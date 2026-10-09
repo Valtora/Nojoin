@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import types
 
 import numpy as np
@@ -258,3 +259,191 @@ def test_onnx_engine_ignores_unusable_padding(tmp_path, monkeypatch):
     result = engine.transcribe(audio_path, {"asr_word_end_padding_s": 0.0})
 
     assert result["segments"][0]["words"][0]["end"] == 0.2
+
+
+# --- phantom speaker filter ----------------------------------------------------
+
+
+def _phantom_diarization():
+    """SPEAKER_00 talks for 10 s; SPEAKER_01 says one thing for 1 s."""
+    from pyannote.core import Annotation, Segment
+
+    annotation = Annotation(uri="meeting")
+    annotation[Segment(0.0, 10.0)] = "SPEAKER_00"
+    annotation[Segment(12.0, 13.0)] = "SPEAKER_01"
+    return annotation
+
+
+class _PhantomModel:
+    """Embeds SPEAKER_00 as [1, 0] and the brief speaker at ``cosine`` to it."""
+
+    def __init__(self, cosine: float = 0.65) -> None:
+        self._cosine = cosine
+
+    def crop(self, _audio_path, segment):
+        if segment.start < 11.0:
+            return np.array([1.0, 0.0])
+        return np.array([self._cosine, math.sqrt(1 - self._cosine**2)])
+
+
+class _UntouchableModel:
+    def crop(self, *_args):
+        raise AssertionError("the embedding model must not run")
+
+
+def _install_phantom_model(monkeypatch, model) -> None:
+    from backend.processing import embedding_core
+
+    monkeypatch.setitem(
+        embedding_core._embedding_model_cache,
+        (embedding_core.DEFAULT_EMBEDDING_MODEL, "cpu"),
+        model,
+    )
+
+
+def _labels(annotation) -> set[str]:
+    return {label for _seg, _track, label in annotation.itertracks(yield_label=True)}
+
+
+def test_phantom_close_to_a_speaker_is_merged_at_defaults(monkeypatch):
+    from backend.processing.phantom_filter import filter_phantom_speakers
+
+    _install_phantom_model(monkeypatch, _PhantomModel())
+
+    result = filter_phantom_speakers(
+        _phantom_diarization(), "audio.wav", config={"processing_device": "cpu"}
+    )
+
+    assert _labels(result) == {"SPEAKER_00"}
+
+
+def test_raised_phantom_merge_threshold_retains_the_brief_speaker(monkeypatch):
+    from backend.processing.phantom_filter import filter_phantom_speakers
+
+    _install_phantom_model(monkeypatch, _PhantomModel())
+
+    result = filter_phantom_speakers(
+        _phantom_diarization(),
+        "audio.wav",
+        config={"processing_device": "cpu", "phantom_merge_threshold": 0.7},
+    )
+
+    assert _labels(result) == {"SPEAKER_00", "SPEAKER_01"}
+
+
+@pytest.mark.parametrize(
+    "tuning", [{"phantom_max_duration_s": 0}, {"phantom_max_segments": 0}]
+)
+def test_zero_phantom_ceiling_turns_the_filter_off(monkeypatch, tuning):
+    from backend.processing import embedding_core
+    from backend.processing.phantom_filter import filter_phantom_speakers
+
+    _install_phantom_model(monkeypatch, _UntouchableModel())
+
+    def _no_load(*_args):
+        raise AssertionError("the embedding model must not load")
+
+    monkeypatch.setattr(embedding_core, "load_embedding_model", _no_load)
+    diarization = _phantom_diarization()
+
+    result = filter_phantom_speakers(
+        diarization, "audio.wav", config={"processing_device": "cpu", **tuning}
+    )
+
+    assert result is diarization
+
+
+def test_inverted_phantom_pair_falls_back_to_both_defaults(monkeypatch, caplog):
+    """A floor above the merge threshold (possible through config.json) would
+    leave no band in which a brief speaker survives."""
+    from backend.processing.phantom_filter import filter_phantom_speakers
+
+    _install_phantom_model(monkeypatch, _PhantomModel(cosine=0.5))
+
+    with caplog.at_level(logging.WARNING):
+        result = filter_phantom_speakers(
+            _phantom_diarization(),
+            "audio.wav",
+            config={
+                "processing_device": "cpu",
+                "phantom_embedding_floor": 0.9,
+                "phantom_merge_threshold": 0.8,
+            },
+        )
+
+    # At the defaults (0.35, 0.60) a 0.5 candidate is retained; under the
+    # configured pair it would have been reassigned as non-speech.
+    assert _labels(result) == {"SPEAKER_00", "SPEAKER_01"}
+    assert "not below merge threshold" in caplog.text
+
+
+# --- duplicate speaker merge pass ----------------------------------------------
+
+
+def _merge_pass(monkeypatch, merged_config: dict):
+    from unittest.mock import MagicMock
+
+    from backend.processing import speaker_merge
+    from backend.processing.embedding_core import EMBEDDING_METHOD_VERSION
+    from backend.worker.tasks.speaker_assignment import _run_duplicate_merge_pass
+
+    def _speaker(speaker_id: int, label: str, embedding: list[float]):
+        return types.SimpleNamespace(
+            id=speaker_id,
+            recording_id=1,
+            diarization_label=label,
+            embedding=embedding,
+            embedding_version=EMBEDDING_METHOD_VERSION,
+            merged_into_id=None,
+            name=None,
+            local_name=None,
+            global_speaker_id=None,
+        )
+
+    # Cosine similarity 0.75 between the two.
+    speakers = [
+        _speaker(1, "SPEAKER_00", [1.0, 0.0]),
+        _speaker(2, "SPEAKER_01", [0.75, math.sqrt(1 - 0.75**2)]),
+    ]
+    session = MagicMock()
+    session.execute.return_value.scalars.return_value.all.return_value = speakers
+    session.get.side_effect = lambda _cls, pk: next(
+        (s for s in speakers if s.id == pk), None
+    )
+    monkeypatch.setattr(
+        speaker_merge, "_count_utterances_per_speaker", lambda *a, **k: {}
+    )
+    events: list[dict] = []
+    monkeypatch.setattr(
+        speaker_merge,
+        "record_pipeline_metric",
+        lambda **kwargs: events.append(kwargs),
+    )
+    ctx = types.SimpleNamespace(
+        session=session, merged_config=merged_config, recording_id=1
+    )
+
+    _run_duplicate_merge_pass(ctx, types.SimpleNamespace(id=1), [], None)
+
+    return speakers, events[-1]["payload"]
+
+
+def test_merge_pass_merges_at_the_default_threshold(monkeypatch):
+    speakers, payload = _merge_pass(monkeypatch, {})
+
+    assert speakers[1].merged_into_id == 1
+    assert payload["threshold"] == 0.7
+
+
+def test_merge_pass_uses_the_owners_threshold(monkeypatch):
+    speakers, payload = _merge_pass(monkeypatch, {"speaker_merge_threshold": 0.8})
+
+    assert speakers[1].merged_into_id is None
+    assert payload["threshold"] == 0.8
+
+
+def test_merge_pass_ignores_an_unusable_threshold(monkeypatch):
+    speakers, payload = _merge_pass(monkeypatch, {"speaker_merge_threshold": 0.1})
+
+    assert speakers[1].merged_into_id == 1
+    assert payload["threshold"] == 0.7
