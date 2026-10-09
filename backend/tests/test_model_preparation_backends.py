@@ -30,6 +30,7 @@ from backend.celery_app import GPU_QUEUE, celery_app
 from backend.models.user import User
 from backend.services import model_preparation
 from backend.tests.sqlite_schemas import USERS_SCHEMA
+from backend.worker.tasks.system import download_models_task
 
 
 @pytest.fixture
@@ -103,6 +104,40 @@ def test_with_no_backend_given_the_install_config_decides(prepared, monkeypatch)
     preload_models.download_models(include_core=True)
 
     assert prepared == ["pyannote", "onnx:parakeet/parakeet-tdt-0.6b-v3"]
+
+
+@pytest.mark.parametrize(
+    ("linked_task", "last_status"),
+    [
+        (None, "complete"),
+        (model_preparation.MODEL_PREPARATION_TASK, "downloading"),
+        ("backend.worker.tasks.generate_notes_task", "complete"),
+    ],
+    ids=["nothing-linked", "preparation-linked", "other-task-linked"],
+)
+def test_a_task_with_a_preparation_linked_after_it_does_not_report_complete(
+    prepared, monkeypatch, linked_task, last_status
+):
+    """Settings stops polling the progress at the first "complete"."""
+    statuses: list[str] = []
+    monkeypatch.setattr(
+        preload_models,
+        "set_download_progress",
+        lambda *args, status, **kwargs: statuses.append(status),
+    )
+    monkeypatch.setattr(download_models_task, "update_state", lambda **kwargs: None)
+    callbacks = [] if linked_task is None else [{"task": linked_task, "kwargs": {}}]
+
+    download_models_task.push_request(callbacks=callbacks)
+    try:
+        download_models_task.run(
+            transcription_backend="whisper", whisper_model_size="small", include_core=True
+        )
+    finally:
+        download_models_task.pop_request()
+
+    assert prepared == ["whisper:small", "pyannote"]
+    assert statuses[-1] == last_status
 
 
 # --- API startup ------------------------------------------------------------

@@ -40,6 +40,13 @@ def download_models_task(
     """
     from backend.preload_models import download_models
 
+    # Startup links the next preparation task to this one, and the worker
+    # queues it once this task returns. Reporting "complete" before then would
+    # end the Settings progress poll while that task is still to run.
+    preparation_follows = any(
+        callback.get("task") == self.name for callback in self.request.callbacks or ()
+    )
+
     def progress_callback(message, progress, speed=None, eta=None, stage=None):
         self.update_state(
             state="PROCESSING",
@@ -66,6 +73,7 @@ def download_models_task(
         parakeet_model=parakeet_model,
         canary_model=canary_model,
         include_core=include_core,
+        report_complete=not preparation_follows,
     )
     return {"status": "success", "message": "Model preparation complete."}
 
