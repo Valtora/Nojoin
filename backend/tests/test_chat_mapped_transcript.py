@@ -252,6 +252,55 @@ def test_chat_falls_back_to_the_projection_without_canonical_rows(engine):
     assert transcript == "[00:03] Priya: Hello."
 
 
+def _update_utterance(engine, utterance_id: int, **values) -> None:
+    assignments = ", ".join(f"{column} = :{column}" for column in values)
+    with engine.begin() as connection:
+        connection.execute(
+            text(f"UPDATE transcript_utterances SET {assignments} WHERE id = :id"),
+            {"id": utterance_id, **values},
+        )
+
+
+def test_chat_leaves_out_deleted_and_superseded_utterances(engine):
+    # Deleting a line is the commonest correction a user makes; a reprocess
+    # supersedes old rows. Neither may reach the model. A provisional live row
+    # is still part of the transcript the view shows.
+    _insert_transcript(engine, segments=None)
+    _insert_speaker(engine, "SPEAKER_00", local_name="Priya")
+    _insert_utterance(engine, 1, (0, 1000), "SPEAKER_00", "Kept.")
+    _insert_utterance(engine, 2, (1000, 2000), "SPEAKER_00", "Deleted by the user.")
+    _insert_utterance(engine, 3, (2000, 3000), "SPEAKER_00", "Superseded.")
+    _insert_utterance(engine, 4, (3000, 4000), "SPEAKER_00", "Still live.")
+    _update_utterance(engine, 2, state="deleted")
+    _update_utterance(engine, 3, state="superseded")
+    _update_utterance(engine, 4, state="provisional")
+
+    transcript = LLMBackend.get_mapped_transcript_for_llm(RECORDING_ID)
+
+    assert transcript == "[00:00] Priya: Kept.\n[00:03] Priya: Still live."
+
+
+def test_chat_names_who_talked_over_a_line(engine):
+    # Rolling diarisation records overlapping speakers by recording speaker
+    # id; chat names them the same way it names the speaker.
+    _insert_transcript(engine, segments=None)
+    _insert_speaker(engine, "SPEAKER_00", local_name="Priya")
+    _insert_speaker(engine, "SPEAKER_01", global_name="Dana")
+    _insert_utterance(engine, 1, (0, 1000), "SPEAKER_00", "Hello.")
+    _insert_utterance(engine, 2, (1000, 2000), "SPEAKER_01", "Hi.")
+    _update_utterance(
+        engine,
+        1,
+        confidence_payload=json.dumps(
+            {"rolling_diarization": {"overlapping_recording_speaker_ids": [2]}}
+        ),
+    )
+
+    transcript = LLMBackend.get_mapped_transcript_for_llm(RECORDING_ID)
+
+    assert transcript == "[00:00] Priya (with Dana): Hello.\n[00:01] Dana: Hi."
+
+
 def test_chat_resolves_every_speaker_alias_the_way_the_view_does(engine):
     # Legacy projections can name a speaker by an old display name or by a
     # generic "Speaker N" instead of the diarisation label. The view maps all
