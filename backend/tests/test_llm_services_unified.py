@@ -70,6 +70,21 @@ class _FakeOllamaResponse:
         return {"message": {"content": self._payload}}
 
 
+class _FakeOllamaShowResponse:
+    """``/api/show`` for a model trained on more context than any test sends."""
+
+    def raise_for_status(self) -> None:
+        return None
+
+    def json(self) -> dict:
+        return {
+            "model_info": {
+                "general.architecture": "llama",
+                "llama.context_length": 131072,
+            }
+        }
+
+
 class _FakeOllamaStreamResponse:
     def __init__(self, chunks: list[dict[str, object]]):
         self._chunks = chunks
@@ -229,6 +244,8 @@ def test_ollama_generate_meeting_intelligence_repairs_contract_failure() -> None
             timeout: int,
             allow_redirects: bool,
         ):
+            if url.endswith("/api/show"):
+                return _FakeOllamaShowResponse()
             calls.append(
                 {
                     "url": url,
@@ -281,10 +298,12 @@ def test_ollama_streaming_chat_raises_when_context_exhausted() -> None:
             self,
             url: str,
             json: dict,
-            stream: bool,
             timeout: int,
             allow_redirects: bool,
+            stream: bool = False,
         ):
+            if url.endswith("/api/show"):
+                return _FakeOllamaShowResponse()
             capture["json"] = json
             return _FakeOllamaStreamResponse(
                 [
@@ -341,6 +360,8 @@ def test_ollama_generate_meeting_edge_accepts_empty_signal_payload() -> None:
             timeout: int,
             allow_redirects: bool,
         ):
+            if url.endswith("/api/show"):
+                return _FakeOllamaShowResponse()
             calls.append(
                 {
                     "url": url,
@@ -382,6 +403,8 @@ def test_ollama_generate_meeting_edge_repairs_malformed_payload() -> None:
             timeout: int,
             allow_redirects: bool,
         ):
+            if url.endswith("/api/show"):
+                return _FakeOllamaShowResponse()
             calls.append(
                 {
                     "url": url,
@@ -427,6 +450,8 @@ def test_secondary_fallback_runs_after_primary_repair_failure() -> None:
             timeout: int,
             allow_redirects: bool,
         ):
+            if url.endswith("/api/show"):
+                return _FakeOllamaShowResponse()
             calls.append({"url": url, "json": json})
             return _FakeOllamaResponse('{"speaker_mapping": {"SPEAKER_00": "Alex"}')
 
