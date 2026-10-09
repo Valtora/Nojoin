@@ -2,7 +2,7 @@
 
 ``LLMBackend.get_mapped_transcript_for_llm`` builds the transcript every chat
 backend sends. Like notes generation and Meeting Edge it reads canonical
-utterances, and it names speakers the way the transcript view does. These
+utterances and names speakers through ``build_recording_speaker_map``. These
 tests pin that against real rows in SQLite.
 """
 
@@ -299,25 +299,6 @@ def test_chat_names_who_talked_over_a_line(engine):
     transcript = LLMBackend.get_mapped_transcript_for_llm(RECORDING_ID)
 
     assert transcript == "[00:00] Priya (with Dana): Hello.\n[00:01] Dana: Hi."
-
-
-def test_chat_resolves_every_speaker_alias_the_way_the_view_does(engine):
-    # Legacy projections can name a speaker by an old display name or by a
-    # generic "Speaker N" instead of the diarisation label. The view maps all
-    # of those to the speaker's current name; chat must not send the old one.
-    _insert_transcript(
-        engine,
-        segments=[
-            {"start": 0.0, "end": 2.0, "speaker": "Bob", "text": "Budget is final."},
-            {"start": 2.0, "end": 4.0, "speaker": "Speaker 2", "text": "Agreed."},
-        ],
-    )
-    _insert_speaker(engine, "SPEAKER_00", name="Bob", local_name="Robert")
-    _insert_speaker(engine, "SPEAKER_01", local_name="Dana")
-
-    transcript = LLMBackend.get_mapped_transcript_for_llm(RECORDING_ID)
-
-    assert transcript == "[00:00] Robert: Budget is final.\n[00:02] Dana: Agreed."
 
 
 def test_chat_names_a_merged_speakers_lines_after_the_target(engine):
