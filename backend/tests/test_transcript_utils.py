@@ -320,11 +320,13 @@ def _spans(segments):
     return [(seg["start"], seg["end"], seg["speaker"], seg["text"]) for seg in segments]
 
 
-def test_combination_keeps_text_of_a_segment_without_words():
-    # A segment with an empty "words" list between segments that have words.
-    transcription = {
+def whisper_transcription_with_a_wordless_segment() -> dict:
+    """openai-whisper's shape: integer segment ids, and one segment whose words
+    could not be aligned, so it carries an empty "words" list."""
+    return {
         "segments": [
             {
+                "id": 0,
                 "start": 0.0,
                 "end": 1.0,
                 "text": " Let's start.",
@@ -333,8 +335,15 @@ def test_combination_keeps_text_of_a_segment_without_words():
                     {"start": 0.5, "end": 1.0, "word": " start."},
                 ],
             },
-            {"start": 1.5, "end": 3.0, "text": " Sorry, I was muted.", "words": []},
             {
+                "id": 1,
+                "start": 1.5,
+                "end": 3.0,
+                "text": " Sorry, I was muted.",
+                "words": [],
+            },
+            {
+                "id": 2,
                 "start": 3.5,
                 "end": 4.5,
                 "text": " No problem.",
@@ -345,11 +354,20 @@ def test_combination_keeps_text_of_a_segment_without_words():
             },
         ]
     }
-    diarization = FakeDiarization(
-        [(0.0, 1.2, "SPEAKER_00"), (1.4, 3.1, "SPEAKER_01"), (3.4, 4.6, "SPEAKER_00")]
-    )
 
-    result = combine_transcription_diarization(transcription, diarization)
+
+WORDLESS_SEGMENT_TURNS = [
+    (0.0, 1.2, "SPEAKER_00"),
+    (1.4, 3.1, "SPEAKER_01"),
+    (3.4, 4.6, "SPEAKER_00"),
+]
+
+
+def test_combination_keeps_text_of_a_segment_without_words():
+    result = combine_transcription_diarization(
+        whisper_transcription_with_a_wordless_segment(),
+        FakeDiarization(WORDLESS_SEGMENT_TURNS),
+    )
 
     assert _spans(result) == [
         (0.0, 1.0, "SPEAKER_00", "Let's start."),
@@ -357,6 +375,23 @@ def test_combination_keeps_text_of_a_segment_without_words():
         (3.5, 4.5, "SPEAKER_00", "No problem."),
     ]
     assert "words" not in result[1]
+    # Whisper's segment index is not an utterance id; finalize would persist
+    # it as a public_id, which is unique across recordings.
+    assert "id" not in result[1]
+
+
+def test_segment_level_combination_keeps_only_string_ids():
+    transcription = {
+        "segments": [
+            {"id": 3, "start": 0.0, "end": 1.0, "text": " Engine index."},
+            {"id": "live-7", "start": 1.0, "end": 2.0, "text": " Live reuse."},
+        ]
+    }
+    diarization = FakeDiarization([(0.0, 2.0, "SPEAKER_00")])
+
+    result = combine_transcription_diarization(transcription, diarization)
+
+    assert [seg.get("id") for seg in result] == [None, "live-7"]
 
 
 def test_combination_aligns_words_after_a_segment_without_them():

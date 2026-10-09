@@ -220,8 +220,12 @@ def _combine_segment_level(segments, speaker_turns):
             "overlapping_speakers": overlapping_speakers,
             "text": text,
         }
-        if seg.get("id"):
-            final_segment["id"] = seg["id"]
+        # Only a string id (a live utterance's public id) carries over. An
+        # engine's own index, such as openai-whisper's integer segment "id",
+        # would become an utterance public_id, which is unique install-wide.
+        segment_id = seg.get("id")
+        if isinstance(segment_id, str) and segment_id:
+            final_segment["id"] = segment_id
         final_segments.append(final_segment)
     return final_segments
 
