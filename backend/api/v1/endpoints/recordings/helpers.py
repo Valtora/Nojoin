@@ -766,7 +766,7 @@ def _ensure_recording_accepts_status_updates(recording: Recording) -> None:
 
 
 async def _lock_unless_finalizing_import(
-    db: AsyncSession, recording: Recording
+    db: AsyncSession, recording: Recording, *, refuse_stale: bool = False
 ) -> None:
     """Lock ``recording`` for this transaction, refusing an import whose
     finalize is extracting its audio.
@@ -774,10 +774,22 @@ async def _lock_unless_finalizing_import(
     The claimed import is still UPLOADING, but its files are being read and
     its row is about to be queued, so nothing else may change either. The row
     is re-read under the lock, so a claim cannot land between this check and
-    the caller's write.
+    the caller's write. ``refuse_stale`` refuses a stale claim too, whose
+    finalize may still be running: only discard, which removes the import,
+    may end one.
     """
     await db.refresh(recording, with_for_update=True)
+    if refuse_stale and _carries_finalize_claim(recording):
+        raise HTTPException(status_code=409, detail=IMPORT_BEING_FINALIZED_DETAIL)
     _refuse_while_finalizing_import(recording)
+
+
+def _carries_finalize_claim(recording: Recording) -> bool:
+    """A finalize claim is on the row, stale or not."""
+    return (
+        recording.status == RecordingStatus.UPLOADING
+        and recording.processing_step == FINALIZING_IMPORT_STEP
+    )
 
 
 def _refuse_while_finalizing_import(recording: Recording) -> None:
@@ -791,10 +803,7 @@ def _remove_claimed_import_leftovers(recording: Recording) -> None:
     Their files are named after ``audio_path``, not at it, so deleting the
     recording's artifacts alone would leave them.
     """
-    if (
-        recording.status == RecordingStatus.UPLOADING
-        and recording.processing_step == FINALIZING_IMPORT_STEP
-    ):
+    if _carries_finalize_claim(recording):
         remove_finalize_leftovers(recording.audio_path, logger=logger)
 
 

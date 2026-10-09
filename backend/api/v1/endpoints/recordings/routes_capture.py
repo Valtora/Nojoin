@@ -135,7 +135,9 @@ async def pause_upload(
     recording = await recordings_module._get_owned_recording(
         db, recording_id, current_user.id
     )
-    await recordings_module._lock_unless_finalizing_import(db, recording)
+    await recordings_module._lock_unless_finalizing_import(
+        db, recording, refuse_stale=True
+    )
 
     if recording.status not in {RecordingStatus.UPLOADING, RecordingStatus.PAUSED}:
         raise HTTPException(

@@ -384,6 +384,82 @@ async def test_a_finalize_whose_claim_was_taken_over_leaves_the_new_owner_alone(
     assert len(dispatches) == 1
 
 
+async def _backdate_claim(engine) -> None:
+    """Make the claim look stale by the database clock, as after a suspended
+    host or a clock step."""
+    async with engine.begin() as conn:
+        await conn.execute(
+            text("UPDATE recordings SET updated_at = :t"),
+            {"t": utc_now() - timedelta(hours=3)},
+        )
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("route", ["pause", "segment"])
+async def test_a_stale_claim_still_refuses_pause_and_segment_upload(
+    pg, pg_client, monkeypatch, tmp_path: Path, route: str
+) -> None:
+    """A stale claim's finalize may still be running: pausing or adding a
+    part would throw away its good extraction."""
+    engine, _ = pg
+    recording_id, call, release, dispatches, _ = await _finalize_held(
+        pg_client, monkeypatch, tmp_path, after_keep=True
+    )
+    await _backdate_claim(engine)
+
+    if route == "pause":
+        refused = await pg_client.post(f"/api/v1/recordings/{recording_id}/pause")
+    else:
+        refused = await pg_client.post(
+            "/api/v1/recordings/import/chunked/segment",
+            params={"recording_id": recording_id, "sequence": 0},
+            files={"file": ("0.part", b"resent", "application/octet-stream")},
+        )
+    release.set()
+    answer = await call
+
+    assert refused.status_code == 409, refused.text
+    assert answer.status_code == 200, answer.text
+    assert answer.json()["status"] == "QUEUED"
+    assert (await _stored_audio(engine)).exists()
+    assert len(dispatches) == 1
+
+
+@pytest.mark.anyio
+async def test_a_finalize_that_waited_on_a_discard_answers_not_found(
+    pg, pg_client, monkeypatch, tmp_path: Path
+) -> None:
+    """A finalize arriving while a discard holds the row waits for it, then
+    finds the import gone, as a repeated call would."""
+    from backend.api.v1.endpoints import recordings as recordings_module
+
+    recording_id, dispatches, recordings_dir = await _start(
+        pg_client, monkeypatch, tmp_path
+    )
+    _patch_keep(monkeypatch, _stub_keep)
+    lock = recordings_module._lock_unless_finalizing_import
+    locked = threading.Event()
+
+    async def lock_and_linger(db, recording, **kwargs):
+        await lock(db, recording, **kwargs)
+        locked.set()
+        await asyncio.sleep(1.0)
+
+    monkeypatch.setattr(
+        recordings_module, "_lock_unless_finalizing_import", lock_and_linger
+    )
+    discard = asyncio.create_task(
+        pg_client.post(f"/api/v1/recordings/{recording_id}/discard")
+    )
+    await _until(locked)
+    finalize = await _finalize(pg_client, recording_id)
+
+    assert (await discard).status_code == 200
+    assert finalize.status_code == 404, finalize.text
+    assert dispatches == []
+    assert _files(recordings_dir) == []
+
+
 @pytest.mark.anyio
 async def test_a_failed_duration_probe_does_not_fail_the_import(
     pg, pg_client, monkeypatch, tmp_path: Path

@@ -359,7 +359,7 @@ async def upload_chunked_segment(
     Upload a binary segment for a chunked import.
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
-    await _lock_unless_finalizing_import(db, recording)
+    await _lock_unless_finalizing_import(db, recording, refuse_stale=True)
 
     if recording.status != RecordingStatus.UPLOADING:
         raise HTTPException(
@@ -733,6 +733,11 @@ async def finalize_chunked_import(
     finalize; the daily cleanup releases it.
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
+    try:
+        # Waits out a discard or pause that holds the row, then sees its result.
+        await db.refresh(recording, with_for_update=True)
+    except InvalidRequestError:
+        raise HTTPException(status_code=404, detail="Recording not found")
     if recording.status != RecordingStatus.UPLOADING or is_finalizing_import(recording):
         return _answer_unclaimable_finalize(recording)
 
@@ -768,7 +773,8 @@ async def finalize_chunked_import(
         return _answer_unclaimable_finalize(recording)
     await db.commit()
 
-    # A stale claim taken over leaves what its attempt wrote; start clean.
+    # After a takeover, clear what earlier attempts wrote; a fresh claim finds
+    # nothing to clear.
     remove_finalize_leftovers(recording.audio_path, logger=logger)
     answer = await _keep_claimed_import(
         db, recording, _claim_for_attempt(recording, token), chunk_rows
