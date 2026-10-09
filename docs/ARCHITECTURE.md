@@ -571,19 +571,27 @@ locks remain authoritative.
 
 ### Utterance Ids At Finalize
 
-An utterance `public_id` is minted or validated at finalize; an engine's segment
-ids are never trusted. `transcript_utterances.public_id` is unique across every
-recording, and ids are minted as UUID strings: uuid4 by
+An utterance `public_id` is minted or validated where the utterance is written;
+an engine's segment ids are never trusted. `transcript_utterances.public_id` is
+unique across every recording, and ids are minted as UUID strings: uuid4 by
 `generate_pipeline_public_id`, and uuid5 by the live lane, so a provisional
-utterance's id is stable for its span and text. A merged segment's `id` is only a
+utterance's id is stable for its span and text. A segment's `id` is only a
 request. Live-ASR reuse uses it to carry a live utterance's id into the final
-pass, but the same key also holds an engine's own segment number (openai-whisper
-numbers its segments), which the merge passes on when diarisation or word
-timestamps are off. `finalize_utterances_from_segments` therefore keeps a
-requested id only when it is in canonical UUID form and no other recording holds
-it ([backend/utils/canonical_pipeline/public_ids.py](../backend/utils/canonical_pipeline/public_ids.py)),
-and mints a fresh one otherwise. A requested id that the same recording already
-holds goes into the new utterance's `confidence_payload.source_public_ids` as before.
+pass, and a transcript projection carries its utterances' ids, but the same key
+also holds an engine's own segment number (openai-whisper numbers its segments),
+which the merge passes on when diarisation or word timestamps are off.
+
+The two writers that build utterances from segments someone else produced,
+`finalize_utterances_from_segments` and `replace_utterances_from_segments`
+(legacy backfill, startup cutover and the full-replace path of transcript
+edits), take ids from `UtterancePublicIds`
+([backend/utils/canonical_pipeline/public_ids.py](../backend/utils/canonical_pipeline/public_ids.py)).
+It keeps a requested id only when it is in canonical UUID form and no utterance
+holds it yet, in any recording. An id the same recording already holds, active
+or superseded, is recorded in the segment's `confidence_payload.source_public_ids`
+and a fresh id is minted; anything else gets a fresh id. The other writers mint
+their own ids: the live lane's append takes the uuid5 it just built, and
+diarisation boundary reconciliation gives each split or merged piece a new uuid4.
 
 ### Startup Canonical Cutover
 

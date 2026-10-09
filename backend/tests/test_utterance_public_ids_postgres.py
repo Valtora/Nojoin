@@ -1,12 +1,13 @@
-"""Finalize keeps a segment's ``id`` as an utterance public id only when it is one.
+"""A segment's ``id`` becomes an utterance public id only when it is one.
 
 ``transcript_utterances.public_id`` is unique across every recording, but a
 merged segment's ``id`` can be an engine's own segment number: openai-whisper
 numbers its segments, and the merge passes the number on when diarisation is
 off or word timestamps are off. Finalize used to persist any such id it had
-not already reserved for the same recording, so the second recording through
-either path failed with a UniqueViolation. Live-ASR reuse carries a live
-utterance's public id through the same key on purpose, and that must survive.
+not already reserved for the same recording, and the backfill/replace path
+persisted every id unchecked, so the second recording through either failed
+with a UniqueViolation. Live-ASR reuse carries a live utterance's public id
+through the same key on purpose, and that must survive.
 
 The production schema needs PostgreSQL (JSONB columns, the vector extension),
 so the database tests skip unless NOJOIN_TEST_POSTGRES_URL names a server. CI
@@ -29,8 +30,12 @@ from backend.models.transcript import Transcript
 from backend.models.user import User
 from backend.processing.live_transcribe import _build_live_utterance_public_id
 from backend.tests.test_transcript_utils import FakeDiarization
-from backend.utils.canonical_pipeline.core import finalize_utterances_from_segments
+from backend.utils.canonical_pipeline.core import (
+    apply_compatibility_segment_replace,
+    finalize_utterances_from_segments,
+)
 from backend.utils.canonical_pipeline.public_ids import is_utterance_public_id
+from backend.utils.canonical_pipeline.startup import ensure_canonical_backfill
 from backend.utils.live_transcript import build_transcription_result_from_segments
 from backend.worker.tasks.pipeline import _combine_and_consolidate_segments
 
@@ -216,6 +221,113 @@ def test_utterance_id_held_by_another_recording_is_not_reused(
     assert owners == {first.id}
     assert len(second_ids) == 1
     assert is_utterance_public_id(second_ids[0])
+
+
+def _backfill(
+    session: Session, recording: Recording, segments: list[dict]
+) -> list[TranscriptUtterance]:
+    """Canonicalise a recording that has only ``Transcript.segments``.
+
+    That is a recording finalised before canonical writes, or with them
+    turned off, or restored from a backup, which carries no utterance rows.
+    """
+    assert recording.id is not None
+    session.add(Transcript(recording_id=recording.id, text="", segments=segments))
+    session.commit()
+    utterances = ensure_canonical_backfill(session, recording.id)
+    session.commit()
+    return utterances
+
+
+def _segment(public_id: str, start: float, end: float, text: str) -> dict:
+    return {
+        "id": public_id,
+        "start": start,
+        "end": end,
+        "speaker": "SPEAKER_00",
+        "text": text,
+    }
+
+
+def test_backfill_never_persists_whisper_segment_numbers(
+    session: Session, user: User
+) -> None:
+    public_ids: list[str] = []
+    for name in ("first", "second"):
+        segments = _combine_and_consolidate_segments(
+            _whisper_without_word_timestamps(),
+            None,
+            enable_diarization=False,
+            recording_id=0,
+        )
+        utterances = _backfill(session, _new_recording(session, user, name), segments)
+        assert [utterance.text for utterance in utterances] == [
+            "Hello there. Over here.",
+            "And again.",
+        ]
+        public_ids.extend(utterance.public_id for utterance in utterances)
+
+    assert all(is_utterance_public_id(public_id) for public_id in public_ids)
+    assert len(set(public_ids)) == len(public_ids)
+
+
+def test_backfill_does_not_reuse_an_id_another_recording_holds(
+    session: Session, user: User
+) -> None:
+    carried_public_id = str(uuid4())
+    first = _backfill(
+        session,
+        _new_recording(session, user, "first"),
+        [_segment(carried_public_id, 0.0, 2.0, "Hello there.")],
+    )
+    second = _backfill(
+        session,
+        _new_recording(session, user, "second"),
+        [_segment(carried_public_id, 0.0, 2.0, "Hello there.")],
+    )
+
+    assert [utterance.public_id for utterance in first] == [carried_public_id]
+    assert len(second) == 1
+    assert second[0].public_id != carried_public_id
+    assert is_utterance_public_id(second[0].public_id)
+
+
+def test_compatibility_replace_mints_over_an_id_this_recording_holds(
+    session: Session, user: User
+) -> None:
+    """Dropping a segment forces a full replace that resends a held id.
+
+    The replace supersedes every active utterance, whose rows keep their
+    public ids, so the resent id must not be persisted again.
+    """
+    recording = _new_recording(session, user, "edited")
+    kept_id, dropped_id = str(uuid4()), str(uuid4())
+    _backfill(
+        session,
+        recording,
+        [
+            _segment(kept_id, 0.0, 2.0, "Hello there."),
+            _segment(dropped_id, 2.0, 4.0, "Over here."),
+        ],
+    )
+    assert recording.id is not None
+
+    utterances = apply_compatibility_segment_replace(
+        session,
+        recording_id=recording.id,
+        segments=[_segment(kept_id, 0.0, 2.0, "Hello there, edited.")],
+    )
+    session.commit()
+
+    assert [utterance.text for utterance in utterances] == ["Hello there, edited."]
+    assert utterances[0].public_id not in {kept_id, dropped_id}
+    assert is_utterance_public_id(utterances[0].public_id)
+    transcript = session.exec(
+        select(Transcript).where(Transcript.recording_id == recording.id)
+    ).one()
+    projection = transcript.segments[0]
+    assert projection["id"] == utterances[0].public_id
+    assert projection["confidence_payload"]["source_public_ids"] == [kept_id]
 
 
 @pytest.mark.parametrize(

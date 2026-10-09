@@ -1,6 +1,6 @@
 from .constants import *
 from .diarization import *
-from .public_ids import claimable_segment_public_ids
+from .public_ids import UtterancePublicIds
 from .segmentation import *
 from .speaker import *
 from .speaker_matching import _find_matching_recording_speaker  # noqa: F401
@@ -279,6 +279,9 @@ def replace_utterances_from_segments(
     overlap_groups = _build_overlap_groups(segments)
     utterances: list[TranscriptUtterance] = []
     projection_segments: list[dict[str, Any]] = []
+    utterance_ids = UtterancePublicIds(
+        session, recording_id=recording_id, segments=segments
+    )
 
     for index, segment in enumerate(segments):
         utterance_state = state_override or _state_for_segment(recording, segment)
@@ -299,7 +302,7 @@ def replace_utterances_from_segments(
             session.add(recording_speaker)
 
         utterance = TranscriptUtterance(
-            public_id=str(segment.get("id") or uuid4()),
+            public_id=utterance_ids.assign(segment),
             recording_id=recording_id,
             sort_key=_sort_key_for_index(index),
             start_ms=_segment_to_ms(segment.get("start", 0.0)),
@@ -455,53 +458,9 @@ def finalize_utterances_from_segments(
     utterances: list[TranscriptUtterance] = []
     new_boundary_utterances: list[TranscriptUtterance] = []
     matched_utterance_ids: set[int] = set()
-    reserved_public_ids: set[str] = {
-        str(public_id)
-        for public_id in session.execute(
-            select(TranscriptUtterance.public_id).where(
-                TranscriptUtterance.recording_id == recording_id
-            )
-        )
-        .scalars()
-        .all()
-        if str(public_id or "").strip()
-    }
-    # public_id is unique install-wide; a segment id is only a request.
-    claimable_public_ids = claimable_segment_public_ids(
+    utterance_ids = UtterancePublicIds(
         session, recording_id=recording_id, segments=segments
     )
-
-    def reserve_finalize_public_id(segment_payload: dict[str, Any]) -> str:
-        requested_public_id = str(segment_payload.get("id") or "").strip()
-        if (
-            requested_public_id not in reserved_public_ids
-            and requested_public_id not in claimable_public_ids
-        ):
-            requested_public_id = ""
-        if requested_public_id and requested_public_id not in reserved_public_ids:
-            reserved_public_ids.add(requested_public_id)
-            return requested_public_id
-
-        if requested_public_id:
-            confidence_payload = dict(segment_payload.get("confidence_payload") or {})
-            source_public_ids = [
-                str(public_id or "").strip()
-                for public_id in confidence_payload.get("source_public_ids")
-                or segment_payload.get("source_public_ids")
-                or []
-                if str(public_id or "").strip()
-            ]
-            if requested_public_id not in source_public_ids:
-                source_public_ids.append(requested_public_id)
-            if source_public_ids:
-                confidence_payload["source_public_ids"] = source_public_ids
-                segment_payload["confidence_payload"] = confidence_payload
-
-        public_id = str(uuid4())
-        while public_id in reserved_public_ids:
-            public_id = str(uuid4())
-        reserved_public_ids.add(public_id)
-        return public_id
 
     def inherit_manual_speaker_for_range(
         *,
@@ -852,7 +811,7 @@ def finalize_utterances_from_segments(
         else:
             recording_speaker = resolved_speaker
         utterance = TranscriptUtterance(
-            public_id=reserve_finalize_public_id(effective_segment),
+            public_id=utterance_ids.assign(effective_segment),
             recording_id=recording_id,
             sort_key=_sort_key_for_index(index),
             start_ms=start_ms,
