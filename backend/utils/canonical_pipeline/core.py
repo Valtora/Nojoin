@@ -1,5 +1,6 @@
 from .constants import *
 from .diarization import *
+from .public_ids import claimable_segment_public_ids
 from .segmentation import *
 from .speaker import *
 from .speaker_matching import _find_matching_recording_speaker  # noqa: F401
@@ -465,9 +466,18 @@ def finalize_utterances_from_segments(
         .all()
         if str(public_id or "").strip()
     }
+    # public_id is unique install-wide; a segment id is only a request.
+    claimable_public_ids = claimable_segment_public_ids(
+        session, recording_id=recording_id, segments=segments
+    )
 
     def reserve_finalize_public_id(segment_payload: dict[str, Any]) -> str:
         requested_public_id = str(segment_payload.get("id") or "").strip()
+        if (
+            requested_public_id not in reserved_public_ids
+            and requested_public_id not in claimable_public_ids
+        ):
+            requested_public_id = ""
         if requested_public_id and requested_public_id not in reserved_public_ids:
             reserved_public_ids.add(requested_public_id)
             return requested_public_id

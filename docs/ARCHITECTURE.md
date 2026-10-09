@@ -569,6 +569,22 @@ final ASR/diarisation output and records live evidence in alignment metadata
 instead of silently applying it to the wrong time span. Manual text and speaker
 locks remain authoritative.
 
+### Utterance Ids At Finalize
+
+An utterance `public_id` is minted or validated at finalize; an engine's segment
+ids are never trusted. `transcript_utterances.public_id` is unique across every
+recording, and ids are minted as UUID strings: uuid4 by
+`generate_pipeline_public_id`, and uuid5 by the live lane, so a provisional
+utterance's id is stable for its span and text. A merged segment's `id` is only a
+request. Live-ASR reuse uses it to carry a live utterance's id into the final
+pass, but the same key also holds an engine's own segment number (openai-whisper
+numbers its segments), which the merge passes on when diarisation or word
+timestamps are off. `finalize_utterances_from_segments` therefore keeps a
+requested id only when it is in canonical UUID form and no other recording holds
+it ([backend/utils/canonical_pipeline/public_ids.py](../backend/utils/canonical_pipeline/public_ids.py)),
+and mints a fresh one otherwise. A requested id that the same recording already
+holds goes into the new utterance's `confidence_payload.source_public_ids` as before.
+
 ### Startup Canonical Cutover
 
 The unified pipeline now assumes a container-level startup cutover for older
