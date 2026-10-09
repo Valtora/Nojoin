@@ -452,7 +452,7 @@ Playback, transcript viewing, and export all operate on the full recording timel
 
 Import stores no video.
 
-- **Extraction.** Once an upload is complete and before it is queued, `keep_imported_audio` ([backend/utils/import_audio.py](../backend/utils/import_audio.py)) extracts the audio track ffmpeg selects by default from any media container, or any upload carrying video, into a new file. That file becomes `audio_path`, and the upload is deleted. Other uploads are stored as they arrived.
+- **Extraction.** Once an upload is complete and before it is queued, `keep_imported_audio` ([backend/utils/import_audio.py](../backend/utils/import_audio.py)) extracts the audio track ffmpeg selects by default from any media container, or any upload carrying video, into a new file. That file becomes `audio_path`, and the upload is deleted. Other uploads are stored as they arrived. WAV, MP3, AAC and FLAC, whose formats hold no video (cover art aside), are stored without being probed, so they need no ffmpeg.
 - **Format.** AAC, ALAC, MP3, Opus, Vorbis and FLAC are copied, PCM and other lossless codecs become FLAC, and anything else becomes Opus.
 - **Verification.** The upload is deleted only once the new file is one audio stream no more than max(1 s, 0.1%) shorter than the source track, measured from packets.
 - **Failures.** A file at fault is refused (400 or 422), and nothing is kept. A server fault (a tool missing, timed out or stopped by a signal; a full disk) answers 500, and chunked import moves its parts to `failed/` and marks the recording ERROR.

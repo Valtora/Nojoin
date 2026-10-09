@@ -428,7 +428,7 @@ def test_an_ffmpeg_out_of_space_error_is_a_server_failure(
     ],
     ids=["ffprobe-missing", "ffprobe-hung"],
 )
-@pytest.mark.parametrize("name", ["screen.mkv", "meeting.mp3"])
+@pytest.mark.parametrize("name", ["screen.mkv", "meeting.m4a"])
 def test_ffprobe_failing_to_run_is_a_server_failure(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, failure: Exception, name: str
 ) -> None:
@@ -458,8 +458,8 @@ def test_a_container_ffprobe_cannot_read_is_refused(tmp_path: Path) -> None:
 
 @needs_ffmpeg
 def test_an_audio_file_ffprobe_cannot_read_is_kept_as_before(tmp_path: Path) -> None:
-    source = tmp_path / "meeting.mp3"
-    source.write_bytes(b"not an mp3")
+    source = tmp_path / "meeting.m4a"
+    source.write_bytes(b"not an m4a")
 
     assert keep_imported_audio(str(source)).path == str(source)
 
@@ -712,3 +712,24 @@ def test_a_packet_read_past_its_timeout_is_killed_as_a_server_failure(
 
     with pytest.raises(ToolFailure, match="ran past"):
         track_span(str(stalled), 0, None, timeout=0.2)
+
+
+@pytest.mark.parametrize(
+    "name", ["meeting.wav", "meeting.MP3", "meeting.aac", "meeting.flac"]
+)
+def test_a_format_that_cannot_hold_video_is_kept_without_probing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, name: str
+) -> None:
+    """Stored as uploaded, as before media containers were accepted, and with
+    no ffprobe or ffmpeg needed (upstream CI installs neither)."""
+    source = tmp_path / name
+    source.write_bytes(b"audio")
+
+    def run(cmd, **kwargs):
+        raise FileNotFoundError(2, "No such file or directory", cmd[0])
+
+    monkeypatch.setattr(subprocess, "run", run)
+    monkeypatch.setattr(subprocess, "Popen", run)
+
+    assert keep_imported_audio(str(source)) == import_audio.KeptAudio(str(source))
+    assert source.read_bytes() == b"audio"

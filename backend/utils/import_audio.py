@@ -42,6 +42,14 @@ MEDIA_CONTAINER_SUFFIXES = frozenset(
     {".mkv", ".mka", ".mov", ".avi", ".m4v", ".ts", ".mts", ".mpg", ".mpeg", ".3gp"}
 )
 
+# Formats import accepted before media containers whose format has no video
+# stream: a WAV, an MP3 or AAC elementary stream, native FLAC. MP3 and FLAC can
+# carry cover art, which ffprobe lists as a video stream but is not video, so
+# probing them could find nothing to remove. They are stored as uploaded, as
+# before, without needing ffprobe. Every other accepted format (MP4/M4A, WebM,
+# Ogg/Opus, WMA) is a container that can hold video, so it is probed.
+AUDIO_ONLY_SUFFIXES = frozenset({".wav", ".mp3", ".aac", ".flac"})
+
 # Upper bound on one extraction, and on a full read of a track's packets. A
 # stream copy runs at disk speed (6.5 s for a 3.5 GB, one-hour OBS recording,
 # cold) and an Opus re-encode at about 200x real time, so this only ever ends
@@ -203,8 +211,9 @@ class _CopyChangedCodec(RuntimeError):
 def keep_imported_audio(source_path: str) -> KeptAudio:
     """Return what to store as an import's ``audio_path``.
 
-    A media container, or any other file that carries video, has one audio
-    track extracted to a new audio-only file next to it. Once that file
+    A file in one of ``AUDIO_ONLY_SUFFIXES`` is kept unchanged without being
+    probed. A media container, or any other file that carries video, has one
+    audio track extracted to a new audio-only file next to it. Once that file
     verifies (one audio stream, as long as the source track), ``source_path``
     is deleted and the new path returned. Any other file is kept unchanged,
     including an audio-only file with several tracks and a non-container file
@@ -226,7 +235,10 @@ def keep_imported_audio(source_path: str) -> KeptAudio:
     On any of these ``source_path`` is left in place for the caller to remove
     (unless removing it is what failed), and nothing else is left behind.
     """
-    is_container = Path(source_path).suffix.lower() in MEDIA_CONTAINER_SUFFIXES
+    suffix = Path(source_path).suffix.lower()
+    if suffix in AUDIO_ONLY_SUFFIXES:
+        return KeptAudio(source_path)
+    is_container = suffix in MEDIA_CONTAINER_SUFFIXES
     try:
         probe = probe_streams(source_path)
     except ToolFailure as exc:
