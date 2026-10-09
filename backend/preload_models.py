@@ -543,8 +543,10 @@ def _delete_hub_repo(repo_dir: str) -> None:
     the repo directory is then removed.
 
     The files are chosen from this repo alone. ``delete_revisions`` would be
-    shorter, but it matches commit hashes across the whole cache, so a repo
-    holding the same commit (a mirror) would lose its snapshot too.
+    shorter, but it takes commit hashes, not a repo, and removes each hash from
+    the first repo it comes across holding it, in no fixed order. When another
+    repo holds the same commit (a mirror), only one of the two loses that
+    snapshot, and it can be the mirror instead of this repo.
 
     A repo huggingface_hub cannot list is only removed as a directory: a
     download cut off before its first file started, which has no snapshots

@@ -64,7 +64,7 @@ def test_weights_another_repo_links_to_survive(hub):
     """Parakeet v2 and v3 ship byte-identical files; one copy serves both.
 
     The two repos also hold the same commit here, as a mirror would: deleting
-    by commit hash across the cache would take the sibling's snapshot too.
+    by commit hash could take the sibling's snapshot instead of Parakeet's.
     """
     repo, _ = _shared_parakeet(hub)
     content = onnx_asr_files("parakeet", "int8")[ENCODER]
