@@ -54,6 +54,14 @@ describe("getErrorDetail / getErrorMessage", () => {
     expect(getErrorMessage(error, "fallback")).toBe("Recording not found");
   });
 
+  it("reads the message of an object detail, never the object", () => {
+    const error = {
+      response: { data: { detail: { code: "import_finalizing", message: "Busy" } } },
+    };
+    expect(getErrorDetail(error)).toBe("Busy");
+    expect(getErrorDetail({ response: { data: { detail: { code: "x" } } } })).toBeNull();
+  });
+
   it("falls back to Error.message then the fallback", () => {
     expect(getErrorMessage(new Error("boom"), "fallback")).toBe("boom");
     expect(getErrorMessage({}, "fallback")).toBe("fallback");

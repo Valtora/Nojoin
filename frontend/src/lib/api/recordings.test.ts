@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getErrorStatus } from "@/lib/errors";
 
 import api from "./client";
-import { importAudio } from "./recordings";
+import { ImportStillFinalizingError, importAudio } from "./recordings";
 
 // The real axios instance runs, on its fetch adapter, against a stubbed fetch.
 const originalAdapter = api.defaults.adapter;
@@ -142,7 +142,7 @@ describe("importAudio finalize", () => {
     expect(calls).toHaveLength(1);
   });
 
-  it("gives up after five lost answers, about 30 s of backoff", async () => {
+  it("gives up after five attempts that lost their answer, 30 s of backoff", async () => {
     const calls = serveImport([() => json(504, { detail: "Gateway timeout" })]);
 
     const { error } = (await upload()) as { error: unknown };
@@ -154,7 +154,7 @@ describe("importAudio finalize", () => {
     const calls = serveImport([finalizing]);
 
     const { error } = (await upload()) as { error: unknown };
-    expect(getErrorStatus(error)).toBe(409);
+    expect(error).toBeInstanceOf(ImportStillFinalizingError);
     expect(calls[calls.length - 1] - calls[0]).toBeGreaterThanOrEqual(
       20 * 60_000,
     );

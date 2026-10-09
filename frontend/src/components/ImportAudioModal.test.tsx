@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { fireEvent, renderWithProviders, screen } from "@/test/renderWithProviders";
+import { ImportStillFinalizingError, importAudio } from "@/lib/api";
+import {
+  fireEvent,
+  renderWithProviders,
+  screen,
+  waitFor,
+} from "@/test/renderWithProviders";
 
 const addNotification = vi.fn();
 
@@ -56,5 +62,52 @@ describe("ImportAudioModal", () => {
       expect.objectContaining({ type: "error" }),
     );
     expect(screen.queryByText("slides.pptx")).not.toBeInTheDocument();
+  });
+
+  describe("a failed import", () => {
+    const importFailing = async (error: unknown) => {
+      vi.mocked(importAudio).mockRejectedValueOnce(error);
+      renderWithProviders(<ImportAudioModal isOpen onClose={vi.fn()} />);
+      selectFile("obs-capture.mkv");
+      fireEvent.click(screen.getByRole("button", { name: /Import Audio/ }));
+      await waitFor(() => expect(addNotification).toHaveBeenCalled());
+      return addNotification.mock.calls[0][0];
+    };
+
+    it("shows the message of a structured detail as text", async () => {
+      // Finalize answers 409 with {code, message}; the object itself would
+      // crash the toast and every later view of the notification history.
+      const notification = await importFailing({
+        response: {
+          status: 409,
+          data: {
+            detail: {
+              code: "import_finalizing",
+              message: "This import is already being finalized.",
+            },
+          },
+        },
+      });
+
+      expect(notification).toEqual({
+        type: "error",
+        message: "This import is already being finalized.",
+      });
+    });
+
+    it("warns, not fails, when the server is still finishing the import", async () => {
+      const error = new ImportStillFinalizingError();
+
+      expect(await importFailing(error)).toEqual({
+        type: "warning",
+        message: error.message,
+      });
+    });
+
+    it("blames the connection when no answer came back", async () => {
+      const notification = await importFailing(new TypeError("Failed to fetch"));
+
+      expect(notification.message).toMatch(/check your connection/);
+    });
   });
 });

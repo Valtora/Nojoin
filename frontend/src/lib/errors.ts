@@ -65,7 +65,9 @@ export function getErrorDetail(error: unknown): string | null {
     return null;
   }
 
-  const detail = data.detail;
+  // A detail is a string, or an object such as {code, message} where the
+  // client needs a code to act on; only the message is for display.
+  const detail = isRecord(data.detail) ? data.detail.message : data.detail;
   return typeof detail === "string" && detail.trim().length > 0 ? detail : null;
 }
 
