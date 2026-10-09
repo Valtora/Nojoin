@@ -27,9 +27,9 @@ from backend.utils.meeting_notes import (
 
 
 def _segments_the_view_shows(segments: list[dict]) -> list[dict]:
-    # TranscriptView hides finalised UNKNOWN lines, which is what removing a
-    # speaker leaves behind, once any line has a known speaker. Sending them
-    # would let the model attribute and cite lines the user cannot see.
+    # TranscriptView hides finalised UNKNOWN (unattributed) lines, such as a
+    # removed speaker's, once any line has a known speaker. Sending them would
+    # let the model attribute and cite lines the user cannot see.
     if all(segment.get("speaker") == UNKNOWN_SPEAKER for segment in segments):
         return segments
     return [
