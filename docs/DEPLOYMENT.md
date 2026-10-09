@@ -812,9 +812,17 @@ Pinning a deployment to an exact image digest (`ghcr.io/valtora/nojoin-api@sha25
   model (`whisper_model_size`, `parakeet_model`, `canary_model`) are kept in `data/config.json` and apply
   to every user. Releases before this one stored an administrator's **Settings > Transcription** choice
   on that administrator's own account, so only they used it, and everyone else used the value in
-  `config.json`. After the upgrade, users who are not administrators transcribe with the
-  administrator's engine and model, which is what the settings page already described. A value still
-  stored on any account is ignored, and is removed when that user next saves their settings.
+  `config.json`. On the first start after the upgrade, the API copies the owner's choice into
+  `config.json` and removes it from the owner's account, so a later start never repeats it over a
+  choice made since. A key that `config.json` already sets to anything other than its shipped default
+  (`whisper`, `turbo`, `parakeet-tdt-0.6b-v3`, `nemo-canary-1b-v2`) was set by an operator and is kept;
+  the api log names any owner value left out for that reason. If `config.json` cannot be read or
+  written, the owner's choice stays on their account and the next start tries again.
+
+  After the upgrade, users who are not administrators transcribe with the install's engine and model,
+  settled as above, and with whatever an administrator picks later. That is what the settings page
+  already described. Choices stored on other accounts, other administrators' included, are not
+  carried; they are ignored, and removed when that user next saves their settings.
 - **Empty JWT signing key:** if the api log shows "The JWT signing key in … is empty", delete the file it names under `data/` (`.secret_keys.json` or `.secret_key`) and restart the api; a new key is generated and everyone signs in again.
 ### One-Time Migrations From Pre-Browser-Capture Releases
 
