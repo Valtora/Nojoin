@@ -153,29 +153,71 @@ export interface ImportAudioOptions {
 
 // Finalize extracts the audio of a video file before it answers, which can
 // outlast a proxy's timeout (Cloudflare gives up after 100 s) while the server
-// carries on. Finalize is idempotent, so a lost answer is retried: the retry
-// waits for the running finalize and returns the same recording.
-const FINALIZE_ATTEMPTS = 5;
-const FINALIZE_RETRY_STATUSES = new Set([502, 503, 504, 524]);
+// carries on. Finalize is idempotent: a repeated call answers 409
+// "import_finalizing" while the first is still running and the recording once
+// it is done. So a lost answer is retried, and a 409 is waited out.
+const FINALIZE_LOST_ANSWER_ATTEMPTS = 5;
+const FINALIZE_LOST_ANSWER_STATUSES = new Set([502, 503, 504, 524]);
+const FINALIZE_FIRST_DELAY_MS = 2_000;
+const FINALIZE_MAX_DELAY_MS = 30_000;
+// Longer than the server's bound on one extraction (15 minutes) plus checks.
+const FINALIZE_IN_PROGRESS_LIMIT_MS = 20 * 60_000;
+const IMPORT_FINALIZING_CODE = "import_finalizing";
+
+const wait = (ms: number) =>
+  new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+const backoffMs = (retry: number) =>
+  Math.min(FINALIZE_FIRST_DELAY_MS * 2 ** retry, FINALIZE_MAX_DELAY_MS);
+
+type FinalizeOutcome = "lost" | "in-progress" | "final";
+
+const classifyFinalizeError = (error: unknown): FinalizeOutcome => {
+  if (!isAxiosError(error)) {
+    return "final";
+  }
+  const status = error.response?.status;
+  if (status === undefined || FINALIZE_LOST_ANSWER_STATUSES.has(status)) {
+    return "lost";
+  }
+  const detail = (error.response?.data as { detail?: { code?: unknown } })
+    ?.detail;
+  if (status === 409 && detail?.code === IMPORT_FINALIZING_CODE) {
+    return "in-progress";
+  }
+  return "final";
+};
 
 const finalizeChunkedImport = async (
   recordingId: RecordingId,
 ): Promise<Recording> => {
-  for (let attempt = 1; ; attempt += 1) {
+  let lostAnswers = 0;
+  let retries = 0;
+  let waitingSince: number | null = null;
+  for (;;) {
     try {
       const response = await api.post<Recording>(
         `/recordings/import/chunked/finalize?recording_id=${recordingId}`,
       );
       return response.data;
     } catch (error) {
-      const status = isAxiosError(error) ? error.response?.status : undefined;
-      const answerLost =
-        isAxiosError(error) &&
-        (status === undefined || FINALIZE_RETRY_STATUSES.has(status));
-      if (!answerLost || attempt >= FINALIZE_ATTEMPTS) {
+      const outcome = classifyFinalizeError(error);
+      if (outcome === "lost") {
+        lostAnswers += 1;
+        if (lostAnswers >= FINALIZE_LOST_ANSWER_ATTEMPTS) {
+          throw error;
+        }
+      } else if (outcome === "in-progress") {
+        waitingSince ??= Date.now();
+        if (Date.now() - waitingSince >= FINALIZE_IN_PROGRESS_LIMIT_MS) {
+          throw error;
+        }
+      } else {
         throw error;
       }
     }
+    await wait(backoffMs(retries));
+    retries += 1;
   }
 };
 
