@@ -71,6 +71,7 @@ def _mute(tmp_path, config) -> None:
         ({"threshold": 0.4}, {"vad_threshold": 0.3}, 0.3),
         # An unusable stored value falls back to the install's.
         ({"threshold": 0.4}, {"vad_threshold": 1.7}, 0.4),
+        ({"threshold": 0.4}, {"vad_threshold": 10**400}, 0.4),
     ],
 )
 def test_final_vad_threshold_resolution(
@@ -442,8 +443,9 @@ def test_merge_pass_uses_the_owners_threshold(monkeypatch):
     assert payload["threshold"] == 0.8
 
 
-def test_merge_pass_ignores_an_unusable_threshold(monkeypatch):
-    speakers, payload = _merge_pass(monkeypatch, {"speaker_merge_threshold": 0.1})
+@pytest.mark.parametrize("unusable", [0.1, 10**400], ids=["out-of-range", "huge-int"])
+def test_merge_pass_ignores_an_unusable_threshold(monkeypatch, unusable):
+    speakers, payload = _merge_pass(monkeypatch, {"speaker_merge_threshold": unusable})
 
     assert speakers[1].merged_into_id == 1
     assert payload["threshold"] == 0.7

@@ -82,6 +82,9 @@ def test_boundary_values_are_accepted(key, value) -> None:
         ("vad_threshold", math.inf),
         ("vad_threshold", "0.3"),
         ("vad_threshold", [0.3]),
+        # float() raises OverflowError on an int this large.
+        pytest.param("vad_threshold", 10**400, id="vad_threshold-huge-int"),
+        pytest.param("phantom_max_segments", 10**400, id="max_segments-huge-int"),
     ],
 )
 def test_unusable_values_are_rejected(key, value) -> None:
@@ -102,6 +105,14 @@ def test_resolve_uses_a_valid_value() -> None:
 def test_resolve_ignores_an_invalid_value_with_a_warning(caplog) -> None:
     with caplog.at_level(logging.WARNING):
         resolved = resolve_tuning({"vad_threshold": 1.7}, "vad_threshold")
+
+    assert resolved == 0.5
+    assert "vad_threshold" in caplog.text
+
+
+def test_resolve_falls_back_from_an_int_too_large_for_a_float(caplog) -> None:
+    with caplog.at_level(logging.WARNING):
+        resolved = resolve_tuning({"vad_threshold": 10**400}, "vad_threshold")
 
     assert resolved == 0.5
     assert "vad_threshold" in caplog.text

@@ -76,16 +76,23 @@ def normalise_tuning_value(key: str, value: object) -> float | None:
     """Return ``value`` as a usable number for ``key``, or ``None``.
 
     ``None`` comes back both for an unset value and for one that cannot be
-    used: a non-number (``bool`` included), NaN or infinity, a fraction for an
-    integer key, or anything outside the key's bounds.
+    used: a non-number (``bool`` included), NaN or infinity, an integer too
+    large to convert, a fraction for an integer key, or anything outside the
+    key's bounds. Never raises.
     """
     spec = TUNING_SPECS[key]
     if value is None or isinstance(value, bool):
         return None
     if not isinstance(value, (int, float)):
         return None
-    number = float(value)
+    try:
+        number = float(value)
+    except (OverflowError, ValueError):
+        # An int too large for a float (JSON allows any number of digits)
+        # raises rather than becoming infinity.
+        return None
     if not math.isfinite(number):
+        # A float NaN or infinity; every bound below would reject it too.
         return None
     if not spec.minimum <= number <= spec.maximum:
         return None

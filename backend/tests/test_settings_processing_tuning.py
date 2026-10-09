@@ -114,6 +114,8 @@ def test_a_non_admin_can_store_a_value() -> None:
         {"vad_threshold": True},
         {"phantom_max_segments": 2.5},
         {"speaker_merge_threshold": 0.29},
+        # Too large to convert to a float: must still be a 422, not a 500.
+        {"vad_threshold": 10**400},
     ],
 )
 def test_an_out_of_range_value_is_rejected(body) -> None:
@@ -165,9 +167,11 @@ def test_lowering_merge_below_a_stored_floor_is_rejected() -> None:
     assert row["phantom_merge_threshold"] == 0.8
 
 
-def test_an_unusable_stored_value_reads_as_unset() -> None:
-    (response,), _row = _run([("GET", None)], stored={"vad_threshold": 1.7})
+@pytest.mark.parametrize("stored", [1.7, 10**400], ids=["out-of-range", "huge-int"])
+def test_an_unusable_stored_value_reads_as_unset(stored) -> None:
+    (response,), _row = _run([("GET", None)], stored={"vad_threshold": stored})
 
+    assert response.status_code == 200
     assert response.json()["vad_threshold"] is None
 
 
