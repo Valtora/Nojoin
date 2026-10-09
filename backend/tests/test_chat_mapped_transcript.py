@@ -1,9 +1,9 @@
-"""Meeting chat must read the same transcript the notes and Meeting Edge read.
+"""Meeting chat must read the transcript the user sees.
 
 ``LLMBackend.get_mapped_transcript_for_llm`` builds the transcript every chat
-backend sends. The notes and Meeting Edge paths read canonical utterances and
-resolve speaker names through ``build_recording_speaker_map``; these tests pin
-chat to that same view, against real rows in SQLite.
+backend sends. Like notes generation and Meeting Edge it reads canonical
+utterances, and it names speakers the way the transcript view does. These
+tests pin that against real rows in SQLite.
 """
 
 from __future__ import annotations
