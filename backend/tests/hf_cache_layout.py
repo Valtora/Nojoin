@@ -43,6 +43,39 @@ def write_hf_repo(
     return repo
 
 
+def share_blob(hub: Path, repo: Path, name: str) -> Path:
+    """Move one cached file's blob into the hub cache's shared store.
+
+    This is the layout a Xet download leaves (huggingface_hub 1.32.0,
+    ``utils/_shared_blobs.py``): the payload at ``<hub>/blobs/<xx>/<hash>``,
+    read-only (``_shared_blob_mode``, :192); the store marked by
+    ``.huggingface-shared-blobs`` holding ``1\\n`` (:46-48, :146-166); a
+    ``<hash>.refs`` manifest naming each repo blob that links to it, relative
+    to the hub cache (:246-261, :352-371); and the repo's ``blobs/<etag>``
+    turned into a relative symlink to the payload (:374-378, :432-484). A
+    second repo with the same file links to the payload already there
+    (:386-418). Returns the payload path.
+    """
+    snapshot_link = repo / "snapshots" / COMMIT / name
+    blob = Path(os.path.normpath(snapshot_link.parent / os.readlink(snapshot_link)))
+    content = blob.read_bytes()
+    xet_hash = hashlib.sha256(b"xet:" + content).hexdigest()
+    store = hub / "blobs"
+    store.mkdir(exist_ok=True)
+    (store / ".huggingface-shared-blobs").write_text("1\n")
+    payload = store / xet_hash[:2] / xet_hash
+    payload.parent.mkdir(exist_ok=True)
+    if payload.exists():
+        blob.unlink()
+    else:
+        blob.replace(payload)
+        payload.chmod(0o444)
+    with (payload.parent / f"{xet_hash}.refs").open("a") as manifest:
+        manifest.write(f"{blob.relative_to(hub).as_posix()}\n")
+    blob.symlink_to(os.path.relpath(payload, blob.parent))
+    return payload
+
+
 def onnx_asr_files(status_key: str, quantization: str | None) -> dict[str, bytes]:
     """The files the loader opens for one model at one precision."""
     model = ONNX_ASR_MODELS[status_key]

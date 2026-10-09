@@ -521,13 +521,57 @@ def _deletion_target(model_name: str, found_path: str) -> tuple[str, str]:
 
     Whisper is a single file. The Hugging Face models are a whole repo
     directory: blobs, snapshots and refs together. Removing only the snapshot
-    a Pyannote status points at would delete symlinks and leave the weights in
-    blobs/, with refs/main naming a revision that is gone. Blobs are per repo
-    in the hub cache, so no other model shares them.
+    a Pyannote status points at would delete symlinks and leave the weights
+    behind, with refs/main naming a revision that is gone. Where those weights
+    live, and how they are freed, is up to _delete_hub_repo.
     """
     if model_name == "whisper":
         return whisper_cache_root(), os.path.basename(found_path)
     return hf_hub_cache_root(), _hub_repo_dirname(model_name)
+
+
+def _delete_hub_repo(repo_dir: str) -> None:
+    """Delete one repo from its hub cache, with the weights only it links to.
+
+    ``repo_dir`` is the repo's real path. huggingface_hub keeps a file
+    downloaded through Xet once per cache, in ``<hub cache>/blobs/<xx>/<hash>``,
+    and makes the repo's own ``blobs/<etag>`` a symlink to it, so a second repo
+    with the same file links to the same copy. Removing the repo directory
+    leaves that copy on disk, and a later download links it back without
+    fetching anything. huggingface_hub's cache deletion unlinks the repo's
+    files and frees each copy that no other repo still links to; the rest of
+    the repo directory is then removed.
+
+    The files are chosen from this repo alone. ``delete_revisions`` would be
+    shorter, but it matches commit hashes across the whole cache, so a repo
+    holding the same commit (a mirror) would lose its snapshot too.
+
+    A repo huggingface_hub cannot list is only removed as a directory: a
+    download cut off before its first file started, which has no snapshots
+    directory yet, or a repo left inconsistent, such as a snapshot link to a
+    blob that is gone. Unfinished files are in the repo's own ``blobs/``. A
+    finished file such a repo shared stays in the cache until ``hf cache
+    prune`` collects it.
+    """
+    # Imported here: the API process imports this module for model status, and
+    # only the worker image installs huggingface_hub.
+    from huggingface_hub import scan_cache_dir
+
+    cache_info = scan_cache_dir(cache_dir=os.path.dirname(repo_dir))
+    files = [
+        file
+        for repo in cache_info.repos
+        if str(repo.repo_path) == repo_dir
+        for revision in repo.revisions
+        for file in revision.files
+    ]
+    if files:
+        cache_info.delete_files(*files).execute()
+    # Refs, snapshot directories and unfinished downloads are left by
+    # delete_files. huggingface_hub also logs a path it could not remove and
+    # carries on; removing what is left here raises instead, so a failure
+    # reaches the UI.
+    shutil.rmtree(repo_dir)
 
 
 def delete_model(model_name: str, whisper_model_size: str | None = None) -> bool:
@@ -585,6 +629,9 @@ def delete_model(model_name: str, whisper_model_size: str | None = None) -> bool
     if os.path.isfile(target):
         os.remove(target)
         logger.info(f"Deleted file: {target}")
+    elif os.path.isdir(target) and model_name != "whisper":
+        _delete_hub_repo(real_target)
+        logger.info(f"Deleted repo: {target}")
     elif os.path.isdir(target):
         shutil.rmtree(target)
         logger.info(f"Deleted directory: {target}")
