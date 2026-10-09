@@ -46,7 +46,7 @@ def write_hf_repo(
 def share_blob(hub: Path, repo: Path, name: str) -> Path:
     """Move one cached file's blob into the hub cache's shared store.
 
-    This is the layout a Xet download leaves (huggingface_hub 1.32.0,
+    This is the layout a Xet download leaves (huggingface_hub 1.33.0, the same in 1.32.0,
     ``utils/_shared_blobs.py``): the payload at ``<hub>/blobs/<xx>/<hash>``,
     read-only (``_shared_blob_mode``, :192); the store marked by
     ``.huggingface-shared-blobs`` holding ``1\\n`` (:46-48, :146-166); a
