@@ -1,5 +1,3 @@
-import json
-
 import pytest
 
 from backend.api.v1.endpoints.settings import (
@@ -11,7 +9,6 @@ from backend.api.v1.endpoints.settings import (
 )
 from backend.utils.config_manager import (
     LEGACY_AUTOMATIC_AI_SETTING_KEYS,
-    ConfigManager,
     config_manager,
     get_default_user_settings,
     get_meeting_edge_context_level,
@@ -119,7 +116,7 @@ def test_persist_install_wide_ai_settings_only_writes_install_wide_fields(
 
     monkeypatch.setattr(
         config_manager,
-        "read_file",
+        "get_all",
         lambda: {
             "worker_url": "redis://localhost:6379/0",
             "llm_provider": "gemini",
@@ -193,34 +190,3 @@ async def test_merge_settings_preserves_config_backed_meeting_edge_model(
     assert merged["llm_provider"] == "openai"
     assert merged["openai_model"] == "gpt-4.1"
     assert merged["openai_live_model"] == "gpt-4.1-mini"
-
-
-def test_save_values_reads_back_its_write_and_keeps_env_overrides_out(
-    tmp_path, monkeypatch
-):
-    monkeypatch.setattr(ConfigManager, "_ensure_dirs_exist", lambda self, cfg: None)
-    monkeypatch.setenv("LLM_PROVIDER", "ollama")
-    path = tmp_path / "config.json"
-    path.write_text(json.dumps({"llm_provider": "gemini"}), encoding="utf-8")
-    manager = ConfigManager(config_path=str(path))
-
-    manager.save_values({"whisper_model_size": "small"})
-
-    assert manager.get("whisper_model_size") == "small"
-    assert json.loads(path.read_text(encoding="utf-8")) == {
-        "llm_provider": "gemini",
-        "whisper_model_size": "small",
-    }
-
-
-def test_save_values_refuses_to_replace_a_file_it_cannot_parse(tmp_path, monkeypatch):
-    monkeypatch.setattr(ConfigManager, "_ensure_dirs_exist", lambda self, cfg: None)
-    path = tmp_path / "config.json"
-    path.write_text("{}", encoding="utf-8")
-    manager = ConfigManager(config_path=str(path))
-    path.write_text("{half an edit", encoding="utf-8")
-
-    with pytest.raises(ValueError):
-        manager.save_values({"whisper_model_size": "small"})
-
-    assert path.read_text(encoding="utf-8") == "{half an edit"

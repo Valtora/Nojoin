@@ -287,11 +287,10 @@ def _apply_default_user_settings(
 def _persist_install_wide_ai_settings(update_data: dict[str, Any]) -> None:
     """Write the install-wide keys to config.json.
 
-    Writes onto the file as it is on disk, so a config edited out of band (by an
-    operator, or by a restore) is not reverted by this process's older in-memory
-    copy, and lets a failed write propagate: these keys live nowhere else, so
-    reporting success on a write that did not happen is how a setting silently
-    stays unset.
+    Reloads first so a config edited out of band (by an operator, or by a
+    restore) is not reverted by this process's older in-memory copy, and lets a
+    failed write propagate: these keys live nowhere else, so reporting success
+    on a write that did not happen is how a setting silently stays unset.
     """
     install_wide_updates = {
         key: value
@@ -301,7 +300,12 @@ def _persist_install_wide_ai_settings(update_data: dict[str, Any]) -> None:
     if not install_wide_updates:
         return
 
-    config_manager.save_values(install_wide_updates)
+    config_manager.reload()
+    config_data = config_manager.get_all()
+    config_data.update(install_wide_updates)
+    config_manager.save_config(config_data)
+    # Forced: this process just wrote the file and must read back its own write.
+    config_manager.reload(force=True)
 
 
 async def _merge_settings(user_settings: dict, db: AsyncSession) -> dict:

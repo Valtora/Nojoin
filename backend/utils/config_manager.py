@@ -654,10 +654,12 @@ class ConfigManager:
     def save_values(self, updates: Mapping[str, Any]) -> None:
         """Write these keys to config.json and leave the rest of the file as it is.
 
-        Starts from the file, not from this process's merged copy, so neither a
-        stale copy nor a value an environment variable overrides (ENV_OVERRIDES)
-        is written back. A file that does not hold a JSON object raises
-        ValueError instead of being replaced, and a failed write raises too.
+        For the writes outside the settings routes: first-run setup and the
+        transcription carry-over at startup. Starts from the file, not from this
+        process's merged copy, so neither a stale copy nor a value an environment
+        variable overrides (ENV_OVERRIDES) is written back. A file that does not
+        hold a JSON object raises ValueError instead of being replaced, and a
+        failed write raises too.
         """
         on_disk = self.read_file()
         if on_disk is None:

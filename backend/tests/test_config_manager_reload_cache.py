@@ -121,3 +121,32 @@ class TestDirectoryLogging:
             for record in caplog.records
             if "Created directory" in record.getMessage()
         ]
+
+
+def test_save_values_reads_back_its_write_and_keeps_env_overrides_out(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("LLM_PROVIDER", "ollama")
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps({"llm_provider": "gemini"}), encoding="utf-8")
+    manager = ConfigManager(config_path=str(path))
+
+    manager.save_values({"whisper_model_size": "small"})
+
+    assert manager.get("whisper_model_size") == "small"
+    assert json.loads(path.read_text(encoding="utf-8")) == {
+        "llm_provider": "gemini",
+        "whisper_model_size": "small",
+    }
+
+
+def test_save_values_refuses_to_replace_a_file_it_cannot_parse(tmp_path):
+    path = tmp_path / "config.json"
+    path.write_text("{}", encoding="utf-8")
+    manager = ConfigManager(config_path=str(path))
+    path.write_text("{half an edit", encoding="utf-8")
+
+    with pytest.raises(ValueError):
+        manager.save_values({"whisper_model_size": "small"})
+
+    assert path.read_text(encoding="utf-8") == "{half an edit"
