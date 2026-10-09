@@ -369,7 +369,7 @@ The compose stack derives internal service URLs for PostgreSQL, Redis, and Celer
 Keep any secrets, private mounts, or machine-specific overrides in your local `docker-compose.yml`, not in the tracked template.
 Every variable below is only read by a container if that container's compose service passes it in, which the shipped `docker-compose.example.yml` does for all of them.
 If you maintain your own compose file, a variable you set in `.env` but never declare in a service's `environment:` block is silently discarded: the stack starts and the application default applies with no warning.
-Nojoin auto-generates and persists its JWT signing keyring under `data/.secret_keys.json` in the default deployment, migrating any legacy `data/.secret_key` file on startup, so no `.env` setting is required for that.
+Nojoin auto-generates and persists its JWT signing keyring under `data/.secret_keys.json` in the default deployment, migrating any legacy `data/.secret_key` file on startup, so no `.env` setting is required for that. If that key file is empty or unreadable, the api still starts but nobody can sign in, and the api log names the file to fix; see [JWT Signing Key Rotation](SECURITY.md#jwt-signing-key-rotation).
 Nojoin can also auto-generate `data/.data_encryption_key`, but operators should treat that as a fallback rather than the primary persistence strategy.
 
 ### Always Set
@@ -801,6 +801,7 @@ Pinning a deployment to an exact image digest (`ghcr.io/valtora/nojoin-api@sha25
   chmod -R 700 ./data
   ```
   If you have special host-integration requirements that require group or world read access, you can configure a custom umask using the `NOJOIN_UMASK` environment variable (e.g. `NOJOIN_UMASK=0022` or `NOJOIN_UMASK=0002`).
+- **Empty JWT signing key:** if the api log shows "The JWT signing key in … is empty", delete the file it names under `data/` (`.secret_keys.json` or `.secret_key`) and restart the api; a new key is generated and everyone signs in again.
 ### One-Time Migrations From Pre-Browser-Capture Releases
 
 The notes below describe one-time migrations that run automatically when you first upgrade across the relevant cutover. They apply only if your database or installation predates that cutover. On a clean install, or on any installation already past these cutovers, they require no action and can be treated as historical context.

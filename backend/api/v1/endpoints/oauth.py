@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.api.deps import get_current_user, get_db
 from backend.api.services import oauth_service
 from backend.api.services.oauth_service import OAuthError
+from backend.core.security import SigningKeyUnavailableError
 from backend.models.user import User
 from backend.utils.config_manager import is_mcp_enabled
 from backend.utils.rate_limit import enforce_rate_limit
@@ -271,6 +272,19 @@ async def token_endpoint(
             )
     except OAuthError as exc:
         return _oauth_error_response(exc)
+    except SigningKeyUnavailableError as exc:
+        # Nothing was spent or rotated, so the client can retry the same
+        # grant once the keyring is fixed. The message names the key file,
+        # so it goes to the log, not to the client.
+        logger.error("Could not issue an OAuth access token: %s", exc)
+        return _oauth_error_response(
+            OAuthError(
+                "server_error",
+                "The server could not load its JWT signing key, so no access "
+                "token can be issued. Try again later.",
+                500,
+            )
+        )
 
     return JSONResponse(content=payload, headers={"Cache-Control": "no-store"})
 

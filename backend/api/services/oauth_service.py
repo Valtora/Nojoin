@@ -304,8 +304,8 @@ def _build_access_token(
         token_version=user.token_version,
         extra_claims={
             "client_id": client_id,
-            # Custom claim (not "aud": python-jose rejects tokens carrying
-            # "aud" unless every decode call passes an audience option).
+            # Custom claim (not "aud": PyJWT rejects tokens carrying "aud"
+            # unless every decode call passes an audience option).
             "res": mcp_resource_url(),
             # Lets the MCP endpoint attribute a request to its consent grant
             # so Connected Apps can show when the grant was actually used.
@@ -383,10 +383,15 @@ async def exchange_authorization_code(
     if not code_verifier or not _verify_pkce(record.code_challenge, code_verifier):
         raise OAuthError("invalid_grant", "PKCE verification failed.")
 
-    record.used_at = utc_now()
     user = await _load_user(db, record.user_id)
-
     grant_id = uuid.uuid4().hex
+    # Mint before spending the code: if signing fails, the client can retry
+    # with the same code instead of having it refused as a replay.
+    access_token, expires_in = _build_access_token(
+        user, client_id=client_id, scope=record.scope, grant_id=grant_id
+    )
+
+    record.used_at = utc_now()
     refresh_token = await _issue_refresh_token(
         db,
         RefreshGrant(
@@ -400,9 +405,6 @@ async def exchange_authorization_code(
     client.last_used_at = utc_now()
     await db.commit()
 
-    access_token, expires_in = _build_access_token(
-        user, client_id=client_id, scope=record.scope, grant_id=grant_id
-    )
     return {
         "access_token": access_token,
         "token_type": "Bearer",
@@ -445,6 +447,11 @@ async def refresh_access_token(
         raise OAuthError("invalid_grant", "Refresh token has expired.")
 
     user = await _load_user(db, record.user_id)
+    # Mint before rotating: if signing fails, the presented refresh token
+    # stays valid, so a retry is not mistaken for reuse of a rotated token.
+    access_token, expires_in = _build_access_token(
+        user, client_id=client_id, scope=record.scope, grant_id=record.grant_id
+    )
 
     record.revoked_at = utc_now()
     record.last_used_at = utc_now()
@@ -461,9 +468,6 @@ async def refresh_access_token(
     client.last_used_at = utc_now()
     await db.commit()
 
-    access_token, expires_in = _build_access_token(
-        user, client_id=client_id, scope=record.scope, grant_id=record.grant_id
-    )
     return {
         "access_token": access_token,
         "token_type": "Bearer",
