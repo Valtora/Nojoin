@@ -135,6 +135,21 @@ export function parseTuningInput(
   return tuningValueError(spec, value) === null ? value : undefined;
 }
 
+function decimals(value: number): number {
+  return (String(value).split(".")[1] ?? "").length;
+}
+
+/**
+ * One step up or down from the shipped default, within bounds. An empty field
+ * shows the default as its placeholder, so that is where stepping starts.
+ */
+export function stepFromDefault(spec: ProcessingTuningSpec, direction: 1 | -1): number {
+  const stepped = spec.defaultValue + direction * spec.step;
+  const clamped = Math.min(spec.max, Math.max(spec.min, stepped));
+  // Rounded, so 0.7 + 0.05 reads 0.75 rather than 0.7499999999999999.
+  return Number(clamped.toFixed(Math.max(decimals(spec.step), decimals(spec.defaultValue))));
+}
+
 /**
  * The first reason the tuning values would be rejected on save, or null.
  * Checked before autosave so an unusable value shows an error instead of

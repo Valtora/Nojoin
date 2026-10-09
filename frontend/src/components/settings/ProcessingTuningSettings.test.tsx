@@ -121,4 +121,27 @@ describe("ProcessingTuningSettings", () => {
     expect(state.latest().vad_threshold).toBe(0.85);
     expect(input).not.toHaveAttribute("aria-invalid");
   });
+
+  it.each([
+    ["Speech detection threshold", "ArrowUp", "vad_threshold", 0.55],
+    ["Merge similarity", "ArrowDown", "phantom_merge_threshold", 0.55],
+    ["Max segments", "ArrowUp", "phantom_max_segments", 4],
+  ] as const)("steps an empty %s from its default with %s", (name, key, setting, expected) => {
+    const state = renderWithState({});
+    const input = screen.getByRole("spinbutton", { name });
+
+    const notPrevented = fireEvent.keyDown(input, { key });
+
+    expect(notPrevented).toBe(false);
+    expect(state.latest()[setting]).toBe(expected);
+    expect(input).toHaveValue(expected);
+  });
+
+  it("leaves arrow keys on a filled field to the browser", () => {
+    const state = renderWithState({ vad_threshold: 0.3 });
+    const input = screen.getByRole("spinbutton", { name: "Speech detection threshold" });
+
+    expect(fireEvent.keyDown(input, { key: "ArrowUp" })).toBe(true);
+    expect(state.latest().vad_threshold).toBe(0.3);
+  });
 });

@@ -8,6 +8,7 @@ import {
   PROCESSING_TUNING_SPECS,
   parseTuningInput,
   processingTuningReset,
+  stepFromDefault,
   tuningValueError,
   type ProcessingTuningKey,
 } from "@/lib/processingTuning";
@@ -95,6 +96,20 @@ function TuningInput({ tuningKey, value, onChange, labelled = false }: TuningInp
           if (next !== undefined) {
             onChange(tuningKey, next);
           }
+        }}
+        onKeyDown={(event) => {
+          if (draft !== "" || badInput) {
+            return;
+          }
+          if (event.key !== "ArrowUp" && event.key !== "ArrowDown") {
+            return;
+          }
+          // The browser steps an empty number input from 0 and clamps it to
+          // the minimum, the far end of the range from the default shown.
+          event.preventDefault();
+          const next = stepFromDefault(spec, event.key === "ArrowUp" ? 1 : -1);
+          setDraft(String(next));
+          onChange(tuningKey, next);
         }}
         className={cn(SETTINGS_INPUT_CLASS, error && "border-danger-text")}
       />
