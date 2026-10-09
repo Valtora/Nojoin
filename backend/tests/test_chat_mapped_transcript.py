@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, event, text
 from sqlmodel import Session
 
 from backend.processing.llm_backends.base import LLMBackend
@@ -251,3 +251,39 @@ def test_chat_reports_a_recording_without_any_transcript(engine):
     transcript = LLMBackend.get_mapped_transcript_for_llm(RECORDING_ID)
 
     assert transcript == "Diarized transcript not found."
+
+
+def _count_queries(engine) -> int:
+    statements: list[str] = []
+
+    def _record(conn, cursor, statement, *_):
+        statements.append(statement)
+
+    event.listen(engine, "before_cursor_execute", _record)
+    try:
+        LLMBackend.get_mapped_transcript_for_llm(RECORDING_ID)
+    finally:
+        event.remove(engine, "before_cursor_execute", _record)
+    return len(statements)
+
+
+def test_chat_query_count_does_not_grow_with_linked_speakers(engine):
+    # Every chat turn rebuilds the transcript. Loading each linked global
+    # speaker lazily cost a query per speaker (plus its tags), so a meeting
+    # of twelve linked speakers ran 32 queries where one speaker ran a few.
+    _insert_transcript(engine, segments=None)
+    _insert_speaker(engine, "SPEAKER_00", global_name="Person 0")
+    _insert_utterance(engine, 1, (0, 1000), "SPEAKER_00", "line 1")
+    one_speaker = _count_queries(engine)
+
+    for index in range(1, 12):
+        _insert_speaker(engine, f"SPEAKER_{index:02d}", global_name=f"Person {index}")
+        _insert_utterance(
+            engine,
+            index + 1,
+            (index * 1000, index * 1000 + 900),
+            f"SPEAKER_{index:02d}",
+            f"line {index + 1}",
+        )
+
+    assert _count_queries(engine) == one_speaker
