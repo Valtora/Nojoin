@@ -396,11 +396,17 @@ The normal backend processing path is:
 4. Transcription via a pluggable engine under [backend/processing/engines/](../backend/processing/engines/) (Whisper by default, Parakeet or Canary via onnx-asr selectable sharing `OnnxAsrEngine`).
 5. Pyannote diarisation, optionally bounded by the recording's `max_speakers`.
 6. Phantom speaker filtering.
-7. Merge, voiceprint extraction, and deterministic speaker resolution.
+7. Merge (see [Word Timestamps In The Merge](#word-timestamps-in-the-merge)), voiceprint extraction, and deterministic speaker resolution.
 8. Rolling diarisation window reconciliation: completed rolling windows captured during the live lane are replayed to apply speaker boundary corrections to provisional live utterances.
 9. Frame-level segmentation refinement: a second boundary-quality pass using `pyannote/segmentation-3.0` inspects boundary-flagged and long live-emitted utterances and re-splits them where the dense per-frame speaker activity map identifies a cleaner turn boundary than the rolling diarisation windows resolved.
 10. Automatic meeting intelligence when an AI provider and model are configured.
 11. Automatic application of inferred speaker names to unresolved speakers, plus persistence of the meeting title and Markdown meeting notes. Applied suggestions are retained on the transcript as an audit trail.
+
+### Word Timestamps In The Merge
+
+Word timestamps are optional per segment, and an engine can return them for some segments and not others: a chunked onnx-asr run returns a window that came back without token timings as one segment with no words, and a Whisper segment can carry an empty `words` list. `combine_transcription_diarization` in [backend/utils/transcript_utils.py](../backend/utils/transcript_utils.py) therefore chooses the method for each run of consecutive segments rather than once for the transcript. A run with words is aligned to the diarisation word by word; a run without them gets each segment's dominant speaker over its own time span, so a long segment without words, such as a whole onnx-asr window, goes to one speaker. Every segment's text reaches the merge output either way, and a first segment without words does not turn word alignment off for the rest of the recording. Consolidation afterwards still drops a segment shorter than 0.1 s unless it is the only one, and that includes a word whose start and end are equal.
+
+On the segment-level path the merge keeps a segment's `id` only when it is a string: the live utterance public id that live-ASR reuse attaches. Finalize persists that id as the utterance's `public_id`, which is unique across recordings, so the merge does not pass on an engine's own segment index (openai-whisper numbers its segments).
 
 ### Transcription Failure Versus Silence
 
@@ -589,10 +595,6 @@ meetings rather than a frontend-driven migration workflow.
 6. Only meetings created or explicitly rebuilt through the unified pipeline are
    marked `unified` and treated as fully supported for transcript and speaker
    mutation flows.
-
-### Word Timestamps In The Merge
-
-Word timestamps are optional per segment, and an engine can return them for some segments and not others: a chunked onnx-asr run returns a window that came back without token timings as one segment with no words, and a Whisper segment can carry an empty `words` list. `combine_transcription_diarization` in [backend/utils/transcript_utils.py](../backend/utils/transcript_utils.py) therefore chooses the method for each run of consecutive segments rather than once for the transcript. A run with words is aligned to the diarisation word by word; a run without them gets each segment's dominant speaker over its own time span. Every segment's text reaches the transcript either way, and a first segment without words does not turn word alignment off for the rest of the recording.
 
 ## Stall Detection
 
