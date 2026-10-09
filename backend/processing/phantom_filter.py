@@ -14,17 +14,26 @@ from typing import Any, Dict, Optional
 import numpy as np
 from pyannote.core import Annotation, Segment
 
+from backend.processing.processing_tuning import (
+    PHANTOM_EMBEDDING_FLOOR_KEY,
+    PHANTOM_MAX_DURATION_KEY,
+    PHANTOM_MAX_SEGMENTS_KEY,
+    PHANTOM_MERGE_THRESHOLD_KEY,
+    TUNING_SPECS,
+)
+
 logger = logging.getLogger(__name__)
 
 # --- Phantom Speaker Detection Thresholds ---
+# Defaults; a user's settings may override each (processing_tuning.py).
 # Maximum total speaking duration (seconds) for a speaker to be considered a phantom candidate
-PHANTOM_MAX_DURATION_S = 3.0
+PHANTOM_MAX_DURATION_S = TUNING_SPECS[PHANTOM_MAX_DURATION_KEY].default
 # Maximum segment count for a speaker to be considered a phantom candidate
-PHANTOM_MAX_SEGMENTS = 3
+PHANTOM_MAX_SEGMENTS = TUNING_SPECS[PHANTOM_MAX_SEGMENTS_KEY].default
 # Below this cosine similarity to ALL established speakers, confirmed as non-speech
-PHANTOM_EMBEDDING_FLOOR = 0.35
+PHANTOM_EMBEDDING_FLOOR = TUNING_SPECS[PHANTOM_EMBEDDING_FLOOR_KEY].default
 # Above this similarity to a real speaker, merge into that speaker instead of reassigning
-PHANTOM_MERGE_THRESHOLD = 0.60
+PHANTOM_MERGE_THRESHOLD = TUNING_SPECS[PHANTOM_MERGE_THRESHOLD_KEY].default
 
 
 def _get_speaker_stats(diarization: Annotation) -> Dict[str, Dict[str, Any]]:

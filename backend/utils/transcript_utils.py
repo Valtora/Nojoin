@@ -3,14 +3,21 @@ import logging
 import os
 import re
 
+from backend.processing.processing_tuning import (
+    TUNING_SPECS,
+    WORD_FLIP_MAX_DURATION_KEY,
+    WORD_FLIP_MAX_GAP_KEY,
+)
+
 logger = logging.getLogger(__name__)
 
 WORD_OVERLAP_MIN_RATIO = 0.35
 WORD_OVERLAP_MIN_DURATION_S = 0.05
 SEGMENT_OVERLAP_MIN_RATIO = 0.25
 SEGMENT_OVERLAP_MIN_DURATION_S = 0.25
-ISOLATED_WORD_FLIP_MAX_DURATION_S = 0.45
-ISOLATED_WORD_FLIP_MAX_GAP_S = 0.25
+# Defaults; a user's settings may override each (processing_tuning.py).
+ISOLATED_WORD_FLIP_MAX_DURATION_S = TUNING_SPECS[WORD_FLIP_MAX_DURATION_KEY].default
+ISOLATED_WORD_FLIP_MAX_GAP_S = TUNING_SPECS[WORD_FLIP_MAX_GAP_KEY].default
 _PUNCTUATION_ONLY_RE = re.compile(r"^[\.,!?;:%)\]\}]+$")
 _CONTRACTION_SUFFIXES = {
     "'d",
