@@ -11,7 +11,6 @@ import {
   Trash2,
   Tag as TagIcon,
   Users,
-  FilePlus,
   Settings,
   ChevronLeft,
   ChevronRight,
@@ -31,12 +30,10 @@ import {
   useSensors,
   pointerWithin,
 } from "@dnd-kit/core";
-import { useCapture } from "@/lib/capture/CaptureProvider";
 import { useNavigationStore, ViewType } from "@/lib/store";
 import { DESKTOP_BREAKPOINT } from "@/lib/viewportDensity";
 import { logout } from "@/lib/api";
 
-import ImportAudioModal from "./ImportAudioModal";
 import ConfirmationModal from "./ConfirmationModal";
 import CreateTagModal from "./CreateTagModal";
 import NotificationHistoryModal from "./NotificationHistoryModal";
@@ -52,7 +49,6 @@ import { TagWithChildren, useMainNavTags } from "./mainNav/useMainNavTags";
 export default function MainNav() {
   const router = useRouter();
   const pathname = usePathname();
-  const { pausedRecording, runtimeActive } = useCapture();
   const { isCompact, isDesktop } = useViewportDensity();
   const {
     currentView,
@@ -109,9 +105,7 @@ export default function MainNav() {
   const [mounted, setMounted] = useState(false);
 
   // Modal states
-  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isNotificationModalOpen, setIsNotificationModalOpen] = useState(false);
-  const hasPausedCaptureLock = Boolean(pausedRecording && !runtimeActive);
 
   const handleLogout = async () => {
     await logout();
@@ -207,10 +201,6 @@ export default function MainNav() {
         </React.Fragment>
       );
     });
-  };
-
-  const handleImportSuccess = () => {
-    window.dispatchEvent(new CustomEvent("recording-updated"));
   };
 
   const isDashboardRoute = pathname === "/";
@@ -547,14 +537,6 @@ export default function MainNav() {
         {/* Action Buttons */}
         <div className="p-2 space-y-1">
           <NavItem
-            id="nav-import"
-            icon={<FilePlus className="w-5 h-5" />}
-            label="Import Audio"
-            onClick={() => setIsImportModalOpen(true)}
-            collapsed={collapsed}
-            disabled={hasPausedCaptureLock}
-          />
-          <NavItem
             id="nav-notifications"
             icon={<Bell className="w-5 h-5" />}
             label="Notifications"
@@ -592,12 +574,6 @@ export default function MainNav() {
       <NotificationHistoryModal
         isOpen={isNotificationModalOpen}
         onClose={() => setIsNotificationModalOpen(false)}
-      />
-
-      <ImportAudioModal
-        isOpen={isImportModalOpen}
-        onClose={() => setIsImportModalOpen(false)}
-        onSuccess={handleImportSuccess}
       />
 
       <ConfirmationModal

@@ -163,7 +163,7 @@ It can surface live questions, missed points, and quick concept help during a me
 
 ## Importing Recordings
 
-You can import existing audio files directly through the web client.
+You can import existing audio files directly through the web client. **Import Audio** sits beside the search box at the top of the **Recordings** list (the first screen of the recordings workspace on a phone), in the collapsed list on desktop, and in the empty list and the recordings landing panel. It is not offered in **Archived** or **Deleted**, and it is unavailable while a paused recording is waiting to be resumed or finished.
 
 Supported formats include WAV, MP3, M4A, AAC, WebM, OGG, FLAC, MP4, WMA, and OPUS.
 

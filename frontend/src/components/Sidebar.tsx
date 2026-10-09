@@ -22,6 +22,7 @@ import {
   Trash2,
 } from "lucide-react";
 import IconButton from "./ui/IconButton";
+import ImportAudioButton from "./importAudio/ImportAudioButton";
 import RecordingInfoModal from "./RecordingInfoModal";
 import MeetingControls from "./MeetingControls";
 import { useState, useEffect, useCallback, useMemo } from "react";
@@ -695,6 +696,7 @@ export default function Sidebar() {
               <Mic aria-hidden="true" className="h-4 w-4" />
             )}
           </span>
+          {view === "recordings" && <ImportAudioButton tooltipPosition="right" />}
         </div>
       )}
       {!isCollapsed && (
@@ -761,6 +763,7 @@ export default function Sidebar() {
                   <Filter className="w-4 h-4" />
                 </button>
               </div>
+              {view === "recordings" && <ImportAudioButton />}
               <IconButton
                 onClick={toggleRecordingsSidebarCollapse}
                 size="sm"
@@ -935,6 +938,9 @@ export default function Sidebar() {
           <div className="text-center p-4 text-rail-fg-muted text-sm">
             <p>{getEmptyMessage().main}</p>
             <p className="mt-1 text-xs">{getEmptyMessage().sub}</p>
+            {view === "recordings" && (
+              <ImportAudioButton appearance="labelled" className="mt-3" />
+            )}
           </div>
         )}
         {filteredRecordings.map((recording, index) => {

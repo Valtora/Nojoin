@@ -5,8 +5,12 @@ import {
   renderWithProviders,
   screen,
   waitFor,
+  within,
 } from "@/test/renderWithProviders";
+import { useImportAudioStore } from "@/lib/importAudioStore";
+import type { ViewType } from "@/lib/store";
 import Sidebar from "./Sidebar";
+import ImportAudioHost from "./importAudio/ImportAudioHost";
 import { RecordingStatus, type Recording } from "@/types";
 
 const routerPush = vi.fn();
@@ -16,6 +20,9 @@ const getRecordings = vi.fn();
 const getGlobalSpeakers = vi.fn();
 const getTags = vi.fn();
 const getRecordingsCalendar = vi.fn();
+
+let currentView: ViewType = "recordings";
+let pausedRecording: { id: string } | null = null;
 
 vi.mock("next/link", () => ({
   default: ({ children, href, ...props }: React.ComponentPropsWithoutRef<"a">) => (
@@ -52,7 +59,7 @@ vi.mock("@/lib/capture/CaptureProvider", () => ({
   useCapture: () => ({
     cancel: vi.fn(),
     recordingId: null,
-    pausedRecording: null,
+    pausedRecording,
     runtimeActive: false,
   }),
 }));
@@ -67,7 +74,7 @@ vi.mock("@/lib/timezone", () => ({
 
 vi.mock("@/lib/store", () => ({
   useNavigationStore: () => ({
-    currentView: "recordings",
+    currentView,
     selectedTagIds: [],
     toggleTagFilter: vi.fn(),
     clearTagFilters: vi.fn(),
@@ -119,6 +126,11 @@ vi.mock("./BatchActionBar", () => ({
   default: () => null,
 }));
 
+vi.mock("./ImportAudioModal", () => ({
+  default: ({ isOpen }: { isOpen: boolean }) =>
+    isOpen ? <div data-testid="import-modal" /> : null,
+}));
+
 const recording: Recording = {
   id: "rec-1",
   created_at: "2026-05-25T11:54:00Z",
@@ -139,6 +151,9 @@ describe("Sidebar", () => {
     routerPush.mockReset();
     routerReplace.mockReset();
     addNotification.mockReset();
+    currentView = "recordings";
+    pausedRecording = null;
+    useImportAudioStore.setState({ isImportAudioOpen: false });
 
     getRecordings.mockResolvedValue([recording]);
     getGlobalSpeakers.mockResolvedValue([]);
@@ -189,6 +204,83 @@ describe("Sidebar", () => {
 
     await waitFor(() => {
       expect(getRecordings.mock.calls.length).toBeGreaterThan(callsAfterMount);
+    });
+  });
+
+  describe("Import Audio", () => {
+    const renderList = () =>
+      renderWithProviders(
+        <>
+          <Sidebar />
+          <ImportAudioHost />
+        </>,
+      );
+
+    it("opens the import dialog from the recordings list header", async () => {
+      renderList();
+      await screen.findByRole("heading", { name: "Latest meeting" });
+
+      const button = screen.getByRole("button", { name: "Import Audio" });
+      expect(button).toBeEnabled();
+      expect(screen.queryByTestId("import-modal")).not.toBeInTheDocument();
+
+      fireEvent.click(button);
+
+      expect(screen.getByTestId("import-modal")).toBeInTheDocument();
+    });
+
+    it.each<ViewType>(["archived", "deleted"])(
+      "has no import entry in the %s view",
+      async (view) => {
+        currentView = view;
+        getRecordings.mockResolvedValue([]);
+        renderList();
+
+        await screen.findByText(/^No (archived|deleted) recordings\.$/);
+        expect(
+          screen.queryByRole("button", { name: "Import Audio" }),
+        ).not.toBeInTheDocument();
+      },
+    );
+
+    it("is disabled while a paused recording holds the capture lock", async () => {
+      pausedRecording = { id: "rec-paused" };
+      getRecordings.mockResolvedValue([]);
+      renderList();
+      await screen.findByText("No recordings found.");
+
+      const buttons = screen.getAllByRole("button", { name: "Import Audio" });
+      expect(buttons).toHaveLength(2);
+      for (const button of buttons) {
+        expect(button).toBeDisabled();
+        fireEvent.click(button);
+      }
+      expect(screen.queryByTestId("import-modal")).not.toBeInTheDocument();
+
+      // Both forms say why: the header icon in its tooltip, the empty-state
+      // button in its title.
+      const [headerButton, emptyStateButton] = buttons;
+      fireEvent.mouseEnter(headerButton.parentElement as HTMLElement);
+      expect(screen.getByRole("tooltip")).toHaveTextContent(
+        "Resume or discard the paused recording before importing audio.",
+      );
+      expect(emptyStateButton).toHaveAttribute(
+        "title",
+        "Resume or discard the paused recording before importing audio.",
+      );
+    });
+
+    it("opens the import dialog from the empty list", async () => {
+      getRecordings.mockResolvedValue([]);
+      renderList();
+
+      const emptyState = (await screen.findByText("No recordings found."))
+        .parentElement as HTMLElement;
+      fireEvent.click(
+        within(emptyState).getByRole("button", { name: "Import Audio" }),
+      );
+
+      expect(screen.getByTestId("import-modal")).toBeInTheDocument();
     });
   });
 });

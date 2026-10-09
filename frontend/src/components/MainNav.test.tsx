@@ -32,10 +32,6 @@ vi.mock("next/image", () => ({
   default: ({ alt }: { alt: string }) => <span data-testid="logo">{alt}</span>,
 }));
 
-vi.mock("@/lib/capture/CaptureProvider", () => ({
-  useCapture: () => ({ pausedRecording: null, runtimeActive: false }),
-}));
-
 vi.mock("@/lib/store", () => ({
   useNavigationStore: () => ({
     currentView: "recordings",
@@ -65,7 +61,6 @@ vi.mock("@/lib/api", () => ({
 // Heavy modals/menus are stubbed so the tests pin the nav's own
 // orchestration (which items render, routing, tag tree) rather than the
 // modal/menu internals.
-vi.mock("./ImportAudioModal", () => ({ default: () => null }));
 vi.mock("./ConfirmationModal", () => ({
   default: ({ isOpen, title }: { isOpen: boolean; title: string }) =>
     isOpen ? <div data-testid="confirm-modal">{title}</div> : null,
@@ -110,6 +105,18 @@ describe("MainNav", () => {
     expect(screen.getByText("Recordings")).toBeInTheDocument();
     expect(screen.getByText("Archived")).toBeInTheDocument();
     expect(screen.getByText("Deleted")).toBeInTheDocument();
+  });
+
+  it("leaves Import Audio to the recordings list", async () => {
+    renderWithProviders(<MainNav />);
+
+    await waitFor(() => {
+      expect(getTags).toHaveBeenCalled();
+    });
+    expect(screen.getByRole("button", { name: "Settings" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /import audio/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("routes to /tasks when the Tasks item is clicked from the dashboard", async () => {

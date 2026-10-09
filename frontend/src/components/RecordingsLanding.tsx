@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { LifeBuoy, Waves } from "lucide-react";
 
+import ImportAudioButton from "./importAudio/ImportAudioButton";
 import Workspace from "./Workspace";
 import { useNavigationStore } from "@/lib/store";
 
@@ -12,7 +13,7 @@ const LANDING_COPY = {
     description:
       "Choose a meeting from the list to review transcripts, notes, documents, and linked context.",
     detail:
-      "If the list is empty, start a meeting or import audio to build your library.",
+      "To add to your library, start a meeting or import an existing audio file.",
   },
   archived: {
     title: "Select an archived recording",
@@ -59,6 +60,13 @@ export default function RecordingsLanding() {
           </div>
 
           <div className="mt-8 flex flex-wrap gap-3">
+            {currentView === "recordings" && (
+              <ImportAudioButton
+                appearance="labelled"
+                variant="primary"
+                className="h-auto rounded-xl py-3"
+              />
+            )}
             <Link
               href="/settings/help"
               className="inline-flex items-center gap-2 rounded-xl border border-surface-border bg-surface-card px-4 py-3 text-sm font-semibold text-foreground transition-colors hover:border-action-border hover:text-action-text"
