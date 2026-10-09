@@ -18,7 +18,7 @@ This meeting has no transcript. If a question needs one, say that the transcript
 """
 
 
-def _transcript_section(diarized_transcript: Optional[str]) -> str:
+def _transcript_section(diarized_transcript: str | None) -> str:
     # A missing transcript is stated as such, never passed off as transcript
     # text, so the model cannot quote a status message as something said.
     if not diarized_transcript:
@@ -26,10 +26,15 @@ def _transcript_section(diarized_transcript: Optional[str]) -> str:
     return f"# Full Diarized Transcript:\n{diarized_transcript}\n"
 
 
-def build_chat_context(meeting_notes: str, diarized_transcript: Optional[str]) -> str:
+def build_chat_context(meeting_notes: str, diarized_transcript: str | None) -> str:
     """Stable, cacheable chat context: instructions, notes, and full transcript."""
+    sources = (
+        "meeting notes, full diarized transcript,"
+        if diarized_transcript
+        else "meeting notes"
+    )
     return f"""
-You are a helpful AI assistant. You have access to the following meeting notes, full diarized transcript, and potentially extracted context from related documents. Use this information to answer the user's question as accurately as possible. If the answer is not present, say so.
+You are a helpful AI assistant. You have access to the following {sources} and potentially extracted context from related documents. Use this information to answer the user's question as accurately as possible. If the answer is not present, say so.
 
 # CRITICAL INSTRUCTION
 When referencing transcript content, always include the timestamp in [MM:SS] format (e.g., "At [12:30], Speaker A mentioned...").
@@ -44,7 +49,7 @@ When an answer compares several items across the same fields, present it as a Ma
 
 
 def build_chat_prompt(
-    user_question: str, meeting_notes: str, diarized_transcript: Optional[str]
+    user_question: str, meeting_notes: str, diarized_transcript: str | None
 ) -> str:
     """Single-string chat prompt (context + question) for providers without caching."""
     return (

@@ -27,6 +27,7 @@ def test_chat_context_states_a_missing_transcript_instead_of_quoting_one() -> No
     context = build_chat_context(NOTES, None)
 
     assert "# Full Diarized Transcript:" not in context
+    assert "transcript," not in context.split("\n# CRITICAL INSTRUCTION")[0]
     assert context.endswith(
         "# Transcript:\nThis meeting has no transcript. If a question needs one, "
         "say that the transcript is not available.\n"

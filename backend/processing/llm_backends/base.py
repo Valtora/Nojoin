@@ -362,7 +362,7 @@ class LLMBackend:
         self,
         user_question: str,
         meeting_notes: str,
-        diarized_transcript: str,
+        diarized_transcript: str | None,
         conversation_history: list = None,
         timeout: int = 60,
         recording_id: str = None,
@@ -376,7 +376,7 @@ class LLMBackend:
         self,
         user_question: str,
         meeting_notes: str,
-        diarized_transcript: str,
+        diarized_transcript: str | None,
         conversation_history: list = None,
         timeout: int = 60,
         recording_id: str = None,
@@ -410,7 +410,7 @@ class LLMBackend:
         self,
         user_question: str,
         meeting_notes: str,
-        diarized_transcript: Optional[str],
+        diarized_transcript: str | None,
     ) -> str:
         return build_chat_prompt(user_question, meeting_notes, diarized_transcript)
 
@@ -724,7 +724,7 @@ Preserve the same schema and do not invent facts not supported by the original t
 """
 
     @staticmethod
-    def get_mapped_transcript_for_llm(recording_id: int) -> Optional[str]:
+    def get_mapped_transcript_for_llm(recording_id: int) -> str | None:
         """Render a recording's transcript for Meeting Chat, or None without one.
 
         See ``backend.utils.llm_transcript.render_transcript_for_llm``.
