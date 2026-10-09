@@ -291,6 +291,73 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
     defaultValue: true,
     keywords: ["diarization", "speakers", "speaker separation", "who spoke", "pyannote", "processing"],
   },
+  // Processing tuning. defaultValue null: unset means inherit, so only a value
+  // the user actually set counts as changed.
+  {
+    id: "recording-vad-threshold",
+    label: "Speech detection threshold",
+    description:
+      "How confident voice activity detection must be before audio counts as speech. Lower keeps quiet speech; higher drops more noise.",
+    category: "recording",
+    access: "all",
+    advanced: "can-degrade",
+    settingsKeys: ["vad_threshold"],
+    defaultValue: null,
+    keywords: ["vad threshold", "speech detection", "quiet speech", "soft speech", "silero", "large meeting", "tuning"],
+  },
+  {
+    id: "recording-word-padding",
+    label: "Word end padding",
+    description:
+      "How long a Parakeet or Canary word lasts when a pause follows it, which decides whether a short word reaches a speaker turn.",
+    category: "recording",
+    access: "all",
+    advanced: "can-degrade",
+    settingsKeys: ["asr_word_end_padding_s"],
+    defaultValue: null,
+    keywords: ["word padding", "word end", "parakeet", "canary", "timing", "brief speaker", "tuning"],
+  },
+  {
+    id: "recording-phantom-filter",
+    label: "Phantom speaker filter",
+    description:
+      "Which brief speakers count as noise to reassign, or as an existing speaker to merge, rather than a real person.",
+    category: "recording",
+    access: "all",
+    advanced: "can-degrade",
+    settingsKeys: [
+      "phantom_max_duration_s",
+      "phantom_max_segments",
+      "phantom_embedding_floor",
+      "phantom_merge_threshold",
+    ],
+    defaultValue: null,
+    keywords: ["phantom speaker", "brief speaker", "short speaker", "noise", "chime", "large meeting", "tuning"],
+  },
+  {
+    id: "recording-speaker-merge",
+    label: "Duplicate speaker merge similarity",
+    description:
+      "How alike two detected speakers' voices must be before they are merged into one. Lower merges more split speakers, but wrong merges are harder to undo than splits.",
+    category: "recording",
+    access: "all",
+    advanced: "can-degrade",
+    settingsKeys: ["speaker_merge_threshold"],
+    defaultValue: null,
+    keywords: ["merge threshold", "duplicate speaker", "split speaker", "same person", "voiceprint", "large meeting", "tuning"],
+  },
+  {
+    id: "recording-word-flip",
+    label: "Single-word flip smoothing",
+    description:
+      "Gives a very short word inside one speaker's run back to that speaker. Loosening it can erase brief interjections.",
+    category: "recording",
+    access: "all",
+    advanced: "can-degrade",
+    settingsKeys: ["word_flip_max_duration_s", "word_flip_max_gap_s"],
+    defaultValue: null,
+    keywords: ["word flip", "smoothing", "interjection", "brief speaker", "speaker change", "tuning"],
+  },
 
   // ---------------------------------------------------------- transcription
   {
