@@ -47,9 +47,11 @@ from backend.utils.recording_audio_sync import (
     sync_recording_audio_window_manifests,
 )
 from backend.utils.recording_storage import (
+    FINALIZING_IMPORT_STEP,
     RECORDING_UPLOAD_RETENTION_HOURS,
     is_finalize_claim_token,
     is_finalizing_import,
+    remove_finalize_leftovers,
 )
 from backend.utils.time import utc_now
 
@@ -763,14 +765,37 @@ def _ensure_recording_accepts_status_updates(recording: Recording) -> None:
         )
 
 
-def _refuse_while_finalizing_import(recording: Recording) -> None:
-    """Refuse to touch an import whose finalize is extracting its audio.
+async def _lock_unless_finalizing_import(
+    db: AsyncSession, recording: Recording
+) -> None:
+    """Lock ``recording`` for this transaction, refusing an import whose
+    finalize is extracting its audio.
 
     The claimed import is still UPLOADING, but its files are being read and
-    its row is about to be queued, so nothing else may change either.
+    its row is about to be queued, so nothing else may change either. The row
+    is re-read under the lock, so a claim cannot land between this check and
+    the caller's write.
     """
+    await db.refresh(recording, with_for_update=True)
+    _refuse_while_finalizing_import(recording)
+
+
+def _refuse_while_finalizing_import(recording: Recording) -> None:
     if is_finalizing_import(recording):
         raise HTTPException(status_code=409, detail=IMPORT_BEING_FINALIZED_DETAIL)
+
+
+def _remove_claimed_import_leftovers(recording: Recording) -> None:
+    """Before an import is deleted, remove what its finalize attempts wrote.
+
+    Their files are named after ``audio_path``, not at it, so deleting the
+    recording's artifacts alone would leave them.
+    """
+    if (
+        recording.status == RecordingStatus.UPLOADING
+        and recording.processing_step == FINALIZING_IMPORT_STEP
+    ):
+        remove_finalize_leftovers(recording.audio_path, logger=logger)
 
 
 def _revocable_task_id(recording: Recording) -> str | None:

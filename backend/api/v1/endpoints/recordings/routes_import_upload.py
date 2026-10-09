@@ -56,9 +56,9 @@ from .helpers import (
     _enforce_lossy_bitrate,
     _find_missing_chunk_sequences,
     _get_owned_recording,
+    _lock_unless_finalizing_import,
     _mark_recording_audio_chunks_failed,
     _recording_has_proxy,
-    _refuse_while_finalizing_import,
     _sync_recording_audio_chunks_from_directory,
     generate_default_meeting_name,
     get_initial_proxy_path,
@@ -359,12 +359,12 @@ async def upload_chunked_segment(
     Upload a binary segment for a chunked import.
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
+    await _lock_unless_finalizing_import(db, recording)
 
     if recording.status != RecordingStatus.UPLOADING:
         raise HTTPException(
             status_code=400, detail="Recording is not in uploading state"
         )
-    _refuse_while_finalizing_import(recording)
 
     recording_temp_dir = recordings_module.recording_upload_temp_dir(
         recording.id, create=True

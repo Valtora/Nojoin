@@ -407,3 +407,37 @@ async def test_a_finalize_that_outlives_the_stale_age_untaken_still_stores(
     assert answer.json()["status"] == "QUEUED"
     assert len(dispatches) == 1
     assert (await _stored_audio(engine)).exists()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("route", ["delete", "discard"])
+async def test_removing_an_import_a_dead_finalize_held_removes_what_it_wrote(
+    pg, pg_client, monkeypatch, tmp_path: Path, route: str
+) -> None:
+    """A finalize that died leaves its reassembled upload and partial audio,
+    named after the import's audio path but not at it."""
+    engine, _ = pg
+    recording_id, _, recordings_dir = await _start(pg_client, monkeypatch, tmp_path)
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "UPDATE recordings SET processing_step = 'Finalizing import',"
+                " celery_task_id = 'import-finalize:0123abcd', updated_at = :t"
+            ),
+            {"t": utc_now() - timedelta(hours=3)},
+        )
+    upload = await _stored_audio(engine)
+    leftovers = [
+        upload.with_name(f"{upload.stem}.0123abcd.mkv"),
+        upload.with_name(f"{upload.stem}.0123abcd.4567ef.flac"),
+    ]
+    for leftover in leftovers:
+        leftover.write_bytes(b"left behind")
+
+    if route == "delete":
+        removed = await pg_client.delete(f"/api/v1/recordings/{recording_id}")
+    else:
+        removed = await pg_client.post(f"/api/v1/recordings/{recording_id}/discard")
+
+    assert removed.status_code == 200, removed.text
+    assert _files(recordings_dir) == []

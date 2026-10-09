@@ -135,12 +135,12 @@ async def pause_upload(
     recording = await recordings_module._get_owned_recording(
         db, recording_id, current_user.id
     )
+    await recordings_module._lock_unless_finalizing_import(db, recording)
 
     if recording.status not in {RecordingStatus.UPLOADING, RecordingStatus.PAUSED}:
         raise HTTPException(
             status_code=409, detail=recordings_module.UPLOAD_CLOSED_DETAIL
         )
-    recordings_module._refuse_while_finalizing_import(recording)
 
     if recording.status != RecordingStatus.PAUSED:
         recording.status = RecordingStatus.PAUSED
@@ -623,12 +623,12 @@ async def discard_upload(
         RecordingStatus.QUEUED,
         RecordingStatus.PROCESSING,
     }
+    await recordings_module._lock_unless_finalizing_import(db, recording)
     if recording.status not in discardable_states:
         raise HTTPException(
             status_code=400,
             detail="Only in-flight or processing recordings can be discarded",
         )
-    recordings_module._refuse_while_finalizing_import(recording)
 
     if reason:
         logger.info(
@@ -657,6 +657,7 @@ async def discard_upload(
         except Exception:  # noqa: BLE001
             pass
 
+    recordings_module._remove_claimed_import_leftovers(recording)
     recordings_module.delete_recording_artifacts(
         recording_id=recording.id,
         audio_path=recording.audio_path,
