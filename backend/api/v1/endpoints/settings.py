@@ -27,6 +27,7 @@ from backend.utils.config_manager import (
     MEETING_EDGE_CONTEXT_LEVEL_MIN,
     SENSITIVE_KEYS,
     TRANSCRIPTION_BACKENDS,
+    TRANSCRIPTION_SETTING_KEYS,
     WHISPER_MODEL_SIZES,
     config_manager,
     get_default_user_settings,
@@ -508,6 +509,12 @@ def _build_settings_update_data(
     if not is_admin:
         for key in INSTALL_WIDE_ONLY_USER_SETTING_KEYS:
             update_data.pop(key, None)
+
+    # config.json is the only place these keys live, so a null saved there would
+    # replace the engine instead of falling back to the default.
+    for key in TRANSCRIPTION_SETTING_KEYS:
+        if key in update_data and update_data[key] is None:
+            del update_data[key]
 
     return update_data
 
