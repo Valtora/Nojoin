@@ -6,7 +6,11 @@ interface SettingsRowProps {
   /** Registry entry id, used as the anchor a search result scrolls to. */
   id?: string;
   label: ReactNode;
+  /** Id for the label, so a group of controls can be named by it. */
+  labelId?: string;
   description?: ReactNode;
+  /** Id for the description, so a control can be described by it. */
+  descriptionId?: string;
   /** Optional leading icon, sized by the caller. */
   icon?: ReactNode;
   /** Trailing badge next to the label, for status or scope. */
@@ -30,7 +34,9 @@ interface SettingsRowProps {
 export default function SettingsRow({
   id,
   label,
+  labelId,
   description,
+  descriptionId,
   icon,
   badge,
   className,
@@ -53,14 +59,16 @@ export default function SettingsRow({
         <div className="min-w-0 @min-[26rem]:max-w-md">
           <div className="flex flex-wrap items-center gap-2">
             {icon}
-            <span className="text-sm font-medium text-foreground">
+            <span id={labelId} className="text-sm font-medium text-foreground">
               {label}
             </span>
             {badge}
           </div>
 
           {description && (
-            <p className="mt-1 text-xs leading-5 contrast-helper">{description}</p>
+            <p id={descriptionId} className="mt-1 text-xs leading-5 contrast-helper">
+              {description}
+            </p>
           )}
         </div>
 

@@ -292,6 +292,104 @@ def test_word_level_combination_smooths_isolated_speaker_flip():
     assert result[0]["text"] == "one two three"
 
 
+def _flip_transcription(gap_s: float = 0.0) -> dict:
+    """one (A), two (B, 0.3 s), three (A), ``gap_s`` apart."""
+    two_start = 0.3 + gap_s
+    three_start = two_start + 0.3 + gap_s
+    return {
+        "segments": [
+            {
+                "start": 0.0,
+                "end": three_start + 0.3,
+                "text": " one two three",
+                "words": [
+                    {"start": 0.0, "end": 0.3, "word": " one"},
+                    {"start": two_start, "end": two_start + 0.3, "word": " two"},
+                    {"start": three_start, "end": three_start + 0.3, "word": " three"},
+                ],
+            }
+        ]
+    }
+
+
+def _flip_diarization(gap_s: float = 0.0) -> FakeDiarization:
+    two_start = 0.3 + gap_s
+    three_start = two_start + 0.3 + gap_s
+    return FakeDiarization(
+        [
+            (0.0, 0.3, "SPEAKER_00"),
+            (two_start, two_start + 0.3, "SPEAKER_01"),
+            (three_start, three_start + 0.3, "SPEAKER_00"),
+        ]
+    )
+
+
+@pytest.mark.parametrize(
+    "config",
+    [
+        # Smoothing off.
+        {"word_flip_max_duration_s": 0},
+        # The 0.3 s word is longer than the limit.
+        {"word_flip_max_duration_s": 0.2},
+    ],
+)
+def test_word_flip_limits_from_config_keep_the_brief_speaker(config):
+    result = combine_transcription_diarization(
+        _flip_transcription(), _flip_diarization(), config=config
+    )
+
+    assert [seg["speaker"] for seg in result] == [
+        "SPEAKER_00",
+        "SPEAKER_01",
+        "SPEAKER_00",
+    ]
+
+
+def test_word_flip_gap_limit_from_config():
+    transcription = _flip_transcription(gap_s=0.1)
+    diarization = _flip_diarization(gap_s=0.1)
+
+    smoothed = combine_transcription_diarization(transcription, diarization)
+    kept = combine_transcription_diarization(
+        transcription, diarization, config={"word_flip_max_gap_s": 0.05}
+    )
+
+    assert [seg["speaker"] for seg in smoothed] == ["SPEAKER_00"]
+    assert len(kept) == 3
+
+
+def test_word_flip_unusable_limit_keeps_the_default():
+    result = combine_transcription_diarization(
+        _flip_transcription(),
+        _flip_diarization(),
+        config={"word_flip_max_duration_s": -1},
+    )
+
+    assert [seg["speaker"] for seg in result] == ["SPEAKER_00"]
+
+
+@pytest.mark.parametrize(("max_duration_s", "expected"), [(0.45, "A"), (0, "B")])
+def test_zero_word_flip_limit_leaves_even_a_zero_length_word(max_duration_s, expected):
+    """A zero-length word is no longer than a limit of 0, so only the explicit
+    off switch keeps it from being relabelled. combine_transcription_diarization
+    labels such a word UNKNOWN, so this drives the smoothing step directly."""
+    from backend.utils.transcript_utils import _smooth_isolated_word_speaker_flips
+
+    def _assignment(start: float, end: float, speaker: str) -> dict:
+        word = {"start": start, "end": end, "word": " w"}
+        return {"word": word, "speaker": speaker, "overlapping_speakers": []}
+
+    assignments = [
+        _assignment(0.0, 0.3, "A"),
+        _assignment(0.3, 0.3, "B"),
+        _assignment(0.3, 0.6, "A"),
+    ]
+
+    _smooth_isolated_word_speaker_flips(assignments, max_duration_s=max_duration_s)
+
+    assert assignments[1]["speaker"] == expected
+
+
 def test_segment_level_combination_ignores_tiny_secondary_overlap():
     transcription = {
         "segments": [
