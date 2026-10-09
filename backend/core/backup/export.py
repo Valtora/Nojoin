@@ -97,11 +97,14 @@ def _table_dump_statement(table_name: str, model_cls: Type[SQLModel]):
 
 
 def _audio_member_compression(arcname: str) -> int:
-    """How an audio member is stored in the zip.
+    """How an audio member is stored in the zip, decided by its extension.
 
-    Every accepted format except WAV is already compressed, and deflating it
-    costs CPU for nothing: on Opus it measured a 0.99 ratio at about 58 MB/s.
-    WAV is raw PCM, so deflate still shrinks it.
+    A member whose extension is a compressed audio format is stored uncompressed:
+    deflating it costs CPU for nothing (on Opus it measured a 0.99 ratio at about
+    58 MB/s). WAV normally holds raw PCM, which deflate still shrinks. The file's
+    contents are not inspected, so a WAV holding compressed audio is deflated for
+    no gain, and another container carrying PCM (a MOV, AVI or MKA can) is stored
+    at full size.
     """
     if arcname.lower().endswith(".wav"):
         return zipfile.ZIP_DEFLATED
