@@ -126,6 +126,7 @@ def compute_delivery_analytics_task(recording_id: int) -> dict[str, Any]:
                         "speaker_count": len(delivery["speakers"]),
                         "skipped_overlapping": delivery["skipped_overlapping"],
                         "skipped_short": delivery["skipped_short"],
+                        "skipped_beyond_audio": delivery["skipped_beyond_audio"],
                     }
                 )
         except Exception as exc:  # noqa: BLE001 -- boundary: analytics must never fail a meeting

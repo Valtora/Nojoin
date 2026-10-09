@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  act,
   fireEvent,
   renderWithProviders,
   screen,
@@ -16,6 +17,7 @@ const routerPush = vi.fn();
 const routerRefresh = vi.fn();
 const addNotification = vi.fn();
 const setActivePanel = vi.fn();
+const exportAudio = vi.fn();
 
 const getRecording = vi.fn();
 const getSettings = vi.fn();
@@ -26,15 +28,27 @@ const generateNotes = vi.fn();
 
 let activePanel = "transcript";
 
+// Stable across renders, like Next's own router: the page's load callback
+// depends on it, and a fresh object per render would reload in a loop.
+const router = { push: routerPush, refresh: routerRefresh };
+
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({
-    push: routerPush,
-    refresh: routerRefresh,
-  }),
+  useRouter: () => router,
 }));
 
 vi.mock("@/lib/notificationStore", () => ({
   useNotificationStore: () => ({ addNotification }),
+}));
+
+// The dashboard layout wraps every recording page in the capture provider; the
+// shared recording actions read it.
+vi.mock("@/lib/capture/CaptureProvider", () => ({
+  useCapture: () => ({
+    cancel: vi.fn(),
+    recordingId: null,
+    pausedRecording: null,
+    runtimeActive: false,
+  }),
 }));
 
 vi.mock("@/lib/store", () => ({
@@ -65,7 +79,7 @@ vi.mock("@/lib/api", () => ({
   updateUserNotes: vi.fn(),
   updateMeetingEdgeFocus: vi.fn(),
   exportContent: vi.fn(),
-  exportAudio: vi.fn(),
+  exportAudio: (...args: unknown[]) => exportAudio(...args),
   ExportContentType: {},
   ExportFormat: {},
 }));
@@ -77,7 +91,9 @@ vi.mock("@/components/ChatPanel", () => ({
   default: () => <div data-testid="chat-panel" />,
 }));
 vi.mock("@/components/AudioPlayer", () => ({
-  default: () => <div data-testid="audio-player" />,
+  default: ({ recording }: { recording: Recording }) => (
+    <div data-testid="audio-player" data-has-audio={String(recording.has_audio)} />
+  ),
 }));
 vi.mock("@/components/SpeakerPanel", () => ({
   default: () => <div data-testid="speaker-panel" />,
@@ -110,7 +126,19 @@ vi.mock("@/components/RecordingStatusDisplay", () => ({
   default: () => <div data-testid="recording-status-display" />,
 }));
 vi.mock("@/components/ExportModal", () => ({
-  default: () => <div data-testid="export-modal" />,
+  default: ({
+    hasAudio,
+    onExport,
+  }: {
+    hasAudio: boolean;
+    onExport: (contentType: string, format: string) => void;
+  }) => (
+    <button
+      data-testid="export-modal"
+      data-has-audio={String(hasAudio)}
+      onClick={() => onExport("audio", "txt")}
+    />
+  ),
 }));
 vi.mock("@/components/RecordingTagEditor", () => ({
   default: () => <div data-testid="recording-tag-editor" />,
@@ -120,6 +148,10 @@ vi.mock("@/components/LinkedEventPanel", () => ({
 }));
 
 import RecordingPage from "./page";
+import {
+  AUDIO_RECHECK_INTERVAL_MS,
+  AUDIO_RECHECK_WINDOW_MS,
+} from "./_hooks/recordingDetailUtils";
 
 const buildRecording = (overrides: Partial<Recording> = {}): Recording => ({
   id: "rec-1",
@@ -171,6 +203,7 @@ describe("RecordingPage (detail)", () => {
     routerRefresh.mockReset();
     addNotification.mockReset();
     setActivePanel.mockReset();
+    exportAudio.mockReset();
     getRecording.mockReset();
     getSettings.mockReset();
     getGlobalSpeakers.mockReset();
@@ -271,6 +304,86 @@ describe("RecordingPage (detail)", () => {
       type: "error",
       message: "Failed to load recording.",
     });
+  });
+
+  it("picks up audio that arrives after the page reported it unavailable", async () => {
+    // A restore commits the recording rows before it moves their audio into
+    // place, so a page opened in between first sees no audio at all.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      let audioOnDisk = false;
+      getRecording.mockImplementation(async () =>
+        buildRecording({ has_proxy: false, has_audio: audioOnDisk }),
+      );
+
+      renderPage();
+
+      expect(await screen.findByTestId("audio-player")).toHaveAttribute(
+        "data-has-audio",
+        "false",
+      );
+
+      audioOnDisk = true;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(AUDIO_RECHECK_INTERVAL_MS);
+      });
+
+      expect(screen.getByTestId("audio-player")).toHaveAttribute(
+        "data-has-audio",
+        "true",
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("stops re-checking for audio that has not arrived within the window", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      getRecording.mockImplementation(async () =>
+        buildRecording({ has_proxy: false, has_audio: false }),
+      );
+
+      renderPage();
+      await screen.findByTestId("audio-player");
+      const loads = getRecording.mock.calls.length;
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(AUDIO_RECHECK_WINDOW_MS);
+      });
+      const checksInWindow = getRecording.mock.calls.length - loads;
+      expect(checksInWindow).toBeGreaterThan(0);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(AUDIO_RECHECK_WINDOW_MS);
+      });
+      expect(getRecording.mock.calls.length - loads).toBe(checksInWindow);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("offers no audio export, and explains a failed one, when the audio is gone", async () => {
+    getRecording.mockResolvedValue(
+      buildRecording({ has_proxy: false, has_audio: false }),
+    );
+    exportAudio.mockRejectedValue({ response: { status: 404 } });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    renderPage();
+
+    const exportModal = await screen.findByTestId("export-modal");
+    expect(exportModal).toHaveAttribute("data-has-audio", "false");
+
+    fireEvent.click(exportModal);
+
+    await waitFor(() => {
+      expect(addNotification).toHaveBeenCalledWith({
+        type: "error",
+        message: expect.stringMatching(/audio is not available/),
+      });
+    });
+    expect(exportAudio).toHaveBeenCalledWith("rec-1", "Quarterly sync");
   });
 
   it("renders the notes panel when notes is the active tab", async () => {

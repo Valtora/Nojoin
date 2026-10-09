@@ -10,10 +10,7 @@ import os
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Set, Tuple
 
-from backend.core.backup.format import (
-    ARCHIVABLE_AUDIO_EXTENSIONS,
-    ARCHIVE_QUALITY_COMPRESSED,
-)
+from backend.core.backup.format import ARCHIVE_QUALITY_COMPRESSED
 from backend.core.backup.paths import (
     _build_backup_document_path,
     _build_backup_recording_audio_path,
@@ -48,6 +45,10 @@ class _AudioPlan:
     arcname_by_audio_path: Dict[str, str] = field(default_factory=dict)
     # Recordings whose row survives but whose audio file could not be found on disk.
     missing_audio: int = 0
+    # Recordings whose audio was found but maps to an archive member another
+    # recording already claimed (``x.wav`` and ``x.webm`` both compress to
+    # ``recordings/x.opus``), so it is archived as metadata only.
+    colliding_audio: int = 0
 
 
 @dataclass
@@ -70,7 +71,10 @@ def _resolve_source_audio_path(
     audio_path: str | None,
     recordings_dir: str | os.PathLike[str],
 ) -> str | None:
-    """Find a recording's audio on disk, or ``None`` if it is not there.
+    """Find a recording's audio on disk, or ``None`` if it is not there or is empty.
+
+    An empty file, left by an interrupted write, is no audio: the player treats it
+    as unavailable, so the backup counts it as missing rather than archiving it.
 
     ``Recording.audio_path`` is stored relative to the process working directory,
     which is ``/app`` in every container. The recordings directory is tried as a
@@ -88,7 +92,7 @@ def _resolve_source_audio_path(
         )
 
     for candidate in candidates:
-        if os.path.isfile(candidate):
+        if os.path.isfile(candidate) and os.path.getsize(candidate) > 0:
             return candidate
 
     return None
@@ -111,22 +115,16 @@ def _build_audio_plan(
         source_path = _resolve_source_audio_path(audio_path, recordings_dir)
         if source_path is None:
             logger.warning(
-                "Recording audio not found on disk; archiving metadata only: %s",
+                "Recording audio missing or empty on disk; archiving metadata only: %s",
                 audio_path,
             )
             plan.missing_audio += 1
             continue
 
+        # Every recording's own file is archived, whatever its container: browser
+        # captures are WebM, and imports keep the format they arrived in. ffmpeg
+        # reads all of them, so the compressed mode re-encodes any of them to Opus.
         extension = os.path.splitext(source_path)[1].lower()
-        if extension not in ARCHIVABLE_AUDIO_EXTENSIONS:
-            logger.warning(
-                "Recording audio has an unsupported extension %r; "
-                "archiving metadata only: %s",
-                extension,
-                audio_path,
-            )
-            plan.missing_audio += 1
-            continue
 
         # Already-Opus audio is copied verbatim under either quality: re-encoding it
         # would be a pointless generation loss.
@@ -137,6 +135,13 @@ def _build_audio_plan(
 
         arcname = _build_backup_recording_audio_path(audio_path, arc_extension)
         if not arcname or arcname in claimed_arcnames:
+            logger.warning(
+                "Recording audio maps to archive member %r, which another recording "
+                "already uses; archiving metadata only: %s",
+                arcname,
+                audio_path,
+            )
+            plan.colliding_audio += 1
             continue
 
         claimed_arcnames.add(arcname)

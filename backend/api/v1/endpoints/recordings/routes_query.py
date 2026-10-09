@@ -49,12 +49,18 @@ from backend.utils.timezones import (
 
 from .helpers import (
     _get_owned_recording,
+    _recording_has_audio,
     _recording_has_proxy,
     _should_hide_in_flight_transcript_content,
 )
 from .router import router
 
 logger = logging.getLogger(__name__)
+
+RECORDING_AUDIO_UNAVAILABLE_DETAIL = (
+    "This recording's audio is not available. It may have been restored from a "
+    "backup taken without audio."
+)
 
 # Capture is still open, so the live view is watching for audio going missing.
 # A paused recording counts: it can be resumed, and the shortfall accrued before
@@ -183,7 +189,11 @@ async def list_recordings(
     result = await db.execute(query)
     recordings = result.scalars().all()
     return [
-        serialize_recording(recording, has_proxy=_recording_has_proxy(recording))
+        serialize_recording(
+            recording,
+            has_proxy=_recording_has_proxy(recording),
+            has_audio=_recording_has_audio(recording),
+        )
         for recording in recordings
     ]
 
@@ -417,6 +427,7 @@ async def get_recording(
     return serialize_recording(
         recording,
         has_proxy=_recording_has_proxy(recording),
+        has_audio=_recording_has_audio(recording),
         processing_eta_seconds=processing_eta_seconds,
         processing_eta_learning=processing_eta_learning,
         processing_eta_sample_size=processing_eta_sample_size,
@@ -469,6 +480,13 @@ async def stream_recording(
     recording = await _get_owned_recording(db, recording_id, current_user.id)
 
     if not recording.proxy_path or not os.path.exists(recording.proxy_path):
+        # A proxy is only ever on its way when there is audio to make it from.
+        # Without any, answering 202 would leave the player waiting forever.
+        if not _recording_has_audio(recording):
+            raise HTTPException(
+                status_code=404,
+                detail=RECORDING_AUDIO_UNAVAILABLE_DETAIL,
+            )
         raise HTTPException(
             status_code=202,
             detail="Audio proxy is being prepared. Please try again shortly.",
@@ -480,13 +498,16 @@ async def stream_recording(
     file_size = os.path.getsize(file_path)
     CHUNK_SIZE = 2500 * 1024
 
-    is_range_request = False
     start = 0
-    end = min(file_size - 1, CHUNK_SIZE - 1)
-
     range_header = request.headers.get("range")
+    # A request without Range wants the whole file (the audio export), so it gets
+    # all of it with 200. Media elements always send Range and keep getting
+    # chunked 206s. The body is read 64 KB at a time either way, so a whole-file
+    # answer never holds the file in memory.
+    end = file_size - 1
+
     if range_header:
-        is_range_request = True
+        end = min(file_size - 1, CHUNK_SIZE - 1)
         try:
             range_str = range_header.replace("bytes=", "")
             range_parts = range_str.split("-")
@@ -505,8 +526,7 @@ async def stream_recording(
         except ValueError:
             pass
 
-    chunk_end = min(end, start + CHUNK_SIZE - 1)
-    end = chunk_end
+        end = min(end, start + CHUNK_SIZE - 1)
 
     if start >= file_size:
         raise HTTPException(
@@ -533,7 +553,7 @@ async def stream_recording(
                 bytes_to_read -= len(data)
 
     cache_control = "private, max-age=3600"
-    use_partial = is_range_request or content_length < file_size
+    use_partial = bool(range_header)
 
     headers = {
         "Accept-Ranges": "bytes",

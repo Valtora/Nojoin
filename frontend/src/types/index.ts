@@ -328,6 +328,11 @@ export interface Recording extends Omit<BaseDBModel, "id"> {
   meeting_uid: string;
   audio_path: string;
   has_proxy?: boolean;
+  /**
+   * False when neither the audio nor its proxy exists, so none is coming.
+   * Null when the endpoint did not check; only list and detail reads do.
+   */
+  has_audio?: boolean | null;
   duration_seconds?: number;
   file_size_bytes?: number;
   status: RecordingStatus;
@@ -1142,6 +1147,9 @@ export interface AnalyticsDelivery {
   channel_layout: "browser_live" | "single_source";
   skipped_overlapping: number;
   skipped_short: number;
+  // Utterances starting after the end of the audio that was read. Absent from
+  // blocks measured before it was counted.
+  skipped_beyond_audio?: number;
   ambiguous_channel: number;
 }
 

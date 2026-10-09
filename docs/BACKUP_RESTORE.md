@@ -67,15 +67,23 @@ The download streams straight to disk, so a large archive does not need to fit i
 
 ### Archive Quality
 
-**Compressed** (the default) re-encodes audio to Opus, producing a much smaller archive. Audio that is already Opus is copied unchanged rather than re-encoded.
+**Compressed** (the default) re-encodes audio to 64 kbps Opus, producing a much smaller archive. Every recording is included whatever its format: browser recordings (WebM), and imports in the format they arrived in, including video files. Only a `.opus` file is copied unchanged. Everything else is re-encoded, including the Opus audio inside browser recordings (WebM, captured at 160 kbps) and Ogg files. In testing, re-encoding ran at roughly 260 times real time, about half a minute per two-hour recording, so backing up a large library of browser recordings can take hours. The archive keeps one audio track per recording, with no video: the track marked as default, or if none is, the one with the most channels.
 
-**Original** stores every recording exactly as captured. The archive is substantially larger, but a restored recording can be reprocessed without compounding compression loss. Choose this if you may want to re-run transcription or diarisation on restored meetings.
+**Original** stores every recording exactly as captured, in its own file format, with every track it has. That includes the video track of an imported video file, which can be several gigabytes for a long screen recording. The archive is substantially larger, but a restored recording can be reprocessed without compounding compression loss. Choose this if you may want to re-run transcription or diarisation on restored meetings.
+
+An audio file whose extension is a compressed audio format is stored in the ZIP as it is, because compressing it again gains nothing. WAV files, which hold uncompressed audio, are compressed in an Original-quality archive. The choice goes by the file extension, not the contents, so another container that carries uncompressed audio, such as a camera video with PCM sound, is stored at full size.
+
+A large library can produce an archive bigger than the restore upload limit, which is 25 GB by default and is only checked when the archive is uploaded for restore. A library of 2,000 two-hour browser recordings is about 290 GB in Original quality and about 115 GB in Compressed quality. Raise `UPLOAD_LIMIT_BACKUP` on the server that will restore it before you need it (see [Housekeeping](#housekeeping)).
 
 Each recording's audio is selected from its database record, so the master recording is always the file that is archived, never its playback proxy.
 
 ### Recordings Without Audio
 
-If a recording's audio file is missing from disk when the backup runs, its metadata, transcript and notes are still archived and you are told how many recordings were affected, both at download time and inside the archive's `backup_info.json`. Those recordings restore without playable audio.
+If a recording's audio file is missing from disk or empty when the backup runs, or cannot be read, re-encoded or given a unique name in the archive, its metadata, transcript and notes are still archived and you are told how many recordings were affected, both at download time and inside the archive's `backup_info.json` (`recordings_without_audio`, `recordings_audio_failed`). Those recordings restore without playable audio, and their player says the audio is not available.
+
+Backups from earlier versions archived audio only for WAV, MP3, M4A, OGG, FLAC and Opus recordings. Browser recordings made since v1.1.0 (stored as WebM) and AAC, MP4, WMA or WebM imports were left out of the archive. Backups taken with v1.7.0 or later counted them among recordings that had no audio file on disk, and earlier versions did not report them. Those recordings are metadata only in such an archive. Take a new backup to capture their audio.
+
+> **Warning:** restoring one of those earlier archives with **Clear All Existing Data** deletes the audio of those recordings from the server, because the archive has none to put back. **Skip** and **Overwrite** keep the audio already on disk. If you need Clear All, take a new backup and restore that instead.
 
 ## Restoring a Backup
 
@@ -163,7 +171,7 @@ Uploaded archives take the opposite path, through `data/temp_uploads`, and resto
 
 Two environment variables are relevant on large installations:
 
-- `UPLOAD_LIMIT_BACKUP`: the largest archive that may be uploaded for restore. Defaults to 25 GB. Raise it if you take Original-quality backups of a very large library.
+- `UPLOAD_LIMIT_BACKUP`: the largest archive that may be uploaded for restore, in bytes. Defaults to 25 GB. Raise it if you back up a large library, Original quality especially. `docker-compose.example.yml` does not pass it through from `.env`, so add it under the `api` service's `environment:` in your `docker-compose.yml`, for example `UPLOAD_LIMIT_BACKUP: "107374182400"` for 100 GB, then recreate the container with `docker compose up -d api`. Give it a number: an empty value stops the API from starting.
 - `BACKUP_EXPORT_DIR`: where exported archives are written. Defaults to `data/backups`. Set it to move exports onto a separate disk. The API and the workers must agree on the value, or the API cannot serve what a worker wrote.
 
 ## Recommendations

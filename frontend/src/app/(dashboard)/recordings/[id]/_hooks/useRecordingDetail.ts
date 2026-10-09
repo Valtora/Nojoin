@@ -20,7 +20,6 @@ import {
   updateUserNotes,
   updateMeetingEdgeFocus,
   exportContent,
-  exportAudio,
   ExportContentType,
   ExportFormat,
 } from "@/lib/api";
@@ -65,11 +64,14 @@ import {
 } from "@/lib/transcriptState";
 import { useDragSelectionLock } from "@/lib/useDragSelectionLock";
 import { useViewportDensity } from "@/components/ViewportDensityProvider";
+import { useRecordingActions } from "@/components/recordings/_hooks/useRecordingActions";
 
 import {
   cloneTranscriptSegments,
-  isDemoRecording,
+  hasPolledRecordingChanged,
+  isAudioUnavailable,
   isRecordingInFlight,
+  recordingPollIntervalMs,
   shouldPollRecordingUpdates,
   type TranscriptHistoryItem,
 } from "./recordingDetailUtils";
@@ -95,6 +97,7 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const transcriptStateRef = useRef<LocalTranscriptState | null>(null);
   const { addNotification } = useNotificationStore();
+  const recordingActions = useRecordingActions();
   const { chatPanelHeight, setChatPanelHeight, activePanel, setActivePanel } = useNavigationStore();
 
   // Undo/Redo State
@@ -143,6 +146,9 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
   // change after that raises a toast. Keyed by recording so each one primes.
   const lastNotesErrorRef = useRef<{ recordingId: string; error: string | null } | null>(null);
   const lastMeetingEdgeErrorRef = useRef<string | null>(null);
+  // When the page first saw the audio as unavailable. It bounds how long the
+  // page keeps re-checking for it.
+  const audioUnavailableSinceRef = useRef<number | null>(null);
   const isInFlightRecording = isRecordingInFlight(recording);
   const compactChatPanelHeight = isCompact
     ? Math.min(chatPanelHeight, 42)
@@ -396,48 +402,34 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
   useEffect(() => {
     if (!recording) return;
 
-    if (!shouldPollRecordingUpdates(recording)) {
+    if (!isAudioUnavailable(recording)) {
+      audioUnavailableSinceRef.current = null;
+    } else if (audioUnavailableSinceRef.current === null) {
+      audioUnavailableSinceRef.current = Date.now();
+    }
+    const currentPollIntervalMs = () =>
+      recordingPollIntervalMs(
+        recording,
+        audioUnavailableSinceRef.current === null
+          ? 0
+          : Date.now() - audioUnavailableSinceRef.current,
+      );
+
+    const pollIntervalMs = currentPollIntervalMs();
+    if (pollIntervalMs === null) {
       return;
     }
 
-    const pollIntervalMs =
-      recording.status === RecordingStatus.UPLOADING ||
-      recording.status === RecordingStatus.PAUSED ||
-      (recording.status === RecordingStatus.PROCESSED &&
-        recording.has_proxy === false &&
-        !isDemoRecording(recording))
-        ? 1000
-        : 3000;
-
     const interval = setInterval(async () => {
+      if (currentPollIntervalMs() === null) {
+        clearInterval(interval);
+        return;
+      }
       try {
         const { id } = await params;
         const data = await getRecording(id);
 
-        const meetingEdgeSignature = (rec: Recording | null) =>
-          JSON.stringify({
-            focus: rec?.transcript?.meeting_edge_focus ?? null,
-            status: rec?.transcript?.meeting_edge_status ?? null,
-            error: rec?.transcript?.meeting_edge_error_message ?? null,
-            payload: rec?.transcript?.meeting_edge_payload ?? null,
-          });
-
-        if (
-          data.status !== recording.status ||
-          data.client_status !== recording.client_status ||
-          data.processing_step !== recording.processing_step ||
-          data.upload_progress !== recording.upload_progress ||
-          data.processing_progress !== recording.processing_progress ||
-          data.processing_eta_seconds !== recording.processing_eta_seconds ||
-          data.processing_eta_learning !== recording.processing_eta_learning ||
-          data.processing_eta_sample_size !== recording.processing_eta_sample_size ||
-          data.has_proxy !== recording.has_proxy ||
-          data.transcript?.notes_status !== recording.transcript?.notes_status ||
-          data.transcript?.notes !== recording.transcript?.notes ||
-          data.transcript?.user_notes !== recording.transcript?.user_notes ||
-          meetingEdgeSignature(data) !== meetingEdgeSignature(recording) ||
-          JSON.stringify(data.speakers) !== JSON.stringify(recording.speakers)
-        ) {
+        if (hasPolledRecordingChanged(recording, data)) {
           setRecording(data);
           if (!isEditingTitle) setTitleValue(data.name);
         }
@@ -1107,14 +1099,14 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
     format: ExportFormat,
   ) => {
     if (!recording) return;
+    if (contentType === "audio") {
+      // Reports its own failures, with what went wrong.
+      await recordingActions.exportAudio(recording.id, recording.name);
+      return;
+    }
     try {
-      if (contentType === "audio") {
-        await exportAudio(recording.id, recording.name);
-      } else {
-        await exportContent(recording.id, contentType, format);
-      }
-
-        } catch (error: unknown) {
+      await exportContent(recording.id, contentType, format);
+    } catch (error: unknown) {
       console.error("Export failed:", error);
       addNotification({
         type: "error",

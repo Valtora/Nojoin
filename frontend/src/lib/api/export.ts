@@ -11,6 +11,11 @@ export const exportAudio = async (
   try {
     const response = await api.get(`/recordings/${recordingId}/stream`, {
       responseType: "blob",
+      // Only a 200 carries the whole audio. A 202 means the playable copy is
+      // still being made, and its body is a JSON notice that must not be saved
+      // as an .mp3. A 206 would be only part of the file. Both are rejected
+      // like any error.
+      validateStatus: (status) => status === 200,
     });
 
     const url = window.URL.createObjectURL(new Blob([response.data], { type: "audio/mpeg" }));
