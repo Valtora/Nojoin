@@ -375,30 +375,9 @@ async def chat_with_meeting(
 
         except Exception as e:  # noqa: BLE001
             logger.error(f"Streaming error: {e}")
-            error_msg = str(e).lower()
+            from backend.services.chat_relay import friendly_chat_error
 
-            # Map common upstream API failures to friendly messages
-            if (
-                "503" in error_msg
-                or "unavailable" in error_msg
-                or "overloaded" in error_msg
-            ):
-                user_msg = "The AI provider is currently experiencing high demand and is unavailable. Please try again later."
-            elif (
-                "429" in error_msg or "rate limit" in error_msg or "quota" in error_msg
-            ):
-                user_msg = "You have exceeded your AI provider's rate limit or quota. Please check your billing or try again later."
-            elif "timeout" in error_msg or "deadline" in error_msg:
-                user_msg = "The AI provider took too long to respond. Please try again."
-            elif (
-                "context window was exhausted" in error_msg
-                or "done_reason=length" in error_msg
-            ):
-                user_msg = "The Ollama context window was exhausted before a full answer could be generated. Increase the Ollama context window or choose a larger-context model."
-            else:
-                user_msg = "An internal error occurred while communicating with the AI service. Please try again."
-
-            yield f"data: {json.dumps({'error': user_msg})}\n\n"
+            yield f"data: {json.dumps({'error': friendly_chat_error(e)})}\n\n"
             return
 
         # 6. Save Assistant Response to DB
