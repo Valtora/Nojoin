@@ -407,7 +407,10 @@ class LLMBackend:
         raise NotImplementedError
 
     def _build_chat_prompt(
-        self, user_question: str, meeting_notes: str, diarized_transcript: str
+        self,
+        user_question: str,
+        meeting_notes: str,
+        diarized_transcript: Optional[str],
     ) -> str:
         return build_chat_prompt(user_question, meeting_notes, diarized_transcript)
 
@@ -721,20 +724,16 @@ Preserve the same schema and do not invent facts not supported by the original t
 """
 
     @staticmethod
-    def get_mapped_transcript_for_llm(recording_id: int) -> str:
-        """Render a recording's transcript for Meeting Chat.
+    def get_mapped_transcript_for_llm(recording_id: int) -> Optional[str]:
+        """Render a recording's transcript for Meeting Chat, or None without one.
 
         See ``backend.utils.llm_transcript.render_transcript_for_llm``.
         """
         from backend.core.db import get_sync_session
-        from backend.models.recording import Recording
         from backend.utils.llm_transcript import render_transcript_for_llm
 
         with get_sync_session() as session:
-            if not session.get(Recording, recording_id):
-                return "Recording not found."
-            transcript = render_transcript_for_llm(session, recording_id)
-            return transcript or "Diarized transcript not found."
+            return render_transcript_for_llm(session, recording_id)
 
     def _update_notes_in_db(self, recording_id: int, new_notes: str):
         """

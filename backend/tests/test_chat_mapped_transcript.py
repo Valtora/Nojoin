@@ -292,12 +292,13 @@ def test_chat_names_a_merged_speakers_lines_after_the_target(engine):
     assert transcript == "[00:00] Priya: First point.\n[00:02] Priya: Second point."
 
 
-def test_chat_reports_a_recording_without_any_transcript(engine):
+def test_chat_has_no_transcript_for_a_recording_without_one(engine):
+    # None, not a status message: the caller must be able to tell "no
+    # transcript" from a transcript, and never send the message as one.
     _insert_transcript(engine, segments=None)
 
-    transcript = LLMBackend.get_mapped_transcript_for_llm(RECORDING_ID)
-
-    assert transcript == "Diarized transcript not found."
+    assert LLMBackend.get_mapped_transcript_for_llm(RECORDING_ID) is None
+    assert LLMBackend.get_mapped_transcript_for_llm(RECORDING_ID + 1) is None
 
 
 def _count_queries(engine) -> int:

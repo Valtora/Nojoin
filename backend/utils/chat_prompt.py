@@ -13,8 +13,20 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
+NO_TRANSCRIPT_SECTION = """# Transcript:
+This meeting has no transcript. If a question needs one, say that the transcript is not available.
+"""
 
-def build_chat_context(meeting_notes: str, diarized_transcript: str) -> str:
+
+def _transcript_section(diarized_transcript: Optional[str]) -> str:
+    # A missing transcript is stated as such, never passed off as transcript
+    # text, so the model cannot quote a status message as something said.
+    if not diarized_transcript:
+        return NO_TRANSCRIPT_SECTION
+    return f"# Full Diarized Transcript:\n{diarized_transcript}\n"
+
+
+def build_chat_context(meeting_notes: str, diarized_transcript: Optional[str]) -> str:
     """Stable, cacheable chat context: instructions, notes, and full transcript."""
     return f"""
 You are a helpful AI assistant. You have access to the following meeting notes, full diarized transcript, and potentially extracted context from related documents. Use this information to answer the user's question as accurately as possible. If the answer is not present, say so.
@@ -28,13 +40,11 @@ When an answer compares several items across the same fields, present it as a Ma
 # Meeting Notes:
 {meeting_notes}
 
-# Full Diarized Transcript:
-{diarized_transcript}
-"""
+{_transcript_section(diarized_transcript)}"""
 
 
 def build_chat_prompt(
-    user_question: str, meeting_notes: str, diarized_transcript: str
+    user_question: str, meeting_notes: str, diarized_transcript: Optional[str]
 ) -> str:
     """Single-string chat prompt (context + question) for providers without caching."""
     return (
