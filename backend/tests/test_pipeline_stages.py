@@ -1038,3 +1038,81 @@ def test_local_provider_runs_intelligence_inline(monkeypatch):
     assert result == {"status": "success", "recording_id": 711}
     assert dispatched == []  # not deferred
     assert len(inline_calls) == 1  # ran inline on the GPU worker
+
+
+# --- user processing tuning reaches the stages -------------------------------
+
+
+def _tuned_llm_config(**tuning):
+    class _TunedLlmConfig:
+        merged_config = {
+            "transcription_backend": "whisper",
+            "whisper_model_size": "base",
+            "enable_vad": True,
+            "enable_diarization": True,
+            "enable_auto_voiceprints": False,
+            "prefer_short_titles": True,
+            **tuning,
+        }
+        provider = "openai"
+
+        def missing_configuration_message(self):
+            return None
+
+    return _TunedLlmConfig()
+
+
+def test_vad_stage_receives_the_owners_merged_settings(monkeypatch):
+    """The owner's VAD threshold only takes effect if the stage hands the
+    merged settings to the VAD call."""
+    recording = _FakeRecording(720)
+    transcript = _FakeTranscript(720)
+    session = _FakeSession(recording, transcript)
+    _install_happy_path_modules(monkeypatch)
+
+    seen: dict = {}
+
+    def _capture_vad(*args, **kwargs):
+        seen["config"] = kwargs.get("config")
+        return True, 30.0
+
+    _install(
+        monkeypatch, "backend.processing.vad", mute_non_speech_segments=_capture_vad
+    )
+    llm_config = _tuned_llm_config(vad_threshold=0.3)
+
+    _run_task(monkeypatch, session, recording_id=720, llm_config=llm_config)
+
+    assert seen["config"]["vad_threshold"] == 0.3
+
+
+def test_combine_stage_receives_the_owners_merged_settings(monkeypatch):
+    """The owner's flip-smoothing limits only take effect if the combine
+    stage hands the merged settings to the combiner."""
+    recording = _FakeRecording(721)
+    transcript = _FakeTranscript(721)
+    session = _FakeSession(recording, transcript)
+    _install_happy_path_modules(monkeypatch, diarization_result=object())
+    _install(
+        monkeypatch,
+        "backend.processing.phantom_filter",
+        filter_phantom_speakers=lambda diar, *a, **k: diar,
+    )
+
+    seen: dict = {}
+
+    def _capture_combine(transcription, diarization, config=None):
+        seen["config"] = config
+        return []
+
+    _install(
+        monkeypatch,
+        "backend.utils.transcript_utils",
+        combine_transcription_diarization=_capture_combine,
+        consolidate_diarized_transcript=lambda segs, *a, **k: list(segs),
+    )
+    llm_config = _tuned_llm_config(word_flip_max_duration_s=0)
+
+    _run_task(monkeypatch, session, recording_id=721, llm_config=llm_config)
+
+    assert seen["config"]["word_flip_max_duration_s"] == 0

@@ -33,6 +33,7 @@ export const logout = async (): Promise<void> => {
     console.error("Logout failed:", error);
   } finally {
     if (typeof window !== "undefined") {
+      // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- a full reload is required: this runs outside React (no router), and the reload clears the signed-in session's in-memory client state
       window.location.href = "/login";
     }
   }

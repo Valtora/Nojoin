@@ -3,6 +3,8 @@ import { Check, Download, Loader2, Trash2, X } from "lucide-react";
 import {
   DownloadProgress,
   ModelPreparationTarget,
+  ModelSource,
+  ModelStatusInfo,
   SystemModelStatus,
 } from "@/types";
 import SettingsBlock from "./SettingsBlock";
@@ -64,6 +66,17 @@ const DEPENDENCY_MODELS: {
     target: "core",
   },
 ];
+
+/** Why Delete is unavailable for a model kept where Nojoin does not delete. */
+const UNDELETABLE_REASON: Partial<Record<ModelSource, string>> = {
+  bundled: "Bundled repo asset",
+  external:
+    "Found in a cache outside Nojoin's model cache. It is used, but not deleted from here.",
+};
+
+function undeletableReason(status?: ModelStatusInfo): string | undefined {
+  return status?.source ? UNDELETABLE_REASON[status.source] : undefined;
+}
 
 /** Admin-only "Model dependencies" section of {@link AISettings}. */
 export default function AiModelDependenciesSection({
@@ -130,19 +143,27 @@ export default function AiModelDependenciesSection({
                           Bundled
                         </SettingsStatusBadge>
                       )}
+                      {modelStatus?.[model.id]?.source === "external" && (
+                        <span title={UNDELETABLE_REASON.external}>
+                          <SettingsStatusBadge tone="neutral">
+                            External
+                          </SettingsStatusBadge>
+                        </span>
+                      )}
                       <button
                         onClick={() => handleDeleteModel(model.id)}
                         disabled={
                           deleting === model.id ||
                           !isAdmin ||
-                          modelStatus?.[model.id]?.source === "bundled"
+                          undeletableReason(modelStatus?.[model.id]) !==
+                            undefined
                         }
                         className="text-contrast-helper hover:text-status-danger-fg transition-colors p-1.5 hover:bg-surface-inset rounded-md disabled:opacity-50"
                         title={
-                          modelStatus?.[model.id]?.source === "bundled"
-                            ? "Bundled repo asset"
-                            : "Delete Model"
+                          undeletableReason(modelStatus?.[model.id]) ??
+                          "Delete Model"
                         }
+                        aria-label={`Delete ${model.label}`}
                       >
                         {deleting === model.id ? (
                           <Loader2 className="w-4 h-4 animate-spin" />
@@ -157,6 +178,29 @@ export default function AiModelDependenciesSection({
                         <SettingsStatusBadge tone="error" className="gap-1">
                           <X className="w-3 h-3" /> Missing
                         </SettingsStatusBadge>
+                        {modelStatus?.[model.id]?.partial && (
+                          <button
+                            onClick={() => handleDeleteModel(model.id)}
+                            disabled={
+                              deleting === model.id ||
+                              !isAdmin ||
+                              preparationRunning
+                            }
+                            className="text-contrast-helper hover:text-status-danger-fg transition-colors p-1.5 hover:bg-surface-inset rounded-md disabled:opacity-50"
+                            title={
+                              preparationRunning
+                                ? "A model preparation is running and may still be writing this download"
+                                : "Clear the partial download left in the model cache"
+                            }
+                            aria-label={`Clear partial download of ${model.label}`}
+                          >
+                            {deleting === model.id ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Trash2 className="w-4 h-4" />
+                            )}
+                          </button>
+                        )}
                         <button
                           onClick={() => void startPreparation(model.target)}
                           disabled={!isAdmin || preparationRunning}

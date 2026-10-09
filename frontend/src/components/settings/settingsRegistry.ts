@@ -77,6 +77,8 @@ export interface SettingsRegistryEntry {
  * a key arriving here should be a decision, not an oversight.
  *
  *  - theme is written by ThemeProvider into local storage, not through settings;
+ *  - processing_tuning_install is read-only context the API supplies (the
+ *    installation's tuning values) for validation, not a value anyone sets;
  *  - the rest are read by the backend and have never had a frontend control.
  */
 export const UNSURFACED_SETTINGS_KEYS = [
@@ -85,6 +87,7 @@ export const UNSURFACED_SETTINGS_KEYS = [
   "enable_live_transcription",
   "processing_device",
   "worker_url",
+  "processing_tuning_install",
 ] as const;
 
 export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
@@ -290,6 +293,61 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
     settingsKeys: ["enable_diarization"],
     defaultValue: true,
     keywords: ["diarization", "speakers", "speaker separation", "who spoke", "pyannote", "processing"],
+  },
+  // Processing tuning. defaultValue null: unset means inherit, so only a value
+  // the user actually set counts as changed.
+  {
+    id: "recording-vad-threshold",
+    label: "Speech detection threshold",
+    description:
+      "How confident voice activity detection must be before audio counts as speech. Lower keeps quiet speech; higher drops more noise.",
+    category: "recording",
+    access: "all",
+    advanced: "can-degrade",
+    settingsKeys: ["vad_threshold"],
+    defaultValue: null,
+    keywords: ["vad threshold", "speech detection", "quiet speech", "soft speech", "silero", "large meeting", "tuning"],
+  },
+  {
+    id: "recording-word-padding",
+    label: "Word end padding",
+    description:
+      "How long a Parakeet or Canary word lasts when a pause follows it, which decides whether a short word reaches a speaker turn.",
+    category: "recording",
+    access: "all",
+    advanced: "can-degrade",
+    settingsKeys: ["asr_word_end_padding_s"],
+    defaultValue: null,
+    keywords: ["word padding", "word end", "parakeet", "canary", "timing", "brief speaker", "tuning"],
+  },
+  {
+    id: "recording-phantom-filter",
+    label: "Phantom speaker filter",
+    description:
+      "Which brief speakers count as noise to reassign, or as an existing speaker to merge, rather than a real person.",
+    category: "recording",
+    access: "all",
+    advanced: "can-degrade",
+    settingsKeys: [
+      "phantom_max_duration_s",
+      "phantom_max_segments",
+      "phantom_embedding_floor",
+      "phantom_merge_threshold",
+    ],
+    defaultValue: null,
+    keywords: ["phantom speaker", "brief speaker", "short speaker", "noise", "chime", "large meeting", "tuning"],
+  },
+  {
+    id: "recording-word-flip",
+    label: "Single-word flip smoothing",
+    description:
+      "Gives a very short word inside one speaker's run back to that speaker. Loosening it can erase brief interjections.",
+    category: "recording",
+    access: "all",
+    advanced: "can-degrade",
+    settingsKeys: ["word_flip_max_duration_s", "word_flip_max_gap_s"],
+    defaultValue: null,
+    keywords: ["word flip", "smoothing", "interjection", "brief speaker", "speaker change", "tuning"],
   },
 
   // ---------------------------------------------------------- transcription
