@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import random
 import resource
 import shutil
 import signal
@@ -649,32 +650,49 @@ def test_a_copied_track_decodes_to_the_source_samples(tmp_path: Path) -> None:
     assert _decoded_bytes(stored) == expected
 
 
+def _noisy_recording(path: Path) -> None:
+    """Ten minutes of MP2 with one byte in 2,000 flipped: ffmpeg reports
+    decode errors as it goes, yet the file imports when left to finish."""
+    _ffmpeg(
+        "-f", "lavfi", "-i", "sine=frequency=440:duration=600", "-c:a", "mp2", str(path)
+    )
+    data = bytearray(path.read_bytes())
+    flips = random.Random(3)
+    for _ in range(len(data) // 2000):
+        data[flips.randrange(8192, len(data))] ^= 0xFF
+    path.write_bytes(bytes(data))
+
+
 @needs_ffmpeg
 def test_ffmpeg_stopped_by_sigterm_is_a_server_failure(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """A service or container stopping sends SIGTERM, which ffmpeg traps: it
-    exits 255 having reported nothing, not -15. The file is not at fault."""
-    source = tmp_path / "screen.mkv"
-    _ffmpeg(*_VIDEO, *_TONE, "-c:v", "mpeg4", "-c:a", "aac", str(source))
+    exits 255, not -15, after whatever it reported about a noisy file. The
+    file is not at fault."""
+    source = tmp_path / "noisy.mka"
+    _noisy_recording(source)
     real_run = subprocess.run
+    stopped: list[subprocess.CalledProcessError] = []
 
     def run_until_stopped(cmd, **kwargs):
         if cmd[0] != "ffmpeg":
             return real_run(cmd, **kwargs)
-        # -re reads the input at its own pace, so ffmpeg is still running.
-        process = subprocess.Popen(
-            [cmd[0], "-re", *cmd[1:]], stdout=subprocess.PIPE, stderr=subprocess.PIPE
-        )
-        time.sleep(0.5)
+        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        time.sleep(0.3)
         process.send_signal(signal.SIGTERM)
         stdout, stderr = process.communicate()
-        raise subprocess.CalledProcessError(process.returncode, cmd, stdout, stderr)
+        stopped.append(
+            subprocess.CalledProcessError(process.returncode, cmd, stdout, stderr)
+        )
+        raise stopped[-1]
 
     monkeypatch.setattr(import_audio.subprocess, "run", run_until_stopped)
 
     with pytest.raises(ImportServerError):
         keep_imported_audio(str(source))
+    [error] = stopped
+    assert (error.returncode, bool(error.stderr.strip())) == (255, True)
     assert sorted(tmp_path.iterdir()) == [source]
 
 
