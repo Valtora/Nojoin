@@ -184,17 +184,9 @@ class ImportServerError(Exception):
 
 @dataclass(frozen=True)
 class KeptAudio:
-    """What import stores for an upload.
-
-    ``reencoded_from_lossy`` is set when a lossy track was re-encoded, and
-    ``source_bit_rate`` is then the source track's bit rate as ffprobe reports
-    it (None when it reports none). A bitrate floor has to judge that, since
-    measuring the stored file would measure the encoder.
-    """
+    """What import stores for an upload."""
 
     path: str
-    reencoded_from_lossy: bool = False
-    source_bit_rate: int | None = None
 
 
 class _OutputPlan(NamedTuple):
@@ -260,7 +252,7 @@ def keep_imported_audio(source_path: str) -> KeptAudio:
     if not is_container and not _carries_video(streams):
         return KeptAudio(source_path)
 
-    extracted, plan = _extract_audio_track(source_path, track, probe)
+    extracted, _ = _extract_audio_track(source_path, track, probe)
     try:
         os.remove(source_path)
     except OSError as exc:
@@ -270,21 +262,7 @@ def keep_imported_audio(source_path: str) -> KeptAudio:
             f"Could not remove the upload {source_path}: {exc}"
         ) from exc
     logger.info("Kept the audio of imported file %s as %s", source_path, extracted)
-    if not plan.reencodes_lossy:
-        return KeptAudio(extracted)
-    return KeptAudio(
-        extracted,
-        reencoded_from_lossy=True,
-        source_bit_rate=_bit_rate(track),
-    )
-
-
-def _bit_rate(track: dict) -> int | None:
-    """The track's bit rate in bits per second, as ffprobe reports it."""
-    try:
-        return int(track.get("bit_rate")) or None
-    except (TypeError, ValueError):
-        return None
+    return KeptAudio(extracted)
 
 
 def _carries_video(streams: list[dict]) -> bool:

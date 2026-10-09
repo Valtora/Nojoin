@@ -357,20 +357,6 @@ def test_an_extraction_shorter_than_its_track_is_refused(
     assert sorted(tmp_path.iterdir()) == [source]
 
 
-@needs_ffmpeg
-def test_a_re_encode_reports_the_source_bit_rate(tmp_path: Path) -> None:
-    """A bitrate floor must judge the 64 kb/s MP2, not the 160 kb/s Opus."""
-    source = tmp_path / "camera.ts"
-    _ffmpeg(*_VIDEO, *_TONE, "-c:v", "mpeg4", "-c:a", "mp2", "-b:a", "64k", str(source))
-    copied = tmp_path / "screen.mkv"
-    _ffmpeg(*_SCREEN, str(copied))
-
-    reencoded = keep_imported_audio(str(source))
-    assert reencoded.reencoded_from_lossy
-    assert reencoded.source_bit_rate == 64_000
-    assert not keep_imported_audio(str(copied)).reencoded_from_lossy
-
-
 def _limit_ffmpeg_output(monkeypatch: pytest.MonkeyPatch, max_bytes: int) -> None:
     """Run ffmpeg under a file-size limit, as a full disk quota would stop it."""
     real_run = subprocess.run
@@ -503,7 +489,6 @@ def test_a_source_whose_packets_undercount_is_not_refused(tmp_path: Path) -> Non
     kept = keep_imported_audio(str(source))
 
     assert kept.path.endswith(".flac")
-    assert not kept.reencoded_from_lossy
     assert get_audio_duration(kept.path) == pytest.approx(10.0, abs=0.1)
 
 
@@ -561,7 +546,6 @@ def test_mp2_labelled_mp3_in_mp4_is_re_encoded_not_stored_as_mp3(
     kept = keep_imported_audio(str(source))
 
     assert kept.path.endswith(".webm")
-    assert kept.reencoded_from_lossy
     assert [s["codec_name"] for s in _streams(kept.path)] == ["opus"]
     assert sorted(tmp_path.iterdir()) == [Path(kept.path)]
 
