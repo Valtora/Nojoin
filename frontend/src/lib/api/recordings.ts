@@ -6,6 +6,8 @@ import type {
   RecordingInitResponse,
   ReprocessRequest,
 } from "@/types";
+import { isAxiosError } from "@/lib/errors";
+
 import api, { API_BASE_URL } from "./client";
 
 export interface RecordingFilters {
@@ -149,6 +151,34 @@ export interface ImportAudioOptions {
   onUploadProgress?: (progress: number) => void;
 }
 
+// Finalize extracts the audio of a video file before it answers, which can
+// outlast a proxy's timeout (Cloudflare gives up after 100 s) while the server
+// carries on. Finalize is idempotent, so a lost answer is retried: the retry
+// waits for the running finalize and returns the same recording.
+const FINALIZE_ATTEMPTS = 5;
+const FINALIZE_RETRY_STATUSES = new Set([502, 503, 504, 524]);
+
+const finalizeChunkedImport = async (
+  recordingId: RecordingId,
+): Promise<Recording> => {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      const response = await api.post<Recording>(
+        `/recordings/import/chunked/finalize?recording_id=${recordingId}`,
+      );
+      return response.data;
+    } catch (error) {
+      const status = isAxiosError(error) ? error.response?.status : undefined;
+      const answerLost =
+        isAxiosError(error) &&
+        (status === undefined || FINALIZE_RETRY_STATUSES.has(status));
+      if (!answerLost || attempt >= FINALIZE_ATTEMPTS) {
+        throw error;
+      }
+    }
+  }
+};
+
 export const importAudio = async (
   file: File,
   options?: ImportAudioOptions,
@@ -198,15 +228,13 @@ export const importAudio = async (
   }
 
   // 3. Finalize Import
-  const finalizeResponse = await api.post<Recording>(
-    `/recordings/import/chunked/finalize?recording_id=${recording.id}`,
-  );
+  const finalized = await finalizeChunkedImport(recording.id);
 
   if (options?.onUploadProgress) {
     options.onUploadProgress(100);
   }
 
-  return finalizeResponse.data;
+  return finalized;
 };
 
 export const getSupportedAudioFormats = (): string[] => {
