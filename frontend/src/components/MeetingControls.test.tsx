@@ -92,19 +92,29 @@ describe("MeetingControls", () => {
     expect(routerPush).not.toHaveBeenCalled();
   });
 
-  it("keeps the sidebar's paired action beside Start Meeting and under the live controls", () => {
+  it("keeps the sidebar's paired action through idle, recording, paused and finalizing", () => {
     const paired = <button type="button">Import Audio</button>;
-    const { rerender } = render(<MeetingControls pairedAction={paired} />);
-
-    expect(screen.getByRole("button", { name: "Start Meeting" })).toBeInTheDocument();
+    const renderAs = (runtimeActive: boolean, status: string) => {
+      captureState.runtimeActive = runtimeActive;
+      captureState.status = status;
+      return <MeetingControls pairedAction={paired} />;
+    };
+    const { rerender } = render(renderAs(false, "idle"));
+    expect(screen.getByRole("button", { name: "Start Meeting" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Import Audio" })).toBeInTheDocument();
 
-    captureState.runtimeActive = true;
-    captureState.status = "recording";
-    rerender(<MeetingControls pairedAction={paired} />);
+    for (const status of ["recording", "paused"]) {
+      rerender(renderAs(true, status));
+      expect(screen.getByTestId("live-controls")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Start Meeting" })).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Import Audio" })).toBeInTheDocument();
+    }
 
-    expect(screen.getByTestId("live-controls")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Start Meeting" })).not.toBeInTheDocument();
+    // Finalizing hands the row back to the status button, which is disabled
+    // and carries the stage; the paired action stays.
+    rerender(renderAs(true, "finalizing"));
+    expect(screen.queryByTestId("live-controls")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Finalizing meeting..." })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Import Audio" })).toBeInTheDocument();
   });
 });

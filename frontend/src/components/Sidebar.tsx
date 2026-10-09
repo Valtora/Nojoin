@@ -707,7 +707,7 @@ export default function Sidebar() {
         <div className="hidden lg:block">
           <MeetingControls
             onMeetingEnd={fetchRecordings}
-            pairedAction={<ImportAudioButton className="grow px-3 @min-[16rem]:basis-0" />}
+            pairedAction={<ImportAudioButton className="w-full" />}
           />
         </div>
       )}

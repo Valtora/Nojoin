@@ -163,7 +163,7 @@ It can surface live questions, missed points, and quick concept help during a me
 
 ## Importing Recordings
 
-You can import existing audio files directly through the web client. **Import Audio** sits beside **Start Meeting** at the top of the **Recordings** list. On a phone, where Start Meeting is on the dashboard, an **Import** button sits beside the list title on the first screen of the recordings workspace. The collapsed list on desktop keeps it as an icon, and an empty library shows it too. It is not offered in **Archived** or **Deleted**, and it is unavailable while a paused recording is waiting for you to resume, stop or discard it.
+You can import existing audio files directly through the web client. **Import Audio** sits with **Start Meeting** at the top of the **Recordings** list: beside it when the list is wide enough, under it otherwise, and under the live controls while a meeting runs. On a phone, where Start Meeting is on the dashboard, an **Import** button sits beside the list title on the first screen of the recordings workspace. The collapsed list on desktop keeps it as an icon, and an empty library shows it too. It is not offered in **Archived** or **Deleted**, and it is unavailable while a paused recording is waiting for you to resume, stop or discard it.
 
 Supported formats include WAV, MP3, M4A, AAC, WebM, OGG, FLAC, MP4, WMA, and OPUS.
 

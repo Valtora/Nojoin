@@ -11,15 +11,21 @@ import { useNotificationStore } from "@/lib/notificationStore";
 import CaptureUnsupportedNotice from "./CaptureUnsupportedNotice";
 import LiveMeetingControls from "./LiveMeetingControls";
 
-interface MeetingControlsProps {
-  onMeetingEnd?: () => void;
-  variant?: "sidebar" | "dashboard";
-  /**
-   * Sidebar only: a second "add a recording" action laid out beside Start
-   * Meeting, and under the live controls while a meeting runs.
-   */
-  pairedAction?: ReactNode;
-}
+type MeetingControlsProps =
+  | {
+      onMeetingEnd?: () => void;
+      variant?: "sidebar";
+      /**
+       * A second "add a recording" action, laid out beside Start Meeting and
+       * under the live controls while a meeting runs.
+       */
+      pairedAction?: ReactNode;
+    }
+  | {
+      onMeetingEnd?: () => void;
+      variant: "dashboard";
+      pairedAction?: never;
+    };
 
 type ButtonMode = "start" | "open-settings" | "wait";
 
@@ -225,23 +231,33 @@ export default function MeetingControls({
         ) : null}
 
         {!hasLiveRecording ? (
-          // Side by side while the column has room for both labels, stacked
-          // below that, so neither label is squeezed.
-          <div className="@container">
-            <div className="flex flex-col gap-2 @min-[16rem]:flex-row">
+          // The paired action sits beside Start Meeting only while both labels
+          // fit on one line each, and wraps to its own line otherwise. A
+          // status label (finalizing, unsupported, paused) takes the full
+          // width, where it can wrap.
+          <div className="flex flex-wrap gap-2">
+            <div
+              className={
+                meetingSurfaceState.buttonMode === "start"
+                  ? "min-w-fit grow basis-0 whitespace-nowrap"
+                  : "basis-full"
+              }
+            >
               <button
                 type="button"
                 onClick={handlePrimaryAction}
                 disabled={meetingSurfaceState.buttonDisabled}
                 title={meetingSurfaceState.buttonTooltip}
                 aria-label={meetingSurfaceState.buttonLabel}
-                className="flex min-h-10 grow items-center @min-[16rem]:basis-0 justify-center gap-1.5 rounded-md bg-action px-3 py-2 text-sm leading-tight font-semibold text-action-on transition-colors hover:bg-action-hover disabled:cursor-not-allowed disabled:bg-action-tint"
+                className="flex w-full items-center justify-center gap-2 rounded-md bg-action px-4 py-2 font-medium text-action-on transition-colors hover:bg-action-hover disabled:cursor-not-allowed disabled:bg-action-tint"
               >
-                <Mic className="h-4 w-4 shrink-0" />
+                <Mic className="h-4 w-4" />
                 {meetingSurfaceState.buttonLabel}
               </button>
-              {pairedAction}
             </div>
+            {pairedAction ? (
+              <div className="flex min-w-fit grow basis-0">{pairedAction}</div>
+            ) : null}
           </div>
         ) : (
           <>

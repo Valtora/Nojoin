@@ -56,7 +56,11 @@ export default function ImportAudioButton({
       disabled={locked}
       // The short form keeps the full name for assistive tech.
       aria-label={appearance === "compact" ? LABEL : undefined}
-      className={cn("rounded-md", className)}
+      // Rounded and disabled like Start Meeting, which it sits beside.
+      className={cn(
+        "rounded-md disabled:border-transparent disabled:bg-action-tint disabled:text-action-tint-fg disabled:opacity-100",
+        className,
+      )}
     >
       {appearance === "compact" ? "Import" : LABEL}
     </Button>
