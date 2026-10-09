@@ -446,6 +446,20 @@ export interface Settings {
   install_glossary_terms?: string;
   enable_vad?: boolean;
   enable_diarization?: boolean;
+  // Processing tuning (lib/processingTuning.ts). null means inherit the
+  // install's value, else the shipped default.
+  vad_threshold?: number | null;
+  asr_word_end_padding_s?: number | null;
+  phantom_max_duration_s?: number | null;
+  phantom_max_segments?: number | null;
+  phantom_embedding_floor?: number | null;
+  phantom_merge_threshold?: number | null;
+  word_flip_max_duration_s?: number | null;
+  word_flip_max_gap_s?: number | null;
+  // Read-only, from GET: the installation's config.json tuning values, keyed
+  // by tuning key (null where unset or unusable). Today it holds the phantom
+  // pair, which the floor/merge check counts for a field left empty.
+  processing_tuning_install?: Record<string, number | null>;
   spellcheck_language?: string;
 
     [key: string]: unknown;
@@ -740,11 +754,19 @@ export interface AudioDevice {
   is_default: boolean;
 }
 
+/** Where a found model lives. `external`: loadable, but outside the cache
+ * Nojoin manages (a personal Hugging Face cache), so it is not deleted from
+ * the UI. Only Pyannote models report a source. */
+export type ModelSource = "bundled" | "cache" | "external";
+
 export interface ModelStatusInfo {
   downloaded: boolean;
   path: string | null;
   checked_paths: string[];
-  source?: string;
+  source?: ModelSource;
+  /** Not downloaded, but the model's own entry is in Nojoin's model cache: a
+   * download that was cut off or is still running. It can be deleted. */
+  partial?: boolean;
 }
 
 export interface SystemModelStatus {

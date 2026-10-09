@@ -93,7 +93,8 @@ def delete_model_task(self, model_name: str, variant: str | None = None):
     try:
         deleted = delete_model(model_name, whisper_model_size=variant)
     except ValueError as e:
-        # Repo-bundled assets are read-only by policy, not by accident.
+        # Refused by policy, not by accident: a bundled asset, or a model
+        # that is not Nojoin's own file or repo in its model cache.
         return {"status": "forbidden", "message": str(e)}
     except Exception as e:  # noqa: BLE001
         logger.error("Failed to delete model %s: %s", model_name, e, exc_info=True)

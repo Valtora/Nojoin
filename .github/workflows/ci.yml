@@ -55,6 +55,9 @@ jobs:
               - 'backend/**'
               - 'requirements/**'
               - 'pyproject.toml'
+              # The frontend's copy of the processing tuning bounds; a backend
+              # test checks it against backend/processing/processing_tuning.py.
+              - 'frontend/src/lib/processingTuning.json'
             frontend:
               - 'frontend/**'
             site:
