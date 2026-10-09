@@ -47,10 +47,10 @@ class _FakeConfigManager:
     def get_all(self):
         return dict(self.config)
 
-    def save_config(self, config_data):
-        self.config = dict(config_data)
+    def save_values(self, updates):
+        self.config.update(updates)
 
-    def reload(self, *, force=False):
+    def reload(self):
         return None
 
     def validate_config_value(self, key, value):

@@ -487,7 +487,9 @@ async def setup_system(
         config_manager.save_values(
             {"whisper_model_size": setup_in.whisper_model_size or "turbo"}
         )
-    except OSError as e:
+    except (OSError, ValueError) as e:
+        # Raised before anything is written, or by the write itself. The owner
+        # already exists, so failing the request would leave setup unrepeatable.
         logger.error("Failed to persist the first-run transcription model: %s", e)
 
     model_preparation_task_id = None
@@ -637,7 +639,7 @@ async def prepare_models_endpoint(
         )
 
     # The transcription keys are install-wide, so config.json holds the model an
-    # administrator just chose. Reloaded in case another API process saved it.
+    # administrator chose. Reloaded in case the file was edited by hand since.
     config_manager.reload()
 
     if target == "active":

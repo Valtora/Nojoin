@@ -1,6 +1,8 @@
 import json
 import logging
 import os
+from collections.abc import Mapping
+from typing import Any
 from urllib.parse import urlparse
 
 from dotenv import load_dotenv
@@ -634,16 +636,36 @@ class ConfigManager:
         """Returns the entire configuration dictionary."""
         return self.config.copy()
 
-    def save_values(self, updates):
-        """Write these keys to config.json, keeping every other key it holds.
+    def read_file(self) -> dict[str, Any] | None:
+        """config.json as it is on disk: no defaults, no environment overrides.
 
-        Reloads first so a file edited out of band is not reverted by this
-        process's older copy, and lets a failed write raise.
+        An empty dict when the file does not exist, and None when it exists but
+        does not hold a JSON object.
         """
-        self.reload()
-        config_data = self.get_all()
-        config_data.update(updates)
-        self.save_config(config_data)
+        try:
+            with open(self.config_path, "r", encoding="utf-8") as f:
+                on_disk = json.load(f)
+        except FileNotFoundError:
+            return {}
+        except (OSError, ValueError):
+            return None
+        return on_disk if isinstance(on_disk, dict) else None
+
+    def save_values(self, updates: Mapping[str, Any]) -> None:
+        """Write these keys to config.json and leave the rest of the file as it is.
+
+        Starts from the file, not from this process's merged copy, so neither a
+        stale copy nor a value an environment variable overrides (ENV_OVERRIDES)
+        is written back. A file that does not hold a JSON object raises
+        ValueError instead of being replaced, and a failed write raises too.
+        """
+        on_disk = self.read_file()
+        if on_disk is None:
+            raise ValueError(
+                f"{self.config_path} does not hold a JSON object, so it was not overwritten"
+            )
+        on_disk.update(updates)
+        self.save_config(on_disk)
         # Forced: this process just wrote the file and must read back its own write.
         self.reload(force=True)
 

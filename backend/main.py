@@ -234,7 +234,7 @@ async def carry_owner_transcription_choice_on_startup() -> None:
     try:
         async with async_session_maker() as session:
             carried = await carry_owner_transcription_choice(session)
-    except (OSError, SQLAlchemyError) as e:
+    except (OSError, ValueError, SQLAlchemyError) as e:
         logger.error(
             "Could not carry the owner's transcription choice into config.json: %s", e
         )
