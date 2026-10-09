@@ -282,7 +282,7 @@ export default function DocumentsView({ recordingId }: DocumentsViewProps) {
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto pb-clear-floating-0">
         {loading ? (
           <div className="flex items-center justify-center h-full text-contrast-helper">
             <Loader2 className="w-6 h-6 animate-spin mr-2" />

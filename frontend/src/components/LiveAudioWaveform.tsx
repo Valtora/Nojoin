@@ -207,7 +207,7 @@ export default function LiveAudioWaveform({
             <button
               type="button"
               onClick={() => dismissForMeeting(recordingId)}
-              className="rounded-full border border-action-border bg-surface-card px-3 py-1.5 text-xs font-medium text-action-text transition-colors hover:bg-surface-card"
+              className="rounded-pill border border-action-border bg-surface-card px-3 py-1.5 text-xs font-medium text-action-text transition-colors hover:bg-surface-card"
             >
               Dismiss
             </button>
@@ -217,7 +217,7 @@ export default function LiveAudioWaveform({
                 dismissForMeeting(recordingId);
                 suppressWarnings();
               }}
-              className="rounded-full border border-action-border px-3 py-1.5 text-xs font-medium text-action-text transition-colors hover:bg-action-tint"
+              className="rounded-pill border border-action-border px-3 py-1.5 text-xs font-medium text-action-text transition-colors hover:bg-action-tint"
             >
               Don&apos;t show again
             </button>

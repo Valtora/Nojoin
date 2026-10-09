@@ -173,7 +173,7 @@ export default function AudioPlayer({
         className={`${shellClassName} relative overflow-hidden`}
       >
         <div className="absolute inset-0 bg-surface-card z-10 flex items-center justify-center">
-          <span className={`flex items-center gap-2 rounded-full border border-status-info-border bg-status-info-bg px-3 py-1 font-medium text-status-info-fg ${compact ? "text-xs" : "text-sm"}`}>
+          <span className={`flex items-center gap-2 rounded-pill border border-status-info-border bg-status-info-bg px-3 py-1 font-medium text-status-info-fg ${compact ? "text-xs" : "text-sm"}`}>
             <Loader2 className="w-4 h-4 animate-spin" />
             Audio is being processed, please wait...
           </span>
@@ -208,7 +208,7 @@ export default function AudioPlayer({
       >
         {/* Blurred background visual effect */}
         <div className="absolute inset-0 bg-surface-card z-10 flex items-center justify-center">
-          <span className={`flex items-center gap-2 rounded-full border border-action-border bg-action-tint px-3 py-1 font-medium text-action-tint-fg ${compact ? "text-xs" : "text-sm"}`}>
+          <span className={`flex items-center gap-2 rounded-pill border border-action-border bg-action-tint px-3 py-1 font-medium text-action-tint-fg ${compact ? "text-xs" : "text-sm"}`}>
             <VolumeX className="w-4 h-4" />
             This meeting was imported with no audio
           </span>

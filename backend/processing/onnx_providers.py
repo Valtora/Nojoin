@@ -80,6 +80,31 @@ def gpu_is_present() -> bool:
     return bool(glob.glob(_NVIDIA_DEVICE_GLOB))
 
 
+def sessions_use_cuda(model: Any, *, requested: Sequence[str]) -> bool:
+    """Whether any of a loaded model's sessions runs on the CUDA provider.
+
+    Answers where an allocation failure happened, so one session on the GPU is
+    enough, even if onnxruntime moved the others to CPU. When the sessions cannot
+    be inspected, a model that asked for CUDA is assumed to have it where a GPU
+    is present.
+
+    Args:
+        model: A loaded model object holding one or more InferenceSessions.
+        requested: The provider list that was passed to the loader.
+    """
+    if CUDA_PROVIDER not in requested:
+        return False
+    try:
+        session_providers = [
+            session.get_providers() for session in iter_inference_sessions(model)
+        ]
+    except (ImportError, AttributeError, RuntimeError, TypeError):
+        return gpu_is_present()
+    if not session_providers:
+        return gpu_is_present()
+    return any(CUDA_PROVIDER in providers for providers in session_providers)
+
+
 def verify_gpu_providers(
     model: Any, *, component: str, requested: Sequence[str]
 ) -> bool:

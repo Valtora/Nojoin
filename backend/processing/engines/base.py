@@ -16,14 +16,16 @@ class TranscriptionEngine(ABC):
           ]
         }
 
-    Returns None on failure or missing file (does NOT raise). The pipeline
-    handles None safely.
+    A result with empty text and no segments is a success: the audio held no
+    speech. Any failure, a missing file included, raises TranscriptionError
+    (backend/processing/engines/errors.py) instead, so callers never mistake a
+    crash for silence.
     """
 
     name: str
 
     @abstractmethod
-    def transcribe(self, audio_path: str, config: dict) -> dict | None: ...
+    def transcribe(self, audio_path: str, config: dict) -> dict: ...
 
     def release(self) -> None:
         """Release cached models / VRAM. Default no-op."""
