@@ -559,7 +559,8 @@ sufficient, preserves authoritative user edits, and only falls back to a
 whole-recording ASR or diarisation rerun when coverage is missing,
 confidence remains too low, or the user explicitly requests reprocessing with a
 different engine. A different transcription engine is reserved for explicit
-manual reprocessing after the user changes the transcription engine in Settings.
+manual reprocessing after an administrator changes the install's transcription
+engine in Settings.
 
 Final processing may reuse live transcript text and source-channel speaker
 authority only after a stable utterance id match or a clear one-to-one time

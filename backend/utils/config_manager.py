@@ -68,6 +68,15 @@ LEGACY_AUTOMATIC_AI_SETTING_KEYS = frozenset(
     }
 )
 
+# The transcription engine and its model. An administrator picks them under
+# Settings > Transcription, and every recording on the install uses them.
+TRANSCRIPTION_SETTING_KEYS = (
+    "transcription_backend",
+    "whisper_model_size",
+    "parakeet_model",
+    "canary_model",
+)
+
 INSTALL_WIDE_AI_SETTING_KEYS = (
     "llm_provider",
     "enable_meeting_edge",
@@ -100,6 +109,7 @@ INSTALL_WIDE_AI_SETTING_KEYS = (
     # row, and so they persist to the install config instead.
     "install_notes_template_id",
     "install_glossary_terms",
+    *TRANSCRIPTION_SETTING_KEYS,
 )
 
 MEETING_EDGE_CONTEXT_LEVEL_MIN = 1
@@ -623,6 +633,19 @@ class ConfigManager:
     def get_all(self):
         """Returns the entire configuration dictionary."""
         return self.config.copy()
+
+    def save_values(self, updates):
+        """Write these keys to config.json, keeping every other key it holds.
+
+        Reloads first so a file edited out of band is not reverted by this
+        process's older copy, and lets a failed write raise.
+        """
+        self.reload()
+        config_data = self.get_all()
+        config_data.update(updates)
+        self.save_config(config_data)
+        # Forced: this process just wrote the file and must read back its own write.
+        self.reload(force=True)
 
     def migrate_file_if_needed(self, old_path, new_path):
         if os.path.exists(old_path) and not os.path.exists(new_path):

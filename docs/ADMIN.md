@@ -100,6 +100,7 @@ Admin-only sections let you:
 - Choose the default LLM provider.
 - Configure the Ollama API URL and context window. The context window is sent to Ollama as `num_ctx` for full-context meeting prompts; if Ollama still reports a length stop, Nojoin surfaces that as a chat error instead of saving a truncated answer.
 - Configure a secondary LLM provider for fallback. When the primary provider fails, the system automatically retries with the secondary provider. The secondary provider has its own independent configuration (provider, model, API key, Ollama URL) set through `SECONDARY_` prefixed environment variables.
+- Choose the transcription engine and model in **Settings > Transcription**. They apply to every user on the installation and are stored in `data/config.json`.
 - View installed Whisper models.
 - Remove local model cache entries. Required default models are prepared on first run, and repo-bundled model assets remain read-only in the UI. Deletion runs on a worker, since the API mounts the model cache read-only, so it needs a running worker to succeed.
 - Choose when a newly selected transcription model is downloaded. Picking a model that is not on the server prompts you to fetch it now, so it is ready before the next recording, or to leave it until first use. Declining is safe: the model is downloaded when it is first needed, but live transcription and Meeting Edge wait for that download to finish.

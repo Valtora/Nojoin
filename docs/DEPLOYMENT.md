@@ -189,8 +189,9 @@ design, with a 24-hour lifetime, so take the backup again if you needed it.
 
 The worker container starts Celery without preloading inference models. Nojoin
 keeps GPU memory idle at startup, then queues worker-side model preparation for
-Pyannote diarisation, voice embeddings, and the configured transcription engine
-(`transcription_backend` in `config.json`). Whisper is prepared only when that
+Pyannote diarisation, voice embeddings, and the install's transcription engine
+(`transcription_backend` in `config.json`, chosen by an administrator under
+**Settings > Transcription**). Whisper is prepared only when that
 engine is Whisper, at the configured `whisper_model_size`: Parakeet and Canary
 never load it, so an install running either does not download Whisper at every
 start. The worker validates those assets on CPU where possible, caches them on
@@ -462,12 +463,12 @@ Nojoin splits configuration between:
 The first-run setup wizard can pre-fill many values from environment variables to speed up deployment.
 On uninitialised systems, that prefill flow is itself locked behind `FIRST_RUN_PASSWORD`.
 
-Install-wide settings that an administrator changes in the UI (the AI provider and models, the install
-glossary, the install default notes structure) are written to `data/config.json` rather than to the
-database, so the mounted `data/` directory must be writable by the API container's user. If it is not,
-saving any of those settings now fails with an explicit error instead of appearing to succeed and then
-reverting on the next restart. If you see that error, check the ownership of the host directory bound to
-`/app/data`.
+Install-wide settings that an administrator changes in the UI (the AI provider and models, the
+transcription engine and model, the install glossary, the install default notes structure) are written
+to `data/config.json` rather than to the database, so the mounted `data/` directory must be writable by
+the API container's user. If it is not, saving any of those settings now fails with an explicit error
+instead of appearing to succeed and then reverting on the next restart. If you see that error, check the
+ownership of the host directory bound to `/app/data`.
 
 ## CLI OAuth (worker-io image)
 
@@ -807,6 +808,13 @@ Pinning a deployment to an exact image digest (`ghcr.io/valtora/nojoin-api@sha25
   chmod -R 700 ./data
   ```
   If you have special host-integration requirements that require group or world read access, you can configure a custom umask using the `NOJOIN_UMASK` environment variable (e.g. `NOJOIN_UMASK=0022` or `NOJOIN_UMASK=0002`).
+- **The transcription engine and model are install-wide.** The engine (`transcription_backend`) and its
+  model (`whisper_model_size`, `parakeet_model`, `canary_model`) are kept in `data/config.json` and apply
+  to every user. Releases before this one stored an administrator's **Settings > Transcription** choice
+  on that administrator's own account, so only they used it, and everyone else used the value in
+  `config.json`. After the upgrade, users who are not administrators transcribe with the
+  administrator's engine and model, which is what the settings page already described. A value still
+  stored on any account is ignored, and is removed when that user next saves their settings.
 - **Empty JWT signing key:** if the api log shows "The JWT signing key in … is empty", delete the file it names under `data/` (`.secret_keys.json` or `.secret_key`) and restart the api; a new key is generated and everyone signs in again.
 ### One-Time Migrations From Pre-Browser-Capture Releases
 

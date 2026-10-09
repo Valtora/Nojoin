@@ -434,7 +434,7 @@ async def setup_system(
     require_first_run_password(request)
 
     # Construct settings dict
-    settings = {"whisper_model_size": setup_in.whisper_model_size}
+    settings: dict[str, Any] = {}
 
     llm_provider = config_manager.get("llm_provider", "gemini")
     if setup_in.selected_model:
@@ -480,6 +480,15 @@ async def setup_system(
         telemetry.set_enabled(setup_in.enable_telemetry)
     except Exception as e:  # noqa: BLE001 -- boundary: setup must not fail on a telemetry write
         logger.error("Failed to persist first-run telemetry choice: %s", e)
+
+    # The transcription model is install-wide, so the choice goes to config.json:
+    # nothing reads it from the owner's row.
+    try:
+        config_manager.save_values(
+            {"whisper_model_size": setup_in.whisper_model_size or "turbo"}
+        )
+    except OSError as e:
+        logger.error("Failed to persist the first-run transcription model: %s", e)
 
     model_preparation_task_id = None
     try:
@@ -618,6 +627,7 @@ async def prepare_models_endpoint(
     downloads anything by itself, because the preparation task runs on the GPU
     lane and would otherwise queue in front of live work unannounced.
     """
+    del current_user
     target = (payload or ModelPreparationRequest()).target
 
     if is_download_in_progress():
@@ -626,17 +636,14 @@ async def prepare_models_endpoint(
             detail="Model preparation is already running. Wait for it to finish.",
         )
 
-    # The transcription keys are user-scoped rather than install-wide, so the
-    # admin's own row wins over config.json. Reading config alone would prepare
-    # whatever the install default happens to be, not the model just chosen.
-    user_settings = current_user.settings or {}
-
-    def effective(key: str, default: str) -> str:
-        value = user_settings.get(key)
-        return str(value) if value else str(config_manager.get(key, default))
+    # The transcription keys are install-wide, so config.json holds the model an
+    # administrator just chose. Reloaded in case another API process saved it.
+    config_manager.reload()
 
     if target == "active":
-        transcription_backend = effective("transcription_backend", "whisper")
+        transcription_backend = str(
+            config_manager.get("transcription_backend", "whisper")
+        )
         include_core = transcription_backend == "whisper"
     elif target == "core":
         transcription_backend = "whisper"
@@ -647,10 +654,7 @@ async def prepare_models_endpoint(
 
     try:
         task_id = await enqueue_model_preparation(
-            whisper_model_size=effective("whisper_model_size", "turbo"),
             transcription_backend=transcription_backend,
-            parakeet_model=effective("parakeet_model", "parakeet-tdt-0.6b-v3"),
-            canary_model=effective("canary_model", "nemo-canary-1b-v2"),
             include_core=include_core,
         )
     except Exception as e:  # noqa: BLE001
