@@ -241,6 +241,17 @@ The optional **Maximum speakers** field sets an upper bound for a single recordi
 
 It is an upper bound, not an exact count. Setting 4 for a meeting with 3 speakers still returns 3. This is deliberate: forcing an exact count would split one person into two whenever the number is too high, which is the problem the field exists to solve. Setting the value **lower** than the real number of participants will merge people together, so when in doubt, guess high or leave it empty.
 
+### Tuning Speech Detection And Speaker Separation
+
+The defaults suit most meetings. Large meetings are harder: quiet or distant voices can be muted as noise before they are transcribed, and people who say one or two things can be folded into someone else. **Settings > Recording > Advanced > Speech and Speaker Tuning** lets you adjust the values behind both for your own recordings.
+
+Every field starts empty, which means inherit: your installation's value if an administrator set one, otherwise the default shown in the field. A value saved earlier that is no longer accepted, for example after an upgrade narrowed its range, also shows as empty, but until the page next saves it uses the shipped default rather than your installation's value. **Reset to defaults** empties them all again. Changes apply to recordings processed after the change, and to any recording you reprocess; finished transcripts are not rewritten.
+
+- **Speech detection threshold** (default 0.5, 0.15 to 0.90). How confident voice activity detection must be before audio counts as speech. Lower it if quiet speech goes missing from transcripts; raise it if background noise turns into words. The live transcript uses it too, even when voice activity detection is switched off for processing.
+- **Word end padding** (Parakeet and Canary only, default 0.2 seconds, 0.05 to 0.80). How long a word lasts when a pause follows it. A longer word is more likely to overlap its speaker's turn, which helps a short reply land on the right person. It also keeps a slightly longer pause from starting a new segment. Whisper ignores it.
+- **Phantom speaker filter**. A detected speaker with no more than **Max speech** seconds (default 3) and no more than **Max segments** (default 3) is checked against the others. If it sounds like no one, below the **Non-speech floor** (default 0.35), it is treated as noise and its audio given to the nearest speaker. If it sounds like an existing speaker, at or above the **Merge similarity** (default 0.60), it is merged into them. In between, it is kept as a brief speaker. To keep more brief speakers, lower the two limits or raise the merge similarity. Setting either limit to 0 turns the filter off. The floor must stay below the merge similarity; for a field you leave empty, that means your installation's value, which the error names.
+- **Single-word flip smoothing**. A word no longer than **Max word length** (default 0.45 seconds), within **Max gap** (default 0.25 seconds) of the words either side, is given back to the speaker on both sides of it. This tidies diarization jitter, but it can also erase a one-word interjection. Lower the values to keep more of them; a max word length of 0 turns smoothing off.
+
 ### When Voiceprints Need Rebuilding
 
 Voiceprints are only comparable with others made the same way. When an upgrade improves how they are extracted, previously saved ones stop contributing to automatic identification until they are rebuilt from the original audio.
@@ -414,7 +425,7 @@ Settings are grouped by task.
 
 - **Profile**: account details and password changes.
 - **Appearance**: theme (system, light or dark), colour palette (Nojoin orange, Graphite, Classic, Ultraviolet or Marigold), corner style (Rounded, Subtle or Square), density (Automatic, Comfortable, Compact or Dense), timezone, and spellcheck language. Theme, palette, corner style and density are saved in this browser only, so each browser can look different; they apply immediately, and on the next load before the page first paints.
-- **Capture**: microphone selection, shared-audio gain, microphone gain, browser audio-processing toggles, and a local mic input test for browser recording.
+- **Recording**: microphone selection, shared-audio gain, microphone gain, and a local mic input test for browser recording. Its Advanced section holds the browser audio-processing toggles, the processing defaults (voice activity detection, speaker diarization), and speech and speaker tuning (see [Tuning Speech Detection And Speaker Separation](#tuning-speech-detection-and-speaker-separation)).
 - **AI**: per-user AI routing (the server's configured provider, or your own Claude or ChatGPT subscription), the server provider and model, Meeting Edge, automatic meeting intelligence, language, and secondary-provider fallback. Install-wide controls (provider, models, the Ollama endpoint, fallback, and "Enable Meeting Edge") are shown only to administrators; a non-admin sees a read-only summary of the active provider instead.
 - **Transcription**: transcription backend and model choices. Administrators picking a model the server does not have yet are asked whether to download it now, so it is ready before the next recording, or to leave it until first use.
 - **Calendar**: user calendar connections and timezone behaviour.

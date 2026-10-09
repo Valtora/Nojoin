@@ -14,17 +14,27 @@ from typing import Any, Dict, Optional
 import numpy as np
 from pyannote.core import Annotation, Segment
 
+from backend.processing.processing_tuning import (
+    PHANTOM_EMBEDDING_FLOOR_KEY,
+    PHANTOM_MAX_DURATION_KEY,
+    PHANTOM_MAX_SEGMENTS_KEY,
+    PHANTOM_MERGE_THRESHOLD_KEY,
+    TUNING_SPECS,
+    resolve_tuning,
+)
+
 logger = logging.getLogger(__name__)
 
 # --- Phantom Speaker Detection Thresholds ---
+# Defaults; a user's settings may override each (processing_tuning.py).
 # Maximum total speaking duration (seconds) for a speaker to be considered a phantom candidate
-PHANTOM_MAX_DURATION_S = 3.0
+PHANTOM_MAX_DURATION_S = TUNING_SPECS[PHANTOM_MAX_DURATION_KEY].default
 # Maximum segment count for a speaker to be considered a phantom candidate
-PHANTOM_MAX_SEGMENTS = 3
+PHANTOM_MAX_SEGMENTS = TUNING_SPECS[PHANTOM_MAX_SEGMENTS_KEY].default
 # Below this cosine similarity to ALL established speakers, confirmed as non-speech
-PHANTOM_EMBEDDING_FLOOR = 0.35
+PHANTOM_EMBEDDING_FLOOR = TUNING_SPECS[PHANTOM_EMBEDDING_FLOOR_KEY].default
 # Above this similarity to a real speaker, merge into that speaker instead of reassigning
-PHANTOM_MERGE_THRESHOLD = 0.60
+PHANTOM_MERGE_THRESHOLD = TUNING_SPECS[PHANTOM_MERGE_THRESHOLD_KEY].default
 
 
 def _get_speaker_stats(diarization: Annotation) -> Dict[str, Dict[str, Any]]:
@@ -64,14 +74,56 @@ def _find_nearest_speaker(
     return best_label
 
 
+def _resolve_thresholds(
+    config: Optional[dict],
+    max_duration_s: Optional[float],
+    max_segments: Optional[int],
+    embedding_floor: Optional[float],
+    merge_threshold: Optional[float],
+) -> tuple[float, float, float, float]:
+    """Resolve each threshold: explicit argument, else the config, else default.
+
+    A floor at or above the merge threshold would leave no similarity at which
+    a brief speaker is retained, so each half of that pair read from the config
+    falls back to its default. An explicit argument is used as given, as it was
+    before the values were configurable, so an explicit half can still leave
+    the pair inverted; the warning names the pair actually used.
+    """
+    floor_from_config = embedding_floor is None
+    merge_from_config = merge_threshold is None
+    if max_duration_s is None:
+        max_duration_s = resolve_tuning(config, PHANTOM_MAX_DURATION_KEY)
+    if max_segments is None:
+        max_segments = resolve_tuning(config, PHANTOM_MAX_SEGMENTS_KEY)
+    if embedding_floor is None:
+        embedding_floor = resolve_tuning(config, PHANTOM_EMBEDDING_FLOOR_KEY)
+    if merge_threshold is None:
+        merge_threshold = resolve_tuning(config, PHANTOM_MERGE_THRESHOLD_KEY)
+    if embedding_floor >= merge_threshold and (floor_from_config or merge_from_config):
+        configured = (embedding_floor, merge_threshold)
+        if floor_from_config:
+            embedding_floor = PHANTOM_EMBEDDING_FLOOR
+        if merge_from_config:
+            merge_threshold = PHANTOM_MERGE_THRESHOLD
+        logger.warning(
+            "[PhantomFilter] Floor %s is not below merge threshold %s; using %s "
+            "and %s (a value from settings falls back to its default, an "
+            "explicit argument is kept).",
+            *configured,
+            embedding_floor,
+            merge_threshold,
+        )
+    return max_duration_s, max_segments, embedding_floor, merge_threshold
+
+
 def filter_phantom_speakers(
     diarization: Annotation,
     audio_path: str,
     config: Optional[dict] = None,
-    max_duration_s: float = PHANTOM_MAX_DURATION_S,
-    max_segments: int = PHANTOM_MAX_SEGMENTS,
-    embedding_floor: float = PHANTOM_EMBEDDING_FLOOR,
-    merge_threshold: float = PHANTOM_MERGE_THRESHOLD,
+    max_duration_s: Optional[float] = None,
+    max_segments: Optional[int] = None,
+    embedding_floor: Optional[float] = None,
+    merge_threshold: Optional[float] = None,
 ) -> Annotation:
     """
     Detect and reassign phantom speaker segments in a diarization result.
@@ -88,16 +140,29 @@ def filter_phantom_speakers(
     Args:
         diarization: Pyannote Annotation from diarization.
         audio_path:  Path to the WAV file used for diarization.
-        config:      Optional config dict (for device/hf_token overrides).
+        config:      Optional config dict: device/hf_token overrides and the
+                     user's phantom_* tuning values.
         max_duration_s: Heuristic ceiling for total speaker duration.
         max_segments:   Heuristic ceiling for speaker segment count.
         embedding_floor: Cosine similarity floor for non-speech confirmation.
         merge_threshold: Cosine similarity above which a phantom is merged
                          into the matched real speaker.
 
+    Each threshold left as None comes from ``config``, else the module default.
+    When the floor is not below the merge threshold, each of the two that came
+    from ``config`` falls back to its default; explicit arguments are used as
+    given, as they always were. A zero duration or segment ceiling selects no
+    candidates, which turns the filter off before the embedding model is
+    loaded.
+
     Returns:
         A new Annotation with phantom segments reassigned or merged.
     """
+    max_duration_s, max_segments, embedding_floor, merge_threshold = (
+        _resolve_thresholds(
+            config, max_duration_s, max_segments, embedding_floor, merge_threshold
+        )
+    )
     stats = _get_speaker_stats(diarization)
     num_speakers = len(stats)
 

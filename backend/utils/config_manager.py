@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+from backend.processing.processing_tuning import TUNING_KEYS
 from backend.utils.languages import (
     AUTO_TRANSCRIPTION_LANGUAGE,
     DEFAULT_NOTES_LANGUAGE,
@@ -240,6 +241,11 @@ DEFAULT_USER_SETTINGS = {
     "install_glossary_terms": "",
     "enable_vad": True,  # Enable Voice Activity Detection (silence filtering)
     "enable_diarization": True,  # Enable Speaker Diarization (who said what)
+    # Processing tuning (backend/processing/processing_tuning.py). None means
+    # inherit: the install's config.json value if set, else the shipped default.
+    # A non-None default here would be stamped onto every row by the settings
+    # page's whole-object autosave and shadow both.
+    **dict.fromkeys(TUNING_KEYS),
     "spellcheck_language": "en-GB",  # Default spell check language for meeting notes
     "timezone": "UTC",  # Default user timezone for calendar and task rendering
 }
