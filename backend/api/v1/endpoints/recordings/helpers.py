@@ -26,7 +26,6 @@ from backend.models.pipeline import (
     TranscriptUtterance,
 )
 from backend.models.recording import (
-    IN_FLIGHT_TRANSCRIPT_STATUSES,
     ClientStatus,
     Recording,
     RecordingPipelineGeneration,
@@ -183,7 +182,12 @@ async def _mark_recording_upload_error(
 
 
 def _should_hide_in_flight_transcript_content(recording: Recording) -> bool:
-    return recording.status in IN_FLIGHT_TRANSCRIPT_STATUSES
+    return recording.status in {
+        RecordingStatus.PAUSED,
+        RecordingStatus.UPLOADING,
+        RecordingStatus.QUEUED,
+        RecordingStatus.PROCESSING,
+    }
 
 
 async def _get_owned_recording(
