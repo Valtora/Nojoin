@@ -9,7 +9,8 @@ from uuid import uuid4
 
 import aiofiles
 from fastapi import Depends, File, HTTPException, Query, Request, UploadFile
-from sqlalchemy import delete, select
+from sqlalchemy import delete, update
+from sqlalchemy.exc import InvalidRequestError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import backend.api.v1.endpoints.recordings as recordings_module
@@ -34,6 +35,12 @@ from backend.utils.import_audio import (
     keep_imported_audio,
 )
 from backend.utils.rate_limit import enforce_upload_concurrency
+from backend.utils.recording_storage import (
+    FINALIZING_IMPORT_STATUS,
+    FINALIZING_IMPORT_STEP,
+    IMPORT_FINALIZING_CODE,
+    is_finalizing_import,
+)
 from backend.utils.upload_limit import (
     UPLOAD_LIMIT_LEGACY_RECORDING,
     stream_and_validate_upload,
@@ -72,6 +79,11 @@ SUPPORTED_AUDIO_FORMATS = {
 _EXTRACTION_SERVER_FAILURE = (
     "The server could not extract the audio from this file. Try again later; "
     "if it keeps failing, an administrator should check the server logs."
+)
+
+_CHUNKED_SERVER_FAILURE_STEP = (
+    "The server failed while importing this file. Delete this recording and "
+    "import the file again."
 )
 
 # A chunked import in one of these has been finalized already. Finalize answers
@@ -400,24 +412,112 @@ async def _discard_chunked_import(db: AsyncSession, recording: Recording) -> Non
     await db.commit()
 
 
-async def _lock_for_finalize(db: AsyncSession, recording: Recording) -> Recording:
-    """Re-read ``recording`` under a row lock held until this request commits.
+def _answer_unclaimable_finalize(recording: Recording) -> RecordingPublicRead:
+    """Answer a finalize for an import that is not waiting to be finalized.
 
-    Two finalize calls for one import would otherwise both pass the status
-    check and race through reassembly and extraction. On PostgreSQL the second
-    waits here until the first commits, then sees the status it left. SQLite
-    ignores FOR UPDATE.
+    Already finalized: return it, so a client whose proxy dropped the first
+    answer can retry. Being finalized by another call: 409, so the client can
+    wait and ask again. Anything else: 400, as before.
+    """
+    if recording.status in _FINALIZED_STATUSES:
+        return serialize_recording(recording, has_proxy=_recording_has_proxy(recording))
+    if is_finalizing_import(recording.status, recording.processing_step):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": IMPORT_FINALIZING_CODE,
+                "message": "This import is already being finalized.",
+            },
+        )
+    raise HTTPException(status_code=400, detail="Recording is not in uploading state")
+
+
+async def _claim_for_finalize(db: AsyncSession, recording: Recording) -> bool:
+    """Move ``recording`` from UPLOADING to the finalizing claim, atomically.
+
+    A conditional UPDATE, so of two finalize calls exactly one claims the row.
+    Only the claim is written under a lock; the caller commits it at once and
+    holds no connection while the audio is extracted.
     """
     result = await db.execute(
-        select(Recording)
+        update(Recording)
         .where(Recording.id == recording.id)
-        .with_for_update()
-        .execution_options(populate_existing=True)
+        .where(Recording.status == RecordingStatus.UPLOADING)
+        .values(status=FINALIZING_IMPORT_STATUS, processing_step=FINALIZING_IMPORT_STEP)
     )
-    locked = result.scalars().one_or_none()
-    if locked is None:
-        raise HTTPException(status_code=404, detail="Recording not found")
-    return locked
+    return result.rowcount == 1
+
+
+async def _fail_chunked_finalize(
+    db: AsyncSession, recording: Recording, audio_path: str | None, exc: Exception
+) -> HTTPException:
+    """Settle a finalize the server failed: keep the parts, mark the import.
+
+    The parts move to ``failed/`` for recovery, as for any server failure in
+    finalize, and the recording is marked ERROR so it does not stay claimed.
+    Returns the HTTP error to raise.
+    """
+    failed_root: Path | None = None
+    try:
+        failed_root = recordings_module.move_recording_upload_to_failed(
+            recording.id, logger=logger
+        )
+    except Exception as move_error:  # noqa: BLE001
+        logger.error(
+            f"Failed to move failed chunked upload to failed dir: {move_error}"
+        )
+
+    await _mark_recording_audio_chunks_failed(
+        db, recording_id=recording.id, failed_root=failed_root
+    )
+    recordings_module.delete_recording_artifacts(
+        recording_id=recording.id, audio_path=audio_path, proxy_path=None, logger=logger
+    )
+    await _mark_recording_upload_error(db, recording, _CHUNKED_SERVER_FAILURE_STEP)
+    return sanitized_http_exception(
+        logger=logger,
+        status_code=500,
+        client_message=(
+            _EXTRACTION_SERVER_FAILURE
+            if isinstance(exc, ImportServerError)
+            else "Failed to finalize the uploaded recording."
+        ),
+        log_message=f"Failed to finalize chunked import for recording {recording.public_id}.",
+        exc=exc,
+    )
+
+
+async def _store_finalized_import(
+    db: AsyncSession, recording: Recording, audio_path: str
+) -> None:
+    """Point ``recording`` at its kept audio, rebuild its window, queue it."""
+    recording.audio_path = audio_path
+    recording.proxy_path = get_initial_proxy_path(audio_path)
+    recording.file_size_bytes = os.stat(audio_path).st_size
+    try:
+        recording.duration_seconds = get_audio_duration(audio_path)
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"Failed to get duration: {e}")
+
+    await db.execute(
+        delete(RecordingAudioChunk)
+        .where(RecordingAudioChunk.recording_id == recording.id)
+        .where(RecordingAudioChunk.source_kind == "import_part")
+    )
+    await db.execute(
+        delete(RecordingAudioWindowManifest)
+        .where(RecordingAudioWindowManifest.recording_id == recording.id)
+        .where(RecordingAudioWindowManifest.source_kind == "import_part")
+    )
+    await _bootstrap_import_audio_windows(
+        db, recording_id=recording.id, audio_path=audio_path
+    )
+    recording.status = RecordingStatus.QUEUED
+    recording.client_status = ClientStatus.IDLE
+    recording.processing_step = None
+    db.add(recording)
+    await db.commit()
+    await db.refresh(recording)
 
 
 @router.post("/import/chunked/finalize", response_model=RecordingPublicRead)
@@ -429,18 +529,15 @@ async def finalize_chunked_import(
     """
     Finalize a chunked import, reassemble the file, and trigger processing.
 
-    Idempotent: a call for an import that is already finalized returns it.
+    The recording is claimed (UPLOADING to RECORDED) in a short transaction
+    that is committed before the audio is extracted, so no row lock or
+    connection is held through the extraction. A second call returns at once:
+    the recording when it is already finalized, 409 while it is being
+    finalized. A claim a crash left behind is released by the daily cleanup.
     """
-    recording = await _lock_for_finalize(
-        db, await _get_owned_recording(db, recording_id, current_user.id)
-    )
-
-    if recording.status in _FINALIZED_STATUSES:
-        return serialize_recording(recording, has_proxy=_recording_has_proxy(recording))
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
     if recording.status != RecordingStatus.UPLOADING:
-        raise HTTPException(
-            status_code=400, detail="Recording is not in uploading state"
-        )
+        return _answer_unclaimable_finalize(recording)
 
     await _sync_recording_audio_chunks_from_directory(
         db,
@@ -463,96 +560,46 @@ async def finalize_chunked_import(
             detail="Recording upload is still in progress; finalize after all segment uploads complete.",
         )
 
-    try:
-        segment_paths = [row.storage_path for row in chunk_rows]
-        concatenate_binary_files(segment_paths, recording.audio_path)
-
-        recording.audio_path = (
-            await asyncio.to_thread(keep_imported_audio, recording.audio_path)
-        ).path
-        recording.proxy_path = get_initial_proxy_path(recording.audio_path)
-
-        file_stats = os.stat(recording.audio_path)
-        recording.file_size_bytes = file_stats.st_size
-
-        # Get duration
+    if not await _claim_for_finalize(db, recording):
+        await db.rollback()
         try:
-            recording.duration_seconds = get_audio_duration(recording.audio_path)
-        except Exception as e:  # noqa: BLE001
-            logger.warning(f"Failed to get duration: {e}")
+            await db.refresh(recording)
+        except InvalidRequestError:
+            # Another finalize refused the import and removed it meanwhile.
+            raise HTTPException(status_code=404, detail="Recording not found")
+        return _answer_unclaimable_finalize(recording)
+    await db.commit()
 
-        await db.execute(
-            delete(RecordingAudioChunk)
-            .where(RecordingAudioChunk.recording_id == recording.id)
-            .where(RecordingAudioChunk.source_kind == "import_part")
-        )
-        await db.execute(
-            delete(RecordingAudioWindowManifest)
-            .where(RecordingAudioWindowManifest.recording_id == recording.id)
-            .where(RecordingAudioWindowManifest.source_kind == "import_part")
-        )
-        await _bootstrap_import_audio_windows(
-            db,
-            recording_id=recording.id,
-            audio_path=recording.audio_path,
-        )
+    source_path = recording.audio_path
+    segment_paths = [row.storage_path for row in chunk_rows]
+    try:
+        concatenate_binary_files(segment_paths, source_path)
+        kept_path = (await asyncio.to_thread(keep_imported_audio, source_path)).path
     except ImportRefusedError as exc:
         # Refused like /import and /upload: nothing of the upload is kept, so
         # no failed recording is left in the library.
         await _discard_chunked_import(db, recording)
         raise HTTPException(status_code=exc.status_code, detail=exc.detail)
+    except Exception as e:  # noqa: BLE001
+        raise await _fail_chunked_finalize(db, recording, source_path, e)
+
+    try:
+        await _store_finalized_import(db, recording, kept_path)
     except HTTPException as exc:
+        await db.rollback()
+        await db.refresh(recording)
         recordings_module.delete_recording_artifacts(
             recording_id=recording.id,
-            audio_path=recording.audio_path,
+            audio_path=kept_path,
             proxy_path=None,
             logger=logger,
         )
         await _mark_recording_upload_error(db, recording, str(exc.detail))
         raise
     except Exception as e:  # noqa: BLE001
-        failed_root: Path | None = None
-        try:
-            failed_root = recordings_module.move_recording_upload_to_failed(
-                recording.id, logger=logger
-            )
-        except Exception as move_error:  # noqa: BLE001
-            logger.error(
-                f"Failed to move failed chunked upload to failed dir: {move_error}"
-            )
-
-        await _mark_recording_audio_chunks_failed(
-            db,
-            recording_id=recording.id,
-            failed_root=failed_root,
-        )
-        await db.commit()
-
-        recordings_module.delete_recording_artifacts(
-            recording_id=recording.id,
-            audio_path=recording.audio_path,
-            proxy_path=None,
-            logger=logger,
-        )
-
-        raise sanitized_http_exception(
-            logger=logger,
-            status_code=500,
-            client_message=(
-                _EXTRACTION_SERVER_FAILURE
-                if isinstance(e, ImportServerError)
-                else "Failed to finalize the uploaded recording."
-            ),
-            log_message=f"Failed to finalize chunked import for recording {recording_id}.",
-            exc=e,
-        )
-
-    recording.status = RecordingStatus.QUEUED
-    recording.client_status = ClientStatus.IDLE
-
-    db.add(recording)
-    await db.commit()
-    await db.refresh(recording)
+        await db.rollback()
+        await db.refresh(recording)
+        raise await _fail_chunked_finalize(db, recording, kept_path, e)
 
     task = await dispatch_task(
         "backend.worker.tasks.process_recording_task", args=[recording.id]

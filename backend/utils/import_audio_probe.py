@@ -6,7 +6,10 @@ Kept apart from the extraction in ``import_audio`` so each stays readable.
 from __future__ import annotations
 
 import json
+import signal
 import subprocess
+import tempfile
+import threading
 from typing import Any
 
 from backend.utils.audio import ensure_ffmpeg_in_path
@@ -25,17 +28,37 @@ PROBE_ENTRIES = (
 _TAIL_WINDOW_S = 30.0
 
 
+# Signals that end ffmpeg or ffprobe from outside: the OOM killer or a timeout
+# (SIGKILL), a disk quota (SIGXFSZ), a container stopping (SIGTERM). Any other
+# signal, such as SIGSEGV or SIGABRT, is the tool crashing on the file.
+SERVER_SIGNALS = frozenset({signal.SIGKILL, signal.SIGXFSZ, signal.SIGTERM})
+
+
 class ToolFailure(Exception):
     """ffprobe or ffmpeg did not finish for a reason on the server's side.
 
-    It could not be started, ran past its timeout, or was killed by a signal
-    (an out-of-memory kill, or SIGXFSZ when the disk quota is reached). It says
-    nothing about the file.
+    It could not be started, ran past its timeout, or was ended by one of
+    ``SERVER_SIGNALS``. It says nothing about the file.
     """
 
 
 class UnreadableMediaError(RuntimeError):
-    """ffprobe ran to completion but could not read the file."""
+    """ffprobe could not read the file: it exited with an error or crashed."""
+
+
+def killed_by_server_signal(returncode: int) -> bool:
+    """The process was ended by one of ``SERVER_SIGNALS``."""
+    return returncode < 0 and -returncode in SERVER_SIGNALS
+
+
+def _failure(returncode: int, stderr: bytes, path: str) -> Exception:
+    """The exception for ffprobe exiting with ``returncode`` on ``path``."""
+    message = stderr.decode(errors="replace").strip()
+    if killed_by_server_signal(returncode):
+        return ToolFailure(f"ffprobe was ended ({returncode}) on {path}: {message}")
+    return UnreadableMediaError(
+        f"ffprobe could not read {path} ({returncode}): {message}"
+    )
 
 
 def run_ffprobe(arguments: list[str], path: str, *, timeout: float) -> dict[str, Any]:
@@ -50,10 +73,7 @@ def run_ffprobe(arguments: list[str], path: str, *, timeout: float) -> dict[str,
     try:
         result = subprocess.run(cmd, capture_output=True, check=True, timeout=timeout)
     except subprocess.CalledProcessError as exc:
-        stderr = (exc.stderr or b"").decode(errors="replace").strip()
-        if exc.returncode < 0:
-            raise ToolFailure(f"ffprobe was killed on {path}: {stderr}") from exc
-        raise UnreadableMediaError(f"ffprobe could not read {path}: {stderr}") from exc
+        raise _failure(exc.returncode, exc.stderr or b"", path) from exc
     except (subprocess.TimeoutExpired, OSError) as exc:
         raise ToolFailure(f"ffprobe did not finish on {path}: {exc}") from exc
     try:
@@ -169,8 +189,10 @@ def track_span(
     video's length (AVI). Reads the first packet and the last
     ``_TAIL_WINDOW_S`` before ``reported_end``. When no packet lands in that
     window, or no end is reported (an MKV whose recorder never finalised it),
-    the whole stream is read, bounded by ``timeout``. None when the stream has
-    no timed packets.
+    the whole stream is read, bounded by ``timeout``. ffprobe's output is read
+    line by line and only the first start and the latest end are kept, so a
+    full read of a long recording needs no more memory than a short one. None
+    when the stream has no timed packets.
 
     Raises:
         ToolFailure, UnreadableMediaError: as ``run_ffprobe``.
@@ -180,31 +202,55 @@ def track_span(
     if reported_end is not None:
         window_start = max(0.0, reported_end - _TAIL_WINDOW_S)
         intervals = ["-read_intervals", f"%+#1,{window_start:.3f}%"]
-        tail = run_ffprobe([*arguments, *intervals], path, timeout=PROBE_TIMEOUT_S)
-        span = _packet_span(tail, window_start=window_start)
-        if span is not None:
-            return span
-    return _packet_span(
-        run_ffprobe(arguments, path, timeout=timeout), window_start=None
-    )
-
-
-def _packet_span(data: dict, *, window_start: float | None) -> float | None:
-    """The span of the listed packets; None if none reaches ``window_start``."""
-    first: float | None = None
-    end: float | None = None
-    for packet in data.get("packets") or []:
-        at = seconds(packet.get("pts_time"))
-        if at is None:
-            at = seconds(packet.get("dts_time"))
-        if at is None:
-            continue
-        if first is None:
-            first = at
-        finish = at + (seconds(packet.get("duration_time")) or 0.0)
-        end = finish if end is None else max(end, finish)
+        first, end = _packet_bounds([*arguments, *intervals], path, PROBE_TIMEOUT_S)
+        if first is not None and end is not None and end >= window_start:
+            return end - first
+    first, end = _packet_bounds(arguments, path, timeout)
     if first is None or end is None:
         return None
-    if window_start is not None and end < window_start:
-        return None
     return end - first
+
+
+def _packet_bounds(
+    arguments: list[str], path: str, timeout: float
+) -> tuple[float | None, float | None]:
+    """The first packet's start and the latest packet end ffprobe lists."""
+    ensure_ffmpeg_in_path()
+    cmd = ["ffprobe", "-v", "error", *arguments, "-of", "csv=p=0", path]
+    first: float | None = None
+    end: float | None = None
+    with tempfile.TemporaryFile() as stderr:
+        try:
+            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=stderr)
+        except OSError as exc:
+            raise ToolFailure(f"ffprobe could not be started: {exc}") from exc
+        # SIGKILL on timeout, which _failure reports as a server-side failure.
+        watchdog = threading.Timer(timeout, process.kill)
+        watchdog.start()
+        try:
+            with process:
+                for line in process.stdout or ():
+                    at, finish = _packet_times(line)
+                    if at is None:
+                        continue
+                    if first is None:
+                        first = at
+                    end = finish if end is None else max(end, finish)
+        finally:
+            watchdog.cancel()
+        if process.returncode != 0:
+            stderr.seek(0)
+            raise _failure(process.returncode, stderr.read(), path)
+    return first, end
+
+
+def _packet_times(line: bytes) -> tuple[float | None, float]:
+    """A csv packet line's start (pts, else dts) and end."""
+    fields = line.decode(errors="replace").strip().split(",")
+    fields += [""] * (3 - len(fields))
+    at = seconds(fields[0])
+    if at is None:
+        at = seconds(fields[1])
+    if at is None:
+        return None, 0.0
+    return at, at + (seconds(fields[2]) or 0.0)

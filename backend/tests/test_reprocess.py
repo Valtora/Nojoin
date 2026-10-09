@@ -2129,6 +2129,15 @@ async def test_a_server_failure_while_finalizing_keeps_the_parts_for_recovery(
     assert [path.name for path in kept] == ["0.part"]
     assert "failed" in kept[0].relative_to(recordings_dir).parts
     assert kept[0].read_bytes() == source.read_bytes()
+    # Not left claimed: the library shows the failure and what to do.
+    async with test_session_maker() as session:
+        status, step = (
+            await session.execute(
+                text("SELECT status, processing_step FROM recordings")
+            )
+        ).one()
+    assert status == "ERROR"
+    assert step == routes_import_upload._CHUNKED_SERVER_FAILURE_STEP
 
 
 async def _start_chunked_import(client: AsyncClient, source: Path) -> str:
@@ -2182,16 +2191,28 @@ async def test_finalize_again_returns_the_import_without_redoing_it(
 
 @pytest.mark.anyio
 @pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg is not installed")
+@pytest.mark.parametrize(
+    ("other_state", "expected"),
+    [
+        # The other finalize has finished: this one returns its recording.
+        ("status = 'QUEUED'", 200),
+        # The other finalize holds the claim: this one says so at once.
+        ("status = 'RECORDED', processing_step = 'Finalizing import'", 409),
+    ],
+    ids=["other-finished", "other-running"],
+)
 async def test_a_finalize_that_lost_the_race_does_not_extract_again(
     client: AsyncClient,
     test_session_maker: sessionmaker,
     monkeypatch,
     tmp_path: Path,
+    other_state: str,
+    expected: int,
 ) -> None:
-    """Finalize re-reads the row under its lock before acting on the status.
+    """Only the finalize whose conditional claim matches extracts.
 
-    Here another finalize completes between this one's first read and its
-    lock, as it does on PostgreSQL when the second call waits on the row lock.
+    Here another finalize moves the row between this one's first read and
+    its claim, so the claim matches nothing.
     """
     from backend.api.v1.endpoints.recordings import routes_import_upload
     from backend.utils import import_audio
@@ -2215,7 +2236,7 @@ async def test_a_finalize_that_lost_the_race_does_not_extract_again(
         recording = await real_get(db, public_id, user_id, **kwargs)
         async with test_session_maker() as other:
             await other.execute(
-                text("UPDATE recordings SET status = 'QUEUED' WHERE id = :id"),
+                text(f"UPDATE recordings SET {other_state} WHERE id = :id"),
                 {"id": recording.id},
             )
             await other.commit()
@@ -2228,10 +2249,43 @@ async def test_a_finalize_that_lost_the_race_does_not_extract_again(
 
     response = await _finalize(client, recording_id)
 
-    assert response.status_code == 200, response.text
-    assert response.json()["status"] == "QUEUED"
+    assert response.status_code == expected, response.text
+    if expected == 200:
+        assert response.json()["status"] == "QUEUED"
+    else:
+        assert response.json()["detail"]["code"] == "import_finalizing"
     assert extractions == []
     assert calls == []
+
+
+@pytest.mark.anyio
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg is not installed")
+async def test_upload_keeps_lossless_audio_lossless_and_skips_the_floor(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """WavPack reports no bit rate in MKV; as FLAC it is lossless, not "lossy
+    audio whose bitrate cannot be verified"."""
+    from backend.api.v1.endpoints.recordings import routes_import_upload
+
+    source = tmp_path / "field-recorder.mkv"
+    _screen_recording(source, ["-c:a", "wavpack"])
+    recordings_dir = tmp_path / "recordings"
+    recordings_dir.mkdir()
+    calls = _patch_delay(monkeypatch)
+    monkeypatch.setenv("RECORDINGS_DIR", str(recordings_dir))
+    monkeypatch.setattr(
+        routes_import_upload, "enforce_upload_concurrency", _no_upload_limit
+    )
+
+    response = await _post_upload(client, "upload", source, "field-recorder.mkv")
+
+    assert response.status_code == 200, response.text
+    audio_path, _, _ = await _stored_recording(test_session_maker)
+    assert audio_path.endswith(".flac")
+    assert len(calls) == 1
 
 
 def _has_encoder(name: str) -> bool:

@@ -27,6 +27,7 @@ from backend.utils.import_audio_probe import (
     decoded_audio_stream,
     has_audio,
     is_empty_track,
+    killed_by_server_signal,
     probe_streams,
     seconds,
     track_end,
@@ -60,10 +61,14 @@ _STREAM_COPY_SUFFIXES = {
     "flac": ".flac",
 }
 
-# Any other codec is re-encoded. PCM becomes FLAC: lossless, about 40% of the
-# WAV's size, and free of WAV's 4 GiB limit. Anything else (MP2, AC-3, AMR,
-# DTS, ...) becomes what browser capture stores: Opus at 160 kb/s in WebM.
+# Any other codec is re-encoded. PCM and the other lossless codecs become FLAC:
+# still lossless, about 40% of a WAV's size, and free of WAV's 4 GiB limit.
+# Anything else (MP2, AC-3, AMR, DTS, ...) becomes what browser capture stores:
+# Opus at 160 kb/s in WebM.
 _PCM_CODEC_PREFIX = "pcm_"
+_LOSSLESS_CODECS = frozenset(
+    {"wavpack", "tta", "truehd", "mlp", "ape", "tak", "wmalossless"}
+)
 _REENCODE_SUFFIX = ".webm"
 _REENCODE_OPUS_BITRATE = "160k"
 # libopus refuses some surround layouts, such as the 5.1(side) cameras write,
@@ -73,10 +78,12 @@ _OPUS_MAX_CHANNELS = 2
 _FLAC_MAX_CHANNELS = 8
 _DOWNMIX_CHANNELS = "2"
 
-# How far the extracted audio's length may differ from the source track's
-# before the extraction counts as failed: whichever of these is larger.
+# How much shorter than the source track the extracted audio may be before the
+# extraction counts as failed: whichever of these is larger. Both sides are
+# measured from packets, which agree to within 0.1 s on every file probed; the
+# 1 s floor covers a last packet that reports no duration.
 _DURATION_TOLERANCE_S = 1.0
-_DURATION_TOLERANCE_RATIO = 0.01
+_DURATION_TOLERANCE_RATIO = 0.001
 
 # ffmpeg error text that points at the server rather than at the file.
 _SERVER_FAULT_MARKERS = (
@@ -165,6 +172,16 @@ class _OutputPlan(NamedTuple):
     suffix: str
     codec_arguments: list[str]
     reencodes_lossy: bool
+    # The codec the output must hold; None to accept what ffmpeg wrote.
+    copies_codec: str | None = None
+
+
+class _CopyChangedCodec(RuntimeError):
+    """A stream copy holds another codec than the track was reported as.
+
+    MP4 and MOV label MPEG-1 Layer II audio "mp3", so a copy into ``.mp3``
+    would store MP2 frames, which browsers do not play as MP3.
+    """
 
 
 def keep_imported_audio(source_path: str) -> KeptAudio:
@@ -210,8 +227,7 @@ def keep_imported_audio(source_path: str) -> KeptAudio:
     if not is_container and not _carries_video(streams):
         return KeptAudio(source_path)
 
-    plan = _output_plan(track)
-    extracted = _extract_audio_track(source_path, track, probe, plan)
+    extracted, plan = _extract_audio_track(source_path, track, probe)
     try:
         os.remove(source_path)
     except OSError as exc:
@@ -258,12 +274,18 @@ def _output_plan(track: dict) -> _OutputPlan:
     channels = int(track.get("channels") or 0)
     copy_suffix = _STREAM_COPY_SUFFIXES.get(codec)
     if copy_suffix is not None:
-        return _OutputPlan(copy_suffix, ["-c:a", "copy"], reencodes_lossy=False)
-    if codec.startswith(_PCM_CODEC_PREFIX):
+        return _OutputPlan(
+            copy_suffix, ["-c:a", "copy"], reencodes_lossy=False, copies_codec=codec
+        )
+    if codec.startswith(_PCM_CODEC_PREFIX) or codec in _LOSSLESS_CODECS:
         arguments = ["-c:a", "flac"]
         if channels > _FLAC_MAX_CHANNELS:
             arguments += ["-ac", _DOWNMIX_CHANNELS]
         return _OutputPlan(".flac", arguments, reencodes_lossy=False)
+    return _opus_plan(channels)
+
+
+def _opus_plan(channels: int) -> _OutputPlan:
     arguments = ["-c:a", "libopus", "-b:a", _REENCODE_OPUS_BITRATE]
     if channels > _OPUS_MAX_CHANNELS:
         arguments += ["-ac", _DOWNMIX_CHANNELS]
@@ -271,19 +293,40 @@ def _output_plan(track: dict) -> _OutputPlan:
 
 
 def _extract_audio_track(
+    source_path: str, track: dict, probe: dict
+) -> tuple[str, _OutputPlan]:
+    """Write ``track`` to a new audio-only file; return it and how it was made.
+
+    A copy that turns out to hold another codec than reported is redone as an
+    Opus re-encode (see ``_CopyChangedCodec``).
+
+    Raises:
+        AudioExtractionError, ImportServerError: as ``_write_audio_track``.
+    """
+    plan = _output_plan(track)
+    try:
+        return _write_audio_track(source_path, track, probe, plan), plan
+    except _CopyChangedCodec as exc:
+        logger.info("Re-encoding instead of copying: %s", exc)
+    plan = _opus_plan(int(track.get("channels") or 0))
+    return _write_audio_track(source_path, track, probe, plan), plan
+
+
+def _write_audio_track(
     source_path: str, track: dict, probe: dict, plan: _OutputPlan
 ) -> str:
-    """Write ``track`` of ``source_path`` to a new audio-only file; return it.
+    """Write ``track`` of ``source_path`` to a new file by ``plan``; return it.
 
     The output starts at zero (``-avoid_negative_ts make_zero``), so a track
     that started late is stored without the leading gap and its duration is
     its length.
 
     Raises:
-        AudioExtractionError: ffmpeg rejected the input, or the new file did
-            not verify.
+        AudioExtractionError: ffmpeg rejected or crashed on the input, or the
+            new file did not verify.
         ImportServerError: a failure on the server's side.
-        The new file is removed either way.
+        _CopyChangedCodec: see the class.
+        The new file is removed in every case.
     """
     target = str(Path(source_path).with_name(f"{uuid4()}{plan.suffix}"))
     cmd = ["ffmpeg", "-nostdin", "-y", "-v", "error", "-i", source_path]
@@ -292,7 +335,10 @@ def _extract_audio_track(
     ensure_ffmpeg_in_path()
     try:
         subprocess.run(cmd, check=True, capture_output=True, timeout=EXTRACT_TIMEOUT_S)
-        _verify_extracted_audio(target, source_path, track, probe)
+        _verify_extracted_audio(target, source_path, track, probe, plan)
+    except _CopyChangedCodec:
+        _remove_quietly(target)
+        raise
     except (ToolFailure, subprocess.SubprocessError, OSError, RuntimeError) as exc:
         _remove_quietly(target)
         message = f"Could not extract the audio of {source_path}: {_reason(exc)}"
@@ -315,26 +361,30 @@ def _is_server_fault(exc: BaseException) -> bool:
     if isinstance(exc, (ToolFailure, subprocess.TimeoutExpired, OSError)):
         return True
     if isinstance(exc, subprocess.CalledProcessError):
-        # Killed by a signal: SIGXFSZ at a disk quota, SIGKILL from the OOM killer.
-        return exc.returncode < 0 or any(
-            marker in _reason(exc) for marker in _SERVER_FAULT_MARKERS
+        # A crash on the file (SIGSEGV, SIGABRT) is the file's fault.
+        return killed_by_server_signal(exc.returncode) or (
+            exc.returncode > 0
+            and any(marker in _reason(exc) for marker in _SERVER_FAULT_MARKERS)
         )
     return False
 
 
 def _verify_extracted_audio(
-    target: str, source_path: str, track: dict, probe: dict
+    target: str, source_path: str, track: dict, probe: dict, plan: _OutputPlan
 ) -> None:
     """Check ``target`` is one audio track that holds all of the source track.
 
     Both lengths are measured the same way, from the packets (``track_span``),
-    so a late start or a header that counts the video does not count. When the
-    source track has no timed packets there is nothing to compare, and only the
-    output is checked.
+    so a late start or a header that counts the video does not count. Only a
+    shorter output is refused: a longer one has lost nothing, and the source's
+    span can undercount (a last WavPack block without a duration, concatenated
+    MPEG-TS whose timestamps restart). When the source track has no timed
+    packets there is nothing to compare, and only the output is checked.
 
     Raises:
+        _CopyChangedCodec: see the class.
         RuntimeError: it is not one audio track, holds no audio or is shorter
-            or longer than the source track.
+            than the source track.
         ToolFailure, UnreadableMediaError: ffprobe could not measure a file.
     """
     out = probe_streams(target)
@@ -345,6 +395,11 @@ def _verify_extracted_audio(
         or not has_audio(streams[0])
     ):
         raise RuntimeError(f"{target} is not a single audio track")
+    written = streams[0].get("codec_name")
+    if plan.copies_codec is not None and written != plan.copies_codec:
+        raise _CopyChangedCodec(
+            f"{source_path}: {plan.copies_codec} copied as {written}"
+        )
     out_span = track_span(
         target,
         int(streams[0]["index"]),
@@ -365,7 +420,7 @@ def _verify_extracted_audio(
         )
         return
     tolerance = max(_DURATION_TOLERANCE_S, source_span * _DURATION_TOLERANCE_RATIO)
-    if abs(out_span - source_span) > tolerance:
+    if out_span < source_span - tolerance:
         raise RuntimeError(
             f"{target} runs {out_span:.2f} s where the source track runs "
             f"{source_span:.2f} s"

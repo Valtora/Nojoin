@@ -19,9 +19,12 @@ from sqlmodel import Session, create_engine
 
 from backend.models import registry  # noqa: F401 -- resolve the mapper graph
 from backend.utils.recording_storage import (
+    FINALIZING_IMPORT_STEP,
+    STALE_FINALIZE_CLAIM_DETAIL,
     cleanup_orphaned_uploading_recordings,
     probe_recordings_storage,
     recording_upload_temp_dir,
+    release_stale_finalize_claims,
 )
 
 RECORDINGS_SCHEMA = """
@@ -282,3 +285,41 @@ def test_reaper_ignores_recordings_past_the_uploading_state(
 
     assert reaped == 0
     assert _is_deleted(engine, 6) is False
+
+
+def test_a_finalize_claim_a_crash_left_is_released(storage_root: Path) -> None:
+    """Only a claim older than any finalize can take is released, and only a
+    claim: a RECORDED row without the finalize step is left alone."""
+    engine = _make_engine()
+    with engine.begin() as connection:
+        for recording_id, claimed_at, step in (
+            (1, _NOW - timedelta(hours=3), FINALIZING_IMPORT_STEP),
+            (2, _NOW - timedelta(minutes=30), FINALIZING_IMPORT_STEP),
+            (3, _NOW - timedelta(hours=3), None),
+        ):
+            _insert_recording(
+                connection,
+                recording_id=recording_id,
+                status="RECORDED",
+                created_at=claimed_at,
+            )
+            connection.execute(
+                text("UPDATE recordings SET processing_step = :step WHERE id = :id"),
+                {"step": step, "id": recording_id},
+            )
+
+    with Session(engine) as session:
+        released = release_stale_finalize_claims(
+            session, logger=logging.getLogger(__name__), now=_NOW
+        )
+
+    assert released == 1
+    with Session(engine) as session:
+        rows = session.execute(
+            text("SELECT id, status, processing_step FROM recordings ORDER BY id")
+        ).all()
+    assert [tuple(row) for row in rows] == [
+        (1, "ERROR", STALE_FINALIZE_CLAIM_DETAIL),
+        (2, "RECORDED", FINALIZING_IMPORT_STEP),
+        (3, "RECORDED", None),
+    ]

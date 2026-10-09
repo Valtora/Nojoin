@@ -10,6 +10,7 @@ from pathlib import Path
 from sqlmodel import select
 
 from backend.models.pipeline import RecordingAudioChunk
+from backend.models.recording import ClientStatus, Recording, RecordingStatus
 from backend.utils.time import utc_now
 
 RECORDING_UPLOAD_RETENTION_HOURS = 24
@@ -253,6 +254,63 @@ def cleanup_recording_audio_chunks(
         session.commit()
 
     return cleaned_count
+
+
+# A chunked import being finalized is claimed by moving it from UPLOADING to
+# RECORDED (the model's default status, assigned by nothing else and swept by
+# nothing) with this step, before its audio is extracted outside any
+# transaction. The step tells the claim apart from a RECORDED row of any other
+# origin.
+FINALIZING_IMPORT_STEP = "Finalizing import"
+IMPORT_FINALIZING_CODE = "import_finalizing"
+STALE_FINALIZE_CLAIM_DETAIL = (
+    "This import was interrupted before its audio was kept. Delete this "
+    "recording and import the file again."
+)
+FINALIZING_IMPORT_STATUS = RecordingStatus.RECORDED
+
+
+def is_finalizing_import(status, processing_step: str | None) -> bool:
+    """The recording is claimed by a chunked-import finalize."""
+    return (
+        status == FINALIZING_IMPORT_STATUS and processing_step == FINALIZING_IMPORT_STEP
+    )
+
+
+def release_stale_finalize_claims(
+    session,
+    *,
+    logger: logging.Logger,
+    max_age_hours: int = 2,
+    now: datetime | None = None,
+) -> int:
+    """Mark ERROR the chunked imports a crashed finalize left claimed.
+
+    A finalize claims its import, extracts the audio and then queues it, all
+    within one request bounded by ffmpeg timeouts of minutes. A claim older
+    than ``max_age_hours`` has no request left behind it: the process died
+    mid-extraction. Its parts stay in the upload temp directory for the usual
+    sweep, and the recording says what happened instead of looking busy.
+    """
+    cutoff = (now or utc_now()) - timedelta(hours=max_age_hours)
+    stale = session.exec(
+        select(Recording)
+        .where(Recording.status == FINALIZING_IMPORT_STATUS)
+        .where(Recording.processing_step == FINALIZING_IMPORT_STEP)
+        .where(Recording.updated_at <= cutoff)
+    ).all()
+    for recording in stale:
+        recording.status = RecordingStatus.ERROR
+        recording.client_status = ClientStatus.IDLE
+        recording.processing_step = STALE_FINALIZE_CLAIM_DETAIL
+        session.add(recording)
+        logger.warning(
+            "Released the finalize claim on recording %s, interrupted mid-import",
+            recording.id,
+        )
+    if stale:
+        session.commit()
+    return len(stale)
 
 
 def cleanup_orphaned_uploading_recordings(

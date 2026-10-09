@@ -127,6 +127,7 @@ from backend.utils.recording_storage import (
     cleanup_recording_audio_chunks,
     cleanup_stale_recording_artifacts,
     mark_recording_audio_chunks_ready_for_cleanup,
+    release_stale_finalize_claims,
 )
 from backend.utils.rolling_diarization import (
     build_diarization_window_payload,

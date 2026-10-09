@@ -21,6 +21,7 @@ def cleanup_temp_recordings(self):
     cleaned_count += cleanup_orphaned_uploading_recordings(
         self.session, logger=logger, max_age_hours=24
     )
+    cleaned_count += release_stale_finalize_claims(self.session, logger=logger)
 
     logger.info(f"Cleanup complete. Removed {cleaned_count} items.")
 

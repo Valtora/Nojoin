@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import resource
 import shutil
+import signal
 import subprocess
 from pathlib import Path
 
@@ -468,4 +469,142 @@ def test_an_upload_that_cannot_be_removed_leaves_no_extracted_copy(
     with pytest.raises(ImportServerError):
         keep_imported_audio(str(source))
 
+    assert sorted(tmp_path.iterdir()) == [source]
+
+
+@needs_ffmpeg
+def test_a_source_whose_packets_undercount_is_not_refused(tmp_path: Path) -> None:
+    """WavPack's last block in MKV reports no duration, so the source's span
+    runs about a second short of the correct output; only a shorter output
+    is refused. WavPack is lossless and is kept as FLAC."""
+    source = tmp_path / "recorder.mkv"
+    _ffmpeg(
+        *["-f", "lavfi", "-i", "testsrc=size=64x64:rate=25:duration=10"],
+        *["-f", "lavfi", "-i", "sine=duration=10:sample_rate=48000"],
+        *["-c:v", "mpeg4", "-c:a", "wavpack", "-shortest", str(source)],
+    )
+
+    kept = keep_imported_audio(str(source))
+
+    assert kept.path.endswith(".flac")
+    assert not kept.reencoded_from_lossy
+    assert get_audio_duration(kept.path) == pytest.approx(10.0, abs=0.1)
+
+
+@needs_ffmpeg
+def test_concatenated_mpeg_ts_clips_are_kept_whole(tmp_path: Path) -> None:
+    """``cat a.ts b.ts``: ffmpeg mends the restarting timestamps, ffprobe does
+    not, so the source looks half as long as the correct output."""
+    clips = []
+    for name in ("a.ts", "b.ts"):
+        clip = tmp_path / name
+        _ffmpeg(*_VIDEO, *_TONE, "-c:v", "mpeg4", "-c:a", "aac", str(clip))
+        clips.append(clip)
+    source = tmp_path / "joined.ts"
+    source.write_bytes(b"".join(clip.read_bytes() for clip in clips))
+
+    stored = keep_imported_audio(str(source)).path
+
+    assert get_audio_duration(stored) == pytest.approx(4.0, abs=0.2)
+
+
+@needs_ffmpeg
+def test_ten_minutes_losing_four_seconds_is_refused(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The tolerance is max(1 s, 0.1%): 0.6 s on ten minutes, so a 4 s loss
+    is caught (at 1% it would pass)."""
+    source = tmp_path / "long.mka"
+    _ffmpeg(
+        *["-f", "lavfi", "-i", "sine=duration=600:sample_rate=16000"],
+        *["-c:a", "aac", "-b:a", "32k", str(source)],
+    )
+    monkeypatch.setattr(
+        import_audio,
+        "_output_plan",
+        lambda track: import_audio._OutputPlan(
+            ".m4a", ["-c:a", "copy", "-t", "596"], reencodes_lossy=False
+        ),
+    )
+
+    with pytest.raises(AudioExtractionError, match="source track runs 600"):
+        keep_imported_audio(str(source))
+
+
+@needs_ffmpeg
+def test_mp2_labelled_mp3_in_mp4_is_re_encoded_not_stored_as_mp3(
+    tmp_path: Path,
+) -> None:
+    """ffprobe names MPEG-1 Layer II in MP4 "mp3"; copied into ``.mp3`` it
+    would hold MP2 frames, so it goes down the Opus path instead."""
+    source = tmp_path / "camera.mp4"
+    _ffmpeg(
+        *_VIDEO, *_TONE, "-c:v", "mpeg4", "-c:a", "mp2", "-b:a", "192k", str(source)
+    )
+
+    kept = keep_imported_audio(str(source))
+
+    assert kept.path.endswith(".webm")
+    assert kept.reencoded_from_lossy
+    assert [s["codec_name"] for s in _streams(kept.path)] == ["opus"]
+    assert sorted(tmp_path.iterdir()) == [Path(kept.path)]
+
+
+@needs_ffmpeg
+def test_a_truncated_file_with_intact_tags_is_measured_by_a_full_read(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Its tags say 120 s, its packets stop near 40 s: the tail window finds
+    nothing, so the whole stream is read and a short extraction is caught."""
+    full = tmp_path / "full.mka"
+    _ffmpeg(
+        *["-f", "lavfi", "-i", "sine=duration=120:sample_rate=16000"],
+        *["-c:a", "aac", "-b:a", "32k", str(full)],
+    )
+    source = tmp_path / "cut.mka"
+    data = full.read_bytes()
+    source.write_bytes(data[: len(data) // 3])
+    full.unlink()
+    _cut_extraction_short(monkeypatch)
+
+    with pytest.raises(AudioExtractionError, match="where the source track runs"):
+        keep_imported_audio(str(source))
+
+
+def _fail_with_signal(monkeypatch: pytest.MonkeyPatch, tool: str, signum: int) -> None:
+    real_run = subprocess.run
+
+    def run(cmd, **kwargs):
+        if cmd[0] == tool:
+            raise subprocess.CalledProcessError(-signum, cmd, stderr=b"")
+        return real_run(cmd, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", run)
+
+
+@needs_ffmpeg
+@pytest.mark.parametrize("tool", ["ffprobe", "ffmpeg"])
+@pytest.mark.parametrize(
+    ("signum", "error"),
+    [
+        (signal.SIGSEGV, AudioExtractionError),
+        (signal.SIGABRT, AudioExtractionError),
+        (signal.SIGKILL, ImportServerError),
+        (signal.SIGXFSZ, ImportServerError),
+    ],
+    ids=["segv", "abort", "kill", "xfsz"],
+)
+def test_a_crash_is_the_files_fault_and_a_kill_is_the_servers(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    tool: str,
+    signum: int,
+    error: type,
+) -> None:
+    source = tmp_path / "screen.mkv"
+    _ffmpeg(*_SCREEN, str(source))
+    _fail_with_signal(monkeypatch, tool, signum)
+
+    with pytest.raises(error):
+        keep_imported_audio(str(source))
     assert sorted(tmp_path.iterdir()) == [source]
