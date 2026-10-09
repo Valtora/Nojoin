@@ -621,15 +621,21 @@ def _reassemble_and_keep(segment_paths: list[str], source_path: str) -> _KeptImp
     """Reassemble the parts and keep their audio. Blocking: run it off the loop.
 
     Every step but the reassembly, which is disk-bound, is under a timeout.
+    The duration is optional, as on /import and /upload. If anything fails
+    once the audio is kept, the kept file is removed: no caller knows it yet.
     """
     concatenate_binary_files(segment_paths, source_path)
     kept_path = keep_imported_audio(source_path).path
-    duration: float | None = None
     try:
-        duration = get_audio_duration(kept_path, timeout=PROBE_TIMEOUT_S)
-    except RuntimeError as e:
-        logger.warning(f"Failed to get duration: {e}")
-    return _KeptImport(kept_path, os.stat(kept_path).st_size, duration)
+        duration: float | None = None
+        try:
+            duration = get_audio_duration(kept_path, timeout=PROBE_TIMEOUT_S)
+        except (RuntimeError, OSError) as e:
+            logger.warning(f"Failed to get duration: {e}")
+        return _KeptImport(kept_path, os.stat(kept_path).st_size, duration)
+    except BaseException:
+        _remove_upload(kept_path)
+        raise
 
 
 async def _store_finalized_import(

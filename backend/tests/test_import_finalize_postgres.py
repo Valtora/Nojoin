@@ -385,6 +385,57 @@ async def test_a_finalize_whose_claim_was_taken_over_leaves_the_new_owner_alone(
 
 
 @pytest.mark.anyio
+async def test_a_failed_duration_probe_does_not_fail_the_import(
+    pg, pg_client, monkeypatch, tmp_path: Path
+) -> None:
+    """The duration is optional: ffprobe failing to start (a fork error)
+    leaves a good extraction stored, as on /import and /upload."""
+    from backend.api.v1.endpoints.recordings import routes_import_upload
+
+    engine, _ = pg
+    recording_id, dispatches, _ = await _start(pg_client, monkeypatch, tmp_path)
+    _patch_keep(monkeypatch, _stub_keep)
+
+    def duration(path, timeout=None):
+        raise OSError(11, "Resource temporarily unavailable")
+
+    monkeypatch.setattr(routes_import_upload, "get_audio_duration", duration)
+    answer = await _finalize(pg_client, recording_id)
+
+    assert answer.status_code == 200, answer.text
+    assert answer.json()["status"] == "QUEUED"
+    assert (await _stored_audio(engine)).exists()
+    assert len(dispatches) == 1
+
+
+@pytest.mark.anyio
+async def test_a_failure_after_the_audio_is_kept_leaves_no_file(
+    pg, pg_client, monkeypatch, tmp_path: Path
+) -> None:
+    """The kept audio is known only inside the extraction, so it is removed
+    there; nothing is left for the failed import's deletion to miss."""
+    from backend.api.v1.endpoints.recordings import routes_import_upload
+
+    recording_id, dispatches, recordings_dir = await _start(
+        pg_client, monkeypatch, tmp_path
+    )
+    _patch_keep(monkeypatch, _stub_keep)
+
+    def duration(path, timeout=None):
+        raise TypeError("unexpected")
+
+    monkeypatch.setattr(routes_import_upload, "get_audio_duration", duration)
+    answer = await _finalize(pg_client, recording_id)
+    root_files = [path for path in recordings_dir.iterdir() if path.is_file()]
+    deleted = await pg_client.delete(f"/api/v1/recordings/{recording_id}")
+
+    assert answer.status_code == 500
+    assert root_files == []
+    assert deleted.status_code == 200
+    assert dispatches == []
+
+
+@pytest.mark.anyio
 async def test_a_finalize_that_outlives_the_stale_age_untaken_still_stores(
     pg, pg_client, monkeypatch, tmp_path: Path
 ) -> None:
