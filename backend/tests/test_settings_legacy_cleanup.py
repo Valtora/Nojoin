@@ -211,3 +211,16 @@ def test_save_values_reads_back_its_write_and_keeps_env_overrides_out(
         "llm_provider": "gemini",
         "whisper_model_size": "small",
     }
+
+
+def test_save_values_refuses_to_replace_a_file_it_cannot_parse(tmp_path, monkeypatch):
+    monkeypatch.setattr(ConfigManager, "_ensure_dirs_exist", lambda self, cfg: None)
+    path = tmp_path / "config.json"
+    path.write_text("{}", encoding="utf-8")
+    manager = ConfigManager(config_path=str(path))
+    path.write_text("{half an edit", encoding="utf-8")
+
+    with pytest.raises(ValueError):
+        manager.save_values({"whisper_model_size": "small"})
+
+    assert path.read_text(encoding="utf-8") == "{half an edit"
