@@ -363,6 +363,28 @@ def test_word_flip_unusable_limit_keeps_the_default():
     assert [seg["speaker"] for seg in result] == ["SPEAKER_00"]
 
 
+@pytest.mark.parametrize(("max_duration_s", "expected"), [(0.45, "A"), (0, "B")])
+def test_zero_word_flip_limit_leaves_even_a_zero_length_word(max_duration_s, expected):
+    """A zero-length word is no longer than a limit of 0, so only the explicit
+    off switch keeps it from being relabelled. combine_transcription_diarization
+    labels such a word UNKNOWN, so this drives the smoothing step directly."""
+    from backend.utils.transcript_utils import _smooth_isolated_word_speaker_flips
+
+    def _assignment(start: float, end: float, speaker: str) -> dict:
+        word = {"start": start, "end": end, "word": " w"}
+        return {"word": word, "speaker": speaker, "overlapping_speakers": []}
+
+    assignments = [
+        _assignment(0.0, 0.3, "A"),
+        _assignment(0.3, 0.3, "B"),
+        _assignment(0.3, 0.6, "A"),
+    ]
+
+    _smooth_isolated_word_speaker_flips(assignments, max_duration_s=max_duration_s)
+
+    assert assignments[1]["speaker"] == expected
+
+
 def test_segment_level_combination_ignores_tiny_secondary_overlap():
     transcription = {
         "segments": [

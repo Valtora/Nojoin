@@ -1478,6 +1478,40 @@ def test_live_in_order_run(monkeypatch, tmp_path):
     assert state["next_expected"] == 3
 
 
+def test_live_task_passes_the_owners_vad_threshold_to_vad(monkeypatch, tmp_path):
+    """The task hands the engine config, with the owner's threshold, to VAD."""
+    from backend.models.recording import RecordingStatus
+    from backend.processing import live_transcribe as lt
+    from backend.processing import vad as vad_module
+
+    temp_dir = tmp_path / "42"
+    temp_dir.mkdir()
+    monkeypatch.setattr(
+        lt, "recording_upload_temp_dir", lambda rid, create=False: temp_dir
+    )
+    audio_store = _patch_live_deps(
+        monkeypatch, speech_map=lambda audio: [{"start": 0.0, "end": 1.0}]
+    )
+    vad_configs: list = []
+
+    def _detect(audio, *args, config=None, **kwargs):
+        vad_configs.append(config)
+        return [{"start": 0.0, "end": 1.0}]
+
+    def _resolve(recording_id, live_config):
+        live_config["vad_threshold"] = 0.3
+        return live_config
+
+    monkeypatch.setattr(vad_module, "detect_speech_segments", _detect)
+    monkeypatch.setattr(lt, "_resolve_live_engine_config", _resolve)
+    session = _FakeSession(_FakeRecording(RecordingStatus.UPLOADING, _FakeTranscript()))
+
+    _make_segment_wav(temp_dir, 0, 2.0, audio_store)
+    _run_live_task(monkeypatch, 42, 0, session)
+
+    assert [config["vad_threshold"] for config in vad_configs] == [0.3]
+
+
 def test_live_out_of_order_arrival(monkeypatch, tmp_path):
     """seq=1 first returns without advancing; seq=0 drains the run [0,1]."""
     from backend.models.recording import RecordingStatus
