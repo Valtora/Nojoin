@@ -704,7 +704,14 @@ async def delete_model_endpoint(
     """
     del current_user
 
-    if model_name not in ["whisper", "pyannote", "embedding", "parakeet", "canary"]:
+    if model_name not in [
+        "whisper",
+        "pyannote",
+        "embedding",
+        "segmentation",
+        "parakeet",
+        "canary",
+    ]:
         raise HTTPException(status_code=400, detail="Invalid model name")
 
     try:

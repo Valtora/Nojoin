@@ -73,6 +73,16 @@ def test_deletion_is_dispatched_to_a_worker(delete_app):
     assert sent == [(DELETE_TASK, {"model_name": "whisper", "variant": "medium"})]
 
 
+def test_the_segmentation_model_can_be_deleted(delete_app):
+    """Model dependencies lists it with a Delete button like the others."""
+    app, sent, _ = delete_app
+
+    response = asyncio.run(_delete(app, "segmentation"))
+
+    assert response.status_code == 200
+    assert sent == [(DELETE_TASK, {"model_name": "segmentation", "variant": None})]
+
+
 def test_a_missing_model_is_reported_as_not_found(delete_app):
     app, _, box = delete_app
     box.task = _FakeTask({"status": "not_found", "message": "nope"})

@@ -2,6 +2,8 @@ import logging
 import os
 from typing import Optional
 
+from .model_cache_paths import whisper_cache_root
+
 logger = logging.getLogger(__name__)
 
 
@@ -19,10 +21,7 @@ def get_whisper_model_path(model_size: str) -> Optional[str]:
         # Extract the filename from the URL (last part after /)
         model_filename = model_url.split("/")[-1]
 
-        # Get the download root (default cache directory)
-        download_root = os.path.expanduser("~/.cache/whisper")
-
-        return os.path.join(download_root, model_filename)
+        return os.path.join(whisper_cache_root(), model_filename)
     except Exception as e:  # noqa: BLE001
         logger.error(f"Error getting model path for {model_size}: {e}")
         return None
@@ -59,37 +58,3 @@ WHISPER_MODEL_SIZES_MB = {
 def get_whisper_model_size_mb(model_size: str) -> Optional[float]:
     """Get the approximate size of a Whisper model in MB."""
     return WHISPER_MODEL_SIZES_MB.get(model_size)
-
-
-def check_default_model_availability() -> tuple[bool, str]:
-    """
-    Check if the default Whisper model is available locally.
-
-    Returns:
-        tuple: (is_available, model_size)
-    """
-    from ..utils.config_manager import config_manager
-
-    default_model = config_manager.get("whisper_model_size", "turbo")
-    is_available = is_whisper_model_downloaded(default_model)
-
-    logger.info(f"Default model '{default_model}' availability: {is_available}")
-    return is_available, default_model
-
-
-def should_prompt_for_first_run_download() -> bool:
-    """
-    Determine if we should prompt the user to download the default model on first run.
-
-    Returns:
-        bool: True if we should prompt, False otherwise
-    """
-    is_available, model_size = check_default_model_availability()
-
-    # Only prompt if the default model is not available
-    if not is_available:
-        logger.info(f"First-run model download prompt needed for model: {model_size}")
-        return True
-
-    logger.info("Default model is available, no first-run prompt needed")
-    return False

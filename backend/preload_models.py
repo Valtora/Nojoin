@@ -15,6 +15,12 @@ from backend.utils.download_progress import (
     set_download_progress,
 )
 from backend.utils.logging_config import setup_logging
+from backend.utils.model_cache_paths import (
+    hf_hub_cache_root,
+    hf_repo_dirname,
+    whisper_cache_root,
+)
+from backend.utils.onnx_asr_cache import ONNX_ASR_MODELS, find_cached_onnx_asr_model
 from backend.utils.pyannote_model_utils import (
     is_repo_bundled_pyannote_path,
     resolve_local_pyannote_model,
@@ -40,55 +46,13 @@ WHISPER_FILENAMES = {
     "turbo": "large-v3-turbo.pt",
 }
 
-# Hugging Face cache directory fragments for the ONNX ASR models, used to detect
-# them without importing onnx-asr into the API process.
-#
-# These are fragments of the *repo* name, not of the Nojoin model id, because the
-# two diverge: `nemo-canary-1b-v2` is cached as `models--istupakov--canary-1b-v2-onnx`,
-# with no `nemo-` prefix. Matching the Nojoin id reported Canary as permanently
-# missing however many times it was downloaded, which also made it undeletable,
-# since deletion resolves its path through the same status check.
-ONNX_ASR_CACHE_FRAGMENTS = {
-    "parakeet": "parakeet-tdt-0.6b-v3",
-    "canary": "canary-1b-v2",
+
+# The Pyannote models status reports, by status key.
+PYANNOTE_STATUS_MODELS = {
+    "pyannote": "pyannote/speaker-diarization-community-1",
+    "embedding": "pyannote/wespeaker-voxceleb-resnet34-LM",
+    "segmentation": "pyannote/segmentation-3.0",
 }
-
-
-def _is_onnx_asr_model_cached(model_substring: str) -> bool:
-    """Check if an onnx-asr model is present in the Hugging Face hub cache."""
-    hf_cache_base = os.getenv(
-        "HF_HOME", os.path.join(os.path.expanduser("~"), ".cache", "huggingface")
-    )
-    hf_cache = os.path.join(hf_cache_base, "hub")
-    for cache_dir in [
-        hf_cache,
-        os.path.join(os.path.expanduser("~"), ".cache", "huggingface", "hub"),
-    ]:
-        if os.path.isdir(cache_dir):
-            try:
-                for entry in os.listdir(cache_dir):
-                    if model_substring in entry:
-                        return True
-            except OSError:
-                pass
-    return False
-
-
-def _is_whisper_model_cached(model_size: str) -> bool:
-    """Check if a Whisper model file exists in the local cache."""
-    filename = WHISPER_FILENAMES.get(model_size)
-    if not filename:
-        return False
-    download_root = os.getenv(
-        "XDG_CACHE_HOME", os.path.join(os.path.expanduser("~"), ".cache")
-    )
-    filepath = os.path.join(download_root, "whisper", filename)
-    if os.path.exists(filepath):
-        return True
-    default_filepath = os.path.join(
-        os.path.expanduser("~"), ".cache", "whisper", filename
-    )
-    return default_filepath != filepath and os.path.exists(default_filepath)
 
 
 def _suppress_ort_warnings():
@@ -311,10 +275,7 @@ def _prepare_whisper_model(model_size: str) -> None:
     _suppress_whisper_timing_warnings()
     import whisper
 
-    download_root = os.getenv(
-        "XDG_CACHE_HOME", os.path.join(os.path.expanduser("~"), ".cache")
-    )
-    download_root = os.path.join(download_root, "whisper")
+    download_root = whisper_cache_root()
     os.makedirs(download_root, exist_ok=True)
 
     logger.info("Preparing Whisper model %s in %s", model_size, download_root)
@@ -512,11 +473,9 @@ def check_model_status(whisper_model_size=None):
     if not whisper_model_size:
         whisper_model_size = str(config_manager.get("whisper_model_size", "base"))
 
-    # 1. Check XDG_CACHE_HOME location (Primary)
-    download_root = os.getenv(
-        "XDG_CACHE_HOME", os.path.join(os.path.expanduser("~"), ".cache")
-    )
-    download_root = os.path.join(download_root, "whisper")
+    # Only where the engine loads from: whisper.load_model is given exactly
+    # this directory, so a copy anywhere else would be downloaded again.
+    download_root = whisper_cache_root()
 
     # Use local dict instead of importing whisper
     filename = WHISPER_FILENAMES.get(whisper_model_size)
@@ -528,52 +487,23 @@ def check_model_status(whisper_model_size=None):
         if os.path.exists(filepath):
             status["whisper"]["downloaded"] = True
             status["whisper"]["path"] = filepath
-        else:
-            # 2. Fallback: Check default ~/.cache/whisper
-            # This helps if XDG_CACHE_HOME is set but files are in default location
-            default_root = os.path.join(os.path.expanduser("~"), ".cache", "whisper")
-            default_filepath = os.path.join(default_root, filename)
-            if default_filepath != filepath:
-                status["whisper"]["checked_paths"].append(default_filepath)
-                if os.path.exists(default_filepath):
-                    status["whisper"]["downloaded"] = True
-                    status["whisper"]["path"] = default_filepath
 
-    # Check the ONNX ASR models.
-    # Best-effort detection: onnx-asr caches the model under the Hugging Face hub
-    # cache. Detection is a directory-name match; the exact repo dir name may vary
-    # by onnx-asr version, so this is treated as a heuristic, not authoritative.
-    hf_cache_base = os.getenv(
-        "HF_HOME", os.path.join(os.path.expanduser("~"), ".cache", "huggingface")
-    )
-    hf_cache = os.path.join(hf_cache_base, "hub")
-    parakeet_hf_caches = [hf_cache]
-    default_hf_cache = os.path.join(
-        os.path.expanduser("~"), ".cache", "huggingface", "hub"
-    )
-    if default_hf_cache not in parakeet_hf_caches:
-        parakeet_hf_caches.append(default_hf_cache)
+    # Check the ONNX ASR models, only in the hub cache onnx-asr downloads into
+    # and only under the exact repo it loads. A copy anywhere else (a personal
+    # ~/.cache/huggingface on a bare-metal install, or another repo with a
+    # similar name) is never loaded, so reporting it would hide a download
+    # still to come.
+    hf_cache = hf_hub_cache_root()
+    for status_key, onnx_model in ONNX_ASR_MODELS.items():
+        status[status_key]["checked_paths"].append(
+            os.path.join(hf_cache, onnx_model.repo_dirname)
+        )
+        repo_dir = find_cached_onnx_asr_model(onnx_model)
+        if repo_dir:
+            status[status_key]["downloaded"] = True
+            status[status_key]["path"] = repo_dir
 
-    for status_key, fragment in ONNX_ASR_CACHE_FRAGMENTS.items():
-        for cache_dir in parakeet_hf_caches:
-            status[status_key]["checked_paths"].append(cache_dir)
-            if os.path.isdir(cache_dir):
-                try:
-                    for entry in os.listdir(cache_dir):
-                        if fragment in entry:
-                            status[status_key]["downloaded"] = True
-                            status[status_key]["path"] = os.path.join(cache_dir, entry)
-                            break
-                except OSError:
-                    pass
-            if status[status_key]["downloaded"]:
-                break
-
-    for status_key, model_id in (
-        ("pyannote", "pyannote/speaker-diarization-community-1"),
-        ("embedding", "pyannote/wespeaker-voxceleb-resnet34-LM"),
-        ("segmentation", "pyannote/segmentation-3.0"),
-    ):
+    for status_key, model_id in PYANNOTE_STATUS_MODELS.items():
         resolved = resolve_local_pyannote_model(model_id)
         status[status_key]["checked_paths"] = resolved.checked_paths
         if resolved.path:
@@ -581,39 +511,181 @@ def check_model_status(whisper_model_size=None):
             status[status_key]["path"] = resolved.path
             status[status_key]["source"] = resolved.source
 
+    # A model not found complete anywhere, whose own repo directory is in the
+    # managed cache all the same, is a download that was cut off or is still
+    # running. It is reported so the leftover can be deleted from the UI.
+    for status_key in (*ONNX_ASR_MODELS, *PYANNOTE_STATUS_MODELS):
+        if not status[status_key]["downloaded"] and os.path.lexists(
+            os.path.join(hf_cache, _hub_repo_dirname(status_key))
+        ):
+            status[status_key]["partial"] = True
+
     return status
 
 
-def delete_model(model_name: str, whisper_model_size: str | None = None) -> bool:
+def _hub_repo_dirname(model_name: str) -> str:
+    """The model's own repo directory name in the hub cache."""
+    if model_name in ONNX_ASR_MODELS:
+        return ONNX_ASR_MODELS[model_name].repo_dirname
+    return hf_repo_dirname(PYANNOTE_STATUS_MODELS[model_name])
+
+
+def _deletion_target(model_name: str, found_path: str) -> tuple[str, str]:
+    """The managed root, and the one entry in it, that deleting this model removes.
+
+    Whisper is a single file. The Hugging Face models are a whole repo
+    directory: blobs, snapshots and refs together. Removing only the snapshot
+    a Pyannote status points at would delete symlinks and leave the weights
+    behind, with refs/main naming a revision that is gone. Where those weights
+    live, and how they are freed, is up to _delete_hub_repo.
     """
-    Delete a specific model from the cache.
-    model_name: 'whisper', 'pyannote', 'embedding'
+    if model_name == "whisper":
+        return whisper_cache_root(), os.path.basename(found_path)
+    return hf_hub_cache_root(), _hub_repo_dirname(model_name)
+
+
+def _delete_hub_repo(repo_dir: str) -> None:
+    """Delete one repo from its hub cache, with the weights only it links to.
+
+    ``repo_dir`` is the repo's real path. huggingface_hub keeps a file
+    downloaded through Xet once per cache, in ``<hub cache>/blobs/<xx>/<hash>``,
+    and makes the repo's own ``blobs/<etag>`` a symlink to it, so a second repo
+    with the same file links to the same copy. Removing the repo directory
+    leaves that copy on disk, and a later download links it back without
+    fetching anything. huggingface_hub's cache deletion unlinks the repo's
+    files and frees each copy that no other repo still links to; the rest of
+    the repo directory is then removed.
+
+    The files are chosen from this repo alone. ``delete_revisions`` would be
+    shorter, but it takes commit hashes, not a repo, and removes each hash from
+    the first repo it comes across holding it, in no fixed order. When another
+    repo holds the same commit (a mirror), only one of the two loses that
+    snapshot, and it can be the mirror instead of this repo.
+
+    A repo huggingface_hub cannot list is only removed as a directory: a
+    download cut off before its first file started, which has no snapshots
+    directory yet, or a repo left inconsistent, such as a snapshot link to a
+    blob that is gone. Unfinished files are in the repo's own ``blobs/``. A
+    finished file such a repo shared stays in the cache until ``hf cache
+    prune`` collects it. So is any repo when another repo in the cache cannot
+    be read, and ``hf cache prune`` fails on that repo too until it is fixed.
+    """
+    # Imported here: the API process imports this module for model status, and
+    # only the worker image installs huggingface_hub.
+    from huggingface_hub import scan_cache_dir
+
+    def inside_repo(path: os.PathLike[str]) -> bool:
+        real = os.path.realpath(path)
+        return os.path.commonpath([real, repo_dir]) == repo_dir
+
+    # scan_cache_dir reads every repo in the cache, so an unrelated one it
+    # cannot read (root-owned files left by a sudo run in a personal cache, or
+    # a ref torn into bytes that are not text) would otherwise make every
+    # model undeletable. Nothing is deleted until the plan is made, so
+    # catching here cannot hide a partial deletion.
+    try:
+        cache_info = scan_cache_dir(cache_dir=os.path.dirname(repo_dir))
+        # delete_files unlinks each snapshot entry and removes the first place
+        # its symlink points (blob_path), wherever that is. A snapshot entry,
+        # or a whole snapshot directory, linked to files outside the repo
+        # (weights kept on another disk, another repo's blob) would take those
+        # files with it. Both removals act on the entry in its real parent
+        # directory without following the entry itself, so a file is handed
+        # over only when both parents resolve inside the repo. The rest are
+        # links that rmtree below unlinks without following.
+        files = [
+            file
+            for repo in cache_info.repos
+            if str(repo.repo_path) == repo_dir
+            for revision in repo.revisions
+            for file in revision.files
+            if inside_repo(file.file_path.parent) and inside_repo(file.blob_path.parent)
+        ]
+        strategy = cache_info.delete_files(*files) if files else None
+    except (OSError, UnicodeError) as e:
+        logger.warning(
+            f"Could not read the hub cache to delete {repo_dir} ({e}). Removing it "
+            "as a directory only: a file it shared with another repo stays on "
+            "disk. `hf cache prune` fails on the same unreadable repo, so fix it "
+            "(usually its permissions) first, then run `hf cache prune`."
+        )
+        strategy = None
+    if strategy is not None:
+        strategy.execute()
+    # Refs, snapshot directories and unfinished downloads are left by
+    # delete_files. huggingface_hub also logs a repo path it could not remove
+    # and carries on; removing what is left here raises instead, so a failure
+    # inside the repo reaches the UI. A shared copy it could not free (a lock
+    # or a store directory it may not write) is logged only at debug level and
+    # stays until `hf cache prune`: execute() discards the sweep's result, so
+    # there is nothing here to report it from.
+    shutil.rmtree(repo_dir)
+
+
+def delete_model(model_name: str, whisper_model_size: str | None = None) -> bool:
+    """Delete one model from the cache its loader downloads into.
+
+    Removes exactly the model's own file or repo directory in that cache,
+    whether the model is complete there or only partly downloaded, and raises
+    ValueError for anything else status may have found: a bundled asset, a
+    copy in another cache that the loader also reads (Pyannote's
+    personal-cache fallback), or an entry that is a symbolic link to
+    somewhere else.
     """
     status = check_model_status(whisper_model_size=whisper_model_size)
     model_info = status.get(model_name)
 
-    if not model_info or not model_info["downloaded"] or not model_info["path"]:
+    if model_info and model_info["downloaded"] and model_info["path"]:
+        path = model_info["path"]
+    elif model_info and model_info.get("partial"):
+        # What status found is the leftover repo directory itself.
+        path = os.path.join(hf_hub_cache_root(), _hub_repo_dirname(model_name))
+    else:
         logger.warning(
             f"Model {model_name} (variant: {whisper_model_size}) not found or not downloaded."
         )
         return False
 
-    path = model_info["path"]
     if is_repo_bundled_pyannote_path(path):
         raise ValueError(
             f"Model {model_name} is bundled with the repository at {path} and cannot be deleted from the runtime cache UI."
         )
-    try:
-        if os.path.isfile(path):
-            os.remove(path)
-            logger.info(f"Deleted file: {path}")
-        elif os.path.isdir(path):
-            shutil.rmtree(path)
-            logger.info(f"Deleted directory: {path}")
-        return True
-    except Exception as e:
-        logger.error(f"Failed to delete {model_name} at {path}: {e}")
-        raise e
+
+    root, entry = _deletion_target(model_name, path)
+    # Joined as given, not normalised: the loaders and status hand the root to
+    # the OS, which resolves ".." after following links, so collapsing it as
+    # text could name a different directory from the one they use.
+    target = os.path.join(root, entry)
+    # The entry itself must be real. A symlinked cache root is fine, but a
+    # model entry linked to a directory elsewhere, inside the root or not, is
+    # not a model Nojoin downloaded.
+    if os.path.islink(target):
+        raise ValueError(
+            f"Model {model_name} at {target} is a link to "
+            f"{os.path.realpath(target)}, not a model Nojoin downloaded, and is "
+            "not deleted from here. Remove it by hand."
+        )
+    # Status finds Pyannote in the personal cache too, and loads it from there,
+    # but Nojoin did not download it and does not delete it.
+    real_target = os.path.realpath(target)
+    if os.path.commonpath([os.path.realpath(path), real_target]) != real_target:
+        raise ValueError(
+            f"Model {model_name} is outside Nojoin's model cache and is not deleted "
+            "from here."
+        )
+
+    if os.path.isfile(target):
+        os.remove(target)
+        logger.info(f"Deleted file: {target}")
+    elif os.path.isdir(target) and model_name != "whisper":
+        _delete_hub_repo(real_target)
+        logger.info(f"Deleted repo: {target}")
+    elif os.path.isdir(target):
+        shutil.rmtree(target)
+        logger.info(f"Deleted directory: {target}")
+    else:
+        return False
+    return True
 
 
 if __name__ == "__main__":

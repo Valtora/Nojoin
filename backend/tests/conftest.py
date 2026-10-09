@@ -170,6 +170,32 @@ def fake_single_flight(monkeypatch):
     return fake
 
 
+# Every variable that moves a model cache: huggingface_hub's (in precedence
+# order) and the XDG base that both it and Whisper fall back to.
+MODEL_CACHE_VARIABLES = (
+    "HF_HUB_CACHE",
+    "HUGGINGFACE_HUB_CACHE",
+    "HF_HOME",
+    "XDG_CACHE_HOME",
+)
+
+
+@pytest.fixture
+def model_cache_env(monkeypatch, tmp_path_factory):
+    """An empty HOME and none of the variables that move the model caches.
+
+    Model status resolves its roots from the environment, so a developer
+    machine that exports HF_HUB_CACHE (common on ML hosts), or simply has a
+    model in ~/.cache, would otherwise steer every lookup to its own cache.
+    Returns the HOME it set.
+    """
+    home = tmp_path_factory.mktemp("home")
+    monkeypatch.setenv("HOME", str(home))
+    for variable in MODEL_CACHE_VARIABLES:
+        monkeypatch.delenv(variable, raising=False)
+    return home
+
+
 POSTGRES_TEST_URL_ENV = "NOJOIN_TEST_POSTGRES_URL"
 
 
