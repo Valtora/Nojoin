@@ -1851,16 +1851,32 @@ async def test_import_refuses_audio_it_cannot_use(
 
 @pytest.mark.anyio
 @pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg is not installed")
+@pytest.mark.parametrize(
+    ("first_track", "dispositions"),
+    [
+        # 3 s of audio, not flagged default: the default second track wins.
+        (["-f", "lavfi", "-i", "sine=frequency=440:duration=3"], ("0", "default")),
+        # Flagged default but holding no packets: ffmpeg passes it over.
+        (
+            ["-ss", "30", "-f", "lavfi", "-i", "sine=frequency=440:duration=1"],
+            ("default", "0"),
+        ),
+    ],
+    ids=["default-track", "empty-default-track"],
+)
 async def test_import_times_the_audio_track_ffmpeg_decodes(
     client: AsyncClient,
     test_session_maker: sessionmaker,
     monkeypatch,
     tmp_path: Path,
+    first_track: list[str],
+    dispositions: tuple[str, str],
 ) -> None:
-    """With two audio tracks the stored length is the default-flagged one's.
+    """With two audio tracks the stored length is the decoded one's.
 
-    The first track lasts 3 s and the second, flagged default, 5 s. ffmpeg
-    decodes the second, so the transcript runs 5 s and so must the recording.
+    The second track holds 5 s of audio. ffmpeg decodes it when it is flagged
+    default, and also when the first track is flagged default but empty, so
+    the transcript runs 5 s and so must the recording.
     """
     import soundfile as sf
 
@@ -1871,11 +1887,11 @@ async def test_import_times_the_audio_track_ffmpeg_decodes(
     source = tmp_path / "two-tracks.mkv"
     _ffmpeg(
         *["-f", "lavfi", "-i", "testsrc=size=64x64:rate=25:duration=5"],
-        *["-f", "lavfi", "-i", "sine=frequency=440:duration=3"],
+        *first_track,
         *["-f", "lavfi", "-i", "sine=frequency=880:duration=5"],
         *["-map", "0:v", "-map", "1:a", "-map", "2:a"],
         *["-c:v", "mpeg4", "-c:a", "aac", "-ac", "2"],
-        *["-disposition:a:0", "0", "-disposition:a:1", "default"],
+        *["-disposition:a:0", dispositions[0], "-disposition:a:1", dispositions[1]],
         str(source),
     )
     recordings_dir = tmp_path / "recordings"

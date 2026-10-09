@@ -149,24 +149,43 @@ def _duration_tag(stream: dict) -> str | None:
     return None
 
 
+def _is_empty_track(stream: dict) -> bool:
+    """The stream's DURATION tag says the track holds no audio."""
+    tagged = _duration_seconds(_duration_tag(stream))
+    return tagged is not None and tagged <= 0
+
+
+def _has_audio(stream: dict) -> bool:
+    """ffprobe read the stream's format and found the track non-empty.
+
+    This stands in for ffmpeg's own test, whether the stream yielded packets
+    while the input was probed, which ffprobe does not report.
+    """
+    return int(stream.get("channels") or 0) > 0 and not _is_empty_track(stream)
+
+
 def decoded_audio_stream(streams: list[dict]) -> dict | None:
     """The audio stream ffmpeg decodes when no stream is mapped explicitly.
 
-    ffmpeg's automatic selection takes the audio stream flagged default, then
-    the one with the most channels, then the first. Every conversion in this
-    module relies on that selection, so a file's length and format are read
-    from the same stream.
+    ffmpeg's automatic selection prefers a stream that has audio over one that
+    is empty or unread, then the stream flagged default, then the one with the
+    most channels, then the first. Every conversion in this module relies on
+    that selection, so a file's length and format are read from the same
+    stream.
     """
     audio = [s for s in streams if s.get("codec_type") == "audio"]
     if not audio:
         return None
-    return max(
-        audio,
-        key=lambda s: (
-            bool((s.get("disposition") or {}).get("default")),
-            int(s.get("channels") or 0),
+    ranked = max(
+        enumerate(audio),
+        key=lambda item: (
+            _has_audio(item[1]),
+            bool((item[1].get("disposition") or {}).get("default")),
+            int(item[1].get("channels") or 0),
+            -item[0],
         ),
     )
+    return ranked[1]
 
 
 def audio_duration_from_probe(data: dict, source: str) -> float:
@@ -181,7 +200,8 @@ def audio_duration_from_probe(data: dict, source: str) -> float:
 
     Raises:
         NoAudioStreamError: the streams hold no audio, or the decoded audio
-            track is empty (its DURATION tag is zero).
+            track is empty (its DURATION tag is zero). The decoded track is
+            empty or unreadable only when every audio track is.
         UnreadableAudioStreamError: the decoded audio stream has no channels.
         RuntimeError: no duration is reported at all.
     """
@@ -194,10 +214,13 @@ def audio_duration_from_probe(data: dict, source: str) -> float:
             raise NoAudioStreamError(f"No audio stream in {source}")
         if stream.get("channels") == 0:
             raise UnreadableAudioStreamError(f"Unreadable audio stream in {source}")
-        tagged = _duration_seconds(_duration_tag(stream))
-        if tagged is not None and tagged <= 0:
+        if _is_empty_track(stream):
             raise NoAudioStreamError(f"Empty audio track in {source}")
-        candidates = [tagged, _duration_seconds(stream.get("duration")), container]
+        candidates = [
+            _duration_seconds(_duration_tag(stream)),
+            _duration_seconds(stream.get("duration")),
+            container,
+        ]
 
     reported = [seconds for seconds in candidates if seconds is not None]
     for seconds in reported:

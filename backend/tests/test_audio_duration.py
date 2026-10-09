@@ -30,6 +30,10 @@ def _audio(**fields) -> dict:
     return {"codec_type": "audio", "channels": 2, **fields}
 
 
+# A Matroska track that holds no packets.
+_EMPTY = {"tags": {"DURATION": "00:00:00.000000000"}}
+
+
 @pytest.mark.parametrize(
     ("data", "expected"),
     [
@@ -46,6 +50,13 @@ def _audio(**fields) -> dict:
         (_probe([_audio(duration="3.0")], "0.000000"), 3.0),
         (_probe([_audio(duration="0.000000")], "0.000000"), 0.0),
         (_probe([], "7.5"), 7.5),
+        (
+            _probe(
+                [_audio(disposition={"default": 1}, **_EMPTY), _audio(duration="5.0")],
+                "9.0",
+            ),
+            5.0,
+        ),
     ],
     ids=[
         "stream",
@@ -58,6 +69,7 @@ def _audio(**fields) -> dict:
         "zero-container-loses",
         "zero-only-when-nothing-else",
         "no-streams-listed",
+        "empty-default-track-passed-over",
     ],
 )
 def test_duration_is_the_audio_tracks(data: dict, expected: float) -> None:
@@ -76,16 +88,22 @@ def test_no_reported_duration_is_an_error() -> None:
         ([{"codec_type": "video"}], NoAudioStreamError),
         ([_audio(tags={"DURATION": "00:00:00.000000000"})], NoAudioStreamError),
         ([_audio(channels=0, duration="20.0")], UnreadableAudioStreamError),
+        (
+            [_audio(disposition={"default": 1}, **_EMPTY), _audio(**_EMPTY)],
+            NoAudioStreamError,
+        ),
     ],
-    ids=["video-only", "empty-track", "no-channels"],
+    ids=["video-only", "empty-track", "no-channels", "every-track-empty"],
 )
 def test_audio_nothing_can_use_is_refused(streams: list[dict], error: type) -> None:
     with pytest.raises(error):
         audio_duration_from_probe(_probe(streams, "20.0"), "f")
 
 
-def _track(index: int, *, default: int, channels: int) -> dict:
-    return _audio(index=index, channels=channels, disposition={"default": default})
+def _track(index: int, *, default: int, channels: int, **fields) -> dict:
+    return _audio(
+        index=index, channels=channels, disposition={"default": default}, **fields
+    )
 
 
 @pytest.mark.parametrize(
@@ -95,8 +113,31 @@ def _track(index: int, *, default: int, channels: int) -> dict:
         ([_track(1, default=1, channels=1), _track(2, default=0, channels=2)], 1),
         ([_track(1, default=0, channels=1), _track(2, default=0, channels=2)], 2),
         ([_track(1, default=0, channels=2), _track(2, default=0, channels=2)], 1),
+        (
+            [
+                _track(1, default=1, channels=2, **_EMPTY),
+                _track(2, default=0, channels=1),
+            ],
+            2,
+        ),
+        ([_track(1, default=1, channels=0), _track(2, default=0, channels=1)], 2),
+        (
+            [
+                _track(1, default=0, channels=2, **_EMPTY),
+                _track(2, default=1, channels=2, **_EMPTY),
+            ],
+            2,
+        ),
     ],
-    ids=["default-wins", "default-beats-channels", "most-channels", "first-on-tie"],
+    ids=[
+        "default-wins",
+        "default-beats-channels",
+        "most-channels",
+        "first-on-tie",
+        "audio-beats-empty-default",
+        "audio-beats-unread-default",
+        "default-among-empty",
+    ],
 )
 def test_the_timed_track_is_the_one_ffmpeg_selects(
     streams: list[dict], chosen: int
