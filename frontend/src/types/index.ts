@@ -456,12 +456,10 @@ export interface Settings {
   phantom_merge_threshold?: number | null;
   word_flip_max_duration_s?: number | null;
   word_flip_max_gap_s?: number | null;
-  // Read-only, from GET: the installation's phantom pair (null where unset or
-  // unusable). The floor/merge check counts it for a field left empty.
-  phantom_thresholds_install?: {
-    phantom_embedding_floor: number | null;
-    phantom_merge_threshold: number | null;
-  };
+  // Read-only, from GET: the installation's config.json tuning values, keyed
+  // by tuning key (null where unset or unusable). Today it holds the phantom
+  // pair, which the floor/merge check counts for a field left empty.
+  processing_tuning_install?: Record<string, number | null>;
   spellcheck_language?: string;
 
     [key: string]: unknown;

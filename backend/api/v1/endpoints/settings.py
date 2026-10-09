@@ -318,9 +318,11 @@ def _apply_default_user_settings(
 
 
 PHANTOM_PAIR_KEYS = (PHANTOM_EMBEDDING_FLOOR_KEY, PHANTOM_MERGE_THRESHOLD_KEY)
-# Read-only in GET: the install's phantom pair, so the settings page can run
-# the floor/merge check on the values processing will actually use.
-PHANTOM_THRESHOLDS_INSTALL_KEY = "phantom_thresholds_install"
+# Read-only in GET: the install's flat config.json tuning values the settings
+# page needs, keyed by tuning key (null where unset or unusable). Today that
+# is the phantom pair, so the page runs the floor/merge check on the values
+# processing will actually use.
+PROCESSING_TUNING_INSTALL_KEY = "processing_tuning_install"
 
 
 def _phantom_pair_in_effect(
@@ -358,7 +360,7 @@ def _normalise_processing_tuning(
     if phantom_thresholds_conflict(_phantom_pair_in_effect(install, merged)):
         for key in PHANTOM_PAIR_KEYS:
             merged[key] = None
-    merged[PHANTOM_THRESHOLDS_INSTALL_KEY] = {
+    merged[PROCESSING_TUNING_INSTALL_KEY] = {
         key: normalise_tuning_value(key, install.get(key)) for key in PHANTOM_PAIR_KEYS
     }
 

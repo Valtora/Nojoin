@@ -227,7 +227,7 @@ def test_get_reports_the_installs_pair_and_hides_a_value_it_overrides(
     # back for both; the page shows it as unset.
     assert payload["phantom_merge_threshold"] is None
     # The install's unusable 4 reads as unset too.
-    assert payload["phantom_thresholds_install"] == {
+    assert payload["processing_tuning_install"] == {
         "phantom_embedding_floor": 0.55,
         "phantom_merge_threshold": None,
     }

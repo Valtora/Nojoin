@@ -91,7 +91,7 @@ function effectiveValue(
   if (typeof own === "number") {
     return { value: own, source: "user" };
   }
-  const installed = settings.phantom_thresholds_install?.[key];
+  const installed = settings.processing_tuning_install?.[key];
   if (typeof installed === "number") {
     return { value: installed, source: "installation" };
   }

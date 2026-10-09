@@ -77,8 +77,8 @@ export interface SettingsRegistryEntry {
  * a key arriving here should be a decision, not an oversight.
  *
  *  - theme is written by ThemeProvider into local storage, not through settings;
- *  - phantom_thresholds_install is read-only context the API supplies for the
- *    phantom filter's validation, not a value anyone sets;
+ *  - processing_tuning_install is read-only context the API supplies (the
+ *    installation's tuning values) for validation, not a value anyone sets;
  *  - the rest are read by the backend and have never had a frontend control.
  */
 export const UNSURFACED_SETTINGS_KEYS = [
@@ -87,7 +87,7 @@ export const UNSURFACED_SETTINGS_KEYS = [
   "enable_live_transcription",
   "processing_device",
   "worker_url",
-  "phantom_thresholds_install",
+  "processing_tuning_install",
 ] as const;
 
 export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [

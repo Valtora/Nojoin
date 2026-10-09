@@ -34,7 +34,7 @@ describe("validateProcessingTuning", () => {
 
   it("checks an empty half of the phantom pair against the installation's value", () => {
     const installFloor = {
-      phantom_thresholds_install: {
+      processing_tuning_install: {
         phantom_embedding_floor: 0.55,
         phantom_merge_threshold: null,
       },
@@ -49,7 +49,7 @@ describe("validateProcessingTuning", () => {
     expect(
       validateProcessingTuning({
         phantom_embedding_floor: 0.7,
-        phantom_thresholds_install: {
+        processing_tuning_install: {
           phantom_embedding_floor: null,
           phantom_merge_threshold: 0.8,
         },
@@ -62,7 +62,7 @@ describe("validateProcessingTuning", () => {
       validateProcessingTuning({
         phantom_embedding_floor: null,
         phantom_merge_threshold: null,
-        phantom_thresholds_install: {
+        processing_tuning_install: {
           phantom_embedding_floor: 0.7,
           phantom_merge_threshold: 0.6,
         },
