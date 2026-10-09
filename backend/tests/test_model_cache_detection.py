@@ -17,8 +17,6 @@ import pytest
 from backend.preload_models import check_model_status
 from backend.tests.hf_cache_layout import write_onnx_asr_repo
 
-pytestmark = pytest.mark.usefixtures("model_cache_env")
-
 # The directory names a real install ends up with, taken from a live cache.
 CACHED_REPOS = (
     "models--istupakov--canary-1b-v2-onnx",
@@ -32,10 +30,12 @@ def isolated_home(monkeypatch, tmp_path_factory):
 
     Detection falls back to ``~/.cache/huggingface/hub`` after ``HF_HOME``, so
     a developer machine with Parakeet or Canary cached reported the "empty"
-    cache below as populated.
+    cache below as populated. ``HF_HUB_CACHE`` and ``HUGGINGFACE_HUB_CACHE``
+    take precedence over ``HF_HOME``, so an exported one would too.
     """
     monkeypatch.setenv("HOME", str(tmp_path_factory.mktemp("home")))
-    monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
+    for variable in ("XDG_CACHE_HOME", "HF_HUB_CACHE", "HUGGINGFACE_HUB_CACHE"):
+        monkeypatch.delenv(variable, raising=False)
 
 
 @pytest.mark.parametrize("model", ["parakeet", "canary"])
