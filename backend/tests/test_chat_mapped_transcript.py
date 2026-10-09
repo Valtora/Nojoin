@@ -85,9 +85,11 @@ def _insert_transcript(engine, segments: list[dict] | None) -> None:
         )
 
 
-def _speaker_id(label: str) -> int:
+def _speaker_id(label: str) -> int | None:
     # Speaker rows take their id from the label, so an utterance can point at
-    # its speaker the way canonical writes do.
+    # its speaker the way canonical writes do. UNKNOWN has no speaker row.
+    if not label.startswith("SPEAKER_"):
+        return None
     return int(label.removeprefix("SPEAKER_")) + 1
 
 
@@ -299,6 +301,31 @@ def test_chat_names_who_talked_over_a_line(engine):
     transcript = LLMBackend.get_mapped_transcript_for_llm(RECORDING_ID)
 
     assert transcript == "[00:00] Priya (with Dana): Hello.\n[00:01] Dana: Hi."
+
+
+def test_chat_leaves_out_the_lines_of_a_removed_speaker_like_the_view(engine):
+    # Removing a speaker marks their lines UNKNOWN, and the view hides a
+    # finalised UNKNOWN line once any line has a known speaker. A provisional
+    # live line stays visible.
+    _insert_transcript(engine, segments=None)
+    _insert_speaker(engine, "SPEAKER_00", local_name="Priya")
+    _insert_utterance(engine, 1, (0, 1000), "SPEAKER_00", "Kept.")
+    _insert_utterance(engine, 2, (1000, 2000), "UNKNOWN", "The TV in the background.")
+    _insert_utterance(engine, 3, (2000, 3000), "UNKNOWN", "Still live.")
+    _update_utterance(engine, 3, state="provisional")
+
+    transcript = LLMBackend.get_mapped_transcript_for_llm(RECORDING_ID)
+
+    assert transcript == "[00:00] Priya: Kept.\n[00:02] UNKNOWN: Still live."
+
+
+def test_chat_keeps_unknown_lines_when_no_speaker_is_known(engine):
+    _insert_transcript(engine, segments=None)
+    _insert_utterance(engine, 1, (0, 1000), "UNKNOWN", "Hello.")
+
+    transcript = LLMBackend.get_mapped_transcript_for_llm(RECORDING_ID)
+
+    assert transcript == "[00:00] UNKNOWN: Hello."
 
 
 def test_chat_names_a_merged_speakers_lines_after_the_target(engine):

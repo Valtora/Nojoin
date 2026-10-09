@@ -16,11 +16,28 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from backend.utils.canonical_pipeline import build_transcript_segments_for_read
-from backend.utils.canonical_pipeline.constants import _load_recording_speakers
+from backend.utils.canonical_pipeline.constants import (
+    UNKNOWN_SPEAKER,
+    _load_recording_speakers,
+)
 from backend.utils.meeting_notes import (
     build_recording_speaker_map,
     format_segments_for_llm,
 )
+
+
+def _segments_the_view_shows(segments: list[dict]) -> list[dict]:
+    # TranscriptView hides finalised UNKNOWN lines, which is what removing a
+    # speaker leaves behind, once any line has a known speaker. Sending them
+    # would let the model attribute and cite lines the user cannot see.
+    if all(segment.get("speaker") == UNKNOWN_SPEAKER for segment in segments):
+        return segments
+    return [
+        segment
+        for segment in segments
+        if segment.get("speaker") != UNKNOWN_SPEAKER
+        or segment.get("provisional") is True
+    ]
 
 
 def render_transcript_for_llm(session: Session, recording_id: int) -> str | None:
@@ -32,5 +49,7 @@ def render_transcript_for_llm(session: Session, recording_id: int) -> str | None
     # resolution reads it, and a lazy load costs a query per speaker.
     speakers = _load_recording_speakers(session, recording_id)
     return format_segments_for_llm(
-        segments, build_recording_speaker_map(speakers), with_end=False
+        _segments_the_view_shows(segments),
+        build_recording_speaker_map(speakers),
+        with_end=False,
     )
