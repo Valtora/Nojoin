@@ -99,8 +99,11 @@ jobs:
     # host without Postgres still passes, while CI runs them for real.
     services:
       postgres:
-        # Matches the production image, as the migrations job does.
-        image: pgvector/pgvector:pg18-trixie
+        # Matches the production image, as the migrations job does. Pulled
+        # through Google's Docker Hub cache, which serves the same digests:
+        # anonymous Docker Hub pulls from the runners hit its rate limit, and a
+        # pull request from a fork gets no secrets to log in with.
+        image: mirror.gcr.io/pgvector/pgvector:pg18-trixie
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -155,7 +158,8 @@ jobs:
     services:
       postgres:
         # Matches the production image so extension and type behaviour agree.
-        image: pgvector/pgvector:pg18-trixie
+        # Pulled through mirror.gcr.io, as the backend tests job explains.
+        image: mirror.gcr.io/pgvector/pgvector:pg18-trixie
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
