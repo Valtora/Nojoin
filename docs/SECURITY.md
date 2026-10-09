@@ -77,10 +77,12 @@ JWT signing material is stored as a small keyring rather than a single static va
 
 - The keyring is persisted to `<user_data>/.secret_keys.json` and contains an `active` key id (`kid`) plus any prior keys that are still trusted.
 - Every issued JWT carries a `kid` header. Verification picks the matching key from the keyring; if the `kid` is not known the token is rejected.
+- Tokens are signed and verified with PyJWT using HS256 only. Verification refuses any other `alg` (including `none` and the asymmetric algorithms), a malformed header, an expired token, and a token whose `iat` lies in the future. The api process both issues and verifies every token, so no clock-skew leeway is applied. Keyring entries are always symmetric secrets, never public keys.
 - Operators with shell access can rotate the key by calling `backend.core.security.rotate_signing_key()`. Rotation generates a fresh `kid`, makes it active, and (by default) keeps the previous key in the ring so currently outstanding tokens keep verifying until their natural expiry.
 - After enough time has passed for outstanding tokens to expire, `prune_signing_keys()` removes retired keys from the keyring. Any token still signed by a removed key fails verification immediately, providing a hard cut-over.
-- Setting the `SECRET_KEY` environment variable overrides the keyring with a single static key (intended for advanced deployments and tests). In that mode the rotation API is disabled.
+- Setting the `SECRET_KEY` environment variable overrides the keyring with a single static key (intended for advanced deployments and tests). In that mode the rotation API is disabled. Use a random value carrying at least 256 bits, for example `openssl rand -hex 32` (a 64-character hex string, the same form as a generated keyring key): RFC 7518 Section 3.2 requires an HS256 key at least as long as its 256-bit hash output. A shorter value still works, so existing deployments keep signing in, but PyJWT emits an `InsecureKeyLengthWarning` when it signs or verifies with it.
 - Existing single-key installs are migrated automatically: the legacy `<user_data>/.secret_key` file is loaded into the keyring as `kid="legacy"` on first startup and the legacy file is renamed.
+- The api loads the keyring at startup. PyJWT cannot sign or verify with an empty key, so if the active key is empty (an empty legacy `.secret_key`, an empty active entry in `.secret_keys.json`, or a blank `.secret_keys.json` left by a write that was cut short, for example by a full disk) or a key file is malformed, unreadable or a directory, the api still starts but logs an error that names the file and the fix. For an empty or malformed key the fix is to delete the named file and restart, which generates a new key; everyone signed in has to sign in again. For an unreadable file, the fix is to give the api read and write access to the data directory. A key file that is a directory, usually left by a Docker bind mount of a host file that did not exist, has to be removed together with that bind mount before restarting. Until it is fixed, sign-in fails with a message pointing to the api log and every token is rejected.
 
 ## Browser Capture Security
 
@@ -121,7 +123,7 @@ Published container images are scanned for known vulnerabilities by [Trivy](http
 - The release pipeline scans each image and **fails the release on CRITICAL or HIGH findings that have a fix available** (`ignore-unfixed: true`). Such findings are addressable by us — usually by pulling in a patched base image or dependency — so they block publication.
 - Findings **without an upstream fix** do not block the release. They cannot be actioned by Nojoin and are unavoidable for the GPU worker base image. They remain visible in scan output for tracking.
 - A *fixed* CRITICAL/HIGH finding may be **temporarily accepted only by an explicit, documented exception** in [.github/trivyignore](../.github/trivyignore), recording the CVE id, the reason, the owner, and a review-by date. Exceptions are expected to be short-lived and are removed once the fix is pulled in, typically through a Dependabot base-image or dependency update.
-- Pull requests additionally run an informational dependency and configuration scan that surfaces CVEs without blocking merges.
+- Pull requests additionally run an informational dependency and configuration scan, covering the npm lockfiles and the pinned Python requirements in `requirements/`, that surfaces CVEs without blocking merges.
 
 ## Supported Versions
 

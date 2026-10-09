@@ -8,7 +8,7 @@ parent-before-child ordering that tag hierarchies need.
 
 import logging
 import os
-from typing import Any, Dict, List, Type
+from typing import Any, Dict, List, Set, Type
 
 from sqlmodel import SQLModel
 
@@ -293,12 +293,37 @@ def _serialise_backup_table_rows(
     return data
 
 
+def _unarchived_recording_audio_path(
+    item: Dict[str, Any], original_audio_path: str, taken: Set[str]
+) -> str | None:
+    """A plausible archive path for a recording whose audio the archive lacks.
+
+    It keeps the recording's own file name, so a restore over a server that still
+    holds the file reattaches it. Where another recording's archived member already
+    has that name (``h.wav`` re-encoded to ``h.opus`` beside a missing ``h.opus``),
+    the restore would hand this recording that audio, so the recording's identifier
+    is added to the name.
+    """
+    path = _build_backup_recording_audio_path(
+        original_audio_path,
+        os.path.splitext(original_audio_path)[1].lower() or ".opus",
+    )
+    if path in taken:
+        stem, extension = os.path.splitext(path)
+        identifier = item.get("meeting_uid") or item.get("public_id") or item.get("id")
+        path = f"{stem}__{identifier}{extension}"
+    if path:
+        taken.add(path)
+    return path
+
+
 def _rewrite_recording_rows(
     data: List[Dict[str, Any]],
     audio_plan: _AudioPlan | None,
     _document_plan: _DocumentPlan | None,
 ) -> None:
     arcnames = audio_plan.arcname_by_audio_path if audio_plan else {}
+    taken = set(arcnames.values())
     for item in data:
         original_audio_path = item.get("audio_path")
         if original_audio_path:
@@ -308,10 +333,7 @@ def _rewrite_recording_rows(
             # plausible path so the row itself survives the restore.
             item["audio_path"] = arcnames.get(
                 original_audio_path
-            ) or _build_backup_recording_audio_path(
-                original_audio_path,
-                os.path.splitext(original_audio_path)[1].lower() or ".opus",
-            )
+            ) or _unarchived_recording_audio_path(item, original_audio_path, taken)
             # Recomputed from the extracted file on restore, since a re-encoded archive
             # makes the source system's byte count wrong.
             item["file_size_bytes"] = None

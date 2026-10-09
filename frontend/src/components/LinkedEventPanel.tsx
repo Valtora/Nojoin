@@ -85,8 +85,8 @@ export default function LinkedEventPanel({
   };
 
   const basePillClass = compact
-    ? "inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-medium"
-    : "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm font-medium";
+    ? "inline-flex items-center gap-2 rounded-pill border px-2.5 py-1 text-xs font-medium"
+    : "inline-flex items-center gap-2 rounded-pill border px-3 py-1 text-sm font-medium";
   const dropdownWidthClass = compact ? "w-[min(18rem,calc(100vw-2rem))]" : "w-80";
 
   return (

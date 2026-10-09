@@ -4,10 +4,11 @@ import os
 import subprocess
 import tempfile
 import time
-from typing import Dict, Optional
+from contextlib import contextmanager
+from typing import Dict, Iterator, Optional
 
 from backend.core.exceptions import AudioFormatError
-from backend.utils.audio import convert_to_mono_16k
+from backend.utils.audio import convert_to_16k_wav, convert_to_mono_16k
 
 logger = logging.getLogger(__name__)
 
@@ -139,6 +140,81 @@ def cleanup_temp_file(temp_path: str):
             logger.info(f"Deleted temp file: {temp_path}")
     except Exception as e:  # noqa: BLE001
         logger.warning(f"Failed to delete temp file {temp_path}: {e}", exc_info=True)
+
+
+_ANALYSIS_WAV_SUFFIX = "_analysis.wav"
+
+# Upper bound on one analysis decode. ffmpeg decodes Opus far faster than real
+# time (seconds per hour of audio), so this only ever ends a hung process.
+ANALYSIS_DECODE_TIMEOUT_S = 15 * 60
+
+# An analysis WAV older than this was stranded by a dead worker. A file still
+# being written has a fresh mtime (ffmpeg writes it to the end, and the decode is
+# bounded above), and every reader opens it, or loads it, as soon as the decode
+# returns; an open file stays readable after it is unlinked.
+_STRANDED_ANALYSIS_WAV_AGE_HOURS = 6
+
+
+@contextmanager
+def soundfile_readable_audio(audio_path: str, *, mono: bool = False) -> Iterator[str]:
+    """Yield a path to ``audio_path``'s audio that soundfile can open.
+
+    A browser-captured recording is stored in the container MediaRecorder
+    produced (WebM/Opus, or MP4/AAC on older Safari), and an import keeps its
+    own container; libsndfile opens neither WebM nor MP4/AAC. A file soundfile
+    reads is yielded as it is; anything else is decoded with ffmpeg to a
+    temporary 16 kHz, 16-bit PCM WAV that is removed on exit.
+
+    16 kHz is the rate both consumers work at: the overlap model resamples to
+    it, and delivery's pitch estimator was validated on 16 kHz audio. A 4 h
+    two-channel 48 kHz capture decodes to about 2.8 GB at its native rate and
+    about 920 MB at 16 kHz. The decode keeps the channels, which delivery needs
+    to tell the two browser capture sources apart; ``mono`` downmixes as well,
+    for overlap, which needs one channel.
+
+    The temporary file lives in the process's temp dir and is removed in a
+    finally block. A worker killed outright (an OOM kill during inference) never
+    reaches that, so each decode first sweeps analysis WAVs older than a few
+    hours from the same temp dir. The sweep runs here rather than on the io
+    lane's daily task because each worker container has a private /tmp that
+    the io lane cannot see.
+
+    Raises:
+        FileNotFoundError: ``audio_path`` does not exist.
+        AudioFormatError: ffmpeg could not decode the file, could not be
+            started, or timed out.
+    """
+    import soundfile as sf
+
+    # libsndfile reports a missing file as one it cannot read, which would send
+    # it to ffmpeg and log a decode failure for what is a missing file.
+    os.stat(audio_path)
+    try:
+        sf.info(audio_path)
+    except sf.LibsndfileError:
+        pass
+    else:
+        yield audio_path
+        return
+
+    cleanup_stale_pipeline_temp_files(
+        max_age_hours=_STRANDED_ANALYSIS_WAV_AGE_HOURS,
+        suffixes=(_ANALYSIS_WAV_SUFFIX,),
+    )
+    temp_fd, temp_path = tempfile.mkstemp(suffix=_ANALYSIS_WAV_SUFFIX)
+    os.close(temp_fd)
+    try:
+        try:
+            convert_to_16k_wav(
+                audio_path, temp_path, mono=mono, timeout=ANALYSIS_DECODE_TIMEOUT_S
+            )
+        except (RuntimeError, OSError, subprocess.TimeoutExpired) as exc:
+            raise AudioFormatError(
+                f"Could not decode {audio_path} for analysis: {exc}"
+            ) from exc
+        yield temp_path
+    finally:
+        cleanup_temp_file(temp_path)
 
 
 # Suffixes this module and the VAD stage give their scratch files. Matched by

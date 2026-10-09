@@ -177,7 +177,13 @@ interface present it without hedging and lets a user check it against the
 audio.
 
 Deliberately numpy and soundfile only, so it holds no model and never pulls
-torch in. The pitch estimator is YIN's cumulative-mean-normalised difference
+torch in. A recording soundfile cannot open is first decoded with ffmpeg to a
+temporary 16 kHz WAV that keeps its channels: a browser capture is stored in
+the container MediaRecorder produced (WebM/Opus, or MP4/AAC on older Safari),
+and imports such as M4A, AAC, MP4 and WMA keep theirs. 16 kHz is the rate the
+pitch estimator was validated at, and it keeps the decoded copy of a long
+two-channel capture to about a third of its native size.
+The pitch estimator is YIN's cumulative-mean-normalised difference
 function — closed-form numpy, chosen after the original autocorrelation
 picker measured a 4% gross-error rate against laryngograph ground truth,
 enough to inflate the pitch-movement spread; the replacement halves every
@@ -243,6 +249,8 @@ from the same "Measure delivery" action for old ones. The result stores under
 the `audio_overlap` key of `analytics_payload` with its own method version
 and its status inside the block — it needs no column and no staleness story,
 because it depends only on the audio, which never changes after processing.
+A recording soundfile cannot open is decoded with ffmpeg to a temporary 16 kHz
+mono WAV first, the rate and layout the model works at.
 
 What it reports is deliberately narrow: that people talked over each other,
 for at least how long, and where in the meeting — never who overlapped whom.
@@ -394,6 +402,16 @@ The normal backend processing path is:
 10. Automatic meeting intelligence when an AI provider and model are configured.
 11. Automatic application of inferred speaker names to unresolved speakers, plus persistence of the meeting title and Markdown meeting notes. Applied suggestions are retained on the transcript as an audit trail.
 
+### Transcription Failure Versus Silence
+
+A transcription engine's `transcribe()` either returns the canonical result or raises `TranscriptionError` ([backend/processing/engines/errors.py](../backend/processing/engines/errors.py)); it never returns `None`. A result with empty text and no segments is a success: the audio held no speech. The dispatcher `transcribe_audio` wraps anything else an engine lets escape, so `TranscriptionError` is the one exception callers treat as a lost transcription. The error's message is written for the UI and names a GPU out-of-memory failure as CUDA out of memory; `gpu_out_of_memory` flags it for code. Out-of-memory counts as a GPU failure only when the model ran on the GPU: an onnx-asr model none of whose sessions runs on the CUDA provider reports the server running out of memory instead (when its sessions cannot be inspected, a GPU host is assumed). After an out-of-memory error the engines drop every reference to the model, including the locals of the frames the error's traceback keeps alive, and collect it, so the memory is actually freed (onnxruntime's arena never shrinks); the live lane, which never retries, therefore does not reuse an exhausted session for every later region. Celery time limits and termination are not transcription failures: engines, the dispatcher and the final pass re-raise them unchanged.
+
+Final processing retries a GPU out-of-memory failure once, after releasing every cached model (ASR, diarisation, embeddings) and the CUDA cache; if releasing them fails, the original out-of-memory error is reported. Any failure that remains sets the transcript's `transcript_status` to `error` with the message in `error_message`, marks the recording `ERROR` with the same message as its `processing_step`, and stops before diarisation, speaker assignment, meeting intelligence and post-processing follow-ups, none of which can produce anything from a transcript that does not exist. Provisional live text already on the row is kept. `Retry Speaker Inference` returns such a recording to `ERROR` rather than `PROCESSED`; only reprocessing can repair it.
+
+`error_message` is shared with notes failures, so ownership follows `transcript_status`: while it is `error` the message is the transcription failure. Only the `Transcript` methods `fail_transcription`, `complete_transcription` and `set_notes_error_message` write it, so notes runs never clear or overwrite a transcription failure, and a backup restore that settles an interrupted recording marks its transcription failed the same way. Notes cannot be generated for a failed transcription: the API answers 409 and a notes task queued earlier does nothing. A later run that completes clears a transcription failure. When that run finds no speech at all it leaves `notes_status` alone, since there is nothing to summarise, which matches the success path skipping meeting intelligence for an empty transcript.
+
+The invariant this protects: an empty `completed` transcript means the meeting was silent, never that ASR crashed. Before this contract the engines returned `None` for every failure and the pipeline saved that as an empty, completed transcript, so a GPU out-of-memory run looked identical to a silent meeting. Code that calls an engine must not turn a `TranscriptionError` into an empty result. The live lane still records a failure as a failure but does not stop for one: it is best-effort and the final pass transcribes the whole recording again, so a region whose transcription fails is dropped, its ASR ledger row is marked failed, and the lane keeps advancing.
+
 ### Speaker Cap And Voiceprint Versioning
 
 `Recording.max_speakers` is an optional per-recording upper bound. `NULL` means auto-detect and is the default; that path passes no speaker keyword to pyannote at all, so it is unchanged from before the field existed. A set value is applied as pyannote's `max_speakers` and never as `num_speakers` — an exact count forces a split whenever the user overcounts, which is the over-clustering failure the field exists to prevent. It is settable at import, on the reprocess request, and throughout a live capture, since diarisation runs at stop time.
@@ -522,6 +540,20 @@ diarisation configuration and completed window result. The legacy window
 lane-specific ASR and diarisation fields. Operator-facing recording pages now
 surface only high-level recording progress plus Meeting Edge guidance while a
 recording is still in flight.
+
+A run that fails outright still accounts for the audio it drained. If it had
+already carried the audio past its cut point into `live/buffer.wav`, that buffer
+is kept and `buffer_abs_start` moves to where it starts, exactly as a successful
+run would leave it. Otherwise the run's audio is spent: `buffer_abs_start` moves
+past the audio the run read, and the buffer and the `live/context.wav` run-up are
+removed. When the run failed while reading, its length comes from the WAV
+headers, falling back to the buffer length saved in `live/state.json` at
+carry-over (`buffer_len_s`) and to the chunk durations recorded at upload.
+Advancing only `next_expected` would replay the stale buffer in the next run and
+stamp every later utterance early by the length of the failed run. The new state
+is saved in one write before any audio is removed, so a failed write leaves the
+buffer consistent with the state on disk, and `next_expected` advances even when
+the timeline cannot be worked out.
 
 The live lane is best-effort: any failure is logged, the lane still advances,
 and nothing is re-raised. When the recording finalises, `process_recording_task`

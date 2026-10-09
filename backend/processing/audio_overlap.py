@@ -91,16 +91,20 @@ def measure_audio_overlap(audio_path: str, hf_token: str | None) -> dict[str, An
     import torch
     from pyannote.audio import Inference
 
+    from backend.processing.audio_preprocessing import soundfile_readable_audio
     from backend.processing.segmentation_refinement import load_segmentation_model
 
     device_str = "cuda" if torch.cuda.is_available() else "cpu"
     model = load_segmentation_model(device_str, hf_token)
     inference = Inference(model, step=OVERLAP_INFERENCE_STEP_S)
 
-    info = sf.info(audio_path)
-    duration_ms = int(math.floor(info.frames / info.samplerate * 1000))
+    # Downmixed when it has to be decoded at all: the segmentation model reads
+    # one channel, and a two-channel copy doubles what this process holds.
+    with soundfile_readable_audio(audio_path, mono=True) as readable_path:
+        info = sf.info(readable_path)
+        duration_ms = int(math.floor(info.frames / info.samplerate * 1000))
+        scores = inference(readable_path)
 
-    scores = inference(audio_path)
     regions = _overlap_regions_from_chunks(scores.data, OVERLAP_INFERENCE_STEP_S, 10.0)
     total_ms = sum(end - start for start, end in regions)
 

@@ -16,6 +16,7 @@ const api = {
   restoreRecording: vi.fn(),
   softDeleteRecording: vi.fn(),
   permanentlyDeleteRecording: vi.fn(),
+  exportAudio: vi.fn(),
 };
 
 vi.mock("@/lib/api", () => ({
@@ -29,6 +30,7 @@ vi.mock("@/lib/api", () => ({
   softDeleteRecording: (...a: unknown[]) => api.softDeleteRecording(...a),
   permanentlyDeleteRecording: (...a: unknown[]) =>
     api.permanentlyDeleteRecording(...a),
+  exportAudio: (...a: unknown[]) => api.exportAudio(...a),
 }));
 
 const captureState: {
@@ -186,5 +188,37 @@ describe("useRecordingActions", () => {
     expect(api.softDeleteRecording).toHaveBeenCalledWith("rec-1");
     expect(api.permanentlyDeleteRecording).toHaveBeenCalledWith("rec-1");
     expect(onSuccess).toHaveBeenCalledTimes(5);
+  });
+
+  it("exports audio and says what went wrong when there is no file to save", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const onSuccess = vi.fn();
+    const onError = vi.fn();
+    const { result } = renderHook(() => useRecordingActions());
+
+    await act(async () => {
+      await result.current.exportAudio("rec-1", "Weekly sync", { onSuccess });
+    });
+    expect(api.exportAudio).toHaveBeenCalledWith("rec-1", "Weekly sync");
+    expect(onSuccess).toHaveBeenCalledTimes(1);
+    expect(addNotification).not.toHaveBeenCalled();
+
+    const answers: Array<[number, RegExp]> = [
+      [202, /still being prepared/],
+      [404, /audio is not available/],
+      [500, /^Failed to export audio\.$/],
+    ];
+    for (const [status, message] of answers) {
+      addNotification.mockReset();
+      api.exportAudio.mockRejectedValueOnce({ response: { status } });
+      await act(async () => {
+        await result.current.exportAudio("rec-1", "Weekly sync", { onError });
+      });
+      expect(addNotification).toHaveBeenCalledWith({
+        message: expect.stringMatching(message),
+        type: "error",
+      });
+    }
+    expect(onError).toHaveBeenCalledTimes(3);
   });
 });

@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 
 import { Recording, RecordingId, RecordingStatus } from "@/types";
 import { useNotificationStore } from "@/lib/notificationStore";
+import { notesErrorDetail } from "@/lib/transcriptErrors";
 
 /**
  * Watches a recordings list for status transitions and raises the matching
@@ -54,10 +55,11 @@ export function useRecordingStatusNotifications(
           prevNotesStatus !== "error" &&
           currentNotesStatus === "error"
         ) {
+          const detail = notesErrorDetail(rec.transcript);
           addNotification({
             type: "error",
-            message: rec.transcript.error_message
-              ? `Meeting notes failed for "${rec.name}": ${rec.transcript.error_message}`
+            message: detail
+              ? `Meeting notes failed for "${rec.name}": ${detail}`
               : `Meeting notes failed for "${rec.name}"`,
           });
         }
@@ -77,10 +79,30 @@ export function useRecordingStatusNotifications(
             message: `Transcript ready for "${rec.name}"`,
           });
         }
+        // Reprocessing deletes the transcript, so a failed retry's row is new:
+        // there is no previous transcript status, only an in-flight recording.
+        const sawTranscriptionRun =
+          prevTranscriptStatus !== undefined ||
+          (prevStatus !== undefined && prevStatus !== RecordingStatus.ERROR);
+        if (
+          sawTranscriptionRun &&
+          prevTranscriptStatus !== "error" &&
+          currentTranscriptStatus === "error"
+        ) {
+          // The message already reads "Transcription failed: ...".
+          addNotification({
+            type: "error",
+            message: rec.transcript.error_message
+              ? `"${rec.name}": ${rec.transcript.error_message}`
+              : `Transcription failed for "${rec.name}"`,
+          });
+        }
         prevTranscriptStatusRef.current.set(
           rec.id,
           currentTranscriptStatus || "pending",
         );
+      } else {
+        prevTranscriptStatusRef.current.delete(rec.id);
       }
     });
   }, [recordings, addNotification]);

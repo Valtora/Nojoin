@@ -651,6 +651,44 @@ def test_infer_speakers_task_skips_without_complete_llm_configuration_and_restor
         verification_engine.dispose()
 
 
+def test_infer_speakers_task_leaves_a_failed_transcription_in_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Retrying speaker inference must not relabel a failed ASR run as finished."""
+    engine = _create_infer_speakers_task_database(tmp_path, owner_settings={})
+    failure = "Transcription failed: the GPU ran out of memory (CUDA out of memory)"
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "UPDATE transcripts SET transcript_status = 'error', "
+                "error_message = :failure, segments = '[]', text = '' "
+                "WHERE recording_id = 1"
+            ),
+            {"failure": failure},
+        )
+
+    monkeypatch.setattr(tasks_module, "get_sync_session", lambda: Session(engine))
+    monkeypatch.setattr(tasks_module.config_manager, "reload", lambda: None)
+    monkeypatch.setattr(llm_config_module.config_manager, "get_all", lambda: {})
+
+    verification_engine = create_engine(str(engine.url), future=True)
+    try:
+        _run_infer_speakers_task(engine)
+
+        with Session(verification_engine) as session:
+            recording_row = session.exec(
+                text(
+                    "SELECT status, processing_step, client_status "
+                    "FROM recordings WHERE id = 1"
+                )
+            ).one()
+
+        assert tuple(recording_row) == ("ERROR", failure, "IDLE")
+    finally:
+        verification_engine.dispose()
+
+
 def test_infer_speakers_task_persists_rule_based_self_intro_without_llm(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

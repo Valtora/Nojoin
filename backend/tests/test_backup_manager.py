@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
+import subprocess
 import time
 import zipfile
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Optional
 
 import pytest
@@ -27,6 +30,7 @@ from sqlmodel import Field, Session, SQLModel, select
 import backend.core.backup.export as backup_export
 import backend.core.backup.format as backup_format
 import backend.core.backup.paths as backup_paths
+import backend.core.backup.plans as backup_plans
 import backend.core.backup.restore.runner as backup_runner
 import backend.core.backup.restore.stages as backup_stages
 import backend.core.backup.runtime as backup_runtime
@@ -1741,6 +1745,10 @@ async def test_compressed_quality_reencodes_while_original_stores_bytes_verbatim
         # The member carries the re-encoded extension, and the recording row's
         # audio_path agrees with it so the restore can find the file again.
         assert archive.read("recordings/quarterly-planning.opus") == b"OPUS-AUDIO"
+        # The WAV master is deflated in Original quality, but the Opus it became
+        # is already compressed and is stored.
+        member = archive.getinfo("recordings/quarterly-planning.opus")
+        assert member.compress_type == zipfile.ZIP_STORED
         rows = json.loads(archive.read("recordings.json"))
         assert rows[0]["audio_path"] == "recordings/quarterly-planning.opus"
         info = json.loads(archive.read("backup_info.json"))
@@ -1781,6 +1789,41 @@ async def test_backup_counts_recordings_whose_audio_is_missing_from_disk(
             ]
             == 1
         )
+
+    await context.async_engine.dispose()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "quality",
+    [backup_format.ARCHIVE_QUALITY_ORIGINAL, backup_format.ARCHIVE_QUALITY_COMPRESSED],
+)
+async def test_backup_counts_an_empty_audio_file_as_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, quality: str
+) -> None:
+    # An interrupted write can leave an empty master, which the player reports as
+    # unavailable. Original quality used to archive it as an empty member without a
+    # word, and Compressed counted it as an audio file that failed to encode.
+    context = build_test_context(tmp_path / "source")
+    patch_backup_manager(monkeypatch, context)
+    monkeypatch.setenv("DATA_ENCRYPTION_KEY", "source-encryption-key")
+    empty = context.path_manager.recordings_directory / "interrupted.webm"
+    empty.write_bytes(b"")
+    await seed_source_data(
+        context.async_session_maker,
+        recording_meeting_uid="meeting-uid-empty",
+        recording_audio_path=str(empty),
+        recording_proxy_path=None,
+    )
+
+    zip_path, warnings = await BackupManager.create_backup(
+        include_audio=True, archive_quality=quality
+    )
+
+    assert warnings["recordings_without_audio"] == 1
+    assert warnings["recordings_audio_failed"] == 0
+    with zipfile.ZipFile(zip_path, "r") as archive:
+        assert not [n for n in archive.namelist() if n.startswith("recordings/")]
 
     await context.async_engine.dispose()
 
@@ -2539,3 +2582,300 @@ async def test_backup_progress_callback_failure_never_breaks_the_export(
         assert json.loads(archive.read("recordings.json"))
 
     await context.async_engine.dispose()
+
+
+# --- Every recording format is archived ------------------------------------
+#
+# The archive used to take audio only from .wav .mp3 .m4a .ogg .flac and .opus
+# files. Every browser recording made since v1.1.0 (finalised as WebM) and every
+# AAC, MP4, WMA or WebM import was archived as metadata only, reported as "no
+# audio file on disk", and restored as a PROCESSED recording whose player waited
+# for a proxy forever.
+
+needs_ffmpeg = pytest.mark.skipif(
+    shutil.which("ffmpeg") is None, reason="ffmpeg is not installed"
+)
+
+
+async def _back_up_recording(
+    tmp_path: Path, monkeypatch, audio: Path, quality: str
+) -> str:
+    source = build_test_context(tmp_path / "source")
+    patch_backup_manager(monkeypatch, source)
+    monkeypatch.setenv("DATA_ENCRYPTION_KEY", "source-encryption-key")
+    recorded = source.path_manager.recordings_directory / audio.name
+    shutil.copyfile(audio, recorded)
+    await seed_source_data(
+        source.async_session_maker,
+        recording_meeting_uid=f"meeting-{audio.suffix[1:]}",
+        recording_audio_path=str(recorded),
+        recording_proxy_path=None,
+    )
+
+    zip_path, warnings = await BackupManager.create_backup(
+        include_audio=True, archive_quality=quality
+    )
+
+    assert warnings["recordings_without_audio"] == 0
+    assert warnings["recordings_audio_failed"] == 0
+    await source.async_engine.dispose()
+    return zip_path
+
+
+async def _restore_recording(tmp_path: Path, monkeypatch, zip_path: str):
+    target = build_test_context(tmp_path / "target")
+    patch_backup_manager(monkeypatch, target)
+    monkeypatch.setenv("DATA_ENCRYPTION_KEY", "target-encryption-key")
+    finalized: list[tuple[int, bool]] = []
+    monkeypatch.setattr(
+        backup_stages,
+        "_enqueue_recording_finalization",
+        lambda recording_id, needs_proxy=True: finalized.append(
+            (recording_id, needs_proxy)
+        ),
+    )
+    job_id = "restore-audio-formats"
+    BackupManager.restore_jobs[job_id] = {
+        "status": "pending",
+        "progress": "Queued",
+        "error": None,
+    }
+
+    await BackupManager.restore_backup(
+        job_id, zip_path, clear_existing=False, overwrite_existing=False
+    )
+
+    assert BackupManager.restore_jobs[job_id]["status"] == "completed"
+    with Session(target.sync_engine) as session:
+        restored = session.exec(select(TestRecording)).one()
+    await target.async_engine.dispose()
+    return restored, finalized
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("suffix", [".webm", ".mp4", ".aac", ".wma"])
+async def test_original_quality_round_trips_every_recording_format(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, suffix: str
+) -> None:
+    audio = tmp_path / f"meeting{suffix}"
+    audio.write_bytes(f"{suffix}-AUDIO-BYTES".encode())
+
+    zip_path = await _back_up_recording(
+        tmp_path, monkeypatch, audio, backup_format.ARCHIVE_QUALITY_ORIGINAL
+    )
+
+    with zipfile.ZipFile(zip_path) as archive:
+        assert archive.read(f"recordings/meeting{suffix}") == audio.read_bytes()
+
+    restored, finalized = await _restore_recording(tmp_path, monkeypatch, zip_path)
+
+    assert restored.audio_path.endswith(f"meeting{suffix}")
+    assert Path(restored.audio_path).read_bytes() == audio.read_bytes()
+    # The audio landed, so the restore asks for a playback proxy to be made from it.
+    assert finalized == [(restored.id, True)]
+
+
+def _encode_media(target: Path, args: list[str]) -> None:
+    subprocess.run(
+        ["ffmpeg", "-y", "-loglevel", "error"]
+        + ["-f", "lavfi", "-i", "testsrc=size=64x64:rate=25:duration=2"]
+        + ["-f", "lavfi", "-i", "sine=frequency=440:duration=2:sample_rate=48000"]
+        + args
+        + ["-shortest", str(target)],
+        check=True,
+    )
+
+
+@needs_ffmpeg
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("name", "args"),
+    [
+        # A browser capture: two-channel Opus in WebM, no video.
+        ("capture.webm", ["-map", "1:a", "-ac", "2", "-c:a", "libopus"]),
+        # An imported screen recording with a video track. The .opus muxer takes
+        # no video, so this guards the audio-only outcome, not the -vn flag.
+        ("screen.mp4", ["-c:v", "mpeg4", "-c:a", "aac"]),
+    ],
+)
+async def test_compressed_quality_reencodes_every_recording_format_to_opus(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, name: str, args: list[str]
+) -> None:
+    audio = tmp_path / name
+    _encode_media(audio, args)
+
+    zip_path = await _back_up_recording(
+        tmp_path, monkeypatch, audio, backup_format.ARCHIVE_QUALITY_COMPRESSED
+    )
+
+    member = f"recordings/{Path(name).stem}.opus"
+    with zipfile.ZipFile(zip_path) as archive:
+        assert archive.getinfo(member).compress_type == zipfile.ZIP_STORED
+        extracted = tmp_path / "member.opus"
+        extracted.write_bytes(archive.read(member))
+    probe = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "stream=codec_type,codec_name"]
+        + ["-of", "csv=p=0", str(extracted)],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert probe.stdout.split() == ["opus,audio"]
+
+    restored, finalized = await _restore_recording(tmp_path, monkeypatch, zip_path)
+
+    assert restored.audio_path.endswith(".opus")
+    assert Path(restored.audio_path).exists()
+    assert finalized == [(restored.id, True)]
+
+
+# --- How audio members are stored --------------------------------------------
+#
+# Deflating already-compressed audio measured a 0.99 ratio at about 58 MB/s, so
+# those members are stored as they are. WAV is raw PCM, which deflate still
+# shrinks, and the records stay deflated.
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("suffix", "compress_type"),
+    [
+        (".webm", zipfile.ZIP_STORED),
+        (".m4a", zipfile.ZIP_STORED),
+        (".wav", zipfile.ZIP_DEFLATED),
+    ],
+)
+async def test_audio_members_are_stored_unless_they_are_raw_pcm(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, suffix: str, compress_type: int
+) -> None:
+    audio = tmp_path / f"meeting{suffix}"
+    audio.write_bytes(b"\0" * 4096)
+
+    zip_path = await _back_up_recording(
+        tmp_path, monkeypatch, audio, backup_format.ARCHIVE_QUALITY_ORIGINAL
+    )
+
+    with zipfile.ZipFile(zip_path) as archive:
+        member = archive.getinfo(f"recordings/meeting{suffix}")
+        assert member.compress_type == compress_type
+        assert archive.read(member) == audio.read_bytes()
+        records = archive.getinfo("recordings.json")
+        assert records.compress_type == zipfile.ZIP_DEFLATED
+
+
+def test_audio_that_collides_on_its_archive_name_is_counted_and_logged(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # Compressed quality names every member <stem>.opus, so x.wav and x.webm both
+    # want recordings/x.opus. The second used to be skipped without a word.
+    context = build_test_context(tmp_path / "source")
+    patch_backup_manager(monkeypatch, context)
+    recordings_dir = context.path_manager.recordings_directory
+    rows = []
+    for name in ("meeting.wav", "meeting.webm"):
+        (recordings_dir / name).write_bytes(name.encode())
+        rows.append(SimpleNamespace(audio_path=str(recordings_dir / name)))
+    encoded = tmp_path / "encoded.opus"
+    encoded.write_bytes(b"OPUS-AUDIO")
+    monkeypatch.setattr(backup_export, "_compress_to_opus", lambda source: str(encoded))
+
+    plan = backup_plans._build_audio_plan(
+        rows, recordings_dir, backup_format.ARCHIVE_QUALITY_COMPRESSED
+    )
+    zip_path, warnings = backup_export._create_backup_sync(
+        backup_export._ExportRequest(
+            recordings_dir=recordings_dir,
+            config_path=context.path_manager.config_path,
+            db_dump={},
+            include_audio=True,
+            audio_plan=plan,
+            archive_quality=backup_format.ARCHIVE_QUALITY_COMPRESSED,
+        )
+    )
+
+    assert warnings["recordings_audio_failed"] == 1
+    assert warnings["recordings_without_audio"] == 0
+    assert "recordings/meeting.opus" in caplog.text
+    with zipfile.ZipFile(zip_path) as archive:
+        members = [n for n in archive.namelist() if n.startswith("recordings/")]
+        assert members == ["recordings/meeting.opus"]
+
+
+@pytest.mark.anyio
+async def test_recording_without_archived_audio_never_takes_another_recordings_member(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # In Compressed quality h.wav is archived as recordings/h.opus. A recording whose
+    # own h.opus is missing used to be given that same path, so a restore handed it
+    # h.wav's audio and left h.wav's recording with none.
+    source = build_test_context(tmp_path / "source")
+    patch_backup_manager(monkeypatch, source)
+    monkeypatch.setenv("DATA_ENCRYPTION_KEY", "source-encryption-key")
+    recordings_dir = source.path_manager.recordings_directory
+    (recordings_dir / "h.wav").write_bytes(b"H-WAV")
+    encoded = tmp_path / "encoded.opus"
+    encoded.write_bytes(b"H-WAV-AS-OPUS")
+    monkeypatch.setattr(backup_export, "_compress_to_opus", lambda source: str(encoded))
+    await seed_source_data(
+        source.async_session_maker,
+        recording_meeting_uid="meeting-present",
+        recording_audio_path=str(recordings_dir / "h.wav"),
+        recording_proxy_path=None,
+    )
+    async with source.async_session_maker() as session:
+        # A lower id than the seeded recording, so its row is written first.
+        session.add(
+            TestRecording(
+                id=39,
+                name="Lost audio",
+                meeting_uid="meeting-lost",
+                audio_path=str(recordings_dir / "h.opus"),
+                status="PROCESSED",
+                user_id=1,
+            )
+        )
+        await session.commit()
+
+    zip_path, warnings = await BackupManager.create_backup(
+        include_audio=True, archive_quality=backup_format.ARCHIVE_QUALITY_COMPRESSED
+    )
+    await source.async_engine.dispose()
+
+    assert warnings["recordings_without_audio"] == 1
+    with zipfile.ZipFile(zip_path) as archive:
+        archived_paths = {
+            row["meeting_uid"]: row["audio_path"]
+            for row in json.loads(archive.read("recordings.json"))
+        }
+    assert archived_paths["meeting-present"] == "recordings/h.opus"
+    assert archived_paths["meeting-lost"] != "recordings/h.opus"
+
+    target = build_test_context(tmp_path / "target")
+    patch_backup_manager(monkeypatch, target)
+    monkeypatch.setenv("DATA_ENCRYPTION_KEY", "target-encryption-key")
+    monkeypatch.setattr(
+        backup_stages,
+        "_enqueue_recording_finalization",
+        lambda recording_id, needs_proxy=True: None,
+    )
+    job_id = "restore-unarchived-audio"
+    BackupManager.restore_jobs[job_id] = {
+        "status": "pending",
+        "progress": "Queued",
+        "error": None,
+    }
+    await BackupManager.restore_backup(
+        job_id, zip_path, clear_existing=False, overwrite_existing=False
+    )
+
+    assert BackupManager.restore_jobs[job_id]["status"] == "completed"
+    with Session(target.sync_engine) as session:
+        restored = {
+            row.meeting_uid: row for row in session.exec(select(TestRecording)).all()
+        }
+    await target.async_engine.dispose()
+    present = Path(restored["meeting-present"].audio_path)
+    assert present.read_bytes() == b"H-WAV-AS-OPUS"
+    assert not Path(restored["meeting-lost"].audio_path).exists()
