@@ -345,13 +345,13 @@ export default function SplitPersonModal({
                     >
                       <div className="p-4 flex-1">
                         <div className="mb-3 flex items-center justify-between">
-                          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-surface-card text-xs font-medium text-contrast-helper">
+                          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-pill bg-surface-card text-xs font-medium text-contrast-helper">
                             <Volume2 className="w-3 h-3" />
                             {(seg.end - seg.start).toFixed(1)}s
                           </div>
                           {isSelected && (
                             <div className="w-5 h-5 bg-action rounded-full flex items-center justify-center animate-in zoom-in duration-200">
-                              <Check className="w-3 h-3 text-foreground" />
+                              <Check className="w-3 h-3 text-action-on" />
                             </div>
                           )}
                         </div>

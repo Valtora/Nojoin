@@ -89,11 +89,11 @@ export default function DashboardTasksPanel() {
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <Check className="h-5 w-5 shrink-0 text-action-text" />
         <h2 className="text-base font-semibold text-foreground">Task List</h2>
-        <span className="inline-flex items-center gap-2 rounded-full border border-action-border bg-action-tint px-2.5 py-0.5 text-xs font-semibold text-action-text">
+        <span className="inline-flex items-center gap-2 rounded-pill border border-action-border bg-action-tint px-2.5 py-0.5 text-xs font-semibold text-action-text">
           {openTasks.length} open
         </span>
         {completedTasks.length > 0 && (
-          <span className="inline-flex items-center gap-2 rounded-full border border-control-border px-2.5 py-0.5 text-xs font-semibold text-contrast-muted">
+          <span className="inline-flex items-center gap-2 rounded-pill border border-control-border px-2.5 py-0.5 text-xs font-semibold text-contrast-muted">
             {completedTasks.length} completed
           </span>
         )}

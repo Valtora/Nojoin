@@ -29,6 +29,7 @@ import {
   DEFAULT_MEETING_EDGE_CONTEXT_LEVEL,
 } from "@/lib/meetingEdgeContext";
 import { getErrorMessage, getErrorStatus, isAbortError } from "@/lib/errors";
+import { notesErrorDetail } from "@/lib/transcriptErrors";
 import { subscribeRecordingRemoved } from "@/lib/recordingEvents";
 import {
   Recording,
@@ -138,7 +139,9 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
   // Notes History (separate from transcript history, can include null values)
   const [notesHistory, setNotesHistory] = useState<(string | null)[]>([]);
   const [notesFuture, setNotesFuture] = useState<(string | null)[]>([]);
-  const lastNotesErrorRef = useRef<string | null>(null);
+  // The notes error already showing when a recording opens is not news: only a
+  // change after that raises a toast. Keyed by recording so each one primes.
+  const lastNotesErrorRef = useRef<{ recordingId: string; error: string | null } | null>(null);
   const lastMeetingEdgeErrorRef = useRef<string | null>(null);
   const isInFlightRecording = isRecordingInFlight(recording);
   const compactChatPanelHeight = isCompact
@@ -541,21 +544,20 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
   }, [recording, transcriptSegments]);
 
   useEffect(() => {
+    if (!recording) return;
     const notesError =
-      recording?.transcript?.notes_status === "error"
-        ? recording.transcript?.error_message ||
+      recording.transcript?.notes_status === "error"
+        ? notesErrorDetail(recording.transcript) ||
           "Meeting notes could not be generated. Configure an AI provider and model in Settings, then try again."
         : null;
 
-    if (notesError && notesError !== lastNotesErrorRef.current) {
+    const last = lastNotesErrorRef.current;
+    lastNotesErrorRef.current = { recordingId: recording.id, error: notesError };
+    if (!last || last.recordingId !== recording.id) return;
+    if (notesError && notesError !== last.error) {
       addNotification({ type: "error", message: notesError });
-      lastNotesErrorRef.current = notesError;
     }
-
-    if (!notesError) {
-      lastNotesErrorRef.current = null;
-    }
-  }, [addNotification, recording?.transcript?.error_message, recording?.transcript?.notes_status]);
+  }, [addNotification, recording]);
 
   useEffect(() => {
     const meetingEdgeError =

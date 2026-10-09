@@ -183,7 +183,7 @@ export default function MeetingAnalysisPanel({
           />
           What was discussed
         </h3>
-        <span className="rounded-full border border-surface-border px-2 py-0.5 text-[11px] font-medium text-contrast-helper">
+        <span className="rounded-pill border border-surface-border px-2 py-0.5 text-[11px] font-medium text-contrast-helper">
           Read by AI, not measured
         </span>
       </div>

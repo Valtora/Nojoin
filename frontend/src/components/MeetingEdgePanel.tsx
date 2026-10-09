@@ -262,7 +262,7 @@ function MeetingEdgePanel({
   return (
     <section className="@container density-surface flex h-full min-h-0 flex-col border border-surface-border bg-surface-card shadow-card">
       <div className="flex items-center justify-between gap-3">
-        <div className="inline-flex items-center gap-2 rounded-full border border-action-border bg-action-tint px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-action-text">
+        <div className="inline-flex items-center gap-2 rounded-pill border border-action-border bg-action-tint px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-action-text">
           {status === "updating" ? (
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
           ) : (
@@ -395,7 +395,7 @@ function MeetingEdgePanel({
           </div>
         )}
 
-        <div className="mt-5 rounded-[1.5rem] border border-action-border bg-action-tint p-4">
+        <div className="mt-5 rounded-3xl border border-action-border bg-action-tint p-4">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
               <Target className="h-4 w-4 text-action-text" />
@@ -413,7 +413,7 @@ function MeetingEdgePanel({
             onChange={handleChange}
             onBlur={handleBlur}
             placeholder="Example: Help me ask sharper timeline questions and flag hidden risks or missing owners."
-            className="mt-3 min-h-[6rem] w-full resize-none rounded-[1.25rem] border border-surface-border bg-surface-card px-4 py-3 text-sm leading-6 text-foreground outline-none transition focus:border-action focus:ring-2 focus:ring-action"
+            className="mt-3 min-h-[6rem] w-full resize-none rounded-[calc(1.25rem*var(--radius-scale))] border border-surface-border bg-surface-card px-4 py-3 text-sm leading-6 text-foreground outline-none transition focus:border-action focus:ring-2 focus:ring-action"
           />
         </div>
 

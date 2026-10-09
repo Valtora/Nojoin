@@ -193,6 +193,12 @@ the configured Whisper model, Pyannote diarisation, and voice embeddings. The
 worker validates those assets on CPU where possible, caches them on disk, and
 releases model objects and CUDA memory before returning to idle.
 
+Downloaded models live in the `model_cache` volume (`XDG_CACHE_HOME` and
+`HF_HOME` on the worker lanes), so they survive container recreation. The text
+embedding model behind search and meeting chat is cached there too, in
+`$XDG_CACHE_HOME/fastembed`; set `FASTEMBED_CACHE_PATH` on the worker lanes to
+keep it somewhere else.
+
 One worker lane (`worker-io`) runs the embedded Celery Beat scheduler (`celery
 worker -B`) that drives Nojoin's periodic jobs: calendar sync every 15 minutes,
 calendar push-channel renewal every 30 minutes, and temporary-recording cleanup
