@@ -38,41 +38,20 @@ def load_audio(path: str, *, channels_first: bool = True):
 
 def ensure_ffmpeg_in_path():
     """
-    Ensures ffmpeg and ffprobe are in the system PATH.
-    Checks common locations if not found.
+    Warn when ffmpeg or ffprobe is not on PATH.
+
+    PATH is the only place looked: the images and the host setup in
+    docs/DEVELOPMENT.md both put the tools there. PATH is never edited, so
+    narrowing it, as a test does to stand in for a host without ffmpeg, takes
+    ffmpeg away from every caller rather than until the next call restores it.
     """
     if shutil.which("ffmpeg") and shutil.which("ffprobe"):
         return
 
-    possible_paths = [
-        # Windows
-        os.path.join(os.getcwd(), "ffmpeg.exe"),
-        r"C:\ffmpeg\bin\ffmpeg.exe",
-        r"C:\Program Files\ffmpeg\bin\ffmpeg.exe",
-        # Linux / Unix
-        "/usr/bin/ffmpeg",
-        "/usr/local/bin/ffmpeg",
-        "/snap/bin/ffmpeg",
-        # macOS
-        "/opt/homebrew/bin/ffmpeg",
-        "/usr/local/opt/ffmpeg/bin/ffmpeg",
-    ]
-
-    found = False
-    for p in possible_paths:
-        if os.path.exists(p):
-            ffmpeg_dir = os.path.dirname(p)
-            if ffmpeg_dir not in os.environ["PATH"]:
-                logger.info(f"Adding ffmpeg directory to PATH: {ffmpeg_dir}")
-                os.environ["PATH"] += os.pathsep + ffmpeg_dir
-            found = True
-            break
-
-    if not found and not (shutil.which("ffmpeg") and shutil.which("ffprobe")):
-        logger.warning(
-            "FFmpeg/FFprobe not found in PATH or common locations. "
-            "Please install FFmpeg to enable audio processing features."
-        )
+    logger.warning(
+        "FFmpeg/FFprobe not found in PATH. "
+        "Please install FFmpeg to enable audio processing features."
+    )
 
 
 def get_audio_duration(file_path: str, timeout: float | None = None) -> float:
