@@ -349,8 +349,8 @@ def _normalise_restored_recording_state(session: Any, state: "_RestoreState") ->
             recording.status = RESTORED_RECORDING_TERMINAL_STATUS
         else:
             recording.status = RESTORED_RECORDING_INTERRUPTED_STATUS
-            if transcript is not None and hasattr(transcript, "error_message"):
-                transcript.error_message = RESTORED_RECORDING_INTERRUPTED_MESSAGE
+            if transcript is not None:
+                transcript.fail_transcription(RESTORED_RECORDING_INTERRUPTED_MESSAGE)
                 session.add(transcript)
 
         logger.info(

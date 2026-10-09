@@ -24,11 +24,6 @@ ARCHIVE_QUALITY_ORIGINAL = "original"
 ARCHIVE_QUALITIES = (ARCHIVE_QUALITY_COMPRESSED, ARCHIVE_QUALITY_ORIGINAL)
 
 
-ARCHIVABLE_AUDIO_EXTENSIONS = frozenset(
-    {".wav", ".mp3", ".m4a", ".ogg", ".flac", ".opus"}
-)
-
-
 RESTORE_STAGING_DIRNAME = "restore_staging"
 
 

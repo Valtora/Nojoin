@@ -44,7 +44,7 @@ export default function RecordingTagEditor({ recordingId, tags, onTagsUpdated, c
           return (
             <span
               key={tag.id || tag.name}
-              className={`inline-flex items-center rounded-full border bg-surface-inset text-contrast-muted ${compact ? "px-2.5 py-1 text-xs font-medium" : "px-3 py-1 text-sm font-medium border-control-border"}`}
+              className={`inline-flex items-center rounded-pill border bg-surface-inset text-contrast-muted ${compact ? "px-2.5 py-1 text-xs font-medium" : "px-3 py-1 text-sm font-medium border-control-border"}`}
               title={parentName ? `Parent: ${parentName}` : undefined}
             >
               <span className={`w-2 h-2 rounded-full mr-2 ${color.dot}`} />
@@ -63,7 +63,7 @@ export default function RecordingTagEditor({ recordingId, tags, onTagsUpdated, c
 
         <button
           onClick={() => setIsModalOpen(true)}
-          className={`inline-flex items-center rounded-full border border-dashed text-contrast-helper transition-colors hover:border-action-border hover:text-contrast-muted dark:hover:border-action-border ${compact ? "px-2.5 py-1 text-xs font-medium" : "px-3 py-1 text-sm font-medium border-control-border"}`}
+          className={`inline-flex items-center rounded-pill border border-dashed text-contrast-helper transition-colors hover:border-action-border hover:text-contrast-muted dark:hover:border-action-border ${compact ? "px-2.5 py-1 text-xs font-medium" : "px-3 py-1 text-sm font-medium border-control-border"}`}
         >
           <Plus className={`${compact ? "mr-1 h-3.5 w-3.5" : "mr-1.5 h-4 w-4"}`} />
           Add Tag

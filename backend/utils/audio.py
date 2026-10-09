@@ -198,6 +198,36 @@ def convert_to_mono_16k(input_path: str, output_path: str):
         raise RuntimeError(f"Failed to convert audio: {e.stderr.decode()}")
 
 
+def convert_to_16k_wav(
+    input_path: str, output_path: str, *, mono: bool, timeout: float
+) -> None:
+    """Decode audio to a 16 kHz, 16-bit PCM WAV using ffmpeg.
+
+    Keeps the channels unless ``mono``. The WAV is written as RF64 once it
+    passes 4 GiB (``-rf64 auto``): plain WAV cannot describe a larger file, and
+    ffmpeg would otherwise write a broken header and still exit 0, leaving a
+    reader to see only the first 4 GiB.
+
+    Raises:
+        RuntimeError: ffmpeg failed; the message carries its stderr.
+        subprocess.TimeoutExpired: ffmpeg ran past ``timeout`` seconds and was
+            killed.
+        OSError: ffmpeg could not be started.
+    """
+    ensure_ffmpeg_in_path()
+
+    cmd = ["ffmpeg", "-y", "-i", input_path, "-acodec", "pcm_s16le", "-ar", "16000"]
+    if mono:
+        cmd += ["-ac", "1"]
+    cmd += ["-rf64", "auto", output_path]
+
+    try:
+        subprocess.run(cmd, check=True, capture_output=True, timeout=timeout)
+    except subprocess.CalledProcessError as e:
+        stderr = e.stderr.decode(errors="replace") if e.stderr else str(e)
+        raise RuntimeError(f"Failed to decode audio: {stderr}") from e
+
+
 def convert_to_mp3(input_path: str, output_path: str) -> bool:
     """
     Convert audio to MP3 (128kbps) using ffmpeg.

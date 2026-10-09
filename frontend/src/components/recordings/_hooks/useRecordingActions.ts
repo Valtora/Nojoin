@@ -6,6 +6,7 @@ import {
   archiveRecording,
   deleteRecording,
   discardRecordingCapture,
+  exportAudio,
   inferSpeakers,
   permanentlyDeleteRecording,
   renameRecording,
@@ -13,13 +14,15 @@ import {
   softDeleteRecording,
 } from "@/lib/api";
 import { useCapture } from "@/lib/capture/CaptureProvider";
+import { getErrorStatus } from "@/lib/errors";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { dispatchRecordingRemoved } from "@/lib/recordingEvents";
 import { RecordingId } from "@/types";
 
 /**
  * Shared action model for the per-recording actions used by the sidebar list
- * (`Sidebar.tsx`) and the live view (`RecordingStatusDisplay.tsx`).
+ * (`Sidebar.tsx`), the live view (`RecordingStatusDisplay.tsx`) and the
+ * recording page (`useRecordingDetail.ts`, for the audio export).
  *
  * The surfaces previously duplicated the asynchronous action bodies (rename,
  * infer speakers, cancel, delete, archive, restore, permanent delete) verbatim.
@@ -46,6 +49,7 @@ export const RECORDING_ACTION_IDS = [
   "restore",
   "softDelete",
   "permanentDelete",
+  "exportAudio",
 ] as const;
 
 export type RecordingActionId = (typeof RECORDING_ACTION_IDS)[number];
@@ -92,7 +96,24 @@ export interface RecordingActions {
     id: RecordingId,
     callbacks?: RecordingActionCallbacks,
   ) => Promise<void>;
+  exportAudio: (
+    id: RecordingId,
+    name: string,
+    callbacks?: RecordingActionCallbacks,
+  ) => Promise<void>;
 }
+
+/** What to tell the person when the audio export did not produce a file. */
+export const audioExportFailureMessage = (error: unknown): string => {
+  switch (getErrorStatus(error)) {
+    case 202:
+      return "The audio is still being prepared. Try exporting it again shortly.";
+    case 404:
+      return "This recording's audio is not available, so there is nothing to export.";
+    default:
+      return "Failed to export audio.";
+  }
+};
 
 export function useRecordingActions(): RecordingActions {
   const { addNotification } = useNotificationStore();
@@ -223,6 +244,20 @@ export function useRecordingActions(): RecordingActions {
           callbacks?.onSuccess?.();
         } catch (e: unknown) {
           console.error("Failed to permanently delete", e);
+          callbacks?.onError?.();
+        }
+      },
+
+      exportAudio: async (id, name, callbacks) => {
+        try {
+          await exportAudio(id, name);
+          callbacks?.onSuccess?.();
+        } catch (e: unknown) {
+          console.error("Failed to export audio", e);
+          addNotification({
+            message: audioExportFailureMessage(e),
+            type: "error",
+          });
           callbacks?.onError?.();
         }
       },

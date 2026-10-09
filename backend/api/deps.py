@@ -1,9 +1,9 @@
 from typing import Any, AsyncGenerator, Optional
 from urllib.parse import urlparse
 
+import jwt
 from fastapi import Depends, HTTPException, Request, WebSocket, status
 from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
@@ -178,7 +178,7 @@ async def get_authenticated_token_details(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Token does not have the required scope",
             )
-    except (JWTError, ValidationError):
+    except (jwt.PyJWTError, ValidationError):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not validate credentials",

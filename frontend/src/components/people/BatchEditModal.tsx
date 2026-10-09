@@ -191,7 +191,7 @@ export function BatchEditModal({
                 key={tag.id}
                 type="button"
                 onClick={() => toggleTag(tag.id)}
-                className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${
+                className={`inline-flex items-center rounded-pill border px-2.5 py-1 text-xs font-medium transition-colors ${
                   selectedTagIds.includes(tag.id)
                     ? tagAction === "remove"
                       ? "border-status-danger-border bg-status-danger-bg text-status-danger-fg"

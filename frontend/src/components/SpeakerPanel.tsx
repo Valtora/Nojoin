@@ -165,7 +165,7 @@ export default function SpeakerPanel({
         </div>
       )}
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-2 space-y-2">
+      <div className="min-h-0 flex-1 overflow-y-auto p-2 pb-clear-floating-2 space-y-2">
         {speakerEntries.length === 0 ? (
           <div className="p-4 text-sm text-contrast-helper text-center italic">
             No speakers detected.
@@ -299,7 +299,7 @@ export default function SpeakerPanel({
                               utterance in the transcript. */}
                           {entry.namedByAssistant && (
                             <span
-                              className="mt-0.5 inline-flex items-center gap-1 rounded-full border border-surface-border bg-surface-inset px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-foreground"
+                              className="mt-0.5 inline-flex items-center gap-1 rounded-pill border border-surface-border bg-surface-inset px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-foreground"
                               title="An assistant connected through the MCP connector named this speaker"
                             >
                               <Sparkles className="h-2.5 w-2.5" aria-hidden="true" />

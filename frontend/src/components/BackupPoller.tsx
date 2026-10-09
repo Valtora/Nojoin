@@ -67,16 +67,24 @@ export default function BackupPoller() {
             message: "Backup created successfully! Downloading...",
           });
 
-          // Recordings whose audio was missing from disk are archived as metadata only.
-          // The archive records this too, but the person who took the backup should be
-          // told at the point they take it.
+          // Recordings archived as metadata only: their audio file was missing from
+          // disk, or reading or re-encoding it failed. The archive records this too,
+          // but the person who took the backup should be told at the point they take it.
           const warnings = (result as { warnings?: Record<string, number> } | undefined)
             ?.warnings;
           const missingAudio = warnings?.recordings_without_audio ?? 0;
           if (missingAudio > 0) {
             addNotification({
               type: "error",
-              message: `${missingAudio} recording${missingAudio === 1 ? "" : "s"} had no audio file on disk and were backed up as metadata only.`,
+              message: `${missingAudio} recording${missingAudio === 1 ? "" : "s"} had no audio file on disk and ${missingAudio === 1 ? "was" : "were"} backed up as metadata only.`,
+              persistent: true,
+            });
+          }
+          const failedAudio = warnings?.recordings_audio_failed ?? 0;
+          if (failedAudio > 0) {
+            addNotification({
+              type: "error",
+              message: `The audio of ${failedAudio} recording${failedAudio === 1 ? "" : "s"} could not be archived, so ${failedAudio === 1 ? "it was" : "they were"} backed up as metadata only. Check the worker logs.`,
               persistent: true,
             });
           }

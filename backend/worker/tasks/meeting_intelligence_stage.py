@@ -123,7 +123,7 @@ def _apply_automatic_meeting_intelligence_result(
     transcript.notes_status = "completed"
     # Freshly generated notes reflect every READY document by definition.
     transcript.notes_stale_documents = False
-    transcript.error_message = None
+    transcript.set_notes_error_message(None)
     if resolved_template is not None:
         # Provenance: the template and its text at generation time (issue #137).
         transcript.notes_template_id = resolved_template.template_id
@@ -278,7 +278,7 @@ def _run_automatic_meeting_intelligence_stage_impl(
         session.add(recording)
 
     transcript.notes_status = "generating"
-    transcript.error_message = None
+    transcript.set_notes_error_message(None)
     session.add(transcript)
     session.commit()
     update_recording_status(session, recording.id)
