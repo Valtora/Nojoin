@@ -4,6 +4,7 @@ from typing import List
 
 from fastapi import Depends, HTTPException
 from fastapi.responses import StreamingResponse
+from sqlalchemy import and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlmodel import select
@@ -108,6 +109,37 @@ def _tag_context_recording_ids(tag_ids: list[int], user_id: int):
     )
 
 
+def _chat_retrieval_filters(recording_id: int, tag_ids: list[int], user_id: int):
+    """Where chat retrieval looks: (transcript filter or None, document filter).
+
+    Chat already sends the meeting's full transcript with every turn, so
+    excerpts of that same transcript would only repeat it. Worse, the index is
+    rebuilt after processing, not after an edit or a rename, so an excerpt can
+    carry text and speaker names the transcript no longer has, and the model
+    would see both versions. Transcript excerpts therefore come only from the
+    other meetings a tag widens the search to; attached documents come from
+    this meeting and from those.
+    """
+    is_document = ContextChunk.document_id.is_not(None)
+    if not tag_ids:
+        return None, and_(ContextChunk.recording_id == recording_id, is_document)
+
+    tagged = _tag_context_recording_ids(tag_ids, user_id)
+    transcript_filter = and_(
+        ContextChunk.document_id.is_(None),
+        ContextChunk.recording_id.in_(tagged),
+        ContextChunk.recording_id != recording_id,
+    )
+    document_filter = and_(
+        or_(
+            ContextChunk.recording_id.in_(tagged),
+            ContextChunk.recording_id == recording_id,
+        ),
+        is_document,
+    )
+    return transcript_filter, document_filter
+
+
 @router.post("/{recording_id}/chat")
 async def chat_with_meeting(
     recording_id: str,
@@ -174,7 +206,7 @@ async def chat_with_meeting(
     transcript_chunks = []
     document_chunks = []
 
-    # Always attempt RAG, at least for the current recording
+    # Always attempt RAG, at least for this meeting's attached documents.
     try:
         # 1. Get embedding for the user query via Celery
         from fastapi.concurrency import run_in_threadpool
@@ -185,16 +217,10 @@ async def chat_with_meeting(
         embeddings = await run_in_threadpool(task.get, timeout=30)
         query_embedding = embeddings[0]
 
-        # 2. Build Query Condition
-        if request.tag_ids:
-            # Identify relevant recordings from tags
-            subquery = _tag_context_recording_ids(request.tag_ids, current_user.id)
-            condition = (ContextChunk.recording_id.in_(subquery)) | (
-                ContextChunk.recording_id == recording.id
-            )
-        else:
-            # Only search current recording
-            condition = ContextChunk.recording_id == recording.id
+        # 2. Scope the search (see _chat_retrieval_filters).
+        transcript_filter, document_filter = _chat_retrieval_filters(
+            recording.id, request.tag_ids or [], current_user.id
+        )
 
         # 3. Vector search, with a separate budget per source.
         #
@@ -209,7 +235,6 @@ async def chat_with_meeting(
         async def _search(source_filter, limit: int):
             stmt = (
                 select(ContextChunk)
-                .where(condition)
                 .where(ContextChunk.embedding_version == TEXT_EMBEDDING_VERSION)
                 .where(source_filter)
                 .order_by(ContextChunk.embedding.cosine_distance(query_embedding))
@@ -217,12 +242,11 @@ async def chat_with_meeting(
             )
             return (await db.execute(stmt)).scalars().all()
 
-        transcript_chunks = await _search(
-            ContextChunk.document_id.is_(None), CHAT_TRANSCRIPT_CHUNK_BUDGET
-        )
-        document_chunks = await _search(
-            ContextChunk.document_id.is_not(None), CHAT_DOCUMENT_CHUNK_BUDGET
-        )
+        if transcript_filter is not None:
+            transcript_chunks = await _search(
+                transcript_filter, CHAT_TRANSCRIPT_CHUNK_BUDGET
+            )
+        document_chunks = await _search(document_filter, CHAT_DOCUMENT_CHUNK_BUDGET)
         relevant_chunks = list(transcript_chunks) + list(document_chunks)
 
         if relevant_chunks:
