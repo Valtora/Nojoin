@@ -7,6 +7,7 @@ from backend.processing.processing_tuning import (
     TUNING_SPECS,
     WORD_FLIP_MAX_DURATION_KEY,
     WORD_FLIP_MAX_GAP_KEY,
+    resolve_tuning,
 )
 
 logger = logging.getLogger(__name__)
@@ -123,7 +124,7 @@ if TYPE_CHECKING:
 
 
 def combine_transcription_diarization(
-    transcription: dict, diarization: Any
+    transcription: dict, diarization: Any, config: Optional[dict] = None
 ) -> Optional[List[Dict]]:
     """Combines Whisper segments with Pyannote diarization.
 
@@ -134,6 +135,8 @@ def combine_transcription_diarization(
     Args:
         transcription: The result dictionary from whisper.transcribe().
         diarization: The pyannote.core.Annotation object from diarization.
+        config: The recording owner's merged settings; supplies the
+            word_flip_* smoothing limits (word-level path only).
 
     Returns:
         A list of dictionaries, each representing a segment with start, end,
@@ -153,7 +156,7 @@ def combine_transcription_diarization(
 
         if has_word_timestamps:
             logger.info("Combining using WORD-LEVEL timestamps (High Precision)")
-            return _combine_word_level(segments, speaker_turns)
+            return _combine_word_level(segments, speaker_turns, config)
         else:
             logger.info("Combining using SEGMENT-LEVEL timestamps (Standard Precision)")
             return _combine_segment_level(segments, speaker_turns)
@@ -225,7 +228,7 @@ def _combine_segment_level(segments, speaker_turns):
     return final_segments
 
 
-def _combine_word_level(segments, speaker_turns):
+def _combine_word_level(segments, speaker_turns, config=None):
     """High-precision logic: Align individual words to speakers."""
     from pyannote.core import Segment
 
@@ -289,7 +292,11 @@ def _combine_word_level(segments, speaker_turns):
             }
         )
 
-    _smooth_isolated_word_speaker_flips(word_assignments)
+    _smooth_isolated_word_speaker_flips(
+        word_assignments,
+        max_duration_s=resolve_tuning(config, WORD_FLIP_MAX_DURATION_KEY),
+        max_gap_s=resolve_tuning(config, WORD_FLIP_MAX_GAP_KEY),
+    )
 
     for i, assignment in enumerate(word_assignments):
         word_data = assignment["word"]
@@ -485,7 +492,20 @@ def _speaker_overlap_is_significant(
     return (overlap_duration_s / target_duration_s) >= min_ratio
 
 
-def _smooth_isolated_word_speaker_flips(word_assignments: list[dict]) -> None:
+def _smooth_isolated_word_speaker_flips(
+    word_assignments: list[dict],
+    *,
+    max_duration_s: float = ISOLATED_WORD_FLIP_MAX_DURATION_S,
+    max_gap_s: float = ISOLATED_WORD_FLIP_MAX_GAP_S,
+) -> None:
+    """Give a brief word wedged inside one speaker's run back to that speaker.
+
+    A word no longer than ``max_duration_s``, within ``max_gap_s`` of the words
+    on both sides, is relabelled when both neighbours share a speaker. A
+    ``max_duration_s`` of 0 turns the smoothing off.
+    """
+    if max_duration_s <= 0:
+        return
     for index in range(1, len(word_assignments) - 1):
         previous_assignment = word_assignments[index - 1]
         assignment = word_assignments[index]
@@ -509,12 +529,9 @@ def _smooth_isolated_word_speaker_flips(word_assignments: list[dict]) -> None:
         previous_gap = float(current_word["start"]) - float(previous_word["end"])
         next_gap = float(next_word["start"]) - float(current_word["end"])
 
-        if current_duration > ISOLATED_WORD_FLIP_MAX_DURATION_S:
+        if current_duration > max_duration_s:
             continue
-        if (
-            previous_gap > ISOLATED_WORD_FLIP_MAX_GAP_S
-            or next_gap > ISOLATED_WORD_FLIP_MAX_GAP_S
-        ):
+        if previous_gap > max_gap_s or next_gap > max_gap_s:
             continue
 
         assignment["speaker"] = previous_speaker

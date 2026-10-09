@@ -6,6 +6,8 @@ pipeline, so the stage tests can stub that module per test.
 """
 
 import logging
+from collections.abc import Mapping
+from typing import Any
 
 from backend.processing.pipeline_metrics import record_pipeline_metric
 
@@ -18,13 +20,15 @@ def combine_and_consolidate_segments(
     *,
     enable_diarization: bool,
     recording_id: int,
+    config: Mapping[str, Any] | None = None,
 ) -> list[dict]:
     """Merge ASR + diarization into consolidated final segments.
 
     When no combined result is available (combination skipped or failed) every
     ASR segment is emitted pinned to the ``UNKNOWN`` speaker, preserving any
     ``id``/``words`` payload. This is the load-bearing fallback that keeps a
-    transcript even without usable diarization.
+    transcript even without usable diarization. ``config`` (the owner's merged
+    settings) supplies the single-word flip smoothing limits.
     """
     from backend.utils.transcript_utils import (
         combine_transcription_diarization,
@@ -34,7 +38,7 @@ def combine_and_consolidate_segments(
     combined_segments = []
     if diarization_result:
         combined_segments = combine_transcription_diarization(
-            transcription_result, diarization_result
+            transcription_result, diarization_result, config
         )
     else:
         logger.info("Diarization result missing or disabled. Skipping combination.")

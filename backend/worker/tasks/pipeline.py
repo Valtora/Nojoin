@@ -866,6 +866,7 @@ def process_recording_task(
             diarization_result,
             enable_diarization=enable_diarization,
             recording_id=recording_id,
+            config=merged_config,
         )
 
         transcript = _persist_final_transcript(
