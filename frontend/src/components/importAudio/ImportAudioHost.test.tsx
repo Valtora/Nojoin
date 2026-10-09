@@ -30,8 +30,8 @@ function renderWithOpeners() {
   render(
     <>
       <input aria-label="Search" />
+      <ImportAudioButton appearance="icon" />
       <ImportAudioButton />
-      <ImportAudioButton appearance="labelled" />
       <ImportAudioHost />
     </>,
   );

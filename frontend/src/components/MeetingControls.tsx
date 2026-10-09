@@ -2,6 +2,7 @@
 
 import { Mic } from "lucide-react";
 import { useRouter } from "next/navigation";
+import type { ReactNode } from "react";
 import { useConnectivityStore } from "@/lib/connectivity/monitor";
 import { isReachable } from "@/lib/connectivity/reducer";
 import { useCapture } from "@/lib/capture/CaptureProvider";
@@ -13,6 +14,11 @@ import LiveMeetingControls from "./LiveMeetingControls";
 interface MeetingControlsProps {
   onMeetingEnd?: () => void;
   variant?: "sidebar" | "dashboard";
+  /**
+   * Sidebar only: a second "add a recording" action laid out beside Start
+   * Meeting, and under the live controls while a meeting runs.
+   */
+  pairedAction?: ReactNode;
 }
 
 type ButtonMode = "start" | "open-settings" | "wait";
@@ -27,6 +33,7 @@ interface MeetingSurfaceState {
 export default function MeetingControls({
   onMeetingEnd,
   variant = "sidebar",
+  pairedAction,
 }: MeetingControlsProps) {
   const backend = useConnectivityStore((state) => isReachable(state.status));
   const {
@@ -218,19 +225,29 @@ export default function MeetingControls({
         ) : null}
 
         {!hasLiveRecording ? (
-          <button
-            type="button"
-            onClick={handlePrimaryAction}
-            disabled={meetingSurfaceState.buttonDisabled}
-            title={meetingSurfaceState.buttonTooltip}
-            aria-label={meetingSurfaceState.buttonLabel}
-            className="flex w-full items-center justify-center gap-2 rounded-md bg-action px-4 py-2 font-medium text-action-on transition-colors hover:bg-action-hover disabled:cursor-not-allowed disabled:bg-action-tint"
-          >
-            <Mic className="h-4 w-4" />
-            {meetingSurfaceState.buttonLabel}
-          </button>
+          // Side by side while the column has room for both labels, stacked
+          // below that, so neither label is squeezed.
+          <div className="@container">
+            <div className="flex flex-col gap-2 @min-[16rem]:flex-row">
+              <button
+                type="button"
+                onClick={handlePrimaryAction}
+                disabled={meetingSurfaceState.buttonDisabled}
+                title={meetingSurfaceState.buttonTooltip}
+                aria-label={meetingSurfaceState.buttonLabel}
+                className="flex min-h-10 grow items-center @min-[16rem]:basis-0 justify-center gap-1.5 rounded-md bg-action px-3 py-2 text-sm leading-tight font-semibold text-action-on transition-colors hover:bg-action-hover disabled:cursor-not-allowed disabled:bg-action-tint"
+              >
+                <Mic className="h-4 w-4 shrink-0" />
+                {meetingSurfaceState.buttonLabel}
+              </button>
+              {pairedAction}
+            </div>
+          </div>
         ) : (
-          <LiveMeetingControls size="compact" onMeetingEnd={onMeetingEnd} />
+          <>
+            <LiveMeetingControls size="compact" onMeetingEnd={onMeetingEnd} />
+            {pairedAction ? <div className="mt-2 flex">{pairedAction}</div> : null}
+          </>
         )}
       </div>
     </div>

@@ -3,6 +3,7 @@
 import { FilePlus } from "lucide-react";
 
 import { useCapture } from "@/lib/capture/CaptureProvider";
+import { cn } from "@/lib/cn";
 import { useImportAudioStore } from "@/lib/importAudioStore";
 
 import Button from "../ui/Button";
@@ -12,44 +13,52 @@ const LABEL = "Import Audio";
 
 interface ImportAudioButtonProps {
   /**
-   * `icon` is the toolbar form: icon-only, named by its title like the other
-   * list header controls. `labelled` is the empty-state form.
+   * `button` is the labelled secondary that sits beside Start Meeting and in
+   * the empty list. `compact` is the phone list header's short form, and
+   * `icon` the collapsed list strip's.
    */
-  appearance?: "icon" | "labelled";
+  appearance?: "button" | "compact" | "icon";
+  /** Layout classes from the caller, for the labelled forms. */
+  className?: string;
 }
 
 /**
  * Opens the shared Import Audio dialog. Disabled while a paused recording
- * holds the capture lock, as the navigation entry it replaces was.
+ * holds the capture lock, as Start Meeting is.
  */
 export default function ImportAudioButton({
-  appearance = "icon",
+  appearance = "button",
+  className,
 }: ImportAudioButtonProps) {
   const { pausedRecording, runtimeActive } = useCapture();
   const openImportAudio = useImportAudioStore((state) => state.openImportAudio);
   const locked = Boolean(pausedRecording && !runtimeActive);
 
-  if (appearance === "labelled") {
+  if (appearance === "icon") {
     return (
-      <Button
-        iconLeft={<FilePlus aria-hidden="true" className="h-4 w-4 shrink-0" />}
+      <IconButton
+        aria-label={LABEL}
+        title={LABEL}
+        size="sm"
+        icon={<FilePlus aria-hidden="true" />}
         onClick={openImportAudio}
         disabled={locked}
-      >
-        {LABEL}
-      </Button>
+        className="text-rail-fg-muted hover:bg-rail-item-hover hover:text-rail-fg"
+      />
     );
   }
 
   return (
-    <IconButton
-      aria-label={LABEL}
-      title={LABEL}
-      size="sm"
-      icon={<FilePlus aria-hidden="true" />}
+    <Button
+      variant="secondary"
+      iconLeft={<FilePlus aria-hidden="true" className="h-4 w-4 shrink-0" />}
       onClick={openImportAudio}
       disabled={locked}
-      className="text-rail-fg-muted hover:bg-rail-item-hover hover:text-rail-fg"
-    />
+      // The short form keeps the full name for assistive tech.
+      aria-label={appearance === "compact" ? LABEL : undefined}
+      className={cn("rounded-md", className)}
+    >
+      {appearance === "compact" ? "Import" : LABEL}
+    </Button>
   );
 }

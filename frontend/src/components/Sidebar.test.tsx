@@ -99,7 +99,9 @@ vi.mock("@/lib/searchUtils", () => ({
 }));
 
 vi.mock("./MeetingControls", () => ({
-  default: () => <div data-testid="meeting-controls" />,
+  default: ({ pairedAction }: { pairedAction?: React.ReactNode }) => (
+    <div data-testid="meeting-controls">{pairedAction}</div>
+  ),
 }));
 
 vi.mock("./MonthCalendar", () => ({
@@ -215,16 +217,39 @@ describe("Sidebar", () => {
           <ImportAudioHost />
         </>,
       );
+    const importButtons = () =>
+      screen.queryAllByRole("button", { name: "Import Audio" });
+    // jsdom applies no CSS, so the desktop pair and the phone header button
+    // are both in the tree; each is found by where it sits.
+    const desktopImport = () =>
+      within(screen.getByTestId("meeting-controls")).getByRole("button", {
+        name: "Import Audio",
+      });
+    const phoneImport = () =>
+      importButtons().find((button) => button.textContent === "Import");
+    const emptyState = () =>
+      screen.getByText("No recordings found.").parentElement as HTMLElement;
 
-    it("opens the import dialog from the recordings list header", async () => {
+    it("pairs a labelled Import Audio with Start Meeting and opens the dialog", async () => {
       renderList();
       await screen.findByRole("heading", { name: "Latest meeting" });
 
-      const button = screen.getByRole("button", { name: "Import Audio" });
-      expect(button).toBeEnabled();
+      const button = desktopImport();
+      expect(button).toHaveTextContent("Import Audio");
       expect(screen.queryByTestId("import-modal")).not.toBeInTheDocument();
 
       fireEvent.click(button);
+
+      expect(screen.getByTestId("import-modal")).toBeInTheDocument();
+    });
+
+    it("offers a short Import in the phone list header, named in full", async () => {
+      renderList();
+      await screen.findByRole("heading", { name: "Latest meeting" });
+
+      const button = phoneImport();
+      expect(button).toBeDefined();
+      fireEvent.click(button as HTMLElement);
 
       expect(screen.getByTestId("import-modal")).toBeInTheDocument();
     });
@@ -237,9 +262,7 @@ describe("Sidebar", () => {
         renderList();
 
         await screen.findByText(/^No (archived|deleted) recordings\.$/);
-        expect(
-          screen.queryByRole("button", { name: "Import Audio" }),
-        ).not.toBeInTheDocument();
+        expect(importButtons()).toHaveLength(0);
       },
     );
 
@@ -249,11 +272,9 @@ describe("Sidebar", () => {
       const { rerender } = renderList();
 
       await waitFor(() => {
-        expect(
-          screen.getAllByRole("button", { name: "Import Audio" }),
-        ).toHaveLength(2);
+        expect(importButtons()).toHaveLength(3);
       });
-      for (const button of screen.getAllByRole("button", { name: "Import Audio" })) {
+      for (const button of importButtons()) {
         expect(button).toBeDisabled();
         fireEvent.click(button);
       }
@@ -267,7 +288,7 @@ describe("Sidebar", () => {
         </>,
       );
 
-      for (const button of screen.getAllByRole("button", { name: "Import Audio" })) {
+      for (const button of importButtons()) {
         expect(button).toBeEnabled();
       }
     });
@@ -276,10 +297,8 @@ describe("Sidebar", () => {
       getRecordings.mockResolvedValue([]);
       renderList();
 
-      const emptyState = screen.getByText("No recordings found.")
-        .parentElement as HTMLElement;
       fireEvent.click(
-        await within(emptyState).findByRole("button", { name: "Import Audio" }),
+        await within(emptyState()).findByRole("button", { name: "Import Audio" }),
       );
 
       expect(screen.getByTestId("import-modal")).toBeInTheDocument();
@@ -294,32 +313,29 @@ describe("Sidebar", () => {
       );
       renderList();
 
-      expect(screen.getByText("No recordings found.")).toBeInTheDocument();
-      expect(screen.getAllByRole("button", { name: "Import Audio" })).toHaveLength(1);
+      expect(
+        within(emptyState()).queryByRole("button", { name: "Import Audio" }),
+      ).not.toBeInTheDocument();
 
       resolveRecordings([]);
 
-      await waitFor(() => {
-        expect(
-          screen.getAllByRole("button", { name: "Import Audio" }),
-        ).toHaveLength(2);
-      });
+      expect(
+        await within(emptyState()).findByRole("button", { name: "Import Audio" }),
+      ).toBeInTheDocument();
     });
 
     it("offers no empty-list button when a search is what emptied the list", async () => {
       getRecordings.mockResolvedValue([]);
       renderList();
-      await waitFor(() => {
-        expect(
-          screen.getAllByRole("button", { name: "Import Audio" }),
-        ).toHaveLength(2);
-      });
+      await within(emptyState()).findByRole("button", { name: "Import Audio" });
 
       fireEvent.change(screen.getByPlaceholderText("Search..."), {
         target: { value: "budget" },
       });
 
-      expect(screen.getAllByRole("button", { name: "Import Audio" })).toHaveLength(1);
+      expect(
+        within(emptyState()).queryByRole("button", { name: "Import Audio" }),
+      ).not.toBeInTheDocument();
     });
   });
 });

@@ -40,6 +40,10 @@ vi.mock("@/lib/notificationStore", () => ({
   useNotificationStore: () => ({ addNotification }),
 }));
 
+vi.mock("./LiveMeetingControls", () => ({
+  default: () => <div data-testid="live-controls" />,
+}));
+
 describe("MeetingControls", () => {
   beforeEach(() => {
     routerPush.mockReset();
@@ -86,5 +90,21 @@ describe("MeetingControls", () => {
 
     expect(addNotification).not.toHaveBeenCalled();
     expect(routerPush).not.toHaveBeenCalled();
+  });
+
+  it("keeps the sidebar's paired action beside Start Meeting and under the live controls", () => {
+    const paired = <button type="button">Import Audio</button>;
+    const { rerender } = render(<MeetingControls pairedAction={paired} />);
+
+    expect(screen.getByRole("button", { name: "Start Meeting" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Import Audio" })).toBeInTheDocument();
+
+    captureState.runtimeActive = true;
+    captureState.status = "recording";
+    rerender(<MeetingControls pairedAction={paired} />);
+
+    expect(screen.getByTestId("live-controls")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Start Meeting" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Import Audio" })).toBeInTheDocument();
   });
 });

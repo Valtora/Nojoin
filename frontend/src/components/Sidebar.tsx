@@ -698,14 +698,17 @@ export default function Sidebar() {
               <Mic aria-hidden="true" className="h-4 w-4" />
             )}
           </span>
-          {view === "recordings" && <ImportAudioButton />}
+          {view === "recordings" && <ImportAudioButton appearance="icon" />}
         </div>
       )}
       {!isCollapsed && (
       <div className="flex-1 overflow-y-auto">
       {view === "recordings" && (
         <div className="hidden lg:block">
-          <MeetingControls onMeetingEnd={fetchRecordings} />
+          <MeetingControls
+            onMeetingEnd={fetchRecordings}
+            pairedAction={<ImportAudioButton className="grow px-3 @min-[16rem]:basis-0" />}
+          />
         </div>
       )}
 
@@ -720,6 +723,11 @@ export default function Sidebar() {
               {currentViewLabel}
             </div>
           </div>
+          {/* Start Meeting is not in the list on a phone, so Import stands
+              alone here, beside the title rather than squeezing search. */}
+          {view === "recordings" && (
+            <ImportAudioButton appearance="compact" className="ml-auto" />
+          )}
         </div>
 
         {selectionMode ? (
@@ -765,7 +773,6 @@ export default function Sidebar() {
                   <Filter className="w-4 h-4" />
                 </button>
               </div>
-              {view === "recordings" && <ImportAudioButton />}
               <IconButton
                 onClick={toggleRecordingsSidebarCollapse}
                 size="sm"
@@ -944,7 +951,7 @@ export default function Sidebar() {
                 fetch lands, and not when a search or filter hides the rows. */}
             {view === "recordings" && hasLoadedRecordings && !hasActiveFilters && (
               <div className="mt-3">
-                <ImportAudioButton appearance="labelled" />
+                <ImportAudioButton />
               </div>
             )}
           </div>
