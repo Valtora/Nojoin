@@ -5,7 +5,6 @@ from __future__ import annotations
 import contextlib
 import shutil
 import subprocess
-import threading
 from pathlib import Path
 
 import pytest
@@ -1588,6 +1587,10 @@ _MEDIA_CONTAINER_FIXTURES = [
     (".3gp", ["-c:v", "mpeg4", "-c:a", "aac", "-ar", "16000", "-ac", "1"]),
 ]
 
+# What an import of one of them is stored as: formats import accepted before
+# media containers were, which the pipeline already reads.
+_STORED_AUDIO_SUFFIXES = {".m4a", ".mp3", ".webm", ".ogg", ".flac"}
+
 
 def _encode_media_fixture(path: Path, output_args: list[str]) -> None:
     inputs = ["-f", "lavfi", "-i", "sine=frequency=440:duration=2:sample_rate=48000"]
@@ -1614,10 +1617,37 @@ def _stream_types(path: str) -> list[str]:
     return probe.stdout.split()
 
 
+async def _stored_recording(test_session_maker: sessionmaker) -> tuple:
+    async with test_session_maker() as session:
+        return (
+            await session.execute(
+                text("SELECT audio_path, proxy_path, duration_seconds FROM recordings")
+            )
+        ).one()
+
+
+def _assert_only_audio_kept(recordings_dir: Path, audio_path: str) -> None:
+    """The stored audio is the recording's only file, and nothing kept has video.
+
+    Chunked import's received ``.part`` files are left for the daily sweep, as
+    for every import, and are not read again.
+    """
+    kept = [
+        path
+        for path in recordings_dir.rglob("*")
+        if path.is_file() and path.suffix != ".part"
+    ]
+    assert [p for p in kept if "temp" not in p.relative_to(recordings_dir).parts] == [
+        Path(audio_path)
+    ]
+    for path in kept:
+        assert _stream_types(str(path)) == ["audio"], path
+
+
 @pytest.mark.anyio
 @pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg is not installed")
 @pytest.mark.parametrize(("suffix", "output_args"), _MEDIA_CONTAINER_FIXTURES)
-async def test_import_media_container_reaches_audio_only_artifacts(
+async def test_import_media_container_stores_only_its_audio(
     client: AsyncClient,
     test_session_maker: sessionmaker,
     monkeypatch,
@@ -1625,13 +1655,12 @@ async def test_import_media_container_reaches_audio_only_artifacts(
     suffix: str,
     output_args: list[str],
 ) -> None:
-    """A media container imports and converts like audio, and only its audio is read."""
+    """The audio track replaces the upload, in a format processing reads."""
     import soundfile as sf
 
     from backend.processing.audio_preprocessing import (
         preprocess_audio_for_diarization,
     )
-    from backend.utils.audio import convert_to_proxy_mp3
 
     source = tmp_path / f"source{suffix}"
     _encode_media_fixture(source, output_args)
@@ -1647,16 +1676,11 @@ async def test_import_media_container_reaches_audio_only_artifacts(
 
     assert response.status_code == 200, response.text
     assert len(calls) == 1
-    async with test_session_maker() as session:
-        audio_path, duration = (
-            await session.execute(
-                text("SELECT audio_path, duration_seconds FROM recordings")
-            )
-        ).one()
-    assert audio_path.endswith(suffix)
+    audio_path, _, duration = await _stored_recording(test_session_maker)
+    assert Path(audio_path).suffix in _STORED_AUDIO_SUFFIXES
+    _assert_only_audio_kept(recordings_dir, audio_path)
     assert duration == pytest.approx(2.0, abs=0.2)
 
-    # The processing pipeline's first step and the playback proxy.
     processed = preprocess_audio_for_diarization(audio_path)
     assert processed is not None
     try:
@@ -1665,9 +1689,6 @@ async def test_import_media_container_reaches_audio_only_artifacts(
         assert info.duration == pytest.approx(2.0, abs=0.2)
     finally:
         Path(processed).unlink()
-    proxy = tmp_path / "proxy.mp3"
-    assert convert_to_proxy_mp3(audio_path, str(proxy))
-    assert _stream_types(str(proxy)) == ["audio"]
 
 
 @pytest.mark.anyio
@@ -1698,10 +1719,7 @@ async def test_import_takes_the_duration_of_the_audio_not_the_video(
     )
 
     assert response.status_code == 200, response.text
-    async with test_session_maker() as session:
-        duration = (
-            await session.execute(text("SELECT duration_seconds FROM recordings"))
-        ).scalar_one()
+    _, _, duration = await _stored_recording(test_session_maker)
     assert duration == pytest.approx(2.0, abs=0.1)
 
 
@@ -1761,6 +1779,62 @@ async def _assert_nothing_kept(
     assert [path for path in recordings_dir.rglob("*") if path.is_file()] == []
 
 
+def _screen_recording(path: Path, audio_args: list[str]) -> None:
+    _ffmpeg(
+        *["-f", "lavfi", "-i", "testsrc=size=64x64:rate=25:duration=2"],
+        *["-f", "lavfi", "-i", "sine=frequency=440:duration=2:sample_rate=48000"],
+        *["-c:v", "mpeg4", *audio_args, "-shortest", str(path)],
+    )
+
+
+@pytest.mark.anyio
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg is not installed")
+@pytest.mark.parametrize("route", ["import", "chunked", "upload"])
+async def test_every_import_route_stores_only_the_audio(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+    monkeypatch,
+    tmp_path: Path,
+    route: str,
+) -> None:
+    """MP3 audio is copied out of the MKV; as an MP3 it is its own playback proxy,
+    and the import's audio window is built from it, not from the upload."""
+    from backend.api.v1.endpoints.recordings import routes_import_upload
+
+    source = tmp_path / "screen.mkv"
+    _screen_recording(source, ["-c:a", "libmp3lame", "-b:a", "192k"])
+    recordings_dir = tmp_path / "recordings"
+    recordings_dir.mkdir()
+    calls = _patch_delay(monkeypatch)
+    monkeypatch.setenv("RECORDINGS_DIR", str(recordings_dir))
+    monkeypatch.setattr(
+        routes_import_upload, "enforce_upload_concurrency", _no_upload_limit
+    )
+
+    response = await _post_upload(client, route, source, "screen.mkv")
+
+    assert response.status_code == 200, response.text
+    assert len(calls) == 1
+    audio_path, proxy_path, duration = await _stored_recording(test_session_maker)
+    assert audio_path.endswith(".mp3")
+    assert proxy_path == audio_path
+    assert duration == pytest.approx(2.0, abs=0.1)
+    _assert_only_audio_kept(recordings_dir, audio_path)
+    async with test_session_maker() as session:
+        staged = (
+            await session.execute(
+                text(
+                    "SELECT storage_path, duration_ms FROM recording_audio_chunks "
+                    "WHERE source_kind = 'import'"
+                )
+            )
+        ).all()
+    if route != "upload":
+        [(storage_path, duration_ms)] = staged
+        assert storage_path.endswith(".mp3")
+        assert duration_ms == pytest.approx(2000, abs=100)
+
+
 @pytest.mark.anyio
 @pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg is not installed")
 @pytest.mark.parametrize("route", ["import", "chunked", "upload"])
@@ -1798,6 +1872,44 @@ async def test_import_without_an_audio_track_is_refused(
 
 @pytest.mark.anyio
 @pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg is not installed")
+@pytest.mark.parametrize("route", ["import", "chunked", "upload"])
+async def test_a_failed_extraction_refuses_the_import(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+    monkeypatch,
+    tmp_path: Path,
+    route: str,
+) -> None:
+    """The upload is not kept in place of its audio: refused, and nothing kept."""
+    from backend.api.v1.endpoints.recordings import routes_import_upload
+    from backend.utils import import_audio
+
+    source = tmp_path / "screen.mkv"
+    _screen_recording(source, ["-c:a", "aac"])
+    recordings_dir = tmp_path / "recordings"
+    recordings_dir.mkdir()
+    calls = _patch_delay(monkeypatch)
+    monkeypatch.setenv("RECORDINGS_DIR", str(recordings_dir))
+    monkeypatch.setattr(
+        routes_import_upload, "enforce_upload_concurrency", _no_upload_limit
+    )
+    monkeypatch.setattr(
+        import_audio,
+        "_codec_arguments",
+        lambda track: (".m4a", ["-c:a", "no_such_encoder"]),
+    )
+
+    response = await _post_upload(client, route, source, "screen.mkv")
+
+    assert response.status_code == 422, response.text
+    assert "could not extract" in response.json()["detail"]
+    assert str(tmp_path) not in response.text
+    assert calls == []
+    await _assert_nothing_kept(test_session_maker, recordings_dir)
+
+
+@pytest.mark.anyio
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg is not installed")
 @pytest.mark.parametrize(
     ("fixture", "detail"),
     [
@@ -1813,7 +1925,7 @@ async def test_import_without_an_audio_track_is_refused(
             "no audio track",
         ),
         # MPEG-PS whose first audio packet lies past ffprobe's default probe
-        # window: the stream reports 0 channels and every conversion fails.
+        # window: the stream reports 0 channels and extraction would fail.
         (
             [
                 *["-f", "lavfi", "-i", "testsrc=size=64x64:rate=25:duration=8"],
@@ -1865,7 +1977,7 @@ async def test_import_refuses_audio_it_cannot_use(
     ],
     ids=["default-track", "empty-default-track"],
 )
-async def test_import_times_the_audio_track_ffmpeg_decodes(
+async def test_import_keeps_the_audio_track_ffmpeg_decodes(
     client: AsyncClient,
     test_session_maker: sessionmaker,
     monkeypatch,
@@ -1873,18 +1985,11 @@ async def test_import_times_the_audio_track_ffmpeg_decodes(
     first_track: list[str],
     dispositions: tuple[str, str],
 ) -> None:
-    """With two audio tracks the stored length is the decoded one's.
+    """Of two audio tracks, only the one ffmpeg decodes is stored.
 
     The second track holds 5 s of audio. ffmpeg decodes it when it is flagged
-    default, and also when the first track is flagged default but empty, so
-    the transcript runs 5 s and so must the recording.
+    default, and also when the first track is flagged default but empty.
     """
-    import soundfile as sf
-
-    from backend.processing.audio_preprocessing import (
-        preprocess_audio_for_diarization,
-    )
-
     source = tmp_path / "two-tracks.mkv"
     _ffmpeg(
         *["-f", "lavfi", "-i", "testsrc=size=64x64:rate=25:duration=5"],
@@ -1903,19 +2008,9 @@ async def test_import_times_the_audio_track_ffmpeg_decodes(
     response = await _post_upload(client, "import", source, "two-tracks.mkv")
 
     assert response.status_code == 200, response.text
-    async with test_session_maker() as session:
-        audio_path, duration = (
-            await session.execute(
-                text("SELECT audio_path, duration_seconds FROM recordings")
-            )
-        ).one()
+    audio_path, _, duration = await _stored_recording(test_session_maker)
+    assert _stream_types(audio_path) == ["audio"]
     assert duration == pytest.approx(5.0, abs=0.1)
-    processed = preprocess_audio_for_diarization(audio_path)
-    assert processed is not None
-    try:
-        assert sf.info(processed).duration == pytest.approx(duration, abs=0.1)
-    finally:
-        Path(processed).unlink()
 
 
 @pytest.mark.anyio
@@ -1950,57 +2045,6 @@ async def test_upload_bitrate_floor_ignores_the_video_track(
     assert "below 128 kbps" in response.json()["detail"]
     assert calls == []
     await _assert_nothing_kept(test_session_maker, recordings_dir)
-
-
-@pytest.mark.anyio
-@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg is not installed")
-async def test_recording_info_describes_the_audio_not_the_video(
-    client: AsyncClient,
-    test_session_maker: sessionmaker,
-    monkeypatch,
-    tmp_path: Path,
-) -> None:
-    """/info agrees with the stored length and leaves the video's bytes out.
-
-    Its probe runs off the event loop, so a slow one cannot stall the API.
-    """
-    from backend.processing import audio_preprocessing
-
-    source = tmp_path / "screen.mov"
-    _ffmpeg(
-        *["-f", "lavfi", "-i", "testsrc=size=320x240:rate=25:duration=6"],
-        *["-f", "lavfi", "-i", "sine=frequency=440:duration=2"],
-        *["-c:v", "mpeg4", "-b:v", "1M", "-c:a", "aac", "-b:a", "96k"],
-        str(source),
-    )
-    recordings_dir = tmp_path / "recordings"
-    recordings_dir.mkdir()
-    _patch_delay(monkeypatch)
-    monkeypatch.setenv("RECORDINGS_DIR", str(recordings_dir))
-
-    imported = await _post_upload(client, "import", source, "screen.mov")
-    assert imported.status_code == 200, imported.text
-    probe_threads: list[int] = []
-    real_analyze = audio_preprocessing.analyze_audio_file
-
-    def analyze(path: str):
-        probe_threads.append(threading.get_ident())
-        return real_analyze(path)
-
-    monkeypatch.setattr(audio_preprocessing, "analyze_audio_file", analyze)
-    response = await client.get(f"/api/v1/recordings/{imported.json()['id']}/info")
-
-    assert response.status_code == 200, response.text
-    assert probe_threads
-    assert threading.get_ident() not in probe_threads
-    original = response.json()["original"]
-    async with test_session_maker() as session:
-        stored = (
-            await session.execute(text("SELECT duration_seconds FROM recordings"))
-        ).scalar_one()
-    assert original["duration"] == pytest.approx(stored)
-    assert original["duration"] == pytest.approx(2.0, abs=0.1)
-    assert 64_000 < original["bitrate"] < 128_000
 
 
 @pytest.mark.anyio

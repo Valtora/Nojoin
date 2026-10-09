@@ -9,7 +9,8 @@ from os import PathLike
 
 from backend.core.exceptions import AudioFormatError
 from backend.processing.audio_preprocessing import cleanup_stale_pipeline_temp_files
-from backend.utils.audio import MEDIA_CONTAINER_SUFFIXES, convert_to_mono_16k
+from backend.utils.audio import convert_to_mono_16k
+from backend.utils.import_audio import MEDIA_CONTAINER_SUFFIXES
 from backend.utils.recording_audio_sync import BROWSER_AUDIO_SEGMENT_SUFFIXES
 
 EMBEDDING_WAV_SUFFIX = "_embedding.wav"

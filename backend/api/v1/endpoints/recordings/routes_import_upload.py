@@ -25,11 +25,11 @@ from backend.processing.speaker_cap import (
     MIN_SPEAKER_CAP,
     normalize_speaker_cap,
 )
-from backend.utils.audio import (
+from backend.utils.audio import concatenate_binary_files, get_audio_duration
+from backend.utils.import_audio import (
     MEDIA_CONTAINER_SUFFIXES,
-    NoAudioStreamError,
-    concatenate_binary_files,
-    get_audio_duration,
+    ImportRefusedError,
+    keep_imported_audio,
 )
 from backend.utils.rate_limit import enforce_upload_concurrency
 from backend.utils.upload_limit import (
@@ -100,7 +100,8 @@ async def import_audio(
     """
     Import an external audio recording (e.g., from Zoom, Teams, Google Meet).
     Supports: WAV, MP3, M4A, AAC, WebM, OGG, FLAC, MP4, WMA, Opus, and the audio
-    track of MKV, MKA, MOV, AVI, M4V, TS, MTS, MPG, MPEG and 3GP files.
+    track of MKV, MKA, MOV, AVI, M4V, TS, MTS, MPG, MPEG and 3GP files. Only the
+    audio is stored (see ``keep_imported_audio``).
     """
     # Validate file extension
     file_ext = os.path.splitext(file.filename)[1].lower() if file.filename else ""
@@ -132,15 +133,18 @@ async def import_audio(
             exc=e,
         )
 
+    try:
+        file_path = await asyncio.to_thread(keep_imported_audio, file_path)
+    except ImportRefusedError as exc:
+        os.remove(file_path)
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail)
+
     file_stats = os.stat(file_path)
 
     # Get duration
     duration = 0.0
     try:
-        duration = await asyncio.to_thread(get_audio_duration, file_path)
-    except NoAudioStreamError as exc:
-        os.remove(file_path)
-        raise HTTPException(status_code=400, detail=exc.detail)
+        duration = get_audio_duration(file_path)
     except Exception as e:  # noqa: BLE001
         logger.warning(f"Failed to get duration: {e}")
 
@@ -395,16 +399,17 @@ async def finalize_chunked_import(
         segment_paths = [row.storage_path for row in chunk_rows]
         concatenate_binary_files(segment_paths, recording.audio_path)
 
+        recording.audio_path = await asyncio.to_thread(
+            keep_imported_audio, recording.audio_path
+        )
+        recording.proxy_path = get_initial_proxy_path(recording.audio_path)
+
         file_stats = os.stat(recording.audio_path)
         recording.file_size_bytes = file_stats.st_size
 
-        # Get duration. NoAudioStreamError is left to the refusal below.
+        # Get duration
         try:
-            recording.duration_seconds = await asyncio.to_thread(
-                get_audio_duration, recording.audio_path
-            )
-        except NoAudioStreamError:
-            raise
+            recording.duration_seconds = get_audio_duration(recording.audio_path)
         except Exception as e:  # noqa: BLE001
             logger.warning(f"Failed to get duration: {e}")
 
@@ -423,11 +428,11 @@ async def finalize_chunked_import(
             recording_id=recording.id,
             audio_path=recording.audio_path,
         )
-    except NoAudioStreamError as exc:
+    except ImportRefusedError as exc:
         # Refused like /import and /upload: nothing of the upload is kept, so
         # no failed recording is left in the library.
         await _discard_chunked_import(db, recording)
-        raise HTTPException(status_code=400, detail=exc.detail)
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail)
     except HTTPException as exc:
         recordings_module.delete_recording_artifacts(
             recording_id=recording.id,
@@ -543,29 +548,28 @@ async def upload_recording(
                 exc=e,
             )
 
-    # The no-audio refusal comes first: a video-only file has no audio
-    # bitrate, and the floor would refuse it for the wrong reason.
-    duration = 0.0
+    # The floor measures the audio that is stored, so a video track's
+    # bitrate cannot lift low-bitrate audio over it.
     try:
-        duration = await asyncio.to_thread(
-            recordings_module.get_audio_duration, file_path
-        )
-    except NoAudioStreamError as exc:
+        file_path = await asyncio.to_thread(keep_imported_audio, file_path)
+    except ImportRefusedError as exc:
         os.remove(file_path)
-        raise HTTPException(status_code=400, detail=exc.detail)
-    except Exception as e:  # noqa: BLE001
-        logger.warning(f"Failed to get duration: {e}")
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail)
 
     try:
-        await asyncio.to_thread(
-            recordings_module._enforce_lossy_audio_bitrate_floor, file_path
-        )
+        recordings_module._enforce_lossy_audio_bitrate_floor(file_path)
     except HTTPException:
         if os.path.exists(file_path):
             os.remove(file_path)
         raise
 
     file_stats = os.stat(file_path)
+
+    duration = 0.0
+    try:
+        duration = recordings_module.get_audio_duration(file_path)
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"Failed to get duration: {e}")
 
     # Create DB entry
     name = os.path.splitext(file.filename)[0]
