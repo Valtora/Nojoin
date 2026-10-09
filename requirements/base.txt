@@ -1,7 +1,7 @@
 sqlmodel==0.0.47
 psycopg2-binary==2.9.13
 asyncpg==0.31.0
-python-dotenv==1.2.3
+python-dotenv==1.2.4
 PyJWT==2.15.1
 # Imported directly by backend/core/encryption.py (Fernet). It used to arrive
 # through the python-jose[cryptography] extra, so it is pinned here rather than
