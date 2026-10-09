@@ -27,6 +27,12 @@ function formatValue(value: number | null | undefined): string {
   return value === null || value === undefined ? "" : String(value);
 }
 
+// The native spinner steps an empty field from its minimum rather than from
+// the default shown, and looks foreign in both themes (as in SpeakerCapField).
+// Arrow keys still step, through onKeyDown when the field is empty.
+const HIDE_SPINNER_CLASS =
+  "[appearance:textfield] [&::-webkit-inner-spin-button]:m-0 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:m-0 [&::-webkit-outer-spin-button]:appearance-none";
+
 interface TuningInputProps {
   tuningKey: ProcessingTuningKey;
   value: number | null | undefined;
@@ -119,7 +125,7 @@ function TuningInput({
           setDraft(String(next));
           onChange(tuningKey, next);
         }}
-        className={cn(SETTINGS_INPUT_CLASS, error && "border-danger-text")}
+        className={cn(SETTINGS_INPUT_CLASS, HIDE_SPINNER_CLASS, error && "border-danger-text")}
       />
       {error && (
         <p id={errorId} className="mt-1 text-xs text-danger-text">
