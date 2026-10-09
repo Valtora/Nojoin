@@ -252,12 +252,19 @@ def keep_imported_audio(source_path: str) -> KeptAudio:
     logger.info("Kept the audio of imported file %s as %s", source_path, extracted)
     if not plan.reencodes_lossy:
         return KeptAudio(extracted)
-    bit_rate = seconds(track.get("bit_rate"))
     return KeptAudio(
         extracted,
         reencoded_from_lossy=True,
-        source_bit_rate=int(bit_rate) if bit_rate else None,
+        source_bit_rate=_bit_rate(track),
     )
+
+
+def _bit_rate(track: dict) -> int | None:
+    """The track's bit rate in bits per second, as ffprobe reports it."""
+    try:
+        return int(track.get("bit_rate")) or None
+    except (TypeError, ValueError):
+        return None
 
 
 def _carries_video(streams: list[dict]) -> bool:
