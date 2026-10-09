@@ -141,9 +141,9 @@ def validate_tuning_candidate(candidate: Mapping[str, object]) -> None:
     Raises:
         ValueError: The phantom floor is not below the phantom merge threshold.
     """
-    floor = _effective(candidate, PHANTOM_EMBEDDING_FLOOR_KEY)
-    merge = _effective(candidate, PHANTOM_MERGE_THRESHOLD_KEY)
-    if floor >= merge:
+    if phantom_thresholds_conflict(candidate):
+        floor = _effective(candidate, PHANTOM_EMBEDDING_FLOOR_KEY)
+        merge = _effective(candidate, PHANTOM_MERGE_THRESHOLD_KEY)
         raise ValueError(
             f"{PHANTOM_EMBEDDING_FLOOR_KEY} ({floor}) must be lower than "
             f"{PHANTOM_MERGE_THRESHOLD_KEY} ({merge})."
