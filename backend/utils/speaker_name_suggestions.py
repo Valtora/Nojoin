@@ -21,7 +21,9 @@ SELF_INTRO_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
         "self_introduction",
     ),
     (
-        re.compile(rf"^\s*{_CAPITALISED_NAME}\s+(?i:here|speaking)\b"),
+        # Every line starts with a capital in a cased transcript, so here the
+        # cue must close the clause: "Priya here." but not "But here's".
+        re.compile(rf"^\s*{_CAPITALISED_NAME}\s+(?i:here|speaking)\s*(?:[.,!;:]|$)"),
         "self_identification",
     ),
 )
@@ -777,8 +779,9 @@ def _find_transcript_name_mentions(
     "thanks, Priya" at the previous one, "Priya, what do you think?" at the
     next one. So a mention counts only when it is spoken by someone else in the
     turn directly before or after one of this speaker's turns. The speaker's own
-    mentions are never evidence: someone saying "thanks, Priya" is not Priya
-    (self-introductions are matched separately by SELF_INTRO_PATTERNS).
+    mentions are never evidence: someone saying "thanks, Priya" is not Priya.
+    Nor is a neighbour's self-introduction ("I'm Priya"): it names the speaker
+    who said it, and SELF_INTRO_PATTERNS already credits them.
     """
     evidence: list[SpeakerSuggestionEvidenceSpan] = []
     full_name_pattern = re.compile(rf"\b{re.escape(suggested_name)}\b", re.IGNORECASE)
@@ -793,6 +796,8 @@ def _find_transcript_name_mentions(
         if not text:
             continue
         if not (full_name_pattern.search(text) or first_name_pattern.search(text)):
+            continue
+        if _introduces_name(text, suggested_name):
             continue
         if diarization_label in _adjacent_other_speakers(labels, index):
             evidence.append(
@@ -825,3 +830,12 @@ def _adjacent_other_speakers(labels: Sequence[str], index: int) -> set[str]:
                 break
             position += step
     return adjacent
+
+
+def _introduces_name(text: str, name: str) -> bool:
+    """Whether ``text`` is a self-introduction by a name compatible with ``name``."""
+    for pattern, _reason in SELF_INTRO_PATTERNS:
+        candidate = _first_name_candidate(pattern, text)
+        if candidate is not None and _names_are_compatible(candidate, name):
+            return True
+    return False

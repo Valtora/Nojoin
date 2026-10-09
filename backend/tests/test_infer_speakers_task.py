@@ -313,6 +313,11 @@ def _rule_based_names(line: str) -> list[str]:
         "I'm here.",
         "So this is Tom's laptop.",
         "I'M GOING TO SHARE MY SCREEN.",
+        # A line starts with a capital in any cased transcript, so "X here" and
+        # "X speaking" only count when the cue closes the clause.
+        "But here's the thing.",
+        "Anybody here?",
+        "Click here to open it.",
         # Lowercase transcripts carry no capitalisation evidence, so the rule
         # makes no suggestion rather than guessing.
         "hi, i'm priya.",
@@ -331,9 +336,17 @@ def test_rule_based_speaker_suggestions_reject_non_name_introductions(
         ("And my name is Priya Shah.", ["Priya Shah"]),
         ("Morning, this is Tom from finance.", ["Tom"]),
         ("Priya here, can you hear me?", ["Priya"]),
+        ("Priya here.", ["Priya"]),
+        ("Tom speaking, can everyone hear me?", ["Tom"]),
         ("THIS IS TOM HERE.", ["Tom"]),
         ("This Is Priya Shah Speaking.", ["Priya Shah"]),
         ("I'm going to start, so hi, I'm Priya.", ["Priya"]),
+        ("Hi, my name is Tom and I'm a product manager.", ["Tom"]),
+        ("I'm an engineer, my name is Priya.", ["Priya"]),
+        (
+            "My name is Priya Shah, and I'm an engineer on the platform team.",
+            ["Priya Shah"],
+        ),
     ],
 )
 def test_rule_based_speaker_suggestions_keep_real_introductions(

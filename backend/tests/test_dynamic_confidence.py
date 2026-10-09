@@ -170,3 +170,18 @@ def test_mentioning_a_colleague_throughout_is_not_evidence_for_the_speaker() -> 
     # SPEAKER_02 never speaks next to a line that names Priya.
     bystander = _suggestion_for("SPEAKER_02", "Priya", segments)
     assert "transcript_name_mention" not in bystander.signals
+
+
+def test_a_neighbours_self_introduction_is_not_evidence_for_the_listener() -> None:
+    for line, name in (
+        ("I'm Priya, by the way.", "Priya"),
+        ("Hello, this is Jean-Luc Moreau calling.", "Jean-Luc Moreau"),
+    ):
+        segments = [
+            _turn("SPEAKER_00", line, 0.0),
+            _turn("SPEAKER_01", "Nice to meet you.", 2.0),
+        ]
+
+        listener = _suggestion_for("SPEAKER_01", name, segments)
+        assert "transcript_name_mention" not in listener.signals, line
+        assert listener.confidence == 0.50, line
