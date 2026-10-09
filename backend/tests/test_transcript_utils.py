@@ -599,3 +599,90 @@ def test_consolidate_keeps_an_isolated_short_segment_on_its_own():
         (5.0, 5.05, "S1", "Hm."),
         (8.0, 9.0, "S0", "Second point."),
     ]
+
+
+@pytest.mark.parametrize(
+    "segments",
+    [
+        # Folding back would grow the 10 s segment past the cap.
+        [
+            _segment(0.0, 10.0, "S0", "Long turn."),
+            _segment(10.0, 10.05, "S0", "Hm."),
+            _segment(12.0, 13.0, "S0", "Later."),
+        ],
+        # Folding forward would, too.
+        [
+            _segment(0.0, 0.05, "S0", "Hm."),
+            _segment(0.05, 10.05, "S0", "Long turn."),
+        ],
+    ],
+)
+def test_consolidate_never_folds_a_segment_past_the_maximum_duration(segments):
+    expected = _spans(segments)
+
+    result = consolidate_diarized_transcript([dict(seg) for seg in segments])
+
+    assert _spans(result) == expected
+
+
+def test_consolidate_folds_into_the_earlier_neighbour_on_a_tie():
+    segments = [
+        _segment(0.0, 2.0, "S0", "First"),
+        _segment(2.0, 2.05, "S2", "uh"),
+        _segment(2.05, 4.0, "S1", "Second."),
+    ]
+
+    result = consolidate_diarized_transcript(segments)
+
+    assert _spans(result) == [
+        (0.0, 2.05, "S0", "First uh"),
+        (2.05, 4.0, "S1", "Second."),
+    ]
+
+
+def test_consolidate_merges_one_turn_split_only_by_a_folded_segment():
+    segments = [
+        _segment(0.0, 2.0, "S0", "So the"),
+        _segment(2.0, 2.05, "S1", "uh"),
+        _segment(2.05, 4.0, "S0", "plan is set."),
+    ]
+
+    result = consolidate_diarized_transcript(segments)
+
+    assert _spans(result) == [(0.0, 4.0, "S0", "So the uh plan is set.")]
+
+
+def test_consolidate_fold_merges_metadata_as_a_merge_does():
+    def pair(fragment_start):
+        return [
+            {**_segment(0.0, 2.0, "S0", "a"), "id": "live-a"},
+            {
+                **_segment(fragment_start, fragment_start + 0.05, "S0", "x"),
+                "id": "live-x",
+                "text_manually_edited": True,
+            },
+            _segment(5.0, 6.0, "S1", "b"),
+        ]
+
+    merged = consolidate_diarized_transcript(pair(2.0))[0]
+    folded = consolidate_diarized_transcript(pair(2.05))[0]
+
+    assert folded["source_public_ids"] == ["live-a", "live-x"]
+    assert folded["text_manually_edited"] is True
+    assert "id" not in folded
+    metadata_keys = {"id", "source_public_ids", "text_manually_edited"}
+    assert {k: v for k, v in folded.items() if k in metadata_keys} == {
+        k: v for k, v in merged.items() if k in metadata_keys
+    }
+
+
+def test_consolidate_drops_a_short_segment_without_text():
+    segments = [
+        _segment(0.0, 2.0, "S0", "First point."),
+        _segment(5.0, 5.05, "S1", ""),
+        _segment(8.0, 9.0, "S0", "Second point."),
+    ]
+
+    result = consolidate_diarized_transcript(segments)
+
+    assert [seg["text"] for seg in result] == ["First point.", "Second point."]
