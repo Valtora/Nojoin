@@ -20,7 +20,10 @@ const statusWithEmbedding = (source?: ModelSource): SystemModelStatus => ({
   segmentation: ready("cache"),
 });
 
-const renderSection = (modelStatus: SystemModelStatus) => {
+const renderSection = (
+  modelStatus: SystemModelStatus,
+  preparationRunning = false,
+) => {
   const handleDeleteModel = vi.fn();
   render(
     <AiModelDependenciesSection
@@ -29,7 +32,7 @@ const renderSection = (modelStatus: SystemModelStatus) => {
       handleDeleteModel={handleDeleteModel}
       isAdmin
       downloadProgress={null}
-      preparationRunning={false}
+      preparationRunning={preparationRunning}
       startPreparation={vi.fn().mockResolvedValue(true)}
     />,
   );
@@ -68,5 +71,50 @@ describe("AiModelDependenciesSection delete", () => {
     expect(deleteEmbedding().disabled).toBe(true);
     expect(deleteEmbedding().title).toBe("Bundled repo asset");
     expect(screen.queryByText("External")).toBeNull();
+  });
+});
+
+const missing = (partial?: boolean) => ({
+  downloaded: false,
+  path: null,
+  checked_paths: [],
+  partial,
+});
+
+const statusWithParakeet = (partial?: boolean): SystemModelStatus => ({
+  ...statusWithEmbedding("cache"),
+  parakeet: missing(partial),
+});
+
+const CLEAR_PARAKEET = {
+  name: "Clear partial download of Parakeet ASR Model (Transcription)",
+};
+
+const clearParakeet = () =>
+  screen.getByRole("button", CLEAR_PARAKEET) as HTMLButtonElement;
+
+describe("AiModelDependenciesSection partial download", () => {
+  it("offers to clear a partial download of a missing model", () => {
+    const handleDeleteModel = renderSection(statusWithParakeet(true));
+
+    fireEvent.click(clearParakeet());
+
+    expect(clearParakeet().disabled).toBe(false);
+    expect(handleDeleteModel).toHaveBeenCalledWith("parakeet");
+  });
+
+  it("offers nothing to delete for a model with no partial download", () => {
+    renderSection(statusWithParakeet());
+
+    expect(screen.queryByRole("button", CLEAR_PARAKEET)).toBeNull();
+  });
+
+  it("keeps the clear button disabled while a preparation is running", () => {
+    const handleDeleteModel = renderSection(statusWithParakeet(true), true);
+
+    fireEvent.click(clearParakeet());
+
+    expect(clearParakeet().disabled).toBe(true);
+    expect(handleDeleteModel).not.toHaveBeenCalled();
   });
 });

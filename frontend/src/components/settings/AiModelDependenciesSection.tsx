@@ -178,6 +178,29 @@ export default function AiModelDependenciesSection({
                         <SettingsStatusBadge tone="error" className="gap-1">
                           <X className="w-3 h-3" /> Missing
                         </SettingsStatusBadge>
+                        {modelStatus?.[model.id]?.partial && (
+                          <button
+                            onClick={() => handleDeleteModel(model.id)}
+                            disabled={
+                              deleting === model.id ||
+                              !isAdmin ||
+                              preparationRunning
+                            }
+                            className="text-contrast-helper hover:text-status-danger-fg transition-colors p-1.5 hover:bg-surface-inset rounded-md disabled:opacity-50"
+                            title={
+                              preparationRunning
+                                ? "A model preparation is running and may still be writing this download"
+                                : "Clear the partial download left in the model cache"
+                            }
+                            aria-label={`Clear partial download of ${model.label}`}
+                          >
+                            {deleting === model.id ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Trash2 className="w-4 h-4" />
+                            )}
+                          </button>
+                        )}
                         <button
                           onClick={() => void startPreparation(model.target)}
                           disabled={!isAdmin || preparationRunning}

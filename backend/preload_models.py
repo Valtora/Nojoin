@@ -497,7 +497,23 @@ def check_model_status(whisper_model_size=None):
             status[status_key]["path"] = resolved.path
             status[status_key]["source"] = resolved.source
 
+    # A model not found complete anywhere, whose own repo directory is in the
+    # managed cache all the same, is a download that was cut off or is still
+    # running. It is reported so the leftover can be deleted from the UI.
+    for status_key in (*ONNX_ASR_MODELS, *PYANNOTE_STATUS_MODELS):
+        if not status[status_key]["downloaded"] and os.path.lexists(
+            os.path.join(hf_cache, _hub_repo_dirname(status_key))
+        ):
+            status[status_key]["partial"] = True
+
     return status
+
+
+def _hub_repo_dirname(model_name: str) -> str:
+    """The model's own repo directory name in the hub cache."""
+    if model_name in ONNX_ASR_MODELS:
+        return ONNX_ASR_MODELS[model_name].repo_dirname
+    return hf_repo_dirname(PYANNOTE_STATUS_MODELS[model_name])
 
 
 def _deletion_target(model_name: str, found_path: str) -> tuple[str, str]:
@@ -511,30 +527,33 @@ def _deletion_target(model_name: str, found_path: str) -> tuple[str, str]:
     """
     if model_name == "whisper":
         return whisper_cache_root(), os.path.basename(found_path)
-    if model_name in ONNX_ASR_MODELS:
-        return hf_hub_cache_root(), ONNX_ASR_MODELS[model_name].repo_dirname
-    return hf_hub_cache_root(), hf_repo_dirname(PYANNOTE_STATUS_MODELS[model_name])
+    return hf_hub_cache_root(), _hub_repo_dirname(model_name)
 
 
 def delete_model(model_name: str, whisper_model_size: str | None = None) -> bool:
     """Delete one model from the cache its loader downloads into.
 
-    Removes exactly the model's own file or repo directory in that cache, and
-    raises ValueError for anything else status may have found: a bundled
-    asset, a copy in another cache that the loader also reads (Pyannote's
+    Removes exactly the model's own file or repo directory in that cache,
+    whether the model is complete there or only partly downloaded, and raises
+    ValueError for anything else status may have found: a bundled asset, a
+    copy in another cache that the loader also reads (Pyannote's
     personal-cache fallback), or an entry that is a symbolic link to
     somewhere else.
     """
     status = check_model_status(whisper_model_size=whisper_model_size)
     model_info = status.get(model_name)
 
-    if not model_info or not model_info["downloaded"] or not model_info["path"]:
+    if model_info and model_info["downloaded"] and model_info["path"]:
+        path = model_info["path"]
+    elif model_info and model_info.get("partial"):
+        # What status found is the leftover repo directory itself.
+        path = os.path.join(hf_hub_cache_root(), _hub_repo_dirname(model_name))
+    else:
         logger.warning(
             f"Model {model_name} (variant: {whisper_model_size}) not found or not downloaded."
         )
         return False
 
-    path = model_info["path"]
     if is_repo_bundled_pyannote_path(path):
         raise ValueError(
             f"Model {model_name} is bundled with the repository at {path} and cannot be deleted from the runtime cache UI."

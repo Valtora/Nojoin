@@ -16,9 +16,12 @@ import pytest
 
 from backend import preload_models
 from backend.tests.hf_cache_layout import (
+    PYANNOTE_EMBEDDING,
+    write_hf_repo,
     write_onnx_asr_repo,
     write_pyannote_embedding,
 )
+from backend.utils.onnx_asr_cache import ONNX_ASR_MODELS
 
 PARAKEET_REPO = "models--istupakov--parakeet-tdt-0.6b-v3-onnx"
 
@@ -255,3 +258,82 @@ def test_a_whisper_file_linked_to_outside_the_cache_is_not_deleted(
         preload_models.delete_model("whisper", whisper_model_size="turbo")
 
     assert elsewhere.exists()
+
+
+def _cut_off_download(hub: Path, status_key: str = "parakeet") -> Path:
+    """A download cut off part-way: one file linked, one blob left incomplete."""
+    repo = write_hf_repo(hub, ONNX_ASR_MODELS[status_key].repo_id, {"vocab.txt": b"v"})
+    (repo / "blobs" / "0f1e2d.incomplete").write_bytes(b"half an encoder")
+    return repo
+
+
+def test_a_cut_off_download_is_missing_but_partial(homes, monkeypatch):
+    monkeypatch.setenv("HF_HOME", str(homes["managed"]))
+    _cut_off_download(homes["managed"] / "hub")
+
+    status = preload_models.check_model_status(whisper_model_size="turbo")
+
+    assert status["parakeet"]["downloaded"] is False
+    assert status["parakeet"]["partial"] is True
+    assert "partial" not in status["canary"]
+
+
+def test_a_complete_model_is_not_partial(homes, monkeypatch):
+    monkeypatch.setenv("HF_HOME", str(homes["managed"]))
+    write_onnx_asr_repo(homes["managed"] / "hub", "parakeet")
+
+    status = preload_models.check_model_status(whisper_model_size="turbo")
+
+    assert "partial" not in status["parakeet"]
+
+
+def test_a_partial_download_is_deleted_and_nothing_beside_it(homes, monkeypatch):
+    monkeypatch.setenv("HF_HOME", str(homes["managed"]))
+    hub = homes["managed"] / "hub"
+    partial = _cut_off_download(hub)
+    canary = write_onnx_asr_repo(hub, "canary")
+    nemo = write_hf_repo(hub, "nvidia/parakeet-tdt-0.6b-v3", {"model.nemo": b"x"})
+    (hub / "version.txt").write_text("1")
+
+    assert preload_models.delete_model("parakeet") is True
+
+    assert not partial.exists()
+    assert (canary / "refs" / "main").exists()
+    assert (nemo / "refs" / "main").exists()
+    assert (hub / "version.txt").exists()
+    status = preload_models.check_model_status(whisper_model_size="turbo")
+    assert "partial" not in status["parakeet"]
+
+
+@pytest.mark.usefixtures("no_bundled_pyannote")
+def test_a_partial_pyannote_download_is_deleted(homes, monkeypatch):
+    """A repo whose snapshot lacks the weights, as a cut-off fetch leaves it."""
+    monkeypatch.setenv("HF_HOME", str(homes["managed"]))
+    repo = write_hf_repo(
+        homes["managed"] / "hub", PYANNOTE_EMBEDDING, {"config.yaml": b"model: {}\n"}
+    )
+
+    status = preload_models.check_model_status(whisper_model_size="turbo")
+    assert status["embedding"]["downloaded"] is False
+    assert status["embedding"]["partial"] is True
+
+    assert preload_models.delete_model("embedding") is True
+    assert not repo.exists()
+
+
+def test_a_partial_download_linked_to_elsewhere_is_not_deleted(
+    homes, monkeypatch, tmp_path
+):
+    monkeypatch.setenv("HF_HOME", str(homes["managed"]))
+    elsewhere = _cut_off_download(tmp_path / "elsewhere")
+    link = homes["managed"] / "hub" / PARAKEET_REPO
+    link.parent.mkdir()
+    link.symlink_to(elsewhere, target_is_directory=True)
+
+    status = preload_models.check_model_status(whisper_model_size="turbo")
+    assert status["parakeet"]["partial"] is True
+    with pytest.raises(ValueError, match="is a link to"):
+        preload_models.delete_model("parakeet")
+
+    assert link.is_symlink()
+    assert (elsewhere / "blobs" / "0f1e2d.incomplete").exists()

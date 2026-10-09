@@ -745,6 +745,9 @@ export interface ModelStatusInfo {
   path: string | null;
   checked_paths: string[];
   source?: ModelSource;
+  /** Not downloaded, but the model's own entry is in Nojoin's model cache: a
+   * download that was cut off or is still running. It can be deleted. */
+  partial?: boolean;
 }
 
 export interface SystemModelStatus {
