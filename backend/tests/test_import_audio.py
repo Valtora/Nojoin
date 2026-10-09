@@ -625,6 +625,30 @@ def test_a_crash_is_the_files_fault_and_a_kill_is_the_servers(
     assert sorted(tmp_path.iterdir()) == [source]
 
 
+def _decoded_bytes(path: Path) -> int:
+    """How much 16-bit mono PCM the file's audio decodes to."""
+    decoded = subprocess.run(
+        ["ffmpeg", "-v", "error", "-i", str(path), "-map", "0:a"]
+        + ["-ac", "1", "-f", "s16le", "-"],
+        capture_output=True,
+        check=True,
+    )
+    return len(decoded.stdout)
+
+
+@needs_ffmpeg
+def test_a_copied_track_decodes_to_the_source_samples(tmp_path: Path) -> None:
+    """AAC's encoder delay, declared by the MP4 edit list, survives the copy;
+    shifting it to zero would add 1,024 samples of priming."""
+    source = tmp_path / "screen.mp4"
+    _ffmpeg(*_SCREEN, "-shortest", str(source))
+    expected = _decoded_bytes(source)
+
+    stored = Path(keep_imported_audio(str(source)).path)
+
+    assert _decoded_bytes(stored) == expected
+
+
 @needs_ffmpeg
 def test_ffmpeg_stopped_by_sigterm_is_a_server_failure(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path

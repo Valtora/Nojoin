@@ -330,9 +330,11 @@ def _write_audio_track(
 ) -> str:
     """Write ``track`` of ``source_path`` to a new file by ``plan``; return it.
 
-    The output starts at zero (``-avoid_negative_ts make_zero``), so a track
-    that started late is stored without the leading gap and its duration is
-    its length.
+    A track that starts late is shifted to start at zero
+    (``-avoid_negative_ts make_zero``), so it is stored without the leading
+    gap and its duration is its length. Any other track keeps its timestamps,
+    so a copied AAC track keeps the encoder delay its edit list declares and
+    decodes to the source's samples.
 
     Raises:
         AudioExtractionError: ffmpeg rejected or crashed on the input, or the
@@ -347,7 +349,9 @@ def _write_audio_track(
     target = str(source.with_name(f"{source.stem}.{uuid4().hex}{plan.suffix}"))
     cmd = ["ffmpeg", "-nostdin", "-y", "-v", "error", "-i", source_path]
     cmd += ["-map", f"0:{track['index']}", *plan.codec_arguments]
-    cmd += ["-avoid_negative_ts", "make_zero", target]
+    if (seconds(track.get("start_time")) or 0.0) > 0:
+        cmd += ["-avoid_negative_ts", "make_zero"]
+    cmd.append(target)
     ensure_ffmpeg_in_path()
     try:
         subprocess.run(cmd, check=True, capture_output=True, timeout=EXTRACT_TIMEOUT_S)
