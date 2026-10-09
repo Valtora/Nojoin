@@ -161,3 +161,100 @@ def test_live_engine_config_carries_the_owners_vad_threshold(monkeypatch):
     live_config = _resolve_live(monkeypatch, {"vad_threshold": 0.3})
 
     assert live_config["vad_threshold"] == 0.3
+
+
+def test_live_engine_config_carries_the_owners_word_end_padding(monkeypatch):
+    live_config = _resolve_live(monkeypatch, {"asr_word_end_padding_s": 0.5})
+
+    assert live_config["asr_word_end_padding_s"] == 0.5
+
+
+# --- onnx-asr word end padding -------------------------------------------------
+
+
+class _Recognized:
+    """Two words 1.2 s apart: more than the 0.8 s pause after the first."""
+
+    text = "hello world"
+    tokens = [" hello", " world"]
+    timestamps = [0.0, 1.2]
+
+
+def test_default_padding_ends_the_word_early_and_splits_the_segment() -> None:
+    from backend.processing.engines.onnx_asr_engine import map_onnx_asr_recognition
+
+    result = map_onnx_asr_recognition(_Recognized(), audio_duration=2.0)
+
+    assert result["segments"][0]["words"][0]["end"] == 0.2
+    assert len(result["segments"]) == 2
+
+
+def test_wider_padding_extends_the_word_and_keeps_one_segment() -> None:
+    from backend.processing.engines.onnx_asr_engine import map_onnx_asr_recognition
+
+    result = map_onnx_asr_recognition(
+        _Recognized(), audio_duration=2.0, word_end_pad_s=0.5
+    )
+
+    assert result["segments"][0]["words"][0]["end"] == 0.5
+    # The 0.7 s left before the next word is under the pause threshold.
+    assert len(result["segments"]) == 1
+
+
+def _onnx_engine_over(tmp_path, monkeypatch, seconds: float):
+    from backend.processing.engines.parakeet_engine import ParakeetEngine
+
+    audio_path = tmp_path / "audio.wav"
+    sf.write(str(audio_path), np.zeros(int(seconds * 16000), dtype="float32"), 16000)
+
+    class _Recognizer:
+        def recognize(self, path):
+            return _Recognized()
+
+    class _Model:
+        def with_timestamps(self):
+            return _Recognizer()
+
+    engine = ParakeetEngine()
+    monkeypatch.setattr(engine, "_get_model", lambda config: _Model())
+    return engine, str(audio_path)
+
+
+@pytest.mark.parametrize(
+    ("config", "expected_end"),
+    [(None, 0.2), ({}, 0.2), ({"asr_word_end_padding_s": 0.5}, 0.5)],
+)
+def test_onnx_engine_reads_padding_from_its_config(
+    tmp_path, monkeypatch, config, expected_end
+):
+    engine, audio_path = _onnx_engine_over(tmp_path, monkeypatch, 2.0)
+
+    result = engine.transcribe(audio_path, config)
+
+    assert result["segments"][0]["words"][0]["end"] == expected_end
+
+
+def test_onnx_engine_passes_padding_to_every_window(tmp_path, monkeypatch):
+    from backend.processing.engines import onnx_asr_engine
+
+    monkeypatch.setattr(onnx_asr_engine, "MAX_CHUNK_DURATION_S", 4.0)
+    monkeypatch.setattr(onnx_asr_engine, "CHUNK_SNAP_RADIUS_S", 0.5)
+    engine, audio_path = _onnx_engine_over(tmp_path, monkeypatch, 10.0)
+
+    result = engine.transcribe(audio_path, {"asr_word_end_padding_s": 0.5})
+
+    first_words = [
+        segment["words"][0]
+        for segment in result["segments"]
+        if segment["words"][0]["word"] == " hello"
+    ]
+    assert len(first_words) == 3
+    assert all(round(word["end"] - word["start"], 6) == 0.5 for word in first_words)
+
+
+def test_onnx_engine_ignores_unusable_padding(tmp_path, monkeypatch):
+    engine, audio_path = _onnx_engine_over(tmp_path, monkeypatch, 2.0)
+
+    result = engine.transcribe(audio_path, {"asr_word_end_padding_s": 0.0})
+
+    assert result["segments"][0]["words"][0]["end"] == 0.2

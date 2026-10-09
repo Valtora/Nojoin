@@ -1021,8 +1021,11 @@ def _resolve_live_engine_config(recording_id: int, live_config: dict) -> dict:
                         "live_max_segment_s",
                         live_config["max_segment_s"],
                     ),
-                    # Validated where it is used (get_vad_config_from_settings).
+                    # Both validated where they are used.
                     "vad_threshold": merged_config.get("vad_threshold"),
+                    "asr_word_end_padding_s": merged_config.get(
+                        "asr_word_end_padding_s"
+                    ),
                 }
             )
     finally:
