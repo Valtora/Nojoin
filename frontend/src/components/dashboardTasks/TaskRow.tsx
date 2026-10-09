@@ -189,7 +189,7 @@ export default function TaskRow(props: TaskRowProps) {
           <div className="mt-3 flex flex-wrap items-center gap-2">
             {timeRemainingState && (
               <span
-                className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${timeRemainingState.className}`}
+                className={`inline-flex rounded-pill border px-2.5 py-1 text-xs font-medium ${timeRemainingState.className}`}
               >
                 {timeRemainingState.label}
               </span>

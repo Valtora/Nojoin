@@ -593,6 +593,7 @@ can be.
   `sharedRecordingActions.test.ts` fails if one stops doing so. The surfaces today are
   [Sidebar.tsx](../frontend/src/components/Sidebar.tsx) (the recordings rail) and
   [RecordingStatusDisplay.tsx](../frontend/src/components/RecordingStatusDisplay.tsx) (the live view).
+  The recording page takes its audio export from the same hook.
 
 ## Release Workflow and Version Detection
 

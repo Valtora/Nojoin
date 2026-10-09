@@ -534,3 +534,37 @@ def test_worker_text_embedding_task(mock_get_service):
 
     res = get_text_embedding_task("hello text")
     assert res == [[0.2] * 384]
+
+
+@pytest.mark.anyio
+async def test_generate_notes_is_refused_for_a_failed_transcription(
+    client: AsyncClient,
+    override_current_user,
+    test_session_maker: sessionmaker,
+) -> None:
+    await seed_data(test_session_maker)
+    override_current_user(1)
+    async with test_session_maker() as session:
+        await session.execute(
+            text(
+                "UPDATE transcripts SET transcript_status = 'error', "
+                "error_message = 'Transcription failed: out of memory' WHERE id = 31"
+            )
+        )
+        await session.commit()
+
+    response = await client.post("/api/v1/transcripts/rec-public-21/notes/generate")
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == (
+        "Transcription failed; reprocess the recording before generating notes."
+    )
+    async with test_session_maker() as session:
+        row = (
+            await session.execute(
+                text(
+                    "SELECT notes_status, error_message FROM transcripts WHERE id = 31"
+                )
+            )
+        ).one()
+    assert tuple(row) == ("idle", "Transcription failed: out of memory")

@@ -68,7 +68,7 @@ export default function RichTextEditor({ content, onChange, editable = true, onE
     },
     editorProps: {
       attributes: {
-        class: 'prose prose-gray dark:prose-invert max-w-none focus:outline-none h-full p-6',
+        class: 'prose prose-gray dark:prose-invert max-w-none focus:outline-none min-h-full p-6',
         spellcheck: 'false',
       },
     },
@@ -93,8 +93,13 @@ export default function RichTextEditor({ content, onChange, editable = true, onE
   }
 
   return (
-    <div className="h-full w-full bg-surface-card overflow-y-auto">
-      <EditorContent editor={editor} className="h-full" />
+    // The editor is the notes tab's scroller. It is a column so the content
+    // fills it when short (the ProseMirror root is min-h-full, so a click
+    // anywhere still lands in the editor) and grows past it when long, and
+    // the clearance padding is room after long notes, never extra height
+    // for short ones.
+    <div className="flex h-full w-full flex-col overflow-y-auto bg-surface-card pb-clear-floating-0">
+      <EditorContent editor={editor} className="flex-1" />
     </div>
   );
 }

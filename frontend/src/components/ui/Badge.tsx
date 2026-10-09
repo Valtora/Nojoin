@@ -37,7 +37,7 @@ export function Badge({ tone = "neutral", size = "md", icon, className, children
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-full border font-semibold whitespace-nowrap",
+        "inline-flex items-center rounded-pill border font-semibold whitespace-nowrap",
         TONES[tone],
         SIZES[size],
         className,

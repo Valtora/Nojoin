@@ -44,7 +44,7 @@ account sees a dashboard rather than a page of empty boxes. The dashboard adds a
 third column as space allows, measured against the workspace itself, so collapsing the navigation
 rail can gain you a column at the same window size.
 
-On desktop viewports around `1920x1080` and smaller, Nojoin automatically shifts into a denser desktop layout so more dashboard, recordings, transcript, notes, and settings content remains visible without affecting the roomier large-monitor layout.
+On desktop viewports around `1920x1080` and smaller, Nojoin automatically shifts into a denser desktop layout so more dashboard, recordings, transcript, notes, and settings content remains visible without affecting the roomier large-monitor layout. **Settings > Appearance > Density** overrides this: choose Comfortable or Compact to use that spacing at every window size, including phones, or Automatic to go back to the behaviour above. **Dense** is a further, opt-in step for mouse-and-keyboard use: smaller text, tighter rows, panels and transcript lines. On a touch screen Dense tightens spacing only and keeps controls at Compact size, so touch targets do not shrink.
 
 ### Calendar Surface
 
@@ -188,6 +188,8 @@ If a recording fails or you want to rebuild the generated meeting artifacts, use
 
 Retry Processing clears transcript-derived generated state, preserves recording metadata, tags, uploaded documents, and user-authored notes, then records a fresh processing timing sample for future ETA calculations.
 
+If transcription itself fails, the recording is marked **Error** instead of finishing with an empty transcript, a notification says so, and the transcript tab explains what went wrong. Meeting notes cannot be generated for it until it is reprocessed. When the GPU ran out of memory the message says so; Nojoin has already retried once after freeing memory by then, so free GPU memory or choose a smaller transcription model in Settings before using Retry Processing. A meeting in which nobody spoke still finishes normally, and its transcript tab says that no speech was detected.
+
 ### Reprocess A Recording
 
 From the recording detail page you can choose **Reprocess at higher quality**. This re-runs the full pipeline after you change the transcription engine or model in Settings.
@@ -203,7 +205,7 @@ Within a processed recording you can:
 - Click transcript text to seek playback.
 - Edit transcript text and speaker assignments.
 - Export transcript-only, notes-only, or combined output as TXT, PDF, or DOCX.
-- Export the recording's audio as MP3.
+- Export the recording's audio as MP3. The option is unavailable when the recording has no audio, for example after a restore from a backup taken without it. While the playable copy is still being prepared, the export asks you to try again shortly.
 
 Exported transcripts carry a `[MM:SS]` timestamp and the resolved speaker name on every line, in all three document formats, so an export stays navigable against the audio without a separate subtitle file. Notes-only exports carry the meeting notes as written. Every export is headed with the meeting name, date, duration, and speaker list.
 
@@ -411,6 +413,7 @@ Nojoin includes a built-in MCP connector so AI assistants such as Claude can wor
 Settings are grouped by task.
 
 - **Profile**: account details and password changes.
+- **Appearance**: theme (system, light or dark), colour palette (Nojoin orange, Graphite, Classic, Ultraviolet or Marigold), corner style (Rounded, Subtle or Square), density (Automatic, Comfortable, Compact or Dense), timezone, and spellcheck language. Theme, palette, corner style and density are saved in this browser only, so each browser can look different; they apply immediately, and on the next load before the page first paints.
 - **Capture**: microphone selection, shared-audio gain, microphone gain, browser audio-processing toggles, and a local mic input test for browser recording.
 - **AI**: per-user AI routing (the server's configured provider, or your own Claude or ChatGPT subscription), the server provider and model, Meeting Edge, automatic meeting intelligence, language, and secondary-provider fallback. Install-wide controls (provider, models, the Ollama endpoint, fallback, and "Enable Meeting Edge") are shown only to administrators; a non-admin sees a read-only summary of the active provider instead.
 - **Transcription**: transcription backend and model choices. Administrators picking a model the server does not have yet are asked whether to download it now, so it is ready before the next recording, or to leave it until first use.
@@ -464,7 +467,7 @@ Configure the secondary provider through environment variables prefixed with `SE
 - If remote participants are missing, start again and enable shared audio in the browser picker.
 - If the microphone is missing, grant microphone permission and check **Settings > Recording**.
 - If Nojoin reports a paused recording, resume it, stop and process it, or discard it before starting another capture.
-- If processing fails, use **Retry Processing** or check the administrator logs.
+- If processing fails, use **Retry Processing** or check the administrator logs. A failed transcription shows its reason, such as the GPU running out of memory, on the recording's transcript tab.
 - If calendar sync fails, review provider setup in [CALENDAR.md](CALENDAR.md).
 
 ## Updates

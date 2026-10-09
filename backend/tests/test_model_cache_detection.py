@@ -26,6 +26,18 @@ CACHED_REPOS = (
 )
 
 
+@pytest.fixture(autouse=True)
+def isolated_home(monkeypatch, tmp_path_factory):
+    """Keep the host's own model cache out of every assertion.
+
+    Detection falls back to ``~/.cache/huggingface/hub`` after ``HF_HOME``, so
+    a developer machine with Parakeet or Canary cached reported the "empty"
+    cache below as populated.
+    """
+    monkeypatch.setenv("HOME", str(tmp_path_factory.mktemp("home")))
+    monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
+
+
 @pytest.mark.parametrize("model", ["parakeet", "canary"])
 def test_a_downloaded_onnx_model_is_reported_as_present(model, monkeypatch, tmp_path):
     hub = tmp_path / "hub"

@@ -164,7 +164,7 @@ interface TagNode extends PeopleTag {
         <button
           type="button"
           onClick={() => toggleTag(tag.id)}
-          className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border transition-all ${
+          className={`inline-flex items-center px-2.5 py-1 rounded-pill text-xs font-medium border transition-all ${
             formData.tag_ids.includes(tag.id)
               ? "bg-action-tint text-action-text border-action shadow-card ring-1 ring-action"
               : "bg-surface-card text-contrast-helper text-contrast-icon-muted border-surface-border hover:border-action-border"

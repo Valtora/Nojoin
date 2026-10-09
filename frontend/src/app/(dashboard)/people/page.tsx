@@ -312,7 +312,7 @@ export default function PeoplePage() {
                   <TagIcon className="w-5 h-5" />
                   Tags
                   {selectedTagIds.length > 0 && (
-                    <span className="ml-0.5 inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1 text-xs font-semibold text-action-on bg-action rounded-full">
+                    <span className="ml-0.5 inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1 text-xs font-semibold text-action-on bg-action rounded-pill">
                       {selectedTagIds.length}
                     </span>
                   )}
