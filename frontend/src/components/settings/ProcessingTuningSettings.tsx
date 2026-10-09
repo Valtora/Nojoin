@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState } from "react";
+import { Fragment, useId, useState } from "react";
 import { ArrowLeftRight, Ghost, Mic, RotateCcw, Timer } from "lucide-react";
 
 import { cn } from "@/lib/cn";
@@ -33,9 +33,17 @@ interface TuningInputProps {
   onChange: (key: ProcessingTuningKey, value: number | null) => void;
   /** Show the field's own label above it, for rows that hold several fields. */
   labelled?: boolean;
+  /** Id of the row's help text, announced with the field. */
+  descriptionId: string;
 }
 
-function TuningInput({ tuningKey, value, onChange, labelled = false }: TuningInputProps) {
+function TuningInput({
+  tuningKey,
+  value,
+  onChange,
+  labelled = false,
+  descriptionId,
+}: TuningInputProps) {
   const spec = PROCESSING_TUNING_SPECS[tuningKey];
   const inputId = useId();
   const errorId = useId();
@@ -83,7 +91,7 @@ function TuningInput({ tuningKey, value, onChange, labelled = false }: TuningInp
         placeholder={`Default (${spec.defaultValue})`}
         aria-label={labelled ? undefined : spec.label}
         aria-invalid={error ? true : undefined}
-        aria-describedby={error ? errorId : undefined}
+        aria-describedby={error ? `${errorId} ${descriptionId}` : descriptionId}
         onChange={(event) => {
           const text = event.target.value;
           const bad = event.target.validity.badInput;
@@ -136,13 +144,28 @@ export default function ProcessingTuningSettings({
   const update = (key: ProcessingTuningKey, value: number | null) =>
     onUpdate({ ...settings, [key]: value });
 
-  const input = (key: ProcessingTuningKey, labelled = false) => (
+  // Row ids are unique registry ids, so ids derived from them are too.
+  const labelId = (rowId: string) => `${rowId}-label`;
+  const descriptionId = (rowId: string) => `${rowId}-description`;
+
+  const input = (rowId: string, key: ProcessingTuningKey, labelled = false) => (
     <TuningInput
       tuningKey={key}
       value={settings[key]}
       onChange={update}
       labelled={labelled}
+      descriptionId={descriptionId(rowId)}
     />
+  );
+
+  // A row with several fields names them as one group, so "Merge similarity"
+  // is announced as part of the phantom speaker filter.
+  const group = (rowId: string, keys: ProcessingTuningKey[]) => (
+    <div role="group" aria-labelledby={labelId(rowId)} className="grid grid-cols-2 gap-3">
+      {keys.map((key) => (
+        <Fragment key={key}>{input(rowId, key, true)}</Fragment>
+      ))}
+    </div>
   );
 
   return (
@@ -162,46 +185,51 @@ export default function ProcessingTuningSettings({
     >
       <SettingsRow
         id="recording-vad-threshold"
+        labelId={labelId("recording-vad-threshold")}
+        descriptionId={descriptionId("recording-vad-threshold")}
         label="Speech detection threshold"
         description="Lower keeps quiet or distant speech that would otherwise be muted before transcription; higher drops more background noise. Also used by the live transcript, even with voice activity detection off."
         icon={<Mic className={ICON_CLASS} aria-hidden="true" />}
       >
-        {input("vad_threshold")}
+        {input("recording-vad-threshold", "vad_threshold")}
       </SettingsRow>
 
       <SettingsRow
         id="recording-word-padding"
+        labelId={labelId("recording-word-padding")}
+        descriptionId={descriptionId("recording-word-padding")}
         label="Word end padding (Parakeet, Canary)"
         description="How long, in seconds, a word lasts when a pause follows it. Longer gives a short reply more chance to land on its speaker. Whisper ignores it."
         icon={<Timer className={ICON_CLASS} aria-hidden="true" />}
       >
-        {input("asr_word_end_padding_s")}
+        {input("recording-word-padding", "asr_word_end_padding_s")}
       </SettingsRow>
 
       <SettingsRow
         id="recording-phantom-filter"
+        labelId={labelId("recording-phantom-filter")}
+        descriptionId={descriptionId("recording-phantom-filter")}
         label="Phantom speaker filter"
         description="A speaker under both limits is checked: below the floor it is treated as noise and reassigned, at or above the merge similarity it joins the closest speaker, and in between it is kept. Lower limits or a higher merge similarity keep more brief speakers. A limit of 0 turns the filter off."
         icon={<Ghost className={ICON_CLASS} aria-hidden="true" />}
       >
-        <div className="grid grid-cols-2 gap-3">
-          {input("phantom_max_duration_s", true)}
-          {input("phantom_max_segments", true)}
-          {input("phantom_embedding_floor", true)}
-          {input("phantom_merge_threshold", true)}
-        </div>
+        {group("recording-phantom-filter", [
+          "phantom_max_duration_s",
+          "phantom_max_segments",
+          "phantom_embedding_floor",
+          "phantom_merge_threshold",
+        ])}
       </SettingsRow>
 
       <SettingsRow
         id="recording-word-flip"
+        labelId={labelId("recording-word-flip")}
+        descriptionId={descriptionId("recording-word-flip")}
         label="Single-word flip smoothing"
         description="A word up to this long, this close to its neighbours, is given back to the speaker on both sides of it. Lower values keep more one-word interjections; 0 turns smoothing off."
         icon={<ArrowLeftRight className={ICON_CLASS} aria-hidden="true" />}
       >
-        <div className="grid grid-cols-2 gap-3">
-          {input("word_flip_max_duration_s", true)}
-          {input("word_flip_max_gap_s", true)}
-        </div>
+        {group("recording-word-flip", ["word_flip_max_duration_s", "word_flip_max_gap_s"])}
       </SettingsRow>
     </SettingsCard>
   );

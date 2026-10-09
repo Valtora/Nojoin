@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 
 import { PROCESSING_TUNING_KEYS } from "@/lib/processingTuning";
 import type { Settings } from "@/types";
@@ -88,11 +88,24 @@ describe("ProcessingTuningSettings", () => {
     expect(input).toHaveAttribute("placeholder", "Default (0.5)");
   });
 
-  it("labels each field of a multi-field row", () => {
+  it("labels each field of a multi-field row within a group named by the row", () => {
     renderTuning({});
 
-    expect(screen.getByRole("spinbutton", { name: "Merge similarity" })).toBeInTheDocument();
-    expect(screen.getByRole("spinbutton", { name: "Max gap (seconds)" })).toBeInTheDocument();
+    const phantom = screen.getByRole("group", { name: "Phantom speaker filter" });
+    const flip = screen.getByRole("group", { name: "Single-word flip smoothing" });
+    expect(within(phantom).getByRole("spinbutton", { name: "Merge similarity" })).toBeInTheDocument();
+    expect(within(flip).getByRole("spinbutton", { name: "Max gap (seconds)" })).toBeInTheDocument();
+  });
+
+  it("describes each field with its row's help text", () => {
+    renderTuning({});
+
+    expect(
+      screen.getByRole("spinbutton", { name: "Speech detection threshold" }),
+    ).toHaveAccessibleDescription(/^Lower keeps quiet or distant speech/);
+    expect(screen.getByRole("spinbutton", { name: "Merge similarity" })).toHaveAccessibleDescription(
+      /^A speaker under both limits is checked/,
+    );
   });
 
   it("keeps text the browser cannot parse out of the settings", () => {
@@ -103,7 +116,7 @@ describe("ProcessingTuningSettings", () => {
 
     expect(state.latest().vad_threshold).toBe(0.3);
     expect(input).toHaveAttribute("aria-invalid", "true");
-    expect(input).toHaveAccessibleDescription("Speech detection threshold must be a number.");
+    expect(input).toHaveAccessibleDescription(/^Speech detection threshold must be a number\. Lower keeps/);
   });
 
   it("keeps an out-of-range number out of the settings until it is fixed", () => {
