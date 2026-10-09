@@ -35,6 +35,11 @@ from backend.processing.pipeline_metrics import (
     pipeline_metric_timer,
     record_pipeline_metric,
 )
+from backend.processing.processing_tuning import (
+    ASR_WORD_END_PADDING_KEY,
+    VAD_THRESHOLD_KEY,
+    normalise_tuning_value,
+)
 from backend.utils.asr_window_results import (
     build_recording_asr_window_result_config_hash,
     complete_recording_asr_window_result,
@@ -957,13 +962,38 @@ def _strip_repetition(text: str) -> str:
     return " ".join(out)
 
 
-def _resolve_live_engine_config(recording_id: int, live_config: dict) -> dict:
+def _live_tuning_value(
+    recording_id: int, merged_config: dict, key: str, *, warn: bool
+) -> float | None:
+    """The owner's ``key`` when usable, else None, so the reader inherits.
+
+    Validated here rather than by the reader, which would log an unusable value
+    on every live segment; ``warn`` lets the caller log it once per recording.
+    """
+    raw = merged_config.get(key)
+    value = normalise_tuning_value(key, raw)
+    if raw is not None and value is None:
+        logger.log(
+            logging.WARNING if warn else logging.DEBUG,
+            "Ignoring invalid %s=%r for live recording %s.",
+            key,
+            raw,
+            recording_id,
+        )
+    return value
+
+
+def _resolve_live_engine_config(
+    recording_id: int, live_config: dict, *, first_run: bool = True
+) -> dict:
     """Layer user-aware overrides onto the base live engine config.
 
     Loads the recording's owning user once and merges their resolved LLM/ASR
     settings into ``live_config`` in place, returning the same dict. Behaviour is
     a no-op when the recording or user is absent. DB/model imports stay local so
-    module import time pulls in no ML inference dependencies.
+    module import time pulls in no ML inference dependencies. ``first_run``
+    marks the recording's first live run, the one that warns about unusable
+    tuning values.
     """
     from backend.core.db import get_sync_session
     from backend.models.recording import Recording
@@ -1021,10 +1051,17 @@ def _resolve_live_engine_config(recording_id: int, live_config: dict) -> dict:
                         "live_max_segment_s",
                         live_config["max_segment_s"],
                     ),
-                    # Both validated where they are used.
-                    "vad_threshold": merged_config.get("vad_threshold"),
-                    "asr_word_end_padding_s": merged_config.get(
-                        "asr_word_end_padding_s"
+                    "vad_threshold": _live_tuning_value(
+                        recording_id,
+                        merged_config,
+                        VAD_THRESHOLD_KEY,
+                        warn=first_run,
+                    ),
+                    "asr_word_end_padding_s": _live_tuning_value(
+                        recording_id,
+                        merged_config,
+                        ASR_WORD_END_PADDING_KEY,
+                        warn=first_run,
                     ),
                 }
             )
@@ -1762,7 +1799,7 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
         live_config = _build_live_config()
         W = int(live_config["context_window_s"] * LIVE_SAMPLE_RATE)
         # Load user-aware overrides once for live speaker matching.
-        _resolve_live_engine_config(recording_id, live_config)
+        _resolve_live_engine_config(recording_id, live_config, first_run=run[0] == 0)
         ledger_enabled = bool(
             config_manager.get("enable_asr_window_result_ledger", True)
         )
