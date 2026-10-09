@@ -254,6 +254,26 @@ def test_chat_falls_back_to_the_projection_without_canonical_rows(engine):
     assert transcript == "[00:03] Priya: Hello."
 
 
+def _segment(
+    utterance_id: int,
+    span: tuple[float, float],
+    label: str,
+    words: str,
+    *,
+    provisional: bool = False,
+) -> dict:
+    # A projection segment mirroring _insert_utterance's row.
+    start, end = span
+    return {
+        "id": f"utt-{utterance_id}",
+        "start": start,
+        "end": end,
+        "speaker": label,
+        "text": words,
+        "provisional": provisional,
+    }
+
+
 def _update_utterance(engine, utterance_id: int, **values) -> None:
     assignments = ", ".join(f"{column} = :{column}" for column in values)
     with engine.begin() as connection:
@@ -264,9 +284,8 @@ def _update_utterance(engine, utterance_id: int, **values) -> None:
 
 
 def test_chat_leaves_out_deleted_and_superseded_utterances(engine):
-    # Deleting a line is the commonest correction a user makes; a reprocess
-    # supersedes old rows. Neither may reach the model. A provisional live row
-    # is still part of the transcript the view shows.
+    # Deleted and superseded rows are inactive and must not reach the model.
+    # A provisional live row is still part of the transcript the view shows.
     _insert_transcript(engine, segments=None)
     _insert_speaker(engine, "SPEAKER_00", local_name="Priya")
     _insert_utterance(engine, 1, (0, 1000), "SPEAKER_00", "Kept.")
@@ -284,10 +303,17 @@ def test_chat_leaves_out_deleted_and_superseded_utterances(engine):
 
 def test_chat_names_who_talked_over_a_line(engine):
     # Rolling diarisation records overlapping speakers by recording speaker
-    # id; chat names them the same way it names the speaker.
-    _insert_transcript(engine, segments=None)
-    _insert_speaker(engine, "SPEAKER_00", local_name="Priya")
-    _insert_speaker(engine, "SPEAKER_01", global_name="Dana")
+    # id; chat names them the same way it names the speaker. The projection
+    # mirrors the rows, as edits keep it, so only the suffix is new here.
+    _insert_transcript(
+        engine,
+        segments=[
+            _segment(1, (0.0, 1.0), "SPEAKER_00", "Hello."),
+            _segment(2, (1.0, 2.0), "SPEAKER_01", "Hi."),
+        ],
+    )
+    _insert_speaker(engine, "SPEAKER_00", name="Priya")
+    _insert_speaker(engine, "SPEAKER_01", name="Dana")
     _insert_utterance(engine, 1, (0, 1000), "SPEAKER_00", "Hello.")
     _insert_utterance(engine, 2, (1000, 2000), "SPEAKER_01", "Hi.")
     _update_utterance(
@@ -304,11 +330,18 @@ def test_chat_names_who_talked_over_a_line(engine):
 
 
 def test_chat_leaves_out_the_lines_of_a_removed_speaker_like_the_view(engine):
-    # Removing a speaker marks their lines UNKNOWN, and the view hides a
-    # finalised UNKNOWN line once any line has a known speaker. A provisional
+    # The view hides a finalised UNKNOWN line (unattributed, such as a
+    # removed speaker's) once any line has a known speaker. A provisional
     # live line stays visible.
-    _insert_transcript(engine, segments=None)
-    _insert_speaker(engine, "SPEAKER_00", local_name="Priya")
+    _insert_transcript(
+        engine,
+        segments=[
+            _segment(1, (0.0, 1.0), "SPEAKER_00", "Kept."),
+            _segment(2, (1.0, 2.0), "UNKNOWN", "The TV in the background."),
+            _segment(3, (2.0, 3.0), "UNKNOWN", "Still live.", provisional=True),
+        ],
+    )
+    _insert_speaker(engine, "SPEAKER_00", name="Priya")
     _insert_utterance(engine, 1, (0, 1000), "SPEAKER_00", "Kept.")
     _insert_utterance(engine, 2, (1000, 2000), "UNKNOWN", "The TV in the background.")
     _insert_utterance(engine, 3, (2000, 3000), "UNKNOWN", "Still live.")
@@ -329,9 +362,16 @@ def test_chat_keeps_unknown_lines_when_no_speaker_is_known(engine):
 
 
 def test_chat_names_a_merged_speakers_lines_after_the_target(engine):
-    # A merge relabels the source's utterances to the target and keeps the
-    # source row, pointing at the target, for reprocessing.
-    _insert_transcript(engine, segments=None)
+    # A merge relabels the source's utterances (and the projection) to the
+    # target and keeps the source row, pointing at the target, for
+    # reprocessing. The renamed target used to come out as "None".
+    _insert_transcript(
+        engine,
+        segments=[
+            _segment(1, (0.0, 2.0), "SPEAKER_00", "First point."),
+            _segment(2, (2.0, 4.0), "SPEAKER_00", "Second point."),
+        ],
+    )
     _insert_speaker(engine, "SPEAKER_00", local_name="Priya")
     _insert_speaker(engine, "SPEAKER_01", local_name="Laptop mic")
     with engine.begin() as connection:
@@ -373,9 +413,9 @@ def _count_queries(engine) -> int:
 
 
 def test_chat_query_count_does_not_grow_with_linked_speakers(engine):
-    # Every chat turn rebuilds the transcript. Loading each linked global
-    # speaker lazily cost a query per speaker (plus its tags), so a meeting
-    # of twelve linked speakers ran 32 queries where one speaker ran a few.
+    # Every chat turn rebuilds the transcript, and naming a linked speaker
+    # reads its global speaker. Loaded lazily, that would run a query per
+    # speaker (plus its tags); loaded up front, the count stays fixed.
     _insert_transcript(engine, segments=None)
     _insert_speaker(engine, "SPEAKER_00", global_name="Person 0")
     _insert_utterance(engine, 1, (0, 1000), "SPEAKER_00", "line 1")
