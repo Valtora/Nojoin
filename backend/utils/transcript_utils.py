@@ -546,19 +546,114 @@ def _smooth_isolated_word_speaker_flips(word_assignments: list[dict]) -> None:
         assignment["speaker"] = previous_speaker
 
 
+# A short segment folds only into a neighbour within this gap; folding across
+# a longer silence would stretch the neighbour over it, so such a segment stays
+# on its own. 1.0 s is the gap at which the word-level merge starts a segment.
+SHORT_SEGMENT_FOLD_MAX_GAP_S = 1.0
+
+_FOLD_PREVIOUS, _FOLD_NONE, _FOLD_NEXT = 0, 1, 2
+
+
+def _fold_short_segments(
+    segments: list[dict], short_indices: set[int], max_duration_s: float
+) -> list[dict]:
+    """Fold each segment in ``short_indices`` into a neighbour so its text stays.
+
+    A short segment goes to the adjacent segment by the same speaker, and
+    otherwise to the nearer one (the earlier on a tie), among neighbours within
+    SHORT_SEGMENT_FOLD_MAX_GAP_S that would not grow past ``max_duration_s``.
+    With no such neighbour it stays as its own segment. The neighbour's span
+    grows to cover what it absorbs; its speaker, overlapping speakers and ids
+    are unchanged. Consecutive short segments keep their order: once one stays
+    or goes to the later neighbour, none after it goes to the earlier one. A
+    short segment without text is dropped.
+    """
+    result: list[dict] = []
+    previous: Optional[dict] = None
+    run: list[dict] = []
+    for index, segment in enumerate([*segments, None]):
+        if segment is not None and index in short_indices:
+            run.append(segment)
+            continue
+        folded_forward: list[dict] = []
+        choice = _FOLD_PREVIOUS
+        for short in run:
+            if not short["text"]:
+                continue
+            choice = max(
+                choice, _short_segment_fold(short, previous, segment, max_duration_s)
+            )
+            if choice == _FOLD_PREVIOUS:
+                result[-1] = previous = _absorb_segments(result[-1], [], [short])
+            elif choice == _FOLD_NONE:
+                result.append(short)
+            else:
+                folded_forward.append(short)
+        run = []
+        if segment is not None:
+            result.append(_absorb_segments(segment, folded_forward, []))
+            previous = result[-1]
+    return result or segments[-1:]
+
+
+def _short_segment_fold(
+    short: dict,
+    previous: Optional[dict],
+    following: Optional[dict],
+    max_duration_s: float,
+) -> int:
+    candidates: list[tuple[int, dict, float]] = []
+    if previous is not None:
+        gap = short["start"] - previous["end"]
+        span = max(previous["end"], short["end"]) - previous["start"]
+        if gap <= SHORT_SEGMENT_FOLD_MAX_GAP_S and span <= max_duration_s:
+            candidates.append((_FOLD_PREVIOUS, previous, max(gap, 0.0)))
+    if following is not None:
+        gap = following["start"] - short["end"]
+        span = following["end"] - min(following["start"], short["start"])
+        if gap <= SHORT_SEGMENT_FOLD_MAX_GAP_S and span <= max_duration_s:
+            candidates.append((_FOLD_NEXT, following, max(gap, 0.0)))
+    if not candidates:
+        return _FOLD_NONE
+    same_speaker = [c for c in candidates if c[1]["speaker"] == short["speaker"]]
+    # min() keeps the first of equal gaps, so the earlier neighbour wins a tie.
+    return min(same_speaker or candidates, key=lambda candidate: candidate[2])[0]
+
+
+def _absorb_segments(target: dict, before: list[dict], after: list[dict]) -> dict:
+    if not before and not after:
+        return target
+    parts = [*before, target, *after]
+    logger.debug(
+        "Folding %d short segment(s) into [%.2fs - %.2fs] %s",
+        len(parts) - 1,
+        target["start"],
+        target["end"],
+        target["speaker"],
+    )
+    absorbed = dict(target)
+    absorbed["start"] = min(part["start"] for part in parts)
+    absorbed["end"] = max(part["end"] for part in parts)
+    absorbed["text"] = " ".join(part["text"] for part in parts if part["text"])
+    absorbed["words"] = [word for part in parts for word in part.get("words") or []]
+    return absorbed
+
+
 def consolidate_diarized_transcript(
     segments, min_duration_s: float = 0.1, max_duration_s: float = 10.0
 ):
     """
     Consolidate diarized transcript segments by speaker, merging consecutive segments by the same speaker,
     and handling overlapping speakers. Returns a list of dicts with start, end, speaker, and text.
-    Filters out final consolidated segments that are shorter than min_duration_s.
+    Folds a consolidated segment shorter than min_duration_s into a neighbour
+    rather than keeping it on its own (see _fold_short_segments).
     Forces a split if the segment duration exceeds max_duration_s.
     """
     if not segments:
         return []
 
     consolidated = []
+    short_indices: set[int] = set()
     i = 0
     n = len(segments)
     while i < n:
@@ -765,33 +860,22 @@ def consolidate_diarized_transcript(
             )
         )
 
-        # Add the consolidated segment only if its duration is long enough
-        # OR if it's the only segment we have (to avoid dropping data for short recordings)
-        # ... OR (end of stream AND no prepared segments).
-        if (curr_end - curr_start) >= min_duration_s or (
-            len(consolidated) == 0 and j == n
-        ):
-            consolidated_segment = {
-                "start": curr_start,
-                "end": curr_end,
-                "speaker": curr_speaker,
-                "overlapping_speakers": overlapping_list,
-                "text": curr_text.strip(),
-                "words": curr_words,
-            }
-            consolidated_segment.update(_merge_consolidation_metadata(segments[i:j]))
-            consolidated.append(consolidated_segment)
-        else:
-            ov_str = (
-                f" (Overlap: {', '.join(overlapping_list)})" if overlapping_list else ""
-            )
-            logger.info(
-                f"Filtering out short consolidated segment: "
-                f"[{curr_start:.2f}s - {curr_end:.2f}s] Speaker {curr_speaker}{ov_str} "
-                f"duration {(curr_end - curr_start):.2f}s < {min_duration_s}s"
-            )
+        consolidated_segment = {
+            "start": curr_start,
+            "end": curr_end,
+            "speaker": curr_speaker,
+            "overlapping_speakers": overlapping_list,
+            "text": curr_text.strip(),
+            "words": curr_words,
+        }
+        consolidated_segment.update(_merge_consolidation_metadata(segments[i:j]))
+        if (curr_end - curr_start) < min_duration_s:
+            short_indices.add(len(consolidated))
+        consolidated.append(consolidated_segment)
 
         i = j
+
+    consolidated = _fold_short_segments(consolidated, short_indices, max_duration_s)
 
     # Log final consolidation results
     speaker_counts = {}

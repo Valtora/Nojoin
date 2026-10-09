@@ -532,3 +532,70 @@ def test_zero_length_word_mid_sentence_survives_consolidation():
     )
 
     assert _spans(result) == [(0.0, 3.0, "SPEAKER_00", "we will ship it today")]
+
+
+def _segment(start, end, speaker, text):
+    return {"start": start, "end": end, "speaker": speaker, "text": text}
+
+
+def test_consolidate_folds_a_short_segment_into_the_same_speaker_neighbour():
+    segments = [
+        _segment(0.0, 2.0, "S0", "First point."),
+        _segment(2.0, 2.05, "S1", "Uh"),
+        _segment(2.5, 4.0, "S1", "second point."),
+    ]
+
+    result = consolidate_diarized_transcript(segments)
+
+    assert _spans(result) == [
+        (0.0, 2.0, "S0", "First point."),
+        (2.0, 4.0, "S1", "Uh second point."),
+    ]
+
+
+def test_consolidate_folds_a_short_segment_into_the_nearer_neighbour():
+    segments = [
+        _segment(0.0, 2.0, "S0", "First point"),
+        _segment(2.0, 2.05, "UNKNOWN", "too."),
+        _segment(3.0, 4.0, "S1", "Second point."),
+    ]
+
+    result = consolidate_diarized_transcript(segments)
+
+    assert _spans(result) == [
+        (0.0, 2.05, "S0", "First point too."),
+        (3.0, 4.0, "S1", "Second point."),
+    ]
+
+
+def test_consolidate_keeps_text_order_across_consecutive_short_segments():
+    # "x" prefers the later neighbour (same speaker); "y" would prefer the
+    # earlier one, but going there would put it before "x".
+    segments = [
+        _segment(0.0, 1.0, "S0", "a"),
+        _segment(1.0, 1.05, "S1", "x"),
+        _segment(1.05, 1.1, "S0", "y"),
+        _segment(1.1, 2.0, "S1", "b"),
+    ]
+
+    result = consolidate_diarized_transcript(segments)
+
+    assert _spans(result) == [(0.0, 1.0, "S0", "a"), (1.0, 2.0, "S1", "x y b")]
+
+
+def test_consolidate_keeps_an_isolated_short_segment_on_its_own():
+    # Folding across seconds of silence would stretch the neighbour over it.
+    segments = [
+        _segment(0.0, 2.0, "S0", "First point."),
+        _segment(5.0, 5.05, "S1", "Hm."),
+        _segment(8.0, 9.0, "S0", "Second point."),
+        _segment(9.0, 9.0, "S0", ""),
+    ]
+
+    result = consolidate_diarized_transcript(segments)
+
+    assert _spans(result) == [
+        (0.0, 2.0, "S0", "First point."),
+        (5.0, 5.05, "S1", "Hm."),
+        (8.0, 9.0, "S0", "Second point."),
+    ]
