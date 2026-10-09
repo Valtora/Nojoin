@@ -347,7 +347,11 @@ def convert_to_mono_16k(
     input_path: str, output_path: str, *, timeout: float | None = None
 ):
     """
-    Convert audio to mono 16kHz WAV using ffmpeg.
+    Convert audio to a mono 16 kHz, 16-bit PCM WAV using ffmpeg.
+
+    The WAV is written as RF64 once it passes 4 GiB (``-rf64 auto``, about
+    37 hours at this rate): plain WAV cannot describe a larger file, and
+    ffmpeg would otherwise write a broken header and still exit 0.
 
     ``timeout`` (seconds) kills a hung ffmpeg and raises
     ``subprocess.TimeoutExpired``; None waits indefinitely.
@@ -359,19 +363,8 @@ def convert_to_mono_16k(
     """
     ensure_ffmpeg_in_path()
 
-    cmd = [
-        "ffmpeg",
-        "-y",
-        "-i",
-        input_path,
-        "-ac",
-        "1",  # Mono
-        "-ar",
-        "16000",  # 16kHz
-        "-f",
-        "wav",
-        output_path,
-    ]
+    cmd = ["ffmpeg", "-y", "-i", input_path, "-acodec", "pcm_s16le", "-ar", "16000"]
+    cmd += ["-ac", "1", "-rf64", "auto", "-f", "wav", output_path]
 
     try:
         subprocess.run(cmd, check=True, capture_output=True, timeout=timeout)
