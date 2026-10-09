@@ -104,9 +104,40 @@ function describe(effective: ReturnType<typeof effectiveValue>): string {
     : String(effective.value);
 }
 
+/** Why ``value`` is not usable for ``spec``, or null when it is. */
+export function tuningValueError(spec: ProcessingTuningSpec, value: unknown): string | null {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return `${spec.label} must be a number.`;
+  }
+  if (value < spec.min || value > spec.max) {
+    return `${spec.label} must be between ${spec.min} and ${spec.max}.`;
+  }
+  if (spec.integer && !Number.isInteger(value)) {
+    return `${spec.label} must be a whole number.`;
+  }
+  return null;
+}
+
+/**
+ * A field's text as a setting: null when empty (inherit), the number when it
+ * is usable, and undefined when it is not (partial, out of range, a fraction
+ * for a whole-number field).
+ */
+export function parseTuningInput(
+  spec: ProcessingTuningSpec,
+  text: string,
+): number | null | undefined {
+  const trimmed = text.trim();
+  if (trimmed === "") {
+    return null;
+  }
+  const value = Number(trimmed);
+  return tuningValueError(spec, value) === null ? value : undefined;
+}
+
 /**
  * The first reason the tuning values would be rejected on save, or null.
- * Checked before autosave so a half-typed value shows an error instead of
+ * Checked before autosave so an unusable value shows an error instead of
  * sending a request the API refuses.
  */
 export function validateProcessingTuning(settings: Settings): string | null {
@@ -115,14 +146,9 @@ export function validateProcessingTuning(settings: Settings): string | null {
     if (value === null || value === undefined) {
       continue;
     }
-    if (typeof value !== "number" || !Number.isFinite(value)) {
-      return `${spec.label} must be a number.`;
-    }
-    if (value < spec.min || value > spec.max) {
-      return `${spec.label} must be between ${spec.min} and ${spec.max}.`;
-    }
-    if (spec.integer && !Number.isInteger(value)) {
-      return `${spec.label} must be a whole number.`;
+    const error = tuningValueError(spec, value);
+    if (error) {
+      return error;
     }
   }
 

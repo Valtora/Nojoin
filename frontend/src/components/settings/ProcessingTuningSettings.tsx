@@ -1,11 +1,14 @@
 "use client";
 
-import { useId, useState, type ChangeEvent } from "react";
+import { useId, useState } from "react";
 import { ArrowLeftRight, Ghost, Mic, RotateCcw, Timer } from "lucide-react";
 
+import { cn } from "@/lib/cn";
 import {
   PROCESSING_TUNING_SPECS,
+  parseTuningInput,
   processingTuningReset,
+  tuningValueError,
   type ProcessingTuningKey,
 } from "@/lib/processingTuning";
 import type { Settings } from "@/types";
@@ -23,16 +26,6 @@ function formatValue(value: number | null | undefined): string {
   return value === null || value === undefined ? "" : String(value);
 }
 
-function readInput(event: ChangeEvent<HTMLInputElement>): number | null {
-  // A half-typed number reads as "" with badInput set: report it as NaN so
-  // validation shows an error, rather than as empty, which would reset it.
-  if (event.target.validity.badInput) {
-    return Number.NaN;
-  }
-  const text = event.target.value.trim();
-  return text === "" ? null : Number(text);
-}
-
 interface TuningInputProps {
   tuningKey: ProcessingTuningKey;
   value: number | null | undefined;
@@ -44,18 +37,32 @@ interface TuningInputProps {
 function TuningInput({ tuningKey, value, onChange, labelled = false }: TuningInputProps) {
   const spec = PROCESSING_TUNING_SPECS[tuningKey];
   const inputId = useId();
+  const errorId = useId();
   const [draft, setDraft] = useState(formatValue(value));
+  // A number input reports text it cannot parse (Firefox accepts letters;
+  // "-" or "e" mid-typing anywhere) as an empty value with badInput set.
+  const [badInput, setBadInput] = useState(false);
   const [shownValue, setShownValue] = useState(value);
 
   // Follow a change made elsewhere (a reset, the initial load) without
   // rewriting what the user is typing when it already parses to that value.
-  if (value !== shownValue) {
+  // Object.is, because a NaN from anywhere would otherwise never compare
+  // equal and re-run this on every render.
+  if (!Object.is(value, shownValue)) {
     setShownValue(value);
-    const draftValue = draft.trim() === "" ? null : Number(draft);
-    if (draftValue !== (value ?? null)) {
-      setDraft(formatValue(value));
+    const next = value ?? null;
+    if (!Number.isNaN(next) && parseTuningInput(spec, draft) !== next) {
+      setDraft(formatValue(next));
+      setBadInput(false);
     }
   }
+
+  const parsed = badInput ? undefined : parseTuningInput(spec, draft);
+  const error =
+    parsed === undefined
+      ? (tuningValueError(spec, badInput ? Number.NaN : Number(draft)) ??
+        `${spec.label} must be a number.`)
+      : null;
 
   return (
     <div className="min-w-0">
@@ -74,12 +81,28 @@ function TuningInput({ tuningKey, value, onChange, labelled = false }: TuningInp
         value={draft}
         placeholder={`Default (${spec.defaultValue})`}
         aria-label={labelled ? undefined : spec.label}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error ? errorId : undefined}
         onChange={(event) => {
-          setDraft(event.target.value);
-          onChange(tuningKey, readInput(event));
+          const text = event.target.value;
+          const bad = event.target.validity.badInput;
+          setDraft(text);
+          setBadInput(bad);
+          // Only an empty field or a usable number reaches the settings. A
+          // partial or out-of-range value stays in the field, marked invalid,
+          // so it never blocks the autosave of every other setting.
+          const next = bad ? undefined : parseTuningInput(spec, text);
+          if (next !== undefined) {
+            onChange(tuningKey, next);
+          }
         }}
-        className={SETTINGS_INPUT_CLASS}
+        className={cn(SETTINGS_INPUT_CLASS, error && "border-danger-text")}
       />
+      {error && (
+        <p id={errorId} className="mt-1 text-xs text-danger-text">
+          {error}
+        </p>
+      )}
     </div>
   );
 }
