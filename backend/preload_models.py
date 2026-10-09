@@ -391,7 +391,6 @@ def download_models(
     parakeet_model=None,
     canary_model=None,
     include_core=True,
-    report_complete=True,
 ):
     """
     Prepare required model assets on disk without retaining models in memory.
@@ -399,9 +398,6 @@ def download_models(
     Warmup intentionally runs in the worker process. It may instantiate a model
     on CPU to validate that downloads completed, then releases all caches and
     CUDA allocations before returning.
-
-    With ``report_complete`` off, a successful run ends on "queued" rather than
-    "complete", for a run that another preparation follows.
     """
     clear_download_progress()
 
@@ -432,8 +428,7 @@ def download_models(
         )
 
         # Whisper is only ever loaded by the Whisper engine, live and final
-        # alike, so a run for Parakeet or Canary leaves it out. API startup
-        # queues a separate Whisper run when other users still transcribe with it.
+        # alike, so a run for Parakeet or Canary leaves it out.
         if include_core and transcription_backend == "whisper":
             report(
                 f"Preparing Whisper {whisper_model_size} for transcription...",
@@ -479,14 +474,7 @@ def download_models(
             )
             _prepare_onnx_asr_model(onnx_model_id)
 
-        if report_complete:
-            report(
-                "Model preparation complete.", 100, stage="complete", status="complete"
-            )
-        else:
-            report(
-                "Model preparation queued...", 0, stage="queued", status="downloading"
-            )
+        report("Model preparation complete.", 100, stage="complete", status="complete")
     except Exception as exc:
         logger.error("Model preparation failed: %s", exc, exc_info=True)
         set_download_progress(

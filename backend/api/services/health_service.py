@@ -16,7 +16,6 @@ from backend.core.db import sync_engine
 from backend.core.redis import get_redis_url
 from backend.core.task_dispatch import dispatch_task
 from backend.preload_models import check_model_status
-from backend.services.model_preparation import resolve_install_transcription_selection
 from backend.utils.config_manager import async_get_system_api_keys, config_manager
 from backend.utils.deployment_warnings import get_deployment_warnings
 from backend.utils.download_progress import (
@@ -261,18 +260,19 @@ def _is_stage_downloading(download: dict[str, Any], *stages: str) -> bool:
 def _get_transcription_component(
     model_status: dict[str, Any],
     download: dict[str, Any],
-    selection: dict[str, Any],
 ) -> tuple[dict[str, Any], bool]:
-    transcription_backend = selection["transcription_backend"]
-    whisper_model_size = selection["whisper_model_size"]
+    transcription_backend = str(config_manager.get("transcription_backend", "whisper"))
+    whisper_model_size = str(config_manager.get("whisper_model_size", "turbo"))
 
     if transcription_backend == "parakeet":
-        configured_model = selection["parakeet_model"]
+        configured_model = str(
+            config_manager.get("parakeet_model", "parakeet-tdt-0.6b-v3")
+        )
         backing_status = model_status.get("parakeet", {})
         model_label = f"Parakeet ({configured_model})"
         downloading = _is_stage_downloading(download, "parakeet", "queued", "init")
     elif transcription_backend == "canary":
-        configured_model = selection["canary_model"]
+        configured_model = str(config_manager.get("canary_model", "nemo-canary-1b-v2"))
         backing_status = model_status.get("canary", {})
         model_label = f"Canary ({configured_model})"
         downloading = _is_stage_downloading(download, "canary", "queued", "init")
@@ -729,11 +729,8 @@ async def get_system_health_status() -> dict[str, Any]:
 
 
 async def get_admin_health_status(db: AsyncSession) -> dict[str, Any]:
-    # Report the engine startup prepares, not config.json's alone: the
-    # transcription keys are user-scoped, so config can name an unused engine.
-    selection = await resolve_install_transcription_selection(db)
     model_status = check_model_status(
-        whisper_model_size=selection["whisper_model_size"]
+        whisper_model_size=str(config_manager.get("whisper_model_size", "turbo"))
     )
     download = _current_download_summary()
 
@@ -745,7 +742,6 @@ async def get_admin_health_status(db: AsyncSession) -> dict[str, Any]:
     transcription_component, transcription_ready = _get_transcription_component(
         model_status,
         download,
-        selection,
     )
     diarization_component, diarization_ready = await _get_diarization_component(
         db,

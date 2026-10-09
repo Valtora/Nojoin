@@ -45,10 +45,7 @@ from backend.core.task_dispatch import dispatch_task
 from backend.models.user import User
 from backend.preload_models import check_model_status
 from backend.seed_demo import seed_demo_data
-from backend.services.model_preparation import (
-    effective_transcription_setting,
-    enqueue_model_preparation,
-)
+from backend.services.model_preparation import enqueue_model_preparation
 from backend.utils.config_manager import config_manager, get_trusted_web_origin
 from backend.utils.download_progress import (
     get_download_progress,
@@ -632,11 +629,14 @@ async def prepare_models_endpoint(
     # The transcription keys are user-scoped rather than install-wide, so the
     # admin's own row wins over config.json. Reading config alone would prepare
     # whatever the install default happens to be, not the model just chosen.
-    def effective(key: str) -> str:
-        return effective_transcription_setting(current_user.settings, key)
+    user_settings = current_user.settings or {}
+
+    def effective(key: str, default: str) -> str:
+        value = user_settings.get(key)
+        return str(value) if value else str(config_manager.get(key, default))
 
     if target == "active":
-        transcription_backend = effective("transcription_backend")
+        transcription_backend = effective("transcription_backend", "whisper")
         include_core = transcription_backend == "whisper"
     elif target == "core":
         transcription_backend = "whisper"
@@ -647,10 +647,10 @@ async def prepare_models_endpoint(
 
     try:
         task_id = await enqueue_model_preparation(
-            whisper_model_size=effective("whisper_model_size"),
+            whisper_model_size=effective("whisper_model_size", "turbo"),
             transcription_backend=transcription_backend,
-            parakeet_model=effective("parakeet_model"),
-            canary_model=effective("canary_model"),
+            parakeet_model=effective("parakeet_model", "parakeet-tdt-0.6b-v3"),
+            canary_model=effective("canary_model", "nemo-canary-1b-v2"),
             include_core=include_core,
         )
     except Exception as e:  # noqa: BLE001

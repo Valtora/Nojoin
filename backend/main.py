@@ -127,7 +127,7 @@ from backend.core.db import async_session_maker
 from backend.core.security import SigningKeyUnavailableError, get_signing_keyring
 from backend.models.user import User
 from backend.seed_demo import seed_demo_data
-from backend.services.model_preparation import enqueue_startup_model_preparation
+from backend.services.model_preparation import enqueue_model_preparation
 from backend.services.recording_identity_service import (
     ensure_recording_meeting_uids,
     ensure_recording_public_ids,
@@ -308,7 +308,7 @@ async def lifespan(app: FastAPI):
         logger.error(f"Failed to seed demo data on startup: {e}")
 
     try:
-        await enqueue_startup_model_preparation(async_session_maker)
+        await enqueue_model_preparation(include_core=True)
     except Exception as e:  # noqa: BLE001
         logger.error("Failed to queue startup model preparation: %s", e, exc_info=True)
 
