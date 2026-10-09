@@ -551,9 +551,10 @@ def _delete_hub_repo(repo_dir: str) -> None:
     A repo huggingface_hub cannot list is only removed as a directory: a
     download cut off before its first file started, which has no snapshots
     directory yet, or a repo left inconsistent, such as a snapshot link to a
-    blob that is gone. So is any repo when another repo in the cache cannot be
-    read. Unfinished files are in the repo's own ``blobs/``. A finished file
-    such a repo shared stays in the cache until ``hf cache prune`` collects it.
+    blob that is gone. Unfinished files are in the repo's own ``blobs/``. A
+    finished file such a repo shared stays in the cache until ``hf cache
+    prune`` collects it. So is any repo when another repo in the cache cannot
+    be read, and ``hf cache prune`` fails on that repo too until it is fixed.
     """
     # Imported here: the API process imports this module for model status, and
     # only the worker image installs huggingface_hub.
@@ -590,8 +591,9 @@ def _delete_hub_repo(repo_dir: str) -> None:
     except (OSError, UnicodeError) as e:
         logger.warning(
             f"Could not read the hub cache to delete {repo_dir} ({e}). Removing it "
-            "as a directory only: a file it shared with another repo stays until "
-            "`hf cache prune` collects it."
+            "as a directory only: a file it shared with another repo stays on "
+            "disk. `hf cache prune` fails on the same unreadable repo, so fix it "
+            "(usually its permissions) first, then run `hf cache prune`."
         )
         strategy = None
     if strategy is not None:
