@@ -468,7 +468,9 @@ transcription engine and model, the install glossary, the install default notes 
 to `data/config.json` rather than to the database, so the mounted `data/` directory must be writable by
 the API container's user. If it is not, saving any of those settings now fails with an explicit error
 instead of appearing to succeed and then reverting on the next restart. If you see that error, check the
-ownership of the host directory bound to `/app/data`.
+ownership of the host directory bound to `/app/data`. First-run setup writes the wizard's Whisper model
+size there as well, except that the wizard's default (`turbo`) does not replace a different size already
+in a pre-seeded `config.json`.
 
 ## CLI OAuth (worker-io image)
 
@@ -811,19 +813,25 @@ Pinning a deployment to an exact image digest (`ghcr.io/valtora/nojoin-api@sha25
 - **The transcription engine and model are install-wide.** The engine (`transcription_backend`) and its
   model (`whisper_model_size`, `parakeet_model`, `canary_model`) are kept in `data/config.json` and apply
   to every user. Releases before this one stored them per account: **Settings > Transcription**, shown
-  only to administrators, saved the choice on that administrator's own account, and first-run setup
-  saved the wizard's Whisper size on the owner's account. Everyone without a stored value used
-  `config.json`.
+  only to administrators, saved the choice on that administrator's own account; first-run setup saved
+  the wizard's Whisper size on the owner's account; and any settings save stored the displayed values
+  on the saving user's account. Everyone without a stored value used `config.json`.
 
   On the first start after the upgrade, the API copies the owner's choice (the first account with the
   owner role) into `config.json` and removes it from the owner's account, so a later start never
   repeats it over a choice made since. The owner's value wins over what `config.json` holds, with one
   exception: an owner value equal to the shipped default (`whisper`, `turbo`, `parakeet-tdt-0.6b-v3`,
-  `nemo-canary-1b-v2`) does not replace a different value in `config.json`, because setup stores that
-  default on the owner's account whether or not anyone chose it. An owner value that is not a valid
-  choice is not carried. The api log names every `config.json` value replaced or kept, and why. If
+  `nemo-canary-1b-v2`) does not replace a different value in `config.json`. A default on the owner's
+  account may never have been a choice: first-run setup stored the wizard's Whisper size there, and the
+  settings page saves every displayed value, defaults included, whenever an administrator changes any
+  setting. The same autosave means a non-default value on the owner's account can be a snapshot of what
+  `config.json` held at the time; it still wins, even over a later hand edit of the file, because it is
+  what the owner was running. An unknown engine or Whisper size is not carried; model ids are passed to
+  the engine as given. The api log names every value carried, kept or rejected, and why. If
   `config.json` cannot be read or written, the owner's choice stays on their account, unused, and the
-  next start tries again; until then everyone transcribes with the `config.json` engine.
+  next start tries again; until then everyone transcribes with the `config.json` engine. Workers do not
+  wait for the API, so a recording a worker picks up in the moments before the carry-over runs can
+  still be transcribed with the old `config.json` engine.
 
   After the upgrade, users who are not administrators transcribe with the install's engine and model,
   settled as above, and with whatever an administrator picks later. That is what the settings page

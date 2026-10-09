@@ -106,20 +106,26 @@ async def _carry(rows: list[tuple[str, dict]], runs: int = 1, between=None):
         return carried, await _rows(maker)
 
 
-def test_the_owners_choice_moves_into_config(config_path):
-    carried, (owner, member) = asyncio.run(
-        _carry(
-            [
-                ("owner", {**OWNER_CHOICE, "theme": "light"}),
-                ("user", {"transcription_backend": "canary"}),
-            ]
+def test_the_owners_choice_moves_into_config(config_path, caplog):
+    with caplog.at_level(logging.WARNING, logger=upgrade.logger.name):
+        carried, (owner, member) = asyncio.run(
+            _carry(
+                [
+                    ("owner", {**OWNER_CHOICE, "theme": "light"}),
+                    ("user", {"transcription_backend": "canary"}),
+                ]
+            )
         )
-    )
 
     assert carried == OWNER_CHOICE
     config = _config(config_path)
     for key, value in OWNER_CHOICE.items():
         assert config[key] == value
+        # Each carried value is logged, with the default it replaces.
+        assert any(
+            key in r.getMessage() and repr(value) in r.getMessage()
+            for r in caplog.records
+        )
     # Cleared from the owner's row; every other setting stays.
     assert owner == {"theme": "light"}
     # Another user's value is not carried, only ignored from now on.
@@ -160,22 +166,58 @@ def test_the_owners_later_choice_replaces_what_setup_left_in_config(
     assert any("'small'" in r.getMessage() for r in caplog.records)
 
 
-def test_an_owner_default_does_not_replace_a_config_value(config_path, caplog):
-    # Setup stores the wizard's size, usually the default, on the owner's row.
-    _set_config(config_path, whisper_model_size="large")
+@pytest.mark.parametrize(
+    ("key", "file_value"),
+    [
+        ("transcription_backend", "canary"),
+        ("whisper_model_size", "large"),
+        ("parakeet_model", "parakeet-other"),
+        ("canary_model", "canary-other"),
+    ],
+)
+def test_an_owner_default_does_not_replace_a_config_value(
+    config_path, caplog, key, file_value
+):
+    # Setup and the settings page's autosave store defaults on the owner's row.
+    _set_config(config_path, **{key: file_value})
+    default = DEFAULT_SYSTEM_CONFIG[key]
+    other = "whisper_model_size" if key != "whisper_model_size" else "parakeet_model"
+    choice = {key: default, other: OWNER_CHOICE.get(other, "parakeet-tdt-0.6b-v2")}
 
     with caplog.at_level(logging.WARNING, logger=upgrade.logger.name):
-        carried, (owner,) = asyncio.run(
-            _carry([("owner", {**OWNER_CHOICE, "whisper_model_size": "turbo"})])
-        )
+        carried, (owner,) = asyncio.run(_carry([("owner", choice)]))
 
     config = _config(config_path)
-    assert config["whisper_model_size"] == "large"
-    # The owner's other keys still carry.
-    assert config["transcription_backend"] == "parakeet"
-    assert "whisper_model_size" not in carried
+    assert config[key] == file_value
+    # The owner's other key still carries.
+    assert config[other] == choice[other]
+    assert key not in carried
     assert owner == {}
-    assert any("'turbo'" in r.getMessage() for r in caplog.records)
+    assert any(repr(default) in r.getMessage() for r in caplog.records)
+
+
+def test_an_empty_owner_value_is_skipped_quietly(config_path, caplog):
+    with caplog.at_level(logging.WARNING, logger=upgrade.logger.name):
+        carried, (owner,) = asyncio.run(
+            _carry([("owner", {"transcription_backend": ""})])
+        )
+
+    assert carried == {}
+    assert owner == {}
+    assert not caplog.records
+
+
+def test_a_config_that_cannot_be_read_is_left_alone(config_path, caplog):
+    config_path.unlink()
+    config_path.mkdir()
+
+    with caplog.at_level(logging.WARNING, logger=upgrade.logger.name):
+        carried, (owner,) = asyncio.run(_carry([("owner", OWNER_CHOICE)]))
+
+    assert carried == {}
+    assert config_path.is_dir()
+    assert owner == OWNER_CHOICE
+    assert any(str(config_path) in r.getMessage() for r in caplog.records)
 
 
 @pytest.mark.parametrize(
@@ -278,9 +320,12 @@ def test_nothing_is_written_without_an_owner_choice(config_path):
     )
 
 
-def test_startup_carries_on_when_the_step_fails(monkeypatch, caplog):
+@pytest.mark.parametrize(
+    "error", [OSError("read-only file system"), ValueError("not an object")]
+)
+def test_startup_carries_on_when_the_step_fails(monkeypatch, caplog, error):
     async def fail(session) -> dict:
-        raise OSError("read-only file system")
+        raise error
 
     monkeypatch.setattr(main, "carry_owner_transcription_choice", fail)
 

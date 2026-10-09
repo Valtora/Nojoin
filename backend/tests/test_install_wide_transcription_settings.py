@@ -199,11 +199,12 @@ class _SetupSession:
         value.id = 1
 
 
-def test_first_run_setup_saves_the_transcription_model_to_config(
-    install_config, monkeypatch
-):
-    session = _SetupSession()
-    queued: list[dict] = []
+@pytest.fixture
+def run_setup(install_config, monkeypatch):
+    """Post the first-run setup with this Whisper size.
+
+    Returns the response, the users it created and the preparation it queued.
+    """
 
     async def no_op(*args, **kwargs) -> None:
         return None
@@ -211,47 +212,80 @@ def test_first_run_setup_saves_the_transcription_model_to_config(
     async def not_initialized(db) -> bool:
         return False
 
-    async def fake_enqueue(**kwargs) -> str:
-        queued.append(kwargs)
-        return "task-1"
-
     monkeypatch.setattr(system, "config_manager", install_config)
     monkeypatch.setattr(system, "enforce_setup_rate_limit", no_op)
     monkeypatch.setattr(system, "is_system_initialized", not_initialized)
     monkeypatch.setattr(system, "require_first_run_password", lambda request: None)
-    monkeypatch.setattr(system, "enqueue_model_preparation", fake_enqueue)
     monkeypatch.setattr(
         importlib.import_module("backend.utils.telemetry"),
         "set_enabled",
         lambda enabled: None,
     )
 
-    app = FastAPI()
-    app.include_router(system.router, prefix="/system")
+    def run(whisper_model_size: str):
+        session = _SetupSession()
+        queued: list[dict] = []
 
-    async def override_db():
-        yield session
+        async def fake_enqueue(**kwargs) -> str:
+            queued.append(kwargs)
+            return "task-1"
 
-    app.dependency_overrides[get_db] = override_db
+        monkeypatch.setattr(system, "enqueue_model_preparation", fake_enqueue)
+        app = FastAPI()
+        app.include_router(system.router, prefix="/system")
 
-    async def run():
-        async with AsyncClient(
-            transport=ASGITransport(app=app), base_url="http://t"
-        ) as client:
-            return await client.post(
-                "/system/setup",
-                json={
-                    "username": "owner",
-                    "password": "a-long-enough-password",
-                    "whisper_model_size": "medium",
-                    "include_demo_recording": False,
-                },
-            )
+        async def override_db():
+            yield session
 
-    response = asyncio.run(run())
+        app.dependency_overrides[get_db] = override_db
+
+        async def post():
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://t"
+            ) as client:
+                return await client.post(
+                    "/system/setup",
+                    json={
+                        "username": "owner",
+                        "password": "a-long-enough-password",
+                        "whisper_model_size": whisper_model_size,
+                        "include_demo_recording": False,
+                    },
+                )
+
+        return asyncio.run(post()), session.added, queued
+
+    return run
+
+
+def test_first_run_setup_saves_the_transcription_model_to_config(
+    install_config, run_setup
+):
+    response, (owner,), queued = run_setup("medium")
 
     assert response.status_code == 200
     assert _config_file(install_config)["whisper_model_size"] == "medium"
-    (owner,) = session.added
     assert "whisper_model_size" not in owner.settings
     assert queued[0]["whisper_model_size"] == "medium"
+
+
+def test_the_wizards_default_does_not_replace_a_seeded_size(install_config, run_setup):
+    path = Path(install_config.config_path)
+    path.write_text(json.dumps({"whisper_model_size": "large"}), encoding="utf-8")
+
+    response, _, queued = run_setup("turbo")
+
+    assert response.status_code == 200
+    assert _config_file(install_config)["whisper_model_size"] == "large"
+    assert queued[0]["whisper_model_size"] == "large"
+
+
+def test_setup_finishes_when_config_is_not_an_object(install_config, run_setup):
+    Path(install_config.config_path).write_text("[]", encoding="utf-8")
+
+    response, added, _ = run_setup("medium")
+
+    # The owner is already committed, so a 500 would make setup unrepeatable.
+    assert response.status_code == 200
+    assert len(added) == 1
+    assert Path(install_config.config_path).read_text(encoding="utf-8") == "[]"

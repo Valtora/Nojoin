@@ -150,3 +150,28 @@ def test_save_values_refuses_to_replace_a_file_it_cannot_parse(tmp_path):
         manager.save_values({"whisper_model_size": "small"})
 
     assert path.read_text(encoding="utf-8") == "{half an edit"
+
+
+@pytest.mark.parametrize(
+    ("content", "message"),
+    [("{half an edit", "is not valid JSON"), ("[]", "holds a JSON list")],
+)
+def test_read_file_says_what_is_wrong_with_the_file(tmp_path, content, message):
+    path = tmp_path / "config.json"
+    path.write_text("{}", encoding="utf-8")
+    manager = ConfigManager(config_path=str(path))
+    path.write_text(content, encoding="utf-8")
+
+    with pytest.raises(ValueError, match=message):
+        manager.read_file()
+
+
+def test_read_file_lets_an_unreadable_file_raise(tmp_path):
+    path = tmp_path / "config.json"
+    path.write_text("{}", encoding="utf-8")
+    manager = ConfigManager(config_path=str(path))
+    path.unlink()
+    path.mkdir()
+
+    with pytest.raises(OSError):
+        manager.read_file()

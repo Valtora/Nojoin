@@ -46,7 +46,11 @@ from backend.models.user import User
 from backend.preload_models import check_model_status
 from backend.seed_demo import seed_demo_data
 from backend.services.model_preparation import enqueue_model_preparation
-from backend.utils.config_manager import config_manager, get_trusted_web_origin
+from backend.utils.config_manager import (
+    DEFAULT_SYSTEM_CONFIG,
+    config_manager,
+    get_trusted_web_origin,
+)
 from backend.utils.download_progress import (
     get_download_progress,
     is_download_in_progress,
@@ -412,6 +416,29 @@ async def check_ffmpeg(current_user: User = Depends(get_current_admin_user)) -> 
     }
 
 
+def _save_first_run_whisper_size(wizard_size: str) -> str:
+    """Write the wizard's Whisper size to config.json; return the install's size.
+
+    The transcription model is install-wide, so the choice goes to config.json:
+    nothing reads it from the owner's row. The wizard always offers the shipped
+    default first, so that default does not replace a different size an
+    operator seeded config.json with before the first run.
+    """
+    try:
+        seeded = config_manager.read_file().get("whisper_model_size")
+        if (
+            wizard_size == DEFAULT_SYSTEM_CONFIG["whisper_model_size"]
+            and seeded in WHISPER_MODEL_SIZES_MB
+        ):
+            return str(seeded)
+        config_manager.save_values({"whisper_model_size": wizard_size})
+    except (OSError, ValueError) as e:
+        # Raised before anything is written, or by the write itself. The owner
+        # already exists, so failing the request would leave setup unrepeatable.
+        logger.error("Failed to persist the first-run transcription model: %s", e)
+    return wizard_size
+
+
 @router.post("/setup")
 async def setup_system(
     *,
@@ -481,21 +508,14 @@ async def setup_system(
     except Exception as e:  # noqa: BLE001 -- boundary: setup must not fail on a telemetry write
         logger.error("Failed to persist first-run telemetry choice: %s", e)
 
-    # The transcription model is install-wide, so the choice goes to config.json:
-    # nothing reads it from the owner's row.
-    try:
-        config_manager.save_values(
-            {"whisper_model_size": setup_in.whisper_model_size or "turbo"}
-        )
-    except (OSError, ValueError) as e:
-        # Raised before anything is written, or by the write itself. The owner
-        # already exists, so failing the request would leave setup unrepeatable.
-        logger.error("Failed to persist the first-run transcription model: %s", e)
+    whisper_model_size = _save_first_run_whisper_size(
+        setup_in.whisper_model_size or DEFAULT_SYSTEM_CONFIG["whisper_model_size"]
+    )
 
     model_preparation_task_id = None
     try:
         model_preparation_task_id = await enqueue_model_preparation(
-            whisper_model_size=setup_in.whisper_model_size or "turbo",
+            whisper_model_size=whisper_model_size,
             transcription_backend="whisper",
             include_core=True,
         )
