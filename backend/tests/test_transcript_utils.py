@@ -857,16 +857,22 @@ def seg(start, end, text, overlapping, words=None):
         out["words"] = words
     return out
 
+def long_seg():
+    return seg(1.05, 12.05, "one. two", ["S3", "S2"], [
+        {"start": 1.05, "end": 9.05, "word": " one."},
+        {"start": 9.05, "end": 12.05, "word": " two"},
+    ])
+
 segments = [
     seg(0.0, 1.0, "a", ["S2", "S3"]),
     {**seg(1.0, 1.05, "uh", []), "speaker": "S1"},
-    seg(1.05, 12.05, "one. two", ["S3", "S2"], [
-        {"start": 1.05, "end": 9.05, "word": " one."},
-        {"start": 9.05, "end": 12.05, "word": " two"},
-    ]),
+    long_seg(),
 ]
 result = consolidate_diarized_transcript(segments)
 print(json.dumps([(s["start"], s["end"], s["overlapping_speakers"]) for s in result]))
+# A split chunk on its own keeps the overlapping speakers it was built with.
+alone = consolidate_diarized_transcript([long_seg()])
+print(json.dumps([(s["start"], s["end"], s["overlapping_speakers"]) for s in alone]))
 """
 
 
