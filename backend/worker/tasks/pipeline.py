@@ -197,7 +197,7 @@ def _run_vad_stage(
 
         vad_output_path = vad_input_path.replace("_vad.wav", "_vad_processed.wav")
         vad_success, speech_duration = mute_non_speech_segments(
-            vad_input_path, vad_output_path
+            vad_input_path, vad_output_path, config=ctx.merged_config
         )
 
         if not vad_success:

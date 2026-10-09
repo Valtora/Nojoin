@@ -1021,6 +1021,8 @@ def _resolve_live_engine_config(recording_id: int, live_config: dict) -> dict:
                         "live_max_segment_s",
                         live_config["max_segment_s"],
                     ),
+                    # Validated where it is used (get_vad_config_from_settings).
+                    "vad_threshold": merged_config.get("vad_threshold"),
                 }
             )
     finally:
@@ -1767,6 +1769,7 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
             combined,
             min_silence_duration_ms=LIVE_MIN_SILENCE_MS,
             speech_pad_ms=live_config["speech_pad_ms"],
+            config=live_config,
         )
         complete, cut_point = classify_speech(
             speech,
