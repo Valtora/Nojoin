@@ -98,7 +98,7 @@ Use **Settings > AI providers** for installation-wide provider defaults, model o
 Admin-only sections let you:
 
 - Choose the default LLM provider.
-- Configure the Ollama API URL and context window. The context window is sent to Ollama as `num_ctx` for full-context meeting prompts; if Ollama still reports a length stop, Nojoin surfaces that as a chat error instead of saving a truncated answer.
+- Configure the Ollama API URL and context window. The context window is sent to Ollama as `num_ctx` for full-context meeting prompts, lowered to the model's own maximum when the model was trained on less. A prompt that cannot fit with room for the answer is refused before it is sent, and a response whose token counts show the window filled (a length stop, a silently truncated prompt or a context shift mid-answer) is refused instead of saved. The error names the window; raise it, or pick a model with a larger context.
 - Configure a secondary LLM provider for fallback. When the primary provider fails, the system automatically retries with the secondary provider. The secondary provider has its own independent configuration (provider, model, API key, Ollama URL) set through `SECONDARY_` prefixed environment variables.
 - View installed Whisper models.
 - Remove local model cache entries. Required default models are prepared on first run, and repo-bundled model assets remain read-only in the UI. Deletion runs on a worker, since the API mounts the model cache read-only, so it needs a running worker to succeed.
