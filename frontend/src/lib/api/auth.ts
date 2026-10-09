@@ -33,7 +33,8 @@ export const logout = async (): Promise<void> => {
     console.error("Logout failed:", error);
   } finally {
     if (typeof window !== "undefined") {
-      window.location.href = "/login";
+      // A full load drops the old session's client state; replace keeps the signed-in page off the Back stack.
+      window.location.replace("/login");
     }
   }
 };

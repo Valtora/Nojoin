@@ -110,7 +110,8 @@ api.interceptors.response.use(
         // here would discard the client's authorization parameters.
         !window.location.pathname.startsWith("/oauth/authorize")
       ) {
-        window.location.href = "/login";
+        // A full load drops the expired session's client state; replace keeps the dead page off the Back stack.
+        window.location.replace("/login");
       }
     }
 
@@ -123,7 +124,8 @@ api.interceptors.response.use(
         typeof window !== "undefined" &&
         !window.location.pathname.startsWith("/settings")
       ) {
-        window.location.href = FORCE_PASSWORD_CHANGE_REDIRECT;
+        // A full load reloads the user's state; replace keeps the blocked page off the Back stack.
+        window.location.replace(FORCE_PASSWORD_CHANGE_REDIRECT);
       }
     }
 
