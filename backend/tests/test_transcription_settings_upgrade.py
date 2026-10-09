@@ -1,10 +1,10 @@
 """The owner's transcription choice is carried into config.json on upgrade.
 
-Before the engine and model were install-wide, Settings > Transcription stored
-them on the choosing administrator's own row. The upgrade step moves the
-owner's choice into config.json once, without overriding a value an operator
-set there, and clears it from the row so a later start cannot replay it over a
-choice saved since.
+Before the engine and model were install-wide, Settings > Transcription and
+first-run setup stored them on the owner's own row. The upgrade step moves the
+owner's choice into config.json once, before startup queues model preparation,
+and clears it from the row so a later start cannot replay it over a choice
+saved since.
 """
 
 from __future__ import annotations
@@ -143,18 +143,97 @@ def test_a_second_start_does_not_replay_the_choice_over_a_later_one(config_path)
     assert owner == {}
 
 
-def test_a_value_an_operator_set_in_config_wins(config_path):
-    _set_config(config_path, transcription_backend="canary")
+def test_the_owners_later_choice_replaces_what_setup_left_in_config(
+    config_path, caplog
+):
+    # Some older releases wrote the wizard's size to config.json.
+    _set_config(config_path, whisper_model_size="small")
+
+    with caplog.at_level(logging.WARNING, logger=upgrade.logger.name):
+        carried, (owner,) = asyncio.run(
+            _carry([("owner", {"whisper_model_size": "large"})])
+        )
+
+    assert carried == {"whisper_model_size": "large"}
+    assert _config(config_path)["whisper_model_size"] == "large"
+    assert owner == {}
+    assert any("'small'" in r.getMessage() for r in caplog.records)
+
+
+def test_an_owner_default_does_not_replace_a_config_value(config_path, caplog):
+    # Setup stores the wizard's size, usually the default, on the owner's row.
+    _set_config(config_path, whisper_model_size="large")
+
+    with caplog.at_level(logging.WARNING, logger=upgrade.logger.name):
+        carried, (owner,) = asyncio.run(
+            _carry([("owner", {**OWNER_CHOICE, "whisper_model_size": "turbo"})])
+        )
+
+    config = _config(config_path)
+    assert config["whisper_model_size"] == "large"
+    # The owner's other keys still carry.
+    assert config["transcription_backend"] == "parakeet"
+    assert "whisper_model_size" not in carried
+    assert owner == {}
+    assert any("'turbo'" in r.getMessage() for r in caplog.records)
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [("transcription_backend", "nonsense"), ("whisper_model_size", "huge")],
+)
+def test_an_invalid_owner_value_is_logged_and_not_carried(
+    config_path, caplog, key, value
+):
+    before = _config(config_path)
+
+    with caplog.at_level(logging.WARNING, logger=upgrade.logger.name):
+        carried, (owner,) = asyncio.run(_carry([("owner", {key: value})]))
+
+    assert carried == {}
+    assert _config(config_path) == before
+    assert owner == {}
+    assert any(repr(value) in r.getMessage() for r in caplog.records)
+
+
+def test_the_first_owner_by_id_is_carried(config_path):
+    carried, rows = asyncio.run(
+        _carry(
+            [
+                ("user", {"transcription_backend": "canary"}),
+                ("owner", {"transcription_backend": "parakeet"}),
+                ("owner", {"transcription_backend": "canary"}),
+            ]
+        )
+    )
+
+    assert carried == {"transcription_backend": "parakeet"}
+    assert _config(config_path)["transcription_backend"] == "parakeet"
+    assert rows == [
+        {"transcription_backend": "canary"},
+        {},
+        {"transcription_backend": "canary"},
+    ]
+
+
+def test_a_missing_config_is_created_with_the_owners_choice(config_path):
+    config_path.unlink()
 
     carried, (owner,) = asyncio.run(_carry([("owner", OWNER_CHOICE)]))
 
-    config = _config(config_path)
-    assert config["transcription_backend"] == "canary"
-    # The keys the operator left at their defaults still carry.
-    assert config["whisper_model_size"] == "small"
-    assert config["parakeet_model"] == "parakeet-tdt-0.6b-v2"
-    assert "transcription_backend" not in carried
+    assert carried == OWNER_CHOICE
+    assert _config(config_path) == OWNER_CHOICE
     assert owner == {}
+
+
+def test_a_config_that_is_not_an_object_is_left_alone(config_path):
+    config_path.write_text("[]", encoding="utf-8")
+
+    carried, (owner,) = asyncio.run(_carry([("owner", OWNER_CHOICE)]))
+
+    assert carried == {}
+    assert config_path.read_text(encoding="utf-8") == "[]"
+    assert owner == OWNER_CHOICE
 
 
 def test_an_unreadable_config_is_left_alone_and_the_row_kept(config_path):
@@ -212,3 +291,62 @@ def test_startup_carries_on_when_the_step_fails(monkeypatch, caplog):
         "Could not carry the owner's transcription choice" in record.getMessage()
         for record in caplog.records
     )
+
+
+def test_startup_prepares_the_engine_it_has_just_carried(config_path, monkeypatch):
+    """The carry-over runs in the lifespan, before preparation is queued."""
+    model_preparation = importlib.import_module("backend.services.model_preparation")
+    steps: list[str] = []
+    dispatched: list[dict] = []
+
+    async def fake_dispatch(name, *, kwargs, **options):
+        steps.append("prepare")
+        dispatched.append(kwargs)
+        return type("Task", (), {"id": "task-1"})()
+
+    async def no_op_async(*args, **kwargs) -> None:
+        return None
+
+    def no_op(*args, **kwargs) -> None:
+        return None
+
+    real_carry = main.carry_owner_transcription_choice
+
+    async def recorded_carry(session) -> dict:
+        steps.append("carry")
+        return await real_carry(session)
+
+    for name in (
+        "log_signing_keyring_status",
+        "run_migrations",
+        "log_deployment_warnings",
+        "log_trusted_proxy_warnings",
+        "log_recordings_storage_warnings",
+        "start_stall_watchdog",
+    ):
+        monkeypatch.setattr(main, name, no_op)
+    for name in (
+        "ensure_owner_exists",
+        "log_first_run_setup_pointer",
+        "ensure_recording_public_ids_on_startup",
+        "ensure_recording_meeting_uids_on_startup",
+        "seed_demo_data",
+    ):
+        monkeypatch.setattr(main, name, no_op_async)
+    monkeypatch.setattr(main, "is_mcp_enabled", lambda: False)
+    monkeypatch.setattr(main, "carry_owner_transcription_choice", recorded_carry)
+    monkeypatch.setattr(model_preparation, "config_manager", upgrade.config_manager)
+    monkeypatch.setattr(model_preparation, "dispatch_task", fake_dispatch)
+    monkeypatch.setattr(model_preparation, "set_download_progress", no_op)
+
+    async def run() -> None:
+        async with _users([("owner", OWNER_CHOICE)]) as maker:
+            monkeypatch.setattr(main, "async_session_maker", maker)
+            async with main.lifespan(main.app):
+                pass
+
+    asyncio.run(run())
+
+    assert steps == ["carry", "prepare"]
+    assert dispatched[0]["transcription_backend"] == "parakeet"
+    assert dispatched[0]["parakeet_model"] == "parakeet-tdt-0.6b-v2"

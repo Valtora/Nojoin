@@ -1,15 +1,15 @@
 """Carry the owner's transcription choice into config.json on upgrade.
 
-Before the transcription engine and model were install-wide, Settings >
-Transcription stored an administrator's choice on that administrator's own
-account, and config.json held what everyone else used. Every reader now takes
-these keys from config.json alone, so without this step the owner's engine
-would silently revert to the config.json value on upgrade.
+Before the transcription engine and model were install-wide, the owner's choice
+lived on the owner's own account: Settings > Transcription stored it there, and
+first-run setup stored the wizard's Whisper size there. config.json held what
+everyone else used. Every reader now takes these keys from config.json alone, so
+without this step the owner's engine would silently revert to the config.json
+value on upgrade.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any
 
@@ -28,33 +28,6 @@ from backend.utils.config_manager import (
 logger = logging.getLogger(__name__)
 
 
-def _read_config_file(path: str) -> dict[str, Any] | None:
-    """config.json as it is on disk, without the defaults the loader fills in.
-
-    None when the file exists but cannot be parsed, so that nothing is written
-    over a file an operator is part-way through editing.
-    """
-    try:
-        with open(path, encoding="utf-8") as config_file:
-            on_disk = json.load(config_file)
-    except FileNotFoundError:
-        return {}
-    except (OSError, ValueError):
-        return None
-    return on_disk if isinstance(on_disk, dict) else None
-
-
-def _set_by_operator(on_disk: dict[str, Any], key: str) -> bool:
-    """Whether config.json holds a value for this key that someone chose.
-
-    Nothing in the UI wrote these keys to config.json before this release, and
-    the file is written with every default on first start. So a value other
-    than the shipped default was set by an operator, while the default itself
-    cannot be told apart from one nobody set.
-    """
-    return on_disk.get(key) not in (None, "", DEFAULT_SYSTEM_CONFIG[key])
-
-
 def _usable(key: str, value: Any) -> bool:
     if not isinstance(value, str) or not value:
         return False
@@ -65,50 +38,80 @@ def _usable(key: str, value: Any) -> bool:
     return True
 
 
+def _choose(key: str, owner_value: Any, file_value: Any) -> bool:
+    """Whether the owner's value replaces config.json's for this key, logged.
+
+    The owner's value wins, with one exception: an owner value equal to the
+    shipped default does not replace a config.json value that differs from it.
+    First-run setup has stored the wizard's Whisper size, usually the default,
+    on the owner's account, so that default may never have been a choice, while
+    the config.json value was set by an operator or by an older release.
+    """
+    default = DEFAULT_SYSTEM_CONFIG[key]
+    current = default if file_value in (None, "") else file_value
+    if not _usable(key, owner_value):
+        logger.warning(
+            "The owner's %s, %r, is not a valid choice, so config.json keeps %r.",
+            key,
+            owner_value,
+            current,
+        )
+        return False
+    if owner_value == current:
+        return False
+    if current == default:
+        return True
+    if owner_value == default:
+        logger.warning(
+            "config.json keeps %s %r: the owner's %r is the shipped default, "
+            "which first-run setup also stores, so it is not treated as a choice.",
+            key,
+            current,
+            owner_value,
+        )
+        return False
+    logger.warning(
+        "config.json's %s %r is replaced by the owner's choice, %r.",
+        key,
+        current,
+        owner_value,
+    )
+    return True
+
+
 async def carry_owner_transcription_choice(session: AsyncSession) -> dict[str, str]:
     """Write the owner's transcription keys to config.json, then clear their row.
 
-    For each key, a value an operator set in config.json wins, then the
-    owner's, then the shipped default. Only the owner's row is carried: it is
-    the account the install-wide LLM settings already fall back to, and other
-    rows are ignored from now on.
+    The owner is the first account with the owner role, by id: the account the
+    install-wide LLM settings already fall back to. Other rows are not carried,
+    and are ignored from now on. See _choose for which value wins.
 
     Idempotent: once the keys are cleared from the owner's row, a later run
     finds nothing to carry, and so never overwrites a choice an administrator
-    has saved since. A failed write raises before the row is touched, so the
-    next start tries again. Returns the values written to config.json.
+    has saved since. A config.json that does not hold a JSON object is left
+    alone, and a failed write raises before the row is touched, so the next
+    start tries again. Returns the values written to config.json.
     """
-    result = await session.execute(select(User).where(User.role == "owner"))
-    owner = result.scalar_one_or_none()
+    result = await session.execute(
+        select(User).where(User.role == "owner").order_by(User.id).limit(1)
+    )
+    owner = result.scalars().first()
     row = dict(owner.settings or {}) if owner is not None else {}
     held = [key for key in TRANSCRIPTION_SETTING_KEYS if key in row]
     if owner is None or not held:
         return {}
 
-    on_disk = _read_config_file(config_manager.config_path)
+    on_disk = config_manager.read_file()
     if on_disk is None:
         logger.warning(
             "config.json could not be read, so the owner's transcription choice "
-            "stays on their account until the next start."
+            "stays on their account, unused, until the next start."
         )
         return {}
 
-    carried: dict[str, str] = {}
-    for key in held:
-        value = row[key]
-        current = on_disk.get(key, DEFAULT_SYSTEM_CONFIG[key])
-        if not _usable(key, value) or value == current:
-            continue
-        if _set_by_operator(on_disk, key):
-            logger.warning(
-                "config.json sets %s to %r, so the owner's %r was not carried over.",
-                key,
-                current,
-                value,
-            )
-            continue
-        carried[key] = value
-
+    carried = {
+        key: row[key] for key in held if _choose(key, row[key], on_disk.get(key))
+    }
     if carried:
         config_manager.save_values(carried)
 

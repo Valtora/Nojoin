@@ -810,14 +810,20 @@ Pinning a deployment to an exact image digest (`ghcr.io/valtora/nojoin-api@sha25
   If you have special host-integration requirements that require group or world read access, you can configure a custom umask using the `NOJOIN_UMASK` environment variable (e.g. `NOJOIN_UMASK=0022` or `NOJOIN_UMASK=0002`).
 - **The transcription engine and model are install-wide.** The engine (`transcription_backend`) and its
   model (`whisper_model_size`, `parakeet_model`, `canary_model`) are kept in `data/config.json` and apply
-  to every user. Releases before this one stored an administrator's **Settings > Transcription** choice
-  on that administrator's own account, so only they used it, and everyone else used the value in
-  `config.json`. On the first start after the upgrade, the API copies the owner's choice into
-  `config.json` and removes it from the owner's account, so a later start never repeats it over a
-  choice made since. A key that `config.json` already sets to anything other than its shipped default
-  (`whisper`, `turbo`, `parakeet-tdt-0.6b-v3`, `nemo-canary-1b-v2`) was set by an operator and is kept;
-  the api log names any owner value left out for that reason. If `config.json` cannot be read or
-  written, the owner's choice stays on their account and the next start tries again.
+  to every user. Releases before this one stored them per account: **Settings > Transcription**, shown
+  only to administrators, saved the choice on that administrator's own account, and first-run setup
+  saved the wizard's Whisper size on the owner's account. Everyone without a stored value used
+  `config.json`.
+
+  On the first start after the upgrade, the API copies the owner's choice (the first account with the
+  owner role) into `config.json` and removes it from the owner's account, so a later start never
+  repeats it over a choice made since. The owner's value wins over what `config.json` holds, with one
+  exception: an owner value equal to the shipped default (`whisper`, `turbo`, `parakeet-tdt-0.6b-v3`,
+  `nemo-canary-1b-v2`) does not replace a different value in `config.json`, because setup stores that
+  default on the owner's account whether or not anyone chose it. An owner value that is not a valid
+  choice is not carried. The api log names every `config.json` value replaced or kept, and why. If
+  `config.json` cannot be read or written, the owner's choice stays on their account, unused, and the
+  next start tries again; until then everyone transcribes with the `config.json` engine.
 
   After the upgrade, users who are not administrators transcribe with the install's engine and model,
   settled as above, and with whatever an administrator picks later. That is what the settings page
