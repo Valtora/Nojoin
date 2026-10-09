@@ -5,13 +5,11 @@ import numpy as np
 import torch
 from pyannote.core import Segment
 
-from backend.core.exceptions import AudioFormatError
 from backend.processing.embedding_version import (
     EMBEDDING_METHOD_VERSION,
     LEGACY_EMBEDDING_METHOD_VERSION,
 )
 from backend.utils.config_manager import config_manager
-from backend.utils.embedding_audio import pyannote_readable_audio
 from backend.utils.pyannote_model_utils import resolve_local_pyannote_model
 
 logger = logging.getLogger(__name__)
@@ -378,12 +376,6 @@ def extract_embedding_for_segments(
 
     Returns:
         Aggregated embedding vector as a list of floats, or None if extraction fails.
-
-    Raises:
-        AudioFormatError: the recording could not be decoded for cropping. This
-            can be transient, so it is raised rather than returned as None,
-            which callers such as the voiceprint rebuild read as "these
-            segments hold nothing usable".
     """
     if not segments:
         logger.warning("No segments provided for embedding extraction")
@@ -414,17 +406,16 @@ def extract_embedding_for_segments(
         )
 
         speaker_embeddings = []
-        with pyannote_readable_audio(audio_path) as readable_path:
-            for seg in crops:
-                try:
-                    unit_embedding = _crop_embedding(model, readable_path, seg)
-                    if unit_embedding is not None:
-                        speaker_embeddings.append(unit_embedding)
-                except Exception as e:  # noqa: BLE001
-                    logger.warning(
-                        f"Failed to extract embedding for segment ({seg.start:.2f}, {seg.end:.2f}): {e}"
-                    )
-                    continue
+        for seg in crops:
+            try:
+                unit_embedding = _crop_embedding(model, audio_path, seg)
+                if unit_embedding is not None:
+                    speaker_embeddings.append(unit_embedding)
+            except Exception as e:  # noqa: BLE001
+                logger.warning(
+                    f"Failed to extract embedding for segment ({seg.start:.2f}, {seg.end:.2f}): {e}"
+                )
+                continue
 
         if not speaker_embeddings:
             logger.warning(
@@ -434,8 +425,6 @@ def extract_embedding_for_segments(
 
         return _aggregate_crop_embeddings(speaker_embeddings)
 
-    except AudioFormatError:
-        raise
     except Exception as e:
         logger.error(f"Embedding extraction for segments failed: {e}", exc_info=True)
         return None

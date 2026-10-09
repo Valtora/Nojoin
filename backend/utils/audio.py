@@ -172,36 +172,30 @@ def concatenate_binary_files(segment_paths: List[str], output_path: str):
         raise RuntimeError(f"Failed to concatenate binary files: {str(e)}")
 
 
-def convert_to_mono_16k(
-    input_path: str, output_path: str, *, timeout: float | None = None
-):
+def convert_to_mono_16k(input_path: str, output_path: str):
     """
-    Convert audio to a mono 16 kHz, 16-bit PCM WAV using ffmpeg.
-
-    The WAV is written as RF64 once it passes 4 GiB (``-rf64 auto``, about
-    37 hours at this rate): plain WAV cannot describe a larger file, and
-    ffmpeg would otherwise write a broken header and still exit 0.
-
-    ``timeout`` (seconds) kills a hung ffmpeg and raises
-    ``subprocess.TimeoutExpired``; None waits indefinitely.
-
-    Raises:
-        RuntimeError: ffmpeg failed; the message carries its stderr.
-        subprocess.TimeoutExpired: ffmpeg ran past ``timeout`` and was killed.
-        OSError: ffmpeg could not be started.
+    Convert audio to mono 16kHz WAV using ffmpeg.
     """
     ensure_ffmpeg_in_path()
 
-    cmd = ["ffmpeg", "-y", "-i", input_path, "-acodec", "pcm_s16le", "-ar", "16000"]
-    cmd += ["-ac", "1", "-rf64", "auto", "-f", "wav", output_path]
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-i",
+        input_path,
+        "-ac",
+        "1",  # Mono
+        "-ar",
+        "16000",  # 16kHz
+        "-f",
+        "wav",
+        output_path,
+    ]
 
     try:
-        subprocess.run(cmd, check=True, capture_output=True, timeout=timeout)
+        subprocess.run(cmd, check=True, capture_output=True)
     except subprocess.CalledProcessError as e:
-        # ffmpeg's stderr echoes the input's metadata, which need not be UTF-8
-        # (AVI INFO tags are raw bytes, often Latin-1).
-        stderr = e.stderr.decode(errors="replace") if e.stderr else str(e)
-        raise RuntimeError(f"Failed to convert audio: {stderr}") from e
+        raise RuntimeError(f"Failed to convert audio: {e.stderr.decode()}")
 
 
 def convert_to_16k_wav(

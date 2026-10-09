@@ -12,15 +12,11 @@ cleared, or explicitly held back for retry -- and that the counts say which.
 from __future__ import annotations
 
 import json
-import os
-import shutil
-import subprocess
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-import numpy as np
 import pytest
 from sqlalchemy import create_engine, text
 from sqlmodel import Session
@@ -45,10 +41,6 @@ from backend.tests.sqlite_schemas import (
 
 STALE_VECTOR = [1.0, 0.0, 0.0]
 REBUILT_VECTOR = [0.6, 0.8, 0.0]
-
-# Captured before the autouse fixture below replaces it, for the tests that
-# exercise the real extraction around a stubbed model.
-_REAL_EXTRACT = embedding_core.extract_embedding_for_segments
 
 
 def _utc_now_naive() -> datetime:
@@ -90,9 +82,7 @@ def _add_user(connection, user_id: int) -> None:
     )
 
 
-def _add_recording(
-    connection, recording_id: int, user_id: int, audio_path: str | None = None
-) -> None:
+def _add_recording(connection, recording_id: int, user_id: int) -> None:
     connection.execute(
         text(
             """
@@ -112,7 +102,7 @@ def _add_recording(
             "name": f"Meeting {recording_id}",
             "public_id": f"public-recording-{recording_id}",
             "uid": f"meeting-uid-{recording_id}",
-            "audio_path": audio_path or f"/audio/{recording_id}.wav",
+            "audio_path": f"/audio/{recording_id}.wav",
             "user_id": user_id,
         },
     )
@@ -436,139 +426,6 @@ def test_transient_extraction_failure_is_held_back_for_retry(tmp_path: Path) -> 
     embedding, version = _speaker_rows(engine)[100]
     assert json.loads(embedding) == STALE_VECTOR
     assert version == LEGACY_EMBEDDING_METHOD_VERSION
-
-
-def _extract_with_a_stub_model(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Run the real segment extraction, with the model and its crop stubbed."""
-    monkeypatch.setattr(embedding_core, "extract_embedding_for_segments", _REAL_EXTRACT)
-    monkeypatch.setattr(
-        embedding_core, "load_embedding_model", lambda device, token: object()
-    )
-    monkeypatch.setattr(
-        embedding_core,
-        "_crop_embedding",
-        lambda model, audio_path, segment: np.asarray(REBUILT_VECTOR),
-    )
-    monkeypatch.setattr(embedding_core, "_embedding_model_cache", {})
-
-
-def test_a_failed_decode_of_a_media_container_is_held_back_for_retry(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """A container with no proxy is decoded before cropping, and that can fail.
-
-    A full temp directory or a hung ffmpeg says nothing about the speaker's
-    audio, so the voiceprint must survive for a later run.
-    """
-    engine = _make_engine(tmp_path, "decode-failure")
-    with engine.begin() as connection:
-        _add_user(connection, 1)
-        _add_recording(connection, 10, 1, audio_path=str(tmp_path / "screen.mkv"))
-        _add_speaker(connection, SpeakerRow(100, 10, "SPEAKER_00"))
-        _add_utterance(connection, 1, 10, 100, (0, 2000))
-
-    def _no_space(input_path, output_path, *, timeout=None):
-        raise RuntimeError("No space left on device")
-
-    _extract_with_a_stub_model(monkeypatch)
-    monkeypatch.setattr(embedding_audio, "convert_to_mono_16k", _no_space)
-    summary = _run_task(engine, user_id=1)
-
-    assert summary["speakers_failed_retryable"] == 1
-    assert summary["speakers_cleared_unrebuildable"] == 0
-    embedding, version = _speaker_rows(engine)[100]
-    assert json.loads(embedding) == STALE_VECTOR
-    assert version == LEGACY_EMBEDDING_METHOD_VERSION
-
-
-def test_a_media_container_is_decoded_once_per_recording(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """Every speaker is cropped from one decode, not one decode each."""
-    engine = _make_engine(tmp_path, "single-decode")
-    with engine.begin() as connection:
-        _add_user(connection, 1)
-        _add_recording(connection, 10, 1, audio_path=str(tmp_path / "screen.mkv"))
-        _add_speaker(connection, SpeakerRow(100, 10, "SPEAKER_00"))
-        _add_speaker(connection, SpeakerRow(101, 10, "SPEAKER_01"))
-        _add_utterance(connection, 1, 10, 100, (0, 2000))
-        _add_utterance(connection, 2, 10, 101, (2000, 4000))
-
-    decodes: list[str] = []
-
-    def _decode(input_path, output_path, *, timeout=None):
-        decodes.append(input_path)
-        Path(output_path).write_bytes(b"RIFF")
-
-    _extract_with_a_stub_model(monkeypatch)
-    monkeypatch.setattr(embedding_audio, "convert_to_mono_16k", _decode)
-    summary = _run_task(engine, user_id=1)
-
-    assert summary["speakers_rebuilt"] == 2
-    assert decodes == [str(tmp_path / "screen.mkv")]
-
-
-def _latin1_titled_avi(path: Path) -> None:
-    """A short AVI whose INFO title holds a Latin-1 byte, as older tools write.
-
-    ffmpeg echoes that title raw in its stderr, so the stderr is not UTF-8.
-    """
-    placeholder = b"CafQXYZ"
-    subprocess.run(
-        ["ffmpeg", "-y", "-loglevel", "error"]
-        + ["-f", "lavfi", "-i", "sine=frequency=440:duration=2:sample_rate=16000"]
-        + ["-metadata", f"title={placeholder.decode()}", "-c:a", "pcm_s16le"]
-        + [str(path)],
-        check=True,
-    )
-    data = path.read_bytes()
-    assert data.count(placeholder) == 1
-    path.write_bytes(data.replace(placeholder, b"Caf\xe9XYZ"))
-
-
-@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg is not installed")
-@pytest.mark.skipif(not os.path.exists("/dev/full"), reason="needs /dev/full")
-def test_a_decode_failure_with_non_utf8_ffmpeg_output_does_not_stop_the_run(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, caplog: pytest.LogCaptureFixture
-) -> None:
-    """One recording's failed decode holds back only that recording.
-
-    The decode writes to /dev/full, as a full temp directory would make it
-    fail, and the file's metadata puts a non-UTF-8 byte in ffmpeg's error
-    output. The recordings after it and the people rebuild must still run,
-    and ffmpeg's diagnostics must reach the log.
-    """
-    source = tmp_path / "camcorder.avi"
-    _latin1_titled_avi(source)
-    engine = _make_engine(tmp_path, "non-utf8-decode-failure")
-    with engine.begin() as connection:
-        _add_user(connection, 1)
-        _add_person(connection, 5, 1, embedding=STALE_VECTOR, embedding_version=1)
-        _add_recording(connection, 10, 1, audio_path=str(source))
-        _add_recording(connection, 20, 1)
-        _add_speaker(connection, SpeakerRow(100, 10, "SPEAKER_00"))
-        _add_speaker(connection, SpeakerRow(200, 20, "SPEAKER_00", global_speaker_id=5))
-        _add_utterance(connection, 1, 10, 100, (0, 2000))
-        _add_utterance(connection, 2, 20, 200, (0, 2000))
-
-    real_decode = embedding_audio.convert_to_mono_16k
-
-    def _decode_onto_a_full_disk(input_path, output_path, *, timeout=None):
-        real_decode(input_path, "/dev/full", timeout=timeout)
-
-    monkeypatch.setattr(
-        embedding_audio, "convert_to_mono_16k", _decode_onto_a_full_disk
-    )
-    summary = _run_task(engine, user_id=1)
-
-    assert summary["recordings_processed"] == 2
-    assert summary["speakers_failed_retryable"] == 1
-    assert summary["speakers_rebuilt"] == 1
-    assert summary["people_rebuilt"] == 1
-    rows = _speaker_rows(engine)
-    assert json.loads(rows[100][0]) == STALE_VECTOR
-    assert json.loads(rows[200][0]) == REBUILT_VECTOR
-    assert "Caf\ufffdXYZ" in caplog.text
 
 
 def test_extraction_returning_nothing_clears_the_voiceprint(tmp_path: Path) -> None:

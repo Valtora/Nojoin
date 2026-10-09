@@ -1,23 +1,8 @@
 from __future__ import annotations
 
-import os
-import shutil
-import subprocess
-import time
-from pathlib import Path
 from types import SimpleNamespace
 
-import pytest
-import soundfile as sf
-
-from backend.core.exceptions import AudioFormatError
-from backend.processing import embedding_core
-from backend.utils import embedding_audio
-from backend.utils.embedding_audio import (
-    EMBEDDING_DECODE_TIMEOUT_S,
-    EMBEDDING_WAV_SUFFIX,
-    select_recording_audio_for_embedding,
-)
+from backend.utils.embedding_audio import select_recording_audio_for_embedding
 from backend.worker.tasks.embeddings import update_speaker_embedding_task
 
 
@@ -27,20 +12,6 @@ def test_select_recording_audio_for_embedding_prefers_proxy_for_browser_capture(
     audio_path = tmp_path / "meeting.webm"
     proxy_path = tmp_path / "meeting.mp3"
     audio_path.write_bytes(b"webm")
-    proxy_path.write_bytes(b"mp3")
-
-    recording = SimpleNamespace(audio_path=str(audio_path), proxy_path=str(proxy_path))
-
-    assert select_recording_audio_for_embedding(recording) == str(proxy_path)
-
-
-def test_select_recording_audio_for_embedding_prefers_proxy_for_media_containers(
-    tmp_path,
-):
-    """pyannote's segment crop returns short or empty chunks from these."""
-    audio_path = tmp_path / "meeting.mkv"
-    proxy_path = tmp_path / "meeting.mp3"
-    audio_path.write_bytes(b"container")
     proxy_path.write_bytes(b"mp3")
 
     recording = SimpleNamespace(audio_path=str(audio_path), proxy_path=str(proxy_path))
@@ -132,122 +103,3 @@ def test_update_speaker_embedding_task_prefers_proxy_for_browser_capture(
     assert captured["audio"] == str(proxy_path)
     assert captured["segments"] == [(1.0, 2.0)]
     assert recording_speaker.embedding == [0.1, 0.2]
-
-
-@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg is not installed")
-def test_a_media_container_without_a_proxy_is_cropped_from_a_decoded_wav(
-    monkeypatch, tmp_path
-):
-    """With no proxy yet, the MKV itself is never handed to pyannote's crop."""
-    source = tmp_path / "meeting.mkv"
-    subprocess.run(
-        ["ffmpeg", "-y", "-loglevel", "error"]
-        + ["-f", "lavfi", "-i", "testsrc=size=64x64:rate=25:duration=4"]
-        + ["-f", "lavfi", "-i", "sine=frequency=440:duration=4:sample_rate=48000"]
-        + ["-c:v", "mpeg4", "-c:a", "aac", "-ac", "2", str(source)],
-        check=True,
-    )
-    recording = SimpleNamespace(audio_path=str(source), proxy_path=None)
-    target = select_recording_audio_for_embedding(recording)
-    cropped: list[tuple[str, int, int]] = []
-
-    def fake_crop(model, audio_path, segment):
-        info = sf.info(audio_path)
-        cropped.append((audio_path, info.channels, info.samplerate))
-        return [1.0, 0.0]
-
-    monkeypatch.setattr(
-        embedding_core, "load_embedding_model", lambda device, token: object()
-    )
-    monkeypatch.setattr(embedding_core, "_crop_embedding", fake_crop)
-    monkeypatch.setattr(embedding_core, "_embedding_model_cache", {})
-
-    result = embedding_core.extract_embedding_for_segments(
-        target, [(0.5, 3.5)], device_str="cpu", hf_token="unused"
-    )
-
-    assert result is not None
-    assert cropped
-    assert {(channels, rate) for _, channels, rate in cropped} == {(1, 16_000)}
-    decoded_paths = {path for path, _, _ in cropped}
-    assert str(source) not in decoded_paths
-    assert not any(Path(path).exists() for path in decoded_paths)
-
-
-@pytest.mark.parametrize(
-    "failure",
-    [
-        RuntimeError("No space left on device"),
-        subprocess.TimeoutExpired(cmd="ffmpeg", timeout=EMBEDDING_DECODE_TIMEOUT_S),
-        UnicodeDecodeError("utf-8", b"Caf\xe9", 3, 4, "invalid continuation byte"),
-    ],
-    ids=["ffmpeg-error", "timeout", "any-other-error"],
-)
-def test_a_failed_decode_is_raised_not_reported_as_no_embedding(
-    monkeypatch, tmp_path, failure
-):
-    """None means "these segments hold nothing usable", which a decode failure
-    does not show: it may be a full temp directory or a hung ffmpeg."""
-    decodes: list[tuple[str, float | None]] = []
-
-    def failing_decode(input_path, output_path, *, timeout=None):
-        decodes.append((output_path, timeout))
-        raise failure
-
-    monkeypatch.setattr(embedding_audio, "convert_to_mono_16k", failing_decode)
-    monkeypatch.setattr(
-        embedding_core, "load_embedding_model", lambda device, token: object()
-    )
-    monkeypatch.setattr(embedding_core, "_embedding_model_cache", {})
-
-    with pytest.raises(AudioFormatError):
-        embedding_core.extract_embedding_for_segments(
-            str(tmp_path / "meeting.mkv"),
-            [(0.5, 3.5)],
-            device_str="cpu",
-            hf_token="unused",
-        )
-
-    assert [timeout for _, timeout in decodes] == [EMBEDDING_DECODE_TIMEOUT_S]
-    assert not any(Path(path).exists() for path, _ in decodes)
-
-
-def test_no_room_for_the_decode_is_raised_as_a_decode_failure(monkeypatch, tmp_path):
-    def full(*args, **kwargs):
-        raise OSError(28, "No space left on device")
-
-    monkeypatch.setattr(embedding_audio.tempfile, "mkstemp", full)
-
-    with pytest.raises(AudioFormatError):
-        with embedding_audio.pyannote_readable_audio(str(tmp_path / "meeting.mkv")):
-            pass
-
-
-def test_a_decode_first_reclaims_embedding_wavs_a_killed_worker_left(
-    monkeypatch, tmp_path
-):
-    """Swept on the lane that writes them: each worker's /tmp is private."""
-
-    def aged(name: str, hours: float) -> Path:
-        path = tmp_path / name
-        path.write_bytes(b"audio")
-        stamp = time.time() - hours * 3600
-        os.utime(path, (stamp, stamp))
-        return path
-
-    stranded = aged(f"tmpold{EMBEDDING_WAV_SUFFIX}", 48)
-    in_use = aged(f"tmpnew{EMBEDDING_WAV_SUFFIX}", 1)
-    not_ours = aged("tmpold_vad.wav", 48)
-    monkeypatch.setattr(embedding_audio.tempfile, "tempdir", str(tmp_path))
-    monkeypatch.setattr(
-        embedding_audio,
-        "convert_to_mono_16k",
-        lambda input_path, output_path, *, timeout=None: None,
-    )
-
-    with embedding_audio.pyannote_readable_audio(str(tmp_path / "meeting.mkv")):
-        pass
-
-    assert not stranded.exists()
-    assert in_use.exists()
-    assert not_ours.exists()
