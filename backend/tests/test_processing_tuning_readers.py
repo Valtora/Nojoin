@@ -452,6 +452,26 @@ def test_explicit_phantom_arguments_are_used_as_given(monkeypatch, caplog):
     assert "not below merge threshold" not in caplog.text
 
 
+def test_a_mixed_pair_left_inverted_is_reported_as_used(monkeypatch, caplog):
+    """An explicit floor of 0.7 beside a configured merge threshold of 0.65:
+    the merge threshold falls back to 0.60 and the explicit floor stays, so the
+    pair stays inverted, as upstream computes for that call. The warning must
+    name the pair actually used."""
+    from backend.processing.phantom_filter import filter_phantom_speakers
+
+    _install_phantom_model(monkeypatch, _PhantomModel(cosine=0.5))
+
+    with caplog.at_level(logging.WARNING):
+        filter_phantom_speakers(
+            _phantom_diarization(),
+            "audio.wav",
+            config={"processing_device": "cpu", "phantom_merge_threshold": 0.65},
+            embedding_floor=0.7,
+        )
+
+    assert "using 0.7 and 0.6" in caplog.text
+
+
 def test_a_conflicting_configured_floor_falls_back_beside_an_explicit_merge(
     monkeypatch,
 ):
