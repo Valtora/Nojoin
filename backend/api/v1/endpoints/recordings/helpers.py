@@ -48,6 +48,7 @@ from backend.utils.recording_audio_sync import (
 )
 from backend.utils.recording_storage import (
     RECORDING_UPLOAD_RETENTION_HOURS,
+    is_finalize_claim_token,
     is_finalizing_import,
 )
 from backend.utils.time import utc_now
@@ -770,6 +771,12 @@ def _refuse_while_finalizing_import(recording: Recording) -> None:
     """
     if is_finalizing_import(recording):
         raise HTTPException(status_code=409, detail=IMPORT_BEING_FINALIZED_DETAIL)
+
+
+def _revocable_task_id(recording: Recording) -> str | None:
+    """``celery_task_id`` when it names a task, not a finalize claim's token."""
+    task_id = recording.celery_task_id
+    return None if is_finalize_claim_token(task_id) else task_id
 
 
 def _ensure_recording_can_finalize_upload(recording: Recording) -> None:

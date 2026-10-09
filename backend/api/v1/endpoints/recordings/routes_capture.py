@@ -650,11 +650,10 @@ async def discard_upload(
     # recording before its row and files disappear. terminate=True sends SIGTERM
     # to a task that is already running; a queued-but-not-started task is simply
     # dropped. Mirrors the permanent-delete path in routes_actions.py.
-    if recording.celery_task_id:
+    task_id = recordings_module._revocable_task_id(recording)
+    if task_id:
         try:
-            recordings_module.celery_app.control.revoke(
-                recording.celery_task_id, terminate=True
-            )
+            recordings_module.celery_app.control.revoke(task_id, terminate=True)
         except Exception:  # noqa: BLE001
             pass
 

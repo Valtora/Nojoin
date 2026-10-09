@@ -6,6 +6,7 @@ import shutil
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
+from uuid import uuid4
 
 from sqlalchemy import update
 from sqlmodel import select
@@ -259,15 +260,19 @@ def cleanup_recording_audio_chunks(
 
 # A chunked import being finalized stays UPLOADING, so every guard that keeps an
 # upload from being reprocessed, shown as finished or swept still applies. Its
-# finalize claims it by setting this step in one conditional UPDATE, committed
-# before the audio is extracted outside any transaction; ``updated_at`` dates
-# the claim. A finalize's ffmpeg and ffprobe runs are bounded well within
-# FINALIZE_CLAIM_STALE_AFTER (about 66 minutes at worst), so an older claim has
-# no request behind it: the next finalize takes it over, and the daily cleanup
-# releases it.
+# finalize claims it in one conditional UPDATE, committed before the audio is
+# extracted outside any transaction: the step marks the claim, ``updated_at``
+# dates it, and ``celery_task_id`` holds the claim's token, which names the
+# finalize attempt that owns it. That column is free while an import is
+# UPLOADING; finalize overwrites it with the processing task's id once the
+# import is queued. Every write that settles the claim matches the token, so a
+# finalize acts only on its own claim. A claim older than
+# FINALIZE_CLAIM_STALE_AFTER may be taken over by the next finalize, and is
+# released by the daily cleanup; staleness gates only that, never the owner.
 FINALIZING_IMPORT_STEP = "Finalizing import"
 IMPORT_FINALIZING_CODE = "import_finalizing"
 FINALIZE_CLAIM_STALE_AFTER = timedelta(hours=2)
+FINALIZE_CLAIM_TOKEN_PREFIX = "import-finalize:"
 STALE_FINALIZE_CLAIM_DETAIL = (
     "This import was interrupted before its audio was kept. Delete this "
     "recording and import the file again."
@@ -279,9 +284,14 @@ def finalize_claim_cutoff(now: datetime | None = None) -> datetime:
     return (now or utc_now()) - FINALIZE_CLAIM_STALE_AFTER
 
 
-def finalize_claim_outlived(held_for_seconds: float) -> bool:
-    """A finalize that has held its claim this long may have lost it to another."""
-    return held_for_seconds >= FINALIZE_CLAIM_STALE_AFTER.total_seconds()
+def new_finalize_claim_token() -> str:
+    """A token naming one finalize attempt, stored with its claim."""
+    return f"{FINALIZE_CLAIM_TOKEN_PREFIX}{uuid4().hex}"
+
+
+def is_finalize_claim_token(value: str | None) -> bool:
+    """``celery_task_id`` holds a finalize claim's token, not a task id."""
+    return bool(value) and str(value).startswith(FINALIZE_CLAIM_TOKEN_PREFIX)
 
 
 def is_finalizing_import(recording: Recording, now: datetime | None = None) -> bool:
@@ -296,11 +306,13 @@ def is_finalizing_import(recording: Recording, now: datetime | None = None) -> b
 def remove_finalize_leftovers(
     audio_path: str | None, *, logger: logging.Logger
 ) -> None:
-    """Delete what a finalize wrote beside a chunked import.
+    """Delete what every finalize attempt wrote beside a chunked import.
 
-    That is the reassembled upload (``audio_path``, which can hold video) and
-    any audio extracted from it, finished or partial: ``keep_imported_audio``
-    names its output after the upload.
+    An attempt reassembles the upload, which can hold video, as
+    ``<stem>.<attempt><suffix>`` beside ``audio_path``, and
+    ``keep_imported_audio`` names the audio it extracts after that, finished
+    or partial. For a claim no live finalize holds: a stale one, or the
+    import's deletion.
     """
     resolved = _resolve_path_within_recordings_root(audio_path)
     if resolved is None:
@@ -347,6 +359,7 @@ def release_stale_finalize_claims(
                 status=RecordingStatus.ERROR,
                 client_status=ClientStatus.IDLE,
                 processing_step=STALE_FINALIZE_CLAIM_DETAIL,
+                celery_task_id=None,
             )
         )
         if result.rowcount != 1:

@@ -1,7 +1,6 @@
 import asyncio
 import logging
 import os
-import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -35,13 +34,15 @@ from backend.utils.import_audio import (
     KeptAudio,
     keep_imported_audio,
 )
+from backend.utils.import_audio_probe import PROBE_TIMEOUT_S
 from backend.utils.rate_limit import enforce_upload_concurrency
 from backend.utils.recording_storage import (
+    FINALIZE_CLAIM_TOKEN_PREFIX,
     FINALIZING_IMPORT_STEP,
     IMPORT_FINALIZING_CODE,
     finalize_claim_cutoff,
-    finalize_claim_outlived,
     is_finalizing_import,
+    new_finalize_claim_token,
     remove_finalize_leftovers,
 )
 from backend.utils.time import utc_now
@@ -402,21 +403,37 @@ async def upload_chunked_segment(
 
 @dataclass(frozen=True)
 class _Claim:
-    """What a finalize holds once it has claimed an import.
+    """One finalize attempt's claim on an import.
 
-    Kept apart from the ORM row, which a rollback expires.
+    ``token`` is stored with the claim (see ``FINALIZING_IMPORT_STEP``), and
+    every file the attempt writes carries its id: ``source_path`` is the
+    reassembled upload, and ``keep_imported_audio`` names the audio it
+    extracts after it. Kept apart from the ORM row, which a rollback expires.
     """
 
     recording_id: int
     public_id: str
+    token: str
     source_path: str
-    claimed_at: float
 
 
-def _claim_held():
-    """The finalize claim is still on the row (see ``FINALIZING_IMPORT_STEP``)."""
-    return (Recording.status == RecordingStatus.UPLOADING) & (
-        Recording.processing_step == FINALIZING_IMPORT_STEP
+def _claim_for_attempt(recording: Recording, token: str) -> _Claim:
+    upload = Path(recording.audio_path)
+    attempt = token.removeprefix(FINALIZE_CLAIM_TOKEN_PREFIX)
+    return _Claim(
+        recording_id=recording.id,
+        public_id=recording.public_id,
+        token=token,
+        source_path=str(upload.with_name(f"{upload.stem}.{attempt}{upload.suffix}")),
+    )
+
+
+def _claim_held(token: str):
+    """The row still carries the claim ``token`` names."""
+    return (
+        (Recording.status == RecordingStatus.UPLOADING)
+        & (Recording.processing_step == FINALIZING_IMPORT_STEP)
+        & (Recording.celery_task_id == token)
     )
 
 
@@ -443,14 +460,16 @@ def _answer_unclaimable_finalize(recording: Recording) -> RecordingPublicRead:
     raise HTTPException(status_code=400, detail="Recording is not in uploading state")
 
 
-async def _claim_for_finalize(db: AsyncSession, recording: Recording) -> bool:
-    """Claim ``recording`` for this finalize, atomically.
+async def _claim_for_finalize(
+    db: AsyncSession, recording: Recording, token: str
+) -> bool:
+    """Claim ``recording`` for the finalize attempt ``token`` names, atomically.
 
     A conditional UPDATE, so of two finalize calls exactly one claims the row.
     It matches an UPLOADING import that no finalize holds, or whose claim is
-    stale (``finalize_claim_cutoff``): a finalize that died mid-extraction is
-    taken over. Only the claim is written under a lock; the caller commits it
-    at once and holds no connection while the audio is extracted.
+    stale (``finalize_claim_cutoff``), which is taken over. Only the claim is
+    written under a lock; the caller commits it at once and holds no
+    connection while the audio is extracted.
     """
     result = await db.execute(
         update(Recording)
@@ -460,80 +479,77 @@ async def _claim_for_finalize(db: AsyncSession, recording: Recording) -> bool:
             Recording.processing_step.is_distinct_from(FINALIZING_IMPORT_STEP)
             | (Recording.updated_at <= finalize_claim_cutoff())
         )
-        .values(processing_step=FINALIZING_IMPORT_STEP, updated_at=utc_now())
+        .values(
+            processing_step=FINALIZING_IMPORT_STEP,
+            celery_task_id=token,
+            updated_at=utc_now(),
+        )
     )
     return result.rowcount == 1
 
 
-def _claim_outlived(claimed_at: float) -> bool:
-    return finalize_claim_outlived(time.monotonic() - claimed_at)
-
-
-async def _settle_claim(
-    db: AsyncSession, recording_id: int, claimed_at: float, **values
-) -> bool:
-    """Write ``values`` if this finalize still holds the import's claim.
+async def _settle_claim(db: AsyncSession, claim: _Claim, **values) -> bool:
+    """Write ``values`` if the row still carries this attempt's claim.
 
     It does not when the recording was deleted, discarded or changed
-    meanwhile, or when this finalize ran so long that another may have taken
-    the claim over. On success the row stays locked until the caller commits.
+    meanwhile, or another finalize took the claim over. On success the row
+    stays locked until the caller commits.
     """
-    if _claim_outlived(claimed_at):
-        return False
     result = await db.execute(
         update(Recording)
-        .where(Recording.id == recording_id)
-        .where(_claim_held())
+        .where(Recording.id == claim.recording_id)
+        .where(_claim_held(claim.token))
         .values(**values)
     )
     return result.rowcount == 1
 
 
-def _claim_lost(
-    source_path: str, kept_path: str | None, claimed_at: float
-) -> HTTPException:
-    """Clean up after a finalize that no longer holds its claim; the error.
+async def _answer_lost_claim(
+    db: AsyncSession, recording: Recording, claim: _Claim, kept_path: str | None
+) -> RecordingPublicRead:
+    """Answer for an attempt that no longer holds its claim.
 
-    The upload and anything extracted from it are removed, unless another
-    finalize may have taken the claim over and now owns the upload: then only
-    this finalize's own extracted file goes.
+    Only this attempt's own files are removed; whoever holds the claim now
+    owns the rest. The answer is what a repeated call gets, or 409 when the
+    recording is gone.
     """
-    if not _claim_outlived(claimed_at):
-        remove_finalize_leftovers(source_path, logger=logger)
-    elif kept_path is not None and kept_path != source_path:
-        _remove_upload(kept_path)
-    return HTTPException(status_code=409, detail=FINALIZE_CLAIM_LOST_DETAIL)
+    for path in (claim.source_path, kept_path):
+        if path is not None:
+            _remove_upload(path)
+    try:
+        await db.refresh(recording)
+    except InvalidRequestError:
+        raise HTTPException(status_code=409, detail=FINALIZE_CLAIM_LOST_DETAIL)
+    return _answer_unclaimable_finalize(recording)
 
 
-async def _discard_chunked_import(
-    db: AsyncSession, recording_id: int, source_path: str, claimed_at: float
-) -> bool:
+async def _discard_chunked_import(db: AsyncSession, claim: _Claim) -> bool:
     """Remove a refused chunked import: its files, chunk rows and recording.
 
-    False, with nothing removed, when this finalize no longer holds the claim.
+    False, with nothing removed, when this attempt no longer holds the claim.
     """
-    if _claim_outlived(claimed_at):
-        return False
     await db.execute(
         delete(RecordingAudioChunk).where(
-            RecordingAudioChunk.recording_id == recording_id
+            RecordingAudioChunk.recording_id == claim.recording_id
         )
     )
     await db.execute(
         delete(RecordingAudioWindowManifest).where(
-            RecordingAudioWindowManifest.recording_id == recording_id
+            RecordingAudioWindowManifest.recording_id == claim.recording_id
         )
     )
     result = await db.execute(
-        delete(Recording).where(Recording.id == recording_id).where(_claim_held())
+        delete(Recording)
+        .where(Recording.id == claim.recording_id)
+        .where(_claim_held(claim.token))
     )
     if result.rowcount != 1:
         await db.rollback()
         return False
     await db.commit()
     recordings_module.delete_recording_artifacts(
-        recording_id=recording_id,
-        audio_path=source_path,
+        recording_id=claim.recording_id,
+        audio_path=claim.source_path,
         proxy_path=None,
         logger=logger,
     )
@@ -541,29 +557,26 @@ async def _discard_chunked_import(
 
 
 async def _fail_chunked_finalize(
-    db: AsyncSession,
-    claim: _Claim,
-    exc: Exception,
-    kept_path: str | None = None,
-) -> HTTPException:
+    db: AsyncSession, claim: _Claim, kept_path: str | None = None
+) -> bool:
     """Settle a finalize the server failed: keep the parts, mark the import.
 
     The recording is marked ERROR so it does not stay claimed, the parts move
     to ``failed/`` for recovery, as for any server failure in finalize, and
-    the reassembled upload and any extracted audio are deleted. Returns the
-    HTTP error to raise.
+    this attempt's reassembled upload and extracted audio are deleted. False,
+    with nothing changed, when this attempt no longer holds the claim.
     """
     settled = await _settle_claim(
         db,
-        claim.recording_id,
-        claim.claimed_at,
+        claim,
         status=RecordingStatus.ERROR,
         client_status=ClientStatus.IDLE,
         processing_step=_CHUNKED_SERVER_FAILURE_STEP,
+        celery_task_id=None,
     )
     if not settled:
         await db.rollback()
-        return _claim_lost(claim.source_path, kept_path, claim.claimed_at)
+        return False
     failed_root: Path | None = None
     try:
         failed_root = recordings_module.move_recording_upload_to_failed(
@@ -577,7 +590,13 @@ async def _fail_chunked_finalize(
         db, recording_id=claim.recording_id, failed_root=failed_root
     )
     await db.commit()
-    remove_finalize_leftovers(claim.source_path, logger=logger)
+    for path in (claim.source_path, kept_path):
+        if path is not None:
+            _remove_upload(path)
+    return True
+
+
+def _server_failure(claim: _Claim, exc: Exception) -> HTTPException:
     return sanitized_http_exception(
         logger=logger,
         status_code=500,
@@ -591,30 +610,46 @@ async def _fail_chunked_finalize(
     )
 
 
+@dataclass(frozen=True)
+class _KeptImport:
+    path: str
+    size_bytes: int
+    duration_seconds: float | None
+
+
+def _reassemble_and_keep(segment_paths: list[str], source_path: str) -> _KeptImport:
+    """Reassemble the parts and keep their audio. Blocking: run it off the loop.
+
+    Every step but the reassembly, which is disk-bound, is under a timeout.
+    """
+    concatenate_binary_files(segment_paths, source_path)
+    kept_path = keep_imported_audio(source_path).path
+    duration: float | None = None
+    try:
+        duration = get_audio_duration(kept_path, timeout=PROBE_TIMEOUT_S)
+    except RuntimeError as e:
+        logger.warning(f"Failed to get duration: {e}")
+    return _KeptImport(kept_path, os.stat(kept_path).st_size, duration)
+
+
 async def _store_finalized_import(
-    db: AsyncSession, recording: Recording, claim: _Claim, audio_path: str
+    db: AsyncSession, recording: Recording, claim: _Claim, kept: _KeptImport
 ) -> bool:
     """Point ``recording`` at its kept audio, rebuild its window, queue it.
 
-    False, with nothing written, when this finalize no longer holds the claim.
+    False, with nothing written, when this attempt no longer holds the claim.
     """
-    duration: float | None = None
-    try:
-        duration = get_audio_duration(audio_path)
-    except Exception as e:  # noqa: BLE001
-        logger.warning(f"Failed to get duration: {e}")
-
     settled = await _settle_claim(
         db,
-        claim.recording_id,
-        claim.claimed_at,
-        audio_path=audio_path,
-        proxy_path=get_initial_proxy_path(audio_path),
-        file_size_bytes=os.stat(audio_path).st_size,
-        duration_seconds=duration,
+        claim,
+        audio_path=kept.path,
+        proxy_path=get_initial_proxy_path(kept.path),
+        file_size_bytes=kept.size_bytes,
+        duration_seconds=kept.duration_seconds,
         status=RecordingStatus.QUEUED,
         client_status=ClientStatus.IDLE,
         processing_step=None,
+        celery_task_id=None,
     )
     if not settled:
         await db.rollback()
@@ -630,7 +665,7 @@ async def _store_finalized_import(
         .where(RecordingAudioWindowManifest.source_kind == "import_part")
     )
     await _bootstrap_import_audio_windows(
-        db, recording_id=claim.recording_id, audio_path=audio_path
+        db, recording_id=claim.recording_id, audio_path=kept.path
     )
     # Read back while the UPDATE still holds the row, so a delete cannot
     # land between the commit and the read.
@@ -640,45 +675,39 @@ async def _store_finalized_import(
 
 
 async def _keep_claimed_import(
-    db: AsyncSession, recording: Recording, chunk_rows: list
-) -> None:
+    db: AsyncSession, recording: Recording, claim: _Claim, chunk_rows: list
+) -> RecordingPublicRead | None:
     """Reassemble a claimed import, keep its audio and queue it.
 
-    Every way out writes to the row only while this finalize still holds the
-    claim; when it does not, what it wrote is removed and 409 raised.
+    None once it is queued. Every way out writes to the row only while this
+    attempt still holds the claim; when it does not, the answer is returned.
     """
-    claim = _Claim(
-        recording_id=recording.id,
-        public_id=recording.public_id,
-        source_path=recording.audio_path,
-        claimed_at=time.monotonic(),
-    )
-    # A stale claim taken over leaves what its finalize wrote; start clean.
-    remove_finalize_leftovers(claim.source_path, logger=logger)
     segment_paths = [row.storage_path for row in chunk_rows]
     try:
-        concatenate_binary_files(segment_paths, claim.source_path)
-        kept_path = (
-            await asyncio.to_thread(keep_imported_audio, claim.source_path)
-        ).path
+        kept = await asyncio.to_thread(
+            _reassemble_and_keep, segment_paths, claim.source_path
+        )
     except ImportRefusedError as exc:
         # Refused like /import and /upload: nothing of the upload is kept, so
         # no failed recording is left in the library.
-        if not await _discard_chunked_import(
-            db, claim.recording_id, claim.source_path, claim.claimed_at
-        ):
-            raise _claim_lost(claim.source_path, None, claim.claimed_at)
+        if not await _discard_chunked_import(db, claim):
+            return await _answer_lost_claim(db, recording, claim, None)
         raise HTTPException(status_code=exc.status_code, detail=exc.detail)
     except Exception as e:  # noqa: BLE001
-        raise await _fail_chunked_finalize(db, claim, e)
+        if not await _fail_chunked_finalize(db, claim):
+            return await _answer_lost_claim(db, recording, claim, None)
+        raise _server_failure(claim, e)
 
     try:
-        stored = await _store_finalized_import(db, recording, claim, kept_path)
+        stored = await _store_finalized_import(db, recording, claim, kept)
     except Exception as e:  # noqa: BLE001
         await db.rollback()
-        raise await _fail_chunked_finalize(db, claim, e, kept_path)
+        if not await _fail_chunked_finalize(db, claim, kept.path):
+            return await _answer_lost_claim(db, recording, claim, kept.path)
+        raise _server_failure(claim, e)
     if not stored:
-        raise _claim_lost(claim.source_path, kept_path, claim.claimed_at)
+        return await _answer_lost_claim(db, recording, claim, kept.path)
+    return None
 
 
 @router.post("/import/chunked/finalize", response_model=RecordingPublicRead)
@@ -694,8 +723,8 @@ async def finalize_chunked_import(
     a short transaction committed before the audio is extracted, so no row
     lock or connection is held through the extraction. A second call returns
     at once: the recording when it is already finalized, 409 while it is being
-    finalized. A claim a crash left behind goes stale after two hours; the
-    next finalize then takes it over, and the daily cleanup releases it.
+    finalized. A claim older than two hours may be taken over by the next
+    finalize; the daily cleanup releases it.
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
     if recording.status != RecordingStatus.UPLOADING or is_finalizing_import(recording):
@@ -722,7 +751,8 @@ async def finalize_chunked_import(
             detail="Recording upload is still in progress; finalize after all segment uploads complete.",
         )
 
-    if not await _claim_for_finalize(db, recording):
+    token = new_finalize_claim_token()
+    if not await _claim_for_finalize(db, recording, token):
         await db.rollback()
         try:
             await db.refresh(recording)
@@ -732,7 +762,13 @@ async def finalize_chunked_import(
         return _answer_unclaimable_finalize(recording)
     await db.commit()
 
-    await _keep_claimed_import(db, recording, chunk_rows)
+    # A stale claim taken over leaves what its attempt wrote; start clean.
+    remove_finalize_leftovers(recording.audio_path, logger=logger)
+    answer = await _keep_claimed_import(
+        db, recording, _claim_for_attempt(recording, token), chunk_rows
+    )
+    if answer is not None:
+        return answer
 
     task = await dispatch_task(
         "backend.worker.tasks.process_recording_task", args=[recording.id]

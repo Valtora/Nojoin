@@ -1,15 +1,17 @@
-"""Chunked-import finalize against a real PostgreSQL.
+"""Chunked-import finalize's claim against a real PostgreSQL.
 
 SQLite serialises writers, so it cannot show what concurrent finalize calls
-do to row locks and the connection pool. Skips unless NOJOIN_TEST_POSTGRES_URL
-names a server (see ``postgres_test_url``) and ffmpeg is installed.
+do to row locks and the connection pool. The claim and its races are the
+subject, so the extraction is a stub and ffmpeg is not needed (real
+extraction is covered in ``test_import_audio`` and ``test_reprocess``). Skips
+unless NOJOIN_TEST_POSTGRES_URL names a server (see ``postgres_test_url``).
 """
 
 from __future__ import annotations
 
 import asyncio
 import importlib
-import shutil
+import os
 import threading
 import time
 import uuid
@@ -30,11 +32,12 @@ from backend.api.deps import (
     get_db,
 )
 from backend.api.v1.api import api_router
-from backend.tests.test_reprocess import _screen_recording, build_test_user
+from backend.tests.test_reprocess import build_test_user
+from backend.utils.import_audio import AudioExtractionError, KeptAudio
+from backend.utils.time import utc_now
 
 SCHEMA = "import_finalize_test"
 FINALIZE_CALLS = 5
-EXTRACTION_SECONDS = 2.0
 
 
 @pytest.fixture
@@ -144,39 +147,59 @@ async def _connections_in_transaction(maker) -> int:
         ).scalar_one()
 
 
-@pytest.mark.anyio
-@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg is not installed")
-async def test_concurrent_finalizes_extract_once_and_hold_nothing_meanwhile(
-    pg, pg_client, monkeypatch, tmp_path: Path
-) -> None:
-    """One call claims the import; the others answer 409 at once, and no
-    connection or row lock is held while the audio is extracted."""
-    from backend.api.v1.endpoints.recordings import routes_import_upload
-    from backend.utils import import_audio
+def _stub_keep(path: str) -> KeptAudio:
+    """Stand-in for ``keep_imported_audio``: the same file contract (named
+    after the upload, which is deleted), no ffmpeg."""
+    source = Path(path)
+    if not source.exists():
+        raise AudioExtractionError(f"{path} is gone")
+    kept = source.with_name(f"{source.stem}.{uuid.uuid4().hex}.m4a")
+    kept.write_bytes(source.read_bytes())
+    os.remove(source)
+    return KeptAudio(str(kept))
 
-    engine, maker = pg
+
+def _patch_keep(monkeypatch, keep) -> None:
+    from backend.api.v1.endpoints.recordings import routes_import_upload
+
+    monkeypatch.setattr(routes_import_upload, "keep_imported_audio", keep)
+
+
+async def _start(pg_client, monkeypatch, tmp_path: Path):
+    """An import with its one part uploaded; returns its id, the recorded
+    dispatches and the recordings directory."""
     source = tmp_path / "screen.mkv"
-    _screen_recording(source, ["-c:a", "aac"])
+    source.write_bytes(b"\x1a\x45\xdf\xa3 not really a matroska file")
     recordings_dir = tmp_path / "recordings"
     recordings_dir.mkdir()
     monkeypatch.setenv("RECORDINGS_DIR", str(recordings_dir))
     dispatches = _record_dispatches(monkeypatch)
     recording_id = await _start_import(pg_client, source)
+    return recording_id, dispatches, recordings_dir
+
+
+@pytest.mark.anyio
+async def test_concurrent_finalizes_extract_once_and_hold_nothing_meanwhile(
+    pg, pg_client, monkeypatch, tmp_path: Path
+) -> None:
+    """One call claims the import; the others answer 409 at once, and no
+    connection or row lock is held while the audio is extracted."""
+    engine, maker = pg
+    recording_id, dispatches, _ = await _start(pg_client, monkeypatch, tmp_path)
     extractions: list[str] = []
-    real_keep = import_audio.keep_imported_audio
 
-    def slow_keep(path: str):
+    def slow_keep(path: str) -> KeptAudio:
         extractions.append(path)
-        time.sleep(EXTRACTION_SECONDS)
-        return real_keep(path)
+        time.sleep(2.0)
+        return _stub_keep(path)
 
-    monkeypatch.setattr(routes_import_upload, "keep_imported_audio", slow_keep)
+    _patch_keep(monkeypatch, slow_keep)
 
     calls = [
         asyncio.create_task(_finalize(pg_client, recording_id))
         for _ in range(FINALIZE_CALLS)
     ]
-    await asyncio.sleep(EXTRACTION_SECONDS / 2)
+    await asyncio.sleep(1.0)
     in_transaction = await _connections_in_transaction(maker)
     checked_out = engine.pool.checkedout()
     answers = await asyncio.gather(*calls)
@@ -198,28 +221,24 @@ async def test_concurrent_finalizes_extract_once_and_hold_nothing_meanwhile(
 
 
 def _hold_extraction(monkeypatch, *, after_keep: bool):
-    """Hold the first extraction until ``release`` is set: before ffmpeg runs,
-    or once the kept audio is written. Later extractions run unheld."""
-    from backend.api.v1.endpoints.recordings import routes_import_upload
-    from backend.utils import import_audio
-
+    """Hold the first extraction until ``release`` is set: before it reads
+    the upload, or once the kept audio is written. Later ones run unheld."""
     entered = threading.Event()
     release = threading.Event()
-    real_keep = import_audio.keep_imported_audio
 
-    def keep(path: str):
+    def keep(path: str) -> KeptAudio:
         if entered.is_set():
-            return real_keep(path)
+            return _stub_keep(path)
         if not after_keep:
             entered.set()
             release.wait(30)
-            return real_keep(path)
-        kept = real_keep(path)
+            return _stub_keep(path)
+        kept = _stub_keep(path)
         entered.set()
         release.wait(30)
         return kept
 
-    monkeypatch.setattr(routes_import_upload, "keep_imported_audio", keep)
+    _patch_keep(monkeypatch, keep)
     return entered, release
 
 
@@ -233,13 +252,9 @@ async def _until(event: threading.Event) -> None:
 
 async def _finalize_held(pg_client, monkeypatch, tmp_path: Path, *, after_keep: bool):
     """Start an import's finalize and return once its extraction is held."""
-    source = tmp_path / "screen.mkv"
-    _screen_recording(source, ["-c:a", "aac"])
-    recordings_dir = tmp_path / "recordings"
-    recordings_dir.mkdir()
-    monkeypatch.setenv("RECORDINGS_DIR", str(recordings_dir))
-    dispatches = _record_dispatches(monkeypatch)
-    recording_id = await _start_import(pg_client, source)
+    recording_id, dispatches, recordings_dir = await _start(
+        pg_client, monkeypatch, tmp_path
+    )
     entered, release = _hold_extraction(monkeypatch, after_keep=after_keep)
     call = asyncio.create_task(_finalize(pg_client, recording_id))
     await _until(entered)
@@ -250,8 +265,14 @@ def _files(root: Path) -> list[Path]:
     return sorted(path for path in root.rglob("*") if path.is_file())
 
 
+async def _stored_audio(engine) -> Path:
+    async with engine.connect() as conn:
+        return Path(
+            (await conn.execute(text("SELECT audio_path FROM recordings"))).scalar_one()
+        )
+
+
 @pytest.mark.anyio
-@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg is not installed")
 async def test_an_import_being_finalized_cannot_be_reprocessed(
     pg, pg_client, monkeypatch, tmp_path: Path
 ) -> None:
@@ -277,7 +298,6 @@ async def test_an_import_being_finalized_cannot_be_reprocessed(
 
 
 @pytest.mark.anyio
-@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg is not installed")
 async def test_an_import_being_finalized_cannot_be_discarded_or_added_to(
     pg, pg_client, monkeypatch, tmp_path: Path
 ) -> None:
@@ -308,13 +328,12 @@ async def test_an_import_being_finalized_cannot_be_discarded_or_added_to(
 
 
 @pytest.mark.anyio
-@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg is not installed")
-@pytest.mark.parametrize("after_keep", [False, True], ids=["mid-probe", "after-keep"])
+@pytest.mark.parametrize("after_keep", [False, True], ids=["before-keep", "after-keep"])
 async def test_deleting_an_import_being_finalized_leaves_nothing_behind(
     pg, pg_client, monkeypatch, tmp_path: Path, after_keep: bool
 ) -> None:
-    """Finalize answers that the import is gone, removes what it extracted and
-    queues nothing."""
+    """Finalize answers that the import is gone, and nothing it or the delete
+    left remains; nothing is queued."""
     from backend.api.v1.endpoints.recordings import routes_import_upload
 
     recording_id, call, release, dispatches, recordings_dir = await _finalize_held(
@@ -333,22 +352,23 @@ async def test_deleting_an_import_being_finalized_leaves_nothing_behind(
 
 
 @pytest.mark.anyio
-@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg is not installed")
-async def test_a_finalize_that_outlived_its_claim_does_not_store(
-    pg, pg_client, monkeypatch, tmp_path: Path
+@pytest.mark.parametrize("after_keep", [False, True], ids=["before-keep", "after-keep"])
+async def test_a_finalize_whose_claim_was_taken_over_leaves_the_new_owner_alone(
+    pg, pg_client, monkeypatch, tmp_path: Path, after_keep: bool
 ) -> None:
-    """A finalize that takes over a stale claim owns the import; the one it
-    took over from keeps nothing when it finally returns."""
-    from backend.utils import recording_storage
-
+    """Its claim looks stale by the database clock (a suspended host, a clock
+    step), so another finalize takes it over and queues the import. When the
+    first one resumes, it removes only its own files and answers as a
+    repeated call would."""
     engine, _ = pg
-    monkeypatch.setattr(
-        recording_storage, "FINALIZE_CLAIM_STALE_AFTER", timedelta(seconds=1)
-    )
     recording_id, first, release, dispatches, recordings_dir = await _finalize_held(
-        pg_client, monkeypatch, tmp_path, after_keep=True
+        pg_client, monkeypatch, tmp_path, after_keep=after_keep
     )
-    await asyncio.sleep(1.2)
+    async with engine.begin() as conn:
+        await conn.execute(
+            text("UPDATE recordings SET updated_at = :t"),
+            {"t": utc_now() - timedelta(hours=3)},
+        )
 
     second = await _finalize(pg_client, recording_id)
     release.set()
@@ -356,11 +376,34 @@ async def test_a_finalize_that_outlived_its_claim_does_not_store(
 
     assert second.status_code == 200, second.text
     assert second.json()["status"] == "QUEUED"
-    assert first_answer.status_code == 409, first_answer.text
+    stored = await _stored_audio(engine)
+    assert stored.exists()
+    assert [path for path in recordings_dir.iterdir() if path.is_file()] == [stored]
+    assert first_answer.status_code == 200, first_answer.text
+    assert first_answer.json()["status"] == "QUEUED"
     assert len(dispatches) == 1
-    async with engine.connect() as conn:
-        audio_path = (
-            await conn.execute(text("SELECT audio_path FROM recordings"))
-        ).scalar_one()
-    stored = [path for path in recordings_dir.iterdir() if path.is_file()]
-    assert stored == [Path(audio_path)]
+
+
+@pytest.mark.anyio
+async def test_a_finalize_that_outlives_the_stale_age_untaken_still_stores(
+    pg, pg_client, monkeypatch, tmp_path: Path
+) -> None:
+    """Staleness only lets another finalize take the claim over. With none
+    doing so, the owner keeps its claim and its good extraction."""
+    from backend.utils import recording_storage
+
+    engine, _ = pg
+    monkeypatch.setattr(
+        recording_storage, "FINALIZE_CLAIM_STALE_AFTER", timedelta(seconds=1)
+    )
+    recording_id, call, release, dispatches, _ = await _finalize_held(
+        pg_client, monkeypatch, tmp_path, after_keep=True
+    )
+    await asyncio.sleep(1.2)
+    release.set()
+    answer = await call
+
+    assert answer.status_code == 200, answer.text
+    assert answer.json()["status"] == "QUEUED"
+    assert len(dispatches) == 1
+    assert (await _stored_audio(engine)).exists()

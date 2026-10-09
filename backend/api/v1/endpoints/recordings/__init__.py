@@ -103,6 +103,7 @@ from .helpers import (
     _reset_generated_recording_state,
     _resolve_browser_master_suffix,
     _resolve_segment_upload_suffix,
+    _revocable_task_id,
     _should_hide_in_flight_transcript_content,
     _stage_import_audio_chunk,
     _sync_recording_audio_chunks_from_directory,

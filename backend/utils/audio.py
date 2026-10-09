@@ -75,9 +75,10 @@ def ensure_ffmpeg_in_path():
         )
 
 
-def get_audio_duration(file_path: str) -> float:
+def get_audio_duration(file_path: str, timeout: float | None = None) -> float:
     """
-    Get the duration of an audio file in seconds using ffprobe.
+    Get the duration of an audio file in seconds using ffprobe, which is killed
+    after ``timeout`` seconds when one is given.
     """
     ensure_ffmpeg_in_path()
 
@@ -92,11 +93,14 @@ def get_audio_duration(file_path: str) -> float:
         file_path,
     ]
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, check=True, timeout=timeout
+        )
         data = json.loads(result.stdout)
         return float(data["format"]["duration"])
     except (
         subprocess.CalledProcessError,
+        subprocess.TimeoutExpired,
         KeyError,
         ValueError,
         FileNotFoundError,
