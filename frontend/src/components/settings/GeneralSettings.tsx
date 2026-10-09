@@ -1,6 +1,5 @@
 import { Fragment, useMemo, useState } from "react";
 import { Popover, Transition } from "@headlessui/react";
-import { useTheme, Theme } from "@/lib/ThemeProvider";
 import { fuzzyMatch } from "@/lib/searchUtils";
 import { Settings } from "@/types";
 import {
@@ -15,6 +14,7 @@ import {
 import { Switch } from "../ui/Switch";
 import { SPELLCHECK_LANGUAGES, spellCheckService } from "@/lib/spellCheckService";
 import DictionaryModal from "../DictionaryModal";
+import AppearanceSettings from "./AppearanceSettings";
 import {
   DEFAULT_TIME_ZONE,
   getBrowserTimeZone,
@@ -75,7 +75,6 @@ export default function GeneralSettings({
   suppressNoMatch = false,
   sections = ALL_GENERAL_SECTIONS,
 }: GeneralSettingsProps) {
-  const { theme, setTheme } = useTheme();
   const [isDictionaryModalOpen, setIsDictionaryModalOpen] = useState(false);
   const [timezoneSearch, setTimezoneSearch] = useState("");
   const browserTimeZone = useMemo(() => getBrowserTimeZone(), []);
@@ -123,10 +122,6 @@ export default function GeneralSettings({
     await spellCheckService.changeLanguage(locale);
   };
 
-  const handleThemeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    setTheme(e.target.value as Theme);
-  };
-
   const handleTimeZoneSelect = (candidate: string) => {
     const resolvedTimeZone = resolveTimeZone(candidate, DEFAULT_TIME_ZONE);
     if (resolvedTimeZone === selectedTimeZone) {
@@ -149,6 +144,16 @@ export default function GeneralSettings({
       "dark",
       "mode",
       "color",
+      "colour",
+      "palette",
+      "accent",
+      "corners",
+      "rounded",
+      "square",
+      "density",
+      "compact",
+      "comfortable",
+      "dense",
     ]);
   const showDateTime =
     enabled("dateTime") &&
@@ -199,25 +204,7 @@ export default function GeneralSettings({
 
   return (
     <>
-      {showAppearance && (
-        <SettingsCard
-          id="appearance-theme"
-          title="Appearance"
-          description="How Nojoin looks in your browser."
-        >
-          <SettingsRow label="Theme">
-            <select
-              value={theme}
-              onChange={handleThemeChange}
-              className={SETTINGS_SELECT_CLASS}
-            >
-              <option value="system">System default</option>
-              <option value="light">Light</option>
-              <option value="dark">Dark</option>
-            </select>
-          </SettingsRow>
-        </SettingsCard>
-      )}
+      {showAppearance && <AppearanceSettings />}
 
       {showDateTime && (
         <SettingsCard
@@ -309,12 +296,12 @@ export default function GeneralSettings({
                                           {timeZone}
                                         </span>
                                         {timeZone === DEFAULT_TIME_ZONE && (
-                                          <span className="rounded-full bg-surface-inset px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-contrast-muted">
+                                          <span className="rounded-pill bg-surface-inset px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-contrast-muted">
                                             UTC
                                           </span>
                                         )}
                                         {isBrowserDetected && (
-                                          <span className="rounded-full bg-action-tint px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-action-text">
+                                          <span className="rounded-pill bg-action-tint px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-action-text">
                                             Browser detected
                                           </span>
                                         )}

@@ -66,6 +66,22 @@ def _recording_has_proxy(recording: Recording) -> bool:
     return bool(recording.proxy_path and os.path.exists(recording.proxy_path))
 
 
+def _recording_has_audio(recording: Recording) -> bool:
+    """Whether anything playable exists, or can be made, for this recording.
+
+    An empty master, such as one left by an interrupted write, cannot make a
+    proxy, so it does not count as audio.
+    """
+    if _recording_has_proxy(recording):
+        return True
+    if not recording.audio_path:
+        return False
+    try:
+        return os.path.getsize(recording.audio_path) > 0
+    except OSError:
+        return False
+
+
 def _estimated_audio_bitrate_bits_per_second(
     audio_info: dict[str, Any] | None,
 ) -> int | None:

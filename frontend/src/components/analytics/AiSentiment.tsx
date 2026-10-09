@@ -45,7 +45,7 @@ export default function AiSentiment({
               </span>
             </span>
             <span
-              className={`rounded-full border px-2 py-0.5 text-xs font-medium ${toneClass(item.tone)}`}
+              className={`rounded-pill border px-2 py-0.5 text-xs font-medium ${toneClass(item.tone)}`}
             >
               {toneLabel(item.tone)}
             </span>

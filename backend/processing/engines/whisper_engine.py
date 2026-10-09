@@ -2,9 +2,11 @@
 # Whisper transcription engine. Heavy imports (whisper, torch, tqdm) live here,
 # not in the thin dispatcher backend/processing/transcribe.py.
 
+import gc
 import logging
 import os
 import threading
+import traceback
 import warnings
 
 import torch
@@ -14,6 +16,11 @@ import whisper
 from ...utils.config_manager import config_manager
 from ...utils.languages import resolve_transcription_language_code
 from .base import TranscriptionEngine
+from .errors import (
+    TranscriptionError,
+    is_task_interruption,
+    transcription_error_from,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -204,7 +211,7 @@ class WhisperEngine(TranscriptionEngine):
 
     name = "whisper"
 
-    def transcribe(self, audio_path: str, config: dict) -> dict | None:
+    def transcribe(self, audio_path: str, config: dict) -> dict:
         """Transcribes the given audio file using OpenAI Whisper.
 
         Args:
@@ -212,12 +219,18 @@ class WhisperEngine(TranscriptionEngine):
             config: Optional configuration dictionary to override defaults.
 
         Returns:
-            A dictionary containing the transcription result (including text, segments, language)
-            or None if transcription fails.
+            A dictionary containing the transcription result (including text,
+            segments, language); empty text means no speech.
+
+        Raises:
+            TranscriptionError: The file is missing or Whisper failed.
         """
         if not os.path.exists(audio_path):
             logger.error(f"Audio file not found for transcription: {audio_path}")
-            return None
+            raise TranscriptionError(
+                f"Transcription failed ({self.name}): the audio file is missing.",
+                engine=self.name,
+            )
 
         # Use provided config or fall back to system config
         get_config = config.get if config else config_manager.get
@@ -235,6 +248,7 @@ class WhisperEngine(TranscriptionEngine):
 
         ensure_ffmpeg_in_path()
 
+        model = None
         try:
             # Load model (use cache)
             if model_size not in _model_cache:
@@ -295,6 +309,8 @@ class WhisperEngine(TranscriptionEngine):
             return result
 
         except Exception as e:
+            if is_task_interruption(e):
+                raise
             logger.error(
                 f"Error during Whisper transcription for {audio_path}: {e}",
                 exc_info=True,
@@ -305,9 +321,16 @@ class WhisperEngine(TranscriptionEngine):
             ):  # e.g., CUDA out of memory
                 logger.warning(f"Clearing model cache for {model_size} due to error.")
                 del _model_cache[model_size]
+                # The traceback's frames still hold the model; drop those
+                # references too, or emptying the CUDA cache frees nothing.
+                model = None
+                traceback.clear_frames(e.__traceback__)
+                gc.collect()
                 if device == "cuda":
                     torch.cuda.empty_cache()
-            return None
+            raise transcription_error_from(
+                e, engine=self.name, on_gpu=device == "cuda"
+            ) from e
 
     def release(self) -> None:
         """Releases all loaded Whisper models from memory and clears CUDA cache."""

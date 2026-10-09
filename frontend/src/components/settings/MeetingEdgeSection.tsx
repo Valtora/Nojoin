@@ -145,7 +145,7 @@ export default function MeetingEdgeSection({
                   Context section.
                 </p>
               </div>
-              <span className="inline-flex items-center rounded-full border border-action-border bg-surface-card px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-action-text">
+              <span className="inline-flex items-center rounded-pill border border-action-border bg-surface-card px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-action-text">
                 {selectedOption.label || `Level ${selectedOption.value}`}
               </span>
             </div>

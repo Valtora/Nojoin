@@ -668,7 +668,7 @@ export default function SystemTab() {
 
                 <div>
                   <span
-                    className={`inline-flex items-center gap-2 rounded-full px-2.5 py-1 text-xs font-medium ${styles.badge}`}
+                    className={`inline-flex items-center gap-2 rounded-pill px-2.5 py-1 text-xs font-medium ${styles.badge}`}
                   >
                     <span className={`h-2 w-2 rounded-full ${styles.dot}`} />
                     {check.status.replace(/_/g, " ")}
@@ -680,7 +680,7 @@ export default function SystemTab() {
                     {meta.map((item) => (
                       <span
                         key={item}
-                        className="rounded-full bg-surface-inset px-2.5 py-1"
+                        className="rounded-pill bg-surface-inset px-2.5 py-1"
                       >
                         {item}
                       </span>

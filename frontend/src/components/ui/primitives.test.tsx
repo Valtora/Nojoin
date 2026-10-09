@@ -133,6 +133,16 @@ describe("Badge", () => {
       unmount();
     }
   });
+
+  // A badge is a text-bearing pill, so it follows the Corner style setting
+  // through rounded-pill. rounded-full is a circle and would stay round under
+  // Square.
+  it("uses the pill radius rather than a fixed circle", () => {
+    const { container } = render(<Badge>Label</Badge>);
+    const className = container.firstElementChild?.className ?? "";
+    expect(className).toContain("rounded-pill");
+    expect(className).not.toContain("rounded-full");
+  });
 });
 
 describe("Input", () => {

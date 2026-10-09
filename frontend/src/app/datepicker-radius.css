@@ -1,0 +1,141 @@
+/* react-datepicker's own corner radii, re-expressed through the corner scale.
+
+   The library's stylesheet (imported at the top of globals.css) hard-codes
+   0.3rem, 0.375em and 4px, so the calendar ignored the Corner style setting.
+   Each rule below repeats one of the library's selectors with its non-zero
+   radii multiplied by --radius-scale; at the default scale every value is the
+   library's own. The same selectors at the same specificity, loaded after the
+   library, win without !important. The close icon's 50% stays: it is a
+   circle. datepickerRadius.test.ts fails if a library upgrade adds a radius
+   this file does not scale. */
+
+.react-datepicker {
+  border-radius: calc(0.3rem * var(--radius-scale));
+}
+
+.react-datepicker--time-only .react-datepicker__time,
+.react-datepicker--time-only .react-datepicker__time-box {
+  border-bottom-left-radius: calc(0.375em * var(--radius-scale));
+  border-bottom-right-radius: calc(0.375em * var(--radius-scale));
+}
+
+.react-datepicker__header {
+  border-top-left-radius: calc(0.3rem * var(--radius-scale));
+}
+
+.react-datepicker__header:not(.react-datepicker__header--has-time-select, .react-datepicker__header--middle, .react-datepicker__header--bottom) {
+  border-top-right-radius: calc(0.3rem * var(--radius-scale));
+}
+
+.react-datepicker__header--bottom {
+  border-radius: 0 0 calc(0.3rem * var(--radius-scale)) calc(0.3rem * var(--radius-scale));
+}
+
+.react-datepicker__month-select,
+.react-datepicker__year-select,
+.react-datepicker__month-year-select {
+  border-radius: calc(0.3rem * var(--radius-scale));
+}
+
+.react-datepicker__time-container--with-today-button {
+  border-radius: calc(0.375em * var(--radius-scale));
+}
+
+.react-datepicker__time-container .react-datepicker__time {
+  border-bottom-right-radius: calc(0.375em * var(--radius-scale));
+}
+
+.react-datepicker__time-container .react-datepicker__time .react-datepicker__time-box {
+  border-bottom-right-radius: calc(0.375em * var(--radius-scale));
+}
+
+.react-datepicker__week-number.react-datepicker__week-number--clickable:not(.react-datepicker__week-number--selected):hover {
+  border-radius: calc(0.3rem * var(--radius-scale));
+}
+
+.react-datepicker__week-number--selected {
+  border-radius: calc(0.3rem * var(--radius-scale));
+}
+
+.react-datepicker__day:not([aria-disabled=true]):hover,
+.react-datepicker__month-text:not([aria-disabled=true]):hover,
+.react-datepicker__quarter-text:not([aria-disabled=true]):hover,
+.react-datepicker__year-text:not([aria-disabled=true]):hover {
+  border-radius: calc(0.3rem * var(--radius-scale));
+}
+
+.react-datepicker__day--highlighted,
+.react-datepicker__month-text--highlighted,
+.react-datepicker__quarter-text--highlighted,
+.react-datepicker__year-text--highlighted {
+  border-radius: calc(0.3rem * var(--radius-scale));
+}
+
+.react-datepicker__day--holidays,
+.react-datepicker__month-text--holidays,
+.react-datepicker__quarter-text--holidays,
+.react-datepicker__year-text--holidays {
+  border-radius: calc(0.3rem * var(--radius-scale));
+}
+
+.react-datepicker__day--holidays .overlay,
+.react-datepicker__month-text--holidays .overlay,
+.react-datepicker__quarter-text--holidays .overlay,
+.react-datepicker__year-text--holidays .overlay {
+  border-radius: calc(4px * var(--radius-scale));
+}
+
+.react-datepicker__day--selected,
+.react-datepicker__day--in-selecting-range,
+.react-datepicker__day--in-range,
+.react-datepicker__month-text--selected,
+.react-datepicker__month-text--in-selecting-range,
+.react-datepicker__month-text--in-range,
+.react-datepicker__quarter-text--selected,
+.react-datepicker__quarter-text--in-selecting-range,
+.react-datepicker__quarter-text--in-range,
+.react-datepicker__year-text--selected,
+.react-datepicker__year-text--in-selecting-range,
+.react-datepicker__year-text--in-range {
+  border-radius: calc(0.3rem * var(--radius-scale));
+}
+
+.react-datepicker__day--keyboard-selected,
+.react-datepicker__month-text--keyboard-selected,
+.react-datepicker__quarter-text--keyboard-selected,
+.react-datepicker__year-text--keyboard-selected {
+  border-radius: calc(0.3rem * var(--radius-scale));
+}
+
+.react-datepicker__day--disabled .overlay,
+.react-datepicker__month-text--disabled .overlay,
+.react-datepicker__quarter-text--disabled .overlay,
+.react-datepicker__year-text--disabled .overlay {
+  border-radius: calc(4px * var(--radius-scale));
+}
+
+.react-datepicker__year-read-view,
+.react-datepicker__month-read-view,
+.react-datepicker__month-year-read-view {
+  border-radius: calc(0.3rem * var(--radius-scale));
+}
+
+.react-datepicker__year-dropdown,
+.react-datepicker__month-dropdown,
+.react-datepicker__month-year-dropdown {
+  border-radius: calc(0.3rem * var(--radius-scale));
+}
+
+.react-datepicker__year-option:first-of-type,
+.react-datepicker__month-option:first-of-type,
+.react-datepicker__month-year-option:first-of-type {
+  border-top-left-radius: calc(0.3rem * var(--radius-scale));
+  border-top-right-radius: calc(0.3rem * var(--radius-scale));
+}
+
+.react-datepicker__year-option:last-of-type,
+.react-datepicker__month-option:last-of-type,
+.react-datepicker__month-year-option:last-of-type {
+  border-bottom-left-radius: calc(0.3rem * var(--radius-scale));
+  border-bottom-right-radius: calc(0.3rem * var(--radius-scale));
+}

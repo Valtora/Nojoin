@@ -8,9 +8,9 @@ from pathlib import Path
 from threading import Lock
 from typing import Any, Optional, Union
 
+import jwt
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
-from jose import jwt
 
 from backend.utils.path_manager import path_manager
 from backend.utils.time import utc_now
@@ -55,24 +55,85 @@ def _new_kid() -> str:
     return f"k_{secrets.token_hex(4)}"
 
 
+class SigningKeyUnavailableError(RuntimeError):
+    """The JWT keyring cannot be loaded, so no token can be signed or verified.
+
+    The message names the file at fault and how to fix it, for the api log.
+    """
+
+
 def _read_keyring_file() -> Optional[dict[str, Any]]:
     keyring_file = _keyring_path()
-    if not keyring_file.exists():
-        return None
     try:
-        data = json.loads(keyring_file.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        raise RuntimeError(
-            f"Unable to load JWT keyring at {keyring_file}: {exc}"
-        ) from exc
+        if not keyring_file.exists():
+            return None
+        content = keyring_file.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise _key_file_access_error(keyring_file, exc) from exc
+    except UnicodeDecodeError as exc:
+        raise _malformed_key_file_error(keyring_file, str(exc)) from exc
+    if not content.strip():
+        # A write cut short, for example by a full disk, leaves the file blank.
+        raise _empty_signing_key_error(keyring_file)
+    try:
+        data = json.loads(content)
+    except json.JSONDecodeError as exc:
+        raise _malformed_key_file_error(keyring_file, str(exc)) from exc
     if (
         not isinstance(data, dict)
         or not isinstance(data.get("keys"), dict)
         or not isinstance(data.get("active"), str)
         or data["active"] not in data["keys"]
     ):
-        raise RuntimeError(f"JWT keyring at {keyring_file} is malformed.")
+        raise _malformed_key_file_error(keyring_file, "no usable active key entry")
+    if not all(isinstance(key, str) for key in data["keys"].values()):
+        raise _malformed_key_file_error(keyring_file, "a key that is not a string")
     return data
+
+
+def _replace_key_file_remedy(key_file: Path) -> str:
+    return (
+        f"Delete {key_file} and restart Nojoin to generate a new key (everyone "
+        "signed in will have to sign in again), or set the SECRET_KEY "
+        "environment variable."
+    )
+
+
+def _empty_signing_key_error(key_file: Path) -> SigningKeyUnavailableError:
+    # PyJWT refuses an empty HMAC key, so an empty key would fail every
+    # sign-in with a bare 500. Detecting it at load names the file instead.
+    return SigningKeyUnavailableError(
+        f"The JWT signing key in {key_file} is empty, so no token can be signed "
+        f"or verified. {_replace_key_file_remedy(key_file)}"
+    )
+
+
+def _malformed_key_file_error(
+    key_file: Path, reason: str
+) -> SigningKeyUnavailableError:
+    return SigningKeyUnavailableError(
+        f"The JWT key file {key_file} is malformed ({reason}), so no token can "
+        f"be signed or verified. {_replace_key_file_remedy(key_file)}"
+    )
+
+
+def _key_file_access_error(
+    key_file: Path, exc: Union[OSError, UnicodeDecodeError]
+) -> SigningKeyUnavailableError:
+    if isinstance(exc, IsADirectoryError):
+        return SigningKeyUnavailableError(
+            f"The JWT key file {key_file} is a directory, so no token can be "
+            "signed or verified. A Docker bind mount of a host file that does "
+            "not exist creates a directory like this. Remove the directory and "
+            "any bind mount of that file (the key lives in the data directory), "
+            "then restart Nojoin to generate a new key (everyone signed in will "
+            "have to sign in again), or set the SECRET_KEY environment variable."
+        )
+    return SigningKeyUnavailableError(
+        f"Unable to read or write the JWT key file {key_file} ({exc}), so no "
+        f"token can be signed or verified. Make sure the api can read and write "
+        f"{key_file.parent}, or set the SECRET_KEY environment variable."
+    )
 
 
 def _write_keyring_file(data: dict[str, Any]) -> None:
@@ -91,12 +152,25 @@ def _write_keyring_file(data: dict[str, Any]) -> None:
         )
 
 
+def _read_legacy_key(legacy_file: Path) -> Optional[str]:
+    try:
+        if not legacy_file.exists():
+            return None
+        return legacy_file.read_text(encoding="utf-8").strip()
+    except OSError as exc:
+        raise _key_file_access_error(legacy_file, exc) from exc
+    except UnicodeDecodeError as exc:
+        raise _malformed_key_file_error(legacy_file, str(exc)) from exc
+
+
 def _bootstrap_keyring() -> dict[str, Any]:
     legacy_file = _legacy_key_path()
     _migrate_legacy_secret_file(legacy_file)
 
-    if legacy_file.exists():
-        legacy_value = legacy_file.read_text(encoding="utf-8").strip()
+    legacy_value = _read_legacy_key(legacy_file)
+    if legacy_value is not None:
+        if not legacy_value:
+            raise _empty_signing_key_error(legacy_file)
         data = {
             "active": DEFAULT_LEGACY_KID,
             "keys": {DEFAULT_LEGACY_KID: legacy_value},
@@ -133,10 +207,18 @@ def _load_keyring() -> dict[str, Any]:
         return {"active": "env", "keys": {"env": env_key}}
 
     with _keyring_lock:
-        existing = _read_keyring_file()
-        if existing is not None:
-            return existing
-        return _bootstrap_keyring()
+        keyring = _read_keyring_file()
+        if keyring is None:
+            try:
+                keyring = _bootstrap_keyring()
+            except (OSError, UnicodeDecodeError) as exc:
+                # Writing the new keyring, or migrating a desktop-era key file.
+                raise _key_file_access_error(_keyring_path(), exc) from exc
+    # Checked here rather than in _read_keyring_file so that
+    # rotate_signing_key() can still replace an empty active entry.
+    if not keyring["keys"][keyring["active"]]:
+        raise _empty_signing_key_error(_keyring_path())
+    return keyring
 
 
 def get_signing_keyring() -> dict[str, Any]:
@@ -312,19 +394,24 @@ def create_access_token(
 def decode_access_token(token: str) -> dict[str, Any]:
     """Decode and verify a JWT using the keyring entry indicated by its ``kid``.
 
-    Raises :class:`jose.JWTError` if the token cannot be verified with any
-    known key.
+    Raises :class:`jwt.PyJWTError` if the token is malformed or cannot be
+    verified with any known key. Catch that base class: besides
+    :class:`jwt.InvalidTokenError`, ``jwt.decode`` raises
+    :class:`jwt.InvalidKeyError` (not an ``InvalidTokenError``) when the
+    stored key for the token's ``kid`` is unusable as an HMAC secret. An
+    unloadable keyring also raises ``InvalidTokenError``, so every token
+    is refused until the keyring is fixed.
     """
+    # PyJWT parses the header strictly: a malformed token or a non-string
+    # ``kid`` raises InvalidTokenError here, before any key lookup.
+    kid = jwt.get_unverified_header(token).get("kid")
     try:
-        unverified_header = jwt.get_unverified_header(token)
-    except Exception:  # pragma: no cover - defensive: jose raises subclass of Exception  # noqa: BLE001
-        unverified_header = {}
-    kid = unverified_header.get("kid") if isinstance(unverified_header, dict) else None
-    signing_key = get_signing_key_for_kid(kid)
+        signing_key = get_signing_key_for_kid(kid)
+    except SigningKeyUnavailableError as exc:
+        # The api logs the cause at startup and on each sign-in attempt.
+        raise jwt.InvalidTokenError("JWT keyring is unavailable") from exc
     if signing_key is None:
-        from jose import JWTError
-
-        raise JWTError("Unknown signing key id")
+        raise jwt.InvalidTokenError("Unknown signing key id")
     return jwt.decode(token, signing_key, algorithms=[ALGORITHM])
 
 

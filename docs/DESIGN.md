@@ -57,6 +57,47 @@ of its own renderings to use, so without `light` on `:root` and `dark` on `.dark
 control renders light while the rest of the app is dark. This is the price of `Select` being a
 native select, and it is worth paying for the platform picker on a phone.
 
+### Appearance preferences
+
+Theme, colour palette, corner style and density are per-browser preferences chosen in
+**Settings > Appearance**. `lib/appearance.ts` owns their allowed values and storage keys;
+`lib/theme-script.ts` reads local storage before first paint and stamps the result on `<html>`, and
+`ThemeProvider` / `ViewportDensityProvider` keep it in sync afterwards. The inline script is shipped
+as an uncompiled string, so it must stay plain JavaScript; `theme-script.test.ts` executes it.
+
+| Preference | On `<html>` | Default |
+| --- | --- | --- |
+| Theme | `.dark` class | follows the system |
+| Palette | `data-palette` = `graphite`, `classic`, `ultraviolet` or `marigold` | no attribute (the `:root` / `.dark` tokens) |
+| Corner style | `data-corners` = `subtle` or `square` | no attribute (rounded) |
+| Density | `data-ui-density` = `comfortable`, `compact` or `dense` | resolved from the viewport (never `dense`) |
+
+Every default leaves the product exactly as it looks without the preference, which is the invariant
+to keep when adding one.
+
+### Palettes
+
+A palette is a pair of token blocks in `frontend/src/app/palettes.css`:
+`html[data-palette="x"]:not(.dark)` and `html[data-palette="x"].dark`. The `:not(.dark)` is
+load-bearing: `html[data-palette]` alone outranks `.dark`, so an unscoped light block would leak its
+values into dark mode for any token the dark block does not repeat.
+
+A palette may re-tint the neutrals (page, card, inset, float, rails, text greys, hairlines, control
+borders) and replace the action family (fill, label, text, tint, border, focus ring). It must not
+touch status tones, danger, chart series or speaker colours: those encode meaning, and a speaker or
+an error has to look the same whichever palette is chosen.
+
+`check-contrast.mjs` discovers palettes from that file and audits both blocks against the full app
+pairing list, modelling the cascade above, so a new palette is gated the moment it exists.
+
+Two consequences of the shared danger and the 3:1 fill rule show up in the palettes as they stand.
+A page as dark as Windows button-face grey (#D4D0C8) cannot carry the shared danger text, so
+Classic's page is #ECE9D8 and the grey is confined to the rails. And a dark-mode fill has to clear
+3:1 against the card while still carrying its label at 4.5:1, which a deep colour (Classic's navy,
+Marigold's gold-on-forest) cannot do with a white label; those palettes invert the dark fill to a
+light colour with a dark label (`--action-on`). Components must therefore always label an action
+fill with `text-action-on`, never with a literal white.
+
 ## Colour
 
 ### Action, the brand
@@ -215,7 +256,27 @@ these with `z-[var(--z-modal)]`, never with a bare number.
 Spacing, radii and control heights are tokens rather than per-component values, which is what makes
 the density setting possible. `ViewportDensityProvider` sets `data-ui-density="compact"` on the
 document element, and a single block in `tokens.css` re-declares the layout tokens at smaller
-values. No component needs to know the density.
+values. No component needs to know the density. Density is resolved from the viewport unless the
+user has chosen Comfortable, Compact or Dense in Settings; `resolveDensity()` in
+`lib/viewportDensity.ts` is the one place that decision is made, and the pre-paint script mirrors
+it.
+
+### Dense
+
+Dense is opt-in only: the viewport heuristic never returns it, and Compact's values do not move
+for it. Its token block lists itself beside compact, so it inherits compact's values and then
+tightens. It is split by input, and the split is the rule to keep when tuning it:
+
+- **Everywhere:** spacing that is never a touch target (workspace gaps and padding, card padding,
+  surface radii) and `--leading-relaxed-step`, which Tailwind's `leading-relaxed` reads through
+  `globals.css` (1.625 by default, 1.45 in Dense).
+- **`@media (pointer: fine)` only:** the root font size (14px) that every rem padding, row height
+  and control height hangs off, and `--control-height-lg`. On a coarse pointer Dense keeps
+  compact's 15px root and 3.25rem controls, so it never makes a touch target smaller than Compact
+  already does.
+
+`useViewportDensity().isCompact` is true for compact and dense alike, so layout code that narrows a
+rail for compact narrows it for dense too.
 
 | Token group | Members |
 | --- | --- |
@@ -232,6 +293,36 @@ tags, status badges and avatars.
 Adding a hard-coded padding or radius to a component opts that component out of the density
 setting. Use or extend the tokens instead. The radius tokens are also reachable as utilities:
 `rounded-surface`, `rounded-surface-subtle`, `rounded-surface-panel`.
+
+### Corner radii
+
+Every radius is a multiple of `--radius-scale` (1 by default). `globals.css` re-declares Tailwind's
+`rounded` and `rounded-xs` through `rounded-4xl` at their stock sizes times the scale, so
+`rounded-lg` is still 8px by default and still answers to the Corner style setting.
+`html[data-corners="subtle"]` sets the scale to 0.5 and `html[data-corners="square"]` to 0.
+
+Pills cannot be scaled (a pill is "half the height", not a length), so a text-bearing pill (a tag,
+a status badge, a count) uses `rounded-pill`, backed by `--pill-radius`. `rounded-full` is reserved
+for true circles (avatars, dots, round icon buttons, spinners), which stay circles in every corner
+style. An arbitrary radius must go through the scale, as in
+`rounded-[calc(5px*var(--radius-scale))]`; a bare `rounded-[5px]` ignores the setting.
+`radiusUsage.test.ts` fails on either slip: `rounded-full` with horizontal padding in one class
+string, or an arbitrary radius without the scale.
+
+Third-party stylesheets are brought under the scale where they draw corners: the typography
+plugin's `<pre>` and `<kbd>` (`globals.css`) and every fixed radius in react-datepicker's stylesheet
+(`datepicker-radius.css`, checked against the library by `datepickerRadius.test.ts`).
+
+**Deliberate exceptions.** These stay round under Subtle and Square, because their shape is what
+they are rather than a corner treatment:
+
+- circles: avatars, colour and status dots, round icon buttons (the chat button, calendar month
+  arrows), spinners, the selected day in the task deadline calendar, react-datepicker's clear
+  button;
+- switches: the `Switch` track and thumb, which read as a switch because they are round;
+- progress and level bars (uploads, document parsing, model downloads, the capture level meters):
+  thin rounded bars whose ends are not corners;
+- scrollbar thumbs.
 
 ### Width is a property of the surface, not of the app
 

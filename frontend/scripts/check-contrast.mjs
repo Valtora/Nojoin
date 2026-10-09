@@ -39,6 +39,14 @@ const TOKENS = resolve(ROOT, "src/app/tokens.css");
  * the :root inside the prefers-color-scheme media query.
  */
 const SITE_TOKENS = resolve(ROOT, "../site/src/styles/site-tokens.css");
+/**
+ * The optional colour palettes. Each one is a light block scoped
+ * `html[data-palette="x"]:not(.dark)` and a dark block scoped
+ * `html[data-palette="x"].dark`, overriding a subset of the tokens above. They
+ * are discovered rather than listed, so a new palette is audited the moment
+ * it exists.
+ */
+const PALETTES = resolve(ROOT, "src/app/palettes.css");
 
 /**
  * Thresholds.
@@ -507,6 +515,40 @@ const themes = [
     floats: false,
   },
 ];
+
+/**
+ * Palettes, in both themes, against the full app pairing list. The merges
+ * mirror palettes.css's selectors: the light block is scoped :not(.dark), so
+ * in light mode a palette is `:root` plus its light block, and in dark mode it
+ * is `:root` < `.dark` < its dark block, with the light block out of play. A
+ * palette missing either block is an error rather than a silent half-audit.
+ */
+const paletteCss = await readFile(PALETTES, "utf8");
+const paletteNames = Array.from(
+  paletteCss.matchAll(/^html\[data-palette="([\w-]+)"\]:not\(\.dark\)\s*\{/gm),
+  (match) => match[1],
+);
+if (paletteNames.length === 0) throw new Error("no palettes found in palettes.css");
+for (const name of paletteNames) {
+  const paletteLight = parseBlock(paletteCss, `html[data-palette="${name}"]:not(.dark)`);
+  const paletteDark = parseBlock(paletteCss, `html[data-palette="${name}"].dark`);
+  themes.push(
+    {
+      name: `palette-${name}-light`,
+      tokens: { ...light, ...paletteLight },
+      base: { ...light, ...paletteLight },
+      pairings: PAIRINGS,
+      floats: true,
+    },
+    {
+      name: `palette-${name}-dark`,
+      tokens: { ...dark, ...paletteDark },
+      base: light,
+      pairings: PAIRINGS,
+      floats: true,
+    },
+  );
+}
 
 const failures = [];
 const results = [];

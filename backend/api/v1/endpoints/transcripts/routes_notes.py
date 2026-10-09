@@ -11,7 +11,7 @@ from backend.api.deps import get_current_user, get_db
 from backend.core.task_dispatch import dispatch_task
 from backend.models.recording import Recording
 from backend.models.speaker import RecordingSpeaker
-from backend.models.transcript import Transcript
+from backend.models.transcript import TRANSCRIPTION_FAILED_NOTES_MESSAGE, Transcript
 from backend.models.user import User
 from backend.utils.config_manager import is_meeting_edge_enabled
 from backend.utils.llm_config import resolve_llm_config_async
@@ -203,6 +203,9 @@ async def generate_notes(
     result = await db.execute(stmt)
     transcript = result.scalar_one_or_none()
 
+    if transcript and transcript.transcription_failed():
+        raise HTTPException(status_code=409, detail=TRANSCRIPTION_FAILED_NOTES_MESSAGE)
+
     if not transcript or not transcript.segments:
         raise HTTPException(status_code=404, detail="Transcript not found or empty")
 
@@ -217,7 +220,7 @@ async def generate_notes(
     missing_llm_config = llm_config.missing_configuration_message()
     if missing_llm_config:
         transcript.notes_status = "error"
-        transcript.error_message = missing_llm_config
+        transcript.set_notes_error_message(missing_llm_config)
         db.add(transcript)
         await db.commit()
         raise HTTPException(
@@ -244,7 +247,7 @@ async def generate_notes(
 
     # 5. Call Worker Task
     transcript.notes_status = "generating"
-    transcript.error_message = None
+    transcript.set_notes_error_message(None)
     db.add(transcript)
     await db.commit()
 
