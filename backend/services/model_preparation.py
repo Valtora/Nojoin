@@ -186,9 +186,13 @@ async def resolve_install_transcription_selection(
     be read (a database error), the install config decides, as it did before
     startup read the users.
 
-    The read runs in a savepoint, so a failure rolls back only the read: the
-    health check passes the request's session, whose work must survive it.
+    The read runs in a savepoint, so a failed read rolls back only the read:
+    the health check passes the request's session, whose work must survive it.
+    Opening a savepoint flushes the caller's pending objects, and that flush is
+    the caller's work, not the read. It runs first, outside the fallback, so
+    its failure propagates to the caller.
     """
+    await session.flush()
     try:
         async with session.begin_nested():
             user_settings = await _read_active_user_settings(session)

@@ -20,11 +20,13 @@ from collections.abc import AsyncIterator
 
 import pytest
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
 from backend import preload_models
 from backend.api.services import health_service
+from backend.models.user import User
 from backend.services import model_preparation
 from backend.tests.sqlite_schemas import USERS_SCHEMA
 
@@ -391,6 +393,30 @@ def test_a_failed_users_read_leaves_a_postgres_transaction_usable(
             await engine.dispose()
 
     assert asyncio.run(run()) == 2
+
+
+def test_a_failed_flush_of_the_callers_pending_work_is_not_a_failed_read(
+    monkeypatch, caplog
+):
+    """Opening the read's savepoint flushes the caller's objects first.
+
+    That flush is the caller's work. Its failure must reach the caller rather
+    than be logged as an unreadable users table, with the work silently gone.
+    """
+    _use_config(monkeypatch, {})
+
+    async def run() -> None:
+        async with _users_db([("owner", True, None)]) as maker, maker() as session:
+            # A second row with the owner's id, which only the flush rejects.
+            session.add(User(id=1, username="duplicate", hashed_password="x"))
+            await model_preparation.resolve_install_transcription_selection(session)
+
+    with (
+        caplog.at_level(logging.WARNING, logger=model_preparation.__name__),
+        pytest.raises(IntegrityError),
+    ):
+        asyncio.run(run())
+    assert "config.json decides" not in caplog.text
 
 
 @pytest.mark.parametrize(
