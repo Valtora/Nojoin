@@ -70,9 +70,13 @@ async def test_validate_hf_token_revalidates_when_token_changes(monkeypatch) -> 
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("source", ["bundled", "cache", "external"])
 async def test_get_diarization_component_accepts_local_assets_without_hf_token(
+    source,
     monkeypatch,
 ) -> None:
+    """Every local source loads without a token, a personal-cache copy too."""
+
     async def _fake_keys(_db):
         return {"hf_token": None}
 
@@ -91,9 +95,9 @@ async def test_get_diarization_component_accepts_local_assets_without_hf_token(
     component, ready = await health_service._get_diarization_component(
         db=None,
         model_status={
-            "pyannote": {"downloaded": True, "source": "bundled"},
-            "embedding": {"downloaded": True, "source": "bundled"},
-            "segmentation": {"downloaded": True, "source": "bundled"},
+            "pyannote": {"downloaded": True, "source": source},
+            "embedding": {"downloaded": True, "source": source},
+            "segmentation": {"downloaded": True, "source": source},
         },
         download={"in_progress": False, "stage": None, "status": None},
     )
