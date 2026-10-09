@@ -754,11 +754,19 @@ export interface AudioDevice {
   is_default: boolean;
 }
 
+/** Where a found model lives. `external`: loadable, but outside the cache
+ * Nojoin manages (a personal Hugging Face cache), so it is not deleted from
+ * the UI. Only Pyannote models report a source. */
+export type ModelSource = "bundled" | "cache" | "external";
+
 export interface ModelStatusInfo {
   downloaded: boolean;
   path: string | null;
   checked_paths: string[];
-  source?: string;
+  source?: ModelSource;
+  /** Not downloaded, but the model's own entry is in Nojoin's model cache: a
+   * download that was cut off or is still running. It can be deleted. */
+  partial?: boolean;
 }
 
 export interface SystemModelStatus {
