@@ -10,6 +10,7 @@ import json
 import os
 import random
 import resource
+import select
 import shutil
 import signal
 import subprocess
@@ -650,10 +651,11 @@ def test_a_copied_track_decodes_to_the_source_samples(tmp_path: Path) -> None:
 
 
 def _noisy_recording(path: Path) -> None:
-    """Ten minutes of MP2 with one byte in 2,000 flipped: ffmpeg reports
-    decode errors as it goes, yet the file imports when left to finish."""
+    """Thirty seconds of 32 kb/s MP2 with one byte in 2,000 flipped: ffmpeg
+    reports decode errors as it goes, from its first seconds on."""
     _ffmpeg(
-        "-f", "lavfi", "-i", "sine=frequency=440:duration=600", "-c:a", "mp2", str(path)
+        *["-f", "lavfi", "-i", "sine=frequency=440:duration=30"],
+        *["-c:a", "mp2", "-b:a", "32k", str(path)],
     )
     data = bytearray(path.read_bytes())
     flips = random.Random(3)
@@ -662,29 +664,60 @@ def _noisy_recording(path: Path) -> None:
     path.write_bytes(bytes(data))
 
 
+# The test's bound on each wait for ffmpeg, which answers in milliseconds.
+_STOP_WAIT_S = 5
+# Less than a pipe holds (64 KiB on Linux), so writing it cannot block.
+_PIPED_BYTES = 48 * 1024
+
+
+def _first_report(process: subprocess.Popen) -> bytes:
+    """What ffmpeg has written to stderr, waiting at most ``_STOP_WAIT_S``."""
+    assert process.stderr is not None
+    ready, _, _ = select.select([process.stderr], [], [], _STOP_WAIT_S)
+    assert ready, "ffmpeg reported nothing about the noisy file"
+    return os.read(process.stderr.fileno(), 65536)
+
+
 @needs_ffmpeg
 def test_ffmpeg_stopped_by_sigterm_is_a_server_failure(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """A service or container stopping sends SIGTERM, which ffmpeg traps: it
     exits 255, not -15, after whatever it reported about a noisy file. The
-    file is not at fault."""
+    file is not at fault.
+
+    ffmpeg reads the start of the file from a pipe the test holds open, so it
+    is still running, blocked on a read, when the signal goes. The input then
+    ends, which is when ffmpeg 7.1 acts on the signal. Each wait is bounded.
+    """
     source = tmp_path / "noisy.mka"
     _noisy_recording(source)
+    piped = source.read_bytes()[:_PIPED_BYTES]
     real_run = subprocess.run
     stopped: list[subprocess.CalledProcessError] = []
 
     def run_until_stopped(cmd, **kwargs):
         if cmd[0] != "ffmpeg":
             return real_run(cmd, **kwargs)
-        # -re reads the input at its own pace, so the ten minutes cannot finish
-        # first; the signal goes once ffmpeg has reported an error.
+        cmd = ["pipe:0" if arg == str(source) else arg for arg in cmd]
         process = subprocess.Popen(
-            [cmd[0], "-re", *cmd[1:]], stdout=subprocess.PIPE, stderr=subprocess.PIPE
+            cmd,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
         )
-        reported = process.stderr.read(1) if process.stderr else b""
-        process.send_signal(signal.SIGTERM)
-        stdout, stderr = process.communicate()
+        try:
+            assert process.stdin is not None
+            process.stdin.write(piped)
+            process.stdin.flush()
+            reported = _first_report(process)
+            process.send_signal(signal.SIGTERM)
+            # Closes ffmpeg's input, then waits for it to exit.
+            stdout, stderr = process.communicate(timeout=_STOP_WAIT_S)
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait()
         stopped.append(
             subprocess.CalledProcessError(
                 process.returncode, cmd, stdout, reported + stderr
