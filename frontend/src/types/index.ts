@@ -446,6 +446,20 @@ export interface Settings {
   install_glossary_terms?: string;
   enable_vad?: boolean;
   enable_diarization?: boolean;
+  // Processing tuning (lib/processingTuning.ts). null means inherit the
+  // install's value, else the shipped default.
+  vad_threshold?: number | null;
+  asr_word_end_padding_s?: number | null;
+  phantom_max_duration_s?: number | null;
+  phantom_max_segments?: number | null;
+  phantom_embedding_floor?: number | null;
+  phantom_merge_threshold?: number | null;
+  word_flip_max_duration_s?: number | null;
+  word_flip_max_gap_s?: number | null;
+  // Read-only, from GET: the installation's config.json tuning values, keyed
+  // by tuning key (null where unset or unusable). Today it holds the phantom
+  // pair, which the floor/merge check counts for a field left empty.
+  processing_tuning_install?: Record<string, number | null>;
   spellcheck_language?: string;
 
     [key: string]: unknown;

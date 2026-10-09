@@ -2,7 +2,7 @@ import logging
 from typing import Any, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, ValidationInfo, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.deps import get_current_user, get_db
@@ -10,6 +10,16 @@ from backend.api.error_handling import sanitized_http_exception
 from backend.models.notes_template import NotesTemplate, NotesTemplateScope
 from backend.models.recording import Recording, RecordingStatus
 from backend.models.user import User
+from backend.processing.processing_tuning import (
+    PHANTOM_EMBEDDING_FLOOR_KEY,
+    PHANTOM_MERGE_THRESHOLD_KEY,
+    TUNING_KEYS,
+    TUNING_SPECS,
+    PhantomThresholdConflict,
+    normalise_tuning_value,
+    phantom_thresholds_conflict,
+    validate_tuning_candidate,
+)
 from backend.utils.config_manager import (
     APP_THEMES,
     INSTALL_WIDE_AI_SETTING_KEYS,
@@ -100,6 +110,30 @@ class SettingsUpdate(BaseModel):
     enable_diarization: Optional[bool] = None
     spellcheck_language: Optional[str] = None
     timezone: Optional[str] = None
+    # Processing tuning (backend/processing/processing_tuning.py). Explicit null
+    # resets a value to inherit.
+    vad_threshold: Optional[float] = None
+    asr_word_end_padding_s: Optional[float] = None
+    phantom_max_duration_s: Optional[float] = None
+    phantom_max_segments: Optional[int] = None
+    phantom_embedding_floor: Optional[float] = None
+    phantom_merge_threshold: Optional[float] = None
+    word_flip_max_duration_s: Optional[float] = None
+    word_flip_max_gap_s: Optional[float] = None
+
+    @field_validator(*TUNING_KEYS, mode="before")
+    @classmethod
+    def validate_processing_tuning(cls, value: Any, info: ValidationInfo) -> Any:
+        if value is None:
+            return value
+        key = str(info.field_name)
+        normalised = normalise_tuning_value(key, value)
+        if normalised is None:
+            spec = TUNING_SPECS[key]
+            raise ValueError(
+                f"Invalid {key}. Must be a number from {spec.minimum} to {spec.maximum}."
+            )
+        return normalised
 
     @field_validator("whisper_model_size")
     @classmethod
@@ -283,6 +317,92 @@ def _apply_default_user_settings(
         merged[key] = value
 
 
+PHANTOM_PAIR_KEYS = (PHANTOM_EMBEDDING_FLOOR_KEY, PHANTOM_MERGE_THRESHOLD_KEY)
+# Read-only in GET: the install's flat config.json tuning values the settings
+# page needs, keyed by tuning key (null where unset or unusable). Today that
+# is the phantom pair, so the page runs the floor/merge check on the values
+# processing will actually use.
+PROCESSING_TUNING_INSTALL_KEY = "processing_tuning_install"
+
+
+def _phantom_pair_in_effect(
+    install: dict[str, Any], user: dict[str, Any]
+) -> dict[str, Any]:
+    """The phantom pair as processing reads it: the user's values over the install's.
+
+    The worker's settings are ``config.json`` overlaid with the user's non-null
+    values, so checking the pair against anything else could accept a pair
+    processing then discards, or reject one it would use.
+    """
+    return {
+        key: user[key] if user.get(key) is not None else install.get(key)
+        for key in PHANTOM_PAIR_KEYS
+    }
+
+
+def _normalise_processing_tuning(
+    merged: dict[str, Any], install: dict[str, Any]
+) -> None:
+    """Show unusable stored tuning values as unset, and add the install's pair.
+
+    The settings page saves the whole object it was given, so a stored value
+    that no longer validates (hand-edited, restored from a backup, or written
+    before a bound tightened) would otherwise make every later save fail.
+    Processing ignores such a value too. A stored phantom value that conflicts
+    with the other half in effect is cleared for the same reason.
+
+    Unusable values are cleared first, so the conflict check sees exactly what
+    the page will post back: an unset half then counts as the install's value,
+    as it will once that save lands, and the post-back always passes.
+    """
+    for key in TUNING_KEYS:
+        merged[key] = normalise_tuning_value(key, merged.get(key))
+    if phantom_thresholds_conflict(_phantom_pair_in_effect(install, merged)):
+        for key in PHANTOM_PAIR_KEYS:
+            merged[key] = None
+    merged[PROCESSING_TUNING_INSTALL_KEY] = {
+        key: normalise_tuning_value(key, install.get(key)) for key in PHANTOM_PAIR_KEYS
+    }
+
+
+def _validate_processing_tuning(
+    candidate: dict[str, Any], update_data: dict[str, Any]
+) -> None:
+    """Reject a save that would leave the phantom thresholds unusable.
+
+    Checked on the pair processing would use: the user's values over the
+    install's ``config.json`` ones. Skipped when the save does not touch the
+    pair, so a conflict already stored on the row (which processing ignores)
+    cannot block unrelated saves, and when the user sets neither half, since a
+    conflict then lies in the install's own values, which processing also
+    ignores.
+
+    Raises:
+        PhantomThresholdConflict: The floor would not be below the merge
+            threshold; the message names each value and any that comes from
+            the install.
+    """
+    if not set(PHANTOM_PAIR_KEYS).intersection(update_data):
+        return
+    if all(candidate.get(key) is None for key in PHANTOM_PAIR_KEYS):
+        return
+    install = config_manager.get_all()
+    try:
+        validate_tuning_candidate(_phantom_pair_in_effect(install, candidate))
+    except PhantomThresholdConflict as exc:
+        inherited = [
+            f"{key} to {value}"
+            for key in PHANTOM_PAIR_KEYS
+            if candidate.get(key) is None
+            and (value := normalise_tuning_value(key, install.get(key))) is not None
+        ]
+        if inherited:
+            raise PhantomThresholdConflict(
+                f"{exc} The installation sets {' and '.join(inherited)}."
+            ) from exc
+        raise
+
+
 def _persist_install_wide_ai_settings(update_data: dict[str, Any]) -> None:
     """Write the install-wide keys to config.json.
 
@@ -336,6 +456,7 @@ async def _merge_settings(user_settings: dict, db: AsyncSession) -> dict:
         merged.update(
             {k: v for k, v in sanitized_user_settings.items() if v is not None}
         )
+    _normalise_processing_tuning(merged, config_manager.get_all())
 
     # 4. Inject system API keys (from Admin DB or .env) globally
     from backend.utils.config_manager import async_get_system_api_keys
@@ -475,10 +596,21 @@ async def _save_user_settings(
             )
         for key, value in update_data.items():
             config_manager.validate_config_value(key, value)
-        candidate_language_settings = get_default_user_settings()
-        candidate_language_settings.update(current_settings)
-        candidate_language_settings.update(update_data)
-        validate_language_settings(candidate_language_settings)
+        candidate_settings = get_default_user_settings()
+        candidate_settings.update(current_settings)
+        candidate_settings.update(update_data)
+        validate_language_settings(candidate_settings)
+        _validate_processing_tuning(candidate_settings, update_data)
+    except PhantomThresholdConflict as e:
+        # Only this error's message is shown: it holds key names and numbers,
+        # and names an install value the user cannot see on the page.
+        raise sanitized_http_exception(
+            logger=logger,
+            status_code=400,
+            client_message=str(e),
+            log_message="Rejected settings update: phantom thresholds conflict.",
+            exc=e,
+        )
     except ValueError as e:
         raise sanitized_http_exception(
             logger=logger,
