@@ -7,6 +7,7 @@ import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from sqlalchemy import update
 from sqlmodel import select
 
 from backend.models.pipeline import RecordingAudioChunk
@@ -256,61 +257,120 @@ def cleanup_recording_audio_chunks(
     return cleaned_count
 
 
-# A chunked import being finalized is claimed by moving it from UPLOADING to
-# RECORDED (the model's default status, assigned by nothing else and swept by
-# nothing) with this step, before its audio is extracted outside any
-# transaction. The step tells the claim apart from a RECORDED row of any other
-# origin.
+# A chunked import being finalized stays UPLOADING, so every guard that keeps an
+# upload from being reprocessed, shown as finished or swept still applies. Its
+# finalize claims it by setting this step in one conditional UPDATE, committed
+# before the audio is extracted outside any transaction; ``updated_at`` dates
+# the claim. A finalize's ffmpeg and ffprobe runs are bounded well within
+# FINALIZE_CLAIM_STALE_AFTER (about 66 minutes at worst), so an older claim has
+# no request behind it: the next finalize takes it over, and the daily cleanup
+# releases it.
 FINALIZING_IMPORT_STEP = "Finalizing import"
 IMPORT_FINALIZING_CODE = "import_finalizing"
+FINALIZE_CLAIM_STALE_AFTER = timedelta(hours=2)
 STALE_FINALIZE_CLAIM_DETAIL = (
     "This import was interrupted before its audio was kept. Delete this "
     "recording and import the file again."
 )
-FINALIZING_IMPORT_STATUS = RecordingStatus.RECORDED
 
 
-def is_finalizing_import(status, processing_step: str | None) -> bool:
-    """The recording is claimed by a chunked-import finalize."""
+def finalize_claim_cutoff(now: datetime | None = None) -> datetime:
+    """A finalize claim dated at or before this is stale."""
+    return (now or utc_now()) - FINALIZE_CLAIM_STALE_AFTER
+
+
+def finalize_claim_outlived(held_for_seconds: float) -> bool:
+    """A finalize that has held its claim this long may have lost it to another."""
+    return held_for_seconds >= FINALIZE_CLAIM_STALE_AFTER.total_seconds()
+
+
+def is_finalizing_import(recording: Recording, now: datetime | None = None) -> bool:
+    """A live finalize holds ``recording``: its claim is set and not stale."""
     return (
-        status == FINALIZING_IMPORT_STATUS and processing_step == FINALIZING_IMPORT_STEP
+        recording.status == RecordingStatus.UPLOADING
+        and recording.processing_step == FINALIZING_IMPORT_STEP
+        and recording.updated_at > finalize_claim_cutoff(now)
     )
+
+
+def remove_finalize_leftovers(
+    audio_path: str | None, *, logger: logging.Logger
+) -> None:
+    """Delete what a finalize wrote beside a chunked import.
+
+    That is the reassembled upload (``audio_path``, which can hold video) and
+    any audio extracted from it, finished or partial: ``keep_imported_audio``
+    names its output after the upload.
+    """
+    resolved = _resolve_path_within_recordings_root(audio_path)
+    if resolved is None:
+        return
+    for path in resolved.parent.glob(f"{resolved.stem}.*"):
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            continue
+        except OSError as error:
+            logger.warning("Failed to delete import leftover %s: %s", path, error)
 
 
 def release_stale_finalize_claims(
     session,
     *,
     logger: logging.Logger,
-    max_age_hours: int = 2,
     now: datetime | None = None,
 ) -> int:
-    """Mark ERROR the chunked imports a crashed finalize left claimed.
+    """Mark ERROR the chunked imports whose finalize died mid-extraction.
 
-    A finalize claims its import, extracts the audio and then queues it, all
-    within one request bounded by ffmpeg timeouts of minutes. A claim older
-    than ``max_age_hours`` has no request left behind it: the process died
-    mid-extraction. Its parts stay in the upload temp directory for the usual
-    sweep, and the recording says what happened instead of looking busy.
+    Settled as a finalize the server failed is: the recording is marked ERROR
+    with a note to import the file again, its parts move to ``failed/``, and
+    the reassembled upload and any extracted audio are deleted, so a retry can
+    never process a video container as audio. Each release is a conditional
+    UPDATE, so a finalize that took the claim over first keeps it.
     """
-    cutoff = (now or utc_now()) - timedelta(hours=max_age_hours)
-    stale = session.exec(
-        select(Recording)
-        .where(Recording.status == FINALIZING_IMPORT_STATUS)
-        .where(Recording.processing_step == FINALIZING_IMPORT_STEP)
-        .where(Recording.updated_at <= cutoff)
+    cutoff = finalize_claim_cutoff(now)
+    stale_claim = (
+        (Recording.status == RecordingStatus.UPLOADING)
+        & (Recording.processing_step == FINALIZING_IMPORT_STEP)
+        & (Recording.updated_at <= cutoff)
+    )
+    candidates = session.exec(
+        select(Recording.id, Recording.audio_path).where(stale_claim)
     ).all()
-    for recording in stale:
-        recording.status = RecordingStatus.ERROR
-        recording.client_status = ClientStatus.IDLE
-        recording.processing_step = STALE_FINALIZE_CLAIM_DETAIL
-        session.add(recording)
+    released = 0
+    for recording_id, audio_path in candidates:
+        result = session.execute(
+            update(Recording)
+            .where(Recording.id == recording_id)
+            .where(stale_claim)
+            .values(
+                status=RecordingStatus.ERROR,
+                client_status=ClientStatus.IDLE,
+                processing_step=STALE_FINALIZE_CLAIM_DETAIL,
+            )
+        )
+        if result.rowcount != 1:
+            continue
+        session.commit()
+        try:
+            failed_root = move_recording_upload_to_failed(recording_id, logger=logger)
+        except OSError as error:
+            logger.error("Failed to move import parts to the failed dir: %s", error)
+            failed_root = None
+        mark_recording_audio_chunks_ready_for_cleanup(
+            session,
+            recording_id=recording_id,
+            upload_status="failed",
+            moved_to=failed_root,
+        )
+        session.commit()
+        remove_finalize_leftovers(audio_path, logger=logger)
+        released += 1
         logger.warning(
             "Released the finalize claim on recording %s, interrupted mid-import",
-            recording.id,
+            recording_id,
         )
-    if stale:
-        session.commit()
-    return len(stale)
+    return released
 
 
 def cleanup_orphaned_uploading_recordings(
@@ -385,7 +445,10 @@ def mark_recording_audio_chunks_ready_for_cleanup(
     *,
     recording_id: int,
     upload_status: str = "finalized",
+    moved_to: Path | None = None,
 ) -> int:
+    """Date a recording's chunk rows for cleanup; ``moved_to`` is where their
+    files went (``move_recording_upload_to_failed``), if they moved."""
     rows = session.exec(
         select(RecordingAudioChunk).where(
             RecordingAudioChunk.recording_id == recording_id
@@ -396,6 +459,8 @@ def mark_recording_audio_chunks_ready_for_cleanup(
 
     deadline = chunk_cleanup_deadline()
     for row in rows:
+        if moved_to is not None:
+            row.storage_path = str(moved_to / Path(row.storage_path).name)
         row.upload_status = upload_status
         row.cleanup_eligible_at = deadline
         session.add(row)

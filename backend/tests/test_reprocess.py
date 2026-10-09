@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import shutil
 import subprocess
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -19,6 +20,7 @@ from backend.api.deps import get_current_user, get_db
 from backend.api.v1.api import api_router
 from backend.models.document import Document
 from backend.models.tag import RecordingTag
+from backend.utils.time import utc_now
 
 RECORDINGS_SCHEMA = """
 CREATE TABLE recordings (
@@ -2138,6 +2140,14 @@ async def test_a_server_failure_while_finalizing_keeps_the_parts_for_recovery(
         ).one()
     assert status == "ERROR"
     assert step == routes_import_upload._CHUNKED_SERVER_FAILURE_STEP
+    # A client whose proxy lost that answer and retries is told the same.
+    async with test_session_maker() as session:
+        public_id = (
+            await session.execute(text("SELECT public_id FROM recordings"))
+        ).scalar_one()
+    retry = await _finalize(client, public_id)
+    assert retry.status_code == 400
+    assert retry.json()["detail"] == routes_import_upload._CHUNKED_SERVER_FAILURE_STEP
 
 
 async def _start_chunked_import(client: AsyncClient, source: Path) -> str:
@@ -2191,13 +2201,64 @@ async def test_finalize_again_returns_the_import_without_redoing_it(
 
 @pytest.mark.anyio
 @pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg is not installed")
+async def test_finalize_takes_over_a_claim_a_crash_left(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """A claim older than any finalize can take has no request behind it: the
+    next finalize takes it over and clears what the dead one wrote."""
+    source = tmp_path / "screen.mkv"
+    _screen_recording(source, ["-c:a", "aac"])
+    recordings_dir = tmp_path / "recordings"
+    recordings_dir.mkdir()
+    calls = _patch_delay(monkeypatch)
+    monkeypatch.setenv("RECORDINGS_DIR", str(recordings_dir))
+    recording_id = await _start_chunked_import(client, source)
+    async with test_session_maker() as session:
+        await session.execute(
+            text(
+                "UPDATE recordings SET processing_step = 'Finalizing import',"
+                " updated_at = :claimed_at"
+            ),
+            {"claimed_at": utc_now() - timedelta(hours=3)},
+        )
+        await session.commit()
+        upload = Path(
+            (
+                await session.execute(text("SELECT audio_path FROM recordings"))
+            ).scalar_one()
+        )
+    upload.write_bytes(b"half reassembled")
+    partial = upload.with_name(f"{upload.stem}.0123abcd.m4a")
+    partial.write_bytes(b"half extracted")
+
+    response = await _finalize(client, recording_id)
+
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "QUEUED"
+    assert len(calls) == 1
+    assert not partial.exists()
+    assert not upload.exists()
+    async with test_session_maker() as session:
+        stored = (
+            await session.execute(text("SELECT audio_path FROM recordings"))
+        ).scalar_one()
+    assert [path for path in recordings_dir.iterdir() if path.is_file()] == [
+        Path(stored)
+    ]
+
+
+@pytest.mark.anyio
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg is not installed")
 @pytest.mark.parametrize(
     ("other_state", "expected"),
     [
         # The other finalize has finished: this one returns its recording.
         ("status = 'QUEUED'", 200),
         # The other finalize holds the claim: this one says so at once.
-        ("status = 'RECORDED', processing_step = 'Finalizing import'", 409),
+        ("processing_step = 'Finalizing import'", 409),
     ],
     ids=["other-finished", "other-running"],
 )

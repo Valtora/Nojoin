@@ -48,10 +48,12 @@ from backend.utils.recording_audio_sync import (
 )
 from backend.utils.recording_storage import (
     RECORDING_UPLOAD_RETENTION_HOURS,
+    is_finalizing_import,
 )
 from backend.utils.time import utc_now
 
 from .constants import (
+    IMPORT_BEING_FINALIZED_DETAIL,
     LOSSY_AUDIO_SUFFIXES,
     SEGMENT_CONTENT_TYPE_SUFFIXES,
     STATUS_UPDATES_CLOSED_DETAIL,
@@ -760,6 +762,16 @@ def _ensure_recording_accepts_status_updates(recording: Recording) -> None:
         )
 
 
+def _refuse_while_finalizing_import(recording: Recording) -> None:
+    """Refuse to touch an import whose finalize is extracting its audio.
+
+    The claimed import is still UPLOADING, but its files are being read and
+    its row is about to be queued, so nothing else may change either.
+    """
+    if is_finalizing_import(recording):
+        raise HTTPException(status_code=409, detail=IMPORT_BEING_FINALIZED_DETAIL)
+
+
 def _ensure_recording_can_finalize_upload(recording: Recording) -> None:
     # PAUSED is accepted so a capture whose browser runtime is gone can still be
     # finalized (issue #166). Requiring a resume first meant the client had to
@@ -772,6 +784,7 @@ def _ensure_recording_can_finalize_upload(recording: Recording) -> None:
             status_code=409,
             detail=UPLOAD_CLOSED_DETAIL,
         )
+    _refuse_while_finalizing_import(recording)
 
 
 def generate_default_meeting_name() -> str:

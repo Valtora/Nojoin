@@ -97,6 +97,7 @@ from .helpers import (
     _quarantine_corrupt_browser_segments,
     _recording_has_audio,
     _recording_has_proxy,
+    _refuse_while_finalizing_import,
     _requeue_for_processing,
     _rescue_pending_browser_segments_for_finalize,
     _reset_generated_recording_state,

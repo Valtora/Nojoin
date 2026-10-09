@@ -289,24 +289,34 @@ def test_reaper_ignores_recordings_past_the_uploading_state(
 
 def test_a_finalize_claim_a_crash_left_is_released(storage_root: Path) -> None:
     """Only a claim older than any finalize can take is released, and only a
-    claim: a RECORDED row without the finalize step is left alone."""
+    claim: an UPLOADING row without the finalize step is left alone. A release
+    settles the import as a failed finalize: parts to failed/, and nothing
+    left that a retry could process as audio."""
     engine = _make_engine()
+    upload = storage_root / "9e736055.mkv"
+    partial = storage_root / "9e736055.0123abcd.webm"
+    unrelated = storage_root / "5d1c0a2b.mkv"
+    for path in (upload, partial, unrelated):
+        path.write_bytes(b"media")
+    parts = recording_upload_temp_dir(1, create=True)
+    (parts / "0.part").write_bytes(b"part")
     with engine.begin() as connection:
-        for recording_id, claimed_at, step in (
-            (1, _NOW - timedelta(hours=3), FINALIZING_IMPORT_STEP),
-            (2, _NOW - timedelta(minutes=30), FINALIZING_IMPORT_STEP),
-            (3, _NOW - timedelta(hours=3), None),
+        for recording_id, claimed_at, step, audio_path in (
+            (1, _NOW - timedelta(hours=3), FINALIZING_IMPORT_STEP, upload),
+            (2, _NOW - timedelta(minutes=30), FINALIZING_IMPORT_STEP, unrelated),
+            (3, _NOW - timedelta(hours=3), None, unrelated),
         ):
             _insert_recording(
                 connection,
                 recording_id=recording_id,
-                status="RECORDED",
                 created_at=claimed_at,
+                audio_path=str(audio_path),
             )
             connection.execute(
                 text("UPDATE recordings SET processing_step = :step WHERE id = :id"),
                 {"step": step, "id": recording_id},
             )
+        _insert_chunk(connection, recording_id=1, storage_path=str(parts / "0.part"))
 
     with Session(engine) as session:
         released = release_stale_finalize_claims(
@@ -318,8 +328,18 @@ def test_a_finalize_claim_a_crash_left_is_released(storage_root: Path) -> None:
         rows = session.execute(
             text("SELECT id, status, processing_step FROM recordings ORDER BY id")
         ).all()
+        chunk_status, chunk_path = session.execute(
+            text("SELECT upload_status, storage_path FROM recording_audio_chunks")
+        ).one()
     assert [tuple(row) for row in rows] == [
         (1, "ERROR", STALE_FINALIZE_CLAIM_DETAIL),
-        (2, "RECORDED", FINALIZING_IMPORT_STEP),
-        (3, "RECORDED", None),
+        (2, "UPLOADING", FINALIZING_IMPORT_STEP),
+        (3, "UPLOADING", None),
     ]
+    assert not upload.exists()
+    assert not partial.exists()
+    assert unrelated.exists()
+    assert not parts.exists()
+    assert chunk_status == "failed"
+    assert "failed" in Path(chunk_path).parts
+    assert Path(chunk_path).read_bytes() == b"part"

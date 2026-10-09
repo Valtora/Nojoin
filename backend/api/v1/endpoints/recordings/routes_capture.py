@@ -140,6 +140,7 @@ async def pause_upload(
         raise HTTPException(
             status_code=409, detail=recordings_module.UPLOAD_CLOSED_DETAIL
         )
+    recordings_module._refuse_while_finalizing_import(recording)
 
     if recording.status != RecordingStatus.PAUSED:
         recording.status = RecordingStatus.PAUSED
@@ -609,6 +610,8 @@ async def discard_upload(
     pipeline is actively running (``PROCESSING``). Whatever stage it is at, the
     backend revokes any running Celery task, removes every on-disk artefact, and
     deletes the recording row so no manual cancel-then-delete is required.
+    An import whose finalize is extracting its audio is refused with 409
+    until that finalize settles it.
     """
     recording = await recordings_module._get_owned_recording(
         db, recording_id, current_user.id
@@ -625,6 +628,7 @@ async def discard_upload(
             status_code=400,
             detail="Only in-flight or processing recordings can be discarded",
         )
+    recordings_module._refuse_while_finalizing_import(recording)
 
     if reason:
         logger.info(
