@@ -1,9 +1,15 @@
+import logging
+
 from .constants import *
 from .diarization import *
 from .segmentation import *
 from .speaker import *
 from .speaker_matching import _find_matching_recording_speaker  # noqa: F401
 from .startup import *
+
+# Its own logger, not the one the star imports bring in, so a record names
+# this module.
+logger = logging.getLogger(__name__)
 
 
 def recording_ready_for_canonical_backfill(
