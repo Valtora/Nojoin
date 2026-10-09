@@ -239,7 +239,7 @@ def _combine_word_level(segments, speaker_turns):
         if "words" in seg:
             all_words.extend(seg["words"])
 
-    logger.info(f"_combine_word_level: Processing {len(all_words)} words")
+    logger.debug(f"_combine_word_level: Processing {len(all_words)} words")
 
     final_segments = []
     current_segment = {
@@ -379,7 +379,7 @@ def _combine_word_level(segments, speaker_turns):
     for seg in final_segments:
         spk = seg["speaker"]
         speaker_counts[spk] = speaker_counts.get(spk, 0) + 1
-    logger.info(
+    logger.debug(
         f"_combine_word_level: Created {len(final_segments)} segments with speaker distribution: {speaker_counts}"
     )
 
