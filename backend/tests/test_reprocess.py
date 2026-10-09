@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import shutil
 import subprocess
+import threading
 from pathlib import Path
 
 import pytest
@@ -1959,7 +1960,12 @@ async def test_recording_info_describes_the_audio_not_the_video(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    """/info agrees with the stored length and leaves the video's bytes out."""
+    """/info agrees with the stored length and leaves the video's bytes out.
+
+    Its probe runs off the event loop, so a slow one cannot stall the API.
+    """
+    from backend.processing import audio_preprocessing
+
     source = tmp_path / "screen.mov"
     _ffmpeg(
         *["-f", "lavfi", "-i", "testsrc=size=320x240:rate=25:duration=6"],
@@ -1974,9 +1980,19 @@ async def test_recording_info_describes_the_audio_not_the_video(
 
     imported = await _post_upload(client, "import", source, "screen.mov")
     assert imported.status_code == 200, imported.text
+    probe_threads: list[int] = []
+    real_analyze = audio_preprocessing.analyze_audio_file
+
+    def analyze(path: str):
+        probe_threads.append(threading.get_ident())
+        return real_analyze(path)
+
+    monkeypatch.setattr(audio_preprocessing, "analyze_audio_file", analyze)
     response = await client.get(f"/api/v1/recordings/{imported.json()['id']}/info")
 
     assert response.status_code == 200, response.text
+    assert probe_threads
+    assert threading.get_ident() not in probe_threads
     original = response.json()["original"]
     async with test_session_maker() as session:
         stored = (

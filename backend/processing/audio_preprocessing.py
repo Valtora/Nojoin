@@ -259,7 +259,8 @@ def convert_wav_to_mp3(input_wav_path: str, output_mp3_path: str) -> bool:
 def analyze_audio_file(file_path: str) -> Optional[Dict]:
     """
     Analyze an audio file and return basic information.
-    Returns None if analysis fails.
+    Returns None if analysis fails, including when ffprobe runs past
+    ``FFPROBE_TIMEOUT_S`` and is killed.
 
     Describes the audio track ffmpeg decodes. For a file that also carries
     video, the duration and bitrate are that track's, not the container's,
@@ -268,6 +269,7 @@ def analyze_audio_file(file_path: str) -> Optional[Dict]:
     """
     try:
         from backend.utils.audio import (
+            FFPROBE_TIMEOUT_S,
             audio_duration_from_probe,
             decoded_audio_stream,
             ensure_ffmpeg_in_path,
@@ -285,7 +287,9 @@ def analyze_audio_file(file_path: str) -> Optional[Dict]:
             "-show_streams",
             file_path,
         ]
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, check=True, timeout=FFPROBE_TIMEOUT_S
+        )
         data = json.loads(result.stdout)
 
         format_info = data.get("format", {})

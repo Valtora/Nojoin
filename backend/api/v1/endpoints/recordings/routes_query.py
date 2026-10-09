@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 from datetime import UTC, datetime, timedelta, timezone
@@ -440,6 +441,9 @@ async def get_recording_info(
 ) -> Any:
     """
     Get detailed technical info about the recording audio file.
+
+    Each ffprobe runs in a worker thread, so a slow or hung probe does not
+    block the event loop.
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
 
@@ -448,10 +452,14 @@ async def get_recording_info(
     info = {"original": None, "proxy": None}
 
     if recording.audio_path and os.path.exists(recording.audio_path):
-        info["original"] = analyze_audio_file(recording.audio_path)
+        info["original"] = await asyncio.to_thread(
+            analyze_audio_file, recording.audio_path
+        )
 
     if recording.proxy_path and os.path.exists(recording.proxy_path):
-        info["proxy"] = analyze_audio_file(recording.proxy_path)
+        info["proxy"] = await asyncio.to_thread(
+            analyze_audio_file, recording.proxy_path
+        )
 
     return info
 

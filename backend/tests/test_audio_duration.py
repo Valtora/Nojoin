@@ -12,6 +12,7 @@ import subprocess
 
 import pytest
 
+from backend.processing import audio_preprocessing
 from backend.utils import audio
 from backend.utils.audio import (
     FFPROBE_TIMEOUT_S,
@@ -159,4 +160,18 @@ def test_a_hung_ffprobe_is_ended_and_reported(monkeypatch) -> None:
 
     with pytest.raises(RuntimeError, match="Failed to get audio duration"):
         audio.get_audio_duration("meeting.mkv")
+    assert seen["timeout"] == FFPROBE_TIMEOUT_S
+
+
+def test_a_hung_analysis_probe_is_ended(monkeypatch) -> None:
+    """/info and the upload bitrate floor probe through analyze_audio_file."""
+    seen: dict = {}
+
+    def hung(cmd, **kwargs):
+        seen.update(kwargs)
+        raise subprocess.TimeoutExpired(cmd, kwargs["timeout"])
+
+    monkeypatch.setattr(audio_preprocessing.subprocess, "run", hung)
+
+    assert audio_preprocessing.analyze_audio_file("meeting.mkv") is None
     assert seen["timeout"] == FFPROBE_TIMEOUT_S
