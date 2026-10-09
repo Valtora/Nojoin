@@ -26,6 +26,7 @@ from sqlalchemy.pool import StaticPool
 
 from backend import preload_models
 from backend.api.services import health_service
+from backend.celery_app import GPU_QUEUE, celery_app
 from backend.models.user import User
 from backend.services import model_preparation
 from backend.tests.sqlite_schemas import USERS_SCHEMA
@@ -157,10 +158,11 @@ async def _users_db(
 
 
 def _capture_dispatch(monkeypatch) -> list[dict]:
+    """Record each task sent to the broker: its name, kwargs and options."""
     dispatched: list[dict] = []
 
-    async def fake_dispatch(name, *, kwargs, ignore_result):
-        dispatched.append(kwargs)
+    async def fake_dispatch(name, *, kwargs, **options):
+        dispatched.append({"name": name, "kwargs": kwargs, **options})
         return type("Task", (), {"id": "task-1"})()
 
     monkeypatch.setattr(model_preparation, "dispatch_task", fake_dispatch)
@@ -176,7 +178,7 @@ def _startup_dispatch(
     *,
     with_users_table: bool = True,
 ) -> list[dict]:
-    """Run the startup entry point over these users; return each task's kwargs."""
+    """Run the startup entry point over these users; return what it sent."""
     dispatched = _capture_dispatch(monkeypatch)
 
     async def run() -> None:
@@ -185,6 +187,30 @@ def _startup_dispatch(
 
     asyncio.run(run())
     return dispatched
+
+
+def _in_run_order(dispatched: list[dict]) -> list[dict]:
+    """Each sent task's kwargs, followed by those of the tasks linked after it."""
+    tasks = []
+    for message in dispatched:
+        tasks.append(message["kwargs"])
+        follower = message.get("link")
+        while follower is not None:
+            tasks.append(follower.kwargs)
+            (follower,) = follower.options.get("link", [None])
+    return tasks
+
+
+def _startup_tasks(
+    monkeypatch,
+    users: list[tuple[str, bool, object]],
+    *,
+    with_users_table: bool = True,
+) -> list[dict]:
+    """Run the startup entry point; return each task's kwargs in run order."""
+    return _in_run_order(
+        _startup_dispatch(monkeypatch, users, with_users_table=with_users_table)
+    )
 
 
 def _run_on_the_worker(tasks: list[dict]) -> None:
@@ -197,7 +223,7 @@ def _config_dispatch(monkeypatch) -> dict:
     """The task kwargs of the config-only path startup used before reading users."""
     dispatched = _capture_dispatch(monkeypatch)
     asyncio.run(model_preparation.enqueue_model_preparation(include_core=True))
-    return dispatched[0]
+    return dispatched[0]["kwargs"]
 
 
 def test_startup_skips_whisper_when_the_owner_chose_parakeet_in_settings(
@@ -206,7 +232,7 @@ def test_startup_skips_whisper_when_the_owner_chose_parakeet_in_settings(
     """The UI writes the engine to the owner's row; config.json still says whisper."""
     _use_config(monkeypatch, {})
 
-    tasks = _startup_dispatch(
+    tasks = _startup_tasks(
         monkeypatch, [("owner", True, {"transcription_backend": "parakeet"})]
     )
     _run_on_the_worker(tasks)
@@ -220,7 +246,7 @@ def test_startup_keeps_whisper_while_any_user_transcribes_with_it(
 ):
     _use_config(monkeypatch, {"transcription_backend": "whisper"})
 
-    tasks = _startup_dispatch(
+    tasks = _startup_tasks(
         monkeypatch,
         [
             ("user", True, {"whisper_model_size": "small"}),
@@ -235,10 +261,44 @@ def test_startup_keeps_whisper_while_any_user_transcribes_with_it(
     assert prepared == ["whisper:small", "pyannote", "onnx:canary/nemo-canary-1b-v2"]
 
 
+def test_startup_queues_the_owners_engine_only_once_the_whisper_task_succeeds(
+    monkeypatch,
+):
+    """Both tasks write one progress key. Queued independently, the second
+    would clear a failed first task's error and end on "complete"."""
+    _use_config(monkeypatch, {"transcription_backend": "whisper"})
+
+    dispatched = _startup_dispatch(
+        monkeypatch,
+        [
+            ("owner", True, {"transcription_backend": "parakeet"}),
+            ("user", True, None),
+        ],
+    )
+
+    # Only the Whisper task is sent; the owner's engine is linked to it, and
+    # the worker queues a link only when the task it hangs on succeeds.
+    (message,) = dispatched
+    assert message["kwargs"]["transcription_backend"] == "whisper"
+    follower = message["link"]
+    assert follower.task == model_preparation.MODEL_PREPARATION_TASK
+    assert follower.kwargs["transcription_backend"] == "parakeet"
+    assert follower.kwargs["include_core"] is False
+    assert follower.options["ignore_result"] is True
+    assert "link" not in follower.options
+    # The worker hands a link the finished task's return value as its first
+    # positional argument (hf_token, here); the linked task must drop it.
+    assert follower.clone(args=({"status": "success"},)).args == ()
+    route = celery_app.amqp.router.route(
+        dict(follower.options), follower.task, (), follower.kwargs
+    )
+    assert route["queue"].name == GPU_QUEUE
+
+
 def test_startup_ignores_deactivated_users(prepared, monkeypatch):
     _use_config(monkeypatch, {"transcription_backend": "parakeet"})
 
-    tasks = _startup_dispatch(
+    tasks = _startup_tasks(
         monkeypatch,
         [
             ("owner", True, None),
@@ -256,7 +316,7 @@ def test_startup_before_any_user_exists_follows_the_install_config(
 ):
     _use_config(monkeypatch, {"transcription_backend": configured})
 
-    tasks = _startup_dispatch(monkeypatch, [])
+    tasks = _startup_tasks(monkeypatch, [])
 
     assert tasks == [_config_dispatch(monkeypatch)]
     assert tasks[0]["transcription_backend"] == configured
@@ -285,7 +345,7 @@ def test_startup_tasks_use_only_arguments_older_workers_accept(
 ):
     _use_config(monkeypatch, {"transcription_backend": configured})
 
-    tasks = _startup_dispatch(
+    tasks = _startup_tasks(
         monkeypatch,
         [
             ("owner", True, {"transcription_backend": owner_engine}),
@@ -301,7 +361,7 @@ def test_startup_does_not_count_an_empty_engine_as_whisper(prepared, monkeypatch
     """The pipeline keeps a stored "" over config and fails, so it needs no Whisper."""
     _use_config(monkeypatch, {"transcription_backend": "whisper"})
 
-    tasks = _startup_dispatch(
+    tasks = _startup_tasks(
         monkeypatch,
         [
             ("owner", True, {"transcription_backend": "parakeet"}),
@@ -319,7 +379,7 @@ def test_startup_falls_back_to_the_config_when_the_users_cannot_be_read(
     _use_config(monkeypatch, {"transcription_backend": "whisper"})
 
     with caplog.at_level(logging.WARNING, logger=model_preparation.__name__):
-        tasks = _startup_dispatch(monkeypatch, [], with_users_table=False)
+        tasks = _startup_tasks(monkeypatch, [], with_users_table=False)
     _run_on_the_worker(tasks)
 
     assert tasks == [_config_dispatch(monkeypatch)]
@@ -433,7 +493,7 @@ def test_a_malformed_settings_row_falls_back_to_the_config_for_that_user_only(
     """One bad row must not move the owner's engine back to config.json's."""
     _use_config(monkeypatch, {"transcription_backend": "whisper"})
 
-    tasks = _startup_dispatch(
+    tasks = _startup_tasks(
         monkeypatch,
         [
             ("owner", True, {"transcription_backend": "parakeet"}),

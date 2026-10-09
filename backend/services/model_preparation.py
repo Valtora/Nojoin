@@ -3,11 +3,13 @@ import logging
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from celery.canvas import Signature
 from sqlalchemy import case, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlmodel import col
 
+from backend.celery_app import celery_app
 from backend.core.task_dispatch import dispatch_task
 from backend.models.user import User
 from backend.utils.config_manager import DEFAULT_SYSTEM_CONFIG, config_manager
@@ -58,9 +60,11 @@ async def enqueue_model_preparation(
     return await _queue_preparation(kwargs)
 
 
-async def _queue_preparation(kwargs: dict[str, Any]) -> str:
+async def _queue_preparation(
+    kwargs: dict[str, Any], *, link: Signature | None = None
+) -> str:
     task = await dispatch_task(
-        MODEL_PREPARATION_TASK, kwargs=kwargs, ignore_result=True
+        MODEL_PREPARATION_TASK, kwargs=kwargs, ignore_result=True, link=link
     )
     await asyncio.to_thread(
         set_download_progress,
@@ -209,18 +213,35 @@ async def resolve_install_transcription_selection(
     return resolve_startup_model_selection(user_settings)
 
 
+def _linked_preparation(kwargs: dict[str, Any], link: Signature | None) -> Signature:
+    """A preparation task to run once the task it is linked to has succeeded.
+
+    Immutable, because the worker passes the finished task's return value to a
+    link as its first positional argument, which this task must not receive.
+    """
+    task = celery_app.signature(
+        MODEL_PREPARATION_TASK, kwargs=kwargs, immutable=True, ignore_result=True
+    )
+    if link is not None:
+        task.link(link)
+    return task
+
+
 async def enqueue_startup_model_preparation(
     session_maker: async_sessionmaker[AsyncSession],
-) -> list[str]:
+) -> str:
     """Queue the startup preparation for the engines this install's users run.
 
-    The tasks share the GPU lane, which runs one task at a time by default, so
-    they run in the order queued. A lane with more concurrency may overlap
-    them, which is safe: no two tasks prepare the same model.
+    Only the first task is queued here. Each later task is linked to the one
+    before it, so the worker queues it on the GPU lane only once that task has
+    succeeded. The tasks never overlap, whatever the lane's concurrency, and a
+    failed task's error stays the last progress written instead of being
+    replaced by the next task's. Returns the first task's id.
     """
     async with session_maker() as session:
         selection = await resolve_install_transcription_selection(session)
-    return [
-        await _queue_preparation(kwargs)
-        for kwargs in startup_preparation_tasks(selection)
-    ]
+    first, *rest = startup_preparation_tasks(selection)
+    link = None
+    for kwargs in reversed(rest):
+        link = _linked_preparation(kwargs, link)
+    return await _queue_preparation(first, link=link)
