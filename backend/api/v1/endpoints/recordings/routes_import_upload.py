@@ -9,7 +9,7 @@ from uuid import uuid4
 
 import aiofiles
 from fastapi import Depends, File, HTTPException, Query, Request, UploadFile
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import backend.api.v1.endpoints.recordings as recordings_module
@@ -29,6 +29,8 @@ from backend.utils.audio import concatenate_binary_files, get_audio_duration
 from backend.utils.import_audio import (
     MEDIA_CONTAINER_SUFFIXES,
     ImportRefusedError,
+    ImportServerError,
+    KeptAudio,
     keep_imported_audio,
 )
 from backend.utils.rate_limit import enforce_upload_concurrency
@@ -39,6 +41,7 @@ from backend.utils.upload_limit import (
 
 from .helpers import (
     _bootstrap_import_audio_windows,
+    _enforce_lossy_bitrate,
     _find_missing_chunk_sequences,
     _get_owned_recording,
     _mark_recording_audio_chunks_failed,
@@ -65,6 +68,49 @@ SUPPORTED_AUDIO_FORMATS = {
     ".opus",
     *MEDIA_CONTAINER_SUFFIXES,
 }
+
+_EXTRACTION_SERVER_FAILURE = (
+    "The server could not extract the audio from this file. Try again later; "
+    "if it keeps failing, an administrator should check the server logs."
+)
+
+# A chunked import in one of these has been finalized already. Finalize answers
+# a repeated call with the recording, so a client whose proxy dropped the first
+# response can retry it.
+_FINALIZED_STATUSES = frozenset(
+    {RecordingStatus.QUEUED, RecordingStatus.PROCESSING, RecordingStatus.PROCESSED}
+)
+
+
+def _remove_upload(path: str) -> None:
+    try:
+        os.remove(path)
+    except FileNotFoundError:
+        pass
+    except OSError as exc:
+        logger.warning("Could not remove the upload %s: %s", path, exc)
+
+
+async def _keep_uploaded_audio(file_path: str, filename: str | None) -> KeptAudio:
+    """Keep the audio of a saved /import or /upload file, off the event loop.
+
+    On a refusal or a server failure the upload is removed and the matching
+    HTTP error raised.
+    """
+    try:
+        return await asyncio.to_thread(keep_imported_audio, file_path)
+    except ImportRefusedError as exc:
+        _remove_upload(file_path)
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail)
+    except ImportServerError as exc:
+        _remove_upload(file_path)
+        raise sanitized_http_exception(
+            logger=logger,
+            status_code=500,
+            client_message=_EXTRACTION_SERVER_FAILURE,
+            log_message=f"Failed to keep the audio of uploaded file '{filename}'.",
+            exc=exc,
+        )
 
 
 @dataclass
@@ -133,11 +179,7 @@ async def import_audio(
             exc=e,
         )
 
-    try:
-        file_path = await asyncio.to_thread(keep_imported_audio, file_path)
-    except ImportRefusedError as exc:
-        os.remove(file_path)
-        raise HTTPException(status_code=exc.status_code, detail=exc.detail)
+    file_path = (await _keep_uploaded_audio(file_path, file.filename)).path
 
     file_stats = os.stat(file_path)
 
@@ -358,6 +400,26 @@ async def _discard_chunked_import(db: AsyncSession, recording: Recording) -> Non
     await db.commit()
 
 
+async def _lock_for_finalize(db: AsyncSession, recording: Recording) -> Recording:
+    """Re-read ``recording`` under a row lock held until this request commits.
+
+    Two finalize calls for one import would otherwise both pass the status
+    check and race through reassembly and extraction. On PostgreSQL the second
+    waits here until the first commits, then sees the status it left. SQLite
+    ignores FOR UPDATE.
+    """
+    result = await db.execute(
+        select(Recording)
+        .where(Recording.id == recording.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    locked = result.scalars().one_or_none()
+    if locked is None:
+        raise HTTPException(status_code=404, detail="Recording not found")
+    return locked
+
+
 @router.post("/import/chunked/finalize", response_model=RecordingPublicRead)
 async def finalize_chunked_import(
     recording_id: str,
@@ -366,9 +428,15 @@ async def finalize_chunked_import(
 ):
     """
     Finalize a chunked import, reassemble the file, and trigger processing.
-    """
-    recording = await _get_owned_recording(db, recording_id, current_user.id)
 
+    Idempotent: a call for an import that is already finalized returns it.
+    """
+    recording = await _lock_for_finalize(
+        db, await _get_owned_recording(db, recording_id, current_user.id)
+    )
+
+    if recording.status in _FINALIZED_STATUSES:
+        return serialize_recording(recording, has_proxy=_recording_has_proxy(recording))
     if recording.status != RecordingStatus.UPLOADING:
         raise HTTPException(
             status_code=400, detail="Recording is not in uploading state"
@@ -399,9 +467,9 @@ async def finalize_chunked_import(
         segment_paths = [row.storage_path for row in chunk_rows]
         concatenate_binary_files(segment_paths, recording.audio_path)
 
-        recording.audio_path = await asyncio.to_thread(
-            keep_imported_audio, recording.audio_path
-        )
+        recording.audio_path = (
+            await asyncio.to_thread(keep_imported_audio, recording.audio_path)
+        ).path
         recording.proxy_path = get_initial_proxy_path(recording.audio_path)
 
         file_stats = os.stat(recording.audio_path)
@@ -470,7 +538,11 @@ async def finalize_chunked_import(
         raise sanitized_http_exception(
             logger=logger,
             status_code=500,
-            client_message="Failed to finalize the uploaded recording.",
+            client_message=(
+                _EXTRACTION_SERVER_FAILURE
+                if isinstance(e, ImportServerError)
+                else "Failed to finalize the uploaded recording."
+            ),
             log_message=f"Failed to finalize chunked import for recording {recording_id}.",
             exc=e,
         )
@@ -548,16 +620,17 @@ async def upload_recording(
                 exc=e,
             )
 
-    # The floor measures the audio that is stored, so a video track's
-    # bitrate cannot lift low-bitrate audio over it.
-    try:
-        file_path = await asyncio.to_thread(keep_imported_audio, file_path)
-    except ImportRefusedError as exc:
-        os.remove(file_path)
-        raise HTTPException(status_code=exc.status_code, detail=exc.detail)
+    # The floor judges the uploaded audio: the stored file when it was kept
+    # or copied (so a video track's bitrate cannot lift it over), the source
+    # track's reported bitrate when it was re-encoded.
+    kept = await _keep_uploaded_audio(file_path, file.filename)
+    file_path = kept.path
 
     try:
-        recordings_module._enforce_lossy_audio_bitrate_floor(file_path)
+        if kept.reencoded_from_lossy:
+            _enforce_lossy_bitrate(kept.source_bit_rate)
+        else:
+            recordings_module._enforce_lossy_audio_bitrate_floor(file_path)
     except HTTPException:
         if os.path.exists(file_path):
             os.remove(file_path)

@@ -1895,8 +1895,10 @@ async def test_a_failed_extraction_refuses_the_import(
     )
     monkeypatch.setattr(
         import_audio,
-        "_codec_arguments",
-        lambda track: (".m4a", ["-c:a", "no_such_encoder"]),
+        "_output_plan",
+        lambda track: import_audio._OutputPlan(
+            ".m4a", ["-c:a", "no_such_encoder"], reencodes_lossy=False
+        ),
     )
 
     response = await _post_upload(client, route, source, "screen.mkv")
@@ -2045,6 +2047,259 @@ async def test_upload_bitrate_floor_ignores_the_video_track(
     assert "below 128 kbps" in response.json()["detail"]
     assert calls == []
     await _assert_nothing_kept(test_session_maker, recordings_dir)
+
+
+def _limit_ffmpeg_output(monkeypatch, max_bytes: int) -> None:
+    """Run the extraction's ffmpeg under a file-size limit, as a full disk quota
+    would stop it (SIGXFSZ)."""
+    import resource
+
+    from backend.utils import import_audio
+
+    real_run = subprocess.run
+
+    def limit() -> None:
+        resource.setrlimit(resource.RLIMIT_FSIZE, (max_bytes, max_bytes))
+
+    def run(cmd, **kwargs):
+        if cmd[0] == "ffmpeg":
+            kwargs["preexec_fn"] = limit
+        return real_run(cmd, **kwargs)
+
+    monkeypatch.setattr(import_audio.subprocess, "run", run)
+
+
+@pytest.mark.anyio
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg is not installed")
+@pytest.mark.parametrize("route", ["import", "upload"])
+async def test_a_server_failure_while_extracting_is_a_server_error(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+    monkeypatch,
+    tmp_path: Path,
+    route: str,
+) -> None:
+    """A full disk is not the file's fault: 500, no advice to convert it."""
+    from backend.api.v1.endpoints.recordings import routes_import_upload
+
+    source = tmp_path / "screen.mkv"
+    _screen_recording(source, ["-c:a", "aac"])
+    recordings_dir = tmp_path / "recordings"
+    recordings_dir.mkdir()
+    calls = _patch_delay(monkeypatch)
+    monkeypatch.setenv("RECORDINGS_DIR", str(recordings_dir))
+    monkeypatch.setattr(
+        routes_import_upload, "enforce_upload_concurrency", _no_upload_limit
+    )
+    _limit_ffmpeg_output(monkeypatch, 1_000)
+
+    response = await _post_upload(client, route, source, "screen.mkv")
+
+    assert response.status_code == 500, response.text
+    assert response.json()["detail"] == routes_import_upload._EXTRACTION_SERVER_FAILURE
+    assert calls == []
+    await _assert_nothing_kept(test_session_maker, recordings_dir)
+
+
+@pytest.mark.anyio
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg is not installed")
+async def test_a_server_failure_while_finalizing_keeps_the_parts_for_recovery(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """As for any server failure in finalize, the parts move to failed/."""
+    from backend.api.v1.endpoints.recordings import routes_import_upload
+
+    source = tmp_path / "screen.mkv"
+    _screen_recording(source, ["-c:a", "aac"])
+    recordings_dir = tmp_path / "recordings"
+    recordings_dir.mkdir()
+    calls = _patch_delay(monkeypatch)
+    monkeypatch.setenv("RECORDINGS_DIR", str(recordings_dir))
+    _limit_ffmpeg_output(monkeypatch, 1_000)
+
+    response = await _post_upload(client, "chunked", source, "screen.mkv")
+
+    assert response.status_code == 500, response.text
+    assert response.json()["detail"] == routes_import_upload._EXTRACTION_SERVER_FAILURE
+    assert calls == []
+    kept = [path for path in recordings_dir.rglob("*") if path.is_file()]
+    assert [path.name for path in kept] == ["0.part"]
+    assert "failed" in kept[0].relative_to(recordings_dir).parts
+    assert kept[0].read_bytes() == source.read_bytes()
+
+
+async def _start_chunked_import(client: AsyncClient, source: Path) -> str:
+    init = await client.post(
+        "/api/v1/recordings/import/chunked/init", params={"filename": source.name}
+    )
+    assert init.status_code == 200, init.text
+    recording_id = init.json()["id"]
+    segment = await client.post(
+        "/api/v1/recordings/import/chunked/segment",
+        params={"recording_id": recording_id, "sequence": 0},
+        files={"file": ("0.part", source.read_bytes(), "application/octet-stream")},
+    )
+    assert segment.status_code == 200, segment.text
+    return recording_id
+
+
+async def _finalize(client: AsyncClient, recording_id: str):
+    return await client.post(
+        "/api/v1/recordings/import/chunked/finalize",
+        params={"recording_id": recording_id},
+    )
+
+
+@pytest.mark.anyio
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg is not installed")
+async def test_finalize_again_returns_the_import_without_redoing_it(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """A client whose proxy dropped the first response can retry finalize."""
+    source = tmp_path / "screen.mkv"
+    _screen_recording(source, ["-c:a", "aac"])
+    recordings_dir = tmp_path / "recordings"
+    recordings_dir.mkdir()
+    calls = _patch_delay(monkeypatch)
+    monkeypatch.setenv("RECORDINGS_DIR", str(recordings_dir))
+    recording_id = await _start_chunked_import(client, source)
+
+    first = await _finalize(client, recording_id)
+    files_after_first = sorted(recordings_dir.rglob("*"))
+    again = await _finalize(client, recording_id)
+
+    assert (first.status_code, again.status_code) == (200, 200), again.text
+    assert again.json()["id"] == first.json()["id"] == recording_id
+    assert len(calls) == 1
+    assert sorted(recordings_dir.rglob("*")) == files_after_first
+
+
+@pytest.mark.anyio
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg is not installed")
+async def test_a_finalize_that_lost_the_race_does_not_extract_again(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """Finalize re-reads the row under its lock before acting on the status.
+
+    Here another finalize completes between this one's first read and its
+    lock, as it does on PostgreSQL when the second call waits on the row lock.
+    """
+    from backend.api.v1.endpoints.recordings import routes_import_upload
+    from backend.utils import import_audio
+
+    source = tmp_path / "screen.mkv"
+    _screen_recording(source, ["-c:a", "aac"])
+    recordings_dir = tmp_path / "recordings"
+    recordings_dir.mkdir()
+    calls = _patch_delay(monkeypatch)
+    monkeypatch.setenv("RECORDINGS_DIR", str(recordings_dir))
+    recording_id = await _start_chunked_import(client, source)
+    extractions: list[str] = []
+    real_keep = import_audio.keep_imported_audio
+    real_get = routes_import_upload._get_owned_recording
+
+    def counting_keep(path: str):
+        extractions.append(path)
+        return real_keep(path)
+
+    async def read_then_lose_the_race(db, public_id, user_id, **kwargs):
+        recording = await real_get(db, public_id, user_id, **kwargs)
+        async with test_session_maker() as other:
+            await other.execute(
+                text("UPDATE recordings SET status = 'QUEUED' WHERE id = :id"),
+                {"id": recording.id},
+            )
+            await other.commit()
+        return recording
+
+    monkeypatch.setattr(routes_import_upload, "keep_imported_audio", counting_keep)
+    monkeypatch.setattr(
+        routes_import_upload, "_get_owned_recording", read_then_lose_the_race
+    )
+
+    response = await _finalize(client, recording_id)
+
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "QUEUED"
+    assert extractions == []
+    assert calls == []
+
+
+def _has_encoder(name: str) -> bool:
+    if shutil.which("ffmpeg") is None:
+        return False
+    listing = subprocess.run(
+        ["ffmpeg", "-hide_banner", "-encoders"], capture_output=True, text=True
+    )
+    return f" {name} " in listing.stdout
+
+
+@pytest.mark.anyio
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg is not installed")
+@pytest.mark.parametrize(
+    ("filename", "audio_args", "accepted"),
+    [
+        # Silence: the Opus it becomes is far below 128 kb/s, the AC-3 is not.
+        ("camera.mts", ["-c:a", "ac3", "-b:a", "192k", "-f", "mpegts"], True),
+        ("camera.mts", ["-c:a", "ac3", "-b:a", "96k", "-f", "mpegts"], False),
+        pytest.param(
+            "phone.3gp",
+            ["-c:a", "libopencore_amrnb", "-ar", "8000", "-ac", "1", "-b:a", "12.2k"],
+            False,
+            marks=pytest.mark.skipif(
+                not _has_encoder("libopencore_amrnb"), reason="no AMR-NB encoder"
+            ),
+        ),
+    ],
+    ids=["ac3-192k", "ac3-96k", "amr-nb-12k"],
+)
+async def test_upload_bitrate_floor_judges_the_source_of_a_re_encode(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+    monkeypatch,
+    tmp_path: Path,
+    filename: str,
+    audio_args: list[str],
+    accepted: bool,
+) -> None:
+    """Re-encoded audio is judged by the upload's bitrate, not the Opus's."""
+    from backend.api.v1.endpoints.recordings import routes_import_upload
+
+    source = tmp_path / filename
+    _ffmpeg(
+        *["-f", "lavfi", "-i", "testsrc=size=64x64:rate=25:duration=2"],
+        *["-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo"],
+        *["-c:v", "mpeg4", *audio_args, "-shortest", str(source)],
+    )
+    recordings_dir = tmp_path / "recordings"
+    recordings_dir.mkdir()
+    calls = _patch_delay(monkeypatch)
+    monkeypatch.setenv("RECORDINGS_DIR", str(recordings_dir))
+    monkeypatch.setattr(
+        routes_import_upload, "enforce_upload_concurrency", _no_upload_limit
+    )
+
+    response = await _post_upload(client, "upload", source, filename)
+
+    if accepted:
+        assert response.status_code == 200, response.text
+        audio_path, _, _ = await _stored_recording(test_session_maker)
+        assert audio_path.endswith(".webm")
+        assert len(calls) == 1
+    else:
+        assert response.status_code == 422, response.text
+        assert "below 128 kbps" in response.json()["detail"]
+        assert calls == []
+        await _assert_nothing_kept(test_session_maker, recordings_dir)
 
 
 @pytest.mark.anyio

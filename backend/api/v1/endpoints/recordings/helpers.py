@@ -113,7 +113,11 @@ def _enforce_lossy_audio_bitrate_floor(file_path: str) -> None:
     from backend.processing.audio_preprocessing import analyze_audio_file
 
     audio_info = analyze_audio_file(file_path)
-    bitrate = _estimated_audio_bitrate_bits_per_second(audio_info)
+    _enforce_lossy_bitrate(_estimated_audio_bitrate_bits_per_second(audio_info))
+
+
+def _enforce_lossy_bitrate(bitrate: int | None) -> None:
+    """Refuse lossy audio below the floor, or whose bitrate is unknown."""
     if bitrate is None:
         raise HTTPException(
             status_code=422,

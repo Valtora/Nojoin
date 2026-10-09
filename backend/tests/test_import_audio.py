@@ -1,12 +1,13 @@
-"""What an import keeps: one audio track, in a format the pipeline reads.
+"""What an import keeps: no video, one audio track, a format the pipeline reads.
 
 Fixtures are generated with ffmpeg's built-in sources and encoders; the ffmpeg
-cases skip where ffmpeg is not installed.
+cases skip where ffmpeg is not installed, as the suite's other media tests do.
 """
 
 from __future__ import annotations
 
 import json
+import resource
 import shutil
 import subprocess
 from pathlib import Path
@@ -14,13 +15,14 @@ from pathlib import Path
 import pytest
 
 from backend.utils import import_audio
+from backend.utils.audio import get_audio_duration
 from backend.utils.import_audio import (
-    PROBE_TIMEOUT_S,
     AudioExtractionError,
+    ImportServerError,
     NoAudioStreamError,
-    decoded_audio_stream,
     keep_imported_audio,
 )
+from backend.utils.import_audio_probe import decoded_audio_stream
 
 needs_ffmpeg = pytest.mark.skipif(
     shutil.which("ffmpeg") is None, reason="ffmpeg is not installed"
@@ -28,6 +30,7 @@ needs_ffmpeg = pytest.mark.skipif(
 
 _VIDEO = ["-f", "lavfi", "-i", "testsrc=size=64x64:rate=25:duration=2"]
 _TONE = ["-f", "lavfi", "-i", "sine=frequency=440:duration=2:sample_rate=48000"]
+_SCREEN = [*_VIDEO, *_TONE, "-c:v", "mpeg4", "-c:a", "aac"]
 
 
 def _ffmpeg(*args: str) -> None:
@@ -104,6 +107,8 @@ def test_the_kept_track_is_the_one_ffmpeg_selects(
     assert selected["index"] == chosen
 
 
+_SIXTEEN_CHANNELS = "pan=16c|" + "|".join(f"c{i}=c0" for i in range(16))
+
 # (fixture output arguments, suffix, stored suffix, stored codec, channels)
 _EXTRACTIONS = [
     (["-c:v", "mpeg4", "-c:a", "aac"], ".mkv", ".m4a", "aac", 1),
@@ -113,6 +118,8 @@ _EXTRACTIONS = [
     (["-c:v", "mpeg4", "-c:a", "libvorbis"], ".mkv", ".ogg", "vorbis", 1),
     (["-c:a", "flac"], ".mka", ".flac", "flac", 1),
     (["-c:v", "mpeg4", "-c:a", "pcm_s24le"], ".mov", ".flac", "flac", 1),
+    # FLAC holds at most 8 channels: a field recorder's 16 are kept as stereo.
+    (["-af", _SIXTEEN_CHANNELS, "-c:a", "pcm_s16le"], ".mka", ".flac", "flac", 2),
     (["-c:v", "mpeg2video", "-c:a", "mp2"], ".mpg", ".webm", "opus", 1),
     # Cameras write AC-3 5.1(side), a layout libopus refuses: kept as stereo.
     (
@@ -130,7 +137,9 @@ _EXTRACTIONS = [
 
 @needs_ffmpeg
 @pytest.mark.parametrize(
-    "case", _EXTRACTIONS, ids=[f"{row[1]}-{row[3]}" for row in _EXTRACTIONS]
+    "case",
+    _EXTRACTIONS,
+    ids=[f"{row[1]}-{row[3]}-{row[4]}ch" for row in _EXTRACTIONS],
 )
 def test_the_audio_track_replaces_the_upload(tmp_path: Path, case: tuple) -> None:
     output_args, suffix, stored_suffix, codec, channels = case
@@ -138,7 +147,7 @@ def test_the_audio_track_replaces_the_upload(tmp_path: Path, case: tuple) -> Non
     inputs = [*_VIDEO, *_TONE] if "-c:v" in output_args else _TONE
     _ffmpeg(*inputs, *output_args, "-shortest", str(source))
 
-    stored = Path(keep_imported_audio(str(source)))
+    stored = Path(keep_imported_audio(str(source)).path)
 
     assert not source.exists()
     assert stored.parent == tmp_path
@@ -148,6 +157,88 @@ def test_the_audio_track_replaces_the_upload(tmp_path: Path, case: tuple) -> Non
     assert stream["channels"] == channels
     assert stream["duration"] == pytest.approx(2.0, abs=0.1)
     assert sorted(tmp_path.iterdir()) == [stored]
+
+
+@needs_ffmpeg
+@pytest.mark.parametrize(
+    ("suffix", "audio_args"),
+    [
+        (".mkv", ["-c:a", "aac"]),
+        (".mkv", ["-c:a", "libmp3lame"]),
+        (".mkv", ["-c:a", "libvorbis"]),
+        (".mkv", ["-c:a", "flac"]),
+        (".mkv", ["-c:a", "pcm_s16le"]),
+        (".mkv", ["-c:a", "libopus"]),
+        (".avi", ["-c:a", "libmp3lame"]),
+    ],
+    ids=["mkv-aac", "mkv-mp3", "mkv-vorbis", "mkv-flac", "mkv-pcm", "mkv-opus", "avi"],
+)
+def test_audio_that_starts_late_is_kept_whole(
+    tmp_path: Path, suffix: str, audio_args: list[str]
+) -> None:
+    """3 s of audio starting 3 s into a 6 s video.
+
+    Matroska's DURATION tag (6 s) is the track's end, not its length, and an
+    AVI header counts the video's length; the packets hold 3 s, as does the
+    stored file, which starts at zero.
+    """
+    source = tmp_path / f"late{suffix}"
+    _ffmpeg(
+        *["-f", "lavfi", "-i", "testsrc=size=64x64:rate=25:duration=6"],
+        *["-itsoffset", "3", "-f", "lavfi", "-i", "sine=duration=3:sample_rate=48000"],
+        *["-map", "0:v", "-map", "1:a", "-c:v", "mpeg4", *audio_args, str(source)],
+    )
+
+    stored = keep_imported_audio(str(source)).path
+
+    assert get_audio_duration(stored) == pytest.approx(3.0, abs=0.1)
+
+
+def _unfinalised_mkv(path: Path) -> None:
+    """An MKV written to a pipe, as a recorder that crashed leaves it:
+    no duration, no cues, no DURATION tags."""
+    with path.open("wb") as out:
+        subprocess.run(
+            ["ffmpeg", "-loglevel", "error", *_SCREEN, "-f", "matroska", "pipe:1"],
+            stdout=out,
+            check=True,
+        )
+
+
+@needs_ffmpeg
+def test_a_file_that_reports_no_length_is_measured_from_its_packets(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    source = tmp_path / "crashed.mkv"
+    _unfinalised_mkv(source)
+    probe = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration:stream_tags"]
+        + ["-of", "json", str(source)],
+        capture_output=True,
+        check=True,
+    )
+    reported = json.loads(probe.stdout)
+    assert "duration" not in reported["format"]
+    assert all("DURATION" not in s.get("tags", {}) for s in reported["streams"])
+
+    stored = keep_imported_audio(str(source)).path
+    assert get_audio_duration(stored) == pytest.approx(2.0, abs=0.1)
+
+    _unfinalised_mkv(source)
+    _cut_extraction_short(monkeypatch)
+    with pytest.raises(AudioExtractionError, match="source track runs 2"):
+        keep_imported_audio(str(source))
+
+
+def _cut_extraction_short(monkeypatch: pytest.MonkeyPatch) -> None:
+    """ffmpeg exits 0, but writes only the first half second of the track."""
+    monkeypatch.setattr(
+        import_audio,
+        "_output_plan",
+        lambda track: import_audio._OutputPlan(
+            ".m4a", ["-c:a", "copy", "-t", "0.5"], reencodes_lossy=False
+        ),
+    )
 
 
 @needs_ffmpeg
@@ -163,20 +254,28 @@ def test_the_audio_track_replaces_the_upload(tmp_path: Path, case: tuple) -> Non
             *["-c:v", "png", "-disposition:v", "attached_pic", "cover.mp3"],
         ],
         [*_TONE, "-c:a", "aac", "upload.m4a"],
+        # Two audio tracks and no video: stored whole, as import always has.
+        [
+            *_TONE,
+            *["-f", "lavfi", "-i", "sine=frequency=880:duration=2"],
+            *["-map", "0:a", "-map", "1:a", "-c:a", "aac", "two-tracks.m4a"],
+        ],
     ],
-    ids=["mp3", "mp3-with-cover-art", "m4a"],
+    ids=["mp3", "mp3-with-cover-art", "m4a", "m4a-two-tracks"],
 )
 def test_an_audio_file_is_kept_as_uploaded(tmp_path: Path, fixture: list[str]) -> None:
     source = tmp_path / fixture[-1]
     _ffmpeg(*fixture[:-1], str(source))
     before = source.read_bytes()
 
-    assert keep_imported_audio(str(source)) == str(source)
+    assert keep_imported_audio(str(source)).path == str(source)
     assert source.read_bytes() == before
 
 
 @needs_ffmpeg
-def test_of_two_audio_tracks_the_default_one_is_kept(tmp_path: Path) -> None:
+def test_of_two_audio_tracks_in_a_container_the_default_one_is_kept(
+    tmp_path: Path,
+) -> None:
     """OBS can record a track per source. The second, flagged default, is kept."""
     source = tmp_path / "obs.mkv"
     _ffmpeg(
@@ -188,7 +287,7 @@ def test_of_two_audio_tracks_the_default_one_is_kept(tmp_path: Path) -> None:
         str(source),
     )
 
-    [stream] = _streams(keep_imported_audio(str(source)))
+    [stream] = _streams(keep_imported_audio(str(source)).path)
 
     assert stream["duration"] == pytest.approx(5.0, abs=0.1)
 
@@ -210,13 +309,15 @@ def test_a_file_with_only_video_is_refused_and_left_to_the_caller(
 def test_a_failed_extraction_is_refused_and_leaves_nothing_new(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """ffmpeg exits with an error: the partial file goes, the upload stays."""
+    """ffmpeg rejects the job: the partial file goes, the upload stays."""
     source = tmp_path / "screen.mkv"
-    _ffmpeg(*_VIDEO, *_TONE, "-c:v", "mpeg4", "-c:a", "aac", str(source))
+    _ffmpeg(*_SCREEN, str(source))
     monkeypatch.setattr(
         import_audio,
-        "_codec_arguments",
-        lambda track: (".m4a", ["-c:a", "no_such_encoder"]),
+        "_output_plan",
+        lambda track: import_audio._OutputPlan(
+            ".m4a", ["-c:a", "no_such_encoder"], reencodes_lossy=False
+        ),
     )
 
     with pytest.raises(AudioExtractionError, match="no_such_encoder"):
@@ -229,14 +330,9 @@ def test_a_failed_extraction_is_refused_and_leaves_nothing_new(
 def test_an_extraction_shorter_than_its_track_is_refused(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """ffmpeg exits 0, but the file it wrote does not hold the whole track."""
     source = tmp_path / "screen.mkv"
-    _ffmpeg(*_VIDEO, *_TONE, "-c:v", "mpeg4", "-c:a", "aac", str(source))
-    monkeypatch.setattr(
-        import_audio,
-        "_codec_arguments",
-        lambda track: (".m4a", ["-c:a", "copy", "-t", "0.5"]),
-    )
+    _ffmpeg(*_SCREEN, str(source))
+    _cut_extraction_short(monkeypatch)
 
     with pytest.raises(AudioExtractionError, match="source track runs 2"):
         keep_imported_audio(str(source))
@@ -244,46 +340,122 @@ def test_an_extraction_shorter_than_its_track_is_refused(
     assert sorted(tmp_path.iterdir()) == [source]
 
 
-def _hung(seen: dict):
+@needs_ffmpeg
+def test_a_re_encode_reports_the_source_bit_rate(tmp_path: Path) -> None:
+    """A bitrate floor must judge the 64 kb/s MP2, not the 160 kb/s Opus."""
+    source = tmp_path / "camera.ts"
+    _ffmpeg(*_VIDEO, *_TONE, "-c:v", "mpeg4", "-c:a", "mp2", "-b:a", "64k", str(source))
+    copied = tmp_path / "screen.mkv"
+    _ffmpeg(*_SCREEN, str(copied))
+
+    reencoded = keep_imported_audio(str(source))
+    assert reencoded.reencoded_from_lossy
+    assert reencoded.source_bit_rate == 64_000
+    assert not keep_imported_audio(str(copied)).reencoded_from_lossy
+
+
+def _limit_ffmpeg_output(monkeypatch: pytest.MonkeyPatch, max_bytes: int) -> None:
+    """Run ffmpeg under a file-size limit, as a full disk quota would stop it."""
+    real_run = subprocess.run
+
+    def limit() -> None:
+        resource.setrlimit(resource.RLIMIT_FSIZE, (max_bytes, max_bytes))
+
     def run(cmd, **kwargs):
-        seen.update(kwargs)
-        raise subprocess.TimeoutExpired(cmd, kwargs["timeout"])
+        if cmd[0] == "ffmpeg":
+            kwargs["preexec_fn"] = limit
+        return real_run(cmd, **kwargs)
 
-    return run
+    monkeypatch.setattr(import_audio.subprocess, "run", run)
 
 
-def test_a_container_ffprobe_cannot_read_is_refused(
+@needs_ffmpeg
+def test_a_full_disk_is_a_server_failure_not_a_bad_file(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Its audio cannot be extracted, and a container is never stored."""
     source = tmp_path / "screen.mkv"
-    source.write_bytes(b"not a matroska file")
-    seen: dict = {}
-    monkeypatch.setattr(import_audio.subprocess, "run", _hung(seen))
+    _ffmpeg(*_SCREEN, str(source))
+    _limit_ffmpeg_output(monkeypatch, 1_000)
 
-    with pytest.raises(AudioExtractionError):
+    with pytest.raises(ImportServerError):
         keep_imported_audio(str(source))
-    assert seen["timeout"] == PROBE_TIMEOUT_S
+
+    assert sorted(tmp_path.iterdir()) == [source]
+
+
+@needs_ffmpeg
+def test_an_ffmpeg_out_of_space_error_is_a_server_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    source = tmp_path / "screen.mkv"
+    _ffmpeg(*_SCREEN, str(source))
+    real_run = subprocess.run
+
+    def run(cmd, **kwargs):
+        if cmd[0] == "ffmpeg":
+            raise subprocess.CalledProcessError(
+                1, cmd, stderr=b"av_interleaved_write_frame(): No space left on device"
+            )
+        return real_run(cmd, **kwargs)
+
+    monkeypatch.setattr(import_audio.subprocess, "run", run)
+
+    with pytest.raises(ImportServerError):
+        keep_imported_audio(str(source))
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        FileNotFoundError(2, "No such file or directory", "ffprobe"),
+        subprocess.TimeoutExpired("ffprobe", 60),
+    ],
+    ids=["ffprobe-missing", "ffprobe-hung"],
+)
+@pytest.mark.parametrize("name", ["screen.mkv", "meeting.mp3"])
+def test_ffprobe_failing_to_run_is_a_server_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, failure: Exception, name: str
+) -> None:
+    source = tmp_path / name
+    source.write_bytes(b"audio")
+
+    def run(cmd, **kwargs):
+        raise failure
+
+    monkeypatch.setattr(subprocess, "run", run)
+
+    with pytest.raises(ImportServerError):
+        keep_imported_audio(str(source))
     assert source.exists()
 
 
-def test_an_audio_file_ffprobe_cannot_read_is_kept_as_before(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+@needs_ffmpeg
+def test_a_container_ffprobe_cannot_read_is_refused(tmp_path: Path) -> None:
+    """Its audio cannot be extracted, and a container is never stored."""
+    source = tmp_path / "screen.mkv"
+    source.write_bytes(b"not a matroska file")
+
+    with pytest.raises(AudioExtractionError):
+        keep_imported_audio(str(source))
+    assert source.exists()
+
+
+@needs_ffmpeg
+def test_an_audio_file_ffprobe_cannot_read_is_kept_as_before(tmp_path: Path) -> None:
     source = tmp_path / "meeting.mp3"
     source.write_bytes(b"not an mp3")
-    monkeypatch.setattr(import_audio.subprocess, "run", _hung({}))
 
-    assert keep_imported_audio(str(source)) == str(source)
+    assert keep_imported_audio(str(source)).path == str(source)
 
 
 @needs_ffmpeg
 def test_an_upload_that_cannot_be_removed_leaves_no_extracted_copy(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """The caller only knows the upload's path, so the new file goes too."""
+    """A server failure; the caller only knows the upload's path, so the new
+    file goes too."""
     source = tmp_path / "screen.mkv"
-    _ffmpeg(*_VIDEO, *_TONE, "-c:v", "mpeg4", "-c:a", "aac", str(source))
+    _ffmpeg(*_SCREEN, str(source))
     real_remove = import_audio.os.remove
 
     def remove(path):
@@ -293,7 +465,7 @@ def test_an_upload_that_cannot_be_removed_leaves_no_extracted_copy(
 
     monkeypatch.setattr(import_audio.os, "remove", remove)
 
-    with pytest.raises(PermissionError):
+    with pytest.raises(ImportServerError):
         keep_imported_audio(str(source))
 
     assert sorted(tmp_path.iterdir()) == [source]
