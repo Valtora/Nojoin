@@ -482,8 +482,10 @@ The legacy `vad_parameters.threshold` in `config.json` is still honoured, used a
 user's `vad_threshold` and a flat `vad_threshold`. The worker logs and ignores a value outside its range,
 or a phantom floor that is not below the phantom merge threshold, and uses the shipped default instead
 (for the VAD threshold, `vad_parameters.threshold`), so a typo never fails a recording. A user's own
-value, when set, replaces the flat key entirely, so an unusable per-user value falls back to the shipped
-default rather than to the installation's. The settings page shows a user's own value only: where the installation sets
+value, when set, replaces the flat key entirely, so an unusable per-user value (edited by hand, restored from a
+backup taken by a version with different ranges, or stored before a range narrowed) falls back to the shipped default
+rather than to the installation's. The settings page shows such a value as empty, and the user's next save clears it, after
+which the installation's value applies. The settings page shows a user's own value only: where the installation sets
 a default, the field still reads "Default" with the shipped value as its placeholder. When a user saves either phantom
 similarity, the floor-below-merge rule is checked against the pair processing will use, so a half the user left empty
 counts as the installation's flat value, and the error names it. A pair whose conflict lies in the installation's two

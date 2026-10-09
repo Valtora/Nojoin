@@ -171,7 +171,7 @@ export default function ProcessingTuningSettings({
   return (
     <SettingsCard
       title="Speech and Speaker Tuning"
-      description="Fine-tune how recordings are split into speech and speakers. Empty fields use the installation's value, or the default shown. Changes apply to recordings processed or reprocessed afterwards."
+      description="Fine-tune how recordings are split into speech and speakers. Empty fields use the installation's value, or the default shown; a saved value that is no longer accepted uses the default until this page saves again. Changes apply to recordings processed or reprocessed afterwards."
       headerAside={
         <button
           type="button"
