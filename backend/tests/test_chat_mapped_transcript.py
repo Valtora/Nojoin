@@ -178,8 +178,7 @@ def test_chat_reads_canonical_utterances_when_the_projection_is_empty(engine):
     transcript = LLMBackend.get_mapped_transcript_for_llm(RECORDING_ID)
 
     assert transcript == (
-        "[00:00 - 00:02] Speaker 1: We ship on Friday.\n"
-        "[01:05 - 01:07] Speaker 1: Docs are done."
+        "[00:00] Speaker 1: We ship on Friday.\n[01:05] Speaker 1: Docs are done."
     )
 
 
@@ -224,8 +223,7 @@ def test_chat_names_speakers_the_way_the_notes_do(engine):
     transcript = LLMBackend.get_mapped_transcript_for_llm(RECORDING_ID)
 
     assert transcript == (
-        "[00:00 - 00:02] Priya: Is the budget final?\n"
-        "[00:02 - 00:04] Dana: Yes, signed off."
+        "[00:00] Priya: Is the budget final?\n[00:02] Dana: Yes, signed off."
     )
 
 
@@ -242,7 +240,7 @@ def test_chat_falls_back_to_the_projection_without_canonical_rows(engine):
 
     transcript = LLMBackend.get_mapped_transcript_for_llm(RECORDING_ID)
 
-    assert transcript == "[00:03 - 00:04] Priya: Hello."
+    assert transcript == "[00:03] Priya: Hello."
 
 
 def test_chat_reports_a_recording_without_any_transcript(engine):

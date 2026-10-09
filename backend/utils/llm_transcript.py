@@ -5,7 +5,9 @@ is the one place that reads it: the segments come from
 ``build_transcript_segments_for_read`` (the canonical utterances, or the
 ``Transcript.segments`` projection for a recording without them), speaker
 names from the recording's speakers, and the line format from
-``format_segments_for_llm``.
+``format_segments_for_llm``. Lines carry the start time only (``[MM:SS]``), the
+form the chat prompt asks the model to cite, because the transcript is resent
+with every turn and the end time would add roughly a sixth to its size.
 """
 
 from __future__ import annotations
@@ -46,4 +48,6 @@ def render_transcript_for_llm(session: Session, recording_id: int) -> Optional[s
     if not segments:
         return None
     speakers = load_recording_speakers_for_llm(session, recording_id)
-    return format_segments_for_llm(segments, build_recording_speaker_map(speakers))
+    return format_segments_for_llm(
+        segments, build_recording_speaker_map(speakers), with_end=False
+    )
