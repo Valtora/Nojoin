@@ -143,6 +143,9 @@ export default function ProcessingTuningSettings({
 }: ProcessingTuningSettingsProps) {
   const update = (key: ProcessingTuningKey, value: number | null) =>
     onUpdate({ ...settings, [key]: value });
+  // Part of every field's key, so a reset remounts them: that is the only way
+  // to clear text the browser could not parse, which reads as "" already.
+  const [resetCount, setResetCount] = useState(0);
 
   // Row ids are unique registry ids, so ids derived from them are too.
   const labelId = (rowId: string) => `${rowId}-label`;
@@ -150,6 +153,7 @@ export default function ProcessingTuningSettings({
 
   const input = (rowId: string, key: ProcessingTuningKey, labelled = false) => (
     <TuningInput
+      key={`${key}-${resetCount}`}
       tuningKey={key}
       value={settings[key]}
       onChange={update}
@@ -175,7 +179,10 @@ export default function ProcessingTuningSettings({
       headerAside={
         <button
           type="button"
-          onClick={() => onUpdate({ ...settings, ...processingTuningReset() })}
+          onClick={() => {
+            setResetCount((count) => count + 1);
+            onUpdate({ ...settings, ...processingTuningReset() });
+          }}
           className={SETTINGS_BUTTON_SECONDARY}
         >
           <RotateCcw className="h-4 w-4" aria-hidden="true" />

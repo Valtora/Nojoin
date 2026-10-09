@@ -157,4 +157,24 @@ describe("ProcessingTuningSettings", () => {
     expect(fireEvent.keyDown(input, { key: "ArrowUp" })).toBe(true);
     expect(state.latest().vad_threshold).toBe(0.3);
   });
+
+  it.each([
+    ["unparseable text over a stored value", { vad_threshold: 0.3 }, typeUnparseable],
+    [
+      "out-of-range text over an empty field",
+      { vad_threshold: null },
+      (input: HTMLElement) => fireEvent.change(input, { target: { value: "0.95" } }),
+    ],
+  ] as const)("clears %s on reset", (_case, initial, typeBadText) => {
+    const state = renderWithState({ ...initial });
+    const field = () => screen.getByRole("spinbutton", { name: "Speech detection threshold" });
+    typeBadText(field());
+    expect(field()).toHaveAttribute("aria-invalid", "true");
+
+    fireEvent.click(screen.getByRole("button", { name: /reset to defaults/i }));
+
+    expect(state.latest().vad_threshold).toBeNull();
+    expect(field()).not.toHaveAttribute("aria-invalid");
+    expect(field()).toHaveValue(null);
+  });
 });
