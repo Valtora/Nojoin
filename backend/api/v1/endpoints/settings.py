@@ -347,12 +347,16 @@ def _normalise_processing_tuning(
     before a bound tightened) would otherwise make every later save fail.
     Processing ignores such a value too. A stored phantom value that conflicts
     with the other half in effect is cleared for the same reason.
+
+    Unusable values are cleared first, so the conflict check sees exactly what
+    the page will post back: an unset half then counts as the install's value,
+    as it will once that save lands, and the post-back always passes.
     """
+    for key in TUNING_KEYS:
+        merged[key] = normalise_tuning_value(key, merged.get(key))
     if phantom_thresholds_conflict(_phantom_pair_in_effect(install, merged)):
         for key in PHANTOM_PAIR_KEYS:
             merged[key] = None
-    for key in TUNING_KEYS:
-        merged[key] = normalise_tuning_value(key, merged.get(key))
     merged[PHANTOM_THRESHOLDS_INSTALL_KEY] = {
         key: normalise_tuning_value(key, install.get(key)) for key in PHANTOM_PAIR_KEYS
     }

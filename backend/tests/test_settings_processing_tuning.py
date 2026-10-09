@@ -262,16 +262,31 @@ def test_a_stored_conflict_does_not_block_unrelated_saves() -> None:
     assert row["theme"] == "light"
 
 
-def test_saving_back_what_was_read_survives_an_unusable_stored_value() -> None:
+@pytest.mark.parametrize(
+    ("install", "stored"),
+    [
+        ({}, {"vad_threshold": 1.7}),
+        # The unusable floor reads as unset, so the install's 0.5 is the floor
+        # in effect, and it is not below the stored 0.45 merge threshold.
+        (
+            {"phantom_embedding_floor": 0.5},
+            {"phantom_embedding_floor": 1.7, "phantom_merge_threshold": 0.45},
+        ),
+    ],
+    ids=["unusable-value", "unusable-half-beside-install-value"],
+)
+def test_saving_back_what_was_read_survives_an_unusable_stored_value(
+    fake_config, install, stored
+) -> None:
     """The settings page posts the whole object it read. That round trip must
     not fail over a stored value the user cannot see, and must not stamp
     defaults onto the row."""
-    (read,), _row = _run([("GET", None)], stored={"vad_threshold": 1.7})
-    payload = {key: read.json()[key] for key in TUNING_KEYS}
+    fake_config.config = dict(install)
+    (read,), _row = _run([("GET", None)], stored=stored)
 
-    (saved,), row = _run([("POST", payload)], stored={"vad_threshold": 1.7})
+    (saved,), row = _run([("POST", read.json())], stored=stored)
 
-    assert saved.status_code == 200
+    assert saved.status_code == 200, saved.text
     assert all(row[key] is None for key in TUNING_KEYS)
 
 
