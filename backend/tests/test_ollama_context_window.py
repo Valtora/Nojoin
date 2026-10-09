@@ -1,50 +1,113 @@
 """Ollama must never answer from a prompt it silently cut short.
 
-When a prompt is longer than ``num_ctx``, Ollama drops tokens from the front of
-it (keeping only the first ``num_keep``) and answers anyway: notes generated
-that way describe the end of the meeting and nothing says so. When the answer
-fills the window, Ollama shifts the context and loses the start of the prompt
-the same way. These tests pin the guard: refuse before sending a prompt that
-cannot fit, and refuse a response whose token counts show the window filled.
+Left at its defaults, Ollama answers a prompt longer than ``num_ctx`` from
+whatever part of it fits (current releases keep about half the window), and
+shifts the prompt out when the answer fills the window, each with an ordinary
+"stop". Every request is therefore sent with ``truncate: false`` and
+``shift: false``, so Ollama refuses instead, and the refusal is reported.
+
+The response bodies below were recorded from qwen2.5:0.5b on Ollama 0.40.2,
+0.34.2, 0.12.6 and 0.12.5 (which predates both fields and ignores them).
 """
 
 from __future__ import annotations
 
+import json
+
 import pytest
 from requests import HTTPError
 
-from backend.processing.llm_backends.ollama import (
-    ESTIMATED_BYTES_PER_TOKEN,
-    OLLAMA_ANSWER_RESERVE_TOKENS,
-    OllamaLLMBackend,
-)
+from backend.processing.llm_backends import ollama as ollama_module
+from backend.processing.llm_backends.factory import SecondaryLLMBackend
+from backend.processing.llm_backends.ollama import OllamaLLMBackend
 
-NOTES = "# Meeting Notes\n\n## Summary\nThe launch moves to Friday."
+
+def _llama_server_overflow(prompt_tokens: int, n_ctx: int) -> dict:
+    """The refusal of Ollama 0.34 and 0.40: llama-server's error, as a string."""
+    detail = {
+        "error": {
+            "code": 400,
+            "message": (
+                f"request ({prompt_tokens} tokens) exceeds the available context "
+                f"size ({n_ctx} tokens), try increasing it"
+            ),
+            "type": "exceed_context_size_error",
+            "n_prompt_tokens": prompt_tokens,
+            "n_ctx": n_ctx,
+        }
+    }
+    return {"error": json.dumps(detail, separators=(",", ":"))}
+
+
+OVERFLOW_0_40 = _llama_server_overflow(2622, 512)
+OVERFLOW_0_12_6 = {"error": "the input length exceeds the context length"}
+FITS = {"done": True, "done_reason": "stop", "prompt_eval_count": 318, "eval_count": 7}
+WINDOW_FILLED_0_40 = {
+    "done": True,
+    "done_reason": "length",
+    "prompt_eval_count": 61,
+    "eval_count": 451,
+}
+WINDOW_FILLED_0_12_6 = {
+    "done": True,
+    "done_reason": "length",
+    "prompt_eval_count": 61,
+    "eval_count": 452,
+}
+# 0.12.5 ignores truncate: an overflow comes back cut to exactly num_ctx (512).
+TRUNCATED_0_12_5 = {
+    "done": True,
+    "done_reason": "stop",
+    "prompt_eval_count": 512,
+    "eval_count": 11,
+}
+
+ANSWER = "# Meeting Notes\n\n## Summary\nThe launch moves to Friday."
 
 
 class _Response:
-    def __init__(self, body: dict, status_code: int = 200):
+    def __init__(self, body: dict, status_code: int = 200, chunks=None):
         self._body = body
         self.status_code = status_code
+        self._chunks = chunks or []
 
     def raise_for_status(self) -> None:
         if self.status_code >= 400:
-            raise HTTPError(f"HTTP {self.status_code}")
+            raise HTTPError(f"{self.status_code} Client Error", response=self)
 
     def json(self) -> dict:
         return self._body
 
+    def iter_lines(self):
+        for chunk in self._chunks:
+            yield json.dumps(chunk).encode()
+
+
+def _answer(metadata: dict, content: str = ANSWER) -> _Response:
+    return _Response({"message": {"content": content}, **metadata})
+
+
+def _refusal(body: dict, status_code: int = 400) -> _Response:
+    return _Response(body, status_code=status_code)
+
 
 class _FakeOllama:
-    """Answers /api/show with a trained context length and /api/chat with notes."""
+    """Answers /api/show with a trained context length, /api/chat from a queue."""
 
-    def __init__(self, *, trained_context: int | None, chat_metadata: dict):
+    def __init__(self, *chat_responses: _Response, trained_context: int | None = None):
         self.trained_context = trained_context
-        self.chat_metadata = chat_metadata
+        self.chat_responses = list(chat_responses)
         self.chat_payloads: list[dict] = []
         self.show_calls = 0
 
-    def post(self, url: str, json: dict, timeout: int, allow_redirects: bool):
+    def post(
+        self,
+        url: str,
+        json: dict,
+        timeout: int,
+        allow_redirects: bool,
+        stream: bool = False,
+    ):
         if url.endswith("/api/show"):
             self.show_calls += 1
             if self.trained_context is None:
@@ -52,165 +115,261 @@ class _FakeOllama:
             return _Response(
                 {
                     "model_info": {
-                        "general.architecture": "qwen3",
-                        "qwen3.context_length": self.trained_context,
-                    }
+                        "general.architecture": "qwen2",
+                        "qwen2.context_length": self.trained_context,
+                    },
+                    "capabilities": ["completion"],
                 }
             )
         self.chat_payloads.append(json)
-        return _Response(
-            {"message": {"content": NOTES}, "done": True, **self.chat_metadata}
-        )
+        return self.chat_responses.pop(0)
+
+
+@pytest.fixture(autouse=True)
+def _fresh_model_show_cache():
+    ollama_module._model_show_cache.clear()
+    yield
+    ollama_module._model_show_cache.clear()
 
 
 def _backend(fake: _FakeOllama, context_window: int) -> OllamaLLMBackend:
     backend = object.__new__(OllamaLLMBackend)
-    backend.model = "qwen3:14b"
+    backend.model = "qwen2.5:0.5b"
     backend.api_url = "http://ollama.local"
     backend.context_window = context_window
     backend.requests = fake
     return backend
 
 
-def _transcript_of_tokens(tokens: int) -> str:
-    return "x" * (tokens * ESTIMATED_BYTES_PER_TOKEN)
+def _notes(backend: OllamaLLMBackend) -> str:
+    return backend.generate_meeting_notes("[00:00 - 00:04] Ana: hi", {}, timeout=5)
 
 
-def _notes(backend: OllamaLLMBackend, transcript: str) -> str:
-    return backend.generate_meeting_notes(transcript, {}, timeout=5)
-
-
-def test_a_prompt_that_cannot_fit_is_refused_before_it_is_sent():
-    fake = _FakeOllama(trained_context=131072, chat_metadata={"done_reason": "stop"})
-    backend = _backend(fake, context_window=32768)
-
-    with pytest.raises(RuntimeError, match="context window was exhausted"):
-        _notes(backend, _transcript_of_tokens(32768))
-
-    assert fake.chat_payloads == []
-
-
-def test_the_answer_reserve_counts_against_the_window():
-    # A prompt that fits on its own but leaves no room for the notes would end
-    # in a truncated answer or a context shift, so it is refused up front too.
-    fake = _FakeOllama(trained_context=131072, chat_metadata={"done_reason": "stop"})
-    backend = _backend(fake, context_window=32768)
-
-    with pytest.raises(RuntimeError, match="context window was exhausted"):
-        _notes(backend, _transcript_of_tokens(32768 - OLLAMA_ANSWER_RESERVE_TOKENS))
-
-    assert fake.chat_payloads == []
-
-
-def test_a_prompt_ollama_truncated_is_refused_after_the_call():
-    # The estimate can be low (digits and non-Latin text take more tokens per
-    # byte); Ollama's own count is the authority. A truncated prompt comes back
-    # exactly num_ctx tokens long with an ordinary "stop".
-    fake = _FakeOllama(
-        trained_context=131072,
-        chat_metadata={
-            "done_reason": "stop",
-            "prompt_eval_count": 32768,
-            "eval_count": 900,
-        },
-    )
-    backend = _backend(fake, context_window=32768)
-
-    with pytest.raises(RuntimeError, match="context window was exhausted"):
-        _notes(backend, "[00:00 - 00:04] Speaker 1: short")
-
-    assert len(fake.chat_payloads) == 1
-
-
-def test_an_answer_that_filled_the_window_is_refused():
-    # Ollama shifts the context rather than stopping when the answer fills
-    # the window, dropping the start of the prompt mid-answer.
-    fake = _FakeOllama(
-        trained_context=131072,
-        chat_metadata={
-            "done_reason": "stop",
-            "prompt_eval_count": 30000,
-            "eval_count": 2768,
-        },
-    )
-    backend = _backend(fake, context_window=32768)
-
-    with pytest.raises(RuntimeError, match="context window was exhausted"):
-        _notes(backend, "[00:00 - 00:04] Speaker 1: short")
-
-
-def test_a_response_with_room_to_spare_is_kept():
-    fake = _FakeOllama(
-        trained_context=131072,
-        chat_metadata={
-            "done_reason": "stop",
-            "prompt_eval_count": 30000,
-            "eval_count": 2767,
-        },
-    )
-    backend = _backend(fake, context_window=32768)
-
-    assert "The launch moves to Friday." in _notes(backend, "short transcript")
-
-
-def test_the_window_is_clamped_to_what_the_model_was_trained_on():
-    # Ollama clamps num_ctx to the model's trained length at load, so a
-    # truncation at 8192 must be recognised even with 32768 configured.
-    fake = _FakeOllama(
-        trained_context=8192,
-        chat_metadata={
-            "done_reason": "stop",
-            "prompt_eval_count": 8192,
-            "eval_count": 400,
-        },
-    )
-    backend = _backend(fake, context_window=32768)
-
-    with pytest.raises(RuntimeError, match="context window was exhausted"):
-        _notes(backend, "short transcript")
-
-    assert fake.chat_payloads[0]["options"]["num_ctx"] == 8192
-
-
-def test_the_model_is_looked_up_once_per_backend():
-    fake = _FakeOllama(trained_context=131072, chat_metadata={"done_reason": "stop"})
-    backend = _backend(fake, context_window=32768)
-
-    _notes(backend, "first")
-    _notes(backend, "second")
-
-    assert fake.show_calls == 1
-    assert [p["options"]["num_ctx"] for p in fake.chat_payloads] == [32768, 32768]
-
-
-def test_an_unknown_model_length_falls_back_to_the_configured_window():
-    fake = _FakeOllama(trained_context=None, chat_metadata={"done_reason": "stop"})
-    backend = _backend(fake, context_window=32768)
-
-    _notes(backend, "short transcript")
-
-    assert fake.chat_payloads[0]["options"]["num_ctx"] == 32768
-
-
-def test_chat_history_ollama_may_drop_does_not_block_the_question():
-    # Ollama drops the oldest turns of a chat history to fit num_ctx but always
-    # keeps the last message, which carries the transcript and the question.
-    # Only that message has to fit.
-    fake = _FakeOllama(trained_context=131072, chat_metadata={"done_reason": "stop"})
-    backend = _backend(fake, context_window=32768)
-    long_turn = _transcript_of_tokens(20000)
-    history = [
-        {"role": "user", "parts": [{"text": long_turn}]},
-        {"role": "model", "parts": [{"text": long_turn}]},
-    ]
-
-    answer = backend.ask_question_about_meeting(
-        user_question="And then?",
+def _chat(backend: OllamaLLMBackend, history: list[dict] | None = None) -> str:
+    return backend.ask_question_about_meeting(
+        user_question="What was decided?",
         meeting_notes="notes",
-        diarized_transcript="[00:00 - 00:04] Speaker 1: hi",
+        diarized_transcript="[00:00 - 00:04] Ana: we ship Friday",
         conversation_history=history,
         timeout=5,
     )
 
-    assert answer == NOTES
+
+def _turns(count: int, size: int) -> list[dict]:
+    roles = ("user", "model")
+    return [
+        {"role": roles[i % 2], "parts": [{"text": f"{i}" * size}]} for i in range(count)
+    ]
+
+
+def test_every_request_has_ollama_refuse_rather_than_cut_the_prompt():
+    fake = _FakeOllama(_answer(FITS))
+    backend = _backend(fake, context_window=32768)
+
+    assert "The launch moves to Friday." in _notes(backend)
+
+    payload = fake.chat_payloads[0]
+    assert payload["truncate"] is False
+    assert payload["shift"] is False
+    # The answer is bounded by the window even where shift is ignored.
+    assert payload["options"]["num_predict"] == payload["options"]["num_ctx"] == 32768
+
+
+@pytest.mark.parametrize(
+    ("body", "window", "detail"),
+    [
+        (OVERFLOW_0_40, 512, "the window is 512 tokens and the prompt is 2,622 tokens"),
+        (OVERFLOW_0_12_6, 1024, "the window is 1,024 tokens"),
+    ],
+    ids=["ollama-0.34-and-0.40", "ollama-0.12.6"],
+)
+def test_ollamas_overflow_refusal_is_reported_as_the_context_window(
+    body, window, detail
+):
+    fake = _FakeOllama(_refusal(body))
+    backend = _backend(fake, context_window=window)
+
+    with pytest.raises(RuntimeError, match="context window was exhausted") as error:
+        _notes(backend)
+
+    assert detail in str(error.value)
     assert len(fake.chat_payloads) == 1
+
+
+def test_an_unrelated_error_is_not_called_a_context_overflow():
+    missing = {"error": 'model "qwen2.5:0.5b" not found, try pulling it first'}
+    fake = _FakeOllama(_refusal(missing, status_code=404))
+    backend = _backend(fake, context_window=32768)
+
+    with pytest.raises(RuntimeError) as error:
+        _notes(backend)
+
+    assert "404" in str(error.value)
+    assert "context window" not in str(error.value)
+
+
+@pytest.mark.parametrize("window", [1024, 4096, 32768])
+def test_a_short_prompt_fits_any_window_settings_accept(window):
+    fake = _FakeOllama(_answer(FITS, content="Budget sync"))
+    backend = _backend(fake, context_window=window)
+
+    title = backend.infer_meeting_title("[00:00 - 00:05] Ana: quick budget sync")
+
+    assert title == "Budget sync"
+    assert fake.chat_payloads[0]["options"]["num_ctx"] == window
+
+
+@pytest.mark.parametrize(
+    "metadata",
+    [WINDOW_FILLED_0_40, WINDOW_FILLED_0_12_6],
+    ids=["ollama-0.40", "ollama-0.12.6"],
+)
+def test_an_answer_that_filled_the_window_is_incomplete_and_refused(metadata):
+    fake = _FakeOllama(_answer(metadata))
+    backend = _backend(fake, context_window=512)
+
+    with pytest.raises(RuntimeError, match="answer is incomplete"):
+        _notes(backend)
+
+
+def test_a_server_that_ignores_truncate_is_still_caught_by_its_counts():
+    fake = _FakeOllama(_answer(TRUNCATED_0_12_5))
+    backend = _backend(fake, context_window=512)
+
+    with pytest.raises(RuntimeError, match="context window was exhausted"):
+        _notes(backend)
+
+
+def test_an_answer_that_ends_exactly_at_the_window_is_kept():
+    # With shift off nothing was cut: only a length stop or a prompt counted at
+    # the full window means a cut.
+    exact = {"done": True, "done_reason": "stop", "prompt_eval_count": 500}
+    fake = _FakeOllama(_answer({**exact, "eval_count": 12}))
+    backend = _backend(fake, context_window=512)
+
+    assert "The launch moves to Friday." in _notes(backend)
+
+
+def test_the_window_is_clamped_to_what_the_model_was_trained_on():
+    fake = _FakeOllama(_answer(FITS), trained_context=8192)
+    backend = _backend(fake, context_window=32768)
+
+    _notes(backend)
+
+    assert fake.chat_payloads[0]["options"]["num_ctx"] == 8192
+
+
+def test_an_unknown_model_length_falls_back_to_the_configured_window():
+    fake = _FakeOllama(_answer(FITS), trained_context=None)
+    backend = _backend(fake, context_window=32768)
+
+    _notes(backend)
+
+    assert fake.chat_payloads[0]["options"]["num_ctx"] == 32768
+
+
+def test_the_model_is_looked_up_once_per_process_until_the_entry_expires(
+    monkeypatch,
+):
+    clock = [1000.0]
+    monkeypatch.setattr(ollama_module.time, "monotonic", lambda: clock[0])
+    fake = _FakeOllama(*[_answer(FITS) for _ in range(3)], trained_context=131072)
+
+    _notes(_backend(fake, context_window=32768))
+    backend = _backend(fake, context_window=32768)
+    _notes(backend)
+    assert backend.supports_vision() is False
+    assert fake.show_calls == 1
+
+    clock[0] += ollama_module.MODEL_SHOW_TTL_SECONDS
+    _notes(_backend(fake, context_window=32768))
+    assert fake.show_calls == 2
+
+
+def test_chat_keeps_the_newest_turns_that_fit_and_never_cuts_the_question():
+    # 4096 window, a quarter of it kept for the answer: two 3,000-byte turns
+    # fit beside the question, three do not.
+    fake = _FakeOllama(_answer(FITS, content="Friday."))
+    backend = _backend(fake, context_window=4096)
+
+    assert _chat(backend, _turns(4, 3000)) == "Friday."
+
+    sent = fake.chat_payloads[0]["messages"]
+    assert [m["content"][0] for m in sent[:-1]] == ["2", "3"]
+    assert [m["role"] for m in sent[:-1]] == ["user", "assistant"]
+    assert "we ship Friday" in sent[-1]["content"]
+
+
+def test_chat_trims_again_by_ollamas_own_count_when_it_still_refuses():
+    # Dense text (digits, CJK) can run past the estimate; Ollama's count then
+    # decides how many more turns go.
+    fake = _FakeOllama(
+        _refusal(_llama_server_overflow(9000, 8192)),
+        _answer(FITS, content="Friday."),
+    )
+    backend = _backend(fake, context_window=8192)
+
+    assert _chat(backend, _turns(4, 2600)) == "Friday."
+
+    first, retry = (p["messages"] for p in fake.chat_payloads)
+    assert len(first) == 5
+    assert [m["content"][0] for m in retry[:-1]] == ["2", "3"]
+    assert retry[-1] == first[-1]
+
+
+def test_chat_drops_every_turn_when_ollama_gives_no_count():
+    fake = _FakeOllama(_refusal(OVERFLOW_0_12_6), _answer(FITS, content="Friday."))
+    backend = _backend(fake, context_window=8192)
+
+    assert _chat(backend, _turns(2, 1000)) == "Friday."
+
+    assert len(fake.chat_payloads[1]["messages"]) == 1
+
+
+def test_chat_refuses_once_trimming_cannot_make_it_fit():
+    fake = _FakeOllama(_refusal(OVERFLOW_0_12_6), _refusal(OVERFLOW_0_12_6))
+    backend = _backend(fake, context_window=8192)
+
+    with pytest.raises(RuntimeError, match="context window was exhausted"):
+        _chat(backend, _turns(2, 1000))
+
+    assert len(fake.chat_payloads) == 2
+
+
+def test_a_chat_without_history_is_not_retried():
+    fake = _FakeOllama(_refusal(OVERFLOW_0_40))
+    backend = _backend(fake, context_window=512)
+
+    with pytest.raises(RuntimeError, match="context window was exhausted"):
+        _chat(backend)
+
+    assert len(fake.chat_payloads) == 1
+
+
+def _stream(backend) -> list[str]:
+    return list(
+        backend.ask_question_streaming(
+            user_question="What was decided?",
+            meeting_notes="notes",
+            diarized_transcript="[00:00 - 00:04] Ana: we ship Friday",
+        )
+    )
+
+
+def test_a_streaming_overflow_is_refused_before_any_text_and_falls_back():
+    primary = _backend(_FakeOllama(_refusal(OVERFLOW_0_40)), context_window=512)
+    stream = _Response(
+        {},
+        chunks=[
+            {"message": {"content": "Friday."}, "done": False},
+            {"message": {"content": ""}, **FITS},
+        ],
+    )
+    secondary = _backend(_FakeOllama(stream), context_window=32768)
+    secondary.model = "qwen2.5:7b"
+
+    with pytest.raises(RuntimeError, match="context window was exhausted"):
+        next(iter(primary.ask_question_streaming("q", "notes", "transcript")))
+
+    primary.requests.chat_responses.append(_refusal(OVERFLOW_0_40))
+    assert _stream(SecondaryLLMBackend(primary, secondary)) == ["Friday."]

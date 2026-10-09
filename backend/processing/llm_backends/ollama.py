@@ -1,7 +1,8 @@
 import logging
+import time
 from typing import Dict, Generator, List, Optional, Sequence
 
-from requests import RequestException
+from requests import HTTPError, RequestException
 
 from backend.utils.config_manager import config_manager
 from backend.utils.meeting_analysis import (
@@ -34,37 +35,22 @@ from backend.processing.llm_backends.base import (
     is_vision_unsupported_error,
     summarize_llm_response_shape,
 )
+from backend.processing.llm_backends.ollama_context import (
+    CONTEXT_EXHAUSTED_ADVICE,
+    OllamaContextOverflowError,
+    context_overflow_from_response,
+    trim_chat_history,
+    trim_chat_history_after_overflow,
+)
 
 # Ollama's num_ctx defaults to 2048, which silently truncates meeting-length prompts.
 OLLAMA_DEFAULT_NUM_CTX = 8192
 
-# Room the pre-flight check keeps free for the answer. Ollama does not cap the
-# answer (num_predict is never sent), so this is a margin, not a limit: a prompt
-# that leaves less than this is refused before it is sent.
-OLLAMA_ANSWER_RESERVE_TOKENS = 4096
-
-# UTF-8 bytes per token for the pre-flight estimate. Tokenisers give about four
-# for English prose and fewer for digits (every transcript line opens with a
-# timestamp) and non-Latin scripts, so the estimate leans low: it refuses only a
-# prompt that clearly cannot fit, and the prompt_eval_count check after the call
-# catches the rest.
-ESTIMATED_BYTES_PER_TOKEN = 4
-
-CONTEXT_EXHAUSTED_ADVICE = (
-    "Increase the Ollama context window or select a model with a larger context."
-)
-
-
-def estimate_prompt_tokens(messages: Sequence[dict]) -> int:
-    """Estimate the tokens of the part of a chat request Ollama always sends.
-
-    To fit num_ctx, Ollama drops the oldest turns of a chat history but keeps
-    the system messages and the last message, so those are what must fit.
-    """
-    kept = [m for m in messages[:-1] if m.get("role") == "system"]
-    kept.extend(messages[-1:])
-    size = sum(len(str(m.get("content") or "").encode("utf-8")) for m in kept)
-    return size // ESTIMATED_BYTES_PER_TOKEN
+# /api/show answers are reused for this long per server and model: a model
+# pulled again under the same name can change its context length or
+# capabilities, and /api/show carries no digest to key on.
+MODEL_SHOW_TTL_SECONDS = 300.0
+_model_show_cache: dict[tuple[str, str], tuple[float, dict]] = {}
 
 
 class OllamaLLMBackend(LLMBackend):
@@ -94,30 +80,45 @@ class OllamaLLMBackend(LLMBackend):
             "ollama_context_window"
         )
 
+    def _model_show(self) -> Optional[dict]:
+        """``/api/show`` for the selected model, cached per server and model.
+
+        Backends are built per call, so the cache is per process. A failure is
+        raised and not cached.
+        """
+        model = getattr(self, "model", None)
+        if not model:
+            return None
+        key = (self.api_url, model)
+        cached = _model_show_cache.get(key)
+        now = time.monotonic()
+        if cached and now - cached[0] < MODEL_SHOW_TTL_SECONDS:
+            return cached[1]
+        resp = self._post("/api/show", json={"model": model}, timeout=10)
+        resp.raise_for_status()
+        body = resp.json()
+        if not isinstance(body, dict):
+            raise ValueError("Ollama /api/show returned a non-object body")
+        _model_show_cache[key] = (now, body)
+        return body
+
     def _model_context_length(self) -> Optional[int]:
         """The model's trained context length from ``/api/show``, or None.
 
         Ollama clamps num_ctx to this length when it loads the model, so it is
-        the real ceiling of the window. Asked once per backend instance.
+        the real ceiling of the window.
         """
-        if hasattr(self, "_trained_context_length"):
-            return self._trained_context_length
-        length = None
-        if getattr(self, "model", None):
-            try:
-                resp = self._post("/api/show", json={"model": self.model}, timeout=10)
-                resp.raise_for_status()
-                info = resp.json().get("model_info") or {}
-                raw = info.get(f"{info.get('general.architecture')}.context_length")
-                if isinstance(raw, int) and raw > 0:
-                    length = raw
-            except (RequestException, ValueError, AttributeError) as e:
-                # An unknown length falls back to the configured window.
-                logger.debug(
-                    f"Ollama context length probe failed for {self.model}: {e}"
-                )
-        self._trained_context_length = length
-        return length
+        try:
+            show = self._model_show()
+        except (RequestException, ValueError) as e:
+            # An unknown length falls back to the configured window.
+            logger.debug(f"Ollama context length probe failed for {self.model}: {e}")
+            return None
+        info = (show or {}).get("model_info")
+        if not isinstance(info, dict):
+            return None
+        raw = info.get(f"{info.get('general.architecture')}.context_length")
+        return raw if isinstance(raw, int) and raw > 0 else None
 
     def _context_window(self) -> int:
         """The num_ctx to send: the configured window, clamped to the model's.
@@ -134,46 +135,88 @@ class OllamaLLMBackend(LLMBackend):
         return min(configured, trained) if trained else configured
 
     def _chat_options(self, *, temperature: float) -> dict[str, object]:
-        return {"temperature": temperature, "num_ctx": self._context_window()}
+        window = self._context_window()
+        # With shift off the window already bounds the answer to num_ctx minus
+        # the prompt. num_predict holds a server that ignores shift (before
+        # 0.12.6) to the same bound; its own cap is ten windows of a looping
+        # model shifting the context.
+        return {"temperature": temperature, "num_ctx": window, "num_predict": window}
 
     def _post_chat(self, payload: dict, **kwargs):
-        """POST ``/api/chat`` once the prompt is known to fit the window.
+        """POST ``/api/chat`` with Ollama as the judge of whether it fits.
 
-        Ollama does not refuse an oversized prompt: it drops tokens from the
-        front of it and answers from what is left, which for meeting notes
-        means the instructions and the start of the meeting.
+        ``truncate: false`` makes Ollama refuse a prompt longer than num_ctx
+        instead of cutting it and answering from the rest; ``shift: false``
+        makes an answer that fills the window stop with ``done_reason:
+        "length"`` instead of shifting the prompt out. Servers before 0.12.6
+        ignore both; ``_raise_if_truncated`` covers them.
+        """
+        payload = {**payload, "truncate": False, "shift": False}
+        resp = self._post("/api/chat", json=payload, **kwargs)
+        try:
+            resp.raise_for_status()
+        except HTTPError as e:
+            try:
+                body = resp.json()
+            except ValueError:
+                body = None
+            overflow = context_overflow_from_response(
+                resp.status_code, body, int(payload["options"]["num_ctx"])
+            )
+            if overflow is None:
+                raise
+            raise overflow from e
+        return resp
+
+    def _post_chat_trimming_history(self, payload: dict, **kwargs):
+        """POST a conversation, dropping the oldest turns that do not fit.
+
+        The meeting context and the question ride on the last message and are
+        never cut. Turns are trimmed against an estimate first; if Ollama still
+        refuses, once more against its own count, and then the refusal stands.
         """
         window = int(payload["options"]["num_ctx"])
-        estimate = estimate_prompt_tokens(payload["messages"])
-        if estimate + OLLAMA_ANSWER_RESERVE_TOKENS > window:
-            raise RuntimeError(
-                "The Ollama context window was exhausted before the request was "
-                f"sent: the prompt needs about {estimate:,} tokens plus "
-                f"{OLLAMA_ANSWER_RESERVE_TOKENS:,} for the answer, and the window "
-                f"is {window:,} tokens. {CONTEXT_EXHAUSTED_ADVICE}"
+        messages = trim_chat_history(payload["messages"], window)
+        try:
+            return self._post_chat({**payload, "messages": messages}, **kwargs)
+        except OllamaContextOverflowError as overflow:
+            retry = trim_chat_history_after_overflow(messages, overflow)
+            if retry is None:
+                raise
+            logger.info(
+                "Ollama refused %s chat messages (%s tokens, window %s); "
+                "retrying with %s",
+                len(messages),
+                overflow.prompt_tokens,
+                overflow.window,
+                len(retry),
             )
-        return self._post("/api/chat", json=payload, **kwargs)
+            return self._post_chat({**payload, "messages": retry}, **kwargs)
 
     def _raise_if_truncated(self, response_metadata: dict | None) -> None:
-        """Refuse a response whose prompt or answer ran out of window.
+        """Refuse a response whose answer or prompt ran out of window.
 
-        A length stop is the obvious case. The quiet ones end in an ordinary
-        stop: a truncated prompt comes back exactly num_ctx tokens long, and
-        an answer that fills the window makes Ollama shift the context, losing
-        the start of the prompt. Either way the counts reach the window.
+        A length stop means the answer is incomplete. The token counts are a
+        fallback for servers before 0.12.6, which ignore ``truncate`` and
+        ``shift``: they cut an oversized prompt to exactly num_ctx tokens and
+        shift the context when the answer fills it, each with an ordinary stop.
         """
         if not response_metadata:
             return
         prompt_eval_count = response_metadata.get("prompt_eval_count")
         eval_count = response_metadata.get("eval_count")
-        window_filled = (
-            isinstance(prompt_eval_count, int)
-            and prompt_eval_count + (eval_count or 0) >= self._context_window()
-        )
-        if response_metadata.get("done_reason") != "length" and not window_filled:
-            return
+        if response_metadata.get("done_reason") != "length":
+            if not isinstance(prompt_eval_count, int):
+                return
+            window = self._context_window()
+            if (
+                prompt_eval_count < window
+                and prompt_eval_count + (eval_count or 0) <= window
+            ):
+                return
         raise RuntimeError(
-            "Ollama stopped because the context window was exhausted "
+            "Ollama stopped because the context window was exhausted, so the "
+            "answer is incomplete and was not used "
             f"(prompt_eval_count={prompt_eval_count}, eval_count={eval_count}). "
             f"{CONTEXT_EXHAUSTED_ADVICE}"
         )
@@ -219,9 +262,7 @@ class OllamaLLMBackend(LLMBackend):
         if not self.model:
             return None
         try:
-            resp = self._post("/api/show", json={"model": self.model}, timeout=10)
-            resp.raise_for_status()
-            capabilities = resp.json().get("capabilities")
+            capabilities = (self._model_show() or {}).get("capabilities")
         except Exception as e:  # noqa: BLE001
             logger.debug(f"Ollama capability probe failed for {self.model}: {e}")
             return None
@@ -608,7 +649,7 @@ class OllamaLLMBackend(LLMBackend):
                 "stream": False,
                 "options": self._chat_options(temperature=0.3),
             }
-            resp = self._post_chat(payload, timeout=timeout)
+            resp = self._post_chat_trimming_history(payload, timeout=timeout)
             resp.raise_for_status()
             response_json = resp.json()
             self._raise_if_truncated(response_json)
@@ -656,7 +697,9 @@ class OllamaLLMBackend(LLMBackend):
                 "stream": True,
                 "options": self._chat_options(temperature=0.3),
             }
-            resp = self._post_chat(payload, stream=True, timeout=timeout)
+            resp = self._post_chat_trimming_history(
+                payload, stream=True, timeout=timeout
+            )
             resp.raise_for_status()
 
             import json

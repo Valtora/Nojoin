@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from backend.processing.llm_backends import ollama as ollama_module
 from backend.processing.llm_backends.base import (
     NOTES_MAX_OUTPUT_TOKEN_LADDER,
     NOTES_MAX_OUTPUT_TOKENS,
@@ -23,6 +24,14 @@ from backend.utils.meeting_intelligence import (
     AutomaticMeetingIntelligenceRequest,
     AutomaticMeetingIntelligenceResult,
 )
+
+
+@pytest.fixture(autouse=True)
+def _fresh_ollama_model_show_cache():
+    # /api/show answers are cached per process; each fake server starts clean.
+    ollama_module._model_show_cache.clear()
+    yield
+    ollama_module._model_show_cache.clear()
 
 
 def _sample_request() -> AutomaticMeetingIntelligenceRequest:
