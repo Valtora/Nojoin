@@ -197,6 +197,25 @@ class TestAnalyseDelivery:
 
         assert result["skipped_short"] == 1
 
+    def test_utterances_past_the_end_of_the_audio_are_counted(self, tmp_path, caplog):
+        # A decode cut short (a broken WAV header, a stream ffmpeg gave up on
+        # partway) leaves the transcript running past the audio. Those
+        # utterances cannot be measured, and must not vanish silently.
+        audio = tmp_path / "meeting.wav"
+        write_wav(audio, [voiced_tone(150.0, 20.0)])
+        utterances = utterances_for("rs:1", MIN_UTTERANCES_PER_SPEAKER)
+        utterances += utterances_for("rs:1", 2, start_ms=21_000)
+
+        with caplog.at_level("WARNING"):
+            result = analyse_delivery(str(audio), utterances, browser_capture=False)
+
+        assert result["skipped_beyond_audio"] == 2
+        assert result["skipped_short"] == 0
+        assert result["speakers"]["rs:1"]["analysed_utterances"] == (
+            MIN_UTTERANCES_PER_SPEAKER
+        )
+        assert "2 utterance(s) starting after the end of the audio" in caplog.text
+
     def test_loudness_is_flagged_incomparable_across_capture_sources(self, tmp_path):
         # One speaker on the microphone and one on shared audio have been
         # through different signal chains, so comparing their loudness compares

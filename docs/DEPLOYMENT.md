@@ -319,6 +319,8 @@ The Parakeet and Canary ASR engines also use ONNX Runtime CUDA. They load fp32 w
 
 A small number of memcpy nodes is normal, since some graph operations are inherently CPU-pinned. A count in the hundreds or thousands is not, and means the graph is not really running on the GPU.
 
+Preparation fetches the precision the lane loads: fp32 on a worker with a GPU, int8 otherwise. On a GPU host that makes the download larger: about 2.5 GB for Parakeet (the 2.4 GB encoder weights plus 0.1 GB of graphs) against 0.7 GB at int8, and about 4 GB for Canary (3.3 GB of encoder weights plus a 0.7 GB decoder) against 1 GB. Preparation validates the model on the CPU, so it briefly holds that much host memory, but it reserves no VRAM. In exchange, the first transcription on a GPU host does not wait on that download.
+
 The fp32 weights also constrain the transcription window. Attention activations grow with the square of the window length, so the ASR window is capped at 120 seconds on a GPU host against 240 on CPU (`GPU_MAX_CHUNK_DURATION_S`). On an 8 GB card the 240 second window overflows VRAM outright. If live capture and a transcription job contend for the same card, lower that value further.
 
 ONNX Runtime's memory arena grows to fit the largest window and never shrinks, so the ASR models are released after transcription and before diarization rather than at the end of the task. Without that release, a finished ASR session leaves diarization with no VRAM to allocate and it fails with a CUDA out-of-memory error while the transcript itself succeeds.

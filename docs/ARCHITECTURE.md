@@ -177,7 +177,13 @@ interface present it without hedging and lets a user check it against the
 audio.
 
 Deliberately numpy and soundfile only, so it holds no model and never pulls
-torch in. The pitch estimator is YIN's cumulative-mean-normalised difference
+torch in. A recording soundfile cannot open is first decoded with ffmpeg to a
+temporary 16 kHz WAV that keeps its channels: a browser capture is stored in
+the container MediaRecorder produced (WebM/Opus, or MP4/AAC on older Safari),
+and imports such as M4A, AAC, MP4 and WMA keep theirs. 16 kHz is the rate the
+pitch estimator was validated at, and it keeps the decoded copy of a long
+two-channel capture to about a third of its native size.
+The pitch estimator is YIN's cumulative-mean-normalised difference
 function — closed-form numpy, chosen after the original autocorrelation
 picker measured a 4% gross-error rate against laryngograph ground truth,
 enough to inflate the pitch-movement spread; the replacement halves every
@@ -243,6 +249,8 @@ from the same "Measure delivery" action for old ones. The result stores under
 the `audio_overlap` key of `analytics_payload` with its own method version
 and its status inside the block — it needs no column and no staleness story,
 because it depends only on the audio, which never changes after processing.
+A recording soundfile cannot open is decoded with ffmpeg to a temporary 16 kHz
+mono WAV first, the rate and layout the model works at.
 
 What it reports is deliberately narrow: that people talked over each other,
 for at least how long, and where in the meeting — never who overlapped whom.

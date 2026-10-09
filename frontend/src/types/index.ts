@@ -1161,6 +1161,9 @@ export interface AnalyticsDelivery {
   channel_layout: "browser_live" | "single_source";
   skipped_overlapping: number;
   skipped_short: number;
+  // Utterances starting after the end of the audio that was read. Absent from
+  // blocks measured before it was counted.
+  skipped_beyond_audio?: number;
   ambiguous_channel: number;
 }
 
