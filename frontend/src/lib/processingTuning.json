@@ -1,0 +1,10 @@
+{
+  "vad_threshold": { "default": 0.5, "min": 0.15, "max": 0.9, "integer": false },
+  "asr_word_end_padding_s": { "default": 0.2, "min": 0.05, "max": 0.8, "integer": false },
+  "phantom_max_duration_s": { "default": 3, "min": 0, "max": 10, "integer": false },
+  "phantom_max_segments": { "default": 3, "min": 0, "max": 20, "integer": true },
+  "phantom_embedding_floor": { "default": 0.35, "min": 0, "max": 0.95, "integer": false },
+  "phantom_merge_threshold": { "default": 0.6, "min": 0.05, "max": 1, "integer": false },
+  "word_flip_max_duration_s": { "default": 0.45, "min": 0, "max": 2, "integer": false },
+  "word_flip_max_gap_s": { "default": 0.25, "min": 0, "max": 1, "integer": false }
+}

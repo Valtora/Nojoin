@@ -1,5 +1,6 @@
 import logging
 import os
+from collections.abc import Mapping
 from typing import Any, Dict, Tuple
 
 import numpy as np
@@ -7,6 +8,11 @@ import silero_vad
 import torch
 import torchaudio
 
+from backend.processing.processing_tuning import (
+    TUNING_SPECS,
+    VAD_THRESHOLD_KEY,
+    normalise_tuning_value,
+)
 from backend.utils.audio import load_audio
 
 logger = logging.getLogger(__name__)
@@ -53,6 +59,7 @@ def mute_non_speech_segments(
     silence_method: str | None = None,  # "mute" or "fade"
     start_mute_ms: int = 1000,  # Mute first X ms to remove recording artifacts
     end_mute_ms: int = 1000,  # Mute last X ms to remove recording artifacts
+    config: Mapping[str, Any] | None = None,
 ) -> Tuple[bool, float]:
     """
     Uses Silero VAD to mute non-speech segments in a WAV file with enhanced metrics and quality improvements.
@@ -69,6 +76,8 @@ def mute_non_speech_segments(
         silence_method: Method for handling non-speech ("mute" or "fade")
         start_mute_ms: Duration in ms to forcibly mute at the start (default: 200ms)
         end_mute_ms: Duration in ms to forcibly mute at the end (default: 200ms)
+        config: The recording owner's merged settings; a valid ``vad_threshold``
+            there overrides the install's VAD threshold.
 
     Returns:
         Tuple (success: bool, speech_duration_seconds: float)
@@ -77,7 +86,7 @@ def mute_non_speech_segments(
     fade_duration_ms, and silence_method left as None default from the user's
     VAD settings (get_vad_config_from_settings), matching the live path.
     """
-    vad_config = get_vad_config_from_settings()
+    vad_config = get_vad_config_from_settings(config)
     if threshold is None:
         threshold = vad_config["threshold"]
     if min_speech_duration_ms is None:
@@ -401,6 +410,7 @@ def detect_speech_segments(
     sample_rate: int = 16000,
     min_silence_duration_ms: int | None = None,
     speech_pad_ms: int | None = None,
+    config: Mapping[str, Any] | None = None,
 ) -> list:
     """Return speech-region boundaries for a 16 kHz mono audio buffer.
 
@@ -412,6 +422,8 @@ def detect_speech_segments(
         silero VAD. When not None, it overrides the value from
         get_vad_config_from_settings(); when None, the config/default value is
         used (behaviour unchanged for the batch path).
+    config: the recording owner's merged settings; a valid ``vad_threshold``
+        there overrides the install's VAD threshold.
     Returns: list[dict] of {"start": float_seconds, "end": float_seconds}.
     """
     from pathlib import Path
@@ -466,7 +478,7 @@ def detect_speech_segments(
     tensor = tensor.to(device)
 
     # Merge VAD parameters from settings, falling back to sensible defaults.
-    vad_config = get_vad_config_from_settings()
+    vad_config = get_vad_config_from_settings(config)
     threshold = vad_config.get("threshold", 0.5)
     min_speech_duration_ms = vad_config.get("min_speech_duration_ms", 250)
     if min_silence_duration_ms is None:
@@ -491,12 +503,19 @@ def detect_speech_segments(
     ]
 
 
-def get_vad_config_from_settings() -> Dict[str, Any]:
-    """Get VAD configuration from application settings."""
+def get_vad_config_from_settings(
+    overrides: Mapping[str, Any] | None = None,
+) -> Dict[str, Any]:
+    """Get VAD configuration from application settings.
+
+    The install's ``vad_parameters`` apply over the shipped defaults. A valid
+    ``vad_threshold`` in ``overrides`` (the recording owner's merged settings)
+    then replaces the threshold; an invalid one is logged and ignored.
+    """
     from backend.utils.config_manager import config_manager
 
     defaults = {
-        "threshold": 0.5,
+        "threshold": TUNING_SPECS[VAD_THRESHOLD_KEY].default,
         "min_speech_duration_ms": 250,
         "min_silence_duration_ms": 100,
         "fade_duration_ms": 50,
@@ -508,5 +527,18 @@ def get_vad_config_from_settings() -> Dict[str, Any]:
     # Merge with defaults
     final_config = defaults.copy()
     final_config.update(config)
+
+    requested = overrides.get(VAD_THRESHOLD_KEY) if overrides else None
+    if requested is not None:
+        threshold = normalise_tuning_value(VAD_THRESHOLD_KEY, requested)
+        if threshold is None:
+            logger.warning(
+                "[VAD] Ignoring invalid %s=%r; using %s.",
+                VAD_THRESHOLD_KEY,
+                requested,
+                final_config["threshold"],
+            )
+        else:
+            final_config["threshold"] = threshold
 
     return final_config

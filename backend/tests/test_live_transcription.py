@@ -1478,6 +1478,88 @@ def test_live_in_order_run(monkeypatch, tmp_path):
     assert state["next_expected"] == 3
 
 
+def test_live_task_passes_the_owners_vad_threshold_to_vad(monkeypatch, tmp_path):
+    """Each run hands the engine config, with the owner's threshold, to VAD."""
+    from backend.models.recording import RecordingStatus
+    from backend.processing import live_transcribe as lt
+    from backend.processing import vad as vad_module
+
+    temp_dir = tmp_path / "42"
+    temp_dir.mkdir()
+    monkeypatch.setattr(
+        lt, "recording_upload_temp_dir", lambda rid, create=False: temp_dir
+    )
+    audio_store = _patch_live_deps(
+        monkeypatch, speech_map=lambda audio: [{"start": 0.0, "end": 1.0}]
+    )
+    vad_configs: list = []
+    warned: list = []
+
+    def _detect(audio, *args, config=None, **kwargs):
+        vad_configs.append(config)
+        return [{"start": 0.0, "end": 1.0}]
+
+    def _resolve(recording_id, live_config, *, warn_unusable):
+        warned.append(warn_unusable)
+        live_config["vad_threshold"] = 0.3
+        return live_config
+
+    monkeypatch.setattr(vad_module, "detect_speech_segments", _detect)
+    monkeypatch.setattr(lt, "_resolve_live_engine_config", _resolve)
+    session = _FakeSession(_FakeRecording(RecordingStatus.UPLOADING, _FakeTranscript()))
+
+    for sequence in (0, 1):
+        _make_segment_wav(temp_dir, sequence, 2.0, audio_store)
+        _run_live_task(monkeypatch, 42, sequence, session)
+
+    assert [config["vad_threshold"] for config in vad_configs] == [0.3, 0.3]
+    # Once a run has completed, later runs stop warning about unusable values.
+    assert warned == [True, False]
+
+
+def test_live_task_keeps_warning_until_a_run_completes(monkeypatch, tmp_path):
+    """A first run that fails before it loads the config must not use up the
+    one warning about an unusable tuning value."""
+    from backend.models.recording import RecordingStatus
+    from backend.processing import live_transcribe as lt
+
+    temp_dir = tmp_path / "42"
+    temp_dir.mkdir()
+    monkeypatch.setattr(
+        lt, "recording_upload_temp_dir", lambda rid, create=False: temp_dir
+    )
+    audio_store = _patch_live_deps(
+        monkeypatch, speech_map=lambda audio: [{"start": 0.0, "end": 1.0}]
+    )
+    real_build = lt._build_live_combined_buffer
+    builds: list = []
+
+    def _build_failing_first(**kwargs):
+        builds.append(kwargs["run"])
+        if len(builds) == 1:
+            raise RuntimeError("corrupt first segment")
+        return real_build(**kwargs)
+
+    warned: list = []
+
+    def _resolve(recording_id, live_config, *, warn_unusable):
+        warned.append(warn_unusable)
+        return live_config
+
+    monkeypatch.setattr(lt, "_build_live_combined_buffer", _build_failing_first)
+    monkeypatch.setattr(lt, "_resolve_live_engine_config", _resolve)
+    session = _FakeSession(_FakeRecording(RecordingStatus.UPLOADING, _FakeTranscript()))
+
+    for sequence in (0, 1, 2):
+        _make_segment_wav(temp_dir, sequence, 2.0, audio_store)
+        _run_live_task(monkeypatch, 42, sequence, session)
+
+    # Run 0 failed before resolving the config; run 1 is the first to resolve
+    # it and still warns; run 2 follows a completed run and does not.
+    assert builds == [[0], [1], [2]]
+    assert warned == [True, False]
+
+
 def test_live_out_of_order_arrival(monkeypatch, tmp_path):
     """seq=1 first returns without advancing; seq=0 drains the run [0,1]."""
     from backend.models.recording import RecordingStatus
