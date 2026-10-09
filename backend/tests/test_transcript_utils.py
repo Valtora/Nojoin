@@ -394,6 +394,61 @@ def test_segment_level_combination_keeps_only_string_ids():
     assert [seg.get("id") for seg in result] == [None, "live-7"]
 
 
+def test_combination_keeps_every_segment_when_none_has_words():
+    # Whisper asked for word timestamps and aligned none: on the old
+    # first-segment check this collapsed to one empty UNKNOWN segment.
+    transcription = {
+        "segments": [
+            {"id": 0, "start": 0.0, "end": 2.0, "text": " Hello there.", "words": []},
+            {"id": 1, "start": 2.0, "end": 4.0, "text": " Over here.", "words": []},
+        ]
+    }
+    diarization = FakeDiarization([(0.0, 2.0, "SPEAKER_00"), (2.0, 4.0, "SPEAKER_01")])
+
+    result = combine_transcription_diarization(transcription, diarization)
+
+    assert _spans(result) == [
+        (0.0, 2.0, "SPEAKER_00", "Hello there."),
+        (2.0, 4.0, "SPEAKER_01", "Over here."),
+    ]
+
+
+def test_consolidation_merges_a_wordless_segment_with_its_neighbours():
+    transcription = {
+        "segments": [
+            {
+                "id": 0,
+                "start": 0.0,
+                "end": 1.0,
+                "text": " Okay so",
+                "words": [
+                    {"start": 0.0, "end": 0.5, "word": " Okay"},
+                    {"start": 0.5, "end": 1.0, "word": " so"},
+                ],
+            },
+            {"id": 1, "start": 1.0, "end": 2.0, "text": " ...", "words": []},
+            {
+                "id": 2,
+                "start": 2.0,
+                "end": 3.0,
+                "text": " moving on",
+                "words": [
+                    {"start": 2.0, "end": 2.5, "word": " moving"},
+                    {"start": 2.5, "end": 3.0, "word": " on"},
+                ],
+            },
+        ]
+    }
+    diarization = FakeDiarization([(0.0, 3.0, "SPEAKER_00")])
+
+    result = consolidate_diarized_transcript(
+        combine_transcription_diarization(transcription, diarization)
+    )
+
+    assert _spans(result) == [(0.0, 3.0, "SPEAKER_00", "Okay so ... moving on")]
+    assert "id" not in result[0]
+
+
 def test_combination_aligns_words_after_a_segment_without_them():
     # A chunked onnx-asr run can return one window without token timings;
     # later windows still carry words and must be aligned word by word.
