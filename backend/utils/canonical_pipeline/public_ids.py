@@ -6,12 +6,16 @@ and ``_with_word_source_public_ids``), and a transcript projection carries the
 ids of the utterances it was built from, but the same key also carries whatever
 an engine called its segments: openai-whisper numbers them 0, 1, 2. A kept id
 is persisted as ``transcript_utterances.public_id``, which is unique across
-every recording, so the writers that build utterances from segments (finalize
-and the backfill/replace path) hand ids out through ``UtterancePublicIds``.
+every recording.
+
+Finalize and backfill hand ids out through ``UtterancePublicIds``. A client's
+full-replace edit keeps its own ids through ``RequestedPublicIds``, which
+refuses the write up front when an existing utterance already holds one.
 """
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Iterable, Mapping
 from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
@@ -23,6 +27,10 @@ from backend.utils.db_batching import bind_batches
 
 if TYPE_CHECKING:
     from sqlmodel import Session
+
+
+class SegmentIdConflictError(RuntimeError):
+    """A full replace asked to reuse ids that existing utterances hold."""
 
 
 def is_utterance_public_id(value: str) -> bool:
@@ -42,24 +50,26 @@ def _requested_public_id(segment: Mapping[str, Any]) -> str:
     return str(segment.get("id") or "").strip()
 
 
-def _ids_held_elsewhere(
-    session: Session, *, recording_id: int, candidates: list[str]
+def _held_ids(
+    session: Session,
+    candidates: list[str],
+    *,
+    excluding_recording_id: int | None = None,
 ) -> set[str]:
     held: set[str] = set()
     for batch in bind_batches(candidates):
-        held.update(
-            session.execute(
-                select(TranscriptUtterance.public_id)
-                .where(col(TranscriptUtterance.public_id).in_(batch))
-                .where(TranscriptUtterance.recording_id != recording_id)
-            )
-            .scalars()
-            .all()
+        statement = select(TranscriptUtterance.public_id).where(
+            col(TranscriptUtterance.public_id).in_(batch)
         )
+        if excluding_recording_id is not None:
+            statement = statement.where(
+                TranscriptUtterance.recording_id != excluding_recording_id
+            )
+        held.update(session.execute(statement).scalars().all())
     return held
 
 
-def _record_source_public_id(segment: dict[str, Any], public_id: str) -> None:
+def _record_source_public_id(segment: dict[str, Any], public_id: str) -> list[str]:
     """Note on the segment that its utterance replaces ``public_id``."""
     confidence_payload = dict(segment.get("confidence_payload") or {})
     source_public_ids = [
@@ -73,6 +83,7 @@ def _record_source_public_id(segment: dict[str, Any], public_id: str) -> None:
         source_public_ids.append(public_id)
     confidence_payload["source_public_ids"] = source_public_ids
     segment["confidence_payload"] = confidence_payload
+    return source_public_ids
 
 
 class UtterancePublicIds:
@@ -110,9 +121,10 @@ class UtterancePublicIds:
                 if is_utterance_public_id(public_id)
             }
         )
-        self._claimable = set(candidates) - _ids_held_elsewhere(
-            session, recording_id=recording_id, candidates=candidates
+        self._claimable = set(candidates) - _held_ids(
+            session, candidates, excluding_recording_id=recording_id
         )
+        self._sources: dict[str, list[str]] = {}
 
     def assign(self, segment: dict[str, Any]) -> str:
         """The public id for the utterance built from ``segment``.
@@ -120,8 +132,9 @@ class UtterancePublicIds:
         May add ``confidence_payload.source_public_ids`` to ``segment``.
         """
         requested = _requested_public_id(segment)
+        sources: list[str] | None = None
         if requested in self._held_here:
-            _record_source_public_id(segment, requested)
+            sources = _record_source_public_id(segment, requested)
         elif requested in self._claimable:
             self._held_here.add(requested)
             return requested
@@ -129,4 +142,53 @@ class UtterancePublicIds:
         while public_id in self._held_here:
             public_id = str(uuid4())
         self._held_here.add(public_id)
+        if sources is not None:
+            self._sources[public_id] = sources
         return public_id
+
+    def lineage_for(self, public_id: str) -> dict[str, Any] | None:
+        """The row payload naming the ids ``public_id`` was minted over, if any."""
+        sources = self._sources.get(public_id)
+        return {"source_public_ids": sources} if sources else None
+
+
+class RequestedPublicIds:
+    """Keeps a client's own segment ids, as a full-replace edit always has.
+
+    Refuses the whole write before anything changes when an existing
+    utterance, in any recording or state, already holds a requested id, or
+    when the request repeats one: inserting it would violate the unique index.
+    """
+
+    def __init__(self, session: Session, segments: Iterable[Mapping[str, Any]]):
+        counts = Counter(
+            str(segment["id"]) for segment in segments if segment.get("id")
+        )
+        repeated = {public_id for public_id, count in counts.items() if count > 1}
+        conflicts = sorted(repeated | _held_ids(session, sorted(counts)))
+        if conflicts:
+            raise SegmentIdConflictError(
+                f"{len(conflicts)} segment id(s) already belong to existing "
+                f"utterances or repeat in the request (first: {conflicts[0]}). "
+                "Send exactly the current utterance ids to edit in place, or "
+                "omit ids for new segments."
+            )
+
+    def assign(self, segment: Mapping[str, Any]) -> str:
+        return str(segment.get("id") or uuid4())
+
+    def lineage_for(self, public_id: str) -> None:
+        return None
+
+
+def public_ids_for_write(
+    session: Session,
+    *,
+    recording_id: int,
+    segments: Iterable[Mapping[str, Any]],
+    keep_requested: bool,
+) -> UtterancePublicIds | RequestedPublicIds:
+    """``RequestedPublicIds`` for a client edit, ``UtterancePublicIds`` otherwise."""
+    if keep_requested:
+        return RequestedPublicIds(session, segments)
+    return UtterancePublicIds(session, recording_id=recording_id, segments=segments)

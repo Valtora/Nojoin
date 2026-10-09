@@ -17,22 +17,33 @@ sets it for the backend suite.
 from __future__ import annotations
 
 import importlib
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+from fastapi import FastAPI
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy import create_engine, text
-from sqlmodel import Session, SQLModel, select
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.orm import sessionmaker
+from sqlmodel import Session, SQLModel, col, select
 
-from backend.models.pipeline import TranscriptUtterance
+from backend.api.deps import get_current_user, get_db
+from backend.api.v1.api import api_router
+from backend.models.pipeline import (
+    ProcessingRunKind,
+    TranscriptUtterance,
+    TranscriptUtteranceState,
+)
 from backend.models.recording import Recording
 from backend.models.transcript import Transcript
 from backend.models.user import User
 from backend.processing.live_transcribe import _build_live_utterance_public_id
 from backend.tests.test_transcript_utils import FakeDiarization
 from backend.utils.canonical_pipeline.core import (
-    apply_compatibility_segment_replace,
     finalize_utterances_from_segments,
+    replace_utterances_from_segments,
 )
 from backend.utils.canonical_pipeline.public_ids import is_utterance_public_id
 from backend.utils.canonical_pipeline.startup import ensure_canonical_backfill
@@ -292,42 +303,201 @@ def test_backfill_does_not_reuse_an_id_another_recording_holds(
     assert is_utterance_public_id(second[0].public_id)
 
 
-def test_compatibility_replace_mints_over_an_id_this_recording_holds(
+def test_forced_backfill_mints_over_held_ids_and_records_lineage_on_the_row(
     session: Session, user: User
 ) -> None:
-    """Dropping a segment forces a full replace that resends a held id.
+    """A forced rebuild resends the projection's ids, which its own rows hold.
 
-    The replace supersedes every active utterance, whose rows keep their
-    public ids, so the resent id must not be persisted again.
+    The rebuild supersedes every active utterance, whose rows keep their
+    public ids, so each new row gets a fresh id and names the one it replaces.
     """
-    recording = _new_recording(session, user, "edited")
-    kept_id, dropped_id = str(uuid4()), str(uuid4())
-    _backfill(
-        session,
-        recording,
-        [
-            _segment(kept_id, 0.0, 2.0, "Hello there."),
-            _segment(dropped_id, 2.0, 4.0, "Over here."),
-        ],
-    )
+    recording = _new_recording(session, user, "rebuilt")
+    original_id = str(uuid4())
+    _backfill(session, recording, [_segment(original_id, 0.0, 2.0, "Hello there.")])
     assert recording.id is not None
 
-    utterances = apply_compatibility_segment_replace(
+    projection = session.exec(
+        select(Transcript).where(Transcript.recording_id == recording.id)
+    ).one()
+    rebuilt = replace_utterances_from_segments(
         session,
         recording_id=recording.id,
-        segments=[_segment(kept_id, 0.0, 2.0, "Hello there, edited.")],
+        segments=[dict(segment) for segment in projection.segments],
+        run_kind=ProcessingRunKind.BACKFILL,
+        source="backfill",
+        force=True,
+        idempotency_key="rebuild",
     )
     session.commit()
 
-    assert [utterance.text for utterance in utterances] == ["Hello there, edited."]
-    assert utterances[0].public_id not in {kept_id, dropped_id}
-    assert is_utterance_public_id(utterances[0].public_id)
-    transcript = session.exec(
-        select(Transcript).where(Transcript.recording_id == recording.id)
+    assert len(rebuilt) == 1
+    assert rebuilt[0].public_id != original_id
+    assert is_utterance_public_id(rebuilt[0].public_id)
+    assert rebuilt[0].confidence_payload == {"source_public_ids": [original_id]}
+    original = session.exec(
+        select(TranscriptUtterance).where(TranscriptUtterance.public_id == original_id)
     ).one()
-    projection = transcript.segments[0]
-    assert projection["id"] == utterances[0].public_id
-    assert projection["confidence_payload"]["source_public_ids"] == [kept_id]
+    assert original.state == TranscriptUtteranceState.SUPERSEDED
+
+
+@pytest.fixture
+def anyio_backend() -> str:
+    return "asyncio"
+
+
+@pytest.fixture
+async def client(
+    postgres_test_url: str,
+    session: Session,
+    user: User,
+    stub_meeting_edge_dispatch,
+) -> AsyncIterator[AsyncClient]:
+    """The transcripts API over asyncpg (the API's driver), in the same schema."""
+    engine = create_async_engine(
+        postgres_test_url.replace("postgresql://", "postgresql+asyncpg://", 1),
+        connect_args={"server_settings": {"search_path": f"{SCHEMA},public"}},
+    )
+    session_maker = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+    async def override_get_db():
+        async with session_maker() as db_session:
+            yield db_session
+
+    app = FastAPI()
+    app.include_router(api_router, prefix="/api/v1")
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
+        id=user.id, username=user.username, settings={}, force_password_change=False
+    )
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://testserver"
+        ) as http_client:
+            yield http_client
+    finally:
+        await engine.dispose()
+
+
+def _utterance_rows(session: Session) -> list[tuple]:
+    session.expire_all()
+    rows = session.exec(
+        select(
+            TranscriptUtterance.public_id,
+            TranscriptUtterance.text,
+            TranscriptUtterance.state,
+            TranscriptUtterance.manual_text_locked,
+            TranscriptUtterance.manual_speaker_locked,
+            TranscriptUtterance.speaker_label,
+        ).order_by(col(TranscriptUtterance.id))
+    ).all()
+    session.commit()
+    return [tuple(row) for row in rows]
+
+
+def _segments_url(session: Session, user: User) -> str:
+    recording = _new_recording(session, user, "edited")
+    session.add(
+        Transcript(
+            recording_id=recording.id,
+            text="hello",
+            segments=[_segment("", 0.0, 1.0, "hello")],
+        )
+    )
+    session.commit()
+    return f"/api/v1/transcripts/{recording.public_id}"
+
+
+@pytest.mark.anyio
+async def test_bulk_put_reusing_held_ids_is_a_conflict_and_changes_nothing(
+    client: AsyncClient, session: Session, user: User
+) -> None:
+    """Omitting a segment forces a full replace, which cannot reuse held ids.
+
+    The replace supersedes every active utterance, and those rows keep their
+    public ids, so the kept segments' ids would be inserted a second time.
+    """
+    url = _segments_url(session, user)
+    seeded = await client.put(
+        f"{url}/segments",
+        json={
+            "segments": [
+                _segment("", 0.0, 1.0, "one"),
+                _segment("", 1.0, 2.0, "two"),
+                _segment("", 2.0, 3.0, "three"),
+            ]
+        },
+    )
+    assert seeded.status_code == 200
+    first, second, _third = seeded.json()["segments"]
+    locked_text = await client.patch(
+        f"{url}/utterances/{first['id']}/text", json={"text": "ONE locked"}
+    )
+    assert locked_text.status_code == 200
+    locked_speaker = await client.patch(
+        f"{url}/utterances/{second['id']}/speaker",
+        json={"new_speaker_name": "Dana", "scope": "utterance_only"},
+    )
+    assert locked_speaker.status_code == 200
+    rows_before = _utterance_rows(session)
+    locks = {
+        row[0]: (row[3], row[4])
+        for row in rows_before
+        if row[2] != TranscriptUtteranceState.SUPERSEDED
+    }
+    assert locks[first["id"]] == (True, False)
+    assert locks[second["id"]] == (False, True)
+    read_before = (await client.get(f"{url}/utterances")).json()["utterances"]
+
+    response = await client.put(
+        f"{url}/segments",
+        json={
+            "segments": [
+                _segment(segment["id"], segment["start"], segment["end"], "edited")
+                for segment in (first, second)
+            ]
+        },
+    )
+
+    assert response.status_code == 409
+    assert "already belong to existing utterances" in response.json()["detail"]
+    assert _utterance_rows(session) == rows_before
+    read_after = (await client.get(f"{url}/utterances")).json()["utterances"]
+    assert read_after == read_before
+    assert [utterance["text"] for utterance in read_after] == [
+        "ONE locked",
+        "two",
+        "three",
+    ]
+
+
+@pytest.mark.anyio
+async def test_bulk_put_with_ids_nothing_holds_keeps_them_as_given(
+    client: AsyncClient, session: Session, user: User
+) -> None:
+    """A full replace that upstream accepted persists the client's ids unchanged."""
+    url = _segments_url(session, user)
+    initial = (await client.get(f"{url}/utterances")).json()["utterances"]
+    assert len(initial) == 1
+
+    response = await client.put(
+        f"{url}/segments",
+        json={
+            "segments": [
+                _segment("client-seg-a", 0.0, 0.5, "first half"),
+                _segment("client-seg-b", 0.5, 1.0, "second half"),
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    assert [segment["id"] for segment in response.json()["segments"]] == [
+        "client-seg-a",
+        "client-seg-b",
+    ]
+    states = {row[0]: row[2] for row in _utterance_rows(session)}
+    assert states[initial[0]["id"]] == TranscriptUtteranceState.SUPERSEDED
+    assert states["client-seg-a"] != TranscriptUtteranceState.SUPERSEDED
+    assert states["client-seg-b"] != TranscriptUtteranceState.SUPERSEDED
 
 
 @pytest.mark.parametrize(

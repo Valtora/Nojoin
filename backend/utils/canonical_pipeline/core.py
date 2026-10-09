@@ -1,6 +1,6 @@
 from .constants import *
 from .diarization import *
-from .public_ids import UtterancePublicIds
+from .public_ids import UtterancePublicIds, public_ids_for_write
 from .segmentation import *
 from .speaker import *
 from .speaker_matching import _find_matching_recording_speaker  # noqa: F401
@@ -210,11 +210,19 @@ def replace_utterances_from_segments(
     reused_live_asr: bool = False,
     trigger_source: str = "system",
     idempotency_key: str | None = None,
+    keep_segment_ids: bool = False,
 ) -> list[TranscriptUtterance]:
     transcript = _load_transcript(session, recording_id)
     recording = session.get(Recording, recording_id)
     if transcript is None or recording is None:
         return []
+    # Before any write: a client edit keeping held ids is refused here.
+    utterance_ids = public_ids_for_write(
+        session,
+        recording_id=recording_id,
+        segments=segments,
+        keep_requested=keep_segment_ids,
+    )
 
     processing_run = None
     if run_kind is not None:
@@ -279,9 +287,6 @@ def replace_utterances_from_segments(
     overlap_groups = _build_overlap_groups(segments)
     utterances: list[TranscriptUtterance] = []
     projection_segments: list[dict[str, Any]] = []
-    utterance_ids = UtterancePublicIds(
-        session, recording_id=recording_id, segments=segments
-    )
 
     for index, segment in enumerate(segments):
         utterance_state = state_override or _state_for_segment(recording, segment)
@@ -342,6 +347,7 @@ def replace_utterances_from_segments(
             text_confidence=_to_optional_float(segment.get("text_confidence")),
             speaker_confidence=_to_optional_float(segment.get("speaker_confidence")),
         )
+        utterance.confidence_payload = utterance_ids.lineage_for(utterance.public_id)
         session.add(utterance)
         session.flush()
         _append_utterance_event(
@@ -1622,6 +1628,7 @@ def apply_compatibility_segment_replace(
         run_kind=None,
         source="compatibility_replace",
         force=True,
+        keep_segment_ids=True,
     )
 
 
