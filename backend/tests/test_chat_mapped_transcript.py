@@ -85,6 +85,12 @@ def _insert_transcript(engine, segments: list[dict] | None) -> None:
         )
 
 
+def _speaker_id(label: str) -> int:
+    # Speaker rows take their id from the label, so an utterance can point at
+    # its speaker the way canonical writes do.
+    return int(label.removeprefix("SPEAKER_")) + 1
+
+
 def _insert_speaker(
     engine,
     label: str,
@@ -93,7 +99,7 @@ def _insert_speaker(
     name: str | None = None,
     global_name: str | None = None,
 ) -> None:
-    speaker_id = int(label.removeprefix("SPEAKER_")) + 1
+    speaker_id = _speaker_id(label)
     with engine.begin() as connection:
         global_id = None
         if global_name is not None:
@@ -141,13 +147,15 @@ def _insert_utterance(
                 """
                 INSERT INTO transcript_utterances (
                     id, created_at, updated_at, public_id, recording_id, sort_key,
-                    start_ms, end_ms, text, speaker_label, state, source_kind,
+                    start_ms, end_ms, text, speaker_label, recording_speaker_id,
+                    state, source_kind,
                     revision, overlap_rank, manual_text_locked,
                     manual_speaker_locked, speaker_assignment_source,
                     speaker_assignment_authority
                 ) VALUES (
                     :id, :now, :now, :public_id, :recording_id, :sort_key,
-                    :start_ms, :end_ms, :words, :label, 'finalized', 'final',
+                    :start_ms, :end_ms, :words, :label, :speaker_id, 'finalized',
+                    'final',
                     1, 0, 0, 0, 'diarization', 'automatic'
                 )
                 """
@@ -162,6 +170,7 @@ def _insert_utterance(
                 "end_ms": end_ms,
                 "words": words,
                 "label": label,
+                "speaker_id": _speaker_id(label),
             },
         )
 
@@ -241,6 +250,46 @@ def test_chat_falls_back_to_the_projection_without_canonical_rows(engine):
     transcript = LLMBackend.get_mapped_transcript_for_llm(RECORDING_ID)
 
     assert transcript == "[00:03] Priya: Hello."
+
+
+def test_chat_resolves_every_speaker_alias_the_way_the_view_does(engine):
+    # Legacy projections can name a speaker by an old display name or by a
+    # generic "Speaker N" instead of the diarisation label. The view maps all
+    # of those to the speaker's current name; chat must not send the old one.
+    _insert_transcript(
+        engine,
+        segments=[
+            {"start": 0.0, "end": 2.0, "speaker": "Bob", "text": "Budget is final."},
+            {"start": 2.0, "end": 4.0, "speaker": "Speaker 2", "text": "Agreed."},
+        ],
+    )
+    _insert_speaker(engine, "SPEAKER_00", name="Bob", local_name="Robert")
+    _insert_speaker(engine, "SPEAKER_01", local_name="Dana")
+
+    transcript = LLMBackend.get_mapped_transcript_for_llm(RECORDING_ID)
+
+    assert transcript == "[00:00] Robert: Budget is final.\n[00:02] Dana: Agreed."
+
+
+def test_chat_names_a_merged_speakers_lines_after_the_target(engine):
+    # A merge relabels the source's utterances to the target and keeps the
+    # source row, pointing at the target, for reprocessing.
+    _insert_transcript(engine, segments=None)
+    _insert_speaker(engine, "SPEAKER_00", local_name="Priya")
+    _insert_speaker(engine, "SPEAKER_01", local_name="Laptop mic")
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "UPDATE recording_speakers SET merged_into_id = 1, "
+                "speaker_status = 'merged' WHERE id = 2"
+            )
+        )
+    _insert_utterance(engine, 1, (0, 2000), "SPEAKER_00", "First point.")
+    _insert_utterance(engine, 2, (2000, 4000), "SPEAKER_00", "Second point.")
+
+    transcript = LLMBackend.get_mapped_transcript_for_llm(RECORDING_ID)
+
+    assert transcript == "[00:00] Priya: First point.\n[00:02] Priya: Second point."
 
 
 def test_chat_reports_a_recording_without_any_transcript(engine):
