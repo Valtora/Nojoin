@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   fireEvent,
@@ -46,10 +46,20 @@ async function openFrom(opener: HTMLElement) {
   return screen.findByRole("dialog");
 }
 
+const onRecordingUpdated = vi.fn();
+
 describe("ImportAudioHost", () => {
   beforeEach(() => {
     importAudio.mockReset();
+    onRecordingUpdated.mockReset();
     useImportAudioStore.setState({ isImportAudioOpen: false });
+    window.addEventListener("recording-updated", onRecordingUpdated);
+  });
+
+  afterEach(() => {
+    window.removeEventListener("recording-updated", onRecordingUpdated);
+    useImportAudioStore.setState({ isImportAudioOpen: false });
+    vi.useRealTimers();
   });
 
   it("returns focus to the icon opener when the dialog is dismissed with Escape", async () => {
@@ -83,10 +93,12 @@ describe("ImportAudioHost", () => {
     });
   });
 
-  it("refreshes the list and returns focus to the opener after a finished import", async () => {
+  it("announces the new recording and returns focus to the opener after a finished import", async () => {
+    // The dialog closes itself 1.5 s after a successful upload; fake timers
+    // skip that wait, and shouldAdvanceTime keeps Headless UI's own
+    // scheduling moving.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     importAudio.mockResolvedValue({});
-    const onUpdated = vi.fn();
-    window.addEventListener("recording-updated", onUpdated);
     const { iconOpener } = renderWithOpeners();
 
     const dialog = await openFrom(iconOpener);
@@ -98,20 +110,21 @@ describe("ImportAudioHost", () => {
     });
     fireEvent.click(within(dialog).getByRole("button", { name: "Import Audio" }));
 
-    await waitFor(
-      () => {
-        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-      },
-      { timeout: 3000 },
-    );
+    await screen.findByText(/Audio imported successfully/);
     expect(importAudio).toHaveBeenCalledWith(
       expect.objectContaining({ name: "standup.wav" }),
       expect.objectContaining({ name: "standup" }),
     );
-    expect(onUpdated).toHaveBeenCalledTimes(1);
+    expect(onRecordingUpdated).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(1500);
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+    expect(onRecordingUpdated).toHaveBeenCalledTimes(1);
     await waitFor(() => {
       expect(iconOpener).toHaveFocus();
     });
-    window.removeEventListener("recording-updated", onUpdated);
   });
 });

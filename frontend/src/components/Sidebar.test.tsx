@@ -243,44 +243,83 @@ describe("Sidebar", () => {
       },
     );
 
-    it("is disabled while a paused recording holds the capture lock", async () => {
+    it("is disabled while a paused recording holds the capture lock, and re-enables when it clears", async () => {
       pausedRecording = { id: "rec-paused" };
       getRecordings.mockResolvedValue([]);
-      renderList();
-      await screen.findByText("No recordings found.");
+      const { rerender } = renderList();
 
-      const buttons = screen.getAllByRole("button", { name: "Import Audio" });
-      expect(buttons).toHaveLength(2);
-      for (const button of buttons) {
+      await waitFor(() => {
+        expect(
+          screen.getAllByRole("button", { name: "Import Audio" }),
+        ).toHaveLength(2);
+      });
+      for (const button of screen.getAllByRole("button", { name: "Import Audio" })) {
         expect(button).toBeDisabled();
         fireEvent.click(button);
       }
       expect(screen.queryByTestId("import-modal")).not.toBeInTheDocument();
 
-      // Both forms say why: the header icon in its tooltip, the empty-state
-      // button in its title.
-      const [headerButton, emptyStateButton] = buttons;
-      fireEvent.mouseEnter(headerButton.parentElement as HTMLElement);
-      expect(screen.getByRole("tooltip")).toHaveTextContent(
-        "Resume or discard the paused recording before importing audio.",
+      pausedRecording = null;
+      rerender(
+        <>
+          <Sidebar />
+          <ImportAudioHost />
+        </>,
       );
-      expect(emptyStateButton).toHaveAttribute(
-        "title",
-        "Resume or discard the paused recording before importing audio.",
-      );
+
+      for (const button of screen.getAllByRole("button", { name: "Import Audio" })) {
+        expect(button).toBeEnabled();
+      }
     });
 
     it("opens the import dialog from the empty list", async () => {
       getRecordings.mockResolvedValue([]);
       renderList();
 
-      const emptyState = (await screen.findByText("No recordings found."))
+      const emptyState = screen.getByText("No recordings found.")
         .parentElement as HTMLElement;
       fireEvent.click(
-        within(emptyState).getByRole("button", { name: "Import Audio" }),
+        await within(emptyState).findByRole("button", { name: "Import Audio" }),
       );
 
       expect(screen.getByTestId("import-modal")).toBeInTheDocument();
+    });
+
+    it("keeps the empty-list button back until the first fetch lands", async () => {
+      let resolveRecordings: (value: Recording[]) => void = () => {};
+      getRecordings.mockReturnValue(
+        new Promise<Recording[]>((resolve) => {
+          resolveRecordings = resolve;
+        }),
+      );
+      renderList();
+
+      expect(screen.getByText("No recordings found.")).toBeInTheDocument();
+      expect(screen.getAllByRole("button", { name: "Import Audio" })).toHaveLength(1);
+
+      resolveRecordings([]);
+
+      await waitFor(() => {
+        expect(
+          screen.getAllByRole("button", { name: "Import Audio" }),
+        ).toHaveLength(2);
+      });
+    });
+
+    it("offers no empty-list button when a search is what emptied the list", async () => {
+      getRecordings.mockResolvedValue([]);
+      renderList();
+      await waitFor(() => {
+        expect(
+          screen.getAllByRole("button", { name: "Import Audio" }),
+        ).toHaveLength(2);
+      });
+
+      fireEvent.change(screen.getByPlaceholderText("Search..."), {
+        target: { value: "budget" },
+      });
+
+      expect(screen.getAllByRole("button", { name: "Import Audio" })).toHaveLength(1);
     });
   });
 });
