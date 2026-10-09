@@ -276,20 +276,22 @@ def _phantom_diarization():
 
 
 class _PhantomModel:
-    """Embeds SPEAKER_00 as [1, 0] and the brief speaker at ``cosine`` to it."""
+    """Embeds SPEAKER_00 as [1, 0] and the brief speaker at ``cosine`` to it.
+
+    Records every segment it embeds: the filter swallows exceptions raised by
+    the model, so a model that raised to prove it was never called would go
+    unnoticed.
+    """
 
     def __init__(self, cosine: float = 0.65) -> None:
         self._cosine = cosine
+        self.crops: list = []
 
     def crop(self, _audio_path, segment):
+        self.crops.append(segment)
         if segment.start < 11.0:
             return np.array([1.0, 0.0])
         return np.array([self._cosine, math.sqrt(1 - self._cosine**2)])
-
-
-class _UntouchableModel:
-    def crop(self, *_args):
-        raise AssertionError("the embedding model must not run")
 
 
 def _install_phantom_model(monkeypatch, model) -> None:
@@ -332,25 +334,55 @@ def test_raised_phantom_merge_threshold_retains_the_brief_speaker(monkeypatch):
     assert _labels(result) == {"SPEAKER_00", "SPEAKER_01"}
 
 
-@pytest.mark.parametrize(
-    "tuning", [{"phantom_max_duration_s": 0}, {"phantom_max_segments": 0}]
-)
-def test_zero_phantom_ceiling_turns_the_filter_off(monkeypatch, tuning):
+def _filter_with_an_unloaded_model(monkeypatch, tuning: dict):
+    """Run the filter with an empty model cache, recording loads and crops."""
     from backend.processing import embedding_core
     from backend.processing.phantom_filter import filter_phantom_speakers
 
-    _install_phantom_model(monkeypatch, _UntouchableModel())
+    model = _PhantomModel()
+    loads: list[str] = []
 
-    def _no_load(*_args):
-        raise AssertionError("the embedding model must not load")
+    def _load(device, _hf_token):
+        loads.append(device)
+        return model
 
-    monkeypatch.setattr(embedding_core, "load_embedding_model", _no_load)
+    monkeypatch.setattr(embedding_core, "_embedding_model_cache", {})
+    monkeypatch.setattr(embedding_core, "load_embedding_model", _load)
     diarization = _phantom_diarization()
 
     result = filter_phantom_speakers(
         diarization, "audio.wav", config={"processing_device": "cpu", **tuning}
     )
 
+    return diarization, result, loads, model.crops
+
+
+def test_phantom_filter_loads_the_model_for_a_candidate_at_defaults(monkeypatch):
+    """The control for the test below: at the defaults the 1 s speaker is a
+    candidate, so the model loads and embeds both speakers."""
+    _diarization, result, loads, crops = _filter_with_an_unloaded_model(monkeypatch, {})
+
+    assert loads == ["cpu"]
+    assert len(crops) == 2
+    assert _labels(result) == {"SPEAKER_00"}
+
+
+@pytest.mark.parametrize(
+    "tuning",
+    [
+        {"phantom_max_duration_s": 0},
+        {"phantom_max_segments": 0},
+        # Under the 1 s the brief speaker talks for.
+        {"phantom_max_duration_s": 0.5},
+    ],
+)
+def test_phantom_ceiling_below_the_speaker_skips_the_model(monkeypatch, tuning):
+    diarization, result, loads, crops = _filter_with_an_unloaded_model(
+        monkeypatch, tuning
+    )
+
+    assert loads == []
+    assert crops == []
     assert result is diarization
 
 
