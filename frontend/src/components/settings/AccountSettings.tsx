@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { updatePasswordMe, updateUserMe } from '@/lib/api';
 import { getErrorMessage } from '@/lib/errors';
+import { consentReturnPathFromSearch } from '@/lib/passwordChangeReturn';
 import { fuzzyMatch } from '@/lib/searchUtils';
 import { Loader2, User, Lock } from 'lucide-react';
 import { useNotificationStore } from '@/lib/notificationStore';
@@ -156,7 +157,7 @@ export default function AccountSettings({
       addNotification({ message: 'Password updated successfully', type: 'success' });
       setPasswordData({ current_password: '', new_password: '', confirm_password: '' });
       if (forcePasswordChange) {
-        router.push('/');
+        router.push(consentReturnPathFromSearch(window.location.search) ?? '/');
       }
 
         } catch (err: unknown) {

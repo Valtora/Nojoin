@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { getCurrentUser } from '@/lib/api';
 import { getErrorMessage, getErrorStatus } from '@/lib/errors';
+import { passwordChangePath } from '@/lib/passwordChangeReturn';
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -61,7 +62,8 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
         currentUser?.force_password_change &&
         !pathname?.startsWith('/settings')
       ) {
-        router.push('/settings/profile');
+        // Keeps a consent URL so the password change can return to it.
+        router.push(passwordChangePath(`${pathname}${window.location.search}`));
         return;
       }
 
