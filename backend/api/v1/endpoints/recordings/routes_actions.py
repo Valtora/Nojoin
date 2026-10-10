@@ -100,6 +100,9 @@ async def delete_recording(
     Delete a recording and its associated file.
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
+    # Locked, so a worker cannot repoint audio_path between this read and the
+    # delete (keep_imported_audio_task) and leave its new file behind.
+    await db.refresh(recording, with_for_update=True)
 
     recordings_module.delete_recording_artifacts(
         recording_id=recording.id,
@@ -265,6 +268,8 @@ async def permanently_delete_recording(
     invariant for every surface, including MCP.
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
+    # Locked for the same reason as in delete_recording.
+    await db.refresh(recording, with_for_update=True)
 
     if not recording.is_deleted:
         raise HTTPException(

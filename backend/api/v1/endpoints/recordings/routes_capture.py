@@ -613,6 +613,9 @@ async def discard_upload(
     recording = await recordings_module._get_owned_recording(
         db, recording_id, current_user.id
     )
+    # Locked, so a worker cannot repoint audio_path between this read and the
+    # delete (keep_imported_audio_task) and leave its new file behind.
+    await db.refresh(recording, with_for_update=True)
 
     discardable_states = {
         RecordingStatus.UPLOADING,

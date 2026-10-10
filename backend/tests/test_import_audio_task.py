@@ -11,6 +11,7 @@ without ffmpeg.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import importlib
 import os
@@ -845,6 +846,54 @@ async def test_a_fault_after_extraction_leaves_the_upload_for_the_next_copy(
     row = _recording(env)
     assert (row["status"], row["processing_step"]) == ("QUEUED", None)
     assert _files(env.recordings) == [Path(row["audio_path"])]
+
+
+@pytest.mark.anyio
+@needs_ffmpeg
+@pytest.mark.parametrize(
+    "paused_in",
+    ["_duration", "_rebuild_import_window"],
+    ids=["delete-reads-first", "task-writes-first"],
+)
+async def test_a_delete_racing_the_task_leaves_no_file(
+    pg_env: _Env, monkeypatch: pytest.MonkeyPatch, paused_in: str
+) -> None:
+    """The delete locks the row: either it goes first and the task's write
+    matches nothing, or it waits for the task's commit and reads the kept
+    audio's path. Paused in ``_duration`` the task has not written yet; in
+    ``_rebuild_import_window`` it holds the row."""
+    env = pg_env
+    source = env.tmp / "screen.mkv"
+    _screen_recording(source, ["-c:a", "aac"])
+    recording_id = _waiting_import(env, source)
+    with env.engine.connect() as connection:
+        public_id = connection.execute(
+            text("SELECT public_id FROM recordings WHERE id = :id"),
+            {"id": recording_id},
+        ).scalar_one()
+    reached, release = threading.Event(), threading.Event()
+    real = getattr(imported_audio, paused_in)
+
+    def paused(*args, **kwargs):
+        reached.set()
+        assert release.wait(30)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(imported_audio, paused_in, paused)
+    task = _copy(env, recording_id, "A")
+    assert await asyncio.to_thread(reached.wait, 30)
+
+    delete = asyncio.create_task(env.client.delete(f"/api/v1/recordings/{public_id}"))
+    await asyncio.sleep(0.3)
+    release.set()
+    await asyncio.to_thread(task.join, 30)
+    response = await delete
+
+    assert response.status_code == 200, response.text
+    with env.engine.connect() as connection:
+        count = connection.execute(text("SELECT COUNT(*) FROM recordings"))
+        assert count.scalar_one() == 0
+    assert _files(env.recordings) == []
 
 
 def _worker(*queues: str) -> types.SimpleNamespace:
