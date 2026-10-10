@@ -30,6 +30,7 @@ import {
   type OAuthAuthorizeParams,
 } from "@/lib/api";
 import { getErrorMessage } from "@/lib/errors";
+import { passwordChangePath } from "@/lib/passwordChangeReturn";
 
 // Known connector clients get a real product mark on the consent screen;
 // anything else falls back to a neutral plug badge.
@@ -155,7 +156,10 @@ function AuthorizeContent() {
       const response = await login(username, password);
       if (response.force_password_change) {
         // As on /login: the settings layout mounts fresh and loads the signed-in user itself.
-        router.push("/settings/profile");
+        // The consent URL rides along so the password change returns here.
+        router.push(
+          passwordChangePath(`/oauth/authorize?${searchParams.toString()}`),
+        );
         return;
       }
       setSignedInUsername(response.username);
