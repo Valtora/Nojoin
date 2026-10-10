@@ -92,7 +92,7 @@ class Recording(BaseDBModel, table=True):
     proxy_path: Optional[str] = Field(default=None)
     celery_task_id: Optional[str] = Field(default=None)
     duration_seconds: Optional[float] = None
-    file_size_bytes: Optional[int] = None
+    file_size_bytes: Optional[int] = Field(default=None, sa_column=Column(BigInteger))
     status: RecordingStatus = Field(default=RecordingStatus.RECORDED)
     client_status: Optional[ClientStatus] = Field(default=None)
     upload_progress: int = Field(default=0)
