@@ -374,6 +374,69 @@ async def test_every_import_route_queues_the_task_in_place_of_processing(
     assert Path(row["audio_path"]).read_bytes() == source.read_bytes()
 
 
+def _on_event_loop() -> bool:
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return False
+    return True
+
+
+@pytest.mark.anyio
+async def test_a_chunked_import_reads_each_part_once_and_the_whole_file_off_the_loop(
+    env: _Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Each segment upload syncs the upload directory, and the sync used to hash
+    every part again, so a 330-part video import hashed about 550 GB and froze
+    the API for seconds at a time. Now each part is hashed once, and finalize
+    copies and hashes the assembled file on a worker thread."""
+    from backend.api.v1.endpoints.recordings import routes_import_upload
+    from backend.utils import recording_audio_sync
+
+    _fixed_chunk_duration(monkeypatch)
+    monkeypatch.setattr(routes_import_upload, "get_audio_duration", lambda path: 2.0)
+    hashed: list[tuple[str, bool]] = []
+    copied: list[bool] = []
+    real_hash = recording_audio_sync._sha256_for_path
+    real_concatenate = routes_import_upload.concatenate_binary_files
+
+    def _hash(path: Path) -> str:
+        hashed.append((path.name, _on_event_loop()))
+        return real_hash(path)
+
+    def _concatenate(segment_paths: list[str], output_path: str) -> None:
+        copied.append(_on_event_loop())
+        real_concatenate(segment_paths, output_path)
+
+    monkeypatch.setattr(recording_audio_sync, "_sha256_for_path", _hash)
+    monkeypatch.setattr(routes_import_upload, "concatenate_binary_files", _concatenate)
+    payload = os.urandom(6 * 1024)
+
+    init = await env.client.post(
+        "/api/v1/recordings/import/chunked/init", params={"filename": "screen.mkv"}
+    )
+    recording_id = init.json()["id"]
+    for sequence, start in enumerate(range(0, len(payload), 1024), start=1):
+        segment = await env.client.post(
+            "/api/v1/recordings/import/chunked/segment",
+            params={"recording_id": recording_id, "sequence": sequence},
+            files={"file": ("blob", payload[start : start + 1024])},
+        )
+        assert segment.status_code == 200, segment.text
+    finalize = await env.client.post(
+        "/api/v1/recordings/import/chunked/finalize",
+        params={"recording_id": recording_id},
+    )
+
+    assert finalize.status_code == 200, finalize.text
+    assert [name for name, _ in hashed] == [f"{n}.part" for n in range(1, 7)] + [
+        "0.mkv"
+    ]
+    assert hashed[-1] == ("0.mkv", False)
+    assert copied == [False]
+    assert Path(_recording(env)["audio_path"]).read_bytes() == payload
+
+
 @pytest.mark.anyio
 @needs_ffmpeg
 @pytest.mark.parametrize("route", ROUTES)
