@@ -357,6 +357,11 @@ def _write_audio_track(
         if _is_server_fault(exc):
             raise ImportServerError(message) from exc
         raise AudioExtractionError(message) from exc
+    except BaseException:
+        # Anything else (ffprobe output in a shape nothing expected, an
+        # interrupt) is raised as it is, but leaves no file behind either.
+        _remove_quietly(target)
+        raise
     return target
 
 

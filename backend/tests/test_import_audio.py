@@ -341,6 +341,26 @@ def test_a_failed_extraction_is_refused_and_leaves_nothing_new(
 
 
 @needs_ffmpeg
+def test_an_unexpected_error_in_verification_leaves_nothing_new(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """ffprobe output in a shape the measurement does not expect is raised as
+    it is, and the extracted file still goes."""
+    source = tmp_path / "screen.mkv"
+    _ffmpeg(*_SCREEN, str(source))
+
+    def unexpected(*args, **kwargs):
+        raise KeyError("index")
+
+    monkeypatch.setattr(import_audio, "track_span", unexpected)
+
+    with pytest.raises(KeyError):
+        keep_imported_audio(str(source))
+
+    assert sorted(tmp_path.iterdir()) == [source]
+
+
+@needs_ffmpeg
 def test_an_extraction_shorter_than_its_track_is_refused(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
