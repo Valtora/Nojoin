@@ -1,10 +1,9 @@
-"""Finalize must not persist an engine's segment index as an utterance public id.
+"""Two recordings with a wordless Whisper segment finalize without an id collision.
 
-``transcript_utterances.public_id`` is unique across every recording, while
-finalize reserves only the public ids of the recording it is finalizing. An id
-that survives the merge is persisted as given, so openai-whisper's integer
-segment index, kept on a segment without words, made the second recording with
-a wordless segment at the same index fail finalize with a UniqueViolation.
+``transcript_utterances.public_id`` is unique across every recording. The
+per-run merge keeps a wordless segment's text but not its openai-whisper integer
+index, and finalize mints the public id, so the second recording with a
+wordless segment at the same index finalizes cleanly.
 
 The production schema needs PostgreSQL (JSONB columns), so this skips unless
 NOJOIN_TEST_POSTGRES_URL names a server. CI sets it for the backend suite.
