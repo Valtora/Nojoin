@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from backend.processing.llm_backends import ollama as ollama_module
 from backend.processing.llm_backends.base import (
     NOTES_MAX_OUTPUT_TOKEN_LADDER,
     NOTES_MAX_OUTPUT_TOKENS,
@@ -23,6 +24,14 @@ from backend.utils.meeting_intelligence import (
     AutomaticMeetingIntelligenceRequest,
     AutomaticMeetingIntelligenceResult,
 )
+
+
+@pytest.fixture(autouse=True)
+def _fresh_ollama_model_facts_cache():
+    # /api/show answers are cached per process; each fake server starts clean.
+    ollama_module._model_facts_cache.clear()
+    yield
+    ollama_module._model_facts_cache.clear()
 
 
 def _sample_request() -> AutomaticMeetingIntelligenceRequest:
@@ -68,6 +77,21 @@ class _FakeOllamaResponse:
 
     def json(self) -> dict:
         return {"message": {"content": self._payload}}
+
+
+class _FakeOllamaShowResponse:
+    """``/api/show`` for a model trained on more context than any test sends."""
+
+    def raise_for_status(self) -> None:
+        return None
+
+    def json(self) -> dict:
+        return {
+            "model_info": {
+                "general.architecture": "llama",
+                "llama.context_length": 131072,
+            }
+        }
 
 
 class _FakeOllamaStreamResponse:
@@ -229,6 +253,8 @@ def test_ollama_generate_meeting_intelligence_repairs_contract_failure() -> None
             timeout: int,
             allow_redirects: bool,
         ):
+            if url.endswith("/api/show"):
+                return _FakeOllamaShowResponse()
             calls.append(
                 {
                     "url": url,
@@ -263,12 +289,14 @@ def test_ollama_chat_options_pins_num_ctx_floor_when_unconfigured() -> None:
     # Without num_ctx Ollama defaults to 2048 and silently truncates meeting-
     # length prompts, so an unconfigured backend must still send the safe floor.
     backend = object.__new__(OllamaLLMBackend)
+    backend.model = None
     backend.context_window = None
     assert backend._chat_options(temperature=0.3)["num_ctx"] == OLLAMA_DEFAULT_NUM_CTX
 
 
 def test_ollama_chat_options_honours_configured_context_window() -> None:
     backend = object.__new__(OllamaLLMBackend)
+    backend.model = None
     backend.context_window = 131072
     assert backend._chat_options(temperature=0.3)["num_ctx"] == 131072
 
@@ -281,10 +309,12 @@ def test_ollama_streaming_chat_raises_when_context_exhausted() -> None:
             self,
             url: str,
             json: dict,
-            stream: bool,
             timeout: int,
             allow_redirects: bool,
+            stream: bool = False,
         ):
+            if url.endswith("/api/show"):
+                return _FakeOllamaShowResponse()
             capture["json"] = json
             return _FakeOllamaStreamResponse(
                 [
@@ -341,6 +371,8 @@ def test_ollama_generate_meeting_edge_accepts_empty_signal_payload() -> None:
             timeout: int,
             allow_redirects: bool,
         ):
+            if url.endswith("/api/show"):
+                return _FakeOllamaShowResponse()
             calls.append(
                 {
                     "url": url,
@@ -382,6 +414,8 @@ def test_ollama_generate_meeting_edge_repairs_malformed_payload() -> None:
             timeout: int,
             allow_redirects: bool,
         ):
+            if url.endswith("/api/show"):
+                return _FakeOllamaShowResponse()
             calls.append(
                 {
                     "url": url,
@@ -427,6 +461,8 @@ def test_secondary_fallback_runs_after_primary_repair_failure() -> None:
             timeout: int,
             allow_redirects: bool,
         ):
+            if url.endswith("/api/show"):
+                return _FakeOllamaShowResponse()
             calls.append({"url": url, "json": json})
             return _FakeOllamaResponse('{"speaker_mapping": {"SPEAKER_00": "Alex"}')
 
