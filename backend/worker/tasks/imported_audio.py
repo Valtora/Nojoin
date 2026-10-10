@@ -29,7 +29,7 @@ from sqlalchemy.orm import Session
 from sqlmodel import select
 
 from backend.celery_app import CPU_QUEUE
-from backend.core.db import get_sync_session
+from backend.core.db import sync_engine
 from backend.models.pipeline import RecordingAudioChunk, RecordingAudioWindowManifest
 from backend.models.recording import ClientStatus, Recording, RecordingStatus
 from backend.utils.audio import get_audio_duration
@@ -260,16 +260,26 @@ def requeue_imports_waiting_for_audio(sender, **kwargs) -> None:
     A task is acknowledged when a worker takes it, so one lost with its worker
     is not redelivered; without this the import would wait forever, since
     reprocess refuses QUEUED. A copy still queued as well is harmless.
+
+    It runs in the prefork pool's parent, which forks every replacement
+    child. Upstream's startup sweep never had to care: it runs on the gpu
+    lane, whose solo pool forks nothing. A connection left in this process's
+    pool would be inherited by each such child, so several children would
+    share one database connection; the pool is emptied before returning.
     """
     if not _sweeps_recordings(sender, CPU_QUEUE):
         return
-    session = get_sync_session()
+    session = Session(sync_engine)
     try:
-        waiting = session.exec(
-            select(Recording.id)
-            .where(Recording.status == RecordingStatus.QUEUED)
-            .where(Recording.processing_step == KEEPING_AUDIO_STEP)
-        ).all()
+        waiting = (
+            session.execute(
+                select(Recording.id)
+                .where(Recording.status == RecordingStatus.QUEUED)
+                .where(Recording.processing_step == KEEPING_AUDIO_STEP)
+            )
+            .scalars()
+            .all()
+        )
         for recording_id in waiting:
             logger.info(
                 "Re-queueing import %s, still waiting for its audio", recording_id
@@ -283,6 +293,7 @@ def requeue_imports_waiting_for_audio(sender, **kwargs) -> None:
         )
     finally:
         session.close()
+        sync_engine.dispose()
 
 
 def _remove_quietly(path: str) -> None:

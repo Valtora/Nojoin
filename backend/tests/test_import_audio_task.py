@@ -28,6 +28,7 @@ import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import Engine, text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlmodel import Session, SQLModel, create_engine
@@ -956,11 +957,61 @@ async def test_a_starting_cpu_worker_requeues_imports_still_waiting(
             )
         )
         session.commit()
-    monkeypatch.setattr(imported_audio, "get_sync_session", lambda: Session(env.engine))
+    monkeypatch.setattr(imported_audio, "sync_engine", env.engine)
 
     requeue_imports_waiting_for_audio(_worker("gpu"))
     requeue_imports_waiting_for_audio(_worker("io"))
     assert env.dispatched == []
 
+    assert env.engine.pool.checkedin() > 0
     requeue_imports_waiting_for_audio(_worker("cpu"))
     assert env.dispatched == [(KEEP_TASK, [waiting], None)]
+    # It runs in the parent of the prefork pool: no connection may be left
+    # for the children forked later to inherit.
+    assert (env.engine.pool.checkedin(), env.engine.pool.checkedout()) == (0, 0)
+
+
+def _child_report(engine: Engine) -> str:
+    """Run in a forked child: its database backend, and how many of 200
+    queries came back with another process's answer."""
+    try:
+        with engine.connect() as connection:
+            backend = connection.execute(text("SELECT pg_backend_pid()")).scalar_one()
+            wrong = 0
+            for n in range(200):
+                expected = os.getpid() * 1000 + n
+                got = connection.execute(text(f"SELECT {expected}")).scalar_one()
+                wrong += got != expected
+        return f"{backend}|{wrong}"
+    except SQLAlchemyError as exc:  # a shared socket fails in many ways
+        return f"error|{type(exc).__name__}"
+
+
+@pytest.mark.anyio
+async def test_cpu_children_forked_after_the_sweep_get_connections_of_their_own(
+    pg_env: _Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Billiard forks a replacement child from the parent the sweep ran in.
+    Two such children must not share the parent's database connection."""
+    env = pg_env
+    monkeypatch.setattr(imported_audio, "sync_engine", env.engine)
+    requeue_imports_waiting_for_audio(_worker("cpu"))
+
+    read, write = os.pipe()
+    children = []
+    for _ in range(2):
+        pid = os.fork()
+        if pid == 0:
+            os.close(read)
+            os.write(write, f"{_child_report(env.engine)}\n".encode())
+            os._exit(0)
+        children.append(pid)
+    os.close(write)
+    for pid in children:
+        os.waitpid(pid, 0)
+    with os.fdopen(read) as pipe:
+        reports = pipe.read().split()
+
+    assert len(reports) == 2
+    assert [report.split("|")[1] for report in reports] == ["0", "0"], reports
+    assert len({report.split("|")[0] for report in reports}) == 2, reports
