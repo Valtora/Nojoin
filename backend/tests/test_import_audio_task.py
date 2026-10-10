@@ -18,6 +18,7 @@ import os
 import resource
 import shutil
 import subprocess
+import sys
 import threading
 import types
 import uuid
@@ -28,7 +29,6 @@ import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import Engine, text
-from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlmodel import Session, SQLModel, create_engine
@@ -978,47 +978,76 @@ async def test_a_starting_cpu_worker_requeues_imports_still_waiting(
     assert (env.engine.pool.checkedin(), env.engine.pool.checkedout()) == (0, 0)
 
 
-def _child_report(engine: Engine) -> str:
-    """Run in a forked child: its database backend, and how many of 200
-    queries came back with another process's answer."""
+# Run in a fresh interpreter: forking pytest itself, which has threads of its
+# own by now, could deadlock a child. The sweep runs first, as on worker
+# start; then two children fork from this process, as billiard forks a
+# replacement child, and each reports its database backend and how many of
+# its 200 queries came back with another process's answer.
+_FORK_AFTER_SWEEP = """
+import os, sys, types
+from sqlalchemy import create_engine, text
+from sqlalchemy.exc import SQLAlchemyError
+from backend.worker.tasks import imported_audio
+
+url, schema = sys.argv[1], sys.argv[2]
+engine = create_engine(url, connect_args={"options": f"-csearch_path={schema},public"})
+imported_audio.sync_engine = engine
+imported_audio.celery_app.send_task = lambda *a, **k: types.SimpleNamespace(id="x")
+queues = types.SimpleNamespace(consume_from={"cpu": object()})
+worker = types.SimpleNamespace(app=types.SimpleNamespace(amqp=types.SimpleNamespace(queues=queues)))
+imported_audio.requeue_imports_waiting_for_audio(worker)
+
+def report():
     try:
         with engine.connect() as connection:
             backend = connection.execute(text("SELECT pg_backend_pid()")).scalar_one()
             wrong = 0
             for n in range(200):
                 expected = os.getpid() * 1000 + n
-                got = connection.execute(text(f"SELECT {expected}")).scalar_one()
-                wrong += got != expected
+                wrong += connection.execute(text(f"SELECT {expected}")).scalar_one() != expected
         return f"{backend}|{wrong}"
-    except SQLAlchemyError as exc:  # a shared socket fails in many ways
+    except SQLAlchemyError as exc:
         return f"error|{type(exc).__name__}"
+
+read, write = os.pipe()
+children = []
+for _ in range(2):
+    pid = os.fork()
+    if pid == 0:
+        os.close(read)
+        os.write(write, (report() + "\\n").encode())
+        os._exit(0)
+    children.append(pid)
+os.close(write)
+for pid in children:
+    os.waitpid(pid, 0)
+print(os.fdopen(read).read())
+"""
 
 
 @pytest.mark.anyio
 async def test_cpu_children_forked_after_the_sweep_get_connections_of_their_own(
-    pg_env: _Env, monkeypatch: pytest.MonkeyPatch
+    pg_env: _Env, postgres_test_url: str
 ) -> None:
     """Billiard forks a replacement child from the parent the sweep ran in.
     Two such children must not share the parent's database connection."""
-    env = pg_env
-    monkeypatch.setattr(imported_audio, "sync_engine", env.engine)
-    requeue_imports_waiting_for_audio(_worker("cpu"))
+    with pg_env.engine.connect() as connection:
+        schema = connection.execute(text("SELECT current_schema()")).scalar_one()
+    script = pg_env.tmp / "fork_after_sweep.py"
+    script.write_text(_FORK_AFTER_SWEEP)
 
-    read, write = os.pipe()
-    children = []
-    for _ in range(2):
-        pid = os.fork()
-        if pid == 0:
-            os.close(read)
-            os.write(write, f"{_child_report(env.engine)}\n".encode())
-            os._exit(0)
-        children.append(pid)
-    os.close(write)
-    for pid in children:
-        os.waitpid(pid, 0)
-    with os.fdopen(read) as pipe:
-        reports = pipe.read().split()
+    repo = Path(__file__).resolve().parents[2]
+    result = subprocess.run(
+        [sys.executable, str(script), postgres_test_url, schema],
+        cwd=repo,
+        env={**os.environ, "PYTHONPATH": str(repo)},
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
 
-    assert len(reports) == 2
+    assert result.returncode == 0, result.stderr
+    reports = result.stdout.split()
+    assert len(reports) == 2, result.stdout
     assert [report.split("|")[1] for report in reports] == ["0", "0"], reports
     assert len({report.split("|")[0] for report in reports}) == 2, reports
