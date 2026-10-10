@@ -48,6 +48,8 @@ from .router import router
 
 logger = logging.getLogger(__name__)
 
+FINALIZE_FAILED_DETAIL = "Failed to finalize the uploaded recording."
+
 SUPPORTED_AUDIO_FORMATS = {
     ".wav",
     ".mp3",
@@ -364,6 +366,10 @@ async def finalize_chunked_import(
             detail="Recording upload is still in progress; finalize after all segment uploads complete.",
         )
 
+    # Read before anything can fail: after a failed flush the session has to be
+    # rolled back, and that expires every attribute of the recording.
+    recording_pk = recording.id
+    assembled_path = recording.audio_path
     try:
         segment_paths = [row.storage_path for row in chunk_rows]
         # A worker thread copies the parts: a video import runs to gigabytes,
@@ -408,10 +414,11 @@ async def finalize_chunked_import(
         await _mark_recording_upload_error(db, recording, str(exc.detail))
         raise
     except Exception as e:  # noqa: BLE001
+        await db.rollback()
         failed_root: Path | None = None
         try:
             failed_root = recordings_module.move_recording_upload_to_failed(
-                recording.id, logger=logger
+                recording_pk, logger=logger
             )
         except Exception as move_error:  # noqa: BLE001
             logger.error(
@@ -420,22 +427,24 @@ async def finalize_chunked_import(
 
         await _mark_recording_audio_chunks_failed(
             db,
-            recording_id=recording.id,
+            recording_id=recording_pk,
             failed_root=failed_root,
         )
         await db.commit()
 
         recordings_module.delete_recording_artifacts(
-            recording_id=recording.id,
-            audio_path=recording.audio_path,
+            recording_id=recording_pk,
+            audio_path=assembled_path,
             proxy_path=None,
             logger=logger,
         )
+        await db.refresh(recording)
+        await _mark_recording_upload_error(db, recording, FINALIZE_FAILED_DETAIL)
 
         raise sanitized_http_exception(
             logger=logger,
             status_code=500,
-            client_message="Failed to finalize the uploaded recording.",
+            client_message=FINALIZE_FAILED_DETAIL,
             log_message=f"Failed to finalize chunked import for recording {recording_id}.",
             exc=e,
         )

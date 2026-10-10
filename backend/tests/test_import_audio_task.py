@@ -437,6 +437,76 @@ async def test_a_chunked_import_reads_each_part_once_and_the_whole_file_off_the_
     assert Path(_recording(env)["audio_path"]).read_bytes() == payload
 
 
+class _ReportsAFileOver2GiB:
+    """``os`` for the import routes, reporting the assembled upload as 3.3 GB."""
+
+    def __getattr__(self, name: str):
+        return getattr(os, name)
+
+    def stat(self, path, *args, **kwargs):
+        if str(path).endswith(".mkv"):
+            return types.SimpleNamespace(st_size=3_292_350_489)
+        return os.stat(path, *args, **kwargs)
+
+
+@pytest.mark.anyio
+async def test_an_import_over_2_gib_keeps_its_size_on_postgres(
+    pg_env: _Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """recordings.file_size_bytes was a 32-bit column, so finalising a 3.3 GB
+    video failed with "value out of int32 range" and the upload was lost.
+    SQLite has no such limit, which is why only Postgres can show it."""
+    from backend.api.v1.endpoints.recordings import routes_import_upload
+
+    _fixed_chunk_duration(monkeypatch)
+    monkeypatch.setattr(routes_import_upload, "os", _ReportsAFileOver2GiB())
+    source = pg_env.tmp / "screen.mkv"
+    source.write_bytes(b"stands in for a 3.3 GB screen recording")
+
+    response = await _post(pg_env, "chunked", source)
+
+    assert response.status_code == 200, response.text
+    with pg_env.engine.connect() as connection:
+        size = connection.execute(
+            text("SELECT file_size_bytes FROM recordings")
+        ).scalar_one()
+    assert size == 3_292_350_489
+
+
+@pytest.mark.anyio
+async def test_a_finalize_that_fails_in_the_database_marks_the_recording_failed(
+    any_env: _Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failed flush leaves the session unusable until it is rolled back. The
+    cleanup used the session without one, raised again, and the client got a
+    bare 500 while the recording stayed UPLOADING with its files gone."""
+    from backend.api.v1.endpoints.recordings import routes_import_upload
+    from backend.models.pipeline import RecordingAudioChunk
+
+    async def _flush_an_invalid_row(db, *, recording_id: int, audio_path: str):
+        db.add(RecordingAudioChunk(recording_id=recording_id))
+        await db.flush()
+
+    _fixed_chunk_duration(monkeypatch)
+    monkeypatch.setattr(
+        routes_import_upload, "_bootstrap_import_audio_windows", _flush_an_invalid_row
+    )
+    source = any_env.tmp / "screen.mkv"
+    source.write_bytes(b"an upload whose finalize fails")
+
+    response = await _post(any_env, "chunked", source)
+
+    assert response.status_code == 500
+    assert response.json() == {"detail": routes_import_upload.FINALIZE_FAILED_DETAIL}
+    row = _recording(any_env)
+    assert (row["status"], row["processing_step"]) == (
+        "ERROR",
+        routes_import_upload.FINALIZE_FAILED_DETAIL,
+    )
+    assert not Path(row["audio_path"]).exists()
+    assert any_env.dispatched == []
+
+
 @pytest.mark.anyio
 @needs_ffmpeg
 @pytest.mark.parametrize("route", ROUTES)
