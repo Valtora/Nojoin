@@ -444,6 +444,15 @@ If AI configuration is missing, the recording still completes with transcript, d
 
 A secondary LLM provider can be configured via the `SECONDARY_LLM_PROVIDER` environment variable. When set, all AI features (meeting intelligence, Meeting Edge, speaker inference, chat) automatically fall back to the secondary provider if the primary provider fails with any error, handled by `SecondaryLLMBackend`. The secondary provider has its own model, live model, and API key settings, configured independently. Fallback is transparent: the primary provider is tried first, and on failure the system logs a warning and retries with the secondary provider. If both fail, the primary provider's error is raised.
 
+Left at its defaults, Ollama does not refuse an oversized prompt: past `num_ctx` it drops tokens from the front of the prompt and answers from the rest (current releases keep about half the window), and when the answer fills the window it shifts the context and loses the start of the prompt the same way, each time ending in an ordinary stop. The hosted providers reject an oversized request outright. Every Ollama `/api/chat` request therefore lets Ollama decide whether it fits (`OllamaLLMBackend._post_chat`):
+
+1. `num_ctx` is the configured window (`ollama_context_window`, the operator's VRAM budget), lowered to the model's trained context length from `/api/show` when that is smaller, because Ollama clamps to it at load. It is never raised automatically: a larger KV cache is exactly what fails to load on consumer GPUs. `/api/show` is cached per process for five minutes per server and model.
+2. The request carries `truncate: false`, so Ollama refuses a prompt longer than `num_ctx` with HTTP 400 before generating (0.34.2 and 0.40.2 report the exact token count; 0.12.6 does not), and `shift: false`, so an answer that fills the window ends with `done_reason: length`. No `num_predict` is sent, so a Modelfile's own limit stands. The 400 becomes a context-window error naming the window and the count, and a length stop an "incomplete answer" error; neither answer is used.
+3. Meeting chat relied on Ollama's server-side trimming to drop old turns. It now drops the oldest turns itself, against an estimate of 2.6 UTF-8 bytes per token (prose and transcripts run 2.6 to 5; numbers and code run denser and go through the retry) with up to a quarter of the window kept for the answer; the last message, which carries the meeting context and the question, is never cut. If Ollama still refuses, chat retries once with fewer turns (by Ollama's count when given, otherwise with none), then reports the refusal.
+4. Servers before Ollama 0.12.6 ignore `truncate` and `shift`. For them the token counts are checked after the call: a prompt plus answer past `num_ctx` (a cut prompt counts the whole window) is refused as truncated. Their answer cap stays Ollama's default of ten windows, as before.
+
+A refusal raises an error naming the window. Notes generation records it as the notes error, chat shows the context-window message, and a configured secondary provider takes over as for any other primary failure; a streamed chat refused by Ollama falls back too, because the refusal arrives before the first token. A length stop at the end of a streamed answer, or a truncation found after the call on a pre-0.12.6 server, arrives after the text has streamed, so the answer is withdrawn (not saved) and there is no fallback. Meetings too long for the window are not split into parts.
+
 To cut token cost on repeated context, Meeting Chat and Meeting Edge lay out their prompts cache-first — the large, stable portion leads and the volatile part is sent last. Meeting Chat sends the meeting notes and full transcript as the system prompt (the Anthropic backend marks it with a `cache_control` breakpoint; OpenAI-compatible providers reuse the leading system message through automatic prefix caching), leaving only the conversation history and the user's question in the messages array. Meeting Edge splits its single prompt into a stable instruction/JSON-schema prefix and the volatile per-refresh context (rolling summary, recent transcript), and the Anthropic backend `cache_control`-marks that prefix. Caching is transparent to the user — it changes only how the request is framed for reuse, not what the model is asked — and simply yields no benefit when a provider or model does not support it.
 
 Playback, transcript viewing, and export all operate on the full recording timeline without applying persisted trim offsets.
@@ -577,6 +586,22 @@ merged, split, or low-confidence span is ambiguous, final processing keeps the
 final ASR/diarisation output and records live evidence in alignment metadata
 instead of silently applying it to the wrong time span. Manual text and speaker
 locks remain authoritative.
+
+### Utterance Public Ids
+
+`transcript_utterances.public_id` is unique across every recording. A segment's
+`id` is only a request: it carries live utterance ids into finalize and a
+recording's stored ids into backfill, but openai-whisper also numbers its
+segments there. Finalize and backfill (`replace_utterances_from_segments`) take
+ids from `UtterancePublicIds` in
+[backend/utils/canonical_pipeline/public_ids.py](../backend/utils/canonical_pipeline/public_ids.py).
+An id that no utterance holds is kept (finalize also requires a canonical UUID);
+one this recording holds goes into the new row's
+`confidence_payload.source_public_ids` and is replaced by a fresh uuid4;
+anything else gets a uuid4. The bulk segment edit's full-replace fallback keeps
+the client's ids and answers 409 when one is held or repeated. The live append
+persists the live lane's uuid5 of recording id, span, speaker and text;
+diarisation reconciliation mints uuid4.
 
 ### Startup Canonical Cutover
 
