@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 from dataclasses import dataclass
@@ -365,14 +366,20 @@ async def finalize_chunked_import(
 
     try:
         segment_paths = [row.storage_path for row in chunk_rows]
-        concatenate_binary_files(segment_paths, recording.audio_path)
+        # A worker thread copies the parts: a video import runs to gigabytes,
+        # and every other request waits while the event loop is copying.
+        await asyncio.to_thread(
+            concatenate_binary_files, segment_paths, recording.audio_path
+        )
 
         file_stats = os.stat(recording.audio_path)
         recording.file_size_bytes = file_stats.st_size
 
         # Get duration
         try:
-            recording.duration_seconds = get_audio_duration(recording.audio_path)
+            recording.duration_seconds = await asyncio.to_thread(
+                get_audio_duration, recording.audio_path
+            )
         except Exception as e:  # noqa: BLE001
             logger.warning(f"Failed to get duration: {e}")
 
