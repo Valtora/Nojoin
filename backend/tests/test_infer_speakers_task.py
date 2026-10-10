@@ -312,6 +312,8 @@ def _rule_based_names(line: str) -> list[str]:
         "Generally speaking, the rollout went fine.",
         "I'm here.",
         "So this is Tom's laptop.",
+        "So this is Tom’s laptop.",
+        "I’m going to share my screen now.",
         "I'M GOING TO SHARE MY SCREEN.",
         # A line starts with a capital in any cased transcript, so "X here" and
         # "X speaking" only count when the cue closes the clause.
@@ -333,6 +335,7 @@ def test_rule_based_speaker_suggestions_reject_non_name_introductions(
     ("line", "expected"),
     [
         ("Hi, I'm Priya.", ["Priya"]),
+        ("Hi, I’m Priya.", ["Priya"]),
         ("And my name is Priya Shah.", ["Priya Shah"]),
         ("Morning, this is Tom from finance.", ["Tom"]),
         ("Priya here, can you hear me?", ["Priya"]),

@@ -14,10 +14,12 @@ JSON_FENCE_PATTERN = re.compile(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", re.IGNOR
 # because capitalisation is the only evidence that "I'm Priya" names someone while
 # "I'm going to share" does not. A lowercase transcript therefore yields no
 # rule-based suggestion rather than a guessed one.
-_CAPITALISED_NAME = r"([A-Z][A-Za-z'\-]+(?:\s+[A-Z][A-Za-z'\-]+){0,2})"
+# Engines emit the typographic apostrophe (’) as well as the straight one, so
+# every apostrophe below accepts both.
+_CAPITALISED_NAME = r"([A-Z][A-Za-z'’\-]+(?:\s+[A-Z][A-Za-z'’\-]+){0,2})"
 SELF_INTRO_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (
-        re.compile(rf"\b(?i:i am|i'm|my name is|this is)\s+{_CAPITALISED_NAME}\b"),
+        re.compile(rf"\b(?i:i am|i['’]m|my name is|this is)\s+{_CAPITALISED_NAME}\b"),
         "self_introduction",
     ),
     (
@@ -73,7 +75,7 @@ NON_NAME_WORDS = frozenset(
 )
 # Contractions and possessives ("I'm here", "this is Tom's laptop") are not
 # names; an apostrophe inside a name ("O'Brien") is kept.
-CONTRACTION_SUFFIX_PATTERN = re.compile(r"'(?:m|re|s|ve|ll|d|t)$", re.IGNORECASE)
+CONTRACTION_SUFFIX_PATTERN = re.compile(r"['’](?:m|re|s|ve|ll|d|t)$", re.IGNORECASE)
 
 SPEAKER_SUGGESTION_STATUS_PENDING = "pending"
 SPEAKER_SUGGESTION_STATUS_ACCEPTED = "accepted"
