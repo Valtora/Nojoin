@@ -185,7 +185,7 @@ def test_anthropic_generate_meeting_intelligence_uses_shared_contract() -> None:
             capture.update(kwargs)
             return _FakeAnthropicStream(
                 SimpleNamespace(
-                    content=[SimpleNamespace(text=_sample_payload())],
+                    content=[SimpleNamespace(type="text", text=_sample_payload())],
                     stop_reason="end_turn",
                 )
             )
@@ -204,6 +204,37 @@ def test_anthropic_generate_meeting_intelligence_uses_shared_contract() -> None:
     assert capture["messages"][0]["content"].startswith(
         "You are an expert meeting-notes assistant."
     )
+
+
+def test_anthropic_reads_the_text_blocks_after_a_thinking_block() -> None:
+    """Claude Haiku 5.5 and the other current models think by default, so a
+    response can open with a thinking block, whose text is empty unless asked
+    for. Reading the first block failed the notes whenever the model thought
+    first, with "'ThinkingBlock' object has no attribute 'strip'"."""
+    payload = _sample_payload()
+    split = len(payload) // 2
+
+    class FakeMessages:
+        def stream(self, **kwargs):
+            return _FakeAnthropicStream(
+                SimpleNamespace(
+                    content=[
+                        SimpleNamespace(type="thinking", thinking="", signature="s"),
+                        SimpleNamespace(type="text", text=payload[:split]),
+                        SimpleNamespace(type="text", text=payload[split:]),
+                    ],
+                    stop_reason="end_turn",
+                )
+            )
+
+    backend = object.__new__(AnthropicLLMBackend)
+    backend.model = "claude-haiku-5-5"
+    backend.client = SimpleNamespace(messages=FakeMessages())
+
+    result = backend.generate_meeting_intelligence(_sample_request(), timeout=90)
+
+    assert result.speaker_mapping == {"SPEAKER_00": "Alex"}
+    assert "## User Notes" in result.notes_markdown
 
 
 def test_ollama_generate_meeting_intelligence_uses_shared_contract() -> None:
@@ -585,7 +616,9 @@ def test_anthropic_generate_meeting_edge_sends_no_assistant_prefill() -> None:
         def create(self, **kwargs):
             capture.update(kwargs)
             return SimpleNamespace(
-                content=[SimpleNamespace(text=_sample_meeting_edge_payload())]
+                content=[
+                    SimpleNamespace(type="text", text=_sample_meeting_edge_payload())
+                ]
             )
 
     backend = object.__new__(AnthropicLLMBackend)
@@ -640,7 +673,7 @@ def test_anthropic_streams_rather_than_tripping_the_non_streaming_guard() -> Non
             calls.update(kwargs)
             return _FakeAnthropicStream(
                 SimpleNamespace(
-                    content=[SimpleNamespace(text=_sample_payload())],
+                    content=[SimpleNamespace(type="text", text=_sample_payload())],
                     stop_reason="end_turn",
                 )
             )
@@ -672,7 +705,7 @@ def test_anthropic_steps_down_when_a_model_rejects_the_output_ceiling() -> None:
                 )
             return _FakeAnthropicStream(
                 SimpleNamespace(
-                    content=[SimpleNamespace(text=_sample_payload())],
+                    content=[SimpleNamespace(type="text", text=_sample_payload())],
                     stop_reason="end_turn",
                 )
             )
@@ -694,7 +727,7 @@ def test_anthropic_refuses_to_save_notes_the_output_limit_cut_short() -> None:
         def stream(self, **kwargs):
             return _FakeAnthropicStream(
                 SimpleNamespace(
-                    content=[SimpleNamespace(text=_sample_payload())],
+                    content=[SimpleNamespace(type="text", text=_sample_payload())],
                     stop_reason="max_tokens",
                 )
             )
@@ -767,7 +800,7 @@ def test_anthropic_kwargs_are_accepted_by_the_installed_sdk() -> None:
         def create(self, **kwargs):
             captured.append(("create", kwargs))
             return SimpleNamespace(
-                content=[SimpleNamespace(text=_sample_payload())],
+                content=[SimpleNamespace(type="text", text=_sample_payload())],
                 stop_reason="end_turn",
             )
 
@@ -775,7 +808,7 @@ def test_anthropic_kwargs_are_accepted_by_the_installed_sdk() -> None:
             captured.append(("stream", kwargs))
             return _FakeAnthropicStream(
                 SimpleNamespace(
-                    content=[SimpleNamespace(text=_sample_payload())],
+                    content=[SimpleNamespace(type="text", text=_sample_payload())],
                     stop_reason="end_turn",
                 )
             )
