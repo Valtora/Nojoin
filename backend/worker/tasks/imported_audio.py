@@ -117,7 +117,18 @@ def keep_imported_audio_task(self, recording_id: int) -> None:
         return
     if kept != source:
         # Only now: until the kept audio is stored, the upload is all there is.
-        _remove_quietly(source)
+        try:
+            os.remove(source)
+        except FileNotFoundError:
+            pass
+        except OSError as exc:
+            logger.error(
+                "Could not delete the upload of recording %s, %s; nothing "
+                "refers to it any more: %s",
+                recording_id,
+                source,
+                exc,
+            )
 
     task = celery_app.send_task(
         "backend.worker.tasks.process_recording_task", args=[recording_id]
