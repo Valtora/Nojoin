@@ -58,9 +58,13 @@ ENV MALLOC_ARENA_MAX=2
 ENV LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2
 
 RUN apt-get update && \
-    # Patch the base image's OpenSSL against CVE-2026-45447 (PKCS7_verify UAF);
-    # the pinned PyTorch base predates the Ubuntu fix (3.0.13-0ubuntu3.11).
-    apt-get install -y --no-install-recommends --only-upgrade openssl libssl3t64 && \
+    # Patch packages the pinned PyTorch base ships behind the Ubuntu archive:
+    # OpenSSL (CVE-2026-45447, CVE-2026-84782) and the linux-libc-dev kernel
+    # headers, whose CVEs the image scan flags although a container runs the
+    # host's kernel. --only-upgrade takes the archive's newest build whenever
+    # this layer is rebuilt, so later fixes to either need no edit here.
+    apt-get install -y --no-install-recommends --only-upgrade \
+        openssl libssl3t64 linux-libc-dev && \
     apt-get install -y --no-install-recommends \
     ffmpeg \
     libsndfile1 \
@@ -88,11 +92,13 @@ RUN apt-get update && \
 # at import time with the patched versions from requirements, but the old files
 # remain on disk and are flagged by the image scan. Upgrade the system copies in
 # place (as root, before the USER switch) to the same patched versions. Keep these
-# pins in step with requirements/base.txt: pillow==12.3.0 closes the batch of
-# HIGH pillow CVEs disclosed after v1.5.0 (CVE-2026-54058/54059/54060, 55379/55380,
-# 59197/59199/59200/59204/59205); urllib3==2.7.0 closes CVE-2026-44431/44432.
+# pins in step with requirements/base.txt and requirements/worker.txt:
+# pillow==12.3.0 closes the batch of HIGH pillow CVEs disclosed after v1.5.0
+# (CVE-2026-54058/54059/54060, 55379/55380, 59197/59199/59200/59204/59205);
+# urllib3==2.8.0 closes CVE-2026-44431/44432 and CVE-2026-97687/97689;
+# fsspec==2026.7.0 closes CVE-2026-104851.
 RUN /usr/bin/python3 -m pip install --no-cache-dir --break-system-packages \
-    --root-user-action=ignore --upgrade pillow==12.3.0 urllib3==2.7.0
+    --root-user-action=ignore --upgrade pillow==12.3.0 urllib3==2.8.0 fsspec==2026.7.0
 
 # Put the CUDA wheel libraries on the dynamic loader path. Despite the `cudnn9` tag,
 # this base ships CUDA and cuDNN only as nvidia-*-cu12 wheels under dist-packages,
