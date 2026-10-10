@@ -1714,6 +1714,58 @@ async def test_backup_archives_the_master_audio_not_the_playback_proxy(
 
 
 @pytest.mark.anyio
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg is not installed")
+async def test_an_imported_screen_recording_is_backed_up_as_its_audio(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An Original backup copies the audio import kept, not the video it came in."""
+    from backend.utils.import_audio import keep_imported_audio
+
+    context = build_test_context(tmp_path / "source")
+    patch_backup_manager(monkeypatch, context)
+    monkeypatch.setenv("DATA_ENCRYPTION_KEY", "source-encryption-key")
+
+    upload = context.path_manager.recordings_directory / "screen.mkv"
+    subprocess.run(
+        ["ffmpeg", "-y", "-loglevel", "error"]
+        + ["-f", "lavfi", "-i", "testsrc=size=320x240:rate=25:duration=2"]
+        + ["-f", "lavfi", "-i", "sine=frequency=440:duration=2"]
+        + ["-c:v", "mpeg4", "-b:v", "2M", "-c:a", "aac", "-shortest", str(upload)],
+        check=True,
+    )
+    stored = Path(keep_imported_audio(str(upload), upload.parent).path)
+    await seed_source_data(
+        context.async_session_maker,
+        recording_meeting_uid="meeting-uid-screen",
+        recording_audio_path=str(stored),
+        recording_proxy_path=None,
+    )
+
+    zip_path, _ = await BackupManager.create_backup(
+        include_audio=True,
+        archive_quality=backup_format.ARCHIVE_QUALITY_ORIGINAL,
+    )
+
+    member = f"recordings/{stored.name}"
+    with zipfile.ZipFile(zip_path, "r") as archive:
+        members = [n for n in archive.namelist() if n.startswith("recordings/")]
+        assert members == [member]
+        archived = tmp_path / stored.name
+        archived.write_bytes(archive.read(member))
+    probe = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "stream=codec_type"]
+        + ["-of", "csv=p=0", str(archived)],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert probe.stdout.split() == ["audio"]
+
+    await context.async_engine.dispose()
+
+
+@pytest.mark.anyio
 async def test_compressed_quality_reencodes_while_original_stores_bytes_verbatim(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

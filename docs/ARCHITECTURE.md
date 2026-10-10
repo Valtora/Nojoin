@@ -396,11 +396,17 @@ The normal backend processing path is:
 4. Transcription via a pluggable engine under [backend/processing/engines/](../backend/processing/engines/) (Whisper by default, Parakeet or Canary via onnx-asr selectable sharing `OnnxAsrEngine`).
 5. Pyannote diarisation, optionally bounded by the recording's `max_speakers`.
 6. Phantom speaker filtering.
-7. Merge, voiceprint extraction, and deterministic speaker resolution.
+7. Merge (see [Word Timestamps In The Merge](#word-timestamps-in-the-merge)), voiceprint extraction, and deterministic speaker resolution.
 8. Rolling diarisation window reconciliation: completed rolling windows captured during the live lane are replayed to apply speaker boundary corrections to provisional live utterances.
 9. Frame-level segmentation refinement: a second boundary-quality pass using `pyannote/segmentation-3.0` inspects boundary-flagged and long live-emitted utterances and re-splits them where the dense per-frame speaker activity map identifies a cleaner turn boundary than the rolling diarisation windows resolved.
 10. Automatic meeting intelligence when an AI provider and model are configured.
 11. Automatic application of inferred speaker names to unresolved speakers, plus persistence of the meeting title and Markdown meeting notes. Applied suggestions are retained on the transcript as an audit trail.
+
+### Word Timestamps In The Merge
+
+Word timestamps are optional per segment (an onnx-asr window without token timings, a Whisper segment with an empty `words` list). `combine_transcription_diarization` in [backend/utils/transcript_utils.py](../backend/utils/transcript_utils.py) chooses the method per run of consecutive segments: a run with words is aligned word by word, a run without gets each segment's dominant speaker over its span. Every segment's text reaches the merge output. A word no longer than pyannote's segment precision takes the speaker of the turn containing its instant (`[start, end)`; a turn's end counts when no turn starts there; a gap stays `UNKNOWN`).
+
+Consolidation never drops text. A segment under 0.1 s folds into an adjacent segment at most 1.0 s away that stays within the 10 s maximum, preferring the same speaker, then the nearer one. The receiver keeps its speaker and overlapping speakers; ids and edit flags merge as in any consolidation merge. Each fold bridges at most 1.0 s, but folds into one segment add up. Fragments with no qualifying neighbour stay as separate short segments, and only a fragment without text is dropped. Neighbours whose fragments all folded away merge only if the original pieces tiled (every gap under 0.01 s) with the same speaker and overlapping speakers, within 10 s.
 
 ### Processing Tuning
 
@@ -458,6 +464,17 @@ A refusal raises an error naming the window. Notes generation records it as the 
 To cut token cost on repeated context, Meeting Chat and Meeting Edge lay out their prompts cache-first — the large, stable portion leads and the volatile part is sent last. Meeting Chat sends the meeting notes and full transcript as the system prompt (the Anthropic backend marks it with a `cache_control` breakpoint; OpenAI-compatible providers reuse the leading system message through automatic prefix caching), leaving only the conversation history and the user's question in the messages array. Meeting Edge splits its single prompt into a stable instruction/JSON-schema prefix and the volatile per-refresh context (rolling summary, recent transcript), and the Anthropic backend `cache_control`-marks that prefix. Caching is transparent to the user — it changes only how the request is framed for reuse, not what the model is asked — and simply yields no benefit when a provider or model does not support it.
 
 Playback, transcript viewing, and export all operate on the full recording timeline without applying persisted trim offsets.
+
+### Imported Media Input
+
+Import stores no video.
+
+- **Worker step.** Every import route (`/import`, chunked finalize, `/upload`) stores the upload as it arrived, marks the recording QUEUED with the step "Extracting audio..." and queues `keep_imported_audio_task` on the cpu lane in place of processing ([backend/worker/tasks/imported_audio.py](../backend/worker/tasks/imported_audio.py)). The task runs `keep_imported_audio`, points `audio_path` at the result, rebuilds the import's audio window from it, deletes the upload once that write has committed (a failed deletion is logged as an error), then queues processing and the playback proxy.
+- **Duplicates.** Each write is conditional on the recording still waiting for the task with the same `audio_path`, and the upload survives until the kept audio is stored, so a duplicate or re-queued copy is harmless: the copy whose write lands keeps its audio, and every other copy removes only what it extracted. A fault before that write leaves the upload and the waiting recording for the next copy. A task is acknowledged on receipt, so one lost with its worker is not redelivered: the cpu worker re-queues every waiting import when it starts (`requeue_imports_waiting_for_audio`); the gpu worker's startup sweep leaves them to it. An ffmpeg whose worker process was killed, by a crash or by the `terminate=True` revoke in discard and permanent delete, runs on to the end, but its file is in the recording's `temp/<id>/`, which deleting the recording removes and the daily sweep clears. Delete, permanent delete, batch permanent delete and discard read the row `FOR UPDATE`, so they never delete a path the task has just replaced; deleting a user does not lock its recordings.
+- **Extraction.** `keep_imported_audio` ([backend/utils/import_audio.py](../backend/utils/import_audio.py)) extracts the audio track ffmpeg selects by default from any media container, or any upload carrying video, into a new file in the recording's `temp/<id>/`. The task moves that file beside the upload only after its write has matched the waiting row, so a delete or discard either removes it with the temp directory or waits for the commit and removes it by its stored path. The upload is left for the task to delete. Other uploads are kept as they arrived. WAV, MP3, AAC and FLAC, whose formats hold no video (cover art aside), are kept without being probed, so they need no ffmpeg.
+- **Format.** AAC, ALAC, MP3, Opus, Vorbis and FLAC are copied, PCM and other lossless codecs become FLAC, and anything else becomes Opus.
+- **Verification.** The new file is kept only if it is one audio stream no more than max(1 s, 0.1%) shorter than the source track, measured from packets.
+- **Failures.** A file at fault (no audio track, or one ffmpeg cannot extract) and a server fault (a tool missing, timed out or stopped by a signal; a full disk) both mark the recording ERROR, with the reason as its step, and remove its files, the upload included; a failed deletion is logged. Neither is retried, and reprocess refuses a failed recording with no audio left, answering with that reason.
 
 ### Live Transcription Lane
 
@@ -593,8 +610,10 @@ locks remain authoritative.
 
 `transcript_utterances.public_id` is unique across every recording. A segment's
 `id` is only a request: it carries live utterance ids into finalize and a
-recording's stored ids into backfill, but openai-whisper also numbers its
-segments there. Finalize and backfill (`replace_utterances_from_segments`) take
+recording's stored ids into backfill, but openai-whisper numbers its segments
+in the same field. The merge keeps only string ids, so those numbers reach
+finalize only through the fallback that skips the merge (diarisation off or no
+merged segments), and backfill through older stored projections. Finalize and backfill (`replace_utterances_from_segments`) take
 ids from `UtterancePublicIds` in
 [backend/utils/canonical_pipeline/public_ids.py](../backend/utils/canonical_pipeline/public_ids.py).
 An id that no utterance holds is kept (finalize also requires a canonical UUID);

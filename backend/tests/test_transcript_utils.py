@@ -1,3 +1,8 @@
+import os
+import subprocess
+import sys
+from pathlib import Path
+
 import pytest
 from pyannote.core import Segment
 
@@ -413,3 +418,518 @@ def test_segment_level_combination_ignores_tiny_secondary_overlap():
             "text": "hello there",
         }
     ]
+
+
+def _spans(segments):
+    return [(seg["start"], seg["end"], seg["speaker"], seg["text"]) for seg in segments]
+
+
+def whisper_transcription_with_a_wordless_segment() -> dict:
+    """openai-whisper's shape: integer segment ids, and one segment whose words
+    could not be aligned, so it carries an empty "words" list."""
+    return {
+        "segments": [
+            {
+                "id": 0,
+                "start": 0.0,
+                "end": 1.0,
+                "text": " Let's start.",
+                "words": [
+                    {"start": 0.0, "end": 0.5, "word": " Let's"},
+                    {"start": 0.5, "end": 1.0, "word": " start."},
+                ],
+            },
+            {
+                "id": 1,
+                "start": 1.5,
+                "end": 3.0,
+                "text": " Sorry, I was muted.",
+                "words": [],
+            },
+            {
+                "id": 2,
+                "start": 3.5,
+                "end": 4.5,
+                "text": " No problem.",
+                "words": [
+                    {"start": 3.5, "end": 4.0, "word": " No"},
+                    {"start": 4.0, "end": 4.5, "word": " problem."},
+                ],
+            },
+        ]
+    }
+
+
+WORDLESS_SEGMENT_TURNS = [
+    (0.0, 1.2, "SPEAKER_00"),
+    (1.4, 3.1, "SPEAKER_01"),
+    (3.4, 4.6, "SPEAKER_00"),
+]
+
+
+def test_combination_keeps_text_of_a_segment_without_words():
+    result = combine_transcription_diarization(
+        whisper_transcription_with_a_wordless_segment(),
+        FakeDiarization(WORDLESS_SEGMENT_TURNS),
+    )
+
+    assert _spans(result) == [
+        (0.0, 1.0, "SPEAKER_00", "Let's start."),
+        (1.5, 3.0, "SPEAKER_01", "Sorry, I was muted."),
+        (3.5, 4.5, "SPEAKER_00", "No problem."),
+    ]
+    assert "words" not in result[1]
+    # Whisper's segment index is not an utterance id; finalize would persist
+    # it as a public_id, which is unique across recordings.
+    assert "id" not in result[1]
+
+
+def test_segment_level_combination_keeps_only_string_ids():
+    transcription = {
+        "segments": [
+            {"id": 3, "start": 0.0, "end": 1.0, "text": " Engine index."},
+            {"id": "live-7", "start": 1.0, "end": 2.0, "text": " Live reuse."},
+        ]
+    }
+    diarization = FakeDiarization([(0.0, 2.0, "SPEAKER_00")])
+
+    result = combine_transcription_diarization(transcription, diarization)
+
+    assert [seg.get("id") for seg in result] == [None, "live-7"]
+
+
+def test_combination_keeps_every_segment_when_none_has_words():
+    # Whisper asked for word timestamps and aligned none: on the old
+    # first-segment check this collapsed to one empty UNKNOWN segment.
+    transcription = {
+        "segments": [
+            {"id": 0, "start": 0.0, "end": 2.0, "text": " Hello there.", "words": []},
+            {"id": 1, "start": 2.0, "end": 4.0, "text": " Over here.", "words": []},
+        ]
+    }
+    diarization = FakeDiarization([(0.0, 2.0, "SPEAKER_00"), (2.0, 4.0, "SPEAKER_01")])
+
+    result = combine_transcription_diarization(transcription, diarization)
+
+    assert _spans(result) == [
+        (0.0, 2.0, "SPEAKER_00", "Hello there."),
+        (2.0, 4.0, "SPEAKER_01", "Over here."),
+    ]
+
+
+def test_consolidation_merges_a_wordless_segment_with_its_neighbours():
+    transcription = {
+        "segments": [
+            {
+                "id": 0,
+                "start": 0.0,
+                "end": 1.0,
+                "text": " Okay so",
+                "words": [
+                    {"start": 0.0, "end": 0.5, "word": " Okay"},
+                    {"start": 0.5, "end": 1.0, "word": " so"},
+                ],
+            },
+            {"id": 1, "start": 1.0, "end": 2.0, "text": " ...", "words": []},
+            {
+                "id": 2,
+                "start": 2.0,
+                "end": 3.0,
+                "text": " moving on",
+                "words": [
+                    {"start": 2.0, "end": 2.5, "word": " moving"},
+                    {"start": 2.5, "end": 3.0, "word": " on"},
+                ],
+            },
+        ]
+    }
+    diarization = FakeDiarization([(0.0, 3.0, "SPEAKER_00")])
+
+    result = consolidate_diarized_transcript(
+        combine_transcription_diarization(transcription, diarization)
+    )
+
+    assert _spans(result) == [(0.0, 3.0, "SPEAKER_00", "Okay so ... moving on")]
+    assert "id" not in result[0]
+
+
+def test_combination_aligns_words_after_a_segment_without_them():
+    # A chunked onnx-asr run can return one window without token timings;
+    # later windows still carry words and must be aligned word by word.
+    transcription = {
+        "segments": [
+            {"start": 0.0, "end": 2.0, "text": " Good morning everyone."},
+            {
+                "start": 2.5,
+                "end": 4.0,
+                "text": " Thanks. Sure, go ahead.",
+                "words": [
+                    {"start": 2.5, "end": 3.0, "word": " Thanks."},
+                    {"start": 3.1, "end": 3.5, "word": " Sure,"},
+                    {"start": 3.5, "end": 3.7, "word": " go"},
+                    {"start": 3.7, "end": 4.0, "word": " ahead."},
+                ],
+            },
+        ]
+    }
+    diarization = FakeDiarization(
+        [(0.0, 3.05, "SPEAKER_00"), (3.05, 4.0, "SPEAKER_01")]
+    )
+
+    result = combine_transcription_diarization(transcription, diarization)
+
+    assert _spans(result) == [
+        (0.0, 2.0, "SPEAKER_00", "Good morning everyone."),
+        (2.5, 3.0, "SPEAKER_00", "Thanks."),
+        (3.1, 4.0, "SPEAKER_01", "Sure, go ahead."),
+    ]
+
+
+ZERO_LENGTH_TURNS = [(0.0, 1.0, "S0"), (1.0, 2.0, "S1"), (3.0, 4.0, "S2")]
+
+
+@pytest.mark.parametrize(
+    ("instant", "turns", "speaker"),
+    [
+        (0.5, ZERO_LENGTH_TURNS, "S0"),  # inside a turn
+        (1.0, ZERO_LENGTH_TURNS, "S1"),  # shared edge: the turn starting there
+        (2.0, ZERO_LENGTH_TURNS, "S1"),  # a turn's end, no turn starting there
+        (2.5, ZERO_LENGTH_TURNS, "UNKNOWN"),  # gap between turns
+        (5.0, ZERO_LENGTH_TURNS, "UNKNOWN"),  # outside every turn
+        (1.5, [(0.0, 2.0, "S0"), (1.0, 3.0, "S1")], "S0"),  # overlap: first turn
+    ],
+)
+def test_zero_length_word_takes_the_speaker_of_the_turn_containing_it(
+    instant, turns, speaker
+):
+    word = {"start": instant, "end": instant, "word": " ship"}
+    transcription = {
+        "segments": [
+            {"start": instant, "end": instant, "text": " ship", "words": [word]}
+        ]
+    }
+
+    result = combine_transcription_diarization(transcription, FakeDiarization(turns))
+
+    assert [(seg["speaker"], seg["text"]) for seg in result] == [(speaker, "ship")]
+
+
+def test_zero_length_word_mid_sentence_survives_consolidation():
+    # Whisper rounds word timings to 0.01 s, so a word can start and end at once.
+    words = [(0.0, 0.5, " we"), (0.5, 1.0, " will"), (1.0, 1.0, " ship")]
+    words += [(1.0, 2.0, " it"), (2.0, 3.0, " today")]
+    transcription = {
+        "segments": [
+            {
+                "start": 0.0,
+                "end": 3.0,
+                "text": " we will ship it today",
+                "words": [{"start": s, "end": e, "word": w} for s, e, w in words],
+            }
+        ]
+    }
+    diarization = FakeDiarization([(0.0, 3.0, "SPEAKER_00")])
+
+    result = consolidate_diarized_transcript(
+        combine_transcription_diarization(transcription, diarization)
+    )
+
+    assert _spans(result) == [(0.0, 3.0, "SPEAKER_00", "we will ship it today")]
+
+
+def _segment(start, end, speaker, text):
+    return {"start": start, "end": end, "speaker": speaker, "text": text}
+
+
+def test_consolidate_folds_a_short_segment_into_the_same_speaker_neighbour():
+    segments = [
+        _segment(0.0, 2.0, "S0", "First point."),
+        _segment(2.0, 2.05, "S1", "Uh"),
+        _segment(2.5, 4.0, "S1", "second point."),
+    ]
+
+    result = consolidate_diarized_transcript(segments)
+
+    assert _spans(result) == [
+        (0.0, 2.0, "S0", "First point."),
+        (2.0, 4.0, "S1", "Uh second point."),
+    ]
+
+
+def test_consolidate_folds_a_short_segment_into_the_nearer_neighbour():
+    segments = [
+        _segment(0.0, 2.0, "S0", "First point"),
+        _segment(2.0, 2.05, "UNKNOWN", "too."),
+        _segment(3.0, 4.0, "S1", "Second point."),
+    ]
+
+    result = consolidate_diarized_transcript(segments)
+
+    assert _spans(result) == [
+        (0.0, 2.05, "S0", "First point too."),
+        (3.0, 4.0, "S1", "Second point."),
+    ]
+
+
+def test_consolidate_keeps_text_order_across_consecutive_short_segments():
+    # "x" prefers the later neighbour (same speaker); "y" would prefer the
+    # earlier one, but going there would put it before "x".
+    segments = [
+        _segment(0.0, 1.0, "S0", "a"),
+        _segment(1.0, 1.05, "S1", "x"),
+        _segment(1.05, 1.1, "S0", "y"),
+        _segment(1.1, 2.0, "S1", "b"),
+    ]
+
+    result = consolidate_diarized_transcript(segments)
+
+    assert _spans(result) == [(0.0, 1.0, "S0", "a"), (1.0, 2.0, "S1", "x y b")]
+
+
+def test_consolidate_keeps_an_isolated_short_segment_on_its_own():
+    # Folding across seconds of silence would stretch the neighbour over it.
+    segments = [
+        _segment(0.0, 2.0, "S0", "First point."),
+        _segment(5.0, 5.05, "S1", "Hm."),
+        _segment(8.0, 9.0, "S0", "Second point."),
+        _segment(9.0, 9.0, "S0", ""),
+    ]
+
+    result = consolidate_diarized_transcript(segments)
+
+    assert _spans(result) == [
+        (0.0, 2.0, "S0", "First point."),
+        (5.0, 5.05, "S1", "Hm."),
+        (8.0, 9.0, "S0", "Second point."),
+    ]
+
+
+def test_word_with_float_noise_duration_is_looked_up_as_an_instant():
+    # pyannote treats a Segment this short as empty, so it overlaps no turn.
+    word = {"start": 0.5, "end": 0.5 + 1e-9, "word": " ship"}
+    transcription = {
+        "segments": [{"start": 0.5, "end": 0.5, "text": " ship", "words": [word]}]
+    }
+
+    result = combine_transcription_diarization(
+        transcription, FakeDiarization(ZERO_LENGTH_TURNS)
+    )
+
+    assert [seg["speaker"] for seg in result] == ["S0"]
+
+
+@pytest.mark.parametrize(
+    "segments",
+    [
+        # Folding back would grow the 10 s segment past the cap.
+        [
+            _segment(0.0, 10.0, "S0", "Long turn."),
+            _segment(10.0, 10.05, "S0", "Hm."),
+            _segment(12.0, 13.0, "S0", "Later."),
+        ],
+        # Folding forward would, too.
+        [
+            _segment(0.0, 0.05, "S0", "Hm."),
+            _segment(0.05, 10.05, "S0", "Long turn."),
+        ],
+    ],
+)
+def test_consolidate_never_folds_a_segment_past_the_maximum_duration(segments):
+    expected = _spans(segments)
+
+    result = consolidate_diarized_transcript([dict(seg) for seg in segments])
+
+    assert _spans(result) == expected
+
+
+def test_consolidate_folds_into_the_earlier_neighbour_on_a_tie():
+    segments = [
+        _segment(0.0, 2.0, "S0", "First"),
+        _segment(2.0, 2.05, "S2", "uh"),
+        _segment(2.05, 4.0, "S1", "Second."),
+    ]
+
+    result = consolidate_diarized_transcript(segments)
+
+    assert _spans(result) == [
+        (0.0, 2.05, "S0", "First uh"),
+        (2.05, 4.0, "S1", "Second."),
+    ]
+
+
+def test_consolidate_merges_one_turn_split_only_by_a_folded_segment():
+    segments = [
+        _segment(0.0, 2.0, "S0", "So the"),
+        _segment(2.0, 2.05, "S1", "uh"),
+        _segment(2.05, 4.0, "S0", "plan is set."),
+    ]
+
+    result = consolidate_diarized_transcript(segments)
+
+    assert _spans(result) == [(0.0, 4.0, "S0", "So the uh plan is set.")]
+
+
+def test_consolidate_fold_merges_metadata_as_a_merge_does():
+    def pair(fragment_start):
+        return [
+            {**_segment(0.0, 2.0, "S0", "a"), "id": "live-a"},
+            {
+                **_segment(fragment_start, fragment_start + 0.05, "S0", "x"),
+                "id": "live-x",
+                "text_manually_edited": True,
+            },
+            _segment(5.0, 6.0, "S1", "b"),
+        ]
+
+    merged = consolidate_diarized_transcript(pair(2.0))[0]
+    folded = consolidate_diarized_transcript(pair(2.05))[0]
+
+    assert folded["source_public_ids"] == ["live-a", "live-x"]
+    assert folded["text_manually_edited"] is True
+    assert "id" not in folded
+    metadata_keys = {"id", "source_public_ids", "text_manually_edited"}
+    assert {k: v for k, v in folded.items() if k in metadata_keys} == {
+        k: v for k, v in merged.items() if k in metadata_keys
+    }
+
+
+def test_consolidate_drops_a_short_segment_without_text():
+    segments = [
+        _segment(0.0, 2.0, "S0", "First point."),
+        _segment(5.0, 5.05, "S1", ""),
+        _segment(8.0, 9.0, "S0", "Second point."),
+    ]
+
+    result = consolidate_diarized_transcript(segments)
+
+    assert [seg["text"] for seg in result] == ["First point.", "Second point."]
+
+
+def _with_overlap(segment, overlapping):
+    return {**segment, "overlapping_speakers": overlapping}
+
+
+@pytest.mark.parametrize(
+    "segments",
+    [
+        # Different overlapping speakers on the two sides.
+        [
+            _with_overlap(_segment(0.0, 2.0, "S0", "a"), ["S2"]),
+            _segment(2.0, 2.05, "S1", "uh"),
+            _segment(2.05, 4.0, "S0", "b"),
+        ],
+        # Joined, the line would run past 10 s.
+        [
+            _segment(0.0, 5.0, "S0", "a"),
+            _segment(5.0, 5.05, "S1", "uh"),
+            _segment(5.05, 11.0, "S0", "b"),
+        ],
+        # A 0.05 s pause after the fragment.
+        [
+            _segment(0.0, 2.0, "S0", "a"),
+            _segment(2.0, 2.05, "S1", "uh"),
+            _segment(2.1, 4.0, "S0", "b"),
+        ],
+        # A 0.05 s pause before two fragments that fold back and close the gap.
+        [
+            _segment(0.0, 2.0, "S0", "a"),
+            _segment(2.05, 2.1, "S1", "uh"),
+            _segment(2.1, 2.15, "S2", "hm"),
+            _segment(2.15, 4.0, "S0", "b"),
+        ],
+    ],
+)
+def test_consolidate_keeps_neighbours_apart_unless_the_fold_tiles_one_turn(segments):
+    result = consolidate_diarized_transcript([dict(seg) for seg in segments])
+
+    assert len(result) == 2
+    assert result[-1]["text"] == "b"
+
+
+REJOIN_ACROSS_A_SPLIT = """
+import json
+from backend.utils.transcript_utils import consolidate_diarized_transcript
+
+def seg(start, end, text, overlapping, words=None):
+    out = {"start": start, "end": end, "speaker": "S0", "text": text,
+           "overlapping_speakers": overlapping}
+    if words:
+        out["words"] = words
+    return out
+
+def long_seg():
+    return seg(1.05, 12.05, "one. two", ["S3", "S2"], [
+        {"start": 1.05, "end": 9.05, "word": " one."},
+        {"start": 9.05, "end": 12.05, "word": " two"},
+    ])
+
+segments = [
+    seg(0.0, 1.0, "a", ["S2", "S3"]),
+    {**seg(1.0, 1.05, "uh", []), "speaker": "S1"},
+    long_seg(),
+]
+result = consolidate_diarized_transcript(segments)
+print(json.dumps([(s["start"], s["end"], s["overlapping_speakers"]) for s in result]))
+# A split chunk on its own keeps the overlapping speakers it was built with.
+alone = consolidate_diarized_transcript([long_seg()])
+print(json.dumps([(s["start"], s["end"], s["overlapping_speakers"]) for s in alone]))
+"""
+
+
+def test_consolidate_output_does_not_depend_on_the_hash_seed():
+    # A split chunk builds its overlapping speakers from a set, whose order
+    # follows PYTHONHASHSEED; the rejoin must not depend on that order.
+    repo_root = Path(__file__).resolve().parents[2]
+    outputs = {
+        subprocess.run(
+            [sys.executable, "-c", REJOIN_ACROSS_A_SPLIT],
+            cwd=repo_root,
+            env={**os.environ, "PYTHONHASHSEED": str(seed)},
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+        for seed in range(8)
+    }
+
+    assert len(outputs) == 1
+
+
+def test_consolidate_leaves_untouched_neighbours_as_the_merge_left_them():
+    # The merge keeps these apart (their raw overlapping sets differ); with no
+    # fragment between them, the rejoin must not reconsider the pair.
+    segments = [
+        _with_overlap(_segment(0.0, 2.0, "S0", "a"), ["UNKNOWN"]),
+        _segment(2.0, 4.0, "S0", "b"),
+    ]
+
+    result = consolidate_diarized_transcript(segments)
+
+    assert [seg["text"] for seg in result] == ["a", "b"]
+
+
+# 0.0 and 0.01 are the pair whose float difference is exactly the 0.01 s
+# tolerance, so these pin "under the tolerance" as strict.
+@pytest.mark.parametrize(
+    "segments",
+    [
+        # The merge itself: a gap of exactly the tolerance is a pause.
+        [_segment(-1.0, 0.0, "S0", "a"), _segment(0.01, 1.0, "S0", "b")],
+        # A rejoin whose first gap is exactly the tolerance.
+        [
+            _segment(-1.0, 0.0, "S0", "a"),
+            _segment(0.01, 0.05, "S1", "uh"),
+            _segment(0.05, 1.0, "S0", "b"),
+        ],
+        # A rejoin whose last gap is exactly the tolerance.
+        [
+            _segment(-1.0, -0.05, "S0", "a"),
+            _segment(-0.05, 0.0, "S1", "uh"),
+            _segment(0.01, 1.0, "S0", "b"),
+        ],
+    ],
+)
+def test_consolidate_treats_a_gap_of_exactly_the_tolerance_as_a_pause(segments):
+    result = consolidate_diarized_transcript([dict(seg) for seg in segments])
+
+    assert len(result) == 2

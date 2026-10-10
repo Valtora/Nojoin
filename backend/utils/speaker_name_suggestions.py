@@ -10,19 +10,22 @@ from uuid import uuid4
 from backend.utils.meeting_notes import MeetingEventContext, is_placeholder_speaker_name
 
 JSON_FENCE_PATTERN = re.compile(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", re.IGNORECASE)
+# Only the cue phrase is case-insensitive. The captured name must be capitalised,
+# because capitalisation is the only evidence that "I'm Priya" names someone while
+# "I'm going to share" does not. A lowercase transcript therefore yields no
+# rule-based suggestion rather than a guessed one.
+# Engines emit the typographic apostrophe (’) as well as the straight one, so
+# every apostrophe below accepts both.
+_CAPITALISED_NAME = r"([A-Z][A-Za-z'’\-]+(?:\s+[A-Z][A-Za-z'’\-]+){0,2})"
 SELF_INTRO_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (
-        re.compile(
-            r"\b(?:i am|i'm|my name is|this is)\s+([A-Z][A-Za-z'\-]+(?:\s+[A-Z][A-Za-z'\-]+){0,2})\b",
-            re.IGNORECASE,
-        ),
+        re.compile(rf"\b(?i:i am|i['’]m|my name is|this is)\s+{_CAPITALISED_NAME}\b"),
         "self_introduction",
     ),
     (
-        re.compile(
-            r"^\s*([A-Z][A-Za-z'\-]+(?:\s+[A-Z][A-Za-z'\-]+){0,2})\s+(?:here|speaking)\b",
-            re.IGNORECASE,
-        ),
+        # Every line starts with a capital in a cased transcript, so here the
+        # cue must close the clause: "Priya here." but not "But here's".
+        re.compile(rf"^\s*{_CAPITALISED_NAME}\s+(?i:here|speaking)\s*(?:[.,!;:]|$)"),
         "self_identification",
     ),
 )
@@ -52,6 +55,27 @@ DISALLOWED_NAME_TOKENS = {
     "thanks",
 }
 NAME_STOPWORDS = {"at", "for", "from", "in", "on", "with"}
+# Words that follow "I'm", "my name is", "this is", or precede "here"/"speaking",
+# without being a name. They are capitalised in title-case or all-caps
+# transcripts and at sentence starts ("Just here to listen", "Generally
+# speaking"). A name ends where one of these begins. Words that are also common
+# first names (Will, May, Frank, Grace) are deliberately absent.
+NON_NAME_WORDS = frozenset(
+    """
+    about actually afraid all almost already also always another anyone aware
+    back basically because coming confused curious definitely doing done down
+    everybody excited exactly fine frankly generally getting glad going gonna
+    good great happy he hearing her here his honestly hoping how important
+    interested is it its just kind late literally looking my never new nobody
+    not now ok okay only our out over personally pretty probably quite ready
+    really saying she so somebody someone something sorry sort speaking still
+    strictly sure talking technically their there they thinking totally trying
+    up very we what when where which who why wondering working worried you your
+    """.split()
+)
+# Contractions and possessives ("I'm here", "this is Tom's laptop") are not
+# names; an apostrophe inside a name ("O'Brien") is kept.
+CONTRACTION_SUFFIX_PATTERN = re.compile(r"['’](?:m|re|s|ve|ll|d|t)$", re.IGNORECASE)
 
 SPEAKER_SUGGESTION_STATUS_PENDING = "pending"
 SPEAKER_SUGGESTION_STATUS_ACCEPTED = "accepted"
@@ -226,12 +250,8 @@ def detect_rule_based_speaker_suggestions(
             continue
 
         for pattern, reason in SELF_INTRO_PATTERNS:
-            match = pattern.search(text)
-            if not match:
-                continue
-
-            candidate = _clean_candidate_name(match.group(1))
-            if not candidate or is_placeholder_speaker_name(candidate):
+            candidate = _first_name_candidate(pattern, text)
+            if candidate is None:
                 continue
 
             resolved_name, attendee_signal = _match_candidate_to_attendees(
@@ -343,8 +363,8 @@ def build_mapping_based_speaker_suggestions(
             signals.append("transcript_name_mention")
             confidence = 0.72
             rationale = (
-                "The suggested name appears in the transcript for this speaker and is "
-                "stored for user confirmation."
+                "Another speaker uses the suggested name in a turn next to this "
+                "speaker's, as when addressing them."
             )
 
         attendee_signal = _attendee_match_signal(
@@ -659,6 +679,23 @@ def _try_extract_inline_json_object(text: str) -> Mapping[str, Any] | None:
     return None
 
 
+def _first_name_candidate(pattern: re.Pattern[str], text: str) -> str | None:
+    """Return the first match of ``pattern`` that cleans to a plausible name.
+
+    A rejected match ("I'm Sorry") does not end the search, so a later
+    introduction in the same line ("I'm Sorry, I'm Priya") is still found.
+    The search resumes inside the rejected name, not after it: without a
+    comma the capture runs on into the next cue ("Sorry I'm Priya").
+    """
+    position = 0
+    while (match := pattern.search(text, position)) is not None:
+        candidate = _clean_candidate_name(match.group(1))
+        if candidate and not is_placeholder_speaker_name(candidate):
+            return candidate
+        position = match.start(1) + 1
+    return None
+
+
 def _clean_candidate_name(candidate: str) -> str | None:
     cleaned = re.sub(r"^[^A-Za-z]+|[^A-Za-z'\-\s]+$", "", str(candidate).strip())
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
@@ -667,7 +704,12 @@ def _clean_candidate_name(candidate: str) -> str | None:
 
     kept_tokens: list[str] = []
     for token in cleaned.split():
-        if token.lower() in NAME_STOPWORDS:
+        lowered = token.lower()
+        if (
+            lowered in NAME_STOPWORDS
+            or lowered in NON_NAME_WORDS
+            or CONTRACTION_SUFFIX_PATTERN.search(token)
+        ):
             break
         kept_tokens.append(token)
     cleaned = " ".join(kept_tokens).strip()
@@ -737,18 +779,33 @@ def _find_transcript_name_mentions(
     suggested_name: str,
     segments: Sequence[dict[str, Any]],
 ) -> list[SpeakerSuggestionEvidenceSpan]:
+    """Find a line that addresses this speaker by the suggested name.
+
+    A name used as an address term points at the adjacent *other* speaker:
+    "thanks, Priya" at the previous one, "Priya, what do you think?" at the
+    next one. So a mention counts only when it is spoken by someone else in the
+    turn directly before or after one of this speaker's turns. The speaker's own
+    mentions are never evidence: someone saying "thanks, Priya" is not Priya.
+    Nor is a neighbour's self-introduction ("I'm Priya"): it names the speaker
+    who said it, and SELF_INTRO_PATTERNS already credits them.
+    """
     evidence: list[SpeakerSuggestionEvidenceSpan] = []
     full_name_pattern = re.compile(rf"\b{re.escape(suggested_name)}\b", re.IGNORECASE)
     first_token = suggested_name.split()[0]
     first_name_pattern = re.compile(rf"\b{re.escape(first_token)}\b", re.IGNORECASE)
+    labels = [str(segment.get("speaker", "")).strip() for segment in segments]
 
-    for segment in segments:
-        if str(segment.get("speaker", "")).strip() != diarization_label:
+    for index, segment in enumerate(segments):
+        if not labels[index] or labels[index] == diarization_label:
             continue
         text = str(segment.get("text", "")).strip()
         if not text:
             continue
-        if full_name_pattern.search(text) or first_name_pattern.search(text):
+        if not (full_name_pattern.search(text) or first_name_pattern.search(text)):
+            continue
+        if _introduces_name(text, suggested_name):
+            continue
+        if diarization_label in _adjacent_other_speakers(labels, index):
             evidence.append(
                 SpeakerSuggestionEvidenceSpan(
                     quote=text,
@@ -760,3 +817,31 @@ def _find_transcript_name_mentions(
             break
 
     return evidence
+
+
+def _adjacent_other_speakers(labels: Sequence[str], index: int) -> set[str]:
+    """Return the speakers of the turns directly before and after ``index``.
+
+    Consecutive segments by the same speaker form one turn, so the search skips
+    past them to the nearest segment by a different speaker on each side.
+    """
+    speaker = labels[index]
+    adjacent: set[str] = set()
+    for step in (-1, 1):
+        position = index + step
+        while 0 <= position < len(labels):
+            label = labels[position]
+            if label and label != speaker:
+                adjacent.add(label)
+                break
+            position += step
+    return adjacent
+
+
+def _introduces_name(text: str, name: str) -> bool:
+    """Whether ``text`` is a self-introduction by a name compatible with ``name``."""
+    for pattern, _reason in SELF_INTRO_PATTERNS:
+        candidate = _first_name_candidate(pattern, text)
+        if candidate is not None and _names_are_compatible(candidate, name):
+            return True
+    return False

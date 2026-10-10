@@ -25,6 +25,7 @@ from backend.processing.speaker_cap import (
     normalize_speaker_cap,
 )
 from backend.utils.audio import concatenate_binary_files, get_audio_duration
+from backend.utils.import_audio import KEEPING_AUDIO_STEP, MEDIA_CONTAINER_SUFFIXES
 from backend.utils.rate_limit import enforce_upload_concurrency
 from backend.utils.upload_limit import (
     UPLOAD_LIMIT_LEGACY_RECORDING,
@@ -57,7 +58,25 @@ SUPPORTED_AUDIO_FORMATS = {
     ".mp4",
     ".wma",
     ".opus",
+    *MEDIA_CONTAINER_SUFFIXES,
 }
+
+
+async def _queue_imported_audio(db: AsyncSession, recording: Recording) -> None:
+    """Queue ``keep_imported_audio_task`` for a stored upload.
+
+    The task keeps only the upload's audio, then queues processing and the
+    playback proxy itself.
+    """
+    task = await dispatch_task(
+        "backend.worker.tasks.keep_imported_audio_task", args=[recording.id]
+    )
+    recording.celery_task_id = task.id
+    db.add(recording)
+    await db.commit()
+    from backend.models.task import register_task_ownership
+
+    await register_task_ownership(db, task.id, recording.user_id)
 
 
 @dataclass
@@ -92,7 +111,9 @@ async def import_audio(
 ):
     """
     Import an external audio recording (e.g., from Zoom, Teams, Google Meet).
-    Supports: WAV, MP3, M4A, AAC, WebM, OGG, FLAC, MP4, WMA, Opus.
+    Supports: WAV, MP3, M4A, AAC, WebM, OGG, FLAC, MP4, WMA, Opus, and the audio
+    track of MKV, MKA, MOV, AVI, M4V, TS, MTS, MPG, MPEG and 3GP files. Only the
+    audio is stored (``keep_imported_audio_task``).
     """
     # Validate file extension
     file_ext = os.path.splitext(file.filename)[1].lower() if file.filename else ""
@@ -148,6 +169,7 @@ async def import_audio(
         file_size_bytes=file_stats.st_size,
         duration_seconds=duration,
         status=RecordingStatus.QUEUED,
+        processing_step=KEEPING_AUDIO_STEP,
         max_speakers=normalize_speaker_cap(options.max_speakers),
         user_id=current_user.id,
     )
@@ -171,24 +193,7 @@ async def import_audio(
     )
     await db.commit()
 
-    # Trigger processing task
-    task = await dispatch_task(
-        "backend.worker.tasks.process_recording_task", args=[recording.id]
-    )
-    recording.celery_task_id = task.id
-    db.add(recording)
-    await db.commit()
-    from backend.models.task import register_task_ownership
-
-    await register_task_ownership(db, task.id, recording.user_id)
-
-    # Trigger proxy generation task
-    if not recording.proxy_path:
-        proxy_task = await dispatch_task(
-            "backend.worker.tasks.generate_proxy_task", args=[recording.id]
-        )
-        if proxy_task:
-            await register_task_ownership(db, proxy_task.id, recording.user_id)
+    await _queue_imported_audio(db, recording)
 
     return serialize_recording(recording, has_proxy=_recording_has_proxy(recording))
 
@@ -430,27 +435,13 @@ async def finalize_chunked_import(
 
     recording.status = RecordingStatus.QUEUED
     recording.client_status = ClientStatus.IDLE
+    recording.processing_step = KEEPING_AUDIO_STEP
 
     db.add(recording)
     await db.commit()
     await db.refresh(recording)
 
-    task = await dispatch_task(
-        "backend.worker.tasks.process_recording_task", args=[recording.id]
-    )
-    recording.celery_task_id = task.id
-    db.add(recording)
-    await db.commit()
-    from backend.models.task import register_task_ownership
-
-    await register_task_ownership(db, task.id, recording.user_id)
-
-    if not recording.proxy_path:
-        proxy_task = await dispatch_task(
-            "backend.worker.tasks.generate_proxy_task", args=[recording.id]
-        )
-        if proxy_task:
-            await register_task_ownership(db, proxy_task.id, recording.user_id)
+    await _queue_imported_audio(db, recording)
 
     return serialize_recording(recording, has_proxy=_recording_has_proxy(recording))
 
@@ -528,6 +519,7 @@ async def upload_recording(
         file_size_bytes=file_stats.st_size,
         duration_seconds=duration,
         status=RecordingStatus.QUEUED,
+        processing_step=KEEPING_AUDIO_STEP,
         user_id=current_user.id,
     )
 
@@ -535,21 +527,6 @@ async def upload_recording(
     await db.commit()
     await db.refresh(recording)
 
-    task = await dispatch_task(
-        "backend.worker.tasks.process_recording_task", args=[recording.id]
-    )
-    recording.celery_task_id = task.id
-    db.add(recording)
-    await db.commit()
-    from backend.models.task import register_task_ownership
-
-    await register_task_ownership(db, task.id, recording.user_id)
-
-    if not recording.proxy_path:
-        proxy_task = await dispatch_task(
-            "backend.worker.tasks.generate_proxy_task", args=[recording.id]
-        )
-        if proxy_task:
-            await register_task_ownership(db, proxy_task.id, recording.user_id)
+    await _queue_imported_audio(db, recording)
 
     return serialize_recording(recording, has_proxy=_recording_has_proxy(recording))
