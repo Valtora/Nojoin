@@ -684,11 +684,15 @@ def _first_name_candidate(pattern: re.Pattern[str], text: str) -> str | None:
 
     A rejected match ("I'm Sorry") does not end the search, so a later
     introduction in the same line ("I'm Sorry, I'm Priya") is still found.
+    The search resumes inside the rejected name, not after it: without a
+    comma the capture runs on into the next cue ("Sorry I'm Priya").
     """
-    for match in pattern.finditer(text):
+    position = 0
+    while (match := pattern.search(text, position)) is not None:
         candidate = _clean_candidate_name(match.group(1))
         if candidate and not is_placeholder_speaker_name(candidate):
             return candidate
+        position = match.start(1) + 1
     return None
 
 

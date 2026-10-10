@@ -344,6 +344,8 @@ def test_rule_based_speaker_suggestions_reject_non_name_introductions(
         ("THIS IS TOM HERE.", ["Tom"]),
         ("This Is Priya Shah Speaking.", ["Priya Shah"]),
         ("I'm going to start, so hi, I'm Priya.", ["Priya"]),
+        # Unpunctuated, the rejected capture runs on into the real introduction.
+        ("I'm Sorry I'm Priya.", ["Priya"]),
         ("Hi, my name is Tom and I'm a product manager.", ["Tom"]),
         ("I'm an engineer, my name is Priya.", ["Priya"]),
         (
