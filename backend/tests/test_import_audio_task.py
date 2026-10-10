@@ -856,8 +856,9 @@ async def test_a_fault_after_extraction_leaves_the_upload_for_the_next_copy(
     ["_duration", "_rebuild_import_window"],
     ids=["delete-reads-first", "task-writes-first"],
 )
+@pytest.mark.parametrize("batch", [False, True], ids=["delete", "batch-permanent"])
 async def test_a_delete_racing_the_task_leaves_no_file(
-    pg_env: _Env, monkeypatch: pytest.MonkeyPatch, paused_in: str
+    pg_env: _Env, monkeypatch: pytest.MonkeyPatch, paused_in: str, batch: bool
 ) -> None:
     """The delete locks the row: either it goes first and the task's write
     matches nothing, or it waits for the task's commit and reads the kept
@@ -884,7 +885,13 @@ async def test_a_delete_racing_the_task_leaves_no_file(
     task = _copy(env, recording_id, "A")
     assert await asyncio.to_thread(reached.wait, 30)
 
-    delete = asyncio.create_task(env.client.delete(f"/api/v1/recordings/{public_id}"))
+    delete = asyncio.create_task(
+        env.client.post(
+            "/api/v1/recordings/batch/permanent", json={"recording_ids": [public_id]}
+        )
+        if batch
+        else env.client.delete(f"/api/v1/recordings/{public_id}")
+    )
     await asyncio.sleep(0.3)
     release.set()
     await asyncio.to_thread(task.join, 30)
