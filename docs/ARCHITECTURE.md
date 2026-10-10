@@ -396,11 +396,17 @@ The normal backend processing path is:
 4. Transcription via a pluggable engine under [backend/processing/engines/](../backend/processing/engines/) (Whisper by default, Parakeet or Canary via onnx-asr selectable sharing `OnnxAsrEngine`).
 5. Pyannote diarisation, optionally bounded by the recording's `max_speakers`.
 6. Phantom speaker filtering.
-7. Merge, voiceprint extraction, and deterministic speaker resolution.
+7. Merge (see [Word Timestamps In The Merge](#word-timestamps-in-the-merge)), voiceprint extraction, and deterministic speaker resolution.
 8. Rolling diarisation window reconciliation: completed rolling windows captured during the live lane are replayed to apply speaker boundary corrections to provisional live utterances.
 9. Frame-level segmentation refinement: a second boundary-quality pass using `pyannote/segmentation-3.0` inspects boundary-flagged and long live-emitted utterances and re-splits them where the dense per-frame speaker activity map identifies a cleaner turn boundary than the rolling diarisation windows resolved.
 10. Automatic meeting intelligence when an AI provider and model are configured.
 11. Automatic application of inferred speaker names to unresolved speakers, plus persistence of the meeting title and Markdown meeting notes. Applied suggestions are retained on the transcript as an audit trail.
+
+### Word Timestamps In The Merge
+
+Word timestamps are optional per segment (an onnx-asr window without token timings, a Whisper segment with an empty `words` list). `combine_transcription_diarization` in [backend/utils/transcript_utils.py](../backend/utils/transcript_utils.py) chooses the method per run of consecutive segments: a run with words is aligned word by word, a run without gets each segment's dominant speaker over its span. Every segment's text reaches the merge output. A word no longer than pyannote's segment precision takes the speaker of the turn containing its instant (`[start, end)`; a turn's end counts when no turn starts there; a gap stays `UNKNOWN`).
+
+Consolidation never drops text. A segment under 0.1 s folds into an adjacent segment at most 1.0 s away that stays within the 10 s maximum, preferring the same speaker, then the nearer one. The receiver keeps its speaker and overlapping speakers; ids and edit flags merge as in any consolidation merge. Each fold bridges at most 1.0 s, but folds into one segment add up. Fragments with no qualifying neighbour stay as separate short segments, and only a fragment without text is dropped. Neighbours whose fragments all folded away merge only if the original pieces tiled (every gap under 0.01 s) with the same speaker and overlapping speakers, within 10 s.
 
 ### Processing Tuning
 
@@ -602,8 +608,10 @@ locks remain authoritative.
 
 `transcript_utterances.public_id` is unique across every recording. A segment's
 `id` is only a request: it carries live utterance ids into finalize and a
-recording's stored ids into backfill, but openai-whisper also numbers its
-segments there. Finalize and backfill (`replace_utterances_from_segments`) take
+recording's stored ids into backfill, but openai-whisper numbers its segments
+in the same field. The merge keeps only string ids, so those numbers reach
+finalize only through the fallback that skips the merge (diarisation off or no
+merged segments), and backfill through older stored projections. Finalize and backfill (`replace_utterances_from_segments`) take
 ids from `UtterancePublicIds` in
 [backend/utils/canonical_pipeline/public_ids.py](../backend/utils/canonical_pipeline/public_ids.py).
 An id that no utterance holds is kept (finalize also requires a canonical UUID);

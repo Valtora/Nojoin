@@ -117,7 +117,13 @@ def render_transcript(transcript_path, label_to_name, output_format="plain"):
         return "\n".join(display_lines)
 
 
+from itertools import groupby
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
+
+from backend.utils.short_segment_fold import (
+    CONTIGUOUS_GAP_TOLERANCE_S,
+    fold_short_segments,
+)
 
 if TYPE_CHECKING:
     pass
@@ -128,9 +134,11 @@ def combine_transcription_diarization(
 ) -> Optional[List[Dict]]:
     """Combines Whisper segments with Pyannote diarization.
 
-    Automatically detects if word-level timestamps are available:
-    - If YES: Uses precise word-level alignment (better for fast turn-taking).
-    - If NO: Uses segment-level dominant speaker logic (fallback for Windows/No-Triton).
+    Word timestamps are optional per segment, so each run of consecutive
+    segments is combined on its own:
+    - With words: precise word-level alignment (better for fast turn-taking).
+    - Without: segment-level dominant speaker logic (fallback for Windows/No-Triton,
+      or a segment the engine returned without word timings). Its text is kept.
 
     Args:
         transcription: The result dictionary from whisper.transcribe().
@@ -151,15 +159,20 @@ def combine_transcription_diarization(
         segments = transcription["segments"]
         speaker_turns = diarization
 
-        # Check if we have word timestamps
-        has_word_timestamps = len(segments) > 0 and "words" in segments[0]
-
-        if has_word_timestamps:
-            logger.info("Combining using WORD-LEVEL timestamps (High Precision)")
-            return _combine_word_level(segments, speaker_turns, config)
-        else:
-            logger.info("Combining using SEGMENT-LEVEL timestamps (Standard Precision)")
-            return _combine_segment_level(segments, speaker_turns)
+        word_segment_count = sum(1 for seg in segments if seg.get("words"))
+        logger.info(
+            "Combining %d of %d segments using WORD-LEVEL timestamps (High Precision), "
+            "the rest using SEGMENT-LEVEL timestamps (Standard Precision)",
+            word_segment_count,
+            len(segments),
+        )
+        combined: list[dict] = []
+        for has_words, run in groupby(segments, key=lambda seg: bool(seg.get("words"))):
+            if has_words:
+                combined.extend(_combine_word_level(list(run), speaker_turns, config))
+            else:
+                combined.extend(_combine_segment_level(list(run), speaker_turns))
+        return combined
 
     except Exception as e:
         logger.error(
@@ -222,8 +235,12 @@ def _combine_segment_level(segments, speaker_turns):
             "overlapping_speakers": overlapping_speakers,
             "text": text,
         }
-        if seg.get("id"):
-            final_segment["id"] = seg["id"]
+        # Only a string id (a live utterance's public id) carries over. An
+        # engine's own index, such as openai-whisper's integer segment "id",
+        # is not an utterance id; finalize would mint over it anyway.
+        segment_id = seg.get("id")
+        if isinstance(segment_id, str) and segment_id:
+            final_segment["id"] = segment_id
         final_segments.append(final_segment)
     return final_segments
 
@@ -237,7 +254,7 @@ def _combine_word_level(segments, speaker_turns, config=None):
         if "words" in seg:
             all_words.extend(seg["words"])
 
-    logger.info(f"_combine_word_level: Processing {len(all_words)} words")
+    logger.debug(f"_combine_word_level: Processing {len(all_words)} words")
 
     final_segments = []
     current_segment = {
@@ -250,6 +267,8 @@ def _combine_word_level(segments, speaker_turns, config=None):
     }
 
     def get_speakers_for_range(start, end):
+        if end - start <= ZERO_DURATION_EPSILON_S:
+            return [_speaker_at_instant(start, speaker_turns)]
         speaker_overlaps = {}
         word_seg = Segment(start, end)
         for turn, _, label in speaker_turns.itertracks(yield_label=True):
@@ -381,11 +400,35 @@ def _combine_word_level(segments, speaker_turns, config=None):
     for seg in final_segments:
         spk = seg["speaker"]
         speaker_counts[spk] = speaker_counts.get(spk, 0) + 1
-    logger.info(
+    logger.debug(
         f"_combine_word_level: Created {len(final_segments)} segments with speaker distribution: {speaker_counts}"
     )
 
     return final_segments
+
+
+# pyannote treats a Segment no longer than this (its SEGMENT_PRECISION) as
+# empty, so a word that short overlaps no turn and is looked up as an instant.
+ZERO_DURATION_EPSILON_S = 1e-6
+
+
+def _speaker_at_instant(instant: float, speaker_turns) -> str:
+    """Speaker of the turn containing ``instant``, for a word with no duration.
+
+    Such a word overlaps no turn by any amount, so the overlap lookup would
+    leave it UNKNOWN. A turn holds ``[start, end)``: an instant on an edge two
+    turns share belongs to the turn that starts there, and a turn's end still
+    counts when no turn starts at it. Where turns overlap, the first in the
+    diarisation's order wins. An instant in a gap between turns or outside
+    every turn is UNKNOWN, as a word that overlaps no turn is.
+    """
+    ending_here = None
+    for turn, _, label in speaker_turns.itertracks(yield_label=True):
+        if turn.start <= instant < turn.end:
+            return label
+        if ending_here is None and turn.end == instant:
+            ending_here = label
+    return ending_here or "UNKNOWN"
 
 
 def _with_word_source_public_ids(segment: dict) -> dict:
@@ -543,13 +586,16 @@ def consolidate_diarized_transcript(
     """
     Consolidate diarized transcript segments by speaker, merging consecutive segments by the same speaker,
     and handling overlapping speakers. Returns a list of dicts with start, end, speaker, and text.
-    Filters out final consolidated segments that are shorter than min_duration_s.
+    Folds a consolidated segment shorter than min_duration_s into a neighbour
+    rather than keeping it on its own (see short_segment_fold.fold_short_segments).
     Forces a split if the segment duration exceeds max_duration_s.
     """
     if not segments:
         return []
 
     consolidated = []
+    sources: list[list[dict]] = []
+    short_indices: set[int] = set()
     i = 0
     n = len(segments)
     while i < n:
@@ -637,17 +683,18 @@ def consolidate_diarized_transcript(
                     "start": curr_start,
                     "end": split_end_time,
                     "speaker": curr_speaker,
-                    "overlapping_speakers": list(curr_overlapping),
+                    "overlapping_speakers": sorted(curr_overlapping),
                     "text": chunk_text,
                     "words": first_chunk_words,
                 }
                 consolidated.append(_copy_consolidation_metadata(curr, split_segment))
+                sources.append([curr])
 
                 remainder_segment = {
                     "start": split_end_time,
                     "end": curr_end,
                     "speaker": curr_speaker,
-                    "overlapping_speakers": list(curr_overlapping),
+                    "overlapping_speakers": sorted(curr_overlapping),
                     "text": remainder_text,
                     "words": remainder_words,
                 }
@@ -689,10 +736,11 @@ def consolidate_diarized_transcript(
                     "start": curr_start,
                     "end": split_end,
                     "speaker": curr_speaker,
-                    "overlapping_speakers": list(curr_overlapping),
+                    "overlapping_speakers": sorted(curr_overlapping),
                     "text": chunk_text,
                 }
                 consolidated.append(_copy_consolidation_metadata(curr, split_segment))
+                sources.append([curr])
 
                 # Replace segments[i] with the remainder and re-process at the same
                 # index. Infinite-loop safety: split_end > curr_start is guaranteed
@@ -701,7 +749,7 @@ def consolidate_diarized_transcript(
                     "start": split_end,
                     "end": curr_end,  # Original end
                     "speaker": curr_speaker,
-                    "overlapping_speakers": list(curr_overlapping),
+                    "overlapping_speakers": sorted(curr_overlapping),
                     "text": remainder_text,
                 }
                 segments[i] = _copy_consolidation_metadata(curr, remainder_segment)
@@ -734,7 +782,7 @@ def consolidate_diarized_transcript(
                 j += 1
             elif (
                 next_speaker == curr_speaker
-                and abs(next_seg["start"] - curr_end) < 0.01
+                and abs(next_seg["start"] - curr_end) < CONTIGUOUS_GAP_TOLERANCE_S
                 and next_overlapping == curr_overlapping
             ):
                 # Consecutive, same speaker, same overlapping set, no gap
@@ -756,33 +804,28 @@ def consolidate_diarized_transcript(
             )
         )
 
-        # Add the consolidated segment only if its duration is long enough
-        # OR if it's the only segment we have (to avoid dropping data for short recordings)
-        # ... OR (end of stream AND no prepared segments).
-        if (curr_end - curr_start) >= min_duration_s or (
-            len(consolidated) == 0 and j == n
-        ):
-            consolidated_segment = {
-                "start": curr_start,
-                "end": curr_end,
-                "speaker": curr_speaker,
-                "overlapping_speakers": overlapping_list,
-                "text": curr_text.strip(),
-                "words": curr_words,
-            }
-            consolidated_segment.update(_merge_consolidation_metadata(segments[i:j]))
-            consolidated.append(consolidated_segment)
-        else:
-            ov_str = (
-                f" (Overlap: {', '.join(overlapping_list)})" if overlapping_list else ""
-            )
-            logger.info(
-                f"Filtering out short consolidated segment: "
-                f"[{curr_start:.2f}s - {curr_end:.2f}s] Speaker {curr_speaker}{ov_str} "
-                f"duration {(curr_end - curr_start):.2f}s < {min_duration_s}s"
-            )
+        consolidated_segment = {
+            "start": curr_start,
+            "end": curr_end,
+            "speaker": curr_speaker,
+            "overlapping_speakers": overlapping_list,
+            "text": curr_text.strip(),
+            "words": curr_words,
+        }
+        consolidated_segment.update(_merge_consolidation_metadata(segments[i:j]))
+        if (curr_end - curr_start) < min_duration_s:
+            short_indices.add(len(consolidated))
+        consolidated.append(consolidated_segment)
+        sources.append(segments[i:j])
 
         i = j
+
+    consolidated = fold_short_segments(
+        list(zip(consolidated, sources)),
+        short_indices,
+        max_duration_s,
+        _merge_consolidation_metadata,
+    )
 
     # Log final consolidation results
     speaker_counts = {}
