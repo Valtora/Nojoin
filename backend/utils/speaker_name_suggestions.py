@@ -790,9 +790,11 @@ def _find_transcript_name_mentions(
     who said it, and SELF_INTRO_PATTERNS already credits them.
     """
     evidence: list[SpeakerSuggestionEvidenceSpan] = []
-    full_name_pattern = re.compile(rf"\b{re.escape(suggested_name)}\b", re.IGNORECASE)
+    # Case-sensitive, as the self-introduction rule is: names that are also
+    # ordinary words ("I will send it", "mark it done") must not count.
+    full_name_pattern = re.compile(rf"\b{re.escape(suggested_name)}\b")
     first_token = suggested_name.split()[0]
-    first_name_pattern = re.compile(rf"\b{re.escape(first_token)}\b", re.IGNORECASE)
+    first_name_pattern = re.compile(rf"\b{re.escape(first_token)}\b")
     labels = [str(segment.get("speaker", "")).strip() for segment in segments]
 
     for index, segment in enumerate(segments):
