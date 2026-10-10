@@ -236,7 +236,18 @@ def detect_rule_based_speaker_suggestions(
     segments: Sequence[dict[str, Any]],
     eligible_labels: Sequence[str],
     meeting_context: MeetingEventContext | None = None,
+    *,
+    line_start_needs_attendee: bool = True,
 ) -> SpeakerInferenceResult:
+    """Name speakers from self-introductions in the transcript.
+
+    Capitalisation cannot tell a name from an imperative or an adverb at the
+    start of a line ("Click here.", "Broadly speaking, ..."), so a line-start
+    self-identification names a speaker only when the candidate matches a
+    linked meeting attendee. A caller that already holds an independent name
+    for the speaker, as the LLM mapping path does, passes
+    ``line_start_needs_attendee=False`` and checks compatibility itself.
+    """
     allowed = {label.strip() for label in eligible_labels if str(label).strip()}
     best_by_label: dict[str, SpeakerInferenceSuggestion] = {}
 
@@ -258,6 +269,12 @@ def detect_rule_based_speaker_suggestions(
                 candidate,
                 meeting_context.attendees if meeting_context is not None else (),
             )
+            if (
+                reason == "self_identification"
+                and line_start_needs_attendee
+                and attendee_signal is None
+            ):
+                continue
             signals = [reason]
             confidence = 0.97
             rationale = "Detected a self-introduction in the transcript."
@@ -310,6 +327,9 @@ def build_mapping_based_speaker_suggestions(
             segments,
             eligible_labels,
             meeting_context,
+            # The model's name has to be compatible with the line-start
+            # candidate before it counts, which "Click" never is.
+            line_start_needs_attendee=False,
         ).suggestions
     }
     suggestions: list[SpeakerInferenceSuggestion] = []
@@ -790,9 +810,11 @@ def _find_transcript_name_mentions(
     who said it, and SELF_INTRO_PATTERNS already credits them.
     """
     evidence: list[SpeakerSuggestionEvidenceSpan] = []
-    full_name_pattern = re.compile(rf"\b{re.escape(suggested_name)}\b", re.IGNORECASE)
+    # Case-sensitive, as the self-introduction rule is: names that are also
+    # ordinary words ("I will send it", "mark it done") must not count.
+    full_name_pattern = re.compile(rf"\b{re.escape(suggested_name)}\b")
     first_token = suggested_name.split()[0]
-    first_name_pattern = re.compile(rf"\b{re.escape(first_token)}\b", re.IGNORECASE)
+    first_name_pattern = re.compile(rf"\b{re.escape(first_token)}\b")
     labels = [str(segment.get("speaker", "")).strip() for segment in segments]
 
     for index, segment in enumerate(segments):

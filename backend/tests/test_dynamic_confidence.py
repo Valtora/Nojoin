@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from backend.utils.speaker_name_suggestions import (
     build_mapping_based_speaker_suggestions,
 )
@@ -185,3 +187,31 @@ def test_a_neighbours_self_introduction_is_not_evidence_for_the_listener() -> No
         listener = _suggestion_for("SPEAKER_01", name, segments)
         assert "transcript_name_mention" not in listener.signals, line
         assert listener.confidence == 0.50, line
+
+
+@pytest.mark.parametrize(
+    ("line", "name"),
+    [("I will send the deck.", "Will"), ("Can you mark it done?", "Mark")],
+)
+def test_a_name_that_is_also_an_ordinary_word_is_not_a_mention(
+    line: str, name: str
+) -> None:
+    segments = [
+        _turn("SPEAKER_00", "The deck is nearly ready.", 0.0),
+        _turn("SPEAKER_01", line, 2.0),
+    ]
+
+    neighbour = _suggestion_for("SPEAKER_00", name, segments)
+    assert "transcript_name_mention" not in neighbour.signals
+    assert neighbour.confidence == 0.50
+
+
+def test_the_capitalised_name_is_still_a_mention() -> None:
+    segments = [
+        _turn("SPEAKER_00", "The deck is nearly ready.", 0.0),
+        _turn("SPEAKER_01", "Thanks, Will. I will read it tonight.", 2.0),
+    ]
+
+    addressed = _suggestion_for("SPEAKER_00", "Will", segments)
+    assert "transcript_name_mention" in addressed.signals
+    assert addressed.confidence == 0.72
