@@ -221,6 +221,17 @@ export const getSupportedAudioFormats = (): string[] => {
     ".mp4",
     ".wma",
     ".opus",
+    // Media containers: the backend reads their audio track only.
+    ".mkv",
+    ".mka",
+    ".mov",
+    ".avi",
+    ".m4v",
+    ".ts",
+    ".mts",
+    ".mpg",
+    ".mpeg",
+    ".3gp",
   ];
 };
 

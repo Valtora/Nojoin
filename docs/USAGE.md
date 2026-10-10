@@ -165,7 +165,7 @@ It can surface live questions, missed points, and quick concept help during a me
 
 You can import existing audio files directly through the web client.
 
-Supported formats include WAV, MP3, M4A, AAC, WebM, OGG, FLAC, MP4, WMA, and OPUS.
+Supported formats include WAV, MP3, M4A, AAC, WebM, OGG, FLAC, MP4, WMA, and OPUS, and the video and media containers MKV, MKA, MOV, AVI, M4V, TS, MTS, MPG, MPEG, and 3GP. Nojoin keeps only the audio of an imported file. A file with no audio track is refused: the import shows as failed and nothing of the file is kept.
 
 The import flow validates the file, builds the canonical media artifacts, and queues background processing. Imports skip the live capture workflow but share the same final processing pipeline as live recordings.
 
