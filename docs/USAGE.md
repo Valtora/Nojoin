@@ -267,7 +267,7 @@ Processed recordings can include Markdown notes, AI-generated meeting notes, mee
 - **Analytics** reports the meeting's speaking dynamics, measured from the transcript, plus an optional AI reading of what was discussed and who owned each decision.
 - **Notes** are stored with the recording and can be edited after processing.
 - **Generate Notes** runs a notes-only AI pass when AI is configured.
-- **Meeting Chat** answers questions from the transcript, notes, and linked documents.
+- **Meeting Chat** answers questions from the transcript, notes, and linked documents. It reads the transcript with your edits and speaker names, without the unattributed lines (such as a removed speaker's) that the transcript view hides.
 - **Documents** can be uploaded to support meeting context, meeting notes, and later search.
 - **Search** spans recordings, transcript text, notes, tags, and document content where available.
 

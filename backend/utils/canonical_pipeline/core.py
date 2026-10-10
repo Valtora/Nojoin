@@ -1,3 +1,5 @@
+import logging
+
 from .constants import *
 from .diarization import *
 from .public_ids import UtterancePublicIds, public_ids_for_write
@@ -5,6 +7,10 @@ from .segmentation import *
 from .speaker import *
 from .speaker_matching import _find_matching_recording_speaker  # noqa: F401
 from .startup import *
+
+# Its own logger, not the one the star imports bring in, so a record names
+# this module.
+logger = logging.getLogger(__name__)
 
 
 def recording_ready_for_canonical_backfill(
@@ -1744,9 +1750,17 @@ def build_transcript_segments_for_read(
     if transcript is None or not hasattr(session, "execute"):
         return fallback_segments
 
+    # The savepoint keeps a database error inside the read: on Postgres a failed
+    # statement aborts the whole transaction, so without it the caller's next
+    # query would raise InFailedSqlTransaction instead of using the fallback.
     try:
-        canonical_segments = serialize_canonical_utterances(session, recording_id)
-    except Exception:  # noqa: BLE001
+        with session.begin_nested():
+            canonical_segments = serialize_canonical_utterances(session, recording_id)
+    except Exception:
+        logger.exception(
+            "Canonical transcript read failed for recording %s; using the projection",
+            recording_id,
+        )
         return fallback_segments
 
     if canonical_segments:
