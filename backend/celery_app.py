@@ -182,6 +182,8 @@ TASK_ROUTES = {
     # CPU lane: ffmpeg transcode/proxy and local disk work.
     "backend.processing.segment_transcode.transcode_segment_task": {"queue": CPU_QUEUE},
     "backend.worker.tasks.generate_proxy_task": {"queue": CPU_QUEUE},
+    # Extracts an import's audio track with ffmpeg before processing is queued.
+    "backend.worker.tasks.keep_imported_audio_task": {"queue": CPU_QUEUE},
     # Reads and analyses the recording's WAV with numpy. No GPU and no
     # model, so it belongs beside the other local-disk audio work rather
     # than on the lane finalise is holding.

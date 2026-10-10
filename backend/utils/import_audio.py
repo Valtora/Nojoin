@@ -1,0 +1,468 @@
+"""Keep only the audio of an imported recording.
+
+Import accepts video and media containers (OBS's MKV, a camera's MTS, a
+phone's 3GP) as well as audio files, but stores no video. Once the upload is
+complete, a worker task extracts the audio track of a container, or of any
+other upload that carries video, to an audio-only file in a format import
+already accepted, before the recording is processed; that file replaces the
+upload as the recording's ``audio_path``, and the upload is deleted. Nothing
+after that (the playback proxy, processing, analytics, embeddings, backups)
+ever reads a video container. See "Imported Media Input" in
+docs/ARCHITECTURE.md.
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+import subprocess
+from dataclasses import dataclass
+from pathlib import Path
+from typing import NamedTuple
+from uuid import uuid4
+
+from backend.utils.audio import ensure_ffmpeg_in_path
+from backend.utils.import_audio_probe import (
+    ToolFailure,
+    UnreadableMediaError,
+    decoded_audio_stream,
+    has_audio,
+    is_empty_track,
+    killed_by_server_signal,
+    probe_streams,
+    seconds,
+    track_end,
+    track_span,
+)
+
+logger = logging.getLogger(__name__)
+
+# Audio/video containers accepted for import. Their audio track is always
+# extracted, so none of these suffixes is ever stored.
+MEDIA_CONTAINER_SUFFIXES = frozenset(
+    {".mkv", ".mka", ".mov", ".avi", ".m4v", ".ts", ".mts", ".mpg", ".mpeg", ".3gp"}
+)
+
+# Formats import accepted before media containers whose format has no video
+# stream: a WAV, an MP3 or AAC elementary stream, native FLAC. MP3 and FLAC can
+# carry cover art, which ffprobe lists as a video stream but is not video, so
+# probing them could find nothing to remove. They are stored as uploaded, as
+# before, without needing ffprobe. Every other accepted format (MP4/M4A, WebM,
+# Ogg/Opus, WMA) is a container that can hold video, so it is probed.
+AUDIO_ONLY_SUFFIXES = frozenset({".wav", ".mp3", ".aac", ".flac"})
+
+# The step a QUEUED import shows until ``keep_imported_audio_task`` has kept
+# its audio and queued it for processing.
+KEEPING_AUDIO_STEP = "Extracting audio..."
+
+# Upper bound on one extraction, and on a full read of a track's packets. A
+# stream copy runs at disk speed (6.5 s for a 3.5 GB, one-hour OBS recording,
+# cold) and an Opus re-encode at about 200x real time, so this only ever ends
+# a hung ffmpeg; it is not a latency budget (see ARCHITECTURE.md on proxy
+# timeouts).
+EXTRACT_TIMEOUT_S = 15 * 60
+
+# Codecs stored as they are (a stream copy: no re-encode, no quality loss), and
+# the audio-only container each goes into. Every suffix is one import accepted
+# before media containers were, so the pipeline already reads it.
+_STREAM_COPY_SUFFIXES = {
+    "aac": ".m4a",
+    "alac": ".m4a",
+    "mp3": ".mp3",
+    "opus": ".webm",
+    "vorbis": ".ogg",
+    "flac": ".flac",
+}
+
+# Any other codec is re-encoded. PCM and the other lossless codecs become FLAC:
+# still lossless, about 40% of a WAV's size, and free of WAV's 4 GiB limit.
+# SMPTE 302M is the PCM of broadcast MPEG-TS. Anything else (MP2, AC-3, AMR,
+# DTS, ...) becomes what browser capture stores: Opus at 160 kb/s in WebM.
+_PCM_CODEC_PREFIX = "pcm_"
+_LOSSLESS_CODECS = frozenset(
+    {
+        "wavpack",
+        "tta",
+        "truehd",
+        "mlp",
+        "ape",
+        "tak",
+        "wmalossless",
+        "s302m",
+        "mp4als",
+        "shorten",
+        "ralf",
+    }
+)
+_REENCODE_SUFFIX = ".webm"
+_REENCODE_OPUS_BITRATE = "160k"
+# libopus refuses some surround layouts, such as the 5.1(side) cameras write,
+# and FLAC holds at most 8 channels. Processing mixes to mono, so such a track
+# is re-encoded as stereo.
+_OPUS_MAX_CHANNELS = 2
+_FLAC_MAX_CHANNELS = 8
+_DOWNMIX_CHANNELS = "2"
+
+# How much shorter than the source track the extracted audio may be before the
+# extraction counts as failed: whichever of these is larger. Both sides are
+# measured from packets, which agree to within 0.1 s on every file probed; the
+# 1 s floor covers a last packet that reports no duration.
+_DURATION_TOLERANCE_S = 1.0
+_DURATION_TOLERANCE_RATIO = 0.001
+
+# ffmpeg's exit status once it has trapped SIGTERM or SIGINT. A file error
+# maps to it only through AVERROR(EPERM), itself a server-side failure.
+_FFMPEG_SIGNALLED_EXIT = 255
+
+# ffmpeg error text that points at the server rather than at the file.
+_SERVER_FAULT_MARKERS = (
+    "No space left on device",
+    "Disk quota exceeded",
+    "File too large",
+    "Input/output error",
+    "Read-only file system",
+    "Permission denied",
+    "Cannot allocate memory",
+)
+
+
+class ImportRefusedError(RuntimeError):
+    """An uploaded file that import will not keep, because of the file itself.
+
+    ``detail`` is shown to the person importing the file and ``status_code`` is
+    the HTTP status to answer with; the exception's own text names the server
+    path and stays in the logs.
+    """
+
+    status_code = 400
+    detail = "This file cannot be imported."
+
+
+class NoAudioStreamError(ImportRefusedError):
+    """The file holds no audio track, or only empty ones."""
+
+    detail = (
+        "This file has no audio track, so there is nothing to import. "
+        "Check that the recording captured audio."
+    )
+
+
+class UnreadableAudioStreamError(NoAudioStreamError):
+    """ffprobe lists an audio stream but could not read its sample format.
+
+    In MPEG-PS/TS this happens when the first audio packet lies past ffmpeg's
+    default probe window, and the extraction would fail with "Output file does
+    not contain any stream".
+    """
+
+    detail = (
+        "Nojoin cannot read this file's audio track; it may start too far into "
+        "the file. Convert the file to an audio format such as MP3 or WAV and "
+        "import that."
+    )
+
+
+class AudioExtractionError(ImportRefusedError):
+    """ffmpeg could not decode or copy the audio track, or the result did not
+    hold the whole track."""
+
+    status_code = 422
+    detail = (
+        "Nojoin could not extract this file's audio track. Convert the file to "
+        "an audio format such as MP3 or WAV and import that."
+    )
+
+
+class ImportServerError(Exception):
+    """The server failed while keeping the audio; the file may be fine.
+
+    ffmpeg or ffprobe could not be started, timed out or was killed, or the
+    disk filled up. Answered as a server error, never as advice to convert the
+    file.
+    """
+
+
+@dataclass(frozen=True)
+class KeptAudio:
+    """What import stores for an upload."""
+
+    path: str
+
+
+class _OutputPlan(NamedTuple):
+    suffix: str
+    codec_arguments: list[str]
+    # The codec the output must hold; None to accept what ffmpeg wrote.
+    copies_codec: str | None = None
+
+
+class _CopyChangedCodec(RuntimeError):
+    """A stream copy holds another codec than the track was reported as.
+
+    MP4 and MOV label MPEG-1 Layer II audio "mp3", so a copy into ``.mp3``
+    would store MP2 frames, which browsers do not play as MP3.
+    """
+
+
+def keep_imported_audio(source_path: str, work_dir: Path) -> KeptAudio:
+    """Return what to store as an import's ``audio_path``.
+
+    A file in one of ``AUDIO_ONLY_SUFFIXES`` is kept unchanged without being
+    probed. A media container, or any other file that carries video, has one
+    audio track extracted to a new audio-only file in ``work_dir``, and once
+    that file verifies (one audio stream, as long as the source track) its path
+    is returned for the caller to move into place. ``work_dir``, created if
+    need be, is the recording's temp directory: a caller killed mid-extraction
+    leaves an ffmpeg that runs on to the end, and its file is removed with the
+    recording or by the daily sweep. ``source_path`` is never deleted here: the caller deletes it once it has stored the new path,
+    so a caller that cannot store it loses nothing
+    (``keep_imported_audio_task``). Any other file is kept unchanged,
+    including an audio-only file with several tracks and a non-container file
+    ffprobe cannot read, both of which import has always stored as uploaded.
+
+    The track is the one ffmpeg selects by default, so a file is stored with
+    the audio the pipeline would have decoded from it.
+
+    Blocking: it runs ffprobe and possibly a full pass of ffmpeg over the file,
+    so call it off the event loop.
+
+    Raises:
+        NoAudioStreamError: no audio track, or only empty ones.
+        UnreadableAudioStreamError: the selected track's format is unreadable.
+        AudioExtractionError: a container ffprobe cannot read, or an
+            extraction ffmpeg failed or whose result did not verify.
+        ImportServerError: a failure on the server's side (see the class).
+
+    On any of these ``source_path`` is left in place for the caller to remove,
+    and nothing else is left behind.
+    """
+    suffix = Path(source_path).suffix.lower()
+    if suffix in AUDIO_ONLY_SUFFIXES:
+        return KeptAudio(source_path)
+    is_container = suffix in MEDIA_CONTAINER_SUFFIXES
+    try:
+        probe = probe_streams(source_path)
+    except ToolFailure as exc:
+        raise ImportServerError(str(exc)) from exc
+    except UnreadableMediaError as exc:
+        if is_container:
+            logger.warning("Refusing imported container %s: %s", source_path, exc)
+            raise AudioExtractionError(str(exc)) from exc
+        logger.warning("Keeping imported file %s as uploaded: %s", source_path, exc)
+        return KeptAudio(source_path)
+
+    streams = probe.get("streams") or []
+    track = _selected_audio_track(streams, source_path)
+    if not is_container and not _carries_video(streams):
+        return KeptAudio(source_path)
+
+    extracted = _extract_audio_track(source_path, track, probe, work_dir)
+    logger.info("Kept the audio of imported file %s as %s", source_path, extracted)
+    return KeptAudio(extracted)
+
+
+def _carries_video(streams: list[dict]) -> bool:
+    """The file holds a video stream that is not cover art."""
+    return any(
+        stream.get("codec_type") == "video"
+        and not (stream.get("disposition") or {}).get("attached_pic")
+        for stream in streams
+    )
+
+
+def _selected_audio_track(streams: list[dict], source: str) -> dict:
+    """The audio track to keep, refusing a file with none usable."""
+    track = decoded_audio_stream(streams)
+    if track is None:
+        raise NoAudioStreamError(f"No audio stream in {source}")
+    if track.get("channels") == 0:
+        raise UnreadableAudioStreamError(f"Unreadable audio stream in {source}")
+    if is_empty_track(track):
+        raise NoAudioStreamError(f"Empty audio track in {source}")
+    return track
+
+
+def _output_plan(track: dict) -> _OutputPlan:
+    """The output suffix and ffmpeg codec arguments that keep ``track``."""
+    codec = str(track.get("codec_name") or "")
+    channels = int(track.get("channels") or 0)
+    copy_suffix = _STREAM_COPY_SUFFIXES.get(codec)
+    if copy_suffix is not None:
+        return _OutputPlan(copy_suffix, ["-c:a", "copy"], copies_codec=codec)
+    if codec.startswith(_PCM_CODEC_PREFIX) or codec in _LOSSLESS_CODECS:
+        arguments = ["-c:a", "flac"]
+        if channels > _FLAC_MAX_CHANNELS:
+            arguments += ["-ac", _DOWNMIX_CHANNELS]
+        return _OutputPlan(".flac", arguments)
+    return _opus_plan(channels)
+
+
+def _opus_plan(channels: int) -> _OutputPlan:
+    arguments = ["-c:a", "libopus", "-b:a", _REENCODE_OPUS_BITRATE]
+    if channels > _OPUS_MAX_CHANNELS:
+        arguments += ["-ac", _DOWNMIX_CHANNELS]
+    return _OutputPlan(_REENCODE_SUFFIX, arguments)
+
+
+def _extract_audio_track(
+    source_path: str, track: dict, probe: dict, work_dir: Path
+) -> str:
+    """Write ``track`` to a new audio-only file in ``work_dir``; return its path.
+
+    A copy that turns out to hold another codec than reported is redone as an
+    Opus re-encode (see ``_CopyChangedCodec``).
+
+    Raises:
+        AudioExtractionError, ImportServerError: as ``_write_audio_track``.
+    """
+    plan = _output_plan(track)
+    try:
+        return _write_audio_track(source_path, track, probe, plan, work_dir)
+    except _CopyChangedCodec as exc:
+        logger.info("Re-encoding instead of copying: %s", exc)
+    plan = _opus_plan(int(track.get("channels") or 0))
+    return _write_audio_track(source_path, track, probe, plan, work_dir)
+
+
+def _write_audio_track(
+    source_path: str, track: dict, probe: dict, plan: _OutputPlan, work_dir: Path
+) -> str:
+    """Write ``track`` of ``source_path`` to a new file in ``work_dir`` by
+    ``plan``; return it.
+
+    A track that starts late is shifted to start at zero
+    (``-avoid_negative_ts make_zero``), so it is stored without the leading
+    gap and its duration is its length. Any other track keeps its timestamps,
+    so a copied AAC track keeps the encoder delay its edit list declares and
+    decodes to the source's samples.
+
+    Raises:
+        AudioExtractionError: ffmpeg rejected or crashed on the input, or the
+            new file did not verify.
+        ImportServerError: a failure on the server's side.
+        _CopyChangedCodec: see the class.
+        The new file is removed in every case.
+    """
+    target = str(Path(work_dir) / f"{uuid4()}{plan.suffix}")
+    cmd = ["ffmpeg", "-nostdin", "-y", "-v", "error", "-i", source_path]
+    cmd += ["-map", f"0:{track['index']}", *plan.codec_arguments]
+    if (seconds(track.get("start_time")) or 0.0) > 0:
+        cmd += ["-avoid_negative_ts", "make_zero"]
+    cmd.append(target)
+    ensure_ffmpeg_in_path()
+    try:
+        Path(work_dir).mkdir(parents=True, exist_ok=True)
+        subprocess.run(cmd, check=True, capture_output=True, timeout=EXTRACT_TIMEOUT_S)
+        _verify_extracted_audio(target, source_path, track, probe, plan)
+    except _CopyChangedCodec:
+        _remove_quietly(target)
+        raise
+    except (ToolFailure, subprocess.SubprocessError, OSError, RuntimeError) as exc:
+        _remove_quietly(target)
+        message = f"Could not extract the audio of {source_path}: {_reason(exc)}"
+        logger.warning("%s", message)
+        if _is_server_fault(exc):
+            raise ImportServerError(message) from exc
+        raise AudioExtractionError(message) from exc
+    except BaseException:
+        # Anything else (ffprobe output in a shape nothing expected, an
+        # interrupt) is raised as it is, but leaves no file behind either.
+        _remove_quietly(target)
+        raise
+    return target
+
+
+def _reason(exc: BaseException) -> str:
+    stderr = getattr(exc, "stderr", None)
+    if isinstance(stderr, bytes) and stderr:
+        return stderr.decode(errors="replace").strip()
+    return str(exc)
+
+
+def _is_server_fault(exc: BaseException) -> bool:
+    """The failure lies with the server (tools, disk, time), not the file.
+
+    An ffmpeg that was stopped is the server's failure, whoever stopped it:
+    the timeout (``TimeoutExpired``), or a signal from outside. ffmpeg traps
+    SIGTERM and SIGINT and exits 255 (``_FFMPEG_SIGNALLED_EXIT``), whatever
+    it printed about the file before; a signal it cannot trap shows as that
+    signal: SIGKILL or SIGXFSZ is the server's, a crash on the file (SIGSEGV,
+    SIGABRT) the file's. Any other error ffmpeg reports is the file's unless
+    it names the server (``_SERVER_FAULT_MARKERS``).
+    """
+    if isinstance(exc, (ToolFailure, subprocess.TimeoutExpired, OSError)):
+        return True
+    if isinstance(exc, subprocess.CalledProcessError):
+        if exc.returncode < 0:
+            return killed_by_server_signal(exc.returncode)
+        return exc.returncode == _FFMPEG_SIGNALLED_EXIT or any(
+            marker in _reason(exc) for marker in _SERVER_FAULT_MARKERS
+        )
+    return False
+
+
+def _verify_extracted_audio(
+    target: str, source_path: str, track: dict, probe: dict, plan: _OutputPlan
+) -> None:
+    """Check ``target`` is one audio track that holds all of the source track.
+
+    Both lengths are measured the same way, from the packets (``track_span``),
+    so a late start or a header that counts the video does not count. Only a
+    shorter output is refused: a longer one has lost nothing, and the source's
+    span can undercount (a last WavPack block without a duration, concatenated
+    MPEG-TS whose timestamps restart). When the source track has no timed
+    packets there is nothing to compare, and only the output is checked.
+
+    Raises:
+        _CopyChangedCodec: see the class.
+        RuntimeError: it is not one audio track, holds no audio or is shorter
+            than the source track.
+        ToolFailure, UnreadableMediaError: ffprobe could not measure a file.
+    """
+    out = probe_streams(target)
+    streams = out.get("streams") or []
+    if (
+        len(streams) != 1
+        or streams[0].get("codec_type") != "audio"
+        or not has_audio(streams[0])
+    ):
+        raise RuntimeError(f"{target} is not a single audio track")
+    written = streams[0].get("codec_name")
+    if plan.copies_codec is not None and written != plan.copies_codec:
+        raise _CopyChangedCodec(
+            f"{source_path}: {plan.copies_codec} copied as {written}"
+        )
+    out_span = track_span(
+        target,
+        int(streams[0]["index"]),
+        track_end(streams[0], out),
+        timeout=EXTRACT_TIMEOUT_S,
+    )
+    if out_span is None or out_span <= 0:
+        raise RuntimeError(f"{target} holds no audio")
+    source_span = track_span(
+        source_path,
+        int(track["index"]),
+        track_end(track, probe),
+        timeout=EXTRACT_TIMEOUT_S,
+    )
+    if source_span is None:
+        logger.info(
+            "No timed packets in %s to compare the extraction with", source_path
+        )
+        return
+    tolerance = max(_DURATION_TOLERANCE_S, source_span * _DURATION_TOLERANCE_RATIO)
+    if out_span < source_span - tolerance:
+        raise RuntimeError(
+            f"{target} runs {out_span:.2f} s where the source track runs "
+            f"{source_span:.2f} s"
+        )
+
+
+def _remove_quietly(path: str) -> None:
+    try:
+        os.remove(path)
+    except FileNotFoundError:
+        pass
+    except OSError as exc:
+        logger.warning("Could not remove %s: %s", path, exc)
