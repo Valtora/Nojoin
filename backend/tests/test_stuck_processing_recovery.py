@@ -135,11 +135,11 @@ def test_sweeps_when_the_consumed_queues_cannot_be_read():
     assert pipeline._sweeps_recordings(types.SimpleNamespace(app=None))
 
 
-def test_the_sweep_sends_an_import_waiting_for_its_audio_back_to_that_task(
+def test_the_sweep_leaves_an_import_waiting_for_its_audio_to_the_cpu_lane(
     monkeypatch, stub_celery_dispatch
 ):
-    """Processing must not start on an upload whose audio is not kept yet: the
-    task keeps it, then queues processing itself."""
+    """Processing must not start on an upload whose audio is not kept yet; the
+    cpu worker's own sweep re-queues it to keep_imported_audio_task."""
     waiting = Recording(
         id=7,
         name="screen",
@@ -161,6 +161,4 @@ def test_the_sweep_sends_an_import_waiting_for_its_audio_back_to_that_task(
     pipeline.check_queued_recordings(_sender({GPU_QUEUE: object()}))
 
     assert processed == [8]
-    assert stub_celery_dispatch == [
-        ("backend.worker.tasks.keep_imported_audio_task", [7], None)
-    ]
+    assert stub_celery_dispatch == []

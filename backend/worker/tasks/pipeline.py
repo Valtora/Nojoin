@@ -1089,16 +1089,19 @@ def _reclaim_orphaned_processing(session) -> list[Recording]:
     return orphaned
 
 
-def _sweeps_recordings(sender) -> bool:
-    """Whether this worker should run the startup sweep.
+def _sweeps_recordings(sender, queue: str | None = None) -> bool:
+    """Whether this worker should run the startup sweep for ``queue``'s work.
 
     Every lane imports this module, so all three would otherwise sweep on startup
     and dispatch each pending recording once per lane. Only the lane that consumes
-    the queue process_recording_task routes to can actually run the work, so it
-    does the sweep. When the consumed queues cannot be read, sweep anyway: a
-    duplicate run wastes time, but skipping leaves recordings stranded.
+    the queue the work routes to (gpu for process_recording_task, the default)
+    can actually run it, so it does the sweep. When the consumed queues cannot be
+    read, sweep anyway: a duplicate run wastes time, but skipping leaves
+    recordings stranded.
     """
     from backend.celery_app import GPU_QUEUE
+
+    queue = queue or GPU_QUEUE
 
     try:
         consume_from = getattr(sender.app.amqp.queues, "consume_from", None)
@@ -1108,7 +1111,7 @@ def _sweeps_recordings(sender) -> bool:
     if not consume_from:
         logger.warning("Could not read this worker's queues; sweeping regardless.")
         return True
-    return GPU_QUEUE in set(consume_from)
+    return queue in set(consume_from)
 
 
 @worker_ready.connect
@@ -1134,16 +1137,13 @@ def check_queued_recordings(sender, **kwargs):
         logger.info("Found %s pending recordings. Re-queueing...", len(recordings))
 
         for recording in recordings:
-            logger.info("Re-queueing recording %s: %s", recording.id, recording.name)
             if recording.processing_step == KEEPING_AUDIO_STEP:
-                # An import whose audio is not kept yet: that task queues
+                # An import whose audio is not kept yet: the cpu worker's own
+                # sweep re-queues it to keep_imported_audio_task, which queues
                 # processing once it has.
-                celery_app.send_task(
-                    "backend.worker.tasks.keep_imported_audio_task",
-                    args=[recording.id],
-                )
-            else:
-                process_recording_task.delay(recording.id)  # type: ignore
+                continue
+            logger.info("Re-queueing recording %s: %s", recording.id, recording.name)
+            process_recording_task.delay(recording.id)  # type: ignore
 
     except Exception as e:
         logger.error("Failed to check pending recordings: %s", e, exc_info=True)

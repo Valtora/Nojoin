@@ -52,6 +52,7 @@ from backend.worker.tasks import imported_audio
 from backend.worker.tasks.imported_audio import (
     SERVER_FAILURE_DETAIL,
     keep_imported_audio_task,
+    requeue_imports_waiting_for_audio,
 )
 
 KEEP_TASK = "backend.worker.tasks.keep_imported_audio_task"
@@ -844,3 +845,39 @@ async def test_a_fault_after_extraction_leaves_the_upload_for_the_next_copy(
     row = _recording(env)
     assert (row["status"], row["processing_step"]) == ("QUEUED", None)
     assert _files(env.recordings) == [Path(row["audio_path"])]
+
+
+def _worker(*queues: str) -> types.SimpleNamespace:
+    """The ``sender`` of ``worker_ready`` for a worker consuming ``queues``."""
+    consuming = types.SimpleNamespace(
+        consume_from={queue: object() for queue in queues}
+    )
+    return types.SimpleNamespace(
+        app=types.SimpleNamespace(amqp=types.SimpleNamespace(queues=consuming))
+    )
+
+
+@pytest.mark.anyio
+async def test_a_starting_cpu_worker_requeues_imports_still_waiting(
+    env: _Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A task lost with its worker is not redelivered; the cpu worker's start
+    queues it again. Other lanes leave it to the cpu worker."""
+    source = env.tmp / "screen.mkv"
+    source.write_bytes(b"video")
+    waiting = _waiting_import(env, source)
+    with Session(env.engine) as session:
+        session.add(
+            Recording(
+                name="meeting", audio_path="/x.wav", status=RecordingStatus.QUEUED
+            )
+        )
+        session.commit()
+    monkeypatch.setattr(imported_audio, "get_sync_session", lambda: Session(env.engine))
+
+    requeue_imports_waiting_for_audio(_worker("gpu"))
+    requeue_imports_waiting_for_audio(_worker("io"))
+    assert env.dispatched == []
+
+    requeue_imports_waiting_for_audio(_worker("cpu"))
+    assert env.dispatched == [(KEEP_TASK, [waiting], None)]

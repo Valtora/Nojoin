@@ -13,7 +13,9 @@ the same ``audio_path``, and the upload is deleted only once the kept audio is
 stored. A duplicate or re-queued copy is therefore harmless: the copy whose
 write lands keeps its audio, every other copy removes only the file it
 extracted itself, and a copy that fails before storing anything leaves the
-upload for the next one.
+upload for the next one. The cpu worker re-queues imports still waiting when
+it starts (``requeue_imports_waiting_for_audio``), since a task lost with a
+worker is not redelivered.
 """
 
 import logging
@@ -21,9 +23,13 @@ import os
 import shutil
 from pathlib import Path
 
+from celery.signals import worker_ready
 from sqlalchemy import delete, update
 from sqlalchemy.orm import Session
+from sqlmodel import select
 
+from backend.celery_app import CPU_QUEUE
+from backend.core.db import get_sync_session
 from backend.models.pipeline import RecordingAudioChunk, RecordingAudioWindowManifest
 from backend.models.recording import ClientStatus, Recording, RecordingStatus
 from backend.utils.audio import get_audio_duration
@@ -44,6 +50,7 @@ from backend.utils.recording_storage import (
 )
 
 from .constants import DatabaseTask, celery_app
+from .pipeline import _sweeps_recordings
 
 logger = logging.getLogger(__name__)
 
@@ -246,6 +253,38 @@ def _fail(
     )
 
 
+@worker_ready.connect
+def requeue_imports_waiting_for_audio(sender, **kwargs) -> None:
+    """On cpu worker startup, re-queue every import still waiting for its audio.
+
+    A task is acknowledged when a worker takes it, so one lost with its worker
+    is not redelivered; without this the import would wait forever, since
+    reprocess refuses QUEUED. A copy still queued as well is harmless.
+    """
+    if not _sweeps_recordings(sender, CPU_QUEUE):
+        return
+    session = get_sync_session()
+    try:
+        waiting = session.exec(
+            select(Recording.id)
+            .where(Recording.status == RecordingStatus.QUEUED)
+            .where(Recording.processing_step == KEEPING_AUDIO_STEP)
+        ).all()
+        for recording_id in waiting:
+            logger.info(
+                "Re-queueing import %s, still waiting for its audio", recording_id
+            )
+            celery_app.send_task(
+                "backend.worker.tasks.keep_imported_audio_task", args=[recording_id]
+            )
+    except Exception as e:
+        logger.error(
+            "Failed to re-queue imports waiting for audio: %s", e, exc_info=True
+        )
+    finally:
+        session.close()
+
+
 def _remove_quietly(path: str) -> None:
     try:
         os.remove(path)
@@ -255,4 +294,4 @@ def _remove_quietly(path: str) -> None:
         logger.warning("Could not remove %s: %s", path, exc)
 
 
-__all__ = ["keep_imported_audio_task"]
+__all__ = ["keep_imported_audio_task", "requeue_imports_waiting_for_audio"]
