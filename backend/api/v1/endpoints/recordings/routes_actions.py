@@ -20,6 +20,7 @@ from backend.processing.speaker_cap import (
 from .helpers import (
     _get_owned_calendar_event,
     _get_owned_recording,
+    _recording_has_audio,
     _recording_has_proxy,
     _requeue_for_processing,
 )
@@ -156,6 +157,17 @@ async def reprocess_recording(
         raise HTTPException(
             status_code=400,
             detail="Recording is already uploading or processing",
+        )
+
+    # A failed recording with no audio left, such as an import whose file was
+    # refused, keeps the reason it failed rather than losing it to a run that
+    # can only find no audio.
+    if recording.status == RecordingStatus.ERROR and not _recording_has_audio(
+        recording
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail=recording.processing_step or "This recording has no audio.",
         )
 
     if body.transcription_backend not in TRANSCRIPTION_BACKENDS:

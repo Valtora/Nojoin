@@ -896,6 +896,40 @@ async def test_a_delete_racing_the_task_leaves_no_file(
     assert _files(env.recordings) == []
 
 
+@pytest.mark.anyio
+async def test_retrying_a_refused_import_keeps_the_reason_it_failed(
+    env: _Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Its files are gone, so processing could only report no audio; the
+    retry is refused with the refusal the recording shows."""
+    source = env.tmp / "silent.mkv"
+    source.write_bytes(b"video only")
+    recording_id = await _import(env, "upload", source)
+
+    def refuse(path: str) -> KeptAudio:
+        raise NoAudioStreamError(path)
+
+    monkeypatch.setattr(imported_audio, "keep_imported_audio", refuse)
+    _run_task(env, recording_id)
+    with env.engine.connect() as connection:
+        public_id = connection.execute(
+            text("SELECT public_id FROM recordings")
+        ).scalar_one()
+    response = await env.client.post(
+        f"/api/v1/recordings/{public_id}/reprocess",
+        json={"transcription_backend": "whisper"},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == NoAudioStreamError.detail
+    row = _recording(env)
+    assert (row["status"], row["processing_step"]) == (
+        "ERROR",
+        NoAudioStreamError.detail,
+    )
+    assert _dispatched_names(env) == [KEEP_TASK]
+
+
 def _worker(*queues: str) -> types.SimpleNamespace:
     """The ``sender`` of ``worker_ready`` for a worker consuming ``queues``."""
     consuming = types.SimpleNamespace(
