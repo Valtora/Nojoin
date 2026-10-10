@@ -3,6 +3,7 @@
 import CaptureProcessingSettings from "@/components/settings/CaptureProcessingSettings";
 import CaptureSettings from "@/components/settings/CaptureSettings";
 import GeneralSettings from "@/components/settings/GeneralSettings";
+import ProcessingTuningSettings from "@/components/settings/ProcessingTuningSettings";
 import SettingsAdvancedSection from "@/components/settings/SettingsAdvancedSection";
 import SettingsCategoryLayout from "@/components/settings/SettingsCategoryLayout";
 import { useSettingsContext } from "@/components/settings/SettingsProvider";
@@ -29,6 +30,8 @@ export default function RecordingSettingsPage() {
           suppressNoMatch
           sections={["processing"]}
         />
+
+        <ProcessingTuningSettings settings={settings} onUpdate={updateSetting} />
       </SettingsAdvancedSection>
     </SettingsCategoryLayout>
   );

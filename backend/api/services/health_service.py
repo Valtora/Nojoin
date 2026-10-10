@@ -414,7 +414,7 @@ async def _get_diarization_component(
     segmentation_ready = bool(segmentation_status.get("downloaded"))
     using_local_assets = (
         all(
-            status.get("source") in {"bundled", "cache"}
+            status.get("source") in {"bundled", "cache", "external"}
             for status in (pyannote_status, embedding_status)
             if status
         )

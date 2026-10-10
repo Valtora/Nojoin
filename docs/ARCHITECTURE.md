@@ -402,6 +402,14 @@ The normal backend processing path is:
 10. Automatic meeting intelligence when an AI provider and model are configured.
 11. Automatic application of inferred speaker names to unresolved speakers, plus persistence of the meeting title and Markdown meeting notes. Applied suggestions are retained on the transcript as an audit trail.
 
+### Processing Tuning
+
+Eight values inside these stages can be overridden: the VAD threshold (stage 2, and the live lane's VAD), onnx-asr word end padding (stage 4, both lanes), the four phantom filter thresholds (stage 6), and single-word flip smoothing (stage 7). Their keys, shipped defaults and bounds live in one place, [backend/processing/processing_tuning.py](../backend/processing/processing_tuning.py), which imports nothing heavy so the API validates against the same table. The processing modules take their default constants from it.
+
+The values are per-user settings. A stage resolves each one as: an explicit function argument, else the recording owner's merged settings (their own value over the install's flat `config.json` key), else for the VAD threshold the legacy `vad_parameters.threshold`, else the shipped default. Unset is `None` and means inherit. A non-`None` default on the user row would be written onto every row by the settings page's whole-object autosave and would hide both the install value and any later change to a shipped default, so the defaults stay `None`.
+
+The invariant: a tuning value never fails a recording. The API rejects out-of-range values, but a stored or `config.json` value can still be unusable (hand-edited, restored from a backup, which writes `user.settings` as archived, or written before a bound tightened). The worker logs such a value and uses the shipped default instead (for the VAD threshold, `vad_parameters.threshold`) rather than raising, and treats a phantom floor at or above the phantom merge threshold as both defaults. The API checks that rule on the same pair the worker reads, the user's values over the install's flat keys, so a pair it accepts is the pair processing uses, unless the install's values later change. GET returns the install's flat values the settings page needs for that check as a read-only `processing_tuning_install` map, keyed by tuning key. The owner's merged value is a single tier, so an unusable per-user value falls back past the install's flat key. With no value set anywhere, every stage computes exactly what it did before the values could be overridden. New code that reads one of these values must go through `resolve_tuning` (or, for VAD, `get_vad_config_from_settings`) rather than reading the settings directly.
+
 ### Transcription Failure Versus Silence
 
 A transcription engine's `transcribe()` either returns the canonical result or raises `TranscriptionError` ([backend/processing/engines/errors.py](../backend/processing/engines/errors.py)); it never returns `None`. A result with empty text and no segments is a success: the audio held no speech. The dispatcher `transcribe_audio` wraps anything else an engine lets escape, so `TranscriptionError` is the one exception callers treat as a lost transcription. The error's message is written for the UI and names a GPU out-of-memory failure as CUDA out of memory; `gpu_out_of_memory` flags it for code. Out-of-memory counts as a GPU failure only when the model ran on the GPU: an onnx-asr model none of whose sessions runs on the CUDA provider reports the server running out of memory instead (when its sessions cannot be inspected, a GPU host is assumed). After an out-of-memory error the engines drop every reference to the model, including the locals of the frames the error's traceback keeps alive, and collect it, so the memory is actually freed (onnxruntime's arena never shrinks); the live lane, which never retries, therefore does not reuse an exhausted session for every later region. Celery time limits and termination are not transcription failures: engines, the dispatcher and the final pass re-raise them unchanged.
@@ -437,6 +445,15 @@ If AI configuration is missing, the recording still completes with transcript, d
 A secondary LLM provider can be configured via the `SECONDARY_LLM_PROVIDER` environment variable. When set, all AI features (meeting intelligence, Meeting Edge, speaker inference, chat) automatically fall back to the secondary provider if the primary provider fails with any error, handled by `SecondaryLLMBackend`. The secondary provider has its own model, live model, and API key settings, configured independently. Fallback is transparent: the primary provider is tried first, and on failure the system logs a warning and retries with the secondary provider. If both fail, the primary provider's error is raised.
 
 Notes generation, Meeting Edge and Meeting Chat read segments through `build_transcript_segments_for_read` (the canonical utterances, else the `Transcript.segments` projection) and name speakers with `build_recording_speaker_map`. The canonical read runs in a savepoint and a failure is logged, so the projection fallback leaves the caller's transaction usable. Chat renders through `render_transcript_for_llm` (`backend/utils/llm_transcript.py`): `[MM:SS]` start-time lines, without the unattributed `UNKNOWN` lines (such as a removed speaker's) the transcript view hides; notes generation still sends them. The pipeline's first-pass meeting intelligence and the MCP `get_transcript` tool format their own lines.
+
+Left at its defaults, Ollama does not refuse an oversized prompt: past `num_ctx` it drops tokens from the front of the prompt and answers from the rest (current releases keep about half the window), and when the answer fills the window it shifts the context and loses the start of the prompt the same way, each time ending in an ordinary stop. The hosted providers reject an oversized request outright. Every Ollama `/api/chat` request therefore lets Ollama decide whether it fits (`OllamaLLMBackend._post_chat`):
+
+1. `num_ctx` is the configured window (`ollama_context_window`, the operator's VRAM budget), lowered to the model's trained context length from `/api/show` when that is smaller, because Ollama clamps to it at load. It is never raised automatically: a larger KV cache is exactly what fails to load on consumer GPUs. `/api/show` is cached per process for five minutes per server and model.
+2. The request carries `truncate: false`, so Ollama refuses a prompt longer than `num_ctx` with HTTP 400 before generating (0.34.2 and 0.40.2 report the exact token count; 0.12.6 does not), and `shift: false`, so an answer that fills the window ends with `done_reason: length`. No `num_predict` is sent, so a Modelfile's own limit stands. The 400 becomes a context-window error naming the window and the count, and a length stop an "incomplete answer" error; neither answer is used.
+3. Meeting chat relied on Ollama's server-side trimming to drop old turns. It now drops the oldest turns itself, against an estimate of 2.6 UTF-8 bytes per token (prose and transcripts run 2.6 to 5; numbers and code run denser and go through the retry) with up to a quarter of the window kept for the answer; the last message, which carries the meeting context and the question, is never cut. If Ollama still refuses, chat retries once with fewer turns (by Ollama's count when given, otherwise with none), then reports the refusal.
+4. Servers before Ollama 0.12.6 ignore `truncate` and `shift`. For them the token counts are checked after the call: a prompt plus answer past `num_ctx` (a cut prompt counts the whole window) is refused as truncated. Their answer cap stays Ollama's default of ten windows, as before.
+
+A refusal raises an error naming the window. Notes generation records it as the notes error, chat shows the context-window message, and a configured secondary provider takes over as for any other primary failure; a streamed chat refused by Ollama falls back too, because the refusal arrives before the first token. A length stop at the end of a streamed answer, or a truncation found after the call on a pre-0.12.6 server, arrives after the text has streamed, so the answer is withdrawn (not saved) and there is no fallback. Meetings too long for the window are not split into parts.
 
 To cut token cost on repeated context, Meeting Chat and Meeting Edge lay out their prompts cache-first — the large, stable portion leads and the volatile part is sent last. Meeting Chat sends the meeting notes and full transcript as the system prompt (the Anthropic backend marks it with a `cache_control` breakpoint; OpenAI-compatible providers reuse the leading system message through automatic prefix caching), leaving only the conversation history and the user's question in the messages array. Meeting Edge splits its single prompt into a stable instruction/JSON-schema prefix and the volatile per-refresh context (rolling summary, recent transcript), and the Anthropic backend `cache_control`-marks that prefix. Caching is transparent to the user — it changes only how the request is framed for reuse, not what the model is asked — and simply yields no benefit when a provider or model does not support it.
 
@@ -561,7 +578,8 @@ sufficient, preserves authoritative user edits, and only falls back to a
 whole-recording ASR or diarisation rerun when coverage is missing,
 confidence remains too low, or the user explicitly requests reprocessing with a
 different engine. A different transcription engine is reserved for explicit
-manual reprocessing after the user changes the transcription engine in Settings.
+manual reprocessing after an administrator changes the install's transcription
+engine in Settings.
 
 Final processing may reuse live transcript text and source-channel speaker
 authority only after a stable utterance id match or a clear one-to-one time
@@ -570,6 +588,22 @@ merged, split, or low-confidence span is ambiguous, final processing keeps the
 final ASR/diarisation output and records live evidence in alignment metadata
 instead of silently applying it to the wrong time span. Manual text and speaker
 locks remain authoritative.
+
+### Utterance Public Ids
+
+`transcript_utterances.public_id` is unique across every recording. A segment's
+`id` is only a request: it carries live utterance ids into finalize and a
+recording's stored ids into backfill, but openai-whisper also numbers its
+segments there. Finalize and backfill (`replace_utterances_from_segments`) take
+ids from `UtterancePublicIds` in
+[backend/utils/canonical_pipeline/public_ids.py](../backend/utils/canonical_pipeline/public_ids.py).
+An id that no utterance holds is kept (finalize also requires a canonical UUID);
+one this recording holds goes into the new row's
+`confidence_payload.source_public_ids` and is replaced by a fresh uuid4;
+anything else gets a uuid4. The bulk segment edit's full-replace fallback keeps
+the client's ids and answers 409 when one is held or repeated. The live append
+persists the live lane's uuid5 of recording id, span, speaker and text;
+diarisation reconciliation mints uuid4.
 
 ### Startup Canonical Cutover
 

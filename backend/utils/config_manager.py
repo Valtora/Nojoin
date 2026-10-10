@@ -1,12 +1,15 @@
 import json
 import logging
 import os
+from collections.abc import Mapping
+from typing import Any
 from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 
 load_dotenv()
 
+from backend.processing.processing_tuning import TUNING_KEYS
 from backend.utils.languages import (
     AUTO_TRANSCRIPTION_LANGUAGE,
     DEFAULT_NOTES_LANGUAGE,
@@ -68,6 +71,15 @@ LEGACY_AUTOMATIC_AI_SETTING_KEYS = frozenset(
     }
 )
 
+# The transcription engine and its model. An administrator picks them under
+# Settings > Transcription, and every recording on the install uses them.
+TRANSCRIPTION_SETTING_KEYS = (
+    "transcription_backend",
+    "whisper_model_size",
+    "parakeet_model",
+    "canary_model",
+)
+
 INSTALL_WIDE_AI_SETTING_KEYS = (
     "llm_provider",
     "enable_meeting_edge",
@@ -100,6 +112,7 @@ INSTALL_WIDE_AI_SETTING_KEYS = (
     # row, and so they persist to the install config instead.
     "install_notes_template_id",
     "install_glossary_terms",
+    *TRANSCRIPTION_SETTING_KEYS,
 )
 
 MEETING_EDGE_CONTEXT_LEVEL_MIN = 1
@@ -240,6 +253,11 @@ DEFAULT_USER_SETTINGS = {
     "install_glossary_terms": "",
     "enable_vad": True,  # Enable Voice Activity Detection (silence filtering)
     "enable_diarization": True,  # Enable Speaker Diarization (who said what)
+    # Processing tuning (backend/processing/processing_tuning.py). None means
+    # inherit: the install's config.json value if set, else the shipped default.
+    # A non-None default here would be stamped onto every row by the settings
+    # page's whole-object autosave and shadow both.
+    **dict.fromkeys(TUNING_KEYS),
     "spellcheck_language": "en-GB",  # Default spell check language for meeting notes
     "timezone": "UTC",  # Default user timezone for calendar and task rendering
 }
@@ -623,6 +641,45 @@ class ConfigManager:
     def get_all(self):
         """Returns the entire configuration dictionary."""
         return self.config.copy()
+
+    def read_file(self) -> dict[str, Any]:
+        """config.json as it is on disk: no defaults, no environment overrides.
+
+        An empty dict when the file does not exist. Raises OSError when it
+        cannot be read, and ValueError when it is not JSON or holds something
+        other than an object, each saying which.
+        """
+        try:
+            with open(self.config_path, "r", encoding="utf-8") as f:
+                on_disk = json.load(f)
+        except FileNotFoundError:
+            return {}
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"{self.config_path} is not valid JSON: {exc}") from exc
+        if not isinstance(on_disk, dict):
+            raise ValueError(
+                f"{self.config_path} holds a JSON {type(on_disk).__name__}, "
+                "not an object"
+            )
+        return on_disk
+
+    def save_values(self, updates: Mapping[str, Any]) -> None:
+        """Write these keys onto config.json as it is on disk.
+
+        For the writes outside the settings routes: first-run setup and the
+        transcription carry-over at startup. Starts from the file, not from this
+        process's merged copy, so neither a stale copy nor a value an environment
+        variable overrides (ENV_OVERRIDES) is written back. Every other key in
+        the file is kept, except the secret keys (SENSITIVE_KEYS), which are
+        never read from the file and which every save drops. A file that cannot
+        be read, or is not a JSON object, raises (see read_file) instead of
+        being replaced, and a failed write raises too.
+        """
+        on_disk = self.read_file()
+        on_disk.update(updates)
+        self.save_config(on_disk)
+        # Forced: this process just wrote the file and must read back its own write.
+        self.reload(force=True)
 
     def migrate_file_if_needed(self, old_path, new_path):
         if os.path.exists(old_path) and not os.path.exists(new_path):

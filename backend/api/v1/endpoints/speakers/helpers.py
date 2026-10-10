@@ -30,6 +30,7 @@ from backend.utils.canonical_pipeline import (
     merge_recording_speakers_by_label,
     recording_ready_for_canonical_backfill,
 )
+from backend.utils.canonical_pipeline.public_ids import SegmentIdConflictError
 from backend.utils.speaker_name_suggestions import (
     supersede_pending_transcript_speaker_suggestions,
 )
@@ -140,13 +141,16 @@ async def _persist_segments_for_speaker_work(
         _canonical_transcript_writes_enabled()
         and recording_ready_for_canonical_backfill(recording.status)
     ):
-        await db.run_sync(
-            lambda sync_session: apply_compatibility_segment_replace(
-                sync_session,
-                recording_id=recording.id,
-                segments=segments,
+        try:
+            await db.run_sync(
+                lambda sync_session: apply_compatibility_segment_replace(
+                    sync_session,
+                    recording_id=recording.id,
+                    segments=segments,
+                )
             )
-        )
+        except SegmentIdConflictError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         return
     transcript.segments = segments
     flag_modified(transcript, "segments")
