@@ -252,9 +252,7 @@ def _cut_extraction_short(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         import_audio,
         "_output_plan",
-        lambda track: import_audio._OutputPlan(
-            ".m4a", ["-c:a", "copy", "-t", "0.5"], reencodes_lossy=False
-        ),
+        lambda track: import_audio._OutputPlan(".m4a", ["-c:a", "copy", "-t", "0.5"]),
     )
 
 
@@ -332,9 +330,7 @@ def test_a_failed_extraction_is_refused_and_leaves_nothing_new(
     monkeypatch.setattr(
         import_audio,
         "_output_plan",
-        lambda track: import_audio._OutputPlan(
-            ".m4a", ["-c:a", "no_such_encoder"], reencodes_lossy=False
-        ),
+        lambda track: import_audio._OutputPlan(".m4a", ["-c:a", "no_such_encoder"]),
     )
 
     with pytest.raises(AudioExtractionError, match="no_such_encoder"):
@@ -523,9 +519,7 @@ def test_ten_minutes_losing_four_seconds_is_refused(
     monkeypatch.setattr(
         import_audio,
         "_output_plan",
-        lambda track: import_audio._OutputPlan(
-            ".m4a", ["-c:a", "copy", "-t", "596"], reencodes_lossy=False
-        ),
+        lambda track: import_audio._OutputPlan(".m4a", ["-c:a", "copy", "-t", "596"]),
     )
 
     with pytest.raises(AudioExtractionError, match="source track runs 600"):

@@ -192,7 +192,6 @@ class KeptAudio:
 class _OutputPlan(NamedTuple):
     suffix: str
     codec_arguments: list[str]
-    reencodes_lossy: bool
     # The codec the output must hold; None to accept what ffmpeg wrote.
     copies_codec: str | None = None
 
@@ -252,7 +251,7 @@ def keep_imported_audio(source_path: str) -> KeptAudio:
     if not is_container and not _carries_video(streams):
         return KeptAudio(source_path)
 
-    extracted, _ = _extract_audio_track(source_path, track, probe)
+    extracted = _extract_audio_track(source_path, track, probe)
     try:
         os.remove(source_path)
     except OSError as exc:
@@ -292,14 +291,12 @@ def _output_plan(track: dict) -> _OutputPlan:
     channels = int(track.get("channels") or 0)
     copy_suffix = _STREAM_COPY_SUFFIXES.get(codec)
     if copy_suffix is not None:
-        return _OutputPlan(
-            copy_suffix, ["-c:a", "copy"], reencodes_lossy=False, copies_codec=codec
-        )
+        return _OutputPlan(copy_suffix, ["-c:a", "copy"], copies_codec=codec)
     if codec.startswith(_PCM_CODEC_PREFIX) or codec in _LOSSLESS_CODECS:
         arguments = ["-c:a", "flac"]
         if channels > _FLAC_MAX_CHANNELS:
             arguments += ["-ac", _DOWNMIX_CHANNELS]
-        return _OutputPlan(".flac", arguments, reencodes_lossy=False)
+        return _OutputPlan(".flac", arguments)
     return _opus_plan(channels)
 
 
@@ -307,13 +304,11 @@ def _opus_plan(channels: int) -> _OutputPlan:
     arguments = ["-c:a", "libopus", "-b:a", _REENCODE_OPUS_BITRATE]
     if channels > _OPUS_MAX_CHANNELS:
         arguments += ["-ac", _DOWNMIX_CHANNELS]
-    return _OutputPlan(_REENCODE_SUFFIX, arguments, reencodes_lossy=True)
+    return _OutputPlan(_REENCODE_SUFFIX, arguments)
 
 
-def _extract_audio_track(
-    source_path: str, track: dict, probe: dict
-) -> tuple[str, _OutputPlan]:
-    """Write ``track`` to a new audio-only file; return it and how it was made.
+def _extract_audio_track(source_path: str, track: dict, probe: dict) -> str:
+    """Write ``track`` to a new audio-only file; return its path.
 
     A copy that turns out to hold another codec than reported is redone as an
     Opus re-encode (see ``_CopyChangedCodec``).
@@ -323,11 +318,11 @@ def _extract_audio_track(
     """
     plan = _output_plan(track)
     try:
-        return _write_audio_track(source_path, track, probe, plan), plan
+        return _write_audio_track(source_path, track, probe, plan)
     except _CopyChangedCodec as exc:
         logger.info("Re-encoding instead of copying: %s", exc)
     plan = _opus_plan(int(track.get("channels") or 0))
-    return _write_audio_track(source_path, track, probe, plan), plan
+    return _write_audio_track(source_path, track, probe, plan)
 
 
 def _write_audio_track(

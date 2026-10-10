@@ -542,9 +542,7 @@ async def test_a_failed_extraction_fails_the_import_and_leaves_no_file(
     monkeypatch.setattr(
         import_audio,
         "_output_plan",
-        lambda track: import_audio._OutputPlan(
-            ".m4a", ["-c:a", "no_such_encoder"], reencodes_lossy=False
-        ),
+        lambda track: import_audio._OutputPlan(".m4a", ["-c:a", "no_such_encoder"]),
     )
 
     _run_task(env, recording_id)
