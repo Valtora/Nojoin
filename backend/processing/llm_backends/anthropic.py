@@ -43,6 +43,15 @@ from backend.processing.llm_backends.base import (
 )
 
 
+def _response_text(response) -> str:
+    """The answer in a Messages API response: its text blocks, joined.
+
+    Current Claude models think by default, so the first block can be a
+    thinking block, and citations split one answer across several text blocks.
+    """
+    return "".join(block.text for block in response.content if block.type == "text")
+
+
 class AnthropicLLMBackend(LLMBackend):
     def __init__(self, api_key=None, model=None):
         import anthropic
@@ -179,11 +188,7 @@ class AnthropicLLMBackend(LLMBackend):
                 max_tokens=1024,
                 messages=[{"role": "user", "content": prompt}],
             )
-            text = (
-                response.content[0].text
-                if hasattr(response.content[0], "text")
-                else response.content[0]
-            )
+            text = _response_text(response)
             return self.parse_speaker_inference_result(text, eligible_labels)
         except Exception as e:  # noqa: BLE001
             logger.error(f"Anthropic API error (speaker suggestions): {e}")
@@ -238,11 +243,7 @@ class AnthropicLLMBackend(LLMBackend):
             # Match the unified meeting-intelligence path's ceiling so the shared
             # "be comprehensive" notes spec is not silently truncated on long meetings.
             response = self._create_notes_message(prompt)
-            text = (
-                response.content[0].text
-                if hasattr(response.content[0], "text")
-                else response.content[0]
-            )
+            text = _response_text(response)
             notes = self.finalise_meeting_notes(self.parse_notes(text), user_notes)
             return notes
         except TruncatedNotesError:
@@ -269,11 +270,7 @@ class AnthropicLLMBackend(LLMBackend):
             )
         try:
             response = self._create_notes_message(prompt)
-            text = (
-                response.content[0].text
-                if hasattr(response.content[0], "text")
-                else response.content[0]
-            )
+            text = _response_text(response)
             return self.parse_automatic_meeting_intelligence_result(text, request)
         except TruncatedNotesError:
             raise
@@ -297,11 +294,7 @@ class AnthropicLLMBackend(LLMBackend):
                 model=self.model,
                 messages=[{"role": "user", "content": prompt}],
             )
-            return (
-                response.content[0].text
-                if hasattr(response.content[0], "text")
-                else str(response.content[0])
-            )
+            return _response_text(response)
         except TruncatedNotesError:
             raise
         except Exception as e:  # noqa: BLE001
@@ -339,11 +332,7 @@ class AnthropicLLMBackend(LLMBackend):
                 model=self.model,
                 messages=[{"role": "user", "content": content}],
             )
-            return (
-                response.content[0].text
-                if hasattr(response.content[0], "text")
-                else str(response.content[0])
-            )
+            return _response_text(response)
         except TruncatedNotesError:
             raise
         except Exception as e:  # noqa: BLE001
@@ -392,11 +381,7 @@ class AnthropicLLMBackend(LLMBackend):
                 ],
                 timeout=timeout,
             )
-            text = (
-                response.content[0].text
-                if hasattr(response.content[0], "text")
-                else response.content[0]
-            )
+            text = _response_text(response)
             return self.parse_meeting_edge_result(text, request)
         except Exception as e:  # noqa: BLE001
             logger.error(f"Anthropic API error (Meeting Edge): {e}")
@@ -451,11 +436,7 @@ class AnthropicLLMBackend(LLMBackend):
                     "Anthropic stopped generating before the analysis was "
                     "complete, so it would have been cut off mid-item."
                 )
-            text = (
-                response.content[0].text
-                if hasattr(response.content[0], "text")
-                else response.content[0]
-            )
+            text = _response_text(response)
             return self.parse_meeting_analysis_result(text, request)
         except Exception as e:  # noqa: BLE001
             logger.error(f"Anthropic API error (meeting analysis): {e}")
@@ -492,11 +473,7 @@ class AnthropicLLMBackend(LLMBackend):
                 system=anthropic_cached_system(context),
                 messages=messages,
             )
-            return (
-                response.content[0].text
-                if hasattr(response.content[0], "text")
-                else response.content[0]
-            )
+            return _response_text(response)
         except TruncatedNotesError:
             raise
         except Exception as e:  # noqa: BLE001
@@ -617,11 +594,7 @@ class AnthropicLLMBackend(LLMBackend):
                 max_tokens=1024,
                 messages=[{"role": "user", "content": prompt}],
             )
-            title = self.parse_title(
-                response.content[0].text
-                if hasattr(response.content[0], "text")
-                else response.content[0]
-            )
+            title = self.parse_title(_response_text(response))
             return title
         except Exception as e:  # noqa: BLE001
             logger.error(f"Anthropic API error (meeting title): {e}")
