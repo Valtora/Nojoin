@@ -1734,7 +1734,7 @@ async def test_an_imported_screen_recording_is_backed_up_as_its_audio(
         + ["-c:v", "mpeg4", "-b:v", "2M", "-c:a", "aac", "-shortest", str(upload)],
         check=True,
     )
-    stored = Path(keep_imported_audio(str(upload)).path)
+    stored = Path(keep_imported_audio(str(upload), upload.parent).path)
     await seed_source_data(
         context.async_session_maker,
         recording_meeting_uid="meeting-uid-screen",

@@ -33,13 +33,19 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlmodel import Session, SQLModel, create_engine
 
-from backend.api.deps import get_current_user, get_db
+from backend.api.deps import (
+    get_current_recording_client_user,
+    get_current_user,
+    get_db,
+)
 from backend.api.v1.api import api_router
+from backend.celery_app import celery_app
 from backend.models.recording import Recording, RecordingStatus
 from backend.tests.test_reprocess import (
     RECORDING_AUDIO_CHUNKS_SCHEMA,
     RECORDING_AUDIO_WINDOW_MANIFESTS_SCHEMA,
     RECORDINGS_SCHEMA,
+    TRANSCRIPTS_SCHEMA,
     build_test_user,
 )
 from backend.utils import import_audio
@@ -50,6 +56,7 @@ from backend.utils.import_audio import (
     NoAudioStreamError,
     UnreadableAudioStreamError,
 )
+from backend.utils.recording_storage import recording_upload_temp_dir
 from backend.worker.tasks import imported_audio
 from backend.worker.tasks.imported_audio import (
     SERVER_FAILURE_DETAIL,
@@ -82,6 +89,7 @@ def db_path(tmp_path: Path) -> Path:
     with engine.begin() as connection:
         for schema in (
             RECORDINGS_SCHEMA,
+            TRANSCRIPTS_SCHEMA,
             RECORDING_AUDIO_CHUNKS_SCHEMA,
             RECORDING_AUDIO_WINDOW_MANIFESTS_SCHEMA,
         ):
@@ -120,6 +128,7 @@ async def _api_client(async_engine, monkeypatch: pytest.MonkeyPatch):
 
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_current_user] = build_test_user
+    app.dependency_overrides[get_current_recording_client_user] = build_test_user
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://testserver", timeout=60
     ) as async_client:
@@ -657,12 +666,13 @@ async def test_a_server_fault_fails_the_import_without_a_retry(
 
 
 def _fake_keep(calls: list[str], after=None):
-    """Stand in for ``keep_imported_audio``: write ``<stem>.m4a``, delete the
-    upload, then run ``after``."""
+    """Stand in for ``keep_imported_audio``: write ``<stem>.m4a`` to the work
+    directory, delete the upload, then run ``after``."""
 
-    def keep(source: str) -> KeptAudio:
+    def keep(source: str, work_dir: Path) -> KeptAudio:
         calls.append(source)
-        kept = Path(source).with_suffix(".m4a")
+        work_dir.mkdir(parents=True, exist_ok=True)
+        kept = work_dir / f"{Path(source).stem}.m4a"
         kept.write_bytes(b"kept audio")
         os.remove(source)
         if after is not None:
@@ -747,13 +757,13 @@ def _gate_extraction(monkeypatch: pytest.MonkeyPatch, before: bool) -> dict:
     gates = {name: (threading.Event(), threading.Event()) for name in ("A", "B")}
     real_keep = imported_audio.keep_imported_audio
 
-    def gated(source: str) -> KeptAudio:
+    def gated(source: str, work_dir: Path) -> KeptAudio:
         arrived, go = gates[threading.current_thread().name]
         if before:
             arrived.set()
             assert go.wait(30)
-            return real_keep(source)
-        kept = real_keep(source)
+            return real_keep(source, work_dir)
+        kept = real_keep(source, work_dir)
         arrived.set()
         assert go.wait(30)
         return kept
@@ -904,6 +914,116 @@ async def test_a_delete_racing_the_task_leaves_no_file(
     assert _files(env.recordings) == []
 
 
+def _kill_the_worker_after_ffmpeg(
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[threading.Event, threading.Event]:
+    """In the copy of the task run by thread "A", let the extraction's ffmpeg
+    run to the end and stop the task there, as when its worker process is
+    killed and ffmpeg is not. Returns the event set once ffmpeg has finished,
+    and the one that ends the copy, with a stopped ffmpeg's exit status."""
+    finished, end = threading.Event(), threading.Event()
+    real_run = subprocess.run
+
+    def run(cmd, **kwargs):
+        result = real_run(cmd, **kwargs)
+        if cmd[0] == "ffmpeg" and threading.current_thread().name == "A":
+            finished.set()
+            assert end.wait(30)
+            raise subprocess.CalledProcessError(255, cmd)
+        return result
+
+    monkeypatch.setattr(import_audio.subprocess, "run", run)
+    return finished, end
+
+
+@pytest.mark.anyio
+@needs_ffmpeg
+@pytest.mark.parametrize(
+    ("any_env", "route"),
+    # Permanent delete cascades through tables the SQLite schema here lacks.
+    [("sqlite", "discard"), ("postgres", "discard"), ("postgres", "permanent-delete")],
+    indirect=["any_env"],
+)
+async def test_an_extraction_that_outlives_its_worker_goes_with_the_recording(
+    any_env: _Env, monkeypatch: pytest.MonkeyPatch, route: str
+) -> None:
+    """Discard and permanent delete revoke the task with ``terminate=True``,
+    which ends its worker process but not its ffmpeg. The extraction is written
+    to the recording's temp directory, which the route removes, so nothing of
+    it outlives the recording."""
+    env = any_env
+    source = env.tmp / "screen.mkv"
+    _screen_recording(source, ["-c:a", "aac"])
+    recording_id = _waiting_import(env, source)
+    with env.engine.begin() as connection:
+        connection.execute(
+            text(
+                "UPDATE recordings SET celery_task_id = 'keep-task',"
+                " is_deleted = :binned WHERE id = :id"
+            ),
+            {"binned": route == "permanent-delete", "id": recording_id},
+        )
+        public_id = connection.execute(
+            text("SELECT public_id FROM recordings")
+        ).scalar_one()
+    revoked: list = []
+    monkeypatch.setattr(
+        celery_app.control,
+        "revoke",
+        lambda task_id, **options: revoked.append((task_id, options)),
+    )
+    finished, end = _kill_the_worker_after_ffmpeg(monkeypatch)
+    task = _copy(env, recording_id, "A")
+    assert await asyncio.to_thread(finished.wait, 30)
+    temp_dir = recording_upload_temp_dir(recording_id)
+    [extracted] = _files(env.recordings / "temp")
+    assert extracted.parent == temp_dir
+
+    if route == "discard":
+        response = await env.client.post(f"/api/v1/recordings/{public_id}/discard")
+    else:
+        response = await env.client.delete(f"/api/v1/recordings/{public_id}/permanent")
+
+    assert response.status_code == 200, response.text
+    assert revoked == [("keep-task", {"terminate": True})]
+    assert _files(env.recordings) == []
+    end.set()
+    await asyncio.to_thread(task.join, 30)
+    assert _files(env.recordings) == []
+
+
+@pytest.mark.anyio
+@needs_ffmpeg
+async def test_a_requeued_import_leaves_the_lost_extraction_in_temp(
+    env: _Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A copy lost with its worker leaves its ffmpeg's file in the recording's
+    temp directory, for the daily sweep; the copy re-queued at startup keeps
+    the audio, and the recordings directory holds nothing else."""
+    source = env.tmp / "screen.mkv"
+    _screen_recording(source, ["-c:a", "aac"])
+    recording_id = _waiting_import(env, source)
+    finished, end = _kill_the_worker_after_ffmpeg(monkeypatch)
+    lost = _copy(env, recording_id, "A")
+    assert await asyncio.to_thread(finished.wait, 30)
+    [extracted] = _files(env.recordings / "temp")
+
+    _run_task(env, recording_id)
+
+    row = _recording(env)
+    assert (row["status"], row["processing_step"]) == ("QUEUED", None)
+    outside_temp = [
+        path
+        for path in _files(env.recordings)
+        if "temp" not in path.relative_to(env.recordings).parts
+    ]
+    assert outside_temp == [Path(row["audio_path"])]
+    assert _files(recording_upload_temp_dir(recording_id)) == [extracted]
+    end.set()
+    await asyncio.to_thread(lost.join, 30)
+    assert _recording(env) == row
+
+
 @pytest.mark.anyio
 async def test_retrying_a_refused_import_keeps_the_reason_it_failed(
     env: _Env, monkeypatch: pytest.MonkeyPatch
@@ -914,7 +1034,7 @@ async def test_retrying_a_refused_import_keeps_the_reason_it_failed(
     source.write_bytes(b"video only")
     recording_id = await _import(env, "upload", source)
 
-    def refuse(path: str) -> KeptAudio:
+    def refuse(path: str, work_dir: Path) -> KeptAudio:
         raise NoAudioStreamError(path)
 
     monkeypatch.setattr(imported_audio, "keep_imported_audio", refuse)

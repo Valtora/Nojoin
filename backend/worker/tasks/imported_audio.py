@@ -8,12 +8,15 @@ server fault while keeping its audio, marks the recording ERROR and removes its
 files, so no recording is left holding a video. See "Imported Media Input" in
 docs/ARCHITECTURE.md.
 
-Every write is conditional on the recording still waiting for this task with
-the same ``audio_path``, and the upload is deleted only once the kept audio is
-stored. A duplicate or re-queued copy is therefore harmless: the copy whose
-write lands keeps its audio, every other copy removes only the file it
-extracted itself, and a copy that fails before storing anything leaves the
-upload for the next one. The cpu worker re-queues imports still waiting when
+The audio is extracted into the recording's temp directory and moved beside
+the upload only while the task holds the recording's row, so a delete or
+discard either removes it with that directory or waits and removes it by its
+stored path. Every write is conditional on the recording still waiting for
+this task with the same ``audio_path``, and the upload is deleted only once
+the kept audio is stored. A duplicate or re-queued copy is therefore
+harmless: the copy whose write lands keeps its audio, every other copy
+removes only the file it extracted itself, and a copy that fails before
+storing anything leaves the upload for the next one. The cpu worker re-queues imports still waiting when
 it starts (``requeue_imports_waiting_for_audio``), since a task lost with a
 worker is not redelivered.
 """
@@ -94,7 +97,7 @@ def keep_imported_audio_task(self, recording_id: int) -> None:
     session.rollback()
 
     try:
-        kept = keep_imported_audio(source).path
+        kept = keep_imported_audio(source, recording_upload_temp_dir(recording_id)).path
     except ImportRefusedError as exc:
         logger.info("Refused the import of recording %s: %s", recording_id, exc)
         _fail(session, recording_id, source, proxy_path, exc.detail)
@@ -106,16 +109,16 @@ def keep_imported_audio_task(self, recording_id: int) -> None:
         _fail(session, recording_id, source, proxy_path, SERVER_FAILURE_DETAIL)
         return
 
-    stored = False
+    stored = None
     try:
         stored = _store_kept_audio(session, recording_id, source, kept)
     finally:
-        if not stored and kept != source:
+        if stored is None and kept != source:
             _remove_quietly(kept)
-    if not stored:
+    if stored is None:
         logger.info("Recording %s was deleted or changed meanwhile.", recording_id)
         return
-    if kept != source:
+    if stored != source:
         # Only now: until the kept audio is stored, the upload is all there is.
         try:
             os.remove(source)
@@ -147,16 +150,20 @@ def keep_imported_audio_task(self, recording_id: int) -> None:
 
 def _store_kept_audio(
     session: Session, recording_id: int, source: str, kept: str
-) -> bool:
-    """Point the recording at ``kept`` and clear the step; False if it no
-    longer waits for this task."""
+) -> str | None:
+    """Move ``kept`` beside the upload, point the recording at it and clear
+    the step; return the stored path, or None if the recording no longer
+    waits for this task."""
     values: dict = {"processing_step": None}
+    stored = source
     if kept != source:
+        stored = str(Path(source).with_name(Path(kept).name))
         values.update(
-            audio_path=kept,
+            audio_path=stored,
             file_size_bytes=os.stat(kept).st_size,
             duration_seconds=_duration(kept),
         )
+    moved = False
     try:
         result = session.execute(
             update(Recording)
@@ -165,15 +172,21 @@ def _store_kept_audio(
         )
         if result.rowcount != 1:
             session.rollback()
-            return False
+            return None
         if kept != source:
-            _rebuild_import_window(session, recording_id, kept)
+            # Under the row lock: a delete or discard waits for the commit and
+            # then removes the file by its stored path.
+            os.replace(kept, stored)
+            moved = True
+            _rebuild_import_window(session, recording_id, stored)
         session.commit()
     except BaseException:
         # The row still waits, with its upload intact, for the next copy.
         session.rollback()
+        if moved:
+            _remove_quietly(stored)
         raise
-    return True
+    return stored
 
 
 def _duration(path: str) -> float | None:

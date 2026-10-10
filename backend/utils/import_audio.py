@@ -204,15 +204,18 @@ class _CopyChangedCodec(RuntimeError):
     """
 
 
-def keep_imported_audio(source_path: str) -> KeptAudio:
+def keep_imported_audio(source_path: str, work_dir: Path) -> KeptAudio:
     """Return what to store as an import's ``audio_path``.
 
     A file in one of ``AUDIO_ONLY_SUFFIXES`` is kept unchanged without being
     probed. A media container, or any other file that carries video, has one
-    audio track extracted to a new audio-only file next to it, and once that
-    file verifies (one audio stream, as long as the source track) its path is
-    returned. ``source_path`` is never deleted here: the caller deletes it once
-    it has stored the new path, so a caller that cannot store it loses nothing
+    audio track extracted to a new audio-only file in ``work_dir``, and once
+    that file verifies (one audio stream, as long as the source track) its path
+    is returned for the caller to move into place. ``work_dir``, created if
+    need be, is the recording's temp directory: a caller killed mid-extraction
+    leaves an ffmpeg that runs on to the end, and its file is removed with the
+    recording or by the daily sweep. ``source_path`` is never deleted here: the caller deletes it once it has stored the new path,
+    so a caller that cannot store it loses nothing
     (``keep_imported_audio_task``). Any other file is kept unchanged,
     including an audio-only file with several tracks and a non-container file
     ffprobe cannot read, both of which import has always stored as uploaded.
@@ -253,7 +256,7 @@ def keep_imported_audio(source_path: str) -> KeptAudio:
     if not is_container and not _carries_video(streams):
         return KeptAudio(source_path)
 
-    extracted = _extract_audio_track(source_path, track, probe)
+    extracted = _extract_audio_track(source_path, track, probe, work_dir)
     logger.info("Kept the audio of imported file %s as %s", source_path, extracted)
     return KeptAudio(extracted)
 
@@ -301,8 +304,10 @@ def _opus_plan(channels: int) -> _OutputPlan:
     return _OutputPlan(_REENCODE_SUFFIX, arguments)
 
 
-def _extract_audio_track(source_path: str, track: dict, probe: dict) -> str:
-    """Write ``track`` to a new audio-only file; return its path.
+def _extract_audio_track(
+    source_path: str, track: dict, probe: dict, work_dir: Path
+) -> str:
+    """Write ``track`` to a new audio-only file in ``work_dir``; return its path.
 
     A copy that turns out to hold another codec than reported is redone as an
     Opus re-encode (see ``_CopyChangedCodec``).
@@ -312,17 +317,18 @@ def _extract_audio_track(source_path: str, track: dict, probe: dict) -> str:
     """
     plan = _output_plan(track)
     try:
-        return _write_audio_track(source_path, track, probe, plan)
+        return _write_audio_track(source_path, track, probe, plan, work_dir)
     except _CopyChangedCodec as exc:
         logger.info("Re-encoding instead of copying: %s", exc)
     plan = _opus_plan(int(track.get("channels") or 0))
-    return _write_audio_track(source_path, track, probe, plan)
+    return _write_audio_track(source_path, track, probe, plan, work_dir)
 
 
 def _write_audio_track(
-    source_path: str, track: dict, probe: dict, plan: _OutputPlan
+    source_path: str, track: dict, probe: dict, plan: _OutputPlan, work_dir: Path
 ) -> str:
-    """Write ``track`` of ``source_path`` to a new file by ``plan``; return it.
+    """Write ``track`` of ``source_path`` to a new file in ``work_dir`` by
+    ``plan``; return it.
 
     A track that starts late is shifted to start at zero
     (``-avoid_negative_ts make_zero``), so it is stored without the leading
@@ -337,7 +343,7 @@ def _write_audio_track(
         _CopyChangedCodec: see the class.
         The new file is removed in every case.
     """
-    target = str(Path(source_path).with_name(f"{uuid4()}{plan.suffix}"))
+    target = str(Path(work_dir) / f"{uuid4()}{plan.suffix}")
     cmd = ["ffmpeg", "-nostdin", "-y", "-v", "error", "-i", source_path]
     cmd += ["-map", f"0:{track['index']}", *plan.codec_arguments]
     if (seconds(track.get("start_time")) or 0.0) > 0:
@@ -345,6 +351,7 @@ def _write_audio_track(
     cmd.append(target)
     ensure_ffmpeg_in_path()
     try:
+        Path(work_dir).mkdir(parents=True, exist_ok=True)
         subprocess.run(cmd, check=True, capture_output=True, timeout=EXTRACT_TIMEOUT_S)
         _verify_extracted_audio(target, source_path, track, probe, plan)
     except _CopyChangedCodec:

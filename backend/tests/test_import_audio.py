@@ -158,23 +158,29 @@ _EXTRACTIONS = [
     _EXTRACTIONS,
     ids=[f"{row[1]}-{row[3]}-{row[4]}ch" for row in _EXTRACTIONS],
 )
-def test_the_audio_track_is_kept_beside_the_upload(tmp_path: Path, case: tuple) -> None:
-    """The upload is left for the caller, which deletes it once it has stored
-    the new path."""
+def test_the_audio_track_is_written_to_the_work_directory(
+    tmp_path: Path, case: tuple
+) -> None:
+    """Nothing is written beside the upload, which is left for the caller to
+    delete once it has moved the new file into place and stored its path."""
     output_args, suffix, stored_suffix, codec, channels = case
-    source = tmp_path / f"upload{suffix}"
+    recordings = tmp_path / "recordings"
+    recordings.mkdir()
+    source = recordings / f"upload{suffix}"
     inputs = [*_VIDEO, *_TONE] if "-c:v" in output_args else _TONE
     _ffmpeg(*inputs, *output_args, "-shortest", str(source))
+    work_dir = recordings / "temp" / "7"
 
-    stored = Path(keep_imported_audio(str(source)).path)
+    stored = Path(keep_imported_audio(str(source), work_dir).path)
 
-    assert stored.parent == tmp_path
+    assert stored.parent == work_dir
     assert stored.suffix == stored_suffix
     [stream] = _streams(stored)
     assert (stream["codec_type"], stream["codec_name"]) == ("audio", codec)
     assert stream["channels"] == channels
     assert stream["duration"] == pytest.approx(2.0, abs=0.1)
-    assert sorted(tmp_path.iterdir()) == sorted([source, stored])
+    assert sorted(path for path in recordings.iterdir() if path.is_file()) == [source]
+    assert sorted(work_dir.iterdir()) == [stored]
 
 
 @needs_ffmpeg
@@ -207,7 +213,7 @@ def test_audio_that_starts_late_is_kept_whole(
         *["-map", "0:v", "-map", "1:a", "-c:v", "mpeg4", *audio_args, str(source)],
     )
 
-    stored = keep_imported_audio(str(source)).path
+    stored = keep_imported_audio(str(source), tmp_path).path
 
     assert get_audio_duration(stored) == pytest.approx(3.0, abs=0.1)
 
@@ -239,13 +245,13 @@ def test_a_file_that_reports_no_length_is_measured_from_its_packets(
     assert "duration" not in reported["format"]
     assert all("DURATION" not in s.get("tags", {}) for s in reported["streams"])
 
-    stored = keep_imported_audio(str(source)).path
+    stored = keep_imported_audio(str(source), tmp_path).path
     assert get_audio_duration(stored) == pytest.approx(2.0, abs=0.1)
 
     _unfinalised_mkv(source)
     _cut_extraction_short(monkeypatch)
     with pytest.raises(AudioExtractionError, match="source track runs 2"):
-        keep_imported_audio(str(source))
+        keep_imported_audio(str(source), tmp_path)
 
 
 def _cut_extraction_short(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -284,7 +290,7 @@ def test_an_audio_file_is_kept_as_uploaded(tmp_path: Path, fixture: list[str]) -
     _ffmpeg(*fixture[:-1], str(source))
     before = source.read_bytes()
 
-    assert keep_imported_audio(str(source)).path == str(source)
+    assert keep_imported_audio(str(source), tmp_path).path == str(source)
     assert source.read_bytes() == before
 
 
@@ -303,7 +309,7 @@ def test_of_two_audio_tracks_in_a_container_the_default_one_is_kept(
         str(source),
     )
 
-    [stream] = _streams(keep_imported_audio(str(source)).path)
+    [stream] = _streams(keep_imported_audio(str(source), tmp_path).path)
 
     assert stream["duration"] == pytest.approx(5.0, abs=0.1)
 
@@ -316,7 +322,7 @@ def test_a_file_with_only_video_is_refused_and_left_to_the_caller(
     _ffmpeg(*_VIDEO, "-c:v", "mpeg4", str(source))
 
     with pytest.raises(NoAudioStreamError):
-        keep_imported_audio(str(source))
+        keep_imported_audio(str(source), tmp_path)
 
     assert sorted(tmp_path.iterdir()) == [source]
 
@@ -335,7 +341,7 @@ def test_a_failed_extraction_is_refused_and_leaves_nothing_new(
     )
 
     with pytest.raises(AudioExtractionError, match="no_such_encoder"):
-        keep_imported_audio(str(source))
+        keep_imported_audio(str(source), tmp_path)
 
     assert sorted(tmp_path.iterdir()) == [source]
 
@@ -355,7 +361,7 @@ def test_an_unexpected_error_in_verification_leaves_nothing_new(
     monkeypatch.setattr(import_audio, "track_span", unexpected)
 
     with pytest.raises(KeyError):
-        keep_imported_audio(str(source))
+        keep_imported_audio(str(source), tmp_path)
 
     assert sorted(tmp_path.iterdir()) == [source]
 
@@ -369,7 +375,7 @@ def test_an_extraction_shorter_than_its_track_is_refused(
     _cut_extraction_short(monkeypatch)
 
     with pytest.raises(AudioExtractionError, match="source track runs 2"):
-        keep_imported_audio(str(source))
+        keep_imported_audio(str(source), tmp_path)
 
     assert sorted(tmp_path.iterdir()) == [source]
 
@@ -398,7 +404,7 @@ def test_a_full_disk_is_a_server_failure_not_a_bad_file(
     _limit_ffmpeg_output(monkeypatch, 1_000)
 
     with pytest.raises(ImportServerError):
-        keep_imported_audio(str(source))
+        keep_imported_audio(str(source), tmp_path)
 
     assert sorted(tmp_path.iterdir()) == [source]
 
@@ -421,7 +427,7 @@ def test_an_ffmpeg_out_of_space_error_is_a_server_failure(
     monkeypatch.setattr(import_audio.subprocess, "run", run)
 
     with pytest.raises(ImportServerError):
-        keep_imported_audio(str(source))
+        keep_imported_audio(str(source), tmp_path)
 
 
 @pytest.mark.parametrize(
@@ -445,7 +451,7 @@ def test_ffprobe_failing_to_run_is_a_server_failure(
     monkeypatch.setattr(subprocess, "run", run)
 
     with pytest.raises(ImportServerError):
-        keep_imported_audio(str(source))
+        keep_imported_audio(str(source), tmp_path)
     assert source.exists()
 
 
@@ -456,7 +462,7 @@ def test_a_container_ffprobe_cannot_read_is_refused(tmp_path: Path) -> None:
     source.write_bytes(b"not a matroska file")
 
     with pytest.raises(AudioExtractionError):
-        keep_imported_audio(str(source))
+        keep_imported_audio(str(source), tmp_path)
     assert source.exists()
 
 
@@ -465,7 +471,7 @@ def test_an_audio_file_ffprobe_cannot_read_is_kept_as_before(tmp_path: Path) -> 
     source = tmp_path / "meeting.m4a"
     source.write_bytes(b"not an m4a")
 
-    assert keep_imported_audio(str(source)).path == str(source)
+    assert keep_imported_audio(str(source), tmp_path).path == str(source)
 
 
 @needs_ffmpeg
@@ -480,7 +486,7 @@ def test_a_source_whose_packets_undercount_is_not_refused(tmp_path: Path) -> Non
         *["-c:v", "mpeg4", "-c:a", "wavpack", "-shortest", str(source)],
     )
 
-    kept = keep_imported_audio(str(source))
+    kept = keep_imported_audio(str(source), tmp_path)
 
     assert kept.path.endswith(".flac")
     assert get_audio_duration(kept.path) == pytest.approx(10.0, abs=0.1)
@@ -498,7 +504,7 @@ def test_concatenated_mpeg_ts_clips_are_kept_whole(tmp_path: Path) -> None:
     source = tmp_path / "joined.ts"
     source.write_bytes(b"".join(clip.read_bytes() for clip in clips))
 
-    stored = keep_imported_audio(str(source)).path
+    stored = keep_imported_audio(str(source), tmp_path).path
 
     assert get_audio_duration(stored) == pytest.approx(4.0, abs=0.2)
 
@@ -521,7 +527,7 @@ def test_ten_minutes_losing_four_seconds_is_refused(
     )
 
     with pytest.raises(AudioExtractionError, match="source track runs 600"):
-        keep_imported_audio(str(source))
+        keep_imported_audio(str(source), tmp_path)
 
 
 @needs_ffmpeg
@@ -535,7 +541,7 @@ def test_mp2_labelled_mp3_in_mp4_is_re_encoded_not_stored_as_mp3(
         *_VIDEO, *_TONE, "-c:v", "mpeg4", "-c:a", "mp2", "-b:a", "192k", str(source)
     )
 
-    kept = keep_imported_audio(str(source))
+    kept = keep_imported_audio(str(source), tmp_path)
 
     assert kept.path.endswith(".webm")
     assert [s["codec_name"] for s in _streams(kept.path)] == ["opus"]
@@ -560,7 +566,7 @@ def test_a_truncated_file_with_intact_tags_is_measured_by_a_full_read(
     _cut_extraction_short(monkeypatch)
 
     with pytest.raises(AudioExtractionError, match="where the source track runs"):
-        keep_imported_audio(str(source))
+        keep_imported_audio(str(source), tmp_path)
 
 
 def _fail_with_signal(monkeypatch: pytest.MonkeyPatch, tool: str, signum: int) -> None:
@@ -598,7 +604,7 @@ def test_a_crash_is_the_files_fault_and_a_kill_is_the_servers(
     _fail_with_signal(monkeypatch, tool, signum)
 
     with pytest.raises(error):
-        keep_imported_audio(str(source))
+        keep_imported_audio(str(source), tmp_path)
     assert sorted(tmp_path.iterdir()) == [source]
 
 
@@ -621,7 +627,7 @@ def test_a_copied_track_decodes_to_the_source_samples(tmp_path: Path) -> None:
     _ffmpeg(*_SCREEN, "-shortest", str(source))
     expected = _decoded_bytes(source)
 
-    stored = Path(keep_imported_audio(str(source)).path)
+    stored = Path(keep_imported_audio(str(source), tmp_path).path)
 
     assert _decoded_bytes(stored) == expected
 
@@ -704,7 +710,7 @@ def test_ffmpeg_stopped_by_sigterm_is_a_server_failure(
     monkeypatch.setattr(import_audio.subprocess, "run", run_until_stopped)
 
     with pytest.raises(ImportServerError):
-        keep_imported_audio(str(source))
+        keep_imported_audio(str(source), tmp_path)
     [error] = stopped
     assert (error.returncode, bool(error.stderr.strip())) == (255, True)
     assert sorted(tmp_path.iterdir()) == [source]
@@ -740,5 +746,7 @@ def test_a_format_that_cannot_hold_video_is_kept_without_probing(
     monkeypatch.setattr(subprocess, "run", run)
     monkeypatch.setattr(subprocess, "Popen", run)
 
-    assert keep_imported_audio(str(source)) == import_audio.KeptAudio(str(source))
+    assert keep_imported_audio(str(source), tmp_path) == import_audio.KeptAudio(
+        str(source)
+    )
     assert source.read_bytes() == b"audio"
