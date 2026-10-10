@@ -176,9 +176,9 @@ class AudioExtractionError(ImportRefusedError):
 class ImportServerError(Exception):
     """The server failed while keeping the audio; the file may be fine.
 
-    ffmpeg or ffprobe could not be started, timed out or was killed, the disk
-    filled up, or the upload could not be removed. Answered as a server error,
-    never as advice to convert the file.
+    ffmpeg or ffprobe could not be started, timed out or was killed, or the
+    disk filled up. Answered as a server error, never as advice to convert the
+    file.
     """
 
 
@@ -209,9 +209,11 @@ def keep_imported_audio(source_path: str) -> KeptAudio:
 
     A file in one of ``AUDIO_ONLY_SUFFIXES`` is kept unchanged without being
     probed. A media container, or any other file that carries video, has one
-    audio track extracted to a new audio-only file next to it. Once that file
-    verifies (one audio stream, as long as the source track), ``source_path``
-    is deleted and the new path returned. Any other file is kept unchanged,
+    audio track extracted to a new audio-only file next to it, and once that
+    file verifies (one audio stream, as long as the source track) its path is
+    returned. ``source_path`` is never deleted here: the caller deletes it once
+    it has stored the new path, so a caller that cannot store it loses nothing
+    (``keep_imported_audio_task``). Any other file is kept unchanged,
     including an audio-only file with several tracks and a non-container file
     ffprobe cannot read, both of which import has always stored as uploaded.
 
@@ -228,8 +230,8 @@ def keep_imported_audio(source_path: str) -> KeptAudio:
             extraction ffmpeg failed or whose result did not verify.
         ImportServerError: a failure on the server's side (see the class).
 
-    On any of these ``source_path`` is left in place for the caller to remove
-    (unless removing it is what failed), and nothing else is left behind.
+    On any of these ``source_path`` is left in place for the caller to remove,
+    and nothing else is left behind.
     """
     suffix = Path(source_path).suffix.lower()
     if suffix in AUDIO_ONLY_SUFFIXES:
@@ -252,14 +254,6 @@ def keep_imported_audio(source_path: str) -> KeptAudio:
         return KeptAudio(source_path)
 
     extracted = _extract_audio_track(source_path, track, probe)
-    try:
-        os.remove(source_path)
-    except OSError as exc:
-        # The caller's cleanup only knows source_path; leave nothing it cannot see.
-        _remove_quietly(extracted)
-        raise ImportServerError(
-            f"Could not remove the upload {source_path}: {exc}"
-        ) from exc
     logger.info("Kept the audio of imported file %s as %s", source_path, extracted)
     return KeptAudio(extracted)
 

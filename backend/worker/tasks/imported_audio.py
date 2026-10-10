@@ -9,8 +9,11 @@ files, so no recording is left holding a video. See "Imported Media Input" in
 docs/ARCHITECTURE.md.
 
 Every write is conditional on the recording still waiting for this task with
-the same ``audio_path``, so a redelivered task, or one whose recording was
-deleted meanwhile, changes nothing and removes only what it wrote itself.
+the same ``audio_path``, and the upload is deleted only once the kept audio is
+stored. A duplicate or re-queued copy is therefore harmless: the copy whose
+write lands keeps its audio, every other copy removes only the file it
+extracted itself, and a copy that fails before storing anything leaves the
+upload for the next one.
 """
 
 import logging
@@ -105,6 +108,9 @@ def keep_imported_audio_task(self, recording_id: int) -> None:
     if not stored:
         logger.info("Recording %s was deleted or changed meanwhile.", recording_id)
         return
+    if kept != source:
+        # Only now: until the kept audio is stored, the upload is all there is.
+        _remove_quietly(source)
 
     task = celery_app.send_task(
         "backend.worker.tasks.process_recording_task", args=[recording_id]
@@ -133,17 +139,22 @@ def _store_kept_audio(
             file_size_bytes=os.stat(kept).st_size,
             duration_seconds=_duration(kept),
         )
-    result = session.execute(
-        update(Recording)
-        .where(_waiting_for_audio(recording_id, source))
-        .values(**values)
-    )
-    if result.rowcount != 1:
+    try:
+        result = session.execute(
+            update(Recording)
+            .where(_waiting_for_audio(recording_id, source))
+            .values(**values)
+        )
+        if result.rowcount != 1:
+            session.rollback()
+            return False
+        if kept != source:
+            _rebuild_import_window(session, recording_id, kept)
+        session.commit()
+    except BaseException:
+        # The row still waits, with its upload intact, for the next copy.
         session.rollback()
-        return False
-    if kept != source:
-        _rebuild_import_window(session, recording_id, kept)
-    session.commit()
+        raise
     return True
 
 

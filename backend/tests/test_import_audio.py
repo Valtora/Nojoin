@@ -158,7 +158,9 @@ _EXTRACTIONS = [
     _EXTRACTIONS,
     ids=[f"{row[1]}-{row[3]}-{row[4]}ch" for row in _EXTRACTIONS],
 )
-def test_the_audio_track_replaces_the_upload(tmp_path: Path, case: tuple) -> None:
+def test_the_audio_track_is_kept_beside_the_upload(tmp_path: Path, case: tuple) -> None:
+    """The upload is left for the caller, which deletes it once it has stored
+    the new path."""
     output_args, suffix, stored_suffix, codec, channels = case
     source = tmp_path / f"upload{suffix}"
     inputs = [*_VIDEO, *_TONE] if "-c:v" in output_args else _TONE
@@ -166,14 +168,13 @@ def test_the_audio_track_replaces_the_upload(tmp_path: Path, case: tuple) -> Non
 
     stored = Path(keep_imported_audio(str(source)).path)
 
-    assert not source.exists()
     assert stored.parent == tmp_path
     assert stored.suffix == stored_suffix
     [stream] = _streams(stored)
     assert (stream["codec_type"], stream["codec_name"]) == ("audio", codec)
     assert stream["channels"] == channels
     assert stream["duration"] == pytest.approx(2.0, abs=0.1)
-    assert sorted(tmp_path.iterdir()) == [stored]
+    assert sorted(tmp_path.iterdir()) == sorted([source, stored])
 
 
 @needs_ffmpeg
@@ -448,29 +449,6 @@ def test_an_audio_file_ffprobe_cannot_read_is_kept_as_before(tmp_path: Path) -> 
 
 
 @needs_ffmpeg
-def test_an_upload_that_cannot_be_removed_leaves_no_extracted_copy(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """A server failure; the caller only knows the upload's path, so the new
-    file goes too."""
-    source = tmp_path / "screen.mkv"
-    _ffmpeg(*_SCREEN, str(source))
-    real_remove = import_audio.os.remove
-
-    def remove(path):
-        if path == str(source):
-            raise PermissionError(13, "Permission denied", path)
-        real_remove(path)
-
-    monkeypatch.setattr(import_audio.os, "remove", remove)
-
-    with pytest.raises(ImportServerError):
-        keep_imported_audio(str(source))
-
-    assert sorted(tmp_path.iterdir()) == [source]
-
-
-@needs_ffmpeg
 def test_a_source_whose_packets_undercount_is_not_refused(tmp_path: Path) -> None:
     """WavPack's last block in MKV reports no duration, so the source's span
     runs about a second short of the correct output; only a shorter output
@@ -541,7 +519,7 @@ def test_mp2_labelled_mp3_in_mp4_is_re_encoded_not_stored_as_mp3(
 
     assert kept.path.endswith(".webm")
     assert [s["codec_name"] for s in _streams(kept.path)] == ["opus"]
-    assert sorted(tmp_path.iterdir()) == [Path(kept.path)]
+    assert sorted(tmp_path.iterdir()) == sorted([source, Path(kept.path)])
 
 
 @needs_ffmpeg

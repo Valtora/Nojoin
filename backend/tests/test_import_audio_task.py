@@ -3,17 +3,23 @@
 Every import route stores the upload as it arrived and queues the task; the
 task keeps the audio and queues processing. The routes and the task share a
 SQLite file here, so a test follows an upload from the route through the task.
-Celery dispatches are recorded (``stub_celery_dispatch``); the ffmpeg cases
-skip without ffmpeg.
+The tests of concurrent copies of the task, and of a delete racing it, also
+run on PostgreSQL when ``NOJOIN_TEST_POSTGRES_URL`` names one. Celery
+dispatches are recorded (``stub_celery_dispatch``); the ffmpeg cases skip
+without ffmpeg.
 """
 
 from __future__ import annotations
 
 import contextlib
+import importlib
 import os
 import resource
 import shutil
 import subprocess
+import threading
+import types
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -23,10 +29,11 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import Engine, text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
-from sqlmodel import Session, create_engine
+from sqlmodel import Session, SQLModel, create_engine
 
 from backend.api.deps import get_current_user, get_db
 from backend.api.v1.api import api_router
+from backend.models.recording import Recording, RecordingStatus
 from backend.tests.test_reprocess import (
     RECORDING_AUDIO_CHUNKS_SCHEMA,
     RECORDING_AUDIO_WINDOW_MANIFESTS_SCHEMA,
@@ -92,16 +99,15 @@ async def _no_upload_limit(*args, **kwargs):
     yield
 
 
-@pytest.fixture
-async def client(db_path: Path, monkeypatch: pytest.MonkeyPatch):
+@contextlib.asynccontextmanager
+async def _api_client(async_engine, monkeypatch: pytest.MonkeyPatch):
     from backend.api.v1.endpoints.recordings import routes_import_upload
 
     # /upload's concurrency limit lives in Redis, which no test may touch.
     monkeypatch.setattr(
         routes_import_upload, "enforce_upload_concurrency", _no_upload_limit
     )
-    engine = create_async_engine(f"sqlite+aiosqlite:///{db_path}")
-    maker = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    maker = sessionmaker(async_engine, class_=AsyncSession, expire_on_commit=False)
     app = FastAPI()
     app.include_router(api_router, prefix="/api/v1")
 
@@ -112,10 +118,17 @@ async def client(db_path: Path, monkeypatch: pytest.MonkeyPatch):
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_current_user] = build_test_user
     async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://testserver"
+        transport=ASGITransport(app=app), base_url="http://testserver", timeout=60
     ) as async_client:
         yield async_client
-    await engine.dispose()
+    await async_engine.dispose()
+
+
+@pytest.fixture
+async def client(db_path: Path, monkeypatch: pytest.MonkeyPatch):
+    engine = create_async_engine(f"sqlite+aiosqlite:///{db_path}")
+    async with _api_client(engine, monkeypatch) as async_client:
+        yield async_client
 
 
 @dataclass
@@ -139,6 +152,56 @@ def env(
     tmp_path: Path,
 ) -> _Env:
     return _Env(client, sync_engine, recordings_dir, stub_celery_dispatch, tmp_path)
+
+
+_USER_ROW = (
+    "INSERT INTO users (id, created_at, updated_at, username, hashed_password,"
+    " is_active, is_superuser, force_password_change, role, token_version,"
+    " settings, has_seen_demo_recording) VALUES (1, now(), now(), 'alice', 'x',"
+    " true, false, false, 'user', 0, '{}', false)"
+)
+
+
+@pytest.fixture
+async def pg_env(
+    postgres_test_url: str,
+    recordings_dir: Path,
+    stub_celery_dispatch: list,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """``env`` on PostgreSQL, in a schema of its own."""
+    importlib.import_module("backend.models.registry")
+    schema = f"import_task_{uuid.uuid4().hex[:12]}"
+    admin = create_engine(postgres_test_url)
+    with admin.begin() as connection:
+        connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        connection.execute(text(f"CREATE SCHEMA {schema}"))
+    engine = create_engine(
+        postgres_test_url, connect_args={"options": f"-csearch_path={schema},public"}
+    )
+    SQLModel.metadata.create_all(engine)
+    with engine.begin() as connection:
+        connection.execute(text(_USER_ROW))
+    async_engine = create_async_engine(
+        postgres_test_url.replace("postgresql://", "postgresql+asyncpg://", 1),
+        connect_args={"server_settings": {"search_path": f"{schema},public"}},
+    )
+    try:
+        async with _api_client(async_engine, monkeypatch) as async_client:
+            yield _Env(
+                async_client, engine, recordings_dir, stub_celery_dispatch, tmp_path
+            )
+    finally:
+        engine.dispose()
+        with admin.begin() as connection:
+            connection.execute(text(f"DROP SCHEMA IF EXISTS {schema} CASCADE"))
+        admin.dispose()
+
+
+@pytest.fixture(params=["sqlite", "postgres"])
+def any_env(request: pytest.FixtureRequest) -> _Env:
+    return request.getfixturevalue("env" if request.param == "sqlite" else "pg_env")
 
 
 async def _post(env: _Env, route: str, source: Path):
@@ -200,14 +263,18 @@ def _staged_import_chunks(env: _Env) -> list[tuple[str, int]]:
         ]
 
 
+# The task's body, so that copies can run at once, each on its own session as
+# on separate workers (the bound task shares one ``session`` attribute).
+_TASK_BODY = type(keep_imported_audio_task._get_current_object()).run
+
+
 def _run_task(env: _Env, recording_id: int) -> None:
-    """Run the task as the worker does, on its own session."""
-    keep_imported_audio_task._session = Session(env.engine)
+    """Run the task as a worker does, on its own session."""
+    session = Session(env.engine)
     try:
-        keep_imported_audio_task.run(recording_id)
+        _TASK_BODY(types.SimpleNamespace(session=session), recording_id)
     finally:
-        keep_imported_audio_task._session.close()
-        keep_imported_audio_task._session = None
+        session.close()
 
 
 def _dispatched_names(env: _Env) -> list[str]:
@@ -651,3 +718,129 @@ async def test_a_redelivered_task_changes_nothing(
     assert _recording(env) == kept
     assert kept["audio_path"].endswith(".m4a")
     assert _dispatched_names(env) == [KEEP_TASK, PROCESS_TASK, PROXY_TASK]
+
+
+def _waiting_import(env: _Env, source: Path) -> int:
+    """A recording waiting for its audio, as the import routes leave it."""
+    upload = env.recordings / f"{uuid.uuid4()}{source.suffix}"
+    shutil.copyfile(source, upload)
+    with Session(env.engine) as session:
+        recording = Recording(
+            name="screen",
+            audio_path=str(upload),
+            status=RecordingStatus.QUEUED,
+            processing_step=KEEPING_AUDIO_STEP,
+            user_id=1,
+        )
+        session.add(recording)
+        session.commit()
+        return recording.id
+
+
+def _gate_extraction(monkeypatch: pytest.MonkeyPatch, before: bool) -> dict:
+    """Hold each copy of the task, named by its thread, at its extraction:
+    ``before`` it starts, or once it has returned. Returns, per copy, the
+    event it sets on arriving and the one it waits for."""
+    gates = {name: (threading.Event(), threading.Event()) for name in ("A", "B")}
+    real_keep = imported_audio.keep_imported_audio
+
+    def gated(source: str) -> KeptAudio:
+        arrived, go = gates[threading.current_thread().name]
+        if before:
+            arrived.set()
+            assert go.wait(30)
+            return real_keep(source)
+        kept = real_keep(source)
+        arrived.set()
+        assert go.wait(30)
+        return kept
+
+    monkeypatch.setattr(imported_audio, "keep_imported_audio", gated)
+    return gates
+
+
+def _copy(env: _Env, recording_id: int, name: str) -> threading.Thread:
+    thread = threading.Thread(
+        target=_run_task, args=(env, recording_id), name=name, daemon=True
+    )
+    thread.start()
+    return thread
+
+
+@pytest.mark.anyio
+@needs_ffmpeg
+@pytest.mark.parametrize(
+    ("first", "second", "second_extracts_after_the_first_stored"),
+    [("A", "B", False), ("B", "A", False), ("A", "B", True)],
+    ids=["A-stores-first", "B-stores-first", "B-starts-after-A-stored"],
+)
+async def test_two_copies_of_the_task_keep_one_audio_and_the_import(
+    any_env: _Env,
+    monkeypatch: pytest.MonkeyPatch,
+    first: str,
+    second: str,
+    second_extracts_after_the_first_stored: bool,
+) -> None:
+    """Both copies pass the waiting check. Whichever stores first keeps its
+    audio and deletes the upload; the other removes only what it extracted,
+    even when it extracts after the upload is gone."""
+    env = any_env
+    source = env.tmp / "screen.mkv"
+    _screen_recording(source, ["-c:a", "aac"])
+    recording_id = _waiting_import(env, source)
+    upload = _recording(env)["audio_path"]
+    if second_extracts_after_the_first_stored:
+        gates = _gate_extraction(monkeypatch, before=True)
+        threads = {name: _copy(env, recording_id, name) for name in ("A", "B")}
+        assert gates[first][0].wait(30) and gates[second][0].wait(30)
+        gates[first][1].set()
+        threads[first].join(30)
+        gates[second][1].set()
+        threads[second].join(30)
+    else:
+        gates = _gate_extraction(monkeypatch, before=False)
+        threads = {name: _copy(env, recording_id, name) for name in ("A", "B")}
+        assert gates["A"][0].wait(30) and gates["B"][0].wait(30)
+        for name in (first, second):
+            gates[name][1].set()
+            threads[name].join(30)
+
+    row = _recording(env)
+    assert (row["status"], row["processing_step"]) == ("QUEUED", None)
+    assert row["audio_path"].endswith(".m4a")
+    assert _files(env.recordings) == [Path(row["audio_path"])]
+    assert not Path(upload).exists()
+    assert _dispatched_names(env) == [PROCESS_TASK, PROXY_TASK]
+
+
+@pytest.mark.anyio
+@needs_ffmpeg
+async def test_a_fault_after_extraction_leaves_the_upload_for_the_next_copy(
+    any_env: _Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Before the kept audio is stored, the upload is all there is: a fault
+    there removes the extracted file only, and the import waits on."""
+    env = any_env
+    source = env.tmp / "screen.mkv"
+    _screen_recording(source, ["-c:a", "aac"])
+    recording_id = _waiting_import(env, source)
+    before = _recording(env)
+
+    def fail(*args, **kwargs) -> None:
+        raise RuntimeError("connection lost")
+
+    rebuild = imported_audio._rebuild_import_window
+    monkeypatch.setattr(imported_audio, "_rebuild_import_window", fail)
+    with pytest.raises(RuntimeError, match="connection lost"):
+        _run_task(env, recording_id)
+
+    assert _recording(env) == before
+    assert _files(env.recordings) == [Path(before["audio_path"])]
+    assert env.dispatched == []
+
+    monkeypatch.setattr(imported_audio, "_rebuild_import_window", rebuild)
+    _run_task(env, recording_id)
+
+    row = _recording(env)
+    assert (row["status"], row["processing_step"]) == ("QUEUED", None)
+    assert _files(env.recordings) == [Path(row["audio_path"])]
