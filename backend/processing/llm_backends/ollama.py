@@ -238,12 +238,15 @@ class OllamaLLMBackend(LLMBackend):
             **kwargs,
         )
 
+    def _fetch_model_names(self) -> List[str]:
+        resp = self._get("/api/tags", timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+        return sorted([m["name"] for m in data.get("models", [])])
+
     def list_models(self) -> List[str]:
         try:
-            resp = self._get("/api/tags", timeout=10)
-            resp.raise_for_status()
-            data = resp.json()
-            return sorted([m["name"] for m in data.get("models", [])])
+            return self._fetch_model_names()
         except Exception as e:  # noqa: BLE001
             logger.error(f"Ollama API error (list models): {e}")
             return []
@@ -758,8 +761,10 @@ class OllamaLLMBackend(LLMBackend):
             raise RuntimeError(f"Ollama API error (meeting title): {e}")
 
     def validate_api_key(self) -> bool:
+        # Not list_models, which answers [] for any failure: validation has to
+        # see the error, as the hosted backends' raw models.list() calls do.
         try:
-            self.list_models()
+            self._fetch_model_names()
             return True
         except Exception as e:  # noqa: BLE001
             logger.error(f"Ollama API validation failed: {e}")
