@@ -8,22 +8,34 @@ Container images for this release. All images are cosign-signed and ship build-p
 
 <!-- Maintainer: one bullet per item, one or two sentences each. What an operator would notice, not how it works. Detail belongs in the docs. Remove the section if a release has nothing to lead with. -->
 
-- **Anthropic models work again.** Version 1 of the Anthropic SDK removed the `temperature` parameter, and the 2.5.0 images install that version, so every Anthropic request failed before it left the server. Nojoin no longer sends it (#272).
-- **Merging duplicate speakers no longer joins two identified people.** An unnamed third voice that resembled both could bridge them, collapsing one confirmed identification into the other. The check now covers the whole group a merge would create (#270).
-- **Assigning a line to a person always shows that person.** The assignment could land on a speaker record that an earlier merge had retired, and the transcript then fell back to the raw diarization label (#270).
-- **A code execution flaw in the diarization model loader is closed.** CVE-2026-58659 let a crafted PyTorch Lightning checkpoint run code when loaded. The worker loads pyannote models that ship with Nojoin or come from Hugging Face, so the exposure was a tampered model file. Both Lightning packages move to the fixed 2.6.6 (#288).
-- **The API image carries current Debian security fixes.** Its base image lags the Debian archive by weeks, so the image now applies pending system package updates when it is built. This release picks up fixes to gzip, PCRE2, SQLite, Perl and OpenSSL (#291).
-- **The notes editor is off a vulnerable tiptap release.** GHSA-cp6q-959q-f8rh in `@tiptap/core` is cleared by moving the whole tiptap family together (#272).
-- Routine updates include React 19.3, Next.js 16.3.5 and uvicorn 0.53 (#284, #288, #292).
+- **Backups include every recording's audio.** Browser recordings and AAC, MP4 and WMA imports went into the archive as metadata only, and the export still reported success. Take a fresh backup after upgrading (#332).
+- **A failed transcription is reported as a failure.** A GPU out-of-memory run was saved as an empty, completed transcript. The recording now ends in Error with the reason, after one retry with the GPU memory freed (#317).
+- **Transcripts keep all their text.** The final merge dropped segments without word timings and fragments shorter than a tenth of a second (#349). Finalize could also fail on a duplicate utterance id when diarization was off or word timings were missing (#344).
+- **Notes work with current Claude models.** Claude Haiku 5.5, Sonnet 5.5 and Opus 5.5 think by default, so a reply can open with a thinking block, and Nojoin read only the first block. Notes and the other Anthropic calls failed whenever the model thought first (#363).
+- **Ollama refuses a prompt that does not fit its context window.** Ollama cut the start of an oversized prompt without an error, so a long meeting got notes about its last part only. Nojoin now sizes the window to the model and fails the request instead (#343).
+- **Video and media files can be imported.** MKV, MKA, MOV, AVI, M4V, TS, MTS, MPEG and 3GP files are accepted and only their audio is kept, so an hour of OBS recording is stored as 76 MB instead of 3.5 GB (#333).
+- **Large imports work.** Each uploaded chunk hashed every chunk before it again, so a 3 GB video import froze the server for seconds at a time and slowed as it went, and an import over 2 GiB then failed to finalise. Each chunk is now read once, and files over 2 GiB finalise (#362, #364).
+- **Speech detection and speaker separation can be tuned per user** under **Settings > Recording** (#340).
+- **New appearance settings** choose the colour palette (Graphite, Ultraviolet or Marigold), the corner style and the density, kept per browser. Dark mode no longer flashes light on a hard reload (#320).
+- **The API stays responsive while an AI provider is down.** Listing models from an unreachable Ollama server held up every request for 10 seconds. Validating an unreachable Ollama server now fails instead of reporting a connection (#358, #359).
+- **Fewer model downloads.** GPU hosts prepare the Parakeet or Canary weights they load, where they used to fetch the int8 copy and then download another 2.5 to 4 GB on the first transcription (#338). The embedding model stays in the model cache across image updates (#328).
+- **Delivery and overlap analytics measure browser recordings** and WebM, M4A, AAC, MP4 and WMA imports. Neither could open these files before (#331).
+- **JWT handling moves from the unmaintained python-jose to PyJWT.** Sessions and API tokens issued before the upgrade stay valid (#330). Next.js 16.3.8, sharp 0.35.5 and source-map-js 1.2.2 clear HIGH advisories (#321), and the worker images patch OpenSSL CVE-2026-84782, fsspec CVE-2026-104851, urllib3 and the kernel headers (#361).
+
+### Breaking Changes
+
+- **One transcription engine and model for the whole install.** **Settings > Transcription** saved the choice on the account of the administrator who made it, and every other user ran on the install default. On first start the owner's choice becomes the install's, so a single-user install needs no action. On an install with several users, everyone now transcribes with the owner's engine and model, and a choice saved by another administrator is not carried over (#334).
 
 ### Upgrade
 
-Pull the new images and recreate the stack:
+Pull the new images and recreate the stack.
 
 ```bash
 docker compose pull
 docker compose up -d
 ```
+
+- Take a fresh backup once the stack is up. Archives from earlier versions hold browser recordings and AAC, MP4 and WMA imports without their audio.
 
 ### Migration
 
@@ -31,23 +43,25 @@ Database migrations run automatically on the first API start after upgrading. Ba
 
 <!-- Maintainer: note any blocking first-boot migration, longer startup, or manual step. Keep it to bullets. -->
 
-- No Alembic revisions in this release. Nothing about the schema changes, and no first-boot migration runs.
-- No change to the example compose file, the environment variables or the nginx configuration. Pulling the new images is the whole upgrade.
-- The upgrade does not change recordings whose speakers were already wrongly merged. Reprocessing such a recording runs the corrected merge pass.
+- One Alembic revision widens `recordings.file_size_bytes` to a 64-bit integer, so imports over 2 GiB can be finalised. It runs on the first API start and takes moments.
+- On first start the API copies the owner's transcription engine and model into `config.json` and clears them from the owner's account. It runs once and needs no action.
+- No change to the example compose file, the environment variables or the nginx configuration.
+- The backup format is unchanged. Original-quality archives grow by the audio that earlier versions left out, and audio members are now stored without zip compression.
 
 ### Rollback
 
 <!-- Maintainer: state whether rollback is code-only or requires data steps. Default below. -->
 
-- Code only. Redeploy the previous image tags.
-- Nothing to downgrade, since this release adds no schema revision.
-- Rolling back to 2.5.0 brings back the Anthropic failure and the Lightning flaw, so prefer fixing forward.
+- Roll the schema back before the images, because the 2.5.1 API refuses to start against a revision it does not know. With 2.6.0 still running, run `docker compose exec api alembic downgrade f7a2c6d3b418`, then redeploy the 2.5.1 image tags. The downgrade clears the stored size of any recording over 2 GiB.
+- 2.5.1 reads the engine setting from `config.json` as the install default, so the owner keeps the same engine.
+- Rolling back to 2.5.1 brings back the backups without audio and the empty transcripts after a GPU failure, so prefer fixing forward.
 
 ### Known Issues
 
 <!-- Maintainer: list known issues affecting this release, or leave the default. -->
 
-- Anthropic models now run at the provider's default sampling, where Nojoin previously set a low fixed temperature. Notes and titles from Anthropic models can vary more between runs than before. Other providers are unchanged.
+- New in 2.6.0. With Ollama, a meeting whose transcript does not fit the context window now fails note generation, where it used to get notes about its end only. Raise the Ollama context window under **Settings > AI providers** if the GPU has room, or use a hosted provider for long meetings. Splitting long meetings into parts is planned.
+- Carried over from 2.5.1. Anthropic models run at the provider's default sampling, so their notes and titles can vary more between runs than other providers'.
 - Carried over from 2.4.0. The AI analytics tier spends your own provider quota on every run, is never dispatched automatically, and has no account level cap.
 - Carried over. Measured delivery does not refresh itself, so a transcript edited afterwards is reported stale and re-measured only when asked, and overlapping speech is a floor rather than a total.
 - Carried over. The 120 second GPU window can be too large when live capture and transcription contend for one card, and the Codex payload in the worker-io image is a stripped static binary that scanners cannot introspect.
