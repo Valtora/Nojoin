@@ -31,6 +31,9 @@ from backend.utils.vision import VisionImage, VisionUnsupportedError
 
 logger = logging.getLogger(__name__)
 
+from backend.processing.llm_backends.anthropic_models import (
+    anthropic_model_capabilities,
+)
 from backend.processing.llm_backends.base import (
     CHAT_MAX_OUTPUT_TOKEN_LADDER,
     NOTES_MAX_OUTPUT_TOKEN_LADDER,
@@ -42,6 +45,15 @@ from backend.processing.llm_backends.base import (
     raise_if_output_truncated,
 )
 
+# Output ceilings for the three calls whose answers are short. Current Claude
+# models think by default and thinking tokens count against max_tokens, so a
+# ceiling sized for the answer alone could be spent entirely on thinking and
+# leave no text block at all. These are ceilings, not targets: generation stops
+# when the answer is done, so the headroom costs nothing on a normal reply.
+SPEAKER_SUGGESTIONS_MAX_TOKENS = 4096
+MEETING_EDGE_MAX_TOKENS = 8192
+MEETING_TITLE_MAX_TOKENS = 2048
+
 
 def _response_text(response) -> str:
     """The answer in a Messages API response: its text blocks, joined.
@@ -50,6 +62,24 @@ def _response_text(response) -> str:
     thinking block, and citations split one answer across several text blocks.
     """
     return "".join(block.text for block in response.content if block.type == "text")
+
+
+def _response_text_or_raise(response, what: str) -> str:
+    """``_response_text``, failing when the output limit was spent before any text.
+
+    A reply that is all thinking and no text is an output-limit failure, and
+    must not reach a parser as an empty answer: the contract parsers would
+    report it as a malformed reply, and the title parser as an empty title.
+    """
+    text = _response_text(response)
+    stop_reason = str(getattr(response, "stop_reason", "") or "").lower()
+    if not text.strip() and stop_reason == "max_tokens":
+        raise RuntimeError(
+            f"Anthropic reached its output limit before writing {what}. The "
+            "model spent the whole limit thinking; try again, or choose a model "
+            "that thinks less."
+        )
+    return text
 
 
 class AnthropicLLMBackend(LLMBackend):
@@ -124,6 +154,19 @@ class AnthropicLLMBackend(LLMBackend):
             f"Model {self.model} rejected every supported output limit: {last_error}"
         )
 
+    def _brief_reply_kwargs(self) -> dict[str, Any]:
+        """Request parameters that keep a short-answer call short.
+
+        A model that thinks by default is asked for low effort, so its thinking
+        stays well inside the call's output ceiling. Nothing is sent to a model
+        that would reject ``output_config.effort`` with a 400, and nothing to a
+        model that does not think unless asked, where there is nothing to trim.
+        """
+        capabilities = anthropic_model_capabilities(self.model)
+        if capabilities.thinks_by_default and capabilities.accepts_effort:
+            return {"output_config": {"effort": "low"}}
+        return {}
+
     def _create_notes_message(self, prompt: str):
         return self._create_with_ceiling(
             NOTES_MAX_OUTPUT_TOKEN_LADDER,
@@ -185,10 +228,11 @@ class AnthropicLLMBackend(LLMBackend):
         try:
             response = self.client.messages.create(
                 model=self.model,
-                max_tokens=1024,
+                max_tokens=SPEAKER_SUGGESTIONS_MAX_TOKENS,
                 messages=[{"role": "user", "content": prompt}],
+                **self._brief_reply_kwargs(),
             )
-            text = _response_text(response)
+            text = _response_text_or_raise(response, "the speaker suggestions")
             return self.parse_speaker_inference_result(text, eligible_labels)
         except Exception as e:  # noqa: BLE001
             logger.error(f"Anthropic API error (speaker suggestions): {e}")
@@ -375,13 +419,14 @@ class AnthropicLLMBackend(LLMBackend):
             # fenced/prose wrapping, so raw JSON is not forced by a prefill.
             response = self.client.messages.create(
                 model=self.model,
-                max_tokens=2048,
+                max_tokens=MEETING_EDGE_MAX_TOKENS,
                 messages=[
                     {"role": "user", "content": user_content},
                 ],
                 timeout=timeout,
+                **self._brief_reply_kwargs(),
             )
-            text = _response_text(response)
+            text = _response_text_or_raise(response, "the Meeting Edge update")
             return self.parse_meeting_edge_result(text, request)
         except Exception as e:  # noqa: BLE001
             logger.error(f"Anthropic API error (Meeting Edge): {e}")
@@ -591,10 +636,11 @@ class AnthropicLLMBackend(LLMBackend):
         try:
             response = self.client.messages.create(
                 model=self.model,
-                max_tokens=1024,
+                max_tokens=MEETING_TITLE_MAX_TOKENS,
                 messages=[{"role": "user", "content": prompt}],
+                **self._brief_reply_kwargs(),
             )
-            title = self.parse_title(_response_text(response))
+            title = self.parse_title(_response_text_or_raise(response, "the title"))
             return title
         except Exception as e:  # noqa: BLE001
             logger.error(f"Anthropic API error (meeting title): {e}")
