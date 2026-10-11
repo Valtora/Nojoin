@@ -851,6 +851,22 @@ export interface TelemetryStatus {
   /** A short sentence naming the failure, written by the backend. Null on success. */
   last_attempt_detail: string | null;
   grace_period_days: number;
+  /**
+   * The install heartbeat: the install ID and version, daily and on each new
+   * version. It has no switch in the app, so these fields describe it rather
+   * than control it.
+   */
+  heartbeat_enabled: boolean;
+  /**
+   * Why the heartbeat is not sent: NOJOIN_TELEMETRY_ENABLED=false, or an
+   * opt-out made on this install before the heartbeat existed. Null when sent.
+   */
+  heartbeat_blocked_by: "environment" | "earlier_opt_out" | null;
+  heartbeat_endpoint: string;
+  heartbeat_last_sent_at: string | null;
+  heartbeat_last_attempt_at: string | null;
+  heartbeat_last_attempt_ok: boolean | null;
+  heartbeat_last_attempt_detail: string | null;
 }
 
 export interface AdminHealthSummary {

@@ -677,9 +677,12 @@ Nothing is sampled into the log on a schedule; a quiet system stays quiet. Tunin
 
 ## Anonymous Telemetry
 
-An opt-out Celery Beat task on the IO lane sends one anonymous ping every six hours describing deployment scale, configuration shape, and feature adoption. The receiving service upserts on install id and UTC day, so the cadence buys resilience against a restart re-anchoring the beat interval rather than extra rows. It is identified only by a random install id held in `data/.install_id`, and carries no meeting content, names, or addresses.
+Two Celery Beat tasks on the IO lane report to the collector, both identified only by a random install id held in `data/.install_id`, and neither carrying meeting content, names, or addresses.
 
-State ownership is split deliberately so no two processes write the same value: the API is the only writer of the `telemetry_*` keys in `config.json`, the worker is the only writer of the Redis last-sent marker, and the install id file is write-once. The worker reloads configuration before every consent check, so an operator's opt-out takes effect on the next cycle rather than on the next container restart. Sending is best-effort with no retry, so a network fault can never escalate into repeated calls.
+- **The install heartbeat** carries the install id and the version. A task checks every fifteen minutes and sends when the install has never sent one, has started on a new version, or has not sent one this UTC day. It needs no consent; `NOJOIN_TELEMETRY_ENABLED=false` and an opt-out recorded before the heartbeat existed are its only exemptions.
+- **The usage diagnostics** describe deployment scale, configuration shape, and feature adoption, every six hours once the install consents. The receiving service upserts on install id and UTC day, so the cadence buys resilience against a restart re-anchoring the beat interval rather than extra rows.
+
+State ownership is split deliberately so no two processes write the same value: the API is the only writer of the `telemetry_*` keys in `config.json`, the worker is the only writer of the Redis send markers, and the install id file is write-once. The worker reloads configuration before every consent check, so an operator's opt-out takes effect on the next cycle rather than on the next container restart. Sending is best-effort: the diagnostics never retry, and a failed heartbeat waits an hour, so a network fault can never escalate into repeated calls. The collector keeps every row indefinitely.
 
 The receiving Cloudflare Worker and its D1 schema live in [telemetry/](../telemetry/). See [TELEMETRY.md](TELEMETRY.md).
 

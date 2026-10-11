@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { dayBucket, parsePayload, type TelemetryRow } from "../src/payload";
+import {
+  dayBucket,
+  parseHeartbeat,
+  parsePayload,
+  type HeartbeatRow,
+  type TelemetryRow,
+} from "../src/payload";
 
 const VALID = {
   schema: 1,
@@ -139,6 +145,59 @@ describe("row shape", () => {
         "whisper_model_size",
       ].sort(),
     );
+  });
+});
+
+const HEARTBEAT = {
+  schema: 1,
+  install_id: "3F2A5C1E-9B4D-4A7F-8E1C-2D6B0A9F4E33",
+  version: "2.7.0",
+};
+
+function heartbeatValid(overrides: Record<string, unknown> = {}): HeartbeatRow {
+  const result = parseHeartbeat({ ...HEARTBEAT, ...overrides });
+  if (!result.ok) {
+    throw new Error(`expected heartbeat to parse, got: ${result.error}`);
+  }
+  return result.row;
+}
+
+describe("parseHeartbeat", () => {
+  it.each([
+    ["a string body", "nope"],
+    ["an array body", [1, 2, 3]],
+    ["null", null],
+  ])("rejects %s", (_label, body) => {
+    expect(parseHeartbeat(body).ok).toBe(false);
+  });
+
+  it("rejects an unsupported schema version", () => {
+    expect(parseHeartbeat({ ...HEARTBEAT, schema: 2 }).ok).toBe(false);
+    expect(parseHeartbeat({ ...HEARTBEAT, schema: "1" }).ok).toBe(false);
+  });
+
+  it("rejects a malformed install_id, since it is the dedupe key", () => {
+    for (const bad of ["", "not-a-uuid", 42, null]) {
+      expect(parseHeartbeat({ ...HEARTBEAT, install_id: bad }).ok).toBe(false);
+    }
+  });
+
+  it("lowercases the install id so it joins with the same install's pings", () => {
+    expect(heartbeatValid().install_id).toBe("3f2a5c1e-9b4d-4a7f-8e1c-2d6b0a9f4e33");
+  });
+
+  it("keeps a heartbeat with an unreadable version, storing the version as null", () => {
+    expect(heartbeatValid({ version: "x".repeat(200) }).version).toBeNull();
+    expect(heartbeatValid({ version: undefined }).version).toBeNull();
+  });
+
+  // The heartbeat cannot be switched off in the app, so docs/TELEMETRY.md
+  // promises it stores two values and nothing else. Unlike the ping there is
+  // no raw payload column: an extra field is accepted and then dropped.
+  it("stores the install id and version and discards every other field", () => {
+    const row = heartbeatValid({ hostname: "meetings.example.com", users_total: 4 });
+    expect(Object.keys(row).sort()).toEqual(["install_id", "version"]);
+    expect(JSON.stringify(row)).not.toContain("example.com");
   });
 });
 

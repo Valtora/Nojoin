@@ -120,9 +120,11 @@ Notes-language choices include British and American English, the transcription l
 
 ### Anonymous Usage Data
 
-Use **Settings > Privacy** to turn the six-hourly anonymous ping on or off, and to see this install's random ID, the endpoint, and when a ping was last sent. A failed attempt is reported there with its reason, so a "Last sent: Never" that means "never tried" can be told apart from one that means "tried and blocked". The panel also lists exactly what the ping contains.
+Use **Settings > Privacy** to turn the six-hourly usage diagnostics on or off, and to see this install's random ID, both endpoints, and when the heartbeat and the diagnostics were last sent. A failed attempt is reported there with its reason, so a "Last sent: Never" that means "never tried" can be told apart from one that means "tried and blocked". The panel also lists exactly what each contains.
 
-On an installation upgraded into this feature, nothing is sent until an administrator has seen the one-time notice; the panel says so explicitly while that is the case. If `NOJOIN_TELEMETRY_ENABLED` is set in the environment, the toggle is read-only and the panel explains why.
+The daily install heartbeat is shown in the same panel with no switch: only `NOJOIN_TELEMETRY_ENABLED=false` stops it. If this installation turned telemetry off before 2.7.0, the panel says the heartbeat is not sent and why.
+
+On an installation upgraded into this feature, no diagnostics are sent until an administrator has seen the one-time notice; the panel says so explicitly while that is the case. If `NOJOIN_TELEMETRY_ENABLED` is set in the environment, the toggle is read-only and the panel explains why.
 
 Read [TELEMETRY.md](TELEMETRY.md) for the full disclosure, the retention policy, and how to verify what is sent.
 

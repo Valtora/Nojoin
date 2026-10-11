@@ -23,8 +23,9 @@
       "database_id": "9ea9c413-8a9d-44d3-86ac-cbe9ba91d6db"
     }
   ],
-  // Flood guard only. A legitimate install sends four requests per day, one
-  // every six hours, so this is orders of magnitude above real use and exists
+  // Flood guard only. A legitimate install sends at most five requests per
+  // day, one heartbeat and four diagnostics pings, plus a heartbeat retry an
+  // hour after a failure, so this is orders of magnitude above real use and exists
   // to stop a script from burning the daily Workers quota and taking real
   // installs offline. The key is the connecting address, so it also has to
   // tolerate several installs sharing one NAT egress.
@@ -38,11 +39,11 @@
       }
     }
   ],
-  // Retention sweep: roll raw rows older than 13 months into daily aggregates
-  // and delete them. 03:00 UTC is chosen to sit well away from the clustering
-  // of client pings, which follow each install's own worker start time and are
-  // spread further by the six-hour send interval never aligning to a fixed hour.
+  // No scheduled work. Rows are kept indefinitely, so the retention sweep that
+  // used to run here is gone. The empty list is explicit rather than omitted,
+  // so a deploy removes the old 03:00 trigger instead of leaving it pointing at
+  // a handler that no longer exists.
   "triggers": {
-    "crons": ["0 3 * * *"]
+    "crons": []
   }
 }

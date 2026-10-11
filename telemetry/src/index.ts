@@ -1,9 +1,16 @@
 /**
  * Nojoin anonymous telemetry ingest.
  *
- * Accepts one POST /v1/ping per install per day and stores it in D1. See
- * ../README.md for the deployment runbook and ../../docs/TELEMETRY.md for the
- * user-facing disclosure this code has to remain true to.
+ * Two routes, both one-way:
+ *
+ *   POST /v1/heartbeat  The install heartbeat: an install id and a version,
+ *                       sent on first start, on each new version, and daily.
+ *                       One row per install per UTC day.
+ *   POST /v1/ping       The optional usage diagnostics. One row per install
+ *                       per UTC day, holding the most recent ping.
+ *
+ * See ../README.md for the deployment runbook and ../../docs/TELEMETRY.md for
+ * the user-facing disclosure this code has to remain true to.
  *
  * Deliberate non-features:
  *   - Nothing derived from the connection is stored. No IP, no User-Agent, no
@@ -11,10 +18,11 @@
  *   - No response body. The ingest is one-way; it must never become a channel
  *     that tells an install something, because that would give operators a
  *     reason to keep telemetry on that has nothing to do with consent.
+ *   - No deletion. Rows are kept indefinitely so trends can be followed over
+ *     years, which is why there is no scheduled handler here.
  */
 
-import { dayBucket, parsePayload } from "./payload";
-import { retentionCutoff, rollupStatements } from "./rollup";
+import { dayBucket, parseHeartbeat, parsePayload } from "./payload";
 
 export interface Env {
   DB: D1Database;
@@ -23,6 +31,20 @@ export interface Env {
 
 /** Bodies larger than this are not plausible for the documented payload. */
 const MAX_BODY_BYTES = 8192;
+
+/** The heartbeat is three short fields; anything near this size is not one. */
+const MAX_HEARTBEAT_BYTES = 1024;
+
+// Keyed on (install_id, day) like the ping, so a retried or repeated heartbeat
+// rewrites its own row. The version is updated in place, which records an
+// upgrade on the day it happened.
+const HEARTBEAT_SQL = `
+INSERT INTO heartbeats (install_id, day, version, received_at)
+VALUES (?1, ?2, ?3, ?4)
+ON CONFLICT (install_id, day) DO UPDATE SET
+  version = excluded.version,
+  received_at = excluded.received_at
+`;
 
 const INSERT_SQL = `
 INSERT INTO pings (
@@ -67,33 +89,66 @@ function status(code: number): Response {
   return new Response(null, { status: code });
 }
 
-async function handlePing(request: Request, env: Env): Promise<Response> {
+/**
+ * The checks every route shares: the flood guard, a size cap, and JSON
+ * decoding. Returns the decoded body, or the response to send instead.
+ */
+async function readBody(
+  request: Request,
+  env: Env,
+  maxBytes: number,
+): Promise<{ body: unknown } | { response: Response }> {
   // Keyed on the connecting address purely as a flood guard. The value is used
   // for the limiter decision and is never stored.
   const clientIp = request.headers.get("CF-Connecting-IP") ?? "unknown";
   const { success } = await env.PING_LIMITER.limit({ key: clientIp });
   if (!success) {
-    return status(429);
+    return { response: status(429) };
   }
 
   const declaredLength = Number(request.headers.get("content-length") ?? "0");
-  if (declaredLength > MAX_BODY_BYTES) {
-    return status(413);
+  if (declaredLength > maxBytes) {
+    return { response: status(413) };
   }
 
   const raw = await request.text();
-  if (raw.length > MAX_BODY_BYTES) {
-    return status(413);
+  if (raw.length > maxBytes) {
+    return { response: status(413) };
   }
 
-  let body: unknown;
   try {
-    body = JSON.parse(raw);
+    return { body: JSON.parse(raw) };
   } catch {
+    return { response: status(400) };
+  }
+}
+
+async function handleHeartbeat(request: Request, env: Env): Promise<Response> {
+  const read = await readBody(request, env, MAX_HEARTBEAT_BYTES);
+  if ("response" in read) {
+    return read.response;
+  }
+
+  const parsed = parseHeartbeat(read.body);
+  if (!parsed.ok) {
     return status(400);
   }
 
-  const parsed = parsePayload(body);
+  const receivedAt = Date.now();
+  await env.DB.prepare(HEARTBEAT_SQL)
+    .bind(parsed.row.install_id, dayBucket(receivedAt), parsed.row.version, receivedAt)
+    .run();
+
+  return status(204);
+}
+
+async function handlePing(request: Request, env: Env): Promise<Response> {
+  const read = await readBody(request, env, MAX_BODY_BYTES);
+  if ("response" in read) {
+    return read.response;
+  }
+
+  const parsed = parsePayload(read.body);
   if (!parsed.ok) {
     return status(400);
   }
@@ -135,11 +190,17 @@ async function handlePing(request: Request, env: Env): Promise<Response> {
   return status(204);
 }
 
+const ROUTES: Record<string, (request: Request, env: Env) => Promise<Response>> = {
+  "/v1/heartbeat": handleHeartbeat,
+  "/v1/ping": handlePing,
+};
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
 
-    if (url.pathname !== "/v1/ping") {
+    const handler = ROUTES[url.pathname];
+    if (!handler) {
       return status(404);
     }
     if (request.method !== "POST") {
@@ -147,22 +208,13 @@ export default {
     }
 
     try {
-      return await handlePing(request, env);
+      return await handler(request, env);
     } catch {
       // A failure here must not be diagnosable from outside: the ingest is
       // public, and an error body is free reconnaissance. Detail goes to the
       // Workers log instead, which observability can query.
-      console.error("ping failed");
+      console.error(`${url.pathname} failed`);
       return status(500);
     }
-  },
-
-  async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
-    const cutoff = retentionCutoff(Date.now());
-    const statements = rollupStatements().map((sql) =>
-      env.DB.prepare(sql).bind(cutoff),
-    );
-    await env.DB.batch(statements);
-    console.log(`rolled up and pruned pings before ${cutoff}`);
   },
 } satisfies ExportedHandler<Env>;

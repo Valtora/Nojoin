@@ -231,6 +231,7 @@ TASK_ROUTES = {
     # the API mounts that volume read-only.
     "backend.worker.tasks.delete_model_task": {"queue": IO_QUEUE},
     "backend.worker.tasks.send_telemetry_ping_task": {"queue": IO_QUEUE},
+    "backend.worker.tasks.send_telemetry_heartbeat_task": {"queue": IO_QUEUE},
 }
 
 # Recordings touched by one automatic voiceprint-rebuild tick. The rebuild runs
@@ -310,7 +311,7 @@ celery_app.conf.update(
             "task": "backend.worker.tasks.renew_calendar_push_channels_task",
             "schedule": 1800.0,
         },
-        # Anonymous opt-out telemetry (docs/TELEMETRY.md). The task itself is a
+        # Optional usage diagnostics (docs/TELEMETRY.md). The task itself is a
         # no-op unless the install is enabled and has consented, so scheduling it
         # unconditionally is safe. Beat runs on the io lane only, so pings are
         # attempted once per interval per install regardless of worker count.
@@ -330,6 +331,16 @@ celery_app.conf.update(
         "send-telemetry-ping-every-6h": {
             "task": "backend.worker.tasks.send_telemetry_ping_task",
             "schedule": 21600.0,
+        },
+        # The install heartbeat (docs/TELEMETRY.md). Fifteen minutes is how
+        # often it checks, not how often it sends: the task returns at once
+        # unless the install has never sent one, has started on a new version,
+        # or has not sent one this UTC day. The short interval is what lets a
+        # new install be counted within minutes of starting, where the
+        # six-hour tick above would miss anything torn down sooner.
+        "send-telemetry-heartbeat-every-15m": {
+            "task": "backend.worker.tasks.send_telemetry_heartbeat_task",
+            "schedule": 900.0,
         },
         # Repairs voiceprints stranded by an extraction-method upgrade. Stale
         # voiceprints stop contributing to speaker identification silently, so
