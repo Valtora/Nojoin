@@ -5,6 +5,11 @@ from datetime import UTC, date, datetime
 import pytest
 import redis.connection
 
+# Relationships name their targets by string, so a module that builds its own
+# schema fails with NoReferencedTableError when run alone unless every model is
+# registered first. The full suite hid this behind whichever module imported
+# the registry earlier.
+import backend.models.registry  # noqa: F401
 from backend.celery_app import celery_app
 from backend.tests.redis_guard import (
     harden_celery_retry_policies,
