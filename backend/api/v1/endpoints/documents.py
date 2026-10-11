@@ -24,6 +24,7 @@ from backend.processing.documents import SUPPORTED_EXTENSIONS
 from backend.services.recording_identity_service import get_recording_by_public_id
 from backend.utils.path_manager import PathManager
 from backend.utils.rate_limit import enforce_upload_concurrency
+from backend.utils.time import utc_now
 from backend.utils.upload_limit import (
     UPLOAD_LIMIT_DOCUMENT,
     ensure_disk_headroom,
@@ -108,7 +109,14 @@ async def list_documents(
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
 
-    stmt = select(Document).where(Document.recording_id == recording.id)
+    # Upload order, not completion order: created_at is stamped when an upload
+    # starts (see upload_document), so a batch sent two at a time lists in the
+    # order it was queued even when a smaller file finishes first.
+    stmt = (
+        select(Document)
+        .where(Document.recording_id == recording.id)
+        .order_by(Document.created_at, Document.id)
+    )
     result = await db.execute(stmt)
     documents = result.scalars().all()
 
@@ -210,6 +218,10 @@ async def upload_document(  # noqa: PLR0913 - FastAPI dependencies are parameter
     charts, diagrams and scanned pages survive. Setting it false restricts the
     parse to structural extraction, which costs nothing and calls no provider.
     """
+    # The document's place in the list is reserved now, before the bytes are
+    # read: the client uploads a batch two at a time, and a row stamped at
+    # completion would list a small file ahead of the larger one queued first.
+    started_at = utc_now()
     recording = await _get_owned_recording(db, recording_id, current_user.id)
 
     file_ext = os.path.splitext(file.filename or "")[1].lower()
@@ -258,6 +270,7 @@ async def upload_document(  # noqa: PLR0913 - FastAPI dependencies are parameter
         file_path=file_path,
         file_type=file.content_type or "application/octet-stream",
         file_size_bytes=size_bytes,
+        created_at=started_at,
         status=DocumentStatus.PENDING,
         parse_mode=(
             DocumentParseMode.VISUAL if deep_parse else DocumentParseMode.STRUCTURAL
