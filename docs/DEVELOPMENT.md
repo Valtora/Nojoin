@@ -743,6 +743,16 @@ for img in nojoin-api:scan nojoin-worker:scan nojoin-worker-io:scan nojoin-front
 done
 ```
 
+Trivy cannot see inside the Codex CLI, which `docker/Dockerfile.worker-io` installs as a stripped native binary. The build verifies both subscription CLIs against the npm registry's signatures and provenance attestations (`npm audit signatures`, which fails the build on a package that does not verify) and records the versions it installed, so the remaining check is against upstream advisories. Before cutting a tag, read the versions from the built image and look each up in the GitHub advisory database:
+
+```bash
+docker run --rm --entrypoint cat nojoin-worker-io:scan /usr/local/share/nojoin/cli-versions.json
+gh api 'advisories?ecosystem=npm&affects=@openai/codex@<version>' --jq '.[] | [.ghsa_id, .severity, .summary] | @tsv'
+gh api 'advisories?ecosystem=npm&affects=@anthropic-ai/claude-code@<version>' --jq '.[] | [.ghsa_id, .severity, .summary] | @tsv'
+```
+
+An empty result is a clean version. A hit means rebuilding the image once the fixed release is on the registry, since the CLIs are unpinned and a rebuild installs the latest. The same versions are in the image's SBOM attestation under the `Node.js` packages.
+
 These flags mirror the gate in [release.yml](../.github/workflows/release.yml). Building the worker pulls the large PyTorch/CUDA base on first run. Add `--scanners vuln` to focus on the CVE gate and skip Trivy's secret scanner, which can flag locally generated material (see below).
 
 **Remediation patterns the `requirements/` files and lockfiles do not cover.** Trivy scans files present in the built image, so several classes of finding live outside the dependency graph and need an image-level fix:

@@ -71,6 +71,7 @@ Nojoin can route a user's AI inference through their own **Claude** (Pro/Max) or
 - CLI OAuth is **swappable and non-load-bearing**: any failure (auth, usage limit) degrades through the server's default provider chain — the primary provider first, then the secondary if that also fails. Usage limits set a best-effort reset time surfaced in Settings.
 - Usage accounting stores **aggregate counts only**: a per-user daily rollup of token counts and request totals, plus the latest rate-limit reading, so administrators can review subscription usage. Prompt and response **content is never stored**, and the SDK's notional per-turn cost is kept for reference but never surfaced as money (a subscription is flat-rate).
 - Disconnecting (Settings > Your AI) deletes the encrypted credential and wipes the user's per-user CLI working directory.
+- The two CLIs are installed unpinned, so each image build takes the latest release. The build **verifies both against the npm registry's signatures and provenance attestations** and fails if either does not verify, and it records the installed versions at `/usr/local/share/nojoin/cli-versions.json` in the image (the SBOM attestation carries them too). The Codex CLI ships as a stripped native binary that the image scanner cannot inspect, so a release check looks its version up in the advisory database by hand; see [DEVELOPMENT.md](DEVELOPMENT.md#validating-images-locally-before-cutting-a-tag).
 
 ## JWT Signing Key Rotation
 
