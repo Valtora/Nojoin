@@ -2,7 +2,12 @@
 
 import { Sparkles } from "lucide-react";
 
-import type { AnalyticsAi, AnalyticsAiStatus, AnalyticsSpeaker } from "@/types";
+import type {
+  AnalyticsAi,
+  AnalyticsAiBudget,
+  AnalyticsAiStatus,
+  AnalyticsSpeaker,
+} from "@/types";
 
 import AiDecisions from "./AiDecisions";
 import AiQuestions from "./AiQuestions";
@@ -22,7 +27,30 @@ interface MeetingAnalysisPanelProps {
   onGenerate: () => void;
   generating: boolean;
   onPlaySegment?: (startMs: number) => void;
+  /** The user's daily budget for this tier; absent on older servers. */
+  budget?: AnalyticsAiBudget | null;
 }
+
+/** "14:00 UTC" from the budget's reset timestamp. */
+const formatResetTime = (iso: string): string => {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "midnight UTC";
+  const hh = String(date.getUTCHours()).padStart(2, "0");
+  const mm = String(date.getUTCMinutes()).padStart(2, "0");
+  return `${hh}:${mm} UTC`;
+};
+
+/** The sentence shown when the cap is reached; mirrors the server's refusal. */
+export const budgetExhaustedMessage = (budget: AnalyticsAiBudget): string =>
+  `Your daily AI analysis budget of ${budget.limit} ${budget.limit === 1 ? "run" : "runs"} is used up. It resets at ${formatResetTime(budget.resets_at)}.`;
+
+/** "2 of 5 analyses left today", or nothing when there is no cap. */
+export const budgetRemainingMessage = (
+  budget: AnalyticsAiBudget | null | undefined,
+): string | null => {
+  if (!budget || budget.limit === null || budget.remaining === null) return null;
+  return `${budget.remaining} of ${budget.limit} ${budget.limit === 1 ? "analysis" : "analyses"} left today.`;
+};
 
 const Subsection = ({
   title,
@@ -56,7 +84,13 @@ export default function MeetingAnalysisPanel({
   onGenerate,
   generating,
   onPlaySegment,
+  budget,
 }: MeetingAnalysisPanelProps) {
+  const exhausted = Boolean(
+    budget && budget.limit !== null && budget.remaining !== null && budget.remaining <= 0,
+  );
+  const remainingLine = budgetRemainingMessage(budget);
+
   const body = () => {
     if (status === "generating" || generating) {
       // This run takes minutes and the request that starts it returns in
@@ -89,9 +123,19 @@ export default function MeetingAnalysisPanel({
     }
 
     if (!ai || status !== "completed") {
+      if (exhausted && budget) {
+        // The server would refuse the request with this same sentence; saying
+        // it here spares the click and says when the button comes back.
+        return <Prompt message={budgetExhaustedMessage(budget)} />;
+      }
       return (
         <Prompt
-          message="Nojoin can read the transcript for the topics it moved through, how people put things, which questions went unanswered, and who owned each decision. It uses your AI provider, so it runs when you ask for it."
+          message={[
+            "Nojoin can read the transcript for the topics it moved through, how people put things, which questions went unanswered, and who owned each decision. It uses your AI provider, so it runs when you ask for it.",
+            remainingLine,
+          ]
+            .filter(Boolean)
+            .join(" ")}
           actionLabel="Analyse meeting"
           actionIcon={<Sparkles className="h-3.5 w-3.5" aria-hidden="true" />}
           onAction={onGenerate}
@@ -102,7 +146,13 @@ export default function MeetingAnalysisPanel({
 
     return (
       <div className="space-y-4">
-        {stale && (
+        {stale && exhausted && budget && (
+          <p className="rounded-surface-subtle border border-status-warning-border bg-status-warning-bg px-3 py-2 text-xs text-status-warning-fg">
+            The transcript has changed since this was written.{" "}
+            {budgetExhaustedMessage(budget)}
+          </p>
+        )}
+        {stale && !exhausted && (
           <StaleBanner
             message="The transcript has changed since this was written."
             actionLabel="Analyse again"

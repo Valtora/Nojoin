@@ -53,6 +53,7 @@ export const updateUser = async (
     password?: string;
     role?: string;
     is_active?: boolean;
+    ai_analysis_daily_limit?: number | null;
   },
 ): Promise<User> => {
   const response = await api.patch<User>(`/users/${userId}`, data);

@@ -20,7 +20,8 @@ CREATE TABLE users (
     token_version INTEGER NOT NULL,
     settings JSON,
     has_seen_demo_recording BOOLEAN NOT NULL,
-    invitation_id INTEGER
+    invitation_id INTEGER,
+    ai_analysis_daily_limit INTEGER
 )
 """
 
@@ -388,5 +389,16 @@ CREATE TABLE recording_audio_chunks (
     cleanup_eligible_at DATETIME,
     UNIQUE(recording_id, sequence_no),
     UNIQUE(recording_id, idempotency_key)
+)
+"""
+
+AI_ANALYSIS_RUNS_SCHEMA = """
+CREATE TABLE ai_analysis_runs (
+    id INTEGER PRIMARY KEY,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    user_id INTEGER NOT NULL,
+    recording_id INTEGER,
+    source VARCHAR(16) NOT NULL
 )
 """

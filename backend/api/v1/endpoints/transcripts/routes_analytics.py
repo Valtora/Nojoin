@@ -6,13 +6,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.deps import get_current_user, get_db
 from backend.core.task_dispatch import dispatch_task_best_effort
+from backend.models.ai_analysis import RUN_SOURCE_USER
 from backend.models.user import User
+from backend.services.ai_analysis_budget import (
+    AiAnalysisBudgetExhausted,
+    claim_run,
+    get_budget,
+)
 from backend.services.meeting_analytics import compute_recording_analytics
+from backend.utils.analytics_preferences import is_auto_remeasure_delivery_enabled
 from backend.utils.canonical_pipeline import (
     ensure_canonical_backfill,
     get_canonical_transcript_revision,
 )
-from backend.utils.config_manager import is_auto_remeasure_delivery_enabled
 from backend.utils.rate_limit import RATE_LIMIT_KEY_PREFIX, claim_once
 
 from .helpers import _get_owned_recording, _get_recording_transcript
@@ -49,6 +55,10 @@ class RecordingAnalyticsRead(BaseModel):
     ai_status: str = "pending"
     ai_error_message: str | None = None
     ai_stale: bool = False
+    # The caller's daily budget for the AI tier: limit (null for no cap),
+    # used, remaining and the UTC reset time, so the tab can say why the
+    # button is unavailable before a request is refused.
+    ai_budget: dict = {}
     # Overlapping speech measured from the audio. It has no staleness story:
     # it depends only on the audio, which never changes after processing. Its
     # status lives inside the block because the block is the whole lifecycle.
@@ -196,6 +206,7 @@ async def get_recording_analytics(
         # measuring delivery but before analysing does not mark the analysis
         # stale as well.
         ai_stale=_is_stale(ai, (ai or {}).get("event_watermark"), revision),
+        ai_budget=(await get_budget(db, current_user)).as_dict(),
         audio_overlap=(
             audio_overlap
             if (audio_overlap or {}).get("status") == "completed"
@@ -291,6 +302,14 @@ async def generate_recording_ai_analytics(
             status_code=409, detail="This meeting is already being analysed"
         )
 
+    # The budget is spent here, where the run is queued: a refused request
+    # logs nothing, and the log row commits with the dispatch below so a
+    # dispatch that never reaches the broker spends nothing either.
+    try:
+        await claim_run(db, current_user, recording.id, RUN_SOURCE_USER)
+    except AiAnalysisBudgetExhausted as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
+
     # As with delivery, the worker owns the status from here. Setting it in the
     # handler would strand the transcript in "generating" when a dispatch never
     # reaches the broker, and could overwrite a run that finished first.
@@ -300,10 +319,12 @@ async def generate_recording_ai_analytics(
         context="meeting analysis",
     )
     if dispatched is None:
+        await db.rollback()
         raise HTTPException(
             status_code=503,
             detail="Analysis could not be queued because the task broker is unreachable",
         )
+    await db.commit()
 
     return AnalyticsAiGenerateResponse(
         recording_id=recording.public_id, ai_status="generating"

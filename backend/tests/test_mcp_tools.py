@@ -85,7 +85,8 @@ SCHEMA_STATEMENTS = [
         token_version INTEGER NOT NULL DEFAULT 0,
         settings JSON,
         has_seen_demo_recording BOOLEAN NOT NULL DEFAULT 0,
-        invitation_id INTEGER
+        invitation_id INTEGER,
+    ai_analysis_daily_limit INTEGER
     )
     """,
     """
@@ -438,6 +439,16 @@ SCHEMA_STATEMENTS = [
         source_url VARCHAR(2048),
         external_updated_at DATETIME,
         UNIQUE(calendar_id, provider_event_id)
+    )
+    """,
+    """
+    CREATE TABLE ai_analysis_runs (
+        id INTEGER PRIMARY KEY,
+        created_at DATETIME NOT NULL,
+        updated_at DATETIME NOT NULL,
+        user_id INTEGER NOT NULL,
+        recording_id INTEGER,
+        source VARCHAR(16) NOT NULL
     )
     """,
 ]

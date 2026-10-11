@@ -29,6 +29,8 @@ export interface User {
   is_superuser: boolean;
   role: UserRole;
   force_password_change: boolean;
+  /** Per-user cap on AI analysis runs per UTC day. Null inherits the install default; 0 is no cap. */
+  ai_analysis_daily_limit?: number | null;
 }
 
 export interface Invitation {
@@ -397,6 +399,10 @@ export interface Settings {
   meeting_edge_context_level?: number;
   /** Re-measure stale delivery figures when the Analytics tab is next opened. */
   auto_remeasure_delivery?: boolean;
+  /** Queue the AI analysis of each meeting when it finishes processing, within the daily budget. */
+  auto_analyse_meetings?: boolean;
+  /** Install-wide cap on AI analysis runs per user per UTC day; null or 0 is no cap. Admin only. */
+  ai_analysis_daily_limit?: number | null;
   processing_device?: string;
   theme?: string;
   timezone?: string;
@@ -1102,6 +1108,9 @@ export interface RecordingAnalytics {
   // As delivery_stale, but tracked separately: each tier carries its own
   // watermark, so editing the transcript between the two does not mark both.
   ai_stale: boolean;
+  // The caller's daily budget for the AI tier, so the tab can say why the
+  // button is unavailable before a request is refused.
+  ai_budget: AnalyticsAiBudget;
   // No staleness field: overlap depends only on the audio, which never
   // changes after processing.
   audio_overlap: AnalyticsAudioOverlap | null;
@@ -1193,6 +1202,15 @@ export type AnalyticsDeliveryStatus =
 // Sentiment is read from the words alone and is deliberately never combined
 // with AnalyticsDelivery, which measures the sound of a voice. The two are
 // different kinds of evidence and are presented separately.
+export interface AnalyticsAiBudget {
+  /** Runs allowed per UTC day; null when there is no cap. */
+  limit: number | null;
+  used: number;
+  remaining: number | null;
+  /** ISO timestamp with an explicit UTC offset. */
+  resets_at: string;
+}
+
 export type AnalyticsAiStatus =
   | "pending"
   | "generating"

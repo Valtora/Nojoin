@@ -290,10 +290,18 @@ configured — and that is a normal condition on a healthy install rather than a
 error. Sharing one column would also let an AI failure mark measured delivery as
 broken, when the two are produced by different lanes from different inputs.
 
-It is **never dispatched automatically**, unlike the delivery tier. One run is
-one long call against the user's own AI quota, answering questions most meetings
-are never asked, so it runs from the Analytics tab's button or the MCP
-`analyse_meeting` tool. It is network-bound, so it runs on the **IO lane**,
+It runs on request by default, unlike the delivery tier. One run is one long
+call against the user's own AI quota, answering questions most meetings are
+never asked, so it runs from the Analytics tab's button or the MCP
+`analyse_meeting` tool. Two things bound what that can cost. An administrator
+may cap the runs a user starts per UTC day (`ai_analysis_daily_limit` in
+`config.json`, with a per-user override on the user record); every run is
+logged in `ai_analysis_runs` where it is queued, the API refuses a run past
+the cap with 429 and the message the tab shows, and the read reports the
+budget so the tab can say so before anyone clicks. With that cap in place a
+user may also opt in to automatic analysis (`auto_analyse_meetings`, off by
+default), which queues the tier from the post-processing follow-ups within
+the same budget. It is network-bound, so it runs on the **IO lane**,
 matching how finalise already hands meeting intelligence there for non-local
 providers. Both stored tiers therefore write one JSONB column from two lanes,
 which is why each merges under a row lock through

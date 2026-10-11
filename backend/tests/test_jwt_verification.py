@@ -86,7 +86,8 @@ SCHEMA_STATEMENTS = [
         token_version INTEGER NOT NULL DEFAULT 0,
         settings JSON,
         has_seen_demo_recording BOOLEAN NOT NULL DEFAULT 0,
-        invitation_id INTEGER
+        invitation_id INTEGER,
+    ai_analysis_daily_limit INTEGER
     )
     """,
     """

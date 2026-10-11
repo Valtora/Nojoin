@@ -295,6 +295,18 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
     keywords: ["analytics", "delivery", "re-measure", "remeasure", "stale", "edit", "pace", "pitch"],
   },
   {
+    id: "recording-auto-analyse",
+    label: "Analyse meetings automatically",
+    description:
+      "Queue the AI analysis of each meeting when it finishes processing, within the daily budget. Uses your AI provider quota.",
+    category: "recording",
+    access: "all",
+    advanced: "safe-default",
+    settingsKeys: ["auto_analyse_meetings"],
+    defaultValue: false,
+    keywords: ["analytics", "analyse", "analysis", "automatic", "budget", "quota", "topics", "decisions"],
+  },
+  {
     id: "recording-diarization",
     label: "Speaker diarization",
     description:
@@ -522,8 +534,9 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
       "gemini_api_key",
       "openai_api_key",
       "anthropic_api_key",
+      "ai_analysis_daily_limit",
     ],
-    keywords: ["provider", "llm", "gemini", "openai", "anthropic", "ollama", "model", "api key", "primary", "server default"],
+    keywords: ["provider", "llm", "gemini", "openai", "anthropic", "ollama", "model", "api key", "primary", "server default", "analysis budget", "daily limit", "quota"],
   },
   {
     id: "ai-providers-ollama",

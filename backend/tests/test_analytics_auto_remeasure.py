@@ -25,6 +25,7 @@ from backend.models.recording import Recording
 from backend.models.transcript import Transcript
 from backend.models.user import User
 from backend.tests.sqlite_schemas import (
+    AI_ANALYSIS_RUNS_SCHEMA,
     RECORDINGS_SCHEMA,
     TRANSCRIPTS_SCHEMA,
     USERS_SCHEMA,
@@ -84,6 +85,7 @@ def api(monkeypatch):
             await conn.execute(text(USERS_SCHEMA))
             await conn.execute(text(RECORDINGS_SCHEMA))
             await conn.execute(text(TRANSCRIPTS_SCHEMA))
+            await conn.execute(text(AI_ANALYSIS_RUNS_SCHEMA))
         state.user = User(
             id=1,
             username="alice",

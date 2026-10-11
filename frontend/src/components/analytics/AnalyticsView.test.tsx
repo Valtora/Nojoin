@@ -129,6 +129,7 @@ const analytics = (
   ai_status: "pending",
   ai_error_message: null,
   ai_stale: false,
+  ai_budget: { limit: null, used: 0, remaining: null, resets_at: "2026-10-12T00:00:00+00:00" },
   audio_overlap: null,
   audio_overlap_status: "pending",
   audio_overlap_error_message: null,
@@ -243,6 +244,34 @@ describe("AnalyticsView", () => {
     screen.getByTitle("Play from 0:05").click();
 
     expect(onPlaySegment).toHaveBeenCalledWith(5_000);
+  });
+
+  it("says how many analyses are left when the administrator set a cap", async () => {
+    getRecordingAnalytics.mockResolvedValue(
+      analytics({
+        ai_budget: { limit: 5, used: 3, remaining: 2, resets_at: "2026-10-12T00:00:00+00:00" },
+      }),
+    );
+    renderWithProviders(<AnalyticsView recordingId="rec-1" />);
+
+    await waitFor(() => expect(screen.getByText("Dana")).toBeInTheDocument());
+    expect(screen.getByText(/2 of 5 analyses left today/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Analyse meeting" })).toBeInTheDocument();
+  });
+
+  it("withholds the analyse button once the daily budget is used up", async () => {
+    getRecordingAnalytics.mockResolvedValue(
+      analytics({
+        ai_budget: { limit: 2, used: 2, remaining: 0, resets_at: "2026-10-12T00:00:00+00:00" },
+      }),
+    );
+    renderWithProviders(<AnalyticsView recordingId="rec-1" />);
+
+    await waitFor(() => expect(screen.getByText("Dana")).toBeInTheDocument());
+    expect(
+      screen.getByText("Your daily AI analysis budget of 2 runs is used up. It resets at 00:00 UTC."),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Analyse meeting" })).toBeNull();
   });
 
   it("offers to measure delivery rather than showing it as absent", async () => {
