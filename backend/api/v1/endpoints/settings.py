@@ -69,6 +69,7 @@ class SettingsUpdate(BaseModel):
     codex_live_model: Optional[str] = None  # Codex CLI Meeting Edge model
     enable_meeting_edge: Optional[bool] = None
     meeting_edge_context_level: Optional[int] = None
+    auto_remeasure_delivery: Optional[bool] = None
     whisper_model_size: Optional[str] = None
     transcription_backend: Optional[str] = None
     parakeet_model: Optional[str] = None

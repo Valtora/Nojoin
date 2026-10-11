@@ -218,12 +218,21 @@ interface withholds the comparison rather than inviting a false one.
 figure produced by one procedure is not comparable with one produced by
 another. The stored payload also carries the transcript event watermark it was
 measured against, which is what makes staleness detectable without a second
-column. Stale never means regenerate automatically — rereading a recording's
-audio is work the user should ask for. A **method-version bump** is different:
-that is Nojoin's own maintenance obligation, not user-triggered staleness, so
-a bounded scheduled sweep (`remeasure_outdated_delivery_task`, mirroring the
-voiceprint rebuild) re-measures a few outdated recordings per tick until the
-library is comparable again.
+column. Stale figures are re-measured when the Analytics tab is next read,
+not when the edit lands: rereading a recording's audio is work worth spending
+only on a meeting someone is looking at, and the read that would otherwise show
+stale figures is that moment. The read queues the same CPU-lane task the button
+dispatches, reports the tier as generating so the tab polls for the result, and
+holds a once-per-window claim per recording so the tab's own polling cannot
+queue the run again before the worker marks it generating. A per-user setting
+(`auto_remeasure_delivery`, on by default) turns this off, after which the tab
+shows the figures as stale with the button, as before; a measurement that
+ended in error is never retried by a read either. Editing a transcript nobody
+reopens costs nothing. A **method-version bump** is different: that is Nojoin's
+own maintenance obligation, not user-triggered staleness, so a bounded
+scheduled sweep (`remeasure_outdated_delivery_task`, mirroring the voiceprint
+rebuild) re-measures a few outdated recordings per tick until the library is
+comparable again.
 
 Stored delivery figures also feed **cross-meeting baselines**: for a speaker
 linked to a person, the analytics read derives that person's usual pace,

@@ -268,6 +268,22 @@ async def _consume_fallback_window(key: str, window_seconds: int) -> tuple[int, 
         return len(window), retry_after
 
 
+async def claim_once(key: str, window_seconds: int) -> bool:
+    """Whether this call is the first for ``key`` within ``window_seconds``.
+
+    A once-per-window claim for work that several requests could otherwise
+    each start: the first caller gets True and the rest False until the window
+    lapses. Redis-backed when it is reachable so every API process agrees,
+    otherwise the per-process fallback window, which still stops one process
+    repeating itself.
+    """
+    result = await _consume_redis_window(key, window_seconds)
+    if result is None:
+        result = await _consume_fallback_window(key, window_seconds)
+    count, _retry_after = result
+    return count == 1
+
+
 async def enforce_rate_limit(
     request: Request,
     namespace: str,

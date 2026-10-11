@@ -283,6 +283,18 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
     keywords: ["vad", "voice activity detection", "silence", "filter", "processing"],
   },
   {
+    id: "recording-remeasure-delivery",
+    label: "Re-measure delivery after edits",
+    description:
+      "Opening the Analytics tab re-measures delivery figures that a transcript edit left stale. Off keeps the figures until you press Measure delivery.",
+    category: "recording",
+    access: "all",
+    advanced: "safe-default",
+    settingsKeys: ["auto_remeasure_delivery"],
+    defaultValue: true,
+    keywords: ["analytics", "delivery", "re-measure", "remeasure", "stale", "edit", "pace", "pitch"],
+  },
+  {
     id: "recording-diarization",
     label: "Speaker diarization",
     description:
