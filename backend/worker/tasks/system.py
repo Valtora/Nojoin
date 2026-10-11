@@ -421,4 +421,34 @@ def send_telemetry_ping_task(self):
         logger.info("Telemetry ping sent.")
 
 
+@celery_app.task(name="backend.worker.tasks.send_telemetry_heartbeat_task")
+def send_telemetry_heartbeat_task():
+    """Send the install heartbeat, if one is due.
+
+    Runs every fifteen minutes and returns at once unless this install has never
+    sent one, has started on a new version, or has not sent one today, so a new
+    install is counted within a quarter of an hour of starting. It needs no
+    consent and no database: it carries only the install id and the version.
+    The two exemptions and the retry spacing live in heartbeat_due(), in
+    backend/utils/telemetry.py.
+    """
+    from backend.utils import telemetry
+
+    now = datetime.now(UTC)
+    if not telemetry.heartbeat_due(now):
+        return
+
+    payload = telemetry.build_heartbeat()
+    result = telemetry.send_heartbeat(payload)
+    telemetry.record_heartbeat_attempt(now, result, payload["version"])
+
+    if result.ok:
+        # Info rather than debug, so an operator reading the logs can see the
+        # one outbound call they cannot switch off in the app, and where it went.
+        logger.info(
+            "Telemetry heartbeat sent to %s (see docs/TELEMETRY.md).",
+            telemetry.heartbeat_endpoint(),
+        )
+
+
 __all__ = [name for name in globals() if not name.startswith("__")]

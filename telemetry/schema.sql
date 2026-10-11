@@ -3,10 +3,31 @@
 -- Apply with:
 --   npx wrangler d1 execute nojoin-telemetry --remote --file=./schema.sql
 --
--- The primary key is the whole dedupe strategy: one row per install per UTC
--- day, upserted. A retried or duplicated ping rewrites its own row instead of
--- appending, so neither a network retry nor a restarted worker can inflate the
--- install count, and the write cost stays at one row per install per day.
+-- The primary key is the whole dedupe strategy for both tables: one row per
+-- install per UTC day, upserted. A retried or duplicated request rewrites its
+-- own row instead of appending, so neither a network retry nor a restarted
+-- worker can inflate the install count, and the write cost stays at one row per
+-- install per day.
+--
+-- Nothing is ever deleted. Rows are kept indefinitely so trends can be followed
+-- over years; see ../README.md for the storage ceiling that implies.
+
+-- The install heartbeat: sent on first start, on each new version, and daily.
+-- It holds the install id and the version and nothing else, by design: this is
+-- the part of telemetry an operator cannot switch off in the app, so the ingest
+-- discards any other field rather than keeping a raw payload (src/payload.ts).
+CREATE TABLE IF NOT EXISTS heartbeats (
+  install_id  TEXT    NOT NULL,
+  day         TEXT    NOT NULL,   -- UTC date, derived server-side
+  version     TEXT,
+  received_at INTEGER NOT NULL,   -- epoch ms, server-side
+
+  PRIMARY KEY (install_id, day)
+);
+
+CREATE INDEX IF NOT EXISTS idx_heartbeats_day ON heartbeats (day);
+
+-- The optional usage diagnostics.
 
 CREATE TABLE IF NOT EXISTS pings (
   install_id           TEXT    NOT NULL,
@@ -49,27 +70,5 @@ CREATE TABLE IF NOT EXISTS pings (
   PRIMARY KEY (install_id, day)
 );
 
--- Supports both the daily-count queries and the retention sweep's `day <`
--- filter, so the roll-up scans only the rows it is about to remove.
+-- Supports the daily-count queries, which filter on day across all installs.
 CREATE INDEX IF NOT EXISTS idx_pings_day ON pings (day);
-
--- Aggregates that outlive the raw rows (see src/rollup.ts).
-CREATE TABLE IF NOT EXISTS daily_rollup (
-  day                     TEXT PRIMARY KEY,
-  installs                INTEGER NOT NULL,
-  users_total_sum         INTEGER NOT NULL,
-  users_recording_28d_sum INTEGER NOT NULL,
-  recordings_total_sum    INTEGER NOT NULL,
-  recordings_28d_sum      INTEGER NOT NULL,
-  recording_hours_28d_sum REAL    NOT NULL
-);
-
--- Generic breakdown store, so version and feature splits survive the deletion
--- of raw rows without needing a column per dimension.
-CREATE TABLE IF NOT EXISTS daily_rollup_dim (
-  day       TEXT    NOT NULL,
-  dimension TEXT    NOT NULL,
-  value     TEXT    NOT NULL,
-  installs  INTEGER NOT NULL,
-  PRIMARY KEY (day, dimension, value)
-);

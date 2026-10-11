@@ -231,13 +231,16 @@ DEFAULT_SYSTEM_CONFIG = {
         "fade_duration_ms": 50,
         "silence_method": "mute",
     },
-    # Anonymous opt-out telemetry (docs/TELEMETRY.md). Enabled by default, but
-    # an install that was upgraded into the feature sends nothing until the
-    # admin notice has been shown; see backend/utils/telemetry.py for the
-    # consent rules these three keys drive. Only the API writes them.
+    # Anonymous telemetry (docs/TELEMETRY.md). These keys drive the optional
+    # diagnostics: enabled by default, but an install that was upgraded into
+    # the feature sends none until the admin notice has been shown. The policy
+    # version marks a choice made once the heartbeat existed; an opt-out
+    # without it also exempts the install from the heartbeat. See
+    # backend/utils/telemetry.py for the rules. Only the API writes them.
     "telemetry_enabled": True,
     "telemetry_notice_acknowledged": False,
     "telemetry_notice_first_shown_at": None,
+    "telemetry_policy_version": None,
 }
 
 DEFAULT_USER_SETTINGS = {

@@ -110,13 +110,13 @@ Nojoin makes a small number of outbound connections from the server. Operators r
 - **Release metadata**: the API queries the GitHub Releases API to show update availability in Settings.
 - **AI providers**: only when a non-local provider is configured; local Ollama keeps inference on your own network.
 - **Calendar providers**: only when a user connects a Google or Microsoft account.
-- **Anonymous telemetry**: one ping every six hours to `telemetry.nojoin.co.uk` from the `worker-io` lane.
+- **Anonymous telemetry**: a daily heartbeat, and optionally one diagnostics ping every six hours, to `telemetry.nojoin.co.uk` from the `worker-io` lane.
 
-The telemetry ping is anonymous by construction rather than by policy. It is identified only by a UUID4 generated on your own server, and it carries counts and configuration shape — never meeting content, names, hostnames, URLs, credentials, or model names. The receiving service records nothing derived from the connection: the client IP is used only for rate limiting and is never stored.
+Both are anonymous by construction rather than by policy. They are identified only by a UUID4 generated on your own server. The heartbeat carries that ID and the version and nothing else, and the receiving service discards any other heartbeat field. The diagnostics carry counts and configuration shape, never meeting content, names, hostnames, URLs, credentials, or model names. The receiving service records nothing derived from the connection: the client IP is used only for rate limiting and is never stored.
 
-It is enabled by default, but an installation upgraded into the feature sends nothing until an administrator has been shown the notice. It can be disabled from Settings, pinned off with `NOJOIN_TELEMETRY_ENABLED=false` (which the UI cannot override), or blocked at the network layer with no effect on any other function.
+Diagnostics are enabled by default, but an installation upgraded into the feature sends none until an administrator has been shown the notice, and they can be disabled from Settings. The heartbeat has no switch in the app. `NOJOIN_TELEMETRY_ENABLED=false`, which the UI cannot override, stops both, as does a block at the network layer, with no effect on any other function. An installation that turned telemetry off before 2.7.0 sends neither.
 
-The payload is assembled in exactly one function and locked by a test that fails if a field is added without updating the disclosure, and the receiving Worker is open source in [telemetry/](../telemetry/). See [TELEMETRY.md](TELEMETRY.md).
+Each payload is assembled in exactly one function and locked by a test that fails if a field is added without updating the disclosure, and the receiving Worker is open source in [telemetry/](../telemetry/). See [TELEMETRY.md](TELEMETRY.md).
 
 ## Vulnerability Scanning and Severity Policy
 

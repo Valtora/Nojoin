@@ -132,9 +132,9 @@ Contributions are welcome. See [CONTRIBUTING.md](.github/CONTRIBUTING.md) for th
 
 ## Anonymous Usage Data
 
-Nojoin sends one anonymous ping every six hours so it is possible to know how many deployments exist, which versions are in use, and which features are worth investing in. It contains a random install ID, the version, user and recording counts, and which features are switched on. It contains **none of your meeting data** — no audio, transcripts, notes, names, hostnames, or keys — and it is never sold.
+Nojoin sends a daily heartbeat containing a random install ID and the version, so the number of installations can be counted. Separately, it can send anonymous usage diagnostics every six hours: user and recording counts, and which features are switched on. Neither contains **any of your meeting data**: no audio, transcripts, notes, names, hostnames, or keys. The data is never sold.
 
-It is on by default and can be turned off in **Settings > Privacy**, by setting `NOJOIN_TELEMETRY_ENABLED=false` in `.env`, or by blocking `telemetry.nojoin.co.uk`. On an existing installation nothing is sent until an administrator has seen the notice explaining it.
+Diagnostics are on by default and can be turned off in **Settings > Privacy**; on an existing installation none are sent until an administrator has seen the notice explaining them. The heartbeat has no switch in the app. Setting `NOJOIN_TELEMETRY_ENABLED=false` in `.env` or blocking `telemetry.nojoin.co.uk` stops both, and an installation that turned telemetry off before 2.7.0 sends neither.
 
 The receiving service is open source in [telemetry/](telemetry/), so what is stored can be checked rather than taken on trust. See [docs/TELEMETRY.md](docs/TELEMETRY.md) for the full disclosure.
 

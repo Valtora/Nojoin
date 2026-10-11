@@ -78,11 +78,14 @@ export default function LegalStep({
           />
           <span className="text-sm">
             <span className="font-medium text-foreground">
-              Share anonymous usage data
+              Share anonymous usage diagnostics
             </span>
             <span className="block text-xs text-contrast-helper mt-0.5">
-              Counts and settings only. Never your recordings, transcripts,
-              notes, names, or keys. Changeable in Settings.{" "}
+              Counts and settings every six hours. Separately, Nojoin sends a
+              daily heartbeat with a random install ID and the version, so
+              installations can be counted. Neither includes your
+              recordings, transcripts, notes, names, or keys. Changeable in
+              Settings.{" "}
               <a
                 href={TELEMETRY_DOC_URL}
                 target="_blank"

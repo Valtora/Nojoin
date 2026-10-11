@@ -384,7 +384,7 @@ describe("SetupPage", () => {
     renderWithProviders(<SetupPage />);
     await unlockWizard();
 
-    const telemetryCheckbox = screen.getByLabelText(/Share anonymous usage data/);
+    const telemetryCheckbox = screen.getByLabelText(/Share anonymous usage diagnostics/);
     expect(telemetryCheckbox).toBeChecked();
     fireEvent.click(telemetryCheckbox);
 
