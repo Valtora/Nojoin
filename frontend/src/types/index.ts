@@ -395,6 +395,8 @@ export interface Settings {
   enable_live_transcription?: boolean;
   enable_meeting_edge?: boolean;
   meeting_edge_context_level?: number;
+  /** Re-measure stale delivery figures when the Analytics tab is next opened. */
+  auto_remeasure_delivery?: boolean;
   processing_device?: string;
   theme?: string;
   timezone?: string;

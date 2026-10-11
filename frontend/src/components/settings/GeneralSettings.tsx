@@ -180,6 +180,11 @@ export default function GeneralSettings({
       "speaker separation",
       "speaker diarization",
       "speech",
+      "analytics",
+      "delivery",
+      "re-measure",
+      "remeasure",
+      "stale",
     ]);
 
   const showSpellCheck =
@@ -388,6 +393,21 @@ export default function GeneralSettings({
               checked={settings.enable_vad !== false} // Default true
               onCheckedChange={(checked) =>
                 onUpdate({ ...settings, enable_vad: checked })
+              }
+            />
+          </SettingsRow>
+
+          <SettingsRow
+            id="recording-remeasure-delivery"
+            label="Re-measure delivery after edits"
+            description="Editing a transcript leaves its measured delivery figures describing the old text. With this on, opening the Analytics tab re-reads the audio and refreshes them; with it off, the tab shows the figures as stale until you press Measure delivery."
+            icon={<Mic className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
+            controlClassName="@min-[26rem]:min-w-0 @min-[26rem]:flex @min-[26rem]:justify-end"
+          >
+            <Switch
+              checked={settings.auto_remeasure_delivery !== false} // Default true
+              onCheckedChange={(checked) =>
+                onUpdate({ ...settings, auto_remeasure_delivery: checked })
               }
             />
           </SettingsRow>

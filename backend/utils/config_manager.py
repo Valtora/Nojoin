@@ -241,6 +241,10 @@ DEFAULT_USER_SETTINGS = {
     "codex_model": None,  # Codex CLI model for async tasks
     "codex_live_model": None,  # Optional lower-latency Codex CLI Meeting Edge model
     "enable_meeting_edge": True,  # Enable the Meeting Edge live advisory card and model calls
+    # Re-measure stale delivery figures when the Analytics tab is next opened,
+    # rather than only when the user presses the button. Per user: it spends
+    # audio analysis on the CPU lane, and the user's own library is the cost.
+    "auto_remeasure_delivery": True,
     "meeting_edge_context_level": MEETING_EDGE_CONTEXT_LEVEL_DEFAULT,  # Controls how readily Meeting Edge explains technical terms
     "gemini_api_key": None,  # Google Gemini API key
     "openai_api_key": None,  # OpenAI API key
@@ -342,6 +346,24 @@ def strip_legacy_automatic_ai_settings(settings: dict | None) -> dict:
         for key, value in dict(settings).items()
         if key not in LEGACY_AUTOMATIC_AI_SETTING_KEYS
     }
+
+
+def is_auto_remeasure_delivery_enabled(settings: dict | None) -> bool:
+    """Whether stale delivery figures are re-measured on the next Analytics read.
+
+    The user's own value wins; an unset value falls to the install's, then
+    the shipped default (on).
+    """
+    defaults = get_default_user_settings()
+    user_value = (settings or {}).get("auto_remeasure_delivery")
+    if user_value is not None:
+        return bool(user_value)
+    return bool(
+        config_manager.get(
+            "auto_remeasure_delivery",
+            defaults.get("auto_remeasure_delivery", True),
+        )
+    )
 
 
 def is_meeting_edge_enabled(settings: dict | None) -> bool:
@@ -573,6 +595,7 @@ class ConfigManager:
         if key in {
             "enable_live_transcription",
             "enable_meeting_edge",
+            "auto_remeasure_delivery",
             "enable_canonical_transcript_writes",
             "enable_asr_window_result_ledger",
             "telemetry_enabled",

@@ -12,6 +12,8 @@ from backend.utils.canonical_pipeline import (
     ensure_canonical_backfill,
     get_canonical_transcript_revision,
 )
+from backend.utils.config_manager import is_auto_remeasure_delivery_enabled
+from backend.utils.rate_limit import RATE_LIMIT_KEY_PREFIX, claim_once
 
 from .helpers import _get_owned_recording, _get_recording_transcript
 from .router import router
@@ -34,8 +36,10 @@ class RecordingAnalyticsRead(BaseModel):
     delivery_status: str = "pending"
     delivery_error_message: str | None = None
     # True when the transcript has moved since delivery was measured, so the
-    # figures describe a transcript that no longer exists. Never regenerated
-    # automatically: rereading the audio is work the user should ask for.
+    # figures describe a transcript that no longer exists. Re-measured on this
+    # read when the user's auto_remeasure_delivery setting is on (the default),
+    # in which case delivery_status reports "generating"; otherwise the figures
+    # stay until the user asks.
     delivery_stale: bool = False
     # The AI tier: topics and who led them, sentiment read from the words,
     # question/answer mapping, and decision ownership. Absent is normal; so is
@@ -68,12 +72,21 @@ class AnalyticsAiGenerateResponse(BaseModel):
     ai_status: str
 
 
+# How long one read's re-measure claim holds off the next. Long enough to
+# cover the queue wait and the measurement itself on a busy CPU lane, short
+# enough that a dispatch the worker never picked up is retried on a later open.
+AUTO_REMEASURE_CLAIM_WINDOW_S = 300
+
+
 def _is_stale(block: dict | None, watermark: object, revision: int) -> bool:
     """Whether a stored tier was produced against an older transcript.
 
-    Staleness is disclosed, never acted on: regenerating either tier costs the
-    user something (audio analysis, or AI quota), so the interface offers the
-    button and the user decides.
+    Staleness is disclosed on both tiers. The AI tier is never acted on, since
+    a run spends the user's own provider quota. The delivery tier is
+    re-measured on read when the user has left that on (see
+    _auto_remeasure_delivery): it costs audio analysis on the CPU lane, which
+    is the user's own hardware, and the moment they open the tab is the moment
+    stale figures would otherwise be read as current.
     """
     if block is None or watermark is None:
         return False
@@ -81,6 +94,31 @@ def _is_stale(block: dict | None, watermark: object, revision: int) -> bool:
         return revision > int(watermark)
     except (TypeError, ValueError):
         return False
+
+
+async def _auto_remeasure_delivery(recording, transcript, user, stale: bool) -> bool:
+    """Re-measure stale delivery for this read; True when a run was queued.
+
+    Nothing is queued for figures that are current, for a run already in
+    progress, for a measurement that ended in error (the audio is gone or
+    unreadable, and the button remains for a retry), or when the user has
+    turned the behaviour off. A once-per-window claim stops the tab's polling
+    from queueing the same run on every read before the worker has marked the
+    transcript as generating.
+    """
+    if not stale or transcript.analytics_status in ("generating", "error"):
+        return False
+    if not is_auto_remeasure_delivery_enabled(user.settings):
+        return False
+    key = f"{RATE_LIMIT_KEY_PREFIX}:analytics:remeasure:{recording.id}"
+    if not await claim_once(key, AUTO_REMEASURE_CLAIM_WINDOW_S):
+        return False
+    dispatched = await dispatch_task_best_effort(
+        "backend.worker.tasks.compute_delivery_analytics_task",
+        args=[recording.id],
+        context="delivery re-measure after a transcript edit",
+    )
+    return dispatched is not None
 
 
 def _backfill_and_compute(sync_session, recording) -> tuple[int, dict, dict]:
@@ -131,6 +169,16 @@ async def get_recording_analytics(
     ai = payload.get("ai")
     audio_overlap = payload.get("audio_overlap")
 
+    delivery_stale = _is_stale(delivery, payload.get("event_watermark"), revision)
+    delivery_status = transcript.analytics_status
+    if await _auto_remeasure_delivery(
+        recording, transcript, current_user, delivery_stale
+    ):
+        # Reported, not written: the worker owns the stored status, and the
+        # tab polls while a tier reports generating, so it picks up the new
+        # figures when the run lands.
+        delivery_status = "generating"
+
     return RecordingAnalyticsRead(
         recording_id=recording.public_id,
         transcript_revision=revision,
@@ -138,9 +186,9 @@ async def get_recording_analytics(
         metrics=analytics["metrics"],
         attribution_warning=analytics["attribution_warning"],
         delivery=delivery,
-        delivery_status=transcript.analytics_status,
+        delivery_status=delivery_status,
         delivery_error_message=transcript.analytics_error_message,
-        delivery_stale=_is_stale(delivery, payload.get("event_watermark"), revision),
+        delivery_stale=delivery_stale,
         ai=ai,
         ai_status=transcript.analytics_ai_status,
         ai_error_message=transcript.analytics_ai_error_message,
