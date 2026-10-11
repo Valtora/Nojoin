@@ -64,12 +64,9 @@ Database migrations run automatically on the first API start after upgrading. Ba
 
 ### Known Issues
 
-<!-- Maintainer: list known issues affecting this release, or leave the default. -->
+<!-- Maintainer: list only problems Nojoin can fix, each with its open issue. A limit set by a dependency or a provider is documented in the guide for that feature and does not belong here. -->
 
-- Carried over from 2.6.0. With Ollama, a meeting whose transcript does not fit the context window fails note generation. Raise the Ollama context window under **Settings > AI providers** if the GPU has room, or use a hosted provider for long meetings. Splitting long meetings into parts is planned.
-- Carried over from 2.5.1. Current Anthropic models do not accept a temperature, so their notes and titles can vary more between runs than other providers'.
-- Carried over. Overlapping speech is a floor rather than a total (#387 records why it stays that way).
-- Carried over. Trivy cannot inspect the Codex binary in the worker-io image. Its package is now verified at build time, and its version should be checked against upstream advisories before each release.
+- With Ollama, a meeting whose transcript does not fit the context window fails note generation. Raise the Ollama context window under **Settings > AI providers** if the GPU has room, or use a hosted provider for long meetings (#391).
 
 ### Browser-Capture Compatibility
 

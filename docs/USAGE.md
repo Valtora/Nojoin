@@ -292,7 +292,7 @@ What it shows:
 - **Who spoke**, as a share of everyone's speaking time.
 - **Who spoke when**, showing the balance across the length of the meeting. A meeting where one person led the first half and another led the second reads very differently here from an evenly split one, though both show the same overall share.
 - **How the conversation moved**: turns taken, median and longest turn, how often each person took the floor the instant it opened, and how long they leave before replying when there is a gap to measure. Selecting a longest turn plays the meeting from that point, so any figure can be checked against the audio.
-- **Talking over each other**, measured from the audio itself once the meeting has been measured: at least how much of the meeting was overlapping speech, and where it clustered.
+- **Talking over each other**, measured from the audio itself once the meeting has been measured: at least how much of the meeting was overlapping speech, and where it clustered. The figure is a floor. The detection model finds roughly 70 to 90% of overlapping speech, and every setting that finds more also counts overlap that was not there, so Nojoin reports the lower bound ([ANALYTICS_EVIDENCE.md](ANALYTICS_EVIDENCE.md)).
 
 The tab uses whatever width it has. On a wide display the sections pair up, and on a phone, or with both side panels open, they stack into one column and the per-speaker tables become a list of speakers rather than a table you have to drag sideways. Everyone keeps the colour they have everywhere else in the meeting, so the person who is blue in the transcript is blue in every chart here; changing a speaker's colour in the speaker panel changes it here too.
 
