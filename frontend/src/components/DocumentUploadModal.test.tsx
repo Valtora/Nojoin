@@ -123,6 +123,33 @@ describe("DocumentUploadModal", () => {
     ).toBe(true);
   });
 
+  it("uploads two at a time, in queue order, and fills a slot as soon as one frees", async () => {
+    const resolvers: Array<(value: unknown) => void> = [];
+    uploadDocument.mockImplementation(
+      () => new Promise((resolve) => resolvers.push(resolve)),
+    );
+    const { onSuccess } = renderModal();
+    selectFiles([makeFile("a.pdf"), makeFile("b.pdf"), makeFile("c.pdf")]);
+
+    fireEvent.click(screen.getByRole("button", { name: /upload 3 documents/i }));
+
+    // Two in flight, the third waiting: the backend admits two per user.
+    await waitFor(() => expect(uploadDocument).toHaveBeenCalledTimes(2));
+    expect(uploadDocument.mock.calls.map((call) => call[1].name)).toEqual([
+      "a.pdf",
+      "b.pdf",
+    ]);
+
+    // The second finishes first; the freed slot takes the next in queue order.
+    resolvers[1]({ id: 2 });
+    await waitFor(() => expect(uploadDocument).toHaveBeenCalledTimes(3));
+    expect(uploadDocument.mock.calls[2][1].name).toBe("c.pdf");
+
+    resolvers[0]({ id: 1 });
+    resolvers[2]({ id: 3 });
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(3));
+  });
+
   it("retries only what failed, so a success is never uploaded twice", async () => {
     uploadDocument
       .mockResolvedValueOnce({ id: 1 })
