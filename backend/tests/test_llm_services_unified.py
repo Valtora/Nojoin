@@ -849,3 +849,102 @@ def test_anthropic_kwargs_are_accepted_by_the_installed_sdk() -> None:
                 "The SDK dropped or renamed a parameter -- fix the call sites "
                 "rather than pinning the SDK back."
             )
+
+
+def _anthropic_backend_capturing_creates(model: str, response, capture: list):
+    class FakeMessages:
+        def create(self, **kwargs):
+            capture.append(kwargs)
+            return response
+
+    backend = object.__new__(AnthropicLLMBackend)
+    backend.model = model
+    backend.client = SimpleNamespace(messages=FakeMessages())
+    return backend
+
+
+def _all_thinking_no_text():
+    # What a current model returns when the output limit is spent on thinking:
+    # one thinking block, no text block, and a max_tokens stop.
+    return SimpleNamespace(
+        content=[SimpleNamespace(type="thinking", thinking="", signature="s")],
+        stop_reason="max_tokens",
+    )
+
+
+def test_anthropic_short_calls_ask_a_thinking_model_for_low_effort() -> None:
+    """Speaker suggestions, Meeting Edge and the title cap their replies, and on
+    a model that thinks by default the thinking counts against that cap. Each
+    call sends low effort and a ceiling with room for the thinking."""
+    import contextlib
+
+    capture: list[dict] = []
+    backend = _anthropic_backend_capturing_creates(
+        "claude-opus-5-5",
+        SimpleNamespace(
+            content=[SimpleNamespace(type="text", text="Launch Readiness Review")],
+            stop_reason="end_turn",
+        ),
+        capture,
+    )
+
+    with contextlib.suppress(Exception):
+        backend.infer_speaker_suggestions("[00:00 - 00:05] SPEAKER_00: Hi.")
+    with contextlib.suppress(Exception):
+        backend.generate_meeting_edge(
+            MeetingEdgeRequest(recent_transcript="Speaker A: Hi."), timeout=20
+        )
+    backend.infer_meeting_title("[00:00 - 00:05] SPEAKER_00: Hi.")
+
+    assert len(capture) == 3
+    for kwargs in capture:
+        assert kwargs["output_config"] == {"effort": "low"}
+        assert kwargs["max_tokens"] >= 2048
+
+
+def test_anthropic_short_calls_send_no_effort_where_it_would_be_rejected() -> None:
+    """Haiku 4.5 returns a 400 for output_config.effort, and does not think
+    unless asked, so the request carries nothing it would refuse."""
+    capture: list[dict] = []
+    backend = _anthropic_backend_capturing_creates(
+        "claude-haiku-4-5",
+        SimpleNamespace(
+            content=[SimpleNamespace(type="text", text="Launch Readiness Review")],
+            stop_reason="end_turn",
+        ),
+        capture,
+    )
+
+    backend.infer_meeting_title("[00:00 - 00:05] SPEAKER_00: Hi.")
+
+    assert "output_config" not in capture[0]
+
+
+def test_anthropic_speaker_suggestions_name_the_output_limit_when_spent() -> None:
+    backend = _anthropic_backend_capturing_creates(
+        "claude-opus-5-5", _all_thinking_no_text(), []
+    )
+
+    with pytest.raises(RuntimeError, match="output limit"):
+        backend.infer_speaker_suggestions("[00:00 - 00:05] SPEAKER_00: Hi.")
+
+
+def test_anthropic_meeting_edge_names_the_output_limit_when_spent() -> None:
+    backend = _anthropic_backend_capturing_creates(
+        "claude-opus-5-5", _all_thinking_no_text(), []
+    )
+
+    with pytest.raises(RuntimeError, match="output limit"):
+        backend.generate_meeting_edge(
+            MeetingEdgeRequest(recent_transcript="Speaker A: Hi."), timeout=20
+        )
+
+
+def test_anthropic_title_fails_rather_than_returning_empty_when_cap_is_spent() -> None:
+    # parse_title("") is "", which the caller would save as a blank title.
+    backend = _anthropic_backend_capturing_creates(
+        "claude-opus-5-5", _all_thinking_no_text(), []
+    )
+
+    with pytest.raises(RuntimeError, match="output limit"):
+        backend.infer_meeting_title("[00:00 - 00:05] SPEAKER_00: Hi.")
