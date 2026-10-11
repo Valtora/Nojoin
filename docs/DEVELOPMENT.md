@@ -669,7 +669,7 @@ That is the opposite trade to every other pin in `requirements/`, and it has a c
 
 Capping the three at `<N+1` would have caught it, and was considered and rejected: a cap means the newest model is unavailable until someone lifts it, which is the thing these three exist to avoid. The guard is a test instead. `test_anthropic_kwargs_are_accepted_by_the_installed_sdk` in [backend/tests/test_llm_services_unified.py](../backend/tests/test_llm_services_unified.py) captures the keyword arguments the backend actually sends and binds them against `inspect.signature` of the **installed** SDK, so any parameter a future release removes fails in CI rather than in a built image. It asserts no list of approved names, which is what makes it survive changes nobody predicted.
 
-Two consequences follow. Adding an equivalent guard for the OpenAI and Gemini backends is worthwhile and not yet done. And when one of these three does ship a major, the fix is to update the call sites, never to add a pin that hides the break.
+Two consequences follow. Adding an equivalent guard for the OpenAI and Gemini backends is worthwhile and not yet done. And when one of these three does ship a major, the fix is to update the call sites, never to add a pin that hides the break. The one parameter that survived the removal, `temperature`, now travels in `extra_body`, and only to the models that [anthropic_models.py](../backend/processing/llm_backends/anthropic_models.py) says still accept it; the current models return a 400 for it and run at the provider default.
 
 ### Held Pins and Unfixable Advisories
 
