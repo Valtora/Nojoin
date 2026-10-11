@@ -185,6 +185,9 @@ export default function GeneralSettings({
       "re-measure",
       "remeasure",
       "stale",
+      "analyse",
+      "automatically",
+      "budget",
     ]);
 
   const showSpellCheck =
@@ -408,6 +411,21 @@ export default function GeneralSettings({
               checked={settings.auto_remeasure_delivery !== false} // Default true
               onCheckedChange={(checked) =>
                 onUpdate({ ...settings, auto_remeasure_delivery: checked })
+              }
+            />
+          </SettingsRow>
+
+          <SettingsRow
+            id="recording-auto-analyse"
+            label="Analyse meetings automatically"
+            description="Queue the AI analysis of each meeting as soon as it finishes processing, within any daily budget your administrator has set. Each run uses your AI provider quota, so this is off unless you turn it on."
+            icon={<Mic className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
+            controlClassName="@min-[26rem]:min-w-0 @min-[26rem]:flex @min-[26rem]:justify-end"
+          >
+            <Switch
+              checked={settings.auto_analyse_meetings === true} // Default false
+              onCheckedChange={(checked) =>
+                onUpdate({ ...settings, auto_analyse_meetings: checked })
               }
             />
           </SettingsRow>

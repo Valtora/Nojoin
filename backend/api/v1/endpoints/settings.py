@@ -2,7 +2,7 @@ import logging
 from typing import Any, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, ValidationInfo, field_validator
+from pydantic import BaseModel, Field, ValidationInfo, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.deps import get_current_user, get_db
@@ -70,6 +70,9 @@ class SettingsUpdate(BaseModel):
     enable_meeting_edge: Optional[bool] = None
     meeting_edge_context_level: Optional[int] = None
     auto_remeasure_delivery: Optional[bool] = None
+    auto_analyse_meetings: Optional[bool] = None
+    # Install-wide, admin-only. Null or 0 means no cap.
+    ai_analysis_daily_limit: Optional[int] = Field(default=None, ge=0)
     whisper_model_size: Optional[str] = None
     transcription_backend: Optional[str] = None
     parakeet_model: Optional[str] = None

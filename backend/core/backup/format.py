@@ -140,6 +140,10 @@ UNARCHIVED_TABLES: Dict[str, str] = {
     ),
     "cli_oauth_credentials": "Machine-bound CLI OAuth credentials; re-authenticate on the target.",
     "cli_usage_daily": "Per-installation CLI usage counters.",
+    "ai_analysis_runs": (
+        "Per-installation daily usage counters for the AI analysis budget; a restore "
+        "starts the day's count afresh."
+    ),
     "context_chunks": (
         "RAG embeddings, regenerated from the restored transcript and documents by "
         "finalize_restored_recording_task."

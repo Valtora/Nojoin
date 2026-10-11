@@ -34,7 +34,8 @@ CREATE TABLE users (
     token_version INTEGER NOT NULL,
     settings JSON,
     has_seen_demo_recording BOOLEAN NOT NULL,
-    invitation_id INTEGER
+    invitation_id INTEGER,
+    ai_analysis_daily_limit INTEGER
 );
 
 CREATE TABLE recordings (

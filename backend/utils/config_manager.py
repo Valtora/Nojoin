@@ -109,7 +109,21 @@ def normalise_gpu_asr_window(value: object) -> float | None:
     return number
 
 
+# Install-wide cap on AI analysis runs per user per UTC day. Null or 0 means
+# no cap, which keeps today's behaviour. An administrator may override it per
+# user on the user record.
+AI_ANALYSIS_DAILY_LIMIT_KEY = "ai_analysis_daily_limit"
+
+
+def normalise_ai_analysis_daily_limit(value: object) -> int | None:
+    """``value`` as a positive run count, or ``None`` for no cap."""
+    if value is None or isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value if value > 0 else None
+
+
 INSTALL_WIDE_AI_SETTING_KEYS = (
+    AI_ANALYSIS_DAILY_LIMIT_KEY,
     "llm_provider",
     "enable_meeting_edge",
     "gemini_model",
@@ -204,6 +218,8 @@ DEFAULT_SYSTEM_CONFIG = {
     "ollama_context_window": 32768,
     "secondary_ollama_context_window": 32768,
     "enable_live_transcription": True,
+    # No cap unless an administrator sets one.
+    AI_ANALYSIS_DAILY_LIMIT_KEY: None,
     "live_context_window_s": 5.0,
     "live_forced_max_s": 8.0,
     "live_max_segment_s": 20.0,
@@ -245,6 +261,10 @@ DEFAULT_USER_SETTINGS = {
     # rather than only when the user presses the button. Per user: it spends
     # audio analysis on the CPU lane, and the user's own library is the cost.
     "auto_remeasure_delivery": True,
+    # Queue the AI analytics tier when a meeting finishes processing. Off by
+    # default: each run spends the user's own provider quota, and it only runs
+    # within the daily budget when one is set.
+    "auto_analyse_meetings": False,
     "meeting_edge_context_level": MEETING_EDGE_CONTEXT_LEVEL_DEFAULT,  # Controls how readily Meeting Edge explains technical terms
     "gemini_api_key": None,  # Google Gemini API key
     "openai_api_key": None,  # OpenAI API key
@@ -346,24 +366,6 @@ def strip_legacy_automatic_ai_settings(settings: dict | None) -> dict:
         for key, value in dict(settings).items()
         if key not in LEGACY_AUTOMATIC_AI_SETTING_KEYS
     }
-
-
-def is_auto_remeasure_delivery_enabled(settings: dict | None) -> bool:
-    """Whether stale delivery figures are re-measured on the next Analytics read.
-
-    The user's own value wins; an unset value falls to the install's, then
-    the shipped default (on).
-    """
-    defaults = get_default_user_settings()
-    user_value = (settings or {}).get("auto_remeasure_delivery")
-    if user_value is not None:
-        return bool(user_value)
-    return bool(
-        config_manager.get(
-            "auto_remeasure_delivery",
-            defaults.get("auto_remeasure_delivery", True),
-        )
-    )
 
 
 def is_meeting_edge_enabled(settings: dict | None) -> bool:
@@ -596,6 +598,7 @@ class ConfigManager:
             "enable_live_transcription",
             "enable_meeting_edge",
             "auto_remeasure_delivery",
+            "auto_analyse_meetings",
             "enable_canonical_transcript_writes",
             "enable_asr_window_result_ledger",
             "telemetry_enabled",
@@ -610,6 +613,14 @@ class ConfigManager:
             if value is None:
                 return True
             return isinstance(value, int) and value >= 1024
+        if key == AI_ANALYSIS_DAILY_LIMIT_KEY:
+            if value is None:
+                return True
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise ValueError(
+                    f"Invalid {AI_ANALYSIS_DAILY_LIMIT_KEY}: {value}. Must be a "
+                    "whole number of runs per day, 0 or null for no cap."
+                )
         if key == GPU_ASR_WINDOW_KEY:
             if value is None:
                 return True

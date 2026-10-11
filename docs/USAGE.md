@@ -325,7 +325,7 @@ Two limits worth knowing:
 
 #### What Was Discussed
 
-The rest of the tab is measured. This last section is different: it is an AI model reading the transcript, so it needs an AI provider and it uses your provider quota. Select **Analyse meeting** to run it. It is never run automatically, because it answers questions most meetings are never asked and running it for every recording would spend your quota on meetings nobody opens.
+The rest of the tab is measured. This last section is different: it is an AI model reading the transcript, so it needs an AI provider and it uses your provider quota. Select **Analyse meeting** to run it. It is not run automatically unless you ask for that, because it answers questions most meetings are never asked and running it for every recording would spend your quota on meetings nobody opens. Your administrator may cap how many analyses you can start per day; the section says how many you have left and when the count resets (midnight UTC). Turn on **Analyse meetings automatically** under Settings > Recording to have each new meeting analysed when it finishes processing, within that cap.
 
 If your installation has no AI provider configured, this section says so and nothing else on the tab is affected.
 
