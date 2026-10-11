@@ -19,6 +19,7 @@ import asyncio
 import logging
 import os
 import queue
+import re
 import threading
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -92,11 +93,45 @@ class CliOAuthUnavailableError(RuntimeError):
     configured fallback when one exists; otherwise it surfaces to the caller."""
 
 
+# A rate-limit window label the SDK reports (``five_hour``, ``seven_day``). Only
+# a short token of this shape is repeated to the user; anything else is left out
+# of the message rather than echoed.
+_WINDOW_LABEL_RE = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
+
+
+def _usage_limit_message(
+    resets_at: Optional[datetime], rate_limit_type: Optional[str]
+) -> str:
+    """The copy shown to a user whose subscription limit is reached.
+
+    Built from the reset time and the window label alone, so it carries nothing
+    from an upstream exception. ``friendly_chat_error`` sends it to the client.
+    """
+    label = rate_limit_type if _WINDOW_LABEL_RE.match(rate_limit_type or "") else ""
+    window = f" ({label} window)" if label else ""
+    if resets_at is not None:
+        return (
+            f"Your subscription usage limit is reached{window}; it resets "
+            f"around {resets_at:%H:%M UTC on %b %d}. Configure a fallback provider "
+            f"in Settings > AI, or try again after that."
+        )
+    return (
+        f"Your subscription usage limit is reached{window}. Configure a "
+        f"fallback provider in Settings > AI, or try again later."
+    )
+
+
 class CliUsageLimitError(CliOAuthUnavailableError):
     """The subscription hit a usage/rate limit. Carries the best-effort reset time
     (from the SDK's ``RateLimitEvent``) so callers can tell the user when it lifts.
     Subclasses ``CliOAuthUnavailableError`` so ``SecondaryLLMBackend`` still
-    degrades to the user's configured fallback."""
+    degrades to the user's configured fallback.
+
+    ``message`` is for logs. ``user_message`` is the copy a client may see: it is
+    derived from ``resets_at`` and ``rate_limit_type`` only, never from
+    ``message``, so a future change to what the constructor is given cannot leak
+    to the client through it.
+    """
 
     def __init__(
         self,
@@ -108,6 +143,7 @@ class CliUsageLimitError(CliOAuthUnavailableError):
         super().__init__(message)
         self.resets_at = resets_at
         self.rate_limit_type = rate_limit_type
+        self.user_message = _usage_limit_message(resets_at, rate_limit_type)
 
 
 class CliConversationManager:
@@ -749,22 +785,6 @@ def _as_int(value: Any) -> int:
         return max(0, int(value))
     except (TypeError, ValueError):
         return 0
-
-
-def _usage_limit_message(
-    resets_at: Optional[datetime], rate_limit_type: Optional[str]
-) -> str:
-    window = f" ({rate_limit_type} window)" if rate_limit_type else ""
-    if resets_at is not None:
-        return (
-            f"Your subscription usage limit is reached{window}; it resets "
-            f"around {resets_at:%H:%M UTC on %b %d}. Configure a fallback provider "
-            f"in Settings > AI, or try again after that."
-        )
-    return (
-        f"Your subscription usage limit is reached{window}. Configure a "
-        f"fallback provider in Settings > AI, or try again later."
-    )
 
 
 def _usage_limit_error(

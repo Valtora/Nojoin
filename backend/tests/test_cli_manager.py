@@ -385,6 +385,22 @@ def test_usage_limit_message_includes_reset_and_window():
     assert "15:30" in message
 
 
+def test_usage_limit_message_drops_a_window_label_it_would_not_repeat():
+    # The label comes from the SDK. Only a short token is echoed to the user.
+    message = _usage_limit_message(None, "five hour <script>alert(1)</script>")
+    assert "window" not in message
+    assert "<" not in message
+
+
+def test_usage_limit_error_user_message_ignores_the_log_message():
+    exc = CliUsageLimitError(
+        "raw SDK failure text", resets_at=datetime(2026, 7, 7, 15, 30)
+    )
+    assert exc.user_message == _usage_limit_message(datetime(2026, 7, 7, 15, 30), None)
+    assert "raw SDK failure" not in exc.user_message
+    assert str(exc) == "raw SDK failure text"
+
+
 # --- token-usage accounting ---
 
 

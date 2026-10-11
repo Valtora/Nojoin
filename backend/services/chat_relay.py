@@ -139,11 +139,13 @@ def friendly_chat_error(exc: Exception) -> str:
     Shared by the worker (CLI chat) and the API's inline generator so both speak
     the same copy.
     """
-    # A CLI usage-limit error already carries a precise, reset-time-aware message.
+    # A CLI usage-limit error carries copy written for the user, built from its
+    # reset time and window label. Its str() is for logs and never reaches the
+    # client (CodeQL py/stack-trace-exposure, alert 41).
     from backend.processing.cli.manager import CliUsageLimitError
 
     if isinstance(exc, CliUsageLimitError):
-        return str(exc)
+        return exc.user_message
 
     error_msg = str(exc).lower()
     # First: the context-window message carries token counts, and a count such

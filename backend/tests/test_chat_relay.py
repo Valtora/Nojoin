@@ -237,12 +237,21 @@ def test_a_context_window_refusal_with_503_in_its_count_is_not_high_demand():
     assert "high demand" not in message
 
 
-def test_friendly_chat_error_passes_through_usage_limit():
+def test_friendly_chat_error_returns_usage_limit_user_message():
+    from datetime import datetime
+
     from backend.processing.cli.manager import CliUsageLimitError
 
+    # The constructor's message is for logs. Whatever it carries, the client
+    # sees only the copy built from the reset time and window label.
+    internal = "CLI exited 1: Traceback /app/backend/processing/cli/manager.py"
     exc = CliUsageLimitError(
-        "Your Claude subscription usage limit is reached; it resets around 15:30 UTC.",
-        resets_at=None,
+        internal, resets_at=datetime(2026, 7, 7, 15, 30), rate_limit_type="five_hour"
     )
-    # A usage-limit error already carries a precise reset-aware message.
-    assert chat_relay.friendly_chat_error(exc) == str(exc)
+
+    message = chat_relay.friendly_chat_error(exc)
+
+    assert message == exc.user_message
+    assert "15:30" in message and "five_hour" in message
+    assert "Traceback" not in message and "manager.py" not in message
+    assert str(exc) == internal
