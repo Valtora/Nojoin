@@ -367,8 +367,8 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
     category: "transcription",
     access: "admin",
     advanced: "can-degrade",
-    settingsKeys: ["whisper_model_size", "parakeet_model", "canary_model"],
-    keywords: ["whisper model", "model size", "tiny", "base", "small", "medium", "large", "turbo", "parakeet", "canary", "accuracy"],
+    settingsKeys: ["whisper_model_size", "parakeet_model", "canary_model", "gpu_asr_window_s"],
+    keywords: ["whisper model", "model size", "tiny", "base", "small", "medium", "large", "turbo", "parakeet", "canary", "accuracy", "gpu window", "vram", "out of memory"],
   },
   {
     id: "transcription-language",

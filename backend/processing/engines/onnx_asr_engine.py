@@ -6,9 +6,14 @@ import gc
 import logging
 import os
 import traceback
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import NamedTuple, Protocol
 
+from ...utils.config_manager import (
+    GPU_ASR_WINDOW_KEY,
+    config_manager,
+    normalise_gpu_asr_window,
+)
 from ...utils.languages import resolve_transcription_language_code
 from ..onnx_providers import gpu_is_present, sessions_use_cuda, verify_gpu_providers
 from ..processing_tuning import (
@@ -46,18 +51,46 @@ MAX_CHUNK_DURATION_S = 240.0
 # Tighter cap for GPU runs. The CUDA provider needs the fp32 weights (int8 has no
 # CUDA kernels), whose attention activations grow with the square of the window, so
 # 240s overflows an 8GB card while 160s fits. 120s is the largest window that still
-# leaves the card room for diarization afterwards.
+# leaves the card room for diarization afterwards. An administrator lowers it for
+# a card that live capture shares, or raises it for a larger card, through the
+# install-wide `gpu_asr_window_s` setting (config_manager); this is its default.
 GPU_MAX_CHUNK_DURATION_S = 120.0
 
 
-def max_chunk_duration_s() -> float:
+def gpu_asr_window_s(config: Mapping[str, object] | None = None) -> float:
+    """The GPU window: the install's `gpu_asr_window_s` when usable, else the default.
+
+    Reads the key from ``config`` (the merged settings a run is given, which
+    carry config.json's install-wide keys), else from config.json directly for
+    callers that have no merged settings. A set value outside the engine's
+    bounds is logged and ignored rather than raised: a setting never fails a
+    recording.
+    """
+    raw = config.get(GPU_ASR_WINDOW_KEY) if config else None
+    if raw is None and not config:
+        raw = config_manager.get(GPU_ASR_WINDOW_KEY)
+    if raw is None:
+        return GPU_MAX_CHUNK_DURATION_S
+    window = normalise_gpu_asr_window(raw)
+    if window is None:
+        logger.warning(
+            "Ignoring invalid %s=%r; using the default %ss.",
+            GPU_ASR_WINDOW_KEY,
+            raw,
+            GPU_MAX_CHUNK_DURATION_S,
+        )
+        return GPU_MAX_CHUNK_DURATION_S
+    return window
+
+
+def max_chunk_duration_s(config: Mapping[str, object] | None = None) -> float:
     """Longest window to feed onnx-asr in one recognize() call, for this device.
 
     Takes the smaller of the two caps on a GPU host so that tests, which shrink
     MAX_CHUNK_DURATION_S to keep fixtures tiny, stay effective either way.
     """
     if gpu_is_present():
-        return min(MAX_CHUNK_DURATION_S, GPU_MAX_CHUNK_DURATION_S)
+        return min(MAX_CHUNK_DURATION_S, gpu_asr_window_s(config))
     return MAX_CHUNK_DURATION_S
 
 
@@ -233,15 +266,20 @@ def _shift_segment(segment: dict, offset_s: float) -> dict:
     return shifted
 
 
-def _chunk_boundaries(audio, sample_rate: int) -> list[tuple[int, int]]:
-    """Split [0, len(audio)) into windows of at most MAX_CHUNK_DURATION_S.
+def _chunk_boundaries(
+    audio, sample_rate: int, window_s: float | None = None
+) -> list[tuple[int, int]]:
+    """Split [0, len(audio)) into windows of at most ``window_s`` seconds.
 
-    Each internal boundary is snapped, within CHUNK_SNAP_RADIUS_S of the ideal
-    cut, onto the quietest 0.2 s of audio so a window never cuts mid-word.
-    Returns a list of (start_frame, end_frame) pairs covering the whole signal.
+    ``window_s`` defaults to this device's cap. Each internal boundary is
+    snapped, within CHUNK_SNAP_RADIUS_S of the ideal cut, onto the quietest
+    0.2 s of audio so a window never cuts mid-word. Returns a list of
+    (start_frame, end_frame) pairs covering the whole signal.
     """
     total_frames = len(audio)
-    target = int(max_chunk_duration_s() * sample_rate)
+    if window_s is None:
+        window_s = max_chunk_duration_s()
+    target = int(window_s * sample_rate)
     radius = int(CHUNK_SNAP_RADIUS_S * sample_rate)
     probe = max(1, int(0.2 * sample_rate))
 
@@ -410,11 +448,12 @@ class OnnxAsrEngine(TranscriptionEngine):
             logger.info(f"Starting {self.name} transcription for {audio_path}")
             word_end_pad_s = resolve_tuning(config, ASR_WORD_END_PADDING_KEY)
 
-            if audio_duration is not None and audio_duration > max_chunk_duration_s():
+            window_s = max_chunk_duration_s(config)
+            if audio_duration is not None and audio_duration > window_s:
                 result = self._transcribe_chunked(
                     recognizer,
                     audio_path,
-                    audio_duration,
+                    window_s=window_s,
                     language_code=language_code,
                     word_end_pad_s=word_end_pad_s,
                 )
@@ -455,17 +494,20 @@ class OnnxAsrEngine(TranscriptionEngine):
         self,
         recognizer,
         audio_path: str,
-        audio_duration: float,
         *,
+        window_s: float | None = None,
         language_code: str | None = None,
         word_end_pad_s: float = WORD_END_PAD_S,
     ) -> dict:
         """Transcribe long audio as a sequence of windows, then merge.
 
-        Each window is at most MAX_CHUNK_DURATION_S long and its boundaries snap
-        onto quiet points so a spoken word is never split. Per-window segments
-        are shifted into absolute time and concatenated.
+        Each window is at most ``window_s`` long (this device's cap when not
+        given) and its boundaries snap onto quiet points so a spoken word is
+        never split. Per-window segments are shifted into absolute time and
+        concatenated.
         """
+        if window_s is None:
+            window_s = max_chunk_duration_s()
         import os
         import tempfile
 
@@ -477,10 +519,11 @@ class OnnxAsrEngine(TranscriptionEngine):
         if getattr(audio, "ndim", 1) > 1:
             audio = audio.mean(axis=1)
 
-        boundaries = _chunk_boundaries(audio, sample_rate)
+        boundaries = _chunk_boundaries(audio, sample_rate, window_s)
+        audio_duration = len(audio) / sample_rate
         logger.info(
             f"{self.name}: {audio_duration:.0f}s audio exceeds the "
-            f"{max_chunk_duration_s():.0f}s single-pass limit; transcribing in "
+            f"{window_s:.0f}s single-pass limit; transcribing in "
             f"{len(boundaries)} windows."
         )
 

@@ -259,3 +259,63 @@ def test_window_cap_tightens_on_gpu_and_respects_test_overrides(monkeypatch):
     # Tests shrink MAX_CHUNK_DURATION_S to keep fixtures tiny; that must still win.
     monkeypatch.setattr(e, "MAX_CHUNK_DURATION_S", 4.0)
     assert e.max_chunk_duration_s() == 4.0
+
+
+def test_gpu_window_follows_the_install_setting(monkeypatch, caplog):
+    """An administrator sizes the GPU window for the card through config.json;
+    the merged settings a run is given carry that key."""
+    from backend.processing.engines import onnx_asr_engine as e
+
+    monkeypatch.setattr(e, "gpu_is_present", lambda: True)
+
+    assert e.max_chunk_duration_s({"gpu_asr_window_s": 60}) == 60.0
+    assert e.max_chunk_duration_s({"gpu_asr_window_s": 240.0}) == 240.0
+    # Unset means the shipped default.
+    assert (
+        e.max_chunk_duration_s({"gpu_asr_window_s": None}) == e.GPU_MAX_CHUNK_DURATION_S
+    )
+    assert e.max_chunk_duration_s({}) == e.GPU_MAX_CHUNK_DURATION_S
+
+    # A value the engine cannot use never fails a run: logged, default used.
+    for bad in (10, 500, "90", True, float("nan")):
+        caplog.clear()
+        with caplog.at_level("WARNING"):
+            assert (
+                e.max_chunk_duration_s({"gpu_asr_window_s": bad})
+                == e.GPU_MAX_CHUNK_DURATION_S
+            )
+        assert "Ignoring invalid gpu_asr_window_s" in caplog.text
+
+    # The CPU cap is a different constraint and ignores the GPU setting.
+    monkeypatch.setattr(e, "gpu_is_present", lambda: False)
+    assert e.max_chunk_duration_s({"gpu_asr_window_s": 60}) == e.MAX_CHUNK_DURATION_S
+
+
+def test_gpu_window_reads_config_json_when_no_settings_are_passed(monkeypatch):
+    from backend.processing.engines import onnx_asr_engine as e
+
+    monkeypatch.setattr(e, "gpu_is_present", lambda: True)
+    monkeypatch.setattr(
+        e.config_manager,
+        "get",
+        lambda key, default=None: 45 if key == "gpu_asr_window_s" else default,
+    )
+    assert e.max_chunk_duration_s() == 45.0
+
+
+def test_chunk_boundaries_use_the_window_they_are_given():
+    import numpy as np
+
+    from backend.processing.engines import onnx_asr_engine as e
+
+    sample_rate = 100
+    audio = np.zeros(sample_rate * 100, dtype="float32")
+
+    boundaries = e._chunk_boundaries(audio, sample_rate, window_s=40.0)
+
+    # Snapping may pull a cut earlier within its radius, never later, so no
+    # window exceeds the one given, and the windows tile the whole signal.
+    assert all(end - start <= 40 * sample_rate for start, end in boundaries)
+    assert boundaries[0][0] == 0 and boundaries[-1][1] == len(audio)
+    assert all(a[1] == b[0] for a, b in zip(boundaries, boundaries[1:]))
+    assert len(boundaries) >= 3

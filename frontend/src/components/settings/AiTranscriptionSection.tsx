@@ -3,9 +3,11 @@ import { HelpCircle } from "lucide-react";
 
 import { Settings } from "@/types";
 import { getModelsStatus } from "@/lib/api";
+import { cn } from "@/lib/cn";
 import Tooltip from "@/components/ui/Tooltip";
 import SettingsBlock from "./SettingsBlock";
 import SettingsCard from "./SettingsCard";
+import { SETTINGS_INPUT_CLASS } from "./settingsControls";
 import WhisperModelModal from "./WhisperModelModal";
 import ModelDownloadPromptModal from "./ModelDownloadPromptModal";
 import type { AISettingsModels } from "./useAISettingsModels";
@@ -30,6 +32,107 @@ const WHISPER_MODELS = [
   },
   { id: "turbo", label: "Turbo", params: "809 M", vram: "~6 GB", speed: "~8x" },
 ];
+
+/**
+ * Bounds of the GPU transcription window, mirroring the engine's
+ * (GPU_ASR_WINDOW_MIN_S / MAX_S in backend/utils/config_manager.py). The
+ * default is the engine's GPU_MAX_CHUNK_DURATION_S.
+ */
+export const GPU_ASR_WINDOW_MIN_S = 30;
+export const GPU_ASR_WINDOW_MAX_S = 240;
+export const GPU_ASR_WINDOW_DEFAULT_S = 120;
+
+/**
+ * Parse what was typed into the GPU window field: null for an empty field
+ * (the default), a number inside the bounds, or undefined when it cannot be
+ * saved as typed.
+ */
+export function parseGpuAsrWindowInput(text: string): number | null | undefined {
+  const trimmed = text.trim();
+  if (trimmed === "") return null;
+  const value = Number(trimmed);
+  if (!Number.isFinite(value)) return undefined;
+  if (value < GPU_ASR_WINDOW_MIN_S || value > GPU_ASR_WINDOW_MAX_S) return undefined;
+  return value;
+}
+
+interface GpuWindowFieldProps {
+  value: number | null | undefined;
+  disabled: boolean;
+  onCommit: (value: number | null) => void | Promise<void>;
+}
+
+/**
+ * The install-wide GPU transcription window. Saved on blur or Enter rather
+ * than per keystroke: a half-typed "6" is not a window anyone wants persisted.
+ */
+function GpuWindowField({ value, disabled, onCommit }: GpuWindowFieldProps) {
+  const [draft, setDraft] = useState(value == null ? "" : String(value));
+  const [shown, setShown] = useState(value);
+  // Follow a change made elsewhere (the initial load, another tab) without
+  // rewriting what the user is typing when it already parses to that value.
+  if (!Object.is(value, shown)) {
+    setShown(value);
+    if (parseGpuAsrWindowInput(draft) !== (value ?? null)) {
+      setDraft(value == null ? "" : String(value));
+    }
+  }
+  const parsed = parseGpuAsrWindowInput(draft);
+  const error =
+    parsed === undefined
+      ? `Enter a number of seconds from ${GPU_ASR_WINDOW_MIN_S} to ${GPU_ASR_WINDOW_MAX_S}, or leave it empty for the default.`
+      : null;
+
+  const commit = () => {
+    if (parsed === undefined || parsed === (value ?? null)) return;
+    void onCommit(parsed);
+  };
+
+  return (
+    <div>
+      <label
+        htmlFor="gpu-asr-window-s"
+        className="block text-sm font-medium text-contrast-muted mb-2"
+      >
+        <Tooltip
+          content="The longest stretch of audio Parakeet or Canary transcribes in one call on a GPU host. Lower it if transcription runs out of GPU memory while live capture shares the card; raise it on a larger card."
+          position="right"
+        >
+          <span className="flex items-center gap-1 cursor-help">
+            GPU transcription window (seconds){" "}
+            <HelpCircle className="w-3 h-3 text-contrast-helper" />
+          </span>
+        </Tooltip>
+      </label>
+      <input
+        id="gpu-asr-window-s"
+        type="number"
+        inputMode="numeric"
+        min={GPU_ASR_WINDOW_MIN_S}
+        max={GPU_ASR_WINDOW_MAX_S}
+        step={10}
+        value={draft}
+        placeholder={`Default (${GPU_ASR_WINDOW_DEFAULT_S})`}
+        disabled={disabled}
+        aria-invalid={error ? true : undefined}
+        aria-describedby="gpu-asr-window-s-help"
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            commit();
+          }
+        }}
+        className={cn(SETTINGS_INPUT_CLASS, error && "border-danger-text")}
+      />
+      <p id="gpu-asr-window-s-help" className="mt-2 text-xs contrast-helper">
+        {error ??
+          `Applies to every user. The default of ${GPU_ASR_WINDOW_DEFAULT_S} seconds is sized for an 8 GB card with room left for diarisation; the CPU window is fixed at ${GPU_ASR_WINDOW_MAX_S}.`}
+      </p>
+    </div>
+  );
+}
 
 interface AiTranscriptionSectionProps {
   settings: Settings;
@@ -242,6 +345,15 @@ export default function AiTranscriptionSection({
               whether to download it now or on first use.
             </p>
           </div>
+        )}
+        {(settings.transcription_backend || "whisper") !== "whisper" && (
+          <GpuWindowField
+            value={settings.gpu_asr_window_s}
+            disabled={!isAdmin}
+            onCommit={(next) =>
+              onPersist({ ...settings, gpu_asr_window_s: next })
+            }
+          />
         )}
         <WhisperModelModal
           isOpen={showWhisperModal}
