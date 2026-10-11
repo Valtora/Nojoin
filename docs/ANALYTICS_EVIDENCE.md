@@ -147,6 +147,28 @@ underestimate, never an overestimate, which is why the interface presents the
 figure as "at least". Far-field and MP3-degraded audio (the import case) cost
 essentially nothing, closing a gap the published literature leaves open.
 
+**Can the underestimate be closed? (October 2026, #370.)** The aggregation
+has three knobs: the per-speaker activation threshold, the fraction of
+overlapping windows that must vote for a frame, and the window step, which
+sets how many votes a frame gets. All 24 combinations of three activation
+levels (0.5, 0.4, 0.3), four vote fractions (majority, a third, a quarter, any
+one window) and two steps (2.5 s, the shipped value, and 1.25 s) were scored
+on the same ten files (five meetings, both channels) at the 250ms collar.
+Shipped: precision 0.84 mean and 0.71 minimum, recall 0.72, totals 70-91% of
+truth. The activation threshold changes nothing, because the powerset head
+already decodes to one class per frame. Every setting that raises the totals
+lowers precision on the worst meeting below the shipped floor: at 2.5 s, "any
+one window" brings the mean total to 98% but precision to 0.74 mean and 0.47
+minimum, and overshoots on three files (up to 123%); at 1.25 s, a one-third
+vote is the best F1 (0.772 against 0.768) with totals at 82% and a minimum
+precision of 0.68, for twice the inference. A flat calibration factor on the
+total (about 1.27) would put files between 89% and 116% of truth, so the
+figure would stop being a floor and gain a 15% error either way. The shortfall
+is the detector's own recall, which matches the published figures for this
+model family on AMI (0.66-0.71), so the method, its version and the "at
+least" framing stand. The sweep script and raw results are in the corpus
+directory beside the harness.
+
 ## Delivery descriptors
 
 **What the pace figure is.** Words per utterance duration, median over
@@ -295,6 +317,8 @@ are CC BY 4.0 and PTDB-TUG is ODbL; both are free downloads). The procedure:
   median-F0 bias and semitone-IQR error with the two-pass applied to both
   tracks, so estimator error is isolated from the definitional question of
   whether creak frames count.
+
+The aggregation sweep behind the October 2026 "can the underestimate be closed" finding is `harness/sweep_osd.py` in the same directory; it reuses the harness's masks and scoring, runs the model once per file and step, and evaluates every threshold combination from the stored activations.
 
 ## Key sources
 
