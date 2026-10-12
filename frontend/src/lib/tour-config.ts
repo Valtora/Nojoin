@@ -65,7 +65,7 @@ export const recordingsSteps: DriveStep[] = [
     element: '#recordings-landing-panel',
     popover: {
       title: 'Start Here',
-      description: 'When this workspace is empty, go to the Meet Now card on the dashboard and click Start Meeting to record a session. If the button is disabled, follow the paused-recording or browser-support guidance first.',
+      description: 'When this workspace is empty, go to the Meet Now card on the dashboard and click Start Meeting to record a session, or use Import Audio at the top of the recordings list to add an existing file. If a button is disabled, follow the paused-recording or browser-support guidance first.',
       side: 'left',
     }
   }

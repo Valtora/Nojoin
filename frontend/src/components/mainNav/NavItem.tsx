@@ -8,7 +8,6 @@ interface NavItemProps {
   collapsed: boolean;
   badge?: number;
   id?: string;
-  disabled?: boolean;
 }
 
 export default function NavItem({
@@ -19,17 +18,11 @@ export default function NavItem({
   collapsed,
   badge,
   id,
-  disabled = false,
 }: NavItemProps) {
   return (
     <button
       id={id}
-      onClick={() => {
-        if (!disabled) {
-          onClick();
-        }
-      }}
-      disabled={disabled}
+      onClick={onClick}
       title={collapsed ? label : undefined}
       className={`
         w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors duration-150
@@ -37,11 +30,8 @@ export default function NavItem({
         ${
           isActive
             ? "bg-rail-item-active text-rail-item-active-fg"
-            : disabled
-              ? "text-rail-fg-muted"
-              : "text-rail-fg hover:bg-rail-item-hover"
+            : "text-rail-fg hover:bg-rail-item-hover"
         }
-        ${disabled ? "cursor-not-allowed opacity-60" : ""}
         ${collapsed ? "justify-center" : ""}
       `}
     >

@@ -5,8 +5,12 @@ import {
   renderWithProviders,
   screen,
   waitFor,
+  within,
 } from "@/test/renderWithProviders";
+import { useImportAudioStore } from "@/lib/importAudioStore";
+import type { ViewType } from "@/lib/store";
 import Sidebar from "./Sidebar";
+import ImportAudioHost from "./importAudio/ImportAudioHost";
 import { RecordingStatus, type Recording } from "@/types";
 
 const routerPush = vi.fn();
@@ -16,6 +20,9 @@ const getRecordings = vi.fn();
 const getGlobalSpeakers = vi.fn();
 const getTags = vi.fn();
 const getRecordingsCalendar = vi.fn();
+
+let currentView: ViewType = "recordings";
+let pausedRecording: { id: string } | null = null;
 
 vi.mock("next/link", () => ({
   default: ({ children, href, ...props }: React.ComponentPropsWithoutRef<"a">) => (
@@ -52,7 +59,7 @@ vi.mock("@/lib/capture/CaptureProvider", () => ({
   useCapture: () => ({
     cancel: vi.fn(),
     recordingId: null,
-    pausedRecording: null,
+    pausedRecording,
     runtimeActive: false,
   }),
 }));
@@ -67,7 +74,7 @@ vi.mock("@/lib/timezone", () => ({
 
 vi.mock("@/lib/store", () => ({
   useNavigationStore: () => ({
-    currentView: "recordings",
+    currentView,
     selectedTagIds: [],
     toggleTagFilter: vi.fn(),
     clearTagFilters: vi.fn(),
@@ -92,7 +99,9 @@ vi.mock("@/lib/searchUtils", () => ({
 }));
 
 vi.mock("./MeetingControls", () => ({
-  default: () => <div data-testid="meeting-controls" />,
+  default: ({ pairedAction }: { pairedAction?: React.ReactNode }) => (
+    <div data-testid="meeting-controls">{pairedAction}</div>
+  ),
 }));
 
 vi.mock("./MonthCalendar", () => ({
@@ -119,6 +128,11 @@ vi.mock("./BatchActionBar", () => ({
   default: () => null,
 }));
 
+vi.mock("./ImportAudioModal", () => ({
+  default: ({ isOpen }: { isOpen: boolean }) =>
+    isOpen ? <div data-testid="import-modal" /> : null,
+}));
+
 const recording: Recording = {
   id: "rec-1",
   created_at: "2026-05-25T11:54:00Z",
@@ -139,6 +153,9 @@ describe("Sidebar", () => {
     routerPush.mockReset();
     routerReplace.mockReset();
     addNotification.mockReset();
+    currentView = "recordings";
+    pausedRecording = null;
+    useImportAudioStore.setState({ isImportAudioOpen: false });
 
     getRecordings.mockResolvedValue([recording]);
     getGlobalSpeakers.mockResolvedValue([]);
@@ -189,6 +206,136 @@ describe("Sidebar", () => {
 
     await waitFor(() => {
       expect(getRecordings.mock.calls.length).toBeGreaterThan(callsAfterMount);
+    });
+  });
+
+  describe("Import Audio", () => {
+    const renderList = () =>
+      renderWithProviders(
+        <>
+          <Sidebar />
+          <ImportAudioHost />
+        </>,
+      );
+    const importButtons = () =>
+      screen.queryAllByRole("button", { name: "Import Audio" });
+    // jsdom applies no CSS, so the desktop pair and the phone header button
+    // are both in the tree; each is found by where it sits.
+    const desktopImport = () =>
+      within(screen.getByTestId("meeting-controls")).getByRole("button", {
+        name: "Import Audio",
+      });
+    const phoneImport = () =>
+      importButtons().find((button) => button.textContent === "Import");
+    const emptyState = () =>
+      screen.getByText("No recordings found.").parentElement as HTMLElement;
+
+    it("pairs a labelled Import Audio with Start Meeting and opens the dialog", async () => {
+      renderList();
+      await screen.findByRole("heading", { name: "Latest meeting" });
+
+      const button = desktopImport();
+      expect(button).toHaveTextContent("Import Audio");
+      expect(screen.queryByTestId("import-modal")).not.toBeInTheDocument();
+
+      fireEvent.click(button);
+
+      expect(screen.getByTestId("import-modal")).toBeInTheDocument();
+    });
+
+    it("offers a short Import in the phone list header, named in full", async () => {
+      renderList();
+      await screen.findByRole("heading", { name: "Latest meeting" });
+
+      const button = phoneImport();
+      expect(button).toBeDefined();
+      fireEvent.click(button as HTMLElement);
+
+      expect(screen.getByTestId("import-modal")).toBeInTheDocument();
+    });
+
+    it.each<ViewType>(["archived", "deleted"])(
+      "has no import entry in the %s view",
+      async (view) => {
+        currentView = view;
+        getRecordings.mockResolvedValue([]);
+        renderList();
+
+        await screen.findByText(/^No (archived|deleted) recordings\.$/);
+        expect(importButtons()).toHaveLength(0);
+      },
+    );
+
+    it("is disabled while a paused recording holds the capture lock, and re-enables when it clears", async () => {
+      pausedRecording = { id: "rec-paused" };
+      getRecordings.mockResolvedValue([]);
+      const { rerender } = renderList();
+
+      await waitFor(() => {
+        expect(importButtons()).toHaveLength(3);
+      });
+      for (const button of importButtons()) {
+        expect(button).toBeDisabled();
+        fireEvent.click(button);
+      }
+      expect(screen.queryByTestId("import-modal")).not.toBeInTheDocument();
+
+      pausedRecording = null;
+      rerender(
+        <>
+          <Sidebar />
+          <ImportAudioHost />
+        </>,
+      );
+
+      for (const button of importButtons()) {
+        expect(button).toBeEnabled();
+      }
+    });
+
+    it("opens the import dialog from the empty list", async () => {
+      getRecordings.mockResolvedValue([]);
+      renderList();
+
+      fireEvent.click(
+        await within(emptyState()).findByRole("button", { name: "Import Audio" }),
+      );
+
+      expect(screen.getByTestId("import-modal")).toBeInTheDocument();
+    });
+
+    it("keeps the empty-list button back until the first fetch lands", async () => {
+      let resolveRecordings: (value: Recording[]) => void = () => {};
+      getRecordings.mockReturnValue(
+        new Promise<Recording[]>((resolve) => {
+          resolveRecordings = resolve;
+        }),
+      );
+      renderList();
+
+      expect(
+        within(emptyState()).queryByRole("button", { name: "Import Audio" }),
+      ).not.toBeInTheDocument();
+
+      resolveRecordings([]);
+
+      expect(
+        await within(emptyState()).findByRole("button", { name: "Import Audio" }),
+      ).toBeInTheDocument();
+    });
+
+    it("offers no empty-list button when a search is what emptied the list", async () => {
+      getRecordings.mockResolvedValue([]);
+      renderList();
+      await within(emptyState()).findByRole("button", { name: "Import Audio" });
+
+      fireEvent.change(screen.getByPlaceholderText("Search..."), {
+        target: { value: "budget" },
+      });
+
+      expect(
+        within(emptyState()).queryByRole("button", { name: "Import Audio" }),
+      ).not.toBeInTheDocument();
     });
   });
 });

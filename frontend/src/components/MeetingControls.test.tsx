@@ -40,6 +40,10 @@ vi.mock("@/lib/notificationStore", () => ({
   useNotificationStore: () => ({ addNotification }),
 }));
 
+vi.mock("./LiveMeetingControls", () => ({
+  default: () => <div data-testid="live-controls" />,
+}));
+
 describe("MeetingControls", () => {
   beforeEach(() => {
     routerPush.mockReset();
@@ -86,5 +90,31 @@ describe("MeetingControls", () => {
 
     expect(addNotification).not.toHaveBeenCalled();
     expect(routerPush).not.toHaveBeenCalled();
+  });
+
+  it("keeps the sidebar's paired action through idle, recording, paused and finalizing", () => {
+    const paired = <button type="button">Import Audio</button>;
+    const renderAs = (runtimeActive: boolean, status: string) => {
+      captureState.runtimeActive = runtimeActive;
+      captureState.status = status;
+      return <MeetingControls pairedAction={paired} />;
+    };
+    const { rerender } = render(renderAs(false, "idle"));
+    expect(screen.getByRole("button", { name: "Start Meeting" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Import Audio" })).toBeInTheDocument();
+
+    for (const status of ["recording", "paused"]) {
+      rerender(renderAs(true, status));
+      expect(screen.getByTestId("live-controls")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Start Meeting" })).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Import Audio" })).toBeInTheDocument();
+    }
+
+    // Finalizing hands the row back to the status button, which is disabled
+    // and carries the stage; the paired action stays.
+    rerender(renderAs(true, "finalizing"));
+    expect(screen.queryByTestId("live-controls")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Finalizing meeting..." })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Import Audio" })).toBeInTheDocument();
   });
 });

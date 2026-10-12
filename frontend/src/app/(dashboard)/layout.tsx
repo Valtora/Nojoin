@@ -10,6 +10,7 @@ import TelemetryNotice from "@/components/TelemetryNotice";
 import TourGuide from "@/components/TourGuide";
 import CaptureShell from "@/components/CaptureShell";
 import RecordingFloatingBadge from "@/components/RecordingFloatingBadge";
+import ImportAudioHost from "@/components/importAudio/ImportAudioHost";
 import { CaptureProvider } from "@/lib/capture/CaptureProvider";
 
 export default function DashboardLayout({
@@ -57,6 +58,7 @@ export default function DashboardLayout({
           </div>
         </div>
         <RecordingFloatingBadge />
+        <ImportAudioHost />
       </CaptureShell>
     </CaptureProvider>
   );

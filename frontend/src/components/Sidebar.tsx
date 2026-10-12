@@ -22,6 +22,7 @@ import {
   Trash2,
 } from "lucide-react";
 import IconButton from "./ui/IconButton";
+import ImportAudioButton from "./importAudio/ImportAudioButton";
 import RecordingInfoModal from "./RecordingInfoModal";
 import MeetingControls from "./MeetingControls";
 import { useState, useEffect, useCallback, useMemo } from "react";
@@ -136,6 +137,7 @@ export default function Sidebar() {
   const [mounted, setMounted] = useState(false);
   // `isDesktopLayout` now comes from the shared viewport provider (aliased above).
   const [recordings, setRecordings] = useState<Recording[]>([]);
+  const [hasLoadedRecordings, setHasLoadedRecordings] = useState(false);
   const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(
     null,
   );
@@ -338,6 +340,7 @@ export default function Sidebar() {
 
       const data = await getRecordings(filters);
       setRecordings(data);
+      setHasLoadedRecordings(true);
 
         } catch (error: unknown) {
       console.error("Failed to fetch recordings:", error);
@@ -695,13 +698,17 @@ export default function Sidebar() {
               <Mic aria-hidden="true" className="h-4 w-4" />
             )}
           </span>
+          {view === "recordings" && <ImportAudioButton appearance="icon" />}
         </div>
       )}
       {!isCollapsed && (
       <div className="flex-1 overflow-y-auto">
       {view === "recordings" && (
         <div className="hidden lg:block">
-          <MeetingControls onMeetingEnd={fetchRecordings} />
+          <MeetingControls
+            onMeetingEnd={fetchRecordings}
+            pairedAction={<ImportAudioButton className="w-full" />}
+          />
         </div>
       )}
 
@@ -716,6 +723,11 @@ export default function Sidebar() {
               {currentViewLabel}
             </div>
           </div>
+          {/* Start Meeting is not in the list on a phone, so Import stands
+              alone here, beside the title rather than squeezing search. */}
+          {view === "recordings" && (
+            <ImportAudioButton appearance="compact" className="ml-auto" />
+          )}
         </div>
 
         {selectionMode ? (
@@ -752,7 +764,7 @@ export default function Sidebar() {
                   placeholder="Search..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-9 pr-4 py-2 text-sm bg-control-bg border border-control-border rounded-lg text-foreground placeholder:text-control-placeholder focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-focus-ring"
+                  className="w-full pl-9 pr-9 py-2 text-sm bg-control-bg border border-control-border rounded-lg text-foreground placeholder:text-control-placeholder focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-focus-ring"
                 />
                 <button
                   onClick={() => setShowFilters(!showFilters)}
@@ -935,6 +947,13 @@ export default function Sidebar() {
           <div className="text-center p-4 text-rail-fg-muted text-sm">
             <p>{getEmptyMessage().main}</p>
             <p className="mt-1 text-xs">{getEmptyMessage().sub}</p>
+            {/* Only for a library that is really empty: not before the first
+                fetch lands, and not when a search or filter hides the rows. */}
+            {view === "recordings" && hasLoadedRecordings && !hasActiveFilters && (
+              <div className="mt-3">
+                <ImportAudioButton />
+              </div>
+            )}
           </div>
         )}
         {filteredRecordings.map((recording, index) => {
