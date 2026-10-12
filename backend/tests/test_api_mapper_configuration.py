@@ -1,8 +1,9 @@
 """The ORM mapper graph must configure from every real entry point.
 
 Relationships name their targets by string, so SQLAlchemy resolves them only
-once every class exists. Most test modules import ``backend.models.registry``,
-which registers everything and therefore hides a missing registration -- the
+once every class exists. ``backend/tests/conftest.py`` imports
+``backend.models.registry``, which registers everything for every test and
+therefore hides a missing registration -- the
 whole suite can pass while production fails at start with:
 
     expression 'DocumentPage.page_number' failed to locate a name

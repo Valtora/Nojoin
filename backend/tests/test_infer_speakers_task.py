@@ -11,10 +11,12 @@ from sqlmodel import Session
 
 import backend.utils.llm_config as llm_config_module
 import backend.worker.tasks as tasks_module
+from backend.utils.meeting_notes import MeetingEventContext
 from backend.utils.speaker_name_suggestions import (
     SpeakerInferenceResult,
     SpeakerInferenceSuggestion,
     SpeakerSuggestionEvidenceSpan,
+    build_mapping_based_speaker_suggestions,
     detect_rule_based_speaker_suggestions,
 )
 
@@ -32,7 +34,8 @@ CREATE TABLE users (
     token_version INTEGER NOT NULL,
     settings JSON,
     has_seen_demo_recording BOOLEAN NOT NULL,
-    invitation_id INTEGER
+    invitation_id INTEGER,
+    ai_analysis_daily_limit INTEGER
 );
 
 CREATE TABLE recordings (
@@ -292,6 +295,113 @@ def test_rule_based_speaker_suggestions_ignore_non_name_this_is_phrase() -> None
     )
 
     assert result.suggestions == ()
+
+
+def _rule_based_names(line: str, attendees: list[str] | None = None) -> list[str]:
+    result = detect_rule_based_speaker_suggestions(
+        [{"start": 0.0, "end": 4.0, "speaker": "SPEAKER_00", "text": line}],
+        ["SPEAKER_00"],
+        MeetingEventContext(attendees=attendees) if attendees is not None else None,
+    )
+    return [suggestion.suggested_name for suggestion in result.suggestions]
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "Okay, I'm going to share my screen now.",
+        "I am not sure about that.",
+        "I'm sorry, go ahead.",
+        "Just here to listen today.",
+        "Generally speaking, the rollout went fine.",
+        "I'm here.",
+        "So this is Tom's laptop.",
+        "So this is Tom’s laptop.",
+        "I’m going to share my screen now.",
+        "I'M GOING TO SHARE MY SCREEN.",
+        # A line starts with a capital in any cased transcript, so "X here" and
+        # "X speaking" only count when the cue closes the clause.
+        "But here's the thing.",
+        "Anybody here?",
+        "Click here to open it.",
+        # Even when the cue closes the clause, a line-start capital cannot tell
+        # a name from an imperative or an adverb, so without a linked attendee
+        # to match these name no one, a real "Priya here." included.
+        "Click here.",
+        "Sign here.",
+        "Click here, then pick the file.",
+        "Broadly speaking, it went fine.",
+        "Realistically speaking, no.",
+        "Priya here.",
+        "Tom speaking, can everyone hear me?",
+        # Lowercase transcripts carry no capitalisation evidence, so the rule
+        # makes no suggestion rather than guessing.
+        "hi, i'm priya.",
+    ],
+)
+def test_rule_based_speaker_suggestions_reject_non_name_introductions(
+    line: str,
+) -> None:
+    assert _rule_based_names(line) == []
+
+
+@pytest.mark.parametrize(
+    ("line", "expected"),
+    [
+        ("Hi, I'm Priya.", ["Priya"]),
+        ("Hi, I’m Priya.", ["Priya"]),
+        ("And my name is Priya Shah.", ["Priya Shah"]),
+        ("Morning, this is Tom from finance.", ["Tom"]),
+        ("THIS IS TOM HERE.", ["Tom"]),
+        ("This Is Priya Shah Speaking.", ["Priya Shah"]),
+        ("I'm going to start, so hi, I'm Priya.", ["Priya"]),
+        # Unpunctuated, the rejected capture runs on into the real introduction.
+        ("I'm Sorry I'm Priya.", ["Priya"]),
+        ("Hi, my name is Tom and I'm a product manager.", ["Tom"]),
+        ("I'm an engineer, my name is Priya.", ["Priya"]),
+        (
+            "My name is Priya Shah, and I'm an engineer on the platform team.",
+            ["Priya Shah"],
+        ),
+    ],
+)
+def test_rule_based_speaker_suggestions_keep_real_introductions(
+    line: str, expected: list[str]
+) -> None:
+    assert _rule_based_names(line) == expected
+
+
+@pytest.mark.parametrize(
+    ("line", "expected"),
+    [
+        ("Priya here, can you hear me?", ["Priya Shah"]),
+        ("Priya here.", ["Priya Shah"]),
+        ("Tom speaking, can everyone hear me?", ["Tom Reed"]),
+        ("Click here.", []),
+        ("Broadly speaking, it went fine.", []),
+    ],
+)
+def test_line_start_self_identification_names_only_a_linked_attendee(
+    line: str, expected: list[str]
+) -> None:
+    assert _rule_based_names(line, ["Priya Shah", "Tom Reed"]) == expected
+
+
+def test_line_start_self_identification_still_corroborates_the_models_name() -> None:
+    # Without a calendar link the rule names no one from "Priya here.", but when
+    # the model has already named the speaker Priya, the line is still evidence.
+    result = build_mapping_based_speaker_suggestions(
+        {"SPEAKER_00": "Priya"},
+        segments=[
+            {"start": 0.0, "end": 2.0, "speaker": "SPEAKER_00", "text": "Priya here."}
+        ],
+        eligible_labels=["SPEAKER_00"],
+    )
+
+    (suggestion,) = result.suggestions
+    assert suggestion.suggested_name == "Priya"
+    assert "self_identification" in suggestion.signals
+    assert suggestion.confidence == 0.95
 
 
 def test_infer_speakers_task_updates_speakers_and_restores_recording_state(

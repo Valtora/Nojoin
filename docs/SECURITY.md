@@ -57,6 +57,7 @@ Nojoin's built-in MCP connector ([MCP.md](MCP.md)) issues OAuth 2.1 access token
 - Authorization codes are single-use, PKCE-bound (S256), and expire after 60 seconds. Refresh tokens are stored hashed and rotate on every use; reuse of a rotated refresh token revokes the entire grant family.
 - Dynamic client registration is open (as the MCP specification requires) but rate limited, accepts only public PKCE clients with HTTPS redirect URIs, and grants no access by itself — every grant requires an interactive, origin-checked consent by a signed-in user.
 - Users can list and revoke connector grants under Personal settings. Password changes, admin resets, and session revocation invalidate outstanding MCP access tokens through the shared `token_version` mechanism.
+- A user who must change their password before consenting is sent to `/settings/profile` with the consent URL in `?next=`, and returned to it after the change. The return target is accepted only if it resolves to `/oauth/authorize` on Nojoin's own origin (`frontend/src/lib/passwordChangeReturn.ts`), so a crafted link cannot redirect anywhere else. The most it can do is open a consent screen, which still needs the user's approval.
 - With anonymous discovery enabled (`MCP_ANONYMOUS_DISCOVERY`, default on), the `/mcp` endpoint answers the MCP protocol handshake and tool listing without a token, and an unauthenticated tool call receives an in-band authentication challenge instead of executing. This exists for clients that cannot start OAuth from a bare `401` (Codex Desktop). The disclosure is limited to generic tool metadata — names, descriptions, schemas, and scopes, identical on every deployment and already published in [MCP.md](MCP.md). No tool executes without an authenticated user, enforced at a single choke point ahead of every tool rather than per tool; no user data is reachable anonymously; everything outside the fixed five-method allowlist (including malformed requests) keeps the strict `401`; and the anonymous surface is rate limited per client IP. Set `MCP_ANONYMOUS_DISCOVERY=false` to restore the strict `401` for every unauthenticated request.
 - Operators can remove the entire connector surface with `MCP_ENABLED=false` (see [DEPLOYMENT.md](DEPLOYMENT.md)); every connector endpoint then responds `404`.
 
@@ -70,6 +71,7 @@ Nojoin can route a user's AI inference through their own **Claude** (Pro/Max) or
 - CLI OAuth is **swappable and non-load-bearing**: any failure (auth, usage limit) degrades through the server's default provider chain — the primary provider first, then the secondary if that also fails. Usage limits set a best-effort reset time surfaced in Settings.
 - Usage accounting stores **aggregate counts only**: a per-user daily rollup of token counts and request totals, plus the latest rate-limit reading, so administrators can review subscription usage. Prompt and response **content is never stored**, and the SDK's notional per-turn cost is kept for reference but never surfaced as money (a subscription is flat-rate).
 - Disconnecting (Settings > Your AI) deletes the encrypted credential and wipes the user's per-user CLI working directory.
+- The two CLIs are installed unpinned, so each image build takes the latest release. The build **verifies both against the npm registry's signatures and provenance attestations** and fails if either does not verify, and it records the installed versions at `/usr/local/share/nojoin/cli-versions.json` in the image (the SBOM attestation carries them too). The Codex CLI ships as a stripped native binary that the image scanner cannot inspect, so a release check looks its version up in the advisory database by hand; see [DEVELOPMENT.md](DEVELOPMENT.md#validating-images-locally-before-cutting-a-tag).
 
 ## JWT Signing Key Rotation
 
@@ -108,13 +110,13 @@ Nojoin makes a small number of outbound connections from the server. Operators r
 - **Release metadata**: the API queries the GitHub Releases API to show update availability in Settings.
 - **AI providers**: only when a non-local provider is configured; local Ollama keeps inference on your own network.
 - **Calendar providers**: only when a user connects a Google or Microsoft account.
-- **Anonymous telemetry**: one ping every six hours to `telemetry.nojoin.co.uk` from the `worker-io` lane.
+- **Anonymous telemetry**: a daily heartbeat, and optionally one diagnostics ping every six hours, to `telemetry.nojoin.co.uk` from the `worker-io` lane.
 
-The telemetry ping is anonymous by construction rather than by policy. It is identified only by a UUID4 generated on your own server, and it carries counts and configuration shape — never meeting content, names, hostnames, URLs, credentials, or model names. The receiving service records nothing derived from the connection: the client IP is used only for rate limiting and is never stored.
+Both are anonymous by construction rather than by policy. They are identified only by a UUID4 generated on your own server. The heartbeat carries that ID and the version and nothing else, and the receiving service discards any other heartbeat field. The diagnostics carry counts and configuration shape, never meeting content, names, hostnames, URLs, credentials, or model names. The receiving service records nothing derived from the connection: the client IP is used only for rate limiting and is never stored.
 
-It is enabled by default, but an installation upgraded into the feature sends nothing until an administrator has been shown the notice. It can be disabled from Settings, pinned off with `NOJOIN_TELEMETRY_ENABLED=false` (which the UI cannot override), or blocked at the network layer with no effect on any other function.
+Diagnostics are enabled by default, but an installation upgraded into the feature sends none until an administrator has been shown the notice, and they can be disabled from Settings. The heartbeat has no switch in the app. `NOJOIN_TELEMETRY_ENABLED=false`, which the UI cannot override, stops both, as does a block at the network layer, with no effect on any other function. An installation that turned telemetry off before 2.7.0 sends neither.
 
-The payload is assembled in exactly one function and locked by a test that fails if a field is added without updating the disclosure, and the receiving Worker is open source in [telemetry/](../telemetry/). See [TELEMETRY.md](TELEMETRY.md).
+Each payload is assembled in exactly one function and locked by a test that fails if a field is added without updating the disclosure, and the receiving Worker is open source in [telemetry/](../telemetry/). See [TELEMETRY.md](TELEMETRY.md).
 
 ## Vulnerability Scanning and Severity Policy
 

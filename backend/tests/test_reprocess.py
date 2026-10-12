@@ -478,8 +478,10 @@ async def _insert_recording(
         await session.commit()
 
 
-def _patch_delay(monkeypatch):
-    """Patch celery_app.send_task; return the captured-calls list."""
+def _patch_delay(
+    monkeypatch, task: str = "backend.worker.tasks.process_recording_task"
+):
+    """Patch celery_app.send_task; return the captured calls of ``task``."""
     from backend.api.v1.endpoints import recordings as recordings_module
 
     calls: list = []
@@ -488,12 +490,16 @@ def _patch_delay(monkeypatch):
         id = "fake-task-id"
 
     def fake_send_task(name, args=None, kwargs=None, **other_kwargs):
-        if name == "backend.worker.tasks.process_recording_task":
+        if name == task:
             calls.append((tuple(args or []), kwargs or {}))
         return _FakeTask()
 
     monkeypatch.setattr(recordings_module.celery_app, "send_task", fake_send_task)
     return calls
+
+
+# Import routes queue this in place of processing; it queues processing itself.
+_KEEP_AUDIO_TASK = "backend.worker.tasks.keep_imported_audio_task"
 
 
 # --- endpoint tests ---------------------------------------------------------
@@ -1475,7 +1481,7 @@ async def test_import_audio_bootstraps_durable_import_chunk_and_window(
     from backend.api.v1.endpoints import recordings as recordings_module
     from backend.utils import recording_audio_sync as sync_module
 
-    calls = _patch_delay(monkeypatch)
+    calls = _patch_delay(monkeypatch, _KEEP_AUDIO_TASK)
     monkeypatch.setattr(recordings_module, "get_audio_duration", lambda *a, **k: 12.0)
     monkeypatch.setattr(sync_module, "get_audio_duration", lambda *a, **k: 12.0)
     monkeypatch.setenv("RECORDINGS_DIR", str(tmp_path))
@@ -1523,7 +1529,7 @@ async def test_import_low_bitrate_audio_succeeds(
     from backend.api.v1.endpoints import recordings as recordings_module
     from backend.utils import recording_audio_sync as sync_module
 
-    calls = _patch_delay(monkeypatch)
+    calls = _patch_delay(monkeypatch, _KEEP_AUDIO_TASK)
     monkeypatch.setattr(recordings_module, "get_audio_duration", lambda *a, **k: 15.0)
     monkeypatch.setattr(sync_module, "get_audio_duration", lambda *a, **k: 15.0)
     monkeypatch.setenv("RECORDINGS_DIR", str(tmp_path))

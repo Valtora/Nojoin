@@ -18,6 +18,7 @@ because these imports are intentional registration seams, not dead code.
 """
 
 from backend.models import (
+    ai_analysis,
     base,
     calendar,
     chat,
@@ -40,6 +41,7 @@ from backend.models import (
 )
 
 __all__ = [
+    "ai_analysis",
     "base",
     "calendar",
     "chat",

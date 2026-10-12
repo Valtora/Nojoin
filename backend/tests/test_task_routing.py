@@ -41,6 +41,7 @@ def test_ffmpeg_tasks_route_to_cpu_lane() -> None:
     for task in (
         "backend.processing.segment_transcode.transcode_segment_task",
         "backend.worker.tasks.generate_proxy_task",
+        "backend.worker.tasks.keep_imported_audio_task",
     ):
         assert _queue(task) == CPU_QUEUE
 

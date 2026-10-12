@@ -31,7 +31,7 @@ Operators who prefer the strict pre-authentication behaviour can set `MCP_ANONYM
    ```
 
 3. Leave the OAuth Client ID and Client Secret fields empty — Claude registers itself with your Nojoin instance automatically.
-4. Click **Add**, then **Connect**. Your browser opens Nojoin's authorisation page: sign in with your Nojoin credentials if needed, review the requested access — including the additive write capabilities (People, speaker names, and notes) — and click **Allow access**.
+4. Click **Add**, then **Connect**. Your browser opens Nojoin's authorisation page: sign in with your Nojoin credentials if needed, review the requested access — including the additive write capabilities (People, speaker names, and notes) — and click **Allow access**. If your account has to change its password first, Nojoin takes you to do that and then back to this page. Changing a password signs out every session, so sign in again there with the new one.
 
 The connector then appears in Claude's tool list. Connectors added to a claude.ai account are also available in Claude Desktop and Cowork on the same account.
 

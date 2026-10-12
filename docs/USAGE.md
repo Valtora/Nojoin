@@ -165,7 +165,7 @@ It can surface live questions, missed points, and quick concept help during a me
 
 You can import existing audio files directly through the web client. **Import Audio** sits with **Start Meeting** at the top of the **Recordings** list: beside it when the list is wide enough, under it otherwise, and under the live controls while a meeting runs. On a phone, where Start Meeting is on the dashboard, an **Import** button sits beside the list title on the first screen of the recordings workspace. The collapsed list on desktop keeps it as an icon, and an empty library shows it too. It is not offered in **Archived** or **Deleted**, and it is unavailable while a paused recording is waiting for you to resume, stop or discard it.
 
-Supported formats include WAV, MP3, M4A, AAC, WebM, OGG, FLAC, MP4, WMA, and OPUS.
+Supported formats include WAV, MP3, M4A, AAC, WebM, OGG, FLAC, MP4, WMA, and OPUS, and the video and media containers MKV, MKA, MOV, AVI, M4V, TS, MTS, MPG, MPEG, and 3GP. Nojoin keeps only the audio of an imported file. A file with no audio track is refused: the import shows as failed and nothing of the file is kept.
 
 The import flow validates the file, builds the canonical media artifacts, and queues background processing. Imports skip the live capture workflow but share the same final processing pipeline as live recordings.
 
@@ -188,11 +188,11 @@ If a recording fails or you want to rebuild the generated meeting artifacts, use
 
 Retry Processing clears transcript-derived generated state, preserves recording metadata, tags, uploaded documents, and user-authored notes, then records a fresh processing timing sample for future ETA calculations.
 
-If transcription itself fails, the recording is marked **Error** instead of finishing with an empty transcript, a notification says so, and the transcript tab explains what went wrong. Meeting notes cannot be generated for it until it is reprocessed. When the GPU ran out of memory the message says so; Nojoin has already retried once after freeing memory by then, so free GPU memory or choose a smaller transcription model in Settings before using Retry Processing. A meeting in which nobody spoke still finishes normally, and its transcript tab says that no speech was detected.
+If transcription itself fails, the recording is marked **Error** instead of finishing with an empty transcript, a notification says so, and the transcript tab explains what went wrong. Meeting notes cannot be generated for it until it is reprocessed. When the GPU ran out of memory the message says so; Nojoin has already retried once after freeing memory by then, so free GPU memory, or have an administrator choose a smaller transcription model for the installation under **Settings > Transcription**, before using Retry Processing. A meeting in which nobody spoke still finishes normally, and its transcript tab says that no speech was detected.
 
 ### Reprocess A Recording
 
-From the recording detail page you can choose **Reprocess at higher quality**. This re-runs the full pipeline after you change the transcription engine or model in Settings.
+From the recording detail page you can choose **Reprocess at higher quality**. This re-runs the full pipeline after an administrator changes the transcription engine or model, which apply to the whole installation, under **Settings > Transcription**.
 
 Reprocessing clears and rebuilds transcript and generated artifacts while preserving metadata, tags, documents, and user-authored notes. Older meetings that predate the unified pipeline cutover may require reprocess before transcript or speaker edits are available.
 
@@ -225,7 +225,7 @@ Nojoin maintains a global speaker library across recordings.
 
 Common workflows include linking an unknown in-recording speaker to an existing global speaker, promoting a recording speaker into the People library, creating or updating voiceprints, recalibrating voiceprints from better samples, and merging duplicate speakers.
 
-Inferred speaker names from final processing and manual retry flows are applied automatically to speakers that do not already have a trusted name. Manual speaker edits are authoritative: renaming, merging, promoting, or deleting a speaker always overrides inferred names, and speakers you have already named are never renamed by inference.
+Inferred speaker names from final processing and manual retry flows are applied automatically to speakers that do not already have a trusted name. Without an AI provider, a name is inferred only from a self-introduction whose name is capitalised, such as "I'm Priya", so a transcript in lowercase yields no inferred name. A line that opens with the name, such as "Priya here", counts only when the recording is linked to a calendar event that lists that person, because at the start of a line "Click here" looks the same. Manual speaker edits are authoritative: renaming, merging, promoting, or deleting a speaker always overrides inferred names, and speakers you have already named are never renamed by inference.
 
 Renaming a speaker updates the transcript and the AI meeting notes together, so a meeting does not end up calling the same person two different things. The transcript resolves names at read time and so is always current; the notes are rewritten in place, matching the previous name only where it stands as a whole word. Your own notes are never rewritten. Because the notes are prose, a display name that is also an ordinary phrase will be replaced wherever it appears, so prefer regenerating the notes after renaming a speaker whose old name was not a personal name.
 
@@ -240,6 +240,17 @@ The optional **Maximum speakers** field sets an upper bound for a single recordi
 - **Reprocess.** Reprocessing accepts a new value, so an already-processed meeting can be corrected without re-recording it. Note that reprocess rebuilds the transcript too, and clears speaker names you set by hand on that recording.
 
 It is an upper bound, not an exact count. Setting 4 for a meeting with 3 speakers still returns 3. This is deliberate: forcing an exact count would split one person into two whenever the number is too high, which is the problem the field exists to solve. Setting the value **lower** than the real number of participants will merge people together, so when in doubt, guess high or leave it empty.
+
+### Tuning Speech Detection And Speaker Separation
+
+The defaults suit most meetings. Large meetings are harder: quiet or distant voices can be muted as noise before they are transcribed, and people who say one or two things can be folded into someone else. **Settings > Recording > Advanced > Speech and Speaker Tuning** lets you adjust the values behind both for your own recordings.
+
+Every field starts empty, which means inherit: your installation's value if an administrator set one, otherwise the default shown in the field. A value saved earlier that is no longer accepted, for example after an upgrade narrowed its range, also shows as empty, but until the page next saves it uses the shipped default rather than your installation's value. **Reset to defaults** empties them all again. Changes apply to recordings processed after the change, and to any recording you reprocess; finished transcripts are not rewritten.
+
+- **Speech detection threshold** (default 0.5, 0.15 to 0.90). How confident voice activity detection must be before audio counts as speech. Lower it if quiet speech goes missing from transcripts; raise it if background noise turns into words. The live transcript uses it too, even when voice activity detection is switched off for processing.
+- **Word end padding** (Parakeet and Canary only, default 0.2 seconds, 0.05 to 0.80). How long a word lasts when a pause follows it. A longer word is more likely to overlap its speaker's turn, which helps a short reply land on the right person. It also keeps a slightly longer pause from starting a new segment. Whisper ignores it.
+- **Phantom speaker filter**. A detected speaker with no more than **Max speech** seconds (default 3) and no more than **Max segments** (default 3) is checked against the others. If it sounds like no one, below the **Non-speech floor** (default 0.35), it is treated as noise and its audio given to the nearest speaker. If it sounds like an existing speaker, at or above the **Merge similarity** (default 0.60), it is merged into them. In between, it is kept as a brief speaker. To keep more brief speakers, lower the two limits or raise the merge similarity. Setting either limit to 0 turns the filter off. The floor must stay below the merge similarity; for a field you leave empty, that means your installation's value, which the error names.
+- **Single-word flip smoothing**. A word no longer than **Max word length** (default 0.45 seconds), within **Max gap** (default 0.25 seconds) of the words either side, is given back to the speaker on both sides of it. This tidies diarization jitter, but it can also erase a one-word interjection. Lower the values to keep more of them; a max word length of 0 turns smoothing off.
 
 ### When Voiceprints Need Rebuilding
 
@@ -256,7 +267,7 @@ Processed recordings can include Markdown notes, AI-generated meeting notes, mee
 - **Analytics** reports the meeting's speaking dynamics, measured from the transcript, plus an optional AI reading of what was discussed and who owned each decision.
 - **Notes** are stored with the recording and can be edited after processing.
 - **Generate Notes** runs a notes-only AI pass when AI is configured.
-- **Meeting Chat** answers questions from the transcript, notes, and linked documents.
+- **Meeting Chat** answers questions from the transcript, notes, and linked documents. It reads the transcript with your edits and speaker names, without the unattributed lines (such as a removed speaker's) that the transcript view hides.
 - **Documents** can be uploaded to support meeting context, meeting notes, and later search.
 - **Search** spans recordings, transcript text, notes, tags, and document content where available.
 
@@ -281,7 +292,7 @@ What it shows:
 - **Who spoke**, as a share of everyone's speaking time.
 - **Who spoke when**, showing the balance across the length of the meeting. A meeting where one person led the first half and another led the second reads very differently here from an evenly split one, though both show the same overall share.
 - **How the conversation moved**: turns taken, median and longest turn, how often each person took the floor the instant it opened, and how long they leave before replying when there is a gap to measure. Selecting a longest turn plays the meeting from that point, so any figure can be checked against the audio.
-- **Talking over each other**, measured from the audio itself once the meeting has been measured: at least how much of the meeting was overlapping speech, and where it clustered.
+- **Talking over each other**, measured from the audio itself once the meeting has been measured: at least how much of the meeting was overlapping speech, and where it clustered. The figure is a floor. The detection model finds roughly 70 to 90% of overlapping speech, and every setting that finds more also counts overlap that was not there, so Nojoin reports the lower bound ([ANALYTICS_EVIDENCE.md](ANALYTICS_EVIDENCE.md)).
 
 The tab uses whatever width it has. On a wide display the sections pair up, and on a phone, or with both side panels open, they stack into one column and the per-speaker tables become a list of speakers rather than a table you have to drag sideways. Everyone keeps the colour they have everywhere else in the meeting, so the person who is blue in the transcript is blue in every chart here; changing a speaker's colour in the speaker panel changes it here too.
 
@@ -299,7 +310,7 @@ Three things are worth understanding about the numbers.
 
 Alongside the measured conversation figures, Nojoin can measure **delivery**: each person's speaking pace in words per minute, how high their voice sat, how much it moved (in semitones, so a low voice and a high voice are compared fairly), and how often they paused inside their own turns.
 
-This one reads the meeting's audio, so it is done on request rather than for every meeting. Select **Measure delivery** on the Analytics tab; the same action also listens for overlapping speech. Meetings recorded after these features were added have both measured automatically when processing finishes; older meetings, and any meeting whose transcript you have edited since, offer the button. When an upgrade improves how delivery is measured, Nojoin re-measures previously measured meetings by itself in the background, a few at a time — figures from different measurement methods are not comparable, so this is maintenance Nojoin owes its own data, like voiceprint rebuilding.
+This one reads the meeting's audio, so it is done on request rather than for every meeting. Select **Measure delivery** on the Analytics tab; the same action also listens for overlapping speech. Meetings recorded after these features were added have both measured automatically when processing finishes; older meetings offer the button. A meeting whose transcript you have edited since it was measured is re-measured the next time you open its Analytics tab, so the figures match the text you corrected; turn **Re-measure delivery after edits** off under Settings > Recording to keep the old figures until you press the button yourself. When an upgrade improves how delivery is measured, Nojoin re-measures previously measured meetings by itself in the background, a few at a time — figures from different measurement methods are not comparable, so this is maintenance Nojoin owes its own data, like voiceprint rebuilding.
 
 Each figure carries a short reading beside it so you do not have to know what 197 words a minute means. The pace words are anchored on measured recordings of English speech rather than the oft-quoted "conversation runs at 120 to 150 words a minute", which describes a different way of counting: by the measure Nojoin computes, recorded conversation sits around 160 to 200 words a minute, narration and presentations slower, and the band edges are pinned to published corpus figures ([the evidence note](ANALYTICS_EVIDENCE.md) lists them). Treat the words as a rough guide for meetings held in languages other than English — speaking rates in words are not comparable across languages. Pitch movement and pausing have no such yardstick — the same expressive range measures wider on a high voice than on a low one — so those are compared with the other people in the same meeting, and someone who barely spoke gets no comparison at all. Pauses are shown as a rate as well as a count, so a long contribution does not read as a hesitant one. Pitch height is deliberately left undescribed: that is a property of somebody's voice rather than of how they used it.
 
@@ -314,7 +325,7 @@ Two limits worth knowing:
 
 #### What Was Discussed
 
-The rest of the tab is measured. This last section is different: it is an AI model reading the transcript, so it needs an AI provider and it uses your provider quota. Select **Analyse meeting** to run it. It is never run automatically, because it answers questions most meetings are never asked and running it for every recording would spend your quota on meetings nobody opens.
+The rest of the tab is measured. This last section is different: it is an AI model reading the transcript, so it needs an AI provider and it uses your provider quota. Select **Analyse meeting** to run it. It is not run automatically unless you ask for that, because it answers questions most meetings are never asked and running it for every recording would spend your quota on meetings nobody opens. Your administrator may cap how many analyses you can start per day; the section says how many you have left and when the count resets (midnight UTC). Turn on **Analyse meetings automatically** under Settings > Recording to have each new meeting analysed when it finishes processing, within that cap.
 
 If your installation has no AI provider configured, this section says so and nothing else on the tab is affected.
 
@@ -414,7 +425,7 @@ Settings are grouped by task.
 
 - **Profile**: account details and password changes.
 - **Appearance**: theme (system, light or dark), colour palette (Nojoin orange, Graphite, Classic, Ultraviolet or Marigold), corner style (Rounded, Subtle or Square), density (Automatic, Comfortable, Compact or Dense), timezone, and spellcheck language. Theme, palette, corner style and density are saved in this browser only, so each browser can look different; they apply immediately, and on the next load before the page first paints.
-- **Capture**: microphone selection, shared-audio gain, microphone gain, browser audio-processing toggles, and a local mic input test for browser recording.
+- **Recording**: microphone selection, shared-audio gain, microphone gain, and a local mic input test for browser recording. Its Advanced section holds the browser audio-processing toggles, the processing defaults (voice activity detection, speaker diarization), and speech and speaker tuning (see [Tuning Speech Detection And Speaker Separation](#tuning-speech-detection-and-speaker-separation)).
 - **AI**: per-user AI routing (the server's configured provider, or your own Claude or ChatGPT subscription), the server provider and model, Meeting Edge, automatic meeting intelligence, language, and secondary-provider fallback. Install-wide controls (provider, models, the Ollama endpoint, fallback, and "Enable Meeting Edge") are shown only to administrators; a non-admin sees a read-only summary of the active provider instead.
 - **Transcription**: transcription backend and model choices. Administrators picking a model the server does not have yet are asked whether to download it now, so it is ready before the next recording, or to leave it until first use.
 - **Calendar**: user calendar connections and timezone behaviour.

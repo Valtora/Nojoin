@@ -451,6 +451,73 @@ def test_run_automatic_meeting_intelligence_stage_skips_when_llm_config_missing(
         engine.dispose()
 
 
+@pytest.mark.parametrize(
+    ("line", "expected_local_name"),
+    [
+        # Upstream applied "Going To Share" here: the case-insensitive
+        # self-introduction rule read "going to share" as a name.
+        ("Okay, I'm going to share my screen now.", None),
+        ("Hi everyone, I'm Priya from finance.", "Priya"),
+    ],
+)
+def test_no_llm_final_processing_applies_only_real_self_introductions(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    line: str,
+    expected_local_name: str | None,
+) -> None:
+    engine = _create_worker_ai_database(tmp_path)
+    with engine.begin() as connection:
+        connection.execute(
+            text("UPDATE transcripts SET segments = :segments WHERE recording_id = 1"),
+            {
+                "segments": json.dumps(
+                    [{"start": 0.0, "end": 4.0, "speaker": "SPEAKER_00", "text": line}]
+                )
+            },
+        )
+
+    def fail_if_called(_config):
+        raise AssertionError("no LLM backend may be built without a model")
+
+    monkeypatch.setattr(tasks_module, "_llm_backend_from_config", fail_if_called)
+
+    try:
+        with Session(engine) as session:
+            tasks_module._run_automatic_meeting_intelligence_stage(
+                session=session,
+                task=None,
+                recording=session.get(Recording, 1),
+                transcript=session.exec(
+                    select(Transcript).where(Transcript.recording_id == 1)
+                ).first(),
+                speakers=session.exec(
+                    select(RecordingSpeaker).where(RecordingSpeaker.recording_id == 1)
+                ).all(),
+                transcript_text=f"[00:00:00 - 00:00:04] SPEAKER_00: {line}",
+                unresolved_speakers=("SPEAKER_00",),
+                llm_config=_sample_llm_config(model=None),
+                prefer_short_titles=True,
+                device_suffix=" (CPU)",
+            )
+
+        with Session(engine) as verification_session:
+            speaker = verification_session.get(RecordingSpeaker, 1)
+            transcript = verification_session.exec(
+                select(Transcript).where(Transcript.recording_id == 1)
+            ).first()
+
+        assert speaker.local_name == expected_local_name
+        applied_names = [
+            item["suggested_name"]
+            for item in transcript.speaker_name_suggestions or []
+            if item["status"] == "accepted"
+        ]
+        assert applied_names == ([expected_local_name] if expected_local_name else [])
+    finally:
+        engine.dispose()
+
+
 def test_run_automatic_meeting_intelligence_stage_marks_notes_error_on_failure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

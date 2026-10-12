@@ -1,0 +1,249 @@
+"use client";
+
+import { Fragment, useId, useState } from "react";
+import { ArrowLeftRight, Ghost, Mic, RotateCcw, Timer } from "lucide-react";
+
+import { cn } from "@/lib/cn";
+import {
+  PROCESSING_TUNING_SPECS,
+  parseTuningInput,
+  processingTuningReset,
+  stepFromDefault,
+  tuningValueError,
+  type ProcessingTuningKey,
+} from "@/lib/processingTuning";
+import type { Settings } from "@/types";
+
+import SettingsCard from "./SettingsCard";
+import SettingsRow from "./SettingsRow";
+import { SETTINGS_BUTTON_SECONDARY, SETTINGS_INPUT_CLASS } from "./settingsControls";
+
+interface ProcessingTuningSettingsProps {
+  settings: Settings;
+  onUpdate: (next: Settings) => void;
+}
+
+function formatValue(value: number | null | undefined): string {
+  return value === null || value === undefined ? "" : String(value);
+}
+
+// The native spinner steps an empty field from its minimum rather than from
+// the default shown, and looks foreign in both themes (as in SpeakerCapField).
+// Arrow keys still step, through onKeyDown when the field is empty.
+const HIDE_SPINNER_CLASS =
+  "[appearance:textfield] [&::-webkit-inner-spin-button]:m-0 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:m-0 [&::-webkit-outer-spin-button]:appearance-none";
+
+interface TuningInputProps {
+  tuningKey: ProcessingTuningKey;
+  value: number | null | undefined;
+  onChange: (key: ProcessingTuningKey, value: number | null) => void;
+  /** Show the field's own label above it, for rows that hold several fields. */
+  labelled?: boolean;
+  /** Id of the row's help text, announced with the field. */
+  descriptionId: string;
+}
+
+function TuningInput({
+  tuningKey,
+  value,
+  onChange,
+  labelled = false,
+  descriptionId,
+}: TuningInputProps) {
+  const spec = PROCESSING_TUNING_SPECS[tuningKey];
+  const inputId = useId();
+  const errorId = useId();
+  const [draft, setDraft] = useState(formatValue(value));
+  // A number input reports text it cannot parse (Firefox accepts letters;
+  // "-" or "e" mid-typing anywhere) as an empty value with badInput set.
+  const [badInput, setBadInput] = useState(false);
+  const [shownValue, setShownValue] = useState(value);
+
+  // Follow a change made elsewhere (a reset, the initial load) without
+  // rewriting what the user is typing when it already parses to that value.
+  // Object.is, because a NaN from anywhere would otherwise never compare
+  // equal and re-run this on every render.
+  if (!Object.is(value, shownValue)) {
+    setShownValue(value);
+    const next = value ?? null;
+    if (!Number.isNaN(next) && parseTuningInput(spec, draft) !== next) {
+      setDraft(formatValue(next));
+      setBadInput(false);
+    }
+  }
+
+  const parsed = badInput ? undefined : parseTuningInput(spec, draft);
+  const error =
+    parsed === undefined
+      ? (tuningValueError(spec, badInput ? Number.NaN : Number(draft)) ??
+        `${spec.label} must be a number.`)
+      : null;
+
+  return (
+    <div className="min-w-0">
+      {labelled && (
+        <label htmlFor={inputId} className="mb-1 block text-xs font-medium contrast-helper">
+          {spec.label}
+        </label>
+      )}
+      <input
+        id={inputId}
+        type="number"
+        inputMode={spec.integer ? "numeric" : "decimal"}
+        min={spec.min}
+        max={spec.max}
+        step={spec.step}
+        value={draft}
+        placeholder={`Default (${spec.defaultValue})`}
+        aria-label={labelled ? undefined : spec.label}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error ? `${errorId} ${descriptionId}` : descriptionId}
+        onChange={(event) => {
+          const text = event.target.value;
+          const bad = event.target.validity.badInput;
+          setDraft(text);
+          setBadInput(bad);
+          // Only an empty field or a usable number reaches the settings. A
+          // partial or out-of-range value stays in the field, marked invalid,
+          // so it never blocks the autosave of every other setting.
+          const next = bad ? undefined : parseTuningInput(spec, text);
+          if (next !== undefined) {
+            onChange(tuningKey, next);
+          }
+        }}
+        onKeyDown={(event) => {
+          if (draft !== "" || badInput) {
+            return;
+          }
+          if (event.key !== "ArrowUp" && event.key !== "ArrowDown") {
+            return;
+          }
+          // The browser steps an empty number input from 0 and clamps it to
+          // the minimum, the far end of the range from the default shown.
+          event.preventDefault();
+          const next = stepFromDefault(spec, event.key === "ArrowUp" ? 1 : -1);
+          setDraft(String(next));
+          onChange(tuningKey, next);
+        }}
+        className={cn(SETTINGS_INPUT_CLASS, HIDE_SPINNER_CLASS, error && "border-danger-text")}
+      />
+      {error && (
+        <p id={errorId} className="mt-1 text-xs text-danger-text">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+const ICON_CLASS = "h-4 w-4 contrast-icon-muted";
+
+/**
+ * Speech detection and speaker separation values a user may override for
+ * their own recordings. Every field left empty inherits the installation's
+ * value, or the shipped default its placeholder names.
+ */
+export default function ProcessingTuningSettings({
+  settings,
+  onUpdate,
+}: ProcessingTuningSettingsProps) {
+  const update = (key: ProcessingTuningKey, value: number | null) =>
+    onUpdate({ ...settings, [key]: value });
+  // Part of every field's key, so a reset remounts them: that is the only way
+  // to clear text the browser could not parse, which reads as "" already.
+  const [resetCount, setResetCount] = useState(0);
+
+  // Row ids are unique registry ids, so ids derived from them are too.
+  const labelId = (rowId: string) => `${rowId}-label`;
+  const descriptionId = (rowId: string) => `${rowId}-description`;
+
+  const input = (rowId: string, key: ProcessingTuningKey, labelled = false) => (
+    <TuningInput
+      key={`${key}-${resetCount}`}
+      tuningKey={key}
+      value={settings[key]}
+      onChange={update}
+      labelled={labelled}
+      descriptionId={descriptionId(rowId)}
+    />
+  );
+
+  // A row with several fields names them as one group, so "Merge similarity"
+  // is announced as part of the phantom speaker filter.
+  const group = (rowId: string, keys: ProcessingTuningKey[]) => (
+    <div role="group" aria-labelledby={labelId(rowId)} className="grid grid-cols-2 gap-3">
+      {keys.map((key) => (
+        <Fragment key={key}>{input(rowId, key, true)}</Fragment>
+      ))}
+    </div>
+  );
+
+  return (
+    <SettingsCard
+      title="Speech and Speaker Tuning"
+      description="Fine-tune how recordings are split into speech and speakers. Empty fields use the installation's value, or the default shown; a saved value that is no longer accepted uses the default until this page saves again. Changes apply to recordings processed or reprocessed afterwards."
+      headerAside={
+        <button
+          type="button"
+          onClick={() => {
+            setResetCount((count) => count + 1);
+            onUpdate({ ...settings, ...processingTuningReset() });
+          }}
+          className={SETTINGS_BUTTON_SECONDARY}
+        >
+          <RotateCcw className="h-4 w-4" aria-hidden="true" />
+          Reset to defaults
+        </button>
+      }
+    >
+      <SettingsRow
+        id="recording-vad-threshold"
+        labelId={labelId("recording-vad-threshold")}
+        descriptionId={descriptionId("recording-vad-threshold")}
+        label="Speech detection threshold"
+        description="Lower keeps quiet or distant speech that would otherwise be muted before transcription; higher drops more background noise. Also used by the live transcript, even with voice activity detection off."
+        icon={<Mic className={ICON_CLASS} aria-hidden="true" />}
+      >
+        {input("recording-vad-threshold", "vad_threshold")}
+      </SettingsRow>
+
+      <SettingsRow
+        id="recording-word-padding"
+        labelId={labelId("recording-word-padding")}
+        descriptionId={descriptionId("recording-word-padding")}
+        label="Word end padding (Parakeet, Canary)"
+        description="How long, in seconds, a word lasts when a pause follows it. Longer gives a short reply more chance to land on its speaker. Whisper ignores it."
+        icon={<Timer className={ICON_CLASS} aria-hidden="true" />}
+      >
+        {input("recording-word-padding", "asr_word_end_padding_s")}
+      </SettingsRow>
+
+      <SettingsRow
+        id="recording-phantom-filter"
+        labelId={labelId("recording-phantom-filter")}
+        descriptionId={descriptionId("recording-phantom-filter")}
+        label="Phantom speaker filter"
+        description="A speaker under both limits is checked: below the floor it is treated as noise and reassigned, at or above the merge similarity it joins the closest speaker, and in between it is kept. Lower limits or a higher merge similarity keep more brief speakers. A limit of 0 turns the filter off."
+        icon={<Ghost className={ICON_CLASS} aria-hidden="true" />}
+      >
+        {group("recording-phantom-filter", [
+          "phantom_max_duration_s",
+          "phantom_max_segments",
+          "phantom_embedding_floor",
+          "phantom_merge_threshold",
+        ])}
+      </SettingsRow>
+
+      <SettingsRow
+        id="recording-word-flip"
+        labelId={labelId("recording-word-flip")}
+        descriptionId={descriptionId("recording-word-flip")}
+        label="Single-word flip smoothing"
+        description="A word up to this long, this close to its neighbours, is given back to the speaker on both sides of it. Lower values keep more one-word interjections; 0 turns smoothing off."
+        icon={<ArrowLeftRight className={ICON_CLASS} aria-hidden="true" />}
+      >
+        {group("recording-word-flip", ["word_flip_max_duration_s", "word_flip_max_gap_s"])}
+      </SettingsRow>
+    </SettingsCard>
+  );
+}

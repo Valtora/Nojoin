@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from typing import List, Optional
 
@@ -30,6 +31,45 @@ class VisionSupportRead(BaseModel):
     supported: Optional[bool] = None
 
 
+def _list_provider_models(
+    provider: str, api_url: Optional[str], api_key: Optional[str]
+) -> List[str]:
+    if provider == "ollama":
+        configured_api_url = validate_ollama_api_url(
+            config_manager.get("ollama_api_url"),
+            allow_private=True,
+        )
+        if api_url:
+            requested_api_url = validate_ollama_api_url(
+                api_url,
+                trusted_url=configured_api_url,
+            )
+            if requested_api_url != configured_api_url:
+                raise ValueError("Ollama API URL is managed installation-wide.")
+        api_url = configured_api_url
+
+    backend = get_llm_backend(provider=provider, api_key=api_key, api_url=api_url)
+    return backend.list_models()
+
+
+def _probe_vision_support(
+    provider: str,
+    model: Optional[str],
+    api_url: Optional[str],
+    api_key: Optional[str],
+) -> Optional[bool]:
+    if provider == "ollama":
+        api_url = validate_ollama_api_url(
+            config_manager.get("ollama_api_url"),
+            allow_private=True,
+        )
+
+    backend = get_llm_backend(
+        provider=provider, api_key=api_key, api_url=api_url, model=model
+    )
+    return backend.supports_vision()
+
+
 @router.get("/models", response_model=List[str])
 async def list_models(
     provider: str = Query(..., description="LLM provider"),
@@ -39,29 +79,18 @@ async def list_models(
     db=Depends(get_db),  # We need the DB to fetch system keys
 ):
     try:
-        if provider == "ollama":
-            configured_api_url = validate_ollama_api_url(
-                config_manager.get("ollama_api_url"),
-                allow_private=True,
-            )
-            if api_url:
-                requested_api_url = validate_ollama_api_url(
-                    api_url,
-                    trusted_url=configured_api_url,
-                )
-                if requested_api_url != configured_api_url:
-                    raise ValueError("Ollama API URL is managed installation-wide.")
-            api_url = configured_api_url
-
         if not api_key:
             from backend.utils.config_manager import async_get_system_api_keys
 
             system_keys = await async_get_system_api_keys(db)
             api_key = system_keys.get(f"{provider}_api_key")
 
-        backend = get_llm_backend(provider=provider, api_key=api_key, api_url=api_url)
-        models = backend.list_models()
-        return models
+        # On a worker thread: checking the Ollama URL resolves DNS, and a
+        # provider call waits out its whole timeout when the provider is down.
+        # On the event loop, either one holds up every other request.
+        return await asyncio.to_thread(
+            _list_provider_models, provider, api_url, api_key
+        )
     except ValueError as e:
         raise sanitized_http_exception(
             logger=logger,
@@ -96,23 +125,16 @@ async def get_vision_support(
     treats as "proceed and find out".
     """
     try:
-        if provider == "ollama":
-            api_url = validate_ollama_api_url(
-                config_manager.get("ollama_api_url"),
-                allow_private=True,
-            )
-
         from backend.utils.config_manager import async_get_system_api_keys
 
         system_keys = await async_get_system_api_keys(db)
         api_key = system_keys.get(f"{provider}_api_key")
 
-        backend = get_llm_backend(
-            provider=provider, api_key=api_key, api_url=api_url, model=model
+        # Off the event loop for the reason given in list_models.
+        supported = await asyncio.to_thread(
+            _probe_vision_support, provider, model, api_url, api_key
         )
-        return VisionSupportRead(
-            provider=provider, model=model, supported=backend.supports_vision()
-        )
+        return VisionSupportRead(provider=provider, model=model, supported=supported)
     except ValueError as e:
         raise sanitized_http_exception(
             logger=logger,

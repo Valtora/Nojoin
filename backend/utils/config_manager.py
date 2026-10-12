@@ -1,12 +1,15 @@
 import json
 import logging
 import os
+from collections.abc import Mapping
+from typing import Any
 from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 
 load_dotenv()
 
+from backend.processing.processing_tuning import TUNING_KEYS
 from backend.utils.languages import (
     AUTO_TRANSCRIPTION_LANGUAGE,
     DEFAULT_NOTES_LANGUAGE,
@@ -68,7 +71,59 @@ LEGACY_AUTOMATIC_AI_SETTING_KEYS = frozenset(
     }
 )
 
+# The transcription engine and its model. An administrator picks them under
+# Settings > Transcription, and every recording on the install uses them.
+TRANSCRIPTION_SETTING_KEYS = (
+    "transcription_backend",
+    "whisper_model_size",
+    "parakeet_model",
+    "canary_model",
+)
+
+# Longest window (seconds) the Parakeet and Canary engines feed onnx-asr in one
+# call on a GPU host. A property of the card, so install-wide: the shipped 120 s
+# is sized for an 8 GB card with room left for diarization, and an install
+# whose card is shared with live capture lowers it. Unset (null) means the
+# shipped default; the bounds are the engine's (processing/engines/onnx_asr_engine.py).
+GPU_ASR_WINDOW_KEY = "gpu_asr_window_s"
+GPU_ASR_WINDOW_MIN_S = 30.0
+GPU_ASR_WINDOW_MAX_S = 240.0
+
+
+def normalise_gpu_asr_window(value: object) -> float | None:
+    """``value`` as a usable window, or ``None`` for unset or unusable.
+
+    Never raises: the worker must not fail a recording over a setting, so an
+    out-of-range or non-numeric value is treated as unset and logged by the
+    caller that resolves it.
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    if not isinstance(value, (int, float)):
+        return None
+    number = float(value)
+    if number != number or number in (float("inf"), float("-inf")):
+        return None
+    if not GPU_ASR_WINDOW_MIN_S <= number <= GPU_ASR_WINDOW_MAX_S:
+        return None
+    return number
+
+
+# Install-wide cap on AI analysis runs per user per UTC day. Null or 0 means
+# no cap, which keeps today's behaviour. An administrator may override it per
+# user on the user record.
+AI_ANALYSIS_DAILY_LIMIT_KEY = "ai_analysis_daily_limit"
+
+
+def normalise_ai_analysis_daily_limit(value: object) -> int | None:
+    """``value`` as a positive run count, or ``None`` for no cap."""
+    if value is None or isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value if value > 0 else None
+
+
 INSTALL_WIDE_AI_SETTING_KEYS = (
+    AI_ANALYSIS_DAILY_LIMIT_KEY,
     "llm_provider",
     "enable_meeting_edge",
     "gemini_model",
@@ -100,6 +155,8 @@ INSTALL_WIDE_AI_SETTING_KEYS = (
     # row, and so they persist to the install config instead.
     "install_notes_template_id",
     "install_glossary_terms",
+    *TRANSCRIPTION_SETTING_KEYS,
+    GPU_ASR_WINDOW_KEY,
 )
 
 MEETING_EDGE_CONTEXT_LEVEL_MIN = 1
@@ -148,6 +205,10 @@ DEFAULT_SYSTEM_CONFIG = {
     "transcription_backend": "whisper",  # "whisper" | "parakeet" | "canary"
     "parakeet_model": "parakeet-tdt-0.6b-v3",
     "canary_model": "nemo-canary-1b-v2",
+    # Null means the engine's own default (GPU_MAX_CHUNK_DURATION_S, 120 s).
+    # Listed here so the loader keeps it: config.json keys outside these tables
+    # are dropped on load.
+    GPU_ASR_WINDOW_KEY: None,
     # Ollama num_ctx. Sized for the hardware this project is actually
     # self-hosted on rather than for the model's advertised maximum: a KV cache
     # costs roughly 190 KiB per token on a 14B model, so 32768 is about 6 GB and
@@ -157,6 +218,8 @@ DEFAULT_SYSTEM_CONFIG = {
     "ollama_context_window": 32768,
     "secondary_ollama_context_window": 32768,
     "enable_live_transcription": True,
+    # No cap unless an administrator sets one.
+    AI_ANALYSIS_DAILY_LIMIT_KEY: None,
     "live_context_window_s": 5.0,
     "live_forced_max_s": 8.0,
     "live_max_segment_s": 20.0,
@@ -168,13 +231,16 @@ DEFAULT_SYSTEM_CONFIG = {
         "fade_duration_ms": 50,
         "silence_method": "mute",
     },
-    # Anonymous opt-out telemetry (docs/TELEMETRY.md). Enabled by default, but
-    # an install that was upgraded into the feature sends nothing until the
-    # admin notice has been shown; see backend/utils/telemetry.py for the
-    # consent rules these three keys drive. Only the API writes them.
+    # Anonymous telemetry (docs/TELEMETRY.md). These keys drive the optional
+    # diagnostics: enabled by default, but an install that was upgraded into
+    # the feature sends none until the admin notice has been shown. The policy
+    # version marks a choice made once the heartbeat existed; an opt-out
+    # without it also exempts the install from the heartbeat. See
+    # backend/utils/telemetry.py for the rules. Only the API writes them.
     "telemetry_enabled": True,
     "telemetry_notice_acknowledged": False,
     "telemetry_notice_first_shown_at": None,
+    "telemetry_policy_version": None,
 }
 
 DEFAULT_USER_SETTINGS = {
@@ -194,6 +260,14 @@ DEFAULT_USER_SETTINGS = {
     "codex_model": None,  # Codex CLI model for async tasks
     "codex_live_model": None,  # Optional lower-latency Codex CLI Meeting Edge model
     "enable_meeting_edge": True,  # Enable the Meeting Edge live advisory card and model calls
+    # Re-measure stale delivery figures when the Analytics tab is next opened,
+    # rather than only when the user presses the button. Per user: it spends
+    # audio analysis on the CPU lane, and the user's own library is the cost.
+    "auto_remeasure_delivery": True,
+    # Queue the AI analytics tier when a meeting finishes processing. Off by
+    # default: each run spends the user's own provider quota, and it only runs
+    # within the daily budget when one is set.
+    "auto_analyse_meetings": False,
     "meeting_edge_context_level": MEETING_EDGE_CONTEXT_LEVEL_DEFAULT,  # Controls how readily Meeting Edge explains technical terms
     "gemini_api_key": None,  # Google Gemini API key
     "openai_api_key": None,  # OpenAI API key
@@ -240,6 +314,11 @@ DEFAULT_USER_SETTINGS = {
     "install_glossary_terms": "",
     "enable_vad": True,  # Enable Voice Activity Detection (silence filtering)
     "enable_diarization": True,  # Enable Speaker Diarization (who said what)
+    # Processing tuning (backend/processing/processing_tuning.py). None means
+    # inherit: the install's config.json value if set, else the shipped default.
+    # A non-None default here would be stamped onto every row by the settings
+    # page's whole-object autosave and shadow both.
+    **dict.fromkeys(TUNING_KEYS),
     "spellcheck_language": "en-GB",  # Default spell check language for meeting notes
     "timezone": "UTC",  # Default user timezone for calendar and task rendering
 }
@@ -521,6 +600,8 @@ class ConfigManager:
         if key in {
             "enable_live_transcription",
             "enable_meeting_edge",
+            "auto_remeasure_delivery",
+            "auto_analyse_meetings",
             "enable_canonical_transcript_writes",
             "enable_asr_window_result_ledger",
             "telemetry_enabled",
@@ -535,6 +616,23 @@ class ConfigManager:
             if value is None:
                 return True
             return isinstance(value, int) and value >= 1024
+        if key == AI_ANALYSIS_DAILY_LIMIT_KEY:
+            if value is None:
+                return True
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise ValueError(
+                    f"Invalid {AI_ANALYSIS_DAILY_LIMIT_KEY}: {value}. Must be a "
+                    "whole number of runs per day, 0 or null for no cap."
+                )
+        if key == GPU_ASR_WINDOW_KEY:
+            if value is None:
+                return True
+            if normalise_gpu_asr_window(value) is None:
+                raise ValueError(
+                    f"Invalid {GPU_ASR_WINDOW_KEY}: {value}. Must be a number of "
+                    f"seconds from {GPU_ASR_WINDOW_MIN_S:.0f} to "
+                    f"{GPU_ASR_WINDOW_MAX_S:.0f}, or null for the default."
+                )
         if key == "theme" and value not in APP_THEMES:
             raise ValueError(f"Invalid theme: {value}. Must be one of {APP_THEMES}")
         if key == "llm_provider" and value not in [
@@ -623,6 +721,45 @@ class ConfigManager:
     def get_all(self):
         """Returns the entire configuration dictionary."""
         return self.config.copy()
+
+    def read_file(self) -> dict[str, Any]:
+        """config.json as it is on disk: no defaults, no environment overrides.
+
+        An empty dict when the file does not exist. Raises OSError when it
+        cannot be read, and ValueError when it is not JSON or holds something
+        other than an object, each saying which.
+        """
+        try:
+            with open(self.config_path, "r", encoding="utf-8") as f:
+                on_disk = json.load(f)
+        except FileNotFoundError:
+            return {}
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"{self.config_path} is not valid JSON: {exc}") from exc
+        if not isinstance(on_disk, dict):
+            raise ValueError(
+                f"{self.config_path} holds a JSON {type(on_disk).__name__}, "
+                "not an object"
+            )
+        return on_disk
+
+    def save_values(self, updates: Mapping[str, Any]) -> None:
+        """Write these keys onto config.json as it is on disk.
+
+        For the writes outside the settings routes: first-run setup and the
+        transcription carry-over at startup. Starts from the file, not from this
+        process's merged copy, so neither a stale copy nor a value an environment
+        variable overrides (ENV_OVERRIDES) is written back. Every other key in
+        the file is kept, except the secret keys (SENSITIVE_KEYS), which are
+        never read from the file and which every save drops. A file that cannot
+        be read, or is not a JSON object, raises (see read_file) instead of
+        being replaced, and a failed write raises too.
+        """
+        on_disk = self.read_file()
+        on_disk.update(updates)
+        self.save_config(on_disk)
+        # Forced: this process just wrote the file and must read back its own write.
+        self.reload(force=True)
 
     def migrate_file_if_needed(self, old_path, new_path):
         if os.path.exists(old_path) and not os.path.exists(new_path):

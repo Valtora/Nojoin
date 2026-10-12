@@ -159,6 +159,7 @@ export default function UsersTab() {
       username: user.username,
       role: user.role,
       is_active: user.is_active,
+      ai_analysis_daily_limit: user.ai_analysis_daily_limit ?? null,
       password: "",
     });
     setEditModalOpen(true);
@@ -457,6 +458,28 @@ export default function UsersTab() {
             <option value="admin">Admin</option>
             <option value="owner">Owner</option>
           </Select>
+
+          <Input
+            label={
+              <>
+                Daily AI analysis limit{" "}
+                <span className="font-normal text-contrast-helper">
+                  (blank for the installation default, 0 for no cap)
+                </span>
+              </>
+            }
+            type="number"
+            min={0}
+            step={1}
+            value={editForm.ai_analysis_daily_limit ?? ""}
+            onChange={(e) =>
+              setEditForm({
+                ...editForm,
+                ai_analysis_daily_limit:
+                  e.target.value === "" ? null : Number(e.target.value),
+              })
+            }
+          />
 
           <div className="flex items-center gap-2">
             <input

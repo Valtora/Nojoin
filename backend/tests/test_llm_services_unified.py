@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from backend.processing.llm_backends import ollama as ollama_module
 from backend.processing.llm_backends.base import (
     NOTES_MAX_OUTPUT_TOKEN_LADDER,
     NOTES_MAX_OUTPUT_TOKENS,
@@ -23,6 +24,15 @@ from backend.utils.meeting_intelligence import (
     AutomaticMeetingIntelligenceRequest,
     AutomaticMeetingIntelligenceResult,
 )
+from backend.utils.vision import VisionImage
+
+
+@pytest.fixture(autouse=True)
+def _fresh_ollama_model_facts_cache():
+    # /api/show answers are cached per process; each fake server starts clean.
+    ollama_module._model_facts_cache.clear()
+    yield
+    ollama_module._model_facts_cache.clear()
 
 
 def _sample_request() -> AutomaticMeetingIntelligenceRequest:
@@ -68,6 +78,21 @@ class _FakeOllamaResponse:
 
     def json(self) -> dict:
         return {"message": {"content": self._payload}}
+
+
+class _FakeOllamaShowResponse:
+    """``/api/show`` for a model trained on more context than any test sends."""
+
+    def raise_for_status(self) -> None:
+        return None
+
+    def json(self) -> dict:
+        return {
+            "model_info": {
+                "general.architecture": "llama",
+                "llama.context_length": 131072,
+            }
+        }
 
 
 class _FakeOllamaStreamResponse:
@@ -161,7 +186,7 @@ def test_anthropic_generate_meeting_intelligence_uses_shared_contract() -> None:
             capture.update(kwargs)
             return _FakeAnthropicStream(
                 SimpleNamespace(
-                    content=[SimpleNamespace(text=_sample_payload())],
+                    content=[SimpleNamespace(type="text", text=_sample_payload())],
                     stop_reason="end_turn",
                 )
             )
@@ -180,6 +205,37 @@ def test_anthropic_generate_meeting_intelligence_uses_shared_contract() -> None:
     assert capture["messages"][0]["content"].startswith(
         "You are an expert meeting-notes assistant."
     )
+
+
+def test_anthropic_reads_the_text_blocks_after_a_thinking_block() -> None:
+    """Claude Haiku 5.5 and the other current models think by default, so a
+    response can open with a thinking block, whose text is empty unless asked
+    for. Reading the first block failed the notes whenever the model thought
+    first, with "'ThinkingBlock' object has no attribute 'strip'"."""
+    payload = _sample_payload()
+    split = len(payload) // 2
+
+    class FakeMessages:
+        def stream(self, **kwargs):
+            return _FakeAnthropicStream(
+                SimpleNamespace(
+                    content=[
+                        SimpleNamespace(type="thinking", thinking="", signature="s"),
+                        SimpleNamespace(type="text", text=payload[:split]),
+                        SimpleNamespace(type="text", text=payload[split:]),
+                    ],
+                    stop_reason="end_turn",
+                )
+            )
+
+    backend = object.__new__(AnthropicLLMBackend)
+    backend.model = "claude-haiku-5-5"
+    backend.client = SimpleNamespace(messages=FakeMessages())
+
+    result = backend.generate_meeting_intelligence(_sample_request(), timeout=90)
+
+    assert result.speaker_mapping == {"SPEAKER_00": "Alex"}
+    assert "## User Notes" in result.notes_markdown
 
 
 def test_ollama_generate_meeting_intelligence_uses_shared_contract() -> None:
@@ -229,6 +285,8 @@ def test_ollama_generate_meeting_intelligence_repairs_contract_failure() -> None
             timeout: int,
             allow_redirects: bool,
         ):
+            if url.endswith("/api/show"):
+                return _FakeOllamaShowResponse()
             calls.append(
                 {
                     "url": url,
@@ -263,12 +321,14 @@ def test_ollama_chat_options_pins_num_ctx_floor_when_unconfigured() -> None:
     # Without num_ctx Ollama defaults to 2048 and silently truncates meeting-
     # length prompts, so an unconfigured backend must still send the safe floor.
     backend = object.__new__(OllamaLLMBackend)
+    backend.model = None
     backend.context_window = None
     assert backend._chat_options(temperature=0.3)["num_ctx"] == OLLAMA_DEFAULT_NUM_CTX
 
 
 def test_ollama_chat_options_honours_configured_context_window() -> None:
     backend = object.__new__(OllamaLLMBackend)
+    backend.model = None
     backend.context_window = 131072
     assert backend._chat_options(temperature=0.3)["num_ctx"] == 131072
 
@@ -281,10 +341,12 @@ def test_ollama_streaming_chat_raises_when_context_exhausted() -> None:
             self,
             url: str,
             json: dict,
-            stream: bool,
             timeout: int,
             allow_redirects: bool,
+            stream: bool = False,
         ):
+            if url.endswith("/api/show"):
+                return _FakeOllamaShowResponse()
             capture["json"] = json
             return _FakeOllamaStreamResponse(
                 [
@@ -341,6 +403,8 @@ def test_ollama_generate_meeting_edge_accepts_empty_signal_payload() -> None:
             timeout: int,
             allow_redirects: bool,
         ):
+            if url.endswith("/api/show"):
+                return _FakeOllamaShowResponse()
             calls.append(
                 {
                     "url": url,
@@ -382,6 +446,8 @@ def test_ollama_generate_meeting_edge_repairs_malformed_payload() -> None:
             timeout: int,
             allow_redirects: bool,
         ):
+            if url.endswith("/api/show"):
+                return _FakeOllamaShowResponse()
             calls.append(
                 {
                     "url": url,
@@ -427,6 +493,8 @@ def test_secondary_fallback_runs_after_primary_repair_failure() -> None:
             timeout: int,
             allow_redirects: bool,
         ):
+            if url.endswith("/api/show"):
+                return _FakeOllamaShowResponse()
             calls.append({"url": url, "json": json})
             return _FakeOllamaResponse('{"speaker_mapping": {"SPEAKER_00": "Alex"}')
 
@@ -549,7 +617,9 @@ def test_anthropic_generate_meeting_edge_sends_no_assistant_prefill() -> None:
         def create(self, **kwargs):
             capture.update(kwargs)
             return SimpleNamespace(
-                content=[SimpleNamespace(text=_sample_meeting_edge_payload())]
+                content=[
+                    SimpleNamespace(type="text", text=_sample_meeting_edge_payload())
+                ]
             )
 
     backend = object.__new__(AnthropicLLMBackend)
@@ -604,7 +674,7 @@ def test_anthropic_streams_rather_than_tripping_the_non_streaming_guard() -> Non
             calls.update(kwargs)
             return _FakeAnthropicStream(
                 SimpleNamespace(
-                    content=[SimpleNamespace(text=_sample_payload())],
+                    content=[SimpleNamespace(type="text", text=_sample_payload())],
                     stop_reason="end_turn",
                 )
             )
@@ -636,7 +706,7 @@ def test_anthropic_steps_down_when_a_model_rejects_the_output_ceiling() -> None:
                 )
             return _FakeAnthropicStream(
                 SimpleNamespace(
-                    content=[SimpleNamespace(text=_sample_payload())],
+                    content=[SimpleNamespace(type="text", text=_sample_payload())],
                     stop_reason="end_turn",
                 )
             )
@@ -658,7 +728,7 @@ def test_anthropic_refuses_to_save_notes_the_output_limit_cut_short() -> None:
         def stream(self, **kwargs):
             return _FakeAnthropicStream(
                 SimpleNamespace(
-                    content=[SimpleNamespace(text=_sample_payload())],
+                    content=[SimpleNamespace(type="text", text=_sample_payload())],
                     stop_reason="max_tokens",
                 )
             )
@@ -731,7 +801,7 @@ def test_anthropic_kwargs_are_accepted_by_the_installed_sdk() -> None:
         def create(self, **kwargs):
             captured.append(("create", kwargs))
             return SimpleNamespace(
-                content=[SimpleNamespace(text=_sample_payload())],
+                content=[SimpleNamespace(type="text", text=_sample_payload())],
                 stop_reason="end_turn",
             )
 
@@ -739,7 +809,7 @@ def test_anthropic_kwargs_are_accepted_by_the_installed_sdk() -> None:
             captured.append(("stream", kwargs))
             return _FakeAnthropicStream(
                 SimpleNamespace(
-                    content=[SimpleNamespace(text=_sample_payload())],
+                    content=[SimpleNamespace(type="text", text=_sample_payload())],
                     stop_reason="end_turn",
                 )
             )
@@ -780,3 +850,176 @@ def test_anthropic_kwargs_are_accepted_by_the_installed_sdk() -> None:
                 "The SDK dropped or renamed a parameter -- fix the call sites "
                 "rather than pinning the SDK back."
             )
+
+
+def _anthropic_backend_capturing_creates(model: str, response, capture: list):
+    class FakeMessages:
+        def create(self, **kwargs):
+            capture.append(kwargs)
+            return response
+
+    backend = object.__new__(AnthropicLLMBackend)
+    backend.model = model
+    backend.client = SimpleNamespace(messages=FakeMessages())
+    return backend
+
+
+def _all_thinking_no_text():
+    # What a current model returns when the output limit is spent on thinking:
+    # one thinking block, no text block, and a max_tokens stop.
+    return SimpleNamespace(
+        content=[SimpleNamespace(type="thinking", thinking="", signature="s")],
+        stop_reason="max_tokens",
+    )
+
+
+def test_anthropic_short_calls_ask_a_thinking_model_for_low_effort() -> None:
+    """Speaker suggestions, Meeting Edge and the title cap their replies, and on
+    a model that thinks by default the thinking counts against that cap. Each
+    call sends low effort and a ceiling with room for the thinking."""
+    import contextlib
+
+    capture: list[dict] = []
+    backend = _anthropic_backend_capturing_creates(
+        "claude-opus-5-5",
+        SimpleNamespace(
+            content=[SimpleNamespace(type="text", text="Launch Readiness Review")],
+            stop_reason="end_turn",
+        ),
+        capture,
+    )
+
+    with contextlib.suppress(Exception):
+        backend.infer_speaker_suggestions("[00:00 - 00:05] SPEAKER_00: Hi.")
+    with contextlib.suppress(Exception):
+        backend.generate_meeting_edge(
+            MeetingEdgeRequest(recent_transcript="Speaker A: Hi."), timeout=20
+        )
+    backend.infer_meeting_title("[00:00 - 00:05] SPEAKER_00: Hi.")
+
+    assert len(capture) == 3
+    for kwargs in capture:
+        assert kwargs["output_config"] == {"effort": "low"}
+        assert kwargs["max_tokens"] >= 2048
+
+
+def test_anthropic_short_calls_send_no_effort_where_it_would_be_rejected() -> None:
+    """Haiku 4.5 returns a 400 for output_config.effort, and does not think
+    unless asked, so the request carries nothing it would refuse."""
+    capture: list[dict] = []
+    backend = _anthropic_backend_capturing_creates(
+        "claude-haiku-4-5",
+        SimpleNamespace(
+            content=[SimpleNamespace(type="text", text="Launch Readiness Review")],
+            stop_reason="end_turn",
+        ),
+        capture,
+    )
+
+    backend.infer_meeting_title("[00:00 - 00:05] SPEAKER_00: Hi.")
+
+    assert "output_config" not in capture[0]
+
+
+def test_anthropic_speaker_suggestions_name_the_output_limit_when_spent() -> None:
+    backend = _anthropic_backend_capturing_creates(
+        "claude-opus-5-5", _all_thinking_no_text(), []
+    )
+
+    with pytest.raises(RuntimeError, match="output limit"):
+        backend.infer_speaker_suggestions("[00:00 - 00:05] SPEAKER_00: Hi.")
+
+
+def test_anthropic_meeting_edge_names_the_output_limit_when_spent() -> None:
+    backend = _anthropic_backend_capturing_creates(
+        "claude-opus-5-5", _all_thinking_no_text(), []
+    )
+
+    with pytest.raises(RuntimeError, match="output limit"):
+        backend.generate_meeting_edge(
+            MeetingEdgeRequest(recent_transcript="Speaker A: Hi."), timeout=20
+        )
+
+
+def test_anthropic_title_fails_rather_than_returning_empty_when_cap_is_spent() -> None:
+    # parse_title("") is "", which the caller would save as a blank title.
+    backend = _anthropic_backend_capturing_creates(
+        "claude-opus-5-5", _all_thinking_no_text(), []
+    )
+
+    with pytest.raises(RuntimeError, match="output limit"):
+        backend.infer_meeting_title("[00:00 - 00:05] SPEAKER_00: Hi.")
+
+
+def _text_reply(text: str = "Launch Readiness Review"):
+    return SimpleNamespace(
+        content=[SimpleNamespace(type="text", text=text)], stop_reason="end_turn"
+    )
+
+
+def test_anthropic_sends_a_low_temperature_to_a_model_that_takes_one() -> None:
+    """Sonnet 4.6 still accepts temperature. The SDK no longer types it, so it
+    travels in extra_body, at the 0.2 the OpenAI and Gemini backends use."""
+    import contextlib
+
+    capture: list[dict] = []
+    backend = _anthropic_backend_capturing_creates(
+        "claude-sonnet-4-6", _text_reply(), capture
+    )
+    stream_capture: list[dict] = []
+
+    class FakeMessages:
+        def create(self, **kwargs):
+            capture.append(kwargs)
+            return _text_reply()
+
+        def stream(self, **kwargs):
+            stream_capture.append(kwargs)
+            return _FakeAnthropicStream(_text_reply(_sample_payload()))
+
+    backend.client = SimpleNamespace(messages=FakeMessages())
+
+    backend.infer_meeting_title("[00:00 - 00:05] SPEAKER_00: Hi.")
+    with contextlib.suppress(Exception):
+        backend.infer_speaker_suggestions("[00:00 - 00:05] SPEAKER_00: Hi.")
+    backend.generate_meeting_intelligence(_sample_request(), timeout=90)
+    backend.ask_question_about_meeting(
+        "What was decided?", meeting_notes="Notes", diarized_transcript="Hi."
+    )
+
+    assert len(capture) == 2 and len(stream_capture) == 2
+    for kwargs in capture + stream_capture:
+        assert kwargs["extra_body"] == {"temperature": 0.2}
+
+
+def test_anthropic_image_reading_runs_at_temperature_zero() -> None:
+    stream_capture: list[dict] = []
+
+    class FakeMessages:
+        def stream(self, **kwargs):
+            stream_capture.append(kwargs)
+            return _FakeAnthropicStream(_text_reply("Slide text"))
+
+    backend = object.__new__(AnthropicLLMBackend)
+    backend.model = "claude-sonnet-4-6"
+    backend.client = SimpleNamespace(messages=FakeMessages())
+
+    backend.generate_text_from_images(
+        "Transcribe the slide.",
+        [VisionImage(media_type="image/png", data=b"\x89PNG")],
+    )
+
+    assert stream_capture[0]["extra_body"] == {"temperature": 0.0}
+
+
+def test_anthropic_sends_no_temperature_to_a_model_that_rejects_it() -> None:
+    """Opus 4.7 and later answer 400 to any temperature, so nothing is sent and
+    the request carries no extra_body at all."""
+    capture: list[dict] = []
+    backend = _anthropic_backend_capturing_creates(
+        "claude-opus-5-5", _text_reply(), capture
+    )
+
+    backend.infer_meeting_title("[00:00 - 00:05] SPEAKER_00: Hi.")
+
+    assert "extra_body" not in capture[0]

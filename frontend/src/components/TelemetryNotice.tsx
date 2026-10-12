@@ -15,16 +15,16 @@ import { useServiceStatusStore } from "@/lib/serviceStatusStore";
  * One-time admin notice for installs that were upgraded into telemetry.
  *
  * This banner is load-bearing for consent, not decoration: an upgraded install
- * sends nothing at all until this component reports itself rendered, which is
+ * sends no diagnostics until this component reports itself rendered, which is
  * what starts the grace period. That is deliberately stricter than stamping the
- * clock when an admin session appears — it means the notice must actually have
- * reached a screen. The consequence, accepted and documented in
- * docs/TELEMETRY.md, is that an install nobody signs into never pings.
+ * clock when an admin session appears: the notice must have reached a screen.
+ * The install heartbeat does not wait for it (docs/TELEMETRY.md), so the copy
+ * says the heartbeat is already being sent.
  *
  * Three affordances, matching the three real intents:
- *   Keep it on  -> acknowledges, and sending starts immediately
- *   Turn it off -> disables permanently, nothing is ever sent
- *   Dismiss     -> closes for now, leaving the grace-period clock running
+ *   Keep diagnostics on  -> acknowledges, and diagnostics start immediately
+ *   Turn diagnostics off -> no diagnostics are ever sent
+ *   Dismiss              -> closes for now, leaving the grace-period clock running
  *
  * Dismiss is per-session by design: the banner returns on the next load until an
  * explicit choice is made, so silence is never mistaken for a decision that was
@@ -65,8 +65,8 @@ export default function TelemetryNotice() {
         addNotification({
           type: "success",
           message: enabled
-            ? "Thank you. Nojoin will share anonymous usage data. You can turn it off in Settings at any time."
-            : "Anonymous usage data sharing is off. Nothing will be sent.",
+            ? "Thank you. Nojoin will share usage diagnostics. You can turn them off in Settings at any time."
+            : "Usage diagnostics are off. The daily heartbeat continues.",
         });
         // Refresh so notice_pending clears and the banner does not return.
         void getTelemetryStatus().catch(() => undefined);
@@ -95,11 +95,12 @@ export default function TelemetryNotice() {
             Nojoin can now share anonymous usage data
           </p>
           <p className="mt-1 text-contrast-helper">
-            One anonymous ping every six hours: a random install ID, your
-            version, how many users and recordings this server has, and which
-            features are on. It never includes recordings, transcripts, notes,
-            names, or API keys, and the data is never sold. Nothing has been
-            sent yet.
+            Nojoin sends a daily heartbeat with a random install ID and your
+            version, so installations can be counted. It can also share usage
+            diagnostics every six hours: how many users and recordings this
+            server has, and which features are on. Neither includes
+            recordings, transcripts, notes, names, or API keys, and the data
+            is never sold. No diagnostics have been sent yet.
           </p>
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <button
@@ -108,7 +109,7 @@ export default function TelemetryNotice() {
               onClick={() => void decide(true)}
               className="rounded-lg bg-action px-3 py-1.5 text-sm font-medium text-action-on transition-colors hover:bg-action-hover disabled:opacity-60"
             >
-              Keep it on
+              Keep diagnostics on
             </button>
             <button
               type="button"
@@ -116,7 +117,7 @@ export default function TelemetryNotice() {
               onClick={() => void decide(false)}
               className="rounded-lg border border-control-border bg-surface-card px-3 py-1.5 text-sm font-medium text-contrast-muted transition-colors hover:bg-surface-inset disabled:opacity-60"
             >
-              Turn it off
+              Turn diagnostics off
             </button>
             <a
               href="https://www.nojoin.co.uk/docs/TELEMETRY"

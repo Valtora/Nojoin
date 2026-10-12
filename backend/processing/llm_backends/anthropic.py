@@ -31,6 +31,9 @@ from backend.utils.vision import VisionImage, VisionUnsupportedError
 
 logger = logging.getLogger(__name__)
 
+from backend.processing.llm_backends.anthropic_models import (
+    anthropic_model_capabilities,
+)
 from backend.processing.llm_backends.base import (
     CHAT_MAX_OUTPUT_TOKEN_LADDER,
     NOTES_MAX_OUTPUT_TOKEN_LADDER,
@@ -41,6 +44,48 @@ from backend.processing.llm_backends.base import (
     is_vision_unsupported_error,
     raise_if_output_truncated,
 )
+
+# Output ceilings for the three calls whose answers are short. Current Claude
+# models think by default and thinking tokens count against max_tokens, so a
+# ceiling sized for the answer alone could be spent entirely on thinking and
+# leave no text block at all. These are ceilings, not targets: generation stops
+# when the answer is done, so the headroom costs nothing on a normal reply.
+SPEAKER_SUGGESTIONS_MAX_TOKENS = 4096
+MEETING_EDGE_MAX_TOKENS = 8192
+MEETING_TITLE_MAX_TOKENS = 2048
+
+# Sampling for the models that still take a temperature. 0.2 matches what the
+# OpenAI and Gemini backends send, so notes and titles vary between runs about
+# as much there as here; the image call reads text off a picture and takes 0.
+DEFAULT_TEMPERATURE = 0.2
+IMAGE_TEMPERATURE = 0.0
+
+
+def _response_text(response) -> str:
+    """The answer in a Messages API response: its text blocks, joined.
+
+    Current Claude models think by default, so the first block can be a
+    thinking block, and citations split one answer across several text blocks.
+    """
+    return "".join(block.text for block in response.content if block.type == "text")
+
+
+def _response_text_or_raise(response, what: str) -> str:
+    """``_response_text``, failing when the output limit was spent before any text.
+
+    A reply that is all thinking and no text is an output-limit failure, and
+    must not reach a parser as an empty answer: the contract parsers would
+    report it as a malformed reply, and the title parser as an empty title.
+    """
+    text = _response_text(response)
+    stop_reason = str(getattr(response, "stop_reason", "") or "").lower()
+    if not text.strip() and stop_reason == "max_tokens":
+        raise RuntimeError(
+            f"Anthropic reached its output limit before writing {what}. The "
+            "model spent the whole limit thinking; try again, or choose a model "
+            "that thinks less."
+        )
+    return text
 
 
 class AnthropicLLMBackend(LLMBackend):
@@ -115,11 +160,38 @@ class AnthropicLLMBackend(LLMBackend):
             f"Model {self.model} rejected every supported output limit: {last_error}"
         )
 
+    def _brief_reply_kwargs(self) -> dict[str, Any]:
+        """Request parameters that keep a short-answer call short.
+
+        A model that thinks by default is asked for low effort, so its thinking
+        stays well inside the call's output ceiling. Nothing is sent to a model
+        that would reject ``output_config.effort`` with a 400, and nothing to a
+        model that does not think unless asked, where there is nothing to trim.
+        """
+        capabilities = anthropic_model_capabilities(self.model)
+        if capabilities.thinks_by_default and capabilities.accepts_effort:
+            return {"output_config": {"effort": "low"}}
+        return {}
+
+    def _sampling_kwargs(self, temperature: float = DEFAULT_TEMPERATURE) -> dict:
+        """A ``temperature`` for the models that accept one, else nothing.
+
+        ``anthropic`` 1.x dropped ``temperature`` from the typed request, so it
+        goes through ``extra_body``, which the SDK merges into the request JSON
+        as-is. It is sent only where the model id says the API will take it: a
+        current model answers 400 to the parameter, so the provider default is
+        the only option there.
+        """
+        if anthropic_model_capabilities(self.model).accepts_temperature:
+            return {"extra_body": {"temperature": temperature}}
+        return {}
+
     def _create_notes_message(self, prompt: str):
         return self._create_with_ceiling(
             NOTES_MAX_OUTPUT_TOKEN_LADDER,
             model=self.model,
             messages=[{"role": "user", "content": prompt}],
+            **self._sampling_kwargs(),
         )
 
     def _open_chat_stream(self, **kwargs):
@@ -176,14 +248,12 @@ class AnthropicLLMBackend(LLMBackend):
         try:
             response = self.client.messages.create(
                 model=self.model,
-                max_tokens=1024,
+                max_tokens=SPEAKER_SUGGESTIONS_MAX_TOKENS,
                 messages=[{"role": "user", "content": prompt}],
+                **self._brief_reply_kwargs(),
+                **self._sampling_kwargs(),
             )
-            text = (
-                response.content[0].text
-                if hasattr(response.content[0], "text")
-                else response.content[0]
-            )
+            text = _response_text_or_raise(response, "the speaker suggestions")
             return self.parse_speaker_inference_result(text, eligible_labels)
         except Exception as e:  # noqa: BLE001
             logger.error(f"Anthropic API error (speaker suggestions): {e}")
@@ -238,11 +308,7 @@ class AnthropicLLMBackend(LLMBackend):
             # Match the unified meeting-intelligence path's ceiling so the shared
             # "be comprehensive" notes spec is not silently truncated on long meetings.
             response = self._create_notes_message(prompt)
-            text = (
-                response.content[0].text
-                if hasattr(response.content[0], "text")
-                else response.content[0]
-            )
+            text = _response_text(response)
             notes = self.finalise_meeting_notes(self.parse_notes(text), user_notes)
             return notes
         except TruncatedNotesError:
@@ -269,11 +335,7 @@ class AnthropicLLMBackend(LLMBackend):
             )
         try:
             response = self._create_notes_message(prompt)
-            text = (
-                response.content[0].text
-                if hasattr(response.content[0], "text")
-                else response.content[0]
-            )
+            text = _response_text(response)
             return self.parse_automatic_meeting_intelligence_result(text, request)
         except TruncatedNotesError:
             raise
@@ -296,12 +358,9 @@ class AnthropicLLMBackend(LLMBackend):
                 (max_tokens,),
                 model=self.model,
                 messages=[{"role": "user", "content": prompt}],
+                **self._sampling_kwargs(),
             )
-            return (
-                response.content[0].text
-                if hasattr(response.content[0], "text")
-                else str(response.content[0])
-            )
+            return _response_text(response)
         except TruncatedNotesError:
             raise
         except Exception as e:  # noqa: BLE001
@@ -338,12 +397,9 @@ class AnthropicLLMBackend(LLMBackend):
                 (max_tokens,),
                 model=self.model,
                 messages=[{"role": "user", "content": content}],
+                **self._sampling_kwargs(IMAGE_TEMPERATURE),
             )
-            return (
-                response.content[0].text
-                if hasattr(response.content[0], "text")
-                else str(response.content[0])
-            )
+            return _response_text(response)
         except TruncatedNotesError:
             raise
         except Exception as e:  # noqa: BLE001
@@ -386,17 +442,15 @@ class AnthropicLLMBackend(LLMBackend):
             # fenced/prose wrapping, so raw JSON is not forced by a prefill.
             response = self.client.messages.create(
                 model=self.model,
-                max_tokens=2048,
+                max_tokens=MEETING_EDGE_MAX_TOKENS,
                 messages=[
                     {"role": "user", "content": user_content},
                 ],
                 timeout=timeout,
+                **self._brief_reply_kwargs(),
+                **self._sampling_kwargs(),
             )
-            text = (
-                response.content[0].text
-                if hasattr(response.content[0], "text")
-                else response.content[0]
-            )
+            text = _response_text_or_raise(response, "the Meeting Edge update")
             return self.parse_meeting_edge_result(text, request)
         except Exception as e:  # noqa: BLE001
             logger.error(f"Anthropic API error (Meeting Edge): {e}")
@@ -445,17 +499,14 @@ class AnthropicLLMBackend(LLMBackend):
                 max_tokens=self.MEETING_ANALYSIS_MAX_OUTPUT_TOKENS,
                 messages=[{"role": "user", "content": user_content}],
                 timeout=timeout,
+                **self._sampling_kwargs(),
             )
             if str(getattr(response, "stop_reason", "") or "").lower() == "max_tokens":
                 raise RuntimeError(
                     "Anthropic stopped generating before the analysis was "
                     "complete, so it would have been cut off mid-item."
                 )
-            text = (
-                response.content[0].text
-                if hasattr(response.content[0], "text")
-                else response.content[0]
-            )
+            text = _response_text(response)
             return self.parse_meeting_analysis_result(text, request)
         except Exception as e:  # noqa: BLE001
             logger.error(f"Anthropic API error (meeting analysis): {e}")
@@ -467,7 +518,7 @@ class AnthropicLLMBackend(LLMBackend):
         self,
         user_question: str,
         meeting_notes: str,
-        diarized_transcript: str,
+        diarized_transcript: str | None,
         conversation_history: list = None,
         timeout: int = 60,
         recording_id: str = None,
@@ -491,12 +542,9 @@ class AnthropicLLMBackend(LLMBackend):
                 model=self.model,
                 system=anthropic_cached_system(context),
                 messages=messages,
+                **self._sampling_kwargs(),
             )
-            return (
-                response.content[0].text
-                if hasattr(response.content[0], "text")
-                else response.content[0]
-            )
+            return _response_text(response)
         except TruncatedNotesError:
             raise
         except Exception as e:  # noqa: BLE001
@@ -507,7 +555,7 @@ class AnthropicLLMBackend(LLMBackend):
         self,
         user_question: str,
         meeting_notes: str,
-        diarized_transcript: str,
+        diarized_transcript: str | None,
         conversation_history: list = None,
         timeout: int = 60,
         recording_id: str = None,
@@ -544,6 +592,7 @@ class AnthropicLLMBackend(LLMBackend):
                 system=anthropic_cached_system(context),
                 messages=messages,
                 tools=[tool_definition],
+                **self._sampling_kwargs(),
             )
             try:
                 current_tool_name = None
@@ -614,14 +663,12 @@ class AnthropicLLMBackend(LLMBackend):
         try:
             response = self.client.messages.create(
                 model=self.model,
-                max_tokens=1024,
+                max_tokens=MEETING_TITLE_MAX_TOKENS,
                 messages=[{"role": "user", "content": prompt}],
+                **self._brief_reply_kwargs(),
+                **self._sampling_kwargs(),
             )
-            title = self.parse_title(
-                response.content[0].text
-                if hasattr(response.content[0], "text")
-                else response.content[0]
-            )
+            title = self.parse_title(_response_text_or_raise(response, "the title"))
             return title
         except Exception as e:  # noqa: BLE001
             logger.error(f"Anthropic API error (meeting title): {e}")

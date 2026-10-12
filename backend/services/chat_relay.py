@@ -139,13 +139,23 @@ def friendly_chat_error(exc: Exception) -> str:
     Shared by the worker (CLI chat) and the API's inline generator so both speak
     the same copy.
     """
-    # A CLI usage-limit error already carries a precise, reset-time-aware message.
+    # A CLI usage-limit error carries copy written for the user, built from its
+    # reset time and window label. Its str() is for logs and never reaches the
+    # client (CodeQL py/stack-trace-exposure, alert 41).
     from backend.processing.cli.manager import CliUsageLimitError
 
     if isinstance(exc, CliUsageLimitError):
-        return str(exc)
+        return exc.user_message
 
     error_msg = str(exc).lower()
+    # First: the context-window message carries token counts, and a count such
+    # as 12,503 must not read as an HTTP 503.
+    if "context window was exhausted" in error_msg or "done_reason=length" in error_msg:
+        return (
+            "The Ollama context window was exhausted before a full answer could "
+            "be generated. Increase the Ollama context window or choose a "
+            "larger-context model."
+        )
     if "503" in error_msg or "unavailable" in error_msg or "overloaded" in error_msg:
         return (
             "The AI provider is currently experiencing high demand and is "
@@ -158,10 +168,4 @@ def friendly_chat_error(exc: Exception) -> str:
         )
     if "timeout" in error_msg or "deadline" in error_msg:
         return "The AI provider took too long to respond. Please try again."
-    if "context window was exhausted" in error_msg or "done_reason=length" in error_msg:
-        return (
-            "The Ollama context window was exhausted before a full answer could "
-            "be generated. Increase the Ollama context window or choose a "
-            "larger-context model."
-        )
     return _GENERIC_ERROR

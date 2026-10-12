@@ -287,6 +287,7 @@ export default function AnalyticsView({
         status={analytics.ai_status}
         errorMessage={analytics.ai_error_message}
         stale={analytics.ai_stale}
+        budget={analytics.ai_budget}
         speakers={analytics.speakers}
         colors={colors}
         onGenerate={() => void handleAnalyse()}

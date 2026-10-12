@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 from dataclasses import dataclass
@@ -25,6 +26,7 @@ from backend.processing.speaker_cap import (
     normalize_speaker_cap,
 )
 from backend.utils.audio import concatenate_binary_files, get_audio_duration
+from backend.utils.import_audio import KEEPING_AUDIO_STEP, MEDIA_CONTAINER_SUFFIXES
 from backend.utils.rate_limit import enforce_upload_concurrency
 from backend.utils.upload_limit import (
     UPLOAD_LIMIT_LEGACY_RECORDING,
@@ -46,6 +48,8 @@ from .router import router
 
 logger = logging.getLogger(__name__)
 
+FINALIZE_FAILED_DETAIL = "Failed to finalize the uploaded recording."
+
 SUPPORTED_AUDIO_FORMATS = {
     ".wav",
     ".mp3",
@@ -57,7 +61,25 @@ SUPPORTED_AUDIO_FORMATS = {
     ".mp4",
     ".wma",
     ".opus",
+    *MEDIA_CONTAINER_SUFFIXES,
 }
+
+
+async def _queue_imported_audio(db: AsyncSession, recording: Recording) -> None:
+    """Queue ``keep_imported_audio_task`` for a stored upload.
+
+    The task keeps only the upload's audio, then queues processing and the
+    playback proxy itself.
+    """
+    task = await dispatch_task(
+        "backend.worker.tasks.keep_imported_audio_task", args=[recording.id]
+    )
+    recording.celery_task_id = task.id
+    db.add(recording)
+    await db.commit()
+    from backend.models.task import register_task_ownership
+
+    await register_task_ownership(db, task.id, recording.user_id)
 
 
 @dataclass
@@ -92,7 +114,9 @@ async def import_audio(
 ):
     """
     Import an external audio recording (e.g., from Zoom, Teams, Google Meet).
-    Supports: WAV, MP3, M4A, AAC, WebM, OGG, FLAC, MP4, WMA, Opus.
+    Supports: WAV, MP3, M4A, AAC, WebM, OGG, FLAC, MP4, WMA, Opus, and the audio
+    track of MKV, MKA, MOV, AVI, M4V, TS, MTS, MPG, MPEG and 3GP files. Only the
+    audio is stored (``keep_imported_audio_task``).
     """
     # Validate file extension
     file_ext = os.path.splitext(file.filename)[1].lower() if file.filename else ""
@@ -148,6 +172,7 @@ async def import_audio(
         file_size_bytes=file_stats.st_size,
         duration_seconds=duration,
         status=RecordingStatus.QUEUED,
+        processing_step=KEEPING_AUDIO_STEP,
         max_speakers=normalize_speaker_cap(options.max_speakers),
         user_id=current_user.id,
     )
@@ -171,24 +196,7 @@ async def import_audio(
     )
     await db.commit()
 
-    # Trigger processing task
-    task = await dispatch_task(
-        "backend.worker.tasks.process_recording_task", args=[recording.id]
-    )
-    recording.celery_task_id = task.id
-    db.add(recording)
-    await db.commit()
-    from backend.models.task import register_task_ownership
-
-    await register_task_ownership(db, task.id, recording.user_id)
-
-    # Trigger proxy generation task
-    if not recording.proxy_path:
-        proxy_task = await dispatch_task(
-            "backend.worker.tasks.generate_proxy_task", args=[recording.id]
-        )
-        if proxy_task:
-            await register_task_ownership(db, proxy_task.id, recording.user_id)
+    await _queue_imported_audio(db, recording)
 
     return serialize_recording(recording, has_proxy=_recording_has_proxy(recording))
 
@@ -358,16 +366,26 @@ async def finalize_chunked_import(
             detail="Recording upload is still in progress; finalize after all segment uploads complete.",
         )
 
+    # Read before anything can fail: after a failed flush the session has to be
+    # rolled back, and that expires every attribute of the recording.
+    recording_pk = recording.id
+    assembled_path = recording.audio_path
     try:
         segment_paths = [row.storage_path for row in chunk_rows]
-        concatenate_binary_files(segment_paths, recording.audio_path)
+        # A worker thread copies the parts: a video import runs to gigabytes,
+        # and every other request waits while the event loop is copying.
+        await asyncio.to_thread(
+            concatenate_binary_files, segment_paths, recording.audio_path
+        )
 
         file_stats = os.stat(recording.audio_path)
         recording.file_size_bytes = file_stats.st_size
 
         # Get duration
         try:
-            recording.duration_seconds = get_audio_duration(recording.audio_path)
+            recording.duration_seconds = await asyncio.to_thread(
+                get_audio_duration, recording.audio_path
+            )
         except Exception as e:  # noqa: BLE001
             logger.warning(f"Failed to get duration: {e}")
 
@@ -396,10 +414,11 @@ async def finalize_chunked_import(
         await _mark_recording_upload_error(db, recording, str(exc.detail))
         raise
     except Exception as e:  # noqa: BLE001
+        await db.rollback()
         failed_root: Path | None = None
         try:
             failed_root = recordings_module.move_recording_upload_to_failed(
-                recording.id, logger=logger
+                recording_pk, logger=logger
             )
         except Exception as move_error:  # noqa: BLE001
             logger.error(
@@ -408,49 +427,37 @@ async def finalize_chunked_import(
 
         await _mark_recording_audio_chunks_failed(
             db,
-            recording_id=recording.id,
+            recording_id=recording_pk,
             failed_root=failed_root,
         )
         await db.commit()
 
         recordings_module.delete_recording_artifacts(
-            recording_id=recording.id,
-            audio_path=recording.audio_path,
+            recording_id=recording_pk,
+            audio_path=assembled_path,
             proxy_path=None,
             logger=logger,
         )
+        await db.refresh(recording)
+        await _mark_recording_upload_error(db, recording, FINALIZE_FAILED_DETAIL)
 
         raise sanitized_http_exception(
             logger=logger,
             status_code=500,
-            client_message="Failed to finalize the uploaded recording.",
+            client_message=FINALIZE_FAILED_DETAIL,
             log_message=f"Failed to finalize chunked import for recording {recording_id}.",
             exc=e,
         )
 
     recording.status = RecordingStatus.QUEUED
     recording.client_status = ClientStatus.IDLE
+    recording.processing_step = KEEPING_AUDIO_STEP
 
     db.add(recording)
     await db.commit()
     await db.refresh(recording)
 
-    task = await dispatch_task(
-        "backend.worker.tasks.process_recording_task", args=[recording.id]
-    )
-    recording.celery_task_id = task.id
-    db.add(recording)
-    await db.commit()
-    from backend.models.task import register_task_ownership
-
-    await register_task_ownership(db, task.id, recording.user_id)
-
-    if not recording.proxy_path:
-        proxy_task = await dispatch_task(
-            "backend.worker.tasks.generate_proxy_task", args=[recording.id]
-        )
-        if proxy_task:
-            await register_task_ownership(db, proxy_task.id, recording.user_id)
+    await _queue_imported_audio(db, recording)
 
     return serialize_recording(recording, has_proxy=_recording_has_proxy(recording))
 
@@ -528,6 +535,7 @@ async def upload_recording(
         file_size_bytes=file_stats.st_size,
         duration_seconds=duration,
         status=RecordingStatus.QUEUED,
+        processing_step=KEEPING_AUDIO_STEP,
         user_id=current_user.id,
     )
 
@@ -535,21 +543,6 @@ async def upload_recording(
     await db.commit()
     await db.refresh(recording)
 
-    task = await dispatch_task(
-        "backend.worker.tasks.process_recording_task", args=[recording.id]
-    )
-    recording.celery_task_id = task.id
-    db.add(recording)
-    await db.commit()
-    from backend.models.task import register_task_ownership
-
-    await register_task_ownership(db, task.id, recording.user_id)
-
-    if not recording.proxy_path:
-        proxy_task = await dispatch_task(
-            "backend.worker.tasks.generate_proxy_task", args=[recording.id]
-        )
-        if proxy_task:
-            await register_task_ownership(db, proxy_task.id, recording.user_id)
+    await _queue_imported_audio(db, recording)
 
     return serialize_recording(recording, has_proxy=_recording_has_proxy(recording))

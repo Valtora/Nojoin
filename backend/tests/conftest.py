@@ -5,6 +5,11 @@ from datetime import UTC, date, datetime
 import pytest
 import redis.connection
 
+# Relationships name their targets by string, so a module that builds its own
+# schema fails with NoReferencedTableError when run alone unless every model is
+# registered first. The full suite hid this behind whichever module imported
+# the registry earlier.
+import backend.models.registry  # noqa: F401
 from backend.celery_app import celery_app
 from backend.tests.redis_guard import (
     harden_celery_retry_policies,
@@ -168,6 +173,32 @@ def fake_single_flight(monkeypatch):
     fake = FakeSingleFlightRedis()
     monkeypatch.setattr(single_flight_module, "_open_client", lambda: fake)
     return fake
+
+
+# Every variable that moves a model cache: huggingface_hub's (in precedence
+# order) and the XDG base that both it and Whisper fall back to.
+MODEL_CACHE_VARIABLES = (
+    "HF_HUB_CACHE",
+    "HUGGINGFACE_HUB_CACHE",
+    "HF_HOME",
+    "XDG_CACHE_HOME",
+)
+
+
+@pytest.fixture
+def model_cache_env(monkeypatch, tmp_path_factory):
+    """An empty HOME and none of the variables that move the model caches.
+
+    Model status resolves its roots from the environment, so a developer
+    machine that exports HF_HUB_CACHE (common on ML hosts), or simply has a
+    model in ~/.cache, would otherwise steer every lookup to its own cache.
+    Returns the HOME it set.
+    """
+    home = tmp_path_factory.mktemp("home")
+    monkeypatch.setenv("HOME", str(home))
+    for variable in MODEL_CACHE_VARIABLES:
+        monkeypatch.delenv(variable, raising=False)
+    return home
 
 
 POSTGRES_TEST_URL_ENV = "NOJOIN_TEST_POSTGRES_URL"

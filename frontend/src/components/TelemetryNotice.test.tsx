@@ -57,7 +57,7 @@ describe("TelemetryNotice", () => {
     telemetryNoticePending = true;
     render(<TelemetryNotice />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Keep it on" }));
+    fireEvent.click(screen.getByRole("button", { name: "Keep diagnostics on" }));
 
     await waitFor(() => {
       expect(updateTelemetryEnabled).toHaveBeenCalledWith(true);
@@ -68,7 +68,7 @@ describe("TelemetryNotice", () => {
     telemetryNoticePending = true;
     render(<TelemetryNotice />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Turn it off" }));
+    fireEvent.click(screen.getByRole("button", { name: "Turn diagnostics off" }));
 
     await waitFor(() => {
       expect(updateTelemetryEnabled).toHaveBeenCalledWith(false);

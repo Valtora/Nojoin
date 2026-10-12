@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import {
   FileText,
@@ -30,6 +30,7 @@ import {
   type OAuthAuthorizeParams,
 } from "@/lib/api";
 import { getErrorMessage } from "@/lib/errors";
+import { passwordChangePath } from "@/lib/passwordChangeReturn";
 
 // Known connector clients get a real product mark on the consent screen;
 // anything else falls back to a neutral plug badge.
@@ -88,6 +89,7 @@ const inputClasses =
   "appearance-none block w-full pl-10 pr-3 py-3 border border-control-border rounded-lg bg-control-bg text-foreground placeholder:text-control-placeholder focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-focus-ring sm:text-sm transition-colors";
 
 function AuthorizeContent() {
+  const router = useRouter();
   const searchParams = useSearchParams();
 
   const params: OAuthAuthorizeParams | null = useMemo(() => {
@@ -153,7 +155,11 @@ function AuthorizeContent() {
     try {
       const response = await login(username, password);
       if (response.force_password_change) {
-        window.location.href = "/settings/profile";
+        // As on /login: the settings layout mounts fresh and loads the signed-in user itself.
+        // The consent URL rides along so the password change returns here.
+        router.push(
+          passwordChangePath(`/oauth/authorize?${searchParams.toString()}`),
+        );
         return;
       }
       setSignedInUsername(response.username);

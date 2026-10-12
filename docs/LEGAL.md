@@ -15,9 +15,9 @@ Nojoin is designed with a privacy-first architecture.
 
 ## 3. Anonymous Usage Data
 
-Separately from your meeting data, Nojoin sends one anonymous ping every six hours describing how the installation is configured and how much it is used. It contains counts and configuration settings only, identified by a random number generated on your own server. It contains none of the meeting data listed above, no names, no hostnames or addresses, and no credentials, and it is never sold.
+Separately from your meeting data, Nojoin sends a daily heartbeat containing a random number generated on your own server and the Nojoin version, so installations can be counted. It can also send anonymous usage diagnostics every six hours describing how the installation is configured and how much it is used, identified by the same random number. Neither contains the meeting data listed above, names, hostnames or addresses, or credentials, and the data is never sold.
 
-This can be switched off in Settings, disabled permanently with the `NOJOIN_TELEMETRY_ENABLED` environment variable, or blocked at the network layer. [TELEMETRY.md](TELEMETRY.md) documents exactly what is sent, when, and how to verify it.
+Diagnostics can be switched off in Settings. Both are disabled permanently with the `NOJOIN_TELEMETRY_ENABLED` environment variable, or blocked at the network layer. [TELEMETRY.md](TELEMETRY.md) documents exactly what is sent, when, how long it is kept, and how to verify it.
 
 ## 4. Liability
 

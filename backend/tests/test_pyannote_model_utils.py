@@ -31,7 +31,7 @@ def test_resolve_local_pyannote_model_prefers_bundled_dir(
 
 
 def test_resolve_local_pyannote_model_uses_hf_cache_snapshot(
-    monkeypatch, tmp_path
+    model_cache_env, monkeypatch, tmp_path
 ) -> None:
     monkeypatch.setenv("NOJOIN_PYANNOTE_MODELS_DIR", str(tmp_path / "empty-bundled"))
     monkeypatch.setenv("HF_HOME", str(tmp_path / "hf-home"))

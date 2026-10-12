@@ -439,6 +439,9 @@ async def update_user(
         user.is_active = user_in.is_active
     if user_in.is_superuser is not None:
         user.is_superuser = user_in.is_superuser
+    if "ai_analysis_daily_limit" in user_in.model_fields_set:
+        # Explicit null clears the override back to the install default.
+        user.ai_analysis_daily_limit = user_in.ai_analysis_daily_limit
     if user_in.role is not None:
         # Authorization: only an owner may change an owner's role.
         if user.role == UserRole.OWNER and current_user.role != UserRole.OWNER:

@@ -1,3 +1,4 @@
+import asyncio
 import hmac
 import logging
 import os
@@ -260,6 +261,44 @@ async def get_initial_config(req: Request, db: AsyncSession = Depends(get_db)):
     }
 
 
+def _build_setup_llm_backend(provider: str, model: Optional[str] = None):
+    from backend.utils.config_manager import get_system_api_keys
+
+    api_key = get_system_api_keys().get(f"{provider}_api_key")
+
+    api_url = None
+    if provider == "ollama":
+        api_url = config_manager.get("ollama_api_url")
+        api_url = _validate_setup_ollama_api_url(api_url)
+
+    return get_llm_backend(
+        provider,
+        api_key=api_key,
+        model=model,
+        api_url=api_url,
+        allow_private_api_url=provider == "ollama",
+    )
+
+
+def _validate_llm_provider(provider: str, model: Optional[str]) -> dict:
+    llm = _build_setup_llm_backend(provider, model)
+    llm.validate_api_key()
+
+    if provider == "ollama":
+        return {
+            "valid": True,
+            "message": "Connected to Ollama successfully.",
+            "models": llm.list_models(),
+        }
+
+    provider_name = provider.capitalize() if provider else "LLM"
+    return {"valid": True, "message": f"{provider_name} API key is valid."}
+
+
+def _list_llm_provider_models(provider: str) -> dict:
+    return {"models": _build_setup_llm_backend(provider).list_models()}
+
+
 @router.post("/validate-llm")
 async def validate_llm(
     request: ValidateLLMRequest, req: Request, db: AsyncSession = Depends(get_db)
@@ -271,37 +310,13 @@ async def validate_llm(
     is_public_request = user is None
 
     try:
-        provider = request.provider
-        from backend.utils.config_manager import get_system_api_keys
-
-        system_keys = get_system_api_keys()
-        api_key = system_keys.get(f"{provider}_api_key")
-
-        api_url = None
-        if provider == "ollama":
-            api_url = config_manager.get("ollama_api_url")
-            api_url = _validate_setup_ollama_api_url(api_url)
-
-        llm = get_llm_backend(
-            provider,
-            api_key=api_key,
-            model=request.model,
-            api_url=api_url,
-            allow_private_api_url=provider == "ollama",
+        # The provider work runs on a worker thread. The Ollama URL check
+        # resolves DNS, and a provider call blocks for its whole timeout when
+        # the provider is unreachable. On the event loop that stalls every
+        # other request the API is serving.
+        return await asyncio.to_thread(
+            _validate_llm_provider, request.provider, request.model
         )
-        llm.validate_api_key()
-
-        models = []
-        if provider == "ollama":
-            models = llm.list_models()
-            return {
-                "valid": True,
-                "message": "Connected to Ollama successfully.",
-                "models": models,
-            }
-
-        provider_name = provider.capitalize() if provider else "LLM"
-        return {"valid": True, "message": f"{provider_name} API key is valid."}
     except HTTPException:
         if is_public_request:
             logger.warning(
@@ -335,25 +350,8 @@ async def list_models(
     is_public_request = user is None
 
     try:
-        provider = request.provider
-        from backend.utils.config_manager import get_system_api_keys
-
-        system_keys = get_system_api_keys()
-        api_key = system_keys.get(f"{provider}_api_key")
-
-        api_url = None
-        if provider == "ollama":
-            api_url = config_manager.get("ollama_api_url")
-            api_url = _validate_setup_ollama_api_url(api_url)
-
-        llm = get_llm_backend(
-            provider,
-            api_key=api_key,
-            api_url=api_url,
-            allow_private_api_url=provider == "ollama",
-        )
-        models = llm.list_models()
-        return {"models": models}
+        # Off the event loop for the reason given in validate_llm.
+        return await asyncio.to_thread(_list_llm_provider_models, request.provider)
     except HTTPException:
         if is_public_request:
             logger.warning(

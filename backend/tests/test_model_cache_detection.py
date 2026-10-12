@@ -1,7 +1,7 @@
 """Detecting cached ONNX ASR models on disk.
 
-The status heuristic matches Hugging Face cache directory names. It has to match
-the *repo* name rather than the Nojoin model id, because the two diverge:
+Status looks for the exact Hugging Face cache directory of the repo onnx-asr
+loads: the *repo* name rather than the Nojoin model id, because the two diverge:
 onnx-asr caches `nemo-canary-1b-v2` as `models--istupakov--canary-1b-v2-onnx`.
 Matching the Nojoin id reported Canary as missing however many times it was
 prepared, and made it undeletable with it, since deletion resolves its path
@@ -10,9 +10,12 @@ through this same check.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from backend.preload_models import check_model_status
+from backend.tests.hf_cache_layout import write_onnx_asr_repo
 
 # The directory names a real install ends up with, taken from a live cache.
 CACHED_REPOS = (
@@ -27,24 +30,27 @@ def isolated_home(monkeypatch, tmp_path_factory):
 
     Detection falls back to ``~/.cache/huggingface/hub`` after ``HF_HOME``, so
     a developer machine with Parakeet or Canary cached reported the "empty"
-    cache below as populated.
+    cache below as populated. ``HF_HUB_CACHE`` and ``HUGGINGFACE_HUB_CACHE``
+    take precedence over ``HF_HOME``, so an exported one would too.
     """
     monkeypatch.setenv("HOME", str(tmp_path_factory.mktemp("home")))
-    monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
+    for variable in ("XDG_CACHE_HOME", "HF_HUB_CACHE", "HUGGINGFACE_HUB_CACHE"):
+        monkeypatch.delenv(variable, raising=False)
 
 
 @pytest.mark.parametrize("model", ["parakeet", "canary"])
 def test_a_downloaded_onnx_model_is_reported_as_present(model, monkeypatch, tmp_path):
     hub = tmp_path / "hub"
     hub.mkdir()
-    for repo in CACHED_REPOS:
-        (hub / repo).mkdir()
+    for cached in ("parakeet", "canary"):
+        write_onnx_asr_repo(hub, cached)
     monkeypatch.setenv("HF_HOME", str(tmp_path))
 
     status = check_model_status(whisper_model_size="turbo")
 
     assert status[model]["downloaded"] is True
-    assert status[model]["path"].startswith(str(hub))
+    assert Path(status[model]["path"]).parent == hub
+    assert Path(status[model]["path"]).name in CACHED_REPOS
 
 
 @pytest.mark.parametrize("model", ["parakeet", "canary"])

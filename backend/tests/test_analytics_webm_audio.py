@@ -295,8 +295,6 @@ def test_a_missing_ffmpeg_is_an_audio_format_error(
     empty_bin = tmp_path / "bin"
     empty_bin.mkdir()
     monkeypatch.setenv("PATH", str(empty_bin))
-    # Otherwise it finds the host's ffmpeg in a well-known location.
-    monkeypatch.setattr("backend.utils.audio.ensure_ffmpeg_in_path", lambda: None)
     container = tmp_path / "capture.webm"
     container.write_bytes(UNREADABLE)
 

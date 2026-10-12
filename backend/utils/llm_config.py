@@ -8,6 +8,8 @@ from sqlmodel import Session, select
 
 from backend.models.user import User
 from backend.utils.config_manager import (
+    GPU_ASR_WINDOW_KEY,
+    TRANSCRIPTION_SETTING_KEYS,
     async_get_system_api_keys,
     config_manager,
     get_system_api_keys,
@@ -169,7 +171,11 @@ def _merge_llm_config(
     sanitized_user_settings = strip_legacy_automatic_ai_settings(
         dict(user_settings) if user_settings else {}
     )
-    for field in INSTALL_WIDE_ONLY_USER_LLM_FIELDS:
+    for field in (
+        *INSTALL_WIDE_ONLY_USER_LLM_FIELDS,
+        *TRANSCRIPTION_SETTING_KEYS,
+        GPU_ASR_WINDOW_KEY,
+    ):
         sanitized_user_settings.pop(field, None)
     merged.update({key: value for key, value in system_keys.items() if value})
 

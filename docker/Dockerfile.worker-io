@@ -41,13 +41,25 @@ USER root
 # Trivy HIGH gate. Both are LLM tooling and stay UNPINNED per the repo policy
 # (allow latest). The Codex payload is a large (~285 MB) stripped static binary
 # that Trivy cannot introspect (ADR-0002): it adds no scannable CVEs but is an
-# unaudited vendor artifact — an accepted trade-off recorded in the ADR. claude is
-# symlinked to /usr/bin/claude (historical path); codex lands at
-# /usr/local/bin/codex (npm's global bin, where NOJOIN_CODEX_PATH defaults).
+# unaudited vendor artifact — an accepted trade-off recorded in the ADR. Two
+# things narrow it. `npm audit signatures` fails the build unless every
+# installed package verifies against the registry's signing keys (and its
+# provenance attestation where the publisher issues one), so a package swapped
+# on the registry or in transit cannot reach the image; it refuses `-g`, so it
+# runs from the global prefix's lib directory, where npm keeps the global tree.
+# And the installed versions are written to /usr/local/share/nojoin/
+# cli-versions.json, so a release can be matched against an advisory without
+# unpacking the SBOM (which records them too). claude is symlinked to
+# /usr/bin/claude (historical path); codex lands at /usr/local/bin/codex (npm's
+# global bin, where NOJOIN_CODEX_PATH defaults).
 COPY --from=node /usr/local/bin/node /usr/local/bin/node
 COPY --from=node /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/npm
 RUN ln -sf /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
     && npm install -g @anthropic-ai/claude-code @openai/codex \
+    && (cd "$(npm prefix -g)/lib" && npm audit signatures) \
+    && mkdir -p /usr/local/share/nojoin \
+    && npm ls -g --depth=0 --json @anthropic-ai/claude-code @openai/codex \
+        > /usr/local/share/nojoin/cli-versions.json \
     && ln -sf "$(readlink -f "$(command -v claude)")" /usr/bin/claude \
     && pip install --no-cache-dir claude-agent-sdk \
     && rm -rf /usr/local/lib/node_modules/npm /usr/lib/node_modules/npm \

@@ -4,26 +4,46 @@ Container images for this release. All images are cosign-signed and ship build-p
 
 {{IMAGE_DIGESTS}}
 
+### Install heartbeat
+
+From 2.7.0, each Nojoin installation sends a small heartbeat to `telemetry.nojoin.co.uk`, once when it first starts, once each time it starts on a new version, and once a day. It has three fields.
+
+```json
+{"schema": 1, "install_id": "3f2a5c1e-9b4d-4a7f-8e1c-2d6b0a9f4e33", "version": "2.7.0"}
+```
+
+The install ID is the random UUID Nojoin already generates for telemetry. Nothing else is sent, and the receiving service discards any other field.
+
+I build Nojoin in my spare time, and I need to know how many installations exist to decide how much of that time it gets. At the moment I can't tell. Optional telemetry has seen almost no installations besides my own since July, while the 2.5.1 images were downloaded more than a hundred times in the 24 days after release. Optional telemetry undercounts by design, because nothing is sent until an administrator agrees. The heartbeat tells me which figure is closer.
+
+Usage diagnostics are unchanged and stay optional, and **Settings > Privacy** still turns them off. They gain one count, recordings made in the last 24 hours.
+
+The heartbeat is never sent if you set `NOJOIN_TELEMETRY_ENABLED=false`, or if you turned telemetry off in Settings before upgrading. If you said no before, that still stands. Blocking `telemetry.nojoin.co.uk` stops it too, and nothing else in Nojoin is affected.
+
+Telemetry data is now kept indefinitely rather than reduced to daily totals after 13 months. `docs/TELEMETRY.md` has the full details (#389).
+
 ### Highlights
 
 <!-- Maintainer: one bullet per item, one or two sentences each. What an operator would notice, not how it works. Detail belongs in the docs. Remove the section if a release has nothing to lead with. -->
 
-- **Anthropic models work again.** Version 1 of the Anthropic SDK removed the `temperature` parameter, and the 2.5.0 images install that version, so every Anthropic request failed before it left the server. Nojoin no longer sends it (#272).
-- **Merging duplicate speakers no longer joins two identified people.** An unnamed third voice that resembled both could bridge them, collapsing one confirmed identification into the other. The check now covers the whole group a merge would create (#270).
-- **Assigning a line to a person always shows that person.** The assignment could land on a speaker record that an earlier merge had retired, and the transcript then fell back to the raw diarization label (#270).
-- **A code execution flaw in the diarization model loader is closed.** CVE-2026-58659 let a crafted PyTorch Lightning checkpoint run code when loaded. The worker loads pyannote models that ship with Nojoin or come from Hugging Face, so the exposure was a tampered model file. Both Lightning packages move to the fixed 2.6.6 (#288).
-- **The API image carries current Debian security fixes.** Its base image lags the Debian archive by weeks, so the image now applies pending system package updates when it is built. This release picks up fixes to gzip, PCRE2, SQLite, Perl and OpenSSL (#291).
-- **The notes editor is off a vulnerable tiptap release.** GHSA-cp6q-959q-f8rh in `@tiptap/core` is cleared by moving the whole tiptap family together (#272).
-- Routine updates include React 19.3, Next.js 16.3.5 and uvicorn 0.53 (#284, #288, #292).
+- **Administrators can cap AI analysis runs.** Set a **Daily AI analysis budget** under **Settings > AI providers**, with a per-user override under Users. Each user can then turn on **Analyse meetings automatically** under **Settings > Recording**, off by default and within the same budget (#385).
+- **Delivery figures catch up after a transcript edit.** Opening the Analytics tab re-measures a meeting whose transcript changed since it was measured. **Re-measure delivery after edits** under **Settings > Recording** turns this off (#384).
+- **Document batches upload two at a time** and are listed in the order they were queued, not the order they finished (#383).
+- **The GPU transcription window is an install-wide setting.** An administrator can shorten the 120 second window for Parakeet and Canary under **Settings > Transcription**, for a card shared with live capture (#382).
+- **Short Anthropic calls return text.** Current Claude models think first, and a title or other short call could spend its whole limit thinking and return nothing. These calls now ask for low effort, have more room, and fail with a clear message when there is still no text (#379). Models that still accept a temperature get 0.2, matching OpenAI and Gemini (#380).
+- **The worker-io build verifies the CLIs it installs.** It checks the Codex and Claude Code npm packages against the registry's signatures and provenance, and records their versions in the image (#381).
+- **Dependency and code-scanning fixes.** postcss-selector-parser moves to 7.1.6 for a quadratic parsing advisory (#378). The chat usage-limit message is built from the reset time alone, so it cannot carry exception text (#377). The Trivy ignore list is empty, since none of its entries still applied (#376).
 
 ### Upgrade
 
-Pull the new images and recreate the stack:
+Pull the new images and recreate the stack.
 
 ```bash
 docker compose pull
 docker compose up -d
 ```
+
+- `worker-io` sends the first heartbeat within about fifteen minutes of starting, unless one of the exemptions above applies. Set `NOJOIN_TELEMETRY_ENABLED=false` in `.env` before upgrading if this deployment must not send it.
 
 ### Migration
 
@@ -31,27 +51,22 @@ Database migrations run automatically on the first API start after upgrading. Ba
 
 <!-- Maintainer: note any blocking first-boot migration, longer startup, or manual step. Keep it to bullets. -->
 
-- No Alembic revisions in this release. Nothing about the schema changes, and no first-boot migration runs.
-- No change to the example compose file, the environment variables or the nginx configuration. Pulling the new images is the whole upgrade.
-- The upgrade does not change recordings whose speakers were already wrongly merged. Reprocessing such a recording runs the corrected merge pass.
+- One Alembic revision adds the `ai_analysis_runs` table and a nullable per-user limit on `users`, for the analysis budget. It runs on the first API start and takes moments.
+- No change to the example compose file or the nginx configuration. `NOJOIN_TELEMETRY_ENABLED` keeps its name and values, and `false` now also stops the heartbeat.
+- The backup format is unchanged.
 
 ### Rollback
 
 <!-- Maintainer: state whether rollback is code-only or requires data steps. Default below. -->
 
-- Code only. Redeploy the previous image tags.
-- Nothing to downgrade, since this release adds no schema revision.
-- Rolling back to 2.5.0 brings back the Anthropic failure and the Lightning flaw, so prefer fixing forward.
+- Roll the schema back before the images, because the 2.6.0 API refuses to start against a revision it does not know. With 2.7.0 still running, run `docker compose exec api alembic downgrade b182c2378829`, then redeploy the 2.6.0 image tags. The downgrade drops the AI analysis run log, so each user's count for the day resets.
+- 2.6.0 ignores the settings 2.7.0 adds to `config.json`, so the GPU window and the analysis budget return to their defaults, and it sends no heartbeat.
 
 ### Known Issues
 
-<!-- Maintainer: list known issues affecting this release, or leave the default. -->
+<!-- Maintainer: list only problems Nojoin can fix, each with its open issue. A limit set by a dependency or a provider is documented in the guide for that feature and does not belong here. -->
 
-- Anthropic models now run at the provider's default sampling, where Nojoin previously set a low fixed temperature. Notes and titles from Anthropic models can vary more between runs than before. Other providers are unchanged.
-- Carried over from 2.4.0. The AI analytics tier spends your own provider quota on every run, is never dispatched automatically, and has no account level cap.
-- Carried over. Measured delivery does not refresh itself, so a transcript edited afterwards is reported stale and re-measured only when asked, and overlapping speech is a floor rather than a total.
-- Carried over. The 120 second GPU window can be too large when live capture and transcription contend for one card, and the Codex payload in the worker-io image is a stripped static binary that scanners cannot introspect.
-- Carried over from 2.5.0. A document batch uploads one file at a time, because the backend admits two concurrent uploads per user and rejects the rest.
+- With Ollama, a meeting whose transcript does not fit the context window fails note generation. Raise the Ollama context window under **Settings > AI providers** if the GPU has room, or use a hosted provider for long meetings (#391).
 
 ### Browser-Capture Compatibility
 

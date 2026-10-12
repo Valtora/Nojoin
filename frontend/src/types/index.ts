@@ -29,6 +29,8 @@ export interface User {
   is_superuser: boolean;
   role: UserRole;
   force_password_change: boolean;
+  /** Per-user cap on AI analysis runs per UTC day. Null inherits the install default; 0 is no cap. */
+  ai_analysis_daily_limit?: number | null;
 }
 
 export interface Invitation {
@@ -387,12 +389,20 @@ export interface Settings {
   transcription_backend?: string;
   parakeet_model?: string;
   canary_model?: string;
+  /** Install-wide GPU window for Parakeet and Canary, in seconds; null means the default. */
+  gpu_asr_window_s?: number | null;
   transcription_language?: string;
   notes_language?: string;
   notes_language_custom_instruction?: string;
   enable_live_transcription?: boolean;
   enable_meeting_edge?: boolean;
   meeting_edge_context_level?: number;
+  /** Re-measure stale delivery figures when the Analytics tab is next opened. */
+  auto_remeasure_delivery?: boolean;
+  /** Queue the AI analysis of each meeting when it finishes processing, within the daily budget. */
+  auto_analyse_meetings?: boolean;
+  /** Install-wide cap on AI analysis runs per user per UTC day; null or 0 is no cap. Admin only. */
+  ai_analysis_daily_limit?: number | null;
   processing_device?: string;
   theme?: string;
   timezone?: string;
@@ -446,6 +456,20 @@ export interface Settings {
   install_glossary_terms?: string;
   enable_vad?: boolean;
   enable_diarization?: boolean;
+  // Processing tuning (lib/processingTuning.ts). null means inherit the
+  // install's value, else the shipped default.
+  vad_threshold?: number | null;
+  asr_word_end_padding_s?: number | null;
+  phantom_max_duration_s?: number | null;
+  phantom_max_segments?: number | null;
+  phantom_embedding_floor?: number | null;
+  phantom_merge_threshold?: number | null;
+  word_flip_max_duration_s?: number | null;
+  word_flip_max_gap_s?: number | null;
+  // Read-only, from GET: the installation's config.json tuning values, keyed
+  // by tuning key (null where unset or unusable). Today it holds the phantom
+  // pair, which the floor/merge check counts for a field left empty.
+  processing_tuning_install?: Record<string, number | null>;
   spellcheck_language?: string;
 
     [key: string]: unknown;
@@ -740,11 +764,19 @@ export interface AudioDevice {
   is_default: boolean;
 }
 
+/** Where a found model lives. `external`: loadable, but outside the cache
+ * Nojoin manages (a personal Hugging Face cache), so it is not deleted from
+ * the UI. Only Pyannote models report a source. */
+export type ModelSource = "bundled" | "cache" | "external";
+
 export interface ModelStatusInfo {
   downloaded: boolean;
   path: string | null;
   checked_paths: string[];
-  source?: string;
+  source?: ModelSource;
+  /** Not downloaded, but the model's own entry is in Nojoin's model cache: a
+   * download that was cut off or is still running. It can be deleted. */
+  partial?: boolean;
 }
 
 export interface SystemModelStatus {
@@ -819,6 +851,22 @@ export interface TelemetryStatus {
   /** A short sentence naming the failure, written by the backend. Null on success. */
   last_attempt_detail: string | null;
   grace_period_days: number;
+  /**
+   * The install heartbeat: the install ID and version, daily and on each new
+   * version. It has no switch in the app, so these fields describe it rather
+   * than control it.
+   */
+  heartbeat_enabled: boolean;
+  /**
+   * Why the heartbeat is not sent: NOJOIN_TELEMETRY_ENABLED=false, or an
+   * opt-out made on this install before the heartbeat existed. Null when sent.
+   */
+  heartbeat_blocked_by: "environment" | "earlier_opt_out" | null;
+  heartbeat_endpoint: string;
+  heartbeat_last_sent_at: string | null;
+  heartbeat_last_attempt_at: string | null;
+  heartbeat_last_attempt_ok: boolean | null;
+  heartbeat_last_attempt_detail: string | null;
 }
 
 export interface AdminHealthSummary {
@@ -1076,6 +1124,9 @@ export interface RecordingAnalytics {
   // As delivery_stale, but tracked separately: each tier carries its own
   // watermark, so editing the transcript between the two does not mark both.
   ai_stale: boolean;
+  // The caller's daily budget for the AI tier, so the tab can say why the
+  // button is unavailable before a request is refused.
+  ai_budget: AnalyticsAiBudget;
   // No staleness field: overlap depends only on the audio, which never
   // changes after processing.
   audio_overlap: AnalyticsAudioOverlap | null;
@@ -1167,6 +1218,15 @@ export type AnalyticsDeliveryStatus =
 // Sentiment is read from the words alone and is deliberately never combined
 // with AnalyticsDelivery, which measures the sound of a voice. The two are
 // different kinds of evidence and are presented separately.
+export interface AnalyticsAiBudget {
+  /** Runs allowed per UTC day; null when there is no cap. */
+  limit: number | null;
+  used: number;
+  remaining: number | null;
+  /** ISO timestamp with an explicit UTC offset. */
+  resets_at: string;
+}
+
 export type AnalyticsAiStatus =
   | "pending"
   | "generating"

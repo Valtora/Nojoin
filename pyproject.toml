@@ -63,6 +63,7 @@ files = [
     "backend/models/people_tag_schemas.py",
     # Processing contracts.
     "backend/processing/engines/errors.py",
+    "backend/processing/processing_tuning.py",
 ]
 
 [tool.ruff]

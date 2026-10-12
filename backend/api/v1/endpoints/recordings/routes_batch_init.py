@@ -129,6 +129,9 @@ async def batch_permanently_delete_recordings(
     )
 
     for recording in recordings:
+        # Locked, as in delete_recording, so keep_imported_audio_task cannot
+        # repoint audio_path between this read and the delete.
+        await db.refresh(recording, with_for_update=True)
         recordings_module.delete_recording_artifacts(
             recording_id=recording.id,
             audio_path=recording.audio_path,

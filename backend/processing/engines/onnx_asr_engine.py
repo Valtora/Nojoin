@@ -6,9 +6,21 @@ import gc
 import logging
 import os
 import traceback
+from collections.abc import Mapping, Sequence
+from typing import NamedTuple, Protocol
 
+from ...utils.config_manager import (
+    GPU_ASR_WINDOW_KEY,
+    config_manager,
+    normalise_gpu_asr_window,
+)
 from ...utils.languages import resolve_transcription_language_code
 from ..onnx_providers import gpu_is_present, sessions_use_cuda, verify_gpu_providers
+from ..processing_tuning import (
+    ASR_WORD_END_PADDING_KEY,
+    TUNING_SPECS,
+    resolve_tuning,
+)
 from .base import TranscriptionEngine
 from .errors import (
     TranscriptionError,
@@ -24,6 +36,11 @@ os.environ.setdefault("ORT_LOG_SEVERITY_LEVEL", "1")
 # Gap (seconds) between consecutive words that starts a new segment.
 SEGMENT_PAUSE_THRESHOLD_S = 0.8
 
+# How long (seconds) a word lasts when the next word starts more than
+# SEGMENT_PAUSE_THRESHOLD_S later, or when it is the last word and the audio
+# duration is unknown. A user's settings may override it (processing_tuning.py).
+WORD_END_PAD_S = TUNING_SPECS[ASR_WORD_END_PADDING_KEY].default
+
 # Longest audio (seconds) fed to onnx-asr in a single recognize() call. onnx-asr
 # has no long-form support: the exported Parakeet/Canary FastConformer attention
 # does not handle long sequences — past ~5 min recognize() raises an onnxruntime
@@ -34,24 +51,71 @@ MAX_CHUNK_DURATION_S = 240.0
 # Tighter cap for GPU runs. The CUDA provider needs the fp32 weights (int8 has no
 # CUDA kernels), whose attention activations grow with the square of the window, so
 # 240s overflows an 8GB card while 160s fits. 120s is the largest window that still
-# leaves the card room for diarization afterwards.
+# leaves the card room for diarization afterwards. An administrator lowers it for
+# a card that live capture shares, or raises it for a larger card, through the
+# install-wide `gpu_asr_window_s` setting (config_manager); this is its default.
 GPU_MAX_CHUNK_DURATION_S = 120.0
 
 
-def max_chunk_duration_s() -> float:
+def gpu_asr_window_s(config: Mapping[str, object] | None = None) -> float:
+    """The GPU window: the install's `gpu_asr_window_s` when usable, else the default.
+
+    Reads the key from ``config`` (the merged settings a run is given, which
+    carry config.json's install-wide keys), else from config.json directly for
+    callers that have no merged settings. A set value outside the engine's
+    bounds is logged and ignored rather than raised: a setting never fails a
+    recording.
+    """
+    raw = config.get(GPU_ASR_WINDOW_KEY) if config else None
+    if raw is None and not config:
+        raw = config_manager.get(GPU_ASR_WINDOW_KEY)
+    if raw is None:
+        return GPU_MAX_CHUNK_DURATION_S
+    window = normalise_gpu_asr_window(raw)
+    if window is None:
+        logger.warning(
+            "Ignoring invalid %s=%r; using the default %ss.",
+            GPU_ASR_WINDOW_KEY,
+            raw,
+            GPU_MAX_CHUNK_DURATION_S,
+        )
+        return GPU_MAX_CHUNK_DURATION_S
+    return window
+
+
+def max_chunk_duration_s(config: Mapping[str, object] | None = None) -> float:
     """Longest window to feed onnx-asr in one recognize() call, for this device.
 
     Takes the smaller of the two caps on a GPU host so that tests, which shrink
     MAX_CHUNK_DURATION_S to keep fixtures tiny, stay effective either way.
     """
     if gpu_is_present():
-        return min(MAX_CHUNK_DURATION_S, GPU_MAX_CHUNK_DURATION_S)
+        return min(MAX_CHUNK_DURATION_S, gpu_asr_window_s(config))
     return MAX_CHUNK_DURATION_S
 
 
 # Half-width (seconds) of the search window used to snap a chunk boundary onto
 # the quietest nearby point, so a window never cuts through a spoken word.
 CHUNK_SNAP_RADIUS_S = 18.0
+
+
+class Recognition(Protocol):
+    """The parts of an onnx-asr timestamped result the mapper reads."""
+
+    @property
+    def text(self) -> str: ...
+
+    @property
+    def tokens(self) -> Sequence[str] | None: ...
+
+    @property
+    def timestamps(self) -> Sequence[float] | None: ...
+
+
+class _Recognition(NamedTuple):
+    text: str
+    tokens: Sequence[str] | None
+    timestamps: Sequence[float] | None
 
 
 def map_onnx_asr_result(
@@ -61,7 +125,7 @@ def map_onnx_asr_result(
     audio_duration: float | None = None,
     language: str | None = None,
 ) -> dict:
-    """Map an onnx-asr timestamped result into the canonical transcription schema.
+    """Map an onnx-asr timestamped result with the default word end padding.
 
     Args:
         text: The recognized transcript text (already space-reconstructed).
@@ -70,8 +134,36 @@ def map_onnx_asr_result(
         audio_duration: Total audio duration in seconds, optional.
 
     Returns:
-        A dict with the canonical schema: text, language (always None), segments.
+        A dict with the canonical schema: text, language, segments.
     """
+    return map_onnx_asr_recognition(
+        _Recognition(text, tokens, timestamps), audio_duration, language
+    )
+
+
+def map_onnx_asr_recognition(
+    recognized: Recognition,
+    audio_duration: float | None = None,
+    language: str | None = None,
+    word_end_pad_s: float = WORD_END_PAD_S,
+) -> dict:
+    """Map an onnx-asr timestamped result into the canonical transcription schema.
+
+    Args:
+        recognized: The recognize() result: text, plus parallel subword tokens
+            and per-token start times in seconds (either may be None).
+        audio_duration: Total audio duration in seconds, optional.
+        language: The forced language code, if any.
+        word_end_pad_s: How long a word lasts when a pause follows it.
+
+    Returns:
+        A dict with the canonical schema: text, language, segments.
+    """
+    text, tokens, timestamps = (
+        recognized.text,
+        recognized.tokens,
+        recognized.timestamps,
+    )
     # Fallback: no usable token-level timing data.
     if not tokens or not timestamps or len(tokens) != len(timestamps):
         return {
@@ -95,19 +187,19 @@ def map_onnx_asr_result(
 
     # Assign word end times: next word's start, or audio end for the last word.
     # When the gap to the next word exceeds the pause threshold, the word ends
-    # shortly after its start so the silent gap is not absorbed into the word
-    # (this keeps the segment-split logic below functional).
+    # word_end_pad_s after its start so the silent gap is not absorbed into the
+    # word (this keeps the segment-split logic below functional).
     for index, word in enumerate(words):
         if index + 1 < len(words):
             next_start = words[index + 1]["start"]
             if next_start - word["start"] > SEGMENT_PAUSE_THRESHOLD_S:
-                word["end"] = word["start"] + 0.2
+                word["end"] = word["start"] + word_end_pad_s
             else:
                 word["end"] = next_start
         elif audio_duration is not None and audio_duration > word["start"]:
             word["end"] = audio_duration
         else:
-            word["end"] = word["start"] + 0.2
+            word["end"] = word["start"] + word_end_pad_s
 
     # Ensure every word string carries a single leading space for downstream
     # text reconstruction.
@@ -174,15 +266,20 @@ def _shift_segment(segment: dict, offset_s: float) -> dict:
     return shifted
 
 
-def _chunk_boundaries(audio, sample_rate: int) -> list[tuple[int, int]]:
-    """Split [0, len(audio)) into windows of at most MAX_CHUNK_DURATION_S.
+def _chunk_boundaries(
+    audio, sample_rate: int, window_s: float | None = None
+) -> list[tuple[int, int]]:
+    """Split [0, len(audio)) into windows of at most ``window_s`` seconds.
 
-    Each internal boundary is snapped, within CHUNK_SNAP_RADIUS_S of the ideal
-    cut, onto the quietest 0.2 s of audio so a window never cuts mid-word.
-    Returns a list of (start_frame, end_frame) pairs covering the whole signal.
+    ``window_s`` defaults to this device's cap. Each internal boundary is
+    snapped, within CHUNK_SNAP_RADIUS_S of the ideal cut, onto the quietest
+    0.2 s of audio so a window never cuts mid-word. Returns a list of
+    (start_frame, end_frame) pairs covering the whole signal.
     """
     total_frames = len(audio)
-    target = int(max_chunk_duration_s() * sample_rate)
+    if window_s is None:
+        window_s = max_chunk_duration_s()
+    target = int(window_s * sample_rate)
     radius = int(CHUNK_SNAP_RADIUS_S * sample_rate)
     probe = max(1, int(0.2 * sample_rate))
 
@@ -349,23 +446,22 @@ class OnnxAsrEngine(TranscriptionEngine):
                 logger.warning(f"Could not read audio duration for {audio_path}: {e}")
 
             logger.info(f"Starting {self.name} transcription for {audio_path}")
+            word_end_pad_s = resolve_tuning(config, ASR_WORD_END_PADDING_KEY)
 
-            if audio_duration is not None and audio_duration > max_chunk_duration_s():
+            window_s = max_chunk_duration_s(config)
+            if audio_duration is not None and audio_duration > window_s:
                 result = self._transcribe_chunked(
                     recognizer,
                     audio_path,
-                    audio_duration,
+                    window_s=window_s,
                     language_code=language_code,
+                    word_end_pad_s=word_end_pad_s,
                 )
             else:
                 recognize_kwargs = {"language": language_code} if language_code else {}
                 recognized = recognizer.recognize(audio_path, **recognize_kwargs)
-                result = map_onnx_asr_result(
-                    recognized.text,
-                    recognized.tokens,
-                    recognized.timestamps,
-                    audio_duration,
-                    language_code,
+                result = map_onnx_asr_recognition(
+                    recognized, audio_duration, language_code, word_end_pad_s
                 )
 
             logger.info(f"{self.name} transcription completed for {audio_path}")
@@ -398,16 +494,20 @@ class OnnxAsrEngine(TranscriptionEngine):
         self,
         recognizer,
         audio_path: str,
-        audio_duration: float,
         *,
+        window_s: float | None = None,
         language_code: str | None = None,
+        word_end_pad_s: float = WORD_END_PAD_S,
     ) -> dict:
         """Transcribe long audio as a sequence of windows, then merge.
 
-        Each window is at most MAX_CHUNK_DURATION_S long and its boundaries snap
-        onto quiet points so a spoken word is never split. Per-window segments
-        are shifted into absolute time and concatenated.
+        Each window is at most ``window_s`` long (this device's cap when not
+        given) and its boundaries snap onto quiet points so a spoken word is
+        never split. Per-window segments are shifted into absolute time and
+        concatenated.
         """
+        if window_s is None:
+            window_s = max_chunk_duration_s()
         import os
         import tempfile
 
@@ -419,10 +519,11 @@ class OnnxAsrEngine(TranscriptionEngine):
         if getattr(audio, "ndim", 1) > 1:
             audio = audio.mean(axis=1)
 
-        boundaries = _chunk_boundaries(audio, sample_rate)
+        boundaries = _chunk_boundaries(audio, sample_rate, window_s)
+        audio_duration = len(audio) / sample_rate
         logger.info(
             f"{self.name}: {audio_duration:.0f}s audio exceeds the "
-            f"{max_chunk_duration_s():.0f}s single-pass limit; transcribing in "
+            f"{window_s:.0f}s single-pass limit; transcribing in "
             f"{len(boundaries)} windows."
         )
 
@@ -446,12 +547,8 @@ class OnnxAsrEngine(TranscriptionEngine):
                 except OSError:
                     pass
 
-            chunk_result = map_onnx_asr_result(
-                recognized.text,
-                recognized.tokens,
-                recognized.timestamps,
-                chunk_duration,
-                language_code,
+            chunk_result = map_onnx_asr_recognition(
+                recognized, chunk_duration, language_code, word_end_pad_s
             )
             if chunk_result["text"]:
                 texts.append(chunk_result["text"])

@@ -26,6 +26,7 @@ from backend.models.pipeline import (
     TranscriptUtterance,
 )
 from backend.models.recording import (
+    IN_FLIGHT_TRANSCRIPT_STATUSES,
     ClientStatus,
     Recording,
     RecordingPipelineGeneration,
@@ -38,6 +39,7 @@ from backend.utils.recording_audio_sync import (
     BROWSER_AUDIO_SEGMENT_SUFFIXES,
     SEGMENT_CORRUPT_SUFFIX,
     TRANSCODE_FAILED_SUFFIX,
+    build_recording_audio_chunk_fields,
     find_missing_chunk_sequences,
     find_pending_recording_upload_sequences,
     list_recording_audio_chunks,
@@ -182,12 +184,7 @@ async def _mark_recording_upload_error(
 
 
 def _should_hide_in_flight_transcript_content(recording: Recording) -> bool:
-    return recording.status in {
-        RecordingStatus.PAUSED,
-        RecordingStatus.UPLOADING,
-        RecordingStatus.QUEUED,
-        RecordingStatus.PROCESSING,
-    }
+    return recording.status in IN_FLIGHT_TRANSCRIPT_STATUSES
 
 
 async def _get_owned_recording(
@@ -293,12 +290,25 @@ async def _sync_recording_audio_chunks_from_entries(
     source_kind: str,
     disk_entries: list[tuple[int, Path]],
 ) -> list[RecordingAudioChunk]:
+    # Hashing a whole imported file takes seconds for a video, and run_sync
+    # holds the event loop, so the fields are built on a worker thread first.
+    prebuilt_fields = await asyncio.to_thread(
+        lambda: {
+            sequence: build_recording_audio_chunk_fields(
+                sequence=sequence,
+                source_kind=source_kind,
+                storage_path=storage_path,
+            )
+            for sequence, storage_path in disk_entries
+        }
+    )
     return await db.run_sync(
         lambda session: sync_recording_audio_chunks_from_entries(
             session,
             recording_id=recording_id,
             source_kind=source_kind,
             disk_entries=disk_entries,
+            prebuilt_fields=prebuilt_fields,
         )
     )
 

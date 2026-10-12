@@ -20,7 +20,8 @@ CREATE TABLE users (
     token_version INTEGER NOT NULL,
     settings JSON,
     has_seen_demo_recording BOOLEAN NOT NULL,
-    invitation_id INTEGER
+    invitation_id INTEGER,
+    ai_analysis_daily_limit INTEGER
 )
 """
 
@@ -362,5 +363,42 @@ CREATE TABLE recording_audio_window_manifests (
     processing_run_id INTEGER,
     last_error TEXT,
     UNIQUE(recording_id, window_index)
+)
+"""
+
+RECORDING_AUDIO_CHUNKS_SCHEMA = """
+CREATE TABLE recording_audio_chunks (
+    id INTEGER PRIMARY KEY,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    public_id VARCHAR(36) NOT NULL,
+    recording_id INTEGER NOT NULL,
+    sequence_no INTEGER NOT NULL,
+    source_kind VARCHAR(32) NOT NULL,
+    absolute_start_ms INTEGER NOT NULL,
+    absolute_end_ms INTEGER NOT NULL,
+    duration_ms INTEGER NOT NULL,
+    sample_rate_hz INTEGER NOT NULL,
+    channel_count INTEGER NOT NULL,
+    byte_size INTEGER NOT NULL,
+    sha256 VARCHAR(128) NOT NULL,
+    storage_path VARCHAR(1024) NOT NULL,
+    upload_status VARCHAR(32) NOT NULL,
+    idempotency_key VARCHAR(255),
+    received_at DATETIME NOT NULL,
+    cleanup_eligible_at DATETIME,
+    UNIQUE(recording_id, sequence_no),
+    UNIQUE(recording_id, idempotency_key)
+)
+"""
+
+AI_ANALYSIS_RUNS_SCHEMA = """
+CREATE TABLE ai_analysis_runs (
+    id INTEGER PRIMARY KEY,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    user_id INTEGER NOT NULL,
+    recording_id INTEGER,
+    source VARCHAR(16) NOT NULL
 )
 """

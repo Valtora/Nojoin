@@ -97,11 +97,13 @@ Use **Settings > AI providers** for installation-wide provider defaults, model o
 
 Admin-only sections let you:
 
-- Choose the default LLM provider.
-- Configure the Ollama API URL and context window. The context window is sent to Ollama as `num_ctx` for full-context meeting prompts; if Ollama still reports a length stop, Nojoin surfaces that as a chat error instead of saving a truncated answer.
+- Choose the default LLM provider. Current Anthropic models do not accept a temperature setting, so their notes and titles vary more from run to run than other providers', which Nojoin runs at a low temperature. The limit is in Anthropic's API. Older Claude models that still accept the setting get the same value as the other providers.
+- Cap the AI analysis runs each user may start per day (**Daily AI analysis budget**). Each run is one long call against the user's own provider quota. Leave it blank or 0 for no cap. The cap is the install's default; an individual user's cap can be raised or lowered when editing them under Users, where 0 means no cap for that user.
+- Configure the Ollama API URL and context window. The context window is sent to Ollama as `num_ctx` for full-context meeting prompts, lowered to the model's own maximum when the model was trained on less, and holds the prompt and the answer together. Ollama is asked to refuse a prompt that does not fit, and an answer that fills the window is treated as incomplete; either is reported as an error naming the window instead of being saved. Meeting chat drops its oldest turns to fit. Raise the window, or, when it is already the model's maximum, pick a model with a larger context. Ollama 0.12.6 or later refuses before generating; older servers are checked after the call (see `OLLAMA_CONTEXT_WINDOW` in [DEPLOYMENT.md](DEPLOYMENT.md)).
 - Configure a secondary LLM provider for fallback. When the primary provider fails, the system automatically retries with the secondary provider. The secondary provider has its own independent configuration (provider, model, API key, Ollama URL) set through `SECONDARY_` prefixed environment variables.
+- Choose the transcription engine and model in **Settings > Transcription**. They apply to every user on the installation and are stored in `data/config.json`. The same section holds the **GPU transcription window** for Parakeet and Canary, the longest stretch of audio transcribed in one call on a GPU host (default 120 seconds, sized for an 8 GB card); lower it if transcription runs out of GPU memory while live capture shares the card, as [DEPLOYMENT.md](DEPLOYMENT.md#gpu-acceleration) explains.
 - View installed Whisper models.
-- Remove local model cache entries. Required default models are prepared on first run, and repo-bundled model assets remain read-only in the UI. Deletion runs on a worker, since the API mounts the model cache read-only, so it needs a running worker to succeed.
+- Remove local model cache entries. Required default models are prepared on first run, and repo-bundled model assets remain read-only in the UI. Deletion runs on a worker, since the API mounts the model cache read-only, so it needs a running worker to succeed. Status and Delete look in the caches the models download into: `$XDG_CACHE_HOME/whisper` for Whisper, and the Hugging Face hub cache (`$HF_HOME/hub`, or `HF_HUB_CACHE` if set) for Parakeet, Canary and Pyannote. A Parakeet, Canary or Pyannote download that stopped part-way shows as **Missing** with a Delete button to clear it. A Pyannote model already in the personal cache, `~/.cache/huggingface/hub`, is still used, but shows as **External** and is not deleted from here.
 - Choose when a newly selected transcription model is downloaded. Picking a model that is not on the server prompts you to fetch it now, so it is ready before the next recording, or to leave it until first use. Declining is safe: the model is downloaded when it is first needed, but live transcription and Meeting Edge wait for that download to finish.
 - Download any model listed as **Missing** in **Model dependencies**, with progress shown in place. One preparation runs at a time, so the buttons are disabled while another is in flight.
 
@@ -118,9 +120,11 @@ Notes-language choices include British and American English, the transcription l
 
 ### Anonymous Usage Data
 
-Use **Settings > Privacy** to turn the six-hourly anonymous ping on or off, and to see this install's random ID, the endpoint, and when a ping was last sent. A failed attempt is reported there with its reason, so a "Last sent: Never" that means "never tried" can be told apart from one that means "tried and blocked". The panel also lists exactly what the ping contains.
+Use **Settings > Privacy** to turn the six-hourly usage diagnostics on or off, and to see this install's random ID, both endpoints, and when the heartbeat and the diagnostics were last sent. A failed attempt is reported there with its reason, so a "Last sent: Never" that means "never tried" can be told apart from one that means "tried and blocked". The panel also lists exactly what each contains.
 
-On an installation upgraded into this feature, nothing is sent until an administrator has seen the one-time notice; the panel says so explicitly while that is the case. If `NOJOIN_TELEMETRY_ENABLED` is set in the environment, the toggle is read-only and the panel explains why.
+The daily install heartbeat is shown in the same panel with no switch: only `NOJOIN_TELEMETRY_ENABLED=false` stops it. If this installation turned telemetry off before 2.7.0, the panel says the heartbeat is not sent and why.
+
+On an installation upgraded into this feature, no diagnostics are sent until an administrator has seen the one-time notice; the panel says so explicitly while that is the case. If `NOJOIN_TELEMETRY_ENABLED` is set in the environment, the toggle is read-only and the panel explains why.
 
 Read [TELEMETRY.md](TELEMETRY.md) for the full disclosure, the retention policy, and how to verify what is sent.
 

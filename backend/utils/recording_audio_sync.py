@@ -43,6 +43,9 @@ SEGMENT_CORRUPT_SUFFIX = ".corrupt"
 PENDING_TRANSCODE_SUFFIXES = frozenset(
     {*BROWSER_AUDIO_SEGMENT_SUFFIXES, TRANSCODE_FAILED_SUFFIX}
 )
+# A chunked import's parts are byte ranges of the uploaded file, not audio of
+# their own, so they are never probed for a duration.
+IMPORT_PART_SOURCE_KIND = "import_part"
 
 
 def _chunk_idempotency_key(*, source_kind: str, sequence: int, sha256: str) -> str:
@@ -108,7 +111,7 @@ def _read_wav_chunk_metadata(path: Path) -> tuple[int, int, int]:
     return sample_rate_hz, channel_count, duration_ms
 
 
-def _build_recording_audio_chunk_fields(
+def build_recording_audio_chunk_fields(
     *,
     sequence: int,
     source_kind: str,
@@ -121,7 +124,7 @@ def _build_recording_audio_chunk_fields(
         sample_rate_hz, channel_count, duration_ms = _read_wav_chunk_metadata(
             storage_path
         )
-    if duration_ms <= 0:
+    if duration_ms <= 0 and source_kind != IMPORT_PART_SOURCE_KIND:
         try:
             duration_ms = int(
                 round(float(get_audio_duration(str(storage_path)) or 0.0) * 1000.0)
@@ -151,6 +154,25 @@ def _build_recording_audio_chunk_fields(
         "received_at": utc_now(),
         "cleanup_eligible_at": None,
     }
+
+
+def _row_still_describes_file(row: RecordingAudioChunk, storage_path: Path) -> bool:
+    """Whether a synced row can stand for the file at ``storage_path`` unread.
+
+    Every upload syncs the whole directory, so hashing and probing each file
+    again made the cost of an upload grow with the parts already received. A
+    part is rewritten only by a retry of its own sequence, so a received row
+    whose path and size still match the file needs no new hash. Anything else
+    is rebuilt, which also resets a row marked failed or due for cleanup.
+    """
+    if row.storage_path != str(storage_path):
+        return False
+    if row.upload_status != "received" or row.cleanup_eligible_at is not None:
+        return False
+    try:
+        return int(row.byte_size) == storage_path.stat().st_size
+    except OSError:
+        return False
 
 
 def _select_recording_audio_chunk(
@@ -421,12 +443,27 @@ def _upsert_window_manifests(
     )
 
 
+def _apply_chunk_fields(
+    row: RecordingAudioChunk, fields: dict[str, Any] | None
+) -> bool:
+    """Copy freshly built fields onto a row, and say whether any changed."""
+    changed = False
+    for field_name, field_value in (fields or {}).items():
+        if field_name == "received_at" and row.received_at is not None:
+            continue
+        if getattr(row, field_name) != field_value:
+            setattr(row, field_name, field_value)
+            changed = True
+    return changed
+
+
 def sync_recording_audio_chunks_from_entries(
     session: Session,
     *,
     recording_id: int,
     source_kind: str,
     disk_entries: list[tuple[int, Path]],
+    prebuilt_fields: dict[int, dict[str, Any]] | None = None,
 ) -> list[RecordingAudioChunk]:
     if not disk_entries:
         return []
@@ -451,16 +488,21 @@ def sync_recording_audio_chunks_from_entries(
         if row.source_kind == source_kind and row.idempotency_key
     }
 
-    synced_rows: list[tuple[RecordingAudioChunk, dict[str, Any]]] = []
+    synced_rows: list[tuple[RecordingAudioChunk, dict[str, Any] | None]] = []
     for sequence, storage_path in ordered_entries:
-        fields = _build_recording_audio_chunk_fields(
+        row = existing_by_sequence.get(sequence)
+        if row is not None and _row_still_describes_file(row, storage_path):
+            synced_rows.append((row, None))
+            continue
+
+        fields = (prebuilt_fields or {}).get(
+            sequence
+        ) or build_recording_audio_chunk_fields(
             sequence=sequence,
             source_kind=source_kind,
             storage_path=storage_path,
         )
-        row = existing_by_sequence.get(sequence) or existing_by_idempotency.get(
-            fields["idempotency_key"]
-        )
+        row = row or existing_by_idempotency.get(fields["idempotency_key"])
 
         if row is None:
             row = _get_or_create_recording_audio_chunk(
@@ -478,13 +520,7 @@ def sync_recording_audio_chunks_from_entries(
     absolute_start_ms = 0
     persisted_rows: list[RecordingAudioChunk] = []
     for row, fields in synced_rows:
-        row_changed = False
-        for field_name, field_value in fields.items():
-            if field_name == "received_at" and row.received_at is not None:
-                continue
-            if getattr(row, field_name) != field_value:
-                setattr(row, field_name, field_value)
-                row_changed = True
+        row_changed = _apply_chunk_fields(row, fields)
 
         absolute_end_ms = absolute_start_ms + int(row.duration_ms)
         if int(row.absolute_start_ms) != absolute_start_ms:

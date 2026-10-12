@@ -3,6 +3,7 @@ from backend.processing.engines.errors import (
     is_task_interruption,
     transcription_error_from,
 )
+from backend.utils.import_audio import KEEPING_AUDIO_STEP
 
 from .constants import *
 from .final_asr import (
@@ -10,6 +11,7 @@ from .final_asr import (
     mark_transcript_without_speech,
     transcribe_with_gpu_oom_retry,
 )
+from .final_segments import combine_and_consolidate_segments
 from .speaker_assignment import assign_and_identify_speakers
 
 # ---------------------------------------------------------------------------
@@ -196,7 +198,7 @@ def _run_vad_stage(
 
         vad_output_path = vad_input_path.replace("_vad.wav", "_vad_processed.wav")
         vad_success, speech_duration = mute_non_speech_segments(
-            vad_input_path, vad_output_path
+            vad_input_path, vad_output_path, config=ctx.merged_config
         )
 
         if not vad_success:
@@ -444,71 +446,6 @@ def _run_final_diarization_stage(
         logger.info("Diarization disabled, skipping speaker separation.")
 
     return diarization_result
-
-
-def _combine_and_consolidate_segments(
-    transcription_result: dict,
-    diarization_result,
-    *,
-    enable_diarization: bool,
-    recording_id: int,
-) -> list[dict]:
-    """Merge ASR + diarization into consolidated final segments.
-
-    When no combined result is available (combination skipped or failed) every
-    ASR segment is emitted pinned to the ``UNKNOWN`` speaker, preserving any
-    ``id``/``words`` payload. This is the load-bearing fallback that keeps a
-    transcript even without usable diarization.
-    """
-    from backend.utils.transcript_utils import (
-        combine_transcription_diarization,
-        consolidate_diarized_transcript,
-    )
-
-    combined_segments = []
-    if diarization_result:
-        combined_segments = combine_transcription_diarization(
-            transcription_result, diarization_result
-        )
-    else:
-        logger.info("Diarization result missing or disabled. Skipping combination.")
-
-    logger.info(
-        f"Combined segments count: {len(combined_segments) if combined_segments else 0}"
-    )
-
-    if not combined_segments:
-        if enable_diarization and diarization_result:
-            logger.warning(
-                "Combination failed despite having diarization result. Using raw transcription segments with UNKNOWN speaker."
-            )
-        else:
-            logger.info(
-                "Using raw transcription segments (Diarization disabled or failed)."
-            )
-
-        for seg in transcription_result.get("segments", []):
-            fallback_segment = {
-                "start": seg["start"],
-                "end": seg["end"],
-                "speaker": "UNKNOWN",
-                "text": seg["text"].strip(),
-            }
-            if seg.get("id"):
-                fallback_segment["id"] = seg["id"]
-            if seg.get("words"):
-                fallback_segment["words"] = seg["words"]
-            combined_segments.append(fallback_segment)
-
-    final_segments = consolidate_diarized_transcript(combined_segments)
-    record_pipeline_metric(
-        stage="final_segments_built",
-        recording_id=recording_id,
-        payload={"segment_count": len(final_segments)},
-        log=logger,
-    )
-    logger.info("Final segments after consolidation: %s", len(final_segments))
-    return final_segments
 
 
 def _persist_final_transcript(
@@ -925,11 +862,12 @@ def process_recording_task(
         session.add(recording)
         session.commit()
 
-        final_segments = _combine_and_consolidate_segments(
+        final_segments = combine_and_consolidate_segments(
             transcription_result,
             diarization_result,
             enable_diarization=enable_diarization,
             recording_id=recording_id,
+            config=merged_config,
         )
 
         transcript = _persist_final_transcript(
@@ -1151,16 +1089,19 @@ def _reclaim_orphaned_processing(session) -> list[Recording]:
     return orphaned
 
 
-def _sweeps_recordings(sender) -> bool:
-    """Whether this worker should run the startup sweep.
+def _sweeps_recordings(sender, queue: str | None = None) -> bool:
+    """Whether this worker should run the startup sweep for ``queue``'s work.
 
     Every lane imports this module, so all three would otherwise sweep on startup
     and dispatch each pending recording once per lane. Only the lane that consumes
-    the queue process_recording_task routes to can actually run the work, so it
-    does the sweep. When the consumed queues cannot be read, sweep anyway: a
-    duplicate run wastes time, but skipping leaves recordings stranded.
+    the queue the work routes to (gpu for process_recording_task, the default)
+    can actually run it, so it does the sweep. When the consumed queues cannot be
+    read, sweep anyway: a duplicate run wastes time, but skipping leaves
+    recordings stranded.
     """
     from backend.celery_app import GPU_QUEUE
+
+    queue = queue or GPU_QUEUE
 
     try:
         consume_from = getattr(sender.app.amqp.queues, "consume_from", None)
@@ -1170,7 +1111,7 @@ def _sweeps_recordings(sender) -> bool:
     if not consume_from:
         logger.warning("Could not read this worker's queues; sweeping regardless.")
         return True
-    return GPU_QUEUE in set(consume_from)
+    return queue in set(consume_from)
 
 
 @worker_ready.connect
@@ -1196,6 +1137,11 @@ def check_queued_recordings(sender, **kwargs):
         logger.info("Found %s pending recordings. Re-queueing...", len(recordings))
 
         for recording in recordings:
+            if recording.processing_step == KEEPING_AUDIO_STEP:
+                # An import whose audio is not kept yet: the cpu worker's own
+                # sweep re-queues it to keep_imported_audio_task, which queues
+                # processing once it has.
+                continue
             logger.info("Re-queueing recording %s: %s", recording.id, recording.name)
             process_recording_task.delay(recording.id)  # type: ignore
 

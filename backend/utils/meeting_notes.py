@@ -149,31 +149,40 @@ def build_recording_speaker_map(speakers: Iterable[Any]) -> Dict[str, str]:
     return speaker_map
 
 
+def _format_prompt_timestamp(seconds: float) -> str:
+    return f"{int(seconds // 60):02d}:{int(seconds % 60):02d}"
+
+
 def format_segments_for_llm(
     segments: Iterable[dict],
     speaker_map: Dict[str, str],
+    *,
+    with_end: bool = True,
 ) -> str:
+    """One ``[MM:SS - MM:SS] Name (with ...): text`` line per segment.
+
+    ``with_end=False`` drops the end time (``[MM:SS] Name: text``). Chat sends
+    the whole transcript on every turn and asks the model to cite start
+    times, so the end time there costs tokens and adds little: it is almost
+    always the next line's start.
+    """
     lines = []
 
     for segment in segments:
         speaker_label = segment.get("speaker", "Unknown")
         speaker_name = speaker_map.get(speaker_label, speaker_label)
         start_seconds = float(segment.get("start", 0))
-        end_seconds = float(segment.get("end", start_seconds))
-        start_minutes = int(start_seconds // 60)
-        start_remainder = int(start_seconds % 60)
-        end_minutes = int(end_seconds // 60)
-        end_remainder = int(end_seconds % 60)
+        timestamp = _format_prompt_timestamp(start_seconds)
+        if with_end:
+            end_seconds = float(segment.get("end", start_seconds))
+            timestamp = f"{timestamp} - {_format_prompt_timestamp(end_seconds)}"
         overlapping = segment.get("overlapping_speakers") or []
         overlapping_names = [speaker_map.get(label, label) for label in overlapping]
         overlapping_suffix = (
             f" (with {', '.join(overlapping_names)})" if overlapping_names else ""
         )
         text = str(segment.get("text", "")).strip()
-        lines.append(
-            f"[{start_minutes:02d}:{start_remainder:02d} - {end_minutes:02d}:{end_remainder:02d}] "
-            f"{speaker_name}{overlapping_suffix}: {text}"
-        )
+        lines.append(f"[{timestamp}] {speaker_name}{overlapping_suffix}: {text}")
 
     return "\n".join(lines)
 

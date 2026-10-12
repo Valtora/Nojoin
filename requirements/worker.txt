@@ -39,6 +39,10 @@ huggingface_hub==1.33.0
 # too: left floating, a resolver is free to keep the vulnerable 2.6.5 copy.
 lightning==2.6.6
 pytorch-lightning==2.6.6
+# fsspec 2026.7.0 closes CVE-2026-104851. torch, huggingface_hub and lightning
+# import it, and without a pin the venv uses the PyTorch base image's 2026.2.0
+# copy. docker/Dockerfile.worker upgrades that copy too.
+fsspec==2026.7.0
 opentelemetry-api==1.45.0
 opentelemetry-sdk==1.45.0
 opentelemetry-exporter-otlp==1.45.0

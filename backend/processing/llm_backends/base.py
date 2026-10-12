@@ -362,7 +362,7 @@ class LLMBackend:
         self,
         user_question: str,
         meeting_notes: str,
-        diarized_transcript: str,
+        diarized_transcript: str | None,
         conversation_history: list = None,
         timeout: int = 60,
         recording_id: str = None,
@@ -376,7 +376,7 @@ class LLMBackend:
         self,
         user_question: str,
         meeting_notes: str,
-        diarized_transcript: str,
+        diarized_transcript: str | None,
         conversation_history: list = None,
         timeout: int = 60,
         recording_id: str = None,
@@ -407,7 +407,10 @@ class LLMBackend:
         raise NotImplementedError
 
     def _build_chat_prompt(
-        self, user_question: str, meeting_notes: str, diarized_transcript: str
+        self,
+        user_question: str,
+        meeting_notes: str,
+        diarized_transcript: str | None,
     ) -> str:
         return build_chat_prompt(user_question, meeting_notes, diarized_transcript)
 
@@ -721,50 +724,16 @@ Preserve the same schema and do not invent facts not supported by the original t
 """
 
     @staticmethod
-    def get_mapped_transcript_for_llm(recording_id: int) -> str:
-        """
-        Fetches the diarized transcript and speaker mapping for a recording, and returns the mapped transcript as plaintext.
-        """
-        from sqlmodel import select
+    def get_mapped_transcript_for_llm(recording_id: int) -> str | None:
+        """Render a recording's transcript for Meeting Chat, or None without one.
 
+        See ``backend.utils.llm_transcript.render_transcript_for_llm``.
+        """
         from backend.core.db import get_sync_session
-        from backend.models.recording import Recording
-        from backend.models.speaker import RecordingSpeaker
-        from backend.models.transcript import Transcript
+        from backend.utils.llm_transcript import render_transcript_for_llm
 
         with get_sync_session() as session:
-            rec = session.get(Recording, recording_id)
-            if not rec:
-                return "Recording not found."
-
-            # Get Transcript
-            transcript_obj = session.exec(
-                select(Transcript).where(Transcript.recording_id == recording_id)
-            ).first()
-            if not transcript_obj or not transcript_obj.segments:
-                return "Diarized transcript not found."
-
-            # Get Speakers
-            speakers = session.exec(
-                select(RecordingSpeaker).where(
-                    RecordingSpeaker.recording_id == recording_id
-                )
-            ).all()
-            label_to_name = {s.diarization_label: s.name for s in speakers}
-
-            # Render
-            lines = []
-            for seg in transcript_obj.segments:
-                speaker_label = seg.get("speaker", "Unknown")
-                speaker_name = label_to_name.get(speaker_label, speaker_label)
-                text = seg.get("text", "")
-                start = seg.get("start", 0)
-                minutes = int(start // 60)
-                seconds = int(start % 60)
-                timestamp = f"[{minutes:02d}:{seconds:02d}]"
-                lines.append(f"{timestamp} {speaker_name}: {text}")
-
-            return "\n".join(lines)
+            return render_transcript_for_llm(session, recording_id)
 
     def _update_notes_in_db(self, recording_id: int, new_notes: str):
         """

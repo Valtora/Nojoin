@@ -23,6 +23,20 @@ def test_build_chat_prompt_is_context_plus_question_suffix() -> None:
     assert QUESTION not in context
 
 
+def test_chat_context_states_a_missing_transcript_instead_of_quoting_one() -> None:
+    context = build_chat_context(NOTES, None)
+
+    assert "# Full Diarized Transcript:" not in context
+    assert "transcript," not in context.split("\n# CRITICAL INSTRUCTION")[0]
+    assert context.endswith(
+        "# Transcript:\nThis meeting has no transcript. If a question needs one, "
+        "say that the transcript is not available.\n"
+    )
+    assert build_chat_context(NOTES, TRANSCRIPT).endswith(
+        f"# Full Diarized Transcript:\n{TRANSCRIPT}\n"
+    )
+
+
 def test_build_chat_messages_maps_history_roles_and_puts_question_last() -> None:
     history = [
         {"role": "user", "parts": [{"text": "earlier Q"}]},

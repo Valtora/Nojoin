@@ -1,28 +1,37 @@
-"""Anonymous, opt-out telemetry.
+"""Anonymous telemetry: a daily install heartbeat, and optional diagnostics.
 
-Nojoin sends one small anonymous ping every six hours describing how many
-deployments exist, how they are configured, and how much they are used. See
+Nojoin sends two things to the collector, and they follow different rules. See
 ``docs/TELEMETRY.md`` for the user-facing disclosure this module must remain
 true to.
 
-The ingest keys on ``(install_id, day)`` and upserts, so the four sends a day
-collapse to a single stored row. The cadence exists to survive worker restarts,
-not to record more: a daily interval re-anchors on every restart and can skip a
-calendar day, which reads downstream as the install having gone quiet.
+**The heartbeat** carries the install id and the version and nothing else. It
+goes out within fifteen minutes of first start, on the first start of each new
+version, and once per UTC day, so the number of live deployments can be
+counted. It needs no consent and the app has no switch for it.
 
-Three invariants are load-bearing and are locked by tests:
+**The diagnostics ping** carries counts and configuration shape, and is sent
+every six hours once the install consents. The ingest keys on ``(install_id,
+day)`` and upserts, so the four sends a day collapse to a single stored row.
+That cadence exists to survive worker restarts, not to record more: a daily
+interval re-anchors on every restart and can skip a calendar day.
 
-1. **The payload carries nothing identifying.** No hostname, URL, IP, username,
-   meeting title, transcript text, key, or model name. Only the fields built by
-   :func:`build_payload` are ever sent.
+Four invariants are load-bearing and are locked by tests:
+
+1. **Neither payload carries anything identifying.** No hostname, URL, IP,
+   username, meeting title, transcript text, key, or model name. Only the
+   fields built by :func:`build_heartbeat` and :func:`build_payload` are sent.
 2. **The environment outranks everything.** An operator who sets
    ``NOJOIN_TELEMETRY_ENABLED`` cannot have it overridden from the UI, in
-   either direction: ``false`` is an absolute kill switch, and ``true`` is an
-   explicit opt-in that needs no further consent.
-3. **Nothing is sent without consent.** A new install consents through the
-   first-run wizard; an upgraded install sends nothing at all until the admin
-   notice has actually been shown, and then only after acknowledgement or the
-   grace period. An install nobody signs into therefore never pings.
+   either direction: ``false`` stops the heartbeat and the diagnostics alike,
+   and ``true`` is an explicit opt-in to both that needs no further consent.
+3. **Diagnostics are never sent without consent.** A new install consents
+   through the first-run wizard; an upgraded install sends no diagnostics until
+   the admin notice has actually been shown, and then only after
+   acknowledgement or the grace period.
+4. **A "no" given before the heartbeat existed still stands.** An install that
+   turned telemetry off before the heartbeat shipped turned off what was then
+   all of it, so it sends no heartbeat either until diagnostics are turned back
+   on. A choice made after that covers the diagnostics only.
 
 State ownership is deliberately split so no two processes write the same thing:
 
@@ -33,6 +42,7 @@ State                        Written by            Read by
 ``.install_id``              whoever mints it      API, worker (write-once)
 Redis ``last_sent_at``       worker only           API (display only)
 Redis ``last_attempt``       worker only           API (display only)
+Redis ``heartbeat_*``        worker only           worker, API (display)
 ===========================  ====================  =========================
 
 Making the worker a second writer of ``config.json`` would let a stale worker
@@ -48,7 +58,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, NamedTuple
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 from backend.utils.config_manager import config_manager, get_configured_web_origin
 from backend.utils.path_manager import path_manager
@@ -65,6 +75,12 @@ ENABLED_CONFIG_KEY = "telemetry_enabled"
 ACKNOWLEDGED_CONFIG_KEY = "telemetry_notice_acknowledged"
 NOTICE_SHOWN_CONFIG_KEY = "telemetry_notice_first_shown_at"
 
+#: Written with every telemetry choice made once the heartbeat exists. An
+#: opt-out recorded without it predates the heartbeat and keeps the install
+#: exempt from it; see :func:`opted_out_before_heartbeat`.
+POLICY_CONFIG_KEY = "telemetry_policy_version"
+HEARTBEAT_POLICY_VERSION = 2
+
 LAST_SENT_REDIS_KEY = "nojoin:telemetry:last_sent_at"
 
 #: Every attempt, successful or not. Kept separate from ``last_sent_at`` because
@@ -72,6 +88,18 @@ LAST_SENT_REDIS_KEY = "nojoin:telemetry:last_sent_at"
 #: needs to know whether nothing was ever tried or everything tried has failed,
 #: and one timestamp cannot say both.
 LAST_ATTEMPT_REDIS_KEY = "nojoin:telemetry:last_attempt"
+
+#: The last heartbeat the collector accepted, as ``{"at", "day", "version"}``,
+#: and the last attempt whatever its outcome. Worker-owned, like the ping's.
+HEARTBEAT_SENT_REDIS_KEY = "nojoin:telemetry:heartbeat_sent"
+HEARTBEAT_ATTEMPT_REDIS_KEY = "nojoin:telemetry:heartbeat_attempt"
+
+HEARTBEAT_SCHEMA_VERSION = 1
+
+#: After a failed heartbeat, wait this long before the next try. The task runs
+#: every fifteen minutes, and an operator who blocks the collector should see
+#: one failed lookup an hour rather than four.
+HEARTBEAT_RETRY_AFTER = timedelta(hours=1)
 
 INSTALL_ID_FILENAME = ".install_id"
 
@@ -82,6 +110,11 @@ GRACE_PERIOD_DAYS = 7
 
 #: Rolling activity window for the "is this deployment actually used" metrics.
 ACTIVITY_WINDOW_DAYS = 28
+
+#: Window for the daily-use figure. Rolling rather than a calendar day, because
+#: the ingest keeps each day's last ping and a calendar-day count taken in the
+#: evening would miss whatever was recorded after it.
+DAILY_WINDOW = timedelta(hours=24)
 
 SEND_TIMEOUT_SECONDS = 10.0
 
@@ -175,6 +208,15 @@ def telemetry_endpoint() -> str:
     return configured or DEFAULT_TELEMETRY_ENDPOINT
 
 
+def heartbeat_endpoint() -> str:
+    """The heartbeat route on the same collector as the diagnostics ping.
+
+    Derived rather than configured on its own, so ``NOJOIN_TELEMETRY_ENDPOINT``
+    still points both at a test collector with one setting.
+    """
+    return urljoin(telemetry_endpoint(), "heartbeat")
+
+
 def env_override() -> bool | None:
     """The operator's ``NOJOIN_TELEMETRY_ENABLED`` value, if it is set and valid."""
     return _env_flag(os.environ.get(TELEMETRY_ENABLED_ENV_KEY))
@@ -251,6 +293,40 @@ def should_send(now: datetime | None = None) -> bool:
     return is_telemetry_enabled() and consent_granted(now=now)
 
 
+def opted_out_before_heartbeat() -> bool:
+    """Whether this install said no to telemetry before the heartbeat existed.
+
+    That answer switched off what was then the whole of Nojoin's telemetry, so
+    sending a heartbeat afterwards would go back on it. The policy marker
+    written with every later choice is what tells the two apart: an opt-out
+    stored without it was made before the heartbeat shipped.
+    """
+    config_manager.reload()
+    return (
+        config_manager.get(ENABLED_CONFIG_KEY, True) is False
+        and config_manager.get(POLICY_CONFIG_KEY) is None
+    )
+
+
+def heartbeat_blocked_by() -> str | None:
+    """Why the heartbeat is not sent, or ``None`` when it is.
+
+    ``"environment"`` when ``NOJOIN_TELEMETRY_ENABLED=false``, and
+    ``"earlier_opt_out"`` for an install covered by
+    :func:`opted_out_before_heartbeat`. These are the only two exemptions.
+    """
+    override = env_override()
+    if override is not None:
+        return None if override else "environment"
+    if opted_out_before_heartbeat():
+        return "earlier_opt_out"
+    return None
+
+
+def heartbeat_allowed() -> bool:
+    return heartbeat_blocked_by() is None
+
+
 def notice_pending() -> bool:
     """Whether the admin telemetry notice still needs to be shown.
 
@@ -284,10 +360,19 @@ def _write_config(updates: dict[str, Any]) -> None:
 
 
 def set_enabled(enabled: bool, *, acknowledge: bool = True) -> None:
-    """Record the operator's choice. Any explicit choice also retires the notice."""
+    """Record the operator's choice. Any explicit choice also retires the notice.
+
+    The choice is stamped with the heartbeat policy, so a later opt-out covers
+    the diagnostics only. The one exception is an install that opted out before
+    the heartbeat existed and is saying no again: stamping that would quietly
+    end the exemption it was promised, so its earlier answer is left standing
+    until it turns diagnostics back on.
+    """
     updates: dict[str, Any] = {ENABLED_CONFIG_KEY: bool(enabled)}
     if acknowledge:
         updates[ACKNOWLEDGED_CONFIG_KEY] = True
+    if enabled or not opted_out_before_heartbeat():
+        updates[POLICY_CONFIG_KEY] = HEARTBEAT_POLICY_VERSION
     _write_config(updates)
 
 
@@ -311,6 +396,9 @@ def telemetry_status() -> dict[str, Any]:
     last_sent = get_last_sent_at()
     last_attempt = get_last_attempt()
     shown_at = _config_datetime(NOTICE_SHOWN_CONFIG_KEY)
+    heartbeat_blocked = heartbeat_blocked_by()
+    heartbeat_sent = get_heartbeat_sent() or {}
+    heartbeat_attempt = get_heartbeat_attempt() or {}
 
     return {
         "enabled": is_telemetry_enabled(),
@@ -330,6 +418,13 @@ def telemetry_status() -> dict[str, Any]:
         "last_attempt_ok": last_attempt["ok"] if last_attempt else None,
         "last_attempt_detail": last_attempt["detail"] if last_attempt else None,
         "grace_period_days": GRACE_PERIOD_DAYS,
+        "heartbeat_enabled": heartbeat_blocked is None,
+        "heartbeat_blocked_by": heartbeat_blocked,
+        "heartbeat_endpoint": heartbeat_endpoint(),
+        "heartbeat_last_sent_at": heartbeat_sent.get("at"),
+        "heartbeat_last_attempt_at": heartbeat_attempt.get("at"),
+        "heartbeat_last_attempt_ok": heartbeat_attempt.get("ok"),
+        "heartbeat_last_attempt_detail": heartbeat_attempt.get("detail"),
     }
 
 
@@ -377,14 +472,9 @@ def get_last_sent_at() -> datetime | None:
         return None
 
 
-def get_last_attempt() -> dict[str, Any] | None:
-    """The most recent send attempt, successful or not, or ``None`` if untried.
-
-    Read for display only. A missing or unparseable value is indistinguishable
-    from never having tried, which is the safe reading: the panel then falls
-    back to what the consent state alone can say.
-    """
-    raw = _redis_text(LAST_ATTEMPT_REDIS_KEY)
+def _redis_json(key: str) -> dict[str, Any] | None:
+    """A JSON object stored under ``key`` with an ``at`` stamp, or ``None``."""
+    raw = _redis_text(key)
     if raw is None:
         return None
     try:
@@ -393,11 +483,49 @@ def get_last_attempt() -> dict[str, Any] | None:
         return None
     if not isinstance(stored, dict) or not stored.get("at"):
         return None
+    return stored
 
+
+def _read_attempt(key: str) -> dict[str, Any] | None:
+    stored = _redis_json(key)
+    if stored is None:
+        return None
     return {
         "at": str(stored["at"]),
         "ok": bool(stored.get("ok")),
         "detail": str(stored["detail"]) if stored.get("detail") else None,
+    }
+
+
+def get_last_attempt() -> dict[str, Any] | None:
+    """The most recent send attempt, successful or not, or ``None`` if untried.
+
+    Read for display only. A missing or unparseable value is indistinguishable
+    from never having tried, which is the safe reading: the panel then falls
+    back to what the consent state alone can say.
+    """
+    return _read_attempt(LAST_ATTEMPT_REDIS_KEY)
+
+
+def get_heartbeat_attempt() -> dict[str, Any] | None:
+    """The most recent heartbeat attempt, successful or not, or ``None``."""
+    return _read_attempt(HEARTBEAT_ATTEMPT_REDIS_KEY)
+
+
+def get_heartbeat_sent() -> dict[str, Any] | None:
+    """The last heartbeat the collector accepted: when, which UTC day, which version.
+
+    Unlike the ping's markers this one is not display-only, since it decides
+    whether a heartbeat is due. Losing it costs one extra heartbeat, which the
+    ingest folds into the same day's row.
+    """
+    stored = _redis_json(HEARTBEAT_SENT_REDIS_KEY)
+    if stored is None:
+        return None
+    return {
+        "at": str(stored["at"]),
+        "day": stored.get("day"),
+        "version": stored.get("version"),
     }
 
 
@@ -426,14 +554,93 @@ def record_attempt(moment: datetime, result: SendResult) -> None:
         logger.debug("Could not persist telemetry send markers: %s", exc)
 
 
+def record_heartbeat_attempt(
+    moment: datetime, result: SendResult, version: str | None
+) -> None:
+    """Record one heartbeat attempt. Only the worker calls this.
+
+    The sent marker carries the UTC day and the version it was sent for, which
+    is what :func:`heartbeat_due` compares against.
+    """
+    stamp = moment.isoformat()
+    try:
+        client = _redis_client()
+        client.set(
+            HEARTBEAT_ATTEMPT_REDIS_KEY,
+            json.dumps({"at": stamp, "ok": result.ok, "detail": result.detail}),
+        )
+        if result.ok:
+            client.set(
+                HEARTBEAT_SENT_REDIS_KEY,
+                json.dumps({"at": stamp, "day": _utc_day(moment), "version": version}),
+            )
+    except Exception as exc:  # noqa: BLE001 -- boundary: bookkeeping must not fail the task
+        logger.debug("Could not persist telemetry heartbeat markers: %s", exc)
+
+
+def _utc_day(moment: datetime) -> str:
+    return moment.astimezone(timezone.utc).date().isoformat()
+
+
+def heartbeat_due(now: datetime | None = None) -> bool:
+    """Whether the heartbeat should go out on this tick.
+
+    Due on an install's first tick, on the first tick after it starts on a new
+    version, and on the first tick of each UTC day: the three moments the
+    heartbeat is documented to cover. A failed attempt holds the next one back
+    for :data:`HEARTBEAT_RETRY_AFTER`.
+    """
+    if not heartbeat_allowed():
+        return False
+
+    moment = now or datetime.now(timezone.utc)
+    sent = get_heartbeat_sent()
+    if (
+        sent is not None
+        and sent["day"] == _utc_day(moment)
+        and sent["version"] == _installed_version()
+    ):
+        return False
+
+    attempt = get_heartbeat_attempt()
+    if attempt is not None and not attempt["ok"]:
+        try:
+            attempted_at = datetime.fromisoformat(attempt["at"])
+        except ValueError:
+            return True
+        if attempted_at.tzinfo is None:
+            attempted_at = attempted_at.replace(tzinfo=timezone.utc)
+        if moment - attempted_at < HEARTBEAT_RETRY_AFTER:
+            return False
+
+    return True
+
+
 # --- Payload ----------------------------------------------------------------
+
+
+def build_heartbeat() -> dict[str, Any]:
+    """Assemble the heartbeat: the install id and the version, and nothing else.
+
+    This is the part of telemetry the app cannot switch off, so its contents are
+    fixed at these fields and locked by a test, and the ingest discards anything
+    else it is sent. Anything worth knowing beyond whether an install exists and
+    which version it runs belongs in :func:`build_payload`, behind consent.
+    """
+    return {
+        "schema": HEARTBEAT_SCHEMA_VERSION,
+        "install_id": get_install_id(),
+        "version": _installed_version(),
+    }
 
 
 def _scalar(session: Any, statement: Any) -> Any:
     return session.exec(statement).one()
 
 
-def _usage_metrics(session: Any, cutoff: datetime) -> dict[str, Any]:
+def _usage_metrics(
+    session: Any, cutoff: datetime, day_cutoff: datetime
+) -> dict[str, Any]:
     from sqlalchemy import distinct, func
     from sqlmodel import select
 
@@ -463,6 +670,14 @@ def _usage_metrics(session: Any, cutoff: datetime) -> dict[str, Any]:
             session, select(func.count()).select_from(Recording).where(live, recent)
         ),
         "recording_hours_28d": round((hours or 0) / 3600.0, 1),
+        # How often an install is used, as distinct from whether it is running:
+        # the heartbeat already says the second. One count, not a timeline.
+        "recordings_24h": _scalar(
+            session,
+            select(func.count())
+            .select_from(Recording)
+            .where(live, Recording.created_at >= day_cutoff),
+        ),
     }
 
 
@@ -568,7 +783,8 @@ def build_payload(session: Any) -> dict[str, Any]:
     own clock, so a skewed client clock cannot land a row in the wrong day.
     """
     install_id, minted_at = load_install_identity()
-    cutoff = datetime.now(timezone.utc) - timedelta(days=ACTIVITY_WINDOW_DAYS)
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(days=ACTIVITY_WINDOW_DAYS)
 
     payload: dict[str, Any] = {
         "schema": TELEMETRY_SCHEMA_VERSION,
@@ -577,7 +793,7 @@ def build_payload(session: Any) -> dict[str, Any]:
         "install_age_days": _install_age_days(session, minted_at),
         "local_origin": is_local_origin(),
     }
-    payload.update(_usage_metrics(session, cutoff))
+    payload.update(_usage_metrics(session, cutoff, now - DAILY_WINDOW))
     payload.update(_ai_shape(session))
     payload.update(_transcription_shape())
     payload.update(_feature_flags(session, cutoff))
@@ -590,13 +806,24 @@ def _installed_version() -> str | None:
     return get_installed_version() or None
 
 
+def send_heartbeat(payload: dict[str, Any]) -> SendResult:
+    """POST the heartbeat, and say what happened. Same contract as the ping."""
+    return _post(heartbeat_endpoint(), payload)
+
+
 def send_payload(payload: dict[str, Any]) -> SendResult:
-    """POST the ping, and say what happened.
+    """POST the diagnostics ping. See :func:`_post` for the contract."""
+    return _post(telemetry_endpoint(), payload)
+
+
+def _post(url: str, payload: dict[str, Any]) -> SendResult:
+    """POST one telemetry payload, and say what happened.
 
     Best-effort by contract: an unreachable endpoint, a DNS failure, or a
     non-2xx response returns rather than raises, and the cycle is simply
-    skipped. There is no retry and no backfill, so a flaky network can never
-    turn into a storm against our own endpoint.
+    skipped. Nothing here retries and nothing is backfilled: the ping's next
+    try is the next six-hourly tick and the heartbeat's is an hour later, so a
+    flaky network can never turn into a storm against our own endpoint.
 
     Failures stay at debug rather than warning. Blocking the endpoint at the
     network layer is a documented, supported way to opt out (docs/TELEMETRY.md),
@@ -608,7 +835,7 @@ def send_payload(payload: dict[str, Any]) -> SendResult:
 
     try:
         response = httpx.post(
-            telemetry_endpoint(),
+            url,
             json=payload,
             timeout=SEND_TIMEOUT_SECONDS,
             headers={"content-type": "application/json"},

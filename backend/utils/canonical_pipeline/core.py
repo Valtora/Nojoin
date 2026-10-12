@@ -1,9 +1,16 @@
+import logging
+
 from .constants import *
 from .diarization import *
+from .public_ids import UtterancePublicIds, public_ids_for_write
 from .segmentation import *
 from .speaker import *
 from .speaker_matching import _find_matching_recording_speaker  # noqa: F401
 from .startup import *
+
+# Its own logger, not the one the star imports bring in, so a record names
+# this module.
+logger = logging.getLogger(__name__)
 
 
 def recording_ready_for_canonical_backfill(
@@ -209,11 +216,19 @@ def replace_utterances_from_segments(
     reused_live_asr: bool = False,
     trigger_source: str = "system",
     idempotency_key: str | None = None,
+    keep_segment_ids: bool = False,
 ) -> list[TranscriptUtterance]:
     transcript = _load_transcript(session, recording_id)
     recording = session.get(Recording, recording_id)
     if transcript is None or recording is None:
         return []
+    # Before any write: a client edit keeping held ids is refused here.
+    utterance_ids = public_ids_for_write(
+        session,
+        recording_id=recording_id,
+        segments=segments,
+        keep_requested=keep_segment_ids,
+    )
 
     processing_run = None
     if run_kind is not None:
@@ -298,7 +313,7 @@ def replace_utterances_from_segments(
             session.add(recording_speaker)
 
         utterance = TranscriptUtterance(
-            public_id=str(segment.get("id") or uuid4()),
+            public_id=utterance_ids.assign(segment),
             recording_id=recording_id,
             sort_key=_sort_key_for_index(index),
             start_ms=_segment_to_ms(segment.get("start", 0.0)),
@@ -338,6 +353,7 @@ def replace_utterances_from_segments(
             text_confidence=_to_optional_float(segment.get("text_confidence")),
             speaker_confidence=_to_optional_float(segment.get("speaker_confidence")),
         )
+        utterance.confidence_payload = utterance_ids.lineage_for(utterance.public_id)
         session.add(utterance)
         session.flush()
         _append_utterance_event(
@@ -454,44 +470,9 @@ def finalize_utterances_from_segments(
     utterances: list[TranscriptUtterance] = []
     new_boundary_utterances: list[TranscriptUtterance] = []
     matched_utterance_ids: set[int] = set()
-    reserved_public_ids: set[str] = {
-        str(public_id)
-        for public_id in session.execute(
-            select(TranscriptUtterance.public_id).where(
-                TranscriptUtterance.recording_id == recording_id
-            )
-        )
-        .scalars()
-        .all()
-        if str(public_id or "").strip()
-    }
-
-    def reserve_finalize_public_id(segment_payload: dict[str, Any]) -> str:
-        requested_public_id = str(segment_payload.get("id") or "").strip()
-        if requested_public_id and requested_public_id not in reserved_public_ids:
-            reserved_public_ids.add(requested_public_id)
-            return requested_public_id
-
-        if requested_public_id:
-            confidence_payload = dict(segment_payload.get("confidence_payload") or {})
-            source_public_ids = [
-                str(public_id or "").strip()
-                for public_id in confidence_payload.get("source_public_ids")
-                or segment_payload.get("source_public_ids")
-                or []
-                if str(public_id or "").strip()
-            ]
-            if requested_public_id not in source_public_ids:
-                source_public_ids.append(requested_public_id)
-            if source_public_ids:
-                confidence_payload["source_public_ids"] = source_public_ids
-                segment_payload["confidence_payload"] = confidence_payload
-
-        public_id = str(uuid4())
-        while public_id in reserved_public_ids:
-            public_id = str(uuid4())
-        reserved_public_ids.add(public_id)
-        return public_id
+    utterance_ids = UtterancePublicIds(
+        session, recording_id=recording_id, segments=segments
+    )
 
     def inherit_manual_speaker_for_range(
         *,
@@ -842,7 +823,7 @@ def finalize_utterances_from_segments(
         else:
             recording_speaker = resolved_speaker
         utterance = TranscriptUtterance(
-            public_id=reserve_finalize_public_id(effective_segment),
+            public_id=utterance_ids.assign(effective_segment),
             recording_id=recording_id,
             sort_key=_sort_key_for_index(index),
             start_ms=start_ms,
@@ -1653,6 +1634,7 @@ def apply_compatibility_segment_replace(
         run_kind=None,
         source="compatibility_replace",
         force=True,
+        keep_segment_ids=True,
     )
 
 
@@ -1768,9 +1750,17 @@ def build_transcript_segments_for_read(
     if transcript is None or not hasattr(session, "execute"):
         return fallback_segments
 
+    # The savepoint keeps a database error inside the read: on Postgres a failed
+    # statement aborts the whole transaction, so without it the caller's next
+    # query would raise InFailedSqlTransaction instead of using the fallback.
     try:
-        canonical_segments = serialize_canonical_utterances(session, recording_id)
-    except Exception:  # noqa: BLE001
+        with session.begin_nested():
+            canonical_segments = serialize_canonical_utterances(session, recording_id)
+    except Exception:
+        logger.exception(
+            "Canonical transcript read failed for recording %s; using the projection",
+            recording_id,
+        )
         return fallback_segments
 
     if canonical_segments:

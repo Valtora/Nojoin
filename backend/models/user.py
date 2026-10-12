@@ -31,6 +31,9 @@ class User(BaseDBModel, table=True):
     token_version: int = Field(default=0, nullable=False)
     settings: Dict[str, Any] = Field(default={}, sa_column=Column(JSONB))
     has_seen_demo_recording: bool = Field(default=False)
+    # Per-user cap on AI analysis runs per UTC day, set by an administrator.
+    # Null inherits the install's ai_analysis_daily_limit; 0 means no limit.
+    ai_analysis_daily_limit: Optional[int] = Field(default=None, nullable=True)
 
     invitation_id: Optional[int] = Field(default=None, foreign_key="invitations.id")
 
@@ -65,6 +68,7 @@ class UserRead(SQLModel):
     is_superuser: bool
     force_password_change: bool
     role: str
+    ai_analysis_daily_limit: Optional[int] = None
     created_at: datetime
     updated_at: datetime
 
@@ -80,6 +84,9 @@ class UserUpdate(SQLModel):
     is_active: Optional[bool] = None
     is_superuser: Optional[bool] = None
     role: Optional[str] = None
+    # Applied by the administrator endpoint only; the self-service update
+    # reads the username alone, so a user cannot raise their own cap.
+    ai_analysis_daily_limit: Optional[int] = Field(default=None, ge=0)
 
     @field_validator("password")
     @classmethod

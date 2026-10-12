@@ -89,6 +89,38 @@ export default function ServerProviderSection({
             </SettingsStatusBadge>
           </div>
 
+          <div>
+            <label
+              htmlFor="ai-analysis-daily-limit"
+              className="block text-sm font-medium text-contrast-muted mb-2"
+            >
+              Daily AI analysis budget per user
+            </label>
+            <input
+              id="ai-analysis-daily-limit"
+              type="number"
+              inputMode="numeric"
+              min={0}
+              step={1}
+              value={settings.ai_analysis_daily_limit ?? ""}
+              placeholder="No cap"
+              onChange={(e) =>
+                onUpdate({
+                  ...settings,
+                  ai_analysis_daily_limit:
+                    e.target.value === "" ? null : Math.max(0, Math.floor(Number(e.target.value))),
+                })
+              }
+              className="w-full px-4 py-2.5 rounded-lg border border-surface-border bg-surface-inset text-foreground focus:ring-2 focus:ring-action outline-none transition-all"
+            />
+            <p className="mt-1 text-xs contrast-helper">
+              How many meeting analyses each user may start per day (midnight
+              UTC). Each one is a long call against that user&apos;s own
+              provider quota. Blank or 0 means no cap; a user&apos;s own cap
+              can be set when editing them under Users.
+            </p>
+          </div>
+
           {isOllama && (
             <div className="grid grid-cols-1 @min-[42rem]:grid-cols-2 gap-6">
               <div>

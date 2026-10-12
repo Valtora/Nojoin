@@ -3,9 +3,10 @@
  *
  * This module is deliberately free of Worker runtime APIs so it can be unit
  * tested on plain Node. Everything the ingest decides about a request body
- * lives here.
+ * lives here: the optional diagnostics ping (parsePayload) and the daily
+ * install heartbeat (parseHeartbeat).
  *
- * Two invariants shape the design:
+ * Two invariants shape the ping:
  *
  * 1. An unknown field is never a reason to reject. A newer Nojoin will always
  *    ship fields before this Worker is redeployed, and rejecting them would
@@ -177,6 +178,53 @@ export function parsePayload(body: unknown): ParseResult {
       people_library_used: boolCol(record.people_library_used),
       payload: JSON.stringify(record),
     },
+  };
+}
+
+export const SUPPORTED_HEARTBEAT_SCHEMA_VERSIONS = [1] as const;
+
+export interface HeartbeatRow {
+  install_id: string;
+  version: string | null;
+}
+
+export type HeartbeatParseResult =
+  | { ok: true; row: HeartbeatRow }
+  | { ok: false; error: string };
+
+/**
+ * Validate a heartbeat body into the only two values the ingest keeps.
+ *
+ * Stricter in what it stores than parsePayload, on purpose. The heartbeat is
+ * the part of Nojoin's telemetry that the app cannot switch off, and the
+ * promise attached to it in docs/TELEMETRY.md is that the install id and the
+ * version are stored and nothing else. Any other field is discarded rather
+ * than kept in a raw payload column, so that promise can be checked here
+ * instead of taken on trust. Unknown fields still do not cause a rejection, for
+ * the same forward-compatibility reason as the ping.
+ */
+export function parseHeartbeat(body: unknown): HeartbeatParseResult {
+  const record = asRecord(body);
+  if (!record) {
+    return { ok: false, error: "body must be a JSON object" };
+  }
+
+  const schema = record.schema;
+  if (
+    typeof schema !== "number" ||
+    !SUPPORTED_HEARTBEAT_SCHEMA_VERSIONS.includes(schema as 1)
+  ) {
+    return { ok: false, error: "unsupported schema version" };
+  }
+
+  const installId = record.install_id;
+  if (typeof installId !== "string" || !INSTALL_ID_RE.test(installId)) {
+    return { ok: false, error: "install_id must be a UUID" };
+  }
+
+  return {
+    ok: true,
+    row: { install_id: installId.toLowerCase(), version: versionCol(record.version) },
   };
 }
 

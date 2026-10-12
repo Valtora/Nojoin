@@ -12,7 +12,7 @@ class TranscriptionEngine(ABC):
           "language": str,             # optional; logged only
           "segments": [
             {"start": float, "end": float, "text": str,
-             "words": [{"start": float, "end": float, "word": str}]}  # words optional
+             "words": [{"start": float, "end": float, "word": str}]}  # words optional, per segment
           ]
         }
 

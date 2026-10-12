@@ -29,7 +29,7 @@ interface DocumentUploadModalProps {
     recordingId: RecordingId;
 }
 
-/** Per-file state. The queue is uploaded one file at a time, in order. */
+/** Per-file state. The queue is uploaded two files at a time, in order. */
 interface QueuedUpload {
     /** Stable across re-renders and independent of the file's name. */
     id: string;
@@ -55,6 +55,37 @@ const getFileExtension = (filename: string): string => {
 const supportedFormats = [...SUPPORTED_DOCUMENT_FORMATS];
 const visionOnlyFormats: readonly string[] = VISION_ONLY_DOCUMENT_FORMATS;
 const maxSizeMB = 250;
+
+/**
+ * How many uploads run at once. The backend admits two concurrent document
+ * uploads per user and answers 429 to a third, so this matches that limit
+ * exactly: more would fail most of a large drop, fewer leaves time on the
+ * table.
+ */
+export const UPLOAD_CONCURRENCY = 2;
+
+/**
+ * Run `work` over `items` with at most `limit` in flight, starting them in
+ * list order. Each slot takes the next unstarted item when it finishes, so
+ * dispatch order is always the queue order whatever order uploads complete in.
+ */
+export async function runWithConcurrency<T>(
+    items: readonly T[],
+    limit: number,
+    work: (item: T) => Promise<void>,
+): Promise<void> {
+    let next = 0;
+    const slot = async () => {
+        while (next < items.length) {
+            const item = items[next];
+            next += 1;
+            await work(item);
+        }
+    };
+    await Promise.all(
+        Array.from({ length: Math.min(limit, items.length) }, () => slot()),
+    );
+}
 
 const isVisionOnlyFile = (file: File): boolean =>
     visionOnlyFormats.includes(getFileExtension(file.name));
@@ -223,11 +254,12 @@ export default function DocumentUploadModal({ isOpen, onClose, onSuccess, record
 
         let failures = 0;
 
-        // Sequential, not concurrent. The backend admits two document uploads
-        // per user at a time and rejects the rest, so a fan-out of a ten-file
-        // drop would fail most of it; one at a time also keeps the order of the
-        // documents list matching the order they were queued in.
-        for (const item of pending) {
+        // Two at a time, started in queue order, which is what the backend
+        // admits per user (a third concurrent upload gets a 429). The server
+        // stamps each document when its upload starts and lists by that stamp,
+        // so the documents list keeps the queue order even when a small file
+        // finishes before a larger one started ahead of it.
+        const uploadOne = async (item: QueuedUpload) => {
             setQueue((current) =>
                 current.map((entry) =>
                     entry.id === item.id ? { ...entry, status: 'uploading' } : entry,
@@ -254,7 +286,9 @@ export default function DocumentUploadModal({ isOpen, onClose, onSuccess, record
                 );
                 addNotification({ type: 'error', message: `${item.file.name}: ${message}` });
             }
-        }
+        };
+
+        await runWithConcurrency(pending, UPLOAD_CONCURRENCY, uploadOne);
 
         setIsUploading(false);
 

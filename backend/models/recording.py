@@ -43,6 +43,18 @@ class RecordingPipelineGeneration(str, Enum):
 
 LEGACY_RECORDING_REPROCESS_REQUIRED_DETAIL = "This recording must be reprocessed before transcript or speaker edits are supported"
 
+# Statuses in which a recording's transcript is still being captured or rebuilt.
+# The recording view blanks the transcript while in one, and Meeting Chat
+# refuses to answer from it.
+IN_FLIGHT_TRANSCRIPT_STATUSES = frozenset(
+    {
+        RecordingStatus.PAUSED,
+        RecordingStatus.UPLOADING,
+        RecordingStatus.QUEUED,
+        RecordingStatus.PROCESSING,
+    }
+)
+
 
 def generate_meeting_uid() -> str:
     return str(uuid4())
@@ -80,7 +92,7 @@ class Recording(BaseDBModel, table=True):
     proxy_path: Optional[str] = Field(default=None)
     celery_task_id: Optional[str] = Field(default=None)
     duration_seconds: Optional[float] = None
-    file_size_bytes: Optional[int] = None
+    file_size_bytes: Optional[int] = Field(default=None, sa_column=Column(BigInteger))
     status: RecordingStatus = Field(default=RecordingStatus.RECORDED)
     client_status: Optional[ClientStatus] = Field(default=None)
     upload_progress: int = Field(default=0)

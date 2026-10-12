@@ -112,6 +112,44 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements/test.txt
 
+      # The images ship ffmpeg, and the tests that run real media through it
+      # skip where it is missing. Ubuntu's package is the 6.1 series, older
+      # than the 7.1 in the images.
+      #
+      # Its 63 MB of packages come from Ubuntu's mirrors, which some runners
+      # reach at under 250 kB/s, so the packages are cached. The key is the
+      # list apt resolves, so a security update or a new runner image starts a
+      # new cache. apt installs a cached package whose size matches without
+      # checking its hash, so each one is checked against the SHA256 in the
+      # signed index first, and one that fails is downloaded again.
+      - name: Resolve ffmpeg packages
+        id: ffmpeg-packages
+        run: |
+          sudo apt-get update
+          apt-get install --print-uris -qq --no-install-recommends \
+            -o Acquire::ForceHash=SHA256 ffmpeg \
+            | awk '{sub(/^SHA256:/, "", $4); print $4 "  " $2}' \
+            > "$RUNNER_TEMP/ffmpeg-debs.sha256"
+          echo "key=$(sha256sum < "$RUNNER_TEMP/ffmpeg-debs.sha256" | cut -c1-16)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache ffmpeg packages
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/ffmpeg-debs
+          key: ffmpeg-debs-${{ runner.os }}-${{ steps.ffmpeg-packages.outputs.key }}
+
+      - name: Install ffmpeg
+        run: |
+          mkdir -p ~/ffmpeg-debs/partial
+          cd ~/ffmpeg-debs
+          { sha256sum --check --ignore-missing --quiet "$RUNNER_TEMP/ffmpeg-debs.sha256" 2>/dev/null || true; } \
+            | sed -n 's/: FAILED.*$//p' | xargs -r rm -f
+          sudo apt-get install -y --no-install-recommends \
+            -o Dir::Cache::Archives="$HOME/ffmpeg-debs" ffmpeg
+          # actions/cache saves as the runner user, and apt leaves a root-only lock.
+          sudo rm -f lock
+          sudo chown -R "$(id -u):$(id -g)" .
+
       - name: Run backend tests
         run: pytest
 

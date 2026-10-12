@@ -1,9 +1,10 @@
-"""Guards for anonymous opt-out telemetry.
+"""Guards for anonymous telemetry: the install heartbeat and the diagnostics.
 
-The tests here lock the three invariants the feature's credibility rests on:
-the payload carries nothing identifying, the environment kill switch cannot be
-overridden from the UI, and nothing is sent without consent. See
-docs/TELEMETRY.md for the disclosure these assertions keep honest.
+The tests here lock the invariants the feature's credibility rests on: neither
+payload carries anything identifying, the environment kill switch cannot be
+overridden from the UI, diagnostics are never sent without consent, and an
+opt-out given before the heartbeat existed still stands. See docs/TELEMETRY.md
+for the disclosure these assertions keep honest.
 """
 
 from __future__ import annotations
@@ -23,7 +24,10 @@ from backend.utils.config_manager import ConfigManager
 # machine whose .env disables telemetry would silently turn every send test into
 # a no-op that still passes. At module scope the load happens during collection,
 # and the per-test delenv wins.
-from backend.worker.tasks.system import send_telemetry_ping_task
+from backend.worker.tasks.system import (
+    send_telemetry_heartbeat_task,
+    send_telemetry_ping_task,
+)
 
 
 class _Scalar:
@@ -259,6 +263,7 @@ EXPECTED_PAYLOAD_FIELDS = {
     "recordings_total",
     "recordings_28d",
     "recording_hours_28d",
+    "recordings_24h",
     "llm_provider",
     "secondary_configured",
     "cli_oauth_in_use",
@@ -524,5 +529,217 @@ def test_telemetry_ping_is_scheduled_six_hourly_on_the_io_lane() -> None:
     # Must stay off the single-slot GPU lane: a network call has no business
     # occupying the worker that holds the card.
     assert TASK_ROUTES["backend.worker.tasks.send_telemetry_ping_task"] == {
+        "queue": "io"
+    }
+
+
+# --- Install heartbeat ------------------------------------------------------
+
+
+@pytest.fixture
+def version(monkeypatch):
+    """Pin the running version, and let a test change it as an upgrade would."""
+    current = {"value": "2.7.0"}
+    monkeypatch.setattr(telemetry, "_installed_version", lambda: current["value"])
+    return current
+
+
+def test_heartbeat_contains_only_the_install_id_and_version(data_dir, version) -> None:
+    # The heartbeat is the part an operator cannot switch off in the app, so
+    # its contents are the narrowest promise in the disclosure. A field added
+    # here fails until docs/TELEMETRY.md says so in the same change.
+    heartbeat = telemetry.build_heartbeat()
+
+    assert set(heartbeat) == {"schema", "install_id", "version"}
+    assert heartbeat["install_id"] == telemetry.get_install_id()
+    assert heartbeat["version"] == "2.7.0"
+
+
+def test_heartbeat_goes_to_the_same_collector_as_the_ping(monkeypatch) -> None:
+    assert (
+        telemetry.heartbeat_endpoint() == "https://telemetry.nojoin.co.uk/v1/heartbeat"
+    )
+
+    monkeypatch.setenv(
+        telemetry.TELEMETRY_ENDPOINT_ENV_KEY, "https://collector.invalid/v1/ping"
+    )
+    assert telemetry.heartbeat_endpoint() == "https://collector.invalid/v1/heartbeat"
+
+
+def test_heartbeat_needs_no_consent(config, redis_stub, version) -> None:
+    # The upgraded-install state that blocks diagnostics: no acknowledgement,
+    # no notice shown. The heartbeat goes out anyway.
+    assert telemetry.should_send() is False
+    assert telemetry.heartbeat_due() is True
+
+
+def test_env_false_stops_the_heartbeat_too(
+    config, redis_stub, version, monkeypatch
+) -> None:
+    monkeypatch.setenv(telemetry.TELEMETRY_ENABLED_ENV_KEY, "false")
+
+    assert telemetry.heartbeat_blocked_by() == "environment"
+    assert telemetry.heartbeat_due() is False
+
+
+def test_env_true_sends_the_heartbeat_even_after_an_earlier_opt_out(
+    config, redis_stub, version, monkeypatch
+) -> None:
+    config.set(telemetry.ENABLED_CONFIG_KEY, False)
+    monkeypatch.setenv(telemetry.TELEMETRY_ENABLED_ENV_KEY, "true")
+
+    assert telemetry.heartbeat_allowed() is True
+
+
+def test_an_opt_out_from_before_the_heartbeat_still_stands(
+    config, redis_stub, version
+) -> None:
+    # What an install that unticked the wizard box or pressed "Turn it off" on
+    # an earlier version has in config.json: off, and no policy marker.
+    config.set(telemetry.ENABLED_CONFIG_KEY, False)
+
+    assert telemetry.heartbeat_blocked_by() == "earlier_opt_out"
+    assert telemetry.heartbeat_due() is False
+
+
+def test_saying_no_again_keeps_the_earlier_exemption(
+    config, redis_stub, version
+) -> None:
+    config.set(telemetry.ENABLED_CONFIG_KEY, False)
+
+    # Re-confirming "off" in Settings must not quietly end the exemption.
+    telemetry.set_enabled(False)
+
+    assert telemetry.heartbeat_blocked_by() == "earlier_opt_out"
+
+
+def test_turning_diagnostics_back_on_ends_the_earlier_exemption(
+    config, redis_stub, version
+) -> None:
+    config.set(telemetry.ENABLED_CONFIG_KEY, False)
+
+    telemetry.set_enabled(True)
+    telemetry.set_enabled(False)
+
+    # A choice made with the heartbeat in place covers the diagnostics only.
+    assert telemetry.heartbeat_allowed() is True
+    assert telemetry.is_telemetry_enabled() is False
+
+
+def test_an_opt_out_made_now_covers_the_diagnostics_only(
+    config, redis_stub, version
+) -> None:
+    telemetry.set_enabled(False)
+
+    assert telemetry.is_telemetry_enabled() is False
+    assert telemetry.heartbeat_allowed() is True
+    assert config.get(telemetry.POLICY_CONFIG_KEY) == telemetry.HEARTBEAT_POLICY_VERSION
+
+
+def _sent(moment: datetime, version_value: str) -> None:
+    telemetry.record_heartbeat_attempt(
+        moment, telemetry.SendResult(True), version_value
+    )
+
+
+def test_heartbeat_is_due_once_per_utc_day(config, redis_stub, version) -> None:
+    morning = datetime(2026, 10, 12, 8, 0, tzinfo=timezone.utc)
+    _sent(morning, "2.7.0")
+
+    assert telemetry.heartbeat_due(morning + timedelta(hours=15, minutes=59)) is False
+    assert (
+        telemetry.heartbeat_due(datetime(2026, 10, 13, 0, 5, tzinfo=timezone.utc))
+        is True
+    )
+
+
+def test_heartbeat_is_due_again_when_the_version_changes(
+    config, redis_stub, version
+) -> None:
+    moment = datetime(2026, 10, 12, 8, 0, tzinfo=timezone.utc)
+    _sent(moment, "2.7.0")
+
+    version["value"] = "2.7.1"
+
+    assert telemetry.heartbeat_due(moment + timedelta(minutes=15)) is True
+
+
+def test_a_failed_heartbeat_waits_an_hour_before_the_next_try(
+    config, redis_stub, version
+) -> None:
+    moment = datetime(2026, 10, 12, 8, 0, tzinfo=timezone.utc)
+    telemetry.record_heartbeat_attempt(
+        moment, telemetry.SendResult(False, "Blocked."), "2.7.0"
+    )
+
+    assert telemetry.get_heartbeat_sent() is None
+    assert telemetry.heartbeat_due(moment + timedelta(minutes=45)) is False
+    assert telemetry.heartbeat_due(moment + timedelta(hours=1)) is True
+
+
+def test_the_heartbeat_task_sends_and_records_the_day_and_version(
+    config, data_dir, redis_stub, version, monkeypatch
+) -> None:
+    import httpx
+
+    sent: list[tuple[str, dict]] = []
+
+    def accept(url, json=None, **_kwargs):
+        sent.append((url, json))
+        return httpx.Response(204, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(httpx, "post", accept)
+
+    send_telemetry_heartbeat_task.run()
+    # Same day, same version: the next tick must not send again.
+    send_telemetry_heartbeat_task.run()
+
+    assert len(sent) == 1
+    url, body = sent[0]
+    assert url.endswith("/v1/heartbeat")
+    assert set(body) == {"schema", "install_id", "version"}
+    marker = telemetry.get_heartbeat_sent()
+    assert marker is not None
+    assert marker["version"] == "2.7.0"
+    assert marker["day"] == datetime.now(timezone.utc).date().isoformat()
+
+
+def test_the_heartbeat_task_sends_nothing_for_an_exempt_install(
+    config, data_dir, redis_stub, version, monkeypatch
+) -> None:
+    import httpx
+
+    def explode(*_args, **_kwargs):  # pragma: no cover - must never run
+        raise AssertionError("an exempt install must not send a heartbeat")
+
+    monkeypatch.setattr(httpx, "post", explode)
+    config.set(telemetry.ENABLED_CONFIG_KEY, False)
+
+    send_telemetry_heartbeat_task.run()
+
+
+def test_status_reports_the_heartbeat_separately_from_the_ping(
+    config, data_dir, redis_stub, version
+) -> None:
+    moment = datetime.now(timezone.utc)
+    telemetry.record_heartbeat_attempt(moment, telemetry.SendResult(True), "2.7.0")
+
+    status = telemetry.telemetry_status()
+
+    assert status["heartbeat_enabled"] is True
+    assert status["heartbeat_blocked_by"] is None
+    assert status["heartbeat_last_sent_at"] == moment.isoformat()
+    assert status["heartbeat_endpoint"].endswith("/v1/heartbeat")
+    # The ping has not been sent at all on this install.
+    assert status["last_sent_at"] is None
+
+
+def test_heartbeat_is_checked_every_fifteen_minutes_on_the_io_lane() -> None:
+    from backend.celery_app import TASK_ROUTES, celery_app
+
+    entry = celery_app.conf.beat_schedule["send-telemetry-heartbeat-every-15m"]
+    assert entry["task"] == "backend.worker.tasks.send_telemetry_heartbeat_task"
+    assert entry["schedule"] == 900.0
+    assert TASK_ROUTES["backend.worker.tasks.send_telemetry_heartbeat_task"] == {
         "queue": "io"
     }

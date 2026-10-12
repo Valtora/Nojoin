@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 import pytest
 
 import backend.api.services.health_service as health_service
@@ -70,9 +72,13 @@ async def test_validate_hf_token_revalidates_when_token_changes(monkeypatch) -> 
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("source", ["bundled", "cache", "external"])
 async def test_get_diarization_component_accepts_local_assets_without_hf_token(
+    source,
     monkeypatch,
 ) -> None:
+    """Every local source loads without a token, a personal-cache copy too."""
+
     async def _fake_keys(_db):
         return {"hf_token": None}
 
@@ -91,9 +97,9 @@ async def test_get_diarization_component_accepts_local_assets_without_hf_token(
     component, ready = await health_service._get_diarization_component(
         db=None,
         model_status={
-            "pyannote": {"downloaded": True, "source": "bundled"},
-            "embedding": {"downloaded": True, "source": "bundled"},
-            "segmentation": {"downloaded": True, "source": "bundled"},
+            "pyannote": {"downloaded": True, "source": source},
+            "embedding": {"downloaded": True, "source": source},
+            "segmentation": {"downloaded": True, "source": source},
         },
         download={"in_progress": False, "stage": None, "status": None},
     )
@@ -129,6 +135,22 @@ def test_storage_component_reports_error_when_not_writable(monkeypatch) -> None:
     assert component["status"] == "error"
     assert component["detail"] == "Permission denied"
     assert component["action"]
+
+
+def test_ffmpeg_component_reports_missing_when_path_lacks_it(
+    tmp_path, monkeypatch
+) -> None:
+    """Reported from PATH alone, even on a host that keeps ffmpeg in a
+    well-known location such as /usr/bin."""
+    empty_bin = tmp_path / "bin"
+    empty_bin.mkdir()
+    monkeypatch.setenv("PATH", str(empty_bin))
+
+    component, ready = health_service._get_ffmpeg_component()
+
+    assert ready is False
+    assert component["status"] == "error"
+    assert os.environ["PATH"] == str(empty_bin)
 
 
 def test_unwritable_storage_blocks_the_pipeline_summary() -> None:

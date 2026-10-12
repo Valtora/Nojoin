@@ -1,7 +1,35 @@
 from backend.utils.meeting_notes import (
     append_user_notes_section,
     build_user_notes_prompt_section,
+    format_segments_for_llm,
 )
+
+SEGMENTS = [
+    {"start": 5.0, "end": 9.4, "speaker": "SPEAKER_00", "text": " Ship it. "},
+    {
+        "start": 6125.0,
+        "end": 6130.0,
+        "speaker": "SPEAKER_01",
+        "text": "Agreed.",
+        "overlapping_speakers": ["SPEAKER_00"],
+    },
+]
+SPEAKER_MAP = {"SPEAKER_00": "Priya"}
+
+
+def test_format_segments_for_llm_keeps_the_range_the_notes_prompt_uses() -> None:
+    # Notes generation and Meeting Edge render with the default, so its output
+    # must not move when chat asks for the shorter form.
+    assert format_segments_for_llm(SEGMENTS, SPEAKER_MAP) == (
+        "[00:05 - 00:09] Priya: Ship it.\n"
+        "[102:05 - 102:10] SPEAKER_01 (with Priya): Agreed."
+    )
+
+
+def test_format_segments_for_llm_without_end_keeps_start_and_overlap() -> None:
+    assert format_segments_for_llm(SEGMENTS, SPEAKER_MAP, with_end=False) == (
+        "[00:05] Priya: Ship it.\n[102:05] SPEAKER_01 (with Priya): Agreed."
+    )
 
 
 def test_build_user_notes_prompt_section_handles_empty_notes() -> None:
