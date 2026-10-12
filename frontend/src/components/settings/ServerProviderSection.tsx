@@ -167,7 +167,10 @@ export default function ServerProviderSection({
                 />
                 <p className="mt-1 text-xs contrast-helper">
                   Passed to Ollama as <code>num_ctx</code> for full-context
-                  meeting prompts.
+                  meeting prompts. A meeting longer than the window takes
+                  several times as long, because its notes are written in
+                  parts. For long meetings, a hosted fallback provider with a
+                  larger context is recommended.
                 </p>
               </div>
             </div>

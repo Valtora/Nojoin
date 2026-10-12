@@ -3,8 +3,11 @@ import re
 from typing import Any, Dict, Generator, List, Optional, Sequence, Tuple
 
 from backend.utils.chat_prompt import (
+    ChatTranscript,
+    TranscriptExcerpts,
     build_chat_prompt,
 )
+from backend.utils.context_window import ContextWindowExceededError
 from backend.utils.languages import build_output_language_prompt_section
 from backend.utils.meeting_analysis import (
     MeetingAnalysisContractError,
@@ -264,6 +267,41 @@ class LLMBackend:
         """
         raise NotImplementedError
 
+    def generate_meeting_notes_in_parts(  # noqa: PLR0913 - matches generate_meeting_notes
+        self,
+        transcript: str,
+        speaker_mapping: Dict[str, str],
+        *,
+        overflow: ContextWindowExceededError,
+        timeout: int = 60,
+        user_notes: Optional[str] = None,
+        meeting_context: Optional[MeetingEventContext] = None,
+        output_language_instruction: Optional[str] = None,
+        notes_context: Optional[NotesPromptContext] = None,
+    ) -> str:
+        """Notes for a meeting ``generate_meeting_notes`` refused as too long.
+
+        Called with that refusal once the secondary provider, if any, has also
+        failed on the whole meeting. Only a backend whose window a meeting can
+        outgrow (Ollama) writes notes in parts; the rest raise the refusal.
+        See ``backend.utils.long_meeting_notes``.
+        """
+        raise overflow
+
+    def generate_meeting_intelligence_in_parts(
+        self,
+        request: AutomaticMeetingIntelligenceRequest,
+        *,
+        overflow: ContextWindowExceededError,
+        timeout: int = 60,
+    ) -> AutomaticMeetingIntelligenceResult:
+        """``generate_meeting_intelligence`` for a meeting it refused as too long.
+
+        As ``generate_meeting_notes_in_parts``, and also returning the title
+        and the speaker suggestions.
+        """
+        raise overflow
+
     def supports_vision(self) -> Optional[bool]:
         """Whether the configured model accepts images, if that is knowable.
 
@@ -410,9 +448,31 @@ class LLMBackend:
         self,
         user_question: str,
         meeting_notes: str,
-        diarized_transcript: str | None,
+        diarized_transcript: ChatTranscript,
     ) -> str:
         return build_chat_prompt(user_question, meeting_notes, diarized_transcript)
+
+    def _chat_transcript(
+        self,
+        diarized_transcript: ChatTranscript,
+        recording_id,
+        *,
+        max_bytes: Optional[int] = None,
+    ) -> ChatTranscript:
+        """The transcript a chat prompt carries.
+
+        Normally the recording's whole transcript, read now. For a meeting the
+        provider refused whole, Meeting Chat passes the passages chosen for the
+        question instead, and they are read now too, up to ``max_bytes`` when
+        the backend has a window to fit them in.
+        """
+        if recording_id is None:
+            return diarized_transcript
+        if isinstance(diarized_transcript, TranscriptExcerpts):
+            return self.get_transcript_excerpts_for_llm(
+                recording_id, diarized_transcript.ranges, max_bytes
+            )
+        return self.get_mapped_transcript_for_llm(recording_id)
 
     # Static prompt text. Plain strings, never format templates: JSON schema
     # examples use real braces, and interpolated values need no escaping.
@@ -722,6 +782,25 @@ Preserve the same schema and do not invent facts not supported by the original t
 # Previous Invalid Response
 {invalid_response}
 """
+
+    @staticmethod
+    def get_transcript_excerpts_for_llm(
+        recording_id: int,
+        ranges: Sequence[Tuple[float, float]],
+        max_bytes: Optional[int],
+    ) -> TranscriptExcerpts:
+        """The passages of a recording's transcript at ``ranges``, read now.
+
+        See ``backend.utils.llm_transcript.render_transcript_excerpts_for_llm``.
+        """
+        from backend.core.db import get_sync_session
+        from backend.utils.llm_transcript import render_transcript_excerpts_for_llm
+
+        with get_sync_session() as session:
+            text = render_transcript_excerpts_for_llm(
+                session, recording_id, ranges, max_bytes
+            )
+        return TranscriptExcerpts(ranges=tuple(ranges), text=text)
 
     @staticmethod
     def get_mapped_transcript_for_llm(recording_id: int) -> str | None:

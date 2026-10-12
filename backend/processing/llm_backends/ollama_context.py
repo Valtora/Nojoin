@@ -17,6 +17,8 @@ from __future__ import annotations
 import json
 from typing import Optional, Sequence
 
+from backend.utils.context_window import ContextWindowExceededError
+
 # Ollama 0.12.6 (and Ollama's own runners) refuse with this plain message and no
 # counts. 0.34 and later relay llama-server's error as a JSON string, with type
 # "exceed_context_size_error", "n_prompt_tokens" and "n_ctx".
@@ -29,6 +31,7 @@ _LLAMA_SERVER_OVERFLOW = "exceed_context_size_error"
 # denser; for those the retry on Ollama's own count takes over. Kept as a
 # ratio of integers so the estimate stays exact integer arithmetic.
 _ESTIMATE_BYTES, _ESTIMATE_TOKENS = 26, 10
+ESTIMATED_TOKENS_PER_BYTE = _ESTIMATE_TOKENS / _ESTIMATE_BYTES
 
 # Room chat history trimming leaves for the answer: a quarter of the window,
 # at most this many tokens. Chat answers are short; one that still runs out
@@ -50,14 +53,12 @@ def context_advice(model_maximum: bool) -> str:
     return "Increase the Ollama context window or select a model with a larger context."
 
 
-class OllamaContextOverflowError(RuntimeError):
+class OllamaContextOverflowError(ContextWindowExceededError):
     """Ollama refused a prompt longer than its context window."""
 
     def __init__(
         self, prompt_tokens: Optional[int], window: int, *, model_maximum: bool
     ):
-        self.prompt_tokens = prompt_tokens
-        self.window = window
         size = (
             f"the prompt is {prompt_tokens:,} tokens"
             if prompt_tokens
@@ -67,7 +68,9 @@ class OllamaContextOverflowError(RuntimeError):
         super().__init__(
             "The Ollama context window was exhausted: Ollama refused the request "
             f"because {limit} is {window:,} tokens and {size}. "
-            f"{context_advice(model_maximum)}"
+            f"{context_advice(model_maximum)}",
+            prompt_tokens=prompt_tokens,
+            window=window,
         )
 
 

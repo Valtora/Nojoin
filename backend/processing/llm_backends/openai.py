@@ -395,8 +395,7 @@ class OpenAILLMBackend(LLMBackend):
         timeout: int = 60,
         recording_id: str = None,
     ):
-        if recording_id is not None:
-            diarized_transcript = self.get_mapped_transcript_for_llm(recording_id)
+        diarized_transcript = self._chat_transcript(diarized_transcript, recording_id)
 
         # Lead with the stable meeting context as a system message so OpenAI's
         # automatic prefix caching can reuse it across turns; the volatile
@@ -434,8 +433,7 @@ class OpenAILLMBackend(LLMBackend):
         timeout: int = 60,
         recording_id: str = None,
     ) -> Generator[Any, None, None]:
-        if recording_id is not None:
-            diarized_transcript = self.get_mapped_transcript_for_llm(recording_id)
+        diarized_transcript = self._chat_transcript(diarized_transcript, recording_id)
 
         # Lead with the stable meeting context as a system message so OpenAI's
         # automatic prefix caching can reuse it across turns; the volatile

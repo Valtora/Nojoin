@@ -8,6 +8,7 @@ the ``backend.worker.tasks`` package namespace with no call-site changes.
 
 import logging
 
+from backend.utils.context_window import ContextWindowExceededError
 from backend.worker.tasks.constants import *  # noqa: F401,F403 -- shared task surface
 
 logger = logging.getLogger(__name__)
@@ -285,10 +286,25 @@ def _run_automatic_meeting_intelligence_stage_impl(
 
     try:
         llm = _llm_backend_from_config(llm_config)
-        result = llm.generate_meeting_intelligence(
-            request,
-            timeout=AUTOMATIC_MEETING_INTELLIGENCE_TIMEOUT_SECONDS,
-        )
+        try:
+            result = llm.generate_meeting_intelligence(
+                request,
+                timeout=AUTOMATIC_MEETING_INTELLIGENCE_TIMEOUT_SECONDS,
+            )
+        except ContextWindowExceededError as overflow:
+            # Reached only when the secondary provider, if any, also failed on
+            # the whole meeting. See backend.utils.long_meeting_notes.
+            logger.info(
+                "Recording %s is too long for one call; generating its notes "
+                "in parts: %s",
+                recording.id,
+                overflow,
+            )
+            result = llm.generate_meeting_intelligence_in_parts(
+                request,
+                overflow=overflow,
+                timeout=AUTOMATIC_MEETING_INTELLIGENCE_TIMEOUT_SECONDS,
+            )
         _apply_automatic_meeting_intelligence_result(
             session,
             recording,

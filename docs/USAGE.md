@@ -415,6 +415,16 @@ Nojoin can connect to Google Calendar and Microsoft Calendar when an administrat
 
 Calendar events can provide meeting context, dashboard agenda views, linked recording history, and Meeting Edge context. Read [CALENDAR.md](CALENDAR.md) before changing calendar provider settings or troubleshooting OAuth.
 
+### Long Meetings And Ollama
+
+A hosted provider (Anthropic, OpenAI or Gemini) reads a whole meeting in one call, however long it is. A local Ollama model reads only as much as its context window holds, and on a consumer GPU that is far less than a long meeting: the default window of 32,768 tokens covers about two hours.
+
+**Recommendation:** do not rely on Ollama alone for long meetings. Use a hosted provider for them, or keep Ollama as the primary provider and configure a hosted [secondary provider](#secondary-llm-provider) with a larger context window. When a meeting does not fit Ollama's window, the secondary provider receives the whole meeting and returns notes in one call.
+
+Without a secondary provider, or when it fails too, Ollama writes the notes in parts. Nojoin splits the transcript between utterances into parts that fit the window, writes notes for each part, then combines them into one set of notes with a title and speaker suggestions, as a normal run would. This takes several calls instead of one, so a long meeting takes several times as long to process, and the notes hold less detail than a single call's: the smaller the window, the more rounds of combining a meeting needs, and the less of the early detail reaches the final notes.
+
+Meeting Chat on such a meeting answers from the notes and the passages of the transcript most relevant to your question, since the whole transcript does not fit. It is told to say so when those do not answer the question, so a question about a detail the passages missed can come back unanswered where a hosted provider would have found it.
+
 ## AI Assistant Connections (MCP)
 
 Nojoin includes a built-in MCP connector so AI assistants such as Claude can work with your meeting library on your behalf. It has two access tiers: read tools cover the whole library including semantic search across every meeting and document, and write tools cover recoverable changes such as organising recordings, managing tasks, correcting transcripts, regenerating notes, and maintaining People records. Permanent deletion is not available through the connector at all. Add `https://your-nojoin-domain/mcp` as a custom connector in the assistant and approve access on Nojoin's authorisation page. Active connections are listed under **Settings → Integrations → Connected apps**, where each one can be revoked. See [MCP.md](MCP.md) for setup, supported clients, and troubleshooting.
@@ -462,7 +472,7 @@ Administrators can review per-user Claude-subscription usage under **Settings > 
 
 ### Secondary LLM Provider
 
-Nojoin supports configuring a secondary LLM provider as a fallback. When the primary provider fails with any error, the system automatically retries the request with the secondary provider. This applies to all AI features: Meeting Edge, meeting intelligence, speaker inference, and meeting chat.
+Nojoin supports configuring a secondary LLM provider as a fallback. When the primary provider fails with any error, the system automatically retries the request with the secondary provider. This applies to all AI features: Meeting Edge, meeting intelligence, speaker inference, and meeting chat. A meeting too long for an Ollama primary's context window counts as such a failure, which makes a hosted secondary the recommended setup for long meetings with Ollama ([Long Meetings And Ollama](#long-meetings-and-ollama)).
 
 The secondary provider has its own independent configuration:
 

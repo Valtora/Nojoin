@@ -285,8 +285,7 @@ class CliLLMBackend(LLMBackend):
     ) -> str:
         # Mirror the other backends: prefer the DB-mapped transcript when a
         # recording id is supplied (resolves diarization labels to names).
-        if recording_id is not None:
-            diarized_transcript = self.get_mapped_transcript_for_llm(recording_id)
+        diarized_transcript = self._chat_transcript(diarized_transcript, recording_id)
         base = self._build_chat_prompt(
             user_question, meeting_notes, diarized_transcript
         )

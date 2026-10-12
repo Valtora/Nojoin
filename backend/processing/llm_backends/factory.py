@@ -164,6 +164,17 @@ class SecondaryLLMBackend(LLMBackend):
             "generate_meeting_intelligence", request, prompt_template, timeout
         )
 
+    # The two below are reached only after the secondary has failed on the whole
+    # meeting too. The refusal they are called with is the primary's (see
+    # _call_with_secondary), so the primary writes the notes in parts.
+    def generate_meeting_notes_in_parts(self, transcript, speaker_mapping, **kwargs):
+        return self._primary.generate_meeting_notes_in_parts(
+            transcript, speaker_mapping, **kwargs
+        )
+
+    def generate_meeting_intelligence_in_parts(self, request, **kwargs):
+        return self._primary.generate_meeting_intelligence_in_parts(request, **kwargs)
+
     def generate_text(self, prompt, timeout=60, max_tokens=4096):
         return self._call_with_secondary(
             "generate_text", prompt, timeout, max_tokens=max_tokens

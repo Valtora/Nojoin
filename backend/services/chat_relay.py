@@ -153,8 +153,9 @@ def friendly_chat_error(exc: Exception) -> str:
     if "context window was exhausted" in error_msg or "done_reason=length" in error_msg:
         return (
             "The Ollama context window was exhausted before a full answer could "
-            "be generated. Increase the Ollama context window or choose a "
-            "larger-context model."
+            "be generated. Increase the Ollama context window, choose a "
+            "larger-context model, or add a secondary provider with a larger "
+            "context for long meetings."
         )
     if "503" in error_msg or "unavailable" in error_msg or "overloaded" in error_msg:
         return (

@@ -13,6 +13,7 @@ import backend.worker.tasks as tasks_module
 from backend.models.recording import Recording
 from backend.models.speaker import RecordingSpeaker
 from backend.models.transcript import Transcript
+from backend.utils.context_window import ContextWindowExceededError
 from backend.utils.llm_config import ResolvedLLMConfig
 from backend.utils.meeting_intelligence import AutomaticMeetingIntelligenceResult
 
@@ -567,6 +568,69 @@ def test_run_automatic_meeting_intelligence_stage_marks_notes_error_on_failure(
         assert recording.processing_progress == 97
         assert transcript.notes_status == "error"
         assert transcript.error_message == "Unified AI contract failed"
+    finally:
+        engine.dispose()
+
+
+def test_a_meeting_too_long_for_one_call_gets_its_notes_in_parts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    engine = _create_worker_ai_database(tmp_path)
+    refusal = ContextWindowExceededError("refused", prompt_tokens=40_000, window=8192)
+    captured: dict[str, Any] = {}
+
+    class FakeLLM:
+        def generate_meeting_intelligence(self, request, timeout: int = 60):
+            raise refusal
+
+        def generate_meeting_intelligence_in_parts(self, request, *, overflow, timeout):
+            captured["overflow"] = overflow
+            captured["timeout"] = timeout
+            return AutomaticMeetingIntelligenceResult(
+                speaker_mapping={},
+                title="Written in Parts",
+                notes_markdown="## Summary\nCombined notes.",
+            )
+
+    monkeypatch.setattr(
+        tasks_module, "_llm_backend_from_config", lambda config: FakeLLM()
+    )
+
+    try:
+        with Session(engine) as session:
+            recording = session.get(Recording, 1)
+            transcript = session.exec(
+                select(Transcript).where(Transcript.recording_id == 1)
+            ).first()
+            speakers = session.exec(
+                select(RecordingSpeaker).where(RecordingSpeaker.recording_id == 1)
+            ).all()
+
+            result = tasks_module._run_automatic_meeting_intelligence_stage(
+                session=session,
+                task=None,
+                recording=recording,
+                transcript=transcript,
+                speakers=speakers,
+                transcript_text="[00:00:00 - 00:00:04] SPEAKER_00: Opening update.",
+                unresolved_speakers=("SPEAKER_00",),
+                llm_config=_sample_llm_config(),
+                prefer_short_titles=True,
+                device_suffix=" (CPU)",
+            )
+
+        with Session(engine) as verification_session:
+            recording = verification_session.get(Recording, 1)
+            transcript = verification_session.exec(
+                select(Transcript).where(Transcript.recording_id == 1)
+            ).first()
+
+        assert result is not None
+        assert captured["overflow"] is refusal
+        assert recording.name == "Written in Parts"
+        assert transcript.notes_status == "completed"
+        assert transcript.notes == "## Summary\nCombined notes."
     finally:
         engine.dispose()
 
