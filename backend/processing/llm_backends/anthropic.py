@@ -523,9 +523,7 @@ class AnthropicLLMBackend(LLMBackend):
         timeout: int = 60,
         recording_id: str = None,
     ):
-        # If recording_id is provided, use mapped transcript
-        if recording_id is not None:
-            diarized_transcript = self.get_mapped_transcript_for_llm(recording_id)
+        diarized_transcript = self._chat_transcript(diarized_transcript, recording_id)
 
         # Put the stable meeting context in the cached system prompt (render order
         # is tools -> system -> messages), so it is reused across turns while the
@@ -560,8 +558,7 @@ class AnthropicLLMBackend(LLMBackend):
         timeout: int = 60,
         recording_id: str = None,
     ) -> Generator[Any, None, None]:
-        if recording_id is not None:
-            diarized_transcript = self.get_mapped_transcript_for_llm(recording_id)
+        diarized_transcript = self._chat_transcript(diarized_transcript, recording_id)
 
         # Put the stable meeting context in the cached system prompt (render order
         # is tools -> system -> messages), so it is reused across turns while the

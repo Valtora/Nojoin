@@ -66,7 +66,7 @@ Database migrations run automatically on the first API start after upgrading. Ba
 
 <!-- Maintainer: list only problems Nojoin can fix, each with its open issue. A limit set by a dependency or a provider is documented in the guide for that feature and does not belong here. -->
 
-- With Ollama, a meeting whose transcript does not fit the context window fails note generation. Raise the Ollama context window under **Settings > AI providers** if the GPU has room, or use a hosted provider for long meetings (#391).
+- None known.
 
 ### Browser-Capture Compatibility
 

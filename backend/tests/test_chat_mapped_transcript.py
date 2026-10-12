@@ -432,3 +432,51 @@ def test_chat_query_count_does_not_grow_with_linked_speakers(engine):
         )
 
     assert _count_queries(engine) == one_speaker
+
+
+def _three_minutes(engine) -> None:
+    _insert_transcript(engine, segments=None)
+    _insert_speaker(engine, "SPEAKER_00", local_name="Ana")
+    for minute in range(6):
+        _insert_utterance(
+            engine,
+            minute + 1,
+            (minute * 30_000, minute * 30_000 + 20_000),
+            "SPEAKER_00",
+            f"Point {minute}.",
+        )
+
+
+def test_excerpts_are_read_now_in_time_order_with_gaps_marked(engine):
+    _three_minutes(engine)
+
+    # Most relevant first: 02:00 to 02:50, then 00:00 to 00:20.
+    excerpts = LLMBackend.get_transcript_excerpts_for_llm(
+        RECORDING_ID, [(120.0, 170.0), (0.0, 20.0)], None
+    )
+
+    assert excerpts.text == (
+        "[00:00] Ana: Point 0.\n[...]\n[02:00] Ana: Point 4.\n[02:30] Ana: Point 5."
+    )
+
+
+def test_excerpts_skip_a_passage_that_would_pass_the_byte_budget(engine):
+    _three_minutes(engine)
+    line = len("[00:00] Ana: Point 0.") + 1
+
+    excerpts = LLMBackend.get_transcript_excerpts_for_llm(
+        RECORDING_ID, [(60.0, 120.0), (0.0, 20.0), (150.0, 170.0)], 2 * line
+    )
+
+    # The first range holds two lines and fills the budget; the rest are left.
+    assert excerpts.text == "[...]\n[01:00] Ana: Point 2.\n[01:30] Ana: Point 3.\n[...]"
+
+
+def test_no_excerpts_when_no_range_holds_a_line(engine):
+    _three_minutes(engine)
+
+    excerpts = LLMBackend.get_transcript_excerpts_for_llm(
+        RECORDING_ID, [(900.0, 960.0)], None
+    )
+
+    assert excerpts.text == ""

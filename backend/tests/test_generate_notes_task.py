@@ -10,6 +10,7 @@ from sqlalchemy import create_engine, text
 from sqlmodel import Session
 
 import backend.worker.tasks as tasks_module
+from backend.utils.context_window import ContextWindowExceededError
 
 BASE_SCHEMA = """
 CREATE TABLE invitations (
@@ -307,6 +308,55 @@ def test_generate_notes_task_completes_with_saved_provider_config(
         assert captured["timeout"] == 300
         assert captured["user_notes"] == "Remember the launch date"
         assert "English" in captured["output_language_instruction"]
+    finally:
+        verification_engine.dispose()
+
+
+def test_generate_notes_task_writes_a_meeting_too_long_for_one_call_in_parts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(tasks_module.config_manager, "get_all", lambda: {})
+    engine = _create_notes_task_database(
+        tmp_path,
+        owner_settings={"llm_provider": "ollama", "ollama_model": "qwen3:14b"},
+    )
+    refusal = ContextWindowExceededError("refused", prompt_tokens=40_000, window=8192)
+    captured: dict[str, Any] = {}
+
+    class FakeLLM:
+        def generate_meeting_notes(self, transcript, speaker_mapping, **kwargs):
+            raise refusal
+
+        def generate_meeting_notes_in_parts(
+            self, transcript, speaker_mapping, *, overflow, timeout, **kwargs
+        ):
+            captured["overflow"] = overflow
+            captured["timeout"] = timeout
+            captured["user_notes"] = kwargs["user_notes"]
+            return "## Summary\nCombined notes."
+
+    monkeypatch.setattr(tasks_module, "get_sync_session", lambda: Session(engine))
+    monkeypatch.setattr(
+        "backend.processing.llm_backends.factory.get_llm_backend",
+        lambda *args, **kwargs: FakeLLM(),
+    )
+
+    verification_engine = create_engine(str(engine.url), future=True)
+    try:
+        _run_generate_notes_task(engine)
+
+        with Session(verification_engine) as session:
+            row = session.exec(
+                text(
+                    "SELECT notes, notes_status FROM transcripts WHERE transcripts.id = 1"
+                )
+            ).one()
+
+        assert row == ("## Summary\nCombined notes.", "completed")
+        assert captured["overflow"] is refusal
+        assert captured["timeout"] == 300
+        assert captured["user_notes"] == "Remember the launch date"
     finally:
         verification_engine.dispose()
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from backend.utils.chat_prompt import (
+    TranscriptExcerpts,
     anthropic_cached_system,
     build_chat_context,
     build_chat_messages,
@@ -35,6 +36,26 @@ def test_chat_context_states_a_missing_transcript_instead_of_quoting_one() -> No
     assert build_chat_context(NOTES, TRANSCRIPT).endswith(
         f"# Full Diarized Transcript:\n{TRANSCRIPT}\n"
     )
+
+
+def test_excerpts_are_labelled_as_excerpts_and_never_as_the_full_transcript() -> None:
+    excerpts = TranscriptExcerpts(
+        ranges=((1.0, 5.0),), text=f"[...]\n{TRANSCRIPT}\n[...]"
+    )
+    context = build_chat_context(NOTES, excerpts)
+
+    assert "# Full Diarized Transcript:" not in context
+    assert "excerpts from the diarized transcript" in context
+    assert "# Transcript Excerpts:\nThis meeting is too long" in context
+    assert context.endswith(f"[...]\n{TRANSCRIPT}\n[...]\n")
+
+
+def test_no_excerpts_tells_the_model_to_answer_from_the_notes() -> None:
+    context = build_chat_context(NOTES, TranscriptExcerpts(ranges=()))
+
+    assert "# Transcript Excerpts:" not in context
+    assert "no passages of it could be selected" in context
+    assert "Answer from the meeting notes above" in context
 
 
 def test_build_chat_messages_maps_history_roles_and_puts_question_last() -> None:

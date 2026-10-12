@@ -11,14 +11,44 @@ user/assistant role alternation clean.
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from dataclasses import dataclass
+from typing import Any, Optional, Union
 
 NO_TRANSCRIPT_SECTION = """# Transcript:
 This meeting has no transcript. If a question needs one, say that the transcript is not available.
 """
 
+EXCERPTS_PREAMBLE = """This meeting is too long to include its full transcript, so only the passages most relevant to the question are below, in time order, with [...] where passages were left out. The meeting notes above cover the whole meeting. If neither the notes nor these passages answer the question, say so, and do not guess at what the rest of the transcript contains."""
 
-def _transcript_section(diarized_transcript: str | None) -> str:
+NO_EXCERPTS_PREAMBLE = """This meeting is too long to include its full transcript, and no passages of it could be selected for this question. Answer from the meeting notes above, and say so when they do not cover the question."""
+
+
+@dataclass(frozen=True)
+class TranscriptExcerpts:
+    """Passages of a transcript too long to send whole, chosen for one question.
+
+    Meeting Chat sends these in place of the transcript after the provider
+    refused the whole meeting. ``ranges`` are (start, end) times in seconds,
+    most relevant first. A backend reads the passages from the transcript as
+    it is at that moment and fills ``text`` before building the prompt (see
+    ``LLMBackend._chat_transcript``).
+    """
+
+    ranges: tuple[tuple[float, float], ...]
+    text: str = ""
+
+
+ChatTranscript = Union[str, TranscriptExcerpts, None]
+
+
+def _transcript_section(diarized_transcript: ChatTranscript) -> str:
+    if isinstance(diarized_transcript, TranscriptExcerpts):
+        if not diarized_transcript.text:
+            return f"# Transcript:\n{NO_EXCERPTS_PREAMBLE}\n"
+        return (
+            f"# Transcript Excerpts:\n{EXCERPTS_PREAMBLE}\n\n"
+            f"{diarized_transcript.text}\n"
+        )
     # A missing transcript is stated as such, never passed off as transcript
     # text, so the model cannot quote a status message as something said.
     if not diarized_transcript:
@@ -26,13 +56,17 @@ def _transcript_section(diarized_transcript: str | None) -> str:
     return f"# Full Diarized Transcript:\n{diarized_transcript}\n"
 
 
-def build_chat_context(meeting_notes: str, diarized_transcript: str | None) -> str:
-    """Stable, cacheable chat context: instructions, notes, and full transcript."""
-    sources = (
-        "meeting notes, full diarized transcript,"
-        if diarized_transcript
-        else "meeting notes"
-    )
+def _sources(diarized_transcript: ChatTranscript) -> str:
+    if isinstance(diarized_transcript, TranscriptExcerpts):
+        return "meeting notes, excerpts from the diarized transcript,"
+    if diarized_transcript:
+        return "meeting notes, full diarized transcript,"
+    return "meeting notes"
+
+
+def build_chat_context(meeting_notes: str, diarized_transcript: ChatTranscript) -> str:
+    """Stable, cacheable chat context: instructions, notes, and the transcript."""
+    sources = _sources(diarized_transcript)
     return f"""
 You are a helpful AI assistant. You have access to the following {sources} and potentially extracted context from related documents. Use this information to answer the user's question as accurately as possible. If the answer is not present, say so.
 
@@ -49,7 +83,7 @@ When an answer compares several items across the same fields, present it as a Ma
 
 
 def build_chat_prompt(
-    user_question: str, meeting_notes: str, diarized_transcript: str | None
+    user_question: str, meeting_notes: str, diarized_transcript: ChatTranscript
 ) -> str:
     """Single-string chat prompt (context + question) for providers without caching."""
     return (

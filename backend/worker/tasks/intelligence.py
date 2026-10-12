@@ -1,4 +1,5 @@
 from backend.models.transcript import TRANSCRIPTION_FAILED_NOTES_MESSAGE
+from backend.utils.context_window import ContextWindowExceededError
 
 from .constants import *
 
@@ -104,15 +105,32 @@ def generate_notes_task(self, recording_id: int, notes_template_id: int | None =
             user_id=recording.user_id,
             explicit_template_id=notes_template_id,
         )
-        notes = llm.generate_meeting_notes(
-            transcript_text,
-            speaker_map,
-            timeout=300,
-            user_notes=transcript.user_notes,
-            meeting_context=_resolve_meeting_event_context(session, recording),
-            output_language_instruction=language_preferences.notes_language_instruction,
-            notes_context=notes_context,
-        )
+        notes_arguments = {
+            "user_notes": transcript.user_notes,
+            "meeting_context": _resolve_meeting_event_context(session, recording),
+            "output_language_instruction": language_preferences.notes_language_instruction,
+            "notes_context": notes_context,
+        }
+        try:
+            notes = llm.generate_meeting_notes(
+                transcript_text, speaker_map, timeout=300, **notes_arguments
+            )
+        except ContextWindowExceededError as overflow:
+            # Reached only when the secondary provider, if any, also failed on
+            # the whole meeting. See backend.utils.long_meeting_notes.
+            logger.info(
+                "Recording %s is too long for one call; generating its notes "
+                "in parts: %s",
+                recording_id,
+                overflow,
+            )
+            notes = llm.generate_meeting_notes_in_parts(
+                transcript_text,
+                speaker_map,
+                overflow=overflow,
+                timeout=300,
+                **notes_arguments,
+            )
 
         # Save Notes
         transcript.notes = notes

@@ -26,6 +26,8 @@ from backend.models.tag import RecordingTag
 from backend.models.transcript import Transcript
 from backend.models.user import User
 from backend.processing.text_embedding_version import TEXT_EMBEDDING_VERSION
+from backend.utils.chat_prompt import TranscriptExcerpts
+from backend.utils.context_window import ContextWindowExceededError
 from backend.utils.llm_config import CLI_PROVIDER, resolve_llm_config_async
 from backend.utils.meeting_notes import escape_prompt_attribute
 
@@ -39,6 +41,9 @@ CHAT_TRANSCRIPT_CHUNK_BUDGET = 5
 # smaller count carries considerably more content than the old shared pool of
 # five did.
 CHAT_DOCUMENT_CHUNK_BUDGET = 4
+# Passages of this meeting's own transcript considered for a meeting too long
+# to send whole. The backend keeps the most relevant that fit its window.
+CHAT_EXCERPT_CANDIDATES = 40
 
 logger = logging.getLogger(__name__)
 
@@ -118,7 +123,8 @@ def _chat_retrieval_filters(recording_id: int, tag_ids: list[int], user_id: int)
     carry text and speaker names the transcript no longer has, and the model
     would see both versions. Transcript excerpts therefore come only from the
     other meetings a tag widens the search to; attached documents come from
-    this meeting and from those.
+    this meeting and from those. A meeting too long to send whole is the
+    exception, handled by ``_transcript_excerpts``.
     """
     is_document = ContextChunk.document_id.is_not(None)
     if not tag_ids:
@@ -138,6 +144,53 @@ def _chat_retrieval_filters(recording_id: int, tag_ids: list[int], user_id: int)
         is_document,
     )
     return transcript_filter, document_filter
+
+
+def _excerpt_ranges(metas) -> tuple[tuple[float, float], ...]:
+    """The (start, end) times of the transcript chunks among ``metas``, in order.
+
+    Notes chunks share the rows a transcript search returns and carry no times.
+    """
+    ranges = [
+        (float(meta["start"]), float(meta["end"]))
+        for meta in metas
+        if isinstance(meta, dict)
+        and meta.get("source") == "transcript"
+        and isinstance(meta.get("start"), (int, float))
+        and isinstance(meta.get("end"), (int, float))
+    ]
+    return tuple(ranges[:CHAT_EXCERPT_CANDIDATES])
+
+
+async def _transcript_excerpts(
+    recording_id: int, query_embedding: list[float] | None
+) -> TranscriptExcerpts:
+    """Where this meeting's passages most relevant to the question are.
+
+    For a meeting the provider refused whole. The search index finds the
+    passages, and only their times are kept: the backend reads the lines at
+    those times from the transcript as it is now, so an edit or a rename made
+    since the index was built still shows. Without a query embedding or an
+    index, no passages are chosen and chat answers from the notes.
+    """
+    if query_embedding is None:
+        return TranscriptExcerpts(ranges=())
+    try:
+        async with async_session_maker() as session:
+            stmt = (
+                select(ContextChunk.meta)
+                .where(ContextChunk.recording_id == recording_id)
+                .where(ContextChunk.document_id.is_(None))
+                .where(ContextChunk.embedding_version == TEXT_EMBEDDING_VERSION)
+                .order_by(ContextChunk.embedding.cosine_distance(query_embedding))
+                # Over-fetch, so notes chunks cannot crowd out the transcript.
+                .limit(CHAT_EXCERPT_CANDIDATES * 2)
+            )
+            metas = (await session.execute(stmt)).scalars().all()
+    except Exception as e:  # noqa: BLE001 - chat still answers from the notes
+        logger.error(f"Transcript excerpt search failed: {e}")
+        return TranscriptExcerpts(ranges=())
+    return TranscriptExcerpts(ranges=_excerpt_ranges(metas))
 
 
 @router.post("/{recording_id}/chat")
@@ -202,6 +255,7 @@ async def chat_with_meeting(
 
     # --- RAG Context Retrieval ---
     context_text = ""
+    query_embedding = None
     relevant_chunks = []
     transcript_chunks = []
     document_chunks = []
@@ -382,27 +436,51 @@ async def chat_with_meeting(
         logger.error(f"Failed to initialize LLM backend: {e}")
         raise HTTPException(status_code=500, detail="Failed to initialize AI service")
 
+    def ask(diarized_transcript: TranscriptExcerpts | None):
+        # None: the backend reads the whole transcript itself via recording_id.
+        return llm_backend.ask_question_streaming(
+            user_question=augmented_message,
+            meeting_notes=meeting_notes,
+            diarized_transcript=diarized_transcript,
+            conversation_history=formatted_history,
+            recording_id=recording.id,
+        )
+
     # 5. Define Streaming Generator
     async def stream_generator():
         full_response = ""
+        answered = False
+        excerpts: TranscriptExcerpts | None = None
         try:
-            generator = llm_backend.ask_question_streaming(
-                user_question=augmented_message,
-                meeting_notes=meeting_notes,
-                diarized_transcript=None,  # Will be fetched inside using recording_id
-                conversation_history=formatted_history,
-                recording_id=recording.id,
-            )
-
-            # Iterate over the generator response asynchronously using threadpool
-            # to prevent blocking the asyncio event loop
-            async for chunk in iterate_in_threadpool(generator):
-                if isinstance(chunk, dict) and chunk.get("type") == "notes_update":
-                    yield f"event: notes_update\ndata: {json.dumps({'status': 'success'})}\n\n"
-                else:
-                    full_response += str(chunk)
-                    # Yield SSE format
-                    yield f"data: {json.dumps({'token': str(chunk)})}\n\n"
+            generator = ask(None)
+            while True:
+                try:
+                    # Iterate over the generator response asynchronously using
+                    # threadpool to prevent blocking the asyncio event loop
+                    async for chunk in iterate_in_threadpool(generator):
+                        answered = True
+                        if (
+                            isinstance(chunk, dict)
+                            and chunk.get("type") == "notes_update"
+                        ):
+                            yield f"event: notes_update\ndata: {json.dumps({'status': 'success'})}\n\n"
+                        else:
+                            full_response += str(chunk)
+                            # Yield SSE format
+                            yield f"data: {json.dumps({'token': str(chunk)})}\n\n"
+                    break
+                except ContextWindowExceededError as overflow:
+                    # Refused before any text, by every provider configured:
+                    # ask again from the passages relevant to the question.
+                    if answered or excerpts is not None:
+                        raise
+                    logger.info(
+                        "Meeting %s is too long for chat; answering from excerpts: %s",
+                        recording.id,
+                        overflow,
+                    )
+                    excerpts = await _transcript_excerpts(recording.id, query_embedding)
+                    generator = ask(excerpts)
 
         except Exception as e:  # noqa: BLE001
             logger.error(f"Streaming error: {e}")
