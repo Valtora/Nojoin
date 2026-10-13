@@ -118,7 +118,7 @@ def _create_test_schema(sync_connection) -> None:
             else:
                 try:
                     column.type.compile(dialect=sqlite_dialect)
-                except Exception:  # noqa: BLE001 - Postgres-only type on SQLite
+                except Exception:  # noqa: BLE001 -- boundary: Postgres-only type on SQLite
                     restore.append((column, "type", column.type))
                     column.type = JSON()
     try:

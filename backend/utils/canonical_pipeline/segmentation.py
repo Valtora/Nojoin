@@ -90,7 +90,7 @@ def refine_recording_utterances_via_segmentation(
             SEGMENTATION_MODEL,
             refine_utterance_via_segmentation,
         )
-    except Exception as exc:  # pragma: no cover - import error path  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 -- boundary: importing pyannote can fail in several ways; refinement is optional  # pragma: no cover
         logger.warning(
             "Segmentation refinement module unavailable for recording %s: %s",
             recording_id,
@@ -128,7 +128,7 @@ def refine_recording_utterances_via_segmentation(
                 device_str=device_str,
                 hf_token=hf_token,
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001 -- boundary: one utterance failing must not stop refinement of the rest
             logger.warning(
                 "Segmentation refinement failed for utterance %s: %s",
                 utterance.public_id,

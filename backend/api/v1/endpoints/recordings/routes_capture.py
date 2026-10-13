@@ -102,7 +102,7 @@ def _record_finalize_capture_metrics(
             payload=payload,
             log=logger,
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 -- boundary: metrics must never fail a finalise
         logger.warning(
             "Failed to record finalize capture metrics for recording %s: %s",
             recording.id,
@@ -156,7 +156,7 @@ async def pause_upload(
                 payload={"public_id": recording.public_id},
                 log=logger,
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001 -- boundary: metrics must never fail a pause
             logger.warning(
                 "Failed to record pause metric for recording %s: %s",
                 recording.id,
@@ -256,7 +256,7 @@ async def upload_segment(
             await db.commit()
         except HTTPException:
             raise
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 -- boundary: the partial segment is removed and the failure becomes one sanitised 500
             try:
                 if segment_path.exists():
                     segment_path.unlink()
@@ -282,7 +282,7 @@ async def upload_segment(
             },
             log=logger,
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 -- boundary: metrics must never fail an upload
         logger.warning(
             "Failed to record audio chunk upload metric for recording %s segment %s: %s",
             recording.id,
@@ -298,7 +298,7 @@ async def upload_segment(
                 "backend.processing.live_transcribe.transcribe_segment_live_task",
                 args=[recording.id, sequence],
             )
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 -- boundary: live transcription is best-effort; the segment is still stored
             logger.warning(
                 "Failed to dispatch live transcription task for recording %s segment %s: %s",
                 recording.id,
@@ -311,7 +311,7 @@ async def upload_segment(
                 "backend.processing.segment_transcode.transcode_segment_task",
                 args=[recording.id, sequence],
             )
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 -- boundary: transcoding is retried at finalise; the segment is still stored
             logger.warning(
                 "Failed to dispatch segment transcode task for recording %s segment %s: %s",
                 recording.id,
@@ -483,7 +483,7 @@ async def finalize_upload(
             failed_root = recordings_module.move_recording_upload_to_failed(
                 recording.id, logger=logger
             )
-        except Exception as move_error:  # noqa: BLE001
+        except Exception as move_error:  # noqa: BLE001 -- boundary: the move is cleanup; the original error is what the client needs
             logger.error(f"Failed to move segments to failed dir: {move_error}")
         await recordings_module._mark_recording_audio_chunks_failed(
             db,
@@ -502,13 +502,13 @@ async def finalize_upload(
             db, recording, str(exc.detail)
         )
         raise
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 -- boundary: any failure to build the master audio is recorded on the recording and reported
         failed_root: Path | None = None
         try:
             failed_root = recordings_module.move_recording_upload_to_failed(
                 recording.id, logger=logger
             )
-        except Exception as move_error:  # noqa: BLE001
+        except Exception as move_error:  # noqa: BLE001 -- boundary: the move is cleanup; the original error is what the client needs
             logger.error(f"Failed to move segments to failed dir: {move_error}")
         await recordings_module._mark_recording_audio_chunks_failed(
             db,
@@ -653,7 +653,7 @@ async def discard_upload(
             recordings_module.celery_app.control.revoke(
                 recording.celery_task_id, terminate=True
             )
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 -- boundary: a revoke that cannot reach the broker must not block the delete
             pass
 
     recordings_module.delete_recording_artifacts(

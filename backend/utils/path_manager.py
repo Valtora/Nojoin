@@ -415,7 +415,7 @@ class PathManager:
                             logger.info(
                                 f"Migrated {file_type}: {old_path} -> {new_path}"
                             )
-                        except Exception as e:  # noqa: BLE001
+                        except OSError as e:
                             logger.error(f"Failed to migrate {file_type}: {e}")
                             return False
 
@@ -427,7 +427,7 @@ class PathManager:
 
             return False
 
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 -- boundary: migration is best-effort; a failure leaves the old files where they were
             logger.error(f"Migration failed: {e}")
             return False
 
@@ -468,9 +468,9 @@ class PathManager:
 
                     removed += 1
                     logger.info(f"Deleted old temporary entry: {p}")
-                except Exception as e:  # noqa: BLE001
+                except OSError as e:
                     logger.warning(f"Failed to delete old temporary entry {p}: {e}")
-        except Exception as e:  # noqa: BLE001
+        except OSError as e:
             logger.warning(f"Error during temp file cleanup: {e}")
 
         return removed

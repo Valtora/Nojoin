@@ -172,7 +172,7 @@ async def update_segment_speaker(
                         "backend.worker.tasks.update_speaker_embedding_task",
                         args=[recording.id, start, end, target_speaker_id],
                     )
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 -- boundary: the embedding update is a courtesy; the speaker change was saved
             logger.error(f"Failed to dispatch embedding update task: {e}")
 
         return {"status": "success", "speaker": refreshed_segment.get("speaker")}
@@ -413,7 +413,7 @@ async def update_segment_speaker(
                         target_speaker_id,
                     ],
                 )
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 -- boundary: the embedding update is a courtesy; the speaker change was saved
         logger.error(f"Failed to dispatch embedding update task: {e}")
 
     return {"status": "success", "speaker": target_label}

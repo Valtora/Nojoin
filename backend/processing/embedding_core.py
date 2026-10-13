@@ -327,7 +327,7 @@ def extract_embeddings(
                     unit_embedding = _crop_embedding(model, audio_path, seg)
                     if unit_embedding is not None:
                         speaker_embeddings.append(unit_embedding)
-                except Exception as e:  # noqa: BLE001
+                except Exception as e:  # noqa: BLE001 -- boundary: one crop failing must not lose the speaker's other crops
                     logger.warning(
                         f"Failed to extract embedding for speaker {label} segment {seg}: {e}"
                     )
@@ -405,7 +405,7 @@ def extract_embedding_for_segments(
                 unit_embedding = _crop_embedding(model, audio_path, seg)
                 if unit_embedding is not None:
                     speaker_embeddings.append(unit_embedding)
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:  # noqa: BLE001 -- boundary: one crop failing must not lose the speaker's other crops
                 logger.warning(
                     f"Failed to extract embedding for segment ({seg.start:.2f}, {seg.end:.2f}): {e}"
                 )

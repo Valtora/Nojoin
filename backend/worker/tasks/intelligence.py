@@ -369,7 +369,7 @@ def infer_speakers_task(self, recording_id: int):
         try:
             recording = session.get(Recording, recording_id)
             _complete_speaker_inference_task(session, recording)
-        except Exception as db_err:  # noqa: BLE001
+        except Exception as db_err:  # noqa: BLE001 -- boundary: the status reset is best-effort after the real failure was logged
             logger.error(f"Failed to revert recording status: {db_err}")
 
 
@@ -853,7 +853,7 @@ def generate_meeting_intelligence_task(self, recording_id: int):
             "Generated meeting intelligence on the IO lane for recording %s",
             recording_id,
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 -- boundary: intelligence is optional on this lane; the failure is logged with its traceback
         logger.error(
             "Failed to generate meeting intelligence on the IO lane for recording %s: %s",
             recording_id,
@@ -921,7 +921,7 @@ def generate_notes_structure_task(self, job_id: str, user_id: int, brief: str) -
                 "sections": structure.sections,
             },
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 -- boundary: any failure is published to the job so the client stops waiting
         logger.error("Notes structure generation failed for job %s: %s", job_id, exc)
         publish_job(job_id, {"status": STATUS_ERROR, "error": str(exc)})
 

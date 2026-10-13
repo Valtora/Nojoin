@@ -100,7 +100,7 @@ def _insert_row(ctx: _RowContext):
         with ctx.session.begin_nested():
             ctx.session.add(instance)
             ctx.session.flush()  # To get the new ID
-    except Exception as insert_err:  # noqa: BLE001
+    except Exception as insert_err:  # noqa: BLE001 -- boundary: one bad row is counted and skipped inside its savepoint
         logger.error(
             f"Failed to insert restored {ctx.table_name} row "
             f"(old_id={ctx.old_id}): {insert_err}. Skipping."
@@ -208,7 +208,7 @@ def _restore_table(
 
     try:
         data = json.loads(zipf.read(member))
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 -- boundary: an unreadable member is logged and skipped; the rest still restores
         logger.error(f"Failed to read/parse {member}: {e}")
         return 0
 

@@ -53,7 +53,7 @@ async def _acquire_restore_lock(job_id: str) -> bool:
         )
         await client.aclose()
         return bool(acquired)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 -- boundary: the lock store being down must not refuse every restore
         logger.warning("Restore lock unavailable, proceeding without it: %s", e)
         return True
 
@@ -63,7 +63,7 @@ async def _release_restore_lock() -> None:
         client = redis.from_url(REDIS_URL, decode_responses=True)
         await client.delete(RESTORE_LOCK_KEY)
         await client.aclose()
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 -- boundary: the lock also expires on its TTL, so a failed release is not fatal
         logger.warning("Failed to release restore lock: %s", e)
 
 
@@ -148,7 +148,7 @@ async def export_backup(
 
         await register_task_ownership(db, task.id, current_user.id)
         return {"task_id": task.id}
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 -- boundary: a queue failure becomes one sanitised 500
         raise sanitized_http_exception(
             logger=logger,
             status_code=500,
@@ -193,7 +193,7 @@ async def get_export_status(task_id: str):
             }
 
         return response
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 -- boundary: result-backend errors share no base class; all become one sanitised 500
         raise sanitized_http_exception(
             logger=logger,
             status_code=500,
@@ -237,7 +237,7 @@ async def download_export(task_id: str, background_tasks: BackgroundTasks):
 
     except HTTPException:
         raise
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 -- boundary: any failure to serve the archive becomes one sanitised 500
         raise sanitized_http_exception(
             logger=logger,
             status_code=500,
@@ -308,7 +308,7 @@ async def import_backup(
 
         except HTTPException:
             raise
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 -- boundary: the temp file is removed and the failure becomes one sanitised 500
             try:
                 if temp_path.exists():
                     os.unlink(temp_path)
@@ -441,7 +441,7 @@ async def upload_chunk(upload_id: str, chunk_index: int, file: UploadFile = File
         return {"status": "ok", "chunk_index": chunk_index}
     except HTTPException:
         raise
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 -- boundary: any failure to store the chunk becomes one sanitised 500
         raise sanitized_http_exception(
             logger=logger,
             status_code=500,
@@ -494,7 +494,7 @@ async def complete_upload(
         # A deliberate client-error response (e.g. 400) must not be re-wrapped
         # into a generic 500 by the catch-all below.
         raise
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 -- boundary: the assembled file is removed and the failure becomes one sanitised 500
         if final_path.exists():
             os.remove(final_path)
         raise sanitized_http_exception(

@@ -291,7 +291,7 @@ class MCPAuthMiddleware:
             try:
                 async with async_session_maker() as db:
                     await touch_grant_last_used(db, grant_id)
-            except Exception:  # noqa: BLE001 - usage telemetry must never 500
+            except Exception:  # noqa: BLE001 -- boundary: usage telemetry must never 500
                 logger.warning("Failed to record MCP grant usage.", exc_info=True)
 
         context_token = current_mcp_user.set(user)

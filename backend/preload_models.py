@@ -107,7 +107,7 @@ def _download_file(
                             resume_header = {"Range": f"bytes={downloaded}-"}
                             file_mode = "ab"
                             logger.info(f"Resuming download from byte {downloaded}")
-                except Exception as e:  # noqa: BLE001
+                except Exception as e:  # noqa: BLE001 -- boundary: any failure to inspect the partial download restarts it
                     logger.warning(
                         f"Could not check file size: {e}. Restarting download."
                     )
@@ -140,7 +140,7 @@ def _download_file(
                             )
                             os.remove(part_path)
                             downloaded = 0
-                except Exception as e:  # noqa: BLE001
+                except Exception as e:  # noqa: BLE001 -- boundary: any failure to inspect the partial download restarts it
                     logger.warning(
                         f"Could not check file size: {e}. Restarting download."
                     )
@@ -259,7 +259,7 @@ def _release_validation_caches() -> None:
         try:
             if torch_module.cuda.is_available():
                 torch_module.cuda.empty_cache()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001 -- boundary: CUDA cache release is housekeeping; a torch error must not fail preparation
             logger.debug("CUDA cache cleanup skipped after model preparation: %s", exc)
 
 

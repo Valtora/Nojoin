@@ -71,7 +71,7 @@ class ChatStreamPublisher:
     def close(self) -> None:
         try:
             self._client.close()
-        except Exception:  # noqa: BLE001 - best effort on teardown
+        except Exception:  # noqa: BLE001 -- boundary: closing the relay client is best-effort teardown
             pass
 
 

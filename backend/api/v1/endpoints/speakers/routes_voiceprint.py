@@ -98,7 +98,7 @@ async def extract_voiceprint(
     )
     try:
         embedding = await run_in_threadpool(task.get, timeout=120)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 -- boundary: task.get re-raises whatever the worker raised; all of it is a 504 here
         logger.error(f"Timeout or error extracting voiceprint: {e}")
         raise HTTPException(
             status_code=504,
@@ -382,7 +382,7 @@ async def extract_all_voiceprints(
         )
         try:
             embedding = await run_in_threadpool(task.get, timeout=120)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 -- boundary: task.get re-raises whatever the worker raised; the batch records the failure and continues
             logger.error(f"Timeout or error extracting voiceprint in batch: {e}")
             results.append(
                 {

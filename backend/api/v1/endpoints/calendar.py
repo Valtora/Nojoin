@@ -132,7 +132,7 @@ async def start_calendar_authorisation_redirect(
         return RedirectResponse(
             _build_account_redirect(status_value, provider), status_code=303
         )
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 -- boundary: OAuth start failures are shown on the account page, not as a 500
         return RedirectResponse(
             _build_account_redirect("error", provider), status_code=303
         )
@@ -169,7 +169,7 @@ async def calendar_authorisation_callback(
 
     try:
         await handle_callback(db, provider, current_user, code, state)
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 -- boundary: callback failures are shown on the account page, not as a 500
         return RedirectResponse(
             _build_account_redirect("error", provider), status_code=303
         )
@@ -268,7 +268,7 @@ async def google_calendar_webhook(
             channel_token=request.headers.get("X-Goog-Channel-Token"),
             resource_state=request.headers.get("X-Goog-Resource-State"),
         )
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 -- boundary: the webhook must always be acknowledged or Google retires the channel
         logger.warning("Failed to process Google calendar webhook", exc_info=True)
     # Always acknowledge so Google does not mark the channel as failing.
     return Response(status_code=200)
@@ -319,12 +319,12 @@ async def microsoft_calendar_webhook(
         return Response(status_code=413)
     try:
         payload = json.loads(body)
-    except Exception:  # noqa: BLE001
+    except ValueError:
         payload = None
     if payload is not None:
         try:
             await handle_microsoft_notification(db, payload)
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 -- boundary: the webhook must always be acknowledged or Graph retires the subscription
             logger.warning(
                 "Failed to process Microsoft calendar webhook", exc_info=True
             )

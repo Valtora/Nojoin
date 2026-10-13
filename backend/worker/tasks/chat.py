@@ -76,13 +76,13 @@ def meeting_chat_task(
             )
             session.commit()
         publisher.publish_done()
-    except Exception as exc:  # noqa: BLE001 - relay a friendly error to the client
+    except Exception as exc:  # noqa: BLE001 -- boundary: relay a friendly error to the client
         logger.error(  # noqa: F405
             "meeting_chat_task failed for recording %s: %s", recording_id, exc
         )
         try:
             session.rollback()
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 -- boundary: the session is being abandoned; a failed rollback changes nothing
             pass
         publisher.publish_error(friendly_chat_error(exc))
         publisher.publish_done()

@@ -256,6 +256,9 @@ jobs:
       - name: Check source file size
         run: python scripts/check_file_size.py
 
+      - name: Check blind-except justifications
+        run: python scripts/check_blind_excepts.py
+
       - name: Type-check stable boundaries
         run: mypy
 

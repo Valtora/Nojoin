@@ -209,7 +209,7 @@ class CliConversationManager:
         try:
             if current and current != injected_blob:
                 store_codex_auth_blob_sync(user_id, current)
-        except Exception:  # noqa: BLE001 - persistence must not break inference
+        except Exception:  # noqa: BLE001 -- boundary: persistence must not break inference
             logger.exception("Failed to persist refreshed Codex auth for %s", user_id)
         finally:
             try:
@@ -288,7 +288,7 @@ class CliConversationManager:
                         user_id, prompt, access_token, model, timeout, usage_sink
                     ):
                         chunk_queue.put(("chunk", chunk))
-                except Exception as exc:  # noqa: BLE001 - relayed to the consumer
+                except Exception as exc:  # noqa: BLE001 -- boundary: relayed to the consumer
                     chunk_queue.put(("error", exc))
                 finally:
                     chunk_queue.put(("done", None))
@@ -463,7 +463,7 @@ class CliConversationManager:
                 if turn.reading is not None:
                     self._store_rate_limit_reading(session, user_id, turn.reading)
                 session.commit()
-        except Exception:  # noqa: BLE001 - accounting must not break inference
+        except Exception:  # noqa: BLE001 -- boundary: accounting must not break inference
             logger.exception("Failed to record CLI usage for user %s", user_id)
 
     def _increment_daily_usage(

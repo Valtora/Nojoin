@@ -320,7 +320,7 @@ def _run_automatic_meeting_intelligence_stage_impl(
             recording.id,
         )
         return result
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 -- boundary: any failure is recorded on the transcript as a notes error; the recording still completes
         logger.error(
             "Failed to generate automatic meeting intelligence for recording %s: %s",
             recording.id,

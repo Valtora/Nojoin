@@ -196,7 +196,7 @@ def diarize_audio(
                 logger.info(
                     f"Audio file info - samplerate: {f.samplerate}, channels: {f.channels}, duration: {len(f) / f.samplerate:.2f}s"
                 )
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 -- boundary: the file info is logged only
             logger.warning("Could not read audio file info for logging: %s", e)
 
         # The auto-detect path passes no speaker kwargs, so pyannote estimates
@@ -322,5 +322,5 @@ def diarize_audio_with_progress(
     finally:
         try:
             os.remove(output_path)
-        except Exception:  # noqa: BLE001
+        except OSError:
             pass

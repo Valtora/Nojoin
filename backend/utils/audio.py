@@ -146,7 +146,7 @@ def concatenate_binary_files(segment_paths: List[str], output_path: str):
             for segment_path in segment_paths:
                 with open(segment_path, "rb") as infile:
                     shutil.copyfileobj(infile, outfile)
-    except Exception as e:  # noqa: BLE001
+    except OSError as e:
         raise RuntimeError(f"Failed to concatenate binary files: {str(e)}")
 
 
@@ -233,7 +233,7 @@ def convert_to_mp3(input_path: str, output_path: str) -> bool:
             f"Failed to convert audio to MP3: {e.stderr.decode() if e.stderr else str(e)}"
         )
         return False
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 -- boundary: any other ffmpeg failure is reported as a failed conversion
         logger.error(f"Unexpected error converting to MP3: {str(e)}")
         return False
 
@@ -255,7 +255,7 @@ def convert_to_wav(input_path: str, output_path: str) -> bool:
             f"Failed to convert audio to WAV: {e.stderr.decode() if e.stderr else str(e)}"
         )
         return False
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 -- boundary: any other ffmpeg failure is reported as a failed conversion
         logger.error(f"Unexpected error converting to WAV: {str(e)}")
         return False
 

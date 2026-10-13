@@ -28,7 +28,7 @@ def _get_redis() -> Optional[redis.Redis]:
         try:
             _redis_client = redis.from_url(REDIS_URL, decode_responses=True)
             _redis_client.ping()
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 -- boundary: Redis is optional for progress reporting; without it nothing is reported
             logger.warning(f"Could not connect to Redis: {e}")
             return None
     return _redis_client
@@ -73,7 +73,7 @@ def set_download_progress(
                 data = json.loads(existing_raw)
                 existing = data.get("progress")
                 existing_stage = data.get("stage")
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 -- boundary: a stale or unreadable record is treated as no previous progress
             existing = None
             existing_stage = None
 
@@ -85,7 +85,7 @@ def set_download_progress(
                 existing_int = int(existing)
                 if write_progress < existing_int:
                     write_progress = existing_int
-            except Exception:  # noqa: BLE001
+            except (TypeError, ValueError):
                 # If parsing fails, fall back to provided value
                 pass
 
@@ -101,7 +101,7 @@ def set_download_progress(
         }
         r.set(PROGRESS_KEY, json.dumps(data), ex=PROGRESS_TTL)
         return True
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 -- boundary: progress reporting must never fail the download
         logger.error(f"Failed to set download progress: {e}")
         return False
 
@@ -122,7 +122,7 @@ def get_download_progress() -> Optional[dict]:
         if data:
             return json.loads(data)
         return None
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 -- boundary: progress reporting must never fail the download
         logger.error(f"Failed to get download progress: {e}")
         return None
 
@@ -141,7 +141,7 @@ def clear_download_progress() -> bool:
     try:
         r.delete(PROGRESS_KEY)
         return True
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 -- boundary: progress reporting must never fail the download
         logger.error(f"Failed to clear download progress: {e}")
         return False
 

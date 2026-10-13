@@ -289,7 +289,7 @@ class OllamaLLMBackend(LLMBackend):
     def list_models(self) -> List[str]:
         try:
             return self._fetch_model_names()
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 -- boundary: listing is advisory; an unreachable server lists nothing
             logger.error(f"Ollama API error (list models): {e}")
             return []
 
@@ -311,7 +311,7 @@ class OllamaLLMBackend(LLMBackend):
             return None
         try:
             capabilities = self._model_facts().get("capabilities")
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 -- boundary: the capability probe is advisory; unknown means try it and see
             logger.debug(f"Ollama capability probe failed for {self.model}: {e}")
             return None
         if not isinstance(capabilities, list):
@@ -349,7 +349,7 @@ class OllamaLLMBackend(LLMBackend):
             data = resp.json()
             self._raise_if_truncated(data)
             return (data.get("message") or {}).get("content", "")
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 -- boundary: HTTP and parse errors share no base class; vision refusals are told apart, the rest become one RuntimeError
             if is_vision_unsupported_error(e):
                 raise VisionUnsupportedError(
                     f"The selected Ollama model ({self.model}) does not accept images. "
@@ -392,7 +392,7 @@ class OllamaLLMBackend(LLMBackend):
             self._raise_if_truncated(response_json)
             text = response_json.get("message", {}).get("content", "")
             return self.parse_speaker_inference_result(text, eligible_labels)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 -- boundary: HTTP and parse errors share no base class; every failure becomes one actionable error
             raise self._api_error("speaker suggestions", e)
 
     def infer_speakers(
@@ -451,7 +451,7 @@ class OllamaLLMBackend(LLMBackend):
             self._raise_if_truncated(response_json)
             text = response_json.get("message", {}).get("content", "")
             return self.finalise_meeting_notes(self.parse_notes(text), user_notes)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 -- boundary: HTTP and parse errors share no base class; every failure becomes one actionable error
             raise self._api_error("meeting notes", e)
 
     def generate_meeting_intelligence(
@@ -514,7 +514,7 @@ class OllamaLLMBackend(LLMBackend):
                 return self.parse_automatic_meeting_intelligence_result(
                     repair_text, request
                 )
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 -- boundary: HTTP and parse errors share no base class; every failure becomes one actionable error
             raise self._api_error("meeting intelligence", e)
 
     def _complete(self, prompt: str, *, timeout: int) -> str:
@@ -595,7 +595,7 @@ class OllamaLLMBackend(LLMBackend):
                 self._parts_budget(overflow, refused),
             )
             return self.finalise_meeting_notes(self.parse_notes(notes), user_notes)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 -- boundary: HTTP and parse errors share no base class; every failure becomes one actionable error
             raise self._api_error("meeting notes in parts", e)
 
     def generate_meeting_intelligence_in_parts(
@@ -616,7 +616,7 @@ class OllamaLLMBackend(LLMBackend):
                 partial(self._complete, timeout=timeout),
                 self._parts_budget(overflow, refused),
             )
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 -- boundary: HTTP and parse errors share no base class; every failure becomes one actionable error
             raise self._api_error("meeting intelligence in parts", e)
 
     def generate_text(
@@ -641,7 +641,7 @@ class OllamaLLMBackend(LLMBackend):
             response_json = resp.json()
             self._raise_if_truncated(response_json)
             return response_json.get("message", {}).get("content", "")
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 -- boundary: HTTP and parse errors share no base class; every failure becomes one actionable error
             raise self._api_error("text generation", e)
 
     def generate_meeting_edge(
@@ -699,7 +699,7 @@ class OllamaLLMBackend(LLMBackend):
                 self._raise_if_truncated(repair_json)
                 repair_text = repair_json.get("message", {}).get("content", "")
                 return self.parse_meeting_edge_result(repair_text, request)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 -- boundary: HTTP and parse errors share no base class; every failure becomes one actionable error
             raise self._api_error("Meeting Edge", e)
 
     def _chat_json(self, prompt: str, timeout: int) -> str:
@@ -751,7 +751,7 @@ class OllamaLLMBackend(LLMBackend):
                     timeout,
                 )
                 return self.parse_meeting_analysis_result(repair_text, request)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 -- boundary: HTTP and parse errors share no base class; every failure becomes one actionable error
             raise self._api_error("meeting analysis", e)
 
     def _chat_excerpt_bytes(
@@ -850,7 +850,7 @@ class OllamaLLMBackend(LLMBackend):
             response_json = resp.json()
             self._raise_if_truncated(response_json)
             return response_json.get("message", {}).get("content", "")
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 -- boundary: HTTP and parse errors share no base class; every failure becomes one actionable error
             raise self._api_error("chat", e)
 
     def ask_question_streaming(
@@ -917,7 +917,7 @@ class OllamaLLMBackend(LLMBackend):
                     except json.JSONDecodeError:
                         pass
             self._raise_if_truncated(final_metadata)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 -- boundary: HTTP and parse errors share no base class; every failure becomes one actionable error
             raise self._api_error("streaming chat", e)
 
     def infer_meeting_title(
@@ -949,7 +949,7 @@ class OllamaLLMBackend(LLMBackend):
             self._raise_if_truncated(response_json)
             text = response_json.get("message", {}).get("content", "")
             return self.parse_title(text)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 -- boundary: HTTP and parse errors share no base class; every failure becomes one actionable error
             raise self._api_error("meeting title", e)
 
     def validate_api_key(self) -> bool:
@@ -958,6 +958,6 @@ class OllamaLLMBackend(LLMBackend):
         try:
             self._fetch_model_names()
             return True
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 -- boundary: any failure means the server did not validate
             logger.error(f"Ollama API validation failed: {e}")
             raise ValueError(f"Ollama API validation failed: {e}")

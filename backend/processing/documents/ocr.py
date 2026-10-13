@@ -82,7 +82,7 @@ def ocr_images(images: Sequence[VisionImage]) -> Optional[str]:
     for index, image in enumerate(images):
         try:
             text = _ocr_one(image)
-        except Exception as e:  # noqa: BLE001 - one unreadable image is survivable
+        except Exception as e:  # noqa: BLE001 -- boundary: one unreadable image is survivable
             logger.warning("OCR failed on image %s: %s", index, e)
             continue
         cleaned = (text or "").strip()

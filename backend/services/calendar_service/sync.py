@@ -180,7 +180,7 @@ async def handle_callback(
     await _refresh_connection_calendars(db, connection, provider_calendars)
     try:
         await sync_connection_in_session(db, connection.id)
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 -- boundary: the connection is saved; the periodic sync retries
         logger.warning(
             "Initial calendar sync failed for connection %s (%s)",
             connection.id,
@@ -311,7 +311,7 @@ async def disconnect_connection(
 
     try:
         await teardown_push_channels_for_connection(db, connection)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 -- boundary: channels expire on their own; the disconnect must still complete
         logger.warning(
             "Failed to stop push channels for connection %s during disconnect: %s",
             connection.id,
@@ -534,7 +534,7 @@ async def sync_connection_in_session(db: AsyncSession, connection_id: int) -> No
         await _reset_connection_requiring_reconnect(db, connection)
         await db.commit()
         return
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 -- boundary: provider and network errors are recorded on the connection, not raised
         logger.warning(
             "Calendar sync failed for connection %s (%s)",
             connection.id,

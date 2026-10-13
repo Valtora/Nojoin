@@ -536,7 +536,7 @@ async def recalibrate_voiceprint(
             emb = await run_in_threadpool(task.get, timeout=120)
             if emb:
                 all_embeddings.append(emb)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 -- boundary: task.get re-raises whatever the worker raised; one recording must not fail recalibration
             logger.error(
                 f"Failed to extract embedding for recalibration (Rec {recording_public_id}): {e}"
             )
@@ -714,7 +714,7 @@ async def split_speaker(
                 emb = await run_in_threadpool(task.get, timeout=60)
                 if emb:
                     new_speaker_embeddings.append(emb)
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:  # noqa: BLE001 -- boundary: task.get re-raises whatever the worker raised; the split continues without the embedding
                 logger.error(
                     f"Failed embedding extract during split (Rec {rec_id}): {e}"
                 )
@@ -784,7 +784,7 @@ async def split_speaker(
                 emb = await run_in_threadpool(task.get, timeout=60)
                 if emb:
                     original_speaker_embeddings.append(emb)
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:  # noqa: BLE001 -- boundary: task.get re-raises whatever the worker raised; the split continues without the embedding
                 logger.error(
                     f"Failed embedding extract for original (Rec {rec_id}): {e}"
                 )

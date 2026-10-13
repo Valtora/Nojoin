@@ -458,7 +458,7 @@ async def _transcode_pending_browser_segments_for_finalize(
             await asyncio.to_thread(
                 transcode_staged_browser_segment, recording_id, sequence
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001 -- boundary: one segment failing is recorded; finalise decides what to do with the rest
             failed_sequences.append(sequence)
             logger.warning(
                 "Failed to transcode pending browser segment %s for recording %s during finalize: %s",

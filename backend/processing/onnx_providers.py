@@ -127,8 +127,7 @@ def verify_gpu_providers(
         # Resolve the providers here too, inside the guard, so a session that objects
         # to being queried cannot take the caller down with it.
         session_providers = [s.get_providers() for s in sessions]
-    except Exception as e:  # noqa: BLE001
-        # Provider verification is diagnostic only and must never break model loading.
+    except Exception as e:  # noqa: BLE001 -- boundary: verification is diagnostic and must never break model loading
         logger.debug(f"{component}: could not inspect ONNX Runtime sessions: {e}")
         return False
 

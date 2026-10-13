@@ -129,7 +129,7 @@ def build_recording_audio_chunk_fields(
             duration_ms = int(
                 round(float(get_audio_duration(str(storage_path)) or 0.0) * 1000.0)
             )
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 -- boundary: the duration is advisory; ffprobe failures must not fail the sync
             duration_ms = 0
 
     sha256 = _sha256_for_path(storage_path)

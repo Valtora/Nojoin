@@ -593,7 +593,7 @@ async def _dispatch_meeting_edge_refresh_for_active_recordings(
         recording_ids = [row[0] for row in result.all()]
         for recording_id in recording_ids:
             await _dispatch_meeting_edge_refresh(recording_id)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 -- boundary: the refresh is a courtesy; the settings were already saved
         logger.warning(
             "Failed to dispatch Meeting Edge refresh after settings update: %s",
             exc,
@@ -646,7 +646,7 @@ async def _save_user_settings(
     if is_admin:
         try:
             _persist_install_wide_ai_settings(update_data)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 -- boundary: any failure to write the config file becomes one sanitised 500
             raise sanitized_http_exception(
                 logger=logger,
                 status_code=500,

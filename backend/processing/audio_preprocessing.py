@@ -54,7 +54,7 @@ def validate_audio_file(file_path: str) -> Dict:
         raise AudioFormatError(f"ffprobe failed to analyze {file_path}: {e.stderr}")
     except json.JSONDecodeError:
         raise AudioFormatError(f"ffprobe returned invalid JSON for {file_path}")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 -- boundary: any other ffprobe failure is reported as a validation error
         raise AudioFormatError(f"Validation error for {file_path}: {str(e)}")
 
 
@@ -104,7 +104,7 @@ def repair_audio_file(file_path: str) -> Optional[str]:
         if repaired_path and os.path.exists(repaired_path):
             cleanup_temp_file(repaired_path)
         return None
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 -- boundary: any other repair failure is cleaned up and reported as no repair
         logger.error(f"Unexpected error during audio repair: {e}")
         if repaired_path and os.path.exists(repaired_path):
             cleanup_temp_file(repaired_path)
@@ -136,7 +136,7 @@ def cleanup_temp_file(temp_path: str):
         if temp_path and os.path.exists(temp_path):
             os.remove(temp_path)
             logger.info(f"Deleted temp file: {temp_path}")
-    except Exception as e:  # noqa: BLE001
+    except OSError as e:
         logger.warning(f"Failed to delete temp file {temp_path}: {e}", exc_info=True)
 
 
@@ -373,7 +373,7 @@ def analyze_audio_file(file_path: str) -> Optional[Dict]:
             if format_info.get("size")
             else None,
         }
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 -- boundary: analysis is advisory; any failure answers None
         logger.error(f"Failed to analyze audio file {file_path}: {e}")
         return None
 
@@ -432,7 +432,7 @@ def normalize_audio_levels(
         if temp_path and os.path.exists(temp_path):
             os.remove(temp_path)
         return False
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 -- boundary: any other ffmpeg failure is cleaned up and reported as failed
         logger.error(f"Unexpected error normalizing audio: {e}")
         if temp_path and os.path.exists(temp_path):
             os.remove(temp_path)
@@ -455,6 +455,6 @@ def get_audio_quality_metrics(file_path: str) -> Dict:
             "bitrate": data.get("bitrate"),
             "format": data.get("format"),
         }
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 -- boundary: metrics are advisory; any failure answers an empty dict
         logger.error(f"Failed to get audio metrics: {e}")
         return {}

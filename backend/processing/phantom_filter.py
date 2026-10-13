@@ -237,7 +237,7 @@ def filter_phantom_speakers(
             if len(emb.shape) == 2:
                 emb = np.mean(emb, axis=0)
             established_embeddings[label] = emb
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 -- boundary: one speaker failing to embed must not abort the filter
             logger.warning(
                 f"[PhantomFilter] Could not extract embedding for established speaker {label}: {e}"
             )
@@ -261,7 +261,7 @@ def filter_phantom_speakers(
             emb = np.array(emb)
             if len(emb.shape) == 2:
                 emb = np.mean(emb, axis=0)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 -- boundary: a candidate that cannot be embedded is left as it is
             logger.warning(
                 f"[PhantomFilter] Could not extract embedding for candidate {label}: {e}"
             )

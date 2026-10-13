@@ -134,7 +134,7 @@ async def import_audio(
                 await out_file.write(chunk)
     except HTTPException:
         raise
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 -- boundary: the partial file is removed and the failure becomes one sanitised 500
         if os.path.exists(file_path):
             os.remove(file_path)
         raise sanitized_http_exception(
@@ -150,7 +150,7 @@ async def import_audio(
     duration = 0.0
     try:
         duration = get_audio_duration(file_path)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 -- boundary: the duration is cosmetic; ffprobe failures must not fail the import
         logger.warning(f"Failed to get duration: {e}")
 
     if options.name:
@@ -303,7 +303,7 @@ async def upload_chunked_segment(
             suffix=".part",
         )
         await db.commit()
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 -- boundary: the partial segment is removed and the failure becomes one sanitised 500
         try:
             if segment_path.exists():
                 segment_path.unlink()
@@ -376,7 +376,7 @@ async def finalize_chunked_import(
             recording.duration_seconds = await asyncio.to_thread(
                 get_audio_duration, recording.audio_path
             )
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 -- boundary: the duration is cosmetic; ffprobe failures must not fail the import
             logger.warning(f"Failed to get duration: {e}")
 
         await db.execute(
@@ -403,14 +403,14 @@ async def finalize_chunked_import(
         )
         await _mark_recording_upload_error(db, recording, str(exc.detail))
         raise
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 -- boundary: any failure to assemble the upload is recorded on the recording and reported
         await db.rollback()
         failed_root: Path | None = None
         try:
             failed_root = recordings_module.move_recording_upload_to_failed(
                 recording_pk, logger=logger
             )
-        except Exception as move_error:  # noqa: BLE001
+        except Exception as move_error:  # noqa: BLE001 -- boundary: the move is cleanup; the original error is what the client needs
             logger.error(
                 f"Failed to move failed chunked upload to failed dir: {move_error}"
             )
@@ -486,7 +486,7 @@ async def upload_recording(
             )
         except HTTPException:
             raise
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 -- boundary: any failure to store the file becomes one sanitised 500
             raise sanitized_http_exception(
                 logger=logger,
                 status_code=500,
@@ -507,7 +507,7 @@ async def upload_recording(
     duration = 0.0
     try:
         duration = recordings_module.get_audio_duration(file_path)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 -- boundary: the duration is cosmetic; ffprobe failures must not fail the upload
         logger.warning(f"Failed to get duration: {e}")
 
     name = os.path.splitext(file.filename)[0]

@@ -69,7 +69,7 @@ class _RestoreState:
         if self.progress_callback is not None:
             try:
                 self.progress_callback(progress)
-            except Exception:  # noqa: BLE001 -- progress reporting must never fail a restore
+            except Exception:  # noqa: BLE001 -- boundary: progress reporting must never fail a restore
                 logger.debug("Restore progress callback failed", exc_info=True)
 
     def stage_path(self, member: str) -> str:

@@ -165,7 +165,7 @@ def auto_link_recording(session, recording: Recording) -> None:
             best_event.id,
             best_score,
         )
-    except Exception:  # noqa: BLE001 - linking must never break the pipeline
+    except Exception:  # noqa: BLE001 -- boundary: linking must never break the pipeline
         logger.exception(
             "Auto-linking failed for recording %s", getattr(recording, "id", None)
         )

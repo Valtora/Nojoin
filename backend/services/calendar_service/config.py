@@ -242,7 +242,7 @@ async def update_provider_configuration(
             await dispatch_task(
                 "backend.worker.tasks.renew_calendar_push_channels_task"
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001 -- boundary: the periodic renewal task is the backstop if the queue is down
             logger.warning(
                 "Could not enqueue calendar push reconcile after provider update: %s",
                 exc,

@@ -386,7 +386,7 @@ def cleanup_stale_recording_artifacts(
                     item.unlink()
                 cleaned_count += 1
                 logger.info("Cleaned up old recording storage item: %s", item)
-            except Exception as error:  # noqa: BLE001
+            except OSError as error:
                 logger.error(
                     "Error cleaning stale recording storage item %s: %s", item, error
                 )
