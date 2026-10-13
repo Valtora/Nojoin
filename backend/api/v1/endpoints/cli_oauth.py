@@ -45,7 +45,7 @@ logger = logging.getLogger(__name__)
 
 _STATUS_NOT_CONNECTED = "not_connected"
 
-# Providers a user can connect, in display order (Claude first — the original).
+# Providers a user can connect, in display order.
 SUPPORTED_CLI_PROVIDERS = (
     CliOAuthProvider.CLAUDE_CODE.value,
     CliOAuthProvider.CODEX.value,
@@ -180,7 +180,7 @@ class CliCodexModelsRead(BaseModel):
 # The Claude catalogue is curated, not fetched: a Claude subscription exposes no
 # models endpoint, so there is nothing live to query. Served from the API anyway
 # so the picker reads one source of truth rather than a duplicate hardcoded list
-# in the frontend, which is how the two drifted apart.
+# in the frontend.
 _CLAUDE_MODEL_LABELS = {
     "claude-opus-5": "Claude Opus 5",
     "claude-opus-4-8": "Claude Opus 4.8",

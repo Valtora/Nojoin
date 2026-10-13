@@ -38,7 +38,6 @@ from backend.utils.speaker_name_suggestions import (
 logger = logging.getLogger(__name__)
 
 
-# Helper functions
 async def _get_owned_recording(
     db: AsyncSession, recording_public_id: str, user_id: int
 ) -> Recording:
@@ -51,7 +50,7 @@ async def _get_owned_recording(
 
 
 def _canonical_transcript_writes_enabled() -> bool:
-    # Use speakers_module to support test monkeypatching if needed
+    # Read through speakers_module so tests can monkeypatch config_manager.
     return bool(
         speakers_module.config_manager.get("enable_canonical_transcript_writes", True)
     )
@@ -232,7 +231,6 @@ async def _merge_local_speakers(
             return
         return
 
-    # 1. Find the source and target speaker entries
     statement = select(RecordingSpeaker).where(
         RecordingSpeaker.recording_id == recording_id,
         RecordingSpeaker.diarization_label == source_label,
@@ -248,7 +246,7 @@ async def _merge_local_speakers(
     target_speaker = result.scalar_one_or_none()
 
     if not source_speaker or not target_speaker:
-        # Should not happen if confirmed before calling, but safe to return or log
+        # Callers confirm both speakers first, so a missing one is a no-op.
         return
 
     # Identify aliases for source to catch in transcript
@@ -257,13 +255,11 @@ async def _merge_local_speakers(
         source_aliases.add(source_speaker.local_name)
     if source_speaker.name:
         source_aliases.add(source_speaker.name)
-    # Check global link for alias
     if source_speaker.global_speaker_id:
         gs = await db.get(GlobalSpeaker, source_speaker.global_speaker_id)
         if gs:
             source_aliases.add(gs.name)
 
-    # 2. Update Transcript Segments
     statement = select(Transcript).where(Transcript.recording_id == recording_id)
     result = await db.execute(statement)
     transcript = result.scalar_one_or_none()
@@ -292,7 +288,6 @@ async def _merge_local_speakers(
                     segments=new_segments,
                 )
 
-    # 3. Merge embeddings
     if source_speaker.embedding and target_speaker.embedding:
         target_speaker.embedding = merge_embeddings(
             target_speaker.embedding, source_speaker.embedding, alpha=0.5
@@ -302,14 +297,12 @@ async def _merge_local_speakers(
         target_speaker.embedding = source_speaker.embedding
         db.add(target_speaker)
 
-    # 4. Soft-Merge source speaker (set merged_into_id)
-    # Instead of deleting, we keep it to preserve the merge history for reprocessing
+    # Kept rather than deleted, so the merge history survives reprocessing.
     source_speaker.merged_into_id = target_speaker.id
-    source_speaker.embedding = None  # Clear embedding as it's merged
+    source_speaker.embedding = None
     db.add(source_speaker)
 
 
-# Pydantic schemas/models
 class SpeakerUpdate(BaseModel):
     diarization_label: str
     global_speaker_name: str

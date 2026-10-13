@@ -116,7 +116,6 @@ async def update_tag(
         raise HTTPException(status_code=404, detail="Tag not found")
 
     if tag_update.name is not None:
-        # Check for duplicate name
         if tag_update.name != tag.name:
             stmt = select(Tag).where(
                 Tag.name == tag_update.name, Tag.user_id == current_user.id
@@ -134,7 +133,6 @@ async def update_tag(
     # Use model_fields_set to check for explicit updates, including explicit None
     if "parent_id" in tag_update.model_fields_set:
         new_parent_id = tag_update.parent_id
-        # Prevent circular dependency
         if new_parent_id == tag.id:
             raise HTTPException(status_code=400, detail="Tag cannot be its own parent")
         tag.parent_id = new_parent_id
@@ -154,10 +152,8 @@ async def add_tag_to_recording(
     """
     Add a tag to a recording. Creates the tag if it doesn't exist.
     """
-    # 1. Verify recording exists
     recording = await _get_owned_recording(db, recording_id, current_user.id)
 
-    # 2. Find or Create Tag
     statement = select(Tag).where(
         Tag.name == tag_in.name, Tag.user_id == current_user.id
     )
@@ -170,7 +166,6 @@ async def add_tag_to_recording(
         await db.commit()
         await db.refresh(tag)
 
-    # 3. Check if association exists
     # Use first() instead of scalar_one_or_none() to be robust against existing duplicates
     stmt = select(RecordingTag).where(
         RecordingTag.recording_id == recording.id, RecordingTag.tag_id == tag.id
@@ -202,10 +197,8 @@ async def remove_tag_from_recording(
     """
     Remove a tag from a recording.
     """
-    # Verify recording ownership
     recording = await _get_owned_recording(db, recording_id, current_user.id)
 
-    # 1. Find Tag
     statement = select(Tag).where(Tag.name == tag_name, Tag.user_id == current_user.id)
     result = await db.execute(statement)
     tag = result.scalar_one_or_none()
@@ -213,7 +206,6 @@ async def remove_tag_from_recording(
     if not tag:
         raise HTTPException(status_code=404, detail="Tag not found")
 
-    # 2. Find Association
     stmt = select(RecordingTag).where(
         RecordingTag.recording_id == recording.id, RecordingTag.tag_id == tag.id
     )
@@ -240,7 +232,6 @@ async def delete_tag(
     if not tag or tag.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Tag not found")
 
-    # First, bulk delete all RecordingTag associations for this tag
     await db.execute(delete(RecordingTag).where(RecordingTag.tag_id == tag_id))
 
     await db.delete(tag)
@@ -258,7 +249,6 @@ async def batch_add_tag(
     """
     Add a tag to multiple recordings. Creates the tag if it doesn't exist.
     """
-    # 1. Find or Create Tag
     statement = select(Tag).where(
         Tag.name == batch.tag_name, Tag.user_id == current_user.id
     )
@@ -289,7 +279,6 @@ async def batch_add_tag(
         if recording is None:
             continue
 
-        # Check if link exists
         link_stmt = select(RecordingTag).where(
             RecordingTag.recording_id == recording.id, RecordingTag.tag_id == tag.id
         )
@@ -317,7 +306,6 @@ async def batch_remove_tag(
     """
     Remove a tag from multiple recordings.
     """
-    # 1. Find Tag
     statement = select(Tag).where(
         Tag.name == batch.tag_name, Tag.user_id == current_user.id
     )
@@ -325,7 +313,7 @@ async def batch_remove_tag(
     tag = result.scalar_one_or_none()
 
     if not tag:
-        return {"ok": True, "count": 0}  # Tag doesn't exist, so nothing to remove
+        return {"ok": True, "count": 0}
 
     recordings = await get_recordings_by_public_ids(
         db,
@@ -336,7 +324,6 @@ async def batch_remove_tag(
     if not recording_db_ids:
         return {"ok": True, "count": 0}
 
-    # 2. Remove links
     stmt = select(RecordingTag).where(
         RecordingTag.recording_id.in_(recording_db_ids),
         RecordingTag.tag_id == tag.id,

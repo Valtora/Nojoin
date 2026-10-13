@@ -81,10 +81,8 @@ async def update_segment_speaker(
     Update the speaker for a specific transcript segment.
     Also updates the speaker embedding associations using the audio from this segment.
     """
-    # 1. Fetch Recording and Transcript
     recording = await _get_owned_recording(db, recording_id, current_user.id)
 
-    # Fetch transcript with segments
     stmt = select(Transcript).where(Transcript.recording_id == recording.id)
     result = await db.execute(stmt)
     transcript = result.scalar_one_or_none()
@@ -186,14 +184,12 @@ async def update_segment_speaker(
     if not new_speaker_name:
         raise HTTPException(status_code=400, detail="Speaker name cannot be empty")
 
-    # 2. Resolve Target Speaker
     # Determine the diarization_label to assign to the segment.
 
     target_label = None
     target_recording_speaker = None
 
     # Check if speaker exists in this recording (by name or global name)
-    # Fetch all recording speakers for name comparison
     stmt = (
         select(RecordingSpeaker)
         .where(RecordingSpeaker.recording_id == recording.id)
@@ -353,7 +349,6 @@ async def update_segment_speaker(
         await db.flush()
         target_speaker_id = target_recording_speaker.id
 
-    # 3. Update Transcript Segment
     updated_segments = [dict(entry) for entry in transcript.segments]
     reconcile_segment_assignment(
         updated_segments, segment_index, old_label, target_label
@@ -363,14 +358,13 @@ async def update_segment_speaker(
     flag_modified(transcript, "segments")
     db.add(transcript)
 
-    # 5. Cleanup Old Speaker (if unused)
+    # Remove the old speaker's local row once no segment uses its label.
     if old_label and old_label != target_label:
         is_used = any(
             segment_references_label(entry, old_label) for entry in transcript.segments
         )
 
         if not is_used:
-            # Delete the RecordingSpeaker entry
             stmt = select(RecordingSpeaker).where(
                 RecordingSpeaker.recording_id == recording.id,
                 RecordingSpeaker.diarization_label == old_label,
@@ -380,7 +374,7 @@ async def update_segment_speaker(
 
             if old_speaker_entry:
                 await db.delete(old_speaker_entry)
-                # Note: We don't delete the GlobalSpeaker, just the local association
+                # The GlobalSpeaker stays; only the local association goes.
 
     await db.commit()
     record_pipeline_metric(
@@ -402,7 +396,7 @@ async def update_segment_speaker(
         enabled=is_meeting_edge_enabled(getattr(current_user, "settings", None)),
     )
 
-    # 6. Update Embeddings (Active Learning)
+    # Update embeddings (active learning).
     try:
         if target_speaker_id is not None:
             start = segment["start"]
@@ -438,10 +432,8 @@ async def update_transcript_segment_text(
     """
     Update the text content of a specific transcript segment.
     """
-    # 0. Check Ownership
     recording = await _get_owned_recording(db, recording_id, current_user.id)
 
-    # 1. Fetch Transcript
     stmt = select(Transcript).where(Transcript.recording_id == recording.id)
     result = await db.execute(stmt)
     transcript = result.scalar_one_or_none()
@@ -505,14 +497,12 @@ async def update_transcript_segment_text(
         )
         return serialize_transcript(transcript, recording_public_id=recording.public_id)
 
-    # 2. Update Segment
     updated_segments = [dict(entry) for entry in transcript.segments]
     updated_segments[segment_index]["text"] = update.text
     updated_segments[segment_index]["text_manually_edited"] = True
     transcript.segments = updated_segments
     flag_modified(transcript, "segments")
 
-    # 3. Reconstruct Full Text
     full_text = " ".join([s["text"] for s in transcript.segments])
     transcript.text = full_text
 
@@ -547,10 +537,8 @@ async def find_and_replace(
     Find and replace text across the entire transcript AND meeting notes.
     This ensures consistency between the diarized transcript and generated notes.
     """
-    # 0. Check Ownership
     recording = await _get_owned_recording(db, recording_id, current_user.id)
 
-    # 1. Fetch Transcript
     stmt = select(Transcript).where(Transcript.recording_id == recording.id)
     result = await db.execute(stmt)
     transcript = result.scalar_one_or_none()
@@ -568,7 +556,6 @@ async def find_and_replace(
     if not find_text:
         raise HTTPException(status_code=400, detail="Find text cannot be empty")
 
-    # 2. Apply find/replace to both transcript and notes
     _apply_find_replace(transcript, find_text, replace_text, case_sensitive, use_regex)
 
     if (
@@ -606,10 +593,8 @@ async def update_transcript_segments(
     Bulk update all segments of a transcript.
     Useful for Undo/Redo operations involving multiple segments.
     """
-    # 0. Check Ownership
     recording = await _get_owned_recording(db, recording_id, current_user.id)
 
-    # 1. Fetch Transcript
     stmt = select(Transcript).where(Transcript.recording_id == recording.id)
     result = await db.execute(stmt)
     transcript = result.scalar_one_or_none()
@@ -650,11 +635,9 @@ async def update_transcript_segments(
 
         return serialize_transcript(transcript, recording_public_id=recording.public_id)
 
-    # 2. Update Segments
     transcript.segments = update.segments
     flag_modified(transcript, "segments")
 
-    # 3. Reconstruct Full Text
     full_text = " ".join([s.get("text", "") for s in transcript.segments])
     transcript.text = full_text
 

@@ -42,7 +42,6 @@ async def create_people_tag(
     """
     Create a new tag for people.
     """
-    # Check if exists
     stmt = select(PeopleTag).where(
         PeopleTag.name == tag_in.name,
         (PeopleTag.user_id == current_user.id) | (PeopleTag.user_id == None),
@@ -103,7 +102,6 @@ async def delete_people_tag(
     if not tag:
         raise HTTPException(status_code=404, detail="Tag not found")
 
-    # Check ownership if user_id is set
     if tag.user_id and tag.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not authorized to delete this tag")
 

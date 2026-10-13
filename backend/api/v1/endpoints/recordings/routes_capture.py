@@ -290,7 +290,6 @@ async def upload_segment(
             exc,
         )
 
-    # Dispatch the live transcription task.
     if segment_suffix == ".wav" and recordings_module.config_manager.get(
         "enable_live_transcription"
     ):

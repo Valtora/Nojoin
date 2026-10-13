@@ -113,7 +113,6 @@ async def list_global_speakers(
     result = await db.execute(query)
     rows = result.all()
 
-    # Build response
     speakers_with_counts = []
     for row in rows:
         speaker: GlobalSpeaker = row[0]
@@ -162,7 +161,6 @@ async def create_global_speaker(
     """
     Create a new global speaker (Person).
     """
-    # Check if exists
     statement = select(GlobalSpeaker).where(
         GlobalSpeaker.name == speaker_in.name, GlobalSpeaker.user_id == current_user.id
     )
@@ -210,7 +208,6 @@ async def merge_speakers(
     Merge source speaker into target speaker.
     Reassigns all recording speakers from source to target, then deletes source.
     """
-    # 1. Get speakers
     source = await db.get(GlobalSpeaker, request.source_speaker_id)
     target = await db.get(GlobalSpeaker, request.target_speaker_id)
 
@@ -223,7 +220,6 @@ async def merge_speakers(
     if source.id == target.id:
         raise HTTPException(status_code=400, detail="Cannot merge speaker into itself")
 
-    # 2. Reassign all recording speakers
     stmt = select(RecordingSpeaker).where(
         RecordingSpeaker.global_speaker_id == source.id
     )
@@ -247,7 +243,7 @@ async def merge_speakers(
         if target_rs:
             # COLLISION: Target exists in this recording.
             # Merges the local speakers to prevent duplicates in the meeting view.
-            if rs.id != target_rs.id:  # Sanity check
+            if rs.id != target_rs.id:
                 await _merge_local_speakers(
                     db,
                     rs.recording_id,
@@ -275,13 +271,11 @@ async def merge_speakers(
                     )
                 )
             else:
-                # No collision: Just reassign
                 rs.global_speaker_id = target.id
                 rs.name = target.name
                 rs.local_name = None
                 db.add(rs)
 
-    # 3. Merge embeddings
     if source.embedding and target.embedding:
         target.embedding = merge_embeddings(
             target.embedding, source.embedding, alpha=0.5
@@ -290,7 +284,6 @@ async def merge_speakers(
         target.embedding = source.embedding
     db.add(target)
 
-    # 4. Delete source speaker
     await db.delete(source)
 
     await db.commit()
@@ -313,7 +306,6 @@ async def update_global_speaker(
         raise HTTPException(status_code=404, detail="Speaker not found")
 
     if speaker_in.name is not None and speaker_in.name != speaker.name:
-        # Check name uniqueness
         stmt = select(GlobalSpeaker).where(
             GlobalSpeaker.name == speaker_in.name,
             GlobalSpeaker.user_id == current_user.id,
@@ -343,7 +335,6 @@ async def update_global_speaker(
     if speaker_in.color is not None:
         speaker.color = speaker_in.color
 
-    # CRM Fields
     if speaker_in.title is not None:
         speaker.title = speaker_in.title
     if speaker_in.company is not None:
@@ -356,7 +347,6 @@ async def update_global_speaker(
         speaker.notes = speaker_in.notes
 
     if speaker_in.tag_ids is not None:
-        # Update tags: Clear existing and add new
         from backend.models.people_tag import PeopleTagLink
 
         stmt = select(PeopleTagLink).where(
@@ -427,12 +417,10 @@ async def get_speaker_segments(
     Get recent audio segments attributed to this global speaker.
     Used for manual voiceprint recalibration.
     """
-    # Verify speaker
     speaker = await db.get(GlobalSpeaker, speaker_id)
     if not speaker or speaker.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Speaker not found")
 
-    # Fetch recordings with this speaker
     statement = (
         select(RecordingSpeaker, Recording, Transcript)
         .join(Recording, Recording.id == RecordingSpeaker.recording_id)
@@ -450,7 +438,6 @@ async def get_speaker_segments(
         if not trans or not trans.segments:
             continue
 
-        # Determine labels to look for
         labels = {rs.diarization_label}
         if rs.local_name:
             labels.add(rs.local_name)
@@ -458,7 +445,6 @@ async def get_speaker_segments(
             labels.add(rs.name)
         labels.add(speaker.name)
 
-        # Find matching segments
         rec_segments = []
         for seg in trans.segments:
             if seg.get("speaker") in labels:
@@ -497,7 +483,6 @@ async def recalibrate_voiceprint(
     Manually recalibrate (reset) a speaker's voiceprint using specific audio segments.
     Locks the voiceprint to prevent auto-updates.
     """
-    # 1. Verify speaker
     speaker = await db.get(GlobalSpeaker, speaker_id)
     if not speaker or speaker.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Speaker not found")
@@ -510,7 +495,6 @@ async def recalibrate_voiceprint(
     if not segments:
         raise HTTPException(status_code=400, detail="No segments provided")
 
-    # 2. Group segments by recording
     recording_segments = defaultdict(list)
     for s in segments:
         recording_segments[s.recording_id].append((s.start, s.end))
@@ -527,7 +511,6 @@ async def recalibrate_voiceprint(
     all_embeddings = []
     device_str = speakers_module.config_manager.get("processing_device", "cpu")
 
-    # 3. Extract embeddings
     for recording_public_id, segs in recording_segments.items():
         rec = recordings_by_public_id.get(recording_public_id)
         if rec is None:
@@ -550,7 +533,7 @@ async def recalibrate_voiceprint(
             args=[target_audio, segs, device_str, hf_token],
         )
         try:
-            emb = await run_in_threadpool(task.get, timeout=120)  # 2 min timeout
+            emb = await run_in_threadpool(task.get, timeout=120)
             if emb:
                 all_embeddings.append(emb)
         except Exception as e:  # noqa: BLE001
@@ -564,10 +547,9 @@ async def recalibrate_voiceprint(
             detail="Failed to extract embeddings from selected segments",
         )
 
-    # 4. Average embeddings (equal-weight arithmetic mean across all recordings)
+    # Equal-weight arithmetic mean across all recordings.
     final_emb = np.mean(np.array(all_embeddings), axis=0).tolist()
 
-    # 5. Update and Lock
     speaker.embedding = final_emb
     speaker.is_voiceprint_locked = True
     db.add(speaker)
@@ -608,7 +590,6 @@ async def split_speaker(
     Split a global speaker into a new speaker based on selected audio segments.
     Recalibrates both the new speaker (using selected segments) and the original speaker (using remaining segments).
     """
-    # 1. Verify Source Speaker
     original_speaker = await db.get(GlobalSpeaker, speaker_id)
     if not original_speaker or original_speaker.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Original speaker not found")
@@ -618,7 +599,6 @@ async def split_speaker(
             status_code=400, detail="No segments provided for splitting"
         )
 
-    # 2. Create New Speaker
     stmt = select(GlobalSpeaker).where(
         GlobalSpeaker.name == request.new_speaker_name,
         GlobalSpeaker.user_id == current_user.id,
@@ -656,7 +636,6 @@ async def split_speaker(
         [recording.id for recording in recordings],
     )
 
-    # 3. Process each affected recording
     timestamp_suffix = int(time.time())
     device_str = speakers_module.config_manager.get("processing_device", "cpu")
     user_settings = current_user.settings or {}
@@ -674,7 +653,6 @@ async def split_speaker(
 
         split_label = f"SPLIT_{timestamp_suffix}_{new_speaker.id}"
 
-        # Update Transcript Segments
         stmt = select(Transcript).where(Transcript.recording_id == rec_id)
         result = await db.execute(stmt)
         transcript = result.scalar_one_or_none()
@@ -751,7 +729,6 @@ async def split_speaker(
             )
             db.add(rs)
 
-    # 4. Update New Speaker Voiceprint
     if new_speaker_embeddings:
         final_new_emb = np.mean(np.array(new_speaker_embeddings), axis=0).tolist()
 
@@ -765,7 +742,6 @@ async def split_speaker(
         new_speaker.is_voiceprint_locked = True
         db.add(new_speaker)
 
-    # 5. Recalibrate Original Speaker
     original_speaker_embeddings = []
 
     for recording_public_id in recording_segments.keys():

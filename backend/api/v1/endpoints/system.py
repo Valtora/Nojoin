@@ -262,7 +262,6 @@ async def websocket_logs(
                 if not active:
                     break
                 text = line.decode("utf-8")
-                # Format: [container-name] log info...
                 formatted_line = f"[{container_name}] {text}"
                 # Schedule put_nowait/put to run in the main loop
                 asyncio.run_coroutine_threadsafe(q.put(formatted_line), loop)
@@ -271,12 +270,9 @@ async def websocket_logs(
                 err_msg = f"[{container_name}] Error reading logs: {e}"
                 asyncio.run_coroutine_threadsafe(q.put(err_msg), loop)
 
-    # Determine which containers to stream
     targets = []
     if container == "all":
-        # Get all Nojoin containers
         try:
-            # Filter by name prefix or label if possible. For now, strict list.
             containers_list = [
                 "nojoin-api",
                 "nojoin-worker-gpu",
@@ -296,7 +292,6 @@ async def websocket_logs(
     else:
         targets.append(container)
 
-    # Start reader threads
     import threading
 
     threads = []
@@ -307,11 +302,9 @@ async def websocket_logs(
 
     try:
         while True:
-            # Wait for next line from any container
             line = await queue.get()
             await websocket.send_text(line)
     except WebSocketDisconnect:
-        # Client disconnected
         pass
     except Exception as e:  # noqa: BLE001
         logger.error(f"WebSocket send error: {e}")
@@ -402,7 +395,6 @@ async def check_ffmpeg(current_user: User = Depends(get_current_admin_user)) -> 
 
     from backend.utils.audio import ensure_ffmpeg_in_path
 
-    # Try to ensure it's in path first
     ensure_ffmpeg_in_path()
 
     ffmpeg_path = shutil.which("ffmpeg")
@@ -460,7 +452,6 @@ async def setup_system(
 
     require_first_run_password(request)
 
-    # Construct settings dict
     settings: dict[str, Any] = {}
 
     llm_provider = config_manager.get("llm_provider", "gemini")
@@ -485,7 +476,6 @@ async def setup_system(
     await db.commit()
     await db.refresh(user)
 
-    # Seed demo data for the new admin user
     if not setup_in.include_demo_recording:
         logger.info("Skipping demo recording seed: opted out during first-run setup.")
     elif user.id is None:
@@ -572,8 +562,6 @@ async def get_task_status(
     elif task_result.status == "SUCCESS":
         result_data = task_result.result
     else:
-        # For PENDING, STARTED, RETRY etc.
-        # If it's an exception object, convert to string
         if isinstance(task_result.result, Exception):
             result_data = str(task_result.result)
         else:
@@ -588,7 +576,6 @@ async def get_task_status(
     # If the task is in a custom state (like PROCESSING), result might be the meta dict
     # Celery stores meta info in .info for custom states
     if task_result.status == "PROCESSING":
-        # Ensure we're accessing a dict
         info = task_result.info
         if isinstance(info, dict):
             response["progress"] = info.get("progress", 0)
@@ -645,9 +632,9 @@ async def prepare_models_endpoint(
     """
     Queue preparation of local model assets.
 
-    Preparation is explicit: saving a transcription model change no longer
-    downloads anything by itself, because the preparation task runs on the GPU
-    lane and would otherwise queue in front of live work unannounced.
+    Preparation is explicit: saving a transcription model change downloads
+    nothing, because the preparation task runs on the GPU lane and would
+    otherwise queue in front of live work unannounced.
     """
     del current_user
     target = (payload or ModelPreparationRequest()).target

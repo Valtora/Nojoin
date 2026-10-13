@@ -370,12 +370,10 @@ async def delete_document(
     if not document:
         raise HTTPException(status_code=404, detail="Document not found")
 
-    # Check ownership via recording
     recording = await db.get(Recording, document.recording_id)
     if not recording or recording.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Document not found")
 
-    # Remove file from disk
     if document.file_path and os.path.exists(document.file_path):
         try:
             os.remove(document.file_path)

@@ -5,7 +5,6 @@ from datetime import timedelta
 from io import BytesIO
 from typing import List, Optional
 
-# Python-docx imports for DOCX
 from docx import Document as DocxDocument
 from fastapi import HTTPException
 from markdown_pdf import MarkdownPdf, Section
@@ -109,9 +108,6 @@ def _get_segment_revision(segment: dict) -> int:
     return int(segment.get("revision") or 1)
 
 
-# --- Pydantic Models ---
-
-
 class TranscriptSegmentTextUpdate(BaseModel):
     text: str
 
@@ -207,9 +203,6 @@ class ChatRequest(BaseModel):
     tag_ids: Optional[List[int]] = None
 
 
-# --- Helper Functions ---
-
-
 def _build_speaker_map(speakers) -> dict:
     """Build a mapping from diarization label to speaker name."""
     speaker_map = {}
@@ -294,7 +287,6 @@ def _apply_find_replace(
         if transcript.notes and find_text in transcript.notes:
             transcript.notes = transcript.notes.replace(find_text, replace_text)
 
-    # Path 2: Regex-based replacement (Case Insensitive OR Explicit Regex)
     else:
         # Path 2: Regex-based replacement (Case Insensitive OR Explicit Regex)
 
@@ -308,24 +300,20 @@ def _apply_find_replace(
         if use_regex:
             pattern = prefix + find_text
         else:
-            # Escape the text, then prepend flag
             pattern = prefix + re2.escape(find_text)
 
         try:
             regex = re2.compile(pattern)
         except re2.error:
-            # Invalid regex provided by user
             raise HTTPException(status_code=400, detail="Invalid regular expression")
 
         for segment in transcript.segments:
-            # google-re2 python bindings support subn.
             new_text, count = regex.subn(replace_text, segment["text"])
             if count > 0:
                 segment["text"] = new_text
                 segment["text_manually_edited"] = True
                 total_segment_replacements += 1
 
-        # Replace in notes
         if transcript.notes:
             transcript.notes = regex.sub(replace_text, transcript.notes)
 
@@ -413,7 +401,6 @@ def _generate_full_markdown(
             seconds = int(start % 60)
             time_str = f"[{minutes:02d}:{seconds:02d}]"
 
-            # Use bold for speaker to make it visually distinct
             md_lines.append(f"**{time_str} {html.escape(speaker_name)}**")
             md_lines.append(f"{html.escape(text)}")
             md_lines.append("")
@@ -553,7 +540,6 @@ def _generate_docx_export(
             time_str = f"[{minutes:02d}:{seconds:02d}]"
 
             p = doc.add_paragraph()
-            # Speaker and Timestamp bold
             run = p.add_run(f"{time_str} {speaker_name}: ")
             run.bold = True
             p.add_run(text)
