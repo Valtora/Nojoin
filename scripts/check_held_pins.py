@@ -109,7 +109,7 @@ HOLDS: tuple[Hold, ...] = ()
 
 # torch==2.14.1 --index-url https://...
 PIN_RE_TEMPLATE = r"^{package}==([^\s;#]+)"
-# FROM pytorch/pytorch:2.14.1-cuda12.6-cudnn9-runtime@sha256:...
+# FROM pytorch/pytorch:2.14.1-cuda13.0-cudnn9-runtime@sha256:...
 IMAGE_TAG_RE = re.compile(r"^FROM\s+pytorch/pytorch:([^\s@]+)", re.MULTILINE)
 
 
@@ -263,7 +263,7 @@ def check_drift(stack: MatchedStack) -> list[str]:
             )
 
     for relative, line, package, version in pins:
-        # An image tag carries a suffix (2.14.1-cuda12.6-...), so compare the
+        # An image tag carries a suffix (2.14.1-cuda13.0-...), so compare the
         # leading version component rather than the whole string.
         actual = version.split("-", 1)[0] if package == "pytorch/pytorch" else version
         if actual != stack.version:

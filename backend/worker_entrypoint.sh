@@ -12,4 +12,13 @@ if [ "$(id -u)" = "0" ]; then
     exec gosu appuser "$0" "$@"
 fi
 
+# Hide any GPU this image's CUDA build cannot drive (driver older than 580, or a
+# card older than Turing), so torch and ONNX Runtime run on the CPU instead of
+# failing every recording. Exit 3 means "use the CUDA_VISIBLE_DEVICES printed";
+# any other failure leaves the environment as it was.
+gpu_visible="$(python -m backend.processing.gpu_preflight)" && gpu_status=0 || gpu_status=$?
+if [ "$gpu_status" -eq 3 ]; then
+    export CUDA_VISIBLE_DEVICES="$gpu_visible"
+fi
+
 exec "$@"

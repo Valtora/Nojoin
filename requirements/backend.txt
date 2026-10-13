@@ -1,14 +1,14 @@
 -r base.txt
-fastapi==0.142.2
+fastapi==0.143.0
 uvicorn[standard]==0.54.0
 mcp==2.3.0
 # Backend specific dependencies
 docker==7.2.0
 celery[redis]==5.6.3
 numpy==2.4.6
-openai>=3.24.0
-anthropic>=1.11.0
-google-genai>=2.28.0
+openai>=3.28.0
+anthropic>=1.13.0
+google-genai>=2.29.0
 reportlab==5.0.1
 python-docx==1.2.0
 Markdown==3.11

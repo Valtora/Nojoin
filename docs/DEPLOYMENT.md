@@ -6,7 +6,7 @@ If you just want the fastest path to a working instance, start with [GETTING_STA
 
 ## Recommended Hardware
 
-- **Recommended:** Linux or Windows with an NVIDIA GPU and CUDA 12.x support.
+- **Recommended:** Linux or Windows with an NVIDIA GPU from the Turing generation or later (GTX 16 or RTX 20 series and newer) and NVIDIA driver 580 or newer. See [GPU requirements](#gpu-requirements).
 - **Practical minimum:** 8 GB VRAM for Whisper Turbo and Pyannote.
 - **macOS hosting:** Not recommended for the backend because Docker on macOS cannot expose Apple Silicon GPU acceleration to the containers.
 - **Capture browser:** Chrome on Windows, Linux, or macOS for shared-audio live recording; Edge, Brave, Arc, or another Chromium-family browser on Windows or Linux; or Chrome on Android/iOS for microphone-only live recording. Other Chromium-family browsers on macOS are best-effort.
@@ -78,6 +78,21 @@ If you are developing from local source instead of operating a deployment, read 
 
 ## GPU Support
 
+### GPU Requirements
+
+The worker image is built on CUDA 13.0, which sets two requirements:
+
+- **NVIDIA driver 580 or newer** on the host, Linux or Windows.
+- **A Turing-generation GPU or later** (compute capability 7.5 or higher), which is GTX 16 and RTX 20 series and newer, including RTX 50 series. Maxwell, Pascal and Volta cards (GTX 900 and 10 series, TITAN V, Tesla P4, P40 and P100, V100) are not supported.
+
+Check both with:
+
+```bash
+nvidia-smi --query-gpu=name,compute_cap,driver_version --format=csv
+```
+
+On Linux, the GPU worker checks this when it starts. If the driver is too old or the card predates Turing, it logs a `[gpu-preflight]` line saying which, hides that GPU and processes on the CPU rather than failing each recording.
+
 ### Linux
 
 1. Install the proprietary NVIDIA drivers.
@@ -99,7 +114,7 @@ The default `.env.example` enables `NVIDIA_VISIBLE_DEVICES=all` and `NVIDIA_DRIV
 ### Windows
 
 - Use Docker Desktop with the WSL 2 backend.
-- Install up-to-date NVIDIA Windows drivers.
+- Install NVIDIA Windows drivers 580 or newer.
 
 ## Data Directory Ownership
 

@@ -99,7 +99,7 @@ Nojoin is free, and running it yourself means a machine with a GPU, a compose fi
 
 Notes:
 
-- An NVIDIA GPU is strongly recommended for faster processing.
+- An NVIDIA GPU is strongly recommended for faster processing: GTX 16 or RTX 20 series or newer, with driver 580 or newer.
 - CPU-only mode is supported but it is much slower.
 
 - Set `DATA_ENCRYPTION_KEY` once and keep it stable to avoid losing access to previously encrypted calendar credentials after restores or host changes.

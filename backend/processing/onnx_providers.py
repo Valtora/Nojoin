@@ -13,6 +13,7 @@
 
 import glob
 import logging
+import os
 from collections.abc import Iterator, Sequence
 from typing import Any
 
@@ -75,7 +76,13 @@ def gpu_is_present() -> bool:
     and does not itself depend on the library loading correctly. Distinguishes the
     CPU-only lanes and CPU-only deployments, where running on CPU is intended, from
     a GPU host where a CPU fallback means something is misconfigured.
+
+    An empty CUDA_VISIBLE_DEVICES hides every GPU from CUDA, which is how the worker
+    entrypoint parks a GPU this image cannot drive (see gpu_preflight). Asking ONNX
+    Runtime for its CUDA provider then would find no device, so it counts as absent.
     """
+    if os.environ.get("CUDA_VISIBLE_DEVICES", "unset").strip() in ("", "-1"):
+        return False
     return bool(glob.glob(_NVIDIA_DEVICE_GLOB))
 
 

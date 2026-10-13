@@ -161,6 +161,39 @@ def test_whisper_engine_passes_forced_language(monkeypatch):
     assert captured["language"] == "fr"
 
 
+def test_whisper_engine_seeds_fallback_sampling_without_leaking_it(monkeypatch):
+    """Each transcription samples the same values, and the caller's RNG is untouched."""
+    import torch
+
+    from backend.processing.engines import whisper_engine
+    from backend.processing.engines.whisper_engine import WhisperEngine
+
+    drawn = []
+
+    class _FakeModel:
+        def transcribe(self, audio_path, **kwargs):
+            # Stands in for Whisper's temperature-fallback sampling.
+            drawn.append(torch.rand(3))
+            return {"text": "", "language": "en", "segments": []}
+
+    monkeypatch.setattr(
+        whisper_engine.whisper, "load_model", lambda *a, **k: _FakeModel()
+    )
+    monkeypatch.setattr(whisper_engine.os.path, "exists", lambda p: True)
+    monkeypatch.setattr(whisper_engine, "_model_cache", {})
+
+    torch.manual_seed(1234)
+    expected_next = torch.rand(1)
+    torch.manual_seed(1234)
+
+    engine = WhisperEngine()
+    engine.transcribe("meeting.wav", {"processing_device": "cpu"})
+    engine.transcribe("meeting.wav", {"processing_device": "cpu"})
+
+    assert torch.equal(drawn[0], drawn[1])
+    assert torch.equal(torch.rand(1), expected_next)
+
+
 def test_release_model_cache_calls_engines():
     """release_model_cache delegates to every instantiated engine."""
     fake = _FakeEngine("whisper")
