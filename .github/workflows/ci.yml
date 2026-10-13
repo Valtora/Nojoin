@@ -463,7 +463,7 @@ jobs:
         run: python scripts/check_whitespace.py
 
   held-pins:
-    # Always run: the matched torch/torchaudio stack is declared across several
+    # Always run: the matched torch stack is declared across several
     # requirements files and the worker base image, and nothing else fails a
     # bump applied to only some of them. Offline and pure stdlib, so it is
     # cheap; the networked half runs from held-pin-watch.yml on a schedule.

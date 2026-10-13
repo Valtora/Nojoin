@@ -58,5 +58,7 @@ torchmetrics==1.9.0
 soundfile==0.14.0
 matplotlib==3.11.2
 pyannoteai-sdk==0.4.0
-torchcodec==0.11.1
+# PyPI builds torchcodec against CUDA 13 from 0.14 on. docker/Dockerfile.worker
+# swaps it for the CPU build of this version to suit its CUDA 12.6 torch.
+torchcodec==0.17.0
 fastembed==0.8.1

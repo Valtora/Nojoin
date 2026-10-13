@@ -43,23 +43,6 @@ updates:
           - "*"
     # Held pins (see PR #43). Remove an entry when its blocker clears.
     ignore:
-      # torchaudio has published nothing above 2.11.0, and its wheels are
-      # compiled against a matching torch minor, so 2.11.0 is the matched-stack
-      # ceiling. Held under GHSA-rrmf-rvhw-rf47, which is not fixed until torch
-      # 2.13.0; held-pin-watch.yml opens an issue when torchaudio catches up.
-      - dependency-name: "torch"
-        versions: [">=2.12.0"]
-      # torchcodec stays matched to torch 2.11 (the 0.11.x line).
-      - dependency-name: "torchcodec"
-        versions: [">=0.12.0"]
-      # torchvision is the third independently numbered companion of the held
-      # torch stack, and the only one whose metadata pins torch *exactly*:
-      # torchvision 0.27.0 declares `torch==2.12.0`. Without this entry a
-      # routine torchvision bump drags torch past the torchaudio ceiling, which
-      # is the same way the API base image walked 3.12 to 3.14 unnoticed.
-      # 0.26.x is the 2.11 pair. Lift this with the torch hold above.
-      - dependency-name: "torchvision"
-        versions: [">=0.27.0"]
       # numpy 2.5 forces an ancient numba that breaks the openai-whisper resolve.
       - dependency-name: "numpy"
         versions: [">=2.5.0"]
@@ -112,16 +95,14 @@ updates:
           - "*"
     # Held pins (see PR #43). Remove an entry when its blocker clears.
     ignore:
-      # Remove when torchaudio ships a 2.12.x release.
-      - dependency-name: "pytorch/pytorch"
-        versions: [">=2.12.0"]
       # The API image's Python minor is not independently choosable: it must match
-      # the worker image, which inherits 3.12 from the held PyTorch base, and the
+      # the worker image, which inherits 3.12 from the PyTorch base, and the
       # 3.12 that CI and mypy target. Without this hold Dependabot walked the API
       # base from 3.12 to 3.14 unnoticed, leaving the interpreter serving every
       # HTTP request the only one the test suite never ran on. Lift this only
-      # together with the PyTorch hold above, and move CI, mypy, the docs, and the
-      # worker in the same change. scripts/check_held_pins.py fails if they drift.
+      # when the PyTorch base moves to a newer Python, and move CI, mypy, the
+      # docs, and the worker in the same change. scripts/check_held_pins.py fails
+      # if they drift.
       - dependency-name: "python"
         versions: [">=3.13.0"]
       # Node majors stay deliberate rather than automatic. The two Node bases are

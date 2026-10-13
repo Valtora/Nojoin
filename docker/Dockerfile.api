@@ -3,8 +3,7 @@
 #
 # The Python minor MUST stay 3.12, matching the worker image, CI, and the mypy
 # target. The worker's interpreter is not freely choosable: it comes from the
-# PyTorch base image, held at 2.11.x because torchaudio has published nothing
-# above it, and that image ships 3.12. Running the API on a different minor
+# PyTorch base image, which ships 3.12. Running the API on a different minor
 # means the interpreter serving every HTTP request is the one the test suite
 # never runs on. Both stages below must move together, or the venv is built on a
 # different interpreter than it executes on. scripts/check_held_pins.py enforces
