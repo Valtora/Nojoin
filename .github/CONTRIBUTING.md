@@ -25,7 +25,7 @@ We **actively welcome** code contributions, bug fixes, and feature enhancements 
 
 - **Code Contributions:** Submit PRs for bug fixes or new features.
 - **Bug Reports:** If you encounter any issues, please [open an issue](https://github.com/Valtora/Nojoin/issues) with detailed reproduction steps.
-- **Platform Testing:** We specifically need help verifying browser capture on supported Chromium-family browsers across Windows and Linux, plus microphone-only capture on Chrome on Android and iOS. We also need verification of unsupported-browser messaging on Firefox, Safari, non-Chrome mobile browsers, and Chromium browsers on macOS.
+- **Platform Testing:** We specifically need help verifying shared-audio capture in Chrome on Windows, Linux and macOS and in other Chromium-family browsers, microphone-only capture in Chrome on Android and iOS, and the unsupported-browser message in Firefox, Safari and other mobile browsers.
 - **Documentation:** Improvements to the docs are always welcome.
 
 ## Development Setup
@@ -35,7 +35,7 @@ Please refer to [docs/DEVELOPMENT.md](../docs/DEVELOPMENT.md) for local developm
 Local contributor prerequisites:
 
 - Python 3.12
-- Node.js 20 or newer
+- Node.js 22 or newer (CI builds on Node 26)
 - npm
 - Docker for the containerised stack and deployment-path verification
 
@@ -64,7 +64,7 @@ pre-commit install
 You do not need the full GPU/ML stack for every change. The heavy inference dependencies (CUDA, Whisper, Pyannote) are only required to run the live processing pipeline locally. Match the setup to the surface you are changing.
 
 - **Documentation-only changes:** no Python virtual environment or Node toolchain is required. Edit the Markdown, then validate links with `python3 scripts/validate_docs.py`. That script has no third-party dependencies.
-- **Frontend-only changes:** install Node.js 20 or newer and the frontend dependencies only. You can develop and fully verify frontend work without CUDA or the ML requirements.
+- **Frontend-only changes:** install Node.js 22 or newer and the frontend dependencies only. You can develop and fully verify frontend work without CUDA or the ML requirements.
 
   ```bash
   cd frontend
@@ -93,22 +93,11 @@ Minimum pull request verification is:
 - Documentation changes: `python3 scripts/validate_docs.py`
 - Alembic migration changes: `python3 scripts/validate_alembic.py`
 
-The pull request workflow runs these checks, and the aggregate `CI gate` must be green to merge. The expensive jobs run only when their area changed; the cheap validators always run:
-
-- `Backend tests` — on backend or deployment changes. `Python quality` (Ruff lint, Ruff format check, and mypy on enforced boundaries) also runs on `scripts/**` changes, since it lints and type-checks the standalone tooling there.
-- `Frontend lint`, `Frontend unit tests`, and `Frontend build` — on frontend or deployment changes.
-- `Docs validation` and `Alembic validation` — always.
-
-A deployment change here means `docker/**`, `docker-compose*.yml`, `nginx/**`, or `.github/workflows/ci.yml`. Other workflow files (e.g. the tag-driven release pipeline) are not gated by the unit suites — they cannot be validated by them and run on their own triggers — though they remain a sensitive review scope (see below).
-
-See the [Merge Requirements](#merge-requirements) section for how `CI gate` aggregates these and the exact path rules.
-
-Run the checks for every area you touched before opening a pull request. Capture-related changes also require manual browser smoke testing for start, pause/resume, stop/finalize, discard, unsupported-browser messaging, and selected-microphone behaviour. Migration changes must keep a single checked-in Alembic head and must not delete or rename committed revision files.
+The pull request workflow runs these checks, and the aggregate `CI gate` must be green to merge; [docs/DEVELOPMENT.md](../docs/DEVELOPMENT.md#required-pull-request-checks) lists which jobs run for which paths. Run the checks for every area you touched before opening a pull request. Migrations, security, capture and deployment changes carry extra review obligations, listed under [Merge Requirements](#merge-requirements).
 
 Additional scope rules:
 
 - Recording action changes must go through `frontend/src/components/recordings/_hooks/useRecordingActions.ts` rather than being defined locally, so the rail and the live view cannot diverge.
-- Security-sensitive changes must preserve the documented auth and token boundaries in `docs/SECURITY.md` and update that guide in the same pull request when behaviour changes.
 - API changes must keep backend response schemas (`backend/models/*_public.py` and related Pydantic models) and the corresponding frontend interfaces in `frontend/src/types/index.ts` synchronised in the same pull request.
 
 ## Documentation Ownership
@@ -141,34 +130,17 @@ Nojoin is currently maintained by a single maintainer. The governance below is d
 
 ### Code Ownership
 
-Review responsibility is recorded in [.github/CODEOWNERS](CODEOWNERS). GitHub auto-requests a review from the listed owner for every pull request that touches a matched path. The current map is:
-
-| Area | Paths | Owner |
-| --- | --- | --- |
-| Backend / API | `backend/api/**` | `@Valtora` |
-| Worker / ML and processing | `backend/worker/**`, `backend/processing/**` | `@Valtora` |
-| Migrations | `backend/alembic/**` | `@Valtora` |
-| Frontend / capture | `frontend/src/**`, `frontend/src/lib/capture/**` | `@Valtora` |
-| Security | `docs/SECURITY.md`, `backend/core/security.py`, `backend/core/encryption.py`, `backend/api/deps.py`, `backend/api/v1/endpoints/login.py` | `@Valtora` |
-| Deployment / CI | `docker/**`, `docker-compose*.yml`, `.github/workflows/**` | `@Valtora` |
-| Documentation | `docs/**`, `*.md` | `@Valtora` |
+Review responsibility is recorded in [.github/CODEOWNERS](CODEOWNERS), which groups paths by subsystem. GitHub auto-requests a review from the listed owner for every pull request that touches a matched path. Every subsystem maps to `@Valtora` while the project has one maintainer.
 
 ### Merge Requirements
 
-Every pull request to `main` must have the required `CI gate` status check green before merge. `CI gate` is an aggregate that passes only when every applicable CI job passed. To save CI minutes, the expensive jobs run only when their area changed and are skipped (counted as a pass) otherwise:
-
-- `Backend tests` and `Python quality` (Ruff lint, Ruff format check, mypy) — run when `backend/**`, `requirements/**`, `pyproject.toml`, or `scripts/**` changed.
-- `Frontend lint`, `Frontend unit tests`, and `Frontend build` — run when `frontend/**` changed.
-- A **deployment** change (`docker/**`, `docker-compose*.yml`, `nginx/**`, or `.github/workflows/ci.yml`) runs **both** the backend and frontend suites, since it can affect the built images or the test pipeline even without code changes. Other workflow files (such as the release pipeline) are not gated by the unit suites — they run on their own triggers — but remain a sensitive review scope (see below). A `scripts/**` change runs `Python quality` only.
-- `Whitespace check`, `Docs validation`, and `Alembic validation` — always run (cheap). `Whitespace check` is the only trailing-whitespace guard for Markdown, YAML, shell, and config files, so it is never gated.
-
-See [docs/DEVELOPMENT.md](../docs/DEVELOPMENT.md#required-pull-request-checks) for the exact path rules and how `CI gate` works.
+Every pull request to `main` must have the required `CI gate` status check green before merge. `CI gate` passes only when every applicable CI job passed; a job whose area did not change is skipped and counts as a pass. [docs/DEVELOPMENT.md](../docs/DEVELOPMENT.md#required-pull-request-checks) lists the jobs and the exact path rules.
 
 Sensitive scopes carry an additional review obligation that the maintainer (or, in future, a designated CODEOWNER) must satisfy before merging:
 
 - **Migrations (`backend/alembic/**`):** keep exactly one checked-in Alembic head and never delete or rename a committed revision. Confirm `Alembic validation` is green.
 - **Security (`docs/SECURITY.md`, auth/session/token/encryption code):** preserve the documented auth and token boundaries in [docs/SECURITY.md](../docs/SECURITY.md) and update that guide in the same pull request when behaviour changes.
-- **Capture (`frontend/src/lib/capture/**`):** complete the manual browser smoke coverage listed under [docs/DEVELOPMENT.md](../docs/DEVELOPMENT.md).
+- **Capture (`frontend/src/lib/capture/**`):** complete manual browser smoke testing for start, pause/resume, stop/finalize, discard, unsupported-browser messaging, and selected-microphone behaviour ([docs/DEVELOPMENT.md](../docs/DEVELOPMENT.md#verification-by-change-scope)).
 - **Deployment / release (`docker/**`, `docker-compose*.yml`, `.github/workflows/**`):** keep the pinned action SHAs, pinned base-image digests, and the gated/signed release ordering intact, and run the full backend, frontend, docs, and Alembic validation set together.
 
 ### Branch Protection

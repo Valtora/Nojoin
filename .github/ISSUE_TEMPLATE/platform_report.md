@@ -2,7 +2,7 @@
 name: Platform Compatibility Report
 about: Report a browser-capture issue specific to an OS, browser, or device
 title: '[Platform]: Browser capture issue on <Browser / OS>'
-labels: 'platform-issue, help wanted'
+labels: 'platform-issue, help wanted, needs-triage'
 assignees: ''
 
 ---
@@ -27,7 +27,7 @@ Supported targets for reference (see [docs/CAPTURE.md](../../docs/CAPTURE.md)):
 - Chrome on Android and iOS — microphone-only recording.
 
 **Nojoin version**
- - Version: [e.g. v1.3.8]
+ - Version: [e.g. 2.7.0, shown under Settings > Updates]
 
 **Describe the issue**
 A clear and concise description of what happened.
@@ -35,7 +35,7 @@ A clear and concise description of what happened.
 **To reproduce**
 Steps to reproduce the behaviour:
 1. Open Nojoin in the browser above
-2. Start Meet Now or open Settings -> Capture
+2. Click Start Meeting on the Meet Now card, or open Settings > Recording
 3. Share a tab/window/screen with audio (desktop) or grant microphone access (mobile)
 4. See the issue
 
@@ -45,7 +45,7 @@ A clear and concise description of what you expected to happen.
 **Logs**
 Please attach any relevant logs, with personal data redacted.
 - Browser: open DevTools and copy any relevant console or network errors.
-- Server: collect `docker compose logs api worker-gpu worker-cpu worker-io frontend`.
+- Server: collect `docker compose logs api worker-gpu worker-cpu worker-io worker-parse frontend`.
 
 **Additional context**
 Add any other context about the problem here, including whether the browser share picker exposed an audio toggle and whether a shared-audio track was granted.

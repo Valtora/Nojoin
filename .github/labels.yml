@@ -6,7 +6,8 @@
 # .github/SUPPORT.md. Colours are 6-digit hex without a leading '#'.
 #
 # Keep this file and the live labels in sync: add a label here first, then apply
-# it. When removing a label, remove it here and delete it in GitHub.
+# it. When removing a label, remove it here and delete it in GitHub. GitHub's
+# other default labels and Dependabot's ecosystem labels are not managed here.
 
 # --- Severity: how badly the issue affects users ---
 - name: "severity:critical"
@@ -95,3 +96,17 @@
 - name: "audit"
   color: "0052cc"
   description: "Periodic repository-quality re-audit."
+- name: "held-pin"
+  color: "b60205"
+  description: "A deliberately held dependency pin can now move"
+
+# --- Type: applied by the issue templates (GitHub defaults, kept as created) ---
+- name: "bug"
+  color: "d73a4a"
+  description: "Something isn't working"
+- name: "enhancement"
+  color: "a2eeef"
+  description: "New feature or request"
+- name: "help wanted"
+  color: "008672"
+  description: "Extra attention is needed"

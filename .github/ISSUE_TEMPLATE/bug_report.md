@@ -2,7 +2,7 @@
 name: Bug report
 about: Report a problem to help us improve Nojoin
 title: ''
-labels: bug
+labels: 'bug, needs-triage'
 assignees: ''
 
 ---
@@ -11,7 +11,7 @@ assignees: ''
 A clear and concise description of what the bug is. For an intermittent test failure, prefix the title with `[flaky]` and include the test name and how often it fails.
 
 **Nojoin version**
-e.g. v1.3.8 (see `docs/VERSION` or the about/footer in the app).
+e.g. 2.7.0, shown under **Settings > Updates**.
 
 **Deployment mode**
  - [ ] Docker Compose (recommended deployment)
@@ -37,7 +37,7 @@ If the issue depends on specific input (an audio file, a recording length, a cal
 **Logs**
 Attach relevant logs. **Redact secrets and personal data first** — remove `FIRST_RUN_PASSWORD`, `DATA_ENCRYPTION_KEY`, API keys, tokens, `Authorization` headers, cookies, and meeting content you do not want public.
 - Browser: open DevTools and copy any relevant console or network errors.
-- Server: collect `docker compose logs api worker-gpu worker-cpu worker-io frontend`.
+- Server: collect `docker compose logs api worker-gpu worker-cpu worker-io worker-parse frontend`.
 
 **Screenshots**
 If applicable, add screenshots to help explain the problem (with sensitive content redacted).
