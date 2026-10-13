@@ -1,6 +1,6 @@
 # --- Builder Stage ---
 # Pinned by digest for reproducible builds; Dependabot keeps the tag comment current.
-FROM pytorch/pytorch:2.11.0-cuda12.6-cudnn9-runtime@sha256:3bb77138e105723dd4ed760b82fb63d8310ae3a1afc58f76e0ecf0f776568d33 AS builder
+FROM pytorch/pytorch:2.14.1-cuda12.6-cudnn9-runtime@sha256:1262abc856a428933c0477b4be87079173a0b087b7691c47fcb396b7b5775c56 AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
@@ -36,6 +36,15 @@ RUN pip install --no-cache-dir -r requirements/worker.txt -c constraints.txt
 # Install pyannote.audio without dependencies to use system torch
 RUN pip install --no-cache-dir --no-deps pyannote.audio==4.0.5 -c constraints.txt
 
+# torchcodec on PyPI is built against the CUDA that PyPI torch ships, which has
+# been CUDA 13 since torchcodec 0.14. This image's torch is the CUDA 12.6 build,
+# so the PyPI wheel fails to load (libcudart.so.13 not found) and pyannote has
+# no audio decoder. Swap in the CPU build of the version worker.txt resolved:
+# torchcodec only decodes audio here, which never touches the GPU.
+RUN torchcodec_version="$(python -c 'import importlib.metadata as m; print(m.version("torchcodec").split("+")[0])')" && \
+    pip install --no-cache-dir --no-deps --force-reinstall \
+        --index-url https://download.pytorch.org/whl/cpu "torchcodec==${torchcodec_version}+cpu"
+
 # Parakeet ASR (onnx-asr) requires the CUDA build of ONNX Runtime. fastembed
 # pulls the CPU-only onnxruntime; replace it with a CUDA-12-compatible
 # onnxruntime-gpu build that matches this image's CUDA 12.6 runtime.
@@ -48,7 +57,7 @@ RUN pip uninstall -y onnxruntime onnxruntime-gpu && \
 RUN pip install --no-cache-dir triton
 
 # --- Runtime Stage ---
-FROM pytorch/pytorch:2.11.0-cuda12.6-cudnn9-runtime@sha256:3bb77138e105723dd4ed760b82fb63d8310ae3a1afc58f76e0ecf0f776568d33 AS runtime
+FROM pytorch/pytorch:2.14.1-cuda12.6-cudnn9-runtime@sha256:1262abc856a428933c0477b4be87079173a0b087b7691c47fcb396b7b5775c56 AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
@@ -97,8 +106,14 @@ RUN apt-get update && \
 # (CVE-2026-54058/54059/54060, 55379/55380, 59197/59199/59200/59204/59205);
 # urllib3==2.8.0 closes CVE-2026-44431/44432 and CVE-2026-97687/97689;
 # fsspec==2026.7.0 closes CVE-2026-104851.
+#
+# Then remove that system pip. The worker never runs it (the venv has its own),
+# and from 26.2 it ships an SBOM of its vendored urllib3, msgpack and setuptools,
+# whose fixable HIGH CVEs the image scan reports like installed packages.
 RUN /usr/bin/python3 -m pip install --no-cache-dir --break-system-packages \
-    --root-user-action=ignore --upgrade pillow==12.3.0 urllib3==2.8.0 fsspec==2026.7.0
+    --root-user-action=ignore --upgrade pillow==12.3.0 urllib3==2.8.0 fsspec==2026.7.0 && \
+    /usr/bin/python3 -m pip uninstall -y --break-system-packages \
+    --root-user-action=ignore pip
 
 # Put the CUDA wheel libraries on the dynamic loader path. Despite the `cudnn9` tag,
 # this base ships CUDA and cuDNN only as nvidia-*-cu12 wheels under dist-packages,
@@ -127,6 +142,10 @@ RUN /usr/bin/python3 -c \
     ldconfig -p | grep -q libcublasLt.so.12
 
 COPY --from=builder /opt/venv /opt/venv
+
+# Fail the build, not the first diarisation, if torchcodec cannot load against
+# this image's torch, CUDA runtime and FFmpeg.
+RUN python -c "from torchcodec.decoders import AudioDecoder"
 
 WORKDIR /app
 

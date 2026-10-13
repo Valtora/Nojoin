@@ -1,29 +1,30 @@
 #!/usr/bin/env python3
-"""Guard the deliberately held dependency pins and report when one can move.
+"""Guard the matched dependency stacks and report when a held pin can move.
 
-Some pins sit below the newest release because a companion package has not
-shipped a matching build, not because we chose to lag. A held pin keeps
-attracting Dependabot security alerts that no upgrade can fix, so the hold has
-to be re-justified every time the advisory's affected range is revised. The
-policy, and the one-off dismissal procedure, are in
-docs/DEVELOPMENT.md#held-pins-and-unfixable-advisories.
+Some versions are declared in several files that must agree, and some pins sit
+below the newest release because a companion package has not shipped a
+matching build. A held pin keeps attracting Dependabot security alerts that no
+upgrade can fix, so the hold has to be re-justified every time the advisory's
+affected range is revised. The policy, and the one-off dismissal procedure, are
+in docs/DEVELOPMENT.md#held-pins-and-unfixable-advisories.
 
-This script does the three things that keep the hold honest:
+This script does three things:
 
-1. **Drift check (offline).** Every file that declares part of a matched stack
-   must declare the same version. Nothing else enforces that today, so a bump
-   applied to one requirements file and missed in another would install a
-   mismatched, ABI-incompatible pair.
+1. **Drift check (offline).** Every file that declares a matched stack must
+   declare the same version, and every hold must match the stack it holds.
+   Nothing else enforces that, so a bump applied to one requirements file and
+   missed in another would test one torch and ship another.
 2. **Interpreter check (offline).** Every surface that runs ``backend/`` must
-   declare the same Python minor. This is a consequence of the torch hold rather
-   than a separate decision: the worker inherits its interpreter from the held
+   declare the same Python minor. This follows from the torch stack rather than
+   being a separate decision: the worker inherits its interpreter from the
    PyTorch base image, so the API image, CI, and mypy have to follow it. Left
    unchecked, Dependabot walked the API base image from 3.12 to 3.14 on its own
    and made the interpreter serving every HTTP request the only one the test
    suite never ran on.
-3. **Release check (network).** Ask PyPI whether the blocking package has
-   published a version that lets the pin move, so the hold is revisited when it
-   can actually be lifted rather than on every alert.
+3. **Release check (network).** For each hold, ask PyPI whether the blocking
+   package has published a version that lets the pin move, so the hold is
+   revisited when it can actually be lifted rather than on every alert. No pin
+   is held at present, so this half currently has nothing to check.
 
     python scripts/check_held_pins.py            # drift + release check
     python scripts/check_held_pins.py --offline  # drift check only
@@ -45,7 +46,7 @@ import re
 import sys
 import urllib.error
 import urllib.request
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -53,9 +54,26 @@ PYPI_TIMEOUT_SECONDS = 30
 
 
 @dataclass(frozen=True)
-class Hold:
-    """A pin held below the latest release by an upstream blocker."""
+class MatchedStack:
+    """A version that several files must declare identically."""
 
+    package: str
+    version: str
+    rationale: str
+    # Requirements files that must each pin ``package==version``. Independently
+    # numbered companions (torchvision, torchcodec, torchaudio) are excluded:
+    # they track the stack but do not share its version string.
+    files: tuple[str, ...]
+    # Dockerfiles whose pytorch/pytorch base tag must start with ``version``.
+    images: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class Hold:
+    """A matched stack held below its latest release by an upstream blocker."""
+
+    # Must name a MATCHED_STACKS entry: the drift check is what keeps ``pinned``
+    # true of the files.
     package: str
     pinned: str
     blocker: str
@@ -65,40 +83,33 @@ class Hold:
     clears_advisory_at: str
     advisory: str
     rationale: str
-    # Files whose pins must all agree with ``pinned``. Independently numbered
-    # companions (torchvision, torchcodec) are excluded: they track the stack
-    # but do not share its version string.
-    matched_packages: tuple[str, ...] = ()
-    matched_files: tuple[str, ...] = ()
-    # Docker base images whose tag must start with ``pinned``.
-    matched_images: tuple[str, ...] = field(default_factory=tuple)
 
 
-HOLDS: tuple[Hold, ...] = (
-    Hold(
+MATCHED_STACKS: tuple[MatchedStack, ...] = (
+    MatchedStack(
         package="torch",
-        pinned="2.11.0",
-        blocker="torchaudio",
-        clears_advisory_at="2.13.0",
-        advisory="GHSA-rrmf-rvhw-rf47",
+        version="2.14.1",
         rationale=(
-            "pyannote.audio and torch-audiomentations both require torchaudio, "
-            "whose wheels are compiled against a matching torch minor. "
-            "torchaudio has published nothing above 2.11.0, so torch cannot "
-            "move without breaking the ABI pair."
+            "The worker image takes torch from its pytorch/pytorch base, while "
+            "CI and the GPU host setup install it from the requirements files. "
+            "All three must be the same release, or the suite passes on a "
+            "torch that production does not run."
         ),
-        matched_packages=("torch", "torchaudio"),
-        matched_files=(
+        files=(
             "requirements/test.txt",
             "requirements/local.txt",
         ),
-        matched_images=("docker/Dockerfile.worker",),
+        images=("docker/Dockerfile.worker",),
     ),
 )
 
-# torch==2.11.0, torchaudio==2.11.0 --index-url https://...
+# No pin is held at present. Read "Held Pins and Unfixable Advisories" in
+# docs/DEVELOPMENT.md before adding one.
+HOLDS: tuple[Hold, ...] = ()
+
+# torch==2.14.1 --index-url https://...
 PIN_RE_TEMPLATE = r"^{package}==([^\s;#]+)"
-# FROM pytorch/pytorch:2.11.0-cuda12.6-cudnn9-runtime@sha256:...
+# FROM pytorch/pytorch:2.14.1-cuda12.6-cudnn9-runtime@sha256:...
 IMAGE_TAG_RE = re.compile(r"^FROM\s+pytorch/pytorch:([^\s@]+)", re.MULTILINE)
 
 
@@ -120,10 +131,9 @@ class Declaration:
 # The Python minor that every surface running backend/ must agree on.
 #
 # This is derived, not chosen. The worker's interpreter comes from the PyTorch
-# base image, which is held at 2.11.x because torchaudio has published nothing
-# above it (see the torch Hold above), and that image ships Python 3.12. The
-# worker's Python is therefore fixed until the torch hold lifts, and everything
-# else has to match it rather than the other way round.
+# base image (the torch MatchedStack above), and the 2.14.1 image ships Python
+# 3.12. The worker's Python therefore changes only when that base does, and
+# everything else has to match it rather than the other way round.
 #
 # The worker image is the source of truth but cannot be checked statically: the
 # pytorch/pytorch tag encodes the torch version, not the Python one. So this
@@ -210,24 +220,23 @@ def latest_release(package: str) -> str:
     return max(candidates)[1]
 
 
-def declared_pins(hold: Hold) -> list[tuple[str, int, str, str]]:
+def declared_pins(stack: MatchedStack) -> list[tuple[str, int, str, str]]:
     """Return (file, line, package, version) for every matched pin on disk."""
     found: list[tuple[str, int, str, str]] = []
 
     def line_of(text: str, offset: int) -> int:
         return text.count("\n", 0, offset) + 1
 
-    for relative in hold.matched_files:
+    pattern = re.compile(
+        PIN_RE_TEMPLATE.format(package=re.escape(stack.package)), re.MULTILINE
+    )
+    for relative in stack.files:
         text = (REPO_ROOT / relative).read_text(encoding="utf-8")
-        for package in hold.matched_packages:
-            pattern = re.compile(
-                PIN_RE_TEMPLATE.format(package=re.escape(package)), re.MULTILINE
+        for match in pattern.finditer(text):
+            found.append(
+                (relative, line_of(text, match.start()), stack.package, match.group(1))
             )
-            for match in pattern.finditer(text):
-                found.append(
-                    (relative, line_of(text, match.start()), package, match.group(1))
-                )
-    for relative in hold.matched_images:
+    for relative in stack.images:
         text = (REPO_ROOT / relative).read_text(encoding="utf-8")
         for match in IMAGE_TAG_RE.finditer(text):
             found.append(
@@ -241,30 +250,48 @@ def declared_pins(hold: Hold) -> list[tuple[str, int, str, str]]:
     return found
 
 
-def check_drift(hold: Hold) -> list[str]:
-    """Return a problem description per pin that disagrees with the hold."""
+def check_drift(stack: MatchedStack) -> list[str]:
+    """Return a problem description per declaration that disagrees with the stack."""
     problems: list[str] = []
-    pins = declared_pins(hold)
+    pins = declared_pins(stack)
 
-    for package in hold.matched_packages:
-        if not any(found_package == package for _, _, found_package, _ in pins):
+    for relative in (*stack.files, *stack.images):
+        if not any(found_file == relative for found_file, _, _, _ in pins):
             problems.append(
-                f"{hold.package}: no {package}== pin found in "
-                f"{', '.join(hold.matched_files)}; the drift check is not "
-                f"covering what it claims to."
+                f"{stack.package}: {relative} declares no {stack.package} "
+                f"version; the drift check is not covering what it claims to."
             )
 
     for relative, line, package, version in pins:
-        # An image tag carries a suffix (2.11.0-cuda12.6-...), so compare the
+        # An image tag carries a suffix (2.14.1-cuda12.6-...), so compare the
         # leading version component rather than the whole string.
         actual = version.split("-", 1)[0] if package == "pytorch/pytorch" else version
-        if actual != hold.pinned:
+        if actual != stack.version:
             problems.append(
-                f"{hold.package}: {relative}:{line} declares {package} "
-                f"{version}, but the recorded hold is {hold.pinned}. Either the "
-                f"stack moved and HOLDS in {Path(__file__).name} is stale, or "
-                f"the bump was applied inconsistently and the stack is now "
-                f"mismatched."
+                f"{stack.package}: {relative}:{line} declares {package} "
+                f"{version}, but the recorded stack is {stack.version}. Either "
+                f"the stack moved and MATCHED_STACKS in {Path(__file__).name} is "
+                f"stale, or the bump was applied inconsistently and the stack is "
+                f"now mismatched."
+            )
+    return problems
+
+
+def check_hold_records() -> list[str]:
+    """Return a problem per hold whose pin no matched stack confirms."""
+    stacks = {stack.package: stack for stack in MATCHED_STACKS}
+    problems: list[str] = []
+    for hold in HOLDS:
+        stack = stacks.get(hold.package)
+        if stack is None:
+            problems.append(
+                f"{hold.package}: HOLDS records a hold but MATCHED_STACKS has no "
+                f"entry for it, so nothing checks the held pin against the files."
+            )
+        elif stack.version != hold.pinned:
+            problems.append(
+                f"{hold.package}: HOLDS records {hold.pinned} but MATCHED_STACKS "
+                f"records {stack.version}. Move both together."
             )
     return problems
 
@@ -333,7 +360,7 @@ def check_one_file(
         problems.append(
             f"python: {relative}:{line} sets {declaration.what} to "
             f"{match.group(1)}, but every surface running backend/ must be on "
-            f"{EXPECTED_PYTHON} — the minor the held PyTorch base ships to the "
+            f"{EXPECTED_PYTHON}, the minor the PyTorch base ships to the "
             f"worker. Either align this back, or move the worker, CI, mypy, the "
             f"docs and EXPECTED_PYTHON in {Path(__file__).name} together in one "
             f"reviewed change."
@@ -447,9 +474,11 @@ def render_text(
         print(f"ERROR: could not check {failure}")
     if not problems:
         print(
-            "Matched-stack pins agree with every recorded hold, and every "
-            f"surface running backend/ declares Python {EXPECTED_PYTHON}."
+            "Matched-stack pins agree with every recorded stack and hold, and "
+            f"every surface running backend/ declares Python {EXPECTED_PYTHON}."
         )
+    if not HOLDS:
+        print("No dependency pin is currently held.")
 
 
 def main() -> int:
@@ -464,7 +493,8 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    problems = [problem for hold in HOLDS for problem in check_drift(hold)]
+    problems = [problem for stack in MATCHED_STACKS for problem in check_drift(stack)]
+    problems += check_hold_records()
     problems += check_interpreter()
     results, failures = ((), []) if args.offline else check_releases(HOLDS)
     results = list(results)

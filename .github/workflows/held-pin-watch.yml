@@ -3,12 +3,13 @@ name: Held Pin Watch
 # Watches the deliberately held dependency pins recorded in
 # scripts/check_held_pins.py and opens an issue when one can finally move.
 #
-# A held pin (currently the torch/torchaudio stack) keeps attracting Dependabot
-# security alerts that no upgrade can fix, because the fixed version is not
-# installable while a companion package lags. Those alerts are auto-dismissed by
-# a Dependabot auto-triage rule, which means nothing would otherwise tell us the
-# day the hold can be lifted. This job is that signal: it asks PyPI directly
-# rather than waiting for an alert we have deliberately silenced.
+# A held pin keeps attracting Dependabot security alerts that no upgrade can
+# fix, because the fixed version is not installable while a companion package
+# lags. Those alerts are auto-dismissed by a Dependabot auto-triage rule, which
+# means nothing would otherwise tell us the day the hold can be lifted. This job
+# is that signal: it asks PyPI directly rather than waiting for an alert we have
+# deliberately silenced. While no pin is held, the run checks only that the
+# matched stacks agree.
 #
 # It mirrors repo-audit-reminder.yml: the runner's built-in gh CLI rather than a
 # third-party action, so there is no extra pinned SHA to maintain, and it is
