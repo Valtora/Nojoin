@@ -123,7 +123,6 @@ class EnforceCanonicalHttpsMiddleware(BaseHTTPMiddleware):
         return redirect_target
 
 
-# Import models to register them with SQLModel
 from backend.core.db import async_session_maker
 from backend.core.security import SigningKeyUnavailableError, get_signing_keyring
 from backend.models.user import User
@@ -149,13 +148,8 @@ from backend.utils.stall_watchdog import start_stall_watchdog
 
 
 async def ensure_owner_exists():
-    """
-    Ensures that at least one user has the OWNER role.
-    If no owner exists, it tries to create/promote a default owner from env custom vars,
-    defaulting to 'admin' / 'changeme123'.
-    """
+    """Promote the first user to OWNER when no user holds that role."""
     async with async_session_maker() as session:
-        # Check if any owner exists
         query = select(User).where(User.role == "owner")
         result = await session.execute(query)
         owner = result.scalar_one_or_none()
@@ -329,7 +323,6 @@ async def lifespan(app: FastAPI):
     log_deployment_warnings(startup_path="API startup", logger_instance=logger)
     log_trusted_proxy_warnings(startup_path="API startup", logger_instance=logger)
     log_recordings_storage_warnings(logger_instance=logger)
-    # Seed demo data for the initial user if needed
     try:
         await seed_demo_data()
     except Exception as e:  # noqa: BLE001

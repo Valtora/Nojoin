@@ -6,7 +6,6 @@ import time
 import urllib.request
 import warnings
 
-# Add project root to path to allow imports from backend
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from backend.utils.config_manager import config_manager
@@ -78,7 +77,6 @@ def _download_file(
                 f"Downloading {url} to {dest_path} (Attempt {attempt + 1}/{retries})"
             )
 
-            # Check for existing partial        try:
             downloaded = 0
             file_mode = "wb"
             resume_header = {}
@@ -87,7 +85,6 @@ def _download_file(
             if os.path.exists(dest_path):
                 downloaded = os.path.getsize(dest_path)
 
-                # Check if server supports range requests (HEAD request)
                 req = urllib.request.Request(url, method="HEAD")
                 try:
                     with urllib.request.urlopen(req) as response:
@@ -121,7 +118,6 @@ def _download_file(
             elif os.path.exists(part_path):
                 downloaded = os.path.getsize(part_path)
 
-                # Check if server supports range requests (HEAD request)
                 req = urllib.request.Request(url, method="HEAD")
                 try:
                     with urllib.request.urlopen(req) as response:
@@ -159,10 +155,10 @@ def _download_file(
                 if "Content-Length" in source.info():
                     total_size = int(source.info().get("Content-Length")) + downloaded
                 else:
-                    total_size = None  # Unknown size
+                    total_size = None
 
                 start_time = time.time()
-                chunk_size = 1024 * 1024  # 1MB chunks
+                chunk_size = 1024 * 1024
 
                 last_report_time = 0
 
@@ -175,18 +171,15 @@ def _download_file(
                     output.write(buffer)
 
                     current_time = time.time()
-                    # Report every 0.5 seconds
                     if current_time - last_report_time > 0.5 or (
                         total_size and downloaded == total_size
                     ):
                         last_report_time = current_time
 
-                        # Calculate progress
                         percent = (
                             int(downloaded * 100 / total_size) if total_size else 0
                         )
 
-                        # Calculate speed and ETA
                         elapsed_time = current_time - start_time
                         if elapsed_time > 0:
                             # Speed based on this session's download
@@ -220,7 +213,6 @@ def _download_file(
                             f"{description}", percent, speed_str, eta_str, stage=stage
                         )
 
-            # If we get here, download completed successfully. Rename part to final.
             if os.path.exists(part_path):
                 os.rename(part_path, dest_path)
             return
@@ -229,7 +221,7 @@ def _download_file(
             logger.error(f"Download failed (Attempt {attempt + 1}): {e}")
             if attempt == retries - 1:
                 raise e
-            time.sleep(2)  # Wait before retry
+            time.sleep(2)
 
 
 def _default_device_for_validation() -> str:
@@ -450,7 +442,6 @@ def preload_models():
     try:
         download_models()
     except Exception as e:
-        # Mark download as errored in shared state
         set_download_progress(0, f"Download failed: {str(e)}", status="error")
         raise
 
@@ -477,7 +468,6 @@ def check_model_status(whisper_model_size=None):
     # this directory, so a copy anywhere else would be downloaded again.
     download_root = whisper_cache_root()
 
-    # Use local dict instead of importing whisper
     filename = WHISPER_FILENAMES.get(whisper_model_size)
 
     if filename:

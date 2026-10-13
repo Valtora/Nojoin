@@ -19,7 +19,6 @@ async def init_db():
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
 
-    # Seed demo data
     try:
         await seed_demo_data()
     except Exception as e:  # noqa: BLE001
