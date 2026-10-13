@@ -8,7 +8,7 @@ Use the links below by task rather than treating the root README as the source o
 
 - [GETTING_STARTED.md](GETTING_STARTED.md): First deployment, first admin account, and the shortest path to your first recording.
 - [CAPTURE.md](CAPTURE.md): Browser capture setup, supported browsers, sharing audio, pause/resume behaviour, and capture troubleshooting.
-- [DEPLOYMENT.md](DEPLOYMENT.md): Hosting, Docker, environment variables, remote access, reverse proxy, and updating.
+- [DEPLOYMENT.md](DEPLOYMENT.md): Hosting, Docker, environment variables, [remote access](DEPLOYMENT.md#remote-access-and-trusted-public-origin), [reverse proxies](DEPLOYMENT.md#reverse-proxy-requirements), and updating.
 - [USAGE.md](USAGE.md): Day-to-day product usage for normal users.
 - [DEVELOPMENT.md](DEVELOPMENT.md): Local development prerequisites and main source-build commands.
 
@@ -30,23 +30,3 @@ Use the links below by task rather than treating the root README as the source o
 - [LEGAL.md](LEGAL.md): Legal disclaimer and recording-law responsibility.
 - [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md): Community conduct expectations.
 - [VERSION](VERSION): The current release version used by the project.
-
-## Common Tasks
-
-| I want to... | Read this |
-| --- | --- |
-| Bring up Nojoin for the first time | [GETTING_STARTED.md](GETTING_STARTED.md) |
-| Start, resume, or troubleshoot browser recording | [CAPTURE.md](CAPTURE.md) |
-| Deploy or upgrade a self-hosted instance | [DEPLOYMENT.md](DEPLOYMENT.md) |
-| Reach Nojoin from another device, a phone, a VPN, or a tailnet | [DEPLOYMENT.md](DEPLOYMENT.md#remote-access-and-trusted-public-origin) |
-| Put Nojoin behind Caddy, Nginx, Traefik, or Tailscale Serve | [DEPLOYMENT.md](DEPLOYMENT.md#reverse-proxy-requirements) |
-| Learn how to use the dashboard and recordings workspace | [USAGE.md](USAGE.md) |
-| Configure Google or Outlook calendar sync | [CALENDAR.md](CALENDAR.md) |
-| Connect Claude or another MCP client to my meetings | [MCP.md](MCP.md) |
-| Manage users, invitations, and admin settings | [ADMIN.md](ADMIN.md) |
-| Understand backup sensitivity and restore modes | [BACKUP_RESTORE.md](BACKUP_RESTORE.md) |
-| See what anonymous usage data is sent, or turn it off | [TELEMETRY.md](TELEMETRY.md) |
-| Understand how the system fits together technically | [ARCHITECTURE.md](ARCHITECTURE.md) |
-| Match the interface's colours, spacing, and themes | [DESIGN.md](DESIGN.md) |
-| Write or review marketing site copy and design | [SITE.md](SITE.md) |
-| Set up a local source development environment | [DEVELOPMENT.md](DEVELOPMENT.md) |
