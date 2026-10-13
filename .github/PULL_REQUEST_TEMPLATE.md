@@ -22,8 +22,10 @@ Tick the checks you ran for the areas you touched (see `CONTRIBUTING.md`).
 - [ ] Frontend lint: `cd frontend && npm run lint`
 - [ ] Frontend unit tests: `cd frontend && npm run test`
 - [ ] Frontend build: `cd frontend && npm run build`
+- [ ] Site build: `cd site && npm ci && npm run build`
 - [ ] Docs validation: `python3 scripts/validate_docs.py`
 - [ ] Alembic validation: `python3 scripts/validate_alembic.py`
+- [ ] Whitespace check: `python3 scripts/check_whitespace.py`
 
 ## Migration impact
 
