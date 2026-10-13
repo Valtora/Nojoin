@@ -39,7 +39,7 @@ huggingface_hub==1.33.0
 # too: left floating, a resolver is free to keep the vulnerable 2.6.5 copy.
 lightning==2.6.6
 pytorch-lightning==2.6.6
-# fsspec 2026.7.0 closes CVE-2026-104851. torch, huggingface_hub and lightning
+# fsspec 2026.7.0 and later close CVE-2026-104851. torch, huggingface_hub and lightning
 # import it, and without a pin the venv uses the PyTorch base image's 2026.2.0
 # copy. docker/Dockerfile.worker upgrades that copy too.
 fsspec==2026.9.0
@@ -58,7 +58,7 @@ torchmetrics==1.9.0
 soundfile==0.14.0
 matplotlib==3.11.2
 pyannoteai-sdk==0.4.0
-# PyPI builds torchcodec against CUDA 13 from 0.14 on. docker/Dockerfile.worker
-# swaps it for the CPU build of this version to suit its CUDA 12.6 torch.
+# PyPI builds torchcodec against the CUDA of PyPI's torch. docker/Dockerfile.worker
+# swaps it for the CPU build of this version, which links no CUDA library.
 torchcodec==0.17.0
 fastembed==0.9.0

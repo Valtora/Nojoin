@@ -1,4 +1,9 @@
 sqlmodel==0.0.48
+# sqlmodel 0.0.48 accepts SQLAlchemy 2.1, which breaks two things here: a plain
+# postgresql:// URL now means psycopg 3 rather than the installed psycopg2, and
+# greenlet, which the async engine needs, moved into the asyncio extra. Held at
+# 2.0 until both are handled; the extra is requested so greenlet stays explicit.
+sqlalchemy[asyncio]==2.0.54
 psycopg2-binary==2.9.13
 asyncpg==0.32.0
 python-dotenv==1.2.4

@@ -7,7 +7,7 @@ For deeper hosting and configuration detail, continue to [DEPLOYMENT.md](DEPLOYM
 ## Before You Begin
 
 - Docker must be installed.
-- An NVIDIA GPU is strongly recommended for faster transcription and diarisation, but CPU-only mode is supported.
+- An NVIDIA GPU is strongly recommended for faster transcription and diarisation, but CPU-only mode is supported. The GPU must be GTX 16 or RTX 20 series or newer, on driver 580 or newer ([GPU requirements](DEPLOYMENT.md#gpu-requirements)).
 - Shared-audio live recording requires Chrome on Windows, Linux, or macOS, or Edge, Brave, Arc, or another Chromium-family browser on Windows or Linux. Other Chromium-family browsers on macOS are best-effort.
 - Chrome on Android and iOS can start microphone-only live recordings.
 - Firefox, Safari, and other mobile browsers can review existing recordings but cannot start live capture.

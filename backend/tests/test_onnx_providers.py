@@ -113,11 +113,26 @@ def test_cpu_only_host_is_reported_as_expected_not_as_a_fault(caplog, monkeypatc
 
 
 def test_gpu_presence_is_detected_from_device_nodes(monkeypatch):
+    monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
     monkeypatch.setattr(onnx_providers.glob, "glob", lambda pattern: [])
     assert not onnx_providers.gpu_is_present()
 
     monkeypatch.setattr(
         onnx_providers.glob, "glob", lambda pattern: ["/dev/nvidia0", "/dev/nvidiactl"]
+    )
+    assert onnx_providers.gpu_is_present()
+
+
+def test_gpus_hidden_by_cuda_visible_devices_count_as_absent(monkeypatch):
+    # The worker entrypoint hides a GPU this image cannot drive this way, and the
+    # device nodes are still there, so the environment has to win.
+    monkeypatch.setattr(onnx_providers.glob, "glob", lambda pattern: ["/dev/nvidia0"])
+    for hidden in ("", "-1"):
+        monkeypatch.setenv("CUDA_VISIBLE_DEVICES", hidden)
+        assert not onnx_providers.gpu_is_present()
+
+    monkeypatch.setenv(
+        "CUDA_VISIBLE_DEVICES", "GPU-552ae5c9-a6aa-9229-3016-d1b8617e1a65"
     )
     assert onnx_providers.gpu_is_present()
 

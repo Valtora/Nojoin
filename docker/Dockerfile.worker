@@ -1,6 +1,6 @@
 # --- Builder Stage ---
 # Pinned by digest for reproducible builds; Dependabot keeps the tag comment current.
-FROM pytorch/pytorch:2.14.1-cuda12.6-cudnn9-runtime@sha256:1262abc856a428933c0477b4be87079173a0b087b7691c47fcb396b7b5775c56 AS builder
+FROM pytorch/pytorch:2.14.1-cuda13.0-cudnn9-runtime@sha256:3c0b174a1339193a5bcc4b37d737c9f5ca3c4782a2293d3888e4271367eddf44 AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
@@ -33,23 +33,26 @@ RUN python -c "import torch; print(f'torch=={torch.__version__}')" > constraints
 # Install dependencies using the constraints to force usage of system torch
 RUN pip install --no-cache-dir -r requirements/worker.txt -c constraints.txt
 
-# Install pyannote.audio without dependencies to use system torch
-RUN pip install --no-cache-dir --no-deps pyannote.audio==4.0.5 -c constraints.txt
+# Install pyannote.audio without dependencies to use system torch. The pin is
+# read from local.txt so the image and a GPU host install cannot drift apart.
+RUN pip install --no-cache-dir --no-deps \
+        "$(grep -E '^pyannote\.audio==' requirements/local.txt)" -c constraints.txt
 
-# torchcodec on PyPI is built against the CUDA that PyPI torch ships, which has
-# been CUDA 13 since torchcodec 0.14. This image's torch is the CUDA 12.6 build,
-# so the PyPI wheel fails to load (libcudart.so.13 not found) and pyannote has
-# no audio decoder. Swap in the CPU build of the version worker.txt resolved:
-# torchcodec only decodes audio here, which never touches the GPU.
+# torchcodec on PyPI is built against the CUDA that PyPI torch ships, not the
+# CUDA of this base image, and a mismatch stops it loading (libcudart not found),
+# which leaves pyannote with no audio decoder. Swap in the CPU build of the
+# version worker.txt resolved: torchcodec only decodes audio here, which never
+# touches the GPU, and the CPU build links no CUDA library at all.
 RUN torchcodec_version="$(python -c 'import importlib.metadata as m; print(m.version("torchcodec").split("+")[0])')" && \
     pip install --no-cache-dir --no-deps --force-reinstall \
         --index-url https://download.pytorch.org/whl/cpu "torchcodec==${torchcodec_version}+cpu"
 
 # Parakeet ASR (onnx-asr) requires the CUDA build of ONNX Runtime. fastembed
-# pulls the CPU-only onnxruntime; replace it with a CUDA-12-compatible
-# onnxruntime-gpu build that matches this image's CUDA 12.6 runtime.
+# pulls the CPU-only onnxruntime; replace it with onnxruntime-gpu. Its PyPI
+# builds target CUDA 13 from 1.27.0 and CUDA 12 before that, so this pin must
+# move with the CUDA major of the base image above.
 RUN pip uninstall -y onnxruntime onnxruntime-gpu && \
-    pip install --no-cache-dir onnxruntime-gpu==1.20.2
+    pip install --no-cache-dir onnxruntime-gpu==1.31.0
 
 # Install Triton in the venv so Whisper word-level timestamps use GPU-accelerated
 # kernels instead of falling back to slower CPU implementations. The base PyTorch
@@ -57,7 +60,7 @@ RUN pip uninstall -y onnxruntime onnxruntime-gpu && \
 RUN pip install --no-cache-dir triton
 
 # --- Runtime Stage ---
-FROM pytorch/pytorch:2.14.1-cuda12.6-cudnn9-runtime@sha256:1262abc856a428933c0477b4be87079173a0b087b7691c47fcb396b7b5775c56 AS runtime
+FROM pytorch/pytorch:2.14.1-cuda13.0-cudnn9-runtime@sha256:3c0b174a1339193a5bcc4b37d737c9f5ca3c4782a2293d3888e4271367eddf44 AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
@@ -105,18 +108,18 @@ RUN apt-get update && \
 # pillow==12.3.0 closes the batch of HIGH pillow CVEs disclosed after v1.5.0
 # (CVE-2026-54058/54059/54060, 55379/55380, 59197/59199/59200/59204/59205);
 # urllib3==2.8.0 closes CVE-2026-44431/44432 and CVE-2026-97687/97689;
-# fsspec==2026.7.0 closes CVE-2026-104851.
+# fsspec==2026.9.0 keeps the CVE-2026-104851 fix.
 #
 # Then remove that system pip. The worker never runs it (the venv has its own),
 # and from 26.2 it ships an SBOM of its vendored urllib3, msgpack and setuptools,
 # whose fixable HIGH CVEs the image scan reports like installed packages.
 RUN /usr/bin/python3 -m pip install --no-cache-dir --break-system-packages \
-    --root-user-action=ignore --upgrade pillow==12.3.0 urllib3==2.8.0 fsspec==2026.7.0 && \
+    --root-user-action=ignore --upgrade pillow==12.3.0 urllib3==2.8.0 fsspec==2026.9.0 && \
     /usr/bin/python3 -m pip uninstall -y --break-system-packages \
     --root-user-action=ignore pip
 
 # Put the CUDA wheel libraries on the dynamic loader path. Despite the `cudnn9` tag,
-# this base ships CUDA and cuDNN only as nvidia-*-cu12 wheels under dist-packages,
+# this base ships CUDA and cuDNN only as nvidia-* wheels under dist-packages,
 # with nothing in a system lib dir or the ldconfig cache. torch copes, because it
 # ctypes-preloads its own wheel libraries with RTLD_GLOBAL, but onnxruntime-gpu does
 # not: libonnxruntime_providers_cuda.so is linked against cuDNN 9's split
@@ -129,7 +132,7 @@ RUN /usr/bin/python3 -m pip install --no-cache-dir --break-system-packages \
 # loads on its own merits instead of depending on torch being imported first. These
 # are CUDA runtime libraries only; the driver libraries still come from
 # /usr/local/nvidia/lib*, which LD_LIBRARY_PATH resolves ahead of the ldconfig cache.
-# Read paths from __path__ rather than __file__: the nvidia-*-cu12 wheels are PEP 420
+# Read paths from __path__ rather than __file__: the nvidia-* wheels are PEP 420
 # namespace packages, whose __file__ is None. The greps assert the layout so a future
 # base bump fails the build here instead of degrading to CPU in production.
 RUN /usr/bin/python3 -c \
@@ -139,7 +142,7 @@ RUN /usr/bin/python3 -c \
       > /etc/ld.so.conf.d/nvidia-cuda-wheels.conf && \
     ldconfig && \
     ldconfig -p | grep -q libcudnn_adv.so.9 && \
-    ldconfig -p | grep -q libcublasLt.so.12
+    ldconfig -p | grep -q libcublasLt.so.13
 
 COPY --from=builder /opt/venv /opt/venv
 
