@@ -85,7 +85,6 @@ async def create_invitation(
     await db.commit()
     await db.refresh(invitation)
 
-    # Construct link
     web_app_url = get_invite_base_url()
     link = f"{web_app_url}/register?invite={invitation.code}"
 

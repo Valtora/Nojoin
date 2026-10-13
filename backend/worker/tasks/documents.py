@@ -94,10 +94,8 @@ def _resolve_backend_for_document(session, document: Document):
     if missing:
         return None, "no AI provider is configured for this account."
 
-    # Imported explicitly rather than taken from the `constants` wildcard: that
-    # module imports this factory inside a function, so it never enters the star
-    # namespace and the reference resolved to a NameError at runtime. Every
-    # document then downgraded to a structural parse, whatever the provider.
+    # Imported explicitly: `constants` imports this factory inside a function,
+    # so it never enters the star namespace.
     from backend.processing.llm_services import get_llm_backend_with_secondary
 
     try:
@@ -539,7 +537,7 @@ def _parse_document(session, document: Document) -> None:
 # Post-upgrade rebuild
 # ---------------------------------------------------------------------------
 #
-# The embedding model change is a hard cutover: the migration empties
+# An embedding model change is a hard cutover: the migration empties
 # context_chunks, because vectors from two models are not comparable. Search and
 # meeting chat therefore return nothing until each recording is re-indexed,
 # which is what these two tasks do.

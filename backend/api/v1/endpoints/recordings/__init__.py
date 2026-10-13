@@ -1,4 +1,3 @@
-# Package recordings endpoints init
 from backend.celery_app import celery_app
 from backend.models.recording import RecordingStatus
 from backend.processing.llm_services import (
@@ -35,8 +34,7 @@ from backend.utils.recording_audio_sync import (
     sync_recording_audio_window_manifests,
 )
 
-# Re-export top-level imports that were present in the original recordings.py
-# to preserve backwards-compatibility for test monkeypatching
+# Re-exported because tests monkeypatch these names on the package.
 from backend.utils.recording_storage import (
     RECORDING_UPLOAD_RETENTION_HOURS,
     delete_recording_artifacts,
@@ -68,7 +66,7 @@ from .constants import (
     UPLOAD_CLOSED_DETAIL,
 )
 
-# Re-export helper functions and classes for backwards compatibility (especially test cases)
+# Re-exported for tests that import or patch helpers through the package.
 from .helpers import (
     _assert_recording_owner,
     _bootstrap_import_audio_windows,

@@ -21,9 +21,8 @@ def generate_recording_speaker_public_id() -> str:
 
 class GlobalSpeaker(BaseDBModel, table=True):
     __tablename__ = "global_speakers"
-    name: str = Field(
-        index=True
-    )  # Removed unique=True to allow same name for different users
+    # Not unique: different users may each have a person with the same name.
+    name: str = Field(index=True)
     # none_as_null: without it, clearing a voiceprint stores a JSON ``null``
     # rather than SQL NULL, which still satisfies ``embedding IS NOT NULL``.
     # Queries that count stored voiceprints then disagree with the Python code,

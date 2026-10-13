@@ -223,10 +223,9 @@ async def get_initial_config(req: Request, db: AsyncSession = Depends(get_db)):
     system_keys = await async_get_system_api_keys(db)
     llm_provider = config_manager.get("llm_provider", "gemini")
     # `llm_provider` always resolves to something (gemini is the default), so on
-    # its own it cannot tell the wizard apart from an operator who chose gemini
-    # and one who set nothing at all. .env.example ships LLM_PROVIDER empty and
-    # empty env values are ignored, which made the wizard report a missing
-    # gemini key to operators who never picked gemini.
+    # its own it cannot tell an operator who chose gemini from one who set
+    # nothing. .env.example ships LLM_PROVIDER empty and empty env values are
+    # ignored, so the raw variable is what says whether a provider was chosen.
     llm_provider_selected = bool(os.getenv(LLM_PROVIDER_ENV_KEY, "").strip())
     secondary_llm_provider = config_manager.get("secondary_llm_provider") or None
     selected_model_key = (

@@ -18,7 +18,6 @@ def get_whisper_model_path(model_size: str) -> Optional[str]:
             return None
 
         model_url = whisper._MODELS[model_size]
-        # Extract the filename from the URL (last part after /)
         model_filename = model_url.split("/")[-1]
 
         return os.path.join(whisper_cache_root(), model_filename)
@@ -34,7 +33,6 @@ def is_whisper_model_downloaded(model_size: str) -> bool:
         if not model_path:
             return False
 
-        # Check if the model file exists in the cache
         exists = os.path.exists(model_path)
         logger.debug(f"Model {model_size} file path: {model_path}, exists: {exists}")
         return exists
@@ -51,7 +49,7 @@ WHISPER_MODEL_SIZES_MB = {
     "small": 244,
     "medium": 769,
     "large": 1550,
-    "turbo": 809,  # Whisper Turbo model size
+    "turbo": 809,
 }
 
 

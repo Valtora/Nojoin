@@ -58,13 +58,9 @@ def get_sync_session() -> Session:
 # Register every ORM model on the SQLModel class registry.
 #
 # Relationships name their targets by string, so SQLAlchemy resolves them only
-# once all the classes exist. Leaving that to each entry point's own imports is
-# what produced "expression 'DocumentPage.page_number' failed to locate a name"
-# at container start: registry.py was imported by init_db, alembic and the
-# tests, but not by the API or startup_canonical_cutover, so the whole test
-# suite passed while production could not configure its mappers.
-#
-# This module is the one chokepoint every entry point already goes through --
-# nothing touches the database without it -- and no model imports it back, so
-# there is no cycle. Kept at the bottom so the engines above are built first.
+# once all the classes exist. An entry point that relies on its own imports can
+# pass the tests and still fail to configure its mappers in production with
+# "failed to locate a name". This module is the one chokepoint every entry point
+# already goes through, and no model imports it back, so there is no cycle.
+# Kept at the bottom so the engines above are built first.
 from backend.models import registry  # noqa: E402,F401

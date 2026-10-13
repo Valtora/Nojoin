@@ -73,8 +73,7 @@ def _load_window_reconciliation_context(
 ) -> _WindowReconciliationContext | None:
     """Phase 1: load every input the reconciliation needs for a single
     completed diarization window. Returns None when the window is missing,
-    belongs to another recording, or has no turns — the same early-return
-    conditions the original function used to skip work."""
+    belongs to another recording, or has no turns."""
     window_result = session.get(DiarizationWindowResult, window_result_id)
     if window_result is None or window_result.recording_id != recording_id:
         return None

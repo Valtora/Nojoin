@@ -138,7 +138,6 @@ async def list_recordings(
     if status_filters:
         query = query.where(Recording.status.in_(list(status_filters)))
 
-    # Archive/Delete filtering
     if only_deleted:
         query = query.where(Recording.is_deleted == True)
     elif only_archived:
@@ -151,7 +150,6 @@ async def list_recordings(
         if not include_archived:
             query = query.where(Recording.is_archived == False)
 
-    # Joins for filtering and searching
     if q or speaker_ids or tag_ids:
         query = query.join(Transcript, isouter=True)
         query = query.join(RecordingSpeaker, isouter=True)
@@ -183,7 +181,6 @@ async def list_recordings(
     if tag_ids:
         query = query.where(Tag.id.in_(tag_ids))
 
-    # Order and pagination
     query = query.order_by(Recording.created_at.desc()).offset(skip).limit(limit)
 
     result = await db.execute(query)

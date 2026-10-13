@@ -73,7 +73,6 @@ async def register_user(
     if not user_in.invite_code:
         raise HTTPException(status_code=400, detail="Invitation code required")
 
-    # Validate invite
     query = (
         select(Invitation)
         .where(Invitation.code == user_in.invite_code)
@@ -97,7 +96,6 @@ async def register_user(
         owner_detail="Invitation is invalid",
     )
 
-    # Check if user exists
     query = select(User).where(User.username == user_in.username)
     result = await db.execute(query)
     if result.scalar_one_or_none():
@@ -116,14 +114,12 @@ async def register_user(
     )
     db.add(user)
 
-    # Update invitation usage
     invitation.used_count += 1
     db.add(invitation)
 
     await db.commit()
     await db.refresh(user)
 
-    # Seed demo data
     try:
         await seed_demo_data(user.id)
     except Exception as e:  # noqa: BLE001
@@ -174,11 +170,9 @@ async def read_users(
     if search:
         query = query.where(User.username.ilike(f"%{search}%"))
 
-    # Count total
     count_query = select(func.count()).select_from(query.subquery())
     total = (await db.execute(count_query)).scalar_one()
 
-    # Pagination
     query = query.offset(skip).limit(limit).order_by(User.id)
     result = await db.execute(query)
     users = result.scalars().all()
@@ -202,7 +196,6 @@ async def create_user(
     ):
         raise HTTPException(status_code=403, detail="Not authorized")
 
-    # Check if user exists
     query = select(User).where(User.username == user_in.username)
     result = await db.execute(query)
     if result.scalar_one_or_none():
@@ -218,13 +211,12 @@ async def create_user(
         hashed_password=hash_user_password(user_in.password),
         is_superuser=is_superuser,
         role=role,
-        force_password_change=True,  # Force password change for new users created by admin
+        force_password_change=True,
     )
     db.add(user)
     await db.commit()
     await db.refresh(user)
 
-    # Seed demo data
     try:
         await seed_demo_data(user.id)
     except Exception as e:  # noqa: BLE001
@@ -253,7 +245,6 @@ async def delete_user(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # Prevent deleting self
     if user.id == current_user.id:
         raise HTTPException(status_code=400, detail="Cannot delete yourself")
 
@@ -360,7 +351,6 @@ async def update_user_me(
     Update own user.
     """
     if user_in.username:
-        # Check uniqueness
         query = select(User).where(User.username == user_in.username)
         result = await db.execute(query)
         existing_user = result.scalar_one_or_none()
@@ -430,7 +420,7 @@ async def update_user(
     bump_required = False
     if user_in.password:
         user.hashed_password = hash_user_password(user_in.password)
-        user.force_password_change = True  # Force change if admin resets it
+        user.force_password_change = True
         bump_required = True
 
     if user_in.is_active is not None:

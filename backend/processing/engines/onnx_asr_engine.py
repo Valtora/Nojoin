@@ -1,4 +1,3 @@
-# nojoin/processing/engines/onnx_asr_engine.py
 # Shared base for onnx-asr-backed transcription engines (Parakeet, Canary).
 # Heavy imports (onnx_asr, soundfile) live inside methods, never at module top.
 

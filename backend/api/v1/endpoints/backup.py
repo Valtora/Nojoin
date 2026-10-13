@@ -137,8 +137,6 @@ async def export_backup(
         )
 
     try:
-        # Trigger Celery task
-        # Uses send_task to avoid importing the task function directly (bypasses heavy imports).
         task = await dispatch_task(
             "backend.worker.tasks.create_backup_task",
             kwargs={
@@ -189,7 +187,6 @@ async def get_export_status(task_id: str):
                 else None,
             }
         else:
-            # failure
             response = {
                 "state": task_result.state,
                 "status": "Backup export failed. Check server logs for details.",
@@ -229,9 +226,8 @@ async def download_export(task_id: str, background_tasks: BackgroundTasks):
                 status_code=404, detail="Backup file not found (triggered expired?)"
             )
 
-        # Helper to clean up file after serving
-        # Notes: We do NOT delete the file immediately here to support Resumable Downloads (Range requests).
-        # The file will be cleaned up by the periodic cleanup task or subsequent operations.
+        # Kept after serving so a Range request can resume the download; the
+        # periodic cleanup task removes it.
 
         return FileResponse(
             path=zip_path,
@@ -268,7 +264,6 @@ async def import_backup(
     Trigger background backup restoration.
     Returns: {"job_id": str, "message": str}
     """
-    # Create persistent temporary connection for the file
     path_manager = PathManager()
     restore_temp_dir = path_manager.user_data_directory / "temp_restores"
     restore_temp_dir.mkdir(parents=True, exist_ok=True)
@@ -314,7 +309,6 @@ async def import_backup(
         except HTTPException:
             raise
         except Exception as e:  # noqa: BLE001
-            # Cleanup on immediate failure
             try:
                 if temp_path.exists():
                     os.unlink(temp_path)
@@ -382,9 +376,8 @@ async def init_upload(filename: str, file_size: int, total_chunks: int):
     Initialize a multipart upload.
     Returns: {"upload_id": str}
     """
-    # file_size was previously accepted and ignored, which left this route as an
-    # unbounded write primitive: UPLOAD_LIMIT_BACKUP was only ever enforced on the
-    # single-shot /import route that the UI never calls.
+    # The UI uploads through this route rather than /import, so the limit must
+    # hold here. upload_chunk enforces it again against the bytes written.
     if file_size < 0:
         raise HTTPException(status_code=400, detail="Invalid file size.")
     if file_size > UPLOAD_LIMIT_BACKUP:
@@ -403,7 +396,6 @@ async def init_upload(filename: str, file_size: int, total_chunks: int):
     # Create temp directory (get_upload_temp_dir creates it as a side effect).
     path_manager.get_upload_temp_dir(upload_id)
 
-    # Clean up old upload directories (older than 24h)
     temp_uploads_root = path_manager.user_data_directory / "temp_uploads"
     path_manager.cleanup_temp_files(temp_uploads_root, max_age_hours=24)
 
@@ -474,7 +466,6 @@ async def complete_upload(
     """
     path_manager = PathManager()
 
-    # Destination for assembled file (same as regular import)
     restore_temp_dir = path_manager.user_data_directory / "temp_restores"
     restore_temp_dir.mkdir(parents=True, exist_ok=True)
 

@@ -233,10 +233,8 @@ async def restore_recording(
 
     recording.is_archived = False
     if recording.is_deleted:
-        # Restore from Deleted -> Previous State
         recording.is_deleted = False
     else:
-        # Restore from Archived -> Active
         recording.is_archived = False
 
     db.add(recording)
@@ -274,10 +272,8 @@ async def permanently_delete_recording(
     """
     Permanently delete a recording and its associated file.
 
-    Only recordings already in the bin can be destroyed: the web client has
-    always offered permanent deletion exclusively from the bin view, and
-    this precondition makes that two-step (bin, then destroy) a server-side
-    invariant for every surface, including MCP.
+    Only recordings already in the bin can be destroyed, so the two-step flow
+    (bin, then destroy) holds server-side for every surface, including MCP.
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
     # Locked for the same reason as in delete_recording.

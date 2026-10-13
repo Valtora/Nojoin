@@ -1,4 +1,3 @@
-# nojoin/processing/engines/parakeet_engine.py
 # Parakeet transcription engine: a thin subclass of the shared OnnxAsrEngine.
 # The onnx-asr logic and the timestamped-result mapper live in onnx_asr_engine.
 

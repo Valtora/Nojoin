@@ -23,19 +23,16 @@ async def seed_demo_data(user_id: int | None = None, force: bool = False) -> Non
     """
     logger.info("Checking for demo data...")
 
-    # Ensure recordings directory exists
     pm = PathManager()
     recordings_dir = pm.recordings_directory
     if not os.path.exists(recordings_dir):
         os.makedirs(recordings_dir, exist_ok=True)
 
-    # Use a unique filename per user to avoid unique constraint violations on audio_path
     async with async_session_maker() as session:
         target_user = None
         if user_id:
             target_user = await session.get(User, user_id)
         else:
-            # Get the first user (admin) to assign ownership
             user_statement = select(User).limit(1)
             user_result = await session.execute(user_statement)
             target_user = user_result.scalars().first()
@@ -44,24 +41,23 @@ async def seed_demo_data(user_id: int | None = None, force: bool = False) -> Non
             logger.error("Cannot seed demo data: No users found.")
             return
 
-        # Check if user has already seen the demo (persisted flag)
         if target_user.has_seen_demo_recording and not force:
             logger.info(
                 f"User {target_user.username} has already seen the demo recording. Skipping."
             )
             return
 
+        # One file per user, because audio_path is unique.
         audio_filename = f"demo_welcome_{target_user.id}.wav"
         audio_path = os.path.join(recordings_dir, audio_filename)
 
-        # Create silent WAV file if it doesn't exist
         if not os.path.exists(audio_path):
             logger.info(f"Generating silent demo audio at {audio_path}")
             try:
                 with wave.open(audio_path, "wb") as wav_file:
-                    wav_file.setnchannels(1)  # Mono
+                    wav_file.setnchannels(1)
                     wav_file.setsampwidth(2)  # 16-bit
-                    wav_file.setframerate(16000)  # 16kHz
+                    wav_file.setframerate(16000)
                     # Generate 30 seconds of silence
                     n_frames = 16000 * 30
                     wav_file.writeframes(b"\x00" * n_frames * 2)
@@ -69,7 +65,6 @@ async def seed_demo_data(user_id: int | None = None, force: bool = False) -> Non
                 logger.error(f"Failed to create demo audio file: {e}")
                 return
 
-        # Check if demo recording exists for this user
         statement = select(Recording).where(
             Recording.name == "Welcome to Nojoin", Recording.user_id == target_user.id
         )
@@ -89,7 +84,6 @@ async def seed_demo_data(user_id: int | None = None, force: bool = False) -> Non
                 logger.info(
                     f"Demo recording already exists for user {target_user.username}."
                 )
-                # Ensure flag is set to True if it wasn't
                 if not target_user.has_seen_demo_recording:
                     target_user.has_seen_demo_recording = True
                     session.add(target_user)
@@ -108,7 +102,6 @@ async def seed_demo_data(user_id: int | None = None, force: bool = False) -> Non
             is_archived=False,
             is_deleted=False,
             user_id=target_user.id,
-            # Use a fixed date for consistency
             created_at=datetime.now() - timedelta(days=1),
         )
         session.add(recording)
@@ -124,13 +117,11 @@ async def seed_demo_data(user_id: int | None = None, force: bool = False) -> Non
         ]
 
         for spk in speakers_data:
-            # Create Global Speaker if needed (optional, but good for demo)
             global_spk = GlobalSpeaker(name=spk["name"], color=spk["color"])
             session.add(global_spk)
             await session.commit()
             await session.refresh(global_spk)
 
-            # Link to Recording
             rec_spk = RecordingSpeaker(
                 recording_id=recording.id,
                 global_speaker_id=global_spk.id,

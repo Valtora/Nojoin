@@ -147,8 +147,7 @@ from .urls import (
 
 # HTTPException is re-exported so callers and tests can reference
 # ``calendar_service.HTTPException``. It resolves to None when the web framework
-# is absent (the Celery worker image ships no fastapi), preserving the original
-# single module's import-time contract.
+# is absent (the Celery worker image ships no fastapi).
 try:
     from fastapi import HTTPException
 except ModuleNotFoundError:  # pragma: no cover - worker image has no fastapi

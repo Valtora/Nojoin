@@ -125,7 +125,6 @@ class TextEmbeddingService:
             return []
 
 
-# Global instance accessor
 _service = None
 
 

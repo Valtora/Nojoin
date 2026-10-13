@@ -352,7 +352,7 @@ def get_llm_backend_with_secondary(
         # OAuth config returns the whole server-default chain here, yielding a
         # nested SecondaryLLMBackend(sub, SecondaryLLMBackend(primary, secondary))
         # (user sub -> server primary -> server secondary). The ordinary 2-tier
-        # case bottoms out immediately, so its behaviour is unchanged.
+        # case bottoms out immediately.
         secondary = get_llm_backend_with_secondary(secondary_cfg, purpose)
         return SecondaryLLMBackend(primary=primary, secondary=secondary)
     except Exception as exc:  # noqa: BLE001 -- boundary: continue with primary only if secondary init fails

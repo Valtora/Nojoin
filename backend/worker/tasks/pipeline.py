@@ -139,7 +139,7 @@ def _resolve_input_audio(
         if repaired_path:
             logger.info("Using repaired audio file: %s", repaired_path)
             audio_path = repaired_path
-            temp_files.append(repaired_path)  # Ensure cleanup
+            temp_files.append(repaired_path)
         else:
             logger.error("Audio repair failed for %s", audio_path)
             recording.status = RecordingStatus.ERROR
@@ -748,13 +748,12 @@ def process_recording_task(
         logger.error("Recording %s not found.", recording_id)
         return
 
-    # Check if cancelled
     if recording.status == RecordingStatus.CANCELLED:
         logger.info("Recording %s was cancelled. Aborting task.", recording_id)
         return
 
     # Clear any live ASR model left warm by another capture before this finalise
-    # loads its diarisation stack, so the two never exceed the 8 GB GPU budget.
+    # loads its diarisation stack, so the two are never resident together.
     if not config_manager.get("keep_models_loaded", False):
         _release_pipeline_vram()
 
@@ -794,7 +793,6 @@ def process_recording_task(
     if config_manager.get("use_gpu", True) and torch.cuda.is_available():
         device_type = "cuda"
 
-    # "Gentle" warning suffix
     device_suffix = " (GPU)" if device_type == "cuda" else " (CPU, may take a while)"
 
     ctx = _PipelineRunContext(
@@ -814,7 +812,7 @@ def process_recording_task(
         recording.status = RecordingStatus.PROCESSING
         # Stamp the task actually doing the work, not just the one the API dispatched.
         # The startup sweep uses this to tell a live run from one whose worker died,
-        # and the worker's own re-queue path never set it.
+        # and the worker's own re-queue path does not set it.
         recording.celery_task_id = self.request.id
         recording.processing_progress = 20
         if (
@@ -889,7 +887,6 @@ def process_recording_task(
                 catch_up_run.completed_at = utc_now()
                 session.add(catch_up_run)
             session.commit()
-        # update_recording_status(session, recording.id) # Removed to prevent premature status update (flash)
 
         # --- Stage: speaker assignment / identification ---
         assign_and_identify_speakers(ctx, recording, final_segments, diarization_result)
@@ -905,7 +902,6 @@ def process_recording_task(
             reused_live_transcript_segments,
         )
 
-        # Update Recording Status
         mark_recording_audio_chunks_ready_for_cleanup(
             session,
             recording_id=recording.id,
@@ -1010,7 +1006,6 @@ def process_recording_task(
             update_recording_status(session, recording.id)
 
     finally:
-        # Robust cleanup of all temporary files
         for temp_file in temp_files:
             cleanup_temp_file(temp_file)
 
@@ -1053,10 +1048,10 @@ def _reclaim_orphaned_processing(session) -> list[Recording]:
     """Return recordings left in PROCESSING by a worker that died mid-pipeline.
 
     A recording only leaves PROCESSING when its task finishes, so one whose task is
-    no longer running is stranded: the startup sweep used to ignore it and the
-    reprocess endpoint refuses to touch a PROCESSING recording, leaving no way back
-    short of editing the database. Reclaiming needs proof the task is gone, so this
-    returns nothing when liveness cannot be established.
+    no longer running is stranded: the reprocess endpoint refuses to touch a
+    PROCESSING recording, leaving no way back short of editing the database.
+    Reclaiming needs proof the task is gone, so this returns nothing when
+    liveness cannot be established.
     """
     stuck = session.exec(
         select(Recording).where(Recording.status == RecordingStatus.PROCESSING)

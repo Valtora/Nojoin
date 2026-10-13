@@ -24,7 +24,8 @@ class RecordingTag(BaseDBModel, table=True):
 
 class Tag(BaseDBModel, table=True):
     __tablename__ = "tags"
-    name: str = Field(index=True)  # Removed unique=True
+    # Not unique: different users may each have a tag with the same name.
+    name: str = Field(index=True)
     color: Optional[str] = Field(default=None, description="Color key for UI display")
 
     user_id: Optional[int] = Field(

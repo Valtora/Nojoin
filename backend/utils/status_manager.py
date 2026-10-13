@@ -27,9 +27,7 @@ def update_recording_status(session: Session, recording_id: int):
     ).first()
 
     if not transcript:
-        # If no transcript exists yet, it might be in early processing or queued
-        # Retains current state or sets to QUEUED/PROCESSING based on context,
-        # but usually this function is called when we have a transcript.
+        # No transcript yet: leave the status to whatever is driving it.
         return
 
     t_status = transcript.transcript_status
@@ -41,23 +39,18 @@ def update_recording_status(session: Session, recording_id: int):
 
     new_status = recording.status
 
-    # 1. Check for Processing Activity
     if t_status == "processing" or n_status == "generating":
         new_status = RecordingStatus.PROCESSING
 
-    # 2. Check for Errors (Transcript error is critical)
+    # A transcript error marks the recording failed.
     elif t_status == "error":
         new_status = RecordingStatus.ERROR
 
-    # 3. Check for Completion
     elif t_status == "completed":
-        # If we are here, it means nothing is processing and no critical errors
-        # Notes could be 'completed', 'pending', or 'error' - but if transcript is done,
-        # and nothing is processing, we consider the recording 'PROCESSED'
-        # (or at least ready for viewing)
+        # Nothing is processing and the transcript is done, so the recording is
+        # viewable whatever state its notes are in.
         new_status = RecordingStatus.PROCESSED
 
-    # 4. Fallback/Initial states
     elif t_status == "pending":
         if (
             recording.status != RecordingStatus.RECORDED

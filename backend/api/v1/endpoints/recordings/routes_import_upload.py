@@ -118,7 +118,6 @@ async def import_audio(
     track of MKV, MKA, MOV, AVI, M4V, TS, MTS, MPG, MPEG and 3GP files. Only the
     audio is stored (``keep_imported_audio_task``).
     """
-    # Validate file extension
     file_ext = os.path.splitext(file.filename)[1].lower() if file.filename else ""
     if file_ext not in SUPPORTED_AUDIO_FORMATS:
         raise HTTPException(
@@ -126,14 +125,12 @@ async def import_audio(
             detail=f"Unsupported audio format '{file_ext}'. Supported formats: {', '.join(sorted(SUPPORTED_AUDIO_FORMATS))}",
         )
 
-    # Generate a unique filename to prevent collisions
     unique_filename = f"{uuid4()}{file_ext}"
     file_path = str(recordings_module.recordings_root_dir() / unique_filename)
 
-    # Save the file
     try:
         async with aiofiles.open(file_path, "wb") as out_file:
-            while chunk := await file.read(1024 * 1024):  # Read in 1MB chunks
+            while chunk := await file.read(1024 * 1024):
                 await out_file.write(chunk)
     except HTTPException:
         raise
@@ -150,14 +147,12 @@ async def import_audio(
 
     file_stats = os.stat(file_path)
 
-    # Get duration
     duration = 0.0
     try:
         duration = get_audio_duration(file_path)
     except Exception as e:  # noqa: BLE001
         logger.warning(f"Failed to get duration: {e}")
 
-    # Determine recording name
     if options.name:
         recording_name = options.name
     else:
@@ -177,7 +172,6 @@ async def import_audio(
         user_id=current_user.id,
     )
 
-    # Override created_at if recorded_at is provided
     recorded_at = options.recorded_at
     if recorded_at:
         # Ensure naive UTC datetime for database compatibility
@@ -211,7 +205,6 @@ async def init_chunked_import(
     """
     Initialize a chunked import for large files.
     """
-    # Validate file extension
     file_ext = os.path.splitext(filename)[1].lower()
     if file_ext not in SUPPORTED_AUDIO_FORMATS:
         raise HTTPException(
@@ -222,7 +215,6 @@ async def init_chunked_import(
     unique_filename = f"{uuid4()}{file_ext}"
     file_path = str(recordings_module.recordings_root_dir() / unique_filename)
 
-    # Determine recording name
     if options.name:
         recording_name = options.name
     else:
@@ -239,7 +231,6 @@ async def init_chunked_import(
         user_id=current_user.id,
     )
 
-    # Override created_at if recorded_at is provided
     recorded_at = options.recorded_at
     if recorded_at:
         if recorded_at.tzinfo is not None:
@@ -381,7 +372,6 @@ async def finalize_chunked_import(
         file_stats = os.stat(recording.audio_path)
         recording.file_size_bytes = file_stats.st_size
 
-        # Get duration
         try:
             recording.duration_seconds = await asyncio.to_thread(
                 get_audio_duration, recording.audio_path
@@ -472,12 +462,10 @@ async def upload_recording(
     """
     Upload a new audio recording.
     """
-    # Generate a unique filename to prevent collisions
     file_ext = os.path.splitext(file.filename)[1].lower() if file.filename else ""
     if not file_ext:
-        file_ext = ".wav"  # Default to wav if unknown
+        file_ext = ".wav"
 
-    # Validate extension
     if file_ext not in SUPPORTED_AUDIO_FORMATS and file_ext != ".wav":
         raise HTTPException(
             status_code=400,
@@ -487,7 +475,6 @@ async def upload_recording(
     unique_filename = f"{uuid4()}{file_ext}"
     file_path = str(recordings_module.recordings_root_dir() / unique_filename)
 
-    # Save the file
     async with enforce_upload_concurrency(
         request, "upload_recording", str(current_user.id), 2
     ):
@@ -523,7 +510,6 @@ async def upload_recording(
     except Exception as e:  # noqa: BLE001
         logger.warning(f"Failed to get duration: {e}")
 
-    # Create DB entry
     name = os.path.splitext(file.filename)[0]
     if name == "blob":  # Common default name from blobs
         name = generate_default_meeting_name()

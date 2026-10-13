@@ -100,7 +100,6 @@ async def apply_recording_speaker_update(
 
     _require_recording_speaker_mutations_supported(recording)
 
-    # Check if a Global Speaker with this name already exists
     statement = select(GlobalSpeaker).where(
         GlobalSpeaker.name == update.global_speaker_name,
         GlobalSpeaker.user_id == current_user.id,
@@ -169,7 +168,6 @@ async def apply_recording_speaker_update(
             recording_public_id=recording.public_id,
         )
 
-    # Update RecordingSpeakers
     stmt = select(RecordingSpeaker).where(
         RecordingSpeaker.recording_id == recording.id,
         RecordingSpeaker.diarization_label == update.diarization_label,
@@ -222,7 +220,6 @@ async def apply_recording_speaker_update(
         rs.name_last_edit_source = source
         db.add(rs)
 
-    # Transcript Repair
     stmt = select(Transcript).where(Transcript.recording_id == recording.id)
     result = await db.execute(stmt)
     transcript = result.scalar_one_or_none()

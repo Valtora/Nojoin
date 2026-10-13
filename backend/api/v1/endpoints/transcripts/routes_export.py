@@ -45,7 +45,6 @@ async def export_content(
         f"Received export request: recording_id={recording_id}, content_type={content_type}, format={export_format}, user={current_user.id}"
     )
 
-    # 1. Fetch Recording with Speakers (for name resolution)
     recording = await _get_owned_recording(
         db,
         recording_id,
@@ -61,7 +60,6 @@ async def export_content(
     if recording.speakers:
         recording.speakers = [s for s in recording.speakers if not s.merged_into_id]
 
-    # 2. Fetch Transcript
     stmt = select(Transcript).where(Transcript.recording_id == recording.id)
     result = await db.execute(stmt)
     transcript = result.scalar_one_or_none()
@@ -76,7 +74,6 @@ async def export_content(
     )
     effective_duration = recording.duration_seconds
 
-    # 3. Handle Formats
     include_transcript = content_type in ["transcript", "both"]
     include_notes = content_type in ["notes", "both"]
 
@@ -86,7 +83,6 @@ async def export_content(
                 status_code=404, detail="No meeting notes available to export"
             )
 
-    # Generate Filename
     timestamp = (
         recording.created_at.strftime("%Y%m%d") if recording.created_at else "export"
     )
@@ -101,7 +97,6 @@ async def export_content(
         f"{timestamp}_{_sanitize_filename(recording.name)}_{ftype}.{export_format}"
     )
 
-    # 4. Generate Content
     try:
         if export_format == "pdf":
             content = _generate_pdf_export(
@@ -124,7 +119,6 @@ async def export_content(
             )
             media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         else:  # txt
-            # Text Generation Logic
             speaker_map = _build_speaker_map(recording.speakers)
             sections = []
 

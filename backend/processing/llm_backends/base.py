@@ -96,8 +96,7 @@ NOTES_MAX_OUTPUT_TOKENS = NOTES_MAX_OUTPUT_TOKEN_LADDER[0]
 
 # Meeting Chat uses the same ladder. Most chat answers are short, but the chat
 # tool `update_meeting_notes` rewrites the *entire* notes document, so a low cap
-# silently truncated a rewrite of any real length -- the old 1024 was roughly 750
-# words for a whole set of notes.
+# would truncate a rewrite of any real length.
 CHAT_MAX_OUTPUT_TOKEN_LADDER = NOTES_MAX_OUTPUT_TOKEN_LADDER
 
 
@@ -512,7 +511,8 @@ class LLMBackend:
 
     @staticmethod
     def parse_notes(response_text: str) -> str:
-        # Assume notes start after the mapping table (after a blank line or after '# Meeting Notes')
+        # Notes begin at the '# Meeting Notes' heading; anything before it is the
+        # speaker mapping.
         lines = [line for line in response_text.splitlines()]
         notes_lines = []
         in_notes = False
@@ -632,7 +632,6 @@ class LLMBackend:
                 ("# Transcript", transcript),
             ]
         )
-        # Leading and trailing newlines preserved from the original template.
         return f"\n{body}\n"
 
     @staticmethod
@@ -840,8 +839,7 @@ Preserve the same schema and do not invent facts not supported by the original t
 
 def _get_default_model_for_provider(provider: str) -> Optional[str]:
     """Return the recommended default model for a provider."""
-    # Defaults are no longer hardcoded here.
-    # Users must select a model or rely on frontend recommendations.
+    # No provider has a server-side default: the user selects a model in Settings.
     return None
 
 

@@ -1,6 +1,4 @@
-# Package transcripts endpoints init
-# Re-export top-level imports that were present in the original transcripts.py
-# to preserve backwards-compatibility for test monkeypatching/patching.
+# Re-exported because tests monkeypatch these names on the package.
 from backend.celery_app import celery_app
 from backend.processing.llm_services import get_llm_backend_with_secondary
 from backend.processing.pipeline_metrics import record_pipeline_metric
@@ -16,7 +14,7 @@ from . import (
     routes_utterances,
 )
 
-# Re-export Pydantic models and helper functions for backwards compatibility.
+# Re-exported for tests that import or patch helpers through the package.
 from .helpers import (
     ChatRequest,
     FindReplaceRequest,

@@ -7,7 +7,6 @@ import traceback
 import torch
 from pyannote.audio import Pipeline
 
-# Add project root to sys.path to allow imports from backend
 current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(os.path.dirname(current_dir))
 if project_root not in sys.path:
@@ -64,7 +63,6 @@ def main():
         file = {"audio": audio_path}
         hook = StdoutProgressHook()
         diarization_result = pipeline(file, hook=hook)
-        # Save result to output_path using pickle
         with open(output_path, "wb") as f:
             pickle.dump(diarization_result, f)
         print("DONE", flush=True)

@@ -126,8 +126,8 @@ class BackupManager:
         """Run a restore synchronously and return the job record.
 
         This is the entry point the Celery task uses. Job state lives in the result
-        backend rather than in an API process's memory, so it survives a restart and a
-        restore no longer runs multi-gigabyte extraction inside a request worker.
+        backend rather than in an API process's memory, so it survives a restart,
+        and the multi-gigabyte extraction stays out of request workers.
         """
         path_manager = runtime.PathManager()
 

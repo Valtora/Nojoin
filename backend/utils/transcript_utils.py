@@ -150,7 +150,6 @@ def combine_transcription_diarization(
         A list of dictionaries, each representing a segment with start, end,
         speaker label, and text. Returns None on failure.
     """
-    # Local import for pyannote.core.Segment for performance
     if not transcription or "segments" not in transcription or not diarization:
         logger.error("Invalid input for combining transcription and diarization.")
         return None
@@ -328,7 +327,6 @@ def _combine_word_level(segments, speaker_turns, config=None):
             current_segment["start"] = w_start
             current_segment["speaker"] = speaker
             current_segment["overlapping_speakers"] = []
-            # Strip leading space from first word if present
             current_segment["text"] = w_text.lstrip()
             current_segment["end"] = w_end
             current_segment["words"].append(word_data)
@@ -336,7 +334,6 @@ def _combine_word_level(segments, speaker_turns, config=None):
 
         gap = w_start - current_segment["end"]
 
-        # Split if speaker changes OR gap > 1.0s
         if speaker != current_segment["speaker"] or gap > 1.0:
             final_segments.append(_with_word_source_public_ids(current_segment))
             current_segment = {
@@ -344,13 +341,11 @@ def _combine_word_level(segments, speaker_turns, config=None):
                 "end": w_end,
                 "speaker": speaker,
                 "overlapping_speakers": [],
-                # Strip leading space from first word of new segment
                 "text": w_text.lstrip(),
                 "words": [word_data],
             }
         else:
             # Whisper word tokens include leading space (e.g., " hello")
-            # Add space if the word doesn't already have one
             if w_text.startswith(" "):
                 current_segment["text"] += w_text
             else:
@@ -395,7 +390,6 @@ def _combine_word_level(segments, speaker_turns, config=None):
         else:
             segment["overlapping_speakers"] = []
 
-    # Log speaker distribution
     speaker_counts = {}
     for seg in final_segments:
         spk = seg["speaker"]
@@ -607,9 +601,7 @@ def consolidate_diarized_transcript(
         curr_text = curr["text"]
         curr_words = curr.get("words", [])
 
-        # --- Fix for Giant Single Segments ---
-        # Splits segment if longer than max duration.
-        # This handles cases where Whisper returned a 30s block that needs breaking.
+        # Split a segment longer than max_duration_s; Whisper can return 30s blocks.
         if (curr_end - curr_start) > max_duration_s:
             if curr_words:
                 # Split within an 8-12s window centred on a 10s target: prefer the
@@ -636,7 +628,6 @@ def consolidate_diarized_transcript(
 
                     dist = abs(w_end_time - hard_target)
 
-                    # Check for sentence punctuation
                     is_sentence_end = w["word"].strip().endswith((".", "!", "?"))
 
                     if is_sentence_end:
@@ -644,19 +635,17 @@ def consolidate_diarized_transcript(
                             best_sentence_idx = idx + 1
                             min_sentence_dist = dist
 
-                    # Always track best fallback word
                     if dist < min_word_dist:
                         best_word_idx = idx + 1
                         min_word_dist = dist
 
-                # Decision time: Prefer sentence break if found
                 if best_sentence_idx != -1:
                     split_idx = best_sentence_idx
                 elif best_word_idx != -1:
                     split_idx = best_word_idx
                 else:
-                    # Fallback: split at 10s if no candidate found in the 8-12s window
-                    # Find first word ending after 10s
+                    # No candidate in the 8-12s window: split at the first word
+                    # ending past 10s.
                     split_idx = -1
                     for idx, w in enumerate(curr_words):
                         if w["end"] >= hard_target:
@@ -665,12 +654,11 @@ def consolidate_diarized_transcript(
                     if split_idx == -1:
                         split_idx = len(curr_words)
 
-                # Perform the split
                 first_chunk_words = curr_words[:split_idx]
                 remainder_words = curr_words[split_idx:]
 
                 if not first_chunk_words:
-                    # Edge case: first word is already super long? Force split at 1 word.
+                    # A first word longer than the window still splits after one word.
                     first_chunk_words = curr_words[:1]
                     remainder_words = curr_words[1:]
 
@@ -714,7 +702,6 @@ def consolidate_diarized_transcript(
                 ratio = max_duration_s / duration
                 split_idx = int(len(curr_text) * ratio)
 
-                # Try to split at a space near the ratio to avoid cutting words
                 search_window = 10
                 for offset in range(search_window):
                     # Check forward
@@ -747,7 +734,7 @@ def consolidate_diarized_transcript(
                 # by max_duration_s > 0, so the remainder shrinks each iteration.
                 remainder_segment = {
                     "start": split_end,
-                    "end": curr_end,  # Original end
+                    "end": curr_end,
                     "speaker": curr_speaker,
                     "overlapping_speakers": sorted(curr_overlapping),
                     "text": remainder_text,
@@ -767,12 +754,9 @@ def consolidate_diarized_transcript(
             # Stop merging if adding this segment would exceed max_duration_s.
             potential_end = max(curr_end, next_seg["end"])
             if (potential_end - curr_start) > max_duration_s:
-                # Break the merge loop to enforce the split
                 break
 
-            # Check for overlap
             if next_seg["start"] < curr_end:
-                # Overlapping segment
                 if next_speaker != curr_speaker:
                     curr_overlapping.add(next_speaker)
                 curr_overlapping.update(next_overlapping)
@@ -827,7 +811,6 @@ def consolidate_diarized_transcript(
         _merge_consolidation_metadata,
     )
 
-    # Log final consolidation results
     speaker_counts = {}
     for seg in consolidated:
         spk = seg["speaker"]

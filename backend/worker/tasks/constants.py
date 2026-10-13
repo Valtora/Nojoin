@@ -28,7 +28,7 @@ from backend.models.calendar import CalendarEvent
 from backend.models.chat import ChatMessage
 from backend.models.context_chunk import ContextChunk
 
-# Heavy processing imports moved inside tasks to avoid loading torch in API
+# Heavy processing imports stay inside the tasks so the API never loads torch.
 from backend.models.document import Document, DocumentStatus
 from backend.models.invitation import Invitation
 from backend.models.pipeline import (

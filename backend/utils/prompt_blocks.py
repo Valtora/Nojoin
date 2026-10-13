@@ -1,19 +1,18 @@
 """Composition helper for LLM prompts.
 
-Prompts used to be ``str.format`` templates. That put three failure modes on the
-note-generation path, all of which surfaced at generation time rather than at
-import or save time:
+Prompts are composed from ``(heading, body)`` blocks with no substitution step,
+so text is only ever concatenated. A ``str.format`` template puts three failure
+modes on the note-generation path, all of which surface at generation time
+rather than at import or save time:
 
-* a stray ``{`` in interpolated text raised ``KeyError``/``IndexError``;
-* JSON schema examples inside a template had to be written with doubled braces,
-  which is easy to get wrong and unreadable when it is;
-* adding a placeholder to a template silently required updating every call site,
-  and a missed one only failed when that provider was next used.
+* a stray ``{`` in interpolated text raises ``KeyError``/``IndexError``;
+* JSON schema examples have to be written with doubled braces, which is easy to
+  get wrong and unreadable when it is;
+* adding a placeholder requires updating every call site, and a missed one only
+  fails when that provider is next used.
 
-Prompts are now composed from ``(heading, body)`` blocks with no substitution
-step at all, so text is only ever concatenated. Nothing in a body is special,
-which is the entire point: a user-authored notes structure containing braces,
-backslashes or Markdown is just text.
+Nothing in a body is special: a user-authored notes structure containing
+braces, backslashes or Markdown is just text.
 """
 
 from __future__ import annotations

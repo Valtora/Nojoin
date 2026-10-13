@@ -452,13 +452,12 @@ async def _merge_settings(user_settings: dict, db: AsyncSession) -> dict:
     Merges system config, default user settings, and user-specific settings.
     Priority: User Settings > Default User Settings > System Config
     """
-    # 1. Start with System Config (read-only for users)
     merged = config_manager.get_all()
 
-    # 2. Load Default User Settings for missing user-scoped values.
     default_user_settings = get_default_user_settings()
 
-    # 2.5 Apply Owner's System-Wide LLM Configuration Defaults
+    # The owner's AI settings fill install-wide AI keys that system config
+    # leaves unset. Defaults below then skip any install-wide AI key that is set.
     from sqlmodel import select
 
     from backend.models.user import User
@@ -469,7 +468,6 @@ async def _merge_settings(user_settings: dict, db: AsyncSession) -> dict:
 
     _apply_install_wide_ai_owner_fallback(merged, owner_settings)
 
-    # 3. Apply User Specific Settings
     _apply_default_user_settings(merged, default_user_settings)
     sanitized_user_settings = _get_mutable_user_settings(user_settings)
     if sanitized_user_settings:
@@ -478,7 +476,7 @@ async def _merge_settings(user_settings: dict, db: AsyncSession) -> dict:
         )
     _normalise_processing_tuning(merged, config_manager.get_all())
 
-    # 4. Inject system API keys (from Admin DB or .env) globally
+    # System API keys (admin settings or .env) apply to every user.
     from backend.utils.config_manager import async_get_system_api_keys
 
     system_keys = await async_get_system_api_keys(db)
@@ -487,7 +485,6 @@ async def _merge_settings(user_settings: dict, db: AsyncSession) -> dict:
         if val:
             merged[sk] = val
 
-    # 5. Mask sensitive keys
     for key in SENSITIVE_KEYS:
         if merged.get(key):
             val = str(merged[key])
@@ -594,8 +591,6 @@ async def _dispatch_meeting_edge_refresh_for_active_recordings(
             )
         )
         recording_ids = [row[0] for row in result.all()]
-        # One dispatch per in-flight recording, so an unbounded publish here
-        # multiplied the stall by the number of active recordings.
         for recording_id in recording_ids:
             await _dispatch_meeting_edge_refresh(recording_id)
     except Exception as exc:  # noqa: BLE001

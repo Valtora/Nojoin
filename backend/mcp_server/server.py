@@ -617,10 +617,9 @@ async def get_documents(recording_id: str) -> list[dict[str, Any]]:
 
         payload: list[dict[str, Any]] = []
         for document in documents:
-            # Read the pages, not the chunks. Chunks used to be reassembled
-            # with "".join(), which re-emitted the 50-character overlap at
-            # every boundary and put a stutter into the middle of sentences.
-            # Pages hold the text once, in order, with no overlap by design.
+            # Read the pages, not the chunks. Chunks overlap by 50 characters, so
+            # joining them repeats text at every boundary; pages hold the text
+            # once, in order.
             page_result = await db.execute(
                 select(
                     DocumentPage.page_number, DocumentPage.title, DocumentPage.content

@@ -186,7 +186,6 @@ async def generate_notes(
     it falls through to the user's default, then the install default, then the
     built-in structure.
     """
-    # 1. Fetch Recording with Speakers
     recording = await _get_owned_recording(
         db,
         recording_id,
@@ -198,7 +197,6 @@ async def generate_notes(
         ),
     )
 
-    # 2. Fetch Transcript
     stmt = select(Transcript).where(Transcript.recording_id == recording.id)
     result = await db.execute(stmt)
     transcript = result.scalar_one_or_none()
@@ -228,7 +226,7 @@ async def generate_notes(
             detail=f"{missing_llm_config}. Configure an AI provider and model in Settings.",
         )
 
-    # 4. Resolve the requested template, if any. Resolution is done here rather
+    # Resolve the requested template, if any. Resolution is done here rather
     # than in the worker so an unusable choice is a 400 the user sees at once,
     # instead of a failed job they discover minutes later.
     requested_template_id = request.notes_template_id if request else None
@@ -245,7 +243,6 @@ async def generate_notes(
                 detail="Notes template not found",
             )
 
-    # 5. Call Worker Task
     transcript.notes_status = "generating"
     transcript.set_notes_error_message(None)
     db.add(transcript)

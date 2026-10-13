@@ -333,7 +333,7 @@ def merge_duplicate_speakers(
     }
 
     if len(eligible) < 2:
-        # The case that previously produced no log line at all.
+        # Logged even when nothing is comparable, so an empty pass is visible.
         _emit({**base_payload, "reason": REASON_NO_ELIGIBLE_SPEAKERS, "pairs": []})
         return []
 

@@ -42,7 +42,7 @@ def _redact_sensitive_data(data: Dict[str, Any]) -> Dict[str, Any]:
         elif isinstance(k, str) and (
             k.endswith("_key") or k.endswith("_token") or "password" in k
         ):
-            if v:  # Only redact if there is a value
+            if v:
                 redacted[k] = "REDACTED"
     return redacted
 
@@ -67,13 +67,11 @@ def _adapt_record(model_cls: Type[SQLModel], data: Dict[str, Any]) -> Dict[str, 
     Adapts a record dictionary to match the current model schema.
     Removes fields that no longer exist in the model.
     """
-    # Gets current field names.
     if hasattr(model_cls, "model_fields"):
         current_fields = model_cls.model_fields.keys()
     else:
         current_fields = model_cls.__fields__.keys()
 
-    # Filters data to only include fields that exist in the current model.
     return {k: v for k, v in data.items() if k in current_fields}
 
 
@@ -81,7 +79,6 @@ def _topological_sort(data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     Sorts tags so that parents appear before children.
     """
-    # 1. Build index and adjacency
     by_id = {item["id"]: item for item in data if "id" in item}
     children_map: Dict[Any, List[Dict[str, Any]]] = {}  # parent_id -> list of children
     roots = []
@@ -95,7 +92,6 @@ def _topological_sort(data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         else:
             roots.append(item)
 
-    # 2. Flatten
     sorted_items = []
     queue = list(roots)
 
@@ -110,7 +106,6 @@ def _topological_sort(data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         if node_id in children_map:
             children = children_map[node_id]
             children.sort(key=lambda x: x.get("id", 0))
-            # Append children to the end of the queue (BFS traversal).
             queue.extend(children)
 
     # Items in a cycle or with a missing parent are never reached by the BFS

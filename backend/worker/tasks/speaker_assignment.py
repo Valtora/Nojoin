@@ -240,7 +240,7 @@ def _absorb_into_existing_name(
 
     if work.existing_speaker:
         work.existing_speaker.merged_into_id = target_id
-        work.existing_speaker.name = work.identity.name  # Keep consistent name
+        work.existing_speaker.name = work.identity.name
         work.existing_speaker.local_name = None
         session.add(work.existing_speaker)
     else:

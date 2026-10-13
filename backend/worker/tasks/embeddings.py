@@ -33,8 +33,6 @@ def update_speaker_embedding_task(
 
         device = "cuda" if config_manager.get("use_gpu", True) else "cpu"
 
-        # Extract embedding for this segment
-        # Passes a list of segments [(start, end)] for embedding extraction.
         new_embedding = extract_embedding_for_segments(
             target_audio, [(start, end)], device_str=device
         )
@@ -89,7 +87,6 @@ def extract_embedding_task(
     from backend.processing.embedding_core import extract_embedding_for_segments
 
     try:
-        # If token not passed, try to get from config in worker
         if not hf_token:
             from backend.utils.config_manager import config_manager
 

@@ -1,5 +1,4 @@
-# Package speakers endpoints init
-# Re-export top-level imports that were present in the original speakers.py
+# Re-exported because tests monkeypatch these names on the package.
 from backend.celery_app import celery_app
 from backend.processing.pipeline_metrics import record_pipeline_metric
 from backend.utils.canonical_pipeline import recording_ready_for_canonical_backfill
@@ -8,7 +7,7 @@ from backend.utils.config_manager import config_manager
 # Import submodules to ensure routes are registered on the router
 from . import routes_global, routes_recording, routes_voiceprint
 
-# Re-export helper functions and classes for backwards compatibility
+# Re-exported for tests that import or patch helpers through the package.
 from .helpers import (
     MergeRequest,
     MergeRequestLabels,

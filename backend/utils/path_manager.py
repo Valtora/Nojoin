@@ -45,7 +45,6 @@ class PathManager:
         self._executable_directory = None
         self._user_data_directory = None
 
-        # Initialize paths
         self._detect_deployment_mode()
         self._initialize_directories()
 
@@ -176,13 +175,11 @@ class PathManager:
         try:
             self._user_data_directory.mkdir(parents=True, exist_ok=True)
 
-            # Create subdirectories
             (self._user_data_directory / "logs").mkdir(exist_ok=True)
             (self._user_data_directory / "recordings").mkdir(exist_ok=True)
 
             logger.info(f"Ensured directories exist: {self._user_data_directory}")
 
-            # Run the startup permission repair pass
             self.repair_data_permissions()
 
         except OSError as e:
@@ -220,7 +217,6 @@ class PathManager:
                 "Could not set permissions on root data dir %s: %s", user_data_dir, e
             )
 
-        # Walk the directory structure recursively
         for root, dirs, files in os.walk(user_data_dir):
             root_path = Path(root)
             # Pruned in place so the walk neither descends into a symlinked
@@ -551,7 +547,6 @@ class PathManager:
         upload_dir = self.get_upload_temp_dir(upload_id)
 
         try:
-            # Get all part files, sorted by index
             parts = sorted(upload_dir.glob("*.part"), key=lambda p: int(p.stem))
 
             if not parts:
@@ -562,7 +557,6 @@ class PathManager:
                     with open(part, "rb") as src:
                         shutil.copyfileobj(src, dest)
 
-            # Cleanup parts
             shutil.rmtree(upload_dir)
             return True
         except Exception as e:

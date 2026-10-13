@@ -682,13 +682,12 @@ class AnthropicLLMBackend(LLMBackend):
                 self.client.models.list()
                 return True
 
-            # Fallback if list_models not available (should not happen with recent SDK)
+            # An SDK without models.list() validates with a one-token generation.
             if not self.model:
                 raise ValueError(
                     "No Anthropic model configured. Please select a model in Settings."
                 )
 
-            # Try a minimal generation with the configured model
             self.client.messages.create(
                 model=self.model,
                 max_tokens=1,

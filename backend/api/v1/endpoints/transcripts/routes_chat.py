@@ -37,9 +37,8 @@ from .router import router
 # Retrieval budgets, per source. Kept separate so an attached document can never
 # be crowded out of the context by transcript matches, nor the reverse.
 CHAT_TRANSCRIPT_CHUNK_BUDGET = 5
-# Document chunks are whole pages now rather than 500-character windows, so a
-# smaller count carries considerably more content than the old shared pool of
-# five did.
+# Document chunks are whole pages, so a smaller count still carries more
+# content than the transcript budget.
 CHAT_DOCUMENT_CHUNK_BUDGET = 4
 # Passages of this meeting's own transcript considered for a meeting too long
 # to send whole. The backend keeps the most relevant that fit its window.
@@ -59,7 +58,6 @@ async def get_chat_history(
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
 
-    # Fetch chat messages
     stmt = (
         select(ChatMessage)
         .where(ChatMessage.recording_id == recording.id)
@@ -85,7 +83,6 @@ async def clear_chat_history(
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
 
-    # Delete all chat messages for this recording
     stmt = select(ChatMessage).where(ChatMessage.recording_id == recording.id)
     result = await db.execute(stmt)
     messages = result.scalars().all()
@@ -203,7 +200,6 @@ async def chat_with_meeting(
     """
     Chat with the meeting transcript using LLM (Streaming).
     """
-    # 1. Check Ownership & Fetch Data
     recording = await _get_owned_recording(db, recording_id, current_user.id)
     # The view blanks the transcript of an in-flight recording and the UI
     # hides chat for it; the API must not answer from it either.
@@ -222,8 +218,7 @@ async def chat_with_meeting(
 
     meeting_notes = transcript_obj.notes or ""
 
-    # 2. Get Chat History
-    # Retrieve full history; truncation is deferred to the LLM backend if required.
+    # Full history; the LLM backend truncates it if it must.
     stmt = (
         select(ChatMessage)
         .where(ChatMessage.recording_id == recording.id)
@@ -232,10 +227,8 @@ async def chat_with_meeting(
     result = await db.execute(stmt)
     db_messages = result.scalars().all()
 
-    # Convert to format expected by LLMBackend
-    # Google Gemini: {"role": "user"|"model", "parts": [{"text": ...}]}
-    # OpenAI/Anthropic: Adapted by backend logic, generally checks for standard roles.
-    # Standardizing on Gemini format for internal consistency before backend adaptation.
+    # History is kept in Gemini's shape ({"role": "user"|"model", "parts": [...]})
+    # and each backend adapts it to its own API.
 
     formatted_history = []
     for msg in db_messages:
@@ -276,12 +269,9 @@ async def chat_with_meeting(
             recording.id, request.tag_ids or [], current_user.id
         )
 
-        # 3. Vector search, with a separate budget per source.
-        #
-        # Transcript and document chunks used to compete for one pool of five,
-        # so a strongly-matching passage of transcript could take every slot and
-        # leave an attached deck unrepresented -- or the reverse. Querying each
-        # source independently guarantees both are heard from when both exist.
+        # 3. Vector search, with a separate budget per source, so a strongly
+        # matching transcript passage cannot take every slot and leave an
+        # attached deck unrepresented, or the reverse.
         #
         # Every query is filtered to the current embedding version: vectors from
         # a previous model are not comparable, and scoring against them would
@@ -323,10 +313,8 @@ async def chat_with_meeting(
                 rec_name = rec.name if rec else f"Recording {chunk.recording_id}"
 
                 content = chunk.content
-                # If it's a transcript chunk with speaker info, resolve speaker names
                 if chunk.meta and chunk.meta.get("source") == "transcript" and rec:
                     speaker_map = _build_speaker_map(rec.speakers)
-                    # Replace raw labels with names
                     # Replace raw diarization labels (e.g. "SPEAKER_XX:") with resolved names.
                     for label, name in speaker_map.items():
                         if label and name and label != name:
@@ -418,9 +406,8 @@ async def chat_with_meeting(
         )
 
     try:
-        # Resolved through the package namespace at call time so test patches
-        # against ``backend.api.v1.endpoints.transcripts.get_llm_backend_with_secondary``
-        # continue to take effect after the module-to-package split.
+        # Resolved through the package namespace at call time so tests can patch
+        # ``backend.api.v1.endpoints.transcripts.get_llm_backend_with_secondary``.
         from backend.api.v1.endpoints import transcripts as transcripts_pkg
 
         llm_backend = transcripts_pkg.get_llm_backend_with_secondary(llm_config)
@@ -446,7 +433,6 @@ async def chat_with_meeting(
             recording_id=recording.id,
         )
 
-    # 5. Define Streaming Generator
     async def stream_generator():
         full_response = ""
         answered = False
@@ -466,7 +452,6 @@ async def chat_with_meeting(
                             yield f"event: notes_update\ndata: {json.dumps({'status': 'success'})}\n\n"
                         else:
                             full_response += str(chunk)
-                            # Yield SSE format
                             yield f"data: {json.dumps({'token': str(chunk)})}\n\n"
                     break
                 except ContextWindowExceededError as overflow:
@@ -489,7 +474,6 @@ async def chat_with_meeting(
             yield f"data: {json.dumps({'error': friendly_chat_error(e)})}\n\n"
             return
 
-        # 6. Save Assistant Response to DB
         try:
             async with async_session_maker() as session:
                 assistant_msg = ChatMessage(

@@ -116,7 +116,6 @@ def merge_embeddings(
     curr_arr = np.array(current_embedding)
     new_arr = np.array(new_embedding)
 
-    # Weighted average
     merged = (1 - alpha) * curr_arr + alpha * new_arr
 
     return merged.tolist()
