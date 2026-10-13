@@ -26,9 +26,6 @@ export const CODEX_CLI_MODEL_OPTIONS: CliModelOption[] = [
   { id: "gpt-5.4-mini", label: "GPT-5.4-Mini" },
 ];
 
-/** Back-compat alias (Claude was the only provider originally). */
-export const CLI_MODEL_OPTIONS = CLAUDE_CLI_MODEL_OPTIONS;
-
 /** The curated model list for a given subscription provider. */
 export function cliModelOptions(provider: CliProvider): CliModelOption[] {
   return provider === "codex"
