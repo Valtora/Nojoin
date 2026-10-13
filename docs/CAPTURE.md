@@ -43,7 +43,7 @@ The recording page shows those transcribed segments in a **Live Transcript** pan
 
 On mobile Chrome, Nojoin records only the phone microphone. The browser still uploads live segments into the same backend pipeline, but remote participants are captured only if the phone microphone can hear them from the room or device speaker. Keep the Nojoin tab open and the phone awake while recording.
 
-For support and debugging, browser recording segments are numbered from `0` and resume with the next sequence after the last uploaded segment. Finalization rejects missing sequence gaps while uploads are still in flight, but a segment that repeatedly fails transcoding (for example one truncated by a network outage) is quarantined and skipped so finalization can complete with a short audio gap instead of failing forever; each skipped segment is logged as a `segment_corrupt_skipped` pipeline metric. Live ASR and rolling speaker-window diarisation are tracked separately in the backend, so a recording can have transcript coverage before every speaker-window pass has completed. Final processing reuses live text and speaker decisions only when they align by stable utterance id or clear time overlap; ambiguous spans keep the final pipeline output.
+For support cases: segments are numbered from `0` and resume after the last uploaded one, and finalization skips a segment that repeatedly fails to transcode (logged as a `segment_corrupt_skipped` pipeline metric) rather than failing forever. [ARCHITECTURE.md](ARCHITECTURE.md) covers how the live and final pipelines fit together.
 
 ## Before Your First Recording
 
@@ -123,7 +123,7 @@ Refreshing or closing the Nojoin tab (actual tab unload) during a recording move
 
 An interruption that happened before any audio reached the server is cleared instead of being put to you as a decision. There is nothing to resume and nothing to keep, so Nojoin discards the empty recording, releases the capture lock, and tells you the recording was interrupted and needs starting again. This only applies to a capture the same browser tab lost: a recording paused any other way, or one that banked even a single segment, always goes to the modal.
 
-The case this covers is an upgrade under an open tab. When the Nojoin server is updated while you have the app open, the browser is still running the previous version, so the next page transition reloads the whole app rather than moving within it. If that transition happens to be the one Nojoin makes after **Start Meeting**, the reload unloads the page a second into the recording and the guard pauses it. Nojoin now clears that recording rather than asking about a meeting you have only just started. Press **Start Meeting** again.
+The usual cause is an upgrade under an open tab. When the Nojoin server is updated while you have the app open, the browser is still running the previous version, so the next page transition reloads the whole app. If that transition is the one Nojoin makes after **Start Meeting**, the reload unloads the page a second into the recording. Press **Start Meeting** again.
 
 Switching to another browser tab, changing the active window, using another application, or navigating between pages within the Nojoin app does not pause recording. The Nojoin tab only pauses automatically when it is actually unloaded. A floating recording badge remains visible at the top of the viewport on every page so you can always see the recording status and control it.
 
@@ -133,13 +133,7 @@ While recording, Nojoin holds a screen wake lock so the display does not blank a
 
 ## Floating Recording Badge
 
-While a recording is active, a floating badge appears at the top-centre of the viewport. The badge shows:
-
-- A pulsing red dot and the word **Recording** (or **Paused** when paused).
-- The elapsed recording time.
-- Pause/resume and stop controls.
-
-Clicking the badge navigates directly to the recording detail page. The badge is hidden on the recording detail page itself to avoid duplication. You can pause, resume, or stop the recording from any page without navigating back to the recording workspace first.
+While a recording is active, a floating badge on every page shows its status and elapsed time, with pause, resume and stop controls. Clicking it opens the recording. It is hidden on the recording's own page.
 
 ## Paused Recording Lock
 
@@ -153,20 +147,11 @@ Paused recordings are retained indefinitely. They are not cleaned up automatical
 
 ## Capture Settings
 
-Open **Settings > Recording** to configure:
+Open **Settings > Recording** to choose the microphone and set the shared-audio and microphone gain. The browser's echo cancellation, noise suppression and automatic gain control are under its **Advanced** section. The page also has a local microphone input test that shows raw and gain-adjusted levels in real time.
 
-- Microphone device.
-- Shared audio gain.
-- Microphone gain.
-- Browser echo cancellation.
-- Browser noise suppression.
-- Browser automatic gain control.
+These settings are stored in the browser, so they do not roam between browsers or devices.
 
-The Capture settings page also includes a local microphone input test so you can watch raw and gain-adjusted levels in real time before recording.
-
-These settings are stored in browser-local storage for the current cutover. They do not roam between browsers or devices.
-
-If you explicitly choose a microphone and that device is no longer available when a recording starts or resumes, Nojoin now fails closed. It does not silently fall back to the system default microphone. Choose another device in **Settings > Recording** before retrying.
+If you explicitly choose a microphone and that device is no longer available when a recording starts or resumes, Nojoin fails closed rather than falling back to the system default microphone. Choose another device in **Settings > Recording** before retrying.
 
 Nojoin logs the requested microphone, the browser-granted microphone track metadata, whether shared audio was granted, and the backend browser-live source-channel analysis. Browser APIs still do not reliably expose the physical OS speaker or headset name behind shared system audio, so those logs describe the granted browser capture surface and track metadata rather than a guaranteed output-device identity.
 
@@ -223,7 +208,7 @@ The warning can be dismissed with the close control. It stays dismissed unless t
 
 Nojoin reports this conservatively. The captured figure it compares against is measured from the audio segments the server has decoded, and that measurement runs slightly high, so a small shortfall may be reported as none at all. It will not report a shortfall that is not there.
 
-Audio still queued in the browser is not counted as missing, and the warning names it separately when there is any. A server that stops answering for two minutes leaves two minutes in the queue, and reporting that as lost would send someone to check a tab and a device over audio that was never at risk. A shortfall that persists after the queue drains is the part that is genuinely gone.
+Audio still queued in the browser is not counted as missing, and the warning names it separately when there is any. A shortfall that persists after the queue drains is audio that is lost.
 
 An outage also keeps explaining a shortfall for a few minutes after the server answers again, because the check runs every fifteen seconds and the queue takes longer than that to drain, so the connection has usually recovered by the time the warning appears.
 

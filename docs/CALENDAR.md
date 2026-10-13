@@ -43,7 +43,7 @@ Supported environment variables:
 - `MICROSOFT_OAUTH_CLIENT_SECRET`
 - `MICROSOFT_OAUTH_TENANT_ID`
 
-`DATA_ENCRYPTION_KEY` is not an OAuth credential, but it is what keeps stored calendar provider secrets and user calendar tokens readable across upgrades and infrastructure changes. Earlier `v0.8.1` deployments could rely only on the generated key file, which was an operational oversight for installations where the app data directory and database might be managed separately.
+`DATA_ENCRYPTION_KEY` is not an OAuth credential, but it is what keeps stored calendar provider secrets and user calendar tokens readable across upgrades and infrastructure changes.
 
 ## End-User Connection Flow
 
@@ -55,28 +55,11 @@ Once the installation credentials exist:
 4. Return to Nojoin and choose which calendars to sync.
 5. Optionally apply per-calendar colour overrides.
 
-Connected calendars then feed the dashboard month grid, the agenda, and the next-event surface. Unlinked Nojoin recordings also appear on the dashboard calendar as first-class historical items.
-
 ## Dashboard Behaviour
 
-When calendar sync is configured:
+Connected calendars feed the dashboard month grid and agenda, alongside unlinked Nojoin recordings in Nojoin orange. Each calendar keeps its own colour, which can be overridden per calendar. [USAGE.md](USAGE.md#calendar-surface) describes the dashboard itself. With no calendar connected and no recordings in view, the dashboard shows an empty state rather than mock data.
 
-- The dashboard month grid shows dots on days with synced events and on days that contain unlinked Nojoin recordings.
-- Unlinked Nojoin recordings use the Nojoin orange accent so they remain visually distinct from Google or Microsoft calendar sources.
-- The month grid and the agenda are separate dashboard modules sharing one month summary request, and both are visible at once.
-- The agenda is month-scoped and shows both calendar events and unlinked historical recordings for the viewed month.
-- In the current month, the agenda lists upcoming items first and collapses past items behind a `Show past events` control; past months render fully expanded.
-- The agenda opens scoped to today. Selecting a day in the month grid scopes it to that day, `Whole month` returns it to the full month, and a day agenda for today shows a live now marker against timed events.
-- Clicking a timed event on the day timeline opens a details popover with the full event metadata, join link, and linked recordings; live events additionally show a `Join` button on the bubble.
-- Timeline bubbles size their metadata to the event duration: shorter events show fewer detail rows, and events spanning midnight are marked with dashed edges and chevrons.
-- The `Today` action jumps back to the current month and date context.
-- Per-calendar colours can be used so different sources remain visually distinct.
-- Event times render in the user's configured Nojoin timezone.
-- Meeting links and supported online meeting URLs surface from agenda items as compact `Join meeting` labels showing the provider host instead of the raw URL.
-
-When no calendar is connected and there are no unlinked recordings in view, the dashboard deliberately shows an honest empty state rather than mock data.
-
-Synced calendar events also store their description and attendee list, and recordings carry a nullable `calendar_event_id` so a recording can be linked to the calendar event it belongs to (see Meeting Intelligence in [USAGE.md](USAGE.md)). When a recording is linked, the dashboard suppresses the standalone Nojoin meeting item and shows only the calendar event.
+A recording can be linked to the calendar event it belongs to, which gives notes and Meeting Edge the event's description and attendees. A linked recording appears on the dashboard only as its calendar event.
 
 ## Sync Frequency and Live Sync
 
@@ -123,7 +106,7 @@ Nojoin exposes these webhook endpoints for the providers to call:
    ```
 
 8. Save the client.
-9. Enter the generated client ID and client secret into Nojoin Admin Calendar settings or the matching environment variables.
+9. Enter the generated client ID and client secret in **Settings > Integrations** or the matching environment variables.
 10. Optional, for Live Sync only: verify the Nojoin public domain under the project's **Domain verification** settings so Google will deliver calendar push notifications to `<public-origin>/api/v1/calendar/webhooks/google`. Scheduled 15-minute sync works without this step.
 
 ## Microsoft OAuth Setup
@@ -133,7 +116,7 @@ Microsoft setup is slightly more sensitive because tenant choice affects which a
 ### Supported Account Type
 
 - In the current Entra registration UI, use **Any Entra ID Tenant + Personal Microsoft Accounts** if you want both Microsoft 365 work or school accounts and personal Outlook.com or Hotmail accounts.
-- Older Microsoft documentation may describe this same choice using different wording, but in the current interface the label to look for is **Any Entra ID Tenant + Personal Microsoft Accounts**.
+
 - Use **Accounts in this organisational directory only** only if you deliberately want a single-tenant work or school deployment.
 
 ### Registration Steps
@@ -160,7 +143,7 @@ Microsoft setup is slightly more sensitive because tenant choice affects which a
 9. Do not add application permissions for this user-consent flow.
 10. Open **Certificates & secrets** and create a client secret.
 11. Copy the secret **Value** immediately. Do not use the **Secret ID**.
-12. Save the values into Nojoin Admin Calendar settings or the matching environment variables.
+12. Save the values in **Settings > Integrations** or the matching environment variables.
 13. Live Sync needs no extra Microsoft setup: the existing `Calendars.Read` permission covers change-notification subscriptions, and Microsoft validates the webhook automatically. It still requires Nojoin to be publicly reachable over HTTPS at `WEB_APP_URL`.
 
 ### Tenant Selection Rules
@@ -177,7 +160,7 @@ After setup:
 2. Connect Google or Microsoft from **Settings > Integrations > Calendar connections**.
 3. Approve the provider consent flow.
 4. Select one or more calendars.
-5. Confirm the dashboard shows calendar markers, agenda items, and next-event data.
+5. Confirm the dashboard shows calendar markers and agenda items.
 
 ## Troubleshooting
 

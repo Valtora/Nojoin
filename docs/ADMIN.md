@@ -99,8 +99,8 @@ Admin-only sections let you:
 
 - Choose the default LLM provider. Current Anthropic models do not accept a temperature setting, so their notes and titles vary more from run to run than other providers', which Nojoin runs at a low temperature. The limit is in Anthropic's API. Older Claude models that still accept the setting get the same value as the other providers.
 - Cap the AI analysis runs each user may start per day (**Daily AI analysis budget**). Each run is one long call against the user's own provider quota. Leave it blank or 0 for no cap. The cap is the install's default; an individual user's cap can be raised or lowered when editing them under Users, where 0 means no cap for that user.
-- Configure the Ollama API URL and context window. The context window is sent to Ollama as `num_ctx` for full-context meeting prompts, lowered to the model's own maximum when the model was trained on less, and holds the prompt and the answer together. Ollama is asked to refuse a prompt that does not fit, and an answer that fills the window is treated as incomplete; neither is saved. A meeting longer than the window goes to the secondary provider whole, or, without one, has its notes written in parts and its chat answered from the most relevant passages ([USAGE.md](USAGE.md#long-meetings-and-ollama)). Meeting chat drops its oldest turns to fit. Ollama on its own is not recommended for long meetings: on a consumer GPU the window holds far less than a long meeting, so they take several times as long to process. Ollama 0.12.6 or later refuses before generating; older servers are checked after the call (see `OLLAMA_CONTEXT_WINDOW` in [DEPLOYMENT.md](DEPLOYMENT.md)).
-- Configure a secondary LLM provider for fallback. When the primary provider fails, the system automatically retries with the secondary provider. The secondary provider has its own independent configuration (provider, model, API key, Ollama URL) set through `SECONDARY_` prefixed environment variables. With Ollama as the primary, a hosted secondary with a larger context window is the recommended setup for long meetings, since it takes a meeting Ollama cannot fit in one call.
+- Configure the Ollama API URL and context window. The window is sent to Ollama as `num_ctx`; `OLLAMA_CONTEXT_WINDOW` in [DEPLOYMENT.md](DEPLOYMENT.md) explains how to size it, and [Long Meetings And Ollama](USAGE.md#long-meetings-and-ollama) what happens to a meeting longer than it.
+- Configure a secondary LLM provider for fallback, through `SECONDARY_` prefixed environment variables ([USAGE.md](USAGE.md#secondary-llm-provider)). With Ollama as the primary, a hosted secondary is the recommended setup for long meetings.
 - Choose the transcription engine and model in **Settings > Transcription**. They apply to every user on the installation and are stored in `data/config.json`. The same section holds the **GPU transcription window** for Parakeet and Canary, the longest stretch of audio transcribed in one call on a GPU host (default 120 seconds, sized for an 8 GB card); lower it if transcription runs out of GPU memory while live capture shares the card, as [DEPLOYMENT.md](DEPLOYMENT.md#gpu-acceleration) explains.
 - View installed Whisper models.
 - Remove local model cache entries. Required default models are prepared on first run, and repo-bundled model assets remain read-only in the UI. Deletion runs on a worker, since the API mounts the model cache read-only, so it needs a running worker to succeed. Status and Delete look in the caches the models download into: `$XDG_CACHE_HOME/whisper` for Whisper, and the Hugging Face hub cache (`$HF_HOME/hub`, or `HF_HUB_CACHE` if set) for Parakeet, Canary and Pyannote. A Parakeet, Canary or Pyannote download that stopped part-way shows as **Missing** with a Delete button to clear it. A Pyannote model already in the personal cache, `~/.cache/huggingface/hub`, is still used, but shows as **External** and is not deleted from here.
@@ -111,22 +111,16 @@ Admin-only sections let you:
 
 - Install structures are visible to every user and editable only by an administrator. One can be marked the install default, which applies to anyone who has not chosen their own. Users can copy an install structure into their own list to vary it, which is the intended route when someone wants a change to shared text.
 - The install glossary is merged into each user's own glossary rather than replacing it, so a user adding one personal term keeps the organisation's vocabulary. Where both define the same term, the user's definition is used.
-- Only the section structure is editable. Accuracy, attribution, table formatting, and the response contract are fixed by the application and cannot be removed by a template. Four separate parts of Nojoin depend on the fixed portion: the automatic path checks that the notes open with a Markdown heading, user notes are appended under a heading of their own, a leading title heading is stripped because the interface shows the meeting title separately, and the table rules are what make decisions and action items render as real tables rather than as pipe-delimited text. Exposing the whole prompt would hand out all four contracts at once, and would also mean every future improvement to the shipped wording stopped reaching anyone who had customised.
+- Only the section structure is editable. Accuracy, attribution, table formatting, and the response contract are fixed by the application, because other parts of Nojoin depend on them and improvements to the shipped wording have to keep reaching everyone.
 - A template's structure text is snapshotted onto each set of notes it generates, so editing or deleting a template never changes what past notes were produced from. Restores remap template references; a reference that cannot be remapped is dropped rather than pointed at an unrelated template.
 
-Each user can also configure **Language** in **Settings > Transcription**. Transcription defaults to automatic language detection, while generated meeting titles and notes default to English. Whisper supports forced language selection, Canary supports its listed language set, and Parakeet remains automatic-only. The selected effective transcription language is part of the ASR reuse key, so cached/live transcript work is not reused across incompatible language settings.
-
-Notes-language choices include British and American English, the transcription language, listed languages, and a validated custom language/style instruction. These choices localize generated content while preserving machine-readable JSON keys and speaker labels. Existing saved transcripts and notes are not translated in place; users must reprocess or run **Generate Notes** after changing the relevant preference.
+Each user configures **Language** in **Settings > Transcription**; [USAGE.md](USAGE.md#language-preferences) describes the options.
 
 ### Anonymous Usage Data
 
-Use **Settings > Privacy** to turn the six-hourly usage diagnostics on or off, and to see this install's random ID, both endpoints, and when the heartbeat and the diagnostics were last sent. A failed attempt is reported there with its reason, so a "Last sent: Never" that means "never tried" can be told apart from one that means "tried and blocked". The panel also lists exactly what each contains.
+Use **Settings > Privacy** to turn the six-hourly usage diagnostics on or off, and to see this install's random ID, both endpoints, what each contains, and when each was last sent or why the last attempt failed. The daily install heartbeat is shown there too, with no switch: only `NOJOIN_TELEMETRY_ENABLED=false` stops it.
 
-The daily install heartbeat is shown in the same panel with no switch: only `NOJOIN_TELEMETRY_ENABLED=false` stops it. If this installation turned telemetry off before 2.7.0, the panel says the heartbeat is not sent and why.
-
-On an installation upgraded into this feature, no diagnostics are sent until an administrator has seen the one-time notice; the panel says so explicitly while that is the case. If `NOJOIN_TELEMETRY_ENABLED` is set in the environment, the toggle is read-only and the panel explains why.
-
-Read [TELEMETRY.md](TELEMETRY.md) for the full disclosure, the retention policy, and how to verify what is sent.
+Read [TELEMETRY.md](TELEMETRY.md) for the full disclosure, including how upgraded installations and earlier opt-outs are handled.
 
 ### Backup and Restore
 
@@ -161,21 +155,9 @@ Use **Settings > Updates** to see:
 
 ### Browser Capture Support
 
-- Shared-audio live recording requires Chrome on Windows, Linux, or macOS, or another supported desktop Chromium browser. Other Chromium-family browsers on macOS are best-effort.
-- Chrome on Android and iOS can start microphone-only live recordings.
-- Firefox, Safari, and other mobile browsers can review and administer Nojoin but cannot start live capture.
-- Tab sharing with audio enabled is the recommended support path for browser-based meetings.
-- If local microphone audio is missing, ask the user to grant microphone permission and review **Settings > Recording**.
-- If remote participant audio is missing, ask the user to start again and enable shared audio in the browser picker.
-- If a mobile Chrome recording is missing remote participants, confirm the user expected microphone-only capture and that the phone microphone could hear the meeting audio.
-- If a user has a paused recording, they must resume or discard it before starting another capture.
-- Review backend and worker logs for segment upload, transcode, live transcription, finalize, or discard failures.
-- Browser-live segment numbering starts at `0`; upload or finalize support cases should confirm the sequence is contiguous.
-- The worker keeps browser-live audio as 16 kHz, two-channel WAV after transcode. Channel 0 is shared/system audio when available and channel 1 is microphone audio.
+[CAPTURE.md](CAPTURE.md) has the support matrix, browser picker behaviour, and the troubleshooting steps for missing audio. Tab sharing with audio enabled is the recommended path for browser-based meetings. For a failed upload, transcode, live transcription, finalize, or discard, review the backend and worker logs.
 
-Paused recordings are retained indefinitely and are not cleaned up automatically. This protects uploaded meeting data and prevents overlapping segment streams for the same user.
-
-Read [CAPTURE.md](CAPTURE.md) for the support matrix, browser picker behaviour, and troubleshooting steps.
+Paused recordings are retained indefinitely and are not cleaned up automatically, which protects uploaded meeting data and prevents overlapping segment streams for the same user.
 
 ## Related Docs
 

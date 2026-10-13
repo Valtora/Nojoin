@@ -6,15 +6,7 @@ For deployment, administration, calendar provider setup, backup operations, and 
 
 ## First Run
 
-1. Open Nojoin in Chrome on Windows, Linux, or macOS for shared-audio recording, another supported desktop Chromium browser, or Chrome on Android/iOS for microphone-only recording.
-2. Sign in with your account.
-3. Open **Settings > Recording** if you need to choose a microphone or adjust shared-audio and microphone gain.
-4. Use the **Meet Now** card on the dashboard and click **Start Meeting** to create a short test recording.
-5. In the browser share picker, choose the meeting tab, window, or screen and enable the browser's audio-sharing or system-audio option when it is offered.
-6. Speak briefly and confirm the live waveform responds. If AI is configured, Meeting Edge guidance may appear once enough speech accumulates.
-7. Stop the recording, open it in the `/recordings` workspace, and wait for processing to complete.
-
-Firefox, Safari, and mobile browsers other than Chrome can review recordings but cannot start live capture. Chrome on macOS is supported for recording; other Chromium-family browsers on macOS are best-effort. See [CAPTURE.md](CAPTURE.md) for the full support matrix.
+For a first test recording, follow [Make Your First Recording](GETTING_STARTED.md#5-make-your-first-recording). [CAPTURE.md](CAPTURE.md) lists the supported browsers and covers choosing what to share.
 
 ## Tours And Onboarding
 
@@ -39,28 +31,17 @@ It brings together:
 - **Recent Meetings**, the latest ones with a click through to the detail view. It fills the height
   of its column and scrolls, and appears only once you have recordings.
 
-The first four always render. The last two appear when they have something to report, so a new
-account sees a dashboard rather than a page of empty boxes. The dashboard adds a second and then a
-third column as space allows, measured against the workspace itself, so collapsing the navigation
-rail can gain you a column at the same window size.
+The first four always render. The last two appear only when they have something to report.
 
-On desktop viewports around `1920x1080` and smaller, Nojoin automatically shifts into a denser desktop layout so more dashboard, recordings, transcript, notes, and settings content remains visible without affecting the roomier large-monitor layout. **Settings > Appearance > Density** overrides this: choose Comfortable or Compact to use that spacing at every window size, including phones, or Automatic to go back to the behaviour above. **Dense** is a further, opt-in step for mouse-and-keyboard use: smaller text, tighter rows, panels and transcript lines. On a touch screen Dense tightens spacing only and keeps controls at Compact size, so touch targets do not shrink.
+**Settings > Appearance > Density** controls spacing. Automatic tightens the layout on desktop windows around `1920x1080` and smaller, Comfortable and Compact apply one spacing at every window size, and Dense is a further step for mouse-and-keyboard use. On a touch screen Dense tightens spacing only, so touch targets do not shrink.
 
 ### Calendar Surface
 
-- The month grid and the agenda are separate modules and are both visible at once; there is no view toggle.
-- The agenda opens on today. Selecting a day in the month grid scopes the agenda to that day, and **Whole month** in the agenda header returns it to the full month.
-- Use **Today** to jump back to the current date context.
-- A day agenda for today shows a live now marker against timed events.
-- Unlinked Nojoin recordings appear on the dashboard calendar as orange meeting items, while Google or Microsoft calendar sources keep their own colours.
-- Recorded meeting cards surface tags, speakers, and timestamps directly inside the selected-day agenda.
-- The agenda view is month-scoped and includes both synced calendar events and unlinked Nojoin meeting history for the viewed month.
-- In the current month, the agenda starts at the next upcoming item; use **Show past events** to expand earlier items. Past months always show their full history.
-- Clicking a timed event bubble in the day timeline opens a details popover with the full title, time, calendar, location, join link, and linked recordings.
-- Live events with a trusted meeting link show a **Join** button directly on the timeline bubble.
-- Meeting links render as compact **Join meeting** labels with the provider host rather than raw URLs; the full URL appears on hover.
-- Events continuing past midnight show dashed edges and chevrons on the day timeline.
-- Event times render in your configured Nojoin timezone.
+- The agenda opens on today. Selecting a day in the month grid scopes the agenda to that day, and **Whole month** returns it to the full month.
+- The agenda shows synced calendar events and unlinked Nojoin recordings together. Nojoin recordings are orange; Google and Microsoft calendars keep their own colours.
+- In the current month the agenda starts at the next upcoming item, and **Show past events** expands earlier ones. Past months show their full history.
+- Clicking a timed event opens its details: time, calendar, location, join link, and linked recordings. A live event with a trusted meeting link shows **Join** directly.
+- Event times use your configured Nojoin timezone.
 
 Read [CALENDAR.md](CALENDAR.md) for connection and setup details.
 
@@ -72,9 +53,7 @@ You can create, rename, complete, reopen, archive, delete, and schedule tasks. A
 
 ## Tasks Workspace
 
-The dedicated **Tasks** page sits in the main navigation between **Dashboard** and **People**.
-
-Use it to manage tasks more holistically:
+The **Tasks** page manages tasks more fully than the dashboard list:
 
 - Select **Create Task** to open the task creation form when you need to add a richer task.
 - **Open** shows active, non-archived tasks.
@@ -86,9 +65,7 @@ Delete remains permanent. Use archive when you want to hide a task without losin
 
 ## People Workspace
 
-The dedicated **People** page sits in the main navigation between **Tasks** and **Recordings**.
-
-Use it to manage your shared speaker library:
+The **People** page manages your shared speaker library:
 
 - Review people records and stored voiceprints in one place.
 - Search and filter the library when you need to find a known speaker quickly.
@@ -98,56 +75,21 @@ Use it to manage your shared speaker library:
 
 ## Live Recording
 
-Live recording is browser-native. On supported desktop Chromium browsers, Nojoin captures shared tab/window/screen audio plus microphone audio from the web app. On Chrome for Android and iOS, Nojoin records the phone microphone only.
+Live recording is browser-native: shared tab, window or screen audio plus your microphone on supported desktop Chromium browsers, and the phone microphone only on Chrome for Android and iOS. [CAPTURE.md](CAPTURE.md) covers starting a recording, choosing what to share, and keeping the tab recording.
 
-1. Open the dashboard.
-2. In the **Meet Now** card, click **Start Meeting**.
-3. On desktop, select a meeting tab, application window, or entire screen in the browser share picker.
-4. On desktop, enable the browser's audio-sharing or system-audio option when it is offered before selecting **Share**.
-5. Allow microphone access if prompted.
-6. On mobile Chrome, keep the phone close enough for the microphone to hear the meeting audio.
-7. Keep the Nojoin tab open and the device awake until the meeting ends.
+While recording, the workspace shows the transport controls, a live waveform, the live transcript, your notes, and Meeting Edge. **Attach Docs** in the toolbar attaches documents while the meeting runs, and they are listed under your notes. When you press **Stop**, the transcript becomes pipeline progress.
 
-Tab sharing is usually the best choice for browser-based meetings because it most reliably exposes meeting audio. Window and screen sharing can work, but audio availability depends on browser and operating-system support.
-
-If you close the browser share picker with **Cancel**, Nojoin silently returns to the pre-start state and no recording begins.
-
-Mobile Chrome does not capture meeting tab, app, headset, or system audio. It is useful for microphone or in-room speakerphone capture only.
-
-While recording, Nojoin shows recording state, duration, upload state, a live waveform, a live transcript panel, Meeting Edge guidance, your live notes panel, and collapsed processing visibility.
-
-The recording workspace lays these out so that on a wide display everything is visible at once rather than down a long scroll. The capture controls sit in a toolbar across the top, carrying the meeting's working name, the transport, **Attach Docs** for attaching one or more documents, and the speaker limit. Below it are two columns: the live transcript with your notes under it on the left, and Meeting Edge on the right. It collapses to a single stack on smaller screens. When you press **Stop**, the transcript becomes pipeline progress and the rest of the layout stays where it is.
-
-Documents you attach are listed under your notes. The panel appears only once something is attached, since uploading is done from the toolbar.
-
-On a processed meeting, the tabs are Transcript, Notes, Documents, and Analytics on every screen size. On mobile the speaker panel is opened from the actions menu in the meeting header rather than from a tab of its own, because five tab labels do not fit legibly on a phone. On desktop it stays in the side column beside the transcript.
-
-On mobile and narrow tablet layouts, Nojoin uses compact navigation with a menu button on the main dashboard surfaces. The active recording workspace and processed recording detail view both provide a native back control so you can return to the recordings list without relying on the browser's history buttons. Mobile Meeting Chat also includes its own back action to return to the meeting workspace.
-
-You can switch to another browser tab, window, or application while recording. Nojoin only pauses automatically when the Nojoin tab is refreshed, closed, or navigated away from the active recording.
-
-Keep the Nojoin tab open and the device awake for the length of the meeting. If the browser or the operating system suspends the tab, capture stops receiving audio for that period and it cannot be recovered afterwards, even though the recording is not paused. Nojoin warns you when the audio it has stored falls behind the elapsed recording time. See [Recorded audio is shorter than the meeting](CAPTURE.md#recorded-audio-is-shorter-than-the-meeting).
-
-While a recording is active, a floating badge appears at the top-centre of the viewport on every page. The badge shows the recording status, elapsed time, and pause, resume, and stop controls. Clicking the badge navigates to the recording detail page. You can control the recording from any page without navigating back to the recording workspace first.
+A processed meeting has Transcript, Notes, Documents and Analytics tabs. The speaker panel sits beside them on desktop and opens from the meeting header's actions menu on a phone.
 
 ### Pause, Resume, Stop, And Discard
 
-- **Pause** temporarily stops capture while preserving uploaded segments.
-- **Resume** opens the browser share picker again and continues the same recording.
-- **Stop** finalises the recording and starts processing. It names the stage it is working through, and it works on a paused recording as well as an active one.
-- **Discard** permanently removes an in-progress recording in one step. It stops capture, cancels any processing, deletes the captured audio, and removes the meeting. Nojoin asks you to confirm first because this cannot be undone.
+**Pause** keeps what has been uploaded, **Resume** reopens the share picker and continues the same recording, **Stop** finalises it and starts processing, and **Discard** deletes an unfinished recording, including one that is queued or processing, after asking you to confirm. To remove a meeting that has finished processing, use **Delete** instead.
 
-Discard is available from the live recording controls, the floating recording badge, the resume-or-discard modal, and the recordings menu, so you can abandon a recording from wherever you are.
-
-If the browser is closed, refreshed, or loses the active recording page during capture, Nojoin pauses the recording to protect already uploaded data. When you return, Nojoin requires you to deal with that recording before starting anything else, offering three choices: resume it, **Stop and process** to keep the audio already captured and start processing, or discard it. Stopping this way does not reopen the browser share picker, so it works even though the original capture session is gone.
-
-If the interruption happened before any audio reached the server, Nojoin discards that recording instead of asking, and tells you to start the meeting again. There is nothing in it to resume or keep, so there is nothing to decide. See [Pause, Resume, Stop, And Discard](CAPTURE.md#pause-resume-stop-and-discard).
-
-Paused recordings are retained indefinitely until you resume, stop, or discard them.
+If the tab is closed or refreshed during capture, the recording is paused, and Nojoin asks you to resume it, stop and process it, or discard it before you start anything else. [CAPTURE.md](CAPTURE.md#pause-resume-stop-and-discard) describes this in full.
 
 ### Live Transcription
 
-While a meeting is being recorded, the recording page shows a **Live Transcript** panel above Meeting Edge. Sentences appear as they finalize, a few seconds behind the conversation, because transcription works on windows of audio rather than decoding word by word. The panel follows the newest line automatically; scroll up to read back and it stops following until you scroll to the bottom again or use **Jump to latest**.
+While a meeting is being recorded, the recording page shows a **Live Transcript** panel. Sentences appear as they finalize, a few seconds behind the conversation, because transcription works on windows of audio rather than decoding word by word. The panel follows the newest line automatically; scroll up to read back and it stops following until you scroll to the bottom again or use **Jump to latest**.
 
 The panel is read-only. Live text is provisional and is corrected by the authoritative processing pass when the recording is finalized, so you cannot edit it during capture.
 
@@ -163,24 +105,11 @@ It can surface live questions, missed points, and quick concept help during a me
 
 ## Importing Recordings
 
-You can import existing audio files directly through the web client. **Import Audio** sits with **Start Meeting** at the top of the **Recordings** list: beside it when the list is wide enough, under it otherwise, and under the live controls while a meeting runs. On a phone, where Start Meeting is on the dashboard, an **Import** button sits beside the list title on the first screen of the recordings workspace. The collapsed list on desktop keeps it as an icon, and an empty library shows it too. It is not offered in **Archived** or **Deleted**, and it is unavailable while a paused recording is waiting for you to resume, stop or discard it.
+You can import existing audio files with **Import Audio** at the top of the **Recordings** list. It is unavailable while a paused recording is waiting for you to resume, stop or discard it.
 
 Supported formats include WAV, MP3, M4A, AAC, WebM, OGG, FLAC, MP4, WMA, and OPUS, and the video and media containers MKV, MKA, MOV, AVI, M4V, TS, MTS, MPG, MPEG, and 3GP. Nojoin keeps only the audio of an imported file. A file with no audio track is refused: the import shows as failed and nothing of the file is kept.
 
-The import flow validates the file, builds the canonical media artifacts, and queues background processing. Imports skip the live capture workflow but share the same final processing pipeline as live recordings.
-
-### Discard Recording
-
-Use **Discard Recording** from the recordings list or recording actions when a meeting is still recording, paused, queued, or processing and you no longer want it.
-
-Discard Recording:
-
-- Revokes any running processing task for that meeting.
-- Closes any active live upload or finalisation session.
-- Deletes the captured audio and derived files.
-- Removes the recording entirely, so there is no leftover `Cancelled` entry to clean up afterwards.
-
-Because it permanently deletes the meeting, Nojoin asks you to confirm before discarding. To remove a meeting that has already finished processing, use **Delete** instead.
+An import goes through the same final processing as a live recording.
 
 ### Retry Processing
 
@@ -194,7 +123,7 @@ If transcription itself fails, the recording is marked **Error** instead of fini
 
 From the recording detail page you can choose **Reprocess at higher quality**. This re-runs the full pipeline after an administrator changes the transcription engine or model, which apply to the whole installation, under **Settings > Transcription**.
 
-Reprocessing clears and rebuilds transcript and generated artifacts while preserving metadata, tags, documents, and user-authored notes. Older meetings that predate the unified pipeline cutover may require reprocess before transcript or speaker edits are available.
+Reprocessing clears and rebuilds transcript and generated artifacts while preserving metadata, tags, documents, and user-authored notes.
 
 ## Transcript And Playback
 
@@ -271,12 +200,7 @@ Processed recordings can include Markdown notes, AI-generated meeting notes, mee
 - **Documents** can be uploaded to support meeting context, meeting notes, and later search.
 - **Search** spans recordings, transcript text, notes, tags, and document content where available.
 
-On desktop, the Speakers and Chat panels sit in a resizable column to the right of the transcript
-and notes. Each collapses independently from the control in its header: collapsing one gives the
-other the full column height, and collapsing both reduces the column to a slim strip of icons that
-restores them. The recordings list can likewise be collapsed from the control beside its search
-box. All of these choices persist across visits, so a laptop can keep the full width for reading a
-transcript without giving the panels up for good.
+On desktop, the Speakers and Chat panels share a resizable column beside the transcript. Each collapses from its header, the recordings list collapses too, and these choices persist across visits.
 
 ### Analytics
 
@@ -294,7 +218,7 @@ What it shows:
 - **How the conversation moved**: turns taken, median and longest turn, how often each person took the floor the instant it opened, and how long they leave before replying when there is a gap to measure. Selecting a longest turn plays the meeting from that point, so any figure can be checked against the audio.
 - **Talking over each other**, measured from the audio itself once the meeting has been measured: at least how much of the meeting was overlapping speech, and where it clustered. The figure is a floor. The detection model finds roughly 70 to 90% of overlapping speech, and every setting that finds more also counts overlap that was not there, so Nojoin reports the lower bound ([ANALYTICS_EVIDENCE.md](ANALYTICS_EVIDENCE.md)).
 
-The tab uses whatever width it has. On a wide display the sections pair up, and on a phone, or with both side panels open, they stack into one column and the per-speaker tables become a list of speakers rather than a table you have to drag sideways. Everyone keeps the colour they have everywhere else in the meeting, so the person who is blue in the transcript is blue in every chart here; changing a speaker's colour in the speaker panel changes it here too.
+Everyone keeps the colour they have everywhere else in the meeting, so the person who is blue in the transcript is blue in every chart here; changing a speaker's colour in the speaker panel changes it here too.
 
 Each figure carries a short line saying what it means, and the longer explanation of how it was arrived at sits under a **How this is measured** link beneath the section it belongs to. Nothing is hidden that changes what a number claims: the caveats that qualify a figure directly, such as overlapping speech being a floor rather than a total, stay in the sentence that reports it.
 
@@ -358,7 +282,7 @@ No warning does not mean the attribution is certainly right, only that nothing o
 
 ### Attaching Documents
 
-Upload PDF, PowerPoint, Word, Excel, CSV, text, Markdown, or image files, up to 250 MB each. Documents can be attached at any point: from the Documents tab of a processed meeting, or from the Documents panel that appears below the live transcript while a meeting is still recording or processing.
+Upload PDF, PowerPoint, Word, Excel, CSV, text, Markdown, or image files, up to 250 MB each. Documents can be attached at any point: from the Documents tab of a processed meeting, or with **Attach Docs** in the recording toolbar while a meeting is still recording or processing.
 
 Several files can be attached at once. Browse to them or drag them onto the dialog, in one go or a few at a time, and each queued file is listed with its own **Analyse visually with AI** switch, so a deck can be read visually while the plain-text agenda beside it is not. Uploads run one after another rather than all at once, and the documents panel fills as they land. If one fails the rest still go through, and the dialog stays open with the failed files listed so they can be retried without re-sending what already uploaded.
 
@@ -370,7 +294,7 @@ Text extraction alone misses most of what a slide deck or a scanned report actua
 
 - Turn it off per file for a document that is genuinely plain text, or to avoid using AI provider quota. The file is still parsed, just without visual analysis. When several files are queued, one control turns it off for all of them.
 - It cannot be turned off for image uploads, which have no text to extract without it.
-- Your model must accept images. Every current hosted model from Anthropic, OpenAI, and Google does. If you use **Ollama**, you must select a vision-capable model (such as a `llava` or `-vision` variant) in **Settings > AI**; a text-only model cannot read images and Nojoin will fall back to text extraction.
+- Your model must accept images. Every current hosted model from Anthropic, OpenAI, and Google does. If you use **Ollama**, an administrator must select a vision-capable model (such as a `llava` or `-vision` variant) in **Settings > AI providers**; a text-only model cannot read images and Nojoin will fall back to text extraction.
 - If visual analysis is unavailable, Nojoin falls back to local OCR before giving up. OCR runs on your own server, costs nothing, and sends nothing anywhere, so a scanned page stays searchable even with no AI configured at all. What it cannot do is describe a chart or a diagram, only transcribe the words, and the document card says so when it was used.
 - If neither is available the document still parses from its own text layer, and the card explains what was skipped. Use **Parse again** on the document card once a suitable model is configured.
 
@@ -409,12 +333,6 @@ Generated notes present key decisions and action items as tables, since both are
 
 Notes remain Markdown throughout, so a table written by hand in Markdown, generated by the AI, or pasted in from elsewhere is treated identically.
 
-## Calendar Features
-
-Nojoin can connect to Google Calendar and Microsoft Calendar when an administrator has configured provider credentials.
-
-Calendar events can provide meeting context, dashboard agenda views, linked recording history, and Meeting Edge context. Read [CALENDAR.md](CALENDAR.md) before changing calendar provider settings or troubleshooting OAuth.
-
 ### Long Meetings And Ollama
 
 A hosted provider (Anthropic, OpenAI or Gemini) reads a whole meeting in one call, however long it is. A local Ollama model reads only as much as its context window holds, and on a consumer GPU that is far less than a long meeting: the default window of 32,768 tokens covers about two hours.
@@ -427,20 +345,13 @@ Meeting Chat on such a meeting answers from the notes and the passages of the tr
 
 ## AI Assistant Connections (MCP)
 
-Nojoin includes a built-in MCP connector so AI assistants such as Claude can work with your meeting library on your behalf. It has two access tiers: read tools cover the whole library including semantic search across every meeting and document, and write tools cover recoverable changes such as organising recordings, managing tasks, correcting transcripts, regenerating notes, and maintaining People records. Permanent deletion is not available through the connector at all. Add `https://your-nojoin-domain/mcp` as a custom connector in the assistant and approve access on Nojoin's authorisation page. Active connections are listed under **Settings → Integrations → Connected apps**, where each one can be revoked. See [MCP.md](MCP.md) for setup, supported clients, and troubleshooting.
+Nojoin includes a built-in MCP connector, so AI assistants such as Claude can read your meeting library and make recoverable changes on your behalf. Add `https://your-nojoin-domain/mcp` as a custom connector in the assistant and approve access on Nojoin's authorisation page. [MCP.md](MCP.md) covers setup, the tools, and revoking access.
 
 ## Settings
 
-Settings are grouped by task.
+Settings are grouped by subject, and each category is its own page. Every user has Profile and security, Appearance, Integrations (calendar connections and connected apps), Recording, Transcription, Notes and live assistance, Your AI, Updates, and Help; [ADMIN.md](ADMIN.md#settings-structure) lists the administrator categories as well. A search box finds an individual setting by name.
 
-- **Profile**: account details and password changes.
-- **Appearance**: theme (system, light or dark), colour palette (Nojoin orange, Graphite, Classic, Ultraviolet or Marigold), corner style (Rounded, Subtle or Square), density (Automatic, Comfortable, Compact or Dense), timezone, and spellcheck language. Theme, palette, corner style and density are saved in this browser only, so each browser can look different; they apply immediately, and on the next load before the page first paints.
-- **Recording**: microphone selection, shared-audio gain, microphone gain, and a local mic input test for browser recording. Its Advanced section holds the browser audio-processing toggles, the processing defaults (voice activity detection, speaker diarization), and speech and speaker tuning (see [Tuning Speech Detection And Speaker Separation](#tuning-speech-detection-and-speaker-separation)).
-- **AI**: per-user AI routing (the server's configured provider, or your own Claude or ChatGPT subscription), the server provider and model, Meeting Edge, automatic meeting intelligence, language, and secondary-provider fallback. Install-wide controls (provider, models, the Ollama endpoint, fallback, and "Enable Meeting Edge") are shown only to administrators; a non-admin sees a read-only summary of the active provider instead.
-- **Transcription**: transcription backend and model choices. Administrators picking a model the server does not have yet are asked whether to download it now, so it is ready before the next recording, or to leave it until first use.
-- **Calendar**: user calendar connections and timezone behaviour.
-- **Help**: tours and support surfaces.
-- **Admin**: user, invitations, CLI usage, system, provider, release, and maintenance settings for administrators.
+Theme, colour palette, corner style and density are saved in the browser rather than on the server, so each browser can look different.
 
 ### Language Preferences
 
@@ -462,7 +373,7 @@ Instead of using the server's configured provider, you can route your own AI thr
 - **Claude** — open the grant link and paste back the code Anthropic shows you.
 - **ChatGPT** — open the sign-in page, enter the code shown, and approve access; the panel finishes automatically once you approve.
 
-Pick a model for notes/chat and, optionally, a faster live model for Meeting Edge. If you connect both, choose which one is active. When your subscription is unavailable or usage-limited, Nojoin falls back to the server's default provider chain — its primary provider first, then its secondary if that also fails. Once you start using it, the panel shows your recent token usage.
+Pick a model for notes/chat and, optionally, a faster live model for Meeting Edge. If you connect both, choose which one is active. Once you start using it, the panel shows your recent token usage.
 
 Because this uses your subscription quota, a cheaper model conserves *quota*, not money. If you reach your limit, Nojoin shows a reset time and falls back to the server's default provider chain — its primary provider first, then its secondary if that also fails. Disconnecting removes your stored credential.
 

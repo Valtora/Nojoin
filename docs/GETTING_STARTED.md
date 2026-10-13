@@ -62,7 +62,7 @@ Unlock the wizard with the `FIRST_RUN_PASSWORD` value from your `.env`. Every un
 The wizard runs in five steps after the unlock gate.
 
 1. **Terms.** The legal disclaimer, plus an **anonymous usage diagnostics** checkbox, ticked by default. Leaving it ticked sends one anonymous ping every six hours with counts and configuration settings, never your recordings, transcripts, notes, names, or keys. Unticking it means no diagnostics are ever sent. Separately, Nojoin sends a daily heartbeat with a random install ID and the version, which only `NOJOIN_TELEMETRY_ENABLED=false` in `.env` stops. You can change the diagnostics later in **Settings > Privacy**; see [TELEMETRY.md](TELEMETRY.md).
-2. **Transcription.** Choose the Whisper model. Turbo (the default) suits a server with an NVIDIA GPU; Small or Base is far faster on a CPU-only deployment, and you can change it later in **Settings > AI**. This step also reports whether speaker diarisation can run, by detecting either an `HF_TOKEN` in the environment or Pyannote assets already present on the server.
+2. **Transcription.** Choose the Whisper model. Turbo (the default) suits a server with an NVIDIA GPU; Small or Base is far faster on a CPU-only deployment, and you can change it later in **Settings > Transcription**. This step also reports whether speaker diarisation can run, by detecting either an `HF_TOKEN` in the environment or Pyannote assets already present on the server.
 3. **Account.** Create the Owner account. Submitting this step creates the account, signs you in, and queues preparation of the transcription and speaker models in the background, so the download runs while you finish the remaining steps. Everything after this point is authenticated, and the wizard cannot be stepped back past it.
 4. **AI.** Choose how AI runs. See below.
 5. **Finish.** A summary of what was configured, a check that this browser and origin can actually record, and the remaining model-preparation progress.
@@ -81,14 +81,9 @@ You can also pre-fill much of this through environment variables. See [DEPLOYMEN
 
 ## 4. Prepare Browser Capture
 
-1. Open Nojoin in Chrome on Windows, Linux, or macOS for shared-audio capture, in another supported Chromium-family browser on Windows or Linux, or in Chrome on Android/iOS for microphone-only capture. Other Chromium-family browsers on macOS are best-effort.
-2. Open your meeting in a browser tab when possible. Tab sharing is the most reliable way to capture meeting audio.
-3. Open **Settings > Recording** if you need to choose a microphone or adjust shared-audio and microphone gain.
-4. Keep the Nojoin tab open during live recording.
+Open Nojoin in a supported browser (see [Before You Begin](#before-you-begin)) and, if you need to, choose a microphone in **Settings > Recording**. On desktop, open your meeting in a browser tab where you can: tab sharing is the most reliable way to capture meeting audio. Keep the Nojoin tab open while recording.
 
-On desktop, the browser will ask what tab, window, or screen to share when you start recording. Turn on the browser's audio-sharing or system-audio option in that picker when it is offered so remote participants are captured. If you close the picker with **Cancel**, Nojoin simply returns to the pre-start state. On mobile Chrome, Nojoin records only the phone microphone, so keep the phone close enough to hear the meeting and keep the tab open.
-
-See [CAPTURE.md](CAPTURE.md) for browser-specific guidance, Linux PipeWire notes, pause/resume semantics, and troubleshooting.
+[CAPTURE.md](CAPTURE.md) has browser-specific guidance, Linux PipeWire notes, pause and resume behaviour, and troubleshooting.
 
 ## 5. Make Your First Recording
 

@@ -36,7 +36,7 @@ Nojoin is built for people who want the usefulness of meeting assistants without
 - Optional fully local AI with Ollama
 - `Meeting Edge` live meeting guidance with questions, missed points, and concept help
 - AI-generated meeting notes
-- Meeting analytics measured from the transcript: talk-time share, turn structure, interruptions, and how the balance shifted through the call, plus an optional AI reading of the topics, the questions nobody answered, and who owned each decision
+- Meeting analytics measured from the transcript and the audio: talk-time share, turn structure, overlapping speech, and how the balance shifted through the call, plus an optional AI reading of the topics, the questions nobody answered, and who owned each decision
 - AI-powered Meeting Chat grounded in the transcript, notes, and uploaded documents
 - Global speaker library with voiceprints and speaker matching
 - Google and Outlook calendar sync with meeting context in the dashboard
@@ -95,13 +95,13 @@ Nojoin is free, and running it yourself means a machine with a GPU, a compose fi
 
 6. Unlock the wizard with your `FIRST_RUN_PASSWORD` and complete the first-run setup: terms, transcription model, owner account, AI route, and a finish screen that checks this browser can record. The sign-in page does not link to setup; the wizard is only reachable at `/setup`.
 
-7. Open Nojoin in Chrome on Windows, Linux, or macOS for shared-audio recording, in another Chromium-family browser on Windows or Linux, or in Chrome on Android/iOS for microphone-only recording, then start a short test meeting. Other Chromium-family browsers on macOS are best-effort. See [docs/CAPTURE.md](docs/CAPTURE.md) for browser capture guidance.
+7. Open Nojoin in a [supported browser](#supported-browsers-and-oses) and start a short test meeting. See [docs/CAPTURE.md](docs/CAPTURE.md) for browser capture guidance.
 
 Notes:
 
 - An NVIDIA GPU is strongly recommended for faster processing.
 - CPU-only mode is supported but it is much slower.
-- Browser capture supports shared-audio recording on Chrome for Windows, Linux, and macOS, Chromium-family browsers on Windows and Linux, and best-effort macOS Chromium-family browsers, plus microphone-only recording on Chrome for Android and iOS.
+
 - Set `DATA_ENCRYPTION_KEY` once and keep it stable to avoid losing access to previously encrypted calendar credentials after restores or host changes.
 - To reach Nojoin from another device, a phone, a VPN, or a tailnet, read [Remote Access and Trusted Public Origin](docs/DEPLOYMENT.md#remote-access-and-trusted-public-origin). Live capture requires an HTTPS origin, so remote access means putting a reverse proxy in front of Nojoin rather than only changing a port.
 - For calendar OAuth, updates, and backup guidance, use the documentation below.

@@ -126,7 +126,7 @@ A restore can succeed while being unable to bring every record across. When that
 - Ownership mappings are preserved so restored records belong to the correct users.
 - Audio and recordings are matched carefully to reduce duplicate restoration.
 - Calendar connections, selections, cached events, and each meeting's link to its calendar event are restored so the dashboard calendar comes back intact.
-- Redacted AI credentials (such as LLM API keys and Hugging Face tokens) must be configured in the target server's environment variables (e.g., `.env`) and the containers restarted.
+
 - Recordings that were still processing when the backup was taken are restored as processed if their transcript came across, and as errored otherwise, so nothing is left permanently stuck. Reprocess an errored recording to finish it.
 
 ## Recording Identity and Matching
@@ -149,9 +149,7 @@ If a target installation already holds a row with the same `public_id` or `audio
 
 Playback proxies, the meeting-chat RAG index, and the canonical transcript pipeline's utterance graph are not carried in the archive. They are rebuilt automatically after a restore, so newly restored recordings may briefly show as still processing.
 
-Manual transcript and speaker corrections **do** survive, because they are recorded in the transcript itself. What is not preserved is audit history: the record of who changed what and when, per-window diarisation results, and confidence scores. If you need backups as audit evidence, this archive is not that.
-
-The pipeline's canonical tables are rebuilt from the transcript rather than archived, and the deciding factor was that hand corrections round-trip safely. The transcript carries the flags that mark text and speakers as manually edited, and the rebuild reconstructs the locks that stop a later reprocess overwriting them; had those not survived the round trip, the archive would have had to carry the tables instead, because silently exposing corrected transcripts to being re-overwritten is not an acceptable cost. Against that, archiving the tables would mean remapping a dense foreign-key graph on every restore, which is where this subsystem's bugs have historically come from — one table alone carried three unhandled back-references that would have dropped every restored speaker row. A restored recording is indistinguishable from a pre-existing legacy one, so it is rebuilt by the same tested path those already use.
+Manual transcript and speaker corrections **do** survive: the transcript carries the flags that mark text and speakers as manually edited, and the rebuild restores the locks that stop a later reprocess overwriting them. What is not preserved is audit history: the record of who changed what and when, per-window diarisation results, and confidence scores. If you need backups as audit evidence, this archive is not that.
 
 ## Archive Compatibility
 
@@ -159,13 +157,13 @@ Archives record a format version. A Nojoin installation restores any archive at 
 
 ## Cross-System Restores
 
-Restoring a backup onto a different installation preserves the original `public_id` of each recording so recording URLs, document relationships and later backups remain stable. Browser live recording state is not portable across systems; users should finish, resume, or discard paused recordings before backup and restore operations whenever possible.
+Browser live recording state is not portable across systems; users should finish, resume, or discard paused recordings before backup and restore operations whenever possible.
 
 ## Housekeeping
 
 Exported archives, uploaded archives and abandoned uploads are reclaimed automatically by a periodic cleanup task. Exports remain downloadable for a period after they are created rather than being deleted on first download, so an interrupted download can be retried.
 
-An export is built by a worker and served by the API, so it is the one backup file that has to be reachable from more than one container. It is written to `data/backups`, inside the data directory every service already mounts. Archives are never themselves archived: an export walks database rows rather than the filesystem, and a finished archive has no row.
+An export is built by a worker and served by the API, so it is written to `data/backups`, inside the data directory every service already mounts.
 
 Uploaded archives take the opposite path, through `data/temp_uploads`, and restore staging happens in `data/restore_staging`. Every backup working file therefore lives under the data directory, and none of them depend on a shared `/tmp`.
 
