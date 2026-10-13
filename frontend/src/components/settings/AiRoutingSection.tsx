@@ -49,8 +49,7 @@ interface AiRoutingSectionProps {
  * Per-user "AI routing" section. The user picks between the server-configured
  * provider and routing inference through their own subscription (Claude or
  * ChatGPT, via CLI OAuth). Only the controls relevant to the active choice are
- * shown. The two former no-op options (Ollama/BYOK) were removed — they never
- * changed resolution (they fell through to the server provider).
+ * shown.
  */
 export default function AiRoutingSection({
   settings,

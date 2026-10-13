@@ -1,7 +1,7 @@
 // Curated CLI OAuth models per provider (a subscription exposes no models
-// endpoint). Ids mirror the backend's _CLAUDE_CLI_MODELS / _CODEX_CLI_MODELS
-// (most-capable first); `label` is the full, unambiguous name shown in pickers
-// and usage tables. Codex ids are curated — VERIFY against the live Codex set.
+// endpoint), shown until the API's catalogue loads. Ids mirror the backend's
+// _CLAUDE_CLI_MODELS / _CODEX_CLI_MODELS, most capable first; `label` is the
+// full name shown in pickers and usage tables.
 import type { CliProvider } from "@/types";
 
 export interface CliModelOption {

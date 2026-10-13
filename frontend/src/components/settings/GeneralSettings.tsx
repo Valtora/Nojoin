@@ -31,10 +31,10 @@ import {
 } from "./settingsControls";
 
 /**
- * The sections this component can render. They now live on two different
- * category pages — appearance, date and time, and spellcheck under Appearance;
- * the processing defaults under Recording, next to the capture controls they
- * belong with — so the caller selects which it wants.
+ * The sections this component can render. They sit on two category pages
+ * (appearance, date and time, and spellcheck under Appearance; the processing
+ * defaults under Recording, next to the capture controls they belong with), so
+ * the caller selects which it wants.
  */
 export type GeneralSettingsSection =
   | "appearance"

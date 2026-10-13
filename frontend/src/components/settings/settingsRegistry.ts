@@ -8,7 +8,7 @@ import type { SettingsAccess, SettingsCategoryId } from "./settingsCategories";
  * The settings manifest.
  *
  * One entry per user-facing setting or panel. This is the single source of
- * truth for three things that used to be decided ad hoc in each component:
+ * truth for three things:
  *
  *  - search: entries are matched by label, description, and keywords, so a
  *    search reaches an individual setting rather than only its category;

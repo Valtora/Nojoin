@@ -80,7 +80,6 @@ export default function WhisperModelModal({
     setDeleting(true);
     try {
       await deleteModel("whisper", selectedModel);
-      // Refresh status
       const res = await getModelsStatus(selectedModel);
       setStatus(res);
 

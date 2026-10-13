@@ -1,11 +1,9 @@
 /**
  * The control vocabulary every settings page draws from.
  *
- * Settings previously used seven different border radii and a different input
- * class per component, because each one styled its own fields inline. These
- * constants are the single definition: radius, border, background, focus ring
- * and disabled treatment, matched to the design system's 8px control radius
- * (Tailwind's rounded-lg).
+ * These constants are the single definition of a settings control: radius,
+ * border, background, focus ring and disabled treatment, matched to the design
+ * system's 8px control radius (Tailwind's rounded-lg).
  *
  * Import these rather than writing control classes by hand, so a change to the
  * focus ring or the disabled state lands everywhere at once.

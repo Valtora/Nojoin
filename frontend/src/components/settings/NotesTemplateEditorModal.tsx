@@ -176,10 +176,8 @@ export default function NotesTemplateEditorModal({
 
   const overLimit = sections.length > maxSectionsLength;
 
-  // Rendered into document.body rather than in place. SettingsSection applies
-  //, and an element with a backdrop-filter becomes the containing
-  // block for fixed-position descendants -- so an in-place modal would size
-  // itself to the settings card and overlap the sections around it.
+  // Modal portals to document.body, so the editor is never sized by a
+  // containing block inside the settings page.
   return (
     <Modal
       open={isOpen}
