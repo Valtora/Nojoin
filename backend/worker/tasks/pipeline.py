@@ -1050,8 +1050,8 @@ def _reclaim_orphaned_processing(session) -> list[Recording]:
     A recording only leaves PROCESSING when its task finishes, so one whose task is
     no longer running is stranded: the reprocess endpoint refuses to touch a
     PROCESSING recording, leaving no way back short of editing the database.
-    Reclaiming needs proof the task is gone, so this
-    returns nothing when liveness cannot be established.
+    Reclaiming needs proof the task is gone, so this returns nothing when
+    liveness cannot be established.
     """
     stuck = session.exec(
         select(Recording).where(Recording.status == RecordingStatus.PROCESSING)
