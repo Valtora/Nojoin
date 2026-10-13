@@ -4,46 +4,34 @@ Container images for this release. All images are cosign-signed and ship build-p
 
 {{IMAGE_DIGESTS}}
 
-### Install heartbeat
-
-From 2.7.0, each Nojoin installation sends a small heartbeat to `telemetry.nojoin.co.uk`, once when it first starts, once each time it starts on a new version, and once a day. It has three fields.
-
-```json
-{"schema": 1, "install_id": "3f2a5c1e-9b4d-4a7f-8e1c-2d6b0a9f4e33", "version": "2.7.0"}
-```
-
-The install ID is the random UUID Nojoin already generates for telemetry. Nothing else is sent, and the receiving service discards any other field.
-
-I build Nojoin in my spare time, and I need to know how many installations exist to decide how much of that time it gets. At the moment I can't tell. Optional telemetry has seen almost no installations besides my own since July, while the 2.5.1 images were downloaded more than a hundred times in the 24 days after release. Optional telemetry undercounts by design, because nothing is sent until an administrator agrees. The heartbeat tells me which figure is closer.
-
-Usage diagnostics are unchanged and stay optional, and **Settings > Privacy** still turns them off. They gain one count, recordings made in the last 24 hours.
-
-The heartbeat is never sent if you set `NOJOIN_TELEMETRY_ENABLED=false`, or if you turned telemetry off in Settings before upgrading. If you said no before, that still stands. Blocking `telemetry.nojoin.co.uk` stops it too, and nothing else in Nojoin is affected.
-
-Telemetry data is now kept indefinitely rather than reduced to daily totals after 13 months. `docs/TELEMETRY.md` has the full details (#389).
-
 ### Highlights
 
 <!-- Maintainer: one bullet per item, one or two sentences each. What an operator would notice, not how it works. Detail belongs in the docs. Remove the section if a release has nothing to lead with. -->
 
-- **Administrators can cap AI analysis runs.** Set a **Daily AI analysis budget** under **Settings > AI providers**, with a per-user override under Users. Each user can then turn on **Analyse meetings automatically** under **Settings > Recording**, off by default and within the same budget (#385).
-- **Delivery figures catch up after a transcript edit.** Opening the Analytics tab re-measures a meeting whose transcript changed since it was measured. **Re-measure delivery after edits** under **Settings > Recording** turns this off (#384).
-- **Document batches upload two at a time** and are listed in the order they were queued, not the order they finished (#383).
-- **The GPU transcription window is an install-wide setting.** An administrator can shorten the 120 second window for Parakeet and Canary under **Settings > Transcription**, for a card shared with live capture (#382).
-- **Short Anthropic calls return text.** Current Claude models think first, and a title or other short call could spend its whole limit thinking and return nothing. These calls now ask for low effort, have more room, and fail with a clear message when there is still no text (#379). Models that still accept a temperature get 0.2, matching OpenAI and Gemini (#380).
-- **The worker-io build verifies the CLIs it installs.** It checks the Codex and Claude Code npm packages against the registry's signatures and provenance, and records their versions in the image (#381).
-- **Dependency and code-scanning fixes.** postcss-selector-parser moves to 7.1.6 for a quadratic parsing advisory (#378). The chat usage-limit message is built from the reset time alone, so it cannot carry exception text (#377). The Trivy ignore list is empty, since none of its entries still applied (#376).
+- **The GPU worker runs on CUDA 13 and supports RTX 50 series cards.** It needs NVIDIA driver 580 or newer and a Turing or later GPU, so GTX 900 and 10 series, TITAN V, Tesla P4, P40 and P100 and V100 cards are no longer supported. On one of those, or on an older driver, the GPU worker logs why when it starts and processes on the CPU instead of failing each recording (#414).
+- **Reprocessing gives the same Whisper transcript.** Whisper re-decodes a hard passage by sampling, and that sampling is now seeded, so a reprocess no longer changes words in crosstalk or noise (#414).
+- **Long meetings get notes with Ollama.** When a transcript does not fit Ollama's context window and no secondary provider takes it, the notes are written in parts and combined, and Meeting Chat answers from the meeting's most relevant excerpts (#394).
+- **Import Audio is on the recordings list**, beside Start Meeting, instead of in the navigation rail (#393).
+- **The log viewer shows `worker-parse`** (#404).
+- **Dependency updates.** torch moves to 2.14.1, which fixes GHSA-rrmf-rvhw-rf47 (#405). onnxruntime-gpu moves to 1.31.0, the worker's pyannote.audio to 4.0.7, Next to 16.4.0 and FastAPI to 0.143.0, and the worker image is about 1 GB smaller (#414). ONNX Runtime's own telemetry, on by default in its Linux builds since 1.29, is turned off (#415).
 
 ### Upgrade
 
-Pull the new images and recreate the stack.
+Check the GPU before pulling. A GPU host needs NVIDIA driver 580 or newer and a card of compute capability 7.5 or higher.
+
+```bash
+nvidia-smi --query-gpu=name,compute_cap,driver_version --format=csv
+```
+
+Update the host driver first if it is older than 580. Then pull the new images and recreate the stack.
 
 ```bash
 docker compose pull
 docker compose up -d
 ```
 
-- `worker-io` sends the first heartbeat within about fifteen minutes of starting, unless one of the exemptions above applies. Set `NOJOIN_TELEMETRY_ENABLED=false` in `.env` before upgrading if this deployment must not send it.
+- A card below compute capability 7.5 still runs 2.8.0, with processing on the CPU. The worker log has a `[gpu-preflight]` line naming the card. Stay on 2.7.0 to keep GPU processing on it.
+- CPU-only deployments need nothing new.
 
 ### Migration
 
@@ -51,16 +39,16 @@ Database migrations run automatically on the first API start after upgrading. Ba
 
 <!-- Maintainer: note any blocking first-boot migration, longer startup, or manual step. Keep it to bullets. -->
 
-- One Alembic revision adds the `ai_analysis_runs` table and a nullable per-user limit on `users`, for the analysis budget. It runs on the first API start and takes moments.
-- No change to the example compose file or the nginx configuration. `NOJOIN_TELEMETRY_ENABLED` keeps its name and values, and `false` now also stops the heartbeat.
+- No database migration in this release.
+- No change to `.env`, the example compose file or the nginx configuration.
 - The backup format is unchanged.
 
 ### Rollback
 
 <!-- Maintainer: state whether rollback is code-only or requires data steps. Default below. -->
 
-- Roll the schema back before the images, because the 2.6.0 API refuses to start against a revision it does not know. With 2.7.0 still running, run `docker compose exec api alembic downgrade b182c2378829`, then redeploy the 2.6.0 image tags. The downgrade drops the AI analysis run log, so each user's count for the day resets.
-- 2.6.0 ignores the settings 2.7.0 adds to `config.json`, so the GPU window and the analysis budget return to their defaults, and it sends no heartbeat.
+- Rollback is code-only. Redeploy the 2.7.0 image tags, since the schema has not changed.
+- 2.7.0 runs on CUDA 12.6, which supports pre-Turing cards and drivers from 525.
 
 ### Known Issues
 
@@ -72,7 +60,7 @@ Database migrations run automatically on the first API start after upgrading. Ba
 
 <!-- Maintainer: note any change to supported browsers/OSes or capture behaviour. Default below. -->
 
-- No capture code changed in this release. Supported browsers, operating systems and audio sources are unchanged, and shared-audio capture still resolves on Chromium desktop only.
+- Supported browsers, operating systems and audio sources are unchanged. The live waveform reads the capture level through a store subscription instead of component state (#404).
 
 ### Changes
 
