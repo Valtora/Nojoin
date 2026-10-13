@@ -173,10 +173,9 @@ export default function RecordingMainContent({
         }
       />
 
-      {/* Panel Tabs. Four on every viewport: Speakers used to hold a
-          mobile-only fifth tab, but five labels do not fit legibly at 360px,
-          so on mobile the speaker panel is reached from the header's actions
-          menu instead. On desktop it lives in the side column as before. */}
+      {/* Panel Tabs. Four on every viewport: five labels do not fit legibly at
+          360px, so on mobile the speaker panel is reached from the header's
+          actions menu, and on desktop it lives in the side column. */}
       <div className="shrink-0 bg-surface-inset">
         <div className="grid grid-cols-4 border-b-2 border-surface-border">
           <button

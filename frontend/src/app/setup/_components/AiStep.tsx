@@ -77,9 +77,8 @@ interface AiStepProps {
  * The AI step, which runs authenticated because the account already exists.
  *
  * Three routes, not one. Nojoin supports a server-side provider key, a per-user
- * Claude or ChatGPT subscription, and running with no AI provider at all; the
- * wizard previously modelled only the first and told everyone else to edit .env.
- * A seat-only operator with no API keys is a supported configuration, so it is
+ * Claude or ChatGPT subscription, and running with no AI provider at all. A
+ * seat-only operator with no API keys is a supported configuration, so it is
  * presented as a choice rather than as a failure.
  */
 export default function AiStep({

@@ -200,8 +200,8 @@ function AuthorizeContent() {
   return (
     // page-shell: this route owns its scroll; <body> is overflow-hidden. See
     // the note on .page-shell in globals.css. The card gets tall when a client
-    // asks for many scopes, and what fell off the bottom here was the return
-    // host, the revocation note and, on a short window, Allow itself.
+    // asks for many scopes, and without page scroll the return host, the
+    // revocation note and, on a short window, Allow itself fall off the bottom.
     <div className="page-shell flex flex-col items-center bg-surface-page px-4 py-8 sm:px-6 sm:py-12 lg:px-8">
       <div className="my-auto w-full max-w-lg flex flex-col items-center">
         <div className="w-full bg-surface-card rounded-surface border border-surface-border shadow-card overflow-hidden">

@@ -131,8 +131,8 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
   const [showExportModal, setShowExportModal] = useState(false);
 
 
-  // Mobile State. `isMobile` comes from the shared viewport provider (single
-  // source of truth for the 1024px boundary) rather than a local resize listener.
+  // Mobile State. `isMobile` comes from the shared viewport provider, the single
+  // source of truth for the 1024px boundary.
   const [isMobileChatOpen, setIsMobileChatOpen] = useState(false);
   const [isMobileHeaderActionsOpen, setIsMobileHeaderActionsOpen] = useState(false);
   const [isPanelResizing, setIsPanelResizing] = useState(false);
@@ -390,9 +390,10 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
     }
   }, [isMobile]);
 
-  // The "Speakers" panel is a mobile-only tab (desktop shows the speaker panel
-  // in the side column). Leaving mobile while it is active would blank the main
-  // content, so fall back to the transcript.
+  // The "speakers" panel exists only on mobile, where the header's actions menu
+  // opens it; desktop shows the speaker panel in the side column. Leaving mobile
+  // while it is active would blank the main content, so fall back to the
+  // transcript.
   useEffect(() => {
     if (!isMobile && activePanel === "speakers") {
       setActivePanel("transcript");
@@ -492,8 +493,7 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
   }, [recording, isEditingTitle, refreshRecordingView]);
 
   // Discarding the open recording deletes it, so this page has nothing left to
-  // show. Leaving centrally means every discard surface gets the redirect, not
-  // just the two that happened to wire up their own.
+  // show. Leaving centrally means every discard surface gets the redirect.
   useEffect(
     () =>
       subscribeRecordingRemoved((removedId) => {

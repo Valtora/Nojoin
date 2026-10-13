@@ -62,7 +62,7 @@ export default function LegalStep({
       {/* A separate decision from accepting the terms, and labelled as one, so
           the continue button is not silently carrying two consents. The full
           disclosure lives in the docs rather than here: spelling it out inline
-          pushed the accept button past the fold. */}
+          would push the accept button past the fold. */}
       <div className="rounded-lg border border-surface-border p-4">
         <label
           htmlFor="setup-enable-telemetry"

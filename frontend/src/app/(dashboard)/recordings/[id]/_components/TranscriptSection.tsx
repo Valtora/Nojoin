@@ -71,8 +71,8 @@ export default function TranscriptSection({
   onActiveEditUtteranceChange,
 }: TranscriptSectionProps) {
   const transcriptStatus = recording.transcript?.transcript_status;
-  // A failed transcription is reported, never shown as an empty transcript:
-  // that is exactly how a crashed ASR run used to pass for a silent meeting.
+  // A failed transcription is reported, never shown as an empty transcript,
+  // which would let a crashed ASR run pass for a silent meeting.
   // Only while the recording is in ERROR: a retry or speaker-inference run
   // moves it back to processing, and the old failure no longer applies then.
   const transcriptionError =

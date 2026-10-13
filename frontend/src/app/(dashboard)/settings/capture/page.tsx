@@ -1,9 +1,6 @@
 import { redirect } from "next/navigation";
 
-/**
- * "Capture" was split: browser input settings and the processing defaults that
- * used to sit under Personal are now one Recording category.
- */
+/** Redirect for the former Capture category, now part of Recording. */
 export default function CaptureSettingsRedirectPage() {
   redirect("/settings/recording");
 }
