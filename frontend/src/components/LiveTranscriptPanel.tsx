@@ -118,17 +118,15 @@ export default function LiveTranscriptPanel({
   // Follow new text only while the user has not scrolled away. Reading back
   // through the meeting must never be yanked out from under them.
   //
-  // Before the paint, not after it. On a plain effect the browser painted the
-  // grown transcript at the old scroll position and corrected it a frame later,
-  // which reads as the text spilling past the bottom of the window and then
-  // snapping back into it. The finished transcript's scroll hook uses a layout
-  // effect for the same reason.
+  // Before the paint, not after it: on a plain effect the browser paints the
+  // grown transcript at the old scroll position and corrects it a frame later,
+  // which reads as the text spilling past the window and snapping back. The
+  // finished transcript's scroll hook uses a layout effect for the same reason.
   //
   // Keyed on `lines` rather than `lines.length`, because a provisional
-  // utterance is rewritten in place as it finalises: the text grows, it wraps
-  // to more rows, and the count never changes, so a length-keyed effect never
-  // ran and the tail drifted out of view. `lines` is memoised on `segments`, so
-  // a poll that returned nothing new still does nothing here.
+  // utterance is rewritten in place as it finalises: the text grows and wraps
+  // while the count stays the same. `lines` is memoised on `segments`, so a
+  // poll that returned nothing new still does nothing here.
   useLayoutEffect(() => {
     if (isPinnedToBottom) {
       scrollToBottom();
@@ -162,21 +160,9 @@ export default function LiveTranscriptPanel({
       </div>
 
       {/* The window fills the card, and the card fills what the column has
-          left. Neither carries a ceiling any more.
-
-          One used to sit here, then on the card in RecordingStatusDisplay. It
-          existed to keep this panel independent of the guidance column beside
-          it, which would otherwise have set the height: several screens tall
-          while the guidance was long, back toward the floor once its sections
-          were collapsed, neither of them anything to do with the transcript.
-          That independence is worth having, but a fixed ceiling was the wrong
-          way to buy it. A capped module in an items-stretch grid has to leave
-          the surplus row height somewhere, so both attempts only moved the dead
-          space around, first inside this window and then below the card.
-
-          Meeting Edge scrolls inside its own cell now, so it absorbs height
-          rather than dictating it, and the row comes from the window instead.
-          This panel can just take what is left. */}
+          left, with no ceiling: a capped module in an items-stretch grid only
+          moves the dead space around. Meeting Edge scrolls inside its own cell,
+          so the row height comes from the window rather than from either panel. */}
       <div className="relative mt-4 flex min-h-0 flex-1 flex-col">
         {/* The transcript window is painted by this overlay rather than by the
             scrolling element, and stops short of the right edge by
@@ -197,12 +183,8 @@ export default function LiveTranscriptPanel({
           // and a short transcript would simply leave a gap. From 54rem the
           // column has a definite height and this module absorbs whatever the
           // notes and documents cards leave, which on a short window is less
-          // than 14rem. A floor there is a child refusing the height its own
-          // card was given: the window overflowed the card, the frame below
-          // stayed at the card's height, and the overspill painted across the
-          // notes card. `min-h-0` lets the window take the card exactly, so a
-          // squeezed transcript is a smaller scroll window rather than text
-          // outside its own panel.
+          // than 14rem. A floor there would overflow the card and paint across
+          // the notes card, so `min-h-0` lets the window take the card exactly.
           className="relative min-h-[14rem] flex-1 overflow-y-auto @min-[54rem]:min-h-0"
         >
           <div className="flex min-h-full flex-col py-4 pl-4 pr-8">

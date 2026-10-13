@@ -165,9 +165,6 @@ export default function MeetingControls({
     return (
       <div className="density-surface border border-action-border bg-surface-card shadow-card">
         <div className="flex flex-col gap-4">
-          {/* The sentence that used to sit here explained that the button below
-              starts a meeting, which the button already says. It was onboarding
-              text on a card seen every day. */}
           <div className="flex items-center gap-3">
             <Mic className="h-5 w-5 shrink-0 text-action-text" />
             <h2 className="text-base font-semibold text-foreground">Meet Now</h2>

@@ -123,7 +123,7 @@ export default function AddTagModal({
             Math.floor(Math.random() * DEFAULT_TAG_COLORS.length)
           ];
         await createTag(name.trim(), randomColor, parentId);
-        await loadAllTags(); // Always reload to ensure list is updated
+        await loadAllTags();
         if (!parentId) {
           // Explicitly associates the newly created root tag with the current recording.
           await addTagToRecording(recordingId, name.trim());

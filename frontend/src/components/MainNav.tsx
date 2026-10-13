@@ -155,16 +155,16 @@ export default function MainNav() {
     setMobileNavOpen(false);
   }, [pathname, setMobileNavOpen]);
 
-  // `parentLines` carries the tree-guide flags from the ancestors down to these
-  // nodes (see TagItem's TagGuides). Roots receive `null` and render no guides;
-  // each child appends its own "has sibling below" flag so the parent's
-  // connector becomes the child's ancestor rail.
   // Effective collapsed state: the persisted flag only applies on desktop, and
   // we fall back to expanded until mounted to avoid a hydration mismatch. The
   // tag tree must key off this (not the raw store value) so the mobile sidebar,
   // which is always expanded, still renders sub-tags.
   const collapsed = mounted ? (isDesktop ? isNavCollapsed : false) : false;
 
+  // `parentLines` carries the tree-guide flags from the ancestors down to these
+  // nodes (see TagItem's TagGuides). Roots receive `null` and render no guides;
+  // each child appends its own "has sibling below" flag so the parent's
+  // connector becomes the child's ancestor rail.
   const renderTagTree = (
     nodes: TagWithChildren[],
     parentLines: boolean[] | null = null,

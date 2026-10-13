@@ -109,9 +109,8 @@ export default function RecordingStatusDisplay({
     recording.transcript?.notes_status === "generating" ||
     /generating meeting notes/i.test(recording.processing_step || "");
 
-  // One short state word, not a headline. The heading this replaced was
-  // `text-4xl` over a sentence explaining that a waveform appears while
-  // recording, on a view whose entire problem is vertical space.
+  // One short state word, not a headline: vertical space is what this view is
+  // shortest of.
   const stateLabel = isActiveRecording
     ? isPaused
       ? "Paused"
@@ -129,9 +128,8 @@ export default function RecordingStatusDisplay({
         ? "Waiting for a worker to begin processing."
         : "Preparing your meeting transcript.");
 
-  // Attaching a document is a toolbar action, not a panel one. At the bottom of
-  // the last column it was the least findable control on the page, and the
-  // window for using it usefully closes when processing finishes.
+  // Attaching a document is a toolbar action, not a panel one: it is most
+  // useful while the meeting is still running, before processing finishes.
   const uploadButton = (
     <button
       type="button"
@@ -155,7 +153,7 @@ export default function RecordingStatusDisplay({
   return (
     // The dense shell, not the feature one. This is a console rather than a
     // page of prose: it has a waveform, a transcript, a guidance panel and two
-    // editors, and capping it at a reading measure is what forced all five into
+    // editors, and capping it at a reading measure would force all five into
     // one long scroll.
     //
     // `h-full` rather than the dashboard's `min-h-full`, and that one word is
@@ -209,11 +207,9 @@ export default function RecordingStatusDisplay({
             : ""
         }`}
       >
-        {/* The console is chrome, not a panel. As a card in the first column it
-            took a third of the width to show a waveform and four buttons, and
-            charged it to the transcript and the guidance beside it, both of
-            which are dense text that wraps to three words in a narrow column.
-            As a strip it costs one row and gives that width back. */}
+        {/* The console is chrome, not a panel: as a strip it costs one row,
+            where a card would take a column's width away from the transcript
+            and the guidance, both dense text. */}
         <section className="density-surface flex min-w-0 flex-col border border-surface-border bg-surface-card shadow-card">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
             <span className="inline-flex shrink-0 items-center gap-2 rounded-pill border border-action-border bg-action-tint px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-action-text">
@@ -293,11 +289,6 @@ export default function RecordingStatusDisplay({
           ) : null}
         </section>
 
-        {/* Two columns, not three. Every panel here is dense prose, and a third
-            column bought findability for the notes at the cost of making all
-            three too narrow to read comfortably: Meeting Edge subdivides again
-            internally, so it was carrying four columns of text inside a third
-            of the page. Notes moves under the transcript, which scrolls. */}
         <section className="flex grow flex-col gap-[var(--workspace-gap)] @min-[54rem]:grid @min-[54rem]:min-h-0 @min-[54rem]:grid-cols-[minmax(0,1fr)_minmax(24rem,1.1fr)] @min-[54rem]:grid-rows-[minmax(0,1fr)] @min-[54rem]:items-stretch">
           {/* The meeting's record: what was said, what you wrote, what you
               attached. */}
@@ -308,19 +299,11 @@ export default function RecordingStatusDisplay({
               Once recording stops the transcript is replaced by a progress bar
               and two lines of status, which cannot use height at all, so the
               notes editor absorbs instead and the progress card keeps its own
-              size. Stretched, that card was most of a screen tall around three
-              lines of content.
+              size.
 
-              What was here instead was a max-height on this module, sized as
-              `calc(100dvh-18rem)`. DESIGN.md rules that out: a max-height on a
-              module in an items-stretch grid makes one column's cards end above
-              the other's, which is the dead corner the column model exists to
-              remove. The 18rem was a budget for the toolbar, the workspace
-              padding and the gap, and none of the three hold still. The toolbar
-              carries an extra row of controls while recording, compact density
-              moves the gap and the padding and the root font size while 100dvh
-              does not move with them, and the documents card was never in the
-              budget at all. */}
+              A max-height here would break the column model (DESIGN.md): a
+              max-height on a module in an items-stretch grid makes one column's
+              cards end above the other's. */}
           <div
             className={
               isActiveRecording
@@ -385,11 +368,10 @@ export default function RecordingStatusDisplay({
             )}
           </div>
 
-            {/* The other half of the swap above. The editor is already built to
-                absorb, `h-full min-h-0` on the card with `flex-1` on the
-                textarea, it was simply never given any height to absorb. A
-                taller box to type into while a meeting processes is worth
-                having; a taller progress bar is not. */}
+            {/* The other half of the swap above: the editor (`h-full min-h-0`
+                on the card, `flex-1` on the textarea) absorbs the height while a
+                meeting processes. A taller box to type into is worth having; a
+                taller progress bar is not. */}
             <div
               className={
                 isActiveRecording
@@ -418,15 +400,10 @@ export default function RecordingStatusDisplay({
               subdivide again internally, so it is the panel that suffers most
               from a narrow one.
 
-              It is also this column's absorbing module, which it was not
-              before. Sitting alone in a stretched column at its own content
-              height, it set the grid row for the whole surface, and the column
-              beside it had to find something to do with the surplus. Given a
-              definite height here it scrolls inside its own cell instead, so
-              the row comes from the window rather than from how much guidance
-              has accumulated. Collapsing its sections stops resizing the
-              transcript as a side effect, which is what the ceiling opposite
-              was there to prevent.
+              It is also this column's absorbing module: given a definite height
+              it scrolls inside its own cell, so the row height comes from the
+              window rather than from how much guidance has accumulated, and
+              collapsing its sections never resizes the transcript.
 
               Only from 54rem, where the two columns exist. Below that this is
               one item in a stack and the page scrolls, so a scroll box inside

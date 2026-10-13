@@ -97,7 +97,6 @@ export default function ChatPanel({
 
     load().catch(console.error);
 
-    // Fetch tags
     getTags().then(setAvailableTags).catch(console.error);
 
     return () => {
@@ -105,7 +104,6 @@ export default function ChatPanel({
     };
   }, []);
 
-  // Tag Options
   const tagOptions: Option[] = useMemo(() => {
     return availableTags.map((tag) => ({
       value: tag.id,
@@ -117,7 +115,7 @@ export default function ChatPanel({
   // Load chat history
   useEffect(() => {
     if (recordingId) {
-      setMessages([]); // Clear previous
+      setMessages([]);
       getChatHistory(recordingId).then(setMessages).catch(console.error);
     } else {
       setMessages([]);

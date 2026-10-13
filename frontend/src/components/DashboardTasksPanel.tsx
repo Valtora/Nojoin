@@ -82,10 +82,9 @@ export default function DashboardTasksPanel() {
 
   return (
     <div className="density-surface flex h-full min-h-0 flex-col border border-action-border bg-surface-card shadow-card">
-      {/* One row: glyph, title, counts. This was an icon chip, a text-2xl
-          heading and a separate pill row stacked vertically, which spent about
-          140px before the first task. The counts belong beside the title
-          rather than under it, because they qualify it. */}
+      {/* One row: glyph, title, counts. The counts belong beside the title
+          rather than under it, because they qualify it, and a stacked header
+          would spend about 140px before the first task. */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <Check className="h-5 w-5 shrink-0 text-action-text" />
         <h2 className="text-base font-semibold text-foreground">Task List</h2>

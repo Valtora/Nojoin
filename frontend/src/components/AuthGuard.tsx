@@ -95,7 +95,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   }
 
   if (!checked) {
-      return null; // Or a loading spinner
+      return null;
   }
 
   return <>{children}</>;

@@ -38,7 +38,7 @@ interface SpeakerPanelProps {
   segments: TranscriptSegment[];
   onPlaySegment: (time: number, end?: number) => void;
   recordingId: RecordingId;
-  speakerColors: Record<string, string>; // Now stores color keys, not full classes
+  speakerColors: Record<string, string>; // palette keys, not class names
   onColorChange: (speakerLabel: string, colorKey: string) => void;
   currentTime: number;
   isPlaying: boolean;

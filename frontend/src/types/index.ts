@@ -68,7 +68,7 @@ export interface GlobalSpeaker extends BaseDBModel {
   name: string;
   has_voiceprint?: boolean;
   is_voiceprint_locked?: boolean;
-  recording_count?: number; // Number of recordings this speaker is associated with
+  recording_count?: number;
   color?: string;
   // CRM Fields
   title?: string | null;

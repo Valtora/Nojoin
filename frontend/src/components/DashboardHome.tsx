@@ -67,11 +67,10 @@ export default function DashboardHome() {
           account gets a two-column layout rather than a column holding one
           lonely button.
 
-          `items-stretch` is what removes the dead corner this layout used to
-          have: with `items-start` each column ended wherever its content did,
-          so the shorter one left an empty L-shape down the page. Stretching
-          makes the columns end level, and a module that overflows scrolls
-          inside itself rather than pushing the grid taller.
+          `items-stretch` makes the columns end level: with `items-start` each
+          would end wherever its content did, leaving an empty L-shape under the
+          shorter one. A module that overflows scrolls inside itself rather than
+          pushing the grid taller.
 
           At one column the two wrappers are `display: contents`, which takes
           them out of the box tree and makes all six modules direct children of

@@ -135,7 +135,6 @@ export default function Sidebar() {
   } = useNavigationStore();
 
   const [mounted, setMounted] = useState(false);
-  // `isDesktopLayout` now comes from the shared viewport provider (aliased above).
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [hasLoadedRecordings, setHasLoadedRecordings] = useState(false);
   const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(
@@ -301,7 +300,6 @@ export default function Sidebar() {
     try {
       const filters: RecordingFilters = {};
       // Uses client-side search; 'q' parameter omitted.
-      // if (debouncedSearchQuery) filters.q = debouncedSearchQuery;
 
       if (dateMode === "range") {
         if (dateRange.start)
@@ -376,9 +374,8 @@ export default function Sidebar() {
     };
   }, [fetchRecordings]);
 
-  // A discard from anywhere (live controls, floating badge, resume modal, the
-  // processing view) drops the row here immediately rather than leaving it on
-  // screen until the 15s poll comes round.
+  // A discard from any surface drops the row here immediately rather than
+  // leaving it on screen until the 15s poll comes round.
   useEffect(
     () =>
       subscribeRecordingRemoved((id) => {
@@ -783,7 +780,6 @@ export default function Sidebar() {
                 aria-expanded={true}
               />
             </div>
-            {/* ... filters ... */}
           </div>
         )}
 
@@ -1117,7 +1113,6 @@ export default function Sidebar() {
           }}
         />
       )}
-        {/* Footer/Empty States could go here if needed */}
       </div>
       )}
 

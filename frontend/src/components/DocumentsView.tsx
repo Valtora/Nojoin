@@ -51,7 +51,7 @@ const isBusy = (doc: Document) =>
  *
  * Taken from the server rather than computed here. updated_at is serialised
  * without a timezone, so JavaScript parses it as local time and any browser
- * outside UTC misjudges the age by its whole offset -- which showed every
+ * outside UTC would misjudge the age by its whole offset and show every
  * in-flight parse as stalled. The server also gates the re-parse endpoint on
  * the same value, so the button can never disagree with the label beside it.
  */
@@ -168,8 +168,8 @@ export default function DocumentsView({ recordingId }: DocumentsViewProps) {
     }
   }, [recordingId, fetchDocuments]);
 
-  // Poll while anything is in flight. Faster than the old 3s tick because the
-  // progress bar is now the primary signal that work is still moving.
+  // Poll while anything is in flight, quickly, because the progress bar is the
+  // primary signal that work is still moving.
   useEffect(() => {
     if (!documents.some(isBusy)) return;
     const interval = setInterval(() => {
