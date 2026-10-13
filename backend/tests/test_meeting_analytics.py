@@ -12,7 +12,6 @@ from __future__ import annotations
 from backend.services.meeting_analytics.constants import (
     LATENCY_COLLAR_MS,
     LATENCY_LAPSE_MS,
-    OVERLAP_FLOOR_MS,
     TIMELINE_MIN_BUCKET_MS,
     TURN_GAP_MS,
 )
@@ -20,7 +19,6 @@ from backend.services.meeting_analytics.metrics import (
     UtteranceRow,
     build_turns,
     compute_deterministic_metrics,
-    compute_interruptions,
     compute_overlap,
     compute_silence,
     compute_talk_time,
@@ -119,78 +117,6 @@ class TestTurns:
         assert structure["turn_count"] == 2
         assert structure["median_turn_ms"] == 10_000
         assert structure["excluded_short_turns"] == 1
-
-
-class TestInterruptions:
-    def test_interruption_is_directional(self):
-        # B starts while A still has 5s to run.
-        utterances = [row("a", 0, 10_000), row("b", 5_000, 12_000)]
-
-        counts = compute_interruptions(utterances)
-
-        assert counts["b"]["made"] == 1
-        assert counts["b"]["received"] == 0
-        assert counts["a"]["received"] == 1
-        assert counts["a"]["made"] == 0
-
-    def test_turn_boundary_bleed_below_the_floor_is_not_an_interruption(self):
-        utterances = [
-            row("a", 0, 10_000),
-            row("b", 10_000 - OVERLAP_FLOOR_MS + 50, 12_000),
-        ]
-
-        counts = compute_interruptions(utterances)
-
-        assert counts["b"]["made"] == 0
-        assert counts["a"]["received"] == 0
-
-    def test_a_speaker_overlapping_themselves_is_not_an_interruption(self):
-        utterances = [row("a", 0, 10_000), row("a", 3_000, 12_000)]
-
-        counts = compute_interruptions(utterances)
-
-        assert counts["a"]["made"] == 0
-        assert counts["a"]["received"] == 0
-
-    def test_one_utterance_interrupting_two_speakers_counts_once_for_the_interrupter(
-        self,
-    ):
-        # A cuts across two people already talking. That is one interrupting
-        # act, but two people were interrupted.
-        utterances = [
-            row("a", 0, 10_000),
-            row("b", 0, 10_000),
-            row("c", 5_000, 12_000),
-        ]
-
-        counts = compute_interruptions(utterances)
-
-        assert counts["c"]["made"] == 1
-        assert counts["a"]["received"] == 1
-        assert counts["b"]["received"] == 1
-
-    def test_simultaneous_starts_interrupt_nobody(self):
-        # Neither speaker began first, so neither cut the other off. Without a
-        # strict start comparison the sort order would pick a direction.
-        utterances = [row("a", 0, 10_000), row("b", 0, 10_000)]
-
-        counts = compute_interruptions(utterances)
-
-        assert counts["a"] == {"made": 0, "received": 0}
-        assert counts["b"] == {"made": 0, "received": 0}
-
-    def test_being_interrupted_repeatedly_accumulates(self):
-        utterances = [
-            row("a", 0, 20_000),
-            row("b", 5_000, 8_000),
-            row("c", 12_000, 15_000),
-        ]
-
-        counts = compute_interruptions(utterances)
-
-        assert counts["a"]["received"] == 2
-        assert counts["b"]["made"] == 1
-        assert counts["c"]["made"] == 1
 
 
 class TestTransitionsAndLatency:
@@ -299,9 +225,9 @@ class TestSilenceAndOverlap:
     def test_a_transcript_with_no_overlap_at_all_says_so(self):
         # A single-channel transcript emits strictly sequential segments, so
         # two people talking at once cannot be represented in it whatever
-        # happened in the room. Every interruption count is then zero by
-        # construction, and consumers must be able to tell that apart from a
-        # measurement that nobody interrupted.
+        # happened in the room. The overlap is then zero by construction, and
+        # consumers must be able to tell that apart from a measurement that
+        # nobody spoke over anyone.
         utterances = [
             row("a", 0, 10_000),
             row("b", 10_000, 20_000),
@@ -309,12 +235,9 @@ class TestSilenceAndOverlap:
         ]
 
         overlap = compute_overlap(utterances)
-        interruptions = compute_interruptions(utterances)
 
         assert overlap["overlapped_ms"] == 0
         assert overlap["overlapping_speech_present"] is False
-        assert all(counts["made"] == 0 for counts in interruptions.values())
-        assert all(counts["received"] == 0 for counts in interruptions.values())
 
     def test_touching_utterances_are_not_overlap(self):
         # One utterance ending exactly where the next begins is contiguous
@@ -445,7 +368,7 @@ class TestAssembly:
 
         assert metrics["talk_time"]["a"]["share_of_speech"] == 1.0
         assert metrics["turn_taking"]["transitions"] == []
-        assert metrics["interruptions"]["a"] == {"made": 0, "received": 0}
+        assert "interruptions" not in metrics
 
     def test_empty_transcript_produces_a_complete_shape(self):
         metrics = compute_deterministic_metrics([], duration_ms=0)

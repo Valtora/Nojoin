@@ -82,12 +82,6 @@ associated with dispreferred responses (Kendrick & Torreira 2015; Bögels et
 al. 2015), per response token, mostly in dyadic English conversation. The
 surface deliberately stops short of rendering that as a per-person trait.
 
-**`OVERLAP_FLOOR_MS = 300`** — published + measured. Benign turn-transition
-overlap has mode 96ms / median 205ms / mean 275ms (Switchboard; Levinson &
-Torreira 2015), while only 12% of real overlap events in AMI ground truth are
-shallower than 300ms — so the floor removes boundary bleed while keeping 88%
-of genuine overlap.
-
 **`MIN_UTTERANCE_MS_FOR_TURN_STATS = 250`** — published anchors. About one
 conversational syllable (Greenberg 2003); above the ~90-120ms noise and
 perception floors. A fragment filter, not a backchannel filter — backchannels

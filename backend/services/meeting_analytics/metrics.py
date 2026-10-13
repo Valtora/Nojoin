@@ -26,7 +26,6 @@ from .constants import (
     LATENCY_COLLAR_MS,
     LATENCY_LAPSE_MS,
     MIN_UTTERANCE_MS_FOR_TURN_STATS,
-    OVERLAP_FLOOR_MS,
     TIMELINE_MIN_BUCKET_MS,
     TIMELINE_TARGET_BUCKETS,
     TURN_GAP_MS,
@@ -196,10 +195,9 @@ def compute_overlap(utterances: Sequence[UtteranceRow]) -> dict:
     Some transcripts contain no overlap at all -- an imported single-channel
     recording whose diarisation emitted strictly sequential segments cannot
     represent two people talking at once, whatever happened in the room. On
-    those, every interruption count is zero because overlap was never
-    expressible, not because nobody interrupted, and reporting "0 interruptions"
-    would assert something the transcript cannot support. Consumers use this to
-    withhold the figure instead.
+    those the overlap is zero because it was never expressible, not because
+    nobody spoke over anyone, and reporting "0" would assert something the
+    transcript cannot support. Consumers use this to withhold the figure instead.
     """
     ordered = sort_utterances(utterances)
     total_speech_ms = sum(utterance.duration_ms for utterance in ordered)
@@ -212,51 +210,6 @@ def compute_overlap(utterances: Sequence[UtteranceRow]) -> dict:
         ),
         "overlapping_speech_present": overlapped_ms > 0,
     }
-
-
-def compute_interruptions(
-    utterances: Sequence[UtteranceRow],
-) -> dict[str, dict[str, int]]:
-    """Directional interruption counts.
-
-    Speaker B interrupts speaker A when B starts while A is still speaking and
-    A had started first, with ``OVERLAP_FLOOR_MS`` of A's utterance still to
-    run. Direction is the whole point: being interrupted and interrupting are
-    different behaviours, and a symmetric overlap count conflates them.
-    """
-    counts: dict[str, dict[str, int]] = {}
-
-    def bucket(speaker_key: str) -> dict[str, int]:
-        return counts.setdefault(speaker_key, {"made": 0, "received": 0})
-
-    ordered = sort_utterances(utterances)
-    open_utterances: list[UtteranceRow] = []
-    for utterance in ordered:
-        open_utterances = [
-            candidate
-            for candidate in open_utterances
-            if candidate.end_ms > utterance.start_ms
-        ]
-        interrupted: set[str] = set()
-        for candidate in open_utterances:
-            if candidate.speaker_key == utterance.speaker_key:
-                continue
-            # Strictly earlier, not merely sorted earlier. Two speakers
-            # starting in the same millisecond interrupted nobody, and the
-            # sort's tiebreak would otherwise pick a direction arbitrarily.
-            if candidate.start_ms >= utterance.start_ms:
-                continue
-            if utterance.start_ms < candidate.end_ms - OVERLAP_FLOOR_MS:
-                interrupted.add(candidate.speaker_key)
-        for speaker_key in interrupted:
-            bucket(speaker_key)["received"] += 1
-        if interrupted:
-            bucket(utterance.speaker_key)["made"] += 1
-        else:
-            bucket(utterance.speaker_key)
-        open_utterances.append(utterance)
-
-    return counts
 
 
 def compute_transitions(turns: Sequence[Turn]) -> dict:
@@ -407,7 +360,6 @@ def compute_deterministic_metrics(
         "duration_ms": effective_duration_ms,
         "talk_time": compute_talk_time(ordered, effective_duration_ms),
         "turn_structure": compute_turn_structure(turns),
-        "interruptions": compute_interruptions(ordered),
         "turn_taking": compute_transitions(turns),
         "timeline": compute_timeline(ordered, effective_duration_ms),
         "silence": compute_silence(ordered, effective_duration_ms),

@@ -361,11 +361,11 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           # Attach a signed build-provenance attestation and an SBOM to each
-          # published image so consumers can audit how it was built (REL-007).
+          # published image so consumers can audit how it was built.
           provenance: mode=max
           sbom: true
 
-      # First-party severity gate (REL-008): fail the release on CRITICAL/HIGH
+      # First-party severity gate: fail the release on CRITICAL/HIGH
       # vulnerabilities that have a fix available. ignore-unfixed keeps the
       # CVE-heavy CUDA/PyTorch worker base releasable, because findings with no
       # upstream fix cannot be actioned by us; documented exceptions for fixed
@@ -390,7 +390,7 @@ jobs:
           set -euo pipefail
           # Keyless signing binds the signature to this workflow's OIDC identity;
           # no long-lived private key is stored. Signing by digest covers every
-          # tag that resolves to this image (REL-009).
+          # tag that resolves to this image.
           cosign sign --yes "${IMAGE_DIGEST}"
 
   worker-io-release:
@@ -696,7 +696,7 @@ jobs:
           set -euo pipefail
 
           # Resolve the previous release tag reachable from this tag. The range is
-          # exactly previous-tag..this-tag (REL-013); fall back to full history
+          # exactly previous-tag..this-tag; fall back to full history
           # for the very first release.
           if prev_tag="$(git describe --tags --abbrev=0 --match 'v[0-9]*.[0-9]*.[0-9]*' "${TAG}^" 2>/dev/null)"; then
             range="${prev_tag}..${TAG}"

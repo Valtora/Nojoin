@@ -160,6 +160,7 @@ ALLOWED_CONTAINERS = {
     "nojoin-worker-gpu",
     "nojoin-worker-cpu",
     "nojoin-worker-io",
+    "nojoin-worker-parse",
     "nojoin-worker",  # legacy single-worker deployments
     "nojoin-frontend",
     "nojoin-nginx",
@@ -171,6 +172,7 @@ ALLOWED_CONTAINERS = {
     "nojoin-dev-worker-gpu",
     "nojoin-dev-worker-cpu",
     "nojoin-dev-worker-io",
+    "nojoin-dev-worker-parse",
     "nojoin-dev-worker",  # legacy single-worker deployments
     "nojoin-dev-frontend",
     "nojoin-dev-nginx",
@@ -178,6 +180,20 @@ ALLOWED_CONTAINERS = {
     "nojoin-dev-db",
     "nojoin-dev-socket-proxy",
 }
+
+# What the live log view streams when "all" is selected. Matches the picker in
+# SystemTab.tsx; the legacy single worker and the socket proxy are left out.
+LOG_ALL_CONTAINERS = (
+    "nojoin-api",
+    "nojoin-worker-gpu",
+    "nojoin-worker-cpu",
+    "nojoin-worker-io",
+    "nojoin-worker-parse",
+    "nojoin-frontend",
+    "nojoin-nginx",
+    "nojoin-redis",
+    "nojoin-db",
+)
 
 
 @router.get("/logs/download")
@@ -270,27 +286,7 @@ async def websocket_logs(
                 err_msg = f"[{container_name}] Error reading logs: {e}"
                 asyncio.run_coroutine_threadsafe(q.put(err_msg), loop)
 
-    targets = []
-    if container == "all":
-        try:
-            containers_list = [
-                "nojoin-api",
-                "nojoin-worker-gpu",
-                "nojoin-worker-cpu",
-                "nojoin-worker-io",
-                "nojoin-frontend",
-                "nojoin-nginx",
-                "nojoin-redis",
-                "nojoin-db",
-            ]
-            for c_name in containers_list:
-                targets.append(c_name)
-        except Exception as e:  # noqa: BLE001
-            await websocket.send_text(f"Error listing containers: {e}")
-            await websocket.close()
-            return
-    else:
-        targets.append(container)
+    targets = list(LOG_ALL_CONTAINERS) if container == "all" else [container]
 
     import threading
 

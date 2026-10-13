@@ -492,7 +492,7 @@ jobs:
 
       # Informational on pull requests: surfaces dependency and config CVEs in
       # the repository without blocking merges. The release pipeline enforces
-      # the blocking image scan and severity policy (REL-008).
+      # the blocking image scan and severity policy.
       #
       # Trivy's pip analyzer only picks up files named exactly requirements.txt,
       # so without the file pattern the Python pins in requirements/*.txt are

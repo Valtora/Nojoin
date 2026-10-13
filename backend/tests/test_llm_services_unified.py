@@ -852,6 +852,165 @@ def test_anthropic_kwargs_are_accepted_by_the_installed_sdk() -> None:
             )
 
 
+def _assert_each_call_sent_a_request(calls: dict, captured: list) -> None:
+    """Run each call and fail if it recorded nothing.
+
+    What a call does with its canned response is irrelevant here, so a parse
+    failure is suppressed. A call that never reached the fake client is not:
+    for Gemini the request config is built from the installed SDK's own types,
+    which reject unknown fields, so a removed field fails before the request is
+    made, and that must register as a failure rather than an empty capture.
+    """
+    import contextlib
+
+    for name, call in calls.items():
+        before = len(captured)
+        with contextlib.suppress(Exception):
+            call()
+        assert len(captured) > before, f"{name} sent no request to the SDK"
+
+
+def test_openai_kwargs_are_accepted_by_the_installed_sdk() -> None:
+    """The OpenAI twin of the Anthropic guard above.
+
+    ``openai`` is declared with an open lower bound too, so every keyword the
+    backend passes to ``chat.completions.create`` is bound against the installed
+    SDK's signature rather than a fake that accepts anything.
+    """
+    import inspect
+
+    import openai
+
+    real = openai.OpenAI(api_key="sk-not-used")
+    signature = inspect.signature(real.chat.completions.create)
+
+    captured: list[dict] = []
+
+    class RecordingCompletions:
+        def create(self, **kwargs):
+            captured.append(kwargs)
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(content=_sample_payload()),
+                        finish_reason="stop",
+                    )
+                ]
+            )
+
+    backend = object.__new__(OpenAILLMBackend)
+    backend.model = "gpt-5.5"
+    backend.client = SimpleNamespace(
+        chat=SimpleNamespace(completions=RecordingCompletions())
+    )
+
+    # One call per distinct request shape: the plain create, the JSON-mode
+    # create with response_format, the streamed notes path, and the streamed
+    # chat path that also sends tools.
+    _assert_each_call_sent_a_request(
+        {
+            "generate_meeting_intelligence": lambda: (
+                backend.generate_meeting_intelligence(_sample_request())
+            ),
+            "generate_meeting_edge": lambda: backend.generate_meeting_edge(
+                MeetingEdgeRequest(recent_transcript="Speaker A: Hi.")
+            ),
+            "generate_meeting_notes": lambda: backend.generate_meeting_notes(
+                "[00:00 - 00:05] SPEAKER_00: Hi.", {}
+            ),
+            "ask_question_streaming": lambda: list(
+                backend.ask_question_streaming(
+                    "What was decided?",
+                    meeting_notes="Notes",
+                    diarized_transcript="[00:00 - 00:05] SPEAKER_00: Hi.",
+                )
+            ),
+        },
+        captured,
+    )
+
+    for kwargs in captured:
+        try:
+            signature.bind(**kwargs)
+        except TypeError as exc:
+            pytest.fail(
+                f"chat.completions.create() in OpenAILLMBackend passes arguments "
+                f"that openai {openai.__version__} does not accept: {exc}. "
+                "The SDK dropped or renamed a parameter -- fix the call sites "
+                "rather than pinning the SDK back."
+            )
+
+
+def test_gemini_kwargs_are_accepted_by_the_installed_sdk() -> None:
+    """The Gemini twin of the Anthropic guard above.
+
+    Two things are checked. The keywords sent to ``generate_content`` and
+    ``generate_content_stream`` are bound against the installed signatures, and
+    the ``config`` objects are built from the installed ``google.genai.types``
+    rather than a stand-in, so a field the SDK removes fails at construction.
+    """
+    import inspect
+
+    from google import genai
+
+    real = genai.Client(api_key="not-used")
+    signatures = {
+        "generate_content": inspect.signature(real.models.generate_content),
+        "generate_content_stream": inspect.signature(
+            real.models.generate_content_stream
+        ),
+    }
+
+    captured: list[tuple[str, dict]] = []
+
+    class RecordingModels:
+        def generate_content(self, **kwargs):
+            captured.append(("generate_content", kwargs))
+            return SimpleNamespace(candidates=[], text=_sample_payload())
+
+        def generate_content_stream(self, **kwargs):
+            captured.append(("generate_content_stream", kwargs))
+            return iter(())
+
+    backend = object.__new__(GeminiLLMBackend)
+    backend.model = "gemini-2.5-pro"
+    backend.genai = genai
+    backend.client = SimpleNamespace(models=RecordingModels())
+
+    # One call per distinct request shape: the bare create, the JSON-mode
+    # create with a response type, a temperature and HTTP options, and the
+    # streamed chat path that also sends tools.
+    _assert_each_call_sent_a_request(
+        {
+            "generate_meeting_intelligence": lambda: (
+                backend.generate_meeting_intelligence(_sample_request())
+            ),
+            "generate_meeting_edge": lambda: backend.generate_meeting_edge(
+                MeetingEdgeRequest(recent_transcript="Speaker A: Hi.")
+            ),
+            "ask_question_streaming": lambda: list(
+                backend.ask_question_streaming(
+                    "What was decided?",
+                    meeting_notes="Notes",
+                    diarized_transcript="[00:00 - 00:05] SPEAKER_00: Hi.",
+                )
+            ),
+        },
+        captured,
+    )
+
+    for method, kwargs in captured:
+        try:
+            signatures[method].bind(**kwargs)
+        except TypeError as exc:
+            pytest.fail(
+                f"models.{method}() in GeminiLLMBackend passes arguments that "
+                f"google-genai {genai.__version__} does not accept: {exc}. "
+                "The SDK dropped or renamed a parameter -- fix the call sites "
+                "rather than pinning the SDK back."
+            )
+
+
 def _anthropic_backend_capturing_creates(model: str, response, capture: list):
     class FakeMessages:
         def create(self, **kwargs):

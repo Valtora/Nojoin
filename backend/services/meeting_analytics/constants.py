@@ -26,14 +26,6 @@ from __future__ import annotations
 # docs rather than hidden behind false precision.
 TURN_GAP_MS = 2_000
 
-# An utterance starting fractionally before the previous speaker stops is
-# turn-boundary bleed, not simultaneous speech worth reporting. Diarisation
-# boundaries are accurate to roughly this scale, and most benign terminal
-# overlap is shorter (Switchboard transition overlaps: mode 96ms, median
-# 205ms, mean 275ms -- Levinson & Torreira 2015), while only 12% of real
-# overlap events in AMI ground truth are shallower than this.
-OVERLAP_FLOOR_MS = 300
-
 # Speaker-transition gaps below this are indistinguishable from measurement
 # noise: +/-250ms is the disagreement between human annotators on where a turn
 # boundary lies (the NIST DER collar convention), and this pipeline's
