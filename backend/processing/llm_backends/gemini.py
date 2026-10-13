@@ -53,7 +53,7 @@ class GeminiLLMBackend(LLMBackend):
             )
         self.api_key = api_key
         self.model = model or _get_default_model_for_provider("gemini")
-        self.genai = genai  # Store reference for later use
+        self.genai = genai
         self.client = genai.Client(api_key=self.api_key)
 
     @staticmethod
@@ -86,7 +86,7 @@ class GeminiLLMBackend(LLMBackend):
                 if text_parts:
                     return "".join(text_parts)
 
-        # Fallback to .text if available (which might log the warning but works)
+        # Fall back to .text, which may log a warning but returns the text.
         if hasattr(response, "text"):
             return response.text
         return ""
@@ -100,16 +100,12 @@ class GeminiLLMBackend(LLMBackend):
             # Extract model IDs (e.g. 'models/gemini-pro') from the API response.
             model_list = []
             for m in models:
-                # Check attributes
                 name = getattr(m, "name", None)
                 if name:
-                    # Strip 'models/' prefix if present, as the client usually handles it or expects it.
-                    # But for display we might want the full name or short name.
-                    # The user example showed 'gemini-flash-latest'.
+                    # Listed without the 'models/' prefix, e.g. 'gemini-flash-latest'.
                     if name.startswith("models/"):
                         name = name[7:]
 
-                    # Filter for gemini models
                     if "gemini" in name.lower():
                         model_list.append(name)
 
@@ -415,7 +411,6 @@ class GeminiLLMBackend(LLMBackend):
                 "No Gemini model configured. Please select a model in Settings."
             )
 
-        # Define Tool
         def update_meeting_notes(content: str):
             """Overwrites the current meeting notes with new content. Use this whenever the user asks to modify, edit, add to, or delete parts of the meeting notes. The input should be the fully updated Markdown content of the notes."""
             pass
@@ -423,7 +418,6 @@ class GeminiLLMBackend(LLMBackend):
         tools = [update_meeting_notes]
 
         try:
-            # Use streaming API
             # Automatic function calling is disabled to allow manual handling and event streaming.
             response_stream = self.client.models.generate_content_stream(
                 model=self.model,
@@ -448,7 +442,6 @@ class GeminiLLMBackend(LLMBackend):
 
                 # Safely extract text to avoid warnings about non-text parts
                 try:
-                    # Check if there is actual text content before accessing .text
                     has_text = False
                     if hasattr(chunk, "candidates") and chunk.candidates:
                         candidate = chunk.candidates[0]

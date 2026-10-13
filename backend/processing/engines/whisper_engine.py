@@ -1,4 +1,3 @@
-# nojoin/processing/engines/whisper_engine.py
 # Whisper transcription engine. Heavy imports (whisper, torch, tqdm) live here,
 # not in the thin dispatcher backend/processing/transcribe.py.
 
@@ -132,7 +131,6 @@ def transcribe_audio_with_progress(
     ensure_ffmpeg_in_path()
 
     try:
-        # Load model (use cache)
         if model_size not in _model_cache:
             logger.info(f"Loading Whisper model: {model_size}")
             # Check if model exists locally, if not it will be downloaded by whisper.load_model
@@ -152,17 +150,14 @@ def transcribe_audio_with_progress(
             try:
                 use_fp16 = device == "cuda"
 
-                # Check for cancellation before starting
                 if cancel_check and cancel_check():
                     logger.info(
                         "Transcription cancelled before starting model.transcribe."
                     )
                     return None
 
-                # Perform transcription with progress tracking
-
-                # Check environment variable for word timestamps
-                # Default to True now that we have triton-windows support
+                # Word timestamps default on, except on Windows;
+                # WHISPER_ENABLE_WORD_TIMESTAMPS overrides.
                 env_var = os.environ.get("WHISPER_ENABLE_WORD_TIMESTAMPS")
                 if env_var is not None:
                     enable_word_timestamps = env_var.lower() == "true"
@@ -178,13 +173,10 @@ def transcribe_audio_with_progress(
                     word_timestamps=enable_word_timestamps,
                 )
 
-                # Check for cancellation after transcribe
                 if cancel_check and cancel_check():
                     logger.info("Transcription cancelled after model.transcribe.")
                     return None
 
-                # Ensure 100% completion is reported
-                # context.emit_progress(100, 100) # context is not defined here
                 if progress_callback:
                     progress_callback(100)
 
@@ -235,7 +227,6 @@ class WhisperEngine(TranscriptionEngine):
                 engine=self.name,
             )
 
-        # Use provided config or fall back to system config
         get_config = config.get if config else config_manager.get
         model_size = get_config("whisper_model_size", "base")
         device = get_config("processing_device", "auto")
@@ -253,7 +244,6 @@ class WhisperEngine(TranscriptionEngine):
 
         model = None
         try:
-            # Load model (use cache)
             if model_size not in _model_cache:
                 logger.info(f"Loading Whisper model: {model_size}")
 
@@ -264,12 +254,10 @@ class WhisperEngine(TranscriptionEngine):
                 logger.info(f"Whisper model {model_size} loaded successfully.")
             model = _model_cache[model_size]
 
-            # Perform transcription
-
             use_fp16 = device == "cuda"
 
-            # Check environment variable for word timestamps
-            # Default to True now that we have triton-windows support
+            # Word timestamps default on, except on Windows;
+            # WHISPER_ENABLE_WORD_TIMESTAMPS overrides.
             env_var = os.environ.get("WHISPER_ENABLE_WORD_TIMESTAMPS")
 
             if env_var is not None:
@@ -278,7 +266,6 @@ class WhisperEngine(TranscriptionEngine):
                     f"Word timestamps set via env var: {enable_word_timestamps}"
                 )
             else:
-                # Fallback to False on Windows if Triton is not working
                 import platform
 
                 is_windows = platform.system().lower() == "windows"

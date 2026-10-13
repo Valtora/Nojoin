@@ -38,10 +38,9 @@ logger = logging.getLogger(__name__)
 
 __all__ = ["CliLLMBackend", "CliOAuthUnavailableError"]
 
-# Curated model lists — a subscription exposes no models endpoint, so the picker
-# uses these static sets, ordered most→least capable with full, unambiguous ids.
-# Keep in sync with the frontend cliModels.ts. Codex ids are curated (VERIFY
-# against the live Codex model set before release).
+# Curated model lists: a subscription exposes no models endpoint. Ordered most to
+# least capable, with full, unambiguous ids. The frontend's fallback list in
+# cliModels.ts mirrors these.
 _CLAUDE_CLI_MODELS = (
     "claude-opus-5",
     "claude-opus-4-8",

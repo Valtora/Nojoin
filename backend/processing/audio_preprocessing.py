@@ -42,7 +42,6 @@ def validate_audio_file(file_path: str) -> Dict:
         if duration <= 0:
             raise AudioFormatError(f"Audio file has zero duration: {file_path}")
 
-        # Check for at least one audio stream
         audio_streams = [
             s for s in data.get("streams", []) if s.get("codec_type") == "audio"
         ]
@@ -91,7 +90,6 @@ def repair_audio_file(file_path: str) -> Optional[str]:
 
         subprocess.run(cmd, check=True, capture_output=True)
 
-        # Validate the repaired file
         try:
             validate_audio_file(repaired_path)
             logger.info(f"Successfully repaired audio file: {repaired_path}")
@@ -292,7 +290,6 @@ def preprocess_audio_for_vad(input_path: str) -> str | None:
 
         convert_to_mono_16k(input_path, temp_path)
 
-        # Normalize (in-place or copy)
         normalize_audio_levels(temp_path, temp_path)
 
         logger.info(f"[Audio Preprocessing] VAD preprocessing completed: {temp_path}")
@@ -404,7 +401,7 @@ def normalize_audio_levels(
             os.close(fd)
             target_out = temp_path
 
-        # generic loudnorm parameters usually work well for speech
+        # loudnorm targets for speech:
         # I: integrated loudness target
         # TP: true peak target
         # LRA: loudness range target

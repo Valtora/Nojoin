@@ -248,7 +248,6 @@ def filter_phantom_speakers(
         )
         return diarization
 
-    # Evaluate each candidate
     # Maps candidate label -> target label (reassign/merge destination)
     reassignment_map: Dict[str, str] = {}
 
@@ -270,7 +269,6 @@ def filter_phantom_speakers(
 
         candidate_emb_list = emb.tolist()
 
-        # Compare against every established speaker
         best_match_label = None
         best_score = 0.0
         for est_label, est_emb in established_embeddings.items():

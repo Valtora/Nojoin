@@ -1,4 +1,3 @@
-# nojoin/processing/onnx_providers.py
 # Verification that ONNX Runtime sessions got the execution providers we asked for.
 #
 # ONNX Runtime treats its `providers` argument as a preference, not a contract. When a

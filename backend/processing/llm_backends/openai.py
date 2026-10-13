@@ -60,12 +60,11 @@ class OpenAILLMBackend(LLMBackend):
         try:
             models = self.client.models.list()
             # Filter for gpt models to avoid clutter (dall-e, whisper, etc)
-            # Also exclude models not supported by chat endpoint if possible, but it's hard to know for sure.
             model_list = []
             for m in models:
                 if "gpt" in m.id and "audio" not in m.id and "realtime" not in m.id:
                     model_list.append(m.id)
-                elif "o1" in m.id:  # Add support for reasoning models
+                elif "o1" in m.id:  # reasoning models
                     model_list.append(m.id)
             return sorted(model_list)
         except Exception as e:  # noqa: BLE001
@@ -463,7 +462,6 @@ class OpenAILLMBackend(LLMBackend):
             }
         ]
 
-        # Prepare request arguments
         request_kwargs = {
             "model": self.model,
             "messages": messages,

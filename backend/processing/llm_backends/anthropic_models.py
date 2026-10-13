@@ -44,8 +44,8 @@ class AnthropicModelCapabilities:
     thinks_by_default: bool
     # A non-default ``temperature`` is accepted. Opus 4.7 and later reject the
     # parameter outright; Sonnet 5, Sonnet 5.5 and Haiku 5.5 reject any value but
-    # the default; Fable has no sampling control. The SDK no longer types the
-    # parameter at all, so it travels in ``extra_body`` where it is accepted.
+    # the default; Fable has no sampling control. The SDK does not type the
+    # parameter, so it travels in ``extra_body`` where it is accepted.
     accepts_temperature: bool = False
 
 

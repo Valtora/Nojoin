@@ -1,4 +1,3 @@
-# nojoin/processing/transcribe.py
 # Thin dispatcher: selects a pluggable transcription engine. The Whisper engine
 # logic lives in backend/processing/engines/whisper_engine.py.
 

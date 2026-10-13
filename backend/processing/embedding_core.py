@@ -91,17 +91,14 @@ def load_embedding_model(device_str: str, hf_token: str = None):
                     "Hugging Face token (hf_token) not found and no local embedding model is available."
                 )
 
-        # Explicitly load the model first using Model.from_pretrained
         logger.info(
             "Loading embedding model from %s source: %s",
             resolved_model.source,
             resolved_model.load_ref,
         )
 
-        # Trusts model source (pyannote/wespeaker-voxceleb-resnet34-LM).
-        # Safe globals are added at module level.
-        # Note: Passing weights_only=False to Model.from_pretrained does NOT work because
-        # Requires safe_globals as pyannote excludes it from torch.load.
+        # Safe globals are registered at module level: Model.from_pretrained
+        # ignores weights_only=False, so torch.load needs them.
         if resolved_model.source == "remote":
             loaded_model = Model.from_pretrained(
                 resolved_model.load_ref, token=hf_token
@@ -110,10 +107,9 @@ def load_embedding_model(device_str: str, hf_token: str = None):
             loaded_model = Model.from_pretrained(resolved_model.load_ref)
 
         # window="whole" pools over the entire crop in a single forward pass,
-        # which is what a speaker embedding model is designed for. The previous
-        # window="sliding" setting fed the model 5s sub-windows and averaged the
-        # raw outputs, which measurably depressed same-speaker similarity and
-        # inflated different-speaker similarity. Callers must keep crops bounded
+        # which is what a speaker embedding model is designed for. Averaging
+        # sliding 5s sub-windows measurably depresses same-speaker similarity and
+        # inflates different-speaker similarity. Callers must keep crops bounded
         # (see EMBEDDING_MAX_CROP_S).
         model = Inference(loaded_model, window="whole")
         model.to(torch.device(device_str))
@@ -291,7 +287,6 @@ def extract_embeddings(
 
     logger.info(f"Starting embedding extraction for {audio_path}")
 
-    # Use provided config or fall back to system config
     get_config = config.get if config else config_manager.get
     hf_token = get_config("hf_token")
 
@@ -384,7 +379,6 @@ def extract_embedding_for_segments(
     if device_str == "auto":
         device_str = "cuda" if torch.cuda.is_available() else "cpu"
 
-    # fallback if not provided
     if not hf_token:
         hf_token = config_manager.get("hf_token")
 

@@ -3,7 +3,7 @@
 The Codex counterpart to the Claude Agent SDK path in
 :mod:`backend.processing.cli.manager`. There is no first-party Python SDK for the
 subscription path, so this drives the ``codex`` binary as a single-turn,
-read-only subprocess (confirmed in the CX-0 spike):
+read-only subprocess:
 
     codex exec --json --ephemeral --skip-git-repo-check --ignore-user-config \
         -s read-only -C <workdir> -o <last_message_file> [-m <model>] -
@@ -17,10 +17,8 @@ vars removed so Codex bills the subscription, not an API key.
 Only imported when a user actually routes through Codex (the manager imports this
 module lazily), so the Claude path never loads it.
 
-VERIFY before release (assumed working per the CX-0 decision, proven later like
-Claude): the exact ``--json`` event schema and the ``--with-access-token`` token
-shape. Parsing is deliberately tolerant and always falls back to the reliable
-``-o`` last-message file for text.
+The ``--json`` event schema is undocumented, so parsing is deliberately tolerant
+and always falls back to the ``-o`` last-message file for text.
 """
 
 from __future__ import annotations
@@ -47,7 +45,7 @@ from backend.utils.vision import VisionImage
 
 logger = logging.getLogger(__name__)
 
-# Absolute path to the codex binary in the worker-io image (CX-6 installs it).
+# Absolute path to the codex binary in the worker-io image.
 # Read with ``or`` rather than a get() default: compose declares the variable on
 # the worker lanes so an operator can override it, which means it arrives set but
 # empty whenever they have not, and an empty string is a path the default would
@@ -278,7 +276,7 @@ class CodexExecDriver:
             return ""
 
 
-# ---- tolerant JSONL parsing (schema verified later; see module docstring) ----
+# ---- tolerant JSONL parsing (see module docstring) ----
 
 
 def _iter_events(stdout: str) -> list[dict[str, Any]]:

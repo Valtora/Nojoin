@@ -1,4 +1,3 @@
-# backend/processing/live_transcribe.py
 # Live transcription lane: a Celery task that transcribes recording segments
 # as they arrive, producing provisional transcript segments. A sequence-gated
 # buffer re-imposes ordering on concurrently uploaded segments and carries the
@@ -72,9 +71,9 @@ LIVE_SAMPLE_RATE = BROWSER_LIVE_SAMPLE_RATE_HZ
 # Q&A handovers (e.g. a host's question followed immediately by a guest's
 # answer with a < 500 ms pause) cleave into separate live utterances rather
 # than arriving at reconciliation as one merged segment that absorbs both
-# speakers' words. The previous 700 ms value commonly produced cross-speaker
-# bleed at conversational transitions. Raise cautiously: lowering further
-# may fragment a single speaker's normal pauses into many short utterances.
+# speakers' words. A longer threshold produces cross-speaker bleed at
+# conversational transitions; a shorter one fragments a single speaker's normal
+# pauses into many short utterances.
 LIVE_MIN_SILENCE_MS = 320
 LIVE_SPEAKER_MATCH_THRESHOLD = 0.72
 LIVE_SPEAKER_MATCH_MARGIN = 0.05

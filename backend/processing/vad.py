@@ -119,7 +119,6 @@ def mute_non_speech_segments(
         wav = safe_read_audio(input_wav_path, sampling_rate=sampling_rate)
         logger.info(f"[VAD] Loaded audio shape: {wav.shape}, dtype: {wav.dtype}")
 
-        # Convert to numpy for processing
         wav_np = wav.cpu().numpy() if hasattr(wav, "cpu") else np.array(wav)
         total_samples = len(wav_np)
         total_duration_s = total_samples / sampling_rate
@@ -128,13 +127,11 @@ def mute_non_speech_segments(
         )
 
         logger.info("[VAD] Loading Silero VAD model...")
-        # Defaults to CPU but uses GPU if available/configured.
         from backend.utils.config_manager import config_manager
 
         device_str = config_manager.get("processing_device", "auto")
-        device = torch.device("cpu")  # Default to CPU
+        device = torch.device("cpu")
 
-        # Determine processing device
         if device_str == "auto":
             if torch.cuda.is_available():
                 device = torch.device("cuda")
@@ -150,7 +147,6 @@ def mute_non_speech_segments(
                     "[VAD] Configured for CUDA but not available, falling back to CPU"
                 )
 
-        # Load Silero VAD model
         try:
             model = silero_vad.load_silero_vad()
             model.to(device)
@@ -168,7 +164,6 @@ def mute_non_speech_segments(
 
         logger.info("[VAD] Running speech detection...")
 
-        # Ensure wav is on the correct device
         wav_tensor = torch.from_numpy(wav_np).to(device)
 
         speech_timestamps = silero_vad.get_speech_timestamps(
@@ -196,12 +191,9 @@ def mute_non_speech_segments(
             end_mute_ms,
         )
 
-        # Convert back to torch tensor for saving
         processed_audio_tensor = torch.from_numpy(processed_audio.astype(np.float32))
 
-        # Save output
-        # silero_vad.save_audio expects a tensor [channels, samples] or [samples]
-        # If our numpy array is 1D, we might need to unsqueeze
+        # Saved as [channels, samples].
         if processed_audio_tensor.ndim == 1:
             processed_audio_tensor = processed_audio_tensor.unsqueeze(0)
 
@@ -247,7 +239,6 @@ def _calculate_vad_metrics(
     )
     silence_duration_s = total_duration_s - speech_duration_s
 
-    # Calculate percentages
     speech_percentage = (speech_duration_s / total_duration_s) * 100
     silence_percentage = 100 - speech_percentage
 
@@ -372,7 +363,6 @@ def _apply_vad_processing(
             )
             continue
 
-        # Ensure we don't go out of bounds
         start_sample = max(0, start_sample)
         end_sample = min(len(wav_np), end_sample)
 
@@ -385,12 +375,10 @@ def _apply_vad_processing(
         if silence_method == "fade" and fade_samples > 0:
             segment_len = len(segment_audio)
 
-            # Fade-in at beginning
             if segment_len > fade_samples:
                 fade_in = np.linspace(0, 1, fade_samples)
                 segment_audio[:fade_samples] *= fade_in
 
-            # Fade-out at end
             if segment_len > fade_samples:
                 fade_out = np.linspace(1, 0, fade_samples)
                 segment_audio[-fade_samples:] *= fade_out
@@ -448,7 +436,6 @@ def detect_speech_segments(
                 "[VAD] Configured for CUDA but not available, falling back to CPU"
             )
 
-    # Load the VAD model.
     try:
         model = silero_vad.load_silero_vad()
         if hasattr(model, "to"):
@@ -466,13 +453,11 @@ def detect_speech_segments(
         else:
             raise e
 
-    # Resolve the input into a tensor.
     if isinstance(audio, (str, Path)):
         tensor = safe_read_audio(str(audio), sampling_rate=sample_rate)
     else:
         tensor = audio
 
-    # Ensure the tensor is a PyTorch tensor and move to the resolved device
     if not isinstance(tensor, torch.Tensor):
         tensor = torch.from_numpy(np.array(tensor))
     tensor = tensor.to(device)
@@ -524,7 +509,6 @@ def get_vad_config_from_settings(
 
     config = config_manager.get("vad_parameters", {})
 
-    # Merge with defaults
     final_config = defaults.copy()
     final_config.update(config)
 

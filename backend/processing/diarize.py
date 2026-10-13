@@ -1,5 +1,3 @@
-# nojoin/processing/diarize.py
-
 import logging
 import os
 import warnings
@@ -19,7 +17,7 @@ try:
 
     torch.serialization.add_safe_globals([Specifications, Problem, Resolution])
 except ImportError:
-    pass  # Should not happen if pyannote is installed, but safe to ignore
+    pass
 
 logger = logging.getLogger(__name__)
 
@@ -169,7 +167,6 @@ def diarize_audio(
             f"Diarization input {audio_path} is not a WAV file. Compressed formats like MP3 can cause sample count mismatches."
         )
 
-    # Use provided config or fall back to system config
     get_config = config.get if config else config_manager.get
     device_str = get_config("processing_device", "auto")
 
@@ -185,7 +182,6 @@ def diarize_audio(
         f"device: {device_str}, max_speakers: {speaker_cap or 'auto'}"
     )
     try:
-        # Check cache first
         cache_key = f"{DEFAULT_PIPELINE}_{device_str}"
         if cache_key in _pipeline_cache:
             pipeline = _pipeline_cache[cache_key]
@@ -193,7 +189,6 @@ def diarize_audio(
             pipeline = load_diarization_pipeline(device_str, hf_token)
             _pipeline_cache[cache_key] = pipeline
 
-        # Log audio file info
         try:
             import soundfile as sf
 
@@ -204,8 +199,8 @@ def diarize_audio(
         except Exception as e:  # noqa: BLE001
             logger.warning("Could not read audio file info for logging: %s", e)
 
-        # Run diarization. The auto-detect path passes no speaker kwargs at all,
-        # so it reaches pyannote exactly as it did before the cap existed.
+        # The auto-detect path passes no speaker kwargs, so pyannote estimates
+        # the speaker count itself.
         logger.info("Running diarization inference...")
         pipeline_kwargs = {"max_speakers": speaker_cap} if speaker_cap else {}
         diarization_result = pipeline(audio_path, **pipeline_kwargs)
@@ -217,7 +212,6 @@ def diarize_audio(
             )
             diarization_result = diarization_result.speaker_diarization
 
-        # Check results
         num_segments = len(list(diarization_result.itersegments()))
         num_speakers = len(diarization_result.labels())
         logger.info(
@@ -291,20 +285,17 @@ def diarize_audio_with_progress(
         all_output = []
         for line in process.stdout:
             all_output.append(line)
-            # Check for cancellation during output
             if cancel_check and cancel_check():
                 logger.info("Diarization cancelled during subprocess output read.")
                 process.terminate()
                 process.wait()
                 return None
-            # Look for progress percentage in the line
             match = progress_re.search(line)
             if match:
                 percent = int(match.group(1))
                 if percent != last_percent and progress_callback:
                     progress_callback(min(percent, 100))
                     last_percent = percent
-            # Log the line for debugging
             if line.strip():
                 logger.debug("[diarization-subprocess] %s", line.strip())
         process.wait()
@@ -319,7 +310,6 @@ def diarize_audio_with_progress(
             )
             logger.error("Subprocess output:\n" + "".join(all_output))
             return None
-        # Load result from output file
         with open(output_path, "rb") as f:
             diarization_result = pickle.load(f)
         logger.info("Diarization completed for %s (subprocess mode).", audio_path)
