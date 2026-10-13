@@ -25,6 +25,7 @@ interface SettingsCategoryLayoutProps {
  * into their own width, so every card on a page lines up on both sides.
  * Data-heavy pages declare `fullBleed` on the category instead, so a page is
  * either a form or a data page.
+ */
 export default function SettingsCategoryLayout({
   categoryId,
   children,
