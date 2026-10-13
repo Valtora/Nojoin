@@ -12,8 +12,7 @@ export const FIELD_SIZES: Record<FieldSize, string> = {
 
 /**
  * The chrome every field shares. Kept here rather than in each component so an
- * Input, a Select and a textarea cannot drift apart, which is what happened to
- * the SELECT_CLASS constants this replaces.
+ * Input, a Select and a textarea cannot drift apart.
  */
 export const fieldChrome = (size: FieldSize, invalid: boolean) =>
   cn(

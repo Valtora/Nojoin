@@ -94,8 +94,8 @@ export default function OverlapPanel({
       {overlap.region_count > 0 && (
         <div className="mt-3">
           {/* Neutral, not a series colour. This strip carries no attribution,
-              and painting it in slot 1 gave it the first speaker's colour --
-              the one thing the figure explicitly refuses to say. */}
+              and slot 1 would give it the first speaker's colour, the one thing
+              the figure refuses to say. */}
           <div
             className="flex h-9 items-end gap-px"
             role="img"

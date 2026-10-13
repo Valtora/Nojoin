@@ -13,8 +13,7 @@ import type { AnalyticsSpeaker } from "@/types";
 // 1. A colour follows the speaker, never their position in a list. Analytics
 //    orders speakers by talking time and the speaker panel orders them
 //    alphabetically, so anything keyed on index disagrees with the rest of the
-//    meeting view by construction -- which is exactly what the --chart-* slots
-//    used to do here.
+//    meeting view by construction.
 // 2. Past the last fallback slot, speakers fold into one neutral "other"
 //    colour rather than wrapping back to slot 1. A repeated hue reads as the
 //    same person, which is worse than an honest "everyone else".
@@ -34,7 +33,7 @@ export const slotColor = (index: number): string =>
  * computed client-side from the transcript, so it is the only place the
  * auto-assigned colours exist -- the payload's `color` field carries a colour
  * only once the user has explicitly chosen one. Both are consulted, in that
- * order, and a speaker matching neither keeps the old slot colour rather than
+ * order, and a speaker matching neither keeps its slot colour rather than
  * going uncoloured.
  */
 export const buildSpeakerColors = (

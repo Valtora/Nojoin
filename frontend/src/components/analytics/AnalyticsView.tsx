@@ -64,12 +64,10 @@ export default function AnalyticsView({
   }, [load]);
 
   // Both generated tiers run on a worker, so the POST returns as soon as the
-  // task is queued -- before the worker has claimed it and written
-  // "generating". Clearing the local flag on the POST's own response therefore
-  // dropped the user back to the button for however long that took, with no
-  // sign anything was happening, and left nothing polling. The flag is instead
-  // held until the server reports a status that is not "pending", so the busy
-  // state covers the whole gap.
+  // task is queued, before the worker has claimed it and written "generating".
+  // Clearing the local flag on the POST's own response would drop the user back
+  // to the button with no sign of work and nothing polling, so the flag is held
+  // until the server reports a status that is not "pending".
   const deliveryBusy = generating || analytics?.delivery_status === "generating";
   const aiBusy = analysing || analytics?.ai_status === "generating";
 
@@ -111,8 +109,8 @@ export default function AnalyticsView({
 
   const speakers = analytics?.speakers;
   // Colour identifies a person, so it is resolved once for the whole tab and
-  // handed to every panel. Deriving it per panel is how the tab ended up
-  // disagreeing with the rest of the meeting view in the first place.
+  // handed to every panel. Deriving it per panel lets the tab disagree with the
+  // rest of the meeting view.
   const colors = useMemo(
     () => buildSpeakerColors(speakers ?? [], speakerColors),
     [speakers, speakerColors],

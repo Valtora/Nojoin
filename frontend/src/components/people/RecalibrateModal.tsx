@@ -70,8 +70,6 @@ export default function RecalibrateModal({
     if (!speaker) return;
     setIsLoading(true);
     try {
-      // Fetch safe amount to fill grid (e.g., 9-18 items)
-      // Limit to 27 to allow for some cycling/rejecting
       const data = await getSpeakerSegments(speaker.id);
       setSegments(data);
       // Reset states

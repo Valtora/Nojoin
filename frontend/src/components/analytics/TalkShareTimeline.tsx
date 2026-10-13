@@ -50,8 +50,8 @@ const ChartTooltip = ({
             {/* The swatch is looked up rather than taken from the payload
                 entry, which recharts fills from an area's `stroke`. These
                 bands are stroked in the surface colour to keep the seam
-                between them, so trusting the payload painted every swatch the
-                colour of the card it sits on. */}
+                between them, so trusting the payload would paint every swatch
+                the colour of the card it sits on. */}
             <span
               className="h-2 w-2 shrink-0 rounded-full"
               style={{ backgroundColor: colorByName[entry.name] }}
@@ -118,9 +118,9 @@ export default function TalkShareTimeline({
         {/* A stacked area cannot carry a direct label per series, so identity
             comes from the tooltip plus the talk-share list beside this chart,
             which names every speaker against the same colour. The library's
-            own legend is deliberately gone: it drew its swatches from each
-            area's stroke, which is the card colour here, so it repeated the
-            adjacent list in invisible ink and cost the plot 30px of height. */}
+            own legend is left off: it draws its swatches from each area's
+            stroke, the card colour here, so it would repeat the adjacent list in
+            invisible ink and cost the plot 30px of height. */}
         {speakers.map((speaker) => (
           <Area
             key={speaker.speaker_key}

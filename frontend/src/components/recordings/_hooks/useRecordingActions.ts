@@ -24,19 +24,16 @@ import { RecordingId } from "@/types";
  * (`Sidebar.tsx`), the live view (`RecordingStatusDisplay.tsx`) and the
  * recording page (`useRecordingDetail.ts`, for the audio export).
  *
- * The surfaces previously duplicated the asynchronous action bodies (rename,
- * infer speakers, cancel, delete, archive, restore, permanent delete) verbatim.
- * DEVELOPMENT.md records that they must stay behaviourally synchronised; this
- * hook is the single source of truth for that behaviour so the duplication
- * cannot drift. {@link RECORDING_ACTION_IDS} pins the shared action set so
- * tests can assert every consumer draws from the same one.
+ * DEVELOPMENT.md requires these surfaces to stay behaviourally synchronised,
+ * and this hook is the single source of truth for that behaviour.
+ * {@link RECORDING_ACTION_IDS} pins the shared action set so tests can assert
+ * every consumer draws from the same one.
  *
- * The handlers are behaviour-preserving. Each only performs the API call,
- * user-facing notification, and error logging that the two components shared
- * identically. Consumer-specific concerns — optimistic list updates, post-success
- * refresh strategy (`router.refresh()` vs a re-fetch), `recording-updated`
- * events, confirm() prompts, route redirects, and the card's delayed second
- * refresh — stay in the consumers, wired through the per-call callbacks below.
+ * Each handler performs only the API call, the user-facing notification and
+ * the error logging. Consumer-specific concerns (optimistic list updates, the
+ * post-success refresh strategy, `recording-updated` events, confirm()
+ * prompts and route redirects) stay in the consumers, wired through the
+ * per-call callbacks below.
  */
 
 /** Stable identifiers for the recording actions exposed by this hook. */

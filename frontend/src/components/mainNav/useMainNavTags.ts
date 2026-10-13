@@ -215,7 +215,6 @@ export function useMainNavTags() {
 
     if (!over) return;
 
-    // Extract tag IDs
     const activeIdString = String(active.id);
     const overIdString = String(over.id);
 

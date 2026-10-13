@@ -8,8 +8,8 @@ import { cn } from "@/lib/cn";
  *
  * The tab's own content region is already a card, so a panel inside it is the
  * third level of a two-level surface stack. It therefore gets spacing and a
- * rule rather than another fill and border, which is what DESIGN.md's nesting
- * table prescribes and what the tab did not do.
+ * rule rather than another fill and border, as DESIGN.md's nesting table
+ * prescribes.
  */
 
 export const Section = ({

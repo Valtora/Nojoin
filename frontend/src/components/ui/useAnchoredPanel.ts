@@ -43,8 +43,8 @@ export interface AnchoredPanelStyle {
 }
 
 interface AnchoredPanelOptions {
-  /** Size the panel to its trigger, for a dropdown that used to be `w-full`
-   *  inside it. Fixed positioning takes that percentage away. */
+  /** Size the panel to its trigger, for a dropdown that would otherwise be
+   *  `w-full` inside it. Fixed positioning takes that percentage away. */
   matchAnchorWidth?: boolean;
 }
 

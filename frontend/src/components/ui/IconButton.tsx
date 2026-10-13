@@ -30,8 +30,7 @@ const VARIANTS: Record<ButtonVariant, string> = {
  * Sizes are expressed as a fixed box rather than as padding, because the
  * smaller ones have to keep a touch target the icon inside them does not fill.
  * `sm` renders a 16px glyph inside a 40px box: the glyph is small, the target
- * is not, which is the fix for the card and toolbar actions that were
- * previously unhittable on a phone.
+ * is not.
  */
 const SIZES: Record<IconButtonSize, string> = {
   sm: "h-10 w-10 [&_svg]:h-4 [&_svg]:w-4",

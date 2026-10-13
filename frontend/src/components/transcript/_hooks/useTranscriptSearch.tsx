@@ -155,7 +155,6 @@ export function useTranscriptSearch(
 
     setMatches(newMatches);
 
-    // Smart index management
     setCurrentMatchIndex((prevIndex) => {
       // If search term changed, reset to first match
       if (findText !== prevFindTextRef.current) {

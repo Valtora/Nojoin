@@ -19,9 +19,8 @@ const formatEta = (seconds?: number | null): string | null => {
 /**
  * Whatever the pipeline is still working on.
  *
- * This was invisible unless you were on the recordings page, which is the wrong
- * place for it: the question "is that still running" is asked from wherever you
- * happen to be, and the dashboard is where you happen to be.
+ * On the dashboard because "is that still running" is asked from wherever you
+ * happen to be, not only from the recordings page.
  *
  * The caller hides this module when nothing is in flight, so it appears only
  * while there is something to report and disappears when the queue drains.
