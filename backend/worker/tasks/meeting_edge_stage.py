@@ -194,12 +194,12 @@ def refresh_meeting_edge_task(self, recording_id: int):
     """Refresh Meeting Edge for one recording, one run at a time.
 
     A refresh is queued as the transcript grows, so during a live meeting a
-    trigger arrives every few seconds while a run takes 20-45 seconds. Nothing
-    used to stop them overlapping: the staleness check reads a timestamp only
-    written when a run *finishes*, and the signature check only suppresses an
-    input identical to one already in flight, which a live transcript never is.
-    Four concurrent runs were observed on a single recording, each spawning its
-    own LLM subprocess and all but the last immediately superseded.
+    trigger arrives every few seconds while a run takes 20-45 seconds. The
+    existing checks cannot stop them overlapping: the staleness check reads a
+    timestamp only written when a run *finishes*, and the signature check only
+    suppresses an input identical to one already in flight, which a live
+    transcript never is. Unguarded, several runs overlap on one recording, each
+    spawning its own LLM subprocess and all but the last immediately superseded.
 
     Dropping the surplus rather than queueing it is deliberate. Another trigger
     is seconds away and will carry fresher transcript than the one skipped, so

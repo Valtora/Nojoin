@@ -77,6 +77,6 @@ def mark_transcript_without_speech(transcript: Transcript) -> None:
     there is nothing to summarise, so no notes run follows, which is also what
     the success path does when meeting intelligence skips an empty transcript.
     """
-    transcript.text = ""  # Empty string to prevent hallucinations
+    transcript.text = ""
     transcript.segments = []
     transcript.complete_transcription()

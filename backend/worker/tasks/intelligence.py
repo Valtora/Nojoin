@@ -44,7 +44,6 @@ def generate_notes_task(self, recording_id: int, notes_template_id: int | None =
                 session.commit()
             return
 
-        # Update status
         transcript.notes_status = "generating"
         transcript.set_notes_error_message(None)
         recording.processing_step = "Generating meeting notes..."
@@ -82,7 +81,6 @@ def generate_notes_task(self, recording_id: int, notes_template_id: int | None =
             )
             return
 
-        # Build Speaker Map and Transcript Text
         speakers = session.exec(
             select(RecordingSpeaker).where(
                 RecordingSpeaker.recording_id == recording_id
@@ -91,7 +89,6 @@ def generate_notes_task(self, recording_id: int, notes_template_id: int | None =
         speaker_map = build_recording_speaker_map(speakers)
         transcript_text = format_segments_for_llm(segments, speaker_map)
 
-        # Call LLM Service
         llm = _llm_backend_from_config(llm_config)
         language_preferences = resolve_language_preferences(
             llm_config.merged_config,
@@ -132,7 +129,6 @@ def generate_notes_task(self, recording_id: int, notes_template_id: int | None =
                 **notes_arguments,
             )
 
-        # Save Notes
         transcript.notes = notes
         transcript.notes_status = "completed"
         # Freshly generated notes reflect every READY document by definition.
@@ -152,7 +148,6 @@ def generate_notes_task(self, recording_id: int, notes_template_id: int | None =
 
         # --- Index Notes for RAG ---
         try:
-            # Clean up existing note chunks
             existing_chunks = session.exec(
                 select(ContextChunk)
                 .where(ContextChunk.recording_id == recording_id)
@@ -163,7 +158,6 @@ def generate_notes_task(self, recording_id: int, notes_template_id: int | None =
                 if chunk.meta and chunk.meta.get("source") == "notes":
                     session.delete(chunk)
 
-            # Chunking
             from backend.processing.text_embedding import get_text_embedding_service
 
             note_chunks = []
@@ -244,7 +238,6 @@ def infer_speakers_task(self, recording_id: int):
         eligible_labels = get_speakers_eligible_for_llm_renaming(speakers)
         meeting_context = _resolve_meeting_event_context(session, recording)
 
-        # Fetch user settings for provider resolution.
         user_settings = {}
         if recording.user_id:
             user = session.get(User, recording.user_id)
@@ -409,24 +402,19 @@ def index_transcript_task(self, recording_id: int):
     speaker_map = build_recording_speaker_map(speakers)
 
     try:
-        # Clear existing transcript chunks for this recording
-        # The 'source' metadata field identifies these chunks.
-
-        # Selects then deletes context chunks.
+        # Replace this recording's transcript chunks; document and notes chunks stay.
         existing_chunks = session.exec(
             select(ContextChunk)
             .where(ContextChunk.recording_id == recording_id)
             .where(ContextChunk.document_id == None)
             .where(ContextChunk.meta["source"].as_string() == '"transcript"')
-            # Using document_id == None serves as a proxy for non-document chunks.
         ).all()
 
         for chunk in existing_chunks:
             if chunk.meta.get("source") == "transcript":
                 session.delete(chunk)
 
-        # Chunks the transcript segments.
-        # Grouping small segments improves embedding quality.
+        # Small segments are grouped, which improves embedding quality.
 
         segments = [dict(segment) for segment in segments]
 
@@ -467,12 +455,10 @@ def index_transcript_task(self, recording_id: int):
                     }
                 )
 
-                # Reset
                 temp_chunk_text = ""
                 current_length = 0
                 temp_meta_speakers = set()
 
-        # Add remaining
         if temp_chunk_text:
             chunks_to_embed.append(temp_chunk_text)
             metas.append(
@@ -727,8 +713,7 @@ def _persist_generated_speaker_name_suggestions_impl(
         return 0
 
     # Single legacy gate: without unified mutations the names cannot be
-    # applied, and persisting pending suggestions would strand them forever
-    # now that the accept/reject review flow no longer exists.
+    # applied, and nothing could resolve a pending suggestion later.
     if not recording_supports_unified_mutations(recording):
         logger.info(
             "Skipping speaker suggestion persistence for recording %s: "
@@ -751,8 +736,8 @@ def _persist_generated_speaker_name_suggestions_impl(
     # Apply before persisting: persist_transcript_speaker_suggestions copies
     # the dicts, so resolution fields must already be set on them. Only the
     # applied suggestions are persisted, as an audit trail; a suggestion that
-    # matched no live speaker is dropped rather than written as an unresolvable
-    # "pending" entry now that the accept/reject review flow is gone.
+    # matched no live speaker is dropped rather than written as a "pending"
+    # entry nothing can resolve.
     applied = _auto_apply_persisted_speaker_name_suggestions(
         session,
         recording=recording,

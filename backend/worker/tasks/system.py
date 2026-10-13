@@ -196,7 +196,6 @@ def generate_proxy_task(self, recording_id: int):
             logger.error(f"Audio file not found for recording {recording_id}")
             return
 
-        # Define proxy path (same dir, .mp3 extension)
         base_path, _ = os.path.splitext(recording.audio_path)
         proxy_path = f"{base_path}.mp3"
 
@@ -233,9 +232,8 @@ def cleanup_backup_artifacts(self, max_age_hours: int = 24):
     """
     Reclaim backup working files.
 
-    The download endpoint used to promise that "the periodic cleanup task" would remove
-    exported archives. No such task existed, so every export left a full-size zip in the
-    shared volume forever. This is that task.
+    Exported archives, uploaded archives, abandoned multipart uploads, and restore
+    staging left by a worker that died mid-restore.
 
     Exports age out on a TTL rather than being deleted on first download, which keeps
     range requests and interrupted downloads resumable.
