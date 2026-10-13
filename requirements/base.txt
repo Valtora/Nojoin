@@ -1,6 +1,6 @@
-sqlmodel==0.0.47
+sqlmodel==0.0.48
 psycopg2-binary==2.9.13
-asyncpg==0.31.0
+asyncpg==0.32.0
 python-dotenv==1.2.4
 PyJWT==2.15.1
 # Imported directly by backend/core/encryption.py (Fernet). It used to arrive
@@ -20,4 +20,4 @@ httpx==0.28.1
 urllib3==2.8.0
 pillow==12.3.0
 alembic==1.20.0
-pgvector==0.5.0
+pgvector==0.5.1
