@@ -33,6 +33,28 @@ warnings.filterwarnings(
 # Cache for loaded models to avoid reloading
 _model_cache = {}
 
+# Whisper re-decodes a 30-second window by sampling at a raised temperature when
+# its greedy output fails the compression-ratio or log-probability threshold.
+# Unseeded, that sampling makes reprocessing the same recording give different
+# text wherever a window falls back. Any fixed value works; it only has to stay
+# the same between runs.
+FALLBACK_SAMPLING_SEED = 0
+
+
+def _transcribe_seeded(model, audio_path: str, device: str, **kwargs) -> dict:
+    """Run model.transcribe with its fallback sampling seeded.
+
+    fork_rng restores the global RNG state afterwards, so the seed reaches only
+    this call and not whatever else the worker samples.
+    """
+    # Fork the CUDA generator only when there is one. Asking for the current
+    # device with no driver raises, and the error then belongs to the model call.
+    use_cuda = device == "cuda" and torch.cuda.is_available()
+    devices = [torch.cuda.current_device()] if use_cuda else []
+    with torch.random.fork_rng(devices=devices):
+        torch.manual_seed(FALLBACK_SAMPLING_SEED)
+        return model.transcribe(audio_path, **kwargs)
+
 
 # --- Whisper Progress Listener Infrastructure ---
 class ProgressListener:
@@ -163,8 +185,10 @@ def transcribe_audio_with_progress(
 
                 enable_word_timestamps = platform.system().lower() != "windows"
 
-            result = model.transcribe(
+            result = _transcribe_seeded(
+                model,
                 audio_path,
+                device,
                 fp16=use_fp16,
                 verbose=None,
                 word_timestamps=enable_word_timestamps,
@@ -282,7 +306,7 @@ class WhisperEngine(TranscriptionEngine):
             if language_code:
                 transcribe_kwargs["language"] = language_code
 
-            result = model.transcribe(audio_path, **transcribe_kwargs)
+            result = _transcribe_seeded(model, audio_path, device, **transcribe_kwargs)
 
             logger.info(
                 f"Transcription completed for {audio_path}. Detected language: {result.get('language')}"
