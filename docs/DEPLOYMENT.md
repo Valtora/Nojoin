@@ -58,13 +58,13 @@ while the system is uninitialised. Setup requests are rate limited per client
 address.
 If `FIRST_RUN_PASSWORD`, `DATA_ENCRYPTION_KEY`, `REDIS_PASSWORD`, or the
 tracked PostgreSQL password placeholder are left at their example values,
-Nojoin now emits startup log warnings and an authenticated frontend warning
+Nojoin emits startup log warnings and an authenticated frontend warning
 toast. Those warnings are advisory only; operators are still responsible for
 replacing the placeholder secrets in `.env`.
 
 The compose template is already configured for GPU inference.
 
-The compose files now health-gate the web stack so `frontend` waits for a healthy `api`, and `nginx` waits for healthy `api` plus `frontend` before it is considered ready.
+The compose files health-gate the web stack so `frontend` waits for a healthy `api`, and `nginx` waits for healthy `api` plus `frontend` before it is considered ready.
 
 When doing targeted starts from a fully stopped stack, remember that Docker Compose does not auto-start an omitted dependent service. If you want the proxy back as part of a partial startup, include `nginx` explicitly:
 
@@ -162,7 +162,7 @@ killed before it could.
 
 ### Reclaiming the Old Shared /tmp Volume
 
-Deployments created before this change mounted a `backup_temp` named volume at
+Deployments created before 2.0.0 mounted a `backup_temp` named volume at
 `/tmp` in the `api` and all three `worker-*` services. That made `/tmp` both
 permanent and shared, so every temporary file any of those four services leaked
 accumulated there indefinitely, and only the export subdirectory was ever swept.
@@ -366,7 +366,7 @@ If you do not have a compatible NVIDIA GPU:
 2. Remove the `deploy` section under the `worker-gpu` service.
 3. Start the stack normally with `docker compose up -d`.
 
-Processing will be slower, but the application remains usable. All three worker
+Processing will be slower, but the application remains usable. All four worker
 lanes then run on CPU.
 
 ## Configure .env
@@ -393,7 +393,6 @@ Nojoin can also auto-generate `data/.data_encryption_key`, but operators should 
 
 ### Common Optional Values
 
-- `REDIS_PASSWORD`: Password for the internal Redis service.
 - `HF_TOKEN`: Optional Hugging Face token used only when you want to refresh the bundled Pyannote diarisation assets from upstream.
 - `DEFAULT_TIMEZONE`: Default installation timezone before a user saves their own timezone.
 - `MCP_ENABLED`: Master switch for the built-in MCP connector ([MCP.md](MCP.md)). Defaults to `true`; set to `false` to remove the `/mcp` endpoint, the OAuth discovery documents, and the connector authorisation endpoints entirely. Requires an API container restart to change.
@@ -405,7 +404,7 @@ Nojoin can also auto-generate `data/.data_encryption_key`, but operators should 
 - `OPENAI_API_KEY`: OpenAI API key.
 - `ANTHROPIC_API_KEY`: Anthropic API key.
 - `OLLAMA_API_URL`: Local or remote Ollama endpoint.
-- `OLLAMA_CONTEXT_WINDOW`: Ollama `num_ctx` value used for full-context meeting prompts. Defaults to `32768`, which covers a two-hour meeting (roughly 25,000 to 30,000 tokens). Size it against VRAM, not against the model's advertised maximum: the KV cache costs roughly 190 KiB per token on a 14B model, so `32768` is about 6 GB on top of the weights and `131072` would be about 24 GB, which no consumer card can hold. Ollama fails the load outright rather than degrading if the cache does not fit. Nojoin treats this value as a ceiling: it never raises `num_ctx` above it, and lowers it to the model's trained context length when that is smaller (Ollama would clamp it anyway). The window holds prompt and answer together. Nojoin asks Ollama to refuse a prompt that does not fit and to stop an answer that fills the window, and never saves a truncated result. A meeting longer than the window goes whole to the secondary provider when one is configured; otherwise Ollama writes its notes in parts, which takes several calls instead of one, and chat answers from the notes and the most relevant passages ([USAGE.md](USAGE.md#long-meetings-and-ollama)). Speaker suggestions or document pages over the window produce nothing. Chat drops its oldest turns to fit. This needs **Ollama 0.12.6 or later**; on older servers truncation is detected only after the call, so a streamed chat answer is withdrawn after it was shown.
+- `OLLAMA_CONTEXT_WINDOW`: Ollama `num_ctx` value used for full-context meeting prompts. Defaults to `32768`, which covers a two-hour meeting (roughly 25,000 to 30,000 tokens). Size it against VRAM, not against the model's advertised maximum: the KV cache costs roughly 190 KiB per token on a 14B model, so `32768` is about 6 GB on top of the weights and `131072` would be about 24 GB, which no consumer card can hold. Ollama fails the load outright rather than degrading if the cache does not fit. Nojoin treats this value as a ceiling, and lowers it to the model's trained context length when that is smaller. The window holds prompt and answer together, and a truncated result is never saved; [Long Meetings And Ollama](USAGE.md#long-meetings-and-ollama) describes what happens to a meeting longer than the window. This needs **Ollama 0.12.6 or later**; on older servers truncation is detected only after the call, so a streamed chat answer is withdrawn after it was shown.
 - `SECONDARY_LLM_PROVIDER`: Secondary LLM provider used when the primary fails. Same values as `LLM_PROVIDER`. Leave empty to disable fallback. With Ollama as the primary, a hosted secondary is the recommended way to handle long meetings: it receives a meeting that does not fit the Ollama window whole and answers in one call.
 - `SECONDARY_GEMINI_API_KEY`: Gemini API key for the secondary provider.
 - `SECONDARY_OPENAI_API_KEY`: OpenAI API key for the secondary provider.
@@ -430,7 +429,6 @@ Nojoin can also auto-generate `data/.data_encryption_key`, but operators should 
 - Keep the value stable across restarts, upgrades, image changes, and host migrations.
 - Store it in your secret manager, password vault, or deployment automation alongside other installation secrets.
 - Do not rotate it casually. Changing it without first re-encrypting stored secrets will make previously stored calendar credentials unreadable.
-- This is being documented explicitly as a hotfix follow-up for an oversight in `v0.8.1`, where relying on the generated key file alone could surprise operators during partial restores or host-level data replacement.
 
 ### Custom Frontend Build Value
 
@@ -804,7 +802,7 @@ Published Nojoin images are built by a hardened, gated release pipeline. Operato
 
 ### Verifying an Image Before Deploying
 
-Verify the cosign signature (replace the tag as needed):
+Verify the cosign signature (replace the tag as needed). Use cosign 3.0 or later: the images are signed with cosign 3, and cosign 2 reports `no signatures found` for them.
 
 ```bash
 cosign verify ghcr.io/valtora/nojoin-api:latest \
@@ -812,16 +810,11 @@ cosign verify ghcr.io/valtora/nojoin-api:latest \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
-Inspect the provenance and SBOM attestations:
+The provenance and SBOM are BuildKit attestations stored in the image index, not cosign attestations, so read them with `docker buildx imagetools` rather than `cosign verify-attestation`:
 
 ```bash
-# Provenance attestation
-cosign verify-attestation --type slsaprovenance ghcr.io/valtora/nojoin-api:latest \
-  --certificate-identity-regexp "^https://github.com/Valtora/Nojoin/.*$" \
-  --certificate-oidc-issuer https://token.actions.githubusercontent.com
-
-# SBOM and image index (digests, platforms, attestations)
-docker buildx imagetools inspect ghcr.io/valtora/nojoin-api:latest
+docker buildx imagetools inspect ghcr.io/valtora/nojoin-api:latest --format '{{ json .Provenance }}'
+docker buildx imagetools inspect ghcr.io/valtora/nojoin-api:latest --format '{{ json .SBOM }}'
 ```
 
 Pinning a deployment to an exact image digest (`ghcr.io/valtora/nojoin-api@sha256:...`) rather than a rolling tag guarantees you run the precise image you verified.
@@ -829,51 +822,24 @@ Pinning a deployment to an exact image digest (`ghcr.io/valtora/nojoin-api@sha25
 ## Upgrading and Migration
 
 - When performing major upgrades, check release notes for breaking changes.
-- **TLS Private Key Permissions:** For security hardening, the TLS private key (`cert.key`) generated in `nginx/` is now set to mode `600` (owner-readable only) instead of `644` (world-readable). For existing deployments, operators should manually restrict the permissions of their existing private key on the host:
+- **TLS Private Key Permissions:** The TLS private key (`cert.key`) generated in `nginx/` is created with mode `600` (owner-readable only). A key generated by an older release may still be `644` (world-readable); restrict it on the host:
   ```bash
   chmod 600 nginx/cert.key
   ```
-- **Confidential Data File Permissions:** For security hardening, all confidential application data files (audio recordings, JWT keys, logs, documents, configuration files) now default to owner-only permissions. A recursive startup repair pass automatically secures existing data inside the container-mounted directory. The pass skips symbolic links, so a link stored under the data directory never has its target re-permissioned elsewhere on the filesystem. If you are using host-mounted directories and want to align host-level permissions, you can manually restrict them:
+- **Confidential Data File Permissions:** All confidential application data files (audio recordings, JWT keys, logs, documents, configuration files) default to owner-only permissions. A recursive startup repair pass automatically secures existing data inside the container-mounted directory. The pass skips symbolic links, so a link stored under the data directory never has its target re-permissioned elsewhere on the filesystem. If you are using host-mounted directories and want to align host-level permissions, you can manually restrict them:
   ```bash
   chmod -R 700 ./data
   ```
   If you have special host-integration requirements that require group or world read access, you can configure a custom umask using the `NOJOIN_UMASK` environment variable (e.g. `NOJOIN_UMASK=0022` or `NOJOIN_UMASK=0002`).
-- **The transcription engine and model are install-wide.** The engine (`transcription_backend`) and its
-  model (`whisper_model_size`, `parakeet_model`, `canary_model`) are kept in `data/config.json` and apply
-  to every user. Releases before this one stored them per account: **Settings > Transcription**, shown
-  only to administrators, saved the choice on that administrator's own account; first-run setup saved
-  the wizard's Whisper size on the owner's account; and any settings save stored the displayed values
-  on the saving user's account. Everyone without a stored value used `config.json`.
 
-  On the first start after the upgrade, the API copies the owner's choice (the first account with the
-  owner role) into `config.json` and removes it from the owner's account, so a later start never
-  repeats it over a choice made since. The owner's value wins over what `config.json` holds, with one
-  exception: an owner value equal to the shipped default (`whisper`, `turbo`, `parakeet-tdt-0.6b-v3`,
-  `nemo-canary-1b-v2`) does not replace a different value in `config.json`. A default on the owner's
-  account may never have been a choice: first-run setup stored the wizard's Whisper size there, and the
-  settings page saves every displayed value, defaults included, whenever an administrator changes any
-  setting. The same autosave means a non-default value on the owner's account can be a snapshot of what
-  `config.json` held at the time; it still wins, even over a later hand edit of the file, because it is
-  what the owner was running. An unknown engine or Whisper size is not carried; model ids are passed to
-  the engine as given. The api log names every value carried, kept or rejected, and why. If
-  `config.json` cannot be read or written, the owner's choice stays on their account, unused, and the
-  next start tries again; until then everyone transcribes with the `config.json` engine. Workers do not
-  wait for the API, so a recording a worker picks up in the moments before the carry-over runs can
-  still be transcribed with the old `config.json` engine.
+### One-Time Migrations
 
-  After the upgrade, users who are not administrators transcribe with the install's engine and model,
-  settled as above, and with whatever an administrator picks later. That is what the settings page
-  already described. Choices stored on other accounts, other administrators' included, are not
-  carried; they are ignored, and removed when that user next saves their settings.
-- **Empty JWT signing key:** if the api log shows "The JWT signing key in … is empty", delete the file it names under `data/` (`.secret_keys.json` or `.secret_key`) and restart the api; a new key is generated and everyone signs in again.
-### One-Time Migrations From Pre-Browser-Capture Releases
-
-The notes below describe one-time migrations that run automatically when you first upgrade across the relevant cutover. They apply only if your database or installation predates that cutover. On a clean install, or on any installation already past these cutovers, they require no action and can be treated as historical context.
+The notes below describe one-time migrations that run automatically when you first upgrade across the relevant cutover. They apply only if your database or installation predates that cutover. On a clean install, or on any installation already past these cutovers, they require no action.
 
 - Browser-capture cutover: the Windows desktop helper has been retired. Users start live recordings directly from the Nojoin web app in a supported browser. Existing recordings remain viewable and process through the same backend pipeline; any remaining native-helper installs are obsolete and should be removed from user machines.
 - Canonical-pipeline cutover (first upgrade only): if the database still contains pre-cutover recordings, the first upgrade across this cutover runs a blocking backend-only canonical transcript migration during container startup after Alembic completes. Expect the API container to take longer to become ready on that first boot. During the sweep, existing recordings are classified entirely on the backend: successfully migrated legacy meetings remain viewable, while legacy meetings that cannot be canonicalised safely are marked for explicit reprocess instead of being edited in place. The supported rollback model for this cutover is code rollback only; canonical rows created during the migration are additive and are not converted back into legacy-only transcript state.
 - Live-pipeline lane-state migration: this adds ASR and diarisation fields to `recording_audio_window_manifests` and backfills them from legacy window status plus completed diarisation window results. No operator action is required beyond allowing Alembic to run during normal container startup, but take a database backup before upgrade and avoid downgrading after the migration unless you are prepared to restore from backup.
-- **RAG embedding cutover (destructive, one time).** The search and meeting-chat embedding model changes from `all-MiniLM-L6-v2` to `jina-embeddings-v2-small-en`. The old model truncated its input at roughly 256 tokens, so the tail of any real document page was never searchable; the new one has an 8192-token window, which lets a whole page be a single retrieval unit.
+- **RAG embedding cutover (2.3.0, destructive).** The search and meeting-chat embedding model changed from `all-MiniLM-L6-v2` to `jina-embeddings-v2-small-en`. The old model truncated its input at roughly 256 tokens, so the tail of any real document page was never searchable; the new one has an 8192-token window, which lets a whole page be a single retrieval unit.
 
   Vectors produced by two different models are not comparable at any width, so there is no migration path: the Alembic revision widens `context_chunks.embedding` from 384 to 512 dimensions and **deletes every existing row**. Semantic search and meeting chat return no results until the index is rebuilt.
 
@@ -885,13 +851,15 @@ The notes below describe one-time migrations that run automatically when you fir
     backend.worker.tasks.rebuild_text_embeddings_task
   ```
 
-  Re-indexing is local inference and costs nothing. Documents parsed before this release have no stored pages, so they are re-parsed structurally as part of the rebuild — never visually, so no AI provider quota is spent without being asked. Use **Parse again** on a document card to run visual analysis on one deliberately. Take a database backup before upgrading; the downgrade path is equally destructive, for the same reason.
+  Re-indexing is local inference and costs nothing. Documents parsed before 2.3.0 have no stored pages, so they are re-parsed structurally as part of the rebuild — never visually, so no AI provider quota is spent without being asked. Use **Parse again** on a document card to run visual analysis on one deliberately. Take a database backup before upgrading; the downgrade path is equally destructive, for the same reason.
 
   The new model (roughly 120 MB) downloads to the model cache the first time a worker embeds anything, so the first rebuild call on an air-gapped host will fail until the cache is populated.
 
+- **Transcription engine made install-wide (2.6.0).** The engine (`transcription_backend`) and its model (`whisper_model_size`, `parakeet_model`, `canary_model`) are kept in `data/config.json` and apply to every user; earlier releases stored them on the account of whoever saved the settings page. On the first start after the upgrade, the API copies the owner's choice into `config.json` and removes it from the owner's account. An owner value equal to the shipped default does not replace a different value already in `config.json`, because the settings page saved defaults that nobody chose. Choices stored on other accounts are ignored. The api log names every value carried, kept or rejected; if `config.json` cannot be written, the next start tries again.
+
 ### Live Pipeline Readiness Notes
 
-- Browser live capture now depends on the canonical 16 kHz, two-channel browser segment WAVs produced by the worker. Channel 0 is shared/system audio when available and channel 1 is microphone audio.
+- Browser live capture depends on the canonical 16 kHz, two-channel browser segment WAVs produced by the worker. Channel 0 is shared/system audio when available and channel 1 is microphone audio.
 - Segment sequences start at `0`. Operators investigating upload or finalization failures should check for missing sequence numbers before assuming ASR or diarisation failure.
 - Recording detail pages expose only high-level progress, waveform state, and Meeting Edge guidance during live capture.
 - Final processing reuses live transcript and source-channel speaker evidence only after stable-id or clear overlap alignment. Ambiguous live/final spans are intentionally left to final ASR and diarisation output.
@@ -899,7 +867,7 @@ The notes below describe one-time migrations that run automatically when you fir
 
 ### Canonical Cutover Notes
 
-- The container entrypoint now runs Alembic first and then runs a second backend-only startup cutover pass before the API process starts serving traffic.
+- The container entrypoint runs Alembic first and then runs a second backend-only startup cutover pass before the API process starts serving traffic.
 - The startup cutover acquires a database-level lock so only one upgraded instance performs the legacy-recording sweep at a time.
 - Historical meetings from before the unified pipeline are supported for viewing and explicit reprocess. They are not guaranteed to preserve transcript-edit or speaker-edit parity without reprocessing.
 - For local recovery or debugging only, `NOJOIN_SKIP_STARTUP_CANONICAL_CUTOVER=1` skips the second startup cutover pass. Do not rely on that flag as a normal production rollout strategy.
