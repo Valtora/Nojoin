@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useOnDepsChange } from "@/lib/useOnDepsChange";
 
 import { getTranscriptUtterances } from "@/lib/api/transcript";
 import { isLiveCaptureInProgress } from "@/lib/liveCapture";
@@ -52,6 +53,15 @@ export function useLiveTranscript(
   const [hasLoaded, setHasLoaded] = useState(false);
   const stateRef = useRef<LocalTranscriptState | null>(null);
 
+  // A feed that starts, or restarts for another recording, shows nothing until
+  // its first fetch lands, so one recording's lines never sit under another's.
+  useOnDepsChange([recordingId, isLive], () => {
+    if (recordingId && isLive) {
+      setSegments([]);
+      setHasLoaded(false);
+    }
+  });
+
   useEffect(() => {
     if (!recordingId || !isLive) {
       return;
@@ -59,8 +69,6 @@ export function useLiveTranscript(
 
     let cancelled = false;
     stateRef.current = null;
-    setSegments([]);
-    setHasLoaded(false);
 
     const sync = async (mode: "full" | "delta") => {
       const current = stateRef.current;

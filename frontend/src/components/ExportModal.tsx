@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { useOnDepsChange } from "@/lib/useOnDepsChange";
 import { FileText, StickyNote, Files, Download, Music } from "lucide-react";
 import Button from "./ui/Button";
 import Modal from "./ui/Modal";
@@ -25,12 +26,10 @@ export default function ExportModal({
   const [selected, setSelected] = useState<ExportContentType>("transcript");
   const [format, setFormat] = useState<ExportFormat>("txt");
 
-  // Reset selection when modal opens
-  useEffect(() => {
-    if (isOpen) {
-      setSelected("transcript");
-    }
-  }, [isOpen]);
+  // Reset the selection when the modal opens
+  useOnDepsChange([isOpen], () => {
+    if (isOpen) setSelected("transcript");
+  });
 
   const handleExport = () => {
     onExport(selected, format);

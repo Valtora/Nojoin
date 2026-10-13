@@ -272,8 +272,11 @@ export default function NotesView({
     } else {
       setCurrentMatchIndex(-1);
     }
+    // currentMatchIndex is clamped here rather than depended on: listing it
+    // would recompute every match on each next/previous step. Content changes
+    // reach this effect through the editor instance.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [findText, showSearch, caseSensitive, isFuzzy, useRegex, editor]); // Depend on editor instance (and content updates via it)
+  }, [findText, showSearch, caseSensitive, isFuzzy, useRegex, editor]);
 
   // Sync matches with SearchExtension and handle scrolling
   useEffect(() => {

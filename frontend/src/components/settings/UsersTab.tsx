@@ -82,6 +82,8 @@ export default function UsersTab() {
 
   useEffect(() => {
     fetchUsers();
+    // fetchUsers is redefined every render; the page and the debounced search
+    // term are the only inputs that should start a fetch.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, debouncedSearch]);
 

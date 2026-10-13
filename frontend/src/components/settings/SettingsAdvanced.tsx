@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useId, useState, type ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
+import { useOnDepsChange } from "@/lib/useOnDepsChange";
 import { ChevronRight } from "lucide-react";
 
 import { cn } from "@/lib/cn";
@@ -37,11 +38,9 @@ export default function SettingsAdvanced({
   const [open, setOpen] = useState(forceOpen);
   const contentId = useId();
 
-  useEffect(() => {
-    if (forceOpen) {
-      setOpen(true);
-    }
-  }, [forceOpen]);
+  useOnDepsChange([forceOpen], () => {
+    if (forceOpen) setOpen(true);
+  });
 
   return (
     // A group, not a container: the disclosure toggles sibling cards into view

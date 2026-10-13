@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback } from 'react';
+import { useHydrated } from '@/lib/useHydrated';
 import { Upload, FileAudio, CheckCircle, Calendar, FileText } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
@@ -32,7 +33,7 @@ const getFileExtension = (filename: string): string => {
 };
 
 export default function ImportAudioModal({ isOpen, onClose, onSuccess }: ImportAudioModalProps) {
-  const [mounted, setMounted] = useState(false);
+  const mounted = useHydrated();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [meetingName, setMeetingName] = useState('');
   const [recordedAt, setRecordedAt] = useState<Date | null>(null);
@@ -47,11 +48,6 @@ export default function ImportAudioModal({ isOpen, onClose, onSuccess }: ImportA
   const dropZoneRef = useRef<HTMLDivElement>(null);
 
   const supportedFormats = getSupportedAudioFormats();
-
-  useEffect(() => {
-    setMounted(true);
-    return () => setMounted(false);
-  }, []);
 
   const resetState = useCallback(() => {
     setSelectedFile(null);

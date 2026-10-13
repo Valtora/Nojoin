@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useOnDepsChange } from '@/lib/useOnDepsChange';
 import { Plus, Check } from 'lucide-react';
 import { getTags, createTag } from '@/lib/api';
 import { Tag } from '@/types';
@@ -23,21 +24,27 @@ export default function BatchTagModal({ isOpen, onClose, onApply, count, mode }:
   const [inputValue, setInputValue] = useState('');
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
 
-  const loadTags = useCallback(async () => {
-    try {
-      const data = await getTags();
-      setTags(data);
+  const loadTags = useCallback(
+    () =>
+      getTags()
+        .then(setTags)
+        .catch((error: unknown) => {
+          console.error('Failed to load tags:', error);
+        }),
+    [],
+  );
 
-        } catch (error: unknown) {
-      console.error('Failed to load tags:', error);
+  // The form clears on every open; the tag list is refreshed by the effect.
+  useOnDepsChange([isOpen], () => {
+    if (isOpen) {
+      setInputValue('');
+      setSelectedTag(null);
     }
-  }, []);
+  });
 
   useEffect(() => {
     if (isOpen) {
       void loadTags();
-      setInputValue('');
-      setSelectedTag(null);
     }
   }, [isOpen, loadTags]);
 

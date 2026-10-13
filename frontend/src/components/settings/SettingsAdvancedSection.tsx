@@ -37,6 +37,7 @@ export default function SettingsAdvancedSection({
   useEffect(() => {
     const hash = window.location.hash.slice(1);
     if (hash && advanced.some((entry) => entry.id === hash)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- the hash exists only in the browser; read during render it would hydrate differently from the server
       setForceOpen(true);
     }
   }, [advanced]);

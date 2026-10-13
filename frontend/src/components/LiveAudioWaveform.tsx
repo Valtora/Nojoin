@@ -118,6 +118,7 @@ export default function LiveAudioWaveform({
     };
 
     if (!enabled) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- this effect is the reducer over the level feed: every sample folds into the history and scale through the refs it also advances, so the writes belong with the sample
       setAudioHistory(zeroHistory());
       resetActivityTracking();
       dynamicMinRef.current = 0;

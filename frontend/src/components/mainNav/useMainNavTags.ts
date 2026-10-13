@@ -63,15 +63,15 @@ export function useMainNavTags() {
     onConfirm: () => {},
   });
 
-  const loadTags = useCallback(async () => {
-    try {
-      const data = await getTags();
-      setTags(data);
-
-        } catch (error: unknown) {
-      console.error("Failed to load tags:", error);
-    }
-  }, []);
+  const loadTags = useCallback(
+    () =>
+      getTags()
+        .then(setTags)
+        .catch((error: unknown) => {
+          console.error("Failed to load tags:", error);
+        }),
+    [],
+  );
 
   useEffect(() => {
     void loadTags();

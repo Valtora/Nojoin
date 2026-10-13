@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { useOnDepsChange } from "@/lib/useOnDepsChange";
 import { RefreshCw, AlertTriangle } from "lucide-react";
 import Button from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
@@ -53,14 +54,14 @@ export default function ReprocessDialog({
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const { addNotification } = useNotificationStore();
 
-  useEffect(() => {
+  useOnDepsChange([isOpen, defaultBackend, currentMaxSpeakers], () => {
     if (isOpen) {
       setBackend(defaultBackend);
       setWhisperModelSize(DEFAULT_WHISPER_MODEL_SIZE);
       setMaxSpeakers(currentMaxSpeakers);
       setIsSubmitting(false);
     }
-  }, [isOpen, defaultBackend, currentMaxSpeakers]);
+  });
 
   if (!isOpen) return null;
 

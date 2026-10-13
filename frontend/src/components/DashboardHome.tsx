@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useMemo } from "react";
+import { useHydrated } from "@/lib/useHydrated";
 
 import { getBrowserTimeZone } from "@/lib/timezone";
 
@@ -20,13 +21,13 @@ export default function DashboardHome() {
   // dashboard owns the fetch and hands the same state to both. Calling the hook
   // inside each module would request the month summary twice.
   const calendar = useCalendarDashboard();
-  const [timeZone, setTimeZone] = useState("UTC");
-
-  // Resolved after mount rather than during render, because the server has no
-  // browser time zone and a mismatch would hydrate differently.
-  useEffect(() => {
-    setTimeZone(getBrowserTimeZone());
-  }, []);
+  // Resolved only once hydrated, because the server has no browser time zone
+  // and a mismatch would hydrate differently.
+  const hydrated = useHydrated();
+  const timeZone = useMemo(
+    () => (hydrated ? getBrowserTimeZone() : "UTC"),
+    [hydrated],
+  );
 
   // A module with nothing to say does not render. The calendar, the agenda,
   // Meet Now and the task list are the floor, so a new account sees a dashboard

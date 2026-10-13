@@ -26,6 +26,7 @@ import ImportAudioButton from "./importAudio/ImportAudioButton";
 import RecordingInfoModal from "./RecordingInfoModal";
 import MeetingControls from "./MeetingControls";
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { useHydrated } from "@/lib/useHydrated";
 import {
   getRecordings,
   getGlobalSpeakers,
@@ -134,7 +135,7 @@ export default function Sidebar() {
     toggleRecordingsSidebarCollapse,
   } = useNavigationStore();
 
-  const [mounted, setMounted] = useState(false);
+  const mounted = useHydrated();
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [hasLoadedRecordings, setHasLoadedRecordings] = useState(false);
   const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(
@@ -353,13 +354,13 @@ export default function Sidebar() {
   ]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetchRecordings only sets state once its request resolves; the rule cannot see past the await
     fetchRecordings();
     const interval = setInterval(fetchRecordings, 15000);
     return () => clearInterval(interval);
   }, [fetchRecordings]);
 
   useEffect(() => {
-    setMounted(true);
     getGlobalSpeakers().then(setGlobalSpeakers).catch(console.error);
   }, []);
 

@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
+import { useOnDepsChange } from '@/lib/useOnDepsChange';
 import { Link as LinkIcon } from 'lucide-react';
 
 import Button from './ui/Button';
@@ -17,11 +18,9 @@ interface LinkModalProps {
 export default function LinkModal({ isOpen, onClose, onSubmit, initialUrl = '' }: LinkModalProps) {
   const [url, setUrl] = useState(initialUrl);
 
-  useEffect(() => {
-    if (isOpen) {
-      setUrl(initialUrl);
-    }
-  }, [isOpen, initialUrl]);
+  useOnDepsChange([isOpen, initialUrl], () => {
+    if (isOpen) setUrl(initialUrl);
+  });
 
   const handleSubmit = (e?: React.FormEvent) => {
     e?.preventDefault();

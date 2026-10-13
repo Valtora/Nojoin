@@ -1,7 +1,8 @@
 'use client';
 
 import { AlertTriangle, FileArchive } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { useOnDepsChange } from '@/lib/useOnDepsChange';
 import { Switch } from '@/components/ui/Switch';
 
 import Button from '../ui/Button';
@@ -24,12 +25,12 @@ export default function RestoreOptionsModal({
     const [overwriteExisting, setOverwriteExisting] = useState(false);
 
     // Reset state when opened
-    useEffect(() => {
+    useOnDepsChange([isOpen], () => {
         if (isOpen) {
             setClearExisting(false);
             setOverwriteExisting(false);
         }
-    }, [isOpen]);
+    });
 
     const optionClass = (selected: boolean) =>
         `flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors ${

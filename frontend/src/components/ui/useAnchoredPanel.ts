@@ -1,6 +1,7 @@
 "use client";
 
 import { type RefObject, useCallback, useLayoutEffect, useRef, useState } from "react";
+import { useOnDepsChange } from "@/lib/useOnDepsChange";
 
 /**
  * Anchors a floating panel to a trigger with viewport-relative positioning.
@@ -102,9 +103,14 @@ export function useAnchoredPanel<Panel extends HTMLElement = HTMLElement>(
     });
   }, [anchorRef, matchAnchorWidth]);
 
+  // Closing drops the measured style, so the next open starts from the hidden
+  // measuring pass rather than a stale position.
+  useOnDepsChange([open], () => {
+    if (!open) setStyle(null);
+  });
+
   useLayoutEffect(() => {
     if (!open) {
-      setStyle(null);
       return;
     }
     reposition();

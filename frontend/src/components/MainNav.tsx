@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { useHydrated } from "@/lib/useHydrated";
 import { useRouter, usePathname } from "next/navigation";
 import Image from "next/image";
 import {
@@ -102,7 +103,7 @@ export default function MainNav() {
     handleExpandAllTags,
   } = useMainNavTags();
 
-  const [mounted, setMounted] = useState(false);
+  const mounted = useHydrated();
 
   // Modal states
   const [isNotificationModalOpen, setIsNotificationModalOpen] = useState(false);
@@ -110,10 +111,6 @@ export default function MainNav() {
   const handleLogout = async () => {
     await logout();
   };
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   // Handle resize
   useEffect(() => {

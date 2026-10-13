@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useSyncExternalStore } from "react";
 
 import type { CaptureLevels } from "./shared";
 import { DEFAULT_CAPTURE_LEVELS } from "./shared";
@@ -71,20 +71,25 @@ export const createWaveformMonitor = (options: {
   };
 };
 
+const defaultLevels = (): CaptureLevels => DEFAULT_CAPTURE_LEVELS;
+
+/**
+ * The controller's current levels, re-rendering on every sample.
+ *
+ * The controller is an external store, so useSyncExternalStore reads it
+ * directly rather than copying each sample into state from an effect. Its
+ * state object is replaced on every update, so `levels` is a stable reference
+ * between samples and React can tell a new sample from a re-render.
+ */
 export const useLiveWaveform = (controller: CaptureController | null) => {
-  const [levels, setLevels] = useState<CaptureLevels>(DEFAULT_CAPTURE_LEVELS);
-
-  useEffect(() => {
-    if (!controller) {
-      setLevels(DEFAULT_CAPTURE_LEVELS);
-      return;
-    }
-
-    setLevels(controller.getState().levels);
-    return controller.subscribe((nextState) => {
-      setLevels(nextState.levels);
-    });
-  }, [controller]);
-
-  return levels;
+  const subscribe = useCallback(
+    (onChange: () => void) =>
+      controller ? controller.subscribe(onChange) : () => {},
+    [controller],
+  );
+  const getLevels = useCallback(
+    () => (controller ? controller.getState().levels : DEFAULT_CAPTURE_LEVELS),
+    [controller],
+  );
+  return useSyncExternalStore(subscribe, getLevels, defaultLevels);
 };

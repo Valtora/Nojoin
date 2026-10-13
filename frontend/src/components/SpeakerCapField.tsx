@@ -1,7 +1,8 @@
 "use client";
 
 import { Info, Minus, Plus, Users } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
+import { useOnDepsChange } from "@/lib/useOnDepsChange";
 
 export const MIN_SPEAKER_CAP = 1;
 export const MAX_SPEAKER_CAP = 50;
@@ -81,16 +82,16 @@ export default function SpeakerCapField({
   const [invalid, setInvalid] = useState(false);
   // Only adopt an external value when the user is not mid-edit, so a poll that
   // refreshes the recording cannot yank the field out from under them.
-  const editing = useRef(false);
+  const [editing, setEditing] = useState(false);
 
-  useEffect(() => {
-    if (!editing.current) {
+  useOnDepsChange([value], () => {
+    if (!editing) {
       setDraft(value == null ? "" : String(value));
     }
-  }, [value]);
+  });
 
   const commit = (raw: string) => {
-    editing.current = false;
+    setEditing(false);
     const parsed = parseSpeakerCap(raw);
     if (parsed === undefined) {
       setInvalid(true);
@@ -107,7 +108,7 @@ export default function SpeakerCapField({
   const step = (direction: 1 | -1) => {
     const next = steppedSpeakerCap(value, direction);
     if (next === undefined) return;
-    editing.current = false;
+    setEditing(false);
     setInvalid(false);
     setDraft(next == null ? "" : String(next));
     void onCommit(next);
@@ -165,10 +166,10 @@ export default function SpeakerCapField({
         aria-invalid={invalid || undefined}
         aria-describedby={hintId}
         onFocus={() => {
-          editing.current = true;
+          setEditing(true);
         }}
         onChange={(event) => {
-          editing.current = true;
+          setEditing(true);
           setInvalid(false);
           setDraft(event.target.value);
         }}
@@ -178,7 +179,7 @@ export default function SpeakerCapField({
             event.currentTarget.blur();
           }
           if (event.key === "Escape") {
-            editing.current = false;
+            setEditing(false);
             setInvalid(false);
             setDraft(value == null ? "" : String(value));
             event.currentTarget.blur();
