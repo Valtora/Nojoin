@@ -146,48 +146,45 @@ def transcribe_audio_with_progress(
             logger.info(f"Whisper model {model_size} loaded successfully.")
         model = _model_cache[model_size]
 
-        if True:  # Retained scope guard; kept to preserve the block's indentation.
-            try:
-                use_fp16 = device == "cuda"
+        try:
+            use_fp16 = device == "cuda"
 
-                if cancel_check and cancel_check():
-                    logger.info(
-                        "Transcription cancelled before starting model.transcribe."
-                    )
-                    return None
+            if cancel_check and cancel_check():
+                logger.info("Transcription cancelled before starting model.transcribe.")
+                return None
 
-                # Word timestamps default on, except on Windows;
-                # WHISPER_ENABLE_WORD_TIMESTAMPS overrides.
-                env_var = os.environ.get("WHISPER_ENABLE_WORD_TIMESTAMPS")
-                if env_var is not None:
-                    enable_word_timestamps = env_var.lower() == "true"
-                else:
-                    import platform
+            # Word timestamps default on, except on Windows;
+            # WHISPER_ENABLE_WORD_TIMESTAMPS overrides.
+            env_var = os.environ.get("WHISPER_ENABLE_WORD_TIMESTAMPS")
+            if env_var is not None:
+                enable_word_timestamps = env_var.lower() == "true"
+            else:
+                import platform
 
-                    enable_word_timestamps = platform.system().lower() != "windows"
+                enable_word_timestamps = platform.system().lower() != "windows"
 
-                result = model.transcribe(
-                    audio_path,
-                    fp16=use_fp16,
-                    verbose=None,
-                    word_timestamps=enable_word_timestamps,
-                )
+            result = model.transcribe(
+                audio_path,
+                fp16=use_fp16,
+                verbose=None,
+                word_timestamps=enable_word_timestamps,
+            )
 
-                if cancel_check and cancel_check():
-                    logger.info("Transcription cancelled after model.transcribe.")
-                    return None
+            if cancel_check and cancel_check():
+                logger.info("Transcription cancelled after model.transcribe.")
+                return None
 
-                if progress_callback:
-                    progress_callback(100)
+            if progress_callback:
+                progress_callback(100)
 
-                logger.info(
-                    f"Transcription completed for {audio_path}. Detected language: {result.get('language')}"
-                )
-                return result
+            logger.info(
+                f"Transcription completed for {audio_path}. Detected language: {result.get('language')}"
+            )
+            return result
 
-            except Exception as e:
-                logger.error(f"Error during transcription: {e}", exc_info=True)
-                raise
+        except Exception as e:
+            logger.error(f"Error during transcription: {e}", exc_info=True)
+            raise
 
     except Exception as e:
         logger.error(
