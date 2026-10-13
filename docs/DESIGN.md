@@ -118,9 +118,8 @@ fill with `text-action-on`, never with a literal white.
 
 Two things here are not obvious.
 
-**The fill is orange-700, not the orange-600 this product used to use.** White on orange-600 is
-3.56:1, short of the 4.5:1 held to for all text including button labels. This is the most visible
-change the restyle makes to the interface.
+**The fill is orange-700, not orange-600.** White on orange-600 is 3.56:1, short of the 4.5:1
+held to for all text including button labels.
 
 **`--action` and `--action-text` are separate tokens.** One colour cannot do both jobs, because a
 fill is judged by the label on it while text is judged by the surface under it, and in dark mode
@@ -418,7 +417,7 @@ the markup, so nothing is rendered twice and no width has to be measured in Java
 **A panel that subdivides must query itself, not the window.** Meeting Edge splits into two lists
 side by side, and did so at the `xl` *viewport* breakpoint: at a 1280px window it subdivided a
 400px column and wrapped both lists to three words a line. Any `grid-cols` inside a panel that can
-land in a column belongs behind a container query on that panel. Settings now complies wholesale:
+land in a column belongs behind a container query on that panel. Settings complies wholesale:
 `SettingsBlock` and `SettingsCard` are containers, `SettingsRow` switches its label-beside-control
 layout on its own width, and every grid under `components/settings/` queries its block or card.
 The calendar provider credentials card is the cautionary tale: its two-provider grid engaged on
@@ -617,15 +616,15 @@ inverse and ghost buttons, the marketing type scale, and the three marketing eff
 Those are tokens rather than literals precisely so the contrast audit can measure them.
 
 **The code block is dark in both themes**, on its own `--code-bg` rather than the shared
-`--surface-inset`, and it is the one surface on the site that does not follow the theme. It
-used to: the text was legible either way, but composited over the page the block came out at
-1.04:1 in light and 1.07:1 in dark, so it read as a faint rectangle rather than a panel. That
+`--surface-inset`, and it is the one surface on the site that does not follow the theme. A
+themed block kept its text legible, but composited over the page it came out at 1.04:1 in light
+and 1.07:1 in dark, so it read as a faint rectangle rather than a panel. That
 is a separation problem, not a legibility one, and the contrast gate is silent on it because
 AA has nothing to say about a decorative fill against the page behind it. Following the theme
 could not have fixed dark in any case — the page is already near-black, so the furthest a
 darker fill gets is about 1.1:1. A dark block reaches 16.96:1 against the light page, keeps
 the worst syntax pairing at 6.92:1, and is what a reader expects code to look like. One
-syntax palette now serves both themes.
+syntax palette serves both themes.
 
 The site takes three deliberate departures from the flat canon, all site-only:
 

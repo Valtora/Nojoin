@@ -66,18 +66,21 @@ The `CI` workflow runs these checks on pull requests and on pushes to `main`. To
 
 | Check | Runs when |
 | --- | --- |
-| `Backend tests` | `backend/**`, `requirements/**`, `pyproject.toml`, or a deployment path changed |
+| `Backend tests` | `backend/**`, `requirements/**`, `pyproject.toml`, `frontend/src/lib/processingTuning.json`, or a deployment path changed |
 | `Migrations (Postgres)` | `backend/alembic/**`, `backend/models/**`, `scripts/check_migrations.py`, or a deployment path changed |
 | `Python quality` (Ruff lint, Ruff format check, and mypy on enforced boundaries) | as `Backend tests`, plus `scripts/**` |
 | `Frontend lint` | `frontend/**` or a deployment path changed |
 | `Frontend unit tests` | same as `Frontend lint` |
 | `Frontend build` | same as `Frontend lint` |
+| `Site build` (Astro build and the contrast gate) | `site/**`, `frontend/src/app/tokens.css`, `frontend/scripts/check-contrast.mjs`, or a deployment path changed |
 | `Telemetry worker` (tsc and vitest on the ingest) | `telemetry/**` changed |
 | `Whitespace check` | always (the only trailing-whitespace guard for non-Python files) |
 | `Docs validation` | always |
 | `Alembic validation` | always |
+| `Held pin drift check` | always |
+| `Dependency vulnerability scan` (Trivy, informational) | always; it never fails and is not part of `CI gate` |
 
-A `detect-changes` job (using `dorny/paths-filter`) classifies the diff into `backend`, `frontend`, `scripts`, `migrations`, and `deployment`. The deployment filter — `docker/**`, `docker-compose*.yml`, `nginx/**`, and `.github/workflows/ci.yml` — runs **both** the backend and frontend suites, because a Dockerfile, compose, nginx, or CI-workflow change can break the built images or the test pipeline even when no application code changed; this also keeps CI consistent with the deployment/release verification policy in [CONTRIBUTING.md](../.github/CONTRIBUTING.md#merge-requirements). Only `ci.yml` is included from `.github/workflows/`: it defines the suites, so editing it must re-exercise them. Other workflows (such as the tag-driven [release pipeline](#release-workflow-and-version-detection)) cannot be validated by the unit suites and run on their own triggers — the release pipeline re-runs the full validation set on every tag push — so a change to them is not gated here and runs only the always-on validators. The `scripts` filter runs the `Python quality` job (which lints and type-checks scripts and runs the validators) without the full `Backend tests` suite, since the standalone tooling under `scripts/` is not imported by the backend tests. Each heavy job gates on these outputs; a job that does not apply is **skipped**, not run. The single required status check is **`CI gate`**, an aggregate job that depends on all of the above and passes only when none of them failed — treating a skipped job as a pass. Because `CI gate` always reports a status, a documentation-only pull request (which skips the backend and frontend jobs) is never left waiting on a check that never runs. This is why branch protection requires `CI gate` rather than the individual job names.
+A `detect-changes` job (using `dorny/paths-filter`) classifies the diff into `backend`, `frontend`, `site`, `scripts`, `migrations`, `telemetry`, and `deployment`. The deployment filter — `docker/**`, `docker-compose*.yml`, `nginx/**`, and `.github/workflows/ci.yml` — runs **both** the backend and frontend suites, because a Dockerfile, compose, nginx, or CI-workflow change can break the built images or the test pipeline even when no application code changed; this also keeps CI consistent with the deployment/release verification policy in [CONTRIBUTING.md](../.github/CONTRIBUTING.md#merge-requirements). Only `ci.yml` is included from `.github/workflows/`: it defines the suites, so editing it must re-exercise them. Other workflows (such as the tag-driven [release pipeline](#release-workflow-and-version-detection)) cannot be validated by the unit suites and run on their own triggers — the release pipeline re-runs the full validation set on every tag push — so a change to them is not gated here and runs only the always-on validators. The `scripts` filter runs the `Python quality` job (which lints and type-checks scripts and runs the validators) without the full `Backend tests` suite, since the standalone tooling under `scripts/` is not imported by the backend tests. Each heavy job gates on these outputs; a job that does not apply is **skipped**, not run. The single required status check is **`CI gate`**, an aggregate job that depends on every job above except the dependency scan and passes only when none of them failed — treating a skipped job as a pass. Because `CI gate` always reports a status, a documentation-only pull request (which skips the backend and frontend jobs) is never left waiting on a check that never runs. This is why branch protection requires `CI gate` rather than the individual job names.
 
 Local equivalents:
 
@@ -103,9 +106,9 @@ npm run typecheck
 npm test
 ```
 
-### Branch Protection (maintainer action)
+### Branch Protection
 
-Required status checks and required reviewers are enforced through GitHub branch-protection settings, which cannot be applied from the repository tree. Apply them once on `main` with an authenticated `gh`:
+Required status checks and required reviewers are enforced through GitHub branch-protection settings, which live outside the repository tree. `main` carries the configuration below; to restore it, apply it with an authenticated `gh`:
 
 ```bash
 gh api -X PUT repos/Valtora/Nojoin/branches/main/protection --input - <<'JSON'
@@ -118,6 +121,7 @@ gh api -X PUT repos/Valtora/Nojoin/branches/main/protection --input - <<'JSON'
   },
   "enforce_admins": true,
   "required_pull_request_reviews": {
+    "dismiss_stale_reviews": true,
     "require_code_owner_reviews": false,
     "required_approving_review_count": 0
   },
@@ -140,8 +144,6 @@ JSON
 
 **When a second maintainer joins**, set `require_code_owner_reviews` to `true` and raise `required_approving_review_count` to `1` to turn this into a genuine second-reviewer gate.
 
-This step is maintainer-action-pending: it is documented here but not enforced from the repository tree.
-
 **Do not add the release jobs to this required-checks list.** The required context is the single `CI gate` job, which the CI workflow reports on every pull request. The release jobs (`server-release`/`Build, scan & sign images`, `worker-io-release`/`Build, scan & sign worker-io image`, `health-smoke`/`Image health & non-root smoke`, `publish-mutable-tags`/`Publish rolling tags`, `publish-release-notes`/`Publish release notes` in [release.yml](../.github/workflows/release.yml)) only run on a tag push or `workflow_dispatch`, never on a pull request. If they were added here, GitHub would leave them permanently "Expected" on every PR commit — they would never report, and **every merge to `main` would be blocked**. Branch protection on `main` also does not govern tag creation, so it cannot gate a release at all. The same reasoning is why the individual CI jobs are not required directly: they are skipped by the path filter when irrelevant, so only the always-reporting `CI gate` aggregate is safe to require.
 
 The release pipeline is instead self-gating through the workflow's own `needs:` dependency graph: `publish-mutable-tags` depends on `server-release`, `worker-io-release`, and `health-smoke`, and `publish-release-notes` depends on `publish-mutable-tags`. A failed scan, smoke, or signing step therefore stops the rolling tags from ever publishing, with no branch-protection setting required or possible. Keep that ordering intact when editing the release workflow.
@@ -151,8 +153,8 @@ The release pipeline is instead self-gating through the workflow's own `needs:` 
 - Backend or worker code: run `pytest`.
 - Bulk database writes or reads whose size follows the data: see [Bind Parameter Limits](#bind-parameter-limits) below, and run `pytest` with `NOJOIN_TEST_POSTGRES_URL` set.
 - Frontend code: run `npm run lint`, `npm run check:contrast`, `npm run test`, and `npm run build`.
-- Design token changes in `frontend/src/app/globals.css`: `npm run check:contrast` measures the declared pairings in both themes and fails on any that drops below its threshold. Adding a token that participates in a foreground/background relationship means adding that pairing to `frontend/scripts/check-contrast.mjs`; see [DESIGN.md](DESIGN.md#accessibility) for the thresholds and what they apply to.
-- Marketing site changes under `site/`: `cd site && npm ci && npm run build`, on Node 26 with the npm it bundles, matching CI and the deploy job. Use `npm ci`, never `npm install`: an older npm rewrites `site/package-lock.json` in ways CI rejects. Preview the built output with `npm run serve` on port 4322 rather than `npm run dev`, and check horizontal overflow at 360px and 1920px in both themes. [SITE.md](SITE.md) carries the full runbook, including sharing a preview through a Cloudflare quick tunnel and which `cloudflared` process must never be touched.
+- Design token changes in `frontend/src/app/tokens.css` or `palettes.css`: `npm run check:contrast` measures the declared pairings in both themes and fails on any that drops below its threshold. Adding a token that participates in a foreground/background relationship means adding that pairing to `frontend/scripts/check-contrast.mjs`; see [DESIGN.md](DESIGN.md#accessibility) for the thresholds and what they apply to.
+- Marketing site changes under `site/`: `cd site && npm ci && npm run build`, on Node 26 with the npm it bundles, matching CI and the deploy job. Use `npm ci`, never `npm install`: an older npm rewrites `site/package-lock.json` in ways CI rejects. Preview the built output with `npm run serve` on port 4322 rather than `npm run dev`, and check horizontal overflow at 360px and 1920px in both themes. [SITE.md](SITE.md) carries the full runbook, including sharing a preview through a Cloudflare quick tunnel and stopping that tunnel safely.
 - Browser capture changes: run the frontend checks and perform manual smoke coverage for share picker behaviour, selected microphone behaviour, waveform/live state, pause/resume, stop/finalize, discard, and unsupported-browser messaging.
 - Documentation-only changes: run `python3 scripts/validate_docs.py`.
 - Alembic migration changes: run `python3 scripts/validate_alembic.py` and keep exactly one checked-in head revision. Also run `python3 scripts/check_migrations.py` against a throwaway Postgres — `validate_alembic.py` only proves the revision graph resolves, and a migration that is well-formed can still abort on real data.
@@ -260,11 +262,11 @@ Practical use:
 - Run `docker compose up -d --build worker-gpu worker-cpu worker-io worker-parse` after worker code, dependency, or worker-image changes. Name all four: they do not all share one image. `worker-gpu` and `worker-cpu` run the shared worker image, `worker-io` layers the subscription-CLI tooling on top of it, and `worker-parse` runs the `worker-io` image without building anything of its own. Compose builds each image once and recreates the four containers.
 - Run `docker compose up -d --build frontend` after frontend changes that you want to verify through Nginx.
 
-The compose files now gate `frontend` on a healthy `api`, and gate `nginx` (or `nginx-dev` in development) on healthy `api` plus `frontend`, so the proxy waits for both application tiers before becoming ready.
+The compose files gate `frontend` on a healthy `api`, and gate `nginx` (or `nginx-dev` in development) on healthy `api` plus `frontend`, so the proxy waits for both application tiers before becoming ready.
 
 Docker Compose still does not auto-start an omitted dependent service from a stopped stack. If the Nginx proxy service is not already running and you want `https://localhost:14443` to come back as part of a targeted start, include it explicitly.
 
-For development environments using `docker-compose.yaml`:
+For the localhost dev template, whose proxy service is `nginx-dev`:
 
 ```bash
 docker compose up -d --build api frontend nginx-dev
@@ -336,7 +338,7 @@ If you want the fastest UI feedback loop, you can instead run Next.js on the hos
 
 In host-run frontend mode:
 
-- rebuilding the `frontend` container no longer changes what `https://localhost:14443` serves
+- rebuilding the `frontend` container does not change what `https://localhost:14443` serves
 - you must keep the host Next.js process running yourself
 - you should patch both your local `docker-compose.yml` and your local `nginx/nginx.conf` together so Nginx proxies to the host frontend instead of the `frontend` container
 
@@ -390,7 +392,7 @@ python3 scripts/validate_alembic.py
 Development guardrails:
 
 - Do not delete or rename committed Alembic revision files once a database may have applied them.
-- Container startup now runs two backend migration stages in order: Alembic first, then the startup canonical cutover sweep for pending legacy recordings.
+- Container startup runs two backend migration stages in order: Alembic first, then the startup canonical cutover sweep for pending legacy recordings.
 - `python -m backend.startup_canonical_cutover` is the backend-only local entry point for the legacy recording sweep. Use it when you need to exercise or debug the container-level cutover without booting the full API service.
 - `NOJOIN_SKIP_STARTUP_CANONICAL_CUTOVER=1` is available for local debugging only when you need to bypass that sweep temporarily.
 - `NOJOIN_STARTUP_CANONICAL_CUTOVER_BATCH_SIZE` controls the batch size used by the startup cutover loop. The default is `100`.
@@ -602,7 +604,7 @@ can be.
 
 ### Unified Release Process
 
-Nojoin uses a single Git tag (`vX.Y.Z`) to trigger the API, Worker, and Frontend release builds in lock-step. The maintainer steps are unchanged by the supply-chain hardening; what changed is that more happens automatically after the tag is pushed, and the release can now be blocked by a gate.
+Nojoin uses a single Git tag (`vX.Y.Z`) to trigger the API, Worker, and Frontend release builds in lock-step. Everything after the tag push is automatic, and a failed gate blocks the release.
 
 **Maintainer steps (manual):**
 
@@ -615,7 +617,7 @@ Nojoin uses a single Git tag (`vX.Y.Z`) to trigger the API, Worker, and Frontend
    git tag v0.6.0
    git push origin v0.6.0
    ```
-4. **Refine release notes (after the run succeeds)**: The pipeline creates the GitHub Release automatically (see below). Edit its editorial sections — Migration, Rollback, Known Issues, Browser-Capture Compatibility — in the GitHub Releases interface where the release needs specific guidance. You no longer author release notes from scratch.
+4. **Refine release notes (after the run succeeds)**: The pipeline creates the GitHub Release automatically (see below). Edit its editorial sections — Migration, Rollback, Known Issues, Browser-Capture Compatibility — in the GitHub Releases interface where the release needs specific guidance.
 
 **What the pipeline does automatically (on tag push):** The push of a strict `vX.Y.Z` tag triggers [.github/workflows/release.yml](../.github/workflows/release.yml), which runs in this order:
 
@@ -624,9 +626,9 @@ Nojoin uses a single Git tag (`vX.Y.Z`) to trigger the API, Worker, and Frontend
 3. Scans each image with Trivy and **fails the release on fixable CRITICAL/HIGH vulnerabilities** (see [Image Provenance, SBOM, and Signing](#image-provenance-sbom-and-signing) and the severity policy in [SECURITY.md](SECURITY.md)).
 4. Signs each image with cosign, then runs the non-root and health smoke.
 5. Publishes the rolling `latest` and `major.minor` tags only after all the above pass.
-6. Generates and publishes the GitHub Release notes from the exact previous-tag-to-this-tag range (see [Automated Release Notes](#automated-release-notes-rel-013-rel-014)).
+6. Generates and publishes the GitHub Release notes from the exact previous-tag-to-this-tag range (see [Automated Release Notes](#automated-release-notes)).
 
-Because of step 3, a tag push no longer guarantees published images: if scanning finds a fixable CRITICAL/HIGH vulnerability the run fails and the rolling tags are not moved. The usual fix is to merge the relevant Dependabot base-image or dependency update (or, for a justified unfixable case, add a documented, dated entry to [.github/trivyignore](../.github/trivyignore)) and cut the tag again.
+Because of step 3, a tag push does not guarantee published images: if scanning finds a fixable CRITICAL/HIGH vulnerability the run fails and the rolling tags are not moved. The usual fix is to merge the relevant Dependabot base-image or dependency update (or, for a justified unfixable case, add a documented, dated entry to [.github/trivyignore](../.github/trivyignore)) and cut the tag again.
 
 Manual `workflow_dispatch` runs must target an existing release tag through `release_ref`; they only publish `latest` when `publish_latest=true` is set explicitly.
 
@@ -660,7 +662,7 @@ Each ecosystem is capped at five open pull requests so the queue stays reviewabl
 
 **Who reviews, and how.** The maintainer (per [CODEOWNERS](../.github/CODEOWNERS)) reviews and merges update pull requests like any other change. They run the full required CI suite; a green run plus a scan of the changelog for behavioural or breaking changes is the bar for a routine update. Group updates that touch a runtime dependency (`npm-production`, `python-dependencies`, base images) warrant a closer look than tooling-only groups.
 
-**Security prioritisation.** Dependabot security alerts and any update that resolves a known CVE take priority over routine version bumps and should be merged promptly once CI is green. Because the release pipeline fails on fixable CRITICAL/HIGH image findings (REL-008), a security update is often the unblocking fix for a release: merge the relevant base-image or dependency update, then re-cut the tag. For a finding with no upstream fix, record a dated, justified entry in [.github/trivyignore](../.github/trivyignore) rather than blocking indefinitely.
+**Security prioritisation.** Dependabot security alerts and any update that resolves a known CVE take priority over routine version bumps and should be merged promptly once CI is green. Because the release pipeline fails on fixable CRITICAL/HIGH image findings, a security update is often the unblocking fix for a release: merge the relevant base-image or dependency update, then re-cut the tag. For a finding with no upstream fix, record a dated, justified entry in [.github/trivyignore](../.github/trivyignore) rather than blocking indefinitely.
 
 ### Uncapped AI SDKs
 
@@ -713,7 +715,7 @@ A hold is a deliberate, dated, checked decision, not a silence. If a held adviso
 
 ### Image Provenance, SBOM, and Signing
 
-Every published image is signed with cosign keyless (OIDC) signing and carries build-provenance and SBOM attestations (`provenance: mode=max`, `sbom: true` in the build step). The signature is bound to the release workflow identity, so the `server-release` job requires `id-token: write`. Operator verification commands live in [DEPLOYMENT.md](DEPLOYMENT.md#verifying-an-image-before-deploying).
+Every published image is signed with cosign keyless (OIDC) signing and carries build-provenance and SBOM attestations (`provenance: mode=max`, `sbom: true` in the build step). The signature is bound to the release workflow identity, so both image build jobs (`server-release` and `worker-io-release`) require `id-token: write`. The workflow signs with cosign 3, whose signatures cosign 2 cannot find, and the provenance and SBOM are BuildKit attestations in the image index rather than cosign attestations. Operator verification commands live in [DEPLOYMENT.md](DEPLOYMENT.md#verifying-an-image-before-deploying).
 
 ### Gated Tag Publication
 
@@ -721,9 +723,9 @@ The release flow publishes the immutable `version` and commit-`sha` tags during 
 
 ### Validating Images Locally Before Cutting a Tag
 
-The scan gate fails on *fixable* CRITICAL/HIGH findings and always pulls a fresh vulnerability database, so a previously-green pinned base image can start failing as new CVEs are disclosed — a tag push is not guaranteed to publish even with no code change. Validate the three images locally before pushing (or re-pushing) a `vX.Y.Z` tag to avoid burning tag cycles on a blocked release.
+The scan gate fails on *fixable* CRITICAL/HIGH findings and always pulls a fresh vulnerability database, so a previously-green pinned base image can start failing as new CVEs are disclosed — a tag push is not guaranteed to publish even with no code change. Validate the four images locally before pushing (or re-pushing) a `vX.Y.Z` tag to avoid burning tag cycles on a blocked release.
 
-Install Trivy (the maintainer host keeps it at `~/.local/bin/trivy`, installed without sudo):
+Install Trivy into `~/.local/bin`, which needs no sudo:
 
 ```bash
 curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b "$HOME/.local/bin"
@@ -765,11 +767,11 @@ These flags mirror the gate in [release.yml](../.github/workflows/release.yml). 
 - **Kernel headers (`linux-libc-dev`).** These flag the in-image kernel *header* package, not the running kernel; a container shares the host kernel, so they are not a runtime exposure. Accept them with dated, justified entries in [.github/trivyignore](../.github/trivyignore) rather than chasing base-kernel versions, and remove the entries when a newer base ships the fix.
 - **Secrets in the build context.** [.dockerignore](../.dockerignore) excludes TLS key and certificate material so locally generated files (for example `nginx/cert.key` from [docker/init-ssl.sh](../docker/init-ssl.sh)) are never copied into an image. `.dockerignore` patterns need a `**/` prefix to match nested paths — a bare `*.key` only matches the context root. A clean CI checkout never contains this material, but a local build can, which is why the secret scanner may flag it locally and not in CI.
 
-### Health and Non-Root Smoke (REL-012)
+### Health and Non-Root Smoke
 
 The `health-smoke` job brings up the freshly built api and frontend images with their real `docker-compose` dependencies (Postgres, Redis, the socket proxy) and waits for the production healthchecks to report `healthy`. It then asserts each running container's uid is non-root. The worker requires a GPU and preloaded models to boot, so its non-root `USER` is asserted from the published image config via `docker buildx imagetools inspect` (which reads the config without pulling the large layers) rather than by booting it. The rolling tags are not published unless this job passes.
 
-### Automated Release Notes (REL-013, REL-014)
+### Automated Release Notes
 
 After the rolling tags publish, the `publish-release-notes` job creates the GitHub Release. It resolves the exact previous-tag→this-tag commit range with `git describe`, renders the changelog from that range, resolves the published image digests, and fills [.github/release-notes-template.md](../.github/release-notes-template.md). The template carries the required sections — Upgrade, Migration, Rollback, Known Issues, and Browser-Capture Compatibility — with sensible defaults that maintainers refine in the GitHub Releases UI when a release needs specific guidance. `make_latest` follows the same `publish_latest` decision as the image tags.
 

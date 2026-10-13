@@ -14,23 +14,16 @@ Three pages: landing, comparison and the managed service. Documentation stays on
 `/docs/*` URLs 301 to the corresponding GitHub blob URL forever, because released images
 hardcode `www.nojoin.co.uk/docs/TELEMETRY` and a URL compiled into an image can never 404.
 
-The rebuild shipped two pages and recorded "there is no hosted or paid offering" as the
-reason, while deliberately building the nav and layout to take a third page later. That
-turned out to be worth doing: `/managed/` arrived afterwards and cost one nav entry, one
-landing band and no redesign.
 
 Both themes follow `prefers-color-scheme` by default, and a toggle in the header lets a
 visitor override that. The choice is stored and applied before the first paint, so there is
 no flash on the way to a dark page, and the screenshots follow the active theme rather than
 the system one.
 
-This replaces an earlier decision to ship no JavaScript of our own. That position bought
-one thing — a page with nothing to break — and it cost visitors the ability to look at the
-product in the theme they wanted. The toggle wins because the screenshots are most of the
-page's argument and half of them were unreachable to anyone whose system setting disagreed.
-What remains true is that there is no framework and no hydration: two small inline scripts,
-one to stamp the stored choice on the root element and one to wire the button, alongside
-the Cloudflare beacon.
+The toggle exists because the screenshots are most of the page's argument, and without it
+half of them are unreachable to a visitor whose system setting disagrees. There is still no
+framework and no hydration: two small inline scripts, one to stamp the stored choice on the
+root element and one to wire the button, alongside the Cloudflare beacon.
 
 Fonts are self-hosted: a page whose pitch is that nothing leaves your server does not fetch
 fonts from a CDN.
@@ -77,12 +70,8 @@ Locked by decision, rendered and chosen from variants, and not to be re-litigate
   the rhythm quietly disappears. Removing the privacy section left three consecutive bands
   before anyone noticed.
 - **The quick-start code block is dark in both themes**, and it is the only surface that
-  ignores the theme toggle. It followed the theme until a reader pointed out it was still
-  hard to look at in light: the syntax colours were legible on the measurements, but the
-  block sat at 1.04:1 against the page, so there was nothing to look *at*. Code being dark on
-  a light page is a convention rather than a departure, and it is the only version of this
-  that also works in dark, where a darker fill has nowhere to go. See DESIGN.md for the
-  numbers.
+  ignores the theme toggle. A themed block barely separated from the page, and code being
+  dark on a light page is a convention readers expect. See DESIGN.md for the numbers.
 - **Colour is neutral plus one orange closer**: the loud surface is the full-bleed
   orange-700 band at the foot. No cream tints and no glass.
 - **The closer is the managed offer, and there is no repeat-CTA band.** The foot of the page
@@ -98,9 +87,8 @@ Locked by decision, rendered and chosen from variants, and not to be re-litigate
   nothing to install, moved into the hero. `/managed/` keeps a strip of its own, where the
   three cards say things that page says nowhere else.
 - **The landing page carries no privacy section.** It had one, and it was cut when the page
-  was shortened: those claims are made better elsewhere. Self-hosting and local inference
-  lead the three-up strip, the licence is in the footer, telemetry has a footer link on every
-  page, and `/compare/` argues the whole privacy case in sourced rows rather than assertions.
+  was shortened: those claims are made better elsewhere. Self-hosting is in the headline,
+  the licence is in the footer, telemetry has a footer link on every page, and `/compare/` argues the whole privacy case in sourced rows rather than assertions.
   A section repeating them on the apex page was the fourth time a visitor met the same
   argument.
 - **Three marketing effects, and no more.** The app's flat canon governs the product,
@@ -152,19 +140,8 @@ Locked by decision, rendered and chosen from variants, and not to be re-litigate
   paragraph. The actor pills say "Agent", never a vendor name: more than one assistant is
   supported and the claim is about assistants generally. The prose names Claude and ChatGPT,
   which is what a reader installs; OpenAI renamed the Codex desktop app to ChatGPT on 9 July
-  2026, and Codex survives as a mode inside it. `docs/MCP.md` still says Codex throughout,
-  deliberately: its instructions carry literal commands and paths (`codex mcp logout`,
-  `~/.codex/config.toml`, the "Codex MCP Credentials" keychain entry) that the rename did not
-  change, and its troubleshooting section records behaviour observed on a specific Codex
-  build that nobody has re-tested since. **One part of that has now been re-tested and is
-  settled, and it was never a naming question at all**: the name on Nojoin's consent screen
-  is whatever the connecting client sends as `client_name` when it registers. Nojoin stores
-  and displays it verbatim, so any client that speaks the protocol can appear under any name
-  it chooses. The OpenAI app still registers as `Codex` after its rename — checked on a
-  freshly built instance with a newly added server, so neither a stale image nor a cached
-  registration — but that is a fact about the client, not about Nojoin, and no release here
-  can change it. `docs/MCP.md` now explains the mechanism where a reader meets the screen,
-  including the part that matters for safety: the name is a claim, the redirect host is not.
+  2026. `docs/MCP.md` still says Codex where it gives commands and paths the rename did not
+  change, and explains why the OpenAI app still appears as `Codex` on the consent screen.
 - **The headline says what Nojoin is**: "Open-Source Meeting Notes on a Server You Own".
   It replaced "Transcription is easy. Agentic meeting intelligence isn't.", which told a
   visitor what is hard and left them to work out what the product was. Open source and
@@ -529,24 +506,21 @@ server resolves imports differently and has shipped differences before.
 
 ### Sharing a preview
 
-The site owner reviews over SSH from Windows and cannot reliably bind local ports, so a
-Cloudflare quick tunnel beats `ssh -L`. It needs no account, no DNS record and no token:
+A Cloudflare quick tunnel shares a preview with a reviewer who cannot bind local ports over
+SSH, and needs no account, no DNS record and no token:
 
 ```bash
-~/.local/bin/cloudflared tunnel --url http://127.0.0.1:4322
+cloudflared tunnel --url http://127.0.0.1:4322
 ```
 
 It prints a single-use `https://<random>.trycloudflare.com` URL. `astro.config.mjs` already
 allows `.trycloudflare.com` under `vite.preview.allowedHosts`; without that entry the preview
 server answers every tunnelled request with a host-check error.
 
-**There is a long-running `cloudflared` container on the development host that serves live
-production traffic. Never stop, restart or reconfigure it.** It is `docker compose` service
-`cloudflared` in the homelab core stack, running as uid 65532. A quick tunnel is a separate
-user process and touching one has no effect on the other — but `pkill -f cloudflared` kills
-both, and on this host `pkill` patterns also match the shell wrapper that invoked them. Kill
-preview tunnels by PID, or by matching the binary path `~/.local/bin/cloudflared`, and tidy
-them up when the review is done rather than leaving a fleet running.
+**If the host also runs a `cloudflared` service for live traffic, never stop, restart or
+reconfigure it.** A quick tunnel is a separate process, but `pkill -f cloudflared` kills
+both, and a `pkill` pattern can also match the shell that invoked it. Kill preview tunnels
+by PID, and tidy them up when the review is done rather than leaving a fleet running.
 
 ### Titles: the tab and the share card are different jobs
 
@@ -589,7 +563,7 @@ it renders a bitmap, out of the stylesheet's reach. No gate catches a drift betw
 Workers deployment, so a 404 on `/docs/TELEMETRY` in local preview is expected rather than a
 regression. `wrangler dev` is not parity either — redirect rules that worked there have failed
 in production. Verify that contract against `https://www.nojoin.co.uk/docs/TELEMETRY` after a
-deploy; there is no longer a workers.dev copy to test it on first, so a redirect change is
+deploy; there is no workers.dev copy to test it on first, so a redirect change is
 verified in production or not at all.
 
 ### Checks worth running before asking for review
@@ -632,18 +606,13 @@ deleting the record first, and that would put DNS propagation behind any rollbac
 sits in front of the proxied record, so adding it intercepts traffic atomically and removing
 it stops intercepting just as atomically.
 
-**The site is served on that route alone.** `workers_dev` was `true` while the site was
-being built, so it could be reviewed before the route existed, and it left a complete public
-duplicate of every page on `nojoin-site.taylan-d.workers.dev`. It is now `false`. The
-duplicate had no remaining job, and a second indexable copy of a marketing site is a
-liability: `Base.astro` builds its canonical from `Astro.site` and so pointed crawlers back
-at `www.nojoin.co.uk`, but that is mitigation rather than a reason to keep it. Reviewing an
-unmerged change is what `npm run serve` and a quick tunnel are for.
+**The site is served on that route alone.** `workers_dev` is `false`, because a second
+indexable copy of a marketing site is a liability. Reviewing an unmerged change is what
+`npm run serve` and a quick tunnel are for.
 
 **Fixing a bad deploy means rolling `site/` forward, not backwards.** There is no revert that
 lands on a working site, and reverting the commit that added the route takes the site down
-rather than restoring it — the reasoning is two paragraphs below, and it is the single
-easiest thing to get wrong here under pressure. Deleting the route in the Cloudflare
+rather than restoring it, which is the single easiest thing to get wrong here under pressure. Deleting the route in the Cloudflare
 dashboard is not a rollback either: the weekly scheduled deploy from `main` re-applies
 whatever `wrangler.jsonc` says.
 
@@ -651,17 +620,11 @@ whatever `wrangler.jsonc` says.
 forward — the deploy publishes whatever `main` holds. What is not survivable is reverting
 the route itself.
 
-That rollback used to land on a live GitHub Pages origin. It no longer does. Pages served
-the previous Jekyll site from `main` as a `build_type: legacy` build — no workflow, just a
-repository setting — and it was disabled and its sources deleted (`_config.yml`, `_layouts/`,
-`_includes/`, `assets/css/style.scss`, `docs/index.md`, `CNAME`) when the Astro site went
-live. `assets/images/nojoin-mark.svg` stayed, because `README.md` still references it.
-
-The consequence is worth being clear about: reverting the route now removes the Worker and
-leaves the DNS record pointing at nothing, so **revert is no longer a fallback to a working
-site — it is a way to take the site down.** Fixing a bad deploy means rolling `site/` forward,
-not backwards. Re-enabling Pages is a repository settings change that no `git revert` can
-perform.
+Reverting the route removes the Worker and leaves the DNS record pointing at nothing. GitHub
+Pages, which served the previous Jekyll site, was disabled and its sources deleted when the
+Astro site went live, so there is no older origin to fall back to, and re-enabling it is a
+repository settings change that no `git revert` can perform. `assets/images/nojoin-mark.svg`
+stayed, because `README.md` still references it.
 
 Cloudflare Web Analytics is wired through `PUBLIC_CF_BEACON_TOKEN`, a build-time environment
 variable read in `Base.astro` and supplied by CI as a **repository variable, not a secret**.

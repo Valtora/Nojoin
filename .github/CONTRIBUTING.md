@@ -171,15 +171,9 @@ Sensitive scopes carry an additional review obligation that the maintainer (or, 
 - **Capture (`frontend/src/lib/capture/**`):** complete the manual browser smoke coverage listed under [docs/DEVELOPMENT.md](../docs/DEVELOPMENT.md).
 - **Deployment / release (`docker/**`, `docker-compose*.yml`, `.github/workflows/**`):** keep the pinned action SHAs, pinned base-image digests, and the gated/signed release ordering intact, and run the full backend, frontend, docs, and Alembic validation set together.
 
-### Branch Protection (maintainer-action-pending)
+### Branch Protection
 
-Branch protection and required-reviewer enforcement cannot be applied from the repository tree; they are GitHub repository settings. The settings to apply on `main` are designed so the sole maintainer can always merge their own green pull request and are never an irreversible lockout:
-
-- Require a pull request before merging, with **0** required approvals while the project is single-maintainer. GitHub forbids approving your own pull request, so a non-zero count would make every merge impossible for a sole author; raise it to **1** and enable **Require review from Code Owners** only when a second maintainer joins.
-- Require the single `CI gate` status check to pass before merging, with branches required to be up to date. It is enforced for admins too, so nothing merges red. (Only `CI gate` is required, not the individual jobs, because those are skipped by the path filter when irrelevant and a skipped job would otherwise leave a required check pending forever.)
-- Require linear history and disallow force pushes and deletions.
-
-The exact `gh` command, the reasoning behind each value, and the guarantee that this cannot lock out a sole maintainer are recorded in [docs/DEVELOPMENT.md](../docs/DEVELOPMENT.md#branch-protection-maintainer-action). The release jobs are deliberately **not** part of this list: they only run on tag pushes, never on pull requests, so requiring them on `main` would block every merge. The release pipeline self-gates through its own job dependency graph instead, as documented in [docs/DEVELOPMENT.md](../docs/DEVELOPMENT.md#branch-protection-maintainer-action).
+`main` requires a pull request, the single `CI gate` status check on an up-to-date branch, linear history, and resolved review threads, enforced for admins too. It requires no approvals while the project has one maintainer, and force pushes and deletions are disallowed. [docs/DEVELOPMENT.md](../docs/DEVELOPMENT.md#branch-protection) records the exact settings, why none of them can lock out a sole maintainer, and why the release jobs are not required checks.
 
 ### Recording Significant Decisions
 

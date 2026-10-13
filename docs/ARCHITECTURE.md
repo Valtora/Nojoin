@@ -27,7 +27,7 @@ The processing-heavy work runs in Celery workers rather than inside API endpoint
 
 Dispatching that work is a blocking socket call to Redis, and the API dispatches from `async def` handlers, so an unreachable broker would otherwise stall the whole event loop rather than one request. Two things prevent that. Every dispatch reachable from a request handler goes through `backend/core/task_dispatch.py`, which runs the publish off the event loop, so a slow or unreachable broker delays only the request that dispatched. And the API gives up quickly: connect attempts are capped at two seconds and the API process caps publish and result-backend retries at one, so a dispatch against a dead broker fails in milliseconds and against an unreachable one in a few seconds instead of being unbounded. Workers keep Celery's generous defaults and dispatch inline, because a worker retrying to write a result has nothing waiting on it and no event loop to protect.
 
-The bounds are set from measurement rather than taste. Before they existed, a dispatch against a broker refusing connections blocked for 19.04s and a concurrent request issued 50ms later took 18.99s; against a broker dropping packets the request had not returned after 70s and no concurrent request completed at all, with a theoretical worst case near 42 minutes of wedged event loop. Afterwards the same dispatch costs 0.03s refused and 6.03s unreachable, and during the latter 60 concurrent requests kept a sub-millisecond median. Two details make this easy to get wrong when editing `backend/celery_app.py`: the broker reads its transport options while the result backend reads top-level `redis_*` keys, and bounding the publish retry alone does nothing, because `send_task` subscribes the result backend to the task's channel before it ever publishes.
+Without the bounds, a dispatch against a broker dropping packets could wedge the event loop for minutes; with them it costs 0.03s against a refused connection and about 6s against an unreachable broker, while concurrent requests stay responsive. Two details make this easy to get wrong when editing `backend/celery_app.py`: the broker reads its transport options while the result backend reads top-level `redis_*` keys, and bounding the publish retry alone does nothing, because `send_task` subscribes the result backend to the task's channel before it ever publishes.
 
 Per-user AI inference resolves to one of three usage models — install-wide Ollama, install-wide/BYOK API keys, or the per-user **CLI OAuth** mode, which routes through a user's own subscription using that provider's CLI in the `worker-io` lane. Two providers are supported: a Claude Pro/Max subscription driven by the Claude Agent SDK, and a ChatGPT subscription driven by the OpenAI Codex CLI. CLI OAuth degrades cleanly through the server's default provider chain, trying the primary provider first and the secondary after it, and is never load-bearing — the subscription path is unsanctioned by both providers and can be broken or enforced against without notice, so nothing is allowed to depend on it. See [SECURITY.md](SECURITY.md) for the trust boundary and the accepted risk.
 
@@ -91,9 +91,9 @@ explicit data-not-instructions rule.
 
 ### Meeting Analytics
 
-Speaking-dynamics analytics for a recording — talk-time share, turn structure,
-directional interruptions, turn-taking and response latency, a talk-share
-timeline, and silence and overlap totals — are derived on read from the
+Speaking-dynamics analytics for a recording (talk-time share, turn structure,
+turn-taking and response latency, a talk-share timeline, and silence and
+overlap totals) are derived on read from the
 canonical `transcript_utterances` rows rather than computed by the pipeline and
 stored.
 
@@ -110,8 +110,8 @@ redirects utterances onto the surviving row and the numbers follow.
 
 The derivation lives in `backend/services/meeting_analytics/`, deliberately free
 of ORM and ML imports below its query layer so it can run in the API process and
-be tested as pure functions. Its thresholds — what counts as a turn boundary, an
-interruption rather than turn-boundary bleed, or a measurable response gap — are
+be tested as pure functions. Its thresholds, what counts as a turn boundary or a
+measurable response gap, are
 centralised in that package's `constants.py` for the same reason the speaker
 thresholds are centralised in `backend/processing/embedding.py`: they are one
 tuning decision, not several.
@@ -142,8 +142,8 @@ roughly a quarter-second of noise: **immediate handovers** (gaps under the
 250ms measurement collar — real behaviour, the cross-language response mode
 is 0-200ms, but unresolvable timing), a **reply-time median** over gaps the
 timestamps can support (collar to five seconds), and **lapses** (longer
-silences, which are resumptions rather than replies and once produced
-30-second "reply times" on real recordings). Each population is counted.
+silences, which are resumptions rather than replies). Each population is
+counted.
 
 Because every figure is attached to a speaker, the surface discloses when that
 attribution is doubtful rather than presenting a confidently wrong number: a
@@ -226,7 +226,7 @@ dispatches, reports the tier as generating so the tab polls for the result, and
 holds a once-per-window claim per recording so the tab's own polling cannot
 queue the run again before the worker marks it generating. A per-user setting
 (`auto_remeasure_delivery`, on by default) turns this off, after which the tab
-shows the figures as stale with the button, as before; a measurement that
+shows the figures as stale with the button; a measurement that
 ended in error is never retried by a read either. Editing a transcript nobody
 reopens costs nothing. A **method-version bump** is different: that is Nojoin's
 own maintenance obligation, not user-triggered staleness, so a bounded
@@ -361,7 +361,7 @@ The web client is the only live capture surface. Unsupported browsers retain rev
 
 Backend reachability is a state machine in `frontend/src/lib/connectivity/`, and the thing it exists to avoid is claiming an outage that is not happening. Every observed success is proof of life, whether it came from real API traffic, a health poll or an idle liveness probe, so a page doing steady work never probes at all. Only the dedicated prober can escalate, and only after the last success has gone stale and three of its probes have failed.
 
-Two rules keep that threshold meaning what it says. **Probes are serialised**: a tick will not start one while another is in flight. Without that the driver stacked them, because a tick awaiting its probe holds no timer, so every failing request scheduled another tick 500ms later, and each of those started another probe. A tab whose connection stalls fails a burst of requests at once, which is how one production capture put seven probes in flight together, all aborted in the same instant: three times the threshold delivered in one go rather than confirmed over fifteen seconds. **A probe that outlasts its own timeout by a wide margin is not counted**, because a frozen tab suspends the abort timer along with the request and thaws them together, cancelling the fetch without ever having raced it against the network. Returning to the foreground clears the failure streak for the same reason: evidence gathered while the page was not being run is not evidence. The `resume` event cannot be used for any of this, since it is advisory and not dispatched on every Chromium build (issue #166), so the elapsed wall clock is the signal.
+Two rules keep that threshold meaning what it says. **Probes are serialised**: a tick will not start one while another is in flight. A tick awaiting its probe holds no timer, so without that rule every failing request would schedule another tick 500ms later and each would start another probe; a tab whose connection stalls fails a burst of requests at once, and would deliver several times the threshold in one go rather than confirm it over fifteen seconds. **A probe that outlasts its own timeout by a wide margin is not counted**, because a frozen tab suspends the abort timer along with the request and thaws them together, cancelling the fetch without ever having raced it against the network. Returning to the foreground clears the failure streak for the same reason: evidence gathered while the page was not being run is not evidence. The `resume` event cannot be used for any of this, since it is advisory and not dispatched on every Chromium build (issue #166), so the elapsed wall clock is the signal.
 
 This matters beyond the toast. A false `unreachable` also mislabels an audio-coverage shortfall as `backend-unreachable`, which promises the queued audio will upload on reconnect, when the real cause was the suspension that lost it.
 
@@ -380,7 +380,7 @@ The browser capture stack is responsible for:
 - Holding a screen wake lock for the duration of a capture, re-taking it whenever the page returns to the foreground, since the browser drops the lock on every visibility change. This addresses device sleep only. Nothing in a web page can prevent the browser suspending a tab, or read whether Memory Saver is enabled. Nojoin does not warn about that up front: Chrome exempts tabs actively using the microphone or sharing a screen, which a recording tab is throughout, so the guidance lives in [CAPTURE.md](CAPTURE.md#chrome-memory-saver) as troubleshooting for the case it is actually needed.
 - Comparing the audio the server holds against elapsed recording time and warning when they diverge. A tab suspended by the browser or the operating system stops feeding the recorder without raising an error, so coverage is the only signal that audio is being lost.
 
-The captured figure comes from the backend, on `captured_audio_seconds` in the recording detail payload, summed from the transcoded segments and polled every 15 seconds while capture is open. The client cannot derive it: a segment carries slightly more than the nominal timeslice, because each roll flushes whatever accumulated while the recorder was stopping, and multiplying the sequence number by the timeslice under-counts by around 10% over an hour. That estimate produced coverage warnings on recordings that had lost nothing. The backend figure carries the opposite bias, running 2-3% high because each decoded segment includes codec priming that concatenation later trims, which is left uncorrected on purpose: it can only make a shortfall look smaller, never invent one.
+The captured figure comes from the backend, on `captured_audio_seconds` in the recording detail payload, summed from the transcoded segments and polled every 15 seconds while capture is open. The client cannot derive it: a segment carries slightly more than the nominal timeslice, because each roll flushes whatever accumulated while the recorder was stopping, and multiplying the sequence number by the timeslice under-counts by around 10% over an hour. The backend figure carries the opposite bias, running 2-3% high because each decoded segment includes codec priming that concatenation later trims, which is left uncorrected on purpose: it can only make a shortfall look smaller, never invent one.
 
 The shortfall is net of the uploader's own queue. Segments recorded but not yet acknowledged are audio the browser is holding, not audio that has been lost, and a server that stops answering for two minutes leaves exactly two minutes of them; counting that as missing told a user their meeting was being lost while it sat in memory waiting to upload. The queue is estimated from its length rather than measured, which biases the warning towards firing rather than towards silence, and it is named separately in the copy so a queue that never drains is still visible.
 
@@ -431,7 +431,7 @@ Eight values inside these stages can be overridden: the VAD threshold (stage 2, 
 
 The values are per-user settings. A stage resolves each one as: an explicit function argument, else the recording owner's merged settings (their own value over the install's flat `config.json` key), else for the VAD threshold the legacy `vad_parameters.threshold`, else the shipped default. Unset is `None` and means inherit. A non-`None` default on the user row would be written onto every row by the settings page's whole-object autosave and would hide both the install value and any later change to a shipped default, so the defaults stay `None`.
 
-The invariant: a tuning value never fails a recording. The API rejects out-of-range values, but a stored or `config.json` value can still be unusable (hand-edited, restored from a backup, which writes `user.settings` as archived, or written before a bound tightened). The worker logs such a value and uses the shipped default instead (for the VAD threshold, `vad_parameters.threshold`) rather than raising, and treats a phantom floor at or above the phantom merge threshold as both defaults. The API checks that rule on the same pair the worker reads, the user's values over the install's flat keys, so a pair it accepts is the pair processing uses, unless the install's values later change. GET returns the install's flat values the settings page needs for that check as a read-only `processing_tuning_install` map, keyed by tuning key. The owner's merged value is a single tier, so an unusable per-user value falls back past the install's flat key. With no value set anywhere, every stage computes exactly what it did before the values could be overridden. New code that reads one of these values must go through `resolve_tuning` (or, for VAD, `get_vad_config_from_settings`) rather than reading the settings directly.
+The invariant: a tuning value never fails a recording. The API rejects out-of-range values, but a stored or `config.json` value can still be unusable (hand-edited, restored from a backup, which writes `user.settings` as archived, or written before a bound tightened). The worker logs such a value and uses the shipped default instead (for the VAD threshold, `vad_parameters.threshold`) rather than raising, and treats a phantom floor at or above the phantom merge threshold as both defaults. The API checks that rule on the same pair the worker reads, the user's values over the install's flat keys, so a pair it accepts is the pair processing uses, unless the install's values later change. GET returns the install's flat values the settings page needs for that check as a read-only `processing_tuning_install` map, keyed by tuning key. The owner's merged value is a single tier, so an unusable per-user value falls back past the install's flat key. With no value set anywhere, every stage uses the shipped defaults. New code that reads one of these values must go through `resolve_tuning` (or, for VAD, `get_vad_config_from_settings`) rather than reading the settings directly.
 
 ### Transcription Failure Versus Silence
 
@@ -441,19 +441,19 @@ Final processing retries a GPU out-of-memory failure once, after releasing every
 
 `error_message` is shared with notes failures, so ownership follows `transcript_status`: while it is `error` the message is the transcription failure. Only the `Transcript` methods `fail_transcription`, `complete_transcription` and `set_notes_error_message` write it, so notes runs never clear or overwrite a transcription failure, and a backup restore that settles an interrupted recording marks its transcription failed the same way. Notes cannot be generated for a failed transcription: the API answers 409 and a notes task queued earlier does nothing. A later run that completes clears a transcription failure. When that run finds no speech at all it leaves `notes_status` alone, since there is nothing to summarise, which matches the success path skipping meeting intelligence for an empty transcript.
 
-The invariant this protects: an empty `completed` transcript means the meeting was silent, never that ASR crashed. Before this contract the engines returned `None` for every failure and the pipeline saved that as an empty, completed transcript, so a GPU out-of-memory run looked identical to a silent meeting. Code that calls an engine must not turn a `TranscriptionError` into an empty result. The live lane still records a failure as a failure but does not stop for one: it is best-effort and the final pass transcribes the whole recording again, so a region whose transcription fails is dropped, its ASR ledger row is marked failed, and the lane keeps advancing.
+The invariant this protects: an empty `completed` transcript means the meeting was silent, never that ASR crashed. Code that calls an engine must not turn a `TranscriptionError` into an empty result. The live lane still records a failure as a failure but does not stop for one: it is best-effort and the final pass transcribes the whole recording again, so a region whose transcription fails is dropped, its ASR ledger row is marked failed, and the lane keeps advancing.
 
 ### Speaker Cap And Voiceprint Versioning
 
-`Recording.max_speakers` is an optional per-recording upper bound. `NULL` means auto-detect and is the default; that path passes no speaker keyword to pyannote at all, so it is unchanged from before the field existed. A set value is applied as pyannote's `max_speakers` and never as `num_speakers` — an exact count forces a split whenever the user overcounts, which is the over-clustering failure the field exists to prevent. It is settable at import, on the reprocess request, and throughout a live capture, since diarisation runs at stop time.
+`Recording.max_speakers` is an optional per-recording upper bound. `NULL` means auto-detect and is the default; that path passes no speaker keyword to pyannote at all. A set value is applied as pyannote's `max_speakers` and never as `num_speakers` — an exact count forces a split whenever the user overcounts, which is the over-clustering failure the field exists to prevent. It is settable at import, on the reprocess request, and throughout a live capture, since diarisation runs at stop time.
 
 Voiceprints are only comparable with others produced by the same extraction procedure. `EMBEDDING_METHOD_VERSION` in [backend/processing/embedding_version.py](../backend/processing/embedding_version.py) records which one produced a stored vector, persisted on both `global_speakers.embedding_version` and `recording_speakers.embedding_version`. That module holds nothing but the version and its history, so a request path can reason about versions without importing torch and pyannote. Speaker identification and the duplicate-merge pass both refuse to score across versions; a cross-version cosine value resembles a similarity but is not one. Any change to how embeddings are produced must bump the version, and any new comparison site must check it — `embeddings_are_comparable` exists for that.
 
-The versioning exists because the original extraction was measurably wrong rather than merely imperfect. Across this project's own library — 12 people, 2904 same-person pairs — 29% of same-person pairs scored below the 0.70 merge threshold and 37% below the 0.75 identification threshold, with a median of 0.803 but a tenth percentile of 0.363. Different-person pairs were clean by comparison, at a median of 0.073. The embedding space separated people perfectly well; same-person similarity collapsed whenever acoustic conditions changed, which is precisely the condition that makes the diariser split one person in the first place, so the safety net was weakest exactly where it was needed. `DUPLICATE_SPEAKER_MERGE_THRESHOLD` was therefore deliberately left at 0.70: the input to the comparison was wrong, not the threshold, and lowering it causes wrong merges, which a user finds harder to undo than wrong splits.
+`DUPLICATE_SPEAKER_MERGE_THRESHOLD` stays at 0.70 deliberately. When the first extraction method put 29% of same-person pairs below it, the fault was the input to the comparison, not the threshold: same-person similarity collapsed whenever acoustic conditions changed, the very condition that makes the diariser split one person. Lowering the threshold causes wrong merges, which a user finds harder to undo than wrong splits.
 
 Stale voiceprints are repaired by `rebuild_voiceprints_task` rather than by comparing them anyway. The repair is automatic scheduled maintenance, running every six hours from Celery Beat and processing at most `AUTOMATIC_VOICEPRINT_REBUILD_LIMIT` (25) recordings per tick. It is bounded rather than operator-triggered because staleness is not a state a user can act on — it is a maintenance obligation Nojoin owes itself after changing its own extraction method — and because an unbounded re-extraction would run the embedding model over an entire library on hardware the user owns. Bounding each tick keeps the GPU lane responsive; a large library converges over several ticks. A stale voiceprint that cannot be re-extracted, because its audio is gone or its speaker owns no transcript segment, is cleared rather than kept: it could never be scored against anything, and leaving it would stall the sweep on a row it can never repair. Transient extraction failures are counted separately and leave the voiceprint in place so a later run can retry.
 
-Two `pipeline_metric` stages make diarisation quality inspectable from a worker log. `final_diarization_speaker_stats` records per-cluster speech duration, segment count and share, plus overlapped speech and whether a cap bound. `speaker_merge_pass` is emitted on **every** run of the duplicate-merge pass, including runs that merge nothing and runs that could not score anything (which carry an explicit reason), and lists each pair's cosine score. A pass that merged nothing previously logged nothing and was indistinguishable from one that never ran.
+Two `pipeline_metric` stages make diarisation quality inspectable from a worker log. `final_diarization_speaker_stats` records per-cluster speech duration, segment count and share, plus overlapped speech and whether a cap bound. `speaker_merge_pass` is emitted on **every** run of the duplicate-merge pass, including runs that merge nothing and runs that could not score anything (which carry an explicit reason), and lists each pair's cosine score.
 
 A user can discard a recording at any in-flight stage: uploading, paused, queued, or processing. Discard is a single graceful operation that revokes the running Celery task with `terminate=True`, deletes every on-disk artefact, and removes the recording row, so no manual cancel-then-delete sequence is required. Terminating the task stops the worker from continuing the pipeline, and the worker's start-of-task cancellation guard prevents a revoked-but-requeued task from resuming work. Terminal recordings (processed, errored, or already removed) are deleted through the standard delete flow instead.
 
@@ -475,8 +475,8 @@ Left at its defaults, Ollama does not refuse an oversized prompt: past `num_ctx`
 
 1. `num_ctx` is the configured window (`ollama_context_window`, the operator's VRAM budget), lowered to the model's trained context length from `/api/show` when that is smaller, because Ollama clamps to it at load. It is never raised automatically: a larger KV cache is exactly what fails to load on consumer GPUs. `/api/show` is cached per process for five minutes per server and model.
 2. The request carries `truncate: false`, so Ollama refuses a prompt longer than `num_ctx` with HTTP 400 before generating (0.34.2 and 0.40.2 report the exact token count; 0.12.6 does not), and `shift: false`, so an answer that fills the window ends with `done_reason: length`. No `num_predict` is sent, so a Modelfile's own limit stands. The 400 becomes a context-window error naming the window and the count, and a length stop an "incomplete answer" error; neither answer is used.
-3. Meeting chat relied on Ollama's server-side trimming to drop old turns. It now drops the oldest turns itself, against an estimate of 2.6 UTF-8 bytes per token (prose and transcripts run 2.6 to 5; numbers and code run denser and go through the retry) with up to a quarter of the window kept for the answer; the last message, which carries the meeting context and the question, is never cut. If Ollama still refuses, chat retries once with fewer turns (by Ollama's count when given, otherwise with none), then reports the refusal.
-4. Servers before Ollama 0.12.6 ignore `truncate` and `shift`. For them the token counts are checked after the call: a prompt plus answer past `num_ctx` (a cut prompt counts the whole window) is refused as truncated. Their answer cap stays Ollama's default of ten windows, as before.
+3. Meeting chat drops the oldest turns itself, against an estimate of 2.6 UTF-8 bytes per token (prose and transcripts run 2.6 to 5; numbers and code run denser and go through the retry) with up to a quarter of the window kept for the answer; the last message, which carries the meeting context and the question, is never cut. If Ollama still refuses, chat retries once with fewer turns (by Ollama's count when given, otherwise with none), then reports the refusal.
+4. Servers before Ollama 0.12.6 ignore `truncate` and `shift`. For them the token counts are checked after the call: a prompt plus answer past `num_ctx` (a cut prompt counts the whole window) is refused as truncated. Their answer cap stays Ollama's default of ten windows.
 
 A refusal raises `ContextWindowExceededError` (`backend/utils/context_window.py`) naming the window, and the Ollama backend re-raises it as it is instead of wrapping it, so callers can tell it from every other failure. A configured secondary provider takes over as for any other primary failure; a streamed chat refused by Ollama falls back too, because the refusal arrives before the first token. A length stop at the end of a streamed answer, or a truncation found after the call on a pre-0.12.6 server, arrives after the text has streamed, so the answer is withdrawn (not saved) and there is no fallback. Speaker suggestions and document pages that do not fit report the refusal as their error. Notes and chat go on as [Meetings Longer Than The Context Window](#meetings-longer-than-the-context-window) describes.
 
@@ -530,8 +530,8 @@ runs:
    soon as the recording is in flight. The panel polls
    `GET /transcripts/{id}/utterances` every three seconds for provisional
    utterances and is read-only. The recording detail payload continues to
-   suppress in-flight transcript text and segments, so provisional text still
-   never reaches recording cards, the sidebar, or exports; the utterances
+   suppress in-flight transcript text and segments, so provisional text never
+   reaches the sidebar or exports; the utterances
    endpoint is the only in-flight transcript surface.
 4. Live utterances carry no speaker. Every provisional utterance is written
    with the `UNKNOWN` label, because diarization runs only at finalize; speaker
@@ -602,9 +602,7 @@ ASR lane records whether live or catch-up ASR consumed the window audio. The
 diarisation lane records rolling or catch-up speaker-window work for the active
 diarisation configuration and completed window result. The legacy window
 `status` field remains a compatibility projection; new logic should inspect the
-lane-specific ASR and diarisation fields. Operator-facing recording pages now
-surface only high-level recording progress plus Meeting Edge guidance while a
-recording is still in flight.
+lane-specific ASR and diarisation fields.
 
 A run that fails outright still accounts for the audio it drained. If it had
 already carried the audio past its cut point into `live/buffer.wav`, that buffer
@@ -659,8 +657,8 @@ diarisation reconciliation mints uuid4.
 
 ### Startup Canonical Cutover
 
-The unified pipeline now assumes a container-level startup cutover for older
-meetings rather than a frontend-driven migration workflow.
+Older meetings are brought into the unified pipeline by a container-level
+startup cutover.
 
 1. `backend/entrypoint.sh` runs Alembic through `backend.startup_migrations`.
 2. The same entrypoint then runs `backend.startup_canonical_cutover` before the
@@ -680,7 +678,7 @@ meetings rather than a frontend-driven migration workflow.
 
 ## Stall Detection
 
-A live recording is the one workload where a stall is unrecoverable. The browser keeps counting wall-clock time while nothing reaches the server, and audio for that stretch is lost. Nojoin had no signal for it: an outage in August 2026 froze the API three times for about two minutes each, and the only evidence was requests that completed late.
+A live recording is the one workload where a stall is unrecoverable. The browser keeps counting wall-clock time while nothing reaches the server, and audio for that stretch is lost.
 
 The API therefore runs a watchdog (`backend/utils/stall_watchdog.py`) on its event loop, reporting two things:
 
@@ -703,7 +701,7 @@ The receiving Cloudflare Worker and its D1 schema live in [telemetry/](../teleme
 ## Calendar Flow
 
 1. An admin configures Google and/or Microsoft OAuth credentials for the installation.
-2. End users connect their own accounts from the Personal settings area.
+2. End users connect their own accounts from **Settings > Integrations**.
 3. Nojoin syncs selected calendars into stored dashboard-facing event data, including each event's description and attendee list.
 4. The dashboard renders month markers, agenda items, next-event summaries, and colour-coded sources, combining synced calendar events with unlinked Nojoin recordings.
 5. Recordings carry a nullable `calendar_event_id`; a recording is auto-linked to a confidently overlapping calendar event during processing (or linked manually), and the linked event enriches notes and speaker prompts while suppressing the recording's standalone dashboard calendar item.
@@ -715,7 +713,7 @@ Nojoin uses different auth shapes for different clients:
 
 - **Browser traffic**: Secure HttpOnly session cookies. State-changing browser requests authenticated by that session must originate from the trusted Nojoin web origin, using standard `Origin` or `Referer` validation rather than relying only on `SameSite` and CORS.
 - **Non-browser API clients**: Explicit bearer tokens.
-- **MCP connector clients**: OAuth 2.1 bearer tokens (token type `mcp`) minted by Nojoin's built-in authorization server. These tokens authenticate only the `/mcp` endpoint, never the general API, and are contained by the same `token_version` and denylist machinery as sessions. The tool surface is read-only apart from a small set of scope-gated, additive write tools (People import, speaker naming, and note append). See [MCP.md](MCP.md).
+- **MCP connector clients**: OAuth 2.1 bearer tokens (token type `mcp`) minted by Nojoin's built-in authorization server. These tokens authenticate only the `/mcp` endpoint, never the general API, and are contained by the same `token_version` and denylist machinery as sessions. Read tools need the `mcp:read` scope; write tools need `mcp:write` and make only recoverable changes. See [MCP.md](MCP.md).
 - **Browser recording operations**: Session-authenticated init, segment, pause, resume, discard, and finalize calls owned by the current user.
 - **Legacy native-helper routes**: Retired routes return structured `410 Gone` responses that point operators to [CAPTURE.md](CAPTURE.md).
 
