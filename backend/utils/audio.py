@@ -88,7 +88,6 @@ def _concatenate_with_ffmpeg_concat_demuxer(segment_paths: List[str], output_pat
     """Concatenate multiple same-codec/container files into a single output."""
     ensure_ffmpeg_in_path()
 
-    # Create a temporary file list for ffmpeg
     list_file_path = output_path + ".list.txt"
     with open(list_file_path, "w") as f:
         for path in segment_paths:
@@ -282,7 +281,7 @@ def convert_to_proxy_mp3(
     if is_same_file:
         import uuid
 
-        # Use a unique temp file in the same directory to ensure atomic move/rename works usually
+        # A temp file in the same directory, so the final move is an atomic rename.
         final_output_path = f"{output_path}.{uuid.uuid4().hex[:8]}.tmp"
 
     cmd = [
@@ -322,7 +321,6 @@ def convert_to_proxy_mp3(
         logger.error(
             f"Failed to convert audio to proxy MP3: {e.stderr.decode() if e.stderr else str(e)}"
         )
-        # Cleanup temp file
         if is_same_file and os.path.exists(final_output_path):
             try:
                 os.remove(final_output_path)

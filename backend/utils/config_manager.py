@@ -28,7 +28,6 @@ from .path_manager import path_manager
 logger = logging.getLogger(__name__)
 
 CONFIG_FILENAME = "config.json"
-# Use PathManager for configuration file location
 CONFIG_PATH = str(path_manager.config_path)
 WEB_APP_URL_ENV_KEY = "WEB_APP_URL"
 
@@ -110,8 +109,7 @@ def normalise_gpu_asr_window(value: object) -> float | None:
 
 
 # Install-wide cap on AI analysis runs per user per UTC day. Null or 0 means
-# no cap, which keeps today's behaviour. An administrator may override it per
-# user on the user record.
+# no cap. An administrator may override it per user on the user record.
 AI_ANALYSIS_DAILY_LIMIT_KEY = "ai_analysis_daily_limit"
 
 
@@ -194,7 +192,7 @@ _default_models = _get_default_models()
 
 DEFAULT_SYSTEM_CONFIG = {
     "worker_url": "redis://localhost:6379/0",  # Default Redis URL for Celery worker
-    "web_app_url": "https://localhost:14443",  # Default Web App URL
+    "web_app_url": "https://localhost:14443",
     "enable_canonical_transcript_writes": True,
     "enable_asr_window_result_ledger": True,
     "recordings_directory": "recordings",  # Relative to user data directory
@@ -213,8 +211,8 @@ DEFAULT_SYSTEM_CONFIG = {
     # self-hosted on rather than for the model's advertised maximum: a KV cache
     # costs roughly 190 KiB per token on a 14B model, so 32768 is about 6 GB and
     # fits alongside quantised weights on a 16 GB card. It still covers a
-    # two-hour meeting (~25-30k tokens). The previous 131072 needed ~24 GB of
-    # cache on its own and silently failed to load on any consumer GPU.
+    # two-hour meeting (~25-30k tokens). 131072 would need ~24 GB of cache on its
+    # own and fails to load on a consumer GPU.
     "ollama_context_window": 32768,
     "secondary_ollama_context_window": 32768,
     "enable_live_transcription": True,
@@ -245,7 +243,7 @@ DEFAULT_SYSTEM_CONFIG = {
 
 DEFAULT_USER_SETTINGS = {
     "theme": "dark",  # Default theme (dark, light)
-    "llm_provider": "gemini",  # LLM provider selection
+    "llm_provider": "gemini",
     # Per-user AI usage model. Unset (or ollama/byok) resolves via the
     # install-wide llm_provider path unchanged; cli_oauth routes inference
     # through the user's own subscription (CLI OAuth). Kept out of
@@ -269,34 +267,34 @@ DEFAULT_USER_SETTINGS = {
     # within the daily budget when one is set.
     "auto_analyse_meetings": False,
     "meeting_edge_context_level": MEETING_EDGE_CONTEXT_LEVEL_DEFAULT,  # Controls how readily Meeting Edge explains technical terms
-    "gemini_api_key": None,  # Google Gemini API key
-    "openai_api_key": None,  # OpenAI API key
-    "anthropic_api_key": None,  # Anthropic API key
+    "gemini_api_key": None,
+    "openai_api_key": None,
+    "anthropic_api_key": None,
     "hf_token": None,  # Hugging Face Token for Pyannote
-    "gemini_model": _default_models["gemini_model"],  # Default Gemini model
+    "gemini_model": _default_models["gemini_model"],
     "gemini_live_model": None,  # Optional lower-latency Meeting Edge Gemini model
-    "openai_model": _default_models["openai_model"],  # Default OpenAI model
+    "openai_model": _default_models["openai_model"],
     "openai_live_model": None,  # Optional lower-latency Meeting Edge OpenAI model
-    "anthropic_model": _default_models["anthropic_model"],  # Default Anthropic model
+    "anthropic_model": _default_models["anthropic_model"],
     "anthropic_live_model": None,  # Optional lower-latency Meeting Edge Anthropic model
-    "ollama_model": None,  # Default Ollama model
+    "ollama_model": None,
     "ollama_live_model": None,  # Optional lower-latency Meeting Edge Ollama model
     "ollama_api_url": "http://host.docker.internal:11434",  # Default Ollama API URL
     "ollama_context_window": 32768,  # Ollama num_ctx for full-context meeting chat
     "secondary_llm_provider": None,  # Secondary LLM provider (used when primary is unavailable)
-    "secondary_gemini_model": None,  # Secondary Gemini model
+    "secondary_gemini_model": None,
     "secondary_gemini_live_model": None,  # Optional secondary Meeting Edge Gemini model
-    "secondary_openai_model": None,  # Secondary OpenAI model
+    "secondary_openai_model": None,
     "secondary_openai_live_model": None,  # Optional secondary Meeting Edge OpenAI model
-    "secondary_anthropic_model": None,  # Secondary Anthropic model
+    "secondary_anthropic_model": None,
     "secondary_anthropic_live_model": None,  # Optional secondary Meeting Edge Anthropic model
-    "secondary_ollama_model": None,  # Secondary Ollama model
+    "secondary_ollama_model": None,
     "secondary_ollama_live_model": None,  # Optional secondary Meeting Edge Ollama model
     "secondary_ollama_api_url": "http://host.docker.internal:11434",  # Default secondary Ollama URL
     "secondary_ollama_context_window": 32768,  # Secondary Ollama num_ctx
-    "secondary_gemini_api_key": None,  # Secondary Gemini API key
-    "secondary_openai_api_key": None,  # Secondary OpenAI API key
-    "secondary_anthropic_api_key": None,  # Secondary Anthropic API key
+    "secondary_gemini_api_key": None,
+    "secondary_openai_api_key": None,
+    "secondary_anthropic_api_key": None,
     "enable_auto_voiceprints": True,  # Automatically extract speaker voiceprints during processing
     "prefer_short_titles": True,  # Prefer short (3-5 words) meeting titles
     "transcription_language": AUTO_TRANSCRIPTION_LANGUAGE,
@@ -304,8 +302,7 @@ DEFAULT_USER_SETTINGS = {
     "notes_language_custom_instruction": "",
     # Meeting-notes structure (issue #137). The per-user key selects that user's
     # default template; the install key is the fallback an admin sets for
-    # everyone. Both NULL means the shipped built-in structure, which is the
-    # unchanged behaviour for every existing install.
+    # everyone. Both NULL means the shipped built-in structure.
     "notes_template_id": None,
     "install_notes_template_id": None,
     # Organisation vocabulary fed to the notes and Meeting Edge prompts. The two
@@ -416,7 +413,6 @@ def get_meeting_edge_context_level(settings: dict | None) -> int:
 class ConfigManager:
     def __init__(self, config_path=None):
         if config_path is None:
-            # Ensure directories exist and handle migration
             path_manager.ensure_directories_exist()
             path_manager.migrate_from_project_directory()
             config_path = CONFIG_PATH
@@ -465,7 +461,6 @@ class ConfigManager:
                         k: v for k, v in loaded_config.items() if k in valid_keys
                     }
 
-                    # Update default config with loaded values
                     config.update(filtered_config)
                     logger.info(f"Configuration loaded from {self.config_path}")
             else:
@@ -484,7 +479,6 @@ class ConfigManager:
                         self.config_path,
                     )
 
-            # Ensure necessary directories exist
             self._ensure_dirs_exist(config)
 
         except json.JSONDecodeError as e:
@@ -554,16 +548,14 @@ class ConfigManager:
         """Creates directories specified in the config if they don't exist."""
         recordings_dir = config.get("recordings_directory")
         if recordings_dir:
-            # Resolve recordings directory using PathManager
             abs_recordings_dir = path_manager.get_recordings_directory_from_config(
                 recordings_dir
             )
             try:
                 existed = abs_recordings_dir.is_dir()
                 abs_recordings_dir.mkdir(parents=True, exist_ok=True)
-                # Only announce a directory we actually made. This used to log
-                # on every load, which read as repeated directory creation in
-                # the container logs and buried the events that mattered.
+                # Only announce a directory we actually made, so the log does not
+                # read as repeated creation on every load.
                 if not existed:
                     logger.info(f"Created directory: {abs_recordings_dir}")
             except OSError as e:
@@ -571,7 +563,6 @@ class ConfigManager:
                     f"Failed to create directory {abs_recordings_dir}: {e}",
                     exc_info=True,
                 )
-                # Potentially fallback to a default or raise an error
 
     def validate_config_value(self, key, value):
         """Validates a configuration value."""
@@ -772,8 +763,6 @@ class ConfigManager:
 
 
 # Global instance (Singleton pattern)
-# This makes it easy to access the config from anywhere in the application
-# after it's initialized once at startup.
 config_manager = ConfigManager()
 
 
@@ -783,7 +772,6 @@ def get_project_root():
     if path_manager.is_development_mode:
         return str(path_manager.app_directory)
     else:
-        # In production, this concept doesn't really apply, return app directory
         return str(path_manager.app_directory)
 
 

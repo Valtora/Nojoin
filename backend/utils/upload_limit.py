@@ -12,11 +12,11 @@ UPLOAD_LIMIT_SEGMENT = int(os.getenv("UPLOAD_LIMIT_SEGMENT", 15 * 1024 * 1024))
 UPLOAD_LIMIT_LEGACY_RECORDING = int(
     os.getenv("UPLOAD_LIMIT_LEGACY_RECORDING", 250 * 1024 * 1024)
 )
-# Generous enough for a scanned report or a large deck, since visual parsing is
-# now page-by-page with no page cap and the old 20 MB ceiling rejected files the
-# parser handles fine. Matched to the legacy-recording limit rather than removed
-# outright: this is the only user-driven write-to-disk path in the product, and
-# the free-disk pre-flight below is the second line of defence.
+# Generous enough for a scanned report or a large deck, since visual parsing
+# runs page by page with no page cap. Matched to the legacy-recording limit
+# rather than removed outright: this is the only user-driven write-to-disk path
+# in the product, and the free-disk pre-flight below is the second line of
+# defence.
 UPLOAD_LIMIT_DOCUMENT = int(os.getenv("UPLOAD_LIMIT_DOCUMENT", 250 * 1024 * 1024))
 
 # Above this, the client warns about parse duration and provider cost before

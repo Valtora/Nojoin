@@ -69,7 +69,7 @@ def probe_recordings_storage() -> tuple[bool, str | None]:
     Returns ``(ok, detail)``, where ``detail`` is an operator-facing explanation
     when the probe fails. Existence is not sufficient evidence: a bind mount whose
     directories are owned by root leaves every path present and every write
-    refused, which previously surfaced only as a 500 on the first import
+    refused, which otherwise surfaces only as a 500 on the first import
     (issue #153). This creates and removes a real file so the answer reflects the
     permissions the upload path will actually meet.
     """

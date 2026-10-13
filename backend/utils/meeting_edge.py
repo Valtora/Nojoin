@@ -187,9 +187,9 @@ def build_meeting_edge_prompt_parts(
     The two always concatenate to the whole prompt, so the model sees the same
     text either way; only the cache breakpoint differs.
 
-    Composing the halves separately is what makes that guarantee structural. It
-    previously depended on finding MEETING_EDGE_CACHE_SPLIT_MARKER inside a
-    rendered string, which silently disabled caching if the heading was renamed.
+    Composing the halves separately is what makes that guarantee structural,
+    rather than finding MEETING_EDGE_CACHE_SPLIT_MARKER inside a rendered
+    string, which a heading rename would break.
 
     Returns ``("", prompt)`` for a caller-supplied override, which callers treat
     as "do not cache".

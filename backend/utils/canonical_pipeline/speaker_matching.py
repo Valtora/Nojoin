@@ -1,9 +1,8 @@
 """Resolving a speaker value onto an existing recording speaker.
 
-Split from speaker.py, which is size-capped. Nothing in that module calls this
-any more; core.py is the only consumer, so the dependency runs one way and the
-matching rules live apart from the identity-mutation code that used to house
-them.
+Kept apart from speaker.py, which is size-capped. core.py is the only consumer,
+so the dependency runs one way and the matching rules live apart from the
+identity-mutation code.
 """
 
 from .constants import *  # noqa: F403

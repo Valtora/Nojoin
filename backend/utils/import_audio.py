@@ -43,12 +43,11 @@ MEDIA_CONTAINER_SUFFIXES = frozenset(
     {".mkv", ".mka", ".mov", ".avi", ".m4v", ".ts", ".mts", ".mpg", ".mpeg", ".3gp"}
 )
 
-# Formats import accepted before media containers whose format has no video
-# stream: a WAV, an MP3 or AAC elementary stream, native FLAC. MP3 and FLAC can
-# carry cover art, which ffprobe lists as a video stream but is not video, so
-# probing them could find nothing to remove. They are stored as uploaded, as
-# before, without needing ffprobe. Every other accepted format (MP4/M4A, WebM,
-# Ogg/Opus, WMA) is a container that can hold video, so it is probed.
+# Formats with no video stream: a WAV, an MP3 or AAC elementary stream, native
+# FLAC. MP3 and FLAC can carry cover art, which ffprobe lists as a video stream
+# but is not video, so probing them could find nothing to remove. They are
+# stored as uploaded, without ffprobe. Every other accepted format (MP4/M4A,
+# WebM, Ogg/Opus, WMA) is a container that can hold video, so it is probed.
 AUDIO_ONLY_SUFFIXES = frozenset({".wav", ".mp3", ".aac", ".flac"})
 
 # The step a QUEUED import shows until ``keep_imported_audio_task`` has kept
@@ -63,8 +62,8 @@ KEEPING_AUDIO_STEP = "Extracting audio..."
 EXTRACT_TIMEOUT_S = 15 * 60
 
 # Codecs stored as they are (a stream copy: no re-encode, no quality loss), and
-# the audio-only container each goes into. Every suffix is one import accepted
-# before media containers were, so the pipeline already reads it.
+# the audio-only container each goes into. The pipeline already reads every one
+# of these suffixes.
 _STREAM_COPY_SUFFIXES = {
     "aac": ".m4a",
     "alac": ".m4a",

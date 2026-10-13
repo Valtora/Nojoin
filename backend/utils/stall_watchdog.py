@@ -50,8 +50,7 @@ DEFAULT_INTERVAL_SECONDS = 5.0
 # milliseconds, and a watchdog that cries at that is one nobody reads.
 DEFAULT_LAG_THRESHOLD_SECONDS = 1.0
 # Percent of the last 10 seconds during which some task was blocked. Sustained
-# double digits is already a degraded machine; the 6 August stall would have
-# been three figures away from this.
+# double digits is already a degraded machine.
 DEFAULT_PRESSURE_THRESHOLD = 20.0
 
 # Once pressure is high it tends to stay high, and a line every tick would bury

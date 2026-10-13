@@ -29,9 +29,7 @@ class CheckpointFilter(logging.Filter):
         ]
 
     def filter(self, record):
-        # Filters out unwanted log messages by pattern. Also verifies the record
-        # originates from speechbrain.utils.checkpoints at DEBUG level as an
-        # additional guard, though the string match should be sufficient.
+        # Drops speechbrain.utils.checkpoints DEBUG records matching the patterns.
         is_speechbrain_debug = (
             record.name == "speechbrain.utils.checkpoints"
             and record.levelno == logging.DEBUG
@@ -40,8 +38,8 @@ class CheckpointFilter(logging.Filter):
         if is_speechbrain_debug:
             for pattern in self.unwanted_patterns:
                 if pattern in record.getMessage():
-                    return False  # Don't log this message
-        return True  # Log this message
+                    return False
+        return True
 
 
 class SensitiveDataFilter(logging.Filter):
@@ -148,24 +146,22 @@ def setup_logging(log_level=None):
     if root_logger.hasHandlers():
         root_logger.handlers.clear()
 
-    # Create the filter instance
     checkpoint_filter = CheckpointFilter()
     sensitive_data_filter = SensitiveDataFilter()
 
     # File Handler (Rotating)
-    # Rotate logs after 5MB, keep 3 backup logs
     file_handler = RotatingFileHandler(
         LOG_PATH, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"
     )
     file_handler.setFormatter(log_formatter)
-    file_handler.addFilter(checkpoint_filter)  # Add filter
+    file_handler.addFilter(checkpoint_filter)
     file_handler.addFilter(sensitive_data_filter)
     root_logger.addHandler(file_handler)
 
     # Console Handler (for displaying logs during development/debugging)
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(log_formatter)
-    console_handler.addFilter(checkpoint_filter)  # Add filter
+    console_handler.addFilter(checkpoint_filter)
     console_handler.addFilter(sensitive_data_filter)
     root_logger.addHandler(console_handler)
 
@@ -173,7 +169,7 @@ def setup_logging(log_level=None):
     sb_logger = logging.getLogger("speechbrain.utils.checkpoints")
     sb_logger.setLevel(logging.DEBUG)
 
-    # Silence SQLAlchemy engine logs (redundant if echo=False, but good practice)
+    # Silence SQLAlchemy engine logs.
     logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
 
     # Silence other potentially noisy libraries
@@ -186,10 +182,5 @@ def setup_logging(log_level=None):
     logging.getLogger("celery").setLevel(log_level)
     logging.getLogger("celery.task").setLevel(log_level)
     logging.getLogger("celery.worker").setLevel(log_level)
-
-    # Silence Celery's default task logging to allow custom pretty logs
-    # logging.getLogger('celery.worker.strategy').setLevel(logging.WARNING)
-    # logging.getLogger('celery.app.trace').setLevel(logging.WARNING)
-    # logging.getLogger('celery.worker.job').setLevel(logging.WARNING)
 
     logging.info("Logging configured.")
