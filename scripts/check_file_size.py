@@ -6,9 +6,9 @@ below ``MAX_LINES`` lines. Tests and generated Alembic migrations are
 exempt -- fixtures and committed-immutable revisions legitimately run long.
 
 Files that already exceeded the limit when the gate was introduced are listed in
-``GRANDFATHERED`` with their line count at that time. A grandfathered file passes
-while it stays at or below its recorded count, but FAILS if it grows: the policy
-is shrink-not-grow. The goal is to decompose these over time and delete each
+``GRANDFATHERED`` with a recorded line count, lowered whenever the file shrinks. A
+grandfathered file passes while it stays at or below its recorded count, but FAILS
+if it grows: the policy is shrink-not-grow. The goal is to decompose these over time and delete each
 entry as it drops back under ``MAX_LINES``.
 
     python scripts/check_file_size.py
@@ -32,18 +32,18 @@ EXEMPT_PREFIXES = ("backend/tests/", "backend/alembic/versions/")
 
 
 # File-size baseline: source files that already exceeded MAX_LINES when
-# the gate was introduced, mapped to their line count at that time. A listed
-# file is allowed up to its recorded count and FAILS if it grows beyond it. Do
-# not add new entries; shrink and remove them over time.
+# the gate was introduced, mapped to their recorded line count. A listed file is
+# allowed up to its recorded count and FAILS if it grows beyond it. Lower the
+# count when a file shrinks. Do not add new entries; remove them over time.
 GRANDFATHERED: dict[str, int] = {
     # Being decomposed per-stage (mirroring the llm_services split): the
     # meeting-intelligence, meeting-edge, and catch-up diarization stages moved to
     # their own modules. What remains is the core final-recording pipeline.
-    "backend/worker/tasks/pipeline.py": 1394,
-    "backend/utils/canonical_pipeline/diarization.py": 2484,
-    "backend/utils/canonical_pipeline/core.py": 2190,
-    "backend/processing/live_transcribe.py": 1973,
-    "backend/utils/canonical_pipeline/speaker.py": 1332,
+    "backend/worker/tasks/pipeline.py": 1334,
+    "backend/utils/canonical_pipeline/diarization.py": 2483,
+    "backend/utils/canonical_pipeline/core.py": 2158,
+    "backend/processing/live_transcribe.py": 1947,
+    "backend/utils/canonical_pipeline/speaker.py": 1241,
 }
 
 
