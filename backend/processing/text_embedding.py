@@ -85,7 +85,7 @@ class TextEmbeddingService:
                     component=f"Text embedding model {MODEL_NAME}",
                     requested=providers,
                 )
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:  # noqa: BLE001 -- boundary: any CUDA or ONNX Runtime failure falls back to the CPU model
                 logger.warning(
                     f"Failed to load text embedding model with GPU, falling back to CPU: {e}"
                 )
@@ -120,7 +120,7 @@ class TextEmbeddingService:
             embeddings = list(self._model.embed(texts))
             # fastembed returns numpy arrays
             return [e.tolist() for e in embeddings]
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 -- boundary: an embedding failure returns no vectors; callers treat that as unindexed
             logger.error(f"Failed to generate embeddings: {e}")
             return []
 

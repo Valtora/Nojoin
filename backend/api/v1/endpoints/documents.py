@@ -255,7 +255,7 @@ async def upload_document(  # noqa: PLR0913 - FastAPI dependencies are parameter
             )
         except HTTPException:
             raise
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 -- boundary: any failure to store the file becomes one sanitised 500
             raise sanitized_http_exception(
                 logger=logger,
                 status_code=500,

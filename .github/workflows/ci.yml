@@ -256,6 +256,9 @@ jobs:
       - name: Check source file size
         run: python scripts/check_file_size.py
 
+      - name: Check blind-except justifications
+        run: python scripts/check_blind_excepts.py
+
       - name: Type-check stable boundaries
         run: mypy
 
@@ -489,7 +492,7 @@ jobs:
 
       # Informational on pull requests: surfaces dependency and config CVEs in
       # the repository without blocking merges. The release pipeline enforces
-      # the blocking image scan and severity policy (REL-008).
+      # the blocking image scan and severity policy.
       #
       # Trivy's pip analyzer only picks up files named exactly requirements.txt,
       # so without the file pattern the Python pins in requirements/*.txt are

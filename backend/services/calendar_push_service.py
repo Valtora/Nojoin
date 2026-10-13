@@ -257,7 +257,7 @@ async def _safe_google_stop(
         return
     try:
         await _google_stop(access_token, channel_id, resource_id)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 -- boundary: stopping a channel is best-effort; it expires on its own
         logger.info(
             "Best-effort Google channel stop failed for %s: %s", channel_id, exc
         )
@@ -270,7 +270,7 @@ async def _safe_microsoft_delete(
         return
     try:
         await _microsoft_delete_subscription(access_token, subscription_id)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 -- boundary: deleting a subscription is best-effort; it expires on its own
         logger.info(
             "Best-effort Microsoft subscription delete failed for %s: %s",
             subscription_id,
@@ -536,7 +536,7 @@ async def _provision_selected_calendars(
             continue
         try:
             await _ensure_channel(ctx, calendar, channel)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001 -- boundary: one calendar's channel failing must not stop the others
             logger.warning(
                 "Failed to provision %s push channel for calendar %s: %s",
                 provider,
@@ -568,7 +568,7 @@ async def reconcile_push_channels_for_connection(
             access_token = await _get_access_token_for_connection(
                 db, connection, runtime_config
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001 -- boundary: without a token there is nothing to reconcile; the next sweep retries
             logger.info(
                 "Push reconcile for connection %s skipped: no access token (%s)",
                 connection.id,
@@ -610,7 +610,7 @@ async def ensure_push_channels_for_connection(connection_id: int) -> None:
             if connection is None:
                 return
             await reconcile_push_channels_for_connection(db, connection)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 -- boundary: push channels are best-effort; the periodic sweep retries
         logger.warning(
             "Calendar push reconcile failed for connection %s: %s", connection_id, exc
         )
@@ -632,7 +632,7 @@ async def teardown_push_channels_for_connection(
         access_token = await _get_access_token_for_connection(
             db, connection, runtime_config
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 -- boundary: without a token the channels are left to expire
         logger.info(
             "Cannot obtain token to stop push channels for connection %s: %s",
             connection.id,
@@ -675,7 +675,7 @@ async def renew_push_channels() -> int:
                     continue
                 await reconcile_push_channels_for_connection(db, connection)
                 reconciled += 1
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001 -- boundary: one connection failing must not stop the sweep
             logger.warning(
                 "Calendar push renewal failed for connection %s: %s",
                 connection_id,
@@ -705,7 +705,7 @@ async def _debounced_enqueue_sync(connection_id: int) -> None:
             # restarting) -- otherwise every inbound notification during an
             # outage leaks a pool until the process runs out of descriptors.
             await client.close()
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 -- boundary: the debounce is an optimisation; without Redis the sync is enqueued directly
         logger.debug("Push debounce unavailable; enqueueing directly: %s", exc)
         should_enqueue = True
 
@@ -718,7 +718,7 @@ async def _debounced_enqueue_sync(connection_id: int) -> None:
             args=[connection_id],
             countdown=SYNC_DEBOUNCE_COUNTDOWN,
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 -- boundary: the periodic sync is the backstop if the queue is down
         logger.warning(
             "Failed to enqueue push-triggered sync for connection %s: %s",
             connection_id,

@@ -117,7 +117,7 @@ def release_worker_model_caches() -> None:
             try:
                 if torch_module.cuda.is_available():
                     torch_module.cuda.empty_cache()
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001 -- boundary: CUDA cache release is housekeeping; a torch error must not fail the task
                 logger.debug("CUDA cache cleanup skipped: %s", exc)
 
         # Force glibc allocator to release freed pages back to OS
@@ -128,7 +128,7 @@ def release_worker_model_caches() -> None:
             logger.debug("malloc_trim skipped or failed: %s", trim_exc)
 
         logger.info("Worker model caches released.")
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 -- boundary: cache release is housekeeping and must never fail the task
         logger.warning("Failed to release worker model caches: %s", exc)
 
 
@@ -439,10 +439,10 @@ class HeartbeatThread(threading.Thread):
             while not self.stop_event.is_set():
                 try:
                     r.set("nojoin:worker:heartbeat", "1", ex=self.expire)
-                except Exception as e:  # noqa: BLE001
+                except Exception as e:  # noqa: BLE001 -- boundary: the heartbeat loop must survive a Redis outage and retry
                     logger.warning(f"Heartbeat error: {e}")
                 time.sleep(self.interval)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 -- boundary: a failed heartbeat thread is logged; the worker keeps serving
             logger.error(f"Heartbeat thread failed to start: {e}")
 
     def stop(self):

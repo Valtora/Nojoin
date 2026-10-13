@@ -1202,7 +1202,7 @@ def _recording_uses_browser_capture_impl(session, recording_id: int) -> bool:
             .limit(1)
         )
         return session.exec(statement).first() is not None
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 -- boundary: an unreadable chunk table must not fail proxy generation; keeping the channels is the safe default
         return False
 
 

@@ -244,7 +244,7 @@ class StallWatchdog:
                 await self.tick()
             except asyncio.CancelledError:
                 raise
-            except Exception:  # noqa: BLE001 -- a watchdog must outlive its own bugs
+            except Exception:  # noqa: BLE001 -- boundary: a watchdog must outlive its own bugs
                 logger.warning("Stall watchdog tick failed.", exc_info=True)
                 await self._sleep(self.interval_seconds)
 

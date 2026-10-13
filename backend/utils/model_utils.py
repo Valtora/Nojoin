@@ -21,7 +21,7 @@ def get_whisper_model_path(model_size: str) -> Optional[str]:
         model_filename = model_url.split("/")[-1]
 
         return os.path.join(whisper_cache_root(), model_filename)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 -- boundary: whisper is optional on the API image; without it there is no path
         logger.error(f"Error getting model path for {model_size}: {e}")
         return None
 
@@ -37,7 +37,7 @@ def is_whisper_model_downloaded(model_size: str) -> bool:
         logger.debug(f"Model {model_size} file path: {model_path}, exists: {exists}")
         return exists
 
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 -- boundary: a lookup failure means not downloaded
         logger.error(f"Error checking if model {model_size} is downloaded: {e}")
         return False
 

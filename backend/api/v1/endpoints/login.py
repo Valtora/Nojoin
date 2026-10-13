@@ -1,6 +1,7 @@
 from datetime import timedelta
 from typing import Any
 
+import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -148,7 +149,7 @@ async def logout_user(
     if cookie_token:
         try:
             payload = security.decode_access_token(cookie_token)
-        except Exception:  # noqa: BLE001
+        except jwt.PyJWTError:
             payload = None
         if payload and payload.get("token_type") == security.SESSION_TOKEN_TYPE:
             username = payload.get("sub")

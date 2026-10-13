@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useId, useState } from "react";
+import { useHydrated } from "@/lib/useHydrated";
+import { useOnDepsChange } from "@/lib/useOnDepsChange";
 import DatePicker, { type ReactDatePickerCustomHeaderProps } from "react-datepicker";
 import { addDays, format, isSameDay, isSameMonth } from "date-fns";
 import { ChevronLeft, ChevronRight, Clock3 } from "lucide-react";
@@ -121,34 +123,23 @@ export default function TaskDeadlineModal({
   onClose,
   onSave,
 }: TaskDeadlineModalProps) {
-  const [mounted, setMounted] = useState(false);
-  const [draftValue, setDraftValue] = useState<Date | null>(null);
+  const mounted = useHydrated();
   const titleId = useId();
   const valueTimestamp = value?.getTime() ?? null;
   const resolvedTimeZone = resolveTimeZone(timeZone);
   const zonedNow = toTimeZoneDate(new Date(), resolvedTimeZone);
   const zonedValue = value ? toTimeZoneDate(value, resolvedTimeZone) : null;
 
-  useEffect(() => {
-    setMounted(true);
-    return () => setMounted(false);
-  }, []);
-
-  useEffect(() => {
-    if (!isOpen) {
-      setDraftValue(null);
-      return;
-    }
-
-    const nextZonedValue = value ? toTimeZoneDate(value, resolvedTimeZone) : null;
-    const nextZonedNow = toTimeZoneDate(new Date(), resolvedTimeZone);
-
-    setDraftValue(
-      nextZonedValue
-        ? new Date(nextZonedValue)
-        : buildSuggestedDeadline(nextZonedNow),
-    );
-  }, [isOpen, resolvedTimeZone, value, valueTimestamp]);
+  // The draft starts from the saved deadline, or a suggestion, each time the
+  // modal opens, and clears when it closes.
+  const openingDraft = (): Date | null => {
+    if (!isOpen) return null;
+    return zonedValue ? new Date(zonedValue) : buildSuggestedDeadline(zonedNow);
+  };
+  const [draftValue, setDraftValue] = useState<Date | null>(openingDraft);
+  useOnDepsChange([isOpen, resolvedTimeZone, value, valueTimestamp], () => {
+    setDraftValue(openingDraft());
+  });
 
   useEffect(() => {
     if (!isOpen || isSaving) {

@@ -272,6 +272,9 @@ export function useAISettingsModels(
       cancelled = true;
       clearInterval(timer);
     };
+    // pollingProgress alone starts and stops the poll. refreshStatus is
+    // redefined every render and addNotification is a store action; listing
+    // either would tear the interval down and restart it mid-cycle.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pollingProgress]);
 

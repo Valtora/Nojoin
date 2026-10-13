@@ -62,7 +62,7 @@ def _chart_to_markdown(chart) -> Optional[str]:
                 values = list(series.values)
                 row.append(values[row_index] if row_index < len(values) else "")
             rows.append(row)
-    except Exception as e:  # noqa: BLE001 - chart shapes vary widely
+    except Exception as e:  # noqa: BLE001 -- boundary: chart shapes vary widely
         logger.debug("Chart data extraction failed: %s", e)
         return None
 
@@ -73,7 +73,7 @@ def _chart_to_markdown(chart) -> Optional[str]:
     try:
         if chart.has_title:
             title = chart.chart_title.text_frame.text.strip()
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 -- boundary: python-pptx raises assorted errors on charts without a title
         title = ""
     heading = f"Chart: {title}" if title else "Chart"
     return f"**{heading}**\n\n{table}"
@@ -84,7 +84,7 @@ def _picture_image(shape) -> Optional[VisionImage]:
         image = shape.image
         media_type = _PICTURE_MEDIA_TYPES.get((image.ext or "").lower(), "image/png")
         return VisionImage(data=image.blob, media_type=media_type)
-    except Exception as e:  # noqa: BLE001 - linked or corrupt pictures
+    except Exception as e:  # noqa: BLE001 -- boundary: linked or corrupt pictures
         logger.debug("Picture extraction failed: %s", e)
         return None
 
@@ -105,7 +105,7 @@ def _iter_shapes(shapes):
                 getattr(shape, "left", None) or 0,
             ),
         )
-    except Exception:  # noqa: BLE001 - placeholders may lack geometry
+    except Exception:  # noqa: BLE001 -- boundary: placeholders may lack geometry
         ordered = list(shapes)
 
     for shape in ordered:
@@ -126,7 +126,7 @@ def _slide_notes(slide) -> Optional[str]:
         if not slide.has_notes_slide:
             return None
         notes = slide.notes_slide.notes_text_frame.text.strip()
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 -- boundary: python-pptx raises assorted errors on malformed notes; the slide is still parsed
         logger.debug("Notes extraction failed: %s", e)
         return None
     return notes or None
@@ -136,7 +136,7 @@ def _slide_title(slide) -> Optional[str]:
     try:
         if slide.shapes.title is not None:
             return (slide.shapes.title.text or "").strip() or None
-    except Exception:  # noqa: BLE001 - layouts without a title placeholder
+    except Exception:  # noqa: BLE001 -- boundary: layouts without a title placeholder
         pass
     return None
 
@@ -248,7 +248,7 @@ def _docx_images(document, *, want_images: bool) -> List[VisionImage]:
             if not content_type.startswith("image/"):
                 continue
             images.append(VisionImage(data=part.blob, media_type=content_type))
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 -- boundary: python-docx raises assorted errors on broken image parts; the text is still parsed
         logger.debug("DOCX image extraction failed: %s", e)
     return images
 

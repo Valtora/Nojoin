@@ -472,7 +472,7 @@ class ConfigManager:
                 # saving settings later, not a reason to refuse to start.
                 try:
                     self._save_config(config)
-                except Exception:  # noqa: BLE001
+                except Exception:  # noqa: BLE001 -- boundary: an unwritable config directory is reported, not fatal at startup
                     logger.warning(
                         "Could not write the initial configuration file at %s. "
                         "Install-wide settings will not be persistable.",
@@ -756,7 +756,7 @@ class ConfigManager:
         if os.path.exists(old_path) and not os.path.exists(new_path):
             try:
                 os.rename(old_path, new_path)
-            except Exception:  # noqa: BLE001
+            except OSError:
                 import shutil
 
                 shutil.move(old_path, new_path)
@@ -816,7 +816,7 @@ def migrate_file_if_needed(old_path, new_path):
     if os.path.exists(old_path) and not os.path.exists(new_path):
         try:
             os.rename(old_path, new_path)
-        except Exception:  # noqa: BLE001
+        except OSError:
             import shutil
 
             shutil.move(old_path, new_path)

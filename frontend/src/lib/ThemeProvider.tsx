@@ -68,6 +68,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   // falls back to System rather than reaching the select or the class list.
   useEffect(() => {
     const initialTheme = readStoredTheme();
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- storage is read after hydration so the server and the client render the same tree; the theme control shows this value
     setThemeState(initialTheme);
     const resolved = resolveTheme(initialTheme);
     setResolvedTheme(resolved);

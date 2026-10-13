@@ -218,7 +218,7 @@ async def _get_redis() -> Optional[redis.Redis]:
         try:
             _redis_client = redis.from_url(REDIS_URL, decode_responses=True)
             await _redis_client.ping()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001 -- boundary: Redis is optional for rate limiting; the in-memory window takes over
             logger.warning(f"Could not connect to Redis for rate limiting: {exc}")
             _redis_client = None
             return None
@@ -242,7 +242,7 @@ async def _consume_redis_window(
             ttl = window_seconds
 
         return count, ttl
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 -- boundary: Redis is optional for rate limiting; the in-memory window takes over
         logger.warning(f"Redis-backed rate limiting failed for {key}: {exc}")
         return None
 
@@ -321,7 +321,7 @@ async def acquire_concurrency_limit(key: str, limit: int) -> bool:
                 await client.decr(key)
                 return False
             return True
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001 -- boundary: Redis is optional for concurrency limits; the in-memory counter takes over
             logger.warning(f"Redis concurrency check failed: {exc}")
             # Fall through to in-memory fallback
 
@@ -343,7 +343,7 @@ async def release_concurrency_limit(key: str):
             if val is not None and int(val) <= 0:
                 await client.delete(key)
             return
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001 -- boundary: Redis is optional for concurrency limits; the in-memory counter takes over
             logger.warning(f"Redis concurrency release failed: {exc}")
             # Fall through to in-memory fallback
 

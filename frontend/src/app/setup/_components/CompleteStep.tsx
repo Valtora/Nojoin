@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useMemo } from "react";
+import { useHydrated } from "@/lib/useHydrated";
 import {
   AlertTriangle,
   ArrowRight,
@@ -50,15 +51,14 @@ export default function CompleteStep({
   summary,
   onComplete,
 }: CompleteStepProps) {
-  // Detected after mount: the server render has no navigator, and guessing
-  // there would flash an unsupported-browser warning at every visitor.
-  const [capture, setCapture] = useState<CaptureSupport | null>(null);
-  const [secureContext, setSecureContext] = useState(true);
-
-  useEffect(() => {
-    setCapture(detectCaptureSupport());
-    setSecureContext(window.isSecureContext);
-  }, []);
+  // Detected only once hydrated: the server render has no navigator, and
+  // guessing there would flash an unsupported-browser warning at every visitor.
+  const hydrated = useHydrated();
+  const capture = useMemo<CaptureSupport | null>(
+    () => (hydrated ? detectCaptureSupport() : null),
+    [hydrated],
+  );
+  const secureContext = hydrated ? window.isSecureContext : true;
 
   if (!modelPreparationComplete) {
     return (

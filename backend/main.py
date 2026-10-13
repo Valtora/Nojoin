@@ -325,12 +325,12 @@ async def lifespan(app: FastAPI):
     log_recordings_storage_warnings(logger_instance=logger)
     try:
         await seed_demo_data()
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 -- boundary: a failed demo seed must not stop the API starting
         logger.error(f"Failed to seed demo data on startup: {e}")
 
     try:
         await enqueue_model_preparation(include_core=True)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 -- boundary: model preparation is queued best-effort at startup; the admin page can retry
         logger.error("Failed to queue startup model preparation: %s", e, exc_info=True)
 
     # Started last, so it measures the loop that actually serves requests rather

@@ -62,6 +62,7 @@ export default function FitText({
   }, [maxRem, minRem]);
 
   useLayoutEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fit measures the rendered text and stores the size it found; a layout effect is where DOM measurement belongs
     fit();
     const container = containerRef.current;
     if (!container || typeof ResizeObserver === "undefined") return;

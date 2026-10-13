@@ -45,7 +45,7 @@ def _extract_tables(page) -> List[str]:
     """
     try:
         finder = page.find_tables()
-    except Exception as e:  # noqa: BLE001 - table finding is best-effort
+    except Exception as e:  # noqa: BLE001 -- boundary: table finding is best-effort
         logger.debug("Table detection unavailable on this page: %s", e)
         return []
 
@@ -53,7 +53,7 @@ def _extract_tables(page) -> List[str]:
     for table in getattr(finder, "tables", []):
         try:
             rows = table.extract()
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 -- boundary: one unreadable table must not lose the page
             logger.debug("Table extraction failed: %s", e)
             continue
         markdown = rows_to_markdown_table(rows)

@@ -78,7 +78,7 @@ def run_device_login(  # noqa: C901, PLR0912, PLR0915 - cohesive pty read/parse/
     if pid == 0:  # child: become the codex CLI under the pty
         try:
             os.execvpe(CODEX_PATH, [CODEX_PATH, "login", "--device-auth"], env)
-        except Exception:  # noqa: BLE001 - exec failure in the forked child
+        except Exception:  # noqa: BLE001 -- boundary: the forked child must exit, never return into the parent's code
             os._exit(127)
 
     buffer = ""
@@ -109,7 +109,7 @@ def run_device_login(  # noqa: C901, PLR0912, PLR0915 - cohesive pty read/parse/
                         reported = True
                         try:
                             on_code(url.group(0), code.group(1))
-                        except Exception:  # noqa: BLE001 - publish is best-effort
+                        except Exception:  # noqa: BLE001 -- boundary: publish is best-effort
                             logger.exception("codex login: on_code publish failed")
             reaped_pid, status = os.waitpid(pid, os.WNOHANG)
             if reaped_pid == pid:

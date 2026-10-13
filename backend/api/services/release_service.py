@@ -148,7 +148,7 @@ async def _fetch_github_releases(limit: int = MAX_RELEASE_HISTORY) -> list[Relea
                 return []
 
             payload = response.json()
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 -- boundary: update checks are informational; any failure means no data
         logger.debug("Failed to fetch GitHub releases metadata.", exc_info=True)
         return []
 
@@ -217,7 +217,7 @@ async def _fetch_latest_from_ghcr() -> str | None:
                 key=lambda value: parse_semver(value) or (0, 0, 0), reverse=True
             )
             return normalise_version(semver_tags[0])
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 -- boundary: update checks are informational; any failure means no data
         logger.debug("Failed to fetch latest version from GHCR.", exc_info=True)
         return None
 
@@ -228,7 +228,7 @@ async def _fetch_latest_from_github_raw() -> str | None:
             response = await client.get(GITHUB_RAW_VERSION_URL)
             if response.status_code == 200:
                 return normalise_version(response.text.strip())
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 -- boundary: update checks are informational; any failure means no data
         logger.debug("Failed to fetch version from GitHub raw.", exc_info=True)
     return None
 

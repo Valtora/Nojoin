@@ -110,5 +110,5 @@ def _close(client) -> None:
     # is not closed leaks one for the life of the process.
     try:
         client.close()
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 -- boundary: closing the client is best-effort teardown
         pass

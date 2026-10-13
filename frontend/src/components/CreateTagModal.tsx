@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
+import { useOnDepsChange } from "@/lib/useOnDepsChange";
 
 import Button from "./ui/Button";
 import Input from "./ui/Input";
@@ -28,9 +29,12 @@ export default function CreateTagModal({
   const [tagName, setTagName] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
+  useOnDepsChange([isOpen], () => {
+    if (isOpen) setTagName("");
+  });
+
   useEffect(() => {
     if (!isOpen) return;
-    setTagName("");
     // Focus after the open transition, so the caret is not placed on an
     // element that is still animating in.
     const timer = setTimeout(() => inputRef.current?.focus(), 100);

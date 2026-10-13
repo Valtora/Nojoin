@@ -329,6 +329,7 @@ export default function SystemTab() {
     "nojoin-worker-gpu",
     "nojoin-worker-cpu",
     "nojoin-worker-io",
+    "nojoin-worker-parse",
     "nojoin-frontend",
     "nojoin-nginx",
     "nojoin-redis",

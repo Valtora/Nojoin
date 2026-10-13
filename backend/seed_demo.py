@@ -1,7 +1,7 @@
 import logging
 import os
 import wave
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from sqlmodel import select
 
@@ -12,6 +12,7 @@ from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
 from backend.models.transcript import Transcript
 from backend.models.user import User
 from backend.utils.path_manager import PathManager
+from backend.utils.time import utc_now
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +62,7 @@ async def seed_demo_data(user_id: int | None = None, force: bool = False) -> Non
                     # Generate 30 seconds of silence
                     n_frames = 16000 * 30
                     wav_file.writeframes(b"\x00" * n_frames * 2)
-            except Exception as e:  # noqa: BLE001
+            except (OSError, wave.Error) as e:
                 logger.error(f"Failed to create demo audio file: {e}")
                 return
 
@@ -102,7 +103,7 @@ async def seed_demo_data(user_id: int | None = None, force: bool = False) -> Non
             is_archived=False,
             is_deleted=False,
             user_id=target_user.id,
-            created_at=datetime.now() - timedelta(days=1),
+            created_at=utc_now() - timedelta(days=1),
         )
         session.add(recording)
         await session.commit()

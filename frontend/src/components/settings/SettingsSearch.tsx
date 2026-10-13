@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useOnDepsChange } from "@/lib/useOnDepsChange";
 import { Search } from "lucide-react";
 
 import { cn } from "@/lib/cn";
@@ -51,9 +52,7 @@ export default function SettingsSearch({
     onQueryChange?.(query);
   }, [onQueryChange, query]);
 
-  useEffect(() => {
-    setActiveIndex(0);
-  }, [query]);
+  useOnDepsChange([query], () => setActiveIndex(0));
 
   useEffect(() => {
     if (!open) {

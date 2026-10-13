@@ -142,7 +142,7 @@ def _write_audio_members(
                 zipf.write(
                     entry.source_path, entry.arcname, compress_type=compress_type
                 )
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 -- boundary: one audio file failing is counted; the archive still completes
             logger.error(f"Failed to process audio {entry.source_path}: {e}")
             failed += 1
         finally:
@@ -168,7 +168,7 @@ def _write_document_members(
         report("Adding documents", index, total)
         try:
             zipf.write(source_path, arcname)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 -- boundary: one document failing is counted; the archive still completes
             logger.error(f"Failed to archive document {source_path}: {e}")
             failed += 1
 
@@ -183,7 +183,7 @@ def _write_config_member(zipf: zipfile.ZipFile, config_path: Path) -> None:
     try:
         config_data = _redact_sensitive_data(json.loads(config_path.read_text()))
         zipf.writestr("config.json", json.dumps(config_data, indent=2))
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 -- boundary: the config member is optional; the archive still completes
         logger.error(f"Failed to back up config: {e}")
 
 
@@ -205,7 +205,7 @@ class _ExportRequest:
             return
         try:
             self.progress_callback(stage, current, total)
-        except Exception:  # noqa: BLE001 -- reporting must never fail an export
+        except Exception:  # noqa: BLE001 -- boundary: reporting must never fail an export
             logger.debug("Backup progress callback failed", exc_info=True)
 
 
@@ -302,7 +302,7 @@ async def create_backup(
                     progress_callback(
                         "Reading database", table_index, len(runtime.MODELS)
                     )
-                except Exception:  # noqa: BLE001
+                except Exception:  # noqa: BLE001 -- boundary: reporting must never fail an export
                     logger.debug("Backup progress callback failed", exc_info=True)
             results = await session.execute(
                 _table_dump_statement(table_name, model_cls)
@@ -358,7 +358,7 @@ def create_backup_blocking(
                     progress_callback(
                         "Reading database", table_index, len(runtime.MODELS)
                     )
-                except Exception:  # noqa: BLE001
+                except Exception:  # noqa: BLE001 -- boundary: reporting must never fail an export
                     logger.debug("Backup progress callback failed", exc_info=True)
             items = session.exec(_table_dump_statement(table_name, model_cls)).all()
 

@@ -330,7 +330,7 @@ def analyze_window_speakers(
                 device_str=device_str,
                 hf_token=hf_token,
             )
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 -- boundary: embedding extraction is optional; the speaker keeps its local label
             embedding = None
         if not embedding:
             metadata_by_key[local_speaker_key] = metadata

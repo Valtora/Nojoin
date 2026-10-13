@@ -54,7 +54,7 @@ def codex_device_login_task(self, user_id: int) -> None:
         logger.warning(  # noqa: F405
             "Codex device login failed for user %s: %s", user_id, exc
         )
-    except Exception as exc:  # noqa: BLE001 - report any failure to the client
+    except Exception as exc:  # noqa: BLE001 -- boundary: report any failure to the client
         _wipe_auth_json(user_id)
         codex_oauth.publish_login_state(
             user_id,

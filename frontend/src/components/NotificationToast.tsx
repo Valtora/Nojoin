@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import {  } from 'react';
+import { useHydrated } from '@/lib/useHydrated';
 import { X, CheckCircle, AlertTriangle, Info, AlertCircle } from 'lucide-react';
 import { useNotificationStore } from '@/lib/notificationStore';
 
@@ -20,11 +21,7 @@ const bgColors = {
 
 export default function NotificationToast() {
   const { activeNotifications, dismissToast } = useNotificationStore();
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  const mounted = useHydrated();
 
   if (!mounted) return null;
 

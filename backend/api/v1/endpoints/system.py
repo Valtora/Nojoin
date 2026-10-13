@@ -108,7 +108,7 @@ def resolve_tls_fingerprint() -> str | None:
                             "Retrieved TLS fingerprint from trusted HTTPS origin."
                         )
                         return formatted_fp
-        except Exception:  # noqa: BLE001
+        except OSError:
             logger.warning(
                 "Dynamic TLS certificate retrieval failed; falling back to local certificate."
             )
@@ -138,7 +138,7 @@ def resolve_tls_fingerprint() -> str | None:
         formatted_fp = format_fingerprint(der_data)
         logger.info("Retrieved TLS fingerprint from local certificate fallback.")
         return formatted_fp
-    except Exception:  # noqa: BLE001
+    except (OSError, ValueError):
         logger.error(
             "Unable to resolve TLS fingerprint from local certificate fallback."
         )
@@ -160,6 +160,7 @@ ALLOWED_CONTAINERS = {
     "nojoin-worker-gpu",
     "nojoin-worker-cpu",
     "nojoin-worker-io",
+    "nojoin-worker-parse",
     "nojoin-worker",  # legacy single-worker deployments
     "nojoin-frontend",
     "nojoin-nginx",
@@ -171,6 +172,7 @@ ALLOWED_CONTAINERS = {
     "nojoin-dev-worker-gpu",
     "nojoin-dev-worker-cpu",
     "nojoin-dev-worker-io",
+    "nojoin-dev-worker-parse",
     "nojoin-dev-worker",  # legacy single-worker deployments
     "nojoin-dev-frontend",
     "nojoin-dev-nginx",
@@ -178,6 +180,20 @@ ALLOWED_CONTAINERS = {
     "nojoin-dev-db",
     "nojoin-dev-socket-proxy",
 }
+
+# What the live log view streams when "all" is selected. Matches the picker in
+# SystemTab.tsx; the legacy single worker and the socket proxy are left out.
+LOG_ALL_CONTAINERS = (
+    "nojoin-api",
+    "nojoin-worker-gpu",
+    "nojoin-worker-cpu",
+    "nojoin-worker-io",
+    "nojoin-worker-parse",
+    "nojoin-frontend",
+    "nojoin-nginx",
+    "nojoin-redis",
+    "nojoin-db",
+)
 
 
 @router.get("/logs/download")
@@ -211,7 +227,7 @@ def download_logs(
         )
     except NotFound:
         raise HTTPException(status_code=404, detail=f"Container {container} not found")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 -- boundary: docker-py raises assorted errors; all of them become one 500
         logger.error(f"Error fetching logs for {container}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -265,32 +281,12 @@ async def websocket_logs(
                 formatted_line = f"[{container_name}] {text}"
                 # Schedule put_nowait/put to run in the main loop
                 asyncio.run_coroutine_threadsafe(q.put(formatted_line), loop)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 -- boundary: the reader thread reports the failure into the stream rather than dying
             if active:
                 err_msg = f"[{container_name}] Error reading logs: {e}"
                 asyncio.run_coroutine_threadsafe(q.put(err_msg), loop)
 
-    targets = []
-    if container == "all":
-        try:
-            containers_list = [
-                "nojoin-api",
-                "nojoin-worker-gpu",
-                "nojoin-worker-cpu",
-                "nojoin-worker-io",
-                "nojoin-frontend",
-                "nojoin-nginx",
-                "nojoin-redis",
-                "nojoin-db",
-            ]
-            for c_name in containers_list:
-                targets.append(c_name)
-        except Exception as e:  # noqa: BLE001
-            await websocket.send_text(f"Error listing containers: {e}")
-            await websocket.close()
-            return
-    else:
-        targets.append(container)
+    targets = list(LOG_ALL_CONTAINERS) if container == "all" else [container]
 
     import threading
 
@@ -306,7 +302,7 @@ async def websocket_logs(
             await websocket.send_text(line)
     except WebSocketDisconnect:
         pass
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 -- boundary: a failed send ends the stream; the finally block stops the readers
         logger.error(f"WebSocket send error: {e}")
     finally:
         active = False
@@ -485,7 +481,7 @@ async def setup_system(
     else:
         try:
             await seed_demo_data(user.id)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 -- boundary: a failed demo seed must not fail first-run setup
             logger.error(f"Failed to seed demo data during setup: {e}")
 
     # The wizard checkbox is an explicit, visible consent, so it also retires
@@ -509,7 +505,7 @@ async def setup_system(
             transcription_backend="whisper",
             include_core=True,
         )
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 -- boundary: model preparation is queued best-effort; the admin page can retry
         logger.error(
             "Failed to queue first-run model preparation: %s", e, exc_info=True
         )
@@ -666,7 +662,7 @@ async def prepare_models_endpoint(
             transcription_backend=transcription_backend,
             include_core=include_core,
         )
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 -- boundary: a queue failure becomes a 503 the admin page can act on
         logger.error("Failed to queue model preparation: %s", e, exc_info=True)
         raise HTTPException(
             status_code=503,
@@ -715,7 +711,7 @@ async def delete_model_endpoint(
                 "on the worker; refresh model status in a moment."
             ),
         )
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 -- boundary: task.get re-raises whatever the worker raised; all of it is a 503 here
         logger.error("Model deletion task failed for %s: %s", model_name, e)
         raise HTTPException(
             status_code=503,

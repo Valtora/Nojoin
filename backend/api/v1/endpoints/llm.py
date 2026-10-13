@@ -99,7 +99,7 @@ async def list_models(
             log_message=f"Rejected LLM model listing request for provider '{provider}'.",
             exc=e,
         )
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 -- boundary: provider SDK errors share no base class; all become one sanitised 500
         raise sanitized_http_exception(
             logger=logger,
             status_code=500,
@@ -143,7 +143,7 @@ async def get_vision_support(
             log_message=f"Rejected vision-support probe for provider '{provider}'.",
             exc=e,
         )
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 -- boundary: an unreachable provider answers unknown rather than failing the probe
         # An unreachable provider is indistinguishable from one that simply
         # cannot answer, and neither should block an upload.
         logger.debug(f"Vision-support probe failed for provider '{provider}': {e}")

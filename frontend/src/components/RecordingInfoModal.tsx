@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useOnDepsChange } from "@/lib/useOnDepsChange";
 import { FileAudio, Server, Monitor } from "lucide-react";
 import { getRecordingInfo } from "@/lib/api";
 import { useNotificationStore } from "@/lib/notificationStore";
@@ -22,25 +23,30 @@ export default function RecordingInfoModal({
   const [unavailable, setUnavailable] = useState(false);
   const { addNotification } = useNotificationStore();
 
-  useEffect(() => {
+  // Each open starts from a loading state; the fetch below fills it in.
+  useOnDepsChange([isOpen, recording.id], () => {
     if (isOpen) {
       setLoading(true);
       setUnavailable(false);
-      getRecordingInfo(recording.id)
-        .then((nextInfo) => {
-          setInfo(nextInfo);
-          setUnavailable(false);
-        })
-        .catch((err) => {
-          console.error(err);
-          setUnavailable(true);
-          addNotification({
-            type: "error",
-            message: "Failed to load recording info.",
-          });
-        })
-        .finally(() => setLoading(false));
     }
+  });
+
+  useEffect(() => {
+    if (!isOpen) return;
+    getRecordingInfo(recording.id)
+      .then((nextInfo) => {
+        setInfo(nextInfo);
+        setUnavailable(false);
+      })
+      .catch((err) => {
+        console.error(err);
+        setUnavailable(true);
+        addNotification({
+          type: "error",
+          message: "Failed to load recording info.",
+        });
+      })
+      .finally(() => setLoading(false));
   }, [addNotification, isOpen, recording.id]);
 
   return (

@@ -158,7 +158,7 @@ async def export_content(
 
             content = "\n".join(sections)
             media_type = "text/plain"
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 -- boundary: any failure to render the export becomes one 500; the traceback is logged
         logger.error(f"Export generation failed: {e}")
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail="Export generation failed")

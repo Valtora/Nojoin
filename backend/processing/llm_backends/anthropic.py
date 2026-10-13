@@ -113,7 +113,7 @@ class AnthropicLLMBackend(LLMBackend):
                 return sorted([m.id for m in models if "claude" in m.id])
             else:
                 return []
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 -- boundary: listing is advisory; an unreachable provider lists nothing
             logger.error(f"Anthropic API error (list models): {e}")
             return []
 
@@ -140,7 +140,7 @@ class AnthropicLLMBackend(LLMBackend):
                     max_tokens=max_tokens, **kwargs
                 ) as stream:
                     response = stream.get_final_message()
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001 -- boundary: only the ceiling error is handled here; everything else is re-raised
                 if not is_output_ceiling_error(exc):
                     raise
                 logger.info(
@@ -207,7 +207,7 @@ class AnthropicLLMBackend(LLMBackend):
             manager = self.client.messages.stream(max_tokens=max_tokens, **kwargs)
             try:
                 return manager.__enter__(), manager
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001 -- boundary: only the ceiling error is handled here; everything else is re-raised
                 if not is_output_ceiling_error(exc):
                     raise
                 logger.info(
@@ -255,7 +255,7 @@ class AnthropicLLMBackend(LLMBackend):
             )
             text = _response_text_or_raise(response, "the speaker suggestions")
             return self.parse_speaker_inference_result(text, eligible_labels)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 -- boundary: SDK errors share no base class; every failure becomes one actionable RuntimeError
             logger.error(f"Anthropic API error (speaker suggestions): {e}")
             raise RuntimeError(f"Anthropic API error (speaker suggestions): {e}")
 
@@ -315,7 +315,7 @@ class AnthropicLLMBackend(LLMBackend):
             # Already a precise, user-facing message; wrapping it as a generic
             # API error would bury the one thing the user can act on.
             raise
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 -- boundary: SDK errors share no base class; every failure becomes one actionable RuntimeError
             logger.error(f"Anthropic API error (meeting notes): {e}")
             raise RuntimeError(f"Anthropic API error (meeting notes): {e}")
 
@@ -339,7 +339,7 @@ class AnthropicLLMBackend(LLMBackend):
             return self.parse_automatic_meeting_intelligence_result(text, request)
         except TruncatedNotesError:
             raise
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 -- boundary: SDK errors share no base class; every failure becomes one actionable RuntimeError
             logger.error(f"Anthropic API error (meeting intelligence): {e}")
             raise RuntimeError(f"Anthropic API error (meeting intelligence): {e}")
 
@@ -363,7 +363,7 @@ class AnthropicLLMBackend(LLMBackend):
             return _response_text(response)
         except TruncatedNotesError:
             raise
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 -- boundary: SDK errors share no base class; every failure becomes one actionable RuntimeError
             logger.error(f"Anthropic API error (text generation): {e}")
             raise RuntimeError(f"Anthropic API error (text generation): {e}")
 
@@ -402,7 +402,7 @@ class AnthropicLLMBackend(LLMBackend):
             return _response_text(response)
         except TruncatedNotesError:
             raise
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 -- boundary: SDK errors share no base class; vision refusals are told apart, the rest become one RuntimeError
             if is_vision_unsupported_error(e):
                 raise VisionUnsupportedError(
                     f"The selected Anthropic model ({self.model}) does not accept images."
@@ -452,7 +452,7 @@ class AnthropicLLMBackend(LLMBackend):
             )
             text = _response_text_or_raise(response, "the Meeting Edge update")
             return self.parse_meeting_edge_result(text, request)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 -- boundary: SDK errors share no base class; every failure becomes one actionable RuntimeError
             logger.error(f"Anthropic API error (Meeting Edge): {e}")
             raise RuntimeError(f"Anthropic API error (Meeting Edge): {e}")
 
@@ -508,7 +508,7 @@ class AnthropicLLMBackend(LLMBackend):
                 )
             text = _response_text(response)
             return self.parse_meeting_analysis_result(text, request)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 -- boundary: SDK errors share no base class; every failure becomes one actionable RuntimeError
             logger.error(f"Anthropic API error (meeting analysis): {e}")
             raise RuntimeError(f"Anthropic API error (meeting analysis): {e}")
 
@@ -545,7 +545,7 @@ class AnthropicLLMBackend(LLMBackend):
             return _response_text(response)
         except TruncatedNotesError:
             raise
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 -- boundary: SDK errors share no base class; every failure becomes one actionable RuntimeError
             logger.error(f"Anthropic API error (chat): {e}")
             raise RuntimeError(f"Anthropic API error (chat): {e}")
 
@@ -637,7 +637,7 @@ class AnthropicLLMBackend(LLMBackend):
             finally:
                 stream_manager.__exit__(None, None, None)
 
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 -- boundary: SDK errors share no base class; every failure becomes one actionable RuntimeError
             logger.error(f"Anthropic API error (streaming chat): {e}")
             raise RuntimeError(f"Anthropic API error (streaming chat): {e}")
 
@@ -667,7 +667,7 @@ class AnthropicLLMBackend(LLMBackend):
             )
             title = self.parse_title(_response_text_or_raise(response, "the title"))
             return title
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 -- boundary: SDK errors share no base class; every failure becomes one actionable RuntimeError
             logger.error(f"Anthropic API error (meeting title): {e}")
             raise RuntimeError(f"Anthropic API error (meeting title): {e}")
 
@@ -694,6 +694,6 @@ class AnthropicLLMBackend(LLMBackend):
                 messages=[{"role": "user", "content": "Hi"}],
             )
             return True
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 -- boundary: any failure means the key did not validate
             logger.error(f"Anthropic API validation failed: {e}")
             raise ValueError(f"Anthropic API validation failed: {e}")

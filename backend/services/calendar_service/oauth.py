@@ -73,7 +73,7 @@ async def _save_oauth_state(state: str, payload: dict[str, Any]) -> None:
             # path leaks a pool per authorisation attempt.
             await client.close()
         return
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 -- boundary: Redis is optional here; the in-memory fallback takes over
         pass
 
     _oauth_state_fallback[state] = (expires_at, payload)
@@ -91,7 +91,7 @@ async def _pop_oauth_state(state: str) -> dict[str, Any] | None:
         finally:
             # Close the pool even when get()/delete() raise (see _save_oauth_state).
             await client.close()
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 -- boundary: Redis is optional here; the in-memory fallback is read next
         pass
 
     expires_at, payload = _oauth_state_fallback.pop(state, (None, None))

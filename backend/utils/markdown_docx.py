@@ -70,7 +70,7 @@ def _add_hyperlink(paragraph: Any, url: str, text: str) -> None:
             "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink",
             is_external=True,
         )
-    except Exception:  # noqa: BLE001 - a bad URL must not fail the export
+    except Exception:  # noqa: BLE001 -- boundary: a bad URL must not fail the export
         paragraph.add_run(text)
         return
 

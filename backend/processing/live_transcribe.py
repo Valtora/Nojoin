@@ -147,7 +147,7 @@ def _persist_asr_window_result_best_effort(mutator) -> None:
         mutator(session)
         if hasattr(session, "commit"):
             session.commit()
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 -- boundary: the window result is advisory; the live lane must keep going
         if hasattr(session, "rollback"):
             session.rollback()
         logger.warning("Failed to persist ASR window result", exc_info=True)
@@ -187,7 +187,7 @@ def _load_recording_audio_window_manifests(
             .where(RecordingAudioWindowManifest.recording_id == recording_id)
             .order_by(RecordingAudioWindowManifest.window_index)
         ).all()
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 -- boundary: the live lane must keep transcribing when the manifest table is unreadable
         return []
 
 
@@ -203,7 +203,7 @@ def _load_recording_audio_chunks(
             .where(RecordingAudioChunk.recording_id == recording_id)
             .order_by(RecordingAudioChunk.sequence_no)
         ).all()
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 -- boundary: the live lane must keep transcribing when the chunk table is unreadable
         return []
 
 

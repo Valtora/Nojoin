@@ -325,7 +325,7 @@ async def validate_llm(
                 status_code=400, detail=PUBLIC_LLM_VALIDATION_ERROR_DETAIL
             )
         raise
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 -- boundary: provider SDK errors share no base class; all become one sanitised 400
         _raise_setup_validation_error(
             client_detail=PUBLIC_LLM_VALIDATION_ERROR_DETAIL,
             log_message=(
@@ -358,7 +358,7 @@ async def list_models(
             )
             raise HTTPException(status_code=400, detail=PUBLIC_MODEL_LIST_ERROR_DETAIL)
         raise
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 -- boundary: provider SDK errors share no base class; all become one sanitised 400
         _raise_setup_validation_error(
             client_detail=PUBLIC_MODEL_LIST_ERROR_DETAIL,
             log_message=(

@@ -62,7 +62,7 @@ def _restore_check_version(zipf: zipfile.ZipFile) -> None:
 
     try:
         info = json.loads(zipf.read("backup_info.json"))
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 -- boundary: an unreadable info member is treated as a legacy archive
         logger.warning(f"Failed to read backup info: {e}")
         return
 
@@ -111,7 +111,7 @@ def _restore_preflight_validate(zipf: zipfile.ZipFile, state: "_RestoreState") -
             continue
         try:
             json.loads(zipf.read(member))
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 -- boundary: every unreadable member is re-raised as one damaged-archive error
             raise ValueError(
                 f"This backup is damaged: {member} is not readable ({e})."
             ) from e
@@ -223,7 +223,7 @@ def _restore_config(zipf: zipfile.ZipFile, state: "_RestoreState") -> None:
             config_path.write_text(json.dumps(current_config, indent=2))
         else:
             config_path.write_text(json.dumps(new_config, indent=2))
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 -- boundary: the config member is optional; the restore still completes
         logger.error(f"Failed to restore config: {e}")
 
 
@@ -254,7 +254,7 @@ def _restore_cleanup_staging(state: "_RestoreState") -> None:
         return
     try:
         shutil.rmtree(os.fspath(staging_dir), ignore_errors=True)
-    except Exception as e:  # noqa: BLE001
+    except OSError as e:
         logger.warning("Failed to remove restore staging directory: %s", e)
 
 
@@ -309,7 +309,7 @@ def _restore_preflight_overwrite(
                 delete(runtime.Recording).where(runtime.Recording.id.in_(existing_ids))
             )
             session.flush()
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 -- boundary: a failed pre-delete leaves conflicts for the insert loop to count
         logger.error(f"Pre-flight cleanup failed: {e}")
 
 
@@ -374,7 +374,7 @@ def _restore_enqueue_finalization(state: "_RestoreState") -> None:
                 recording_id,
                 needs_proxy=recording_id in state.recordings_requiring_proxy,
             )
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 -- boundary: one recording failing to queue must not stop the rest
             logger.error(
                 "Failed to enqueue finalization for restored recording %s: %s",
                 recording_id,

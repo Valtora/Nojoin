@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useOnDepsChange } from "@/lib/useOnDepsChange";
 import { ChevronRight, Plus, X } from "lucide-react";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
@@ -125,12 +126,10 @@ export default function TagItem({
     transform: CSS.Translate.toString(transform),
   };
 
-  // Reset edit value when editing starts
-  useEffect(() => {
-    if (isEditing) {
-      setEditValue(tag.name);
-    }
-  }, [isEditing, tag.name]);
+  // Reset the edit value when editing starts
+  useOnDepsChange([isEditing, tag.name], () => {
+    if (isEditing) setEditValue(tag.name);
+  });
 
   const handleSubmit = () => {
     if (editValue.trim() && editValue.trim() !== tag.name) {

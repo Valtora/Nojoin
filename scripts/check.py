@@ -27,6 +27,7 @@ CHECKS: dict[str, list[str]] = {
     "format": ["ruff", "format", "--check", "."],
     "whitespace": [sys.executable, "scripts/check_whitespace.py"],
     "filesize": [sys.executable, "scripts/check_file_size.py"],
+    "blindexcept": [sys.executable, "scripts/check_blind_excepts.py"],
     # --offline: the drift half only. The networked half of this script asks
     # PyPI whether a hold can be lifted and runs on a schedule instead.
     "heldpins": [sys.executable, "scripts/check_held_pins.py", "--offline"],

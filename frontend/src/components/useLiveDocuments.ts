@@ -20,13 +20,15 @@ const POLL_INTERVAL_MS = 4000;
 export function useLiveDocuments(recordingId: RecordingId) {
   const [documents, setDocuments] = useState<Document[]>([]);
 
-  const refresh = useCallback(async () => {
-    try {
-      setDocuments(await getDocuments(recordingId));
-    } catch (error) {
-      console.error("Failed to load documents", error);
-    }
-  }, [recordingId]);
+  const refresh = useCallback(
+    () =>
+      getDocuments(recordingId)
+        .then(setDocuments)
+        .catch((error: unknown) => {
+          console.error("Failed to load documents", error);
+        }),
+    [recordingId],
+  );
 
   useEffect(() => {
     void refresh();

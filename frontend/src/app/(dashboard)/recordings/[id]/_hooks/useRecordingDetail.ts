@@ -532,6 +532,8 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
         existingColors: speakerColors,
       }),
     );
+    // speakerColors is read so existing assignments survive, and it is what
+    // this effect writes: listing it would re-run the effect after every write.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recording, transcriptSegments]);
 

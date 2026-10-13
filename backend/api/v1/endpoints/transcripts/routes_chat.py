@@ -184,7 +184,7 @@ async def _transcript_excerpts(
                 .limit(CHAT_EXCERPT_CANDIDATES * 2)
             )
             metas = (await session.execute(stmt)).scalars().all()
-    except Exception as e:  # noqa: BLE001 - chat still answers from the notes
+    except Exception as e:  # noqa: BLE001 -- boundary: chat still answers from the notes
         logger.error(f"Transcript excerpt search failed: {e}")
         return TranscriptExcerpts(ranges=())
     return TranscriptExcerpts(ranges=_excerpt_ranges(metas))
@@ -358,7 +358,7 @@ async def chat_with_meeting(
                 len(document_chunks),
             )
 
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 -- boundary: retrieval is optional; chat continues without context
         logger.error(f"RAG Retrieval failed: {e}")
         # Continue without context rather than failing
 
@@ -419,7 +419,7 @@ async def chat_with_meeting(
             log_message=f"Rejected chat request for recording {recording_id} due to invalid AI configuration.",
             exc=e,
         )
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 -- boundary: backend construction raises provider-specific errors; all of them are a 500
         logger.error(f"Failed to initialize LLM backend: {e}")
         raise HTTPException(status_code=500, detail="Failed to initialize AI service")
 
@@ -467,7 +467,7 @@ async def chat_with_meeting(
                     excerpts = await _transcript_excerpts(recording.id, query_embedding)
                     generator = ask(excerpts)
 
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 -- boundary: any provider error ends the stream with a friendly message
             logger.error(f"Streaming error: {e}")
             from backend.services.chat_relay import friendly_chat_error
 
@@ -484,7 +484,7 @@ async def chat_with_meeting(
                 )
                 session.add(assistant_msg)
                 await session.commit()
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 -- boundary: the answer was already streamed; a failed save must not undo that
             logger.error(f"Failed to save assistant message: {e}")
 
         yield "data: [DONE]\n\n"

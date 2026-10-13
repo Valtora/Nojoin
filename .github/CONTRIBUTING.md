@@ -78,8 +78,9 @@ Minimum pull request verification is:
 
 - Backend/API/worker changes: `source .venv/bin/activate && pytest`
 - Python lint, format, and type checks: `python scripts/check.py` (runs Ruff,
-  the formatter check, mypy, the doc and Alembic validators, and pytest; pass
-  `--fix` to auto-fix lint and formatting first)
+  the formatter check, the whitespace, file-size, blind-except and held-pin
+  gates, mypy, the doc and Alembic validators, and pytest; pass `--fix` to
+  auto-fix lint and formatting first)
 - Frontend changes: `cd frontend && npm run lint && npm run test && npm run build`
 - Marketing site changes (`site/**`): `cd site && npm ci && npm run build`, on Node 26 with
   the npm it bundles, matching CI and the deploy job. Use `npm ci`, never `npm install`: an

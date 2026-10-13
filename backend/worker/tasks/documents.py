@@ -103,7 +103,7 @@ def _resolve_backend_for_document(session, document: Document):
             get_llm_backend_with_secondary(llm_config, purpose="document_parsing"),
             None,
         )
-    except Exception as e:  # noqa: BLE001 - a bad config must not fail the parse
+    except Exception as e:  # noqa: BLE001 -- boundary: a bad config must not fail the parse
         logger.warning(
             "Could not build an LLM backend for document parsing: %s", e, exc_info=True
         )
@@ -161,7 +161,7 @@ def _transcribe_batch(
             except VisionUnsupportedError as exc:
                 unsupported = exc
                 continue
-            except Exception as e:  # noqa: BLE001 - one page failing is survivable
+            except Exception as e:  # noqa: BLE001 -- boundary: one page failing is survivable
                 logger.warning(
                     "Vision transcription failed for page %s: %s", page.page_number, e
                 )
@@ -275,7 +275,7 @@ def process_document_task(self, document_id: int, force_reparse: bool = False):
 
     except UnsupportedDocumentError as e:
         _fail(session, document, str(e))
-    except Exception as e:  # noqa: BLE001 - any parse failure marks the document
+    except Exception as e:  # noqa: BLE001 -- boundary: any parse failure marks the document
         logger.error("Failed to process document %s: %s", document_id, e, exc_info=True)
         _fail(session, document, str(e))
 

@@ -43,7 +43,7 @@ def _candidate_version_paths() -> list[Path]:
                 executable_directory / "docs" / "VERSION",
             ]
         )
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 -- boundary: PathManager may fail outside an installed layout; the remaining paths still apply
         pass
 
     paths.extend(

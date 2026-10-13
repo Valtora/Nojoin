@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useMemo } from "react";
+import { useHydrated } from "@/lib/useHydrated";
+import { useOnDepsChange } from "@/lib/useOnDepsChange";
 import { Search, Plus, Pencil, Trash2, BookOpen } from "lucide-react";
 import { spellCheckService } from "@/lib/spellCheckService";
 
@@ -15,7 +17,7 @@ interface DictionaryModalProps {
 }
 
 export default function DictionaryModal({ isOpen, onClose }: DictionaryModalProps) {
-  const [mounted, setMounted] = useState(false);
+  const mounted = useHydrated();
   const [words, setWords] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [newWord, setNewWord] = useState("");
@@ -23,12 +25,7 @@ export default function DictionaryModal({ isOpen, onClose }: DictionaryModalProp
   const [editValue, setEditValue] = useState("");
   const [isAdding, setIsAdding] = useState(false);
 
-  useEffect(() => {
-    setMounted(true);
-    return () => setMounted(false);
-  }, []);
-
-  useEffect(() => {
+  useOnDepsChange([isOpen], () => {
     if (isOpen) {
       setWords(spellCheckService.getPersonalDictionaryWords());
       setSearchQuery("");
@@ -36,7 +33,7 @@ export default function DictionaryModal({ isOpen, onClose }: DictionaryModalProp
       setEditingWord(null);
       setIsAdding(false);
     }
-  }, [isOpen]);
+  });
 
   const filteredWords = useMemo(() => {
     const sorted = [...words].sort((a, b) => a.localeCompare(b));

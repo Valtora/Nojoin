@@ -90,10 +90,6 @@ const analytics = (
         excluded_short_turns: 0,
       },
     },
-    interruptions: {
-      "rs:1": { made: 0, received: 1 },
-      "rs:2": { made: 1, received: 0 },
-    },
     turn_taking: {
       transitions: [
         {

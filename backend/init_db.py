@@ -21,7 +21,7 @@ async def init_db():
 
     try:
         await seed_demo_data()
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 -- boundary: a failed demo seed must not stop the database initialising
         logger.error(f"Failed to seed demo data: {e}")
 
     logger.info("Database initialised successfully.")

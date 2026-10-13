@@ -95,7 +95,7 @@ def delete_model_task(self, model_name: str, variant: str | None = None):
         # Refused by policy, not by accident: a bundled asset, or a model
         # that is not Nojoin's own file or repo in its model cache.
         return {"status": "forbidden", "message": str(e)}
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 -- boundary: the task answers with a status dict; a raised error would not serialise the distinction
         logger.error("Failed to delete model %s: %s", model_name, e, exc_info=True)
         return {"status": "error", "message": str(e)}
 
@@ -123,7 +123,7 @@ def get_worker_device_status(self):
         }
     except ImportError:
         return {"device": "cpu", "error": "torch not installed"}
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 -- boundary: a device probe reports what it can and must never fail
         return {"device": "unknown", "error": str(e)}
 
 
@@ -222,7 +222,7 @@ def generate_proxy_task(self, recording_id: int):
         else:
             logger.error(f"Failed to generate proxy for recording {recording_id}")
 
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 -- boundary: the proxy is optional; the original audio still plays
         logger.error(f"Error in generate_proxy_task for recording {recording_id}: {e}")
         # Not re-raised because proxy generation is optional/secondary.
 
@@ -316,7 +316,7 @@ def restore_backup_task(
             from backend.core.redis import REDIS_URL
 
             _redis.from_url(REDIS_URL).delete(RESTORE_LOCK_KEY)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 -- boundary: the restore lock also expires on its TTL, so a failed release is not fatal
             logger.warning("Failed to release restore lock: %s", e)
 
 
@@ -351,7 +351,7 @@ def finalize_restored_recording_task(self, recording_id: int, needs_proxy: bool 
     try:
         ensure_canonical_backfill(session, recording_id)
         session.commit()
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 -- boundary: one failed rebuild must not stop the rest of the restore finalisation
         session.rollback()
         logger.error(
             "Canonical backfill failed for restored recording %s: %s", recording_id, e
@@ -365,7 +365,7 @@ def finalize_restored_recording_task(self, recording_id: int, needs_proxy: bool 
         celery_app.send_task(
             "backend.worker.tasks.rebuild_recording_index_task", args=[recording_id]
         )
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 -- boundary: a failed enqueue is logged; the index sweep picks the recording up later
         logger.error(
             "Failed to queue indexing for restored recording %s: %s", recording_id, e
         )
@@ -376,7 +376,7 @@ def finalize_restored_recording_task(self, recording_id: int, needs_proxy: bool 
             celery_app.send_task(
                 "backend.worker.tasks.generate_proxy_task", args=[recording_id]
             )
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 -- boundary: the proxy is optional; the original audio still plays
             logger.error(
                 "Failed to queue proxy generation for restored recording %s: %s",
                 recording_id,

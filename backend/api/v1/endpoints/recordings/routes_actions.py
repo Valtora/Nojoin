@@ -293,7 +293,7 @@ async def permanently_delete_recording(
             recordings_module.celery_app.control.revoke(
                 recording.celery_task_id, terminate=True
             )
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 -- boundary: a revoke that cannot reach the broker must not block the delete
             pass
 
     recordings_module.delete_recording_artifacts(

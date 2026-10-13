@@ -9,6 +9,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from sqlmodel import select
+
 from backend.models.pipeline import TranscriptUtterance
 from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
 from backend.utils.canonical_pipeline import list_active_utterances
@@ -53,11 +55,10 @@ def _display_name(session, speaker: RecordingSpeaker) -> str:
 
 def _build_speaker_directory(session, recording_id: int) -> dict[str, dict[str, Any]]:
     """Map each grouping key to the identity the interface should show."""
-    speakers = (
-        session.query(RecordingSpeaker)
-        .filter(RecordingSpeaker.recording_id == recording_id)
-        .all()
+    statement = select(RecordingSpeaker).where(
+        RecordingSpeaker.recording_id == recording_id
     )
+    speakers = session.execute(statement).scalars().all()
     directory: dict[str, dict[str, Any]] = {}
     for speaker in speakers:
         display_name = _display_name(session, speaker)

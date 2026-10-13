@@ -441,7 +441,7 @@ class OnnxAsrEngine(TranscriptionEngine):
                 import soundfile
 
                 audio_duration = soundfile.info(audio_path).duration
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:  # noqa: BLE001 -- boundary: the duration only enables chunking; without it the audio is transcribed in one pass
                 logger.warning(f"Could not read audio duration for {audio_path}: {e}")
 
             logger.info(f"Starting {self.name} transcription for {audio_path}")

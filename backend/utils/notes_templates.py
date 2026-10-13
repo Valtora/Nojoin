@@ -504,7 +504,7 @@ def build_notes_prompt_context(  # noqa: PLR0913 - one argument per prompt input
     if recording_id is not None:
         try:
             documents = load_attached_documents(session, recording_id)
-        except Exception:  # noqa: BLE001 - notes must survive a document read failure
+        except Exception:  # noqa: BLE001 -- boundary: notes must survive a document read failure
             logger.exception(
                 "Failed to load attached documents for recording %s", recording_id
             )

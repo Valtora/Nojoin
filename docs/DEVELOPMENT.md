@@ -68,7 +68,7 @@ The `CI` workflow runs these checks on pull requests and on pushes to `main`. To
 | --- | --- |
 | `Backend tests` | `backend/**`, `requirements/**`, `pyproject.toml`, `frontend/src/lib/processingTuning.json`, or a deployment path changed |
 | `Migrations (Postgres)` | `backend/alembic/**`, `backend/models/**`, `scripts/check_migrations.py`, or a deployment path changed |
-| `Python quality` (Ruff lint, Ruff format check, and mypy on enforced boundaries) | as `Backend tests`, plus `scripts/**` |
+| `Python quality` (Ruff lint, Ruff format check, the file-size and blind-except gates, and mypy on enforced boundaries) | as `Backend tests`, plus `scripts/**` |
 | `Frontend lint` | `frontend/**` or a deployment path changed |
 | `Frontend unit tests` | same as `Frontend lint` |
 | `Frontend build` | same as `Frontend lint` |
@@ -484,7 +484,7 @@ If you add a new language or update an existing dictionary:
 ### Language & Formatting
 - **Formatting & Imports**: Code is formatted and import-sorted by Ruff. Run `ruff format .` and `ruff check --fix .`, or let the pre-commit hook do it. Do not hand-format.
 - **Type Hints**: New and changed public/cross-module code should be fully annotated. Type checking is enforced incrementally by mypy on the boundary listed under `[tool.mypy].files` in `pyproject.toml` (configuration, core security/persistence contracts, and API-facing schema/model modules). Add modules to that list as they are annotated; annotate public functions and cross-module interfaces before internal helpers.
-- **Error Handling**: Use `HTTPException` in API endpoints to raise HTTP-level issues. Catch specific exception types where recovery differs; a deliberately broad `except Exception` at a recovery boundary must log actionable context (or re-raise with `raise ... from`) and carry a justification comment in the form `# noqa: BLE001 -- boundary: <reason>`.
+- **Error Handling**: Use `HTTPException` in API endpoints to raise HTTP-level issues. Catch specific exception types where recovery differs; a deliberately broad `except Exception` at a recovery boundary must log actionable context (or re-raise with `raise ... from`) and carry a justification comment in the form `# noqa: BLE001 -- boundary: <reason>`. `scripts/check_blind_excepts.py` enforces that form in `scripts/check.py` and CI: a bare `# noqa: BLE001`, or one with no reason after `boundary:`, fails the check. A handler with no reason worth writing should catch a narrower exception instead.
 - **Logging**: Use lazy `%`-style formatting (`logger.info("processed %s", count)`), not eager f-strings, in frequently executed paths so the interpolation is skipped when the level is disabled.
 - **Prompts are composed, never templated**: build LLM prompts from `(heading, body)` blocks with `backend.utils.prompt_blocks.render_prompt_blocks`. Do not reintroduce `str.format` or `%`-style substitution into a prompt. Interpolated text is frequently user-authored (notes structures, glossaries, focus text) and a substitution step turns a stray brace into a generation-time failure, forces JSON schema examples to be written with doubled braces, and lets a new placeholder ship unfilled until that provider is next used. Composition removes all three, and it is what lets `# Required JSON Schema` blocks read exactly as the model receives them.
 
@@ -514,7 +514,7 @@ source .venv/bin/activate
 python -m pip install -r requirements/dev.txt   # tests + lint/format/type tooling (CPU)
 pre-commit install                              # optional: run lint/format on commit
 
-python scripts/check.py            # ruff lint, format check, trailing-whitespace, file-size, mypy, doc/alembic validators, pytest
+python scripts/check.py            # ruff lint, format check, trailing-whitespace, file-size, blind-except reasons, mypy, doc/alembic validators, pytest
 python scripts/check.py --fix      # auto-fix lint + formatting first
 python scripts/check.py lint typecheck  # run a subset
 ```
@@ -670,9 +670,9 @@ Each ecosystem is capped at five open pull requests so the queue stays reviewabl
 
 That is the opposite trade to every other pin in `requirements/`, and it has a cost worth stating plainly. There is no lockfile, so a **major** release enters the next image build with no pull request, no review, and nothing in the diff to notice. It has already happened once: `anthropic` 1.0.0 removed `temperature`, `top_p`, and `top_k` from `messages.create` and `messages.stream`, every call in the Anthropic backend passed `temperature`, and the provider raised `TypeError` before a request left the process. The unit tests did not catch it because a fake client taking `**kwargs` accepts arguments the real SDK has dropped.
 
-Capping the three at `<N+1` would have caught it, and was considered and rejected: a cap means the newest model is unavailable until someone lifts it, which is the thing these three exist to avoid. The guard is a test instead. `test_anthropic_kwargs_are_accepted_by_the_installed_sdk` in [backend/tests/test_llm_services_unified.py](../backend/tests/test_llm_services_unified.py) captures the keyword arguments the backend actually sends and binds them against `inspect.signature` of the **installed** SDK, so any parameter a future release removes fails in CI rather than in a built image. It asserts no list of approved names, which is what makes it survive changes nobody predicted.
+Capping the three at `<N+1` would have caught it, and was considered and rejected: a cap means the newest model is unavailable until someone lifts it, which is the thing these three exist to avoid. The guard is a test per provider instead. `test_anthropic_kwargs_are_accepted_by_the_installed_sdk`, `test_openai_kwargs_are_accepted_by_the_installed_sdk` and `test_gemini_kwargs_are_accepted_by_the_installed_sdk` in [backend/tests/test_llm_services_unified.py](../backend/tests/test_llm_services_unified.py) each capture the keyword arguments the backend actually sends and bind them against `inspect.signature` of the **installed** SDK, so any parameter a future release removes fails in CI rather than in a built image. They assert no list of approved names, which is what makes them survive changes nobody predicted. The Gemini test also builds its request config from the installed `google.genai.types`, which reject unknown fields, so a removed config field fails the same way.
 
-Two consequences follow. Adding an equivalent guard for the OpenAI and Gemini backends is worthwhile and not yet done. And when one of these three does ship a major, the fix is to update the call sites, never to add a pin that hides the break. The one parameter that survived the removal, `temperature`, now travels in `extra_body`, and only to the models that [anthropic_models.py](../backend/processing/llm_backends/anthropic_models.py) says still accept it; the current models return a 400 for it and run at the provider default.
+One consequence follows: when one of these three does ship a major, the fix is to update the call sites, never to add a pin that hides the break. The one parameter that survived the removal, `temperature`, now travels in `extra_body`, and only to the models that [anthropic_models.py](../backend/processing/llm_backends/anthropic_models.py) says still accept it; the current models return a 400 for it and run at the provider default.
 
 ### Held Pins and Unfixable Advisories
 
