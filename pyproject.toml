@@ -124,7 +124,7 @@ max-complexity = 10
 "backend/api/v1/endpoints/calendar.py" = ["PLR0913"]
 "backend/api/v1/endpoints/recordings/helpers.py" = ["C901", "PLR0912"]
 "backend/api/v1/endpoints/recordings/routes_capture.py" = ["C901", "PLR0913", "PLR0915"]
-"backend/api/v1/endpoints/recordings/routes_import_upload.py" = ["C901", "PLR0912", "PLR0915"]
+"backend/api/v1/endpoints/recordings/routes_import_upload.py" = ["C901"]
 "backend/api/v1/endpoints/recordings/routes_query.py" = ["C901", "PLR0912", "PLR0913", "PLR0915"]
 "backend/api/v1/endpoints/speakers/helpers.py" = ["C901", "PLR0912"]
 "backend/api/v1/endpoints/speakers/routes_global.py" = ["C901", "PLR0912", "PLR0913", "PLR0915"]
@@ -132,24 +132,23 @@ max-complexity = 10
 "backend/api/v1/endpoints/speakers/routes_voiceprint.py" = ["C901", "PLR0912", "PLR0915"]
 "backend/api/v1/endpoints/system.py" = ["C901", "PLR0915"]
 "backend/api/v1/endpoints/tasks.py" = ["C901", "PLR0912"]
-"backend/api/v1/endpoints/transcripts/helpers.py" = ["C901", "PLR0912", "PLR0913", "PLR0915"]
+"backend/api/v1/endpoints/transcripts/helpers.py" = ["C901", "PLR0912", "PLR0913"]
 "backend/api/v1/endpoints/transcripts/routes_chat.py" = ["C901", "PLR0912", "PLR0915"]
 "backend/api/v1/endpoints/transcripts/routes_export.py" = ["C901", "PLR0912", "PLR0915"]
 "backend/api/v1/endpoints/transcripts/routes_segments.py" = ["C901", "PLR0912", "PLR0915"]
 "backend/api/v1/endpoints/users.py" = ["C901"]
-"backend/core/backup_manager.py" = ["C901", "PLR0912", "PLR0913", "PLR0915"]
 "backend/core/security.py" = ["PLR0913"]
 "backend/models/recording_public.py" = ["PLR0913"]
 "backend/preload_models.py" = ["C901", "PLR0912", "PLR0913", "PLR0915"]
 "backend/processing/diarize.py" = ["C901", "PLR0915"]
-"backend/processing/embedding_core.py" = ["C901", "PLR0912"]
+"backend/processing/embedding_core.py" = ["C901"]
 "backend/processing/engines/onnx_asr_engine.py" = ["C901", "PLR0912"]
-"backend/processing/engines/whisper_engine.py" = ["C901", "PLR0912"]
+"backend/processing/engines/whisper_engine.py" = ["C901"]
 "backend/processing/live_transcribe.py" = ["C901", "PLR0912", "PLR0913", "PLR0915"]
 "backend/processing/llm_backends/*.py" = ["C901", "PLR0912", "PLR0913"]
 "backend/processing/phantom_filter.py" = ["C901", "PLR0912", "PLR0913", "PLR0915"]
 "backend/processing/pipeline_metrics.py" = ["PLR0913"]
-"backend/processing/speaker_merge.py" = ["C901", "PLR0912"]
+"backend/processing/speaker_merge.py" = ["C901"]
 "backend/processing/vad.py" = ["C901", "PLR0912", "PLR0913", "PLR0915"]
 "backend/seed_demo.py" = ["C901", "PLR0915"]
 "backend/services/calendar_service/config.py" = ["C901", "PLR0913"]
@@ -194,12 +193,7 @@ max-complexity = 10
     "PLR0913",
     "PLR0915",
 ]
-"backend/worker/tasks/meeting_intelligence_stage.py" = [
-    "C901",
-    "PLR0912",
-    "PLR0913",
-    "PLR0915",
-]
+"backend/worker/tasks/meeting_intelligence_stage.py" = ["PLR0913"]
 "backend/worker/tasks/pipeline.py" = ["C901", "PLR0912", "PLR0913", "PLR0915"]
 "backend/worker/tasks/system.py" = ["PLR0913"]
 # Tests are exempt from PLR0913/PLR0915 (fixtures and parametrised cases legitimately
