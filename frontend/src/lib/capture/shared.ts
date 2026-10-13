@@ -82,8 +82,8 @@ export type CaptureCoverageCause =
  * `capturedSeconds` comes from the backend's sum of transcoded segment
  * durations, not from multiplying the sequence number by the timeslice: a
  * segment carries slightly more than the nominal timeslice, and assuming
- * otherwise under-counted captured audio by around 10% over an hour, which was
- * enough to report a shortfall on a recording that had lost nothing.
+ * otherwise under-counts captured audio by around 10% over an hour, enough to
+ * report a shortfall on a recording that has lost nothing.
  */
 export interface CaptureCoverageWarning {
   capturedSeconds: number;

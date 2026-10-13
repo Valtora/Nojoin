@@ -1,9 +1,7 @@
 // Public API layer barrel. Per the frontend conventions (docs/DEVELOPMENT.md),
-// all API communication routes through "@/lib/api". This barrel re-exports the
-// typed resource clients so existing import sites stay unchanged while the
-// implementation lives in focused per-resource modules. The default export is
-// the shared axios instance; only API_BASE_URL is re-exported as a named value
-// to match the historical public surface.
+// all API communication routes through "@/lib/api", which re-exports the typed
+// per-resource clients. The default export is the shared axios instance;
+// API_BASE_URL is the only named value re-exported from the client.
 import api from "./client";
 
 export { API_BASE_URL } from "./client";

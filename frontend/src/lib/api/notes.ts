@@ -75,8 +75,8 @@ export const generateNotes = async (
     error_message?: string | null;
     message?: string;
   }>(`/transcripts/${recordingId}/notes/generate`, {
-    // Omitted entirely when no template was picked, so the backend falls through
-    // to the user default, the install default and then the built-in structure.
+    // null when no template was picked, so the backend falls through to the
+    // user default, the install default and then the built-in structure.
     notes_template_id: notesTemplateId ?? null,
   });
   return response.data;

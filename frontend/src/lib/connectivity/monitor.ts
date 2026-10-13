@@ -82,10 +82,9 @@ export class ConnectivityMonitor {
    * that is awaiting its probe holds no timer, so every failing request calls
    * `bringProbeForward` and schedules another tick 500ms later, which starts
    * another probe. A tab that resumes from suspension fails many requests at
-   * once and produced seven concurrent probes in production, all aborted in the
-   * same instant, which is three times the confirmation threshold delivered in
-   * one go. The threshold means "three probes over ~15 seconds", and only a
-   * serialised prober makes that true.
+   * once, and stacked probes all abort in the same instant, delivering the whole
+   * confirmation threshold in one go. The threshold means "three probes over
+   * ~15 seconds", and only a serialised prober makes that true.
    */
   private probing = false;
 

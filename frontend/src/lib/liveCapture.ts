@@ -9,9 +9,8 @@ import { ClientStatus, Recording, RecordingStatus } from "@/types";
  * endpoints set a client status of RECORDING or PAUSED, and only a capture ever
  * reaches the PAUSED recording status at all.
  *
- * The PAUSED status is checked alongside the client status so that a capture
- * paused before capture start began recording a client status -- leaving it
- * NULL -- still resolves correctly.
+ * The PAUSED status is checked alongside the client status so that an older
+ * capture paused with no client status recorded still resolves correctly.
  */
 export const isLiveCaptureInProgress = (
   recording: Recording | null | undefined,

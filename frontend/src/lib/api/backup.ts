@@ -107,7 +107,6 @@ export const importBackup = async (
   formData.append("file", file);
 
   try {
-    // 1. Upload and Start Job
     const response = await api.post<{ job_id?: string }>(
       `/backup/import?clear_existing=${clearExisting}&overwrite_existing=${overwriteExisting}`,
       formData,
@@ -163,7 +162,6 @@ export const uploadBackupChunked = async (
   const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
 
   try {
-    // 1. Initialize
     onStatus("Initializing upload...");
     const initRes = await api.post<UploadChunkInitResponse>(
       "/backup/upload/init",
@@ -178,7 +176,6 @@ export const uploadBackupChunked = async (
     );
     const { upload_id } = initRes.data;
 
-    // 2. Upload Chunks
     for (let i = 0; i < totalChunks; i++) {
       const start = i * CHUNK_SIZE;
       const end = Math.min(start + CHUNK_SIZE, file.size);
@@ -193,13 +190,11 @@ export const uploadBackupChunked = async (
         headers: { "Content-Type": "multipart/form-data" },
       });
 
-      // Update combined progress
       const percent = Math.round(((i + 1) / totalChunks) * 100);
       onProgress(Math.min(percent, 99)); // Keep 100 for processing
       onStatus(`Uploading part ${i + 1} of ${totalChunks}...`);
     }
 
-    // 3. Complete
     onStatus("Finalizing upload and starting restore...");
     const completeRes = await api.post(
       `/backup/upload/${upload_id}/complete`,
@@ -212,7 +207,6 @@ export const uploadBackupChunked = async (
       },
     );
 
-    // 4. Poll Status
     const jobId = completeRes.data.job_id;
     if (jobId) {
       if (onProgress) onProgress(100);

@@ -104,11 +104,9 @@ const UPLOAD_FLUSH_TIMEOUT_MS = 60_000;
  *
  * The ratio is low because the figure it judges cannot invent a shortfall: the
  * backend's captured-audio total runs slightly high, so a healthy recording
- * reports zero missing rather than a small positive number. It used to be 10%,
- * set to defend against a client-side estimate that under-counted captured
- * audio by about that much and warned on recordings that had lost nothing.
- * Against an honest figure that tolerance only hid real losses: four minutes
- * missing from an 81-minute meeting is 5%, and worth saying.
+ * reports zero missing rather than a small positive number. A higher tolerance
+ * only hides real losses: four minutes missing from an 81-minute meeting is 5%,
+ * and worth saying.
  */
 const COVERAGE_WARNING_MIN_MISSING_SECONDS = 60;
 
@@ -140,9 +138,9 @@ const COVERAGE_POLL_INTERVAL_MS = 15_000;
  * A shortfall is noticed by a poll that runs every 15 seconds, and it persists
  * while the upload queue drains, so by the time the warning is raised the
  * backend is usually reachable once more. Classifying on the live status alone
- * therefore reported `unknown` for exactly the case the classification exists
- * to name, and told the user to check their tab and their connection for a
- * two-minute stall on the server.
+ * would report `unknown` for exactly the case the classification exists to
+ * name, and send the user to check their tab and connection for a two-minute
+ * stall on the server.
  */
 const COVERAGE_RECENT_OUTAGE_MS = 5 * 60_000;
 
@@ -712,8 +710,8 @@ export class CaptureController {
         error,
       );
       // Never leave the controller in "finalizing": every transport control is
-      // disabled in that state, which previously bricked the UI with no way back.
-      // Settling on "paused" matches the server and keeps stop retryable.
+      // disabled in that state, leaving the UI with no way back. Settling on
+      // "paused" matches the server and keeps stop retryable.
       await this.settleAfterFailedStop(targetRecordingId, hadRuntime, message);
       throw new Error(message);
     }
@@ -802,13 +800,13 @@ export class CaptureController {
    *
    * A document unload during capture is guarded: `handleGuardedExit` pauses the
    * recording so the audio already uploaded survives. That is right in the
-   * middle of a meeting and wrong immediately after one starts, which is where
-   * it kept landing. A `router.push` degrades to a full-document navigation
-   * whenever Next.js finds the tab running a different build from the server
-   * (any upgrade under an open tab does it), and the app performs exactly such
-   * a push a second after `start()` resolves. The guard then paused a recording
-   * that was seconds old and the reloaded page opened the resume-or-discard
-   * modal over a meeting the user had only just started.
+   * middle of a meeting and wrong immediately after one starts. A `router.push`
+   * degrades to a full-document navigation whenever Next.js finds the tab
+   * running a different build from the server (any upgrade under an open tab
+   * does it), and the app performs exactly such a push a second after `start()`
+   * resolves. The guard then pauses a recording that is seconds old, and the
+   * reloaded page opens the resume-or-discard modal over a meeting the user has
+   * only just started.
    *
    * The guard itself has to stay: `beforeunload`/`pagehide` fire only for a real
    * unload, so skipping the pause would strand the recording in `UPLOADING`
@@ -1010,11 +1008,11 @@ export class CaptureController {
   /**
    * Asks the backend how much audio it holds, and re-judges coverage.
    *
-   * The client cannot answer this itself. It used to try, multiplying the last
-   * sequence number by the timeslice, but a segment carries slightly more than
-   * the nominal timeslice because each roll flushes whatever accumulated while
-   * it was stopping. That under-counted captured audio by around 10% over an
-   * hour and reported minutes missing from recordings that had lost nothing.
+   * The client cannot answer this itself. Multiplying the last sequence number
+   * by the timeslice under-counts, because a segment carries slightly more than
+   * the nominal timeslice: each roll flushes whatever accumulated while it was
+   * stopping. Over an hour that is around 10%, enough to report minutes missing
+   * from recordings that lost nothing.
    */
   private pollCapturedAudio = async () => {
     const recordingId = this.state.recordingId;
@@ -1043,8 +1041,8 @@ export class CaptureController {
    * recorder-watchdog stall is direct evidence the browser stopped feeding the
    * recorder; an unreachable backend is direct evidence of the opposite. With
    * neither, `unknown` is honest, and the copy describes the gap without
-   * diagnosing it. Blaming tab suspension by default is what sent someone to
-   * check a Chrome setting during an outage that was entirely server-side.
+   * diagnosing it. Blaming tab suspension by default sends people to check a
+   * Chrome setting during an outage that is entirely server-side.
    */
   private classifyCoverageCause = (): CaptureCoverageCause => {
     if (!isReachable(useConnectivityStore.getState().status)) {
@@ -1123,7 +1121,7 @@ export class CaptureController {
 
     const capturedSeconds = this.capturedAudioSeconds;
     // Nothing to compare against until the first segment has been transcoded.
-    // Silence beats guessing: guessing is what produced the false warnings.
+    // Silence beats guessing.
     if (capturedSeconds === null) {
       return;
     }
@@ -1178,9 +1176,6 @@ export class CaptureController {
 
   /**
    * Dismisses the coverage warning, remembering the shortfall it was showing.
-   *
-   * The warning used to have no way out: once raised it stayed for the rest of
-   * the meeting, including when its diagnosis was wrong.
    */
   dismissCoverageWarning = () => {
     const warning = this.state.coverageWarning;
@@ -1286,8 +1281,7 @@ export class CaptureController {
 
     // Written before anything is awaited. This runs during an unload, so the
     // document can be torn down at the first yield and everything after it may
-    // never execute; the context used to be written in the `finally`, three
-    // awaits later. It is the only record of what this tab was capturing, and
+    // never execute. It is the only record of what this tab was capturing, and
     // discardEmptyInterruptedRecording needs its sequence count on the next
     // load to tell an interruption worth resuming from one worth clearing.
     writePausedCaptureContext({

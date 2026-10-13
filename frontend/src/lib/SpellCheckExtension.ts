@@ -184,7 +184,6 @@ export const SpellCheckExtension = Extension.create({
           scheduleCheck();
         });
 
-        // Initial check
         scheduleCheck();
 
         return {

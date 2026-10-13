@@ -52,7 +52,6 @@ export const exportContent = async (
       responseType: "blob",
     });
 
-    // Create a link and click it to download
     const url = window.URL.createObjectURL(new Blob([response.data]));
     const link = document.createElement("a");
     link.href = url;

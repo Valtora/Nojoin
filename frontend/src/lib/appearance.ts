@@ -3,9 +3,8 @@
  * density. They sit beside the light/dark theme and follow the same rules: the
  * choice lives in local storage, the inline script in theme-script.ts stamps it
  * on <html> before first paint, and the React providers keep it in sync after
- * that. Every default reproduces the product exactly as it looked before these
- * settings existed, so an untouched browser carries no attribute at all for
- * palette and corners.
+ * that. Every default is the product's original look, so an untouched browser
+ * carries no attribute at all for palette and corners.
  *
  * The stylesheet side is attribute-driven: palettes.css keys its token blocks
  * on html[data-palette], tokens.css keys the radius scale on html[data-corners]

@@ -35,11 +35,9 @@ export const SearchExtension = Extension.create<Record<string, never>, SearchSto
         return {
             setSearchMatches: (matches: SearchMatch[], currentIndex: number) => ({ tr, dispatch }) => {
                 if (dispatch) {
-                    // Update storage
                     this.storage.matches = matches;
                     this.storage.currentIndex = currentIndex;
 
-                    // Trigger update via metadata
                     tr.setMeta('search', { matches, currentIndex });
                 }
                 return true;

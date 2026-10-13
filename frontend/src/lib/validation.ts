@@ -54,7 +54,6 @@ export const validateApiKeyFormat = (key: string, provider: string): boolean => 
       return trimmed.startsWith('sk-');
     case 'anthropic':
       return trimmed.startsWith('sk-ant-');
-    // Add other provider specific checks if known
     default:
       return true;
   }

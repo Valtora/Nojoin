@@ -6,7 +6,7 @@ export const COMPACT_DESKTOP_MAX_HEIGHT = 1080;
 
 /**
  * "dense" is only ever an explicit user choice: resolveViewportDensity never
- * returns it, so the automatic behaviour is unchanged.
+ * returns it.
  */
 export type ViewportDensity = "comfortable" | "compact" | "dense";
 

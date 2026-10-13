@@ -6,11 +6,8 @@ import type { RecordingId } from "@/types";
  * The "this recording no longer exists" announcement.
  *
  * Discard is the one recording action that is both explicit and irreversible,
- * and it can be triggered from five places: the recordings rail, the live
- * transport controls, the floating badge, the resume-or-discard modal, and the
- * processing view. Only the rail used to update itself afterwards, so a discard
- * from any of the other four left the meeting on screen until the rail's 15s
- * poll came round.
+ * and several surfaces can trigger it. Every list and the open detail page has
+ * to drop the meeting at once rather than wait for the rail's 15s poll.
  *
  * `recording-updated` is not enough here. It carries no identity for a deletion
  * and every listener answers it with a re-fetch, so the row survives the round

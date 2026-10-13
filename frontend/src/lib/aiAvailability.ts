@@ -5,10 +5,8 @@ import type { CliOAuthStatus, Settings } from "@/types";
  *
  * This lives in `lib/` rather than under `components/settings/` because the
  * question is not settings-specific: any surface that gates a feature on AI
- * being usable (Settings badges, the chat composer) must reach the same answer.
- * Two independent implementations previously disagreed, which is how a user on
- * their own subscription ended up with chat blocked while notes generation
- * worked (issue #138).
+ * being usable (Settings badges, the chat composer) must reach the same answer
+ * (issue #138).
  */
 
 /**
@@ -54,8 +52,7 @@ export interface AiAvailability {
  * user's own subscription, then the server's primary provider, then its
  * secondary (see backend/utils/llm_config.py and the CLI backend's
  * CliOAuthUnavailableError degradation). So a disconnected subscription is not
- * on its own a blocker: a configured server provider still answers. Gating on
- * the subscription alone would have swapped one wrong answer for another.
+ * on its own a blocker: a configured server provider still answers.
  *
  * `cliStatus` may be null for users who are not on cli_oauth; callers should
  * only fetch it when they need it.
