@@ -3,6 +3,12 @@ import os
 
 logger = logging.getLogger(__name__)
 
+# ONNX Runtime's Linux builds upload usage telemetry to Microsoft from 1.29 on
+# unless ORT_DISABLE_TELEMETRY is set before it initialises. Setting it here,
+# ahead of any onnxruntime import, covers installs outside the worker image too.
+# setdefault leaves an operator's explicit value alone.
+os.environ.setdefault("ORT_DISABLE_TELEMETRY", "1")
+
 
 def setup_secure_umask():
     # Default secure umask (owner only)
