@@ -14,11 +14,8 @@ interface WorkspaceProps {
  * The scrolling page shell: a flat page surface with the density-aware
  * workspace width, gutters and gap.
  *
- * This replaced AmbientWorkspace, which drew a stack of radial and linear
- * gradients behind four surfaces and a diagonal white wash on top of them. The
- * prop shape is kept so call sites did not have to change, and
- * `backgroundClassName` is still honoured because the recording detail view
- * passes `bg-transparent` to opt out of the page fill entirely.
+ * `backgroundClassName` lets the recording detail view pass `bg-transparent`
+ * to opt out of the page fill entirely.
  */
 export default function Workspace({
   children,

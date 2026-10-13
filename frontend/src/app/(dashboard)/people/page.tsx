@@ -21,7 +21,7 @@ import {
 import RecalibrateModal from "@/components/people/RecalibrateModal";
 import SplitPersonModal from "@/components/people/SplitPersonModal";
 import { Trash2, Edit2, CheckSquare } from "lucide-react";
-import { deleteGlobalSpeakerEmbedding } from "@/lib/api"; // Ensure this is imported for batch voiceprint delete
+import { deleteGlobalSpeakerEmbedding } from "@/lib/api";
 import { getErrorMessage } from "@/lib/errors";
 import { useNotificationStore } from "@/lib/notificationStore";
 
@@ -251,7 +251,6 @@ export default function PeoplePage() {
           data.tag_ids = newTagIds;
         }
 
-        // Perform Update
         // Only call update if there are fields to change
         if (Object.keys(data).length > 0) {
           await updateGlobalSpeaker(id, data);
@@ -278,7 +277,6 @@ export default function PeoplePage() {
 
   return (
     <div className="flex h-full bg-surface-inset overflow-hidden">
-      {/* Sidebar */}
       <PeopleTagSidebar
         selectedTagIds={selectedTagIds}
         onToggleTag={handleToggleTag}
@@ -290,8 +288,7 @@ export default function PeoplePage() {
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
           {/* The people table is a dense surface: extra width shows more of it
-              rather than lengthening a line of prose. This was a hard-coded
-              max-w-7xl, which also opted the page out of the density setting. */}
+              rather than lengthening a line of prose. */}
           <div className="mx-auto w-full max-w-[var(--workspace-max-width-dense)] space-y-6">
             {/* Header Action */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -327,7 +324,6 @@ export default function PeoplePage() {
               </div>
             </div>
 
-            {/* Filters */}
             <PeopleFilters onSearch={setSearchQuery} />
 
             {/* Batch Action Toolbar */}
@@ -368,7 +364,6 @@ export default function PeoplePage() {
               </div>
             )}
 
-            {/* Table */}
             <PeopleTable
               people={people}
               isLoading={isLoading}

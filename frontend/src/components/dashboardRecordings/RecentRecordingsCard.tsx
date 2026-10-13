@@ -23,9 +23,6 @@ const formatDuration = (seconds?: number): string | null => {
 /**
  * The last handful of recordings, with a click through to the detail view.
  *
- * The dashboard had no recordings presence at all: the rail that lists them
- * only renders on /recordings, so "what happened lately" was a navigation away.
- *
  * The caller hides this module when the list is empty, which is why there is no
  * empty state here.
  */
@@ -63,10 +60,8 @@ export default function RecentRecordingsCard({
                     {duration ? ` · ${duration}` : ""}
                   </span>
                 </span>
-                {/* A processed recording carries no badge. "Ready" was on every
-                    row of a list where ready is the normal state, so it said
-                    nothing and cost the name its width. A badge here now means
-                    something went wrong. */}
+                {/* A processed recording carries no badge: ready is the normal
+                    state, so a badge here means something went wrong. */}
                 {recording.status !== RecordingStatus.PROCESSED && (
                   <StatusBadge status={recording.status} size="sm" />
                 )}

@@ -161,7 +161,7 @@ export default function BackupRestore() {
 
   const handleRestoreClick = () => {
     if (!selectedFile) return;
-    setShowRestoreOptions(true); // Open the options modal
+    setShowRestoreOptions(true);
   };
 
   const performRestore = async (clear: boolean, overwrite: boolean) => {
@@ -172,7 +172,7 @@ export default function BackupRestore() {
       setUploadProgress(0);
       setMessage(null);
       setSkipReport(null);
-      setShowRestoreOptions(false); // Close the modal
+      setShowRestoreOptions(false);
 
       setProcessingStatus("Preparing upload...");
 
@@ -256,8 +256,8 @@ export default function BackupRestore() {
               </div>
 
               {/* A determinate bar while the server can count what it is doing, and an
-                  indeterminate shimmer otherwise. Either way the panel proves work is
-                  happening, which is what the silent version could not do. */}
+                  indeterminate shimmer otherwise. Either way the panel shows work is
+                  happening. */}
               {exportPercent !== null ? (
                 <div className="h-2 w-full rounded-full bg-action-tint overflow-hidden">
                   <div

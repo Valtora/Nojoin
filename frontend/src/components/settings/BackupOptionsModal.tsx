@@ -32,7 +32,6 @@ export default function BackupOptionsModal({
       // Set task ID to trigger global poller
       setTaskId(task_id);
 
-      // Notify user
       addNotification({
         type: "success",
         message:
@@ -107,8 +106,6 @@ export default function BackupOptionsModal({
               >
                 Include Audio Files
               </label>
-              {/* Was a hand-rolled peer-checked toggle with its own palette
-                  classes; the Switch primitive is the same control tokenised. */}
               <Switch
                 id="include-audio"
                 checked={includeAudio}

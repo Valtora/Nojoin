@@ -18,10 +18,8 @@ import type { CalendarDashboard } from "./useCalendarDashboard";
 /**
  * What is happening, as a list rather than as a grid.
  *
- * This was the other half of the calendar card, reachable only by a toggle that
- * hid the month grid. It is now permanent, and it absorbed the day view that
- * used to sit underneath the grid: picking a day in the grid scopes this module
- * to that day, and the header returns it to the whole month.
+ * Picking a day in the month grid scopes this module to that day, and the
+ * header returns it to the whole month.
  *
  * It opens on today, because a live day timeline is the more useful default on
  * a dashboard than a month's worth of list.

@@ -1,14 +1,14 @@
 /**
  * Pure state machine for backend connectivity.
  *
- * The previous design equated "a synthetic health probe failed" with "the
- * backend is down". That is a category error: a throttled background tab, a
- * saturated connection pool, a sleeping laptop or a dropped link all fail
- * probes while saying nothing about the server. This machine instead treats
- * every observed success — a real API response, a health-content poll, or an
- * idle liveness probe — as authoritative proof of reachability, and only
- * escalates to `unreachable` once the browser is online, no success has been
- * seen for a while, AND a dedicated probe has failed repeatedly.
+ * A failed synthetic health probe does not mean the backend is down: a
+ * throttled background tab, a saturated connection pool, a sleeping laptop or a
+ * dropped link all fail probes while saying nothing about the server. This
+ * machine therefore treats every observed success (a real API response, a
+ * health-content poll, or an idle liveness probe) as authoritative proof of
+ * reachability, and only escalates to `unreachable` once the browser is
+ * online, no success has been seen for a while, AND a dedicated probe has
+ * failed repeatedly.
  *
  * Reachability is a derived function of the inputs, so the reducer is a pure
  * function of (state, event) and is exhaustively unit-testable without mocking

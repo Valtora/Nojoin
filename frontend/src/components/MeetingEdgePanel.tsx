@@ -35,9 +35,9 @@ interface MeetingEdgePanelProps {
  * A section of the guidance panel that can be folded away.
  *
  * Meeting Edge accumulates: questions, points and tracked terms all grow as the
- * meeting runs, and a setting nobody touches sat between them and the page. The
- * header is the control, so there is no separate affordance to find, and the
- * body is unmounted rather than hidden so a collapsed section costs no height.
+ * meeting runs. The header is the control, so there is no separate affordance
+ * to find, and the body is unmounted rather than hidden so a collapsed section
+ * costs no height.
  */
 function EdgeSection({
   title,
@@ -304,9 +304,9 @@ function MeetingEdgePanel({
 
             {/* Side by side only when this panel is wide enough to carry two
                 columns of prose, which is a question about the panel and not
-                about the window. On `xl:` these split at a 1280px viewport even
-                when the panel itself was 400px, which is what wrapped these
-                lists to three words a line. */}
+                about the window: a viewport breakpoint would split them at
+                1280px even with the panel 400px wide, wrapping each list to
+                three words a line. */}
             {/* These two fold together. They are grid siblings, so collapsing
                 one alone leaves its cell hollow while the other still sets the
                 row height: the space is not recovered, it just moves. They are
@@ -364,11 +364,9 @@ function MeetingEdgePanel({
                   </span>
                 }
               >
-                {/* No inner scroller. This list used to cap itself at 22rem and
-                    scroll, which was the only way it could stop growing the
-                    card. The card scrolls as a whole now, so a second scroll
-                    region inside the first would only make the list harder to
-                    read than the sections above it. */}
+                {/* No inner scroller: the card scrolls as a whole, and a second
+                    scroll region inside it would make this list harder to read
+                    than the sections above it. */}
                 <div className="grid gap-3 @min-[34rem]:grid-cols-2">
                   {conceptHistory.map((concept, index) => (
                     <div
@@ -418,8 +416,7 @@ function MeetingEdgePanel({
         </div>
 
         {/* Last, and closed. It is a setting rather than guidance: once it is
-            set for a recording it is rarely touched again, and it was sitting
-            between the guidance and the box you type into. */}
+            set for a recording it is rarely touched again. */}
         {onSaveContextLevel ? (
           <div className="mt-5">
             <EdgeSection

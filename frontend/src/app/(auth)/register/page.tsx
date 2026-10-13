@@ -67,7 +67,6 @@ function RegisterForm() {
       // Auto-login after registration
       await login(formData.username, formData.password);
 
-      // Redirect to dashboard (or setup if needed, but usually dashboard)
       router.push("/");
     } catch (err: unknown) {
       setError(
@@ -206,11 +205,7 @@ function RegisterForm() {
             </div>
           </div>
 
-          {/* Hidden invite code field, or visible if missing/error?
-              User requested it not be necessary. We'll keep it in state but not show input unless there's no code in URL?
-              Actually, if there is no code in URL, they probably shouldn't be here or should enter it manually.
-              Let's show it only if it wasn't in the URL.
-          */}
+          {/* The invite code field appears only when the link carried no code. */}
           {!inviteCode && (
             <div>
               <label

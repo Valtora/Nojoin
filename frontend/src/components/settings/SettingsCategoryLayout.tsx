@@ -21,10 +21,10 @@ interface SettingsCategoryLayoutProps {
  * The frame every category page renders into: a back link on mobile, the
  * category heading, and the single column its cards share.
  *
- * Width is decided here, once per page, rather than per card. That is the whole
- * fix for the ragged edges: cards cannot opt into their own width, so every
- * card on a page lines up on both sides. Data-heavy pages declare `fullBleed`
- * on the category instead, so a page is either a form or a data page.
+ * Width is decided here, once per page, rather than per card: cards cannot opt
+ * into their own width, so every card on a page lines up on both sides.
+ * Data-heavy pages declare `fullBleed` on the category instead, so a page is
+ * either a form or a data page.
  */
 export default function SettingsCategoryLayout({
   categoryId,

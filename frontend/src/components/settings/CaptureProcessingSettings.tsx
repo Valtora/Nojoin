@@ -16,7 +16,7 @@ import { SETTINGS_BUTTON_SECONDARY } from "./settingsControls";
 /**
  * The browser-side audio processing toggles and the quiet-audio reminder reset.
  *
- * Split out of CaptureSettings because these sit behind the Advanced gate while
+ * Separate from CaptureSettings because these sit behind the Advanced gate while
  * device selection and levels do not: all three ship enabled, suit almost
  * everyone, and are touched only when something sounds wrong.
  */

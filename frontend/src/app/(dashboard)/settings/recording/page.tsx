@@ -9,10 +9,9 @@ import SettingsCategoryLayout from "@/components/settings/SettingsCategoryLayout
 import { useSettingsContext } from "@/components/settings/SettingsProvider";
 
 /**
- * Recording covers the whole path from microphone to processed audio. The
- * processing defaults (voice activity detection, speaker diarization) used to
- * sit under Personal, three clicks from the gain sliders that explain the same
- * symptoms.
+ * Recording covers the whole path from microphone to processed audio, so the
+ * processing defaults (voice activity detection, speaker diarization) sit
+ * beside the gain sliders that explain the same symptoms.
  */
 export default function RecordingSettingsPage() {
   const { settings, updateSetting } = useSettingsContext();

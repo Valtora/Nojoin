@@ -112,15 +112,14 @@ export default function SetupPage() {
 
   return (
     // page-shell: this route owns its scroll, because <body> is overflow-hidden
-    // for the dashboard's sake. The wizard is the tallest of these pages and it
-    // clipped -- 660px of content in a 420px viewport, unreachable.
+    // for the dashboard's sake. The wizard is the tallest of these pages, and a
+    // short viewport cannot otherwise reach all of it.
     <div className="page-shell flex flex-col items-center bg-surface-page p-4">
       {/* shrink-0 is load-bearing. `overflow-hidden` (which the rounded header
           needs) zeroes this flex item's automatic minimum size, so without it
           the card shrinks to the viewport and clips its own content rather than
-          overflowing into page-shell's scroll: nothing scrolled, and only moving
-          focus revealed the rest. /oauth/authorize avoids the same trap by
-          putting my-auto on a plain wrapper around its card instead. */}
+          overflowing into page-shell's scroll. /oauth/authorize avoids the same
+          trap by putting my-auto on a plain wrapper around its card instead. */}
       <div className="my-auto w-full max-w-xl shrink-0 bg-surface-card rounded-surface border border-surface-border shadow-card overflow-hidden">
         {/* The full welcome earns its space once, on the gate. Past it, every
             step needs the vertical room for its own content instead. */}

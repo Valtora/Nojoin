@@ -134,9 +134,8 @@ export default function SpeakerCapField({
     <div
       className={`flex items-stretch overflow-hidden rounded-xl border bg-control-bg transition-colors focus-within:border-action focus-within:ring-1 focus-within:ring-focus-ring ${
         compact ? "h-8" : "h-9"
-        // Wide enough for the "Auto-detect" placeholder plus both step buttons.
-        // At 9.5rem the two buttons and the input's padding left about 104px for
-        // a label that needs more, so the final letter was clipped.
+        // Wide enough for the "Auto-detect" placeholder plus both step buttons;
+        // 9.5rem clips the last letter.
       } ${inline ? "w-[11.5rem]" : "w-full"} ${
         invalid
           ? "border-status-danger-border"
@@ -213,9 +212,8 @@ export default function SpeakerCapField({
           Max Speakers
         </label>
         {stepper}
-        {/* The rail's copy of this control drops the hint icon. It wrapped onto
-            a line of its own there, so a tooltip nobody hovers cost a whole row
-            above the recordings list. The workspace toolbar keeps it. */}
+        {/* The rail's copy of this control drops the hint icon, which would
+            wrap onto a row of its own there. The workspace toolbar keeps it. */}
         {compact ? null : (
           <span
             className="text-contrast-icon-muted"

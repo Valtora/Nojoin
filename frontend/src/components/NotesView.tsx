@@ -176,7 +176,6 @@ export default function NotesView({
   }, [editor]);
 
   // Calculate matches when findText or editor content changes
-  // Calculate matches when findText or editor content changes
   useEffect(() => {
     if (!findText.trim() || !showSearch || !editor) {
       setMatches([]);
@@ -280,8 +279,7 @@ export default function NotesView({
   useEffect(() => {
     if (!editor) return;
 
-    // 1. Sync matches to the extension for highlighting
-    // Verifies command existence.
+    // 1. Sync matches to the extension for highlighting.
     if (editor.commands.setSearchMatches) {
       editor.commands.setSearchMatches(matches, currentMatchIndex);
     }
@@ -329,7 +327,7 @@ export default function NotesView({
         clearTimeout(timeoutId);
       };
     }
-  }, [currentMatchIndex, matches, editor]); // Removed showSearch dependency as matches will be empty if search hidden
+  }, [currentMatchIndex, matches, editor]);
 
   const nextMatch = () => {
     if (matches.length === 0) return;
@@ -371,7 +369,6 @@ export default function NotesView({
 
     const match = matches[currentMatchIndex];
 
-    // Calculate new notes
     const prefix = localNotes.substring(0, match.startIndex);
     const suffix = localNotes.substring(match.startIndex + match.length);
     const newNotes = prefix + replaceText + suffix;
@@ -477,8 +474,7 @@ export default function NotesView({
                 )}
                 {isGenerating ? "Generating..." : generateNotesLabel}
               </button>
-              {/* Structure picker: the plain button keeps the default, so a user
-                  who never made a template sees no behaviour change. */}
+              {/* Structure picker: the plain button uses the default structure. */}
               <NotesTemplatePicker
                 disabled={isGenerating}
                 activeTemplateId={activeTemplateId}
@@ -718,7 +714,6 @@ export default function NotesView({
         )}
       </div>
 
-      {/* Link Modal */}
       <LinkModal
         isOpen={isLinkModalOpen}
         onClose={() => setIsLinkModalOpen(false)}

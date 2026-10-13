@@ -1,7 +1,7 @@
 // Curated CLI OAuth models per provider (a subscription exposes no models
-// endpoint). Ids mirror the backend's _CLAUDE_CLI_MODELS / _CODEX_CLI_MODELS
-// (most-capable first); `label` is the full, unambiguous name shown in pickers
-// and usage tables. Codex ids are curated — VERIFY against the live Codex set.
+// endpoint), shown until the API's catalogue loads. Ids mirror the backend's
+// _CLAUDE_CLI_MODELS / _CODEX_CLI_MODELS, most capable first; `label` is the
+// full name shown in pickers and usage tables.
 import type { CliProvider } from "@/types";
 
 export interface CliModelOption {
@@ -25,9 +25,6 @@ export const CODEX_CLI_MODEL_OPTIONS: CliModelOption[] = [
   { id: "gpt-5.4", label: "GPT-5.4" },
   { id: "gpt-5.4-mini", label: "GPT-5.4-Mini" },
 ];
-
-/** Back-compat alias (Claude was the only provider originally). */
-export const CLI_MODEL_OPTIONS = CLAUDE_CLI_MODEL_OPTIONS;
 
 /** The curated model list for a given subscription provider. */
 export function cliModelOptions(provider: CliProvider): CliModelOption[] {

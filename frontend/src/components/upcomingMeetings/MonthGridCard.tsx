@@ -16,10 +16,6 @@ import type { CalendarDashboard } from "./useCalendarDashboard";
 /**
  * The month at a glance: one dot per source with something on that day, and a
  * day click that points the agenda module at that day.
- *
- * This used to be one half of a card with a Month/Agenda toggle, where picking
- * one view hid the other. It is now a module in its own right, and the toggle
- * is gone: choosing a day here is what the agenda beside it responds to.
  */
 export default function MonthGridCard({
   calendar,
@@ -94,7 +90,7 @@ export default function MonthGridCard({
 
       {/* Rows are at least 4rem, which keeps a day cell roughly square in a
           column this wide, and grow to share whatever height the column gives
-          them, up to 40rem. The agenda now sits under this module and absorbs
+          them, up to 40rem. The agenda sits under this module and absorbs
           the remainder, so in practice the grid settles near its minimum and
           only stretches where nothing else in the column can take the space. */}
       <div className="mt-2 min-h-0 flex-1">

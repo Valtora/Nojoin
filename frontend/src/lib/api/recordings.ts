@@ -157,7 +157,6 @@ export const importAudio = async (
   const CHUNK_SIZE = 10 * 1024 * 1024;
   const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
 
-  // 1. Initialize Import
   const initParams = new URLSearchParams();
   initParams.append("filename", file.name);
   if (options?.name) initParams.append("name", options.name);
@@ -171,7 +170,6 @@ export const importAudio = async (
   );
   const recording = initResponse.data;
 
-  // 2. Upload Chunks
   for (let i = 0; i < totalChunks; i++) {
     const start = i * CHUNK_SIZE;
     const end = Math.min(start + CHUNK_SIZE, file.size);
@@ -189,7 +187,6 @@ export const importAudio = async (
       },
     );
 
-    // Update progress
     if (options?.onUploadProgress) {
       const progress = Math.round(((i + 1) / totalChunks) * 100);
       // Cap at 99% until finalized
@@ -197,7 +194,6 @@ export const importAudio = async (
     }
   }
 
-  // 3. Finalize Import
   const finalizeResponse = await api.post<Recording>(
     `/recordings/import/chunked/finalize?recording_id=${recording.id}`,
   );

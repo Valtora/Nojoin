@@ -143,8 +143,7 @@ export function useSetupWizard() {
   }, [router]);
 
   /** Every transition clears the banner, so an error cannot follow the operator
-   * into a step it does not describe. A stale one used to reach the final step,
-   * where it also surfaced a premature "Continue to Dashboard" button. */
+   * into a step it does not describe. */
   const goToStep = useCallback((next: number) => {
     setError("");
     setStep(next);
@@ -174,10 +173,8 @@ export function useSetupWizard() {
   };
 
   /**
-   * Always refetches. The previous version early-returned on a captured
-   * `initialConfigLoaded`, so "Check config again" (the one button an operator
-   * without a key is told to press after editing .env) refetched nothing on the
-   * first click and only worked on the second.
+   * Always refetches, so "Check config again" (the one button an operator
+   * without a key is told to press after editing .env) works on the first click.
    */
   const loadInitialConfig = useCallback(async (): Promise<boolean> => {
     const credential = accountCreated ? undefined : bootstrapPasswordRef.current;
@@ -233,9 +230,9 @@ export function useSetupWizard() {
   const handleAccountSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Mirrors backend/core/security.py:validate_password_policy exactly. When
-    // the client was laxer than the server, a password the server rejected only
-    // failed after the wizard had advanced past the field that set it.
+    // Mirrors backend/core/security.py:validate_password_policy exactly. A laxer
+    // client would let a password the server rejects fail only after the wizard
+    // had advanced past the field that set it.
     if (isBlank(formData.username)) {
       setError("Enter a username.");
       return;

@@ -58,9 +58,8 @@ export default function BackupPoller() {
         }
 
         if (state === "SUCCESS") {
-          // Task complete
           setProgress(null);
-          setTaskId(null); // Stop polling immediately
+          setTaskId(null);
 
           addNotification({
             type: "success",
@@ -116,7 +115,6 @@ export default function BackupPoller() {
       }
     };
 
-    // Poll immediately and then interval
     poll();
     intervalRef.current = setInterval(poll, 2000);
 

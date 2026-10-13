@@ -41,7 +41,7 @@ const SIZES: Record<ModalSize, string> = {
  *
  * The height cap and the viewport gutter are not decoration. Without them a
  * tall modal on a phone renders its actions below the fold with no way to
- * reach them, which is the failure the previous hand-rolled scrims all shared.
+ * reach them.
  */
 export default function Modal({
   open,

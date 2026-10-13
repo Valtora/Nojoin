@@ -135,7 +135,6 @@ export default function ReprocessDialog({
       }
     >
       <div className="space-y-4">
-        {/* Engine select */}
         <Select
           label="Transcription engine"
           value={backend}
@@ -179,7 +178,6 @@ export default function ReprocessDialog({
           </div>
         )}
 
-        {/* Speaker cap */}
         <SpeakerCapField
           value={maxSpeakers}
           onCommit={setMaxSpeakers}

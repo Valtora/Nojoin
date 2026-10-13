@@ -15,9 +15,6 @@ const AUTOSAVE_STATE_PRIORITY: Record<SettingsAutosaveSnapshot["status"], number
  * fields that write to their own endpoint — but the footer has room for one
  * message. The most urgent state wins, so a failure is never masked by a
  * neighbour reporting success.
- *
- * Category-matching for search used to live here too; it now belongs to the
- * settings registry, which matches individual settings rather than whole tabs.
  */
 export function mergeAutosaveStates(
   ...states: Array<SettingsAutosaveSnapshot | null | undefined>

@@ -5,7 +5,7 @@ import SettingsCategoryLayout from "@/components/settings/SettingsCategoryLayout
 import { useSettingsContext } from "@/components/settings/SettingsProvider";
 
 /**
- * Per-user AI: the routing choice and the subscription connect flow. Split out
+ * Per-user AI: the routing choice and the subscription connect flow. Separate
  * from provider configuration because every user needs these, while the
  * provider, models and credentials behind them are install-wide and admin-only.
  */

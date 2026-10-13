@@ -26,8 +26,7 @@ interface SettingsBlockProps {
  * label-plus-control: live meters, waveforms, tables, log consoles, wizards.
  *
  * It spans the card's full width and draws no border of its own, so composite
- * UI has a defined home instead of each component improvising a nested panel —
- * which is how the previous three-level surface stack accumulated.
+ * UI has a defined home instead of each component improvising a nested panel.
  */
 export default function SettingsBlock({
   id,

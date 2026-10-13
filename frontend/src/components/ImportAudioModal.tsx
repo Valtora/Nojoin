@@ -36,7 +36,7 @@ export default function ImportAudioModal({ isOpen, onClose, onSuccess }: ImportA
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [meetingName, setMeetingName] = useState('');
   const [recordedAt, setRecordedAt] = useState<Date | null>(null);
-  // null means auto-detect, which is the default and the unchanged path.
+  // null means auto-detect, the default.
   const [maxSpeakers, setMaxSpeakers] = useState<number | null>(null);
   const [uploadState, setUploadState] = useState<UploadState>('idle');
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -337,7 +337,6 @@ export default function ImportAudioModal({ isOpen, onClose, onSuccess }: ImportA
               </p>
             </div>
 
-            {/* Speaker cap */}
             <SpeakerCapField
               value={maxSpeakers}
               onCommit={setMaxSpeakers}

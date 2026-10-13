@@ -143,8 +143,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     applyCornerStyle(newCornerStyle);
   }, []);
 
-  // Prevent hydration mismatch by not rendering until mounted
-  // The inline script handles initial theme, so no flash occurs
+  // Children render before mount: the inline script has already applied the
+  // stored appearance, so nothing flashes.
   const value: ThemeContextValue = {
     theme,
     resolvedTheme,

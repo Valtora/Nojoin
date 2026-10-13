@@ -182,8 +182,7 @@ export function withSecondaryProviderLiveModel(
 }
 
 /**
- * Order the available models so the currently-selected model (if any) is first,
- * matching the original `getModelOptionsForProvider` behaviour.
+ * Order the available models so the currently-selected model (if any) is first.
  */
 export function getModelOptionsForProvider(
   settings: Settings,

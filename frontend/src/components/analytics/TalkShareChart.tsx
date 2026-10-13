@@ -12,10 +12,9 @@ interface TalkShareChartProps {
 
 /** Talk share, as a directly labelled bar per speaker.
  *
- * Hand-rolled rather than a chart library's horizontal bar chart, which is
- * what this was. A charting bar needs a fixed category axis and a fixed label
- * gutter, and those two reservations left about 90px of drawable bar once this
- * panel had to share a wide viewport with the timeline beside it. A bar whose
+ * Hand-rolled rather than a chart library's horizontal bar chart: a charting
+ * bar reserves a fixed category axis and label gutter, which leaves about 90px
+ * of drawable bar when this panel shares a row with the timeline. A bar whose
  * track is the full width of the panel reads at any width the tab can be.
  *
  * The bars are scaled 0-100%, not to the longest bar. Scaling to the leader

@@ -81,7 +81,7 @@ export interface SpeakerPanelActions {
  * dispatch.
  *
  * The caller supplies `closeContextMenu` so the menu-driven actions clear the
- * menu exactly as before.
+ * menu before opening their editor or modal.
  */
 export function useSpeakerPanelActions(
   options: UseSpeakerPanelActionsOptions & { closeContextMenu: () => void },

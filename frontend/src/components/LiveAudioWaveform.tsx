@@ -50,10 +50,8 @@ function WaveformTrack({
 }) {
   const range = dynamicMax - dynamicMin;
   return (
-    // One surface, not two. This used to wrap the track in a card fill, a
-    // border and a *float* shadow, inside the card that already contains it:
-    // a card in a card, and an elevation reserved for things that overlay
-    // other content.
+    // One surface: the track sits directly in the card that contains it, with
+    // no fill, border or float shadow of its own.
     <div
       className={`flex items-end gap-px overflow-hidden rounded-surface-panel bg-surface-inset px-2 sm:gap-1 ${
         compact ? "h-14 py-2" : "h-24 py-3"

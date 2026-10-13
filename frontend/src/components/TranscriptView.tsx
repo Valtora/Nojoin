@@ -308,7 +308,6 @@ export default function TranscriptView({
       return;
     }
 
-    // Calculate new text
     const prefix = segment.text.substring(0, match.startIndex);
     const suffix = segment.text.substring(match.startIndex + match.length);
     const newText = prefix + replaceText + suffix;

@@ -9,7 +9,6 @@ import {
   type ComponentType,
 } from "react";
 import { Popover, Transition } from "@headlessui/react";
-// import axios from "axios"; // Not used anymore
 import {
   Activity,
   AlertTriangle,
@@ -185,9 +184,9 @@ function formatCheckMeta(
 }
 
 /**
- * One rendered log line. Declared at module scope and memoised: it used to be
- * defined inside SystemTab, which made it a new component type on every render,
- * so React discarded and rebuilt every visible line each time a log arrived.
+ * One rendered log line. Declared at module scope and memoised: defined inside
+ * SystemTab it would be a new component type on every render, and React would
+ * rebuild every visible line for each log that arrived.
  */
 const LogLine = memo(function LogLine({
   text,
@@ -211,7 +210,6 @@ const LogLine = memo(function LogLine({
   const containerMatch = remainder.match(/^(\[.*?\])\s*/);
   if (containerMatch) {
     container = containerMatch[1];
-    // Remove container and following whitespace from remainder
     remainder = remainder.substring(containerMatch[0].length);
   }
 
@@ -220,15 +218,12 @@ const LogLine = memo(function LogLine({
   const timeMatch = remainder.match(/^(\d{4}-\d{2}-\d{2}T\S+)\s*/);
   if (timeMatch) {
     timestamp = timeMatch[1];
-    // Remove timestamp and following whitespace
     remainder = remainder.substring(timeMatch[0].length);
   }
 
-  // 3. Remaining text is the content
   content = remainder;
 
-  // Determine Level and Color
-  // Default to INFO (Green) as requested for "LOG" level
+  // Default to INFO (green), which also covers lines tagged LOG.
   let level = "INFO";
   let levelColor = "text-status-success-fg";
   const upperContent = content.toUpperCase();
@@ -342,8 +337,8 @@ export default function SystemTab() {
 
   const logLevels = ["ALL", "DEBUG", "INFO", "WARN", "ERROR"];
 
-  // Derived, not stored: storing it in state re-rendered the whole tab twice
-  // for every line that arrived.
+  // Derived, not stored: state would re-render the whole tab twice for every
+  // line that arrived.
   const filteredLogs = useMemo(() => {
     let result = logs;
 
@@ -362,10 +357,8 @@ export default function SystemTab() {
     // 2. Log Level Filter
     if (logLevel !== "ALL") {
       result = result.filter((log) => {
-        // Simple heuristic: check if line contains level string
-        // Assuming logs contain "INFO", "WARN", "ERROR", "DEBUG"
-        // Uses includes for safety across mixed formats.
-        // Also handling mapping: "WARNING" -> "WARN", "CRITICAL" -> "ERROR"
+        // Substring match on the level name, counting WARNING as WARN and
+        // CRITICAL as ERROR.
         const upper = log.toUpperCase();
         if (logLevel === "INFO") return upper.includes("INFO");
         if (logLevel === "WARN")
@@ -423,10 +416,8 @@ export default function SystemTab() {
     };
   }, []);
 
-  // Auto-scroll
-  // Follow new output only while the viewer is already at the bottom. Writing
-  // scrollTop on every batch regardless is what made scrolling back through
-  // history feel like it kept snapping away.
+  // Follow new output only while the viewer is already at the bottom, so
+  // scrolling back through history is never snapped away.
   useEffect(() => {
     const element = scrollRef.current;
     if (!autoScroll || !element || !pinnedToBottomRef.current) {
@@ -449,11 +440,10 @@ export default function SystemTab() {
   useEffect(() => {
     setLogs([]); // Clear logs on switch
     pendingLogsRef.current = [];
-    // Reset connection state
     setIsConnected(false);
 
-    // Buffer arrivals and flush on a timer: setLogs per message re-rendered the
-    // component (and copied the whole array) once for every line.
+    // Buffer arrivals and flush on a timer, so a burst of lines costs one
+    // render rather than one per line.
     const flush = () => {
       const batch = pendingLogsRef.current;
       if (batch.length === 0) {

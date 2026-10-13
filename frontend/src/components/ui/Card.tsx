@@ -7,9 +7,8 @@ export type CardPadding = "none" | "sm" | "md" | "lg";
 interface CardProps extends HTMLAttributes<HTMLDivElement> {
   /**
    * Switches the hover treatment on. A clickable card tints its background and
-   * strengthens its border; it does not lift. Shadow-on-hover is the affordance
-   * this design replaced, and it never worked in dark mode anyway, where there
-   * is no resting shadow for a hover state to differ from.
+   * strengthens its border; it does not lift, because shadow-on-hover cannot
+   * work in dark mode, where there is no resting shadow to differ from.
    */
   interactive?: boolean;
   padding?: CardPadding;
@@ -23,8 +22,7 @@ const PADDING: Record<CardPadding, string> = {
 };
 
 /**
- * The canonical resting surface, generalised from the settings card that this
- * whole design language was derived from: a solid fill, a 1px hairline, and a
+ * The canonical resting surface: a solid fill, a 1px hairline, and a
  * 4%-alpha shadow that the dark theme resolves to `none` so surfaces separate
  * by lightness instead.
  */

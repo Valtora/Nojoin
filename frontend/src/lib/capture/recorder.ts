@@ -37,10 +37,9 @@ const DEFAULT_AUDIO_BITS_PER_SECOND = 160_000;
 /**
  * How long to wait for MediaRecorder.onstop before abandoning the segment.
  *
- * stopActiveSegment used to await onstop unconditionally. Because every
- * pause/stop/roll goes through one serial operation queue, a MediaRecorder that
- * never fired onstop wedged the queue permanently and stop() could not reach
- * finalize (issue #166).
+ * Every pause/stop/roll goes through one serial operation queue, so a
+ * MediaRecorder that never fires onstop would wedge the queue permanently and
+ * stop() could not reach finalize (issue #166).
  */
 const DEFAULT_STOP_TIMEOUT_MS = 5_000;
 

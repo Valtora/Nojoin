@@ -7,7 +7,6 @@ interface ContextMenuItem {
   label: string;
   onClick: () => void;
   className?: string;
-  // icon removed
 }
 
 interface ContextMenuProps {

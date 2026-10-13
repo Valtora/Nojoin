@@ -7,8 +7,7 @@ interface ImportAudioState {
 }
 
 /**
- * Open state of the single Import Audio dialog. Every entry point (the
- * recordings list header, the empty list, the recordings landing panel) calls
+ * Open state of the single Import Audio dialog. Every entry point calls
  * `openImportAudio`, and `ImportAudioHost`, mounted once in the dashboard
  * layout, renders the dialog. Not persisted: a reload starts closed.
  */

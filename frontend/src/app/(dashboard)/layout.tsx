@@ -39,7 +39,7 @@ export default function DashboardLayout({
             the nav <-> main row filling the rest. `h-dvh` (dynamic viewport)
             keeps the shell inside the visible area so the browser toolbar never
             clips the bottom of scroll views. On desktop TopBar is hidden, so the
-            column collapses to the original single-row layout. */}
+            column collapses to a single row. */}
         <div className="flex flex-col h-dvh w-full overflow-hidden">
           <TourGuide />
           <TopBar />

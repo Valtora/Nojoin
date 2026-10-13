@@ -120,9 +120,9 @@ export class SegmentUploader {
    * Resolves once every queued segment has uploaded.
    *
    * Bounded on purpose: stop() awaits this before finalizing, and an unbounded
-   * wait here meant a stalled queue silently prevented finalize from ever being
-   * called (issue #166). On expiry the caller gets an UploaderTimeoutError and
-   * can decide, rather than hanging.
+   * wait would let a stalled queue prevent finalize from ever being called
+   * (issue #166). On expiry the caller gets an UploaderTimeoutError and can
+   * decide, rather than hanging.
    */
   async waitForIdle(options: { timeoutMs?: number } = {}) {
     const timeoutMs = options.timeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
@@ -146,9 +146,8 @@ export class SegmentUploader {
             );
           }
 
-          // A real macrotask yield. Spinning on a microtask here starved the
-          // event loop instead of yielding, locking up the tab rather than
-          // merely waiting.
+          // A real macrotask yield: spinning on a microtask starves the event
+          // loop and locks up the tab.
           await this.wait(GAP_POLL_INTERVAL_MS);
           continue;
         }

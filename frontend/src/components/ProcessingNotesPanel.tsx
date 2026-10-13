@@ -158,9 +158,7 @@ function ProcessingNotesPanel({
     }
   }, [flushSave]);
 
-  // Nothing at rest. "Autosaves while you type" was a permanent label
-  // describing behaviour that only matters at the moment it happens, and the
-  // three states that do matter say so themselves.
+  // Nothing at rest: only saving, saved, failed and locked say anything.
   const saveMessage =
     disabled
       ? "Locked"
@@ -174,8 +172,7 @@ function ProcessingNotesPanel({
 
   return (
     <section className="density-surface flex h-full min-h-0 flex-col border border-surface-border bg-surface-card shadow-card">
-      {/* One row: title and save state. The sentence under the title explained
-          that you can take notes in a box labelled Notes. */}
+      {/* One row: title and save state. */}
       <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1">
         <h3 className="text-base font-semibold text-foreground">Notes</h3>
         <span className="ml-auto text-xs font-semibold uppercase tracking-[0.2em] text-contrast-helper">

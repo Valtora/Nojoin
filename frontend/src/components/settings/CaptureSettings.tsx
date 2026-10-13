@@ -92,11 +92,9 @@ const MeterBar = ({
 };
 
 /**
- * Microphone selection and levels.
- *
- * The browser processing toggles and the quiet-audio reminders that used to
- * share this component now live in CaptureProcessingSettings, because they sit
- * behind the Advanced gate while device and level selection does not.
+ * Microphone selection and levels. The browser processing toggles and the
+ * quiet-audio reminders are in CaptureProcessingSettings, behind the Advanced
+ * gate.
  */
 export default function CaptureSettings() {
   const { settings, support, updateSettings } = useCapture();

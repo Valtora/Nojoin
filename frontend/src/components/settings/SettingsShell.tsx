@@ -22,8 +22,8 @@ import VersionTag from "./VersionTag";
  *
  * Below `lg` the sidebar is not rendered at all. Mobile navigates by drill-in
  * instead — `/settings` lists the categories and each opens as its own page —
- * because fourteen entries across four groups cannot be expressed as the
- * horizontal chip strip the six-tab version used.
+ * because fourteen entries across four groups do not fit a horizontal chip
+ * strip.
  */
 export default function SettingsShell({ children }: { children: ReactNode }) {
   const router = useRouter();

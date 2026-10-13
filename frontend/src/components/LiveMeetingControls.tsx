@@ -92,9 +92,8 @@ export default function LiveMeetingControls({
     }
   };
 
-  // Inline during capture: a full-width field spanned the whole workspace for
-  // what is at most a two-character value, and pushed the transcript panel down
-  // by three lines of label and hint.
+  // Inline during capture: the value is at most two characters, and a
+  // full-width field would push the transcript panel down.
   const speakerCapField = (
     <SpeakerCapField
       value={maxSpeakers}
@@ -176,9 +175,7 @@ export default function LiveMeetingControls({
   // recording (issue #166).
   //
   // The cause comes from the controller, which has the evidence to tell a
-  // suspended tab from an unreachable backend. This used to assert suspension
-  // unconditionally, which sent people to check browser settings during a
-  // server-side outage.
+  // suspended tab from an unreachable backend.
   const coverageBadge = coverageWarning ? (
     <div
       className="density-surface-panel flex items-start gap-2 border border-status-warning-border bg-status-warning-bg px-3 py-2 text-xs text-status-warning-fg"
@@ -280,9 +277,7 @@ export default function LiveMeetingControls({
 
   if (size === "bar") {
     // The transport shares the row's slack rather than sitting at its intrinsic
-    // width: at three columns there was a great deal of empty bar to the right
-    // of three small buttons. Capped, because a Stop button half a metre wide
-    // is not an improvement.
+    // width, capped so the buttons never grow absurdly wide.
     const barButtonClass =
       "inline-flex h-10 min-w-[7rem] flex-1 items-center justify-center gap-2 rounded-lg px-4 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50";
 

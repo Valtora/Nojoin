@@ -11,9 +11,8 @@ const POLL_INTERVAL_MS = 4000;
  * Documents attached to a recording that is still being captured or processed.
  *
  * The state lives here rather than in the panel because the two halves of this
- * feature ended up in different places: the upload action belongs on the
- * capture toolbar, where it is found, and the list belongs in a card, which
- * only exists once there is something to list.
+ * feature sit in different places: the upload action on the capture toolbar,
+ * and the list in a card that only exists once there is something to list.
  *
  * Polls only while something is mid-parse, and swallows a failed poll: the
  * capture itself is unaffected and the next tick usually recovers.
