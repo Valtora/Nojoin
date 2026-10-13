@@ -114,6 +114,8 @@ Nothing about your meetings, your people, or your server's identity ever leaves 
 - **No secrets.** No API keys, tokens, passwords, OAuth credentials, or encryption keys.
 - **No configuration detail.** No `.env` contents, no Ollama URL, no model names, no file paths.
 
+ONNX Runtime, which runs the Parakeet and Canary engines and the search embeddings, sends its own usage telemetry to Microsoft by default in its Linux builds from 1.29. Nojoin turns that off. The worker image sets `ORT_DISABLE_TELEMETRY=1`, and the backend sets the same default before ONNX Runtime loads, so an install built from the requirements files is covered as well.
+
 The receiving service additionally stores **nothing derived from the connection**. Your server's IP address is used only to decide whether a request is part of a flood, and is never written to the database. No User-Agent, and no geolocation, is recorded.
 
 ## When It Is Sent

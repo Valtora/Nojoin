@@ -67,6 +67,10 @@ ENV PYTHONUNBUFFERED=1
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PATH="/opt/venv/bin:$PATH"
 ENV MALLOC_ARENA_MAX=2
+# ONNX Runtime 1.29+ on Linux uploads usage telemetry to Microsoft by default.
+# This stops it for every process in the image, including ones that never import
+# backend (which sets the same default).
+ENV ORT_DISABLE_TELEMETRY=1
 ENV LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2
 
 RUN apt-get update && \
