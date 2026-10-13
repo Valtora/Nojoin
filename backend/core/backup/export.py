@@ -214,9 +214,6 @@ def _create_backup_sync(request: _ExportRequest) -> Tuple[str, Dict[str, Any]]:
     Synchronous method to handle heavy file compression and zipping.
     Runs in a thread to prevent blocking the main event loop.
 
-    Reports progress as it goes. Compressing a large library to Opus takes minutes,
-    and without per-file reporting the export looks indistinguishable from a hang.
-
     Returns the temporary zip path and a warnings summary for the operator.
     """
     config_path = request.config_path
@@ -239,25 +236,22 @@ def _create_backup_sync(request: _ExportRequest) -> Tuple[str, Dict[str, Any]]:
 
     try:
         with zipfile.ZipFile(temp_zip.name, "w", zipfile.ZIP_DEFLATED) as zipf:
-            # 1. Write DB Dump
             report("Writing records")
             for filename, content in db_dump.items():
                 zipf.writestr(filename, content)
 
-            # 2. Add audio, one member per recording row.
+            # Audio, one member per recording row.
             if include_audio:
                 failed_audio = _write_audio_members(
                     zipf, audio_plan, archive_quality, report
                 )
 
-            # 3. Add attached documents, always included.
+            # Attached documents, always included.
             failed_documents = _write_document_members(zipf, document_plan, report)
 
-            # 4. Add Config
             report("Finalising archive")
             _write_config_member(zipf, config_path)
 
-            # 5. Add Backup Info
             warnings = {
                 "recordings_without_audio": audio_plan.missing_audio
                 if include_audio
@@ -280,7 +274,6 @@ def _create_backup_sync(request: _ExportRequest) -> Tuple[str, Dict[str, Any]]:
         return temp_zip.name, warnings
 
     except Exception as e:
-        # Cleanup temp zip if failed
         if os.path.exists(temp_zip.name):
             os.remove(temp_zip.name)
         raise e
@@ -299,7 +292,6 @@ async def create_backup(
 
     import asyncio
 
-    # 1. Dump Database (Async)
     db_dump = {}
     audio_plan = _AudioPlan()
     document_plan = _DocumentPlan()
@@ -330,7 +322,6 @@ async def create_backup(
 
             db_dump[f"{table_name}.json"] = json.dumps(data, indent=2)
 
-    # 2. Heavy Lifting in Thread
     return await asyncio.to_thread(
         _create_backup_sync,
         _ExportRequest(

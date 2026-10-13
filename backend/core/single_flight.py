@@ -1,11 +1,11 @@
 """Keep one instance of a job running at a time, across worker processes.
 
 Some work is dispatched on a stream of triggers but only makes sense one at a
-time. A Meeting Edge refresh is the case this was written for: it is queued as
-the transcript grows, so during a live meeting a trigger arrives every few
-seconds, while a single refresh takes 20-45 seconds. Nothing stopped four of
-them running at once, each spawning its own LLM subprocess, all but the last
-producing a result immediately superseded.
+time. A Meeting Edge refresh is the main case: it is queued as the transcript
+grows, so during a live meeting a trigger arrives every few seconds, while a
+single refresh takes 20-45 seconds. Unguarded, several run at once, each
+spawning its own LLM subprocess, and all but the last produce a result that is
+immediately superseded.
 
 Redis rather than a database row because the guard has to survive the process
 holding it being killed. A `SET NX EX` expires on its own, so a worker that dies

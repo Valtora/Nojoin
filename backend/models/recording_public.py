@@ -180,7 +180,7 @@ class RecordingPublicRead(PublicModel):
     # Runs about 2-3% high, because each segment's decoded WAV carries codec
     # priming that concatenation later trims. That bias is deliberate rather
     # than corrected for: it can only ever make a shortfall look smaller, so it
-    # cannot manufacture a warning, which is the failure this figure replaced.
+    # cannot manufacture a warning.
     #
     # None until the first segment is transcoded, and on the list endpoint,
     # where summing per row would be a query per recording for a figure no list

@@ -1,9 +1,4 @@
-"""What files an archive will carry, resolved from the database rather than the disk.
-
-Selecting by ``Recording.audio_path`` rather than walking the recordings directory is
-what makes proxy shadowing impossible: a recording and its playback proxy share a
-filename stem, so a stem-keyed directory walk had to guess between them.
-"""
+"""What files an archive will carry, resolved from the database rather than the disk."""
 
 import logging
 import os
@@ -34,10 +29,11 @@ class _AudioPlanEntry:
 class _AudioPlan:
     """What audio the archive will carry, derived from the recording rows themselves.
 
-    Selecting by ``Recording.audio_path`` rather than walking the recordings directory is
-    what makes proxy shadowing impossible. A recording and its playback proxy share a
-    filename stem (``<uuid>.wav`` and ``<uuid>.mp3``), so a stem-keyed directory walk had
-    to guess between them and could archive the mono, lossy proxy as the master audio.
+    Selecting by ``Recording.audio_path`` rather than walking the recordings directory
+    is what makes proxy shadowing impossible. A recording and its playback proxy share
+    a filename stem (``<uuid>.wav`` and ``<uuid>.mp3``), so a stem-keyed directory walk
+    would have to guess between them and could archive the mono, lossy proxy as the
+    master audio.
     """
 
     entries: List[_AudioPlanEntry] = field(default_factory=list)
