@@ -714,7 +714,6 @@ export default function NotesView({
         )}
       </div>
 
-      {/* Link Modal */}
       <LinkModal
         isOpen={isLinkModalOpen}
         onClose={() => setIsLinkModalOpen(false)}

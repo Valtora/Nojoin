@@ -457,7 +457,6 @@ export default function SpeakerPanel({
         />
       )}
 
-      {/* Voiceprint Modal */}
       <VoiceprintModal
         isOpen={voiceprintModalOpen}
         onClose={() => {

@@ -277,7 +277,6 @@ export default function PeoplePage() {
 
   return (
     <div className="flex h-full bg-surface-inset overflow-hidden">
-      {/* Sidebar */}
       <PeopleTagSidebar
         selectedTagIds={selectedTagIds}
         onToggleTag={handleToggleTag}
@@ -325,7 +324,6 @@ export default function PeoplePage() {
               </div>
             </div>
 
-            {/* Filters */}
             <PeopleFilters onSearch={setSearchQuery} />
 
             {/* Batch Action Toolbar */}
@@ -366,7 +364,6 @@ export default function PeoplePage() {
               </div>
             )}
 
-            {/* Table */}
             <PeopleTable
               people={people}
               isLoading={isLoading}

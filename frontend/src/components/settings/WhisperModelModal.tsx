@@ -143,7 +143,6 @@ export default function WhisperModelModal({
           </div>
         </div>
 
-        {/* Selector */}
         <Select
           label="Select Whisper Model"
           fieldSize="lg"

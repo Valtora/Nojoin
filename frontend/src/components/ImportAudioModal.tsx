@@ -337,7 +337,6 @@ export default function ImportAudioModal({ isOpen, onClose, onSuccess }: ImportA
               </p>
             </div>
 
-            {/* Speaker cap */}
             <SpeakerCapField
               value={maxSpeakers}
               onCommit={setMaxSpeakers}

@@ -404,7 +404,6 @@ export default function RecordingPage({ params }: PageProps) {
         )}
       </div>
 
-      {/* Export Modal */}
       <ExportModal
         isOpen={showExportModal}
         onClose={() => setShowExportModal(false)}
