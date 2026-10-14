@@ -224,9 +224,10 @@ def check_registry_login() -> None:
         config = json.loads((config_dir / "config.json").read_text())
     except (OSError, ValueError):
         config = {}
-    if "ghcr.io" in config.get("auths", {}) or "ghcr.io" in config.get(
-        "credHelpers", {}
-    ):
+    # Registry hosts are the keys of these two maps. An auths entry can be
+    # empty when a credential store holds the secret, so test for the key.
+    registries = {**config.get("auths", {}), **config.get("credHelpers", {})}
+    if registries.get("ghcr.io") is not None:
         return
     raise ReleaseError(
         "Docker has no login for ghcr.io. Create a classic token with only the "
