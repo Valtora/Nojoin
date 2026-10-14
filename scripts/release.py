@@ -406,6 +406,7 @@ def scan_images(release: Release) -> None:
         command = [
             "trivy", "image", "--input", str(release.work / "oci" / target),
             "--skip-db-update", "--skip-java-db-update", "--cache-backend", "memory",
+            "--skip-version-check", "--table-mode", "detailed",
             *TRIVY_GATE,
             "--ignorefile", str(release.src / ".github" / "trivyignore"),
             "--secret-config", str(release.src / ".github" / "trivy-secret.yaml"),
