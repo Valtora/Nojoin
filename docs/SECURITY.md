@@ -72,7 +72,7 @@ Nojoin can route a user's AI inference through their own **Claude** (Pro/Max) or
 - CLI OAuth is **swappable and non-load-bearing**: any failure (auth, usage limit) degrades through the server's default provider chain — the primary provider first, then the secondary if that also fails. Usage limits set a best-effort reset time surfaced in Settings.
 - Usage accounting stores **aggregate counts only**: a per-user daily rollup of token counts and request totals, plus the latest rate-limit reading, so administrators can review subscription usage. Prompt and response **content is never stored**, and the SDK's notional per-turn cost is kept for reference but never surfaced as money (a subscription is flat-rate).
 - Disconnecting (Settings > Your AI) deletes the encrypted credential and wipes the user's per-user CLI working directory.
-- The two CLIs are installed unpinned, so each image build takes the latest release. The build **verifies both against the npm registry's signatures and provenance attestations** and fails if either does not verify, and it records the installed versions at `/usr/local/share/nojoin/cli-versions.json` in the image (the SBOM attestation carries them too). The Codex CLI ships as a stripped native binary that the image scanner cannot inspect, so a release check looks its version up in the advisory database by hand; see [DEVELOPMENT.md](DEVELOPMENT.md#validating-images-locally-before-cutting-a-tag).
+- The two CLIs are installed unpinned, so each image build takes the latest release. The build **verifies both against the npm registry's signatures and provenance attestations** and fails if either does not verify, and it records the installed versions at `/usr/local/share/nojoin/cli-versions.json` in the image (the SBOM attestation carries them too). The Codex CLI ships as a stripped native binary that the image scanner cannot inspect, so the release script looks its version up in the GitHub advisory database before anything is pushed; see [DEVELOPMENT.md](DEVELOPMENT.md#release-gates).
 
 ## JWT Signing Key Rotation
 
@@ -122,7 +122,7 @@ Each payload is assembled in exactly one function and locked by a test that fail
 
 ## Vulnerability Scanning and Severity Policy
 
-Published container images are scanned for known vulnerabilities by [Trivy](https://github.com/aquasecurity/trivy) before their rolling tags are published. The policy balances strong assurance against the reality that the worker image is built on a large CUDA/PyTorch base with a slow-moving, inherited CVE surface.
+Published container images are scanned for known vulnerabilities by [Trivy](https://github.com/aquasecurity/trivy) before they are pushed to the registry. The policy balances strong assurance against the reality that the worker image is built on a large CUDA/PyTorch base with a slow-moving, inherited CVE surface.
 
 - The release pipeline scans each image and **fails the release on CRITICAL or HIGH findings that have a fix available** (`ignore-unfixed: true`). Such findings are addressable by us — usually by pulling in a patched base image or dependency — so they block publication.
 - Findings **without an upstream fix** do not block the release. They cannot be actioned by Nojoin and are unavoidable for the GPU worker base image. They remain visible in scan output for tracking.
@@ -162,7 +162,7 @@ When a confirmed vulnerability requires an out-of-band fix, maintainers follow a
 ### Expedited Release
 
 1. **Draft privately.** Develop the fix on a private branch or through a GitHub Security Advisory draft so the change is not disclosed before an image is available.
-2. **Bump and tag.** Update `docs/VERSION` and push a strict `vX.Y.Z` tag exactly as for a normal release. The same release pipeline runs: full test, lint, build, documentation, and migration gates, followed by image build, vulnerability scan, the health and non-root smoke, and cosign signing. The security urgency does not remove these gates; it only compresses the schedule.
+2. **Bump and release.** Merge the `docs/VERSION` bump and run `scripts/release.py` exactly as for a normal release. The same gates run: a green `CI gate` on every commit since the last release, then the image build, vulnerability scan, the health and non-root smoke, and the CLI advisory lookup on the release host, followed by verification and cosign signing in the release workflow. The security urgency does not remove these gates; it only compresses the schedule.
 3. **Publish notes.** The automated release notes are generated for the tag. Add an explicit security section describing the affected versions, severity, and required operator action (for example, "upgrade immediately").
 4. **Advisory.** Publish or update the GitHub Security Advisory, request a CVE where appropriate, and credit the reporter per the coordinated-disclosure workflow above.
 

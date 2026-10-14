@@ -808,13 +808,13 @@ acceptable trade for one less moving part.
 
 ## Image Trust and Supply Chain
 
-Published Nojoin images are built by a hardened, gated release pipeline. Operators with stricter assurance requirements can rely on the following properties.
+Published Nojoin images are built by a hardened, gated release pipeline. The maintainer builds them on a dedicated release host, and GitHub Actions verifies and signs them. Operators with stricter assurance requirements can rely on the following properties.
 
-- **Reproducible bases:** Every image is built from base images pinned by immutable `@sha256:` digest, not mutable tags. The exact GitHub Actions used by the release workflow are pinned to commit SHAs.
+- **Reproducible bases:** Every image is built from base images pinned by immutable `@sha256:` digest, not mutable tags. The exact GitHub Actions used by the release workflow are pinned to commit SHAs, and the BuildKit image that builds the release is pinned by digest.
 - **Update policy:** Pinned actions and base images are kept current automatically by Dependabot on a weekly cadence. Each update passes the full CI gate before it can merge, and a new release must be cut to publish updated images.
-- **Signed images:** Every published image is signed with [cosign](https://github.com/sigstore/cosign) using keyless (OIDC) signing. The signature is bound to the release workflow's identity rather than a stored key.
-- **Provenance and SBOM:** Every image carries a build-provenance attestation and a Software Bill of Materials (SBOM) attestation describing how it was built and what it contains.
-- **Pre-publication verification:** Before the rolling `latest` and `major.minor` tags are published, the api and frontend images are booted with their real dependencies and must pass their production healthchecks, and all images are asserted to run as a non-root user at runtime. The api and worker entrypoints enter as root only to repair ownership of the `./data` bind mount (Docker creates a missing bind source as root), then drop to an unprivileged user (uid 1000) via `gosu` before the long-running process starts; the smoke test verifies that dropped runtime uid rather than the image's declared `USER`.
+- **Signed images:** Every published image is signed with [cosign](https://github.com/sigstore/cosign) using keyless (OIDC) signing. The signature is bound to the release workflow's identity rather than a stored key, and the workflow signs an image only after checking that its revision label names the release tag's commit.
+- **Provenance and SBOM:** Every image carries a build-provenance attestation and a Software Bill of Materials (SBOM) attestation describing how it was built and what it contains. The provenance records the source commit, build arguments, and pinned bases of a build on the release host, so it carries no GitHub runner identity.
+- **Pre-publication verification:** Before any image is pushed to the registry, every image passes the vulnerability scan, the api and frontend images are booted with their real dependencies and must pass their production healthchecks, and all images are asserted to run as a non-root user at runtime. The api and worker entrypoints enter as root only to repair ownership of the `./data` bind mount (Docker creates a missing bind source as root), then drop to an unprivileged user (uid 1000) via `gosu` before the long-running process starts; the smoke test verifies that dropped runtime uid rather than the image's declared `USER`.
 
 ### Verifying an Image Before Deploying
 

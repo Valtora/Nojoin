@@ -142,7 +142,7 @@ Sensitive scopes carry an additional review obligation that the maintainer (or, 
 - **Migrations (`backend/alembic/**`):** keep exactly one checked-in Alembic head and never delete or rename a committed revision. Confirm `Alembic validation` is green.
 - **Security (`docs/SECURITY.md`, auth/session/token/encryption code):** preserve the documented auth and token boundaries in [docs/SECURITY.md](../docs/SECURITY.md) and update that guide in the same pull request when behaviour changes.
 - **Capture (`frontend/src/lib/capture/**`):** complete manual browser smoke testing for start, pause/resume, stop/finalize, discard, unsupported-browser messaging, and selected-microphone behaviour ([docs/DEVELOPMENT.md](../docs/DEVELOPMENT.md#verification-by-change-scope)).
-- **Deployment / release (`docker/**`, `docker-compose*.yml`, `.github/workflows/**`):** keep the pinned action SHAs, pinned base-image digests, and the gated/signed release ordering intact, and run the full backend, frontend, docs, and Alembic validation set together.
+- **Deployment / release (`docker/**`, `docker-compose*.yml`, `.github/workflows/**`, `scripts/release.py`):** keep the pinned action SHAs, pinned base-image digests, and the gated/signed release ordering intact, and run the full backend, frontend, docs, and Alembic validation set together.
 
 ### Branch Protection
 
