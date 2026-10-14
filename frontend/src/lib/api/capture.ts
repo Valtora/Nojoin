@@ -53,8 +53,19 @@ export const updateRecordingMaxSpeakers = async (
 
 export const finalizeRecordingCapture = async (
   recordingId: RecordingId,
+  options: { clientElapsedSeconds?: number } = {},
 ): Promise<Recording> => {
-  const response = await api.post<Recording>(`/recordings/${recordingId}/finalize`);
+  // The browser's own recording time, so the server can judge coverage
+  // against the capture rather than against the time spent uploading after it.
+  const params =
+    options.clientElapsedSeconds !== undefined && options.clientElapsedSeconds > 0
+      ? { client_elapsed_seconds: options.clientElapsedSeconds }
+      : undefined;
+  const response = await api.post<Recording>(
+    `/recordings/${recordingId}/finalize`,
+    undefined,
+    { params },
+  );
   return response.data;
 };
 
@@ -74,6 +85,8 @@ export const discardRecordingCapture = async (
 const resolveRecordingSegmentExtension = (contentType: string | undefined) => {
   const normalized = (contentType || "").split(";", 1)[0].trim().toLowerCase();
   switch (normalized) {
+    case "audio/flac":
+      return "flac";
     case "audio/wav":
       return "wav";
     case "audio/ogg":

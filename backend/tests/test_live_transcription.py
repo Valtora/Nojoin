@@ -19,6 +19,7 @@ from sqlalchemy.pool import StaticPool
 
 from backend.api.deps import get_current_recording_client_user, get_current_user, get_db
 from backend.api.v1.api import api_router
+from backend.tests.sqlite_schemas import RECORDING_AUDIO_CHUNK_CURSORS_SCHEMA
 from backend.utils.config_manager import (
     DEFAULT_SYSTEM_CONFIG,
     ConfigManager,
@@ -269,6 +270,7 @@ async def test_session_maker() -> sessionmaker:
         await connection.execute(text(TRANSCRIPTS_SCHEMA))
         await connection.execute(text(RECORDING_AUDIO_CHUNKS_SCHEMA))
         await connection.execute(text(RECORDING_AUDIO_WINDOW_MANIFESTS_SCHEMA))
+        await connection.execute(text(RECORDING_AUDIO_CHUNK_CURSORS_SCHEMA))
 
     try:
         yield session_maker
@@ -2758,12 +2760,14 @@ async def test_segment_upload_persists_chunk_metadata_and_finalize_seals_window_
 
     concatenated_paths: list[list[str]] = []
 
-    def fake_concatenate_wavs(paths: list[str], destination: str) -> None:
+    def fake_write_master(paths: list[str], destination: str) -> float:
         concatenated_paths.append(list(paths))
         Path(destination).write_bytes(b"joined-audio")
+        return 1.25
 
-    monkeypatch.setattr(recordings_module, "concatenate_wavs", fake_concatenate_wavs)
-    monkeypatch.setattr(recordings_module, "get_audio_duration", lambda path: 1.25)
+    monkeypatch.setattr(
+        recordings_module, "write_browser_master_audio", fake_write_master
+    )
 
     def fake_send_task(name, args=None, kwargs=None, **other_kwargs):
         from types import SimpleNamespace
@@ -2914,9 +2918,10 @@ async def test_finalize_upload_stops_when_recording_is_cancelled_mid_finalize(
     queued_recordings: list[int] = []
     cancel_during_finalize = False
 
-    def fake_concatenate_wavs(paths: list[str], destination: str) -> None:
+    def fake_write_master(paths: list[str], destination: str) -> float:
         concatenated_paths.append(list(paths))
         Path(destination).write_bytes(b"joined-audio")
+        return 1.25
 
     real_list_recording_audio_chunks = recordings_module._list_recording_audio_chunks
 
@@ -2938,8 +2943,9 @@ async def test_finalize_upload_stops_when_recording_is_cancelled_mid_finalize(
         await db.commit()
         return rows
 
-    monkeypatch.setattr(recordings_module, "concatenate_wavs", fake_concatenate_wavs)
-    monkeypatch.setattr(recordings_module, "get_audio_duration", lambda path: 1.25)
+    monkeypatch.setattr(
+        recordings_module, "write_browser_master_audio", fake_write_master
+    )
     monkeypatch.setattr(
         recordings_module,
         "_list_recording_audio_chunks",

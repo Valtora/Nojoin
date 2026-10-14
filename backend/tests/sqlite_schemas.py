@@ -392,6 +392,25 @@ CREATE TABLE recording_audio_chunks (
 )
 """
 
+RECORDING_AUDIO_CHUNK_CURSORS_SCHEMA = """
+CREATE TABLE recording_audio_chunk_cursors (
+    id INTEGER PRIMARY KEY,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    recording_id INTEGER NOT NULL,
+    source_kind VARCHAR(32) NOT NULL,
+    through_sequence INTEGER NOT NULL,
+    end_ms INTEGER NOT NULL,
+    group_start_sequence INTEGER NOT NULL,
+    group_start_ms INTEGER NOT NULL,
+    group_first_window_index INTEGER NOT NULL,
+    target_window_ms INTEGER NOT NULL,
+    hop_ms INTEGER NOT NULL,
+    sealed BOOLEAN NOT NULL,
+    UNIQUE(recording_id, source_kind)
+)
+"""
+
 AI_ANALYSIS_RUNS_SCHEMA = """
 CREATE TABLE ai_analysis_runs (
     id INTEGER PRIMARY KEY,

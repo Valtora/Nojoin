@@ -7,6 +7,7 @@ from uuid import uuid4
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     Column,
     DateTime,
     ForeignKey,
@@ -147,6 +148,47 @@ class RecordingAudioChunk(BaseDBModel, table=True):
     )
     received_at: datetime = Field(default_factory=utc_now, sa_type=DateTime)
     cleanup_eligible_at: Optional[datetime] = Field(default=None, sa_type=DateTime)
+
+
+class RecordingAudioChunkCursor(BaseDBModel, table=True):
+    """How far a live capture's chunks have been placed on its timeline.
+
+    A chunk is placed once every sequence before it is placed or known to have
+    failed, so registering a segment touches only the chunks it unblocks and the
+    windows they reach instead of the whole recording (issue #417). The fields
+    describe the last contiguous group, which is the only one that can still
+    grow. Finalize seals the cursor after its full rebuild, so a segment task
+    that runs late cannot unseal the windows finalize just sealed.
+    """
+
+    __tablename__ = "recording_audio_chunk_cursors"
+    __table_args__ = (
+        UniqueConstraint(
+            "recording_id",
+            "source_kind",
+            name="uq_recording_audio_chunk_cursors_recording_source",
+        ),
+    )
+
+    recording_id: int = Field(
+        sa_column=Column(
+            BigInteger,
+            ForeignKey("recordings.id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        )
+    )
+    source_kind: str = Field(sa_column=Column(String(32), nullable=False))
+    through_sequence: int = Field(sa_column=Column(BigInteger, nullable=False))
+    end_ms: int = Field(sa_column=Column(BigInteger, nullable=False))
+    group_start_sequence: int = Field(sa_column=Column(BigInteger, nullable=False))
+    group_start_ms: int = Field(sa_column=Column(BigInteger, nullable=False))
+    group_first_window_index: int = Field(sa_column=Column(BigInteger, nullable=False))
+    target_window_ms: int = Field(sa_column=Column(BigInteger, nullable=False))
+    hop_ms: int = Field(sa_column=Column(BigInteger, nullable=False))
+    sealed: bool = Field(
+        default=False, sa_column=Column(Boolean, nullable=False, default=False)
+    )
 
 
 class RecordingAudioWindowManifest(BaseDBModel, table=True):

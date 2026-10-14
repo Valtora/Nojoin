@@ -1,283 +1,243 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { createBrowserRecorder } from "./recorder";
+import { StreamingResampler } from "./pcm/resampler";
+import type { PcmBlockListener, PcmSource } from "./pcm/tapSource";
+import { createBrowserRecorder, type RecordedChunk } from "./recorder";
 
-class FakeMediaRecorder {
-  static instances: FakeMediaRecorder[] = [];
+const INPUT_RATE = 48_000;
 
-  static supportedMimeTypes = new Set(["audio/webm;codecs=opus"]);
+class FakePcmSource implements PcmSource {
+  readonly sampleRate = INPUT_RATE;
 
-  static isTypeSupported(mimeType: string) {
-    return FakeMediaRecorder.supportedMimeTypes.has(mimeType);
+  readonly channelCount = 2;
+
+  readonly listeners = new Set<PcmBlockListener>();
+
+  flushes = 0;
+
+  /** Frames the worklet is holding in its unfinished block. */
+  private held: Float32Array[] | null = null;
+
+  private rendered = 0;
+
+  subscribe(listener: PcmBlockListener) {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
   }
 
-  ondataavailable: ((event: BlobEvent) => void) | null = null;
-
-  onerror: (() => void) | null = null;
-
-  onstop: (() => void) | null = null;
-
-  state: RecordingState = "inactive";
-
-  readonly mimeType: string;
-
-  readonly audioBitsPerSecond: number | undefined;
-
-  constructor(_stream: MediaStream, options?: MediaRecorderOptions) {
-    this.mimeType = options?.mimeType ?? "audio/webm;codecs=opus";
-    this.audioBitsPerSecond = options?.audioBitsPerSecond;
-    FakeMediaRecorder.instances.push(this);
-  }
-
-  start() {
-    this.state = "recording";
-  }
-
-  stop() {
-    if (this.state === "inactive") {
-      return;
+  /** Renders `frames` of a 440 Hz / 220 Hz tone, delivered in 4096-frame blocks. */
+  render(frames: number) {
+    const left = new Float32Array(frames);
+    const right = new Float32Array(frames);
+    for (let index = 0; index < frames; index += 1) {
+      const time = (this.rendered + index) / INPUT_RATE;
+      left[index] = 0.5 * Math.sin(2 * Math.PI * 440 * time);
+      right[index] = 0.25 * Math.sin(2 * Math.PI * 220 * time);
     }
-
-    this.state = "inactive";
-    const index = FakeMediaRecorder.instances.indexOf(this);
-    const webmHeader = new Uint8Array([0x1a, 0x45, 0xdf, 0xa3]);
-    const payload = new Blob([webmHeader, `segment-${index}`], {
-      type: this.mimeType,
-    });
-    this.ondataavailable?.({ data: payload } as BlobEvent);
-    this.onstop?.();
+    this.rendered += frames;
+    let offset = 0;
+    while (offset < frames) {
+      const take = Math.min(4_096, frames - offset);
+      this.deliver([left.subarray(offset, offset + take), right.subarray(offset, offset + take)]);
+      offset += take;
+    }
   }
 
-  requestData() {}
+  /** Renders without delivering, as the worklet does for a partial block. */
+  hold(frames: number) {
+    const before = this.listeners;
+    const captured: Float32Array[][] = [];
+    const listeners = new Set<PcmBlockListener>([(block) => captured.push(block)]);
+    Object.defineProperty(this, "listeners", { value: listeners, configurable: true });
+    this.render(frames);
+    Object.defineProperty(this, "listeners", { value: before, configurable: true });
+    this.held = [
+      Float32Array.from(captured.flatMap((block) => Array.from(block[0]))),
+      Float32Array.from(captured.flatMap((block) => Array.from(block[1]))),
+    ];
+  }
+
+  deliver(block: Float32Array[]) {
+    this.listeners.forEach((listener) => listener(block));
+  }
+
+  async flush() {
+    this.flushes += 1;
+    if (this.held) {
+      const held = this.held;
+      this.held = null;
+      this.deliver(held);
+    }
+    return true;
+  }
+
+  close() {}
 }
 
-describe("browser recorder", () => {
+/** Keeps the PCM instead of encoding it, so tests can read the samples back. */
+const rawEncode = (pcm: Int16Array) => new Uint8Array(pcm.slice().buffer);
+
+const samplesOf = async (chunk: RecordedChunk) =>
+  new Int16Array(await chunk.blob.arrayBuffer());
+
+describe("PCM recorder", () => {
+  let source: FakePcmSource;
+  let chunks: RecordedChunk[];
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    source = new FakePcmSource();
+    chunks = [];
+  });
+
   afterEach(() => {
-    FakeMediaRecorder.instances = [];
-    FakeMediaRecorder.supportedMimeTypes = new Set(["audio/webm;codecs=opus"]);
     vi.useRealTimers();
   });
 
-  it("emits independently closed WebM blobs for each timeslice", async () => {
-    vi.useFakeTimers();
-    const chunks: { sequence: number; blob: Blob }[] = [];
+  const createRecorder = (options: Partial<Parameters<typeof createBrowserRecorder>[0]> = {}) =>
+    createBrowserRecorder({
+      source,
+      onChunk: (chunk) => {
+        chunks.push(chunk);
+      },
+      encode: rawEncode,
+      ...options,
+    });
+
+  it("emits exact 2 s FLAC segments numbered from the start sequence", () => {
     const recorder = createBrowserRecorder({
-      stream: {} as MediaStream,
-      mediaRecorderCtor: FakeMediaRecorder as unknown as typeof MediaRecorder,
-      timesliceMs: 1_000,
+      source,
+      startSequence: 7,
       onChunk: (chunk) => {
         chunks.push(chunk);
       },
     });
+    recorder.start();
 
-    recorder.start(1_000);
+    source.render(INPUT_RATE * 5);
 
-    await vi.advanceTimersByTimeAsync(1_000);
-    await vi.waitFor(() => expect(chunks).toHaveLength(1));
-
-    await vi.advanceTimersByTimeAsync(1_000);
-    await vi.waitFor(() => expect(chunks).toHaveLength(2));
-
-    await recorder.stop({ emitTail: true });
-
-    expect(chunks.map((chunk) => chunk.sequence)).toEqual([0, 1, 2]);
-    expect(FakeMediaRecorder.instances).toHaveLength(3);
-    expect(
-      FakeMediaRecorder.instances.map((instance) => instance.audioBitsPerSecond),
-    ).toEqual([160_000, 160_000, 160_000]);
-
-    for (const chunk of chunks) {
-      expect(chunk.blob.type).toBe("audio/webm;codecs=opus");
-      const header = new Uint8Array(await chunk.blob.slice(0, 4).arrayBuffer());
-      expect(Array.from(header)).toEqual([0x1a, 0x45, 0xdf, 0xa3]);
-    }
+    expect(chunks.map((chunk) => chunk.sequence)).toEqual([7, 8]);
+    expect(chunks.every((chunk) => chunk.durationSeconds === 2)).toBe(true);
+    expect(chunks.every((chunk) => chunk.blob.type === "audio/flac")).toBe(true);
   });
 
-  it("drops the current in-memory tail when stopping for a guarded exit", async () => {
-    const chunks: { sequence: number; blob: Blob }[] = [];
-    const recorder = createBrowserRecorder({
-      stream: {} as MediaStream,
-      mediaRecorderCtor: FakeMediaRecorder as unknown as typeof MediaRecorder,
-      onChunk: (chunk) => {
-        chunks.push(chunk);
-      },
-    });
-
+  it("joins segments with no gap: together they are the whole resampled stream", async () => {
+    const recorder = createRecorder();
     recorder.start();
+    source.render(INPUT_RATE * 5 + 1_234);
+    await recorder.stop();
+
+    const joined = (await Promise.all(chunks.map(samplesOf))).flatMap((pcm) => Array.from(pcm));
+    const reference = new FakePcmSource();
+    const resampler = new StreamingResampler(INPUT_RATE, 16_000, 2);
+    const parts: Float32Array[][] = [];
+    reference.subscribe((block) => parts.push(resampler.process(block)));
+    reference.render(INPUT_RATE * 5 + 1_234);
+    parts.push(resampler.flush());
+    const expectedFrames = parts.reduce((sum, part) => sum + part[0].length, 0);
+
+    expect(joined.length / 2).toBe(expectedFrames);
+    expect(chunks.at(-1)?.durationSeconds).toBeCloseTo((expectedFrames - 2 * 32_000) / 16_000, 9);
+  });
+
+  it("collects the worklet's unfinished block before a pause", async () => {
+    const recorder = createRecorder();
+    recorder.start();
+    source.render(INPUT_RATE);
+    source.hold(1_000);
+
+    await recorder.pause();
+
+    expect(source.flushes).toBe(1);
+    expect(chunks).toHaveLength(1);
+    // 1 s plus the held frames, resampled.
+    expect(chunks[0].durationSeconds).toBeCloseTo((INPUT_RATE + 1_000) / 3 / 16_000, 3);
+  });
+
+  it("ignores audio while paused and carries on numbering after a resume", async () => {
+    const recorder = createRecorder({ startSequence: 3 });
+    recorder.start();
+    source.render(INPUT_RATE * 2);
+    await recorder.pause();
+    source.render(INPUT_RATE * 4);
+    recorder.resume();
+    await Promise.resolve();
+    source.render(INPUT_RATE * 2);
+    await recorder.stop();
+
+    // 2 s before the pause and 2 s after it: the paused 4 s were never recorded.
+    expect(chunks.map((chunk) => chunk.sequence)).toEqual([3, 4]);
+    expect(chunks.reduce((sum, chunk) => sum + chunk.durationSeconds, 0)).toBeCloseTo(4, 2);
+  });
+
+  it("drops the unfinished segment when stopped without a tail", async () => {
+    const recorder = createRecorder();
+    recorder.start();
+    source.render(INPUT_RATE * 3);
+
     await recorder.stop({ emitTail: false });
-
-    expect(chunks).toEqual([]);
-  });
-
-  it("falls back to mobile-friendly MP4 audio when WebM is unavailable", async () => {
-    FakeMediaRecorder.supportedMimeTypes = new Set(["audio/mp4"]);
-    const chunks: { sequence: number; blob: Blob }[] = [];
-    const recorder = createBrowserRecorder({
-      stream: {} as MediaStream,
-      mediaRecorderCtor: FakeMediaRecorder as unknown as typeof MediaRecorder,
-      onChunk: (chunk) => {
-        chunks.push(chunk);
-      },
-    });
-
-    recorder.start();
-    await recorder.stop({ emitTail: true });
+    source.render(INPUT_RATE * 3);
 
     expect(chunks).toHaveLength(1);
-    expect(chunks[0].blob.type).toBe("audio/mp4");
-  });
-
-  it("resolves stop when the recorder never fires onstop", async () => {
-    // Awaiting onstop unconditionally wedged the shared operation queue, so
-    // stop() never reached finalize and every later control hung behind it.
-    vi.useFakeTimers();
-
-    class SilentMediaRecorder extends FakeMediaRecorder {
-      stop() {
-        this.state = "inactive";
-        this.ondataavailable?.({
-          data: new Blob(["buffered"], { type: this.mimeType }),
-        } as BlobEvent);
-        // Deliberately never calls onstop.
-      }
-    }
-
-    const chunks: { sequence: number; blob: Blob }[] = [];
-    const recorder = createBrowserRecorder({
-      stream: {} as MediaStream,
-      mediaRecorderCtor: SilentMediaRecorder as unknown as typeof MediaRecorder,
-      stopTimeoutMs: 1_000,
-      onChunk: (chunk) => {
-        chunks.push(chunk);
-      },
-    });
-
-    recorder.start();
-    const stopPromise = recorder.stop({ emitTail: true });
-    await vi.advanceTimersByTimeAsync(1_500);
-
-    await expect(stopPromise).resolves.toBeUndefined();
-    // The buffered audio is kept rather than discarded with the wedged segment.
-    expect(chunks).toHaveLength(1);
+    expect(source.listeners.size).toBe(0);
     expect(recorder.state).toBe("inactive");
   });
 
-  it("does not let a wedged segment block a later stop", async () => {
-    vi.useFakeTimers();
+  it("drops a tail too short to be a FLAC stream", async () => {
+    const recorder = createRecorder();
+    recorder.start();
+    source.render(INPUT_RATE * 2 + 30);
 
-    class SilentMediaRecorder extends FakeMediaRecorder {
-      stop() {
-        this.state = "inactive";
-      }
-    }
+    await recorder.stop();
 
-    const recorder = createBrowserRecorder({
-      stream: {} as MediaStream,
-      mediaRecorderCtor: SilentMediaRecorder as unknown as typeof MediaRecorder,
-      timesliceMs: 500,
-      stopTimeoutMs: 1_000,
-      onChunk: () => {},
-    });
-
-    recorder.start(500);
-    // Let a roll wedge on the missing onstop first.
-    await vi.advanceTimersByTimeAsync(600);
-
-    const stopPromise = recorder.stop({ emitTail: false });
-    await vi.advanceTimersByTimeAsync(3_000);
-
-    await expect(stopPromise).resolves.toBeUndefined();
+    expect(chunks).toHaveLength(1);
   });
 
-  it("reports a stall when no audio reaches disk while recording", async () => {
-    // The failure mode has no error attached: the recorder reports "recording"
-    // with an active segment while producing nothing, so silence over several
-    // timeslices is the only signal available.
-    vi.useFakeTimers();
+  it("reports a stall when the audio stops arriving while recording", () => {
+    const onStall = vi.fn();
+    const recorder = createRecorder({ onStall });
+    recorder.start();
+    source.render(4_096);
 
-    class SilentDataMediaRecorder extends FakeMediaRecorder {
-      stop() {
-        // Ends cleanly but hands back no audio, as a dead source track does.
-        this.state = "inactive";
-        this.onstop?.();
-      }
-    }
+    vi.advanceTimersByTime(8_000);
 
-    const stalls: { sinceLastChunkMs: number; abandonedSegment: boolean }[] = [];
-    const chunks: { sequence: number; blob: Blob }[] = [];
-    const recorder = createBrowserRecorder({
-      stream: {} as MediaStream,
-      mediaRecorderCtor: SilentDataMediaRecorder as unknown as typeof MediaRecorder,
-      timesliceMs: 2_000,
-      stallTimeoutMs: 6_000,
-      onStall: (info) => stalls.push(info),
-      onChunk: (chunk) => {
-        chunks.push(chunk);
-      },
-    });
-
-    recorder.start(2_000);
-    const segmentsAtStart = SilentDataMediaRecorder.instances.length;
-
-    await vi.advanceTimersByTimeAsync(9_000);
-
-    expect(chunks).toEqual([]);
-    expect(stalls.length).toBeGreaterThanOrEqual(1);
-    expect(stalls[0].abandonedSegment).toBe(false);
-    // The chain keeps rolling rather than dying silently.
-    expect(SilentDataMediaRecorder.instances.length).toBeGreaterThan(
-      segmentsAtStart,
-    );
-    expect(recorder.state).toBe("recording");
-
-    await recorder.stop({ emitTail: false });
+    expect(onStall).toHaveBeenCalledTimes(1);
+    expect(onStall.mock.calls[0][0]).toMatchObject({ abandonedSegment: false });
+    expect(onStall.mock.calls[0][0].sinceLastChunkMs).toBeGreaterThanOrEqual(6_000);
   });
 
-  it("does not report a stall while a healthy recorder keeps emitting", async () => {
-    vi.useFakeTimers();
-
-    const stalls: unknown[] = [];
-    const chunks: { sequence: number; blob: Blob }[] = [];
-    const recorder = createBrowserRecorder({
-      stream: {} as MediaStream,
-      mediaRecorderCtor: FakeMediaRecorder as unknown as typeof MediaRecorder,
-      timesliceMs: 2_000,
-      stallTimeoutMs: 6_000,
-      onStall: (info) => stalls.push(info),
-      onChunk: (chunk) => {
-        chunks.push(chunk);
-      },
-    });
-
-    recorder.start(2_000);
-    await vi.advanceTimersByTimeAsync(9_000);
-
-    expect(chunks.length).toBeGreaterThanOrEqual(4);
-    expect(stalls).toEqual([]);
-
-    await recorder.stop({ emitTail: false });
-  });
-
-  it("does not report a stall for a paused recorder", async () => {
-    vi.useFakeTimers();
-
-    const stalls: unknown[] = [];
-    const recorder = createBrowserRecorder({
-      stream: {} as MediaStream,
-      mediaRecorderCtor: FakeMediaRecorder as unknown as typeof MediaRecorder,
-      timesliceMs: 2_000,
-      stallTimeoutMs: 6_000,
-      onStall: (info) => stalls.push(info),
-      onChunk: () => {},
-    });
-
-    recorder.start(2_000);
+  it("does not count a pause as a stall", async () => {
+    const onStall = vi.fn();
+    const recorder = createRecorder({ onStall });
+    recorder.start();
     await recorder.pause();
 
-    await vi.advanceTimersByTimeAsync(60_000);
+    vi.advanceTimersByTime(60_000);
 
-    expect(stalls).toEqual([]);
+    expect(onStall).not.toHaveBeenCalled();
+  });
 
-    await recorder.stop({ emitTail: false });
+  it("reports an encoding failure without using up a sequence number", () => {
+    const onError = vi.fn();
+    let failures = 1;
+    const recorder = createRecorder({
+      onError,
+      encode: (pcm) => {
+        if (failures > 0) {
+          failures -= 1;
+          throw new Error("encoder broke");
+        }
+        return rawEncode(pcm);
+      },
+    });
+    recorder.start();
+
+    // Past 4 s, so the second segment completes without a flush.
+    source.render(INPUT_RATE * 5);
+
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: "encoder broke" }));
+    expect(chunks.map((chunk) => chunk.sequence)).toEqual([0]);
   });
 });

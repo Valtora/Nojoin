@@ -35,9 +35,10 @@ from backend.models.recording import (
 from backend.models.speaker import RecordingSpeaker
 from backend.models.transcript import Transcript
 from backend.services.recording_identity_service import get_recording_by_public_id
+from backend.utils.browser_capture_audio import BROWSER_MASTER_SUFFIX
 from backend.utils.recording_audio_sync import (
-    BROWSER_AUDIO_SEGMENT_SUFFIXES,
     SEGMENT_CORRUPT_SUFFIX,
+    STAGED_BROWSER_SEGMENT_SUFFIXES,
     TRANSCODE_FAILED_SUFFIX,
     build_recording_audio_chunk_fields,
     find_missing_chunk_sequences,
@@ -134,40 +135,9 @@ def _enforce_lossy_audio_bitrate_floor(file_path: str) -> None:
         )
 
 
-def _list_staged_browser_master_segments(recording_id: int) -> list[Path]:
-    temp_dir = recordings_module.recording_upload_temp_dir(recording_id, create=False)
-    if not temp_dir.exists():
-        return []
-
-    segment_entries: list[tuple[int, Path]] = []
-    for entry in temp_dir.iterdir():
-        if not entry.is_file() or entry.suffix not in BROWSER_AUDIO_SEGMENT_SUFFIXES:
-            continue
-
-        try:
-            sequence = int(entry.stem)
-        except ValueError:
-            continue
-
-        segment_entries.append((sequence, entry))
-
-    return [path for _, path in sorted(segment_entries)]
-
-
-def _resolve_browser_master_suffix(segment_paths: list[Path]) -> str:
-    suffixes = {path.suffix.lower() for path in segment_paths}
-    if len(suffixes) != 1:
-        raise HTTPException(
-            status_code=400,
-            detail="Browser capture segments use inconsistent container formats.",
-        )
-
-    return next(iter(suffixes))
-
-
-def _browser_master_output_path(recording: Recording, master_suffix: str) -> str:
+def _browser_master_output_path(recording: Recording) -> str:
     base_path, _ = os.path.splitext(recording.audio_path)
-    return f"{base_path}{master_suffix}"
+    return f"{base_path}{BROWSER_MASTER_SUFFIX}"
 
 
 async def _mark_recording_upload_error(
@@ -552,7 +522,7 @@ def _quarantine_corrupt_browser_segments(
 
         corrupt_path = temp_dir / f"{sequence}{SEGMENT_CORRUPT_SUFFIX}"
         raw_path = None
-        for suffix in sorted(BROWSER_AUDIO_SEGMENT_SUFFIXES):
+        for suffix in sorted(STAGED_BROWSER_SEGMENT_SUFFIXES):
             candidate = temp_dir / f"{sequence}{suffix}"
             if candidate.exists():
                 raw_path = candidate

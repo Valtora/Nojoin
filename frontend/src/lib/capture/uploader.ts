@@ -1,6 +1,9 @@
 import type { RecordingId } from "@/types";
 import { uploadRecordingSegment } from "@/lib/api";
 
+import type { SegmentStore, StoredSegment } from "./segmentStore";
+import type { UploadQueueSize } from "./shared";
+
 const DEFAULT_RETRY_DELAYS_MS = [500, 1_000, 2_000, 4_000, 8_000];
 
 /**
@@ -33,9 +36,18 @@ export interface SegmentUploaderOptions {
   uploadSegment?: typeof uploadRecordingSegment;
   onUploaded?: (sequence: number) => void;
   onStalled?: (error: Error) => void | Promise<void>;
+  /** Called whenever the queue grows or shrinks. */
+  onQueueChange?: (size: UploadQueueSize) => void;
+  /** Where queued segments survive a closed tab. Omitted, the queue is memory only. */
+  store?: SegmentStore;
   retryDelaysMs?: number[];
   wait?: (ms: number) => Promise<void>;
   now?: () => number;
+}
+
+interface QueuedSegment {
+  blob: Blob;
+  durationSeconds: number;
 }
 
 export class SegmentUploader {
@@ -47,13 +59,20 @@ export class SegmentUploader {
 
   private readonly onStalled?: (error: Error) => void | Promise<void>;
 
+  private readonly onQueueChange?: (size: UploadQueueSize) => void;
+
+  private readonly store?: SegmentStore;
+
+  /** Pending writes to the store, so a removal never overtakes its write. */
+  private readonly persisting = new Map<number, Promise<void>>();
+
   private readonly retryDelaysMs: number[];
 
   private readonly wait: (ms: number) => Promise<void>;
 
   private readonly now: () => number;
 
-  private readonly pending = new Map<number, Blob>();
+  private readonly pending = new Map<number, QueuedSegment>();
 
   private nextExpectedSequence: number;
 
@@ -70,6 +89,8 @@ export class SegmentUploader {
     this.uploadSegmentFn = options.uploadSegment ?? uploadRecordingSegment;
     this.onUploaded = options.onUploaded;
     this.onStalled = options.onStalled;
+    this.onQueueChange = options.onQueueChange;
+    this.store = options.store;
     this.retryDelaysMs = options.retryDelaysMs ?? DEFAULT_RETRY_DELAYS_MS;
     this.wait = options.wait ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
     this.now = options.now ?? (() => Date.now());
@@ -89,14 +110,57 @@ export class SegmentUploader {
     return this.pending.size;
   }
 
-  enqueue(sequence: number, blob: Blob) {
+  /** Exact length of the audio still queued. */
+  pendingAudioSeconds(): number {
+    let seconds = 0;
+    this.pending.forEach((segment) => {
+      seconds += segment.durationSeconds;
+    });
+    return seconds;
+  }
+
+  enqueue(sequence: number, blob: Blob, durationSeconds = 0) {
     if (this.closed) {
       return;
     }
 
     // Segments are kept while the uploader is stalled so a later recover()
     // can retry them instead of dropping recorded audio.
-    this.pending.set(sequence, blob);
+    this.pending.set(sequence, { blob, durationSeconds });
+    if (this.store) {
+      this.persisting.set(
+        sequence,
+        this.store
+          .put({ recordingId: this.recordingId, sequence, blob, durationSeconds })
+          .catch((error: unknown) => {
+            console.warn("[capture] could not keep a queued segment in the browser", error);
+          }),
+      );
+    }
+    this.notifyQueueChange();
+    this.scheduleDrain();
+  }
+
+  /**
+   * Queues segments a previous page left in the store, ahead of new audio.
+   *
+   * They are already stored, so they are not written again; each is removed
+   * from the store once the server acknowledges it.
+   */
+  restore(segments: StoredSegment[]) {
+    if (this.closed) {
+      return;
+    }
+    for (const segment of segments) {
+      if (segment.sequence < this.nextExpectedSequence) {
+        continue;
+      }
+      this.pending.set(segment.sequence, {
+        blob: segment.blob,
+        durationSeconds: segment.durationSeconds,
+      });
+    }
+    this.notifyQueueChange();
     this.scheduleDrain();
   }
 
@@ -180,14 +244,17 @@ export class SegmentUploader {
     this.drainPromise = (async () => {
       try {
         while (!this.closed && !this.stalledError) {
-          const nextBlob = this.pending.get(this.nextExpectedSequence);
-          if (!nextBlob) {
+          const next = this.pending.get(this.nextExpectedSequence);
+          if (!next) {
             break;
           }
 
-          this.pending.delete(this.nextExpectedSequence);
-          await this.uploadWithRetry(this.nextExpectedSequence, nextBlob);
-          this.onUploaded?.(this.nextExpectedSequence);
+          const sequence = this.nextExpectedSequence;
+          await this.uploadWithRetry(sequence, next);
+          this.pending.delete(sequence);
+          this.forget(sequence);
+          this.notifyQueueChange();
+          this.onUploaded?.(sequence);
           this.nextExpectedSequence += 1;
         }
       } finally {
@@ -224,12 +291,34 @@ export class SegmentUploader {
     });
   }
 
-  private async uploadWithRetry(sequence: number, blob: Blob) {
+  /** Drops an acknowledged segment from the store, after its write if that is still running. */
+  private forget(sequence: number) {
+    if (!this.store) {
+      return;
+    }
+    const store = this.store;
+    const written = this.persisting.get(sequence) ?? Promise.resolve();
+    this.persisting.delete(sequence);
+    void written
+      .then(() => store.remove(this.recordingId, sequence))
+      .catch((error: unknown) => {
+        console.warn("[capture] could not clear an uploaded segment from the browser", error);
+      });
+  }
+
+  private notifyQueueChange() {
+    this.onQueueChange?.({
+      segments: this.pending.size,
+      seconds: this.pendingAudioSeconds(),
+    });
+  }
+
+  private async uploadWithRetry(sequence: number, segment: QueuedSegment) {
     let lastError: Error | null = null;
 
     for (let attempt = 0; attempt <= this.retryDelaysMs.length; attempt += 1) {
       try {
-        await this.uploadSegmentFn(this.recordingId, sequence, blob);
+        await this.uploadSegmentFn(this.recordingId, sequence, segment.blob);
         return;
 
             } catch (error: unknown) {
@@ -239,9 +328,8 @@ export class SegmentUploader {
             : new Error("The browser uploader failed to send a recording segment.");
 
         if (attempt === this.retryDelaysMs.length) {
-          // Put the segment back so recover() can retry it later; the
+          // The segment stays queued so recover() can retry it later; the
           // uploader stalls rather than permanently dropping audio.
-          this.pending.set(sequence, blob);
           this.stalledError = lastError;
           await this.onStalled?.(lastError);
           throw lastError;

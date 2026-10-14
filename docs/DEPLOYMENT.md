@@ -259,7 +259,8 @@ four Celery queues, each drained by its own container:
   embeddings). Single-slot (`--pool=solo --concurrency=1`): with one GPU, heavy
   work is deliberately serialised to protect VRAM. This is the only worker
   granted GPU access.
-- `worker-cpu` — ffmpeg segment transcode, proxy generation, and backups
+- `worker-cpu` — proxy generation, backups, and the ffmpeg transcode of
+  segments from browser tabs older than FLAC capture
   (`--pool=prefork --concurrency=3`). No GPU.
 - `worker-io` — network-bound work: Meeting Edge, notes, chat embeddings,
   calendar sync, and cleanup (`--pool=prefork --concurrency=4`). No GPU. Also

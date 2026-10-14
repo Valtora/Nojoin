@@ -133,6 +133,70 @@ def build_audio_window_specs(
     return specs
 
 
+def group_window_count(span_ms: int, *, target_window_ms: int, hop_ms: int) -> int:
+    """How many windows ``build_audio_window_specs`` gives a group of this span.
+
+    Counts full windows, then the trailing partial window the builder adds when
+    the last full window stops short of the group's end.
+    """
+    if span_ms <= 0:
+        return 0
+    full_count = (
+        (span_ms - target_window_ms) // hop_ms + 1 if span_ms >= target_window_ms else 0
+    )
+    if full_count and (full_count - 1) * hop_ms + target_window_ms >= span_ms:
+        return full_count
+    return full_count + (1 if full_count * hop_ms < span_ms else 0)
+
+
+def build_group_window_specs(
+    group_rows: Sequence[Any],
+    *,
+    group_start_ms: int,
+    group_end_ms: int,
+    first_window_index: int,
+    from_relative_index: int,
+    target_window_ms: int,
+    hop_ms: int,
+    source_kind: str,
+) -> list[AudioWindowSpec]:
+    """The windows of one growing group from ``from_relative_index`` onwards.
+
+    Produces exactly the specs ``build_audio_window_specs`` gives the same group,
+    unsealed, without visiting the windows before ``from_relative_index``.
+    ``group_rows`` only needs the chunks that overlap those windows. Window
+    ``r`` of a group starts ``r * hop_ms`` after the group does; the last one is
+    partial and ends with the group.
+    """
+    span_ms = group_end_ms - group_start_ms
+    total = group_window_count(
+        span_ms, target_window_ms=target_window_ms, hop_ms=hop_ms
+    )
+    full_count = (
+        (span_ms - target_window_ms) // hop_ms + 1 if span_ms >= target_window_ms else 0
+    )
+    specs: list[AudioWindowSpec] = []
+    for relative_index in range(max(from_relative_index, 0), total):
+        window_start_ms = group_start_ms + relative_index * hop_ms
+        is_partial = relative_index >= full_count
+        specs.append(
+            _build_window_spec(
+                group_rows,
+                window_index=first_window_index + relative_index,
+                source_kind=source_kind,
+                target_window_ms=target_window_ms,
+                hop_ms=hop_ms,
+                window_start_ms=window_start_ms,
+                window_end_ms=(
+                    group_end_ms if is_partial else window_start_ms + target_window_ms
+                ),
+                is_partial=is_partial,
+                is_sealed=False,
+            )
+        )
+    return specs
+
+
 def apply_audio_window_specs(
     *,
     recording_id: int,

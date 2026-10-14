@@ -103,5 +103,6 @@ export function useCapture() {
     finalizeRetry: state.finalizeRetry,
     stopStage: state.stopStage,
     coverageWarning: state.coverageWarning,
+    uploadQueue: state.uploadQueue,
   };
 }

@@ -18,7 +18,8 @@ export interface FeatureDetectEnvironment {
     getDisplayMedia?: MediaDevices["getDisplayMedia"];
     getUserMedia?: MediaDevices["getUserMedia"];
   } | null;
-  mediaRecorderCtor?: typeof MediaRecorder | null;
+  /** Capture records through an AudioWorklet tap on the mixer. */
+  audioWorkletNodeCtor?: typeof AudioWorkletNode | null;
 }
 
 const CHROMIUM_BRANDS = [
@@ -81,8 +82,8 @@ const readNavigatorEnvironment = (): FeatureDetectEnvironment => {
     userAgent: navigator.userAgent,
     userAgentData: navigatorWithUAData.userAgentData,
     mediaDevices: navigator.mediaDevices,
-    mediaRecorderCtor:
-      typeof MediaRecorder === "undefined" ? null : MediaRecorder,
+    audioWorkletNodeCtor:
+      typeof AudioWorkletNode === "undefined" ? null : AudioWorkletNode,
   };
 };
 
@@ -101,12 +102,12 @@ export const detectCaptureSupport = (
   const supportedPlatform = isDesktopCapturePlatform(platform);
   const hasDisplayMedia = Boolean(mediaDevices?.getDisplayMedia);
   const hasUserMedia = Boolean(mediaDevices?.getUserMedia);
-  const hasMediaRecorder = Boolean(environment.mediaRecorderCtor);
+  const hasAudioWorklet = Boolean(environment.audioWorkletNodeCtor);
   const chromeMobile =
     mobile &&
     (hasChromeBrand(userAgentData?.brands) || isChromeMobileUserAgent(userAgent));
 
-  if (chromeMobile && hasUserMedia && hasMediaRecorder) {
+  if (chromeMobile && hasUserMedia && hasAudioWorklet) {
     return { supported: true, mode: "microphone_only" };
   }
 
@@ -127,7 +128,7 @@ export const detectCaptureSupport = (
     supportedPlatform &&
     hasDisplayMedia &&
     hasUserMedia &&
-    hasMediaRecorder
+    hasAudioWorklet
   ) {
     return { supported: true, mode: "shared_audio" };
   }

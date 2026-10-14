@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from backend.api import deps
 from backend.api.deps import get_db
 from backend.api.v1.api import api_router
+from backend.tests.sqlite_schemas import RECORDING_AUDIO_CHUNK_CURSORS_SCHEMA
 
 TRUSTED_ORIGIN = "https://nojoin.example.com"
 BASE_URL = TRUSTED_ORIGIN
@@ -243,6 +244,7 @@ async def test_session_maker(sqlite_urls) -> sessionmaker:
         await connection.execute(text(TRANSCRIPTS_SCHEMA))
         await connection.execute(text(RECORDING_AUDIO_CHUNKS_SCHEMA))
         await connection.execute(text(RECORDING_AUDIO_WINDOW_MANIFESTS_SCHEMA))
+        await connection.execute(text(RECORDING_AUDIO_CHUNK_CURSORS_SCHEMA))
 
     try:
         yield session_maker
@@ -690,7 +692,6 @@ async def test_finalize_upload_transcodes_pending_browser_segments(
     monkeypatch,
     tmp_path,
 ) -> None:
-    from backend.api.v1.endpoints import recordings as recordings_module
     from backend.processing.browser_live_audio import BROWSER_LIVE_CHANNEL_COUNT
 
     set_session_cookie(client)
@@ -729,17 +730,6 @@ async def test_finalize_upload_transcodes_pending_browser_segments(
             make_wav_bytes(channels=BROWSER_LIVE_CHANNEL_COUNT)
         ),
     )
-    monkeypatch.setattr(
-        recordings_module,
-        "concatenate_media_files",
-        lambda paths, destination: Path(destination).write_bytes(
-            b"joined-browser-master"
-        ),
-    )
-    monkeypatch.setattr(recordings_module, "get_audio_duration", lambda path: 1.25)
-    monkeypatch.setattr(
-        recordings_module, "_enforce_lossy_audio_bitrate_floor", lambda path: None
-    )
 
     finalize_response = await client.post(
         f"/api/v1/recordings/{recording_public_id}/finalize",
@@ -767,8 +757,10 @@ async def test_finalize_upload_transcodes_pending_browser_segments(
             )
         ).one()
 
-    assert recording_row[0].endswith(".webm")
+    # The master is joined from the canonical WAVs, not the uploaded WebM.
+    assert recording_row[0].endswith(".flac")
     assert Path(recording_row[0]).exists()
+    assert finalize_response.json()["duration_seconds"] == pytest.approx(0.25)
     assert recording_row[1] is None
 
 
@@ -780,7 +772,6 @@ async def test_finalize_upload_transcodes_pending_m4a_segments(
     monkeypatch,
     tmp_path,
 ) -> None:
-    from backend.api.v1.endpoints import recordings as recordings_module
     from backend.processing.browser_live_audio import BROWSER_LIVE_CHANNEL_COUNT
 
     set_session_cookie(client)
@@ -814,17 +805,6 @@ async def test_finalize_upload_transcodes_pending_m4a_segments(
         lambda input_path, output_path: output_path.write_bytes(
             make_wav_bytes(channels=BROWSER_LIVE_CHANNEL_COUNT)
         ),
-    )
-    monkeypatch.setattr(
-        recordings_module,
-        "concatenate_media_files",
-        lambda paths, destination: Path(destination).write_bytes(
-            b"joined-browser-master"
-        ),
-    )
-    monkeypatch.setattr(recordings_module, "get_audio_duration", lambda path: 1.25)
-    monkeypatch.setattr(
-        recordings_module, "_enforce_lossy_audio_bitrate_floor", lambda path: None
     )
 
     finalize_response = await client.post(
@@ -1129,17 +1109,6 @@ async def test_finalize_skips_corrupt_middle_segment_and_accepts_gap(
     monkeypatch.setattr(
         segment_transcode_module, "_run_ffmpeg_transcode", fake_ffmpeg_transcode
     )
-    monkeypatch.setattr(
-        recordings_module,
-        "concatenate_media_files",
-        lambda paths, destination: Path(destination).write_bytes(
-            b"joined-browser-master"
-        ),
-    )
-    monkeypatch.setattr(recordings_module, "get_audio_duration", lambda path: 4.0)
-    monkeypatch.setattr(
-        recordings_module, "_enforce_lossy_audio_bitrate_floor", lambda path: None
-    )
 
     finalize_metrics: list[dict[str, object]] = []
     monkeypatch.setattr(
@@ -1234,7 +1203,6 @@ async def test_pause_resume_finalize_transcodes_pending_browser_segments_without
     monkeypatch,
     tmp_path,
 ) -> None:
-    from backend.api.v1.endpoints import recordings as recordings_module
     from backend.processing import segment_transcode as segment_transcode_module
     from backend.processing.browser_live_audio import BROWSER_LIVE_CHANNEL_COUNT
 
@@ -1289,17 +1257,6 @@ async def test_pause_resume_finalize_transcodes_pending_browser_segments_without
         lambda input_path, output_path: output_path.write_bytes(
             make_wav_bytes(channels=BROWSER_LIVE_CHANNEL_COUNT)
         ),
-    )
-    monkeypatch.setattr(
-        recordings_module,
-        "concatenate_media_files",
-        lambda paths, destination: Path(destination).write_bytes(
-            b"joined-browser-master"
-        ),
-    )
-    monkeypatch.setattr(recordings_module, "get_audio_duration", lambda path: 2.5)
-    monkeypatch.setattr(
-        recordings_module, "_enforce_lossy_audio_bitrate_floor", lambda path: None
     )
 
     finalize_response = await client.post(
@@ -1414,13 +1371,13 @@ async def test_finalize_runs_concatenation_off_the_event_loop(
     monkeypatch,
     tmp_path,
 ) -> None:
-    """Concatenation must not stall the API for the length of the recording.
+    """Joining the segments must not stall the API for the length of the recording.
 
-    ffmpeg is a blocking subprocess and the API serves from one event loop, so
-    an inline call freezes every other request for the whole concatenation:
-    20s measured on a two-hour recording, and linear in duration. This asserts
-    both halves of the fix, because either alone can pass by accident: the work
-    lands on another thread, and the loop keeps running while it does.
+    Reading every segment is blocking I/O and the API serves from one event
+    loop, so an inline join freezes every other request while it runs: seconds
+    on a two-hour recording, and linear in duration. This asserts both halves
+    of the fix, because either alone can pass by accident: the work lands on
+    another thread, and the loop keeps running while it does.
     """
     import asyncio
     import threading
@@ -1459,17 +1416,16 @@ async def test_finalize_runs_concatenation_off_the_event_loop(
     loop_thread = threading.current_thread()
     concat_thread: list[threading.Thread] = []
 
-    def _slow_concatenate(paths, destination):
-        # Stands in for ffmpeg: blocking, and long enough that an event loop
-        # stuck behind it could not tick.
+    def _slow_write_master(paths, destination):
+        # Stands in for joining thousands of segments: blocking, and long
+        # enough that an event loop stuck behind it could not tick.
         concat_thread.append(threading.current_thread())
         time.sleep(0.3)
         Path(destination).write_bytes(b"joined-browser-master")
+        return 1.25
 
-    monkeypatch.setattr(recordings_module, "concatenate_media_files", _slow_concatenate)
-    monkeypatch.setattr(recordings_module, "get_audio_duration", lambda path: 1.25)
     monkeypatch.setattr(
-        recordings_module, "_enforce_lossy_audio_bitrate_floor", lambda path: None
+        recordings_module, "write_browser_master_audio", _slow_write_master
     )
 
     ticks = 0

@@ -162,6 +162,7 @@ UNARCHIVED_TABLES: Dict[str, str] = {
     "processing_runs": "Canonical pipeline state; rebuilt from the transcript projection.",
     "recording_asr_window_results": "Canonical pipeline state; rebuilt.",
     "recording_audio_chunks": "Live capture scratch data for in-flight recordings.",
+    "recording_audio_chunk_cursors": "Live capture scratch data for in-flight recordings.",
     "recording_audio_window_manifests": "Live capture scratch data for in-flight recordings.",
     "recording_speaker_aliases": "Canonical pipeline state; rebuilt.",
     "speaker_correction_events": "Canonical pipeline audit history; not rebuilt.",

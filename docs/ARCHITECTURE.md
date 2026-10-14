@@ -8,7 +8,7 @@ Nojoin has three major parts:
 
 1. A Dockerised backend that stores data and runs processing workloads.
 2. A Next.js web client for browser capture, review, and administration.
-3. Celery worker services that transcode live browser segments and run the transcription, diarisation, speaker, and AI processing pipeline.
+3. Celery worker services that run the transcription, diarisation, speaker, and AI processing pipeline.
 
 ## Core Components
 
@@ -33,7 +33,8 @@ Per-user AI inference resolves to one of three usage models — install-wide Oll
 
 Celery work is split across four resource lanes so a long recording finalise
 never blocks lightweight tasks: a single-slot GPU lane (finalise, live ASR,
-embeddings), a CPU lane (ffmpeg transcode, proxies, backups), an IO/LLM lane
+embeddings), a CPU lane (proxies, backups, and the transcode of segments from
+clients older than the FLAC capture path), an IO/LLM lane
 (Meeting Edge, notes, chat, calendar sync) that also runs Celery Beat, and a
 parse lane (document parsing and RAG index rebuilds). Routing
 lives in `backend/celery_app.py` (`TASK_ROUTES`); see [DEPLOYMENT.md](DEPLOYMENT.md)
@@ -178,9 +179,10 @@ audio.
 
 Deliberately numpy and soundfile only, so it holds no model and never pulls
 torch in. A recording soundfile cannot open is first decoded with ffmpeg to a
-temporary 16 kHz WAV that keeps its channels: a browser capture is stored in
-the container MediaRecorder produced (WebM/Opus, or MP4/AAC on older Safari),
-and imports such as M4A, AAC, MP4 and WMA keep theirs. 16 kHz is the rate the
+temporary 16 kHz WAV that keeps its channels: a browser capture made before the
+FLAC capture path is stored in the container MediaRecorder produced (WebM/Opus,
+or MP4/AAC on older Safari), and imports such as M4A, AAC, MP4 and WMA keep
+theirs. A browser capture made since is FLAC, which soundfile reads directly. 16 kHz is the rate the
 pitch estimator was validated at, and it keeps the decoded copy of a long
 two-channel capture to about a third of its native size.
 The pitch estimator is YIN's cumulative-mean-normalised difference
@@ -203,7 +205,7 @@ recording that has otherwise finished. The same task backs the interface's
 per-recording "Measure delivery" action, so a meeting recorded before the
 feature existed takes exactly the path a new one does.
 
-Channel selection is meaning-aware. For a browser capture the transcode contract
+Channel selection is meaning-aware. For a browser capture the capture contract
 fixes channel 0 as shared audio and channel 1 as the microphone, so the
 dominant channel per utterance identifies the capture source, using the same
 dominance thresholds as the live lane. An imported stereo file's channels are
@@ -353,7 +355,7 @@ The web client is responsible for:
 - Speaker management.
 - Notes, meeting chat, and document upload.
 - User, admin, and system settings.
-- Browser capture orchestration through `getDisplayMedia`, `getUserMedia`, Web Audio mixing, MediaRecorder segmenting, sequenced upload, live waveform state, pause/resume, and finalize controls. Mobile Chrome uses the same lifecycle with a microphone-only `getUserMedia` path.
+- Browser capture orchestration through `getDisplayMedia`, `getUserMedia`, Web Audio mixing, an AudioWorklet tap that segments and FLAC-encodes the mix, sequenced upload with a queue kept in IndexedDB, live waveform state, pause/resume, and finalize controls. Mobile Chrome uses the same lifecycle with a microphone-only `getUserMedia` path.
 
 The web client is the only live capture surface. Unsupported browsers retain review, playback, admin, and settings capabilities, but cannot start live recording.
 
@@ -372,17 +374,18 @@ The browser capture stack is responsible for:
 - Prompting for shared tab, window, or screen audio.
 - Prompting for microphone access.
 - Mixing shared audio and microphone audio in the browser on desktop, or recording microphone-only audio on mobile Chrome.
-- Recording short WebM/Opus, Ogg/Opus, or MP4 audio slices and uploading them with session-cookie authentication.
-- Preserving the browser-live source layout after worker transcode as 16 kHz, two-channel WAV: channel 0 is shared/system audio when available and channel 1 is microphone audio.
+- Taking the two-channel mix from an AudioWorklet tap (`frontend/public/audio-worklets/pcm-tap.js`), resampling it to 16 kHz with a windowed-sinc filter, cutting it into segments of exactly 32,000 frames by counting samples, and encoding each as FLAC (`frontend/src/lib/capture/pcm/`). Nothing restarts between segments, so they join with no gap. The MediaRecorder this replaced was stopped and restarted every 2 s, which dropped about 28 ms at every restart and left WebM segments whose headers understated their own length (issue #417).
+- Uploading segments with session-cookie authentication, one at a time and in order, so the server never holds a later segment without the one before it. Each segment is written to IndexedDB when it is recorded and removed when the server acknowledges it, so a closed tab keeps what it had not sent; the next resume or stop-and-process in the same browser uploads it first.
+- Preserving the browser-live source layout as 16 kHz, two-channel WAV, decoded from each uploaded FLAC segment by the API: channel 0 is shared/system audio when available and channel 1 is microphone audio.
 - Exposing analyser output to the live waveform UI.
 - Moving recordings to `PAUSED` on real tab unload (pagehide/beforeunload) only, then requiring resume, stop-and-process, or discard before another capture starts. In-app page navigation does not pause capture.
 - Bounding every stage of the stop sequence and reporting which stage it is on, so a stalled recorder or uploader degrades to a retryable finalize rather than leaving the recording unfinishable.
 - Holding a screen wake lock for the duration of a capture, re-taking it whenever the page returns to the foreground, since the browser drops the lock on every visibility change. This addresses device sleep only. Nothing in a web page can prevent the browser suspending a tab, or read whether Memory Saver is enabled. Nojoin does not warn about that up front: Chrome exempts tabs actively using the microphone or sharing a screen, which a recording tab is throughout, so the guidance lives in [CAPTURE.md](CAPTURE.md#chrome-memory-saver) as troubleshooting for the case it is actually needed.
 - Comparing the audio the server holds against elapsed recording time and warning when they diverge. A tab suspended by the browser or the operating system stops feeding the recorder without raising an error, so coverage is the only signal that audio is being lost.
 
-The captured figure comes from the backend, on `captured_audio_seconds` in the recording detail payload, summed from the transcoded segments and polled every 15 seconds while capture is open. The client cannot derive it: a segment carries slightly more than the nominal timeslice, because each roll flushes whatever accumulated while the recorder was stopping, and multiplying the sequence number by the timeslice under-counts by around 10% over an hour. The backend figure carries the opposite bias, running 2-3% high because each decoded segment includes codec priming that concatenation later trims, which is left uncorrected on purpose: it can only make a shortfall look smaller, never invent one.
+The captured figure comes from the backend, on `captured_audio_seconds` in the recording detail payload, summed from the decoded segments and polled every 15 seconds while capture is open. It is exact: every full segment is 2.000 s, and only a segment ended by a pause or a stop is shorter. The server's figure is still the one that counts, because a segment the browser sent but the server set aside as corrupt is not audio the meeting has.
 
-The shortfall is net of the uploader's own queue. Segments recorded but not yet acknowledged are audio the browser is holding, not audio that has been lost, and a server that stops answering for two minutes leaves exactly two minutes of them; counting that as missing told a user their meeting was being lost while it sat in memory waiting to upload. The queue is estimated from its length rather than measured, which biases the warning towards firing rather than towards silence, and it is named separately in the copy so a queue that never drains is still visible.
+The shortfall is net of the uploader's own queue. Segments recorded but not yet acknowledged are audio the browser is holding, not audio that has been lost, and a server that stops answering for two minutes leaves exactly two minutes of them; counting that as missing told a user their meeting was being lost while it sat in memory waiting to upload. The queue is measured from the durations of the segments in it, and it is named separately in the copy so a queue that never drains is still visible. A queue longer than 30 seconds is also shown on the recording controls while capture runs, and a stop that is still sending it says so instead of looking paused.
 
 The warning also carries a cause, because a shortfall means opposite things depending on why. `backend-unreachable` when the connectivity monitor reports the API down, and the queued audio will upload on reconnect. `tab-suspended` when the page was seen to thaw or the recorder watchdog caught it stalled, and the audio is gone. `unknown` when neither signal is present, with copy that describes the gap without diagnosing it. An outage that has just ended still counts, for five minutes: the check polls every fifteen seconds and the shortfall persists while the queue drains, so classifying on the live status alone answered `unknown` for the very case the classifier exists to name. It ranks below a freeze, which is direct evidence the browser stopped recording where an outage is evidence it did not. It is dismissible, and re-arms only when the shortfall grows materially past the value dismissed.
 
@@ -391,15 +394,25 @@ The warning also carries a cause, because a shortfall means opposite things depe
 1. The browser authenticates through a Secure HttpOnly session cookie.
 2. From the **Meet Now** card, the user clicks **Start Meeting** in Chrome on Windows, Linux, or macOS, another supported desktop Chromium browser, or Chrome on Android/iOS for microphone-only recording.
 3. `/recordings/init` creates an `UPLOADING` recording for the current user. The same browser session is used for segment, pause, resume, discard, and finalize operations.
-4. On desktop, the browser asks for shared tab/window/screen audio and microphone access, mixes those streams, and records short audio slices. On mobile Chrome, the browser asks for microphone access only and records microphone-only slices.
+4. On desktop, the browser asks for shared tab/window/screen audio and microphone access, mixes those streams, and cuts the mix into 2 s FLAC segments at 16 kHz. On mobile Chrome, the browser asks for microphone access only, and the shared channel is silent.
 5. The browser uploads segments to `/recordings/{id}/segment?sequence=N` with monotonically increasing 0-based sequence numbers.
-6. The worker transcodes each browser segment to 16 kHz, two-channel WAV and dispatches the live transcription lane. Channel 0 is shared/system audio when available and channel 1 is microphone audio.
-7. Finalisation concatenates the completed WAV segments, queues backend processing, and triggers proxy generation. It accepts an `UPLOADING` or a `PAUSED` recording, so a capture whose browser runtime is gone can still be finalised from its uploaded segments without resuming first; missing sequences and pending transcodes are still refused with a retryable 409.
+6. The API decodes each FLAC segment in process into 16 kHz, two-channel WAV, registers it (see [Chunk Registration](#chunk-registration)), and dispatches the live transcription lane. Channel 0 is shared/system audio when available and channel 1 is microphone audio. A segment that will not decode is quarantined as a `.corrupt` tombstone and the upload still succeeds, so one bad segment costs a 2 s gap instead of pausing the meeting. WebM, Ogg and MP4 segments from a tab still running an older build go to the CPU worker for an ffmpeg transcode first, as before.
+7. Finalisation rebuilds every chunk offset and window manifest once from the segments on disk, seals the cursor, joins the segment WAVs in order into a FLAC master with soundfile (4.4 s for a 2 h 17 m meeting, against 28 s for ffmpeg's concat demuxer over the same 4,164 files), takes the duration from the frames written, queues backend processing, and triggers proxy generation. It accepts an `UPLOADING` or a `PAUSED` recording, so a capture whose browser runtime is gone can still be finalised from its uploaded segments without resuming first; missing sequences and pending transcodes are still refused with a retryable 409. The browser sends its own elapsed recording time with the request, and the `capture_coverage` metric judges against it rather than against the span to the last upload, which also counted the time a stop spent uploading.
 8. The web client shows a live capture or processing status workspace while the job runs.
 
-If the user refreshes, closes, or navigates away from the Nojoin tab while recording (actual tab unload, not in-app navigation), the browser stops capture, drops only the in-memory tail, and asks the backend to mark the recording `PAUSED`. Uploaded segments remain available. On the next app load, Nojoin blocks new capture behind a mandatory modal offering resume, stop-and-process, or discard. Stop does not require a live browser runtime, so a recording in this state always has a route to processing.
+If the user refreshes, closes, or navigates away from the Nojoin tab while recording (actual tab unload, not in-app navigation), the browser stops capture, drops the unfinished segment, and asks the backend to mark the recording `PAUSED`. Uploaded segments remain on the server and queued ones in IndexedDB. On the next app load, Nojoin blocks new capture behind a mandatory modal offering resume, stop-and-process, or discard. Stop does not require a live browser runtime, so a recording in this state always has a route to processing.
 
 Switching focus to another browser tab, window, or application does not pause capture. Navigating between pages within the Nojoin app also does not pause capture. Only a real Nojoin tab unload (pagehide/beforeunload) invokes the guarded pause path.
+
+### Chunk Registration
+
+Every segment becomes a `recording_audio_chunks` row with an offset on the recording's timeline, and every 20 s window (5 s hop) becomes a `recording_audio_window_manifests` row that the rolling diarisation and live ASR lanes track their progress on. Registering a segment used to rebuild all of them: list the upload directory, load every chunk row, recompute every offset, rebuild every window and upsert every manifest, all under `FOR UPDATE` on the `recordings` row. A segment's cost grew with the meeting, and the segment upload, live transcription and finalize all wrote the same row, so they queued behind it. On a 2 h 19 m meeting the task passed the 2 s capture cadence at about segment 3,000 and reached 8 s by segment 4,000; uploads fell 14 minutes behind and a stop spent 13 minutes sending them (issue #417).
+
+`backend/utils/recording_audio_registration.py` now registers a segment in constant time. A per-recording cursor (`recording_audio_chunk_cursors`) records how far the chunks are placed. A chunk is placed once every sequence before it is placed or has failed for good (a `.transcode_failed` marker or a `.corrupt` tombstone). The full rebuild computes the same timeline: offsets are cumulative over the chunks present, and a missing sequence ends a contiguous group of windows. A segment that lands early waits, unplaced, until the gap fills. Placing chunks can only grow the last group, and a growing group can only change its last few windows, so registration rebuilds only the windows from the first one that was not yet full, and it writes only those that are new or whose geometry changed. A window it does not touch keeps its ASR and diarisation status exactly as the live lanes left it. Measured on PostgreSQL, a segment costs 6.8 ms at segment 100 and 6.6 ms at segment 4,150, where the old full sync took 3.3 s per segment by segment 4,200; both produced identical windows.
+
+The bookkeeping is serialised per recording by a transaction-scoped advisory lock (`pg_advisory_xact_lock`) rather than a lock on the recording row, so it never blocks a write to `recordings`. The segment upload writes `last_activity_at` at most every 15 seconds rather than on every segment.
+
+Finalize keeps the full rebuild as its reconciliation pass and then seals the cursor. A sealed cursor turns registration into a no-op, which closes a race where a transcode task still queued at stop time ran the full sync afterwards with `seal_tail=False`, unsealing every window finalize had just sealed and resetting its progress. A resume after a failed stop drops a sealed cursor so registration rebuilds it from the chunk rows; the same rebuild serves a recording that was in flight across the upgrade and has no cursor yet.
 
 When a recording is active, a floating recording badge appears at the top-centre of the viewport showing the recording status, elapsed time, and pause, resume, and stop controls. Clicking the badge navigates to the recording detail page. The badge remains visible on every page except the recording detail page so the user never loses visibility of the active recording while navigating the app.
 

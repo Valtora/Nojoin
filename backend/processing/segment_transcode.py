@@ -14,14 +14,24 @@ from backend.processing.browser_live_audio import (
 )
 from backend.processing.live_transcribe import transcribe_segment_live_task
 from backend.processing.pipeline_metrics import record_pipeline_metric
+from backend.utils.browser_capture_audio import (
+    BROWSER_FLAC_SEGMENT_SUFFIX,
+    decode_browser_flac_segment,
+)
 from backend.utils.config_manager import config_manager
+from backend.utils.recording_audio_registration import (
+    ChunkStream,
+    advance_recording_audio_cursor,
+    register_recording_audio_chunk,
+)
 from backend.utils.recording_audio_sync import (
-    BROWSER_AUDIO_SEGMENT_SUFFIXES,
+    STAGED_BROWSER_SEGMENT_SUFFIXES,
     TRANSCODE_FAILED_SUFFIX,
-    sync_recording_audio_chunks_from_directory,
-    sync_recording_audio_window_manifests,
+    build_recording_audio_chunk_fields,
 )
 from backend.utils.recording_storage import recording_upload_temp_dir
+
+BROWSER_SOURCE_KIND = "browser"
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +52,7 @@ def _locate_staged_browser_segment(recording_id: int, sequence: int) -> Path | N
     if not temp_dir.exists():
         return None
 
-    for suffix in sorted(BROWSER_AUDIO_SEGMENT_SUFFIXES):
+    for suffix in sorted(STAGED_BROWSER_SEGMENT_SUFFIXES):
         candidate = temp_dir / f"{sequence}{suffix}"
         if candidate.exists():
             return candidate
@@ -94,7 +104,11 @@ def transcode_staged_browser_segment(recording_id: int, sequence: int) -> Path:
             f"No staged browser segment found for recording {recording_id} sequence {sequence}"
         )
 
-    _run_ffmpeg_transcode(raw_segment_path, wav_path)
+    if raw_segment_path.suffix == BROWSER_FLAC_SEGMENT_SUFFIX:
+        decode_browser_flac_segment(raw_segment_path, wav_path)
+        raw_segment_path.unlink(missing_ok=True)
+    else:
+        _run_ffmpeg_transcode(raw_segment_path, wav_path)
     try:
         failure_marker.unlink()
     except FileNotFoundError:
@@ -107,6 +121,25 @@ def transcode_staged_browser_segment(recording_id: int, sequence: int) -> Path:
         )
 
     return wav_path
+
+
+def _advance_past_failed_segment(recording_id: int, temp_dir: Path) -> None:
+    """Let chunks that arrived after a failed segment reach the live lane."""
+    session = get_sync_session()
+    try:
+        advance_recording_audio_cursor(
+            session, ChunkStream(recording_id, BROWSER_SOURCE_KIND, temp_dir)
+        )
+        session.commit()
+    except Exception as exc:  # noqa: BLE001 -- boundary: the failure is already recorded, and finalize's rebuild places every chunk regardless
+        session.rollback()
+        logger.warning(
+            "Failed to advance the chunk cursor past failed segment for recording %s: %s",
+            recording_id,
+            exc,
+        )
+    finally:
+        session.close()
 
 
 @celery_app.task
@@ -132,20 +165,19 @@ def transcode_segment_task(recording_id: int, sequence: int):
             BROWSER_LIVE_MICROPHONE_CHANNEL_INDEX,
         )
 
+        fields = build_recording_audio_chunk_fields(
+            sequence=sequence,
+            source_kind=BROWSER_SOURCE_KIND,
+            storage_path=wav_path,
+        )
         session = get_sync_session()
         try:
-            sync_recording_audio_chunks_from_directory(
+            registered = register_recording_audio_chunk(
                 session,
-                recording_id=recording_id,
-                source_kind="browser",
-                suffix=".wav",
-                temp_dir=wav_path.parent,
-            )
-            sync_recording_audio_window_manifests(
-                session,
-                recording_id=recording_id,
-                source_kind="browser",
-                seal_tail=False,
+                ChunkStream(recording_id, BROWSER_SOURCE_KIND, wav_path.parent),
+                sequence=sequence,
+                storage_path=wav_path,
+                fields=fields,
             )
             session.commit()
         except Exception:
@@ -154,7 +186,7 @@ def transcode_segment_task(recording_id: int, sequence: int):
         finally:
             session.close()
 
-        if config_manager.get("enable_live_transcription"):
+        if registered is not None and config_manager.get("enable_live_transcription"):
             try:
                 transcribe_segment_live_task.delay(recording_id, sequence)
             except Exception as exc:  # noqa: BLE001 -- boundary: live transcription is best-effort; the transcoded segment is still stored
@@ -216,4 +248,5 @@ def transcode_segment_task(recording_id: int, sequence: int):
             sequence,
             exc,
         )
+        _advance_past_failed_segment(recording_id, failure_marker.parent)
         return {"status": "failed", "segment": sequence}

@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CaptureController } from "./controller";
 import { PickSourceError } from "./pickSource";
+import { createBrowserRecorder } from "./recorder";
+import { createSegmentUploader } from "./uploader";
 
 const apiMocks = vi.hoisted(() => ({
   discardRecordingCapture: vi.fn(),
@@ -104,6 +106,7 @@ vi.mock("@/lib/notificationStore", () => ({
 
 vi.mock("./mixer", () => ({
   createCaptureMixer: vi.fn(() => Promise.resolve({
+    pcmSource: {},
     systemAnalyser: {},
     microphoneAnalyser: {},
     mixedAnalyser: {},
@@ -113,6 +116,7 @@ vi.mock("./mixer", () => ({
 }));
 
 vi.mock("./recorder", () => ({
+  CAPTURE_SEGMENT_SECONDS: 2,
   createBrowserRecorder: vi.fn(() => ({
     start: vi.fn(),
     stop: vi.fn(),
@@ -124,9 +128,12 @@ vi.mock("./recorder", () => ({
 vi.mock("./uploader", () => ({
   createSegmentUploader: vi.fn(() => ({
     enqueue: vi.fn(),
+    restore: vi.fn(),
     waitForIdle: vi.fn(),
     recover: vi.fn(() => true),
     dispose: vi.fn(),
+    pendingSegmentCount: vi.fn(() => 0),
+    pendingAudioSeconds: vi.fn(() => 0),
   })),
 }));
 
@@ -682,7 +689,7 @@ describe("capture controller", () => {
       status: "QUEUED",
     });
 
-    expect(apiMocks.finalizeRecordingCapture).toHaveBeenCalledWith("rec-1");
+    expect(apiMocks.finalizeRecordingCapture).toHaveBeenCalledWith("rec-1", expect.any(Object));
     // Resuming would re-prompt the browser share picker for nothing, and the
     // ordering race around it was what stranded the recording.
     expect(apiMocks.resumeRecordingCapture).not.toHaveBeenCalled();
@@ -702,7 +709,9 @@ describe("capture controller", () => {
       id: "rec-9",
       status: "QUEUED",
     });
-    expect(apiMocks.finalizeRecordingCapture).toHaveBeenCalledWith("rec-9");
+    expect(apiMocks.finalizeRecordingCapture).toHaveBeenCalledWith("rec-9", {
+      clientElapsedSeconds: undefined,
+    });
   });
 
   it("never leaves the controller stuck in finalizing when stop fails", async () => {
@@ -815,7 +824,7 @@ describe("capture controller", () => {
       id: "rec-1",
       status: "QUEUED",
     });
-    expect(apiMocks.finalizeRecordingCapture).toHaveBeenCalledWith("rec-1");
+    expect(apiMocks.finalizeRecordingCapture).toHaveBeenCalledWith("rec-1", expect.any(Object));
   });
 
   /**
@@ -924,7 +933,7 @@ describe("capture controller", () => {
     // so nothing should be claimed lost.
     const controller = recordingWithCapturedAudio(4_618, 4_874);
     controller.runtime = {
-      uploader: { pendingSegmentCount: () => 128 },
+      uploader: { pendingAudioSeconds: () => 256 },
     };
 
     controller.evaluateCoverage();
@@ -936,7 +945,7 @@ describe("capture controller", () => {
   it("reports the queue alongside a genuine shortfall", () => {
     const controller = recordingWithCapturedAudio(4_618, 4_874);
     controller.runtime = {
-      uploader: { pendingSegmentCount: () => 15 },
+      uploader: { pendingAudioSeconds: () => 30 },
     };
 
     controller.evaluateCoverage();
@@ -1126,5 +1135,153 @@ describe("recovering an interrupted capture", () => {
     }
 
     expect(removed).toEqual(["rec-1"]);
+  });
+});
+
+describe("audio a closed tab recorded but never uploaded", () => {
+  const stored = (sequence: number) => ({
+    recordingId: "rec-1",
+    sequence,
+    blob: new Blob([String(sequence)], { type: "audio/flac" }),
+    durationSeconds: 2,
+  });
+
+  const sources = {
+    mode: "microphone_only",
+    displayStream: null,
+    microphoneStream: {} as MediaStream,
+    captureReport: {
+      mode: "microphone_only",
+      requested_microphone_device_id: null,
+      requested_microphone_label: null,
+      available_microphones: [],
+      browser_microphone_track: null,
+      browser_display_audio_track: null,
+      browser_display_video_track: null,
+      shared_audio_available: false,
+      notes: [],
+    },
+    release: vi.fn(),
+  };
+
+  const controllerWithStored = async (sequences: number[]) => {
+    const controller = new CaptureController() as any;
+    for (const sequence of sequences) {
+      await controller.segmentStore.put(stored(sequence));
+    }
+    return controller;
+  };
+
+  const storedSequences = async (controller: any) =>
+    (await controller.segmentStore.list("rec-1")).map(
+      (segment: { sequence: number }) => segment.sequence,
+    );
+
+  beforeEach(() => {
+    vi.mocked(createSegmentUploader).mockClear();
+    vi.mocked(createBrowserRecorder).mockClear();
+    apiMocks.finalizeRecordingCapture.mockReset();
+    apiMocks.finalizeRecordingCapture.mockResolvedValue({ id: "rec-1", status: "QUEUED" });
+    apiMocks.pauseRecordingCapture.mockReset();
+    apiMocks.pauseRecordingCapture.mockResolvedValue({
+      recording_id: "rec-1",
+      status: "PAUSED",
+      last_sequence: 4,
+    });
+    apiMocks.resumeRecordingCapture.mockReset();
+    apiMocks.resumeRecordingCapture.mockResolvedValue({
+      recording_id: "rec-1",
+      status: "UPLOADING",
+      last_sequence: 4,
+    });
+    apiMocks.discardRecordingCapture.mockReset();
+    apiMocks.discardRecordingCapture.mockResolvedValue(undefined);
+    apiMocks.getPausedRecordings.mockReset();
+    apiMocks.getPausedRecordings.mockResolvedValue([]);
+    apiMocks.reportRecordingCaptureSources.mockResolvedValue(undefined);
+    pickSourceMocks.pickCaptureSource.mockReset();
+    pickSourceMocks.pickCaptureSource.mockResolvedValue(sources);
+    featureDetectMocks.detectCaptureSupport.mockReturnValue({
+      supported: true,
+      mode: "microphone_only",
+    });
+    sharedMocks.readPausedCaptureContext.mockReset();
+    sharedMocks.readPausedCaptureContext.mockReturnValue(null);
+  });
+
+  it("uploads it ahead of new audio on resume, and numbers new audio after it", async () => {
+    // 3 is already on the server and 9 sits past a gap; neither can be sent.
+    const controller = await controllerWithStored([3, 5, 6, 9]);
+
+    await controller.resume("rec-1");
+
+    const uploaderOptions = vi.mocked(createSegmentUploader).mock.calls[0][0];
+    const uploader = vi.mocked(createSegmentUploader).mock.results[0].value;
+    expect(uploaderOptions.initialSequence).toBe(5);
+    expect(uploader.restore.mock.calls[0][0].map((s: { sequence: number }) => s.sequence)).toEqual([
+      5, 6,
+    ]);
+    expect(vi.mocked(createBrowserRecorder).mock.calls[0][0].startSequence).toBe(7);
+    await vi.waitFor(async () => expect(await storedSequences(controller)).toEqual([5, 6]));
+  });
+
+  it("uploads it before finalizing a stop with no live capture", async () => {
+    const controller = await controllerWithStored([5, 6]);
+    const order: string[] = [];
+    vi.mocked(createSegmentUploader).mockImplementationOnce(
+      () =>
+        ({
+          enqueue: vi.fn(),
+          restore: vi.fn(() => order.push("restore")),
+          waitForIdle: vi.fn(async () => {
+            order.push("drained");
+          }),
+          recover: vi.fn(() => true),
+          dispose: vi.fn(),
+          pendingSegmentCount: vi.fn(() => 0),
+          pendingAudioSeconds: vi.fn(() => 0),
+        }) as never,
+    );
+    apiMocks.finalizeRecordingCapture.mockImplementation(async () => {
+      order.push("finalize");
+      return { id: "rec-1", status: "QUEUED" };
+    });
+
+    await controller.stop("rec-1");
+
+    expect(vi.mocked(createSegmentUploader).mock.calls[0][0].initialSequence).toBe(5);
+    expect(order).toEqual(["restore", "drained", "finalize"]);
+    expect(await storedSequences(controller)).toEqual([]);
+  });
+
+  it("finalizes straight away when nothing was left behind", async () => {
+    const controller = await controllerWithStored([]);
+
+    await controller.stop("rec-1");
+
+    expect(createSegmentUploader).not.toHaveBeenCalled();
+    expect(apiMocks.pauseRecordingCapture).not.toHaveBeenCalled();
+    expect(apiMocks.finalizeRecordingCapture).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps an interrupted capture whose only audio is still in the browser", async () => {
+    sharedMocks.readPausedCaptureContext.mockReturnValue({
+      recordingId: "rec-1",
+      lastSequence: -1,
+      persistedAt: 1,
+    });
+    const controller = await controllerWithStored([0, 1]);
+    controller.state = { ...controller.getState(), pausedRecording: { id: "rec-1" } };
+
+    await expect(controller.discardEmptyInterruptedRecording()).resolves.toBe(false);
+    expect(apiMocks.discardRecordingCapture).not.toHaveBeenCalled();
+  });
+
+  it("forgets it when the recording is discarded", async () => {
+    const controller = await controllerWithStored([5, 6]);
+
+    await controller.cancel("rec-1");
+
+    expect(await storedSequences(controller)).toEqual([]);
   });
 });

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { MemorySegmentStore, type StoredSegment } from "./segmentStore";
 import { createSegmentUploader } from "./uploader";
 
 /** Mirrors what uploadRecordingSegment resolves to on a successful upload. */
@@ -209,5 +210,99 @@ describe("capture uploader", () => {
     await uploader.waitForIdle({ timeoutMs: 5_000 });
 
     expect(uploaded).toEqual([0, 1]);
+  });
+});
+
+describe("capture uploader with a segment store", () => {
+  const storeWith = (initial: StoredSegment[] = []) => {
+    const store = new MemorySegmentStore();
+    for (const segment of initial) {
+      void store.put(segment);
+    }
+    return store;
+  };
+
+  it("keeps each segment in the store until the server acknowledges it", async () => {
+    const store = storeWith();
+    let release: () => void = () => {};
+    const uploadSegment = vi.fn(
+      () =>
+        new Promise<ReturnType<typeof accepted>>((resolve) => {
+          release = () => resolve(accepted(0));
+        }),
+    );
+    const uploader = createSegmentUploader({
+      recordingId: "rec-1",
+      uploadSegment: uploadSegment as never,
+      store,
+    });
+
+    uploader.enqueue(0, new Blob(["a"]), 2);
+    await vi.waitFor(() => expect(uploadSegment).toHaveBeenCalledTimes(1));
+
+    expect((await store.list("rec-1")).map((segment) => segment.sequence)).toEqual([0]);
+    release();
+    await vi.waitFor(async () => expect(await store.list("rec-1")).toEqual([]));
+  });
+
+  it("leaves the store alone when the page goes away", async () => {
+    const store = storeWith();
+    const uploader = createSegmentUploader({
+      recordingId: "rec-1",
+      uploadSegment: vi.fn(() => new Promise(() => {})) as never,
+      store,
+    });
+
+    uploader.enqueue(0, new Blob(["a"]), 2);
+    uploader.enqueue(1, new Blob(["b"]), 2);
+    uploader.dispose();
+
+    await vi.waitFor(async () =>
+      expect((await store.list("rec-1")).map((segment) => segment.sequence)).toEqual([0, 1]),
+    );
+  });
+
+  it("uploads restored segments first, without writing them again", async () => {
+    const restored: StoredSegment[] = [
+      { recordingId: "rec-1", sequence: 5, blob: new Blob(["5"]), durationSeconds: 2 },
+      { recordingId: "rec-1", sequence: 6, blob: new Blob(["6"]), durationSeconds: 1.5 },
+    ];
+    const store = storeWith(restored);
+    const put = vi.spyOn(store, "put");
+    const uploaded: number[] = [];
+    const uploader = createSegmentUploader({
+      recordingId: "rec-1",
+      initialSequence: 5,
+      uploadSegment: vi.fn(async (_id: string, sequence: number) => {
+        uploaded.push(sequence);
+        return accepted(sequence);
+      }) as never,
+      store,
+    });
+
+    uploader.restore(restored);
+    uploader.enqueue(7, new Blob(["7"]), 2);
+    await uploader.waitForIdle();
+
+    expect(uploaded).toEqual([5, 6, 7]);
+    expect(put.mock.calls.map(([segment]) => segment.sequence)).toEqual([7]);
+    await vi.waitFor(async () => expect(await store.list("rec-1")).toEqual([]));
+  });
+
+  it("reports the exact audio it holds as the queue changes", async () => {
+    const sizes: { segments: number; seconds: number }[] = [];
+    const uploader = createSegmentUploader({
+      recordingId: "rec-1",
+      uploadSegment: vi.fn(async (_id: string, sequence: number) => accepted(sequence)) as never,
+      onQueueChange: (size) => sizes.push(size),
+    });
+
+    uploader.enqueue(0, new Blob(["a"]), 2);
+    uploader.enqueue(1, new Blob(["b"]), 0.75);
+
+    expect(uploader.pendingAudioSeconds()).toBe(2.75);
+    await uploader.waitForIdle();
+    expect(sizes.at(-1)).toEqual({ segments: 0, seconds: 0 });
+    expect(sizes).toContainEqual({ segments: 2, seconds: 2.75 });
   });
 });

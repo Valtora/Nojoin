@@ -446,7 +446,8 @@ When changing capture behaviour, validate the relevant parts of this path:
 - Shared-audio track detection and missing-audio messaging.
 - Microphone permission and selected-device behaviour.
 - Per-source gain controls in **Settings > Recording**.
-- Segment creation, sequential upload, worker transcode, live transcript dispatch, stop/finalize, pause/resume, and discard.
+- Segment creation, sequential upload, FLAC decode on upload, live transcript dispatch, stop/finalize, pause/resume, and discard.
+- An upload backlog: block segment uploads in the browser's developer tools, close the tab, reopen it, and check that **Stop and process** uploads what the closed tab recorded before finalizing.
 - The paused-recording lock after refresh or close (actual tab unload, not in-app navigation).
 - Focus changes to another tab, window, or application; these should not pause capture.
 
@@ -1025,7 +1026,8 @@ services:
         "-Q", "gpu", "--pool=solo", "--concurrency=1", "--loglevel=info",
       ]
 
-  # CPU lane: ffmpeg segment transcode, proxy generation, backups. No GPU.
+  # CPU lane: proxy generation, backups, and the ffmpeg transcode of segments
+  # from clients older than FLAC capture. No GPU.
   worker-cpu:
     <<: *worker-base
     container_name: nojoin-dev-worker-cpu
