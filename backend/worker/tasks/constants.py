@@ -82,7 +82,6 @@ from backend.utils.canonical_pipeline import (
     build_transcript_segments_for_read,
     ensure_processing_run,
     finalize_utterances_from_segments,
-    reconcile_completed_diarization_windows,
     refine_recording_utterances_via_segmentation,
     refresh_transcript_projection_from_canonical,
 )
@@ -467,24 +466,6 @@ def mark_recording_audio_chunks_ready_for_cleanup(*args, **kwargs):
         ):
             return actual(*args, **kwargs)
     return _mark_recording_audio_chunks_ready_for_cleanup_orig(*args, **kwargs)
-
-
-_reconcile_completed_diarization_windows_orig = reconcile_completed_diarization_windows
-
-
-def reconcile_completed_diarization_windows(*args, **kwargs):
-    import sys
-
-    tasks = sys.modules.get("backend.worker.tasks")
-    if tasks and hasattr(tasks, "reconcile_completed_diarization_windows"):
-        actual = tasks.reconcile_completed_diarization_windows
-        if (
-            actual is not reconcile_completed_diarization_windows
-            and getattr(actual, "__code__", None)
-            is not reconcile_completed_diarization_windows.__code__
-        ):
-            return actual(*args, **kwargs)
-    return _reconcile_completed_diarization_windows_orig(*args, **kwargs)
 
 
 _refine_recording_utterances_via_segmentation_orig = (

@@ -135,75 +135,6 @@ def _processing_run_idempotency_key(
     return f"{run_kind.value}:{digest}"
 
 
-def _reconcile_completed_windows_from_effective_point(
-    session,
-    *,
-    recording_id: int,
-    effective_from_ms: int | None,
-    source: str,
-    processing_run_id: int | None = None,
-    replay_policy: SpeakerReplayPolicy | None = None,
-) -> dict[str, int]:
-    if effective_from_ms is None:
-        return {
-            "window_count": 0,
-            "matched_turn_count": 0,
-            "updated_utterance_count": 0,
-            "preserved_manual_lock_count": 0,
-        }
-
-    completed_window_rows = list(
-        session.execute(
-            select(DiarizationWindowResult)
-            .where(DiarizationWindowResult.recording_id == recording_id)
-            .where(DiarizationWindowResult.status == "completed")
-            .where(DiarizationWindowResult.window_end_ms > int(effective_from_ms))
-            .order_by(
-                DiarizationWindowResult.window_start_ms, DiarizationWindowResult.id
-            )
-        )
-        .scalars()
-        .all()
-    )
-    if not completed_window_rows:
-        return {
-            "window_count": 0,
-            "matched_turn_count": 0,
-            "updated_utterance_count": 0,
-            "preserved_manual_lock_count": 0,
-        }
-
-    summary = {
-        "window_count": 0,
-        "matched_turn_count": 0,
-        "updated_utterance_count": 0,
-        "preserved_manual_lock_count": 0,
-    }
-    for window_row in completed_window_rows:
-        if window_row.id is None:
-            continue
-        replay_summary = reconcile_diarization_window_result(
-            session,
-            recording_id=recording_id,
-            window_result_id=int(window_row.id),
-            processing_run_id=processing_run_id,
-            source=source,
-            effective_from_ms=effective_from_ms,
-            replay_policy=replay_policy,
-        )
-        summary["window_count"] += 1
-        summary["matched_turn_count"] += int(
-            replay_summary.get("matched_turn_count", 0)
-        )
-        summary["updated_utterance_count"] += int(
-            replay_summary.get("updated_utterance_count", 0)
-        )
-        summary["preserved_manual_lock_count"] += int(
-            replay_summary.get("preserved_manual_lock_count", 0)
-        )
-    return summary
-
-
 def replace_utterances_from_segments(
     session,
     *,
@@ -1378,29 +1309,6 @@ def update_utterance_speaker(
     flag_modified(transcript, "segments")
     session.add(transcript)
     refresh_recording_speaker_usage_state(session, recording_id)
-
-    if scope != SpeakerCorrectionScope.UTTERANCE_ONLY:
-        replay_effective_from_ms = (
-            min(
-                int(target_utterance.start_ms) for target_utterance in target_utterances
-            )
-            if target_utterances
-            else int(utterance.start_ms)
-        )
-        replay_event_type = _event_type_for_scope(scope)
-        replay_policy = _speaker_replay_policy_for_correction_event(
-            session,
-            recording_id=recording_id,
-            event_type=replay_event_type,
-            target_recording_speaker_id=target_key,
-        )
-        _reconcile_completed_windows_from_effective_point(
-            session,
-            recording_id=recording_id,
-            effective_from_ms=replay_effective_from_ms,
-            source=_replay_source_for_policy(replay_policy),
-            replay_policy=replay_policy,
-        )
 
     return utterance, target_speaker
 

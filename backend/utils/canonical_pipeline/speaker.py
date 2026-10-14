@@ -218,12 +218,6 @@ def _is_identity_replay_policy(replay_policy: SpeakerReplayPolicy | None) -> boo
     return replay_policy is not None and replay_policy.identity_scope is not None
 
 
-def _replay_source_for_policy(replay_policy: SpeakerReplayPolicy | None) -> str:
-    if _is_identity_replay_policy(replay_policy):
-        return "speaker_identity_replay"
-    return "speaker_correction_replay"
-
-
 def _replay_normalized_recording_speaker_id(
     replay_policy: SpeakerReplayPolicy | None,
     recording_speaker_id: int | None,
@@ -233,39 +227,6 @@ def _replay_normalized_recording_speaker_id(
     if not _identity_replay_scope_contains(replay_policy, recording_speaker_id):
         return recording_speaker_id
     return _identity_replay_anchor_recording_speaker_id(replay_policy)
-
-
-def _speaker_replay_policy_for_correction_event(
-    session,
-    *,
-    recording_id: int,
-    event_type: SpeakerCorrectionEventType,
-    target_recording_speaker_id: int | None,
-) -> SpeakerReplayPolicy | None:
-    if event_type in {
-        SpeakerCorrectionEventType.LINK_GLOBAL_SPEAKER,
-        SpeakerCorrectionEventType.PROMOTE_GLOBAL_SPEAKER,
-        SpeakerCorrectionEventType.MERGE_SPEAKERS,
-    }:
-        if target_recording_speaker_id is None:
-            return SpeakerReplayPolicy(
-                name="identity_guarded",
-                allow_new_recording_speakers=False,
-                allow_inactive_candidate_reactivation=False,
-                preserve_finalized_overlap_primary=True,
-                preserve_finalized_boundary_primary=True,
-            )
-        return _build_identity_replay_policy(
-            session,
-            recording_id=recording_id,
-            anchor_recording_speaker_id=int(target_recording_speaker_id),
-        )
-    if event_type in {
-        SpeakerCorrectionEventType.ASSIGN_RECORDING_SPEAKER,
-        SpeakerCorrectionEventType.ASSIGN_FROM_NOW_ON,
-    }:
-        return DEFAULT_SPEAKER_REPLAY_POLICY
-    return None
 
 
 def _record_guarded_replay_rejection(
@@ -679,63 +640,6 @@ def _resolve_active_recording_speaker(
     return current
 
 
-def _build_identity_replay_policy(
-    session,
-    *,
-    recording_id: int,
-    anchor_recording_speaker_id: int,
-) -> SpeakerReplayPolicy:
-    anchor_speaker = session.get(RecordingSpeaker, anchor_recording_speaker_id)
-    if anchor_speaker is None or anchor_speaker.recording_id != recording_id:
-        return SpeakerReplayPolicy(
-            name="identity_guarded",
-            allow_new_recording_speakers=False,
-            allow_inactive_candidate_reactivation=False,
-            preserve_finalized_overlap_primary=True,
-            preserve_finalized_boundary_primary=True,
-        )
-
-    resolved_anchor = _resolve_active_recording_speaker(session, anchor_speaker)
-    recording_speakers = _load_recording_speakers(session, recording_id)
-    allowed_recording_speaker_ids: set[int] = {
-        int(resolved_anchor.id),
-        int(anchor_speaker.id),
-    }
-
-    for candidate_speaker in recording_speakers:
-        candidate_id = getattr(candidate_speaker, "id", None)
-        if candidate_id is None:
-            continue
-        resolved_candidate = _resolve_active_recording_speaker(
-            session, candidate_speaker
-        )
-        if getattr(resolved_candidate, "id", None) == getattr(
-            resolved_anchor, "id", None
-        ):
-            allowed_recording_speaker_ids.add(int(candidate_id))
-            allowed_recording_speaker_ids.add(int(resolved_candidate.id))
-            continue
-        if (
-            resolved_anchor.global_speaker_id is not None
-            and candidate_speaker.global_speaker_id == resolved_anchor.global_speaker_id
-        ):
-            allowed_recording_speaker_ids.add(int(candidate_id))
-            if getattr(resolved_candidate, "id", None) is not None:
-                allowed_recording_speaker_ids.add(int(resolved_candidate.id))
-
-    return SpeakerReplayPolicy(
-        name="identity_guarded",
-        allow_new_recording_speakers=False,
-        allow_inactive_candidate_reactivation=False,
-        preserve_finalized_overlap_primary=True,
-        preserve_finalized_boundary_primary=True,
-        identity_scope=IdentityReplayScope(
-            anchor_recording_speaker_id=int(resolved_anchor.id),
-            allowed_recording_speaker_ids=frozenset(allowed_recording_speaker_ids),
-        ),
-    )
-
-
 def _identity_replay_scope_contains(
     replay_policy: SpeakerReplayPolicy,
     recording_speaker_id: int | None,
@@ -919,7 +823,6 @@ def record_recording_speaker_corrections(
     payload_by_speaker_id: dict[int, dict[str, Any]] | None = None,
 ) -> list[SpeakerCorrectionEvent]:
     from .core import (
-        _reconcile_completed_windows_from_effective_point,
         refresh_transcript_projection_from_canonical,
     )
 
@@ -957,23 +860,6 @@ def record_recording_speaker_corrections(
                 effective_from_ms=recording_speaker.first_seen_ms,
                 payload=event_payload or None,
             )
-        )
-
-    for correction_event in correction_events:
-        replay_policy = _speaker_replay_policy_for_correction_event(
-            session,
-            recording_id=recording_id,
-            event_type=correction_event.event_type,
-            target_recording_speaker_id=correction_event.target_recording_speaker_id,
-        )
-        if replay_policy is None:
-            continue
-        _reconcile_completed_windows_from_effective_point(
-            session,
-            recording_id=recording_id,
-            effective_from_ms=correction_event.effective_from_ms,
-            source=_replay_source_for_policy(replay_policy),
-            replay_policy=replay_policy,
         )
 
     return correction_events
@@ -1104,7 +990,6 @@ def merge_recording_speakers_by_label(
     source: str = "api",
 ) -> tuple[RecordingSpeaker, RecordingSpeaker]:
     from .core import (
-        _reconcile_completed_windows_from_effective_point,
         list_active_utterances,
         recording_ready_for_canonical_backfill,
         refresh_transcript_projection_from_canonical,
@@ -1214,19 +1099,6 @@ def merge_recording_speakers_by_label(
                 "target_public_id": target_speaker.public_id,
             },
             update_source_provenance=True,
-        )
-        replay_policy = _speaker_replay_policy_for_correction_event(
-            session,
-            recording_id=recording_id,
-            event_type=SpeakerCorrectionEventType.MERGE_SPEAKERS,
-            target_recording_speaker_id=target_speaker.id,
-        )
-        _reconcile_completed_windows_from_effective_point(
-            session,
-            recording_id=recording_id,
-            effective_from_ms=source_speaker.first_seen_ms,
-            source=_replay_source_for_policy(replay_policy),
-            replay_policy=replay_policy,
         )
 
     source_speaker.embedding = None

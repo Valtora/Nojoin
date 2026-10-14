@@ -3,25 +3,6 @@ from .segmentation import *
 from .speaker import *
 
 
-def reconcile_completed_diarization_windows(
-    session,
-    *,
-    recording_id: int,
-    effective_from_ms: int | None = 0,
-    source: str = "finalize_window_replay",
-    processing_run_id: int | None = None,
-) -> dict[str, int]:
-    from .core import _reconcile_completed_windows_from_effective_point
-
-    return _reconcile_completed_windows_from_effective_point(
-        session,
-        recording_id=recording_id,
-        effective_from_ms=effective_from_ms,
-        source=source,
-        processing_run_id=processing_run_id,
-    )
-
-
 @dataclass
 class _WindowReconciliationContext:
     """Shared per-window state threaded through the reconciliation helpers
