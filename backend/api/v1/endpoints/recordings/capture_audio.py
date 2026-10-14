@@ -121,6 +121,13 @@ async def _touch_recording_last_activity(db: AsyncSession, recording_id: int) ->
     )
 
 
+def _segment_filename(sequence: int, suffix: str) -> str:
+    # The sequence comes from the request. FastAPI has already made it a
+    # non-negative int; basename keeps any path built from it inside the
+    # recording's directory regardless, as the upload route does.
+    return os.path.basename(f"{int(sequence)}{suffix}")
+
+
 async def _accept_browser_flac_segment(
     db: AsyncSession,
     *,
@@ -136,11 +143,11 @@ async def _accept_browser_flac_segment(
     until its uploader stalled and paused the meeting; accepting it costs one
     2 s gap, which finalize already knows how to accept.
     """
-    wav_path = temp_dir / f"{sequence}.wav"
+    wav_path = temp_dir / _segment_filename(sequence, ".wav")
     try:
         await asyncio.to_thread(decode_browser_flac_segment, flac_path, wav_path)
     except BrowserAudioFormatError as exc:
-        corrupt_path = temp_dir / f"{sequence}{SEGMENT_CORRUPT_SUFFIX}"
+        corrupt_path = temp_dir / _segment_filename(sequence, SEGMENT_CORRUPT_SUFFIX)
         os.replace(flac_path, corrupt_path)
         logger.error(
             "Quarantined undecodable FLAC segment %s for recording %s: %s",
