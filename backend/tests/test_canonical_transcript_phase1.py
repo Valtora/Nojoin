@@ -6497,9 +6497,10 @@ async def test_be006_reconciliation_preserves_manual_lock_and_records_candidate(
 # nothing writes them any more. A correction used to replay every completed
 # window after the edit point. For a rename, two overlapping windows whose
 # local speaker spanned another person's line moved that line onto the renamed
-# speaker. A merge or global-speaker link replayed under an identity guard that
-# kept the labels but rewrote every line's assignment source and window
-# evidence from the stale rows.
+# speaker. A merge or global-speaker link replayed under an identity guard. It
+# kept other identities' lines, but it moved lines between speakers sharing a
+# global speaker and rewrote assignment sources and window evidence from the
+# stale rows.
 # ---------------------------------------------------------------------------
 
 _STALE_WINDOW_NOW = "2026-05-28 00:00:00"
@@ -6673,21 +6674,18 @@ async def _seed_recording_with_stale_windows(session_maker: sessionmaker) -> Non
         await session.commit()
 
 
-async def _stale_window_speaker_by_line(client: AsyncClient) -> dict[str, str]:
-    # The first read also backfills the canonical utterances.
-    response = await client.get("/api/v1/transcripts/stale-rec/utterances")
-    assert response.status_code == 200
-    return {item["text"]: item["speaker"] for item in response.json()["utterances"]}
-
-
 async def _stale_window_line_state(
     session_maker: sessionmaker,
 ) -> dict[str, tuple[str, str, int | None]]:
-    """Each line's speaker label, assignment source and last window id."""
+    """Every utterance's speaker label, assignment source and last window id.
+
+    Keyed by public id over all rows, so a line the replay split or superseded
+    shows up as a changed key instead of hiding behind another row's text.
+    """
     async with session_maker() as session:
         rows = await session.execute(
             text(
-                "SELECT text, speaker_label, speaker_assignment_source, "
+                "SELECT public_id, speaker_label, speaker_assignment_source, "
                 "last_diarization_window_result_id FROM transcript_utterances "
                 "WHERE recording_id = 1"
             )
@@ -6695,59 +6693,62 @@ async def _stale_window_line_state(
         return {row[0]: (row[1], row[2], row[3]) for row in rows.all()}
 
 
-_STALE_WINDOW_ORIGINAL_LINES = {
-    line: speaker for _, _, speaker, line in _STALE_WINDOW_LINES
-}
-_STALE_WINDOW_UNTOUCHED_STATE = {
-    line: (speaker, "finalize", None)
-    for line, speaker in _STALE_WINDOW_ORIGINAL_LINES.items()
-}
-
-
 async def _seed_and_backfill_stale_window_recording(
     client: AsyncClient, session_maker: sessionmaker
-) -> None:
+) -> dict[str, tuple[str, str, int | None]]:
+    """Seed the recording, backfill it through a read, and return its state."""
     await _seed_recording_with_stale_windows(session_maker)
-    assert await _stale_window_speaker_by_line(client) == _STALE_WINDOW_ORIGINAL_LINES
-    untouched = await _stale_window_line_state(session_maker)
-    assert untouched == _STALE_WINDOW_UNTOUCHED_STATE
+    response = await client.get("/api/v1/transcripts/stale-rec/utterances")
+    assert response.status_code == 200
+    before = await _stale_window_line_state(session_maker)
+    assert {line_id: state[0] for line_id, state in before.items()} == {
+        line_id: speaker for line_id, _, speaker, _ in _STALE_WINDOW_LINES
+    }
+    assert all(state[2] is None for state in before.values())
+    return before
 
 
 @pytest.mark.anyio
+@pytest.mark.usefixtures("stub_celery_dispatch")
 @pytest.mark.parametrize(
-    "scope", ["speaker_everywhere_in_recording", "from_this_utterance_forward"]
+    ("scope", "anchor", "renamed_lines"),
+    [
+        ("speaker_everywhere_in_recording", "sw-3", ("sw-1", "sw-3")),
+        ("from_this_utterance_forward", "sw-1", ("sw-1", "sw-3")),
+        ("from_this_utterance_forward", "sw-3", ("sw-3",)),
+    ],
 )
 async def test_utterance_rename_does_not_replay_stale_window_rows(
     client: AsyncClient,
     test_session_maker: sessionmaker,
-    stub_celery_dispatch,
     scope: str,
+    anchor: str,
+    renamed_lines: tuple[str, ...],
 ) -> None:
-    await _seed_and_backfill_stale_window_recording(client, test_session_maker)
+    before = await _seed_and_backfill_stale_window_recording(client, test_session_maker)
 
     response = await client.patch(
-        "/api/v1/transcripts/stale-rec/utterances/sw-1/speaker",
+        f"/api/v1/transcripts/stale-rec/utterances/{anchor}/speaker",
         json={"new_speaker_name": "Alice", "scope": scope},
     )
     assert response.status_code == 200, response.text
 
-    state = await _stale_window_line_state(test_session_maker)
-    renamed = state["alice one"][0]
-    assert renamed.startswith("MANUAL_")
-    assert state == {
-        **_STALE_WINDOW_UNTOUCHED_STATE,
-        "alice one": (renamed, "manual", None),
-        "alice two": (renamed, "manual", None),
+    after = await _stale_window_line_state(test_session_maker)
+    renamed = after[anchor][0]
+    assert renamed != "SPEAKER_00"
+    assert after == {
+        **before,
+        **{line_id: (renamed, "manual", None) for line_id in renamed_lines},
     }
 
 
 @pytest.mark.anyio
+@pytest.mark.usefixtures("stub_celery_dispatch")
 async def test_speaker_merge_does_not_replay_stale_window_rows(
     client: AsyncClient,
     test_session_maker: sessionmaker,
-    stub_celery_dispatch,
 ) -> None:
-    await _seed_and_backfill_stale_window_recording(client, test_session_maker)
+    before = await _seed_and_backfill_stale_window_recording(client, test_session_maker)
 
     response = await client.post(
         "/api/v1/speakers/recordings/stale-rec/merge",
@@ -6759,19 +6760,19 @@ async def test_speaker_merge_does_not_replay_stale_window_rows(
     assert response.status_code == 200, response.text
 
     assert await _stale_window_line_state(test_session_maker) == {
-        **_STALE_WINDOW_UNTOUCHED_STATE,
-        "alice one": ("SPEAKER_02", "manual", None),
-        "alice two": ("SPEAKER_02", "manual", None),
+        **before,
+        "sw-1": ("SPEAKER_02", "manual", None),
+        "sw-3": ("SPEAKER_02", "manual", None),
     }
 
 
 @pytest.mark.anyio
+@pytest.mark.usefixtures("stub_celery_dispatch")
 async def test_merging_a_speaker_without_lines_does_not_replay_stale_window_rows(
     client: AsyncClient,
     test_session_maker: sessionmaker,
-    stub_celery_dispatch,
 ) -> None:
-    await _seed_and_backfill_stale_window_recording(client, test_session_maker)
+    before = await _seed_and_backfill_stale_window_recording(client, test_session_maker)
 
     response = await client.post(
         "/api/v1/speakers/recordings/stale-rec/merge",
@@ -6782,30 +6783,29 @@ async def test_merging_a_speaker_without_lines_does_not_replay_stale_window_rows
     )
     assert response.status_code == 200, response.text
 
-    assert await _stale_window_line_state(test_session_maker) == (
-        _STALE_WINDOW_UNTOUCHED_STATE
-    )
+    assert await _stale_window_line_state(test_session_maker) == before
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("action", ["link_existing", "promote"])
-async def test_global_speaker_link_does_not_replay_stale_window_rows(
+@pytest.mark.usefixtures("stub_celery_dispatch")
+@pytest.mark.parametrize("action", ["link", "link_with_shared_global", "promote"])
+async def test_global_speaker_identity_change_does_not_replay_stale_window_rows(
     client: AsyncClient,
     test_session_maker: sessionmaker,
-    stub_celery_dispatch,
     action: str,
 ) -> None:
-    await _seed_and_backfill_stale_window_recording(client, test_session_maker)
+    before = await _seed_and_backfill_stale_window_recording(client, test_session_maker)
 
-    if action == "link_existing":
-        response = await client.put(
-            "/api/v1/speakers/recordings/stale-rec",
-            json={
-                "diarization_label": "SPEAKER_00",
-                "global_speaker_name": "Alice Smith",
-            },
-        )
-    else:
+    if action == "link_with_shared_global":
+        # SPEAKER_01 already belongs to the global speaker SPEAKER_00 is about
+        # to join (the diariser split one voice, say). That puts both in the
+        # identity guard's cluster, which let the replay move lines between them.
+        async with test_session_maker() as session:
+            await session.execute(
+                text("UPDATE recording_speakers SET global_speaker_id = 7 WHERE id = 2")
+            )
+            await session.commit()
+    if action == "promote":
         async with test_session_maker() as session:
             await session.execute(
                 text("UPDATE recording_speakers SET local_name = 'Alice' WHERE id = 1")
@@ -6814,12 +6814,18 @@ async def test_global_speaker_link_does_not_replay_stale_window_rows(
         response = await client.post(
             "/api/v1/speakers/recordings/stale-rec/speakers/SPEAKER_00/promote"
         )
+    else:
+        response = await client.put(
+            "/api/v1/speakers/recordings/stale-rec",
+            json={
+                "diarization_label": "SPEAKER_00",
+                "global_speaker_name": "Alice Smith",
+            },
+        )
     assert response.status_code == 200, response.text
 
-    # Linking changes who SPEAKER_00 is, not which lines are theirs.
-    assert await _stale_window_line_state(test_session_maker) == (
-        _STALE_WINDOW_UNTOUCHED_STATE
-    )
+    # An identity change says who a speaker is, not which lines are theirs.
+    assert await _stale_window_line_state(test_session_maker) == before
 
 
 @pytest.mark.anyio
