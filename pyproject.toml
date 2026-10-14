@@ -46,7 +46,7 @@ files = [
     "backend/api/deps.py",
     "backend/api/error_handling.py",
     "backend/utils/upload_limit.py",
-    "backend/utils/markdown_docx.py",
+    "backend/services/exports",
     # API-facing schema and ORM models (public/cross-module surface).
     "backend/models/base.py",
     "backend/models/recording.py",
@@ -132,9 +132,8 @@ max-complexity = 10
 "backend/api/v1/endpoints/speakers/routes_voiceprint.py" = ["C901", "PLR0912", "PLR0915"]
 "backend/api/v1/endpoints/system.py" = ["C901", "PLR0915"]
 "backend/api/v1/endpoints/tasks.py" = ["C901", "PLR0912"]
-"backend/api/v1/endpoints/transcripts/helpers.py" = ["C901", "PLR0912", "PLR0913"]
+"backend/api/v1/endpoints/transcripts/helpers.py" = ["C901", "PLR0912"]
 "backend/api/v1/endpoints/transcripts/routes_chat.py" = ["C901", "PLR0912", "PLR0915"]
-"backend/api/v1/endpoints/transcripts/routes_export.py" = ["C901", "PLR0912", "PLR0915"]
 "backend/api/v1/endpoints/transcripts/routes_segments.py" = ["C901", "PLR0912", "PLR0915"]
 "backend/api/v1/endpoints/users.py" = ["C901"]
 "backend/core/security.py" = ["PLR0913"]
