@@ -144,9 +144,9 @@ JSON
 
 **When a second maintainer joins**, set `require_code_owner_reviews` to `true` and raise `required_approving_review_count` to `1` to turn this into a genuine second-reviewer gate.
 
-**Do not add the release jobs to this required-checks list.** The required context is the single `CI gate` job, which the CI workflow reports on every pull request. The release jobs (`server-release`/`Build, scan & sign images`, `worker-io-release`/`Build, scan & sign worker-io image`, `health-smoke`/`Image health & non-root smoke`, `publish-mutable-tags`/`Publish rolling tags`, `publish-release-notes`/`Publish release notes` in [release.yml](../.github/workflows/release.yml)) only run on a tag push or `workflow_dispatch`, never on a pull request. If they were added here, GitHub would leave them permanently "Expected" on every PR commit — they would never report, and **every merge to `main` would be blocked**. Branch protection on `main` also does not govern tag creation, so it cannot gate a release at all. The same reasoning is why the individual CI jobs are not required directly: they are skipped by the path filter when irrelevant, so only the always-reporting `CI gate` aggregate is safe to require.
+**Do not add the release jobs to this required-checks list.** The required context is the single `CI gate` job, which the CI workflow reports on every pull request. The release jobs (`validate-release-ref`/`Validate release ref`, `sign-images`/`Verify & sign images`, `publish-mutable-tags`/`Publish rolling tags`, `publish-release-notes`/`Publish release notes` in [release.yml](../.github/workflows/release.yml)) only run on a tag push or `workflow_dispatch`, never on a pull request. If they were added here, GitHub would leave them permanently "Expected" on every PR commit — they would never report, and **every merge to `main` would be blocked**. Branch protection on `main` also does not govern tag creation, so it cannot gate a release at all. The same reasoning is why the individual CI jobs are not required directly: they are skipped by the path filter when irrelevant, so only the always-reporting `CI gate` aggregate is safe to require.
 
-The release pipeline is instead self-gating through the workflow's own `needs:` dependency graph: `publish-mutable-tags` depends on `server-release`, `worker-io-release`, and `health-smoke`, and `publish-release-notes` depends on `publish-mutable-tags`. A failed scan, smoke, or signing step therefore stops the rolling tags from ever publishing, with no branch-protection setting required or possible. Keep that ordering intact when editing the release workflow.
+The release is instead self-gating. [scripts/release.py](../scripts/release.py) refuses to build until every commit since the previous tag has a green `CI gate`, and pushes nothing until the scan, smoke, and advisory gates pass. In the workflow, `sign-images` verifies all four images before signing any, `publish-mutable-tags` depends on `sign-images`, and `publish-release-notes` depends on `publish-mutable-tags`. A failed gate or signing step therefore stops the rolling tags from ever publishing, with no branch-protection setting required or possible. Keep that ordering intact when editing either file.
 
 ## Verification By Change Scope
 
@@ -605,33 +605,54 @@ can be.
 
 ### Unified Release Process
 
-Nojoin uses a single Git tag (`vX.Y.Z`) to trigger the API, Worker, and Frontend release builds in lock-step. Everything after the tag push is automatic, and a failed gate blocks the release.
+Nojoin uses a single Git tag (`vX.Y.Z`) to release the API, Worker, Worker-IO, and Frontend images in lock-step. The images are built on the maintainer's release host by [scripts/release.py](../scripts/release.py), not on GitHub's runners: the build takes about two minutes there, against a release workflow that used to take close to half an hour, most of it spent on cache export, disk clean-up, and pulling the worker back down to build worker-io on top of it. GitHub still signs every image, so the signing identity operators verify against is unchanged.
 
-**Maintainer steps (manual):**
+**Maintainer steps:**
 
-1. **Merge and sync**: Merge the work for the release into `main` and ensure your local `main` is up to date.
-2. **Update version**: Update [VERSION](VERSION) to the new version string (e.g. `0.6.0`). The tag must match this value exactly or the release fails fast.
-3. **Commit and tag**: Commit the version bump, then create and push the tag:
+1. **Merge the work** for the release into `main`.
+2. **Bump the version** in a pull request: update [VERSION](VERSION) to the new version string and write the notes in [.github/release-notes-template.md](../.github/release-notes-template.md). Merge it.
+3. **Run the release** on the release host:
    ```bash
-   git add docs/VERSION
-   git commit -m "chore: bump version to 0.6.0"
-   git tag v0.6.0
-   git push origin v0.6.0
+   python3 scripts/release.py 0.6.0
    ```
-4. **Refine release notes (after the run succeeds)**: The pipeline creates the GitHub Release automatically (see below). Edit its editorial sections — Migration, Rollback, Known Issues, Browser-Capture Compatibility — in the GitHub Releases interface where the release needs specific guidance.
+   It finishes by pushing the tag and watching the workflow run, and prints the release URL.
+4. **Refine the release notes** in the GitHub Releases interface if the release needs specific guidance under Migration, Rollback, Known Issues, or Browser-Capture Compatibility.
 
-**What the pipeline does automatically (on tag push):** The push of a strict `vX.Y.Z` tag triggers [.github/workflows/release.yml](../.github/workflows/release.yml), which runs in this order:
+**What the script does**, stopping at the first failure:
 
-1. Re-runs the full backend, frontend, docs, and Alembic validation set and verifies `docs/VERSION` matches the tag.
-2. Builds each image and publishes only the immutable `version` and commit-`sha` tags, with provenance and SBOM attestations.
-3. Scans each image with Trivy and **fails the release on fixable CRITICAL/HIGH vulnerabilities** (see [Image Provenance, SBOM, and Signing](#image-provenance-sbom-and-signing) and the severity policy in [SECURITY.md](SECURITY.md)).
-4. Signs each image with cosign, then runs the non-root and health smoke.
-5. Publishes the rolling `latest` and `major.minor` tags only after all the above pass.
-6. Generates and publishes the GitHub Release notes from the exact previous-tag-to-this-tag range (see [Automated Release Notes](#automated-release-notes)).
+1. Checks that `origin/main` carries the new `docs/VERSION`, that the tag does not exist yet, and that every commit since the previous tag has a green `CI gate`. CI on `main` only runs the jobs whose paths a push touched, so the release commit's own run is not enough on its own: a version bump runs the docs checks and nothing else.
+2. Builds all four images from a clean worktree of that commit, with no layer cache, in a dedicated BuildKit builder. [docker/release.hcl](../docker/release.hcl) defines the build, and worker-io layers onto the worker built in the same run.
+3. Runs the gates on those images: the Trivy severity gate, the health and non-root smoke, and an advisory lookup for the two subscription CLIs in worker-io. See [Release Gates](#release-gates).
+4. Builds again from cache with provenance and SBOM attestations, pushes the immutable `version` and commit-`sha` tags, and checks that each pushed image config is the one that was scanned.
+5. Pushes the tag.
 
-Because of step 3, a tag push does not guarantee published images: if scanning finds a fixable CRITICAL/HIGH vulnerability the run fails and the rolling tags are not moved. The usual fix is to merge the relevant Dependabot base-image or dependency update (or, for a justified unfixable case, add a documented, dated entry to [.github/trivyignore](../.github/trivyignore)) and cut the tag again.
+**What [release.yml](../.github/workflows/release.yml) does on the tag push:**
 
-Manual `workflow_dispatch` runs must target an existing release tag through `release_ref`; they only publish `latest` when `publish_latest=true` is set explicitly.
+1. Verifies `docs/VERSION` matches the tag.
+2. Checks every image is on GHCR under both immutable tags, carries its provenance and SBOM, and has a revision label naming the tag's commit. All four are checked before any is signed.
+3. Signs each image by digest with cosign.
+4. Publishes the rolling `latest` and `major.minor` tags from the signed digests.
+5. Generates and publishes the GitHub Release notes from the exact previous-tag-to-this-tag range (see [Automated Release Notes](#automated-release-notes)).
+
+A tag pushed by hand, without the script, fails at step 2 because its images are not on the registry.
+
+**Rehearsing a release.** `python3 scripts/release.py 0.6.0 --dry-run` runs the checks, the build, and every gate, and pushes nothing. In a dry run the version, tag, and CI checks are reported rather than enforced, and `--ref` builds any commit, so a branch can be rehearsed before it merges:
+
+```bash
+python3 scripts/release.py 0.6.0 --dry-run --ref HEAD
+```
+
+Run a dry run before bumping the version when the base images or unpinned SDKs may have moved: the scan gate always uses a fresh vulnerability database, so a release that passed last week can fail today with no code change.
+
+**Release host requirements.** Docker with a current Buildx (the script uses bake's target contexts and filesystem entitlements; it was written against Buildx 0.38), [Trivy](https://trivy.dev) on the `PATH`, `gh` authenticated for this repository, Python 3.12 or later, and about 25 GB free on the disk holding `~/.cache` and Docker's data. The script creates the `nojoin-release` builder itself, on the BuildKit image pinned in [docker/Dockerfile.buildkit](../docker/Dockerfile.buildkit), and replaces it when that pin moves. Pushing needs a `docker login ghcr.io` with a classic personal access token that has the `write:packages` scope and nothing else:
+
+```bash
+docker login ghcr.io -u <github-user> --password-stdin
+```
+
+Give the token an expiry and keep it to that scope. It can publish images under the project's name, so a broader token on the release host widens what a compromise of that host can do. Logs, the build output, and the worktree live under `~/.cache/nojoin-release/<version>/`; a successful run removes them and a failed one keeps them for inspection.
+
+Manual `workflow_dispatch` runs of release.yml re-verify and re-sign an existing tag's images and republish its notes, for instance after a transient failure. They target an existing release tag through `release_ref`, and only publish `latest` when `publish_latest=true` is set explicitly.
 
 ### Runtime Version Detection
 The backend API resolves the running server version from image build metadata (checking `NOJOIN_SERVER_VERSION` environment variable and `/app/.build-version` file), falling back to local `docs/VERSION` in development/testing. User-facing release metadata is resolved from the GitHub Releases API first, with GHCR tags and raw `docs/VERSION` file used as fallbacks.
@@ -644,6 +665,7 @@ The release pipeline is hardened to make published images reproducible, traceabl
 
 - Every third-party GitHub Action in [.github/workflows/](../.github/workflows/) is pinned to a full commit SHA with a trailing `# vX.Y.Z` comment. Do not reintroduce floating tags such as `@v5`; a mutable tag can be repointed at malicious code after review.
 - Every container base image in the Dockerfiles is pinned by `@sha256:` digest with the human-readable tag kept as a comment. The digest is the immutable identity of the image; the tag alone is mutable.
+- The BuildKit image that builds the release is pinned the same way, in [docker/Dockerfile.buildkit](../docker/Dockerfile.buildkit). Nothing builds that file: the release script reads its `FROM` line, and keeping the pin in a Dockerfile puts it under Dependabot's docker updates with the other bases.
 - When you intentionally upgrade an action or base image, update both the SHA/digest and the version comment in the same change.
 
 ### Dependency-Update Policy
@@ -730,48 +752,31 @@ A hold is a deliberate, dated and checked decision. If a held advisory ever rise
 
 ### Image Provenance, SBOM, and Signing
 
-Every published image is signed with cosign keyless (OIDC) signing and carries build-provenance and SBOM attestations (`provenance: mode=max`, `sbom: true` in the build step). The signature is bound to the release workflow identity, so both image build jobs (`server-release` and `worker-io-release`) require `id-token: write`. The workflow signs with cosign 3, whose signatures cosign 2 cannot find, and the provenance and SBOM are BuildKit attestations in the image index rather than cosign attestations. Operator verification commands live in [DEPLOYMENT.md](DEPLOYMENT.md#verifying-an-image-before-deploying).
+Every published image carries BuildKit build-provenance and SBOM attestations (`--provenance=mode=max --sbom=true` on the push in [scripts/release.py](../scripts/release.py)) and is signed with cosign keyless (OIDC) signing by the `sign-images` job in [release.yml](../.github/workflows/release.yml), which needs `id-token: write`. The signature is bound to the release workflow's identity, so operators verify every release, including those built before the move to the release host, with the same command. The workflow signs with cosign 3, whose signatures cosign 2 cannot find, and the provenance and SBOM are BuildKit attestations in the image index rather than cosign attestations. Operator verification commands live in [DEPLOYMENT.md](DEPLOYMENT.md#verifying-an-image-before-deploying).
+
+The images are built on the release host, and the provenance says so: it records the commit, the build arguments, and the pinned bases, with no builder ID from GitHub. The workflow does not take that on trust. Before signing, it checks each image's `org.opencontainers.image.revision` label against the tag's commit and confirms both attestations are present.
+
+Two properties tie the pushed image to the gates. The script builds from a clean `git worktree` of the release commit, so nothing untracked in a working checkout can reach an image. And it sets `SOURCE_DATE_EPOCH` to the commit time, which makes each image config identical from one bake to the next, so the script can require that every pushed config digest equals the one it scanned and smoke tested.
 
 ### Gated Tag Publication
 
-The release flow publishes the immutable `version` and commit-`sha` tags during the build, then publishes the rolling `latest` and `major.minor` tags from a separate `publish-mutable-tags` job only after vulnerability scanning, the image health smoke, and signing all pass. This means a build that fails a gate can briefly expose an immutable `vX.Y.Z` tag (with the run visibly failing) but can never advance the `latest` tag that operators pull by default. Keep this ordering intact when editing the release workflow.
+Nothing reaches the registry until every gate has passed on the host. The script then pushes the immutable `version` and commit-`sha` tags, and only after release.yml has verified and signed all four does the `publish-mutable-tags` job move the rolling `latest` and `major.minor` tags. A run that fails after the push, in signing for instance, leaves the immutable tags exposed with a visibly failed workflow run, but can never advance the `latest` tag that operators pull by default. Keep this ordering intact when editing the script or the workflow.
 
-### Validating Images Locally Before Cutting a Tag
+### Release Gates
 
-The scan gate fails on *fixable* CRITICAL/HIGH findings and always pulls a fresh vulnerability database, so a previously-green pinned base image can start failing as new CVEs are disclosed — a tag push is not guaranteed to publish even with no code change. Validate the four images locally before pushing (or re-pushing) a `vX.Y.Z` tag to avoid burning tag cycles on a blocked release.
+[scripts/release.py](../scripts/release.py) runs these against the images it has just built, before it pushes anything. `--dry-run` runs them alone.
 
-Install Trivy into `~/.local/bin`, which needs no sudo:
+**Vulnerability and secret scan.** Trivy scans each image's OCI layout with `--severity CRITICAL,HIGH --ignore-unfixed --exit-code 1`, the exceptions in [.github/trivyignore](../.github/trivyignore), and the secret-scanner allow rules in [.github/trivy-secret.yaml](../.github/trivy-secret.yaml). The vulnerability database is downloaded fresh on every run, so a previously green pinned base image can start failing as new CVEs are disclosed. Scanning the layouts directly rather than images loaded into Docker saves Trivy exporting the 9 GB worker images first.
+
+To install Trivy into `~/.local/bin`, which needs no sudo:
 
 ```bash
 curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b "$HOME/.local/bin"
 ```
 
-Build each image exactly as the release workflow does, then run the same gate against all four:
+**Health and non-root smoke.** The same images, loaded into Docker, boot from [docker-compose.example.yml](../docker-compose.example.yml) with their real dependencies (Postgres, Redis, the socket proxy) under a separate Compose project, `nojoin-release-smoke`, so they cannot collide with a stack running on the release host. The api and frontend must reach `healthy`. The script then checks the uid of each long-running process: the api's PID 1, the frontend, and `id -u` through the real entrypoint of the worker and worker-io images, which start as root only to repair `./data` ownership and then drop to `appuser` through `gosu`. The worker needs a GPU and preloaded models to boot, so the smoke stops at that uid check.
 
-```bash
-docker build -f docker/Dockerfile.api --build-arg NOJOIN_SERVER_VERSION=<version> -t nojoin-api:scan .
-docker build -f docker/Dockerfile.worker -t nojoin-worker:scan .
-docker build -f frontend/Dockerfile --build-arg NEXT_PUBLIC_API_URL=/api -t nojoin-frontend:scan frontend
-# worker-io (CLI OAuth AI mode) layers the Claude Code CLI onto the worker;
-# build it FROM the local worker:scan, mirroring the release job's dependency.
-docker build -f docker/Dockerfile.worker-io --build-arg WORKER_BASE_IMAGE=nojoin-worker:scan -t nojoin-worker-io:scan .
-
-for img in nojoin-api:scan nojoin-worker:scan nojoin-worker-io:scan nojoin-frontend:scan; do
-  trivy image --severity CRITICAL,HIGH --ignore-unfixed --ignorefile .github/trivyignore --exit-code 1 "$img"
-done
-```
-
-Trivy cannot see inside the Codex CLI, which `docker/Dockerfile.worker-io` installs as a stripped native binary. The build verifies both subscription CLIs against the npm registry's signatures and provenance attestations (`npm audit signatures`, which fails the build on a package that does not verify) and records the versions it installed, so the remaining check is against upstream advisories. Before cutting a tag, read the versions from the built image and look each up in the GitHub advisory database:
-
-```bash
-docker run --rm --entrypoint cat nojoin-worker-io:scan /usr/local/share/nojoin/cli-versions.json
-gh api 'advisories?ecosystem=npm&affects=@openai/codex@<version>' --jq '.[] | [.ghsa_id, .severity, .summary] | @tsv'
-gh api 'advisories?ecosystem=npm&affects=@anthropic-ai/claude-code@<version>' --jq '.[] | [.ghsa_id, .severity, .summary] | @tsv'
-```
-
-An empty result is a clean version. A hit means rebuilding the image once the fixed release is on the registry, since the CLIs are unpinned and a rebuild installs the latest. The same versions are in the image's SBOM attestation under the `Node.js` packages.
-
-These flags mirror the gate in [release.yml](../.github/workflows/release.yml). Building the worker pulls the large PyTorch/CUDA base on first run. Add `--scanners vuln` to focus on the CVE gate and skip Trivy's secret scanner, which can flag locally generated material (see below).
+**Subscription CLI advisories.** Trivy cannot see inside the Codex CLI, which [docker/Dockerfile.worker-io](../docker/Dockerfile.worker-io) installs as a stripped native binary. The build verifies both subscription CLIs against the npm registry's signatures and provenance attestations (`npm audit signatures`, which fails the build on a package that does not verify) and records the versions it installed in `/usr/local/share/nojoin/cli-versions.json`. The script reads that file and looks each version up in the GitHub advisory database. A hit means rebuilding once the fixed release is on npm, since the CLIs are unpinned and a rebuild installs the latest. The same versions are in the image's SBOM attestation under the `Node.js` packages.
 
 **Remediation patterns the `requirements/` files and lockfiles do not cover.** Trivy scans files present in the built image, so several classes of finding live outside the dependency graph and need an image-level fix:
 
@@ -780,11 +785,8 @@ These flags mirror the gate in [release.yml](../.github/workflows/release.yml). 
 - **An advisory whose version range is wrong.** Trivy and Dependabot both read GitHub's advisory ranges, so an error there outlives the real fix. CVE-2026-58659 in `lightning` was the recorded case: fixed in 2.6.6, with a published range of `< 2022.6.15` that no 2.x release could satisfy, until GitHub corrected the range on 2026-09-24 and the entry came out again. Confirm the fix in the package source, not from the release notes alone, pin every package that ships the affected code, then add a dated entry to [.github/trivyignore](../.github/trivyignore) that cites the evidence, and dismiss the Dependabot alert as `inaccurate`. The ignore file matches on CVE id alone, so the entry also masks a real regression if the pin is later lowered, and the entry should say so.
 - **Build tooling in runtime images.** Remove toolchain the runtime never executes: `npm` (the node base bundles a vulnerable `undici`) from the frontend runner, and `uv`/`uvx` (which bundle `rustls-webpki`) from the worker runtime. Each removal eliminates an inherited finding without affecting the running service.
 - **Kernel headers (`linux-libc-dev`).** These flag the in-image kernel *header* package, not the running kernel; a container shares the host kernel, so they are not a runtime exposure. Accept them with dated, justified entries in [.github/trivyignore](../.github/trivyignore) rather than chasing base-kernel versions, and remove the entries when a newer base ships the fix.
-- **Secrets in the build context.** [.dockerignore](../.dockerignore) excludes TLS key and certificate material so locally generated files (for example `nginx/cert.key` from [docker/init-ssl.sh](../docker/init-ssl.sh)) are never copied into an image. `.dockerignore` patterns need a `**/` prefix to match nested paths — a bare `*.key` only matches the context root. A clean CI checkout never contains this material, but a local build can, which is why the secret scanner may flag it locally and not in CI.
-
-### Health and Non-Root Smoke
-
-The `health-smoke` job brings up the freshly built api and frontend images with their real `docker-compose` dependencies (Postgres, Redis, the socket proxy) and waits for the production healthchecks to report `healthy`. It then asserts each running container's uid is non-root. The worker requires a GPU and preloaded models to boot, so its non-root `USER` is asserted from the published image config via `docker buildx imagetools inspect` (which reads the config without pulling the large layers) rather than by booting it. The rolling tags are not published unless this job passes.
+- **Secrets in the build context.** [.dockerignore](../.dockerignore) excludes TLS key and certificate material so locally generated files (for example `nginx/cert.key` from [docker/init-ssl.sh](../docker/init-ssl.sh)) are never copied into an image. `.dockerignore` patterns need a `**/` prefix to match nested paths: a bare `*.key` only matches the context root. The release script builds from a clean worktree, so this material never reaches a release image. A `docker build` from a working checkout can see it, so the secret scanner may flag a local build and not a release.
+- **Secret-scanner false positives in vendored packages.** The secret scanner matches patterns, and an SDK's docstrings can contain one. `anthropic` 1.14.0 quotes `{"type": "service_account"}`, the whole of what the `gcp-service-account` rule looks for. Add a narrow path allow rule to [.github/trivy-secret.yaml](../.github/trivy-secret.yaml) with a comment saying why the match is not a credential, rather than listing the rule id in `.github/trivyignore`, which would switch it off for every path.
 
 ### Automated Release Notes
 
