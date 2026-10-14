@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getErrorStatus } from "@/lib/errors";
 
 import api from "./client";
-import { exportAudio } from "./export";
+import { exportAudio, exportContent } from "./export";
 
 // The real axios instance runs, on its fetch adapter, against a stubbed fetch:
 // whether a status counts as success is axios's own decision.
@@ -71,5 +71,49 @@ describe("exportAudio", () => {
       (error: unknown) => getErrorStatus(error) === 202,
     );
     expect(createObjectURL).not.toHaveBeenCalled();
+  });
+});
+
+describe("exportContent", () => {
+  beforeEach(() => {
+    api.defaults.adapter = "fetch";
+    window.URL.createObjectURL = vi.fn(() => "blob:export");
+    window.URL.revokeObjectURL = vi.fn();
+  });
+
+  afterEach(() => {
+    api.defaults.adapter = originalAdapter;
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("sends each section as its own key, which is how FastAPI reads a list", async () => {
+    const fetchMock = vi.fn<(input: RequestInfo | URL) => Promise<Response>>(
+      async () =>
+        new Response("%PDF", {
+          status: 200,
+          headers: {
+            "content-type": "application/pdf",
+            "content-disposition": 'attachment; filename="20261014_Sync_FullExport.pdf"',
+          },
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await exportContent("rec-1", ["notes", "analytics"], "pdf", {
+      SPEAKER_00: "blue",
+    });
+
+    const requested = fetchMock.mock.calls[0][0];
+    const url = new URL(
+      requested instanceof Request ? requested.url : String(requested),
+      "http://localhost",
+    );
+    expect(url.pathname).toMatch(/\/transcripts\/rec-1\/export$/);
+    expect(url.searchParams.getAll("sections")).toEqual(["notes", "analytics"]);
+    expect(url.searchParams.get("export_format")).toBe("pdf");
+    expect(JSON.parse(url.searchParams.get("speaker_colors") ?? "{}")).toEqual({
+      SPEAKER_00: "blue",
+    });
   });
 });

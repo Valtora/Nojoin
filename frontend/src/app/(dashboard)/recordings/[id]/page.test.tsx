@@ -80,8 +80,6 @@ vi.mock("@/lib/api", () => ({
   updateMeetingEdgeFocus: vi.fn(),
   exportContent: vi.fn(),
   exportAudio: (...args: unknown[]) => exportAudio(...args),
-  ExportContentType: {},
-  ExportFormat: {},
 }));
 
 // Heavy child components are stubbed so the tests pin the page's own
@@ -131,12 +129,12 @@ vi.mock("@/components/ExportModal", () => ({
     onExport,
   }: {
     hasAudio: boolean;
-    onExport: (contentType: string, format: string) => void;
+    onExport: (selection: { kind: "audio" }) => void;
   }) => (
     <button
       data-testid="export-modal"
       data-has-audio={String(hasAudio)}
-      onClick={() => onExport("audio", "txt")}
+      onClick={() => onExport({ kind: "audio" })}
     />
   ),
 }));

@@ -20,8 +20,7 @@ import {
   updateUserNotes,
   updateMeetingEdgeFocus,
   exportContent,
-  ExportContentType,
-  ExportFormat,
+  type ExportSelection,
 } from "@/lib/api";
 import {
   clampMeetingEdgeContextLevel,
@@ -1096,18 +1095,20 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
     [meetingEdgeContextLevel],
   );
 
-  const handleExport = async (
-    contentType: ExportContentType,
-    format: ExportFormat,
-  ) => {
+  const handleExport = async (selection: ExportSelection) => {
     if (!recording) return;
-    if (contentType === "audio") {
+    if (selection.kind === "audio") {
       // Reports its own failures, with what went wrong.
       await recordingActions.exportAudio(recording.id, recording.name);
       return;
     }
     try {
-      await exportContent(recording.id, contentType, format);
+      await exportContent(
+        recording.id,
+        selection.sections,
+        selection.format,
+        speakerColors,
+      );
     } catch (error: unknown) {
       console.error("Export failed:", error);
       addNotification({
