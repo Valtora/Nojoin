@@ -7,7 +7,7 @@ import wave
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import or_
+from sqlalchemy import or_, text
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.exc import IntegrityError, InvalidRequestError
@@ -40,12 +40,19 @@ TRANSCODE_FAILED_SUFFIX = ".transcode_failed"
 # Terminally corrupt segments are quarantined under this suffix during finalize
 # so they stop counting as pending uploads and their sequence gap is accepted.
 SEGMENT_CORRUPT_SUFFIX = ".corrupt"
+# Every staged browser upload that still has to become a canonical WAV. FLAC is
+# normally decoded during its upload request, so a FLAC file left on disk means
+# that request died between storing and decoding it.
+STAGED_BROWSER_SEGMENT_SUFFIXES = frozenset({*BROWSER_AUDIO_SEGMENT_SUFFIXES, ".flac"})
 PENDING_TRANSCODE_SUFFIXES = frozenset(
-    {*BROWSER_AUDIO_SEGMENT_SUFFIXES, TRANSCODE_FAILED_SUFFIX}
+    {*STAGED_BROWSER_SEGMENT_SUFFIXES, TRANSCODE_FAILED_SUFFIX}
 )
 # A chunked import's parts are byte ranges of the uploaded file, not audio of
 # their own, so they are never probed for a duration.
 IMPORT_PART_SOURCE_KIND = "import_part"
+# First key of the two-key advisory lock, so these locks cannot collide with any
+# other advisory lock taken on a recording id. The value is arbitrary.
+RECORDING_AUDIO_LOCK_NAMESPACE = 417_001
 
 
 def _chunk_idempotency_key(*, source_kind: str, sequence: int, sha256: str) -> str:
@@ -72,17 +79,24 @@ def _build_insert_statement(session: Session, table):
     raise ValueError(f"Unsupported upsert dialect: {dialect}")
 
 
-def _lock_recording(session: Session, recording_id: int) -> None:
-    try:
-        from backend.models.recording import Recording
+def lock_recording_audio(session: Session, recording_id: int) -> None:
+    """Serialise chunk and window bookkeeping for one recording.
 
-        session.execute(
-            select(Recording.id).where(Recording.id == recording_id).with_for_update()
-        )
-    except Exception as exc:  # noqa: BLE001 -- boundary: row lock is best-effort (e.g. SQLite has no FOR UPDATE)
-        logger.debug(
-            "Best-effort row lock for recording %s skipped: %s", recording_id, exc
-        )
+    A transaction-scoped advisory lock rather than ``FOR UPDATE`` on the
+    recording row. The row lock also blocked every write to ``recordings``,
+    so segment uploads, live transcription and finalize all queued behind
+    whichever task was syncing (issue #417). SQLite runs one writer at a time
+    and has no advisory locks, so there it is a no-op.
+    """
+    if _dialect_name(session) != "postgresql":
+        return
+    session.execute(
+        text("SELECT pg_advisory_xact_lock(:namespace, :key)"),
+        {
+            "namespace": RECORDING_AUDIO_LOCK_NAMESPACE,
+            "key": recording_id & 0x7FFFFFFF,
+        },
+    )
 
 
 def _sha256_for_path(path: Path) -> str:
@@ -412,14 +426,13 @@ def _window_manifest_upsert_statement(
     )
 
 
-def _upsert_window_manifests(
+def write_window_manifests(
     session: Session,
-    *,
-    recording_id: int,
     manifest_payloads: list[dict[str, Any]],
-) -> list[RecordingAudioWindowManifest]:
+) -> None:
+    """Upsert manifest payloads without reading the recording's windows back."""
     if not manifest_payloads:
-        return []
+        return
 
     table = RecordingAudioWindowManifest.__table__
     # A multi-row insert binds every column of every row, so a long recording
@@ -431,6 +444,18 @@ def _upsert_window_manifests(
         session.execute(
             _window_manifest_upsert_statement(session, table, list(payload_batch))
         )
+
+
+def _upsert_window_manifests(
+    session: Session,
+    *,
+    recording_id: int,
+    manifest_payloads: list[dict[str, Any]],
+) -> list[RecordingAudioWindowManifest]:
+    if not manifest_payloads:
+        return []
+
+    write_window_manifests(session, manifest_payloads)
 
     return list(
         session.execute(
@@ -467,7 +492,7 @@ def sync_recording_audio_chunks_from_entries(
 ) -> list[RecordingAudioChunk]:
     if not disk_entries:
         return []
-    _lock_recording(session, recording_id)
+    lock_recording_audio(session, recording_id)
     ordered_entries = sorted(disk_entries, key=lambda item: item[0])
 
     existing_rows = (
@@ -593,7 +618,7 @@ def sync_recording_audio_window_manifests(
     source_kind: str,
     seal_tail: bool,
 ) -> list[RecordingAudioWindowManifest]:
-    _lock_recording(session, recording_id)
+    lock_recording_audio(session, recording_id)
     chunk_rows = list_recording_audio_chunks(
         session,
         recording_id,

@@ -37,13 +37,15 @@ Nojoin combines two browser-granted audio sources:
 - **Shared tab, window, or screen audio** for meeting participants and other system output.
 - **Microphone audio** for the local speaker.
 
-On desktop shared-audio capture, the browser mixes those sources in the Nojoin tab, uploads short audio segments to the backend, and the worker transcodes each segment to the canonical 16 kHz, two-channel WAV path used by live transcription and final processing. Channel 0 carries shared/system audio when available and channel 1 carries microphone audio; speech recognition can use a mono mix derived from those preserved channels.
+On desktop shared-audio capture, the browser mixes those sources in the Nojoin tab, resamples the mix to 16 kHz, and uploads it in segments of exactly two seconds, each a small lossless FLAC file. The backend decodes each segment straight into the canonical 16 kHz, two-channel WAV that live transcription and final processing read. Channel 0 carries shared/system audio when available and channel 1 carries microphone audio; speech recognition can use a mono mix derived from those preserved channels.
+
+Segments are cut by counting audio samples, so they join with no gap and the finished recording is exactly as long as the audio captured. Uploading takes about 0.15 Mbit/s while one source carries sound and about 0.3 Mbit/s while both do, because a silent channel costs almost nothing. The finished recording is stored as a FLAC file.
 
 The recording page shows those transcribed segments in a **Live Transcript** panel as each sentence finalizes, a few seconds behind the conversation. Where one channel clearly carried a line, the panel labels it **Microphone** or **Shared audio**. Those labels describe the audio source and not the speaker: the capture always produces two channels, so if you do not share tab audio, channel 0 is silent and everyone in the room arrives on the microphone channel. Speaker names appear only after the recording is processed.
 
 On mobile Chrome, Nojoin records only the phone microphone. The browser still uploads live segments into the same backend pipeline, but remote participants are captured only if the phone microphone can hear them from the room or device speaker. Keep the Nojoin tab open and the phone awake while recording.
 
-For support cases: segments are numbered from `0` and resume after the last uploaded one, and finalization skips a segment that repeatedly fails to transcode (logged as a `segment_corrupt_skipped` pipeline metric) rather than failing forever. [ARCHITECTURE.md](ARCHITECTURE.md) covers how the live and final pipelines fit together.
+For support cases: segments are numbered from `0` and resume after the last uploaded one. A segment that cannot be decoded is set aside and leaves a two-second gap rather than stopping the meeting, and finalization skips one that repeatedly fails to transcode; both are logged as a `segment_corrupt_skipped` pipeline metric. [ARCHITECTURE.md](ARCHITECTURE.md) covers how the live and final pipelines fit together.
 
 ## Before Your First Recording
 
@@ -110,7 +112,7 @@ Chrome on Android and iOS can start recording from the same **Start Meeting** bu
 
 - **Pause** keeps uploaded segments and stops new segment capture until you resume.
 - **Resume** reopens the browser share picker and continues with the next 0-based segment sequence.
-- **Stop** finalizes the recording after all uploaded segments finish transcoding, then queues final processing. The microphone and any shared tab or screen are released as soon as the recorded audio has been handed off, so the browser recording indicator disappears while Nojoin waits for the last segments to be processed; the meeting button names the current stage during that wait (stopping the recorder, uploading the last segments, releasing the microphone, finalizing). Stop works on a paused recording too, and does not need the original browser capture session to still be active.
+- **Stop** finalizes the recording once every recorded segment has uploaded, then queues final processing. While a stop is still sending queued audio, the recording controls say **Uploading** and show how much is left. The microphone and any shared tab or screen are released as soon as the recorded audio has been handed off, so the browser recording indicator disappears while Nojoin waits for the last segments to be processed; the meeting button names the current stage during that wait (stopping the recorder, uploading the last segments, releasing the microphone, finalizing). Stop works on a paused recording too, and does not need the original browser capture session to still be active.
 - **Discard** permanently removes a recording in one step. It works for any recording that has not finished: uploading, paused, queued, or processing. Discard revokes any running processing task, releases the capture lock, deletes the captured audio and derived files, and removes the meeting. Nojoin asks you to confirm first because this cannot be undone.
 
 Discard is available from the live recording controls, the floating recording badge, the resume-or-discard modal, and the recordings menu. Wherever you discard from, the meeting leaves the recordings list and the dashboard immediately, and the recording page closes if you were on it.
@@ -119,7 +121,7 @@ Closing the browser share picker with **Cancel** is different from Nojoin's in-a
 
 If you are recording in a shared-audio capture mode and click the browser's native **Stop sharing** button (or close the sharing indicator), Nojoin automatically detects that the sharing stream has ended. It will immediately stop and finalise the recording, saving all audio captured up to that point, and display a notification informing you that screen sharing ended and the recording was saved.
 
-Refreshing or closing the Nojoin tab (actual tab unload) during a recording moves that recording to `PAUSED`. Nojoin keeps uploaded segments, drops only the in-memory tail, and shows a mandatory resume-or-discard modal the next time you open the app.
+Refreshing or closing the Nojoin tab (actual tab unload) during a recording moves that recording to `PAUSED` and shows a mandatory resume-or-discard modal the next time you open the app. Segments the server already has are kept on the server. Segments recorded but not yet uploaded are kept in this browser's storage for the Nojoin site, and resuming or choosing **Stop and process** in the same browser uploads them first. Only the unfinished segment, less than two seconds of audio, is lost.
 
 An interruption that happened before any audio reached the server is cleared instead of being put to you as a decision. There is nothing to resume and nothing to keep, so Nojoin discards the empty recording, releases the capture lock, and tells you the recording was interrupted and needs starting again. This only applies to a capture the same browser tab lost: a recording paused any other way, or one that banked even a single segment, always goes to the modal.
 
@@ -200,13 +202,13 @@ The warning names one of three causes, and they need different things from you.
 - On mobile Chrome, keep Nojoin in the foreground and stop the phone locking.
 - If it happens repeatedly on Chrome for desktop, exempt Nojoin from tab suspension. See [Chrome Memory Saver](#chrome-memory-saver).
 
-**Nojoin could not reach the server.** Recording continued and the audio is queued in the browser; it uploads when the connection returns. Nothing is lost as long as the tab stays open, so leave it open until the shortfall clears. This is a server or network problem, not a browser one, and changing browser settings will not help.
+**Nojoin could not reach the server.** Recording continued and the audio is queued in the browser; it uploads when the connection returns. The queue is kept in the browser's storage, so even a tab closed before it drains loses nothing: reopen Nojoin in the same browser and resume, or choose **Stop and process**. This is a server or network problem, not a browser one, and changing browser settings will not help.
 
 **Neither could be established.** The warning says only how much audio is missing. Check both: that the tab has stayed open and the device awake, and that the connection to your Nojoin server is healthy.
 
 The warning can be dismissed with the close control. It stays dismissed unless the shortfall grows substantially further, so a problem that is getting worse will say so again.
 
-Nojoin reports this conservatively. The captured figure it compares against is measured from the audio segments the server has decoded, and that measurement runs slightly high, so a small shortfall may be reported as none at all. It will not report a shortfall that is not there.
+The captured figure is the audio the server has decoded, which is exact, so the warning reports a shortfall only when audio is missing.
 
 Audio still queued in the browser is not counted as missing, and the warning names it separately when there is any. A shortfall that persists after the queue drains is audio that is lost.
 
@@ -225,6 +227,10 @@ If you do see repeated shortfalls attributed to tab suspension on Chrome for des
 Nojoin cannot do this for you and cannot check whether it is done. No browser API lets a page opt out of Memory Saver, and none lets a page read whether Memory Saver is switched on. This is why the shortfall warning describes what it can measure rather than asserting a cause it cannot observe.
 
 Chrome documents the feature at [Memory Saver in Chrome](https://support.google.com/chrome/answer/12929150).
+
+### Uploads are behind
+
+When uploads fall more than about 30 seconds behind the recording, the recording controls say how far behind they are. The audio is recorded and kept in the browser, and it is sent as the connection allows. Keep the tab open; if it does close, nothing is lost as long as you return in the same browser.
 
 ### Stop did not finish
 

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import io
 import json
-import shutil
 import wave
 from pathlib import Path
 from types import SimpleNamespace
@@ -18,6 +17,7 @@ from sqlalchemy.pool import StaticPool
 from backend.api import deps
 from backend.api.deps import get_db
 from backend.api.v1.api import api_router
+from backend.tests.sqlite_schemas import RECORDING_AUDIO_CHUNK_CURSORS_SCHEMA
 
 TRUSTED_ORIGIN = "https://nojoin.example.com"
 BASE_URL = TRUSTED_ORIGIN
@@ -344,6 +344,7 @@ async def test_session_maker() -> sessionmaker:
         await connection.execute(text(TRANSCRIPTS_SCHEMA))
         await connection.execute(text(RECORDING_AUDIO_CHUNKS_SCHEMA))
         await connection.execute(text(RECORDING_AUDIO_WINDOW_MANIFESTS_SCHEMA))
+        await connection.execute(text(RECORDING_AUDIO_CHUNK_CURSORS_SCHEMA))
         await connection.execute(text(RECORDING_SPEAKERS_SCHEMA))
         await connection.execute(text(RECORDING_TAGS_SCHEMA))
         await connection.execute(text(TAGS_SCHEMA))
@@ -418,23 +419,6 @@ async def api_app(monkeypatch, tmp_path, test_session_maker: sessionmaker) -> Fa
         "send_task",
         lambda *args, **kwargs: SimpleNamespace(id="task-1"),
     )
-    monkeypatch.setattr(
-        recordings_module,
-        "concatenate_wavs",
-        lambda segment_paths, output_path: _fake_concatenate_wavs(
-            segment_paths, output_path
-        ),
-    )
-    monkeypatch.setattr(
-        recordings_module,
-        "_enforce_lossy_audio_bitrate_floor",
-        lambda *args, **kwargs: None,
-    )
-    monkeypatch.setattr(
-        recordings_module,
-        "get_audio_duration",
-        lambda *args, **kwargs: 0.5,
-    )
 
     app = FastAPI()
     app.include_router(api_router, prefix="/api/v1")
@@ -447,15 +431,6 @@ def _recording_temp_dir(root: Path, recording_id: int, *, create: bool) -> Path:
     if create:
         path.mkdir(parents=True, exist_ok=True)
     return path
-
-
-def _fake_concatenate_wavs(segment_paths: list[str], output_path: str) -> None:
-    if not segment_paths:
-        raise ValueError("No input segments provided.")
-
-    output = Path(output_path)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(segment_paths[0], output)
 
 
 @pytest.fixture

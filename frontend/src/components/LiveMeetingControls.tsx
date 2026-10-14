@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Pause, Play, Square, Trash2, X } from "lucide-react";
+import { AlertTriangle, CloudUpload, Pause, Play, Square, Trash2, X } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
 import SpeakerCapField from "@/components/SpeakerCapField";
@@ -21,6 +21,9 @@ interface LiveMeetingControlsProps {
   /** Extra controls for the `bar` variant, placed before the speaker cap. */
   barTrailing?: ReactNode;
 }
+
+// Below this the queue is ordinary upload latency, a segment or two.
+const UPLOAD_BACKLOG_NOTICE_SECONDS = 30;
 
 const DISCARD_CONFIRM_MESSAGE =
   "Discard this recording? This permanently deletes the in-progress meeting and its audio, and cannot be undone.";
@@ -58,6 +61,8 @@ export default function LiveMeetingControls({
     runtimeActive,
     status,
     stop,
+    stopStage,
+    uploadQueue,
   } = useCapture();
 
   const { addNotification } = useNotificationStore();
@@ -167,7 +172,46 @@ export default function LiveMeetingControls({
     }
   };
 
-  const statusLabel = isRecording ? "Recording" : "Paused";
+  // A stop can spend minutes sending queued audio, and calling that "Paused"
+  // made a working stop look stuck (issue #417).
+  const isFinalizing = status === "finalizing";
+  const statusLabel = isFinalizing
+    ? stopStage === "flushing-uploads" && uploadQueue.segments > 0
+      ? "Uploading"
+      : "Finishing"
+    : isRecording
+      ? "Recording"
+      : "Paused";
+
+  const showUploadBacklog = isFinalizing
+    ? uploadQueue.segments > 0
+    : uploadQueue.seconds >= UPLOAD_BACKLOG_NOTICE_SECONDS;
+  const uploadBacklogNotice = showUploadBacklog ? (
+    <div
+      className="density-surface-panel flex items-start gap-2 border border-status-info-border bg-status-info-bg px-3 py-2 text-xs text-status-info-fg"
+      role="status"
+    >
+      <CloudUpload className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+      <span className="flex-1">
+        {isFinalizing ? (
+          <>
+            <span className="font-semibold">
+              Uploading the last {formatTime(uploadQueue.seconds)} of audio
+            </span>{" "}
+            before processing starts. Keep this tab open until it finishes.
+          </>
+        ) : (
+          <>
+            <span className="font-semibold">
+              Uploads are {formatTime(uploadQueue.seconds)} behind.
+            </span>{" "}
+            The audio is kept in this browser and sent as the connection allows,
+            so keep this tab open.
+          </>
+        )}
+      </span>
+    </div>
+  ) : null;
 
   // The timer is wall clock, so it keeps counting whether or not audio is
   // reaching the server. This badge appears only when the two diverge, naming
@@ -270,6 +314,7 @@ export default function LiveMeetingControls({
           </button>
         </div>
         {coverageBadge}
+        {uploadBacklogNotice}
         {speakerCapField}
       </div>
     );
@@ -351,6 +396,7 @@ export default function LiveMeetingControls({
         </div>
 
         {coverageBadge}
+        {uploadBacklogNotice}
       </div>
     );
   }
@@ -420,6 +466,7 @@ export default function LiveMeetingControls({
       </div>
 
       {coverageBadge}
+      {uploadBacklogNotice}
       {speakerCapField}
     </div>
   );

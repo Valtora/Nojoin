@@ -4,11 +4,7 @@ import { detectCaptureSupport } from "./featureDetect";
 
 const displayMedia = (() => Promise.resolve({})) as MediaDevices["getDisplayMedia"];
 const userMedia = (() => Promise.resolve({})) as MediaDevices["getUserMedia"];
-const mediaRecorderCtor = class {
-  static isTypeSupported() {
-    return true;
-  }
-} as unknown as typeof MediaRecorder;
+const audioWorkletNodeCtor = class {} as unknown as typeof AudioWorkletNode;
 
 describe("capture feature detection", () => {
   it("detects supported Chromium on Windows", () => {
@@ -22,7 +18,7 @@ describe("capture feature detection", () => {
           platform: "Windows",
         },
         mediaDevices: { getDisplayMedia: displayMedia, getUserMedia: userMedia },
-        mediaRecorderCtor,
+        audioWorkletNodeCtor,
       }),
     ).toEqual({ supported: true, mode: "shared_audio" });
   });
@@ -38,7 +34,7 @@ describe("capture feature detection", () => {
           platform: "macOS",
         },
         mediaDevices: { getDisplayMedia: displayMedia, getUserMedia: userMedia },
-        mediaRecorderCtor,
+        audioWorkletNodeCtor,
       }),
     ).toEqual({ supported: true, mode: "shared_audio" });
   });
@@ -54,7 +50,7 @@ describe("capture feature detection", () => {
           platform: "macOS",
         },
         mediaDevices: { getDisplayMedia: displayMedia, getUserMedia: userMedia },
-        mediaRecorderCtor,
+        audioWorkletNodeCtor,
       }),
     ).toEqual({ supported: true, mode: "shared_audio" });
   });
@@ -66,7 +62,7 @@ describe("capture feature detection", () => {
         userAgent:
           "Mozilla/5.0 (X11; Linux x86_64; rv:126.0) Gecko/20100101 Firefox/126.0",
         mediaDevices: { getDisplayMedia: displayMedia, getUserMedia: userMedia },
-        mediaRecorderCtor,
+        audioWorkletNodeCtor,
       },
       expected: { supported: false, reason: "firefox" },
     },
@@ -76,7 +72,7 @@ describe("capture feature detection", () => {
         userAgent:
           "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15",
         mediaDevices: { getDisplayMedia: displayMedia, getUserMedia: userMedia },
-        mediaRecorderCtor,
+        audioWorkletNodeCtor,
       },
       expected: { supported: false, reason: "safari" },
     },
@@ -91,7 +87,7 @@ describe("capture feature detection", () => {
           platform: "Android",
         },
         mediaDevices: { getDisplayMedia: displayMedia, getUserMedia: userMedia },
-        mediaRecorderCtor,
+        audioWorkletNodeCtor,
       },
       expected: { supported: false, reason: "mobile" },
     },
@@ -105,7 +101,7 @@ describe("capture feature detection", () => {
           platform: "Linux",
         },
         mediaDevices: {},
-        mediaRecorderCtor,
+        audioWorkletNodeCtor,
       },
       expected: { supported: false, reason: "unknown" },
     },
@@ -124,7 +120,7 @@ describe("capture feature detection", () => {
           platform: "Android",
         },
         mediaDevices: { getUserMedia: userMedia },
-        mediaRecorderCtor,
+        audioWorkletNodeCtor,
       }),
     ).toEqual({ supported: true, mode: "microphone_only" });
   });
@@ -135,8 +131,26 @@ describe("capture feature detection", () => {
         userAgent:
           "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/136.0.0.0 Mobile/15E148 Safari/604.1",
         mediaDevices: { getUserMedia: userMedia },
-        mediaRecorderCtor,
+        audioWorkletNodeCtor,
       }),
     ).toEqual({ supported: true, mode: "microphone_only" });
+  });
+
+  it("refuses a browser that cannot run the capture worklet", () => {
+    // Capture takes its audio from an AudioWorklet, so without one there is
+    // nothing to record however capable the rest of the browser is.
+    expect(
+      detectCaptureSupport({
+        userAgent:
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+        userAgentData: {
+          brands: [{ brand: "Google Chrome", version: "136" }],
+          mobile: false,
+          platform: "Windows",
+        },
+        mediaDevices: { getDisplayMedia: displayMedia, getUserMedia: userMedia },
+        audioWorkletNodeCtor: null,
+      }),
+    ).toEqual({ supported: false, reason: "unknown" });
   });
 });

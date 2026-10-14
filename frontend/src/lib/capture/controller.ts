@@ -22,10 +22,17 @@ import { CaptureLifecycle, sendPauseBeacon } from "./lifecycle";
 import { createCaptureMixer, type CaptureMixer } from "./mixer";
 import { pickCaptureSource, PickSourceError, type PickedCaptureSources } from "./pickSource";
 import {
+  CAPTURE_SEGMENT_SECONDS,
   createBrowserRecorder,
   type BrowserRecorder,
   type RecorderStallInfo,
 } from "./recorder";
+import {
+  contiguousSegmentsAfter,
+  createSegmentStore,
+  type SegmentStore,
+  type StoredSegment,
+} from "./segmentStore";
 import {
   buildCaptureSourceReportPayload,
   logCaptureSourceReport,
@@ -65,8 +72,14 @@ interface ActiveRuntime {
   mediaReleased?: boolean;
 }
 
-/** Nominal length of one recorded segment. Matches the recorder's timeslice. */
-const CAPTURE_TIMESLICE_SECONDS = 2;
+/**
+ * Length of one recorded segment. Exact rather than nominal: the recorder cuts
+ * segments by counting frames, so only a segment ended by a pause or a stop is
+ * shorter.
+ */
+const CAPTURE_TIMESLICE_SECONDS = CAPTURE_SEGMENT_SECONDS;
+
+const EMPTY_UPLOAD_QUEUE = { segments: 0, seconds: 0 };
 
 const sequenceToElapsedSeconds = (lastSequence: number) =>
   lastSequence >= 0 ? (lastSequence + 1) * CAPTURE_TIMESLICE_SECONDS : 0;
@@ -249,6 +262,8 @@ export class CaptureController {
 
   private readonly wakeLock: CaptureWakeLock = createCaptureWakeLock();
 
+  private readonly segmentStore: SegmentStore = createSegmentStore();
+
   constructor() {
     const pausedContext = readPausedCaptureContext();
     this.state = {
@@ -266,6 +281,7 @@ export class CaptureController {
       stopStage: null,
       coverageWarning: null,
       coverageWarningDismissedAt: null,
+      uploadQueue: EMPTY_UPLOAD_QUEUE,
     };
 
     this.lifecycle = new CaptureLifecycle({
@@ -574,12 +590,22 @@ export class CaptureController {
       }
 
       resumeResponse = await resumeRecordingCapture(targetRecordingId);
+      // Audio a previous page recorded but never uploaded goes first, and new
+      // audio continues numbering after it.
+      const restoredSegments = await this.loadQueuedSegments(
+        targetRecordingId,
+        resumeResponse.last_sequence,
+      );
+      const lastRecordedSequence =
+        restoredSegments.at(-1)?.sequence ?? resumeResponse.last_sequence;
       await this.activateRuntime({
         recordingId: targetRecordingId,
-        startSequence: resumeResponse.last_sequence + 1,
+        startSequence: lastRecordedSequence + 1,
+        uploadFromSequence: resumeResponse.last_sequence + 1,
+        restoredSegments,
         sources,
         captureReport: sources.captureReport,
-        elapsedSeconds: sequenceToElapsedSeconds(resumeResponse.last_sequence),
+        elapsedSeconds: sequenceToElapsedSeconds(lastRecordedSequence),
       });
       const captureReport = sources.captureReport;
       sources = null;
@@ -588,7 +614,6 @@ export class CaptureController {
         status: "recording",
         recordingId: targetRecordingId,
         lastSequence: resumeResponse.last_sequence,
-        elapsedSeconds: sequenceToElapsedSeconds(resumeResponse.last_sequence),
         error: null,
       });
       await this.reportCaptureSourceAttempt(
@@ -680,11 +705,17 @@ export class CaptureController {
         // the microphone/tab capture now instead of keeping the tracks (and
         // the browser recording indicator) live through the finalize retries.
         await this.releaseRuntimeMedia();
+      } else {
+        await this.uploadStoredSegments(targetRecordingId);
       }
 
       this.setStopStage("finalizing");
-      const recording = await this.finalizeRecordingWhenReady(targetRecordingId);
+      const recording = await this.finalizeRecordingWhenReady(
+        targetRecordingId,
+        hadRuntime ? this.state.elapsedSeconds : undefined,
+      );
       clearPausedCaptureContext();
+      await this.segmentStore.clear(targetRecordingId).catch(() => {});
       await this.disposeRuntime();
       this.reportCoverageOnStop(recording);
       this.setState({
@@ -776,6 +807,7 @@ export class CaptureController {
     }
 
     await discardRecordingCapture(targetRecordingId);
+    await this.segmentStore.clear(targetRecordingId).catch(() => {});
     clearPausedCaptureContext();
     this.resetCoverageTracking();
     this.setState({
@@ -835,6 +867,12 @@ export class CaptureController {
       return false;
     }
 
+    // Audio recorded but never uploaded is still audio worth the user's decision.
+    const queued = await this.segmentStore.list(paused.id).catch(() => []);
+    if (queued.length > 0) {
+      return false;
+    }
+
     await this.cancel(paused.id);
     useNotificationStore.getState().addNotification({
       type: "warning",
@@ -845,9 +883,73 @@ export class CaptureController {
     return true;
   };
 
+  /**
+   * The stored segments that continue what the server holds.
+   *
+   * Anything the server already has, or anything past a gap, is removed from
+   * the store: the first is uploaded, the second could never be finalized.
+   */
+  private loadQueuedSegments = async (
+    recordingId: RecordingId,
+    serverLastSequence: number,
+  ): Promise<StoredSegment[]> => {
+    const stored = await this.segmentStore.list(recordingId).catch((error: unknown) => {
+      console.warn("[capture] could not read queued segments from the browser", error);
+      return [] as StoredSegment[];
+    });
+    const usable = contiguousSegmentsAfter(stored, serverLastSequence);
+    const usableSequences = new Set(usable.map((segment) => segment.sequence));
+    for (const segment of stored) {
+      if (!usableSequences.has(segment.sequence)) {
+        void this.segmentStore.remove(recordingId, segment.sequence).catch(() => {});
+      }
+    }
+    return usable;
+  };
+
+  /**
+   * Uploads what a previous page recorded but never sent, before a stop.
+   *
+   * This is the stop for a recording paused by a closed or reloaded tab: there
+   * is no live uploader, only what the store kept.
+   */
+  private uploadStoredSegments = async (recordingId: RecordingId) => {
+    const stored = await this.segmentStore.list(recordingId).catch(() => []);
+    if (stored.length === 0) {
+      return;
+    }
+    this.setStopStage("flushing-uploads");
+    // Pausing an already paused recording changes nothing and reports the last
+    // sequence the server holds.
+    const response = await pauseRecordingCapture(recordingId);
+    const segments = await this.loadQueuedSegments(recordingId, response.last_sequence);
+    if (segments.length === 0) {
+      return;
+    }
+    const uploader = createSegmentUploader({
+      recordingId,
+      initialSequence: response.last_sequence + 1,
+      store: this.segmentStore,
+      onQueueChange: (uploadQueue) => {
+        this.setState({ uploadQueue });
+      },
+    });
+    uploader.restore(segments);
+    try {
+      await uploader.waitForIdle({ timeoutMs: UPLOAD_FLUSH_TIMEOUT_MS });
+    } finally {
+      uploader.dispose();
+      this.setState({ uploadQueue: EMPTY_UPLOAD_QUEUE });
+    }
+  };
+
   private activateRuntime = async (options: {
     recordingId: RecordingId;
+    /** First sequence the recorder numbers new audio with. */
     startSequence: number;
+    /** First sequence the server is missing, when queued audio precedes new audio. */
+    uploadFromSequence?: number;
+    restoredSegments?: StoredSegment[];
     sources: PickedCaptureSources;
     captureReport: CaptureSourceReportSnapshot;
     elapsedSeconds?: number;
@@ -863,7 +965,11 @@ export class CaptureController {
 
     const uploader = createSegmentUploader({
       recordingId: options.recordingId,
-      initialSequence: options.startSequence,
+      initialSequence: options.uploadFromSequence ?? options.startSequence,
+      store: this.segmentStore,
+      onQueueChange: (uploadQueue) => {
+        this.setState({ uploadQueue });
+      },
       onUploaded: (sequence) => {
         this.setState({
           lastSequence: sequence,
@@ -889,11 +995,15 @@ export class CaptureController {
       },
     });
 
+    if (options.restoredSegments?.length) {
+      uploader.restore(options.restoredSegments);
+    }
+
     const recorder = createBrowserRecorder({
-      stream: mixer.outputStream,
+      source: mixer.pcmSource,
       startSequence: options.startSequence,
-      onChunk: ({ sequence, blob }) => {
-        uploader.enqueue(sequence, blob);
+      onChunk: ({ sequence, blob, durationSeconds }) => {
+        uploader.enqueue(sequence, blob, durationSeconds);
       },
       onError: (error) => {
         this.setState({ status: "error", error: error.message });
@@ -1008,11 +1118,9 @@ export class CaptureController {
   /**
    * Asks the backend how much audio it holds, and re-judges coverage.
    *
-   * The client cannot answer this itself. Multiplying the last sequence number
-   * by the timeslice under-counts, because a segment carries slightly more than
-   * the nominal timeslice: each roll flushes whatever accumulated while it was
-   * stopping. Over an hour that is around 10%, enough to report minutes missing
-   * from recordings that lost nothing.
+   * The server's figure is the one that counts: it is what was acknowledged
+   * and decoded, and a segment the browser counted as sent but the server
+   * quarantined as corrupt is not audio the meeting has.
    */
   private pollCapturedAudio = async () => {
     const recordingId = this.state.recordingId;
@@ -1098,18 +1206,9 @@ export class CaptureController {
     );
   };
 
-  /**
-   * Recorded audio the browser is still holding, estimated from the queue.
-   *
-   * Approximate for the same reason the captured figure is measured rather than
-   * derived: a segment carries a little more than the nominal timeslice. It is
-   * only ever subtracted from a shortfall, so the bias makes the warning
-   * slightly readier to fire, never readier to stay silent.
-   */
-  private queuedAudioSeconds = (): number => {
-    const pending = this.runtime?.uploader.pendingSegmentCount() ?? 0;
-    return pending * CAPTURE_TIMESLICE_SECONDS;
-  };
+  /** Recorded audio the browser is still holding, measured from the queue. */
+  private queuedAudioSeconds = (): number =>
+    this.runtime?.uploader.pendingAudioSeconds() ?? 0;
 
   /**
    * Compares the audio the server holds against wall-clock recording time.
@@ -1237,12 +1336,15 @@ export class CaptureController {
     this.evaluateCoverage();
   };
 
-  private finalizeRecordingWhenReady = async (recordingId: RecordingId) => {
+  private finalizeRecordingWhenReady = async (
+    recordingId: RecordingId,
+    clientElapsedSeconds?: number,
+  ) => {
     const maxAttempts = FINALIZE_RETRY_DELAYS_MS.length;
     try {
       for (let attempt = 0; ; attempt += 1) {
         try {
-          return await finalizeRecordingCapture(recordingId);
+          return await finalizeRecordingCapture(recordingId, { clientElapsedSeconds });
 
         } catch (error: unknown) {
           const detail = error instanceof AxiosError ? error.response?.data?.detail : null;
@@ -1343,7 +1445,11 @@ export class CaptureController {
     await this.releaseRuntimeMedia();
     this.runtime = null;
     runtime.uploader.dispose();
-    this.setState({ levels: DEFAULT_CAPTURE_LEVELS, runtimeActive: false });
+    this.setState({
+      levels: DEFAULT_CAPTURE_LEVELS,
+      runtimeActive: false,
+      uploadQueue: EMPTY_UPLOAD_QUEUE,
+    });
   };
 
   /** Clears everything tracked per-recording, so nothing carries over. */

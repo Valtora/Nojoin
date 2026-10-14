@@ -79,11 +79,8 @@ export type CaptureCoverageCause =
 /**
  * Divergence between wall-clock recording time and the audio the server holds.
  *
- * `capturedSeconds` comes from the backend's sum of transcoded segment
- * durations, not from multiplying the sequence number by the timeslice: a
- * segment carries slightly more than the nominal timeslice, and assuming
- * otherwise under-counts captured audio by around 10% over an hour, enough to
- * report a shortfall on a recording that has lost nothing.
+ * `capturedSeconds` is the backend's sum of the segments it decoded, which is
+ * what the meeting actually has.
  */
 export interface CaptureCoverageWarning {
   capturedSeconds: number;
@@ -95,9 +92,7 @@ export interface CaptureCoverageWarning {
   missingSeconds: number;
   /**
    * Recorded, still queued in the browser, not yet acknowledged by the server.
-   * Estimated from the queue length rather than measured, so it is approximate
-   * in the same direction as the timeslice. This audio is not lost; it uploads
-   * when the server answers again.
+   * This audio is not lost; it uploads when the server answers again.
    */
   queuedSeconds: number;
   cause: CaptureCoverageCause;
@@ -124,6 +119,17 @@ export interface CaptureState {
    * meeting.
    */
   coverageWarningDismissedAt: number | null;
+  /**
+   * Audio recorded but not yet acknowledged by the server. Normally a segment
+   * or two; it grows when uploads cannot keep up, and it is what a stop waits
+   * to send before the recording can be finalized.
+   */
+  uploadQueue: UploadQueueSize;
+}
+
+export interface UploadQueueSize {
+  segments: number;
+  seconds: number;
 }
 
 export interface StartCaptureResult {

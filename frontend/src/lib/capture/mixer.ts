@@ -1,6 +1,15 @@
+import {
+  createPortPcmSource,
+  PCM_TAP_BLOCK_FRAMES,
+  PCM_TAP_MODULE_URL,
+  PCM_TAP_PROCESSOR_NAME,
+  type PcmSource,
+} from "./pcm/tapSource";
+
 export interface CaptureMixer {
   context: AudioContext;
-  outputStream: MediaStream;
+  /** Raw two-channel audio: channel 0 shared/system, channel 1 microphone. */
+  pcmSource: PcmSource;
   systemAnalyser: AnalyserNode;
   microphoneAnalyser: AnalyserNode;
   mixedAnalyser: AnalyserNode;
@@ -17,7 +26,14 @@ export interface CreateCaptureMixerOptions {
   systemGain?: number;
   microphoneGain?: number;
   audioContextFactory?: () => AudioContext;
+  audioWorkletNodeFactory?: (
+    context: AudioContext,
+    name: string,
+    options: AudioWorkletNodeOptions,
+  ) => AudioWorkletNode;
 }
+
+const CAPTURE_CHANNEL_COUNT = 2;
 
 export interface AnalyserMetrics {
   rms: number;
@@ -133,7 +149,6 @@ export const createCaptureMixer = async (
     await context.resume();
   }
 
-  const destination = context.createMediaStreamDestination();
   const hasDisplayAudio = Boolean(
     options.displayStream &&
       typeof options.displayStream.getAudioTracks === "function" &&
@@ -166,7 +181,38 @@ export const createCaptureMixer = async (
   const microphoneAutomaticGainNode = context.createGain();
   microphoneAutomaticGainNode.gain.value = 1;
 
-  const sourceMerger = context.createChannelMerger(2);
+  const sourceMerger = context.createChannelMerger(CAPTURE_CHANNEL_COUNT);
+
+  try {
+    await context.audioWorklet.addModule(PCM_TAP_MODULE_URL);
+  } catch (error: unknown) {
+    await context.close().catch(() => {});
+    throw new Error(
+      "Nojoin could not load its audio capture module. Reload the page and try again.",
+      { cause: error },
+    );
+  }
+  const tapNode = (
+    options.audioWorkletNodeFactory ??
+    ((targetContext, name, nodeOptions) =>
+      new AudioWorkletNode(targetContext, name, nodeOptions))
+  )(context, PCM_TAP_PROCESSOR_NAME, {
+    numberOfInputs: 1,
+    numberOfOutputs: 1,
+    outputChannelCount: [CAPTURE_CHANNEL_COUNT],
+    channelCount: CAPTURE_CHANNEL_COUNT,
+    channelCountMode: "explicit",
+    channelInterpretation: "discrete",
+    processorOptions: {
+      blockFrames: PCM_TAP_BLOCK_FRAMES,
+      channelCount: CAPTURE_CHANNEL_COUNT,
+    },
+  });
+  const pcmSource = createPortPcmSource(
+    tapNode.port,
+    context.sampleRate,
+    CAPTURE_CHANNEL_COUNT,
+  );
 
   systemSource.connect(systemAnalyser);
   microphoneSource.connect(microphoneAnalyser);
@@ -176,8 +222,11 @@ export const createCaptureMixer = async (
   microphoneGainNode.connect(microphoneAutomaticGainNode);
   systemAutomaticGainNode.connect(sourceMerger, 0, 0);
   microphoneAutomaticGainNode.connect(sourceMerger, 0, 1);
-  sourceMerger.connect(mixedAnalyser);
-  mixedAnalyser.connect(destination);
+  // The tap sits upstream of the mixed analyser. An analyser with nothing
+  // connected after it is pulled by the audio graph on every render quantum,
+  // which is what keeps the waveform's analysers live, so the tap renders too.
+  sourceMerger.connect(tapNode);
+  tapNode.connect(mixedAnalyser);
 
   const systemSamples = new Uint8Array(systemAnalyser.fftSize);
   const microphoneSamples = new Uint8Array(microphoneAnalyser.fftSize);
@@ -227,7 +276,7 @@ export const createCaptureMixer = async (
 
   return {
     context,
-    outputStream: destination.stream,
+    pcmSource,
     systemAnalyser,
     microphoneAnalyser,
     mixedAnalyser,
@@ -243,6 +292,8 @@ export const createCaptureMixer = async (
         microphoneGainNode.gain.value * microphoneAutomaticGainNode.gain.value,
       ),
     dispose: async () => {
+      pcmSource.close();
+      tapNode.disconnect();
       mixedAnalyser.disconnect();
       systemAnalyser.disconnect();
       microphoneAnalyser.disconnect();

@@ -6,6 +6,9 @@ mcp==2.3.0
 docker==7.2.0
 celery[redis]==5.6.3
 numpy==2.4.6
+# Decodes the FLAC segments browser capture uploads and writes the FLAC master
+# at finalize, in process. Pinned with worker.txt.
+soundfile==0.14.0
 openai>=3.28.0
 anthropic>=1.13.0
 google-genai>=2.29.0

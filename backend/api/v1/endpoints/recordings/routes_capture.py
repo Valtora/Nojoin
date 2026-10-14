@@ -28,6 +28,10 @@ from backend.processing.speaker_cap import (
     MIN_SPEAKER_CAP,
     normalize_speaker_cap,
 )
+from backend.utils.browser_capture_audio import (
+    BROWSER_FLAC_SEGMENT_SUFFIX,
+    BrowserAudioFormatError,
+)
 from backend.utils.rate_limit import enforce_upload_concurrency
 from backend.utils.recording_audio_sync import BROWSER_AUDIO_SEGMENT_SUFFIXES
 from backend.utils.time import utc_now
@@ -60,14 +64,20 @@ def _record_finalize_capture_metrics(
     chunk_rows,
     duration_seconds,
     finalized_from_paused: bool,
+    client_elapsed_seconds: float | None = None,
 ) -> None:
     """Emit the finalize-time capture diagnostics.
 
-    ``capture_coverage`` compares the audio actually stored against the wall-clock
-    span of the session. A browser tab that the OS or the browser suspends stops
-    feeding its MediaRecorder without surfacing any error, so a healthy-looking
-    recording can be missing large stretches of a meeting (issue #166). Coverage
-    is the only server-side signal that this happened.
+    ``capture_coverage`` compares the audio actually stored against how long the
+    capture ran. A browser tab that the OS or the browser suspends stops feeding
+    the recorder without surfacing any error, so a healthy-looking recording can
+    be missing large stretches of a meeting (issue #166). Coverage is the only
+    server-side signal that this happened.
+
+    The ratio uses the recording time the browser measured when it sent one.
+    The wall span runs from creation to the last upload, so it also counts
+    pauses and the time spent draining an upload backlog after Stop, which
+    reported a recording with nothing missing at 90% (issue #417).
     """
     try:
         if finalized_from_paused:
@@ -80,6 +90,7 @@ def _record_finalize_capture_metrics(
 
         captured_ms = sum(int(row.duration_ms or 0) for row in chunk_rows)
         wall_span_seconds = _capture_wall_span_seconds(recording)
+        reference_seconds = client_elapsed_seconds or wall_span_seconds
         payload = {
             "public_id": recording.public_id,
             "chunk_count": len(chunk_rows),
@@ -90,9 +101,12 @@ def _record_finalize_capture_metrics(
             "wall_span_seconds": (
                 round(wall_span_seconds, 2) if wall_span_seconds else None
             ),
+            "client_elapsed_seconds": (
+                round(client_elapsed_seconds, 2) if client_elapsed_seconds else None
+            ),
             "coverage_ratio": (
-                round((captured_ms / 1000.0) / wall_span_seconds, 4)
-                if wall_span_seconds
+                round((captured_ms / 1000.0) / reference_seconds, 4)
+                if reference_seconds
                 else None
             ),
         }
@@ -193,6 +207,10 @@ async def resume_upload(
     recording.client_status = ClientStatus.RECORDING
     recording.last_activity_at = utc_now()
     db.add(recording)
+    # A resume after a failed stop follows a finalize that sealed the chunks.
+    await recordings_module._reopen_recording_audio_cursor(
+        db, recording_id=recording.id
+    )
     await db.commit()
     await db.refresh(recording)
 
@@ -201,6 +219,75 @@ async def resume_upload(
         status=recording.status,
         last_sequence=recordings_module._get_last_uploaded_sequence(recording.id),
     )
+
+
+async def _store_uploaded_segment(
+    db: AsyncSession,
+    *,
+    recording_id: int,
+    sequence: int,
+    segment_suffix: str,
+    segment_path: Path,
+    temp_dir: Path,
+) -> bool:
+    """Bank an uploaded segment. Returns whether it reached the live lane.
+
+    FLAC is decoded and registered here, which is all a segment needs before
+    live transcription can read it. Older clients' WAV registers directly, and
+    their compressed formats wait for the transcode task.
+    """
+    if segment_suffix == BROWSER_FLAC_SEGMENT_SUFFIX:
+        return await recordings_module._accept_browser_flac_segment(
+            db,
+            recording_id=recording_id,
+            sequence=sequence,
+            flac_path=segment_path,
+            temp_dir=temp_dir,
+        )
+    if segment_suffix == ".wav":
+        row = await recordings_module._register_recording_audio_chunk(
+            db,
+            recording_id=recording_id,
+            sequence=sequence,
+            storage_path=segment_path,
+            temp_dir=temp_dir,
+        )
+        return row is not None
+    return False
+
+
+async def _dispatch_segment_followup(
+    *, recording_id: int, sequence: int, segment_suffix: str, live_ready: bool
+) -> None:
+    if live_ready:
+        if not recordings_module.config_manager.get("enable_live_transcription"):
+            return
+        try:
+            await dispatch_task(
+                "backend.processing.live_transcribe.transcribe_segment_live_task",
+                args=[recording_id, sequence],
+            )
+        except Exception as e:  # noqa: BLE001 -- boundary: live transcription is best-effort; the segment is still stored
+            logger.warning(
+                "Failed to dispatch live transcription task for recording %s segment %s: %s",
+                recording_id,
+                sequence,
+                e,
+            )
+        return
+    if segment_suffix in BROWSER_AUDIO_SEGMENT_SUFFIXES:
+        try:
+            await dispatch_task(
+                "backend.processing.segment_transcode.transcode_segment_task",
+                args=[recording_id, sequence],
+            )
+        except Exception as e:  # noqa: BLE001 -- boundary: transcoding is retried at finalise; the segment is still stored
+            logger.warning(
+                "Failed to dispatch segment transcode task for recording %s segment %s: %s",
+                recording_id,
+                sequence,
+                e,
+            )
 
 
 @router.post("/{recording_id}/segment")
@@ -238,21 +325,16 @@ async def upload_segment(
                 dest_path=str(segment_path),
                 max_size=UPLOAD_LIMIT_SEGMENT,
             )
-            if segment_suffix == ".wav":
-                await recordings_module._sync_recording_audio_chunks_from_directory(
-                    db,
-                    recording_id=recording.id,
-                    source_kind="browser",
-                    suffix=".wav",
-                )
-                await recordings_module._sync_recording_audio_window_manifests(
-                    db,
-                    recording_id=recording.id,
-                    source_kind="browser",
-                    seal_tail=False,
-                )
-            recording.last_activity_at = utc_now()
-            db.add(recording)
+            file_size = segment_path.stat().st_size
+            live_ready = await _store_uploaded_segment(
+                db,
+                recording_id=recording.id,
+                sequence=sequence,
+                segment_suffix=segment_suffix,
+                segment_path=segment_path,
+                temp_dir=recording_temp_dir,
+            )
+            await recordings_module._touch_recording_last_activity(db, recording.id)
             await db.commit()
         except HTTPException:
             raise
@@ -271,7 +353,6 @@ async def upload_segment(
             )
 
     try:
-        file_size = segment_path.stat().st_size if segment_path.exists() else 0
         recordings_module.record_pipeline_metric(
             stage="audio_chunk_uploaded",
             recording_id=recording.id,
@@ -290,34 +371,12 @@ async def upload_segment(
             exc,
         )
 
-    if segment_suffix == ".wav" and recordings_module.config_manager.get(
-        "enable_live_transcription"
-    ):
-        try:
-            await dispatch_task(
-                "backend.processing.live_transcribe.transcribe_segment_live_task",
-                args=[recording.id, sequence],
-            )
-        except Exception as e:  # noqa: BLE001 -- boundary: live transcription is best-effort; the segment is still stored
-            logger.warning(
-                "Failed to dispatch live transcription task for recording %s segment %s: %s",
-                recording.id,
-                sequence,
-                e,
-            )
-    elif segment_suffix in BROWSER_AUDIO_SEGMENT_SUFFIXES:
-        try:
-            await dispatch_task(
-                "backend.processing.segment_transcode.transcode_segment_task",
-                args=[recording.id, sequence],
-            )
-        except Exception as e:  # noqa: BLE001 -- boundary: transcoding is retried at finalise; the segment is still stored
-            logger.warning(
-                "Failed to dispatch segment transcode task for recording %s segment %s: %s",
-                recording.id,
-                sequence,
-                e,
-            )
+    await _dispatch_segment_followup(
+        recording_id=recording.id,
+        sequence=sequence,
+        segment_suffix=segment_suffix,
+        live_ready=live_ready,
+    )
 
     return {"status": "received", "segment": sequence}
 
@@ -370,9 +429,43 @@ async def log_capture_source_report(
     return {"status": "logged"}
 
 
+async def _abandon_failed_master(
+    db: AsyncSession, recording: Recording, final_audio_path: str
+) -> None:
+    """Set a recording's segments aside after its master could not be built."""
+    failed_root: Path | None = None
+    try:
+        failed_root = recordings_module.move_recording_upload_to_failed(
+            recording.id, logger=logger
+        )
+    except Exception as move_error:  # noqa: BLE001 -- boundary: the move is cleanup; the original error is what the client needs
+        logger.error(f"Failed to move segments to failed dir: {move_error}")
+    await recordings_module._mark_recording_audio_chunks_failed(
+        db,
+        recording_id=recording.id,
+        failed_root=failed_root,
+    )
+    await db.commit()
+
+    recordings_module.delete_recording_artifacts(
+        recording_id=recording.id,
+        audio_path=final_audio_path,
+        proxy_path=None,
+        logger=logger,
+    )
+
+
 @router.post("/{recording_id}/finalize", response_model=RecordingPublicRead)
 async def finalize_upload(
     recording_id: str,
+    client_elapsed_seconds: Optional[float] = Query(
+        None,
+        ge=0,
+        description=(
+            "Recording time the browser measured, pauses excluded. Used only for "
+            "the capture coverage metric."
+        ),
+    ),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_recording_client_user),
 ):
@@ -397,6 +490,9 @@ async def finalize_upload(
         source_kind="browser",
         seal_tail=True,
     )
+    # Live registration stops here. A segment task still queued would otherwise
+    # unseal every window this rebuild just sealed and reset its progress.
+    await recordings_module._seal_recording_audio_cursor(db, recording_id=recording.id)
     chunk_rows = await recordings_module._list_recording_audio_chunks(
         db,
         recording_id=recording.id,
@@ -438,92 +534,31 @@ async def finalize_upload(
             detail="Recording upload is still in progress; finalize after all segment uploads complete.",
         )
 
-    final_audio_path = recording.audio_path
+    final_audio_path = recordings_module._browser_master_output_path(recording)
 
     def _build_master_audio() -> float:
-        """Concatenate the segments, check the bitrate floor, measure the result.
+        """Join the segments into the FLAC master and return its exact length.
 
-        Every step here shells out to ffmpeg or ffprobe through a blocking
-        `subprocess.run`, and the API serves from a single event loop, so
-        running them inline stalls every other request for the whole
-        concatenation: measured at 20s for a two-hour recording, and linear in
-        duration. Awaited on a worker thread instead, which costs one thread for
-        the length of the concatenation and nothing else.
-
-        Kept as one function rather than three awaits so the thread is entered
-        once, and `final_audio_path` is assigned before the concatenation that
-        writes it, so the failure handlers below still clean up the right file.
+        Reading thousands of segment files is blocking I/O, and the API serves
+        from a single event loop, so it runs on a worker thread. The master is
+        built from the canonical WAVs rather than from what the browser sent,
+        so it is sample-exact whatever the client uploaded: joining the WebM
+        segments of older clients overlapped every boundary by 60 ms and
+        understated the duration by 3% (issue #417).
         """
-        nonlocal final_audio_path
-
-        master_segment_paths = recordings_module._list_staged_browser_master_segments(
-            recording.id
+        return recordings_module.write_browser_master_audio(
+            [row.storage_path for row in chunk_rows],
+            final_audio_path,
         )
-        if master_segment_paths:
-            final_audio_path = recordings_module._browser_master_output_path(
-                recording,
-                recordings_module._resolve_browser_master_suffix(master_segment_paths),
-            )
-            recordings_module.concatenate_media_files(
-                [str(path) for path in master_segment_paths],
-                final_audio_path,
-            )
-        else:
-            segment_paths = [row.storage_path for row in chunk_rows]
-            recordings_module.concatenate_wavs(segment_paths, final_audio_path)
-
-        recordings_module._enforce_lossy_audio_bitrate_floor(final_audio_path)
-        return recordings_module.get_audio_duration(final_audio_path)
 
     try:
         duration_seconds = await asyncio.to_thread(_build_master_audio)
-    except HTTPException as exc:
-        failed_root: Path | None = None
-        try:
-            failed_root = recordings_module.move_recording_upload_to_failed(
-                recording.id, logger=logger
-            )
-        except Exception as move_error:  # noqa: BLE001 -- boundary: the move is cleanup; the original error is what the client needs
-            logger.error(f"Failed to move segments to failed dir: {move_error}")
-        await recordings_module._mark_recording_audio_chunks_failed(
-            db,
-            recording_id=recording.id,
-            failed_root=failed_root,
-        )
-        await db.commit()
-
-        recordings_module.delete_recording_artifacts(
-            recording_id=recording.id,
-            audio_path=final_audio_path,
-            proxy_path=None,
-            logger=logger,
-        )
-        await recordings_module._mark_recording_upload_error(
-            db, recording, str(exc.detail)
-        )
-        raise
+    except BrowserAudioFormatError as exc:
+        await _abandon_failed_master(db, recording, final_audio_path)
+        await recordings_module._mark_recording_upload_error(db, recording, str(exc))
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as e:  # noqa: BLE001 -- boundary: any failure to build the master audio is recorded on the recording and reported
-        failed_root: Path | None = None
-        try:
-            failed_root = recordings_module.move_recording_upload_to_failed(
-                recording.id, logger=logger
-            )
-        except Exception as move_error:  # noqa: BLE001 -- boundary: the move is cleanup; the original error is what the client needs
-            logger.error(f"Failed to move segments to failed dir: {move_error}")
-        await recordings_module._mark_recording_audio_chunks_failed(
-            db,
-            recording_id=recording.id,
-            failed_root=failed_root,
-        )
-        await db.commit()
-
-        recordings_module.delete_recording_artifacts(
-            recording_id=recording.id,
-            audio_path=final_audio_path,
-            proxy_path=None,
-            logger=logger,
-        )
-
+        await _abandon_failed_master(db, recording, final_audio_path)
         raise sanitized_http_exception(
             logger=logger,
             status_code=500,
@@ -567,6 +602,7 @@ async def finalize_upload(
         chunk_rows=chunk_rows,
         duration_seconds=duration_seconds,
         finalized_from_paused=finalized_from_paused,
+        client_elapsed_seconds=client_elapsed_seconds,
     )
 
     task = await dispatch_task(

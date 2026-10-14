@@ -51,6 +51,7 @@ export default function MeetingControls({
     status,
     stopStage,
     support,
+    uploadQueue,
   } = useCapture();
 
   const { addNotification } = useNotificationStore();
@@ -68,7 +69,9 @@ export default function MeetingControls({
     : stopStage === "stopping-recorder"
       ? "stopping the recorder"
       : stopStage === "flushing-uploads"
-        ? "uploading the last segments"
+        ? uploadQueue.segments > 0
+          ? `uploading the last ${Math.ceil(uploadQueue.seconds)} s of audio`
+          : "uploading the last segments"
         : stopStage === "releasing-media"
           ? "releasing the microphone"
           : "finalizing";

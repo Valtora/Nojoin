@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import {
   computeAutomaticGainTarget,
-  createCaptureMixer,
+  createCaptureMixer as createRealCaptureMixer,
   mixToMonoAmplitude,
+  type CreateCaptureMixerOptions,
 } from "./mixer";
+import { PCM_TAP_MODULE_URL, PCM_TAP_PROCESSOR_NAME } from "./pcm/tapSource";
 
 class FakeAudioNode {
   connections: FakeAudioNode[] = [];
@@ -41,8 +43,25 @@ class FakeGainNode extends FakeAudioNode {
   channelCountMode: ChannelCountMode = "max";
 }
 
-class FakeMediaStreamDestinationNode extends FakeAudioNode {
-  stream = {} as MediaStream;
+class FakeWorkletPort {
+  sent: unknown[] = [];
+
+  onmessage: ((event: MessageEvent) => void) | null = null;
+
+  postMessage(message: unknown) {
+    this.sent.push(message);
+  }
+}
+
+class FakeAudioWorkletNode extends FakeAudioNode {
+  port = new FakeWorkletPort();
+
+  constructor(
+    readonly name: string,
+    readonly options: AudioWorkletNodeOptions,
+  ) {
+    super();
+  }
 }
 
 class FakeChannelMergerNode extends FakeAudioNode {}
@@ -56,13 +75,26 @@ class FakeMediaStreamSourceNode extends FakeAudioNode {
 class FakeAudioContext {
   state: AudioContextState = "suspended";
 
+  sampleRate = 48_000;
+
+  loadedModules: string[] = [];
+
+  failModuleLoad = false;
+
+  audioWorklet = {
+    addModule: async (url: string) => {
+      if (this.failModuleLoad) {
+        throw new Error("blocked");
+      }
+      this.loadedModules.push(url);
+    },
+  };
+
+  tapNodes: FakeAudioWorkletNode[] = [];
+
   resumed = false;
 
   closed = false;
-
-  createMediaStreamDestination() {
-    return new FakeMediaStreamDestinationNode();
-  }
 
   createMediaStreamSource(stream: MediaStream) {
     return new FakeMediaStreamSourceNode(stream);
@@ -102,7 +134,69 @@ const setAlternatingSamples = (
   );
 };
 
+const createCaptureMixer = (options: CreateCaptureMixerOptions) =>
+  createRealCaptureMixer({
+    audioWorkletNodeFactory: (context, name, nodeOptions) => {
+      const node = new FakeAudioWorkletNode(name, nodeOptions);
+      (context as unknown as FakeAudioContext).tapNodes.push(node);
+      return node as unknown as AudioWorkletNode;
+    },
+    ...options,
+  });
+
 describe("capture mixer", () => {
+  it("taps the two-channel mix between the merger and the mixed analyser", async () => {
+    const context = new FakeAudioContext();
+    const mixer = await createCaptureMixer({
+      displayStream: {} as MediaStream,
+      microphoneStream: {} as MediaStream,
+      audioContextFactory: () => context as unknown as AudioContext,
+    });
+
+    const [tap] = context.tapNodes;
+    expect(context.loadedModules).toEqual([PCM_TAP_MODULE_URL]);
+    expect(tap.name).toBe(PCM_TAP_PROCESSOR_NAME);
+    expect(tap.options).toMatchObject({
+      channelCount: 2,
+      channelCountMode: "explicit",
+      channelInterpretation: "discrete",
+      outputChannelCount: [2],
+    });
+    expect(tap.connections).toEqual([mixer.mixedAnalyser]);
+    // Nothing after the mixed analyser, so the graph pulls it, and the tap with it.
+    expect((mixer.mixedAnalyser as unknown as FakeAudioNode).connections).toEqual([]);
+    expect(mixer.pcmSource.sampleRate).toBe(48_000);
+    expect(mixer.pcmSource.channelCount).toBe(2);
+  });
+
+  it("stops the tap when disposed", async () => {
+    const context = new FakeAudioContext();
+    const mixer = await createCaptureMixer({
+      displayStream: null,
+      microphoneStream: {} as MediaStream,
+      audioContextFactory: () => context as unknown as AudioContext,
+    });
+
+    await mixer.dispose();
+
+    expect(context.tapNodes[0].port.sent).toContainEqual({ type: "stop" });
+    expect(context.tapNodes[0].disconnected).toBe(true);
+  });
+
+  it("closes the context when the capture module cannot load", async () => {
+    const context = new FakeAudioContext();
+    context.failModuleLoad = true;
+
+    await expect(
+      createCaptureMixer({
+        displayStream: null,
+        microphoneStream: {} as MediaStream,
+        audioContextFactory: () => context as unknown as AudioContext,
+      }),
+    ).rejects.toThrow("could not load its audio capture module");
+    expect(context.closed).toBe(true);
+  });
+
   it("resumes a suspended context and starts with neutral automatic gain", async () => {
     const context = new FakeAudioContext();
     const mixer = await createCaptureMixer({

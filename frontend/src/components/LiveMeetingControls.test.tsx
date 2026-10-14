@@ -28,6 +28,8 @@ const captureState = {
     cause: string;
   } | null,
   dismissCoverageWarning: vi.fn(),
+  stopStage: null as string | null,
+  uploadQueue: { segments: 0, seconds: 0 },
 };
 
 vi.mock("@/lib/capture/CaptureProvider", () => ({
@@ -54,6 +56,48 @@ describe("LiveMeetingControls", () => {
     captureState.runtimeActive = true;
     captureState.status = "recording";
     captureState.coverageWarning = null;
+    captureState.stopStage = null;
+    captureState.uploadQueue = { segments: 0, seconds: 0 };
+  });
+
+  it("says a stop is uploading, not that the meeting is paused", () => {
+    // The 2 h meeting behind issue #417 showed "Paused" for the 13 minutes its
+    // stop spent sending queued audio.
+    captureState.status = "finalizing";
+    captureState.stopStage = "flushing-uploads";
+    captureState.uploadQueue = { segments: 412, seconds: 824 };
+
+    render(<LiveMeetingControls size="bar" />);
+
+    expect(screen.getByText("Uploading")).toBeInTheDocument();
+    expect(screen.queryByText("Paused")).not.toBeInTheDocument();
+    expect(screen.getByText(/Uploading the last 13:44 of audio/)).toBeInTheDocument();
+  });
+
+  it("says a stop is finishing once nothing is left to send", () => {
+    captureState.status = "finalizing";
+    captureState.stopStage = "finalizing";
+
+    render(<LiveMeetingControls size="bar" />);
+
+    expect(screen.getByText("Finishing")).toBeInTheDocument();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("warns once uploads fall behind the recording", () => {
+    captureState.uploadQueue = { segments: 20, seconds: 40 };
+
+    render(<LiveMeetingControls size="full" />);
+
+    expect(screen.getByText(/Uploads are 00:40 behind/)).toBeInTheDocument();
+  });
+
+  it("stays quiet about ordinary upload latency", () => {
+    captureState.uploadQueue = { segments: 2, seconds: 4 };
+
+    render(<LiveMeetingControls size="full" />);
+
+    expect(screen.queryByText(/behind/)).not.toBeInTheDocument();
   });
 
   it("renders the captured figure as a clock, not as a float", () => {

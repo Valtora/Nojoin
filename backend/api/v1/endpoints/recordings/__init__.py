@@ -16,6 +16,7 @@ from backend.utils.audio import (
     concatenate_wavs,
     get_audio_duration,
 )
+from backend.utils.browser_capture_audio import write_browser_master_audio
 from backend.utils.canonical_pipeline import (
     build_transcript_segments_for_read,
     build_transcript_text_for_read,
@@ -58,6 +59,14 @@ from . import (
     routes_import_upload,
     routes_query,
 )
+from .capture_audio import (
+    _accept_browser_flac_segment,
+    _advance_recording_audio_cursor,
+    _register_recording_audio_chunk,
+    _reopen_recording_audio_cursor,
+    _seal_recording_audio_cursor,
+    _touch_recording_last_activity,
+)
 from .constants import (
     LOSSY_AUDIO_SUFFIXES,
     SEGMENT_CONTENT_TYPE_SUFFIXES,
@@ -87,7 +96,6 @@ from .helpers import (
     _get_owned_recording,
     _list_corrupt_browser_segment_sequences,
     _list_recording_audio_chunks,
-    _list_staged_browser_master_segments,
     _mark_recording_audio_chunks_failed,
     _mark_recording_audio_chunks_ready_for_cleanup,
     _mark_recording_upload_error,
@@ -98,7 +106,6 @@ from .helpers import (
     _requeue_for_processing,
     _rescue_pending_browser_segments_for_finalize,
     _reset_generated_recording_state,
-    _resolve_browser_master_suffix,
     _resolve_segment_upload_suffix,
     _should_hide_in_flight_transcript_content,
     _stage_import_audio_chunk,
