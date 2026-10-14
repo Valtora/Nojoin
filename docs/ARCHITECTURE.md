@@ -653,9 +653,9 @@ forward, a merge, a global-speaker link or promotion) changes only what it
 names: the utterances its scope selects, or the speaker's identity. It never
 re-derives other utterances from stored diarisation window rows
 (`diarization_window_results`, `diarization_window_turns`). Live captures
-finalised by v1.0.0 to v1.2.0 can still hold rows from the removed rolling
-diarisation, and replaying them moved other speakers' lines onto the corrected
-speaker.
+finalised by v1.0.0 to v1.2.0 can still hold window turns from the removed
+rolling diarisation, and replaying them moved other speakers' lines onto the
+corrected speaker.
 
 ### Utterance Public Ids
 

@@ -43,7 +43,7 @@ GRANDFATHERED: dict[str, int] = {
     "backend/utils/canonical_pipeline/diarization.py": 2464,
     "backend/utils/canonical_pipeline/core.py": 2066,
     "backend/processing/live_transcribe.py": 1947,
-    "backend/utils/canonical_pipeline/speaker.py": 1113,
+    "backend/utils/canonical_pipeline/speaker.py": 1109,
 }
 
 

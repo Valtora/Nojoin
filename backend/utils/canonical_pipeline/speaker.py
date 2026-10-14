@@ -822,10 +822,6 @@ def record_recording_speaker_corrections(
     payload: dict[str, Any] | None = None,
     payload_by_speaker_id: dict[int, dict[str, Any]] | None = None,
 ) -> list[SpeakerCorrectionEvent]:
-    from .core import (
-        refresh_transcript_projection_from_canonical,
-    )
-
     correction_events: list[SpeakerCorrectionEvent] = []
     for speaker_id in target_recording_speaker_ids:
         recording_speaker = session.get(RecordingSpeaker, speaker_id)
