@@ -345,6 +345,41 @@ stored block carries a method version and a transcript event watermark, and
 staleness shows a banner with a regenerate button rather than triggering another
 call the user did not ask for.
 
+### Exports
+
+`GET /api/v1/transcripts/{id}/export` builds one file from any of the meeting
+notes, the analytics and the transcript, as PDF, DOCX or plain text. The work
+lives in `backend/services/exports/` and is split in two.
+
+`builder.py` decides what an export says. It turns a meeting into an
+`ExportDocument`, a tree of neutral blocks: headings, paragraphs, lists, tables,
+stat tiles, callouts, charts and transcript lines. Notes are parsed from their
+stored Markdown with `markdown-it-py`. Analytics come from
+`read_recording_analytics`, the function the Analytics tab's own read uses, so a
+file cannot report different figures from the tab, and an export never
+dispatches a measurement. The wording and the plain-language readings are ports
+of the tab's components (`formatDuration.ts`, `deliveryInsights.ts`,
+`AttributionWarning.tsx` and the AI panels), with tests that pin the parity.
+
+One renderer per format decides how each block looks: ReportLab for PDF,
+python-docx for Word, and plain text. Charts are laid out once as shapes in
+`charts.py` and painted twice, as vector graphics in the PDF and as a PNG in
+Word, which cannot take ReportLab's drawings. Rendering runs in a worker thread,
+because laying out a long transcript takes seconds and would otherwise stall
+every request the API process is serving.
+
+Two details are easy to miss. Automatic speaker colours exist only in the
+browser, so the export dialog sends the colour map it is showing and
+`speaker_colors.py` resolves it, falling back to saved colours and then to the
+chart slots for a caller that sends none. And Word substitutes any font it
+lacks, so the DOCX renderer embeds Geist Regular and Bold as obfuscated font
+parts (ECMA-376 Part 1, section 17.8.1). The TTF files and their SIL Open Font
+License live in `backend/services/exports/assets/fonts/`.
+
+PDFs were drawn by markdown-pdf until issue #419. Its HTML layout repainted each
+table header row's background at the same position on every later page, over
+whatever text was there, so a regression test inspects every page after a table.
+
 ### Web Client
 
 The web client is responsible for:

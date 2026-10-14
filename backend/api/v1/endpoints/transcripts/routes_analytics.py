@@ -149,6 +149,50 @@ def _backfill_and_compute(sync_session, recording) -> tuple[int, dict, dict]:
     return revision, analytics, baselines
 
 
+async def read_recording_analytics(db: AsyncSession, recording, transcript) -> dict:
+    """Everything the Analytics tab shows for a recording, as one dict.
+
+    Shared by the tab's read and by exports, so an exported file cannot report
+    different figures from the tab. Nothing here dispatches work or spends a
+    budget; the tab's read layers those on top.
+    """
+    revision, analytics, baselines = await db.run_sync(
+        lambda sync_session: _backfill_and_compute(sync_session, recording)
+    )
+    await db.commit()
+
+    payload = transcript.analytics_payload or {}
+    delivery = payload.get("delivery")
+    ai = payload.get("ai")
+    audio_overlap = payload.get("audio_overlap")
+    return {
+        "recording_id": recording.public_id,
+        "transcript_revision": revision,
+        "speakers": analytics["speakers"],
+        "metrics": analytics["metrics"],
+        "attribution_warning": analytics["attribution_warning"],
+        "delivery": delivery,
+        "delivery_status": transcript.analytics_status,
+        "delivery_error_message": transcript.analytics_error_message,
+        "delivery_stale": _is_stale(delivery, payload.get("event_watermark"), revision),
+        "ai": ai,
+        "ai_status": transcript.analytics_ai_status,
+        "ai_error_message": transcript.analytics_ai_error_message,
+        # Each tier carries its own watermark, so editing the transcript after
+        # measuring delivery but before analysing does not mark the analysis
+        # stale as well.
+        "ai_stale": _is_stale(ai, (ai or {}).get("event_watermark"), revision),
+        "audio_overlap": (
+            audio_overlap
+            if (audio_overlap or {}).get("status") == "completed"
+            else None
+        ),
+        "audio_overlap_status": (audio_overlap or {}).get("status", "pending"),
+        "audio_overlap_error_message": (audio_overlap or {}).get("error_message"),
+        "delivery_baselines": baselines,
+    }
+
+
 @router.get("/{recording_id}/analytics", response_model=RecordingAnalyticsRead)
 async def get_recording_analytics(
     recording_id: str,
@@ -169,52 +213,18 @@ async def get_recording_analytics(
     if transcript is None:
         raise HTTPException(status_code=404, detail="Transcript not found")
 
-    revision, analytics, baselines = await db.run_sync(
-        lambda sync_session: _backfill_and_compute(sync_session, recording)
-    )
-    await db.commit()
-
-    payload = transcript.analytics_payload or {}
-    delivery = payload.get("delivery")
-    ai = payload.get("ai")
-    audio_overlap = payload.get("audio_overlap")
-
-    delivery_stale = _is_stale(delivery, payload.get("event_watermark"), revision)
-    delivery_status = transcript.analytics_status
+    read = await read_recording_analytics(db, recording, transcript)
     if await _auto_remeasure_delivery(
-        recording, transcript, current_user, delivery_stale
+        recording, transcript, current_user, read["delivery_stale"]
     ):
         # Reported, not written: the worker owns the stored status, and the
         # tab polls while a tier reports generating, so it picks up the new
         # figures when the run lands.
-        delivery_status = "generating"
+        read["delivery_status"] = "generating"
 
     return RecordingAnalyticsRead(
-        recording_id=recording.public_id,
-        transcript_revision=revision,
-        speakers=analytics["speakers"],
-        metrics=analytics["metrics"],
-        attribution_warning=analytics["attribution_warning"],
-        delivery=delivery,
-        delivery_status=delivery_status,
-        delivery_error_message=transcript.analytics_error_message,
-        delivery_stale=delivery_stale,
-        ai=ai,
-        ai_status=transcript.analytics_ai_status,
-        ai_error_message=transcript.analytics_ai_error_message,
-        # Each tier carries its own watermark, so editing the transcript after
-        # measuring delivery but before analysing does not mark the analysis
-        # stale as well.
-        ai_stale=_is_stale(ai, (ai or {}).get("event_watermark"), revision),
+        **read,
         ai_budget=(await get_budget(db, current_user)).as_dict(),
-        audio_overlap=(
-            audio_overlap
-            if (audio_overlap or {}).get("status") == "completed"
-            else None
-        ),
-        audio_overlap_status=(audio_overlap or {}).get("status", "pending"),
-        audio_overlap_error_message=(audio_overlap or {}).get("error_message"),
-        delivery_baselines=baselines,
     )
 
 

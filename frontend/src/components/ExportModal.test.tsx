@@ -4,44 +4,108 @@ import { fireEvent, renderWithProviders, screen } from "@/test/renderWithProvide
 
 import ExportModal from "./ExportModal";
 
-const renderModal = (hasAudio: boolean) => {
+const renderModal = ({
+  hasNotes = true,
+  hasAnalytics = true,
+  hasAudio = true,
+}: { hasNotes?: boolean; hasAnalytics?: boolean; hasAudio?: boolean } = {}) => {
   const onExport = vi.fn();
+  const onClose = vi.fn();
   renderWithProviders(
     <ExportModal
       isOpen
-      onClose={vi.fn()}
+      onClose={onClose}
       onExport={onExport}
-      hasNotes
+      hasNotes={hasNotes}
+      hasAnalytics={hasAnalytics}
       hasAudio={hasAudio}
     />,
   );
-  return { onExport };
+  return { onExport, onClose };
 };
 
-const audioOption = () => screen.getByRole("radio", { name: /Audio File/ });
+const section = (name: string) => screen.getByRole("checkbox", { name });
 const exportButton = () => screen.getByRole("button", { name: "Export" });
+const audioButton = () => screen.getByRole("button", { name: "Export audio" });
 
-describe("ExportModal audio option", () => {
+describe("ExportModal sections", () => {
+  it("starts from the notes as a PDF", () => {
+    const { onExport } = renderModal();
+
+    fireEvent.click(exportButton());
+
+    expect(onExport).toHaveBeenCalledWith({
+      kind: "document",
+      sections: ["notes"],
+      format: "pdf",
+    });
+  });
+
+  it("starts from the transcript when there are no notes", () => {
+    const { onExport } = renderModal({ hasNotes: false });
+
+    expect(section("Meeting notes")).toBeDisabled();
+    fireEvent.click(exportButton());
+
+    expect(onExport).toHaveBeenCalledWith(
+      expect.objectContaining({ sections: ["transcript"] }),
+    );
+  });
+
+  it("exports any combination, including analytics, in the chosen format", () => {
+    const { onExport } = renderModal();
+
+    fireEvent.click(section("Analytics"));
+    fireEvent.click(section("Transcript"));
+    fireEvent.click(screen.getByRole("radio", { name: "Word (.docx)" }));
+    fireEvent.click(exportButton());
+
+    expect(onExport).toHaveBeenCalledWith({
+      kind: "document",
+      sections: ["notes", "analytics", "transcript"],
+      format: "docx",
+    });
+  });
+
+  it("cannot export nothing", () => {
+    const { onExport } = renderModal();
+
+    fireEvent.click(section("Meeting notes"));
+
+    expect(exportButton()).toBeDisabled();
+    fireEvent.click(exportButton());
+    expect(onExport).not.toHaveBeenCalled();
+  });
+
+  it("offers analytics only once the meeting has been processed", () => {
+    renderModal({ hasAnalytics: false });
+
+    expect(section("Analytics")).toBeDisabled();
+    expect(
+      screen.getByText("Available once the meeting has finished processing"),
+    ).toBeInTheDocument();
+  });
+});
+
+describe("ExportModal audio", () => {
   it("cannot export audio that is not available", () => {
-    const { onExport } = renderModal(false);
+    const { onExport } = renderModal({ hasAudio: false });
 
-    expect(audioOption()).toBeDisabled();
+    expect(audioButton()).toBeDisabled();
     expect(
       screen.getByText("This recording's audio is not available"),
     ).toBeInTheDocument();
 
-    fireEvent.click(audioOption());
-    fireEvent.click(exportButton());
-
-    expect(onExport).toHaveBeenCalledWith("transcript", "txt");
+    fireEvent.click(audioButton());
+    expect(onExport).not.toHaveBeenCalled();
   });
 
   it("exports the audio when it is there", () => {
-    const { onExport } = renderModal(true);
+    const { onExport, onClose } = renderModal();
 
-    fireEvent.click(audioOption());
-    fireEvent.click(exportButton());
+    fireEvent.click(audioButton());
 
-    expect(onExport).toHaveBeenCalledWith("audio", "txt");
+    expect(onExport).toHaveBeenCalledWith({ kind: "audio" });
+    expect(onClose).toHaveBeenCalled();
   });
 });

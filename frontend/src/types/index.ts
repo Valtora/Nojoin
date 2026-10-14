@@ -148,8 +148,6 @@ export interface TranscriptSpeakerAssignment {
   scope: SpeakerCorrectionScope;
 }
 
-export type ExportContentType = "transcript" | "notes" | "both" | "audio";
-
 /** A browser capture channel: the local microphone or the shared system audio. */
 export type CaptureSourceChannel = "microphone" | "system";
 
@@ -403,6 +401,8 @@ export interface Settings {
   auto_analyse_meetings?: boolean;
   /** Install-wide cap on AI analysis runs per user per UTC day; null or 0 is no cap. Admin only. */
   ai_analysis_daily_limit?: number | null;
+  /** Install-wide: exported files carry the Nojoin letterhead and footer line. Admin only. */
+  export_branding?: boolean;
   processing_device?: string;
   theme?: string;
   timezone?: string;

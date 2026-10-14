@@ -150,6 +150,19 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
     keywords: ["timezone", "time zone", "date", "time", "clock", "utc", "gmt", "bst", "locale"],
   },
   {
+    id: "appearance-export-branding",
+    label: "Nojoin branding on exports",
+    description: "Whether exported PDF, Word and text files carry the Nojoin letterhead and footer line.",
+    category: "appearance",
+    access: "admin",
+    settingsKeys: ["export_branding"],
+    defaultValue: true,
+    keywords: [
+      "export", "exports", "branding", "brand", "letterhead", "logo", "footer", "pdf", "word",
+      "docx", "white label", "white-label", "advertising",
+    ],
+  },
+  {
     id: "appearance-spellcheck",
     label: "Spellcheck",
     description: "The dictionary used when you edit notes and tasks.",

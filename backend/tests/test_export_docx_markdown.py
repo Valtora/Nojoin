@@ -1,12 +1,17 @@
-"""Tests for the Markdown-to-DOCX renderer used by the notes export.
+"""Meeting notes, which are stored as Markdown, in a Word export.
 
 The exporter these cover replaced a line-by-line parser that emitted a Markdown
-table into Word as paragraphs of pipes and hyphens (issue #136).
+table into Word as paragraphs of pipes and hyphens (issue #136). Notes now go
+through the shared export pipeline (issue #419), so these render a whole
+document and read the notes back out of it.
 """
+
+from io import BytesIO
 
 from docx import Document
 
-from backend.utils.markdown_docx import render_markdown
+from backend.services.exports import build_document, render
+from backend.tests.export_fixtures import meeting_parts
 
 DECISION_TABLE = """## Key Decisions
 
@@ -17,10 +22,16 @@ DECISION_TABLE = """## Key Decisions
 """
 
 
-def _render(markdown_text: str, *, heading_offset: int = 0) -> Document:
-    document = Document()
-    render_markdown(document, markdown_text, heading_offset=heading_offset)
-    return document
+def _render(markdown_text: str):
+    document = build_document(meeting_parts(notes=markdown_text), ["notes"])
+    return Document(BytesIO(render(document, "docx")))
+
+
+def _notes_paragraphs(document) -> list:
+    """Body paragraphs after the "Meeting notes" section heading."""
+    paragraphs = document.paragraphs
+    start = next(i for i, p in enumerate(paragraphs) if p.text == "Meeting notes")
+    return paragraphs[start + 1 :]
 
 
 def test_markdown_table_becomes_a_native_word_table() -> None:
@@ -50,11 +61,10 @@ def test_table_pipes_never_reach_the_document_body() -> None:
     assert "---" not in body_text
 
 
-def test_table_uses_a_bordered_style_with_a_bold_repeating_header() -> None:
+def test_table_has_a_bold_header_row_that_repeats_across_pages() -> None:
     document = _render(DECISION_TABLE)
     table = document.tables[0]
 
-    assert table.style.name == "Table Grid"
     assert table.rows[0].cells[0].paragraphs[0].runs[0].bold is True
     # tblHeader makes Word repeat the header row across a page break.
     assert "tblHeader" in table.rows[0]._tr.xml
@@ -106,18 +116,18 @@ def test_headings_lists_and_marks_render_as_word_elements() -> None:
         "- Top level\n"
         "  - Nested\n\n"
         "1. First\n\n"
-        "Body with **bold**, *italic* and ~~struck~~ text.\n",
-        heading_offset=1,
+        "Body with **bold**, *italic* and ~~struck~~ text.\n"
     )
 
     styles = [
         (paragraph.style.name, paragraph.text)
-        for paragraph in document.paragraphs
+        for paragraph in _notes_paragraphs(document)
         if paragraph.text.strip()
     ]
 
-    assert ("Heading 3", "Detailed Notes") in styles
-    assert ("Heading 4", "Topic") in styles
+    # The notes' shallowest heading sits one level below the section title.
+    assert ("Heading 2", "Detailed Notes") in styles
+    assert ("Heading 3", "Topic") in styles
     assert ("List Bullet", "Top level") in styles
     assert ("List Bullet 2", "Nested") in styles
     assert ("List Number", "First") in styles
@@ -130,16 +140,37 @@ def test_headings_lists_and_marks_render_as_word_elements() -> None:
     assert "~~" not in body.text
 
 
+def test_each_numbered_list_counts_from_one() -> None:
+    # Word shares one numbering instance per list style unless told otherwise,
+    # so a second list would carry on from the first.
+    document = _render("1. One\n2. Two\n\nBetween.\n\n1. Again\n")
+
+    numbered = [p for p in _notes_paragraphs(document) if p.style.name == "List Number"]
+    num_ids = {p._p.pPr.numPr.numId.val for p in numbered}
+    assert len(numbered) == 3
+    assert len(num_ids) == 2
+
+
 def test_links_become_real_hyperlinks() -> None:
     document = _render("See [the plan](https://example.com/plan) for detail.")
 
-    paragraph = document.paragraphs[0]
+    paragraph = next(p for p in document.paragraphs if p.text.startswith("See"))
     assert "w:hyperlink" in paragraph._p.xml
     assert "https://example.com/plan" not in paragraph.text
 
 
-def test_empty_notes_render_nothing() -> None:
+def test_only_web_and_mail_links_become_hyperlinks() -> None:
+    # markdown-it already refuses javascript: and data: URLs; the renderer's
+    # own allow-list also keeps any other scheme out of the document.
+    document = _render("Fetch [the file](ftp://example.com/file) here.")
+
+    paragraph = next(p for p in document.paragraphs if p.text.startswith("Fetch"))
+    assert "w:hyperlink" not in paragraph._p.xml
+    assert paragraph.text == "Fetch the file here."
+
+
+def test_empty_notes_say_so_rather_than_rendering_nothing() -> None:
     document = _render("")
 
-    assert document.tables == []
-    assert all(not paragraph.text.strip() for paragraph in document.paragraphs)
+    text = "\n".join(cell.text for table in document.tables for cell in table._cells)
+    assert "No meeting notes have been generated" in text

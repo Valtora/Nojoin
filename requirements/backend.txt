@@ -12,11 +12,10 @@ soundfile==0.14.0
 openai>=3.28.0
 anthropic>=1.13.0
 google-genai>=2.29.0
+# Exports (backend/services/exports): ReportLab lays out PDFs, python-docx
+# writes DOCX, and markdown-it-py parses the stored Markdown notes for all
+# three formats.
 reportlab==5.0.1
 python-docx==1.2.0
-Markdown==3.11
-markdown_pdf==1.13.3
-# Imported directly by backend/utils/markdown_docx.py, not only pulled in by
-# markdown_pdf, so it is pinned here rather than left to a transitive resolve.
 markdown-it-py==4.2.0
 google-re2==1.1.20251105
