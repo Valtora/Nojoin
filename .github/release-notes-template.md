@@ -8,30 +8,25 @@ Container images for this release. All images are cosign-signed and ship build-p
 
 <!-- Maintainer: one bullet per item, one or two sentences each. What an operator would notice, not how it works. Detail belongs in the docs. Remove the section if a release has nothing to lead with. -->
 
-- **The GPU worker runs on CUDA 13 and supports RTX 50 series cards.** It needs NVIDIA driver 580 or newer and a Turing or later GPU, so GTX 900 and 10 series, TITAN V, Tesla P4, P40 and P100 and V100 cards are no longer supported. On one of those, or on an older driver, the GPU worker logs why when it starts and processes on the CPU instead of failing each recording (#414).
-- **Reprocessing gives the same Whisper transcript.** Whisper re-decodes a hard passage by sampling, and that sampling is now seeded, so a reprocess no longer changes words in crosstalk or noise (#414).
-- **Long meetings get notes with Ollama.** When a transcript does not fit Ollama's context window and no secondary provider takes it, the notes are written in parts and combined, and Meeting Chat answers from the meeting's most relevant excerpts (#394).
-- **Import Audio is on the recordings list**, beside Start Meeting, instead of in the navigation rail (#393).
-- **The log viewer shows `worker-parse`** (#404).
-- **Dependency updates.** torch moves to 2.14.1, which fixes GHSA-rrmf-rvhw-rf47 (#405). onnxruntime-gpu moves to 1.31.0, the worker's pyannote.audio to 4.0.7, Next to 16.4.0 and FastAPI to 0.143.0, and the worker image is about 1 GB smaller (#414). ONNX Runtime's own telemetry, on by default in its Linux builds since 1.29, is turned off (#415).
+- **Long browser recordings keep up with the meeting.** Each two-second segment is now registered in constant time, so uploads no longer fall behind after about 100 minutes, and stopping a long meeting no longer sits on Paused while a backlog drains (#418).
+- **Browser capture has no gaps and no loss.** The browser cuts exact two-second segments from the audio stream and uploads them as FLAC, instead of restarting its recorder for each segment, which dropped about 28 ms every time. A recording's stored length now matches its audio. New browser recordings are kept as FLAC, and existing ones stay WebM (#418).
+- **Unsent audio survives a closed tab.** Segments waiting to upload are kept in the browser until the server has them, and resuming or choosing **Stop and process** sends them first. While stopping, the controls say **Uploading** with the time left (#418).
+- **Exports can include analytics and open on a Nojoin letterhead.** Choose any mix of notes, analytics and transcript. PDF and Word files carry the logo and Geist type, keep each speaker's colour, and give dates in the reader's timezone. An admin can turn the letterhead off under **Settings > Appearance** (#421).
+- **PDF exports no longer leave grey bars on the pages after a table** (#421).
+- **Release images are built on the maintainer's release host.** The release workflow still signs them, so the cosign verify command is unchanged. The provenance attestation now records that build rather than a GitHub runner (#420).
+- **Dependency changes.** The API image drops markdown-pdf, PyMuPDF and plantuml, and adds soundfile, which decodes capture segments (#418, #421).
 
 ### Upgrade
 
-Check the GPU before pulling. A GPU host needs NVIDIA driver 580 or newer and a card of compute capability 7.5 or higher.
-
-```bash
-nvidia-smi --query-gpu=name,compute_cap,driver_version --format=csv
-```
-
-Update the host driver first if it is older than 580. Then pull the new images and recreate the stack.
+Pull the new images and recreate the stack.
 
 ```bash
 docker compose pull
 docker compose up -d
 ```
 
-- A card below compute capability 7.5 still runs 2.8.0, with processing on the CPU. The worker log has a `[gpu-preflight]` line naming the card. Stay on 2.7.0 to keep GPU processing on it.
-- CPU-only deployments need nothing new.
+- Reload any open Nojoin tab after upgrading so browser capture moves to FLAC segments. A tab still running the old page keeps working, because its WebM segments are still converted.
+- Browser capture now uploads about 150 kbit/s with one active audio source and about 300 kbit/s with two, against 160 kbit/s before. A remote user on a slow uplink may see the uploads-behind notice sooner.
 
 ### Migration
 
@@ -39,16 +34,16 @@ Database migrations run automatically on the first API start after upgrading. Ba
 
 <!-- Maintainer: note any blocking first-boot migration, longer startup, or manual step. Keep it to bullets. -->
 
-- No database migration in this release.
+- One Alembic revision adds the `recording_audio_chunk_cursors` table, which tracks each live recording's capture progress. It runs on the first API start and takes moments. A browser recording in progress during the upgrade rebuilds its cursor on its next segment.
 - No change to `.env`, the example compose file or the nginx configuration.
-- The backup format is unchanged.
+- The backup format is unchanged. Browser recordings go into archives as FLAC, or as WebM for those made before this release.
 
 ### Rollback
 
 <!-- Maintainer: state whether rollback is code-only or requires data steps. Default below. -->
 
-- Rollback is code-only. Redeploy the 2.7.0 image tags, since the schema has not changed.
-- 2.7.0 runs on CUDA 12.6, which supports pre-Turing cards and drivers from 525.
+- Roll the schema back before the images, because the 2.8.0 API refuses to start against a revision it does not know. With no browser recording in progress and 2.9.0 still running, run `docker compose exec api alembic downgrade c4d8e1f2a3b5`, then redeploy the 2.8.0 image tags. The downgrade drops only the capture cursor table.
+- Recordings made on 2.9.0 stay FLAC, which 2.8.0 already stores and plays for imports. Reload open Nojoin tabs after rolling back.
 
 ### Known Issues
 
@@ -60,7 +55,8 @@ Database migrations run automatically on the first API start after upgrading. Ba
 
 <!-- Maintainer: note any change to supported browsers/OSes or capture behaviour. Default below. -->
 
-- Supported browsers, operating systems and audio sources are unchanged. The live waveform reads the capture level through a store subscription instead of component state (#404).
+- Supported browsers, operating systems and audio sources are unchanged. Capture now runs through an AudioWorklet, which every supported browser provides.
+- Audio that has not yet uploaded is stored in the browser's IndexedDB for the Nojoin site until the server acknowledges it, the recording is discarded, or it is finalised. Clearing the site's data in that window loses those segments (#418).
 
 ### Changes
 
