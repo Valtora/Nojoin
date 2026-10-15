@@ -1,8 +1,14 @@
 import type { RecordingId } from "@/types";
 import api from "./client";
 
-export type ExportContentType = "transcript" | "notes" | "both" | "audio";
+/** The parts a document export can carry. The file always orders them notes, analytics, transcript. */
+export type ExportSection = "notes" | "analytics" | "transcript";
 export type ExportFormat = "txt" | "pdf" | "docx";
+
+/** What the export dialog asks for: a document of some sections, or the audio. */
+export type ExportSelection =
+  | { kind: "document"; sections: ExportSection[]; format: ExportFormat }
+  | { kind: "audio" };
 
 export const exportAudio = async (
   recordingId: RecordingId,
@@ -38,17 +44,29 @@ export const exportAudio = async (
   }
 };
 
+/**
+ * Download a document export.
+ *
+ * `speakerColors` is the recording view's speaker colour map (palette keys by
+ * diarisation label and name). Automatic colours exist only in the browser, so
+ * sending them is what lets the file use the colours the reader sees here.
+ */
 export const exportContent = async (
   recordingId: RecordingId,
-  contentType: ExportContentType = "transcript",
-  format: ExportFormat = "txt",
+  sections: ExportSection[],
+  format: ExportFormat = "pdf",
+  speakerColors: Record<string, string> = {},
 ): Promise<void> => {
   try {
     const response = await api.get(`/transcripts/${recordingId}/export`, {
       params: {
-        content_type: contentType,
+        sections,
         export_format: format,
+        speaker_colors: JSON.stringify(speakerColors),
       },
+      // Repeated keys (sections=notes&sections=analytics), which is how
+      // FastAPI reads a list, rather than axios's default sections[]=notes.
+      paramsSerializer: { indexes: null },
       responseType: "blob",
     });
 

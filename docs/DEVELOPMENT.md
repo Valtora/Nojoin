@@ -587,6 +587,12 @@ families:
   figures appear as text. A chart that drops its labels has to move those pairings
   up, and several steps then fail.
 
+Exports draw the same charts and wording on the server, in
+`backend/services/exports/`. Its formatting, delivery readings and attribution
+wording are ports of `formatDuration.ts`, `deliveryInsights.ts` and
+`AttributionWarning.tsx`, and `backend/tests/test_export_documents.py` pins the
+parity. A change to one side needs the same change on the other.
+
 This is also why the talk-share bars are hand-rolled rather than a library's
 horizontal bar chart. A charting bar reserves a category axis and a label gutter,
 which left about 90px of drawable bar once that panel had to share a row; a bar

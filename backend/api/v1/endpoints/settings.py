@@ -73,6 +73,8 @@ class SettingsUpdate(BaseModel):
     auto_analyse_meetings: Optional[bool] = None
     # Install-wide, admin-only. Null or 0 means no cap.
     ai_analysis_daily_limit: Optional[int] = Field(default=None, ge=0)
+    # Install-wide, admin-only: the Nojoin letterhead on exported files.
+    export_branding: Optional[bool] = None
     whisper_model_size: Optional[str] = None
     transcription_backend: Optional[str] = None
     parakeet_model: Optional[str] = None

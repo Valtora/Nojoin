@@ -13,6 +13,7 @@ import ChatPanel from "@/components/ChatPanel";
 import SpeakerPanel from "@/components/SpeakerPanel";
 import RecordingStatusDisplay from "@/components/RecordingStatusDisplay";
 import ExportModal from "@/components/ExportModal";
+import { RecordingStatus } from "@/types";
 import IconButton from "@/components/ui/IconButton";
 import { useNavigationStore } from "@/lib/store";
 
@@ -409,6 +410,7 @@ export default function RecordingPage({ params }: PageProps) {
         onClose={() => setShowExportModal(false)}
         onExport={handleExport}
         hasNotes={!!recording?.transcript?.notes}
+        hasAnalytics={recording?.status === RecordingStatus.PROCESSED}
         hasAudio={recording?.has_audio !== false}
       />
     </div>

@@ -660,6 +660,27 @@ a file it cannot parse, and fails the build if `site.css` hides `site-tokens.css
 [SITE.md](SITE.md) is the authority on the site's composition, voice and claims, and carries
 the preview runbook. This document remains the authority on tokens.
 
+## Exported documents
+
+PDF and Word exports are printed pages, so they take the light theme's values
+whatever theme the reader uses in the app: `--foreground` for text, `--action`
+orange for the letterhead rule, section underlines, table header rules and links,
+and the `--speaker-*` and `--chart-*` values for series, keyed exactly as the
+Analytics tab keys them. The values are copied into
+`backend/services/exports/theme.py`, because the backend cannot read
+`tokens.css`; change both together.
+
+The flat canon holds on the page: solid fills and hairlines, no gradients, and
+the logo is the only place the brand gradient appears. Type is Geist throughout,
+SemiBold for headings, with Geist Mono for transcript timestamps in the PDF.
+
+Two rules are specific to print. A speaker's colour is used as is for a dot, a
+bar or a row marker, but a speaker name set in that colour is darkened until it
+reaches 4.5:1 on white, so yellow or lime still reads as the same person without
+failing contrast. And with branding turned off under **Settings > Appearance**,
+the orange becomes slate (`#334155`) and the logo and footer line go, so a plain
+export carries no Nojoin colour either.
+
 ## Related documentation
 
 - [ARCHITECTURE.md](ARCHITECTURE.md): where the web client sits in the system.
