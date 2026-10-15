@@ -222,9 +222,9 @@ def record_live_run_failure(
 
     Non-fatal by contract: records the failure metric, marks pending ASR ledger
     rows failed, marks the drained sequences ``failed``, advances next_expected
-    so the lane keeps moving, and moves the timeline past the run's audio. The
-    source windows stay discoverable via their pending ASR coverage so the final
-    pipeline recovers them.
+    so the lane keeps moving, and moves the timeline past the run's audio.
+    Finalize transcribes the whole recording, so the run's audio still reaches
+    the final transcript.
     """
     recording_id, sequence, run = live_run.recording_id, live_run.sequence, live_run.run
     record_pipeline_metric(

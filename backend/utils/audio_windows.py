@@ -21,6 +21,7 @@ WINDOW_ASR_STATUS_FAILED = WINDOW_STATUS_FAILED
 
 WINDOW_DIARIZATION_STATUS_PENDING = "pending"
 WINDOW_DIARIZATION_STATUS_PROCESSING = "processing"
+# Older manifests carry this; the removed rolling diarisation wrote it.
 WINDOW_DIARIZATION_STATUS_PROCESSED = "processed"
 WINDOW_DIARIZATION_STATUS_FAILED = "failed"
 
@@ -47,14 +48,6 @@ class AudioWindowSpec:
     chunk_end_sequence: int
     is_partial: bool
     is_sealed: bool
-
-
-@dataclass(frozen=True)
-class CatchUpChunkSpan:
-    start_sequence: int
-    end_sequence: int
-    start_ms: int
-    end_ms: int
 
 
 def build_audio_window_specs(
@@ -309,50 +302,6 @@ def infer_resume_state_from_manifests(
     }
 
 
-def collect_pending_chunk_spans(
-    manifest_rows: Sequence[RecordingAudioWindowManifest],
-    chunk_rows: Sequence[Any],
-) -> list[CatchUpChunkSpan]:
-    if not manifest_rows or not chunk_rows:
-        return []
-
-    pending_ranges = [
-        (int(row.chunk_start_sequence), int(row.chunk_end_sequence))
-        for row in manifest_rows
-        if _get_asr_status(row) not in PROCESSED_ASR_WINDOW_STATUSES
-    ]
-    if not pending_ranges:
-        return []
-
-    chunk_by_sequence = {int(row.sequence_no): row for row in chunk_rows}
-    merged_ranges = _merge_sequence_ranges(pending_ranges)
-    spans: list[CatchUpChunkSpan] = []
-    for start_sequence, end_sequence in merged_ranges:
-        start_chunk = chunk_by_sequence.get(start_sequence)
-        end_chunk = chunk_by_sequence.get(end_sequence)
-        if start_chunk is None or end_chunk is None:
-            continue
-        spans.append(
-            CatchUpChunkSpan(
-                start_sequence=start_sequence,
-                end_sequence=end_sequence,
-                start_ms=int(start_chunk.absolute_start_ms),
-                end_ms=int(end_chunk.absolute_end_ms),
-            )
-        )
-    return spans
-
-
-def count_manifest_statuses(
-    manifest_rows: Sequence[RecordingAudioWindowManifest],
-) -> dict[str, int]:
-    counts: dict[str, int] = {}
-    for row in manifest_rows:
-        status = str(row.status or WINDOW_STATUS_PENDING)
-        counts[status] = counts.get(status, 0) + 1
-    return counts
-
-
 def _get_asr_status(row: Any) -> str:
     asr_status = getattr(row, "asr_status", None)
     if asr_status:
@@ -400,22 +349,8 @@ def _project_legacy_status_after_asr_update(
     row.last_error = None
 
 
-def window_asr_is_processed(row: Any) -> bool:
-    return _get_asr_status(row) in PROCESSED_ASR_WINDOW_STATUSES
-
-
 def window_diarization_status(row: Any) -> str:
     return _get_diarization_status(row)
-
-
-def window_diarization_is_processed(
-    row: Any, *, config_hash: str | None = None
-) -> bool:
-    if _get_diarization_status(row) != WINDOW_DIARIZATION_STATUS_PROCESSED:
-        return False
-    if config_hash is None:
-        return True
-    return str(getattr(row, "diarization_config_hash", "") or "") == str(config_hash)
 
 
 def _group_contiguous_chunks(chunk_rows: Sequence[Any]) -> list[list[Any]]:
@@ -472,21 +407,6 @@ def _build_window_spec(
         is_partial=is_partial,
         is_sealed=is_sealed,
     )
-
-
-def _merge_sequence_ranges(ranges: Sequence[tuple[int, int]]) -> list[tuple[int, int]]:
-    ordered_ranges = sorted(ranges)
-    if not ordered_ranges:
-        return []
-
-    merged: list[tuple[int, int]] = [ordered_ranges[0]]
-    for start_sequence, end_sequence in ordered_ranges[1:]:
-        previous_start, previous_end = merged[-1]
-        if start_sequence <= previous_end + 1:
-            merged[-1] = (previous_start, max(previous_end, end_sequence))
-            continue
-        merged.append((start_sequence, end_sequence))
-    return merged
 
 
 def _window_row_signature(row: RecordingAudioWindowManifest) -> tuple[Any, ...]:

@@ -32,13 +32,7 @@ from backend.models.context_chunk import ContextChunk
 from backend.models.document import Document, DocumentStatus
 from backend.models.invitation import Invitation
 from backend.models.pipeline import (
-    DiarizationWindowResult,
-    DiarizationWindowTurn,
-    ProcessingRun,
-    ProcessingRunKind,
-    ProcessingRunStatus,
     RecordingAudioChunk,
-    RecordingAudioWindowManifest,
     TranscriptUtteranceState,
 )
 from backend.models.recording import (
@@ -59,28 +53,12 @@ from backend.services.calendar_link_service import auto_link_recording
 from backend.utils.asr_window_results import (
     complete_recording_asr_window_result,
     fail_recording_asr_window_result,
-    get_recording_asr_window_result,
-    get_reusable_catch_up_segments,
     start_recording_asr_window_result,
 )
-from backend.utils.audio_windows import (
-    WINDOW_DIARIZATION_STATUS_FAILED,
-    WINDOW_DIARIZATION_STATUS_PROCESSED,
-    WINDOW_STATUS_CATCH_UP_PROCESSED,
-    WINDOW_STATUS_FAILED,
-    collect_pending_chunk_spans,
-    count_manifest_statuses,
-    mark_audio_windows_processed,
-    window_asr_is_processed,
-    window_diarization_is_processed,
-)
 from backend.utils.canonical_pipeline import (
-    ROLLING_DIARIZATION_CONFIDENCE_FLOOR,
-    ROLLING_DIARIZATION_SPEAKER_STATE_PROVISIONAL,
     apply_recording_speaker_identity_fields,
     build_reusable_live_segments,
     build_transcript_segments_for_read,
-    ensure_processing_run,
     finalize_utterances_from_segments,
     refine_recording_utterances_via_segmentation,
     refresh_transcript_projection_from_canonical,
@@ -127,12 +105,6 @@ from backend.utils.recording_storage import (
     cleanup_stale_recording_artifacts,
     mark_recording_audio_chunks_ready_for_cleanup,
 )
-from backend.utils.rolling_diarization import (
-    build_diarization_window_payload,
-    build_rolling_diarization_config_hash,
-    get_rolling_diarization_model_name,
-    persist_diarization_window_result,
-)
 from backend.utils.speaker_name_suggestions import (
     SPEAKER_SUGGESTION_STATUS_ACCEPTED,
     SpeakerInferenceResult,
@@ -162,8 +134,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-FINAL_DIARIZATION_SPAN_PADDING_MS = 1000
-FINAL_DIARIZATION_BRIDGE_GAP_MS = 1500
 
 # Suppress specific warnings in the worker process
 warnings.filterwarnings("ignore", message=r".*std\(\): degrees of freedom is <= 0.*")
@@ -205,15 +175,6 @@ class DatabaseTask(Task):
     def after_return(self, status, retval, task_id, args, kwargs, einfo):
         if self._session:
             self._session.close()
-
-
-def _to_optional_float(value) -> float | None:
-    if value is None:
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
 
 
 # --- IMPORTED REDIRECTION WRAPPERS FOR TEST MONKEYPATCHING ---
@@ -289,24 +250,6 @@ def build_transcript_segments_for_read(*args, **kwargs):
     return _build_transcript_segments_for_read_orig(*args, **kwargs)
 
 
-_collect_pending_chunk_spans_orig = collect_pending_chunk_spans
-
-
-def collect_pending_chunk_spans(*args, **kwargs):
-    import sys
-
-    tasks = sys.modules.get("backend.worker.tasks")
-    if tasks and hasattr(tasks, "collect_pending_chunk_spans"):
-        actual = tasks.collect_pending_chunk_spans
-        if (
-            actual is not collect_pending_chunk_spans
-            and getattr(actual, "__code__", None)
-            is not collect_pending_chunk_spans.__code__
-        ):
-            return actual(*args, **kwargs)
-    return _collect_pending_chunk_spans_orig(*args, **kwargs)
-
-
 _complete_recording_asr_window_result_orig = complete_recording_asr_window_result
 
 
@@ -323,23 +266,6 @@ def complete_recording_asr_window_result(*args, **kwargs):
         ):
             return actual(*args, **kwargs)
     return _complete_recording_asr_window_result_orig(*args, **kwargs)
-
-
-_ensure_processing_run_orig = ensure_processing_run
-
-
-def ensure_processing_run(*args, **kwargs):
-    import sys
-
-    tasks = sys.modules.get("backend.worker.tasks")
-    if tasks and hasattr(tasks, "ensure_processing_run"):
-        actual = tasks.ensure_processing_run
-        if (
-            actual is not ensure_processing_run
-            and getattr(actual, "__code__", None) is not ensure_processing_run.__code__
-        ):
-            return actual(*args, **kwargs)
-    return _ensure_processing_run_orig(*args, **kwargs)
 
 
 _fail_recording_asr_window_result_orig = fail_recording_asr_window_result
@@ -393,24 +319,6 @@ def flag_modified(*args, **kwargs):
         ):
             return actual(*args, **kwargs)
     return _flag_modified_orig(*args, **kwargs)
-
-
-_get_recording_asr_window_result_orig = get_recording_asr_window_result
-
-
-def get_recording_asr_window_result(*args, **kwargs):
-    import sys
-
-    tasks = sys.modules.get("backend.worker.tasks")
-    if tasks and hasattr(tasks, "get_recording_asr_window_result"):
-        actual = tasks.get_recording_asr_window_result
-        if (
-            actual is not get_recording_asr_window_result
-            and getattr(actual, "__code__", None)
-            is not get_recording_asr_window_result.__code__
-        ):
-            return actual(*args, **kwargs)
-    return _get_recording_asr_window_result_orig(*args, **kwargs)
 
 
 _get_speakers_eligible_for_llm_renaming_orig = get_speakers_eligible_for_llm_renaming
@@ -606,42 +514,6 @@ def _build_automatic_meeting_intelligence_transcript(*args, **kwargs):
     )
 
 
-def _build_catch_up_segments(*args, **kwargs):
-    import sys
-
-    tasks = sys.modules.get("backend.worker.tasks")
-    if tasks:
-        actual = getattr(tasks, "_build_catch_up_segments", None)
-        if (
-            actual
-            and getattr(actual, "__code__", None)
-            is not _build_catch_up_segments.__code__
-        ):
-            return actual(*args, **kwargs)
-        impl = getattr(tasks, "_build_catch_up_segments_impl", None)
-        if impl:
-            return impl(*args, **kwargs)
-    raise RuntimeError("_build_catch_up_segments_impl not found in tasks module")
-
-
-def _build_final_diarization_plan(*args, **kwargs):
-    import sys
-
-    tasks = sys.modules.get("backend.worker.tasks")
-    if tasks:
-        actual = getattr(tasks, "_build_final_diarization_plan", None)
-        if (
-            actual
-            and getattr(actual, "__code__", None)
-            is not _build_final_diarization_plan.__code__
-        ):
-            return actual(*args, **kwargs)
-        impl = getattr(tasks, "_build_final_diarization_plan_impl", None)
-        if impl:
-            return impl(*args, **kwargs)
-    raise RuntimeError("_build_final_diarization_plan_impl not found in tasks module")
-
-
 def _has_meeting_edge_signal(*args, **kwargs):
     import sys
 
@@ -676,64 +548,6 @@ def _llm_backend_from_config(*args, **kwargs):
         if impl:
             return impl(*args, **kwargs)
     raise RuntimeError("_llm_backend_from_config_impl not found in tasks module")
-
-
-def _load_recording_audio_chunks(*args, **kwargs):
-    import sys
-
-    tasks = sys.modules.get("backend.worker.tasks")
-    if tasks:
-        actual = getattr(tasks, "_load_recording_audio_chunks", None)
-        if (
-            actual
-            and getattr(actual, "__code__", None)
-            is not _load_recording_audio_chunks.__code__
-        ):
-            return actual(*args, **kwargs)
-        impl = getattr(tasks, "_load_recording_audio_chunks_impl", None)
-        if impl:
-            return impl(*args, **kwargs)
-    raise RuntimeError("_load_recording_audio_chunks_impl not found in tasks module")
-
-
-def _load_recording_audio_window_manifests(*args, **kwargs):
-    import sys
-
-    tasks = sys.modules.get("backend.worker.tasks")
-    if tasks:
-        actual = getattr(tasks, "_load_recording_audio_window_manifests", None)
-        if (
-            actual
-            and getattr(actual, "__code__", None)
-            is not _load_recording_audio_window_manifests.__code__
-        ):
-            return actual(*args, **kwargs)
-        impl = getattr(tasks, "_load_recording_audio_window_manifests_impl", None)
-        if impl:
-            return impl(*args, **kwargs)
-    raise RuntimeError(
-        "_load_recording_audio_window_manifests_impl not found in tasks module"
-    )
-
-
-def _recording_has_completed_diarization_windows(*args, **kwargs):
-    import sys
-
-    tasks = sys.modules.get("backend.worker.tasks")
-    if tasks:
-        actual = getattr(tasks, "_recording_has_completed_diarization_windows", None)
-        if (
-            actual
-            and getattr(actual, "__code__", None)
-            is not _recording_has_completed_diarization_windows.__code__
-        ):
-            return actual(*args, **kwargs)
-        impl = getattr(tasks, "_recording_has_completed_diarization_windows_impl", None)
-        if impl:
-            return impl(*args, **kwargs)
-    raise RuntimeError(
-        "_recording_has_completed_diarization_windows_impl not found in tasks module"
-    )
 
 
 def _recording_uses_browser_capture(*args, **kwargs):
@@ -792,26 +606,6 @@ def _run_automatic_meeting_intelligence_stage(*args, **kwargs):
     )
 
 
-def _run_catch_up_diarization_windows(*args, **kwargs):
-    import sys
-
-    tasks = sys.modules.get("backend.worker.tasks")
-    if tasks:
-        actual = getattr(tasks, "_run_catch_up_diarization_windows", None)
-        if (
-            actual
-            and getattr(actual, "__code__", None)
-            is not _run_catch_up_diarization_windows.__code__
-        ):
-            return actual(*args, **kwargs)
-        impl = getattr(tasks, "_run_catch_up_diarization_windows_impl", None)
-        if impl:
-            return impl(*args, **kwargs)
-    raise RuntimeError(
-        "_run_catch_up_diarization_windows_impl not found in tasks module"
-    )
-
-
 def _should_refresh_meeting_edge(*args, **kwargs):
     import sys
 
@@ -830,30 +624,6 @@ def _should_refresh_meeting_edge(*args, **kwargs):
     raise RuntimeError("_should_refresh_meeting_edge_impl not found in tasks module")
 
 
-def _summarize_completed_diarization_window_speaker_evidence(*args, **kwargs):
-    import sys
-
-    tasks = sys.modules.get("backend.worker.tasks")
-    if tasks:
-        actual = getattr(
-            tasks, "_summarize_completed_diarization_window_speaker_evidence", None
-        )
-        if (
-            actual
-            and getattr(actual, "__code__", None)
-            is not _summarize_completed_diarization_window_speaker_evidence.__code__
-        ):
-            return actual(*args, **kwargs)
-        impl = getattr(
-            tasks, "_summarize_completed_diarization_window_speaker_evidence_impl", None
-        )
-        if impl:
-            return impl(*args, **kwargs)
-    raise RuntimeError(
-        "_summarize_completed_diarization_window_speaker_evidence_impl not found in tasks module"
-    )
-
-
 def _paths_point_to_same_media(*args, **kwargs):
     import sys
 
@@ -870,26 +640,6 @@ def _paths_point_to_same_media(*args, **kwargs):
         if impl:
             return impl(*args, **kwargs)
     raise RuntimeError("_paths_point_to_same_media_impl not found in tasks module")
-
-
-def _persist_catch_up_diarization_window(*args, **kwargs):
-    import sys
-
-    tasks = sys.modules.get("backend.worker.tasks")
-    if tasks:
-        actual = getattr(tasks, "_persist_catch_up_diarization_window", None)
-        if (
-            actual
-            and getattr(actual, "__code__", None)
-            is not _persist_catch_up_diarization_window.__code__
-        ):
-            return actual(*args, **kwargs)
-        impl = getattr(tasks, "_persist_catch_up_diarization_window_impl", None)
-        if impl:
-            return impl(*args, **kwargs)
-    raise RuntimeError(
-        "_persist_catch_up_diarization_window_impl not found in tasks module"
-    )
 
 
 def _mark_notes_generation_error(*args, **kwargs):

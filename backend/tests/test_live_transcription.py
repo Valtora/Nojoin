@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import io
 import json
-import logging
 import wave
 from pathlib import Path
 
@@ -1105,43 +1104,6 @@ def test_build_audio_window_specs_tracks_overlap_independent_of_chunk_cadence():
     ]
 
 
-def test_collect_pending_chunk_spans_merges_overlapping_pending_windows():
-    from types import SimpleNamespace
-
-    from backend.utils.audio_windows import (
-        CatchUpChunkSpan,
-        collect_pending_chunk_spans,
-    )
-
-    chunk_rows = [
-        SimpleNamespace(sequence_no=1, absolute_start_ms=0, absolute_end_ms=1000),
-        SimpleNamespace(sequence_no=2, absolute_start_ms=1000, absolute_end_ms=2000),
-        SimpleNamespace(sequence_no=3, absolute_start_ms=2000, absolute_end_ms=3000),
-    ]
-    manifest_rows = [
-        SimpleNamespace(
-            id=1, chunk_start_sequence=1, chunk_end_sequence=2, status="live_processed"
-        ),
-        SimpleNamespace(
-            id=2, chunk_start_sequence=2, chunk_end_sequence=3, status="pending"
-        ),
-        SimpleNamespace(
-            id=3,
-            chunk_start_sequence=3,
-            chunk_end_sequence=3,
-            status="failed",
-            asr_status="live_processed",
-            diarization_status="failed",
-        ),
-    ]
-
-    spans = collect_pending_chunk_spans(manifest_rows, chunk_rows)
-
-    assert spans == [
-        CatchUpChunkSpan(start_sequence=2, end_sequence=3, start_ms=1000, end_ms=3000)
-    ]
-
-
 def test_infer_resume_state_from_manifest_rows():
     from types import SimpleNamespace
 
@@ -1161,204 +1123,6 @@ def test_infer_resume_state_from_manifest_rows():
     )
 
     assert resumed_state == {"next_expected": 5, "buffer_abs_start": 5.5}
-
-
-def test_catch_up_diarization_marks_diarization_lane_without_changing_asr(monkeypatch):
-    from types import SimpleNamespace
-
-    from backend.worker import tasks as worker_tasks
-
-    manifest_rows = [
-        SimpleNamespace(
-            id=10,
-            recording_id=1,
-            window_index=0,
-            window_start_ms=0,
-            window_end_ms=20_000,
-            chunk_start_sequence=0,
-            chunk_end_sequence=2,
-            status="live_processed",
-            asr_status="live_processed",
-            asr_processing_run_id=41,
-            asr_last_error=None,
-            diarization_status="pending",
-            diarization_processing_run_id=None,
-            diarization_config_hash=None,
-            diarization_window_result_id=None,
-            diarization_last_error=None,
-        )
-    ]
-
-    class _ExecResult:
-        def all(self):
-            return []
-
-    class _Session:
-        def __init__(self):
-            self.added = []
-
-        def exec(self, *args, **kwargs):
-            return _ExecResult()
-
-        def add(self, row):
-            self.added.append(row)
-
-    monkeypatch.setattr(
-        worker_tasks,
-        "_load_recording_audio_window_manifests",
-        lambda session, recording_id: manifest_rows,
-    )
-    monkeypatch.setattr(
-        worker_tasks,
-        "_persist_catch_up_diarization_window",
-        lambda *args, **kwargs: SimpleNamespace(id=99),
-    )
-
-    completed_ids, failed_ids = worker_tasks._run_catch_up_diarization_windows(
-        session=_Session(),
-        recording=SimpleNamespace(id=1),
-        processed_audio_path="/tmp/recording.wav",
-        merged_config={"processing_device": "cpu", "enable_diarization": True},
-        diarize_audio=lambda path, config: object(),
-        extract_audio_clip=lambda *args, **kwargs: None,
-        processing_run_id=77,
-        temp_files=[],
-        log=logging.getLogger("test"),
-    )
-
-    assert completed_ids == {10}
-    assert failed_ids == set()
-    assert manifest_rows[0].asr_status == "live_processed"
-    assert manifest_rows[0].asr_processing_run_id == 41
-    assert manifest_rows[0].diarization_status == "processed"
-    assert manifest_rows[0].diarization_processing_run_id == 77
-    assert manifest_rows[0].diarization_window_result_id == 99
-    assert manifest_rows[0].status == "live_processed"
-
-
-def test_build_diarization_window_payload_offsets_turns_to_absolute_time():
-    from backend.worker.tasks import _build_diarization_window_payload
-
-    class _Segment:
-        def __init__(self, start: float, end: float):
-            self.start = start
-            self.end = end
-
-    class _Annotation:
-        def itertracks(self, yield_label=False):
-            assert yield_label is True
-            yield _Segment(0.2, 0.6), "A", "SPEAKER_00"
-            yield _Segment(0.8, 1.3), "B", "SPEAKER_01"
-
-    payload, turns = _build_diarization_window_payload(
-        _Annotation(),
-        window_start_ms=5000,
-        window_end_ms=7000,
-    )
-
-    assert payload == {
-        "window_start_ms": 5000,
-        "window_end_ms": 7000,
-        "speaker_labels": ["SPEAKER_00", "SPEAKER_01"],
-        "turn_count": 2,
-        "turns": [
-            {
-                "local_speaker_key": "SPEAKER_00",
-                "start_ms": 5200,
-                "end_ms": 5600,
-                "track": "A",
-            },
-            {
-                "local_speaker_key": "SPEAKER_01",
-                "start_ms": 5800,
-                "end_ms": 6300,
-                "track": "B",
-            },
-        ],
-    }
-    assert turns == payload["turns"]
-
-
-def test_analyze_window_speakers_prefers_clean_non_overlapping_spans(monkeypatch):
-    from types import SimpleNamespace
-
-    from backend.utils.rolling_diarization import analyze_window_speakers
-
-    captured_segments = []
-
-    class _DiarizationResult:
-        def itertracks(self, yield_label=False):
-            turns = [
-                (SimpleNamespace(start=0.0, end=0.8), "A", "SPEAKER_00"),
-                (SimpleNamespace(start=0.3, end=0.9), "B", "SPEAKER_01"),
-                (SimpleNamespace(start=1.0, end=2.2), "A", "SPEAKER_00"),
-            ]
-            return iter(turns)
-
-    monkeypatch.setattr(
-        "backend.processing.embedding_core.extract_embedding_for_segments",
-        lambda _audio_path, segments, **_kwargs: (
-            captured_segments.append(list(segments)) or [0.3, 0.4]
-        ),
-    )
-
-    metadata_by_key, embeddings_by_key = analyze_window_speakers(
-        diarization_result=_DiarizationResult(),
-        audio_path="/tmp/window.wav",
-        device_str="cpu",
-        hf_token=None,
-        recording_speakers=[],
-        global_speakers=[],
-        window_start_ms=5_000,
-    )
-
-    assert captured_segments == [[(1.0, 2.2)]]
-    assert embeddings_by_key["SPEAKER_00"] == [0.3, 0.4]
-    assert metadata_by_key["SPEAKER_00"]["clean_segment_count"] == 1
-    assert metadata_by_key["SPEAKER_00"]["source_spans_ms"] == [
-        {"start_ms": 6_000, "end_ms": 7_200}
-    ]
-    assert metadata_by_key["SPEAKER_01"]["embedding_available"] is False
-    assert metadata_by_key["SPEAKER_01"]["clean_segment_count"] == 0
-
-
-def test_analyze_window_speakers_can_skip_embedding_matching(monkeypatch):
-    from types import SimpleNamespace
-
-    from backend.utils.rolling_diarization import analyze_window_speakers
-
-    class _DiarizationResult:
-        def itertracks(self, yield_label=False):
-            turns = [
-                (SimpleNamespace(start=0.0, end=0.8), "A", "SPEAKER_00"),
-                (SimpleNamespace(start=1.0, end=2.2), "A", "SPEAKER_00"),
-            ]
-            return iter(turns)
-
-    def _unexpected_extract(*args, **kwargs):
-        raise AssertionError("live rolling should not extract speaker embeddings")
-
-    monkeypatch.setattr(
-        "backend.processing.embedding_core.extract_embedding_for_segments",
-        _unexpected_extract,
-    )
-
-    metadata_by_key, embeddings_by_key = analyze_window_speakers(
-        diarization_result=_DiarizationResult(),
-        audio_path="/tmp/window.wav",
-        device_str="cpu",
-        hf_token=None,
-        recording_speakers=[SimpleNamespace(id=7, embedding=[0.1, 0.2])],
-        global_speakers=[SimpleNamespace(id=9, embedding=[0.3, 0.4])],
-        window_start_ms=5_000,
-        enable_embedding_matching=False,
-    )
-
-    assert embeddings_by_key == {}
-    assert metadata_by_key["SPEAKER_00"]["embedding_available"] is False
-    assert metadata_by_key["SPEAKER_00"]["clean_segment_count"] == 2
-    assert "best_recording_speaker_id" not in metadata_by_key["SPEAKER_00"]
-    assert "best_global_speaker_id" not in metadata_by_key["SPEAKER_00"]
 
 
 def _patch_live_deps(
@@ -1818,7 +1582,7 @@ def test_live_race_guard_skips_db_write_on_late_status_flip(monkeypatch, tmp_pat
 
 
 def test_live_failure_path_records_recoverable_outcome(monkeypatch, tmp_path):
-    """transcribe_audio raising is logged and recorded for final catch-up."""
+    """transcribe_audio raising is logged and recorded as a failed run."""
     from backend.models.recording import RecordingStatus
     from backend.processing import live_transcribe as lt
     from backend.processing import transcribe as transcribe_module

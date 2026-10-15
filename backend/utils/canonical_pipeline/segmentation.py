@@ -19,8 +19,9 @@ def refine_recording_utterances_via_segmentation(
     """Phase F finalize-time pass: re-split ambiguous utterances using
     frame-level segmentation derived turns.
 
-    For each candidate active utterance (boundary-flagged by Phase B, or any
-    sufficiently long utterance when ``candidate_predicate`` is None), runs
+    For each candidate active utterance (one the removed rolling diarisation
+    flagged as a boundary utterance, or a sufficiently long live utterance,
+    when ``candidate_predicate`` is None), runs
     the pyannote segmentation-3.0 model on the utterance audio span via
     :mod:`backend.processing.segmentation_refinement`, maps the resulting
     local speakers to ``RecordingSpeaker`` rows by embedding cosine
@@ -71,8 +72,8 @@ def refine_recording_utterances_via_segmentation(
             "is_boundary_utterance"
         ):
             return True
-        # Long live-emitted utterances without a window-level split are the
-        # other high-yield target for refinement.
+        # Long live-emitted utterances are the other high-yield target for
+        # refinement.
         if str(utterance.source_kind or "").lower() == "live" and duration_ms >= 4000:
             return True
         return False
@@ -160,7 +161,8 @@ def refine_recording_utterances_via_segmentation(
             continue
 
         # Tag the replacement payloads so downstream UI / metrics can tell
-        # the segmentation-derived splits apart from rolling-window splits.
+        # the segmentation-derived splits apart from the rolling-window splits
+        # that older recordings carry.
         for replacement in split_segments:
             payload = replacement.setdefault("confidence_payload", {})
             rolling_payload = payload.setdefault("rolling_diarization", {})
@@ -324,97 +326,6 @@ def _join_asr_words(words: Sequence[dict[str, Any]]) -> str:
         for word_payload in words
         if str(word_payload.get("word") or "").strip()
     ).strip()
-
-
-def _summarize_utterance_turn_support(
-    utterance: TranscriptUtterance,
-    *,
-    turn_rows: Sequence[DiarizationWindowTurn],
-    replay_policy: SpeakerReplayPolicy | None = None,
-) -> dict[int, dict[str, Any]]:
-    window_ids_by_speaker_id: dict[int, set[int]] = defaultdict(set)
-    overlap_ms_by_speaker_id: dict[int, int] = defaultdict(int)
-
-    for turn_row in turn_rows:
-        if turn_row.matched_recording_speaker_id is None:
-            continue
-        normalized_speaker_id = _replay_normalized_recording_speaker_id(
-            replay_policy,
-            int(turn_row.matched_recording_speaker_id),
-        )
-        if normalized_speaker_id is None:
-            continue
-        overlap_ms = _range_overlap_ms(
-            utterance.start_ms,
-            utterance.end_ms,
-            turn_row.start_ms,
-            turn_row.end_ms,
-        )
-        if overlap_ms < ROLLING_DIARIZATION_MIN_UTTERANCE_OVERLAP_MS:
-            continue
-        speaker_id = int(normalized_speaker_id)
-        window_ids_by_speaker_id[speaker_id].add(int(turn_row.window_result_id))
-        overlap_ms_by_speaker_id[speaker_id] += int(overlap_ms)
-
-    return {
-        speaker_id: {
-            "window_ids": set(window_ids),
-            "supporting_window_count": len(window_ids),
-            "supporting_overlap_ms": int(overlap_ms_by_speaker_id[speaker_id]),
-        }
-        for speaker_id, window_ids in window_ids_by_speaker_id.items()
-    }
-
-
-def _build_utterance_speaker_state_payload(
-    utterance: TranscriptUtterance,
-    *,
-    speaker_id: int,
-    confidence: float,
-    support_summary: dict[int, dict[str, Any]],
-    manual_override: bool = False,
-) -> dict[str, Any]:
-    speaker_support = dict(support_summary.get(int(speaker_id), {}))
-    supporting_window_count = int(speaker_support.get("supporting_window_count", 0))
-    supporting_overlap_ms = int(speaker_support.get("supporting_overlap_ms", 0))
-
-    conflicting_window_ids: set[int] = set()
-    conflicting_overlap_ms = 0
-    for candidate_speaker_id, candidate_support in support_summary.items():
-        if int(candidate_speaker_id) == int(speaker_id):
-            continue
-        conflicting_window_ids.update(candidate_support.get("window_ids", set()))
-        conflicting_overlap_ms += int(candidate_support.get("supporting_overlap_ms", 0))
-
-    state_value = (
-        utterance.state.value
-        if hasattr(utterance.state, "value")
-        else str(utterance.state)
-    )
-    if manual_override:
-        speaker_state = ROLLING_DIARIZATION_SPEAKER_STATE_MANUAL_OVERRIDE
-    elif state_value == TranscriptUtteranceState.FINALIZED.value:
-        speaker_state = ROLLING_DIARIZATION_SPEAKER_STATE_STABLE
-    elif (
-        utterance.source_kind not in {"live", "catch_up"}
-        and state_value != TranscriptUtteranceState.PROVISIONAL.value
-    ):
-        speaker_state = ROLLING_DIARIZATION_SPEAKER_STATE_STABLE
-    elif (
-        supporting_window_count >= ROLLING_DIARIZATION_STABLE_WINDOW_COUNT
-        and float(confidence) >= ROLLING_DIARIZATION_CONFIDENCE_FLOOR
-    ):
-        speaker_state = ROLLING_DIARIZATION_SPEAKER_STATE_STABLE
-    else:
-        speaker_state = ROLLING_DIARIZATION_SPEAKER_STATE_PROVISIONAL
-
-    return {
-        "speaker_state": speaker_state,
-        "supporting_window_count": supporting_window_count,
-        "conflicting_window_count": len(conflicting_window_ids),
-        "supporting_overlap_ms": supporting_overlap_ms,
-        "conflicting_overlap_ms": int(conflicting_overlap_ms),
-    }
 
 
 def _speaker_state_for_utterance(
