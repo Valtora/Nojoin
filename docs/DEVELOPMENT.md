@@ -626,7 +626,7 @@ Nojoin uses a single Git tag (`vX.Y.Z`) to release the API, Worker, Worker-IO, a
 
 **What the script does**, stopping at the first failure:
 
-1. Checks that `origin/main` carries the new `docs/VERSION`, that the tag does not exist yet, and that every commit since the previous tag has a green `CI gate`. CI on `main` only runs the jobs whose paths a push touched, so the release commit's own run is not enough on its own: a version bump runs the docs checks and nothing else.
+1. Checks that `origin/main` carries the new `docs/VERSION`, that the tag does not exist yet, and that every commit since the previous tag has a green `CI gate`, waiting up to 20 minutes for any CI still running. CI on `main` only runs the jobs whose paths a push touched, so the release commit's own run is not enough on its own: a version bump runs the docs checks and nothing else.
 2. Builds all four images from a clean worktree of that commit, with no layer cache, in a dedicated BuildKit builder. [docker/release.hcl](../docker/release.hcl) defines the build, and worker-io layers onto the worker built in the same run.
 3. Runs the gates on those images: the Trivy severity gate, the health and non-root smoke, and an advisory lookup for the two subscription CLIs in worker-io. See [Release Gates](#release-gates).
 4. Builds again from cache with provenance and SBOM attestations, pushes the immutable `version` and commit-`sha` tags, and checks that each pushed image config is the one that was scanned.

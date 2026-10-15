@@ -60,6 +60,7 @@ WORK_ROOT = Path.home() / ".cache" / "nojoin-release"
 SMOKE_PROJECT = "nojoin-release-smoke"
 CI_CHECK = "CI gate"
 CI_WAIT_SECONDS = 20 * 60
+CI_START_GRACE_SECONDS = 2 * 60
 VERSION_PATTERN = re.compile(r"^\d+\.\d+\.\d+$")
 
 # Same severity policy the release gate has always applied; see SECURITY.md.
@@ -237,15 +238,50 @@ def check_registry_login() -> None:
 
 
 def ci_state(commit: str) -> tuple[str, str]:
-    """Return (status, conclusion) of the newest CI gate run for a commit."""
+    """Return (status, conclusion) of a commit's CI gate.
+
+    GitHub creates the CI gate check only once the jobs it needs have finished,
+    so while CI runs there is no check to read. The workflow run's status
+    stands in for it until then.
+    """
     path = (
         f"repos/{GITHUB_REPO}/commits/{commit}/check-runs?check_name={quote(CI_CHECK)}"
     )
     query = ".check_runs | sort_by(.started_at) | last | [.status, .conclusion] | @tsv"
     fields = run(["gh", "api", path, "--jq", query]).strip().split("\t")
-    if len(fields) != 2 or fields[0] in ("", "null"):
-        return ("missing", "")
-    return (fields[0], fields[1])
+    if len(fields) == 2 and fields[0] not in ("", "null"):
+        return (fields[0], fields[1])
+    runs = f"repos/{GITHUB_REPO}/actions/workflows/ci.yml/runs?head_sha={commit}&event=push"
+    query = '.workflow_runs | sort_by(.created_at) | last | .status // ""'
+    status = run(["gh", "api", runs, "--jq", query]).strip()
+    if status and status != "completed":
+        return (status, "")
+    return ("missing", "")
+
+
+def wait_for_ci(commits: list[str]) -> dict[str, tuple[str, str]]:
+    """Poll until no commit's CI is still running, or CI_WAIT_SECONDS pass.
+
+    A commit merged seconds ago may not have a workflow run yet, so a missing
+    run counts as starting for the first CI_START_GRACE_SECONDS.
+    """
+    start = time.monotonic()
+    states = {commit: ci_state(commit) for commit in commits}
+    while time.monotonic() - start < CI_WAIT_SECONDS:
+        starting = time.monotonic() - start < CI_START_GRACE_SECONDS
+        waiting = [
+            commit
+            for commit, (status, _) in states.items()
+            if status not in ("completed", "missing")
+            or (status == "missing" and starting)
+        ]
+        if not waiting:
+            break
+        names = ", ".join(commit[:7] for commit in waiting)
+        print(f"   CI still running on {names}, waiting", flush=True)
+        time.sleep(20)
+        states.update({commit: ci_state(commit) for commit in waiting})
+    return states
 
 
 def check_ci(release: Release) -> None:
@@ -263,20 +299,13 @@ def check_ci(release: Release) -> None:
     commits = run(["git", "rev-list", "--first-parent", span]).split()
     if not release.previous_tag:
         commits = commits[:1]
-    # The release commit is usually the version bump merged moments ago, so its
-    # run may still be going. Older commits have long finished.
-    deadline = time.monotonic() + CI_WAIT_SECONDS
-    head = ci_state(release.sha)
-    while head[0] in ("queued", "in_progress") and time.monotonic() < deadline:
-        print(f"   CI gate on {release.sha[:7]} is {head[0]}, waiting", flush=True)
-        time.sleep(20)
-        head = ci_state(release.sha)
-
-    failures = []
-    for commit in commits:
-        status, conclusion = head if commit == release.sha else ci_state(commit)
-        if status != "completed" or conclusion != "success":
-            failures.append(f"{commit[:7]}: {conclusion or status}")
+    # Any commit in the range can still be under CI: a release usually follows
+    # its version bump within minutes, and sometimes a late fix as well.
+    failures = [
+        f"{commit[:7]}: {conclusion or status}"
+        for commit, (status, conclusion) in wait_for_ci(commits).items()
+        if status != "completed" or conclusion != "success"
+    ]
     if failures:
         raise ReleaseError(
             "CI gate is not green on every commit since "
