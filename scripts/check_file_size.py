@@ -40,10 +40,10 @@ GRANDFATHERED: dict[str, int] = {
     # meeting-intelligence, meeting-edge, and catch-up diarization stages moved to
     # their own modules. What remains is the core final-recording pipeline.
     "backend/worker/tasks/pipeline.py": 1334,
-    "backend/utils/canonical_pipeline/diarization.py": 2483,
-    "backend/utils/canonical_pipeline/core.py": 2158,
+    "backend/utils/canonical_pipeline/diarization.py": 2464,
+    "backend/utils/canonical_pipeline/core.py": 2066,
     "backend/processing/live_transcribe.py": 1947,
-    "backend/utils/canonical_pipeline/speaker.py": 1241,
+    "backend/utils/canonical_pipeline/speaker.py": 1109,
 }
 
 

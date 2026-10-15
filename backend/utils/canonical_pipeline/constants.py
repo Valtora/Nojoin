@@ -101,6 +101,8 @@ SPEAKER_ASSIGNMENT_SOURCE_FINALIZE = "finalize"
 SPEAKER_ASSIGNMENT_SOURCE_BACKFILL = "backfill"
 SPEAKER_ASSIGNMENT_SOURCE_COMPATIBILITY_REPLACE = "compatibility_replace"
 SPEAKER_ASSIGNMENT_SOURCE_MANUAL = "manual"
+# Only older rows carry the two replay sources: speaker corrections no longer
+# replay diarisation window rows.
 SPEAKER_ASSIGNMENT_SOURCE_CORRECTION_REPLAY = "speaker_correction_replay"
 SPEAKER_ASSIGNMENT_SOURCE_IDENTITY_REPLAY = "identity_replay"
 

@@ -462,10 +462,9 @@ The normal backend processing path is:
 5. Pyannote diarisation, optionally bounded by the recording's `max_speakers`.
 6. Phantom speaker filtering.
 7. Merge (see [Word Timestamps In The Merge](#word-timestamps-in-the-merge)), voiceprint extraction, and deterministic speaker resolution.
-8. Rolling diarisation window reconciliation: completed rolling windows captured during the live lane are replayed to apply speaker boundary corrections to provisional live utterances.
-9. Frame-level segmentation refinement: a second boundary-quality pass using `pyannote/segmentation-3.0` inspects boundary-flagged and long live-emitted utterances and re-splits them where the dense per-frame speaker activity map identifies a cleaner turn boundary than the rolling diarisation windows resolved.
-10. Automatic meeting intelligence when an AI provider and model are configured.
-11. Automatic application of inferred speaker names to unresolved speakers, plus persistence of the meeting title and Markdown meeting notes. Applied suggestions are retained on the transcript as an audit trail.
+8. Frame-level segmentation refinement: a second boundary-quality pass using `pyannote/segmentation-3.0` inspects boundary-flagged and long live-emitted utterances and re-splits them where the dense per-frame speaker activity map identifies a cleaner turn boundary than the rolling diarisation windows resolved.
+9. Automatic meeting intelligence when an AI provider and model are configured.
+10. Automatic application of inferred speaker names to unresolved speakers, plus persistence of the meeting title and Markdown meeting notes. Applied suggestions are retained on the transcript as an audit trail.
 
 ### Word Timestamps In The Merge
 
@@ -669,8 +668,7 @@ the timeline cannot be worked out.
 The live lane is best-effort: any failure is logged, the lane still advances,
 and nothing is re-raised. When the recording finalises, `process_recording_task`
 promotes canonical live and catch-up transcript state first, fills only missing
-durable spans, replays completed rolling diarisation windows when that is
-sufficient, preserves authoritative user edits, and only falls back to a
+durable spans, preserves authoritative user edits, and only falls back to a
 whole-recording ASR or diarisation rerun when coverage is missing,
 confidence remains too low, or the user explicitly requests reprocessing with a
 different engine. A different transcription engine is reserved for explicit
@@ -684,6 +682,15 @@ merged, split, or low-confidence span is ambiguous, final processing keeps the
 final ASR/diarisation output and records live evidence in alignment metadata
 instead of silently applying it to the wrong time span. Manual text and speaker
 locks remain authoritative.
+
+A speaker correction (a rename across the recording or from an utterance
+forward, a merge, a global-speaker link or promotion) changes only what it
+names: the utterances its scope selects, or the speaker's identity. It never
+re-derives other utterances from stored diarisation window rows
+(`diarization_window_results`, `diarization_window_turns`). Live captures
+finalised by v1.0.0 to v1.2.0 can still hold window turns from the removed
+rolling diarisation, and replaying them moved other speakers' lines onto the
+corrected speaker.
 
 ### Utterance Public Ids
 
