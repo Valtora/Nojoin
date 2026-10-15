@@ -13,6 +13,7 @@ Container images for this release. All images are cosign-signed and ship build-p
 - **Unsent audio survives a closed tab.** Segments waiting to upload are kept in the browser until the server has them, and resuming or choosing **Stop and process** sends them first. While stopping, the controls say **Uploading** with the time left (#418).
 - **Exports can include analytics and open on a Nojoin letterhead.** Choose any mix of notes, analytics and transcript. PDF and Word files carry the logo and Geist type, keep each speaker's colour, and give dates in the reader's timezone. An admin can turn the letterhead off under **Settings > Appearance** (#421).
 - **PDF exports no longer leave grey bars on the pages after a table** (#421).
+- **Renaming, merging or linking a speaker no longer moves other people's lines.** Recordings captured live by v1.0.0 to v1.2.0 can still hold window data from the old rolling diarisation, and a speaker correction replayed it onto the transcript. Lines it already moved stay until the recording is reprocessed, which also clears that recording's manual edits (#423).
 - **Release images are built on the maintainer's release host.** The release workflow still signs them, so the cosign verify command is unchanged. The provenance attestation now records that build rather than a GitHub runner (#420).
 - **Dependency changes.** The API image drops markdown-pdf, PyMuPDF and plantuml, and adds soundfile, which decodes capture segments (#418, #421).
 
