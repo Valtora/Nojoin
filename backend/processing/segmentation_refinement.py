@@ -6,8 +6,8 @@ through the existing canonical-pipeline splitter machinery. This is the
 finalize-time safety net for the case where:
 
 * Live VAD merged two speakers into one utterance, and
-* The rolling-diarization window turns are too coarse for the Phase A
-  splitters to fire.
+* The diarisation turns are too coarse for the canonical-pipeline splitters
+  to fire.
 
 Latency is intentionally not a goal here — accuracy is.
 """

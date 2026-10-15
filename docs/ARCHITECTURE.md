@@ -441,9 +441,9 @@ Switching focus to another browser tab, window, or application does not pause ca
 
 ### Chunk Registration
 
-Every segment becomes a `recording_audio_chunks` row with an offset on the recording's timeline, and every 20 s window (5 s hop) becomes a `recording_audio_window_manifests` row that the rolling diarisation and live ASR lanes track their progress on. Registering a segment used to rebuild all of them: list the upload directory, load every chunk row, recompute every offset, rebuild every window and upsert every manifest, all under `FOR UPDATE` on the `recordings` row. A segment's cost grew with the meeting, and the segment upload, live transcription and finalize all wrote the same row, so they queued behind it. On a 2 h 19 m meeting the task passed the 2 s capture cadence at about segment 3,000 and reached 8 s by segment 4,000; uploads fell 14 minutes behind and a stop spent 13 minutes sending them (issue #417).
+Every segment becomes a `recording_audio_chunks` row with an offset on the recording's timeline, and every 20 s window (5 s hop) becomes a `recording_audio_window_manifests` row that the live ASR lane tracks its progress on. Registering a segment used to rebuild all of them: list the upload directory, load every chunk row, recompute every offset, rebuild every window and upsert every manifest, all under `FOR UPDATE` on the `recordings` row. A segment's cost grew with the meeting, and the segment upload, live transcription and finalize all wrote the same row, so they queued behind it. On a 2 h 19 m meeting the task passed the 2 s capture cadence at about segment 3,000 and reached 8 s by segment 4,000; uploads fell 14 minutes behind and a stop spent 13 minutes sending them (issue #417).
 
-`backend/utils/recording_audio_registration.py` now registers a segment in constant time. A per-recording cursor (`recording_audio_chunk_cursors`) records how far the chunks are placed. A chunk is placed once every sequence before it is placed or has failed for good (a `.transcode_failed` marker or a `.corrupt` tombstone). The full rebuild computes the same timeline: offsets are cumulative over the chunks present, and a missing sequence ends a contiguous group of windows. A segment that lands early waits, unplaced, until the gap fills. Placing chunks can only grow the last group, and a growing group can only change its last few windows, so registration rebuilds only the windows from the first one that was not yet full, and it writes only those that are new or whose geometry changed. A window it does not touch keeps its ASR and diarisation status exactly as the live lanes left it. Measured on PostgreSQL, a segment costs 6.8 ms at segment 100 and 6.6 ms at segment 4,150, where the old full sync took 3.3 s per segment by segment 4,200; both produced identical windows.
+`backend/utils/recording_audio_registration.py` now registers a segment in constant time. A per-recording cursor (`recording_audio_chunk_cursors`) records how far the chunks are placed. A chunk is placed once every sequence before it is placed or has failed for good (a `.transcode_failed` marker or a `.corrupt` tombstone). The full rebuild computes the same timeline: offsets are cumulative over the chunks present, and a missing sequence ends a contiguous group of windows. A segment that lands early waits, unplaced, until the gap fills. Placing chunks can only grow the last group, and a growing group can only change its last few windows, so registration rebuilds only the windows from the first one that was not yet full, and it writes only those that are new or whose geometry changed. A window it does not touch keeps its ASR and diarisation status exactly as they were. Measured on PostgreSQL, a segment costs 6.8 ms at segment 100 and 6.6 ms at segment 4,150, where the old full sync took 3.3 s per segment by segment 4,200; both produced identical windows.
 
 The bookkeeping is serialised per recording by a transaction-scoped advisory lock (`pg_advisory_xact_lock`) rather than a lock on the recording row, so it never blocks a write to `recordings`. The segment upload writes `last_activity_at` at most every 15 seconds rather than on every segment.
 
@@ -462,7 +462,7 @@ The normal backend processing path is:
 5. Pyannote diarisation, optionally bounded by the recording's `max_speakers`.
 6. Phantom speaker filtering.
 7. Merge (see [Word Timestamps In The Merge](#word-timestamps-in-the-merge)), voiceprint extraction, and deterministic speaker resolution.
-8. Frame-level segmentation refinement: a second boundary-quality pass using `pyannote/segmentation-3.0` inspects boundary-flagged and long live-emitted utterances and re-splits them where the dense per-frame speaker activity map identifies a cleaner turn boundary than the rolling diarisation windows resolved.
+8. Frame-level segmentation refinement: a second boundary-quality pass using `pyannote/segmentation-3.0` inspects long live-emitted utterances, and any that older rolling-diarisation data flagged as boundary utterances, and re-splits them where the dense per-frame speaker activity map identifies a cleaner turn boundary.
 9. Automatic meeting intelligence when an AI provider and model are configured.
 10. Automatic application of inferred speaker names to unresolved speakers, plus persistence of the meeting title and Markdown meeting notes. Applied suggestions are retained on the transcript as an audit trail.
 
@@ -504,7 +504,7 @@ Two `pipeline_metric` stages make diarisation quality inspectable from a worker 
 
 A user can discard a recording at any in-flight stage: uploading, paused, queued, or processing. Discard is a single graceful operation that revokes the running Celery task with `terminate=True`, deletes every on-disk artefact, and removes the recording row, so no manual cancel-then-delete sequence is required. Terminating the task stops the worker from continuing the pipeline, and the worker's start-of-task cancellation guard prevents a revoked-but-requeued task from resuming work. Terminal recordings (processed, errored, or already removed) are deleted through the standard delete flow instead.
 
-Per-user language preferences are resolved once through the shared backend language registry. The effective transcription language is propagated to live, catch-up, final, imported, and reprocessed ASR calls and included in ASR result hashes. Whisper receives an explicit language only when one is selected; Canary receives its supported source-language parameter; Parakeet remains multilingual auto-detection and therefore hashes as automatic language.
+Per-user language preferences are resolved once through the shared backend language registry. The effective transcription language is propagated to live, final, imported, and reprocessed ASR calls and included in ASR result hashes. Whisper receives an explicit language only when one is selected; Canary receives its supported source-language parameter; Parakeet remains multilingual auto-detection and therefore hashes as automatic language.
 
 Generated-content language is independent from source-audio language. Manual notes generation, unified automatic meeting intelligence, standalone title generation, and secondary-provider fallback receive the same resolved output-language instruction. Prompt control text and JSON keys remain stable, while titles and Markdown content can be localized. The automatic intelligence contract accepts any non-empty top-level Markdown heading rather than requiring the English `# Meeting Notes` heading.
 
@@ -582,9 +582,9 @@ runs:
    endpoint is the only in-flight transcript surface.
 4. Live utterances carry no speaker. Every provisional utterance is written
    with the `UNKNOWN` label, because diarization runs only at finalize; speaker
-   identity for live text is therefore resolved by the catch-up diarization and
-   final pipeline passes rather than during capture. Transcript edits made by
-   the user are treated as authoritative.
+   identity for live text is therefore resolved by the final pipeline's
+   diarisation pass rather than during capture. Transcript edits made by the
+   user are treated as authoritative.
    What the lane does resolve per region is the *capture channel*: it compares
    per-channel RMS to decide whether the microphone or the shared system audio
    dominated, and persists that reading in the utterance's
@@ -645,11 +645,12 @@ window, the lane force-emits continuous speech after about 8 seconds, updating
 the current speech region and starting a new live segment.
 
 Browser-live audio window manifests track two independent processing lanes. The
-ASR lane records whether live or catch-up ASR consumed the window audio. The
-diarisation lane records rolling or catch-up speaker-window work for the active
-diarisation configuration and completed window result. The legacy window
-`status` field remains a compatibility projection; new logic should inspect the
-lane-specific ASR and diarisation fields.
+ASR lane records whether the live lane consumed the window audio; rows from
+older releases can also read `catch_up_processed`. Nothing writes the
+diarisation lane since rolling and catch-up diarisation were removed: new
+windows start `pending` and stay there, and older rows keep what those passes
+recorded. The legacy window `status` field remains a compatibility projection;
+new logic should inspect the lane-specific ASR and diarisation fields.
 
 A run that fails outright still accounts for the audio it drained. If it had
 already carried the audio past its cut point into `live/buffer.wav`, that buffer
@@ -667,13 +668,11 @@ the timeline cannot be worked out.
 
 The live lane is best-effort: any failure is logged, the lane still advances,
 and nothing is re-raised. When the recording finalises, `process_recording_task`
-promotes canonical live and catch-up transcript state first, fills only missing
-durable spans, preserves authoritative user edits, and only falls back to a
-whole-recording ASR or diarisation rerun when coverage is missing,
-confidence remains too low, or the user explicitly requests reprocessing with a
-different engine. A different transcription engine is reserved for explicit
-manual reprocessing after an administrator changes the install's transcription
-engine in Settings.
+transcribes the whole recording, diarises it when diarisation is on, and writes
+the result over the live utterances, keeping the user's text and speaker edits
+on the lines it matches. A different transcription engine is reserved for
+explicit manual reprocessing after an administrator changes the install's
+transcription engine in Settings.
 
 Final processing may reuse live transcript text and source-channel speaker
 authority only after a stable utterance id match or a clear one-to-one time
@@ -708,7 +707,8 @@ one this recording holds goes into the new row's
 anything else gets a uuid4. The bulk segment edit's full-replace fallback keeps
 the client's ids and answers 409 when one is held or repeated. The live append
 persists the live lane's uuid5 of recording id, span, speaker and text;
-diarisation reconciliation mints uuid4.
+the boundary splice that segmentation refinement feeds mints uuid4 for the lines
+it splits.
 
 ### Startup Canonical Cutover
 

@@ -3,30 +3,6 @@ from .identity_fields import apply_recording_speaker_identity_fields
 from .notes_propagation import propagate_speaker_rename_to_notes
 
 
-@dataclass(frozen=True)
-class IdentityReplayScope:
-    anchor_recording_speaker_id: int
-    allowed_recording_speaker_ids: frozenset[int]
-
-
-@dataclass(frozen=True)
-class SpeakerReplayPolicy:
-    name: str
-    allow_speaker_reassignment: bool = True
-    allow_new_recording_speakers: bool = True
-    allow_inactive_candidate_reactivation: bool = True
-    preserve_finalized_overlap_primary: bool = False
-    preserve_finalized_boundary_primary: bool = False
-    identity_scope: IdentityReplayScope | None = None
-
-
-DEFAULT_SPEAKER_REPLAY_POLICY = SpeakerReplayPolicy(name="default")
-BOUNDARY_ONLY_SPEAKER_REPLAY_POLICY = SpeakerReplayPolicy(
-    name="boundary_only",
-    allow_speaker_reassignment=False,
-)
-
-
 def _normalize_speaker_assignment_source(value: Any) -> str:
     normalized = str(value or "").strip() or SPEAKER_ASSIGNMENT_SOURCE_LEGACY
     if normalized == "speaker_identity_replay":
@@ -103,18 +79,6 @@ def _derive_default_speaker_assignment_source(
     return SPEAKER_ASSIGNMENT_SOURCE_LEGACY
 
 
-def _max_speaker_assignment_authority(*values: Any) -> str:
-    strongest = SPEAKER_ASSIGNMENT_AUTHORITY_PROVISIONAL
-    strongest_rank = SPEAKER_ASSIGNMENT_AUTHORITY_RANK[strongest]
-    for value in values:
-        normalized = _normalize_speaker_assignment_authority(value)
-        rank = SPEAKER_ASSIGNMENT_AUTHORITY_RANK[normalized]
-        if rank > strongest_rank:
-            strongest = normalized
-            strongest_rank = rank
-    return strongest
-
-
 def _resolve_segment_speaker_assignment_source(
     segment: dict[str, Any],
     *,
@@ -182,82 +146,6 @@ def _utterance_speaker_assignment_authority(
     return _derive_default_speaker_assignment_authority(
         state=utterance.state,
         manual_speaker_locked=bool(utterance.manual_speaker_locked),
-    )
-
-
-def _set_utterance_speaker_assignment_provenance(
-    utterance: TranscriptUtterance,
-    *,
-    source: str,
-    authority: str | None = None,
-) -> None:
-    utterance.speaker_assignment_source = _normalize_speaker_assignment_source(source)
-    utterance.speaker_assignment_authority = (
-        _normalize_speaker_assignment_authority(authority)
-        if authority is not None
-        else _derive_default_speaker_assignment_authority(
-            state=utterance.state,
-            manual_speaker_locked=bool(utterance.manual_speaker_locked),
-        )
-    )
-
-
-def _effective_speaker_replay_policy(
-    replay_policy: SpeakerReplayPolicy | None,
-    *,
-    allow_speaker_reassignment: bool,
-) -> SpeakerReplayPolicy:
-    if replay_policy is not None:
-        return replay_policy
-    if allow_speaker_reassignment:
-        return DEFAULT_SPEAKER_REPLAY_POLICY
-    return BOUNDARY_ONLY_SPEAKER_REPLAY_POLICY
-
-
-def _is_identity_replay_policy(replay_policy: SpeakerReplayPolicy | None) -> bool:
-    return replay_policy is not None and replay_policy.identity_scope is not None
-
-
-def _replay_normalized_recording_speaker_id(
-    replay_policy: SpeakerReplayPolicy | None,
-    recording_speaker_id: int | None,
-) -> int | None:
-    if recording_speaker_id is None or not _is_identity_replay_policy(replay_policy):
-        return recording_speaker_id
-    if not _identity_replay_scope_contains(replay_policy, recording_speaker_id):
-        return recording_speaker_id
-    return _identity_replay_anchor_recording_speaker_id(replay_policy)
-
-
-def _record_guarded_replay_rejection(
-    *,
-    recording_id: int,
-    window_result_id: int,
-    replay_policy: SpeakerReplayPolicy,
-    reason: str,
-    utterance: TranscriptUtterance,
-    candidate_speaker_id: int | None,
-    current_speaker_id: int | None,
-) -> None:
-    if not _is_identity_replay_policy(replay_policy):
-        return
-    record_pipeline_metric(
-        stage="speaker_identity_replay_rejection",
-        recording_id=recording_id,
-        payload={
-            "policy": replay_policy.name,
-            "reason": reason,
-            "window_result_id": int(window_result_id),
-            "utterance_public_id": utterance.public_id,
-            "utterance_state": (
-                utterance.state.value
-                if hasattr(utterance.state, "value")
-                else str(utterance.state)
-            ),
-            "candidate_recording_speaker_id": candidate_speaker_id,
-            "current_recording_speaker_id": current_speaker_id,
-        },
-        log=logger,
     )
 
 
@@ -638,47 +526,6 @@ def _resolve_active_recording_speaker(
             break
         current = merged_target
     return current
-
-
-def _identity_replay_scope_contains(
-    replay_policy: SpeakerReplayPolicy,
-    recording_speaker_id: int | None,
-) -> bool:
-    if replay_policy.identity_scope is None or recording_speaker_id is None:
-        return False
-    return (
-        int(recording_speaker_id)
-        in replay_policy.identity_scope.allowed_recording_speaker_ids
-    )
-
-
-def _identity_replay_anchor_recording_speaker_id(
-    replay_policy: SpeakerReplayPolicy,
-) -> int | None:
-    if replay_policy.identity_scope is None:
-        return None
-    return int(replay_policy.identity_scope.anchor_recording_speaker_id)
-
-
-def _normalized_identity_replay_candidate(
-    session,
-    *,
-    replay_policy: SpeakerReplayPolicy,
-    matched_speaker: RecordingSpeaker | None,
-) -> RecordingSpeaker | None:
-    if matched_speaker is None or replay_policy.identity_scope is None:
-        return matched_speaker
-    if not _identity_replay_scope_contains(
-        replay_policy, getattr(matched_speaker, "id", None)
-    ):
-        return matched_speaker
-    anchor_speaker = session.get(
-        RecordingSpeaker,
-        replay_policy.identity_scope.anchor_recording_speaker_id,
-    )
-    if anchor_speaker is None:
-        return matched_speaker
-    return _resolve_active_recording_speaker(session, anchor_speaker)
 
 
 def _apply_source_run_provenance(

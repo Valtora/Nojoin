@@ -545,8 +545,8 @@ def _finalize_transcript_and_notes(
         )
 
         # Frame-level segmentation safety net for utterances that span a
-        # speaker change but slipped through rolling diarization's coarser
-        # turn boundaries.
+        # speaker change but slipped through the diarisation's coarser turn
+        # boundaries.
         try:
             ctx.task.update_state(
                 state="PROCESSING", meta={"progress": 94, "stage": "Refining"}
@@ -739,9 +739,6 @@ def process_recording_task(
     start_time = time.time()
     session = self.session
     temp_files: list[str] = []
-    catch_up_run: ProcessingRun | None = None
-    catch_up_processed_window_ids: set[int] = set()
-    catch_up_failed_window_ids: set[int] = set()
 
     recording = session.get(Recording, recording_id)
     if not recording:
@@ -872,22 +869,6 @@ def process_recording_task(
             ctx, recording, final_segments, transcription_result
         )
 
-        if (
-            catch_up_run is not None
-            or catch_up_processed_window_ids
-            or catch_up_failed_window_ids
-        ):
-            if catch_up_run is not None:
-                if catch_up_failed_window_ids:
-                    catch_up_run.status = ProcessingRunStatus.FAILED
-                    catch_up_run.error_summary = f"{len(catch_up_failed_window_ids)} catch-up diarization window(s) failed"
-                else:
-                    catch_up_run.status = ProcessingRunStatus.COMPLETED
-                    catch_up_run.error_summary = None
-                catch_up_run.completed_at = utc_now()
-                session.add(catch_up_run)
-            session.commit()
-
         # --- Stage: speaker assignment / identification ---
         assign_and_identify_speakers(ctx, recording, final_segments, diarization_result)
 
@@ -958,11 +939,6 @@ def process_recording_task(
                 )
         recording = session.get(Recording, recording_id)
         if recording:
-            if catch_up_run is not None:
-                catch_up_run.status = ProcessingRunStatus.FAILED
-                catch_up_run.error_summary = str(e)
-                catch_up_run.completed_at = utc_now()
-                session.add(catch_up_run)
             recording.status = RecordingStatus.ERROR
             recording.processing_step = f"Error: {str(e)}"
             recording.processing_completed_at = None
@@ -990,11 +966,6 @@ def process_recording_task(
                 )
         recording = session.get(Recording, recording_id)
         if recording:
-            if catch_up_run is not None:
-                catch_up_run.status = ProcessingRunStatus.FAILED
-                catch_up_run.error_summary = str(e)
-                catch_up_run.completed_at = utc_now()
-                session.add(catch_up_run)
             recording.status = RecordingStatus.ERROR
             # A transcription failure's message already says what failed.
             recording.processing_step = (
@@ -1210,53 +1181,6 @@ def _llm_backend_from_config_impl(llm_config: ResolvedLLMConfig):
     from backend.processing.llm_services import get_llm_backend_with_secondary
 
     return get_llm_backend_with_secondary(llm_config)
-
-
-def _load_recording_audio_chunks_impl(
-    session, recording_id: int
-) -> list[RecordingAudioChunk]:
-    return session.exec(
-        select(RecordingAudioChunk)
-        .where(RecordingAudioChunk.recording_id == recording_id)
-        .order_by(RecordingAudioChunk.sequence_no)
-    ).all()
-
-
-def _load_recording_audio_window_manifests_impl(
-    session,
-    recording_id: int,
-) -> list[RecordingAudioWindowManifest]:
-    return session.exec(
-        select(RecordingAudioWindowManifest)
-        .where(RecordingAudioWindowManifest.recording_id == recording_id)
-        .order_by(RecordingAudioWindowManifest.window_index)
-    ).all()
-
-
-def _segment_requires_final_diarization_check(segment: dict) -> bool:
-    speaker_label = str(segment.get("speaker") or "").strip().upper()
-    speaker_state = str(segment.get("speaker_state") or "").strip().lower()
-    speaker_confidence = _to_optional_float(segment.get("speaker_confidence"))
-
-    if segment.get("provisional") is True:
-        return True
-    if speaker_label == "UNKNOWN":
-        return True
-    if speaker_state == ROLLING_DIARIZATION_SPEAKER_STATE_PROVISIONAL:
-        return True
-    if speaker_state == "" and str(segment.get("segment_source") or "") in {
-        "live",
-        "catch_up",
-    }:
-        return True
-    if (
-        speaker_confidence is not None
-        and speaker_confidence < ROLLING_DIARIZATION_CONFIDENCE_FLOOR
-    ):
-        return True
-    if list(segment.get("overlapping_speakers") or []):
-        return True
-    return False
 
 
 def _is_unresolved_speaker_label(label: object) -> bool:

@@ -1940,8 +1940,8 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
         )
 
     except Exception as exc:  # noqa: BLE001 -- boundary: live failures are non-fatal
-        # Non-fatal: log and keep the source windows discoverable for final
-        # catch-up through their pending ASR coverage.
+        # Non-fatal: log and move on. Finalize transcribes the whole recording,
+        # so the failed run's audio still reaches the final transcript.
         record_live_run_failure(
             live_run, exc, state, live_config, pending_asr_completions
         )

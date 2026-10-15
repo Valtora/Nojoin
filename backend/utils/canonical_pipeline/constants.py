@@ -5,7 +5,6 @@ import json
 import logging
 import re
 from collections import defaultdict
-from dataclasses import dataclass
 from typing import Any, Callable, Iterable, Sequence
 from uuid import uuid4
 
@@ -40,7 +39,6 @@ from backend.processing.browser_live_audio import (
     source_channel_from_confidence_payload,
 )
 from backend.processing.embedding import merge_embeddings
-from backend.processing.pipeline_metrics import record_pipeline_metric
 from backend.utils.speaker_assignment import (
     matches_speaker_name,
     reconcile_segment_assignment,
@@ -68,28 +66,10 @@ UNKNOWN_SPEAKER = "UNKNOWN"
 LABEL_PATTERN = re.compile(r"^(LIVE_\d+|SPEAKER_\d+|MANUAL_[A-Za-z0-9]+)$")
 GENERIC_SPEAKER_DISPLAY_PATTERN = re.compile(r"^Speaker\s+\d+$", re.IGNORECASE)
 
-ROLLING_DIARIZATION_MANUAL_WEIGHT = 6.0
-ROLLING_DIARIZATION_CONTINUITY_WEIGHT = 4.0
-ROLLING_DIARIZATION_UTTERANCE_WEIGHT = 2.0
-ROLLING_DIARIZATION_EMBEDDING_WEIGHT = 2000.0
-ROLLING_DIARIZATION_GLOBAL_WEIGHT = 1500.0
-ROLLING_DIARIZATION_MIN_UTTERANCE_OVERLAP_MS = 250
-ROLLING_DIARIZATION_MIN_TURN_MATCH_MARGIN = 150.0
-ROLLING_DIARIZATION_CONFIDENCE_FLOOR = 0.50
-ROLLING_DIARIZATION_EXISTING_CONFIDENCE_MARGIN = 0.15
-ROLLING_DIARIZATION_STABLE_WINDOW_COUNT = 2
-ROLLING_DIARIZATION_MERGE_BOUNDARY_GAP_MS = 150
-ROLLING_DIARIZATION_DISTINCT_LOCAL_SPEAKER_EMBEDDING_THRESHOLD = 0.72
-ROLLING_DIARIZATION_DISTINCT_LOCAL_SPEAKER_MIN_DURATION_MS = 1000
 # Diarization-boundary splitting (used when the word-level splitter cannot
 # split an utterance, e.g. because some words have no overlapping turn).
 ROLLING_DIARIZATION_BOUNDARY_SPLIT_MIN_OVERLAP_MS = 250
 ROLLING_DIARIZATION_BOUNDARY_SPLIT_MIN_RATIO = 0.15
-# Ambiguity flagging on the max-overlap fallback path. When two speakers each
-# hold at least this fraction of the utterance, the assignment is considered
-# a boundary/transition utterance and its confidence is dampened.
-ROLLING_DIARIZATION_BOUNDARY_AMBIGUITY_RATIO = 0.30
-ROLLING_DIARIZATION_BOUNDARY_CONFIDENCE_DAMPENER = 0.6
 ROLLING_DIARIZATION_SPEAKER_STATE_PROVISIONAL = "provisional"
 ROLLING_DIARIZATION_SPEAKER_STATE_STABLE = "stable"
 ROLLING_DIARIZATION_SPEAKER_STATE_MANUAL_OVERRIDE = "manual_override"
@@ -381,9 +361,9 @@ def _segment_edit_source(
     their provenance through here, which is what carries an assistant's
     correction onto a replacement utterance when boundaries shift.
 
-    Rolling diarization's own rebuild deliberately does not call this. Every
-    path into it refuses a locked utterance outright, so a segment reaching
-    that constructor can never carry a source worth reading.
+    The boundary splice in diarization.py deliberately does not call this. Both
+    splitters that feed it refuse a locked utterance outright, so a segment
+    reaching that constructor can never carry a source worth reading.
     """
     if not locked:
         return None
