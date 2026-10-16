@@ -79,35 +79,6 @@ TRANSCRIPTION_SETTING_KEYS = (
     "canary_model",
 )
 
-# Longest window (seconds) the Parakeet and Canary engines feed onnx-asr in one
-# call on a GPU host. A property of the card, so install-wide: the shipped 120 s
-# is sized for an 8 GB card with room left for diarization, and an install
-# whose card is shared with live capture lowers it. Unset (null) means the
-# shipped default; the bounds are the engine's (processing/engines/onnx_asr_engine.py).
-GPU_ASR_WINDOW_KEY = "gpu_asr_window_s"
-GPU_ASR_WINDOW_MIN_S = 30.0
-GPU_ASR_WINDOW_MAX_S = 240.0
-
-
-def normalise_gpu_asr_window(value: object) -> float | None:
-    """``value`` as a usable window, or ``None`` for unset or unusable.
-
-    Never raises: the worker must not fail a recording over a setting, so an
-    out-of-range or non-numeric value is treated as unset and logged by the
-    caller that resolves it.
-    """
-    if value is None or isinstance(value, bool):
-        return None
-    if not isinstance(value, (int, float)):
-        return None
-    number = float(value)
-    if number != number or number in (float("inf"), float("-inf")):
-        return None
-    if not GPU_ASR_WINDOW_MIN_S <= number <= GPU_ASR_WINDOW_MAX_S:
-        return None
-    return number
-
-
 # Install-wide cap on AI analysis runs per user per UTC day. Null or 0 means
 # no cap. An administrator may override it per user on the user record.
 AI_ANALYSIS_DAILY_LIMIT_KEY = "ai_analysis_daily_limit"
@@ -162,7 +133,6 @@ INSTALL_WIDE_AI_SETTING_KEYS = (
     # Not an AI setting: listed for the same admin-only, install-wide handling.
     EXPORT_BRANDING_KEY,
     *TRANSCRIPTION_SETTING_KEYS,
-    GPU_ASR_WINDOW_KEY,
 )
 
 MEETING_EDGE_CONTEXT_LEVEL_MIN = 1
@@ -210,10 +180,6 @@ DEFAULT_SYSTEM_CONFIG = {
     "transcription_backend": "whisper",  # "whisper" | "parakeet" | "canary"
     "parakeet_model": "parakeet-tdt-0.6b-v3",
     "canary_model": "nemo-canary-1b-v2",
-    # Null means the engine's own default (GPU_MAX_CHUNK_DURATION_S, 120 s).
-    # Listed here so the loader keeps it: config.json keys outside these tables
-    # are dropped on load.
-    GPU_ASR_WINDOW_KEY: None,
     # Ollama num_ctx. Sized for the hardware this project is actually
     # self-hosted on rather than for the model's advertised maximum: a KV cache
     # costs roughly 190 KiB per token on a 14B model, so 32768 is about 6 GB and
@@ -622,15 +588,6 @@ class ConfigManager:
                 raise ValueError(
                     f"Invalid {AI_ANALYSIS_DAILY_LIMIT_KEY}: {value}. Must be a "
                     "whole number of runs per day, 0 or null for no cap."
-                )
-        if key == GPU_ASR_WINDOW_KEY:
-            if value is None:
-                return True
-            if normalise_gpu_asr_window(value) is None:
-                raise ValueError(
-                    f"Invalid {GPU_ASR_WINDOW_KEY}: {value}. Must be a number of "
-                    f"seconds from {GPU_ASR_WINDOW_MIN_S:.0f} to "
-                    f"{GPU_ASR_WINDOW_MAX_S:.0f}, or null for the default."
                 )
         if key == "theme" and value not in APP_THEMES:
             raise ValueError(f"Invalid theme: {value}. Must be one of {APP_THEMES}")

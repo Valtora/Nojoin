@@ -85,10 +85,20 @@ def onnx_asr_files(status_key: str, quantization: str | None) -> dict[str, bytes
     }
 
 
+# The precision write_onnx_asr_repo uses when given none.
+CPU_PRECISION = "cpu"
+
+
 def write_onnx_asr_repo(
-    hub: Path, status_key: str, quantization: str | None = "int8"
+    hub: Path, status_key: str, quantization: str | None = CPU_PRECISION
 ) -> Path:
-    """A complete onnx-asr download of one model at one precision."""
+    """A complete onnx-asr download of one model at one precision.
+
+    By default the precision the engine loads on a CPU, a copy status reports
+    as ready: fp32 for Parakeet, int8 for Canary.
+    """
+    if quantization == CPU_PRECISION:
+        quantization = ONNX_ASR_MODELS[status_key].cpu_quantization
     return write_hf_repo(
         hub,
         ONNX_ASR_MODELS[status_key].repo_id,

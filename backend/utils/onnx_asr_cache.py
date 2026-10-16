@@ -14,7 +14,7 @@ from dataclasses import dataclass
 
 from .model_cache_paths import hf_hub_cache_root, hf_repo_dirname
 
-# The two weight precisions the engine loads: fp32 (None) on a GPU, int8 on CPU.
+# The two weight precisions onnx-asr offers for these models: fp32 (None) and int8.
 ONNX_ASR_QUANTIZATIONS: tuple[str | None, ...] = (None, "int8")
 
 
@@ -31,12 +31,21 @@ class OnnxAsrModel:
     list them, but onnx-asr's download fetches them (it adds
     ``<graph>.onnx?data`` to its allow patterns) and onnxruntime cannot load a
     graph without its external data. The int8 graphs embed their weights.
+
+    ``cpu_quantization`` is the precision the engine loads on a CPU. A GPU
+    always loads fp32 (onnx_asr_engine.onnx_asr_quantization).
     """
 
     onnx_asr_id: str
     repo_id: str
     model_files: tuple[str, ...]
     fp32_external_data: tuple[str, ...]
+    cpu_quantization: str | None
+
+    @property
+    def quantizations(self) -> tuple[str | None, ...]:
+        """Every precision the engine loads this model at, on some device."""
+        return tuple(dict.fromkeys((None, self.cpu_quantization)))
 
     @property
     def repo_dirname(self) -> str:
@@ -56,6 +65,9 @@ class OnnxAsrModel:
 # resolver.model_repos entries for the ids the engines load. In both repos only
 # the fp32 encoder has external data, and it is most of the download:
 # encoder-model.onnx.data is 2.4 GB for Parakeet and 3.3 GB for Canary.
+# Parakeet loads fp32 on CPU too: its int8 encoder blanks out whole stretches of
+# clear speech, and where depends on where the window starts (#445). Canary's
+# int8 weights held up at the same window length.
 ONNX_ASR_MODELS = {
     "parakeet": OnnxAsrModel(
         onnx_asr_id="nemo-parakeet-tdt-0.6b-v3",
@@ -66,12 +78,14 @@ ONNX_ASR_MODELS = {
             "vocab.txt",
         ),
         fp32_external_data=("encoder-model.onnx.data",),
+        cpu_quantization=None,
     ),
     "canary": OnnxAsrModel(
         onnx_asr_id="nemo-canary-1b-v2",
         repo_id="istupakov/canary-1b-v2-onnx",
         model_files=("encoder-model{q}.onnx", "decoder-model{q}.onnx", "vocab.txt"),
         fp32_external_data=("encoder-model.onnx.data",),
+        cpu_quantization="int8",
     ),
 }
 
@@ -179,9 +193,9 @@ def find_cached_onnx_asr_model(model: OnnxAsrModel) -> str | None:
     """The model's repo directory in the hub cache, if a complete copy is there.
 
     Complete means the snapshot ``refs/main`` points at holds every file the
-    loader opens, for one precision (a mix of int8 and fp32 files loads in
-    neither), laid out so ONNX Runtime will load them, and no file of the repo
-    is part-way through downloading. Only
+    loader opens, for a precision the engine loads it at (a mix of int8 and
+    fp32 files loads in neither), laid out so ONNX Runtime will load them, and
+    no file of the repo is part-way through downloading. Only
     the exact repo directory is considered, so another repo with a similar
     name (NVIDIA's own NeMo checkpoint, say) never counts.
     """
@@ -192,7 +206,7 @@ def find_cached_onnx_asr_model(model: OnnxAsrModel) -> str | None:
     if any(
         _has_every_file(snapshot, model.required_files(quantization))
         and _external_data_beside_graphs(snapshot, model, quantization)
-        for quantization in ONNX_ASR_QUANTIZATIONS
+        for quantization in model.quantizations
     ):
         return repo_dir
     return None

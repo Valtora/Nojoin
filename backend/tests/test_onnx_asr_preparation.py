@@ -14,10 +14,18 @@ from backend import preload_models
 from backend.processing import onnx_providers
 from backend.processing.engines import onnx_asr_engine
 from backend.processing.engines.canary_engine import CanaryEngine
+from backend.processing.engines.parakeet_engine import ParakeetEngine
 
 
+@pytest.mark.parametrize(
+    ("engine_class", "cpu_precision"),
+    [(CanaryEngine, "int8"), (ParakeetEngine, None)],
+    ids=["canary", "parakeet"],
+)
 @pytest.mark.parametrize("on_gpu", [True, False], ids=["gpu", "cpu"])
-def test_preparation_loads_the_precision_the_engine_loads(on_gpu, monkeypatch):
+def test_preparation_loads_the_precision_the_engine_loads(
+    on_gpu, engine_class, cpu_precision, monkeypatch
+):
     loads: list[dict] = []
 
     def record_load(model_id, **kwargs):
@@ -29,7 +37,7 @@ def test_preparation_loads_the_precision_the_engine_loads(on_gpu, monkeypatch):
     monkeypatch.setattr(onnx_asr_engine, "gpu_is_present", lambda: on_gpu)
     monkeypatch.setattr(onnx_asr_engine, "verify_gpu_providers", lambda *a, **k: False)
 
-    engine = CanaryEngine()
+    engine = engine_class()
     preload_models._prepare_onnx_asr_model(
         engine._to_onnx_asr_id(engine.default_model_id)
     )
@@ -37,4 +45,4 @@ def test_preparation_loads_the_precision_the_engine_loads(on_gpu, monkeypatch):
 
     prepared, loaded = loads
     assert prepared == loaded
-    assert loaded["quantization"] == (None if on_gpu else "int8")
+    assert loaded["quantization"] == (None if on_gpu else cpu_precision)

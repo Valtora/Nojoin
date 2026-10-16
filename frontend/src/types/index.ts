@@ -406,8 +406,6 @@ export interface Settings {
   transcription_backend?: string;
   parakeet_model?: string;
   canary_model?: string;
-  /** Install-wide GPU window for Parakeet and Canary, in seconds; null means the default. */
-  gpu_asr_window_s?: number | null;
   transcription_language?: string;
   notes_language?: string;
   notes_language_custom_instruction?: string;

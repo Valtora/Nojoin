@@ -314,7 +314,7 @@ def _prepare_onnx_asr_model(model_id: str) -> None:
     # Preparation runs on the same lane as transcription, so this is the
     # precision the engine will load here. Preparing int8 on a GPU host left
     # the engine to download the fp32 weights on first use anyway.
-    quantization = onnx_asr_quantization(gpu_is_present())
+    quantization = onnx_asr_quantization(model_id, gpu_is_present())
     logger.info(
         "Preparing ONNX ASR model %s (quantization=%s)",
         model_id,

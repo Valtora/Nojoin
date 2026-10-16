@@ -5,15 +5,11 @@ import gc
 import logging
 import os
 import traceback
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from typing import NamedTuple, Protocol
 
-from ...utils.config_manager import (
-    GPU_ASR_WINDOW_KEY,
-    config_manager,
-    normalise_gpu_asr_window,
-)
 from ...utils.languages import resolve_transcription_language_code
+from ...utils.onnx_asr_cache import onnx_asr_model
 from ..onnx_providers import gpu_is_present, sessions_use_cuda, verify_gpu_providers
 from ..onnx_threads import onnx_session_options
 from ..processing_tuning import (
@@ -41,62 +37,19 @@ SEGMENT_PAUSE_THRESHOLD_S = 0.8
 # duration is unknown. A user's settings may override it (processing_tuning.py).
 WORD_END_PAD_S = TUNING_SPECS[ASR_WORD_END_PADDING_KEY].default
 
-# Longest audio (seconds) fed to onnx-asr in a single recognize() call. onnx-asr
-# has no long-form support: the exported Parakeet/Canary FastConformer attention
-# does not handle long sequences — past ~5 min recognize() raises an onnxruntime
-# shape error, and on long meetings the O(n^2) attention tensor exhausts memory
-# and the call never returns. Longer audio is transcribed in windows capped here.
-MAX_CHUNK_DURATION_S = 240.0
+# Longest audio (seconds) fed to onnx-asr in a single recognize() call, on any
+# device. onnx-asr has no long-form support, and both models lose speech long
+# before a window runs out of memory (#445). On House of Lords recordings,
+# Canary lost nearly half its words at the old 120 s GPU window and fell into a
+# loop at the old 240 s CPU one, and Parakeet dropped about four times as many
+# words at 60 s as at 30 s. Both held at 30 s on either device. Shorter windows
+# are also faster, since attention grows with the square of the window.
+MAX_CHUNK_DURATION_S = 30.0
 
-# Tighter cap for GPU runs. The CUDA provider needs the fp32 weights (int8 has no
-# CUDA kernels), whose attention activations grow with the square of the window, so
-# 240s overflows an 8GB card while 160s fits. 120s is the largest window that still
-# leaves the card room for diarization afterwards. An administrator lowers it for
-# a card that live capture shares, or raises it for a larger card, through the
-# install-wide `gpu_asr_window_s` setting (config_manager); this is its default.
-GPU_MAX_CHUNK_DURATION_S = 120.0
-
-
-def gpu_asr_window_s(config: Mapping[str, object] | None = None) -> float:
-    """The GPU window: the install's `gpu_asr_window_s` when usable, else the default.
-
-    Reads the key from ``config`` (the merged settings a run is given, which
-    carry config.json's install-wide keys), else from config.json directly for
-    callers that have no merged settings. A set value outside the engine's
-    bounds is logged and ignored rather than raised: a setting never fails a
-    recording.
-    """
-    raw = config.get(GPU_ASR_WINDOW_KEY) if config else None
-    if raw is None and not config:
-        raw = config_manager.get(GPU_ASR_WINDOW_KEY)
-    if raw is None:
-        return GPU_MAX_CHUNK_DURATION_S
-    window = normalise_gpu_asr_window(raw)
-    if window is None:
-        logger.warning(
-            "Ignoring invalid %s=%r; using the default %ss.",
-            GPU_ASR_WINDOW_KEY,
-            raw,
-            GPU_MAX_CHUNK_DURATION_S,
-        )
-        return GPU_MAX_CHUNK_DURATION_S
-    return window
-
-
-def max_chunk_duration_s(config: Mapping[str, object] | None = None) -> float:
-    """Longest window to feed onnx-asr in one recognize() call, for this device.
-
-    Takes the smaller of the two caps on a GPU host so that tests, which shrink
-    MAX_CHUNK_DURATION_S to keep fixtures tiny, stay effective either way.
-    """
-    if gpu_is_present():
-        return min(MAX_CHUNK_DURATION_S, gpu_asr_window_s(config))
-    return MAX_CHUNK_DURATION_S
-
-
-# Half-width (seconds) of the search window used to snap a chunk boundary onto
-# the quietest nearby point, so a window never cuts through a spoken word.
-CHUNK_SNAP_RADIUS_S = 18.0
+# Peak level below which a window holds nothing to transcribe. VAD writes
+# non-speech as exact zeros, and Canary invents text for a silent window
+# ("San Francisco has developed a large tourist infrastructure...").
+SILENT_WINDOW_PEAK = 1e-4
 
 
 class Recognition(Protocol):
@@ -266,33 +219,30 @@ def _shift_segment(segment: dict, offset_s: float) -> dict:
     return shifted
 
 
-def _chunk_boundaries(
-    audio, sample_rate: int, window_s: float | None = None
-) -> list[tuple[int, int]]:
-    """Split [0, len(audio)) into windows of at most ``window_s`` seconds.
+def _chunk_boundaries(audio, sample_rate: int) -> list[tuple[int, int]]:
+    """Split [0, len(audio)) into windows of MAX_CHUNK_DURATION_S at most.
 
-    ``window_s`` defaults to this device's cap. Each internal boundary is
-    snapped, within CHUNK_SNAP_RADIUS_S of the ideal cut, onto the quietest
-    0.2 s of audio so a window never cuts mid-word. Returns a list of
-    (start_frame, end_frame) pairs covering the whole signal.
+    Every window but a lone one lasts at least half that, and closes at the
+    first of the quietest 0.2 s spans after its midpoint, so a cut never
+    falls inside a word and the next window opens on the pause. A long pause
+    is never cut into slivers of silence, and the last cut leaves the final
+    window at least half as well. Returns (start_frame, end_frame) pairs
+    covering the whole signal.
     """
     total_frames = len(audio)
-    if window_s is None:
-        window_s = max_chunk_duration_s()
-    target = int(window_s * sample_rate)
-    radius = int(CHUNK_SNAP_RADIUS_S * sample_rate)
+    longest = int(MAX_CHUNK_DURATION_S * sample_rate)
+    shortest = longest // 2
     probe = max(1, int(0.2 * sample_rate))
 
     boundaries: list[tuple[int, int]] = []
     start = 0
-    while total_frames - start > target:
-        ideal = start + target
-        low = max(ideal - radius, start + probe)
-        high = min(ideal + radius, total_frames - probe)
-        cut = ideal
+    while total_frames - start > longest:
+        low = start + shortest
+        high = min(start + longest, total_frames - shortest) - probe
+        cut = start + longest
         if high > low:
             quietest = None
-            for pos in range(low, high, max(1, probe // 2)):
+            for pos in range(low, high + 1, max(1, probe // 2)):
                 energy = float(abs(audio[pos : pos + probe]).mean())
                 if quietest is None or energy < quietest:
                     quietest = energy
@@ -303,17 +253,22 @@ def _chunk_boundaries(
     return boundaries
 
 
-def onnx_asr_quantization(on_gpu: bool) -> str | None:
-    """The weight precision the engine loads: fp32 (None) on a GPU, int8 on CPU.
+def onnx_asr_quantization(onnx_asr_id: str, on_gpu: bool) -> str | None:
+    """The weight precision the engine loads for a model: None is fp32.
 
-    int8 is a CPU optimisation and defeats CUDA: onnxruntime has no CUDA
-    kernels for most quantized ops, so it claims the session and then hands
-    nearly every node back to CPU, inserting a memcpy at each handoff (1046 of
-    them for canary-1b). The fp32 weights cut that to 66 and keep the graph on
-    the card. Model preparation uses this too, so it fetches the files the
+    A GPU always loads fp32. int8 is a CPU optimisation and defeats CUDA:
+    onnxruntime has no CUDA kernels for most quantized ops, so it claims the
+    session and then hands nearly every node back to CPU, inserting a memcpy
+    at each handoff (1046 of them for canary-1b). The fp32 weights cut that to
+    66 and keep the graph on the card. On a CPU each model has its own
+    precision (onnx_asr_cache.ONNX_ASR_MODELS), and one outside that table
+    loads int8. Model preparation uses this too, so it fetches the files the
     engine will open on the same lane.
     """
-    return None if on_gpu else "int8"
+    if on_gpu:
+        return None
+    model = onnx_asr_model(onnx_asr_id)
+    return model.cpu_quantization if model else "int8"
 
 
 class OnnxAsrEngine(TranscriptionEngine):
@@ -379,7 +334,7 @@ class OnnxAsrEngine(TranscriptionEngine):
             providers = ["CPUExecutionProvider"]
             if on_gpu:
                 providers.insert(0, "CUDAExecutionProvider")
-            quantization = onnx_asr_quantization(on_gpu)
+            quantization = onnx_asr_quantization(onnx_id, on_gpu)
             logger.info(
                 f"Loading {self.name} model: {onnx_id} "
                 f"(quantization={quantization or 'none'})"
@@ -403,7 +358,7 @@ class OnnxAsrEngine(TranscriptionEngine):
     def transcribe(self, audio_path: str, config: dict) -> dict:
         """Transcribe the given audio file using onnx-asr.
 
-        Audio longer than MAX_CHUNK_DURATION_S is transcribed window-by-window
+        Audio longer than MAX_CHUNK_DURATION_S is transcribed window by window
         (onnx-asr has no long-form support); shorter audio goes through a single
         recognize() call.
 
@@ -449,12 +404,10 @@ class OnnxAsrEngine(TranscriptionEngine):
             logger.info(f"Starting {self.name} transcription for {audio_path}")
             word_end_pad_s = resolve_tuning(config, ASR_WORD_END_PADDING_KEY)
 
-            window_s = max_chunk_duration_s(config)
-            if audio_duration is not None and audio_duration > window_s:
+            if audio_duration is not None and audio_duration > MAX_CHUNK_DURATION_S:
                 result = self._transcribe_chunked(
                     recognizer,
                     audio_path,
-                    window_s=window_s,
                     language_code=language_code,
                     word_end_pad_s=word_end_pad_s,
                 )
@@ -496,19 +449,15 @@ class OnnxAsrEngine(TranscriptionEngine):
         recognizer,
         audio_path: str,
         *,
-        window_s: float | None = None,
         language_code: str | None = None,
         word_end_pad_s: float = WORD_END_PAD_S,
     ) -> dict:
         """Transcribe long audio as a sequence of windows, then merge.
 
-        Each window is at most ``window_s`` long (this device's cap when not
-        given) and its boundaries snap onto quiet points so a spoken word is
-        never split. Per-window segments are shifted into absolute time and
+        Windows follow _chunk_boundaries, and one with no signal in it is not
+        transcribed. Per-window segments are shifted into absolute time and
         concatenated.
         """
-        if window_s is None:
-            window_s = max_chunk_duration_s()
         import os
         import tempfile
 
@@ -520,11 +469,11 @@ class OnnxAsrEngine(TranscriptionEngine):
         if getattr(audio, "ndim", 1) > 1:
             audio = audio.mean(axis=1)
 
-        boundaries = _chunk_boundaries(audio, sample_rate, window_s)
+        boundaries = _chunk_boundaries(audio, sample_rate)
         audio_duration = len(audio) / sample_rate
         logger.info(
             f"{self.name}: {audio_duration:.0f}s audio exceeds the "
-            f"{window_s:.0f}s single-pass limit; transcribing in "
+            f"{MAX_CHUNK_DURATION_S:.0f}s single-pass limit; transcribing in "
             f"{len(boundaries)} windows."
         )
 
@@ -534,6 +483,12 @@ class OnnxAsrEngine(TranscriptionEngine):
             offset_s = start_frame / sample_rate
             chunk = audio[start_frame:end_frame]
             chunk_duration = len(chunk) / sample_rate
+            if float(abs(chunk).max()) < SILENT_WINDOW_PEAK:
+                logger.info(
+                    f"{self.name}: window {index + 1}/{len(boundaries)} is silent; "
+                    f"skipped ({offset_s:.0f}s +{chunk_duration:.0f}s)."
+                )
+                continue
 
             handle = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
             chunk_path = handle.name

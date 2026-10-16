@@ -459,7 +459,7 @@ The normal backend processing path is:
 1. Validation.
 2. VAD and audio preprocessing.
 3. Proxy creation for web playback.
-4. Transcription via a pluggable engine under [backend/processing/engines/](../backend/processing/engines/) (Whisper by default, Parakeet or Canary via onnx-asr selectable sharing `OnnxAsrEngine`). Whisper re-decodes a window by sampling when its greedy output fails a quality threshold; that sampling is seeded, so reprocessing a recording on the same image gives the same transcript.
+4. Transcription via a pluggable engine under [backend/processing/engines/](../backend/processing/engines/) (Whisper by default, Parakeet or Canary via onnx-asr selectable sharing `OnnxAsrEngine`). Whisper re-decodes a window by sampling when its greedy output fails a quality threshold; that sampling is seeded, so reprocessing a recording on the same image gives the same transcript. Parakeet and Canary transcribe in windows of 15 to 30 seconds that close at a pause, and skip a window with no signal (`_chunk_boundaries` in `onnx_asr_engine.py`). onnx-asr returns no token timings for Canary, so each Canary window is one segment and takes its dominant speaker in the merge.
 5. Pyannote diarisation, optionally bounded by the recording's `max_speakers`.
 6. Phantom speaker filtering.
 7. Merge (see [Word Timestamps In The Merge](#word-timestamps-in-the-merge)), voiceprint extraction, and deterministic speaker resolution.

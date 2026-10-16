@@ -41,8 +41,8 @@ def hub(model_cache_env, monkeypatch, tmp_path) -> Path:
 
 
 def _shared_parakeet(hub: Path) -> tuple[Path, list[Path]]:
-    """A complete Parakeet download with every file in the shared store."""
-    repo = write_onnx_asr_repo(hub, "parakeet")
+    """A complete int8 Parakeet download with every file in the shared store."""
+    repo = write_onnx_asr_repo(hub, "parakeet", "int8")
     payloads = [
         share_blob(hub, repo, name) for name in onnx_asr_files("parakeet", "int8")
     ]
@@ -104,7 +104,7 @@ def test_a_snapshot_link_to_a_file_outside_the_repo_keeps_that_file(hub, outside
 
 def test_a_snapshot_directory_linked_elsewhere_keeps_its_files(hub, outside):
     """A whole snapshot placed by hand: snapshots/<commit> -> a directory elsewhere."""
-    files = onnx_asr_files("parakeet", "int8")
+    files = onnx_asr_files("parakeet", None)
     for name, content in files.items():
         (outside / name).write_bytes(content)
     repo = hub / hf_repo_dirname(PARAKEET)
@@ -141,7 +141,7 @@ def test_a_snapshot_directory_linked_to_a_copy_elsewhere_keeps_the_copy(hub, out
 
     assert not repo.exists()
     copied = copy / "snapshots" / COMMIT
-    files = onnx_asr_files("parakeet", "int8")
+    files = onnx_asr_files("parakeet", None)
     assert all(
         (copied / name).read_bytes() == content for name, content in files.items()
     )
