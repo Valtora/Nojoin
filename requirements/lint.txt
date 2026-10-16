@@ -6,7 +6,7 @@
 # in pyproject.toml.
 ruff==0.17.0
 mypy==2.4.0
-pre-commit==4.6.2
+pre-commit==4.7.0
 
 # Type stubs for third-party libraries used on the typed backend boundary.
 types-requests==2.33.0.20261006
