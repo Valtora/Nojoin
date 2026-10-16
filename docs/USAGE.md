@@ -169,6 +169,12 @@ Inferred speaker names from final processing and manual retry flows are applied 
 
 Renaming a speaker updates the transcript and the AI meeting notes together, so a meeting does not end up calling the same person two different things. The transcript resolves names at read time and so is always current; the notes are rewritten in place, matching the previous name only where it stands as a whole word. Your own notes are never rewritten. Because the notes are prose, a display name that is also an ordinary phrase will be replaced wherever it appears, so prefer regenerating the notes after renaming a speaker whose old name was not a personal name.
 
+### Undoing An Automatic Merge
+
+Processing sometimes joins two of the clusters speaker detection found into one speaker, because their voiceprints match. When that is wrong, the surviving speaker's card in the speaker panel lists each cluster that was merged in, with how many lines it holds, and an **Undo merge** button beside it. Undoing gives those lines back to a speaker of their own, named `Speaker N` until you rename it, and leaves every line you had already assigned by hand where you put it.
+
+Only merges made by processing are listed. A merge you made yourself marks its lines as your edits, so undo one of those with **Split / Unmerge Speaker** or by reassigning lines. Recordings processed by an earlier version did not keep the clusters, so for those **Retry Processing** is the way back.
+
 ### Limiting The Number Of Speakers
 
 Speaker detection is automatic, and that is the default. Occasionally a long meeting comes back split into more speakers than there were people in the room, usually when someone's audio changes partway through.

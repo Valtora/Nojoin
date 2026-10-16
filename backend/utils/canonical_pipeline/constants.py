@@ -371,4 +371,33 @@ def _segment_edit_source(
     return str(value) if value else None
 
 
+def _segment_diarization_label(segment: dict[str, Any]) -> str | None:
+    """The diariser's cluster label carried on a segment, or None.
+
+    Finalize stamps it before speaker assignment rewrites ``speaker``; the
+    projection carries it back into a backfill. UNKNOWN is no label at all.
+    """
+    label = str(segment.get("diarization_label") or "").strip()
+    if not label or label.upper() == UNKNOWN_SPEAKER:
+        return None
+    return label
+
+
+def _touch_recording_speaker_bounds(
+    recording_speaker: RecordingSpeaker, segment: dict[str, Any]
+) -> None:
+    start_ms = _segment_to_ms(segment.get("start", 0.0))
+    end_ms = _segment_to_ms(segment.get("end", 0.0))
+    if (
+        recording_speaker.first_seen_ms is None
+        or start_ms < recording_speaker.first_seen_ms
+    ):
+        recording_speaker.first_seen_ms = start_ms
+    if (
+        recording_speaker.last_seen_ms is None
+        or end_ms > recording_speaker.last_seen_ms
+    ):
+        recording_speaker.last_seen_ms = end_ms
+
+
 __all__ = [name for name in globals() if not name.startswith("__")]

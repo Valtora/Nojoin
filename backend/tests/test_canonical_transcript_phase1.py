@@ -266,6 +266,7 @@ CREATE TABLE transcript_utterances (
     text TEXT NOT NULL,
     speaker_label VARCHAR(255),
     recording_speaker_id INTEGER,
+    diarization_label VARCHAR(255),
     state VARCHAR(32) NOT NULL,
     source_kind VARCHAR(255) NOT NULL,
     processing_run_id INTEGER,
@@ -4846,3 +4847,238 @@ async def test_speaker_rename_leaves_user_notes_alone(
 
     assert row[0] == "Dana presented."
     assert row[1] == "Ask SPEAKER_00 about the timeline."
+
+
+# --- undoing an automatic merge ---------------------------------------------
+
+
+async def _seed_pipeline_merged_cluster(session_maker: sessionmaker) -> None:
+    """SPEAKER_01 merged into SPEAKER_00 by processing.
+
+    Its lines sit on SPEAKER_00 but still carry SPEAKER_01 as their
+    diarisation label. One of them was then assigned by hand.
+    """
+    from backend.utils.canonical_pipeline import append_utterances_from_segments
+
+    await _seed_processed_recording(session_maker)
+    async with session_maker() as session:
+        await session.execute(
+            text(
+                """
+                INSERT INTO recording_speakers (
+                    id, created_at, updated_at, public_id, recording_id,
+                    global_speaker_id, diarization_label, local_name, name,
+                    embedding, merged_into_id, speaker_status, speaker_kind,
+                    first_seen_ms, last_seen_ms, identity_confidence, identity_locked
+                ) VALUES (
+                    2, :now, :now, 'speaker-public-2', 1,
+                    NULL, 'SPEAKER_01', NULL, 'Speaker 2',
+                    '[0.1, 0.2]', 1, 'merged', 'automated',
+                    NULL, NULL, NULL, 0
+                )
+                """
+            ),
+            {"now": "2026-05-19 00:00:00"},
+        )
+        await session.run_sync(
+            lambda sync_session: append_utterances_from_segments(
+                sync_session,
+                recording_id=1,
+                segments=[
+                    {
+                        "id": "utt-own",
+                        "start": 0.0,
+                        "end": 1.0,
+                        "speaker": "SPEAKER_00",
+                        "diarization_label": "SPEAKER_00",
+                        "text": "mine",
+                        "segment_source": "finalize",
+                    },
+                    {
+                        "id": "utt-theirs",
+                        "start": 1.0,
+                        "end": 2.0,
+                        "speaker": "SPEAKER_00",
+                        "diarization_label": "SPEAKER_01",
+                        "text": "theirs",
+                        "segment_source": "finalize",
+                    },
+                    {
+                        "id": "utt-hand-set",
+                        "start": 2.0,
+                        "end": 3.0,
+                        "speaker": "SPEAKER_00",
+                        "diarization_label": "SPEAKER_01",
+                        "text": "assigned by hand",
+                        "segment_source": "finalize",
+                    },
+                ],
+                run_kind=ProcessingRunKind.FINALIZE,
+                source="finalize",
+                state_override=TranscriptUtteranceState.FINALIZED,
+                trigger_source="test",
+            )
+        )
+        await session.execute(
+            text(
+                "UPDATE transcript_utterances SET manual_speaker_locked = 1 "
+                "WHERE public_id = 'utt-hand-set'"
+            )
+        )
+        await session.commit()
+
+
+@pytest.mark.anyio
+async def test_merged_speakers_listing_counts_the_lines_an_unmerge_restores(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+) -> None:
+    await _seed_pipeline_merged_cluster(test_session_maker)
+
+    response = await client.get("/api/v1/speakers/recordings/canon-rec/merged-speakers")
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {
+            "id": 2,
+            "public_id": "speaker-public-2",
+            "diarization_label": "SPEAKER_01",
+            "name": "Speaker 2",
+            "merged_into_id": 1,
+            "merged_into_label": "SPEAKER_00",
+            # The hand-set line is not counted: it stays where it was put.
+            "restorable_utterance_count": 1,
+            "has_voiceprint": True,
+        }
+    ]
+
+
+@pytest.mark.anyio
+async def test_unmerge_gives_a_merged_cluster_back_its_lines(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+) -> None:
+    await _seed_pipeline_merged_cluster(test_session_maker)
+
+    response = await client.post(
+        "/api/v1/speakers/recordings/canon-rec/speakers/SPEAKER_01/unmerge"
+    )
+    assert response.status_code == 200
+
+    utterances = (await client.get("/api/v1/transcripts/canon-rec/utterances")).json()[
+        "utterances"
+    ]
+    by_id = {utterance["id"]: utterance for utterance in utterances}
+    assert by_id["utt-own"]["speaker"] == "SPEAKER_00"
+    assert by_id["utt-theirs"]["speaker"] == "SPEAKER_01"
+    assert by_id["utt-theirs"]["recording_speaker_id"] == 2
+    assert by_id["utt-theirs"]["diarization_label"] == "SPEAKER_01"
+    # Restored lines keep their pipeline provenance; nobody assigned them.
+    assert by_id["utt-theirs"]["speaker_manually_edited"] is False
+    assert by_id["utt-hand-set"]["speaker"] == "SPEAKER_00"
+    assert by_id["utt-hand-set"]["speaker_manually_edited"] is True
+
+    async with test_session_maker() as session:
+        restored = (
+            await session.execute(
+                text(
+                    "SELECT merged_into_id, speaker_status, name, local_name, "
+                    "global_speaker_id, first_seen_ms, last_seen_ms "
+                    "FROM recording_speakers WHERE id = 2"
+                )
+            )
+        ).one()
+        assert restored[0] is None
+        assert restored[1] == "active"
+        assert restored[2] == "Speaker 2"
+        assert restored[3] is None
+        assert restored[4] is None
+        assert (restored[5], restored[6]) == (1000, 2000)
+        event = (
+            await session.execute(
+                text(
+                    "SELECT event_type, scope, source_recording_speaker_id, "
+                    "target_recording_speaker_id, payload "
+                    "FROM speaker_correction_events ORDER BY id DESC LIMIT 1"
+                )
+            )
+        ).one()
+        assert event[0].lower() == "unmerge_speakers"
+        assert event[1].lower() == "speaker_everywhere_in_recording"
+        assert (event[2], event[3]) == (1, 2)
+        payload = json.loads(event[4]) if isinstance(event[4], str) else event[4]
+        assert payload["utterance_count"] == 1
+        assert payload["unmerged_from_label"] == "SPEAKER_00"
+        transcript = (
+            await session.execute(
+                select(Transcript).where(Transcript.recording_id == 1)
+            )
+        ).scalar_one()
+        projection = {
+            segment.get("id"): segment for segment in transcript.segments or []
+        }
+        assert projection["utt-theirs"]["speaker"] == "SPEAKER_01"
+        assert projection["utt-theirs"]["recording_speaker_id"] == 2
+
+    # Nothing is left to undo, and the listing says so.
+    listing = await client.get("/api/v1/speakers/recordings/canon-rec/merged-speakers")
+    assert listing.json() == []
+
+
+@pytest.mark.anyio
+async def test_unmerge_refuses_a_speaker_that_is_not_merged(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+) -> None:
+    await _seed_pipeline_merged_cluster(test_session_maker)
+
+    not_merged = await client.post(
+        "/api/v1/speakers/recordings/canon-rec/speakers/SPEAKER_00/unmerge"
+    )
+    assert not_merged.status_code == 409
+
+    missing = await client.post(
+        "/api/v1/speakers/recordings/canon-rec/speakers/SPEAKER_09/unmerge"
+    )
+    assert missing.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_finalize_keeps_the_diarisation_label_on_each_line(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+) -> None:
+    """The label survives the merge pass rewriting ``speaker`` to the survivor."""
+    from backend.utils.canonical_pipeline import finalize_utterances_from_segments
+
+    await _seed_processed_recording(test_session_maker)
+    async with test_session_maker() as session:
+        await session.run_sync(
+            lambda sync_session: finalize_utterances_from_segments(
+                sync_session,
+                recording_id=1,
+                segments=[
+                    {
+                        "start": 0.0,
+                        "end": 1.0,
+                        "speaker": "SPEAKER_00",
+                        "diarization_label": "SPEAKER_03",
+                        "text": "hello there",
+                    },
+                    {
+                        "start": 1.0,
+                        "end": 2.0,
+                        "speaker": "UNKNOWN",
+                        "text": "and more",
+                    },
+                ],
+                trigger_source="test",
+            )
+        )
+        await session.commit()
+
+    utterances = (await client.get("/api/v1/transcripts/canon-rec/utterances")).json()[
+        "utterances"
+    ]
+    assert [u["diarization_label"] for u in utterances] == ["SPEAKER_03", None]
+    assert [u["speaker"] for u in utterances] == ["SPEAKER_00", "UNKNOWN"]

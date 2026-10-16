@@ -1,5 +1,6 @@
 import type {
   GlobalSpeaker,
+  MergedRecordingSpeaker,
   Recording,
   RecordingId,
   RecordingSpeaker,
@@ -100,6 +101,25 @@ export const mergeRecordingSpeakers = async (
       target_speaker_label: targetSpeakerLabel,
       source_speaker_label: sourceSpeakerLabel,
     },
+  );
+  return response.data;
+};
+
+export const getMergedRecordingSpeakers = async (
+  recordingId: RecordingId,
+): Promise<MergedRecordingSpeaker[]> => {
+  const response = await api.get<MergedRecordingSpeaker[]>(
+    `/speakers/recordings/${recordingId}/merged-speakers`,
+  );
+  return response.data;
+};
+
+export const unmergeRecordingSpeaker = async (
+  recordingId: RecordingId,
+  diarizationLabel: string,
+): Promise<Recording> => {
+  const response = await api.post<Recording>(
+    `/speakers/recordings/${recordingId}/speakers/${encodeURIComponent(diarizationLabel)}/unmerge`,
   );
   return response.data;
 };

@@ -271,6 +271,7 @@ CREATE TABLE transcript_utterances (
     text TEXT NOT NULL,
     speaker_label VARCHAR(255),
     recording_speaker_id INTEGER,
+    diarization_label VARCHAR(255),
     state VARCHAR(32) NOT NULL,
     source_kind VARCHAR(255) NOT NULL,
     processing_run_id INTEGER,
@@ -768,6 +769,9 @@ def test_process_recording_task_applies_engine_override(monkeypatch):
         find_matching_global_speaker=lambda *a, **k: None,
         embedding_version_of=lambda *a, **k: 2,
         AUTO_UPDATE_THRESHOLD=0.8,
+        IDENTIFICATION_THRESHOLD=0.75,
+        MARGIN_OF_VICTORY=0.05,
+        rank_global_speakers=lambda *a, **k: [],
     )
     _install(
         "backend.utils.transcript_utils",
@@ -938,6 +942,9 @@ def test_process_recording_task_rolls_back_before_persisting_error_state(monkeyp
         find_matching_global_speaker=lambda *a, **k: (None, 0.0),
         embedding_version_of=lambda *a, **k: 2,
         AUTO_UPDATE_THRESHOLD=0.8,
+        IDENTIFICATION_THRESHOLD=0.75,
+        MARGIN_OF_VICTORY=0.05,
+        rank_global_speakers=lambda *a, **k: [],
     )
     _install(
         "backend.utils.transcript_utils",

@@ -9,6 +9,7 @@ from . import routes_global, routes_recording, routes_voiceprint
 
 # Re-exported for tests that import or patch helpers through the package.
 from .helpers import (
+    MergedRecordingSpeakerRead,
     MergeRequest,
     MergeRequestLabels,
     SegmentSelection,
