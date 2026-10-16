@@ -24,7 +24,7 @@ import pytest
 import soundfile as sf
 
 from backend.core.exceptions import AudioFormatError
-from backend.processing import audio_preprocessing, segmentation_refinement
+from backend.processing import audio_preprocessing, segmentation_model
 from backend.processing.audio_overlap import measure_audio_overlap
 from backend.processing.audio_preprocessing import soundfile_readable_audio
 from backend.processing.delivery_descriptors import (
@@ -142,7 +142,7 @@ def overlap_inputs(monkeypatch) -> list[Any]:
     monkeypatch.setitem(sys.modules, "pyannote", types.ModuleType("pyannote"))
     monkeypatch.setitem(sys.modules, "pyannote.audio", audio_stub)
     monkeypatch.setattr(
-        segmentation_refinement, "load_segmentation_model", lambda device, token: None
+        segmentation_model, "load_segmentation_model", lambda device, token: None
     )
     return seen
 

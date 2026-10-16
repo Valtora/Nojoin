@@ -252,11 +252,12 @@ unsupported and, in the EU, prohibited.
 Overlapping speech is measured from the recording's audio by
 [backend/processing/audio_overlap.py](../backend/processing/audio_overlap.py)
 and [backend/worker/tasks/analytics_overlap.py](../backend/worker/tasks/analytics_overlap.py),
-reusing `pyannote/segmentation-3.0` — already a pipeline dependency for
-boundary refinement, so this adds no model and no image growth. It runs on
-the **GPU lane**, where the finalise pipeline keeps that model resident,
-dispatched with the other post-processing follow-ups for new recordings and
-from the same "Measure delivery" action for old ones. The result stores under
+running `pyannote/segmentation-3.0`. The model ships in the bundled models,
+[backend/processing/segmentation_model.py](../backend/processing/segmentation_model.py)
+loads and caches it, and overlap analytics is its only consumer. It runs on
+the **GPU lane** with the other pyannote models, dispatched with the other
+post-processing follow-ups for new recordings and from the same "Measure
+delivery" action for old ones. The result stores under
 the `audio_overlap` key of `analytics_payload` with its own method version
 and its status inside the block — it needs no column and no staleness story,
 because it depends only on the audio, which never changes after processing.
@@ -462,7 +463,7 @@ The normal backend processing path is:
 5. Pyannote diarisation, optionally bounded by the recording's `max_speakers`.
 6. Phantom speaker filtering.
 7. Merge (see [Word Timestamps In The Merge](#word-timestamps-in-the-merge)), voiceprint extraction, and deterministic speaker resolution.
-8. Frame-level segmentation refinement: a second boundary-quality pass using `pyannote/segmentation-3.0` inspects long live-emitted utterances, and any that older rolling-diarisation data flagged as boundary utterances, and re-splits them where the dense per-frame speaker activity map identifies a cleaner turn boundary.
+8. Canonical finalize, when `enable_canonical_transcript_writes` is on (the default): `finalize_utterances_from_segments` in [backend/utils/canonical_pipeline/core.py](../backend/utils/canonical_pipeline/core.py) writes the merged segments as finalized utterances and supersedes every other active utterance, the live lane's included, then the transcript projection is rebuilt from them. With the setting off, the merged segments stay in the transcript's JSON alone. Speaker boundaries come from the merge alone: it has already given each timestamped word the speaker whose turn contains it, and a segment without word timings keeps its dominant speaker whole. Invariant: finalize's canonical writes and the rebuilt projection are committed before meeting intelligence runs, so a failure in the later stages, which rolls the session back, cannot undo them.
 9. Automatic meeting intelligence when an AI provider and model are configured.
 10. Automatic application of inferred speaker names to unresolved speakers, plus persistence of the meeting title and Markdown meeting notes. Applied suggestions are retained on the transcript as an audit trail.
 
@@ -706,9 +707,7 @@ one this recording holds goes into the new row's
 `confidence_payload.source_public_ids` and is replaced by a fresh uuid4;
 anything else gets a uuid4. The bulk segment edit's full-replace fallback keeps
 the client's ids and answers 409 when one is held or repeated. The live append
-persists the live lane's uuid5 of recording id, span, speaker and text;
-the boundary splice that segmentation refinement feeds mints uuid4 for the lines
-it splits.
+persists the live lane's uuid5 of recording id, span, speaker and text.
 
 ### Startup Canonical Cutover
 

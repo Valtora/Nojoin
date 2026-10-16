@@ -60,7 +60,6 @@ from backend.utils.canonical_pipeline import (
     build_reusable_live_segments,
     build_transcript_segments_for_read,
     finalize_utterances_from_segments,
-    refine_recording_utterances_via_segmentation,
     refresh_transcript_projection_from_canonical,
 )
 from backend.utils.config_manager import (
@@ -374,26 +373,6 @@ def mark_recording_audio_chunks_ready_for_cleanup(*args, **kwargs):
         ):
             return actual(*args, **kwargs)
     return _mark_recording_audio_chunks_ready_for_cleanup_orig(*args, **kwargs)
-
-
-_refine_recording_utterances_via_segmentation_orig = (
-    refine_recording_utterances_via_segmentation
-)
-
-
-def refine_recording_utterances_via_segmentation(*args, **kwargs):
-    import sys
-
-    tasks = sys.modules.get("backend.worker.tasks")
-    if tasks and hasattr(tasks, "refine_recording_utterances_via_segmentation"):
-        actual = tasks.refine_recording_utterances_via_segmentation
-        if (
-            actual is not refine_recording_utterances_via_segmentation
-            and getattr(actual, "__code__", None)
-            is not refine_recording_utterances_via_segmentation.__code__
-        ):
-            return actual(*args, **kwargs)
-    return _refine_recording_utterances_via_segmentation_orig(*args, **kwargs)
 
 
 _refresh_transcript_projection_from_canonical_orig = (

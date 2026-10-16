@@ -19,9 +19,9 @@ precision 0.71-0.95 and recall 0.62-0.85 with a 250ms boundary collar, stable
 on far-field audio and through 64kbps MP3, with totals running 74-88% of
 truth -- an underestimate, which is why the total is presented as a floor.
 
-Reuses ``pyannote/segmentation-3.0``, already a pipeline dependency for
-boundary refinement, so this adds no model, no image growth, and no new
-version surface beyond its own. Heavy imports stay inside functions.
+Runs ``pyannote/segmentation-3.0``, which ships in the bundled models and is
+loaded by :mod:`backend.processing.segmentation_model`. Heavy imports stay
+inside functions.
 """
 
 from __future__ import annotations
@@ -92,7 +92,7 @@ def measure_audio_overlap(audio_path: str, hf_token: str | None) -> dict[str, An
     from pyannote.audio import Inference
 
     from backend.processing.audio_preprocessing import soundfile_readable_audio
-    from backend.processing.segmentation_refinement import load_segmentation_model
+    from backend.processing.segmentation_model import load_segmentation_model
 
     device_str = "cuda" if torch.cuda.is_available() else "cpu"
     model = load_segmentation_model(device_str, hf_token)

@@ -1,7 +1,6 @@
 import logging
 
 from .constants import *
-from .diarization import *
 from .public_ids import UtterancePublicIds, public_ids_for_write
 from .segmentation import *
 from .speaker import *

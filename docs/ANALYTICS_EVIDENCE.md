@@ -120,8 +120,8 @@ overlapping utterances. Three independent findings retired them:
    them from competition for the floor.
 
 What ships instead is **measured overlapping speech**, detected from the
-audio with `pyannote/segmentation-3.0` (already a pipeline dependency —
-no new model): total overlapped time as an explicit floor, its share of the
+audio with `pyannote/segmentation-3.0` (a bundled model, so nothing to
+download): total overlapped time as an explicit floor, its share of the
 meeting, and where it clustered. No per-speaker attribution, and the word
 "interruption" does not appear on the surface.
 

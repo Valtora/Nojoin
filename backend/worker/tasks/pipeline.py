@@ -44,7 +44,7 @@ class _PipelineRunContext:
     temp_files: list[str]
     merged_config: dict
     # Set once the VAD stage produces the processed (16k mono) audio; consumed by
-    # the speaker-assignment and segmentation-refinement stages.
+    # the speaker-assignment stage.
     processed_audio_path: str | None = None
 
 
@@ -497,17 +497,14 @@ def _finalize_transcript_and_notes(
     transcription_result: dict,
     reused_live_transcript_segments: Sequence[dict],
 ) -> None:
-    """Persist final segments, run canonical writes + segmentation refinement,
-    and trigger the automatic meeting-intelligence (notes/title) stage.
+    """Persist final segments, run canonical writes, and trigger the automatic
+    meeting-intelligence (notes/title) stage.
 
-    Canonical writes and the frame-level segmentation refinement safety net are
-    gated on ``enable_canonical_transcript_writes``; the refinement pass is
-    wrapped best-effort so a failure never aborts finalize.
+    Canonical writes are gated on ``enable_canonical_transcript_writes``.
     """
     session = ctx.session
     device_suffix = ctx.device_suffix
     merged_config = ctx.merged_config
-    recording_id = ctx.recording_id
 
     # Keep the diarization_label in the segments to maintain the link to
     # RecordingSpeaker; the frontend resolves the display name from the map.
@@ -543,45 +540,9 @@ def _finalize_transcript_and_notes(
             session,
             recording.id,
         )
-
-        # Frame-level segmentation safety net for utterances that span a
-        # speaker change but slipped through the diarisation's coarser turn
-        # boundaries.
-        try:
-            ctx.task.update_state(
-                state="PROCESSING", meta={"progress": 94, "stage": "Refining"}
-            )
-            recording.processing_step = f"Refining speaker boundaries...{device_suffix}"
-            recording.processing_progress = 94
-            session.add(recording)
-            session.commit()
-            with pipeline_metric_timer(
-                stage="segmentation_refinement",
-                recording_id=recording_id,
-                payload={"input_path": ctx.processed_audio_path},
-                log=logger,
-            ) as seg_metric:
-                seg_summary = refine_recording_utterances_via_segmentation(
-                    session,
-                    recording_id=recording.id,
-                    audio_path=ctx.processed_audio_path,
-                    device_str=str(merged_config.get("processing_device", "auto")),
-                    hf_token=config_manager.get("hf_token"),
-                    source="finalize_segmentation_refinement",
-                )
-                seg_metric["payload"].update(seg_summary)
-            if (seg_summary or {}).get("refined_utterance_count", 0) > 0:
-                updated_segments = refresh_transcript_projection_from_canonical(
-                    session,
-                    recording.id,
-                )
-        except Exception as seg_exc:  # noqa: BLE001 -- boundary: refinement pass is best-effort
-            logger.warning(
-                "Segmentation refinement pass failed for recording %s: %s",
-                recording.id,
-                seg_exc,
-                exc_info=True,
-            )
+        # Make the finalized utterances and their projection durable before the
+        # notes and title stages: a failure there rolls the session back.
+        session.commit()
 
     recording_speakers = session.exec(
         select(RecordingSpeaker).where(RecordingSpeaker.recording_id == recording.id)
@@ -687,7 +648,7 @@ def _release_pipeline_vram() -> None:
 
         release_embedding_model_cache()
 
-        from backend.processing.segmentation_refinement import (
+        from backend.processing.segmentation_model import (
             release_segmentation_model_cache,
         )
 
@@ -833,7 +794,7 @@ def process_recording_task(
         if vad_result.finished:
             return
         processed_audio_path = vad_result.processed_audio_path
-        # Cache for the speaker-assignment / refinement stages.
+        # Cache for the speaker-assignment stage.
         ctx.processed_audio_path = processed_audio_path
 
         # --- Stage: transcription (ASR) ---

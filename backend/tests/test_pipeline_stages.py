@@ -218,7 +218,7 @@ def _install_happy_path_modules(monkeypatch, *, diarization_result=None, segment
     )
     _install(
         monkeypatch,
-        "backend.processing.segmentation_refinement",
+        "backend.processing.segmentation_model",
         release_segmentation_model_cache=lambda: None,
     )
 

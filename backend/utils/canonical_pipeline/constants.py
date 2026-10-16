@@ -2,10 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import json
-import logging
 import re
 from collections import defaultdict
-from typing import Any, Callable, Iterable, Sequence
+from typing import Any, Iterable, Sequence
 from uuid import uuid4
 
 from sqlalchemy import func, or_
@@ -14,8 +13,6 @@ from sqlalchemy.orm.attributes import flag_modified
 from sqlmodel import select
 
 from backend.models.pipeline import (
-    DiarizationWindowResult,
-    DiarizationWindowTurn,
     ProcessingRun,
     ProcessingRunKind,
     ProcessingRunStatus,
@@ -66,10 +63,6 @@ UNKNOWN_SPEAKER = "UNKNOWN"
 LABEL_PATTERN = re.compile(r"^(LIVE_\d+|SPEAKER_\d+|MANUAL_[A-Za-z0-9]+)$")
 GENERIC_SPEAKER_DISPLAY_PATTERN = re.compile(r"^Speaker\s+\d+$", re.IGNORECASE)
 
-# Diarization-boundary splitting (used when the word-level splitter cannot
-# split an utterance, e.g. because some words have no overlapping turn).
-ROLLING_DIARIZATION_BOUNDARY_SPLIT_MIN_OVERLAP_MS = 250
-ROLLING_DIARIZATION_BOUNDARY_SPLIT_MIN_RATIO = 0.15
 ROLLING_DIARIZATION_SPEAKER_STATE_PROVISIONAL = "provisional"
 ROLLING_DIARIZATION_SPEAKER_STATE_STABLE = "stable"
 ROLLING_DIARIZATION_SPEAKER_STATE_MANUAL_OVERRIDE = "manual_override"
@@ -95,23 +88,12 @@ SPEAKER_ASSIGNMENT_AUTHORITY_RANK = {
     SPEAKER_ASSIGNMENT_AUTHORITY_MANUAL: 2,
 }
 
-logger = logging.getLogger(__name__)
-
 
 def _to_optional_float(value: Any) -> float | None:
     if value is None:
         return None
     try:
         return float(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _to_optional_int(value: Any) -> int | None:
-    if value is None:
-        return None
-    try:
-        return int(value)
     except (TypeError, ValueError):
         return None
 
@@ -360,10 +342,6 @@ def _segment_edit_source(
     claiming an edit the row no longer pins. The rebuild paths in core.py read
     their provenance through here, which is what carries an assistant's
     correction onto a replacement utterance when boundaries shift.
-
-    The boundary splice in diarization.py deliberately does not call this. Both
-    splitters that feed it refuse a locked utterance outright, so a segment
-    reaching that constructor can never carry a source worth reading.
     """
     if not locked:
         return None

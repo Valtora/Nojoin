@@ -61,8 +61,8 @@ const DEPENDENCY_MODELS: {
   },
   {
     id: "segmentation",
-    label: "Segmentation Refinement",
-    desc: "Pyannote segmentation-3.0 model weights.",
+    label: "Pyannote Segmentation (Overlap Detection)",
+    desc: "Overlapping speech model weights.",
     target: "core",
   },
 ];
