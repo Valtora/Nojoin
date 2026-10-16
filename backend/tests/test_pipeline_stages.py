@@ -180,6 +180,9 @@ def _install_happy_path_modules(monkeypatch, *, diarization_result=None, segment
         find_matching_global_speaker=lambda *a, **k: (None, 0.0),
         embedding_version_of=lambda *a, **k: 2,
         AUTO_UPDATE_THRESHOLD=0.8,
+        IDENTIFICATION_THRESHOLD=0.75,
+        MARGIN_OF_VICTORY=0.05,
+        rank_global_speakers=lambda *a, **k: [],
     )
     _install(
         monkeypatch,
@@ -759,6 +762,9 @@ def test_manual_name_is_preserved_and_not_reidentified(monkeypatch):
         find_matching_global_speaker=_must_not_match,
         embedding_version_of=lambda *a, **k: 2,
         AUTO_UPDATE_THRESHOLD=0.8,
+        IDENTIFICATION_THRESHOLD=0.75,
+        MARGIN_OF_VICTORY=0.05,
+        rank_global_speakers=lambda *a, **k: [],
     )
 
     result = _run_task(monkeypatch, session, recording_id=705)
@@ -834,6 +840,9 @@ def test_duplicate_resolved_name_auto_merges_and_rewrites_segments(monkeypatch):
         find_matching_global_speaker=lambda *a, **k: (matched, 0.99),
         embedding_version_of=lambda *a, **k: 2,
         AUTO_UPDATE_THRESHOLD=0.8,
+        IDENTIFICATION_THRESHOLD=0.75,
+        MARGIN_OF_VICTORY=0.05,
+        rank_global_speakers=lambda *a, **k: [],
     )
     _install(
         monkeypatch,
@@ -901,6 +910,9 @@ def test_unidentified_speakers_get_sequential_names(monkeypatch):
         find_matching_global_speaker=lambda *a, **k: (None, 0.0),
         embedding_version_of=lambda *a, **k: 2,
         AUTO_UPDATE_THRESHOLD=0.8,
+        IDENTIFICATION_THRESHOLD=0.75,
+        MARGIN_OF_VICTORY=0.05,
+        rank_global_speakers=lambda *a, **k: [],
     )
 
     created_names: list = []

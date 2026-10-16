@@ -11,6 +11,8 @@ import type {
 const addNotification = vi.fn();
 const updateSpeaker = vi.fn();
 const deleteRecordingSpeaker = vi.fn();
+const getMergedRecordingSpeakers = vi.fn();
+const unmergeRecordingSpeaker = vi.fn();
 
 vi.mock("@/lib/notificationStore", () => ({
   useNotificationStore: () => ({ addNotification }),
@@ -22,7 +24,15 @@ vi.mock("@/lib/api", () => ({
   deleteRecordingSpeaker: (...a: unknown[]) => deleteRecordingSpeaker(...a),
   extractVoiceprint: vi.fn(),
   promoteToGlobalSpeaker: vi.fn(),
+  getMergedRecordingSpeakers: (...a: unknown[]) =>
+    getMergedRecordingSpeakers(...a),
+  unmergeRecordingSpeaker: (...a: unknown[]) => unmergeRecordingSpeaker(...a),
 }));
+
+beforeEach(() => {
+  getMergedRecordingSpeakers.mockReset().mockResolvedValue([]);
+  unmergeRecordingSpeaker.mockReset().mockResolvedValue({});
+});
 
 // Capture the items handed to the context menu so the action set is testable
 // without depending on the menu's DOM rendering.
@@ -243,5 +253,45 @@ describe("speaker naming provenance", () => {
     });
 
     expect(screen.queryByText("AI named")).not.toBeInTheDocument();
+  });
+});
+
+describe("automatic merges", () => {
+  it("lists a cluster processing merged in and undoes it", async () => {
+    getMergedRecordingSpeakers.mockResolvedValue([
+      {
+        id: 7,
+        public_id: "rs-7",
+        diarization_label: "SPEAKER_07",
+        name: "Speaker 7",
+        merged_into_id: 1,
+        merged_into_label: "SPEAKER_00",
+        restorable_utterance_count: 3,
+        has_voiceprint: true,
+      },
+    ]);
+    const { onRefresh } = renderPanel();
+
+    expect(
+      await screen.findByText("Merged in: SPEAKER_07, 3 lines"),
+    ).toBeInTheDocument();
+    expect(getMergedRecordingSpeakers).toHaveBeenCalledWith("rec-1");
+
+    fireEvent.click(screen.getByText("Undo merge"));
+
+    await waitFor(() => {
+      expect(unmergeRecordingSpeaker).toHaveBeenCalledWith(
+        "rec-1",
+        "SPEAKER_07",
+      );
+    });
+    await waitFor(() => expect(onRefresh).toHaveBeenCalled());
+  });
+
+  it("offers nothing when processing merged no cluster", async () => {
+    renderPanel();
+
+    await waitFor(() => expect(getMergedRecordingSpeakers).toHaveBeenCalled());
+    expect(screen.queryByText("Undo merge")).not.toBeInTheDocument();
   });
 });

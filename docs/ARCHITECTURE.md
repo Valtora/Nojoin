@@ -499,9 +499,11 @@ Voiceprints are only comparable with others produced by the same extraction proc
 
 `DUPLICATE_SPEAKER_MERGE_THRESHOLD` stays at 0.70 deliberately. When the first extraction method put 29% of same-person pairs below it, the fault was the input to the comparison, not the threshold: same-person similarity collapsed whenever acoustic conditions changed, the very condition that makes the diariser split one person. Lowering the threshold causes wrong merges, which a user finds harder to undo than wrong splits.
 
+The pass links clusters by complete linkage: a cluster, or a group already formed, joins another only when every pair across the two clears the threshold. Single linkage, where one qualifying pair was enough, let a small cluster of short backchannel lines bridge two people: its blended voiceprint scored 0.87 against one cluster and 0.74 against another, the two clusters scored 0.42 against each other, and the union gave 79% of a 75-minute board meeting to the wrong person. The direct score between two clusters is the evidence that they are one voice, and no chain through a third cluster overrules it. Replayed over this project's own library, the rule changed three recordings in a hundred, two of which had been bridged that way. The cost is a near miss that stays split, which one merge in the speaker panel fixes.
+
 Stale voiceprints are repaired by `rebuild_voiceprints_task` rather than by comparing them anyway. The repair is automatic scheduled maintenance, running every six hours from Celery Beat and processing at most `AUTOMATIC_VOICEPRINT_REBUILD_LIMIT` (25) recordings per tick. It is bounded rather than operator-triggered because staleness is not a state a user can act on — it is a maintenance obligation Nojoin owes itself after changing its own extraction method — and because an unbounded re-extraction would run the embedding model over an entire library on hardware the user owns. Bounding each tick keeps the GPU lane responsive; a large library converges over several ticks. A stale voiceprint that cannot be re-extracted, because its audio is gone or its speaker owns no transcript segment, is cleared rather than kept: it could never be scored against anything, and leaving it would stall the sweep on a row it can never repair. Transient extraction failures are counted separately and leave the voiceprint in place so a later run can retry.
 
-Two `pipeline_metric` stages make diarisation quality inspectable from a worker log. `final_diarization_speaker_stats` records per-cluster speech duration, segment count and share, plus overlapped speech and whether a cap bound. `speaker_merge_pass` is emitted on **every** run of the duplicate-merge pass, including runs that merge nothing and runs that could not score anything (which carry an explicit reason), and lists each pair's cosine score.
+Three `pipeline_metric` stages make diarisation quality inspectable from a worker log. `final_diarization_speaker_stats` records per-cluster speech duration, segment count and share, plus overlapped speech and whether a cap bound. `speaker_identification` records, for each cluster, the three closest people in the library with their cosine scores and which one matched, so a miss says who came closest and an ambiguous pair is visible as one. `speaker_merge_pass` is emitted on **every** run of the duplicate-merge pass, including runs that merge nothing and runs that could not score anything (which carry an explicit reason); it lists each pair's cosine score, why a pair that cleared the threshold was still refused, and each merged group with its survivor and its weakest and mean score.
 
 A user can discard a recording at any in-flight stage: uploading, paused, queued, or processing. Discard is a single graceful operation that revokes the running Celery task with `terminate=True`, deletes every on-disk artefact, and removes the recording row, so no manual cancel-then-delete sequence is required. Terminating the task stops the worker from continuing the pipeline, and the worker's start-of-task cancellation guard prevents a revoked-but-requeued task from resuming work. Terminal recordings (processed, errored, or already removed) are deleted through the standard delete flow instead.
 
@@ -691,6 +693,16 @@ re-derives other utterances from stored diarisation window rows
 finalised by v1.0.0 to v1.2.0 can still hold window turns from the removed
 rolling diarisation, and replaying them moved other speakers' lines onto the
 corrected speaker.
+
+Every finalised utterance also keeps the cluster label the diariser gave its
+span (`transcript_utterances.diarization_label`), stamped on the segments
+before speaker assignment and the merge pass rewrite `speaker`. It is what
+makes an automatic merge reversible: `unmerge_recording_speaker` restores a
+merged row as an unnamed speaker, gives it back every line that carries its
+label except lines a person assigned by hand, and records an
+`unmerge_speakers` correction event. The speaker panel lists such clusters
+under the surviving speaker. Lines written before the column existed carry no
+label, so a merge made before then can only be undone by reprocessing.
 
 ### Utterance Public Ids
 

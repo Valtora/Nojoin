@@ -71,6 +71,15 @@ def combine_and_consolidate_segments(
             combined_segments.append(fallback_segment)
 
     final_segments = consolidate_diarized_transcript(combined_segments)
+
+    # The cluster label the diariser gave each line. Speaker assignment and the
+    # merge pass rewrite ``speaker`` to the survivor's label; this one is kept
+    # on the utterance so an automatic merge can be undone.
+    for segment in final_segments:
+        label = str(segment.get("speaker") or "").strip()
+        if label and label.upper() != "UNKNOWN":
+            segment["diarization_label"] = label
+
     record_pipeline_metric(
         stage="final_segments_built",
         recording_id=recording_id,

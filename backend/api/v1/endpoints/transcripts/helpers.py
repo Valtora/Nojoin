@@ -146,6 +146,9 @@ class TranscriptUtteranceRead(BaseModel):
     text: str
     speaker: str
     recording_speaker_id: Optional[int] = None
+    # The diariser's own cluster label for this span, kept across merges. Null
+    # on live lines and on rows written before it was recorded.
+    diarization_label: Optional[str] = None
     state: str
     revision: int
     speaker_state: Optional[str] = None

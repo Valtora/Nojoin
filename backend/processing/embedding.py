@@ -1,5 +1,6 @@
 import logging
-from typing import List, Optional
+import re
+from typing import Any, List, Optional
 
 import numpy as np
 
@@ -121,6 +122,53 @@ def merge_embeddings(
     return merged.tolist()
 
 
+_PLACEHOLDER_NAME_PATTERN = re.compile(
+    r"^(SPEAKER_\d+|Speaker \d+|Unknown|New Voice .*)$", re.IGNORECASE
+)
+
+
+def _rank_global_speakers(
+    embedding: List[float],
+    global_speakers: List,
+    method_version: Optional[int],
+) -> tuple[List[tuple[Any, float]], int]:
+    """The ranking, plus how many stale voiceprints it had to leave out."""
+    if method_version is None:
+        method_version = EMBEDDING_METHOD_VERSION
+
+    ranked: List[tuple[Any, float]] = []
+    skipped_stale = 0
+    for gs in global_speakers:
+        if not gs.embedding or _PLACEHOLDER_NAME_PATTERN.match(gs.name):
+            continue
+        if embedding_version_of(gs) != method_version:
+            skipped_stale += 1
+            continue
+        ranked.append((gs, cosine_similarity(embedding, gs.embedding)))
+
+    # A stable sort keeps the first of two equal scores first, as before.
+    ranked.sort(key=lambda item: item[1], reverse=True)
+    return ranked, skipped_stale
+
+
+def rank_global_speakers(
+    embedding: List[float],
+    global_speakers: List,
+    method_version: Optional[int] = None,
+) -> List[tuple[Any, float]]:
+    """Score ``embedding`` against every comparable saved person, best first.
+
+    People with a placeholder name or no voiceprint are left out, and so are
+    voiceprints from another extraction method, because a cross-version cosine
+    is not a similarity. ``find_matching_global_speaker`` decides on this
+    ranking; the pipeline records it, so a miss can say who came closest.
+    """
+    ranked, _skipped_stale = _rank_global_speakers(
+        embedding, global_speakers, method_version
+    )
+    return ranked
+
+
 def find_matching_global_speaker(
     embedding: List[float],
     global_speakers: List,
@@ -146,52 +194,28 @@ def find_matching_global_speaker(
         Tuple of (best_matching_speaker, similarity_score).
         Returns (None, 0.0) if no match above threshold or if match is ambiguous.
     """
-    import re
-
-    if method_version is None:
-        method_version = EMBEDDING_METHOD_VERSION
-
-    placeholder_pattern = re.compile(
-        r"^(SPEAKER_\d+|Speaker \d+|Unknown|New Voice .*)$", re.IGNORECASE
+    ranking, skipped_stale = _rank_global_speakers(
+        embedding, global_speakers, method_version
     )
-
-    best_match = None
-    best_score = 0.0
-    second_best_score = 0.0
-    skipped_stale = 0
-
-    for gs in global_speakers:
-        # Skip placeholder names and speakers without embeddings
-        if not gs.embedding or placeholder_pattern.match(gs.name):
-            continue
-
-        if embedding_version_of(gs) != method_version:
-            skipped_stale += 1
-            continue
-
-        score = cosine_similarity(embedding, gs.embedding)
-
-        if score > best_score:
-            second_best_score = best_score
-            best_score = score
-            best_match = gs
-        elif score > second_best_score:
-            second_best_score = score
-
     if skipped_stale:
         logger.info(
             "Skipped %d global speaker(s) whose voiceprint predates extraction "
             "method v%d. Re-extract voiceprints to make them matchable again.",
             skipped_stale,
-            method_version,
+            method_version or EMBEDDING_METHOD_VERSION,
         )
+    if not ranking:
+        return None, 0.0
 
-    if best_match and best_score >= threshold:
+    best_match, best_score = ranking[0]
+    # Scores at or below zero never counted as a rival, so neither do they here.
+    second_best_score = max(ranking[1][1], 0.0) if len(ranking) > 1 else 0.0
+
+    if best_score >= threshold:
         # Check for ambiguity using the margin of victory
         if (best_score - second_best_score) >= margin:
             return best_match, best_score
-        else:
-            # It's an ambiguous match, better to return nothing than a false positive
-            return None, 0.0
+        # It's an ambiguous match, better to return nothing than a false positive
+        return None, 0.0
 
-    return None, best_score
+    return None, max(best_score, 0.0)

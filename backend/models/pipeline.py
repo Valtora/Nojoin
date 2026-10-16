@@ -87,6 +87,7 @@ class SpeakerCorrectionEventType(str, Enum):
     ASSIGN_RECORDING_SPEAKER = "assign_recording_speaker"
     ASSIGN_FROM_NOW_ON = "assign_from_now_on"
     MERGE_SPEAKERS = "merge_speakers"
+    UNMERGE_SPEAKERS = "unmerge_speakers"
     LINK_GLOBAL_SPEAKER = "link_global_speaker"
     PROMOTE_GLOBAL_SPEAKER = "promote_global_speaker"
 
@@ -376,6 +377,13 @@ class TranscriptUtterance(BaseDBModel, table=True):
             ForeignKey("recording_speakers.id", ondelete="SET NULL"),
             index=True,
         ),
+    )
+    # The cluster label the diariser gave this span. A merge rewrites
+    # speaker_label to the survivor's label; this one stays, so the merge can
+    # be undone. NULL on live rows, legacy rows and rows written before the
+    # column existed.
+    diarization_label: Optional[str] = Field(
+        default=None, sa_column=Column(String(255))
     )
     state: TranscriptUtteranceState = Field(
         default=TranscriptUtteranceState.STABLE,

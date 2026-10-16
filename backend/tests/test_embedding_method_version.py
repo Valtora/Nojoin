@@ -18,6 +18,7 @@ from backend.processing.embedding import (
     embedding_version_of,
     embeddings_are_comparable,
     find_matching_global_speaker,
+    rank_global_speakers,
 )
 from backend.processing.embedding_core import (
     EMBEDDING_METHOD_VERSION,
@@ -158,3 +159,46 @@ def test_explicit_method_version_overrides_the_default():
     )
 
     assert match is legacy
+
+
+def test_rank_global_speakers_orders_comparable_people_best_first():
+    """Stale voiceprints and placeholder names are left out of the ranking."""
+    probe = _vec(1.0, 0.0, 0.0)
+    close = FakeGlobalSpeaker(
+        id=1,
+        name="Alice",
+        embedding=_vec(0.9, 0.1, 0.0),
+        embedding_version=EMBEDDING_METHOD_VERSION,
+    )
+    far = FakeGlobalSpeaker(
+        id=2,
+        name="Bob",
+        embedding=_vec(0.1, 0.9, 0.0),
+        embedding_version=EMBEDDING_METHOD_VERSION,
+    )
+    stale = FakeGlobalSpeaker(
+        id=3,
+        name="Carol",
+        embedding=_vec(1.0, 0.0, 0.0),
+        embedding_version=LEGACY_EMBEDDING_METHOD_VERSION,
+    )
+    placeholder = FakeGlobalSpeaker(
+        id=4,
+        name="Speaker 2",
+        embedding=_vec(1.0, 0.0, 0.0),
+        embedding_version=EMBEDDING_METHOD_VERSION,
+    )
+
+    ranking = rank_global_speakers(probe, [far, stale, placeholder, close])
+
+    assert [person.name for person, _ in ranking] == ["Alice", "Bob"]
+    assert ranking[0][1] > ranking[1][1]
+
+    match, score = find_matching_global_speaker(
+        probe,
+        [far, stale, placeholder, close],
+        threshold=0.75,
+        margin=0.05,
+    )
+    assert match is close
+    assert score == pytest.approx(ranking[0][1])

@@ -240,6 +240,7 @@ CREATE TABLE transcript_utterances (
     text TEXT NOT NULL,
     speaker_label VARCHAR(255),
     recording_speaker_id INTEGER,
+    diarization_label VARCHAR(255),
     state VARCHAR(32) NOT NULL,
     source_kind VARCHAR(255) NOT NULL,
     processing_run_id INTEGER,

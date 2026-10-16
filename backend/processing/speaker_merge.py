@@ -1,8 +1,16 @@
 """Post-diarization embedding-based speaker merge pass.
 
 Detects over-clustered speakers by computing pairwise cosine similarity
-between all active RecordingSpeaker embeddings within a recording. Speakers
-above the merge threshold are consolidated using Union-Find.
+between all active RecordingSpeaker embeddings within a recording. Clusters
+that score at or above the merge threshold are consolidated using Union-Find.
+
+Linkage is complete: a cluster joins a group only when it clears the threshold
+against every member of that group. Under single linkage a small cluster of
+short backchannel lines, whose blended voiceprint scores moderately against two
+different people, bridged those two people into one speaker although they
+scored far below the threshold against each other. The direct score between two
+clusters is the evidence that they are the same voice, and no chain of third
+parties is allowed to overrule it.
 
 Every run emits a ``speaker_merge_pass`` pipeline metric -- including runs that
 merge nothing and runs that cannot score anything at all. A pass that merged
@@ -13,6 +21,7 @@ under-merging impossible to diagnose from a worker log.
 from __future__ import annotations
 
 import logging
+from itertools import combinations
 from typing import Any
 
 from sqlmodel import select
@@ -30,6 +39,10 @@ logger = logging.getLogger(__name__)
 # Reasons the pass produced no comparison at all. Recorded on the metric so an
 # empty result is self-explaining.
 REASON_NO_ELIGIBLE_SPEAKERS = "fewer_than_two_speakers_with_embeddings"
+
+# Recorded on a pair that cleared the threshold but whose union would have put
+# two clusters scoring below it into one group.
+BLOCKED_CROSS_PAIR_BELOW_THRESHOLD = "cross_pair_below_threshold"
 
 
 def _find(parent: dict[int, int], speaker_id: int) -> int:
@@ -50,6 +63,10 @@ def _union(parent: dict[int, int], rank: dict[int, int], a: int, b: int) -> int:
     if rank[root_a] == rank[root_b]:
         rank[root_a] += 1
     return root_a
+
+
+def _pair_key(a: int, b: int) -> tuple[int, int]:
+    return (a, b) if a < b else (b, a)
 
 
 def _count_utterances_per_speaker(
@@ -128,6 +145,22 @@ def _union_is_blocked(
     return None
 
 
+def _weakest_cross_pair(
+    members_a: set[int],
+    members_b: set[int],
+    scores: dict[tuple[int, int], float],
+) -> tuple[float, int, int]:
+    """The lowest-scoring pair across two components, with its speaker ids."""
+    weakest: tuple[float, int, int] | None = None
+    for a in members_a:
+        for b in members_b:
+            score = scores[_pair_key(a, b)]
+            if weakest is None or score < weakest[0]:
+                weakest = (score, a, b)
+    assert weakest is not None  # both components hold at least one speaker
+    return weakest
+
+
 def _survivor_sort_key(
     speaker: RecordingSpeaker,
     utterance_counts: dict[int, int],
@@ -151,34 +184,30 @@ def _survivor_sort_key(
     )
 
 
-def _score_and_union_pairs(
+_Candidate = tuple[float, dict[str, Any], RecordingSpeaker, RecordingSpeaker]
+
+
+def _score_pairs(
     eligible: list[RecordingSpeaker],
     threshold: float,
-    parent: dict[int, int],
-    rank: dict[int, int],
-) -> list[dict[str, Any]]:
-    """Score every pair, union those that qualify, and report all of them.
+) -> tuple[list[dict[str, Any]], dict[tuple[int, int], float], list[_Candidate]]:
+    """Score every pair and report all of them.
 
     Every pair is recorded, merged or not. The near-miss scores are the whole
     point: they distinguish "these are the same voice and we missed it" from
-    "these really are different voices".
-
-    Linking is a second pass over the qualifying pairs in descending score
-    order. Union-find is order-sensitive once a link can be refused: taking the
-    pairs in whatever order the nested loop happened to produce would let an
-    arbitrary weaker link claim a component and push a stronger one out. The
-    strongest evidence should win, so it is applied first.
+    "these really are different voices". Returns the scored pairs, every score
+    keyed by id pair, and the pairs that qualify for linking.
     """
     scored_pairs: list[dict[str, Any]] = []
-    candidates: list[
-        tuple[float, dict[str, Any], RecordingSpeaker, RecordingSpeaker]
-    ] = []
+    scores: dict[tuple[int, int], float] = {}
+    candidates: list[_Candidate] = []
 
     for i, speaker_a in enumerate(eligible):
         for speaker_b in eligible[i + 1 :]:
             if speaker_a.id is None or speaker_b.id is None:
                 continue
-            score = cosine_similarity(speaker_a.embedding, speaker_b.embedding)
+            score = float(cosine_similarity(speaker_a.embedding, speaker_b.embedding))
+            scores[_pair_key(int(speaker_a.id), int(speaker_b.id))] = score
             blocked = _merge_is_blocked(speaker_a, speaker_b)
 
             pair: dict[str, Any] = {
@@ -186,7 +215,7 @@ def _score_and_union_pairs(
                 "b_label": speaker_b.diarization_label,
                 "a_id": int(speaker_a.id),
                 "b_id": int(speaker_b.id),
-                "cosine": round(float(score), 4),
+                "cosine": round(score, 4),
                 "merged": False,
                 "blocked_by": blocked,
             }
@@ -204,12 +233,38 @@ def _score_and_union_pairs(
                 continue
 
             if score >= threshold:
-                candidates.append((float(score), pair, speaker_a, speaker_b))
+                candidates.append((score, pair, speaker_a, speaker_b))
 
-    # The identities each component currently carries. Read through _find, so
-    # only the live root's entry is ever consulted.
+    return scored_pairs, scores, candidates
+
+
+def _score_and_union_pairs(
+    eligible: list[RecordingSpeaker],
+    threshold: float,
+    parent: dict[int, int],
+    rank: dict[int, int],
+) -> tuple[list[dict[str, Any]], dict[tuple[int, int], float]]:
+    """Score every pair, union those that qualify, and report all of them.
+
+    Linking is a second pass over the qualifying pairs in descending score
+    order. Union-find is order-sensitive once a link can be refused: taking the
+    pairs in whatever order the nested loop happened to produce would let an
+    arbitrary weaker link claim a component and push a stronger one out. The
+    strongest evidence should win, so it is applied first.
+
+    A link is refused when any pair across the two components it would join
+    scores below the threshold (complete linkage), so two clusters only ever
+    share a group when they score as the same voice against each other.
+    Returns the scored pairs and the score of every pair, keyed by id pair.
+    """
+    scored_pairs, scores, candidates = _score_pairs(eligible, threshold)
+    labels = {int(speaker.id): speaker.diarization_label for speaker in eligible}
+
+    # The identities and members each component currently carries. Read
+    # through _find, so only the live root's entry is ever consulted.
     component_globals: dict[int, set[int]] = {}
     component_names: dict[int, set[str]] = {}
+    members: dict[int, set[int]] = {}
     for speaker in eligible:
         speaker_id = int(speaker.id)
         component_globals[speaker_id] = (
@@ -219,6 +274,7 @@ def _score_and_union_pairs(
         )
         name_key = _local_name_key(speaker)
         component_names[speaker_id] = {name_key} if name_key else set()
+        members[speaker_id] = {speaker_id}
 
     # Descending score, with the id pair as a deterministic tiebreak so two
     # equally-scoring links never resolve on dict or list ordering.
@@ -250,6 +306,25 @@ def _score_and_union_pairs(
             )
             continue
 
+        weakest, weak_a, weak_b = _weakest_cross_pair(
+            members[root_a], members[root_b], scores
+        )
+        if weakest < threshold:
+            pair["blocked_by"] = BLOCKED_CROSS_PAIR_BELOW_THRESHOLD
+            pair["weakest_cross_cosine"] = round(weakest, 4)
+            logger.info(
+                "[SpeakerMerge] %s ~ %s scored %.3f but was not merged: "
+                "%s ~ %s scores %.3f, below %.3f.",
+                speaker_a.diarization_label,
+                speaker_b.diarization_label,
+                score,
+                labels[weak_a],
+                labels[weak_b],
+                weakest,
+                threshold,
+            )
+            continue
+
         logger.info(
             "[SpeakerMerge] %s (id=%d) ~ %s (id=%d): cosine=%.3f >= %.3f",
             speaker_a.diarization_label,
@@ -261,12 +336,14 @@ def _score_and_union_pairs(
         )
         merged_globals = component_globals[root_a] | component_globals[root_b]
         merged_names = component_names[root_a] | component_names[root_b]
+        merged_members = members[root_a] | members[root_b]
         new_root = _union(parent, rank, int(speaker_a.id), int(speaker_b.id))
         component_globals[new_root] = merged_globals
         component_names[new_root] = merged_names
+        members[new_root] = merged_members
         pair["merged"] = True
 
-    return scored_pairs
+    return scored_pairs, scores
 
 
 def merge_duplicate_speakers(
@@ -325,6 +402,7 @@ def merge_duplicate_speakers(
 
     base_payload: dict[str, Any] = {
         "threshold": round(float(threshold), 4),
+        "linkage": "complete",
         "total_speaker_count": len(speakers),
         "eligible_speaker_count": len(eligible),
         "skipped_no_embedding": len(speakers) - len(with_embedding),
@@ -334,7 +412,14 @@ def merge_duplicate_speakers(
 
     if len(eligible) < 2:
         # Logged even when nothing is comparable, so an empty pass is visible.
-        _emit({**base_payload, "reason": REASON_NO_ELIGIBLE_SPEAKERS, "pairs": []})
+        _emit(
+            {
+                **base_payload,
+                "reason": REASON_NO_ELIGIBLE_SPEAKERS,
+                "pairs": [],
+                "groups": [],
+            }
+        )
         return []
 
     speaker_ids = {int(s.id) for s in eligible}
@@ -343,7 +428,7 @@ def merge_duplicate_speakers(
     parent: dict[int, int] = {int(s.id): int(s.id) for s in eligible}
     rank: dict[int, int] = {int(s.id): 0 for s in eligible}
 
-    scored_pairs = _score_and_union_pairs(eligible, threshold, parent, rank)
+    scored_pairs, scores = _score_and_union_pairs(eligible, threshold, parent, rank)
 
     groups: dict[int, list[RecordingSpeaker]] = {}
     for speaker in eligible:
@@ -352,6 +437,10 @@ def merge_duplicate_speakers(
 
     merge_pairs: list[tuple[int, int]] = []
     label_remap: dict[str, str] = {}
+    # One entry per merged group: who survived, who was absorbed, and the
+    # weakest and mean score inside the group, so a log reader can judge the
+    # group without recomputing it from the pairs.
+    group_payloads: list[dict[str, Any]] = []
 
     for _root, group in groups.items():
         if len(group) < 2:
@@ -376,6 +465,20 @@ def merge_duplicate_speakers(
                 survivor.id,
             )
 
+        group_scores = [
+            scores[_pair_key(int(a.id), int(b.id))] for a, b in combinations(group, 2)
+        ]
+        group_payloads.append(
+            {
+                "survivor_id": int(survivor.id),
+                "survivor_label": survivor.diarization_label,
+                "merged_ids": [int(s.id) for s in group[1:]],
+                "merged_labels": [s.diarization_label for s in group[1:]],
+                "min_cosine": round(min(group_scores), 4),
+                "mean_cosine": round(sum(group_scores) / len(group_scores), 4),
+            }
+        )
+
     _emit(
         {
             **base_payload,
@@ -385,6 +488,7 @@ def merge_duplicate_speakers(
             "merged_pair_count": len(merge_pairs),
             "surviving_speaker_count": len(eligible) - len(merge_pairs),
             "max_cosine": max((p["cosine"] for p in scored_pairs), default=None),
+            "groups": group_payloads,
             "speech_seconds": {
                 s.diarization_label: round(
                     float(speech_seconds.get(s.diarization_label, 0.0)), 2

@@ -101,6 +101,21 @@ export interface RecordingSpeaker extends BaseDBModel {
   name_last_edit_source?: string | null;
 }
 
+/**
+ * A cluster processing merged into another speaker, and what undoing that
+ * merge would give back. Only clusters with lines to restore are listed.
+ */
+export interface MergedRecordingSpeaker {
+  id: number;
+  public_id: string;
+  diarization_label: string;
+  name?: string | null;
+  merged_into_id: number;
+  merged_into_label: string;
+  restorable_utterance_count: number;
+  has_voiceprint: boolean;
+}
+
 export type SpeakerNameSuggestionStatus =
   | "pending"
   | "accepted"
@@ -160,6 +175,8 @@ export interface TranscriptUtterance {
   text: string;
   speaker: string;
   recording_speaker_id?: number;
+  /** The diariser's own cluster label for this span, kept across merges. */
+  diarization_label?: string | null;
   state?: string;
   revision: number;
   speaker_state?: "provisional" | "stable" | "manual_override" | string;
@@ -211,6 +228,8 @@ export interface TranscriptSegment {
   text: string;
   speaker: string;
   recording_speaker_id?: number;
+  /** The diariser's own cluster label for this span, kept across merges. */
+  diarization_label?: string | null;
   state?: string;
   revision?: number;
   speaker_state?: "provisional" | "stable" | "manual_override" | string;

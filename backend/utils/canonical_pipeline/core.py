@@ -6,6 +6,7 @@ from .segmentation import *
 from .speaker import *
 from .speaker_matching import _find_matching_recording_speaker  # noqa: F401
 from .startup import *
+from .unmerge import *
 
 # Its own logger, not the one the star imports bring in, so a record names
 # this module.
@@ -255,6 +256,7 @@ def replace_utterances_from_segments(
                 else str(segment.get("speaker") or UNKNOWN_SPEAKER)
             ),
             recording_speaker_id=recording_speaker.id if recording_speaker else None,
+            diarization_label=_segment_diarization_label(segment),
             state=utterance_state,
             source_kind=str(segment.get("segment_source") or source),
             processing_run_id=processing_run.id if processing_run else None,
@@ -765,6 +767,7 @@ def finalize_utterances_from_segments(
                 else str(effective_segment.get("speaker") or UNKNOWN_SPEAKER)
             ),
             recording_speaker_id=recording_speaker.id if recording_speaker else None,
+            diarization_label=_segment_diarization_label(effective_segment),
             state=TranscriptUtteranceState.FINALIZED,
             source_kind=str(effective_segment.get("segment_source") or "finalize"),
             processing_run_id=processing_run.id,
@@ -994,6 +997,7 @@ def append_utterances_from_segments(
                 else str(segment.get("speaker") or UNKNOWN_SPEAKER)
             ),
             recording_speaker_id=recording_speaker.id if recording_speaker else None,
+            diarization_label=_segment_diarization_label(segment),
             state=utterance_state,
             source_kind=str(segment.get("segment_source") or source),
             processing_run_id=processing_run.id,
@@ -1574,6 +1578,7 @@ def serialize_canonical_utterances(
             or projection.get("speaker")
             or UNKNOWN_SPEAKER,
             "recording_speaker_id": utterance.recording_speaker_id,
+            "diarization_label": utterance.diarization_label,
             "state": state_value,
             "revision": utterance.revision,
             "segment_source": utterance.source_kind,
@@ -1870,23 +1875,6 @@ def _resolve_recording_speaker_for_value(
     return recording_speaker
 
 
-def _touch_recording_speaker_bounds(
-    recording_speaker: RecordingSpeaker, segment: dict[str, Any]
-) -> None:
-    start_ms = _segment_to_ms(segment.get("start", 0.0))
-    end_ms = _segment_to_ms(segment.get("end", 0.0))
-    if (
-        recording_speaker.first_seen_ms is None
-        or start_ms < recording_speaker.first_seen_ms
-    ):
-        recording_speaker.first_seen_ms = start_ms
-    if (
-        recording_speaker.last_seen_ms is None
-        or end_ms > recording_speaker.last_seen_ms
-    ):
-        recording_speaker.last_seen_ms = end_ms
-
-
 def _state_for_segment(
     recording: Recording, segment: dict[str, Any]
 ) -> TranscriptUtteranceState:
@@ -1956,6 +1944,7 @@ def _build_projection_segment(
             ),
             "revision": utterance.revision,
             "recording_speaker_id": utterance.recording_speaker_id,
+            "diarization_label": utterance.diarization_label,
             "state": utterance.state.value
             if hasattr(utterance.state, "value")
             else str(utterance.state),

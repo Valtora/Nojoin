@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from typing import Optional
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from backend.processing.embedding_core import EMBEDDING_METHOD_VERSION
 from backend.processing.speaker_merge import merge_duplicate_speakers
 
@@ -528,10 +530,15 @@ def test_the_strongest_link_claims_a_contested_anonymous_speaker(
 
 
 @patch("backend.processing.speaker_merge._count_utterances_per_speaker")
-def test_a_chain_of_anonymous_speakers_still_merges_transitively(
-    mock_counts: MagicMock,
+def test_a_chain_does_not_join_two_clusters_that_score_below_threshold(
+    mock_counts: MagicMock, monkeypatch
 ) -> None:
-    """The component guard must not cost us ordinary transitive merging."""
+    """Complete linkage: B scores 0.608 against A, so X cannot bridge them.
+
+    X joins A on the stronger link. The X~B link clears the threshold on its
+    own, but the group it would form holds A and B, and A~B is below it.
+    """
+    events = _captured_metrics(monkeypatch)
     speakers = [
         FakeSpeaker(
             id=1,
@@ -550,4 +557,91 @@ def test_a_chain_of_anonymous_speakers_still_merges_transitively(
     by_id = {s.id: s for s in speakers}
     assert by_id[1].merged_into_id is None
     assert by_id[2].merged_into_id == 1
+    assert by_id[3].merged_into_id is None
+
+    pairs = {(p["a_id"], p["b_id"]): p for p in events[0]["payload"]["pairs"]}
+    assert pairs[(2, 3)]["merged"] is False
+    assert pairs[(2, 3)]["blocked_by"] == "cross_pair_below_threshold"
+    assert pairs[(2, 3)]["weakest_cross_cosine"] == pytest.approx(0.608, abs=1e-3)
+
+
+@patch("backend.processing.speaker_merge._count_utterances_per_speaker")
+def test_a_chain_merges_when_every_pair_clears_the_threshold(
+    mock_counts: MagicMock,
+) -> None:
+    """A person split three ways still merges, provided each fragment scores
+    as the same voice against each other fragment."""
+    speakers = [
+        FakeSpeaker(
+            id=1,
+            diarization_label="SPEAKER_A",
+            embedding=[1.0, 0.0, 0.0],
+            global_speaker_id=10,
+        ),
+        FakeSpeaker(id=2, diarization_label="SPEAKER_X", embedding=[0.9, 0.436, 0.0]),
+        FakeSpeaker(id=3, diarization_label="SPEAKER_B", embedding=[0.8, 0.6, 0.0]),
+    ]
+    mock_counts.return_value = {}
+    session = _fake_session_with_speakers(speakers)
+
+    merge_duplicate_speakers(session, recording_id=1, threshold=0.70)
+
+    by_id = {s.id: s for s in speakers}
+    assert by_id[1].merged_into_id is None
+    assert by_id[2].merged_into_id == 1
     assert by_id[3].merged_into_id == 1
+
+
+# The pairwise scores of a real failure: two large clusters R and N scoring
+# 0.42 against each other, a second cluster of R's voice R2, and a small
+# cluster of short backchannel lines X scoring 0.87 against N and 0.74 against
+# R. Single linkage joined all four and N became R.
+VOICE_R = [1.0, 0.0, 0.0, 0.0]
+VOICE_R2 = [0.75, 0.6614, 0.0, 0.0]
+VOICE_X = [0.735, 0.0, 0.678, 0.0]
+VOICE_N = [0.42, 0.0, 0.828, 0.371]
+
+
+@patch("backend.processing.speaker_merge._count_utterances_per_speaker")
+def test_a_backchannel_cluster_cannot_bridge_two_different_voices(
+    mock_counts: MagicMock, monkeypatch
+) -> None:
+    """R keeps R2, N keeps X, and the metric names the pair that stopped the
+    bridge and describes each group."""
+    events = _captured_metrics(monkeypatch)
+    speakers = [
+        FakeSpeaker(
+            id=1,
+            diarization_label="SPEAKER_R",
+            embedding=VOICE_R,
+            global_speaker_id=22,
+        ),
+        FakeSpeaker(id=2, diarization_label="SPEAKER_R2", embedding=VOICE_R2),
+        FakeSpeaker(id=3, diarization_label="SPEAKER_X", embedding=VOICE_X),
+        FakeSpeaker(id=4, diarization_label="SPEAKER_N", embedding=VOICE_N),
+    ]
+    mock_counts.return_value = {1: 66, 2: 40, 3: 192, 4: 209}
+    session = _fake_session_with_speakers(speakers)
+
+    merge_pairs = merge_duplicate_speakers(session, recording_id=1, threshold=0.70)
+
+    assert sorted(merge_pairs) == [(2, 1), (3, 4)]
+    by_id = {s.id: s for s in speakers}
+    assert by_id[4].merged_into_id is None
+
+    payload = events[0]["payload"]
+    assert payload["linkage"] == "complete"
+    pairs = {(p["a_id"], p["b_id"]): p for p in payload["pairs"]}
+    assert pairs[(1, 3)]["cosine"] == pytest.approx(0.735, abs=1e-3)
+    assert pairs[(1, 3)]["merged"] is False
+    assert pairs[(1, 3)]["blocked_by"] == "cross_pair_below_threshold"
+    # The weakest pair across the two groups is N against R2.
+    assert pairs[(1, 3)]["weakest_cross_cosine"] == pytest.approx(0.315, abs=1e-3)
+    assert pairs[(1, 4)]["cosine"] == pytest.approx(0.42, abs=1e-3)
+
+    groups = sorted(payload["groups"], key=lambda g: g["survivor_id"])
+    assert [g["survivor_label"] for g in groups] == ["SPEAKER_R", "SPEAKER_N"]
+    assert groups[0]["merged_labels"] == ["SPEAKER_R2"]
+    assert groups[1]["merged_labels"] == ["SPEAKER_X"]
+    assert groups[0]["min_cosine"] == pytest.approx(0.75, abs=1e-3)
+    assert groups[1]["mean_cosine"] == pytest.approx(0.87, abs=1e-3)

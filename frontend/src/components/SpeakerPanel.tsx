@@ -31,7 +31,11 @@ import {
   type SpeakerPanelEntry,
 } from "./speakers/_hooks/useSpeakerPanelEntries";
 import { useSpeakerSnippetPlayback } from "./speakers/_hooks/useSpeakerSnippetPlayback";
-import { useSpeakerPanelActions } from "./speakers/_hooks/useSpeakerPanelActions";
+import {
+  describeLineCount,
+  useSpeakerPanelActions,
+} from "./speakers/_hooks/useSpeakerPanelActions";
+import { useMergedSpeakerClusters } from "./speakers/_hooks/useMergedSpeakerClusters";
 
 interface SpeakerPanelProps {
   speakers: RecordingSpeaker[];
@@ -81,6 +85,7 @@ export default function SpeakerPanel({
     segments,
     globalSpeakers,
   );
+  const mergedClusters = useMergedSpeakerClusters(recordingId, speakers);
 
   const { playSnippet: handlePlaySnippet, nextSnippet: handleNextSnippet } =
     useSpeakerSnippetPlayback({
@@ -130,6 +135,8 @@ export default function SpeakerPanel({
     setBatchVoiceprintResults,
     createVoiceprint: handleCreateVoiceprint,
     promoteToGlobal: handlePromoteToGlobal,
+    undoMerge: handleUndoMerge,
+    isSubmitting,
   } = actions;
 
   const handleContextMenu = (
@@ -235,6 +242,10 @@ export default function SpeakerPanel({
               entry.labels
                 .map((label) => speakerColors[label])
                 .find(Boolean) || speakerColors[speaker.diarization_label];
+            const memberIds = new Set(entry.members.map((member) => member.id));
+            const absorbedClusters = mergedClusters.filter((cluster) =>
+              memberIds.has(cluster.merged_into_id),
+            );
 
             return (
               <div
@@ -346,6 +357,36 @@ export default function SpeakerPanel({
                   )}
                   </div>
                 </div>
+                {/* Clusters processing merged into this speaker. Each can be
+                    given back its own lines; a merge made by hand is not
+                    listed, since its lines carry the person's lock. */}
+                {absorbedClusters.length > 0 && (
+                  <ul className="mt-2 space-y-1 border-t border-control-border pt-2">
+                    {absorbedClusters.map((cluster) => (
+                      <li
+                        key={cluster.id}
+                        className="flex items-center justify-between gap-2 text-xs text-contrast-helper"
+                      >
+                        <span
+                          className="min-w-0 truncate"
+                          title={`Processing merged ${cluster.diarization_label} into this speaker`}
+                        >
+                          Merged in: {cluster.diarization_label},{" "}
+                          {describeLineCount(cluster.restorable_utterance_count)}
+                        </span>
+                        <button
+                          type="button"
+                          className="shrink-0 rounded px-2 py-0.5 text-xs font-medium text-action-text hover:bg-action-tint disabled:opacity-50"
+                          title="Give these lines back to a speaker of their own"
+                          disabled={isSubmitting}
+                          onClick={() => handleUndoMerge(cluster)}
+                        >
+                          Undo merge
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
             );
           })

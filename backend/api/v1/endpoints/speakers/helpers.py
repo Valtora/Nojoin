@@ -319,6 +319,20 @@ class MergeRequestLabels(BaseModel):
     source_speaker_label: str
 
 
+class MergedRecordingSpeakerRead(BaseModel):
+    """A cluster the pipeline merged into another speaker, and what undoing
+    that would restore."""
+
+    id: int
+    public_id: str
+    diarization_label: str
+    name: Optional[str] = None
+    merged_into_id: int
+    merged_into_label: str
+    restorable_utterance_count: int
+    has_voiceprint: bool = False
+
+
 class VoiceprintAction(BaseModel):
     action: str  # "create_new", "link_existing", "local_only", "force_link"
     global_speaker_id: Optional[int] = (
