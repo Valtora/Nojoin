@@ -9,6 +9,12 @@ logger = logging.getLogger(__name__)
 # setdefault leaves an operator's explicit value alone.
 os.environ.setdefault("ORT_DISABLE_TELEMETRY", "1")
 
+# huggingface_hub 1.32+ stores Xet downloads in a cache-wide store sharded by
+# hash. An fp32 ONNX graph and its external weights then resolve into different
+# directories, and ONNX Runtime refuses external data outside the graph's own
+# (#448). huggingface_hub reads this once, on import, so it is set here first.
+os.environ.setdefault("HF_HUB_DISABLE_SHARED_BLOBS", "1")
+
 
 def setup_secure_umask():
     # Default secure umask (owner only)

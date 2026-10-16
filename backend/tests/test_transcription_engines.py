@@ -353,17 +353,32 @@ def test_onnx_asr_short_audio_single_pass(tmp_path, monkeypatch):
     assert len(result["segments"]) == 1
 
 
+def _write_signal(path, seconds, silent=(), sample_rate=16000):
+    """Write `seconds` of a steady signal, silent over each (start, end) in `silent`.
+
+    A constant level, so every 0.2 s span outside the silences is equally quiet
+    and window boundaries are exact.
+    """
+    import numpy as np
+    import soundfile
+
+    audio = np.full(int(seconds * sample_rate), 0.1, dtype="float32")
+    for start, end in silent:
+        audio[int(start * sample_rate) : int(end * sample_rate)] = 0.0
+    soundfile.write(str(path), audio, sample_rate)
+
+
 def test_onnx_asr_chunks_long_audio(tmp_path, monkeypatch):
     """Audio beyond the limit is split into windows and merged into absolute time."""
     from backend.processing.engines import onnx_asr_engine
     from backend.processing.engines.parakeet_engine import ParakeetEngine
 
-    # Shrink the window so the fixture audio stays tiny: 4s windows, 10s audio.
+    # Shrink the window so the fixture audio stays tiny: 4 s windows, 10 s audio.
+    # With no quieter point, each window closes at its midpoint, 2 s in.
     monkeypatch.setattr(onnx_asr_engine, "MAX_CHUNK_DURATION_S", 4.0)
-    monkeypatch.setattr(onnx_asr_engine, "CHUNK_SNAP_RADIUS_S", 0.5)
 
     audio_path = tmp_path / "long.wav"
-    _write_silence(audio_path, 10)
+    _write_signal(audio_path, 10)
 
     calls = []
     engine = ParakeetEngine()
@@ -371,19 +386,100 @@ def test_onnx_asr_chunks_long_audio(tmp_path, monkeypatch):
 
     result = engine.transcribe(str(audio_path), {})
 
-    # recognize() ran once per window, on temp files — never on the source path.
-    assert len(calls) == 3
+    # recognize() ran once per window, on temp files, never on the source path.
+    assert len(calls) == 4
     assert str(audio_path) not in calls
     # Per-window transcripts and segments are concatenated.
-    assert result["text"] == "chunk chunk chunk"
-    assert len(result["segments"]) == 3
+    assert result["text"] == "chunk chunk chunk chunk"
     # Window segments are shifted into absolute, strictly increasing time.
     starts = [segment["start"] for segment in result["segments"]]
-    assert starts == sorted(starts)
-    assert starts[0] == 0.0
-    assert (
-        starts[1]
-        >= onnx_asr_engine.MAX_CHUNK_DURATION_S - onnx_asr_engine.CHUNK_SNAP_RADIUS_S
+    assert starts == [0.0, 2.0, 4.0, 6.0]
+
+
+def test_onnx_asr_skips_silent_windows(tmp_path, monkeypatch):
+    """Canary invents text for silence, and VAD writes non-speech as zeros."""
+    from backend.processing.engines import onnx_asr_engine
+    from backend.processing.engines.parakeet_engine import ParakeetEngine
+
+    monkeypatch.setattr(onnx_asr_engine, "MAX_CHUNK_DURATION_S", 4.0)
+    audio_path = tmp_path / "pause.wav"
+    _write_signal(audio_path, 16, silent=[(3, 13)])
+
+    calls = []
+    engine = ParakeetEngine()
+    monkeypatch.setattr(engine, "_get_model", lambda config: _fake_onnx_model(calls))
+
+    result = engine.transcribe(str(audio_path), {})
+
+    # [0, 3) and [13, 16) hold the signal; the five windows between are silent.
+    assert len(calls) == 2
+    assert [segment["start"] for segment in result["segments"]] == [0.0, 13.0]
+
+
+def _signal_with_pauses(seconds, pauses, sample_rate=100):
+    import numpy as np
+
+    audio = np.full(int(seconds * sample_rate), 0.5, dtype="float32")
+    for start, end in pauses:
+        audio[int(start * sample_rate) : int(end * sample_rate)] = 0.0
+    return audio
+
+
+def test_a_window_closes_at_the_first_pause_after_its_midpoint():
+    from backend.processing.engines import onnx_asr_engine as e
+
+    sr = 100
+    # The pause at 10 s is before the first window's midpoint; 18 s is the first
+    # after it. The second window finds no pause in its own second half.
+    audio = _signal_with_pauses(60, [(10, 11), (18, 19), (25, 26)], sr)
+
+    boundaries = e._chunk_boundaries(audio, sr)
+
+    assert boundaries == [(0, 18 * sr), (18 * sr, 33 * sr), (33 * sr, 60 * sr)]
+
+
+def test_a_long_pause_is_not_cut_into_slivers():
+    """A window used to be able to close 2 s after it opened, so a long muted
+    stretch became a run of 2 s silent windows."""
+    from backend.processing.engines import onnx_asr_engine as e
+
+    sr = 100
+    audio = _signal_with_pauses(150, [(10, 140)], sr)
+
+    lengths = [(end - start) / sr for start, end in e._chunk_boundaries(audio, sr)]
+
+    assert min(lengths) >= e.MAX_CHUNK_DURATION_S / 2
+    assert max(lengths) <= e.MAX_CHUNK_DURATION_S
+
+
+def test_the_last_window_keeps_half_the_cap():
+    """A pause just before the cap must not leave a sliver for the last window."""
+    from backend.processing.engines import onnx_asr_engine as e
+
+    sr = 100
+    audio = _signal_with_pauses(31, [(29, 29.5)], sr)
+
+    boundaries = e._chunk_boundaries(audio, sr)
+
+    assert boundaries == [(0, 15 * sr), (15 * sr, 31 * sr)]
+
+
+def test_windows_tile_the_signal_within_their_bounds():
+    import numpy as np
+
+    from backend.processing.engines import onnx_asr_engine as e
+
+    sr = 100
+    audio = np.random.default_rng(0).normal(0, 0.1, 600 * sr).astype("float32")
+
+    boundaries = e._chunk_boundaries(audio, sr)
+
+    assert boundaries[0][0] == 0 and boundaries[-1][1] == len(audio)
+    assert all(a[1] == b[0] for a, b in zip(boundaries, boundaries[1:]))
+    lengths = [(end - start) / sr for start, end in boundaries]
+    assert all(
+        e.MAX_CHUNK_DURATION_S / 2 <= length <= e.MAX_CHUNK_DURATION_S
+        for length in lengths
     )
 
 

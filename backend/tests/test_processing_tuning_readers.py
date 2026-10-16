@@ -229,8 +229,11 @@ def test_wider_padding_extends_the_word_and_keeps_one_segment() -> None:
 def _onnx_engine_over(tmp_path, monkeypatch, seconds: float):
     from backend.processing.engines.parakeet_engine import ParakeetEngine
 
+    # A steady signal: the engine skips a silent window without transcribing it.
     audio_path = tmp_path / "audio.wav"
-    sf.write(str(audio_path), np.zeros(int(seconds * 16000), dtype="float32"), 16000)
+    sf.write(
+        str(audio_path), np.full(int(seconds * 16000), 0.1, dtype="float32"), 16000
+    )
 
     class _Recognizer:
         def recognize(self, path):
@@ -262,8 +265,8 @@ def test_onnx_engine_reads_padding_from_its_config(
 def test_onnx_engine_passes_padding_to_every_window(tmp_path, monkeypatch):
     from backend.processing.engines import onnx_asr_engine
 
+    # 4 s windows over 10 s of a steady signal: cuts at 2, 4 and 6 s.
     monkeypatch.setattr(onnx_asr_engine, "MAX_CHUNK_DURATION_S", 4.0)
-    monkeypatch.setattr(onnx_asr_engine, "CHUNK_SNAP_RADIUS_S", 0.5)
     engine, audio_path = _onnx_engine_over(tmp_path, monkeypatch, 10.0)
 
     result = engine.transcribe(audio_path, {"asr_word_end_padding_s": 0.5})
@@ -273,7 +276,7 @@ def test_onnx_engine_passes_padding_to_every_window(tmp_path, monkeypatch):
         for segment in result["segments"]
         if segment["words"][0]["word"] == " hello"
     ]
-    assert len(first_words) == 3
+    assert len(first_words) == 4
     assert all(round(word["end"] - word["start"], 6) == 0.5 for word in first_words)
 
 

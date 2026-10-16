@@ -70,6 +70,11 @@ ENV MALLOC_ARENA_MAX=2
 # This stops it for every process in the image, including ones that never import
 # backend (which sets the same default).
 ENV ORT_DISABLE_TELEMETRY=1
+# huggingface_hub 1.32+ keeps Xet downloads in a cache-wide store sharded by
+# hash, so an fp32 ONNX graph and its external weights land in different
+# directories and ONNX Runtime 1.31 refuses to load them (#448). backend sets
+# the same default.
+ENV HF_HUB_DISABLE_SHARED_BLOBS=1
 ENV LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2
 
 RUN apt-get update && \

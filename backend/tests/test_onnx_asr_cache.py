@@ -80,8 +80,10 @@ def test_the_fp32_weights_are_files_onnx_asr_downloads(status_key, monkeypatch):
         assert any(fnmatch.fnmatch(name, pattern) for pattern in requested), name
 
 
-@pytest.mark.parametrize("quantization", ONNX_ASR_QUANTIZATIONS)
-@pytest.mark.parametrize("status_key", ONNX_ASR_MODELS)
+@pytest.mark.parametrize(
+    ("status_key", "quantization"),
+    [(key, q) for key, model in ONNX_ASR_MODELS.items() for q in model.quantizations],
+)
 def test_a_complete_download_is_ready(status_key, quantization, hub):
     repo = write_onnx_asr_repo(hub, status_key, quantization)
 
@@ -89,6 +91,17 @@ def test_a_complete_download_is_ready(status_key, quantization, hub):
 
     assert status[status_key]["downloaded"] is True
     assert status[status_key]["path"] == str(repo)
+
+
+def test_an_int8_parakeet_copy_is_not_ready(hub):
+    """Parakeet loads fp32 on every device since #445, so an upgraded CPU host
+    that cached only int8 has the fp32 download still to come."""
+    write_onnx_asr_repo(hub, "parakeet", "int8")
+
+    status = preload_models.check_model_status(whisper_model_size="turbo")
+
+    assert status["parakeet"]["downloaded"] is False
+    assert status["parakeet"]["partial"] is True
 
 
 def test_hf_hub_cache_takes_precedence_over_hf_home(hub, monkeypatch, tmp_path):
@@ -159,8 +172,8 @@ def test_a_partial_download_keeps_even_a_complete_precision_missing(hub):
 
 
 def test_a_download_missing_one_file_is_missing(hub):
-    files = onnx_asr_files("parakeet", "int8")
-    del files["decoder_joint-model.int8.onnx"]
+    files = onnx_asr_files("parakeet", None)
+    del files["decoder_joint-model.onnx"]
     write_hf_repo(hub, ONNX_ASR_MODELS["parakeet"].repo_id, files)
 
     status = preload_models.check_model_status(whisper_model_size="turbo")
@@ -187,7 +200,7 @@ def test_int8_and_fp32_halves_do_not_make_a_model(hub):
 def test_a_snapshot_without_refs_main_is_missing(hub):
     """Offline, huggingface_hub finds the snapshot through refs/main only."""
     model = ONNX_ASR_MODELS["parakeet"]
-    write_hf_repo(hub, model.repo_id, onnx_asr_files("parakeet", "int8"), ref=False)
+    write_hf_repo(hub, model.repo_id, onnx_asr_files("parakeet", None), ref=False)
 
     status = preload_models.check_model_status(whisper_model_size="turbo")
 
@@ -205,8 +218,11 @@ def test_nvidias_nemo_checkpoint_is_neither_reported_nor_deleted(
     status_key, nemo_repo, hub
 ):
     """The NeMo repo shares the model's name but onnx-asr never loads it."""
+    cpu_precision = ONNX_ASR_MODELS[status_key].cpu_quantization
     nemo = write_hf_repo(
-        hub, nemo_repo, {**onnx_asr_files(status_key, "int8"), "model.nemo": b"x"}
+        hub,
+        nemo_repo,
+        {**onnx_asr_files(status_key, cpu_precision), "model.nemo": b"x"},
     )
 
     status = preload_models.check_model_status(whisper_model_size="turbo")

@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 
 import onnxruntime as rt
+import pytest
 
 from backend.processing import onnx_providers
 from backend.processing.onnx_providers import (
@@ -173,28 +174,43 @@ def test_get_available_providers_is_not_a_substitute_for_this_check():
     assert CUDA_PROVIDER not in session_providers
 
 
-def test_asr_engine_picks_fp32_on_gpu_and_int8_on_cpu(monkeypatch):
-    """int8 has no CUDA kernels, so the engine must not request it on a GPU host."""
+@pytest.mark.parametrize(
+    ("engine_name", "cpu_precision"),
+    [("canary", "int8"), ("parakeet", None), ("unlisted", "int8")],
+)
+def test_asr_engine_picks_fp32_on_gpu_and_the_models_precision_on_cpu(
+    monkeypatch, engine_name, cpu_precision
+):
+    """int8 has no CUDA kernels, so the engine must not request it on a GPU host.
+
+    On a CPU, Parakeet loads fp32 too: its int8 encoder drops speech (#445). A
+    model outside the table keeps int8.
+    """
     import sys
     import types
 
     from backend.processing.engines import onnx_asr_engine
+    from backend.processing.engines.canary_engine import CanaryEngine
+    from backend.processing.engines.parakeet_engine import ParakeetEngine
 
     captured: dict = {}
     stub = types.ModuleType("onnx_asr")
     stub.load_model = lambda onnx_id, **kw: captured.update(kw) or ModelStub()
     monkeypatch.setitem(sys.modules, "onnx_asr", stub)
 
-    class Engine(onnx_asr_engine.OnnxAsrEngine):
-        name = "canary"
-        config_key = "canary_model"
-        default_model_id = "nemo-canary-1b-v2"
-        onnx_id_map: dict = {}
+    class Unlisted(onnx_asr_engine.OnnxAsrEngine):
+        name = "unlisted"
+        config_key = "unlisted_model"
+        default_model_id = "some-other-onnx-asr-model"
 
-    for gpu_present, expected in ((True, None), (False, "int8")):
+    engine_class = {
+        "canary": CanaryEngine,
+        "parakeet": ParakeetEngine,
+        "unlisted": Unlisted,
+    }[engine_name]
+    for gpu_present, expected in ((True, None), (False, cpu_precision)):
         monkeypatch.setattr(onnx_asr_engine, "gpu_is_present", lambda v=gpu_present: v)
-        engine = Engine()
-        engine._model_cache = {}
+        engine = engine_class()
         engine._get_model({})
         assert captured["quantization"] == expected
 
@@ -259,78 +275,3 @@ def test_text_embedding_requests_cuda_only_when_a_gpu_is_present(monkeypatch):
     monkeypatch.setattr(text_embedding, "gpu_is_present", lambda: True)
     text_embedding.TextEmbeddingService()
     assert captured["providers"] == [CUDA_PROVIDER, CPU_PROVIDER]
-
-
-def test_window_cap_tightens_on_gpu_and_respects_test_overrides(monkeypatch):
-    """fp32 attention activations blow an 8GB card at the CPU-sized window."""
-    from backend.processing.engines import onnx_asr_engine as e
-
-    monkeypatch.setattr(e, "gpu_is_present", lambda: False)
-    assert e.max_chunk_duration_s() == e.MAX_CHUNK_DURATION_S
-
-    monkeypatch.setattr(e, "gpu_is_present", lambda: True)
-    assert e.max_chunk_duration_s() == e.GPU_MAX_CHUNK_DURATION_S
-
-    # Tests shrink MAX_CHUNK_DURATION_S to keep fixtures tiny; that must still win.
-    monkeypatch.setattr(e, "MAX_CHUNK_DURATION_S", 4.0)
-    assert e.max_chunk_duration_s() == 4.0
-
-
-def test_gpu_window_follows_the_install_setting(monkeypatch, caplog):
-    """An administrator sizes the GPU window for the card through config.json;
-    the merged settings a run is given carry that key."""
-    from backend.processing.engines import onnx_asr_engine as e
-
-    monkeypatch.setattr(e, "gpu_is_present", lambda: True)
-
-    assert e.max_chunk_duration_s({"gpu_asr_window_s": 60}) == 60.0
-    assert e.max_chunk_duration_s({"gpu_asr_window_s": 240.0}) == 240.0
-    # Unset means the shipped default.
-    assert (
-        e.max_chunk_duration_s({"gpu_asr_window_s": None}) == e.GPU_MAX_CHUNK_DURATION_S
-    )
-    assert e.max_chunk_duration_s({}) == e.GPU_MAX_CHUNK_DURATION_S
-
-    # A value the engine cannot use never fails a run: logged, default used.
-    for bad in (10, 500, "90", True, float("nan")):
-        caplog.clear()
-        with caplog.at_level("WARNING"):
-            assert (
-                e.max_chunk_duration_s({"gpu_asr_window_s": bad})
-                == e.GPU_MAX_CHUNK_DURATION_S
-            )
-        assert "Ignoring invalid gpu_asr_window_s" in caplog.text
-
-    # The CPU cap is a different constraint and ignores the GPU setting.
-    monkeypatch.setattr(e, "gpu_is_present", lambda: False)
-    assert e.max_chunk_duration_s({"gpu_asr_window_s": 60}) == e.MAX_CHUNK_DURATION_S
-
-
-def test_gpu_window_reads_config_json_when_no_settings_are_passed(monkeypatch):
-    from backend.processing.engines import onnx_asr_engine as e
-
-    monkeypatch.setattr(e, "gpu_is_present", lambda: True)
-    monkeypatch.setattr(
-        e.config_manager,
-        "get",
-        lambda key, default=None: 45 if key == "gpu_asr_window_s" else default,
-    )
-    assert e.max_chunk_duration_s() == 45.0
-
-
-def test_chunk_boundaries_use_the_window_they_are_given():
-    import numpy as np
-
-    from backend.processing.engines import onnx_asr_engine as e
-
-    sample_rate = 100
-    audio = np.zeros(sample_rate * 100, dtype="float32")
-
-    boundaries = e._chunk_boundaries(audio, sample_rate, window_s=40.0)
-
-    # Snapping may pull a cut earlier within its radius, never later, so no
-    # window exceeds the one given, and the windows tile the whole signal.
-    assert all(end - start <= 40 * sample_rate for start, end in boundaries)
-    assert boundaries[0][0] == 0 and boundaries[-1][1] == len(audio)
-    assert all(a[1] == b[0] for a, b in zip(boundaries, boundaries[1:]))
-    assert len(boundaries) >= 3

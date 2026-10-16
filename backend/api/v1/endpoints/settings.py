@@ -22,8 +22,6 @@ from backend.processing.processing_tuning import (
 )
 from backend.utils.config_manager import (
     APP_THEMES,
-    GPU_ASR_WINDOW_MAX_S,
-    GPU_ASR_WINDOW_MIN_S,
     INSTALL_WIDE_AI_SETTING_KEYS,
     MEETING_EDGE_CONTEXT_LEVEL_MAX,
     MEETING_EDGE_CONTEXT_LEVEL_MIN,
@@ -33,7 +31,6 @@ from backend.utils.config_manager import (
     WHISPER_MODEL_SIZES,
     config_manager,
     get_default_user_settings,
-    normalise_gpu_asr_window,
     strip_legacy_automatic_ai_settings,
 )
 from backend.utils.languages import (
@@ -79,8 +76,6 @@ class SettingsUpdate(BaseModel):
     transcription_backend: Optional[str] = None
     parakeet_model: Optional[str] = None
     canary_model: Optional[str] = None
-    # Install-wide, admin-only. Null resets to the engine's shipped default.
-    gpu_asr_window_s: Optional[float] = None
     transcription_language: Optional[str] = None
     notes_language: Optional[str] = None
     notes_language_custom_instruction: Optional[str] = None
@@ -162,16 +157,6 @@ class SettingsUpdate(BaseModel):
         if value and value not in TRANSCRIPTION_BACKENDS:
             raise ValueError(
                 f"Invalid transcription_backend. Must be one of {TRANSCRIPTION_BACKENDS}"
-            )
-        return value
-
-    @field_validator("gpu_asr_window_s")
-    @classmethod
-    def validate_gpu_asr_window_s(cls, value: Optional[float]) -> Optional[float]:
-        if value is not None and normalise_gpu_asr_window(value) is None:
-            raise ValueError(
-                f"Invalid gpu_asr_window_s. Must be from {GPU_ASR_WINDOW_MIN_S:.0f} "
-                f"to {GPU_ASR_WINDOW_MAX_S:.0f} seconds, or null for the default."
             )
         return value
 

@@ -174,59 +174,6 @@ def test_a_value_left_on_a_users_row_is_not_shown_as_theirs(install_config):
         assert body[key] == INSTALL_ENGINE[key]
 
 
-def test_a_user_row_cannot_override_the_gpu_window() -> None:
-    resolved = _merge_llm_config(
-        base_config={"llm_provider": "gemini", "gpu_asr_window_s": 60},
-        system_keys={},
-        owner_settings={"gpu_asr_window_s": 30},
-        user_settings={"gpu_asr_window_s": 240},
-    )
-
-    assert resolved.merged_config["gpu_asr_window_s"] == 60
-
-
-def test_an_admin_saves_the_gpu_window_to_config_and_can_reset_it(install_config):
-    status, body, row = asyncio.run(
-        _call_settings("admin", {}, "POST", {"gpu_asr_window_s": 60})
-    )
-
-    assert status == 200
-    assert _config_file(install_config)["gpu_asr_window_s"] == 60
-    assert body["gpu_asr_window_s"] == 60
-    assert "gpu_asr_window_s" not in row
-
-    # Null is a reset to the shipped default, not a value to keep out.
-    status, body, _ = asyncio.run(
-        _call_settings("admin", {}, "POST", {"gpu_asr_window_s": None})
-    )
-
-    assert status == 200
-    assert _config_file(install_config)["gpu_asr_window_s"] is None
-    assert body["gpu_asr_window_s"] is None
-
-
-def test_a_gpu_window_outside_the_engine_bounds_is_refused(install_config):
-    for bad in (10, 500):
-        status, _, _ = asyncio.run(
-            _call_settings("admin", {}, "POST", {"gpu_asr_window_s": bad})
-        )
-        assert status == 422
-    assert "gpu_asr_window_s" not in _config_file(install_config)
-
-
-def test_a_non_admin_cannot_change_the_gpu_window(install_config):
-    status, body, row = asyncio.run(
-        _call_settings(
-            "user", {"gpu_asr_window_s": 30}, "POST", {"gpu_asr_window_s": 60}
-        )
-    )
-
-    assert status == 200
-    assert "gpu_asr_window_s" not in _config_file(install_config)
-    assert body.get("gpu_asr_window_s") is None
-    assert "gpu_asr_window_s" not in row
-
-
 def test_a_null_engine_is_not_written_over_the_install_engine(install_config):
     status, _, _ = asyncio.run(
         _call_settings("owner", {}, "POST", {"transcription_backend": None})
@@ -236,22 +183,24 @@ def test_a_null_engine_is_not_written_over_the_install_engine(install_config):
     assert _config_file(install_config)["transcription_backend"] == "parakeet"
 
 
-# The ASR window result ledger and its switch were removed (issue #428).
-RETIRED_LEDGER_KEY = "enable_asr_window_result_ledger"
+# Retired settings: the ASR window result ledger switch (issue #428), and the
+# GPU transcription window, now a fixed 30 s on every device (issue #445).
+RETIRED_KEYS = {"enable_asr_window_result_ledger": False, "gpu_asr_window_s": 60}
 
 
-def test_a_stored_ledger_switch_is_dropped_on_load_and_on_the_next_save(
-    tmp_path: Path, monkeypatch
+@pytest.mark.parametrize(("retired_key", "stored"), RETIRED_KEYS.items())
+def test_a_retired_setting_is_dropped_on_load_and_on_the_next_save(
+    tmp_path: Path, monkeypatch, retired_key, stored
 ):
     monkeypatch.setattr(ConfigManager, "_ensure_dirs_exist", lambda self, cfg: None)
     path = tmp_path / "config.json"
     path.write_text(
-        json.dumps({**INSTALL_ENGINE, RETIRED_LEDGER_KEY: False}), encoding="utf-8"
+        json.dumps({**INSTALL_ENGINE, retired_key: stored}), encoding="utf-8"
     )
     manager = ConfigManager(config_path=str(path))
     monkeypatch.setattr(settings_ep, "config_manager", manager)
 
-    assert RETIRED_LEDGER_KEY not in manager.get_all()
+    assert retired_key not in manager.get_all()
     assert manager.get("transcription_backend") == "parakeet"
 
     status, body, _ = asyncio.run(
@@ -260,10 +209,22 @@ def test_a_stored_ledger_switch_is_dropped_on_load_and_on_the_next_save(
 
     assert status == 200
     saved = _config_file(manager)
-    assert RETIRED_LEDGER_KEY not in saved
+    assert retired_key not in saved
     assert saved["canary_model"] == "canary-new"
     assert saved["transcription_backend"] == "parakeet"
-    assert RETIRED_LEDGER_KEY not in body
+    assert retired_key not in body
+
+
+def test_a_gpu_window_sent_by_an_older_page_is_ignored(install_config):
+    """A tab opened before the upgrade still sends the field it shows."""
+    status, body, row = asyncio.run(
+        _call_settings("admin", {}, "POST", {"gpu_asr_window_s": 120})
+    )
+
+    assert status == 200
+    assert "gpu_asr_window_s" not in _config_file(install_config)
+    assert "gpu_asr_window_s" not in body
+    assert "gpu_asr_window_s" not in row
 
 
 class _SetupSession:
