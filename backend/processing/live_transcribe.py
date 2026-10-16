@@ -1150,7 +1150,7 @@ def _transcribe_live_regions(
 
         clip_path = str(live_dir / "clip.wav")
         try:
-            import silero_vad
+            from backend.processing.vad import silero_vad
 
             tensor = clip if clip.ndim > 1 else clip.unsqueeze(0)
             silero_vad.save_audio(clip_path, tensor, sampling_rate=LIVE_SAMPLE_RATE)
@@ -1246,7 +1246,7 @@ def _carry_over_live_buffer(
     removing either file when its content is empty. Returns the new
     ``buffer_abs_start`` for the next run.
     """
-    import silero_vad
+    from backend.processing.vad import silero_vad
 
     W = context_window_samples
     cut_sample = int(cut_point * LIVE_SAMPLE_RATE)

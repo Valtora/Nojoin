@@ -418,6 +418,14 @@ The shipped file gives `worker-io` and `worker-parse` the shared
 merges it, as `worker-gpu` does. The `OMP_NUM_THREADS` the compose file sets has no
 effect here, because ONNX Runtime is built without OpenMP.
 
+PyTorch reads `OMP_NUM_THREADS` instead. On a CPU install it runs diarisation and
+voice embeddings on `worker-gpu`, where the shipped file sets the variable to 2.
+Diarisation scales with the count: on a 5-minute clip in an 8-CPU container it took
+198 seconds with 8 threads and 725 with one. To use a larger CPU allowance, set
+`OMP_NUM_THREADS` to match it in `worker-gpu`'s own `environment:` block. Up to
+2.9.0, loading the speech detector pinned PyTorch to one thread, so the variable
+made no difference to diarisation (#435).
+
 ## Configure .env
 
 Create `.env` from `.env.example` and treat it as the canonical operator configuration file.

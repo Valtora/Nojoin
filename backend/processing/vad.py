@@ -4,7 +4,6 @@ from collections.abc import Mapping
 from typing import Any, Dict, Tuple
 
 import numpy as np
-import silero_vad
 import torch
 import torchaudio
 
@@ -14,6 +13,16 @@ from backend.processing.processing_tuning import (
     normalise_tuning_value,
 )
 from backend.utils.audio import load_audio
+
+# silero_vad calls torch.set_num_threads(1) when it is first imported, which
+# would leave every later torch CPU op in the worker process, CPU diarisation
+# included, on one thread (#435). Import it here and nowhere else in backend/,
+# and put the count back.
+_torch_threads = torch.get_num_threads()
+import silero_vad  # noqa: E402
+
+torch.set_num_threads(_torch_threads)
+del _torch_threads
 
 logger = logging.getLogger(__name__)
 
