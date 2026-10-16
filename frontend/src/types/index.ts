@@ -956,6 +956,17 @@ export interface VersionInfo {
   releases: ReleaseInfo[];
 }
 
+/** Whether to show the signed-in admin the update notification. */
+export interface UpdateNotice {
+  show: boolean;
+  current_version: string;
+  latest_version: string | null;
+  release_url: string | null;
+}
+
+/** Skip hides one release for good; remind hides it until the next login. */
+export type UpdateNoticeAction = "skip" | "remind";
+
 export interface SpeakerSegment {
   recording_id: RecordingId;
   recording_name: string | null;

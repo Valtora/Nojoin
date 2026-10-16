@@ -419,6 +419,18 @@ Configure the secondary provider through environment variables prefixed with `SE
 - If processing fails, use **Retry Processing** or check the administrator logs. A failed transcription shows its reason, such as the GPU running out of memory, on the recording's transcript tab.
 - If calendar sync fails, review provider setup in [CALENDAR.md](CALENDAR.md).
 
+## Notifications
+
+Notifications appear in the bottom-right corner, in two kinds. Transient ones close after five seconds, or sooner from their close button. Persistent ones stay until you dismiss them: they report something that needs attention, such as a server that cannot be reached, and some carry buttons for the choices they ask you to make. **Notifications** in the navigation lists the last 100 shown in this browser.
+
 ## Updates
 
 The Updates area shows the installed server version, latest available release, and release notes. Release metadata comes from GitHub Releases when the deployment can reach GitHub.
+
+When a newer release is out, owners and administrators also get a persistent notification about it whenever they open Nojoin:
+
+- **Go to Releases** opens that release on GitHub and leaves the notification up.
+- **Skip Update** hides it for that release. The next release brings it back.
+- **Remind Me**, or the close button, hides it for the rest of this sign-in. Reloading the page does not bring it back; signing in again does.
+
+Skip Update is saved to your account, so a skipped release stays skipped on every device.

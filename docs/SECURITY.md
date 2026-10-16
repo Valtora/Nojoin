@@ -109,7 +109,7 @@ For end-user capture setup and troubleshooting, see [CAPTURE.md](CAPTURE.md).
 
 Nojoin makes a small number of outbound connections from the server. Operators running in restricted networks should know what they are.
 
-- **Release metadata**: the API queries the GitHub Releases API to show update availability in Settings.
+- **Release metadata**: the API queries the GitHub Releases API to show update availability in Settings and in the update notification shown to administrators. The result is cached for ten minutes.
 - **AI providers**: only when a non-local provider is configured; local Ollama keeps inference on your own network.
 - **Calendar providers**: only when a user connects a Google or Microsoft account.
 - **Anonymous telemetry**: a daily heartbeat, and optionally one diagnostics ping every six hours, to `telemetry.nojoin.co.uk` from the `worker-io` lane.
