@@ -234,6 +234,10 @@ inverts to a translucent fill with light text. **The fill is not what distinguis
 50-level tint on a white card is about 1.05:1 by design, and the label and outline carry the
 meaning, which is why the contrast audit does not measure it.
 
+The dark fills are translucent, so they only read correctly on an opaque surface. A toast floats
+over whatever is behind it, so `NotificationToast` paints `--surface-float` first and lays the
+tone's `-bg` over it. Using the tint as the toast's own fill let the page show through.
+
 ### Overlay and stacking
 
 | Token | Light | Dark |

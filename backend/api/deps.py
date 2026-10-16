@@ -263,6 +263,30 @@ async def get_current_user(
     return user
 
 
+async def get_current_session_id(
+    request: Request,
+    token: Optional[str] = Depends(reusable_oauth2),
+) -> Optional[str]:
+    """The ``jti`` of the browser session making this request, or ``None``.
+
+    Each sign-in mints one session token with its own ``jti`` and nothing
+    refreshes it, so the ``jti`` identifies a single login. This only reads the
+    claim: depend on it beside ``get_current_user``, which authenticates the
+    same token. Bearer API tokens are not sessions and yield ``None``.
+    """
+    actual_token, _ = _resolve_request_token(request, token)
+    if not actual_token:
+        return None
+    try:
+        payload = decode_access_token(actual_token)
+    except jwt.PyJWTError:
+        return None
+    if payload.get("token_type") != SESSION_TOKEN_TYPE:
+        return None
+    jti = payload.get("jti")
+    return jti if isinstance(jti, str) and jti else None
+
+
 async def get_current_user_stream(
     request: Request,
     db: AsyncSession = Depends(get_db),

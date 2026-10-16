@@ -7,6 +7,7 @@ import Sidebar from "@/components/Sidebar";
 import TopBar from "@/components/TopBar";
 import ServiceStatusAlerts from "@/components/ServiceStatusAlerts";
 import TelemetryNotice from "@/components/TelemetryNotice";
+import UpdateNotice from "@/components/UpdateNotice";
 import TourGuide from "@/components/TourGuide";
 import CaptureShell from "@/components/CaptureShell";
 import RecordingFloatingBadge from "@/components/RecordingFloatingBadge";
@@ -53,6 +54,7 @@ export default function DashboardLayout({
             >
               {children}
               <TelemetryNotice />
+              <UpdateNotice />
               <ServiceStatusAlerts />
             </main>
           </div>

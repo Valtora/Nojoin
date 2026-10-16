@@ -149,6 +149,8 @@ Use **Settings > Updates** to see:
 - The latest stable published release.
 - Release history and release notes.
 
+Owners and administrators are also told about a new release by a notification with **Go to Releases**, **Skip Update** and **Remind Me**, which [USAGE.md](USAGE.md#updates) describes. Users without an administrator role do not see it, since they cannot upgrade the installation.
+
 ## Operational Notes
 
 - Back up the installation before upgrading.
