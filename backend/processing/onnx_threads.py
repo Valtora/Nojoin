@@ -9,6 +9,11 @@
 #
 # The OMP_NUM_THREADS that compose sets does not reach ONNX Runtime, which is built
 # without OpenMP.
+#
+# The text embedding model takes the same count through fastembed's threads
+# argument (#446). fastembed sets the inter-op pool to the same value, which has no
+# effect: ONNX Runtime creates that pool only for parallel execution, and fastembed
+# leaves its sessions sequential.
 
 import logging
 import math
@@ -80,8 +85,8 @@ def usable_cpu_count() -> int:
     return cpus if limit is None else min(cpus, limit)
 
 
-def onnx_session_options() -> "rt.SessionOptions | None":
-    """SessionOptions that fit ONNX Runtime's thread pool to this process's CPU limit.
+def onnx_thread_count() -> int | None:
+    """The intra-op pool size that fits this process's CPU limit.
 
     Returns None, which keeps ONNX Runtime's default, in two cases. When
     ORT_INTRA_OP_NUM_THREADS is set, since an explicit pool size would override
@@ -93,13 +98,21 @@ def onnx_session_options() -> "rt.SessionOptions | None":
     threads = usable_cpu_count()
     if threads >= (os.cpu_count() or threads):
         return None
+    logger.info(
+        "Sizing ONNX Runtime thread pools to %d CPU(s), the limit on this worker.",
+        threads,
+    )
+    return threads
+
+
+def onnx_session_options() -> "rt.SessionOptions | None":
+    """SessionOptions carrying onnx_thread_count(), or None where that is None."""
+    threads = onnx_thread_count()
+    if threads is None:
+        return None
 
     import onnxruntime as rt
 
     options = rt.SessionOptions()
     options.intra_op_num_threads = threads
-    logger.info(
-        "Sizing ONNX Runtime thread pools to %d CPU(s), the limit on this worker.",
-        threads,
-    )
     return options

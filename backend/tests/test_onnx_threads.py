@@ -2,16 +2,20 @@
 
 Left at its default, ONNX Runtime sizes every session's pool to the host's cores
 and pins each thread, so a CPU-limited container ran 16 spinning threads on 6
-CPUs and transcribed two to three times slower.
+CPUs and transcribed two to three times slower. Text embedding loads through
+fastembed and had the same default (#446).
 """
 
 from __future__ import annotations
+
+import sys
+import types
 
 import onnx_asr
 import pytest
 
 from backend import preload_models
-from backend.processing import onnx_providers, onnx_threads
+from backend.processing import onnx_providers, onnx_threads, text_embedding
 from backend.processing.engines import onnx_asr_engine
 from backend.processing.engines.canary_engine import CanaryEngine
 
@@ -115,6 +119,7 @@ def test_a_limited_worker_gets_one_thread_per_usable_cpu(cgroup_fs, monkeypatch)
 
     options = onnx_threads.onnx_session_options()
 
+    assert onnx_threads.onnx_thread_count() == 6
     assert options is not None
     assert options.intra_op_num_threads == 6
 
@@ -125,6 +130,7 @@ def test_an_unlimited_worker_keeps_the_onnx_runtime_default(cgroup_fs, monkeypat
     monkeypatch.delenv(onnx_threads.INTRA_OP_THREADS_ENV, raising=False)
     _cpus(monkeypatch, affinity=24, host=24)
 
+    assert onnx_threads.onnx_thread_count() is None
     assert onnx_threads.onnx_session_options() is None
 
 
@@ -136,6 +142,7 @@ def test_the_environment_variable_overrides_the_limit(cgroup_fs, monkeypatch, va
     monkeypatch.setenv(onnx_threads.INTRA_OP_THREADS_ENV, value)
     _cpus(monkeypatch, affinity=6, host=24)
 
+    assert onnx_threads.onnx_thread_count() is None
     assert onnx_threads.onnx_session_options() is None
 
 
@@ -164,3 +171,31 @@ def test_preparation_and_the_engine_both_load_with_the_sized_options(
     engine._get_model({})
 
     assert passed == [sized, sized]
+
+
+@pytest.mark.parametrize("count", [6, None], ids=["limited", "unlimited"])
+def test_text_embedding_loads_with_the_sized_pool(count, monkeypatch):
+    """The first load and the CPU fallback both pass the count to fastembed.
+
+    None goes through as it is, so fastembed leaves the pool size unset and ONNX
+    Runtime applies its default or ORT_INTRA_OP_NUM_THREADS.
+    """
+    passed: list[object] = []
+
+    def record_load(**kwargs):
+        passed.append(kwargs["threads"])
+        return object()
+
+    def failing_verify(*args, **kwargs):
+        raise RuntimeError("provider check failed")
+
+    stub = types.ModuleType("fastembed")
+    stub.TextEmbedding = record_load
+    monkeypatch.setitem(sys.modules, "fastembed", stub)
+    monkeypatch.setattr(text_embedding, "onnx_thread_count", lambda: count)
+    monkeypatch.setattr(text_embedding, "gpu_is_present", lambda: False)
+    monkeypatch.setattr(text_embedding, "verify_gpu_providers", failing_verify)
+
+    text_embedding.TextEmbeddingService()
+
+    assert passed == [count, count]

@@ -3,6 +3,7 @@ import os
 from typing import Any, List, Union
 
 from .onnx_providers import gpu_is_present, verify_gpu_providers
+from .onnx_threads import onnx_thread_count
 from .text_embedding_version import TEXT_EMBEDDING_MODEL
 
 logger = logging.getLogger(__name__)
@@ -54,6 +55,12 @@ class TextEmbeddingService:
     def __init__(self):
         if self._model is None:
             logger.info(f"Loading text embedding model: {MODEL_NAME}")
+            # Size the pool to this worker's CPU limit, as the ASR engines do
+            # (#446). Each prefork child of the io and parse lanes loads its own
+            # model and takes the full count rather than a share of it: a share
+            # made one child embedding alone, the usual case, about twice as
+            # slow, to save 8 to 14% when four children embedded at once.
+            threads = onnx_thread_count()
             try:
                 from fastembed import TextEmbedding
 
@@ -76,6 +83,7 @@ class TextEmbeddingService:
                     model_name=MODEL_NAME,
                     cache_dir=fastembed_cache_dir(),
                     providers=providers,
+                    threads=threads,
                 )
                 # Separate concern: with a GPU attached, CUDA can still be
                 # dropped for a missing shared library, and that silent CPU
@@ -93,7 +101,9 @@ class TextEmbeddingService:
                     from fastembed import TextEmbedding
 
                     self._model = TextEmbedding(
-                        model_name=MODEL_NAME, cache_dir=fastembed_cache_dir()
+                        model_name=MODEL_NAME,
+                        cache_dir=fastembed_cache_dir(),
+                        threads=threads,
                     )
                 except Exception as e_cpu:
                     logger.error(f"Failed to load text embedding model: {e_cpu}")

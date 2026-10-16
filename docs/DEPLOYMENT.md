@@ -385,28 +385,38 @@ If you do not have a compatible NVIDIA GPU:
 Processing will be slower, but the application remains usable. All four worker
 lanes then run on CPU.
 
-### Limiting the Worker's CPUs
+### Limiting the Workers' CPUs
 
-On a CPU install, the Parakeet and Canary engines transcribe on `worker-gpu`
-through ONNX Runtime. Left at its default, ONNX Runtime gives every model session
-one thread per core of the host and pins each thread to its core. It cannot see a
+Two kinds of model run through ONNX Runtime. On a CPU install the Parakeet and
+Canary engines transcribe on `worker-gpu`. On every install, GPU or not, the text
+embedding model indexes transcripts, notes and documents on `worker-io` and
+`worker-parse`. Left at its default, ONNX Runtime gives every model session one
+thread per core of the host and pins each thread to its core. It cannot see a
 container's CPU limit, so a worker capped with `cpus:` or `cpuset:` would run more
 threads than it has CPUs, and with a cpuset the log fills with
-`pthread_setaffinity_np failed` errors. In a 6-CPU container on a 16-core host
-that made Parakeet 2.3 times slower and Canary 3.6 times slower (#429).
+`pthread_setaffinity_np failed` errors. In a 6-CPU container on a 16-core host that
+made Parakeet 2.3 times slower, Canary 3.6 times slower (#429) and text embedding
+1.5 times slower (#446).
 
-The engines size the pool to the limit instead: the CPUs in the worker's affinity
-mask (`cpuset:`), capped by any cgroup v2 CPU quota (`cpus:`) on the worker or a
-parent group, rounded up to whole CPUs, so `cpus: 1.5` gives two threads. The
-worker logs `Sizing ONNX Runtime thread pools to N CPU(s)` when it loads a model
-under a limit. A worker with no limit keeps ONNX Runtime's default. A cgroup v1
-host exposes no quota to read, so limit the worker there with `cpuset:`.
+Both size the pool to the limit instead: the CPUs in the worker's affinity mask
+(`cpuset:`), capped by any cgroup v2 CPU quota (`cpus:`) on the worker or a parent
+group, rounded up to whole CPUs, so `cpus: 1.5` gives two threads. The worker logs
+`Sizing ONNX Runtime thread pools to N CPU(s)` when it loads a model under a limit.
+A worker with no limit keeps ONNX Runtime's default. A cgroup v1 host exposes no
+quota to read, so limit the worker there with `cpuset:`.
 
-To choose the count yourself, set `ORT_INTRA_OP_NUM_THREADS` in the `worker-gpu`
+`worker-io` and `worker-parse` run several prefork children, each with its own copy
+of the embedding model, and each child takes the full count. Splitting the CPUs
+between the children made a lone embedding about twice as slow, while with four
+children embedding at once the full count cost 8 to 14% more than a split.
+
+To choose the count yourself, set `ORT_INTRA_OP_NUM_THREADS` in the limited
 service's `environment:` in `docker-compose.yml`. Nojoin then leaves the pool size
 to ONNX Runtime, which reads the variable, and `0` restores ONNX Runtime's default.
-The `OMP_NUM_THREADS` the compose file sets has no effect here, because ONNX
-Runtime is built without OpenMP.
+The shipped file gives `worker-io` and `worker-parse` the shared
+`*worker-environment` block as it stands, so give either one its own block that
+merges it, as `worker-gpu` does. The `OMP_NUM_THREADS` the compose file sets has no
+effect here, because ONNX Runtime is built without OpenMP.
 
 ## Configure .env
 
