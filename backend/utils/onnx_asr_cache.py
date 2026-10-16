@@ -76,6 +76,13 @@ ONNX_ASR_MODELS = {
 }
 
 
+def onnx_asr_model(onnx_asr_id: str) -> OnnxAsrModel | None:
+    """The table's entry for an onnx-asr model id, if it has one."""
+    return next(
+        (m for m in ONNX_ASR_MODELS.values() if m.onnx_asr_id == onnx_asr_id), None
+    )
+
+
 def _cached_snapshot(repo_dir: str) -> str | None:
     """The snapshot an offline huggingface_hub lookup of ``main`` returns.
 
@@ -112,6 +119,50 @@ def _has_every_file(snapshot: str, patterns: tuple[str, ...]) -> bool:
     return True
 
 
+def _external_data_beside_graphs(
+    snapshot: str, model: OnnxAsrModel, quantization: str | None
+) -> bool:
+    """Whether ONNX Runtime accepts where each graph's external data lives.
+
+    It resolves a graph to its real file and refuses external data whose real
+    path falls outside that file's directory. A plain hub cache keeps every
+    blob of a repo in its own ``blobs/``, so they always pass. huggingface_hub
+    1.32+ moves Xet downloads into a store sharded by hash, which puts a graph
+    and its weights in different directories (#448).
+    """
+    if quantization is not None:
+        return True
+    for data_name in model.fp32_external_data:
+        graph = os.path.realpath(
+            os.path.join(snapshot, data_name.removesuffix(".data"))
+        )
+        graph_dir = os.path.dirname(graph)
+        data = os.path.realpath(os.path.join(snapshot, data_name))
+        if os.path.commonpath([graph_dir, data]) != graph_dir:
+            return False
+    return True
+
+
+def find_unloadable_onnx_asr_copy(
+    model: OnnxAsrModel, quantization: str | None
+) -> str | None:
+    """The repo directory, when its complete copy at this precision cannot load.
+
+    That is a copy whose weights a shared blob store keeps away from their
+    graph. Every file is present, so onnx-asr would not download anything
+    again, but ONNX Runtime refuses the graph every time.
+    """
+    repo_dir = os.path.join(hf_hub_cache_root(), model.repo_dirname)
+    snapshot = _cached_snapshot(repo_dir)
+    if snapshot is None or not _has_every_file(
+        snapshot, model.required_files(quantization)
+    ):
+        return None
+    if _external_data_beside_graphs(snapshot, model, quantization):
+        return None
+    return repo_dir
+
+
 def _has_partial_download(repo_dir: str) -> bool:
     """Whether a blob of the repo was left part-way through downloading.
 
@@ -129,7 +180,8 @@ def find_cached_onnx_asr_model(model: OnnxAsrModel) -> str | None:
 
     Complete means the snapshot ``refs/main`` points at holds every file the
     loader opens, for one precision (a mix of int8 and fp32 files loads in
-    neither), and no file of the repo is part-way through downloading. Only
+    neither), laid out so ONNX Runtime will load them, and no file of the repo
+    is part-way through downloading. Only
     the exact repo directory is considered, so another repo with a similar
     name (NVIDIA's own NeMo checkpoint, say) never counts.
     """
@@ -139,6 +191,7 @@ def find_cached_onnx_asr_model(model: OnnxAsrModel) -> str | None:
         return None
     if any(
         _has_every_file(snapshot, model.required_files(quantization))
+        and _external_data_beside_graphs(snapshot, model, quantization)
         for quantization in ONNX_ASR_QUANTIZATIONS
     ):
         return repo_dir

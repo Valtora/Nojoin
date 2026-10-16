@@ -19,7 +19,12 @@ from backend.utils.model_cache_paths import (
     hf_repo_dirname,
     whisper_cache_root,
 )
-from backend.utils.onnx_asr_cache import ONNX_ASR_MODELS, find_cached_onnx_asr_model
+from backend.utils.onnx_asr_cache import (
+    ONNX_ASR_MODELS,
+    find_cached_onnx_asr_model,
+    find_unloadable_onnx_asr_copy,
+    onnx_asr_model,
+)
 from backend.utils.pyannote_model_utils import (
     is_repo_bundled_pyannote_path,
     resolve_local_pyannote_model,
@@ -315,6 +320,7 @@ def _prepare_onnx_asr_model(model_id: str) -> None:
         model_id,
         quantization or "none",
     )
+    _discard_unloadable_onnx_asr_copy(model_id, quantization)
     model = onnx_asr.load_model(
         model_id,
         quantization=quantization,
@@ -322,6 +328,40 @@ def _prepare_onnx_asr_model(model_id: str) -> None:
         sess_options=onnx_session_options(),
     )
     del model
+
+
+def _discard_unloadable_onnx_asr_copy(model_id: str, quantization: str | None) -> None:
+    """Delete a cached copy ONNX Runtime refuses, so preparation fetches it again.
+
+    Downloads made while huggingface_hub's shared blob store was on keep the
+    fp32 weights away from their graph (#448). Every file is there, so onnx-asr
+    would load the same copy again and fail; with the store now off, a fresh
+    download lays the repo out in one directory. A repo directory that is a
+    link to somewhere else is left alone, as delete_model leaves it.
+    """
+    model = onnx_asr_model(model_id)
+    if model is None:
+        return
+    repo_dir = find_unloadable_onnx_asr_copy(model, quantization)
+    if repo_dir is None:
+        return
+    if os.path.islink(repo_dir):
+        logger.warning(
+            "ONNX ASR model %s at %s cannot be loaded: its weights are kept apart "
+            "from the graph that reads them. The repo is a link to %s, so it is "
+            "not deleted from here; remove it by hand and prepare the model again.",
+            model_id,
+            repo_dir,
+            os.path.realpath(repo_dir),
+        )
+        return
+    logger.warning(
+        "ONNX ASR model %s at %s cannot be loaded: its weights are kept apart from "
+        "the graph that reads them. Deleting it and downloading it again.",
+        model_id,
+        repo_dir,
+    )
+    _delete_hub_repo(os.path.realpath(repo_dir))
 
 
 def _resolve_onnx_asr_id(backend: str, model_id: str | None) -> str | None:

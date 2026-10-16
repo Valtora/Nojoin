@@ -292,3 +292,130 @@ def test_the_segmentation_model_is_deleted_with_its_weights(hub, monkeypatch, tm
 
     assert not repo.exists()
     assert not payload.exists()
+
+
+# fp32 weights in the shared store cannot be loaded (#448). ONNX Runtime refuses
+# external data outside the directory its graph really lives in, and the store
+# shards files by hash, so a graph and its weights land in different places.
+FP32_FILES = onnx_asr_files("parakeet", None)
+
+
+def _shared_fp32_parakeet(hub: Path) -> tuple[Path, list[Path]]:
+    repo = write_onnx_asr_repo(hub, "parakeet", None)
+    payloads = [share_blob(hub, repo, name) for name in FP32_FILES]
+    graph = next(p for n, p in zip(FP32_FILES, payloads) if n == "encoder-model.onnx")
+    weights = next(
+        p for n, p in zip(FP32_FILES, payloads) if n == "encoder-model.onnx.data"
+    )
+    assert graph.parent != weights.parent, "the fixture must split the encoder"
+    return repo, payloads
+
+
+def test_a_shared_fp32_copy_is_not_reported_ready(hub):
+    _shared_fp32_parakeet(hub)
+
+    status = preload_models.check_model_status(whisper_model_size="turbo")
+
+    assert status["parakeet"]["downloaded"] is False
+    assert status["parakeet"]["partial"] is True
+
+
+def test_a_shared_int8_copy_is_still_ready(hub):
+    """The int8 graphs carry their weights inside, so the store does not split them."""
+    repo = write_onnx_asr_repo(hub, "canary", "int8")
+    for name in onnx_asr_files("canary", "int8"):
+        share_blob(hub, repo, name)
+
+    status = preload_models.check_model_status(whisper_model_size="turbo")
+
+    assert status["canary"]["downloaded"] is True
+    assert status["canary"]["path"] == str(repo)
+
+
+def _record_loads(monkeypatch, repo: Path) -> list[bool]:
+    """Stub the load, recording whether the repo was still on disk at the time."""
+    import onnx_asr
+
+    from backend.processing import onnx_providers
+
+    present: list[bool] = []
+
+    def record_load(model_id, **kwargs):
+        present.append(repo.exists())
+        return object()
+
+    monkeypatch.setattr(onnx_asr, "load_model", record_load)
+    monkeypatch.setattr(onnx_providers, "gpu_is_present", lambda: True)
+    return present
+
+
+def test_preparation_replaces_a_copy_onnx_runtime_cannot_load(hub, monkeypatch):
+    repo, payloads = _shared_fp32_parakeet(hub)
+    present = _record_loads(monkeypatch, repo)
+
+    preload_models._prepare_onnx_asr_model(ONNX_ASR_MODELS["parakeet"].onnx_asr_id)
+
+    assert present == [False]
+    assert not any(payload.exists() for payload in payloads)
+
+
+def test_preparation_keeps_a_copy_that_loads(hub, monkeypatch):
+    repo = write_onnx_asr_repo(hub, "parakeet", None)
+    present = _record_loads(monkeypatch, repo)
+
+    preload_models._prepare_onnx_asr_model(ONNX_ASR_MODELS["parakeet"].onnx_asr_id)
+
+    assert present == [True]
+
+
+def test_preparation_leaves_a_linked_repo_alone(hub, monkeypatch, outside, caplog):
+    elsewhere, _ = _shared_fp32_parakeet(outside / "hub")
+    repo = hub / elsewhere.name
+    repo.symlink_to(elsewhere, target_is_directory=True)
+    present = _record_loads(monkeypatch, repo)
+
+    preload_models._prepare_onnx_asr_model(ONNX_ASR_MODELS["parakeet"].onnx_asr_id)
+
+    assert present == [True]
+    assert (elsewhere / "refs" / "main").exists()
+    assert "not deleted from here" in caplog.text
+
+
+def _shared_blobs_flag_after_importing_backend(preset: str | None) -> str:
+    import subprocess
+    import sys
+
+    env = {k: v for k, v in os.environ.items() if k != "HF_HUB_DISABLE_SHARED_BLOBS"}
+    if preset is not None:
+        env["HF_HUB_DISABLE_SHARED_BLOBS"] = preset
+    # A fresh interpreter: huggingface_hub reads the flag once, when imported.
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import backend, huggingface_hub.constants as c; "
+            "print(c.HF_HUB_DISABLE_SHARED_BLOBS)",
+        ],
+        cwd=Path(__file__).resolve().parents[2],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return result.stdout.strip().splitlines()[-1]
+
+
+def test_importing_backend_turns_the_shared_store_off():
+    assert _shared_blobs_flag_after_importing_backend(None) == "True"
+
+
+def test_an_operators_explicit_shared_store_setting_is_left_alone():
+    assert _shared_blobs_flag_after_importing_backend("0") == "False"
+
+
+def test_worker_image_turns_the_shared_store_off():
+    root = Path(__file__).resolve().parents[2]
+    runtime_stage = (
+        (root / "docker" / "Dockerfile.worker").read_text().split("AS runtime", 1)[1]
+    )
+    assert "ENV HF_HUB_DISABLE_SHARED_BLOBS=1" in runtime_stage
