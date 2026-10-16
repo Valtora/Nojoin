@@ -57,7 +57,6 @@ from backend.utils.asr_window_results import (
 )
 from backend.utils.canonical_pipeline import (
     apply_recording_speaker_identity_fields,
-    build_reusable_live_segments,
     build_transcript_segments_for_read,
     finalize_utterances_from_segments,
     refresh_transcript_projection_from_canonical,
@@ -211,24 +210,6 @@ def build_recording_speaker_map(*args, **kwargs):
         ):
             return actual(*args, **kwargs)
     return _build_recording_speaker_map_orig(*args, **kwargs)
-
-
-_build_reusable_live_segments_orig = build_reusable_live_segments
-
-
-def build_reusable_live_segments(*args, **kwargs):
-    import sys
-
-    tasks = sys.modules.get("backend.worker.tasks")
-    if tasks and hasattr(tasks, "build_reusable_live_segments"):
-        actual = tasks.build_reusable_live_segments
-        if (
-            actual is not build_reusable_live_segments
-            and getattr(actual, "__code__", None)
-            is not build_reusable_live_segments.__code__
-        ):
-            return actual(*args, **kwargs)
-    return _build_reusable_live_segments_orig(*args, **kwargs)
 
 
 _build_transcript_segments_for_read_orig = build_transcript_segments_for_read

@@ -1704,23 +1704,6 @@ def build_transcript_text_for_read(
     return str(getattr(transcript, "text", "") or "") if transcript is not None else ""
 
 
-def build_reusable_live_segments(session, recording_id: int) -> list[dict[str, Any]]:
-    reusable_segments: list[dict[str, Any]] = []
-    for payload in serialize_canonical_utterances(
-        session,
-        recording_id,
-        include_confidence_payload=True,
-    ):
-        source_kind = str(payload.get("segment_source") or "")
-        if (
-            source_kind not in {"live", "catch_up"}
-            and payload.get("provisional") is not True
-        ):
-            continue
-        reusable_segments.append(dict(payload))
-    return reusable_segments
-
-
 def refresh_transcript_projection_from_canonical(
     session,
     recording_id: int,

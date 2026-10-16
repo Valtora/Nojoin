@@ -779,7 +779,6 @@ def test_process_recording_task_applies_engine_override(monkeypatch):
         get_audio_duration=lambda *a, **k: 60.0,
         convert_to_mp3=lambda *a, **k: None,
         convert_to_proxy_mp3=lambda *a, **k: None,
-        extract_audio_clip=lambda *a, **k: None,
     )
     _install("backend.processing.llm_services", get_llm_backend=lambda *a, **k: None)
 
@@ -957,7 +956,6 @@ def test_process_recording_task_rolls_back_before_persisting_error_state(monkeyp
         get_audio_duration=lambda *a, **k: 60.0,
         convert_to_mp3=lambda *a, **k: None,
         convert_to_proxy_mp3=lambda *a, **k: None,
-        extract_audio_clip=lambda *a, **k: None,
     )
     _install(
         "backend.utils.live_transcript",
@@ -969,15 +967,11 @@ def test_process_recording_task_rolls_back_before_persisting_error_state(monkeyp
         merge_reusable_segments=lambda primary, additional: (
             list(primary) + list(additional)
         ),
-        map_final_speakers_to_live_labels=lambda *a, **k: {},
     )
     _install("backend.processing.llm_services", get_llm_backend=lambda *a, **k: None)
     _install("backend.processing.text_embedding", release_embedding_model=lambda: None)
 
     monkeypatch.setattr("os.path.exists", lambda path: True)
-    monkeypatch.setattr(
-        tasks_module, "build_reusable_live_segments", lambda *a, **k: []
-    )
     monkeypatch.setattr(
         tasks_module, "_run_automatic_meeting_intelligence_stage", lambda *a, **k: None
     )

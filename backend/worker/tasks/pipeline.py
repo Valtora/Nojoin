@@ -495,7 +495,6 @@ def _finalize_transcript_and_notes(
     final_segments: list[dict],
     llm_config: ResolvedLLMConfig,
     transcription_result: dict,
-    reused_live_transcript_segments: Sequence[dict],
 ) -> None:
     """Persist final segments, run canonical writes, and trigger the automatic
     meeting-intelligence (notes/title) stage.
@@ -533,7 +532,6 @@ def _finalize_transcript_and_notes(
             session,
             recording_id=recording.id,
             segments=[dict(segment) for segment in updated_segments],
-            reused_live_asr=bool(reused_live_transcript_segments),
             trigger_source="worker",
         )
         updated_segments = refresh_transcript_projection_from_canonical(
@@ -726,23 +724,6 @@ def process_recording_task(
 
     llm_config = resolve_llm_config(session, user_settings, user_id=recording.user_id)
     merged_config = llm_config.merged_config
-    live_segments_for_reuse = []
-    if engine_override is None:
-        if config_manager.get("enable_canonical_transcript_writes", True):
-            live_segments_for_reuse = build_reusable_live_segments(
-                session, recording.id
-            )
-        if not live_segments_for_reuse:
-            initial_transcript = session.exec(
-                select(Transcript).where(Transcript.recording_id == recording.id)
-            ).first()
-            if initial_transcript and initial_transcript.segments:
-                live_segments_for_reuse = [
-                    dict(segment)
-                    for segment in initial_transcript.segments
-                    if segment.get("segment_source") in {"live", "catch_up"}
-                    or segment.get("provisional") is True
-                ]
 
     # Platform/Device detection for UX
     import torch
@@ -763,8 +744,6 @@ def process_recording_task(
     )
 
     from backend.processing.audio_preprocessing import cleanup_temp_file
-
-    reused_live_transcript_segments: list = []
 
     try:
         recording.status = RecordingStatus.PROCESSING
@@ -841,7 +820,6 @@ def process_recording_task(
             final_segments,
             llm_config,
             transcription_result,
-            reused_live_transcript_segments,
         )
 
         mark_recording_audio_chunks_ready_for_cleanup(

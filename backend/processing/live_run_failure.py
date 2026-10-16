@@ -234,7 +234,6 @@ def record_live_run_failure(
             "sequence": sequence,
             "run": run,
             "error": str(exc),
-            "catch_up_recoverable": bool(run),
         },
         status="error",
         log=logger,
@@ -272,6 +271,5 @@ def record_live_run_failure(
             "error": str(exc),
             "next_expected": state["next_expected"],
             "buffer_abs_start": state["buffer_abs_start"],
-            "catch_up_recoverable": True,
         },
     )

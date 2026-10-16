@@ -3909,7 +3909,6 @@ async def test_worker_finalize_survives_a_later_stage_failure(
                 final_segments,
                 None,
                 {},
-                [],
             )
         # The worker's catch-all handler rolls back before recording the error.
         sync_session.rollback()

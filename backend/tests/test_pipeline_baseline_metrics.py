@@ -6,7 +6,6 @@ from pathlib import Path
 import pytest
 
 from backend.processing.pipeline_metrics import summarize_pipeline_metrics
-from backend.utils.live_transcript import map_final_speakers_to_live_labels
 
 FIXTURE_DIR = Path(__file__).parent / "pipeline_fixtures"
 
@@ -58,22 +57,6 @@ def test_synthetic_fixture_generator_writes_valid_wavs(tmp_path):
         assert wav_file.getnchannels() == 1
         assert wav_file.getframerate() == 16_000
         assert wav_file.getnframes() > 0
-
-
-@pytest.mark.pipeline_baseline
-def test_current_live_to_final_speaker_mapping_is_index_based_baseline():
-    mapping = map_final_speakers_to_live_labels(
-        [
-            {"speaker": "LIVE_01", "start": 0, "end": 5, "text": "first"},
-            {"speaker": "LIVE_02", "start": 5, "end": 10, "text": "second"},
-        ],
-        [
-            {"speaker": "SPEAKER_00", "start": 5, "end": 10, "text": "second"},
-            {"speaker": "SPEAKER_01", "start": 0, "end": 5, "text": "first"},
-        ],
-    )
-
-    assert mapping == {"SPEAKER_00": "LIVE_02", "SPEAKER_01": "LIVE_01"}
 
 
 @pytest.mark.pipeline_baseline

@@ -1,7 +1,6 @@
 from backend.utils.live_transcript import (
     apply_live_authority_to_segments,
     build_transcription_result_from_segments,
-    map_final_speakers_to_live_labels,
     merge_reusable_segments,
 )
 
@@ -322,43 +321,6 @@ def test_apply_live_authority_transfers_microphone_source_only_on_matched_span()
     assert matched_result[0]["speaker_state_source"] == "source_channel"
     assert unmatched_result[0]["speaker"] == "SPEAKER_00"
     assert unmatched_result[0]["live_reuse_alignment"]["status"] == "rejected"
-
-
-def test_map_final_speakers_to_live_labels_uses_duration_majority():
-    mapping = map_final_speakers_to_live_labels(
-        [
-            {"speaker": "LIVE_01", "start": 0, "end": 1, "text": "a"},
-            {"speaker": "LIVE_02", "start": 1, "end": 6, "text": "b"},
-            {
-                "speaker": "LIVE_03",
-                "start": 6,
-                "end": 9,
-                "text": "c",
-                "speaker_manually_edited": True,
-            },
-        ],
-        [
-            {"speaker": "SPEAKER_00", "start": 0, "end": 1, "text": "a"},
-            {"speaker": "SPEAKER_00", "start": 1, "end": 6, "text": "b"},
-            {"speaker": "SPEAKER_01", "start": 6, "end": 9, "text": "c"},
-        ],
-    )
-
-    assert mapping == {"SPEAKER_00": "LIVE_02"}
-
-
-def test_map_final_speakers_to_live_labels_rejects_ambiguous_majority():
-    mapping = map_final_speakers_to_live_labels(
-        [
-            {"speaker": "LIVE_01", "start": 0, "end": 1, "text": "a"},
-            {"speaker": "LIVE_02", "start": 1, "end": 2, "text": "b"},
-        ],
-        [
-            {"speaker": "SPEAKER_00", "start": 0, "end": 2, "text": "a b"},
-        ],
-    )
-
-    assert mapping == {}
 
 
 def test_merge_reusable_segments_deduplicates_overlapping_rows():
