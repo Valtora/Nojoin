@@ -10,7 +10,7 @@ Downgrade recreates the table as d1a4c7b9e2f1 created it, empty: the dropped
 rows are not restored.
 
 Revision ID: 3b804f4435a1
-Revises: d7e3a1b9c5f2
+Revises: a3f9c2d7e1b4
 Create Date: 2026-10-15 00:00:00.000000
 
 """
@@ -21,7 +21,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision = "3b804f4435a1"
-down_revision = "d7e3a1b9c5f2"
+down_revision = "a3f9c2d7e1b4"
 branch_labels = None
 depends_on = None
 
