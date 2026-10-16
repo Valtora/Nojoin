@@ -308,7 +308,7 @@ def test_is_partial_microsoft_occurrence_detects_stripped_delta_occurrence() -> 
                 "id": "occ-2",
                 "type": "occurrence",
                 "seriesMasterId": "master-1",
-                "subject": "Gotmoves monthly",
+                "subject": "Portfolio monthly",
                 "start": {"dateTime": "2026-04-14T12:00:00"},
                 "end": {"dateTime": "2026-04-14T13:00:00"},
             }
