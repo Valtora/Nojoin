@@ -31,6 +31,7 @@ from sqlmodel import Session, SQLModel, col, select
 
 from backend.api.deps import get_current_user, get_db
 from backend.api.v1.api import api_router
+from backend.core.db import driver_urls
 from backend.models.pipeline import (
     ProcessingRunKind,
     TranscriptUtterance,
@@ -90,10 +91,10 @@ def _live_reuse_transcription(live_public_id: str) -> dict:
 
 @pytest.fixture
 def session(postgres_test_url: str) -> Iterator[Session]:
-    """A psycopg2 session (the worker's driver) over a throwaway schema."""
+    """A psycopg 3 session (the worker's driver) over a throwaway schema."""
     importlib.import_module("backend.models.registry")
     engine = create_engine(
-        postgres_test_url,
+        driver_urls(postgres_test_url)[1],
         connect_args={"options": f"-csearch_path={SCHEMA},public"},
     )
     try:

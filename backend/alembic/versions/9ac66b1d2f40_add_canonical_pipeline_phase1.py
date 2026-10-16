@@ -856,7 +856,11 @@ def upgrade() -> None:
                     transcripts, transcripts.c.recording_id == recordings.c.id
                 )
             )
-            .where(recordings.c.status == "PROCESSED")
+            # status is the native recordingstatus enum. psycopg 3 binds the
+            # value as VARCHAR, and Postgres will not compare an enum with a
+            # VARCHAR, so the column is cast instead; psycopg2 sent an untyped
+            # literal and never hit this.
+            .where(sa.cast(recordings.c.status, sa.String()) == "PROCESSED")
         )
         .mappings()
         .all()

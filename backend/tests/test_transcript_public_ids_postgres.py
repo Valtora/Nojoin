@@ -17,6 +17,7 @@ import pytest
 from sqlalchemy import create_engine, text
 from sqlmodel import Session, SQLModel
 
+from backend.core.db import driver_urls
 from backend.models.recording import Recording
 from backend.models.transcript import Transcript
 from backend.models.user import User
@@ -36,10 +37,10 @@ SCHEMA = "transcript_public_id_test"
 
 @pytest.fixture
 def pg_engine(postgres_test_url: str):
-    """A psycopg2 engine (the worker's driver) over a throwaway schema."""
+    """A psycopg 3 engine (the worker's driver) over a throwaway schema."""
     importlib.import_module("backend.models.registry")
     engine = create_engine(
-        postgres_test_url,
+        driver_urls(postgres_test_url)[1],
         connect_args={"options": f"-csearch_path={SCHEMA},public"},
     )
     try:

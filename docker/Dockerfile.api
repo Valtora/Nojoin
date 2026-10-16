@@ -16,7 +16,6 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
-    libpq-dev \
     libssl-dev \
     libffi-dev \
     build-essential \
@@ -40,7 +39,6 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV PATH="/opt/venv/bin:$PATH"
 
 # ffmpeg is needed for audio duration checks and basic processing
-# libpq5 is needed for psycopg2 (PostgreSQL)
 # libsndfile1 is needed for audio processing
 # gosu drops the entrypoint from root to appuser after the ./data bind-mount
 # ownership repair. Sourced from the distro (Trivy OS-scanner coverage + distro
@@ -56,7 +54,6 @@ ENV PATH="/opt/venv/bin:$PATH"
 # builder stage contributes /opt/venv and nothing from its OS layer.
 RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     ffmpeg \
-    libpq5 \
     libsndfile1 \
     gosu \
     && rm -rf /var/lib/apt/lists/*
