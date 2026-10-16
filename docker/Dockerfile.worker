@@ -11,7 +11,6 @@ ENV DEBIAN_FRONTEND=noninteractive
 # conda environment), so `python -m venv` below cannot bootstrap pip otherwise.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
-    libpq-dev \
     libssl-dev \
     libffi-dev \
     build-essential \
@@ -84,7 +83,6 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     ffmpeg \
     libsndfile1 \
-    libpq5 \
     libjemalloc2 \
     gosu \
     # Local OCR for document parsing: the middle tier between a vision model

@@ -11,14 +11,17 @@ the backend suite.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import Any
 
 import pytest
-from sqlalchemy import text
-from sqlalchemy.exc import InterfaceError
+from sqlalchemy import bindparam, create_engine, text
+from sqlalchemy.engine import Engine
+from sqlalchemy.exc import InterfaceError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlmodel import select
 
+from backend.core.db import driver_urls
 from backend.models.pipeline import RecordingAudioWindowManifest
 from backend.tests.test_recording_audio_window_manifest_upsert import (
     RECORDING_ID,
@@ -31,8 +34,8 @@ from backend.utils.recording_audio_sync import (
 )
 
 # A two-hour meeting at the default 20s window and 5s hop produces roughly 1440
-# windows. At 25 bound columns each that is ~36000 parameters, over the 32767
-# the protocol allows, which is the exact shape of the production failure.
+# windows. At 25 bound columns each that is ~36000 parameters, over asyncpg's
+# 32767, which is the exact shape of the production failure.
 TWO_HOUR_WINDOW_COUNT = 1600
 
 MANIFEST_TABLE_SCHEMA = """
@@ -78,10 +81,10 @@ def anyio_backend() -> str:
 async def pg_session(postgres_test_url: str):
     """An asyncpg-backed session over a throwaway schema.
 
-    asyncpg is the point: it always uses the extended query protocol, so the
-    parameter limit applies. The Celery workers reach the same code through
-    psycopg2, which interpolates client-side and never hits it, which is why
-    the worker path stayed green while the API path failed.
+    asyncpg is the point: its ceiling of 32767 is the lowest of the drivers in
+    use. The Celery workers reached the same code through psycopg2, which wrote
+    parameters into the SQL text and had no ceiling, so the worker path stayed
+    green while the API path failed.
     """
     async_url = postgres_test_url.replace("postgresql://", "postgresql+asyncpg://", 1)
     engine = create_async_engine(async_url, future=True)
@@ -206,3 +209,36 @@ async def test_large_in_clause_needs_batching_on_postgres(pg_session):
         matched.extend(result.scalars().all())
 
     assert matched == []
+
+
+@pytest.fixture
+def pg_sync_engine(postgres_test_url: str) -> Iterator[Engine]:
+    """The workers' engine: psycopg 3, through the URL backend.core.db derives."""
+    engine = create_engine(driver_urls(postgres_test_url)[1])
+    try:
+        yield engine
+    finally:
+        engine.dispose()
+
+
+def test_the_worker_driver_stops_at_the_postgres_ceiling(pg_sync_engine):
+    """psycopg 3 sends parameters separately, so the worker path has a ceiling.
+
+    It is Postgres's own 65535, above asyncpg's 32767, so batching to
+    MAX_BIND_PARAMS covers both drivers.
+    """
+    item_ids = list(range(65_536))
+    statement = text("SELECT 1 WHERE 1 IN :ids").bindparams(
+        bindparam("ids", expanding=True)
+    )
+
+    with pg_sync_engine.connect() as connection:
+        with pytest.raises(OperationalError, match="between 0 and 65535"):
+            connection.execute(statement, {"ids": item_ids})
+
+    with pg_sync_engine.connect() as connection:
+        hits = sum(
+            len(connection.execute(statement, {"ids": batch}).all())
+            for batch in bind_batches(item_ids)
+        )
+    assert hits == 1

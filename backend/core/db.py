@@ -23,15 +23,25 @@ if not DATABASE_URL:
     POSTGRES_DB = os.getenv("POSTGRES_DB", "nojoin")
     DATABASE_URL = f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_SERVER}:{POSTGRES_PORT}/{POSTGRES_DB}"
 
-# Ensures usage of the async driver
-if DATABASE_URL and DATABASE_URL.startswith("postgresql://"):
-    ASYNC_DATABASE_URL = DATABASE_URL.replace(
-        "postgresql://", "postgresql+asyncpg://", 1
-    )
-    SYNC_DATABASE_URL = DATABASE_URL  # Keep original for sync
-else:
-    ASYNC_DATABASE_URL = DATABASE_URL
-    SYNC_DATABASE_URL = DATABASE_URL
+
+def driver_urls(database_url: str) -> tuple[str, str]:
+    """Return the async and sync URLs for a ``DATABASE_URL``.
+
+    A plain ``postgresql://`` URL gets asyncpg for the API and psycopg 3 for
+    the workers, both named. SQLAlchemy's default driver for a bare
+    ``postgresql://`` moved from psycopg2 to psycopg 3 in 2.1, so leaving the
+    choice to it ties the driver to the SQLAlchemy release. Any other URL, such
+    as SQLite in tests, is used as given.
+    """
+    if database_url.startswith("postgresql://"):
+        return (
+            database_url.replace("postgresql://", "postgresql+asyncpg://", 1),
+            database_url.replace("postgresql://", "postgresql+psycopg://", 1),
+        )
+    return database_url, database_url
+
+
+ASYNC_DATABASE_URL, SYNC_DATABASE_URL = driver_urls(DATABASE_URL)
 
 engine = create_async_engine(ASYNC_DATABASE_URL, echo=False, future=True)
 sync_engine = create_engine(

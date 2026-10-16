@@ -1,20 +1,19 @@
 """Batching for statements whose bind parameter count scales with the data.
 
-PostgreSQL's wire protocol carries the bind parameter count in a signed 16-bit
-field, so a single statement accepts at most 32767 of them, and SQLite applies
-an equivalent ceiling. Nothing in SQLAlchemy enforces this. A multi-row insert
-or a large ``IN`` clause builds without complaint and fails at execution time
-once the row or item count is high enough, which means the failure arrives in
-production on the first large recording, calendar or batch rather than in
-review.
+PostgreSQL accepts at most 65535 bind parameters in one statement, asyncpg
+stops at 32767, and SQLite applies a ceiling of its own. Nothing in SQLAlchemy
+enforces these. A multi-row insert or a large ``IN`` clause builds without
+complaint and fails at execution time once the row or item count is high
+enough, which means the failure arrives in production on the first large
+recording, calendar or batch rather than in review.
 
-The limit is also driver-dependent, and that asymmetry is what let it reach
-production here. The Celery workers reach Postgres through psycopg2, which
-interpolates parameters client-side and sends literal SQL, so no bind limit
-applies on their path. The API reaches it through asyncpg, which always uses
-the extended query protocol, so the limit does apply. Shared code that a worker
-exercises on every segment upload can therefore be broken on the API path while
-passing every test the worker path has.
+The ceiling also depends on the driver, and that asymmetry is what let it reach
+production here. The API reaches Postgres through asyncpg. The Celery workers
+then ran psycopg2, which wrote parameters into the SQL text and had no ceiling,
+so shared code that a worker exercised on every segment upload broke on the API
+path while passing every test the worker path had. The workers now use
+psycopg 3, which fails past 65535, so a statement between the two ceilings
+still passes through a worker and fails through the API.
 
 Use :func:`bind_batches` wherever the number of rows or items comes from the
 data rather than from a fixed-size literal.
@@ -27,9 +26,9 @@ from typing import TypeVar
 
 T = TypeVar("T")
 
-# Held below the 32767 that PostgreSQL and SQLite each allow in one statement,
-# with headroom so that widening a table cannot creep over the edge between the
-# batch being sized and the statement being built.
+# Held below asyncpg's 32767, the lowest ceiling of the drivers in use, with
+# headroom so that widening a table cannot creep over the edge between the batch
+# being sized and the statement being built.
 MAX_BIND_PARAMS = 30_000
 
 

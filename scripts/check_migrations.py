@@ -94,13 +94,13 @@ def _alembic(database_url: str, *args: str) -> None:
 
 
 def _sql(database_url: str, statement: str) -> list[tuple]:
-    import psycopg2
+    import psycopg
 
-    with psycopg2.connect(database_url) as conn, conn.cursor() as cur:
+    with psycopg.connect(database_url) as conn, conn.cursor() as cur:
         cur.execute(statement)
         try:
             return cur.fetchall()
-        except psycopg2.ProgrammingError:
+        except psycopg.ProgrammingError:
             return []
 
 

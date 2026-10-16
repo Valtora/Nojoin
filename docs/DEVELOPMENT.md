@@ -164,23 +164,24 @@ The release is instead self-gating. [scripts/release.py](../scripts/release.py) 
 
 ## Bind Parameter Limits
 
-PostgreSQL carries the bind parameter count of a statement in a signed 16-bit
-field, so one statement accepts at most 32767 of them. SQLAlchemy does not
-enforce this. A multi-row insert or a large `IN` clause builds without complaint
-and fails at execution time once the row or item count is high enough, so the
-failure lands in production on the first large recording, calendar or batch
-rather than in review.
+PostgreSQL accepts at most 65535 bind parameters in one statement, and asyncpg,
+the API's driver, stops lower at 32767. SQLAlchemy enforces neither. A
+multi-row insert or a large `IN` clause builds without complaint and fails at
+execution time once the row or item count is high enough, so the failure lands
+in production on the first large recording, calendar or batch rather than in
+review.
 
 Two things make it easy to miss.
 
-**The limit is driver-dependent.** The Celery workers reach Postgres through
-psycopg2, which interpolates parameters client-side and sends literal SQL, so no
-bind limit applies to them. The API reaches it through asyncpg, which always
-uses the extended query protocol, so the limit does apply. Shared code that a
-worker exercises constantly can be broken on the API path while passing every
-test the worker path has. This is exactly how the window manifest upsert shipped:
-the rolling sync wrote 1522 rows through the worker without complaint, and the
-same function then failed at finalize through the API.
+**The ceiling depends on the driver.** The API reaches Postgres through asyncpg
+and its 32767. The Celery workers use psycopg 3, which also sends parameters
+separately from the SQL and fails past 65535. A statement between the two
+therefore passes through a worker and fails through the API. Before psycopg 3
+the workers ran psycopg2, which wrote parameters into the SQL text and had no
+ceiling at all, and that is how the window manifest upsert shipped: the rolling
+sync wrote 1522 rows through the worker without complaint, and the same function
+then failed at finalize through the API. Batch to the lower ceiling;
+`MAX_BIND_PARAMS` sits under both.
 
 **SQLite does not reproduce it.** The suite runs on SQLite, whose builds accept
 far more variables than Postgres will, so a SQLite test passes on the statement
