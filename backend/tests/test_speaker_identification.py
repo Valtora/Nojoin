@@ -51,14 +51,14 @@ def _identify(monkeypatch, people: list[SimpleNamespace], probe: list[float]):
 def test_a_miss_names_the_closest_person(monkeypatch, caplog) -> None:
     caplog.set_level(logging.INFO)
     people = [
-        _person(1, "Hector Mason", [0.56, 0.83, 0.0]),
-        _person(2, "Rob Jolly", [0.3, 0.0, 0.95]),
+        _person(1, "Alice Example", [0.56, 0.83, 0.0]),
+        _person(2, "Bob Example", [0.3, 0.0, 0.95]),
     ]
 
     identity, metrics = _identify(monkeypatch, people, [1.0, 0.0, 0.0])
 
     assert identity is None
-    assert "No match found for SPEAKER_01 (closest: Hector Mason 0.56)" in caplog.text
+    assert "No match found for SPEAKER_01 (closest: Alice Example 0.56)" in caplog.text
 
     assert metrics[0]["stage"] == "speaker_identification"
     assert metrics[0]["recording_id"] == 139
@@ -66,7 +66,10 @@ def test_a_miss_names_the_closest_person(monkeypatch, caplog) -> None:
     assert payload["label"] == "SPEAKER_01"
     assert payload["matched_name"] is None
     assert payload["comparable_people"] == 2
-    assert [c["name"] for c in payload["candidates"]] == ["Hector Mason", "Rob Jolly"]
+    assert [c["name"] for c in payload["candidates"]] == [
+        "Alice Example",
+        "Bob Example",
+    ]
     assert payload["candidates"][0]["cosine"] == pytest.approx(0.56, abs=1e-2)
 
 
@@ -90,17 +93,17 @@ def test_an_ambiguous_match_names_both_rivals(monkeypatch, caplog) -> None:
 def test_a_match_is_recorded_with_its_score(monkeypatch, caplog) -> None:
     caplog.set_level(logging.INFO)
     people = [
-        _person(22, "Rob Jolly", [0.84, 0.54, 0.0]),
-        _person(2, "Jay Radia", [0.3, 0.0, 0.95]),
+        _person(22, "Bob Example", [0.84, 0.54, 0.0]),
+        _person(2, "Carol Example", [0.3, 0.0, 0.95]),
     ]
 
     identity, metrics = _identify(monkeypatch, people, [1.0, 0.0, 0.0])
 
     assert identity is not None
-    assert identity.name == "Rob Jolly"
+    assert identity.name == "Bob Example"
     assert identity.global_speaker_id == 22
-    assert "Identified SPEAKER_01 as Rob Jolly (Score: 0.84)" in caplog.text
+    assert "Identified SPEAKER_01 as Bob Example (Score: 0.84)" in caplog.text
     payload = metrics[0]["payload"]
     assert payload["matched_global_speaker_id"] == 22
     assert payload["score"] == pytest.approx(0.84, abs=1e-2)
-    assert payload["candidates"][0]["name"] == "Rob Jolly"
+    assert payload["candidates"][0]["name"] == "Bob Example"
