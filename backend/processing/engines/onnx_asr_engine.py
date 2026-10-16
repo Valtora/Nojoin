@@ -15,6 +15,7 @@ from ...utils.config_manager import (
 )
 from ...utils.languages import resolve_transcription_language_code
 from ..onnx_providers import gpu_is_present, sessions_use_cuda, verify_gpu_providers
+from ..onnx_threads import onnx_session_options
 from ..processing_tuning import (
     ASR_WORD_END_PADDING_KEY,
     TUNING_SPECS,
@@ -387,6 +388,7 @@ class OnnxAsrEngine(TranscriptionEngine):
                 onnx_id,
                 quantization=quantization,
                 providers=providers,
+                sess_options=onnx_session_options(),
             )
             # onnxruntime silently drops a provider it cannot load, so confirm the
             # session actually landed on the GPU instead of assuming it did.

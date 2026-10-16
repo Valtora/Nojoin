@@ -304,6 +304,7 @@ def _prepare_onnx_asr_model(model_id: str) -> None:
 
     from backend.processing.engines.onnx_asr_engine import onnx_asr_quantization
     from backend.processing.onnx_providers import gpu_is_present
+    from backend.processing.onnx_threads import onnx_session_options
 
     # Preparation runs on the same lane as transcription, so this is the
     # precision the engine will load here. Preparing int8 on a GPU host left
@@ -318,6 +319,7 @@ def _prepare_onnx_asr_model(model_id: str) -> None:
         model_id,
         quantization=quantization,
         providers=["CPUExecutionProvider"],
+        sess_options=onnx_session_options(),
     )
     del model
 
