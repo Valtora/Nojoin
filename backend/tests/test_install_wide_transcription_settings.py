@@ -236,6 +236,36 @@ def test_a_null_engine_is_not_written_over_the_install_engine(install_config):
     assert _config_file(install_config)["transcription_backend"] == "parakeet"
 
 
+# The ASR window result ledger and its switch were removed (issue #428).
+RETIRED_LEDGER_KEY = "enable_asr_window_result_ledger"
+
+
+def test_a_stored_ledger_switch_is_dropped_on_load_and_on_the_next_save(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.setattr(ConfigManager, "_ensure_dirs_exist", lambda self, cfg: None)
+    path = tmp_path / "config.json"
+    path.write_text(
+        json.dumps({**INSTALL_ENGINE, RETIRED_LEDGER_KEY: False}), encoding="utf-8"
+    )
+    manager = ConfigManager(config_path=str(path))
+    monkeypatch.setattr(settings_ep, "config_manager", manager)
+
+    assert RETIRED_LEDGER_KEY not in manager.get_all()
+    assert manager.get("transcription_backend") == "parakeet"
+
+    status, body, _ = asyncio.run(
+        _call_settings("admin", {}, "POST", {"canary_model": "canary-new"})
+    )
+
+    assert status == 200
+    saved = _config_file(manager)
+    assert RETIRED_LEDGER_KEY not in saved
+    assert saved["canary_model"] == "canary-new"
+    assert saved["transcription_backend"] == "parakeet"
+    assert RETIRED_LEDGER_KEY not in body
+
+
 class _SetupSession:
     """Just enough session for the first-run setup route."""
 

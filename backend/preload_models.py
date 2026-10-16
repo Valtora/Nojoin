@@ -239,7 +239,7 @@ def _release_validation_caches() -> None:
         ("backend.processing.diarize", "release_pipeline_cache"),
         ("backend.processing.embedding_core", "release_embedding_model_cache"),
         (
-            "backend.processing.segmentation_refinement",
+            "backend.processing.segmentation_model",
             "release_segmentation_model_cache",
         ),
         ("backend.processing.text_embedding", "release_embedding_model"),
@@ -282,7 +282,7 @@ def _prepare_whisper_model(model_size: str) -> None:
 def _prepare_pyannote_models(hf_token: str | None) -> None:
     from backend.processing.diarize import load_diarization_pipeline
     from backend.processing.embedding_core import load_embedding_model
-    from backend.processing.segmentation_refinement import load_segmentation_model
+    from backend.processing.segmentation_model import load_segmentation_model
 
     device = _default_device_for_validation()
     logger.info("Preparing Pyannote diarization pipeline.")
@@ -293,7 +293,7 @@ def _prepare_pyannote_models(hf_token: str | None) -> None:
     embedding_model = load_embedding_model(device, hf_token)
     del embedding_model
 
-    logger.info("Preparing Pyannote segmentation refinement model.")
+    logger.info("Preparing Pyannote segmentation (overlap detection) model.")
     segmentation_model = load_segmentation_model(device, hf_token)
     del segmentation_model
 
@@ -399,14 +399,16 @@ def download_models(
 
         if include_core:
             report(
-                "Preparing Pyannote diarization, voice embedding, and segmentation models...",
+                "Preparing Pyannote diarization, voice embedding, and segmentation "
+                "(overlap detection) models...",
                 40,
                 stage="pyannote",
                 status="downloading",
             )
             _prepare_pyannote_models(hf_token)
             report(
-                "Pyannote diarization, voice embedding, and segmentation models are ready.",
+                "Pyannote diarization, voice embedding, and segmentation "
+                "(overlap detection) models are ready.",
                 80,
                 stage="segmentation",
                 status="downloading",

@@ -3528,6 +3528,64 @@ async def test_append_utterances_from_segments_creates_live_provisional_run_and_
 
 
 @pytest.mark.anyio
+async def test_live_append_spans_its_run_from_the_earliest_start_to_the_latest_end(
+    test_session_maker: sessionmaker,
+) -> None:
+    """The run's span covers every segment, whatever order they arrive in, and
+    rounds to the millisecond as the live lane's region bounds do."""
+    from backend.utils.canonical_pipeline import append_utterances_from_segments
+
+    await _seed_uploading_recording(test_session_maker)
+
+    segments = [
+        {
+            "id": "live-utt-late",
+            "start": 3.2004,
+            "end": 4.5,
+            "speaker": "LIVE_01",
+            "text": "second region",
+            "provisional": True,
+            "segment_source": "live",
+        },
+        {
+            "id": "live-utt-early",
+            "start": 1.0006,
+            "end": 2.0,
+            "speaker": "LIVE_01",
+            "text": "first region",
+            "provisional": True,
+            "segment_source": "live",
+        },
+    ]
+
+    async with test_session_maker() as session:
+        await session.run_sync(
+            lambda sync_session: append_utterances_from_segments(
+                sync_session,
+                recording_id=1,
+                segments=segments,
+                run_kind=ProcessingRunKind.LIVE,
+                source="live",
+                state_override=TranscriptUtteranceState.PROVISIONAL,
+                trigger_source="test",
+            )
+        )
+        await session.commit()
+
+    async with test_session_maker() as session:
+        span = (
+            await session.execute(
+                text(
+                    "SELECT span_start_ms, span_end_ms FROM processing_runs "
+                    "WHERE recording_id = 1"
+                )
+            )
+        ).one()
+
+    assert tuple(span) == (1001, 4500)
+
+
+@pytest.mark.anyio
 async def test_append_utterances_from_segments_live_retry_is_idempotent(
     test_session_maker: sessionmaker,
 ) -> None:
@@ -3836,56 +3894,122 @@ async def test_identical_finalize_retry_is_idempotent(
         assert active_utterance_count == 1
 
 
-def _make_turn(turn_id: int, start_ms: int, end_ms: int, speaker_id: int | None) -> Any:
-    from backend.models.pipeline import DiarizationWindowTurn
+@pytest.mark.anyio
+async def test_worker_finalize_survives_a_later_stage_failure(
+    test_session_maker: sessionmaker,
+    monkeypatch,
+) -> None:
+    """The canonical finalize is committed before the notes and title stages run.
 
-    return DiarizationWindowTurn(
-        id=turn_id,
-        window_result_id=1,
-        local_speaker_key=f"SPEAKER_{turn_id:02d}",
-        start_ms=start_ms,
-        end_ms=end_ms,
-        matched_recording_speaker_id=speaker_id,
+    When a later stage raises, the worker's handler rolls the session back. The
+    finalized utterances and the transcript projection must both survive it, and
+    still agree with each other.
+    """
+    from types import SimpleNamespace
+
+    from sqlmodel.ext.asyncio.session import AsyncSession as SQLModelAsyncSession
+
+    from backend.models.recording import Recording
+    from backend.worker.tasks import pipeline as pipeline_module
+
+    await _seed_processed_recording(test_session_maker)
+    # The worker runs on a SQLModel session, which the stages query through
+    # ``session.exec``.
+    worker_session_maker = sessionmaker(
+        test_session_maker.kw["bind"],
+        class_=SQLModelAsyncSession,
+        expire_on_commit=False,
     )
 
+    original_get = pipeline_module.config_manager.get
 
-def _make_speaker(speaker_id: int, label: str) -> Any:
-    from backend.models.speaker import RecordingSpeaker
+    def _fake_get(key, default=None):
+        if key == "enable_canonical_transcript_writes":
+            return True
+        return original_get(key, default)
 
-    return RecordingSpeaker(
-        id=speaker_id,
-        recording_id=1,
-        diarization_label=label,
+    def _later_stage_fails(*_args, **_kwargs):
+        raise RuntimeError("notes context failed")
+
+    monkeypatch.setattr(pipeline_module.config_manager, "get", _fake_get)
+    monkeypatch.setattr(
+        pipeline_module,
+        "_build_automatic_meeting_intelligence_transcript",
+        _later_stage_fails,
     )
 
-
-def _make_utterance(
-    *,
-    start_ms: int,
-    end_ms: int,
-    text: str,
-    words: list[dict[str, int | str]] | None = None,
-    public_id: str = "utt-test-1",
-) -> Any:
-    from backend.models.pipeline import TranscriptUtterance, TranscriptUtteranceState
-
-    payload: dict[str, Any] = {}
-    if words is not None:
-        payload = {
-            "asr_segments": [
-                {
-                    "start_ms": start_ms,
-                    "end_ms": end_ms,
-                    "text": text,
-                    "words": words,
-                }
-            ],
-            "asr_word_timestamps_available": True,
+    final_segments = [
+        {
+            "start": 0.0,
+            "end": 1.0,
+            "speaker": "SPEAKER_00",
+            "text": "finalized words",
         }
+    ]
+
+    def _finalize_then_fail(sync_session) -> None:
+        recording = sync_session.get(Recording, 1)
+        transcript = sync_session.exec(
+            select(Transcript).where(Transcript.recording_id == 1)
+        ).one()
+        ctx = pipeline_module._PipelineRunContext(
+            task=SimpleNamespace(update_state=lambda **_kwargs: None),
+            session=sync_session,
+            recording_id=1,
+            device_suffix="",
+            temp_files=[],
+            merged_config={},
+        )
+        with pytest.raises(RuntimeError, match="notes context failed"):
+            pipeline_module._finalize_transcript_and_notes(
+                ctx,
+                recording,
+                transcript,
+                final_segments,
+                None,
+                {},
+            )
+        # The worker's catch-all handler rolls back before recording the error.
+        sync_session.rollback()
+
+    async with worker_session_maker() as session:
+        await session.run_sync(_finalize_then_fail)
+
+    async with test_session_maker() as session:
+        utterances = (
+            await session.execute(
+                text(
+                    "SELECT public_id, text FROM transcript_utterances "
+                    "WHERE recording_id = 1 AND UPPER(state) != 'SUPERSEDED' "
+                    "ORDER BY start_ms"
+                )
+            )
+        ).all()
+        transcript = (
+            await session.execute(
+                select(Transcript).where(Transcript.recording_id == 1)
+            )
+        ).scalar_one()
+
+    assert [row.text for row in utterances] == ["finalized words"]
+    assert [(segment["id"], segment["text"]) for segment in transcript.segments] == [
+        (row.public_id, row.text) for row in utterances
+    ]
+    assert transcript.text == "finalized words"
+    # Finalize writes a projection of its own; only the refresh from the read
+    # model adds the millisecond bounds, so these pin the commit after it.
+    assert [
+        (segment.get("start_ms"), segment.get("end_ms"))
+        for segment in transcript.segments
+    ] == [(0, 1000)]
+
+
+def _make_utterance(*, start_ms: int, end_ms: int, text: str) -> Any:
+    from backend.models.pipeline import TranscriptUtterance, TranscriptUtteranceState
 
     return TranscriptUtterance(
         id=1,
-        public_id=public_id,
+        public_id="utt-test-1",
         recording_id=1,
         sort_key="0001",
         start_ms=start_ms,
@@ -3894,126 +4018,7 @@ def _make_utterance(
         speaker_label="LIVE_01",
         state=TranscriptUtteranceState.PROVISIONAL,
         source_kind="live",
-        confidence_payload=payload or None,
     )
-
-
-def test_word_level_split_tolerates_unmapped_middle_word() -> None:
-    """Phase D1: a single word without a matched turn must not abort the split."""
-    from backend.utils.canonical_pipeline import (
-        _build_split_replacement_segments_from_diarization,
-    )
-
-    speakers = {1: _make_speaker(1, "LIVE_01"), 2: _make_speaker(2, "LIVE_02")}
-    # SPEAKER_00 covers 0-400ms (mapped to id=1), SPEAKER_01 covers 800-1200ms
-    # (mapped to id=2). The middle word at 500-700ms has no overlapping turn.
-    turn_rows = [
-        _make_turn(1, 0, 400, 1),
-        _make_turn(2, 800, 1200, 2),
-    ]
-    utterance = _make_utterance(
-        start_ms=0,
-        end_ms=1200,
-        text="hello cruel world",
-        words=[
-            {"start_ms": 0, "end_ms": 400, "word": "hello"},
-            {"start_ms": 500, "end_ms": 700, "word": "cruel"},
-            {"start_ms": 800, "end_ms": 1200, "word": "world"},
-        ],
-    )
-
-    segments = _build_split_replacement_segments_from_diarization(
-        utterance,
-        turn_rows=turn_rows,
-        recording_speakers_by_id=speakers,
-        window_result_id=99,
-    )
-
-    assert len(segments) == 2
-    assert [segment["speaker"] for segment in segments] == ["LIVE_01", "LIVE_02"]
-    # Middle word inherits a neighbour rather than aborting the split.
-    text_by_speaker = {segment["speaker"]: segment["text"] for segment in segments}
-    assert "hello" in text_by_speaker["LIVE_01"]
-    assert "world" in text_by_speaker["LIVE_02"]
-
-
-def test_turn_boundary_splitter_handles_utterance_without_word_timestamps() -> None:
-    """Phase D2: utterances missing word timestamps still split at turn boundaries."""
-    from backend.utils.canonical_pipeline import (
-        _build_turn_boundary_split_segments_from_diarization,
-    )
-
-    speakers = {1: _make_speaker(1, "LIVE_01"), 2: _make_speaker(2, "LIVE_02")}
-    turn_rows = [
-        _make_turn(1, 0, 500, 1),
-        _make_turn(2, 500, 1000, 2),
-    ]
-    utterance = _make_utterance(
-        start_ms=0,
-        end_ms=1000,
-        text="one two three four",
-        words=None,
-    )
-
-    segments = _build_turn_boundary_split_segments_from_diarization(
-        utterance,
-        turn_rows=turn_rows,
-        recording_speakers_by_id=speakers,
-        window_result_id=42,
-    )
-
-    assert len(segments) == 2
-    assert [segment["speaker"] for segment in segments] == ["LIVE_01", "LIVE_02"]
-    # Proportional whitespace-token split: 4 words across two equal halves.
-    assert segments[0]["text"].split() == ["one", "two"]
-    assert segments[1]["text"].split() == ["three", "four"]
-    assert (
-        segments[0]["confidence_payload"]["rolling_diarization"]["split_strategy"]
-        == "diarization_turn_boundary"
-    )
-    assert (
-        segments[0]["confidence_payload"]["rolling_diarization"]["split_from_public_id"]
-        == utterance.public_id
-    )
-    assert segments[0]["confidence_payload"]["asr_word_timestamps_available"] is False
-
-
-_FOUR_WORDS = [
-    {"start_ms": 0, "end_ms": 250, "word": "one"},
-    {"start_ms": 250, "end_ms": 500, "word": "two"},
-    {"start_ms": 500, "end_ms": 750, "word": "three"},
-    {"start_ms": 750, "end_ms": 1000, "word": "four"},
-]
-
-
-@pytest.mark.parametrize("lock", ["manual_text_locked", "manual_speaker_locked"])
-def test_splitters_leave_a_manually_locked_utterance_whole(lock: str) -> None:
-    """A user's lock outranks diarisation: neither splitter splits a locked line."""
-    from backend.utils.canonical_pipeline import (
-        _build_split_replacement_segments_from_diarization,
-        _build_turn_boundary_split_segments_from_diarization,
-    )
-
-    speakers = {1: _make_speaker(1, "LIVE_01"), 2: _make_speaker(2, "LIVE_02")}
-    turn_rows = [_make_turn(1, 0, 500, 1), _make_turn(2, 500, 1000, 2)]
-    utterance = _make_utterance(
-        start_ms=0, end_ms=1000, text="one two three four", words=_FOUR_WORDS
-    )
-    splitters = (
-        _build_split_replacement_segments_from_diarization,
-        _build_turn_boundary_split_segments_from_diarization,
-    )
-    kwargs = {
-        "turn_rows": turn_rows,
-        "recording_speakers_by_id": speakers,
-        "window_result_id": 42,
-    }
-    # Unlocked, both would split this line, so the lock is what stops them.
-    assert all(len(split(utterance, **kwargs)) == 2 for split in splitters)
-
-    setattr(utterance, lock, True)
-
-    assert [split(utterance, **kwargs) for split in splitters] == [[], []]
 
 
 def test_projection_reads_speaker_evidence_older_rolling_rows_carry() -> None:
@@ -4044,229 +4049,6 @@ def test_projection_reads_speaker_evidence_older_rolling_rows_carry() -> None:
 
     utterance.manual_speaker_locked = True
     assert _speaker_state_for_utterance(utterance) == "manual_override"
-
-
-@pytest.mark.anyio
-async def test_boundary_splice_replaces_the_source_line_in_place(
-    test_session_maker: sessionmaker,
-) -> None:
-    """Segmentation refinement feeds its splits through this splice. The source
-    line is superseded, the split lines take its place in order with fresh ids,
-    and the transcript projection and revision events follow."""
-    from uuid import UUID
-
-    from backend.models.speaker import RecordingSpeaker
-    from backend.utils.canonical_pipeline import (
-        _apply_boundary_reconciliation_segments,
-        _build_split_replacement_segments_from_diarization,
-        append_utterances_from_segments,
-        list_active_utterances,
-    )
-
-    def _live(line_id: str, start: float, end: float, text_value: str) -> dict:
-        return {
-            "id": line_id,
-            "start": start,
-            "end": end,
-            "speaker": "LIVE_01",
-            "text": text_value,
-            "provisional": True,
-            "segment_source": "live",
-        }
-
-    split_line = _live("live-utt-2", 1.0, 2.0, "one two three four")
-    split_line["confidence_payload"] = {
-        "asr_segments": [
-            {
-                "start_ms": 1000,
-                "end_ms": 2000,
-                "text": "one two three four",
-                "words": [
-                    {
-                        "start_ms": word["start_ms"] + 1000,
-                        "end_ms": word["end_ms"] + 1000,
-                        "word": word["word"],
-                    }
-                    for word in _FOUR_WORDS
-                ],
-            }
-        ],
-        "asr_word_timestamps_available": True,
-    }
-
-    await _seed_uploading_recording(test_session_maker)
-    async with test_session_maker() as session:
-        await session.run_sync(
-            lambda sync_session: append_utterances_from_segments(
-                sync_session,
-                recording_id=1,
-                segments=[
-                    _live("live-utt-1", 0.0, 1.0, "before"),
-                    split_line,
-                    _live("live-utt-3", 2.0, 3.0, "after"),
-                ],
-                run_kind=ProcessingRunKind.LIVE,
-                source="live",
-                state_override=TranscriptUtteranceState.PROVISIONAL,
-                trigger_source="test",
-            )
-        )
-        await session.execute(
-            text(
-                """
-                INSERT INTO recording_speakers (
-                    id, created_at, updated_at, public_id, recording_id,
-                    diarization_label, speaker_status, speaker_kind,
-                    first_seen_ms, last_seen_ms, identity_locked
-                ) VALUES (
-                    2, :now, :now, 'speaker-public-2', 1,
-                    'LIVE_02', 'active', 'automated', 1500, 2000, 0
-                )
-                """
-            ),
-            {"now": "2026-05-20 00:00:00"},
-        )
-        # Refinement records a sentinel window row for the split provenance.
-        await session.execute(
-            text(
-                """
-                INSERT INTO diarization_window_results (
-                    id, created_at, updated_at, public_id, recording_id,
-                    window_index, window_start_ms, window_end_ms, model_name,
-                    model_version, device, config_hash, status
-                ) VALUES (
-                    77, :now, :now, 'window-public-77', 1, 0, 1000, 2000,
-                    'pyannote/segmentation-3.0', 'segmentation-3.0', 'cpu',
-                    'segmentation_refinement', 'completed'
-                )
-                """
-            ),
-            {"now": "2026-05-20 00:00:00"},
-        )
-        await session.commit()
-
-    def _split(sync_session) -> list[str]:
-        source = next(
-            utterance
-            for utterance in list_active_utterances(sync_session, 1)
-            if utterance.public_id == "live-utt-2"
-        )
-        speakers = {
-            int(speaker.id): speaker
-            for speaker in sync_session.execute(
-                select(RecordingSpeaker).where(RecordingSpeaker.recording_id == 1)
-            ).scalars()
-        }
-        first_speaker_id = next(
-            speaker_id
-            for speaker_id, speaker in speakers.items()
-            if speaker.diarization_label == "LIVE_01"
-        )
-        segments = _build_split_replacement_segments_from_diarization(
-            source,
-            turn_rows=[
-                _make_turn(1, 1000, 1500, first_speaker_id),
-                _make_turn(2, 1500, 2000, 2),
-            ],
-            recording_speakers_by_id=speakers,
-            window_result_id=77,
-        )
-        created = _apply_boundary_reconciliation_segments(
-            sync_session,
-            recording_id=1,
-            source_utterances=[source],
-            replacement_segments=segments,
-            processing_run_id=None,
-            source="segmentation_refinement",
-        )
-        return [utterance.public_id for utterance in created]
-
-    async with test_session_maker() as session:
-        created_ids = await session.run_sync(_split)
-        await session.commit()
-
-    assert len(created_ids) == 2
-    assert all(str(UUID(public_id)) == public_id for public_id in created_ids)
-
-    async with test_session_maker() as session:
-        rows = (
-            await session.execute(
-                text(
-                    "SELECT public_id, state, speaker_label, text, confidence_payload "
-                    "FROM transcript_utterances WHERE recording_id = 1 "
-                    "ORDER BY sort_key, id"
-                )
-            )
-        ).all()
-        transcript_row = (
-            await session.execute(
-                text("SELECT segments, text FROM transcripts WHERE recording_id = 1")
-            )
-        ).one()
-        event_rows = (
-            await session.execute(
-                text(
-                    "SELECT u.public_id, e.event_type FROM transcript_utterance_events e "
-                    "JOIN transcript_utterances u ON u.id = e.utterance_id "
-                    "WHERE e.recording_id = 1 AND e.source = 'segmentation_refinement'"
-                )
-            )
-        ).all()
-
-    state_by_id = {row[0]: str(row[1]).lower() for row in rows}
-    assert state_by_id["live-utt-2"] == TranscriptUtteranceState.SUPERSEDED.value
-    active = [row for row in rows if row[0] != "live-utt-2"]
-    assert [row[0] for row in active] == ["live-utt-1", *created_ids, "live-utt-3"]
-    assert [row[2] for row in active] == ["LIVE_01", "LIVE_01", "LIVE_02", "LIVE_01"]
-    assert [row[3] for row in active] == ["before", "one two", "three four", "after"]
-    for row in active[1:3]:
-        payload = json.loads(row[4]) if isinstance(row[4], str) else row[4]
-        assert payload["rolling_diarization"]["split_from_public_id"] == "live-utt-2"
-
-    segments = (
-        json.loads(transcript_row[0])
-        if isinstance(transcript_row[0], str)
-        else transcript_row[0]
-    )
-    assert [segment["text"] for segment in segments] == [
-        "before",
-        "one two",
-        "three four",
-        "after",
-    ]
-    assert [segment["speaker"] for segment in segments] == [
-        "LIVE_01",
-        "LIVE_01",
-        "LIVE_02",
-        "LIVE_01",
-    ]
-    assert transcript_row[1] == "before one two three four after"
-    assert sorted(tuple(row) for row in event_rows) == sorted(
-        [("live-utt-2", "supersede")]
-        + [
-            (public_id, kind)
-            for public_id in created_ids
-            for kind in ("created", "split")
-        ]
-    )
-
-
-def test_be006_reconciliation_seam_reexport_surface_is_intact() -> None:
-    """Pin the public re-export surface the rest of the codebase resolves
-    from the canonical_pipeline package root. Decomposition must not drop
-    any of these names from the `from .X import *` seams."""
-    from backend.utils import canonical_pipeline as pkg
-    from backend.utils.canonical_pipeline import diarization
-
-    for name in (
-        "_build_split_replacement_segments_from_diarization",
-        "_build_turn_boundary_split_segments_from_diarization",
-        "_apply_boundary_reconciliation_segments",
-    ):
-        assert hasattr(pkg, name), f"{name} dropped from package root re-export"
-
-    # Segmentation refinement imports the splice helper from diarization.
-    assert hasattr(diarization, "_apply_boundary_reconciliation_segments")
 
 
 # ---------------------------------------------------------------------------

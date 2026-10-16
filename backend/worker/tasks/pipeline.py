@@ -44,7 +44,7 @@ class _PipelineRunContext:
     temp_files: list[str]
     merged_config: dict
     # Set once the VAD stage produces the processed (16k mono) audio; consumed by
-    # the speaker-assignment and segmentation-refinement stages.
+    # the speaker-assignment stage.
     processed_audio_path: str | None = None
 
 
@@ -259,13 +259,11 @@ def _run_final_asr_stage(
     processed_audio_path: str,
     engine_override: dict | None,
 ) -> dict:
-    """Run the configured transcription engine with ASR-ledger bookkeeping.
+    """Run the configured transcription engine.
 
-    Records a ledger row (start/complete/fail) when the ledger is enabled so the
-    manifest/asr_status semantics survive a crash mid-finalize. A GPU OOM is
-    retried once. Any failure marks the ledger row and the transcript failed and
-    is re-raised as a TranscriptionError, so the orchestrator's error handler
-    marks the recording ERROR.
+    A GPU OOM is retried once. Any failure marks the transcript failed and is
+    re-raised as a TranscriptionError, so the orchestrator's error handler marks
+    the recording ERROR.
     """
     session = ctx.session
     merged_config = ctx.merged_config
@@ -293,36 +291,11 @@ def _run_final_asr_stage(
         },
         log=logger,
     ) as metric:
-        asr_source_kind = "reprocess" if engine_override else "finalize"
-        span_end_ms = int(round(float(recording.duration_seconds or 0.0) * 1000.0))
-        if config_manager.get("enable_asr_window_result_ledger", True):
-            start_recording_asr_window_result(
-                session,
-                recording_id=recording.id,
-                source_kind=asr_source_kind,
-                span_start_ms=0,
-                span_end_ms=span_end_ms,
-                config=merged_config,
-                config_hash=_final_asr_config_hash(merged_config),
-            )
         try:
             transcription_result = transcribe_with_gpu_oom_retry(
                 processed_audio_path, merged_config, free_gpu=_release_pipeline_vram
             )
         except Exception as exc:
-            if config_manager.get("enable_asr_window_result_ledger", True):
-                fail_recording_asr_window_result(
-                    session,
-                    recording_id=recording.id,
-                    source_kind=asr_source_kind,
-                    span_start_ms=0,
-                    span_end_ms=span_end_ms,
-                    config=merged_config,
-                    config_hash=_final_asr_config_hash(merged_config),
-                    error_summary=str(exc).strip()[:500]
-                    or "Final ASR invocation failed.",
-                    error_payload={"error_type": exc.__class__.__name__},
-                )
             if is_task_interruption(exc):
                 # A time limit or termination is Celery stopping the task, not a
                 # transcription failure: let it through unchanged.
@@ -338,21 +311,6 @@ def _run_final_asr_stage(
             if failure is exc:
                 raise
             raise failure from exc
-        if config_manager.get("enable_asr_window_result_ledger", True):
-            complete_recording_asr_window_result(
-                session,
-                recording_id=recording.id,
-                source_kind=asr_source_kind,
-                span_start_ms=0,
-                span_end_ms=span_end_ms,
-                config=merged_config,
-                config_hash=_final_asr_config_hash(merged_config),
-                result_payload={
-                    "segment_count": len(transcription_result.get("segments", [])),
-                    "text_chars": len(transcription_result.get("text") or ""),
-                    "engine_override": bool(engine_override),
-                },
-            )
         metric["payload"]["segment_count"] = len(
             transcription_result.get("segments", [])
         )
@@ -495,19 +453,15 @@ def _finalize_transcript_and_notes(
     final_segments: list[dict],
     llm_config: ResolvedLLMConfig,
     transcription_result: dict,
-    reused_live_transcript_segments: Sequence[dict],
 ) -> None:
-    """Persist final segments, run canonical writes + segmentation refinement,
-    and trigger the automatic meeting-intelligence (notes/title) stage.
+    """Persist final segments, run canonical writes, and trigger the automatic
+    meeting-intelligence (notes/title) stage.
 
-    Canonical writes and the frame-level segmentation refinement safety net are
-    gated on ``enable_canonical_transcript_writes``; the refinement pass is
-    wrapped best-effort so a failure never aborts finalize.
+    Canonical writes are gated on ``enable_canonical_transcript_writes``.
     """
     session = ctx.session
     device_suffix = ctx.device_suffix
     merged_config = ctx.merged_config
-    recording_id = ctx.recording_id
 
     # Keep the diarization_label in the segments to maintain the link to
     # RecordingSpeaker; the frontend resolves the display name from the map.
@@ -536,52 +490,15 @@ def _finalize_transcript_and_notes(
             session,
             recording_id=recording.id,
             segments=[dict(segment) for segment in updated_segments],
-            reused_live_asr=bool(reused_live_transcript_segments),
             trigger_source="worker",
         )
         updated_segments = refresh_transcript_projection_from_canonical(
             session,
             recording.id,
         )
-
-        # Frame-level segmentation safety net for utterances that span a
-        # speaker change but slipped through the diarisation's coarser turn
-        # boundaries.
-        try:
-            ctx.task.update_state(
-                state="PROCESSING", meta={"progress": 94, "stage": "Refining"}
-            )
-            recording.processing_step = f"Refining speaker boundaries...{device_suffix}"
-            recording.processing_progress = 94
-            session.add(recording)
-            session.commit()
-            with pipeline_metric_timer(
-                stage="segmentation_refinement",
-                recording_id=recording_id,
-                payload={"input_path": ctx.processed_audio_path},
-                log=logger,
-            ) as seg_metric:
-                seg_summary = refine_recording_utterances_via_segmentation(
-                    session,
-                    recording_id=recording.id,
-                    audio_path=ctx.processed_audio_path,
-                    device_str=str(merged_config.get("processing_device", "auto")),
-                    hf_token=config_manager.get("hf_token"),
-                    source="finalize_segmentation_refinement",
-                )
-                seg_metric["payload"].update(seg_summary)
-            if (seg_summary or {}).get("refined_utterance_count", 0) > 0:
-                updated_segments = refresh_transcript_projection_from_canonical(
-                    session,
-                    recording.id,
-                )
-        except Exception as seg_exc:  # noqa: BLE001 -- boundary: refinement pass is best-effort
-            logger.warning(
-                "Segmentation refinement pass failed for recording %s: %s",
-                recording.id,
-                seg_exc,
-                exc_info=True,
-            )
+        # Make the finalized utterances and their projection durable before the
+        # notes and title stages: a failure there rolls the session back.
+        session.commit()
 
     recording_speakers = session.exec(
         select(RecordingSpeaker).where(RecordingSpeaker.recording_id == recording.id)
@@ -687,7 +604,7 @@ def _release_pipeline_vram() -> None:
 
         release_embedding_model_cache()
 
-        from backend.processing.segmentation_refinement import (
+        from backend.processing.segmentation_model import (
             release_segmentation_model_cache,
         )
 
@@ -765,23 +682,6 @@ def process_recording_task(
 
     llm_config = resolve_llm_config(session, user_settings, user_id=recording.user_id)
     merged_config = llm_config.merged_config
-    live_segments_for_reuse = []
-    if engine_override is None:
-        if config_manager.get("enable_canonical_transcript_writes", True):
-            live_segments_for_reuse = build_reusable_live_segments(
-                session, recording.id
-            )
-        if not live_segments_for_reuse:
-            initial_transcript = session.exec(
-                select(Transcript).where(Transcript.recording_id == recording.id)
-            ).first()
-            if initial_transcript and initial_transcript.segments:
-                live_segments_for_reuse = [
-                    dict(segment)
-                    for segment in initial_transcript.segments
-                    if segment.get("segment_source") in {"live", "catch_up"}
-                    or segment.get("provisional") is True
-                ]
 
     # Platform/Device detection for UX
     import torch
@@ -802,8 +702,6 @@ def process_recording_task(
     )
 
     from backend.processing.audio_preprocessing import cleanup_temp_file
-
-    reused_live_transcript_segments: list = []
 
     try:
         recording.status = RecordingStatus.PROCESSING
@@ -833,7 +731,7 @@ def process_recording_task(
         if vad_result.finished:
             return
         processed_audio_path = vad_result.processed_audio_path
-        # Cache for the speaker-assignment / refinement stages.
+        # Cache for the speaker-assignment stage.
         ctx.processed_audio_path = processed_audio_path
 
         # --- Stage: transcription (ASR) ---
@@ -880,7 +778,6 @@ def process_recording_task(
             final_segments,
             llm_config,
             transcription_result,
-            reused_live_transcript_segments,
         )
 
         mark_recording_audio_chunks_ready_for_cleanup(
@@ -1115,27 +1012,6 @@ def check_queued_recordings(sender, **kwargs):
         logger.error("Failed to check pending recordings: %s", e, exc_info=True)
     finally:
         session.close()
-
-
-def _final_asr_config_hash(merged_config: dict) -> str:
-    transcription_backend = str(merged_config.get("transcription_backend", "whisper"))
-    effective_language = resolve_transcription_language_code(
-        merged_config,
-        transcription_backend,
-    )
-    return hashlib.sha256(
-        "|".join(
-            [
-                transcription_backend,
-                str(merged_config.get("whisper_model_size", "turbo")),
-                str(merged_config.get("parakeet_model", "parakeet-tdt-0.6b-v3")),
-                str(merged_config.get("canary_model", "nemo-canary-1b-v2")),
-                str(merged_config.get("processing_device", "auto")),
-                str(bool(merged_config.get("use_gpu", True))),
-                str(effective_language or "auto"),
-            ]
-        ).encode("utf-8")
-    ).hexdigest()
 
 
 def _paths_point_to_same_media_impl(path_a: str | None, path_b: str | None) -> bool:

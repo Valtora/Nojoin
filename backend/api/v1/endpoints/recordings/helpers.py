@@ -19,7 +19,6 @@ from backend.models.context_chunk import ContextChunk
 from backend.models.pipeline import (
     DiarizationWindowResult,
     ProcessingRun,
-    RecordingAsrWindowResult,
     RecordingAudioChunk,
     RecordingAudioWindowManifest,
     SpeakerCorrectionEvent,
@@ -660,11 +659,6 @@ async def _reset_generated_recording_state(db: AsyncSession, recording_id: int) 
     await db.execute(
         delete(DiarizationWindowResult).where(
             DiarizationWindowResult.recording_id == recording_id
-        )
-    )
-    await db.execute(
-        delete(RecordingAsrWindowResult).where(
-            RecordingAsrWindowResult.recording_id == recording_id
         )
     )
     if existing_transcript:

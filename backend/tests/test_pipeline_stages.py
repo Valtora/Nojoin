@@ -198,7 +198,6 @@ def _install_happy_path_modules(monkeypatch, *, diarization_result=None, segment
         convert_to_mp3=lambda *a, **k: None,
         convert_to_proxy_mp3=lambda *a, **k: None,
         get_audio_duration=lambda *a, **k: 60.0,
-        extract_audio_clip=lambda *a, **k: None,
         convert_to_wav=lambda *a, **k: True,
     )
     _install(
@@ -209,7 +208,6 @@ def _install_happy_path_modules(monkeypatch, *, diarization_result=None, segment
             {"text": "", "segments": []},
             [],
         ),
-        map_final_speakers_to_live_labels=lambda *a, **k: {},
         merge_reusable_segments=lambda primary, additional: (
             list(primary) + list(additional)
         ),
@@ -221,7 +219,7 @@ def _install_happy_path_modules(monkeypatch, *, diarization_result=None, segment
     )
     _install(
         monkeypatch,
-        "backend.processing.segmentation_refinement",
+        "backend.processing.segmentation_model",
         release_segmentation_model_cache=lambda: None,
     )
 
@@ -229,24 +227,16 @@ def _install_happy_path_modules(monkeypatch, *, diarization_result=None, segment
     monkeypatch.setattr(tasks_module.config_manager, "reload", lambda: None)
 
     def _config_get(key, default=None):
-        # Drive the legacy (non-canonical, no-ledger) path so these seam tests
-        # exercise combine/consolidate + speaker assignment rather than the
-        # canonical-write and ASR-ledger branches.
+        # Drive the legacy (non-canonical) path so these seam tests exercise
+        # combine/consolidate + speaker assignment rather than the
+        # canonical-write branch.
         if key == "keep_models_loaded":
             return True
-        if key in {
-            "enable_canonical_transcript_writes",
-            "enable_asr_window_result_ledger",
-        }:
+        if key == "enable_canonical_transcript_writes":
             return False
         return default
 
     monkeypatch.setattr(tasks_module.config_manager, "get", _config_get)
-    # Keep the canonical-write and ledger branches out of the success path so the
-    # assertions focus on the combine/consolidate + speaker-assignment seams.
-    monkeypatch.setattr(
-        tasks_module, "build_reusable_live_segments", lambda *a, **k: []
-    )
     monkeypatch.setattr(tasks_module, "auto_link_recording", lambda *a, **k: None)
     monkeypatch.setattr(tasks_module, "update_recording_status", lambda *a, **k: None)
     monkeypatch.setattr(

@@ -344,34 +344,6 @@ CREATE TABLE speaker_correction_events (
 )
 """
 
-RECORDING_ASR_WINDOW_RESULTS_SCHEMA = """
-CREATE TABLE recording_asr_window_results (
-    id INTEGER PRIMARY KEY,
-    created_at DATETIME NOT NULL,
-    updated_at DATETIME NOT NULL,
-    public_id VARCHAR(36) NOT NULL,
-    recording_id INTEGER NOT NULL,
-    processing_run_id INTEGER,
-    source_kind VARCHAR(255) NOT NULL,
-    span_start_ms INTEGER NOT NULL,
-    span_end_ms INTEGER NOT NULL,
-    chunk_start_sequence INTEGER,
-    chunk_end_sequence INTEGER,
-    transcription_backend VARCHAR(255) NOT NULL,
-    model_name VARCHAR(255),
-    config_hash VARCHAR(255) NOT NULL,
-    status VARCHAR(32) NOT NULL,
-    idempotency_key VARCHAR(255) NOT NULL,
-    error_summary TEXT,
-    error_payload JSON,
-    result_payload JSON,
-    produced_utterance_public_ids JSON,
-    started_at DATETIME,
-    completed_at DATETIME,
-    UNIQUE(recording_id, idempotency_key)
-)
-"""
-
 
 def build_test_user(user_id: int = 1, username: str = "alice"):
     from types import SimpleNamespace
@@ -407,7 +379,6 @@ async def test_session_maker() -> sessionmaker:
         await connection.execute(text(TRANSCRIPT_UTTERANCE_EVENTS_SCHEMA))
         await connection.execute(text(RECORDING_SPEAKER_ALIASES_SCHEMA))
         await connection.execute(text(SPEAKER_CORRECTION_EVENTS_SCHEMA))
-        await connection.execute(text(RECORDING_ASR_WINDOW_RESULTS_SCHEMA))
 
     try:
         yield session_maker
@@ -783,7 +754,6 @@ def test_process_recording_task_applies_engine_override(monkeypatch):
         get_audio_duration=lambda *a, **k: 60.0,
         convert_to_mp3=lambda *a, **k: None,
         convert_to_proxy_mp3=lambda *a, **k: None,
-        extract_audio_clip=lambda *a, **k: None,
     )
     _install("backend.processing.llm_services", get_llm_backend=lambda *a, **k: None)
 
@@ -964,7 +934,6 @@ def test_process_recording_task_rolls_back_before_persisting_error_state(monkeyp
         get_audio_duration=lambda *a, **k: 60.0,
         convert_to_mp3=lambda *a, **k: None,
         convert_to_proxy_mp3=lambda *a, **k: None,
-        extract_audio_clip=lambda *a, **k: None,
     )
     _install(
         "backend.utils.live_transcript",
@@ -976,15 +945,11 @@ def test_process_recording_task_rolls_back_before_persisting_error_state(monkeyp
         merge_reusable_segments=lambda primary, additional: (
             list(primary) + list(additional)
         ),
-        map_final_speakers_to_live_labels=lambda *a, **k: {},
     )
     _install("backend.processing.llm_services", get_llm_backend=lambda *a, **k: None)
     _install("backend.processing.text_embedding", release_embedding_model=lambda: None)
 
     monkeypatch.setattr("os.path.exists", lambda path: True)
-    monkeypatch.setattr(
-        tasks_module, "build_reusable_live_segments", lambda *a, **k: []
-    )
     monkeypatch.setattr(
         tasks_module, "_run_automatic_meeting_intelligence_stage", lambda *a, **k: None
     )
@@ -1147,8 +1112,6 @@ async def test_reprocess_resets_and_rebuilds_pipeline_state(
         ProcessingRun,
         ProcessingRunKind,
         ProcessingRunStatus,
-        RecordingAsrWindowResult,
-        RecordingAsrWindowResultStatus,
         SpeakerCorrectionEvent,
         SpeakerCorrectionEventType,
         SpeakerCorrectionScope,
@@ -1162,7 +1125,7 @@ async def test_reprocess_resets_and_rebuilds_pipeline_state(
     await _insert_recording(test_session_maker, recording_id=201, public_id="rec-201")
 
     # 2. Insert ChatMessage, ContextChunk, RecordingSpeaker, ProcessingRun, TranscriptUtterance,
-    # SpeakerCorrectionEvent, DiarizationWindowResult, RecordingAsrWindowResult
+    # SpeakerCorrectionEvent, DiarizationWindowResult
     async with test_session_maker() as session:
         session.add(
             Transcript(
@@ -1225,18 +1188,6 @@ async def test_reprocess_resets_and_rebuilds_pipeline_state(
                 status="completed",
             )
         )
-        session.add(
-            RecordingAsrWindowResult(
-                public_id="asr-1",
-                recording_id=201,
-                span_start_ms=0,
-                span_end_ms=1000,
-                transcription_backend="whisper",
-                config_hash="hash",
-                status=RecordingAsrWindowResultStatus.COMPLETED,
-                idempotency_key="key",
-            )
-        )
         await session.commit()
 
     # 3. Call reprocess endpoint
@@ -1286,13 +1237,6 @@ async def test_reprocess_resets_and_rebuilds_pipeline_state(
         res = await session.execute(
             text(
                 "SELECT COUNT(*) FROM diarization_window_results WHERE recording_id = 201"
-            )
-        )
-        assert res.scalar() == 0
-
-        res = await session.execute(
-            text(
-                "SELECT COUNT(*) FROM recording_asr_window_results WHERE recording_id = 201"
             )
         )
         assert res.scalar() == 0

@@ -35,7 +35,6 @@ validate_config_value = config_manager.validate_config_value
 def test_config_default_live_transcription_keys_present():
     """Live transcription is enabled and uses the shared transcription backend."""
     assert DEFAULT_SYSTEM_CONFIG["enable_live_transcription"] is True
-    assert DEFAULT_SYSTEM_CONFIG["enable_asr_window_result_ledger"] is True
     assert DEFAULT_SYSTEM_CONFIG["transcription_backend"] == "whisper"
     assert DEFAULT_SYSTEM_CONFIG["live_max_segment_s"] == 20.0
 
@@ -70,13 +69,6 @@ def test_validate_config_value_enable_live_transcription():
     assert validate_config_value("enable_live_transcription", True) is True
     assert validate_config_value("enable_live_transcription", False) is True
     assert validate_config_value("enable_live_transcription", "yes") is False
-
-
-def test_validate_config_value_enable_asr_window_result_ledger():
-    """enable_asr_window_result_ledger is validated as a boolean."""
-    assert validate_config_value("enable_asr_window_result_ledger", True) is True
-    assert validate_config_value("enable_asr_window_result_ledger", False) is True
-    assert validate_config_value("enable_asr_window_result_ledger", "yes") is False
 
 
 def test_default_user_settings_enable_meeting_edge_by_default():
@@ -3076,37 +3068,6 @@ def test_live_meeting_edge_dispatch_failure_is_best_effort(monkeypatch, tmp_path
     state = lt.read_live_state(temp_dir / "live")
     assert state["next_expected"] == 1
     assert state["sequence_outcomes"]["0"]["outcome"] == "consumed"
-
-
-def test_persist_asr_window_result_best_effort_swallows_errors(monkeypatch):
-    """Best-effort seam: a failing ledger mutator is logged, rolled back, and
-    never propagates out of _persist_asr_window_result_best_effort."""
-    from backend.core import db as db_module
-    from backend.processing import live_transcribe as lt
-
-    events: list[str] = []
-
-    class _RollbackSession:
-        def commit(self):
-            events.append("commit")
-
-        def rollback(self):
-            events.append("rollback")
-
-        def close(self):
-            events.append("close")
-
-    session = _RollbackSession()
-    monkeypatch.setattr(db_module, "get_sync_session", lambda: session)
-
-    def boom(_session):
-        raise RuntimeError("ledger write failed")
-
-    # Must not raise.
-    lt._persist_asr_window_result_best_effort(boom)
-
-    assert "commit" not in events
-    assert events == ["rollback", "close"]
 
 
 # --- a live run that fails outright -------------------------------------------

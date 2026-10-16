@@ -100,7 +100,7 @@ max-complexity = 10
 [tool.ruff.lint.per-file-ignores]
 # Star-import re-export packages: these decomposed modules glue themselves
 # together with `from .X import *` (e.g. core.py re-exports constants, speaker,
-# diarization, segmentation, startup). Imports that look locally unused are in
+# segmentation, startup). Imports that look locally unused are in
 # fact the package's public surface, so F401 must not strip the re-export seams.
 "backend/utils/canonical_pipeline/*.py" = ["F401"]
 "backend/worker/tasks/*.py" = ["F401"]
@@ -154,13 +154,10 @@ max-complexity = 10
 "backend/services/calendar_service/dashboard.py" = ["C901", "PLR0912", "PLR0913", "PLR0915"]
 "backend/services/calendar_service/sync.py" = ["C901", "PLR0912", "PLR0915"]
 "backend/services/jwt_revocation_service.py" = ["PLR0913"]
-"backend/utils/asr_window_results.py" = ["PLR0913"]
 "backend/utils/audio_windows.py" = ["PLR0913"]
 "backend/utils/canonical_pipeline/constants.py" = ["PLR0913"]
 "backend/utils/canonical_pipeline/core.py" = ["C901", "PLR0912", "PLR0913", "PLR0915"]
-"backend/utils/canonical_pipeline/diarization.py" = ["C901", "PLR0912", "PLR0913", "PLR0915"]
 "backend/utils/canonical_pipeline/identity_fields.py" = ["PLR0913"]
-"backend/utils/canonical_pipeline/segmentation.py" = ["C901", "PLR0913", "PLR0915"]
 "backend/utils/canonical_pipeline/speaker.py" = ["C901", "PLR0912", "PLR0913"]
 # Carries _find_matching_recording_speaker, split out of speaker.py unchanged;
 # it brings that module's existing exemptions with it rather than being

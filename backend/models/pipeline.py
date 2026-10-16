@@ -57,14 +57,6 @@ class ProcessingRunStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
-class RecordingAsrWindowResultStatus(str, Enum):
-    PENDING = "pending"
-    RUNNING = "running"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    SUPERSEDED = "superseded"
-
-
 class TranscriptUtteranceState(str, Enum):
     PROVISIONAL = "provisional"
     STABLE = "stable"
@@ -346,80 +338,6 @@ class ProcessingRun(BaseDBModel, table=True):
     )
     metrics: Optional[dict[str, Any]] = Field(default=None, sa_column=Column(JSONB))
     error_summary: Optional[str] = Field(default=None, sa_column=Column(Text))
-    started_at: Optional[datetime] = Field(default=None, sa_type=DateTime)
-    completed_at: Optional[datetime] = Field(default=None, sa_type=DateTime)
-
-
-class RecordingAsrWindowResult(BaseDBModel, table=True):
-    __tablename__ = "recording_asr_window_results"
-    __table_args__ = (
-        UniqueConstraint(
-            "recording_id",
-            "idempotency_key",
-            name="uq_recording_asr_window_results_recording_idempotency",
-        ),
-    )
-
-    public_id: str = Field(
-        default_factory=generate_pipeline_public_id,
-        sa_column=Column(
-            String(36),
-            unique=True,
-            index=True,
-            nullable=False,
-            default=generate_pipeline_public_id,
-        ),
-    )
-    recording_id: int = Field(
-        sa_column=Column(
-            BigInteger,
-            ForeignKey("recordings.id", ondelete="CASCADE"),
-            nullable=False,
-            index=True,
-        )
-    )
-    processing_run_id: Optional[int] = Field(
-        default=None,
-        sa_column=Column(
-            BigInteger,
-            ForeignKey("processing_runs.id", ondelete="SET NULL"),
-            index=True,
-        ),
-    )
-    source_kind: str = Field(default="live")
-    span_start_ms: int = Field(sa_column=Column(BigInteger, nullable=False))
-    span_end_ms: int = Field(sa_column=Column(BigInteger, nullable=False))
-    chunk_start_sequence: Optional[int] = Field(
-        default=None, sa_column=Column(BigInteger)
-    )
-    chunk_end_sequence: Optional[int] = Field(
-        default=None, sa_column=Column(BigInteger)
-    )
-    transcription_backend: str = Field(sa_column=Column(String(255), nullable=False))
-    model_name: Optional[str] = Field(default=None, sa_column=Column(String(255)))
-    config_hash: str = Field(sa_column=Column(String(255), nullable=False))
-    status: RecordingAsrWindowResultStatus = Field(
-        default=RecordingAsrWindowResultStatus.PENDING,
-        sa_column=Column(
-            _value_enum_type(
-                RecordingAsrWindowResultStatus, name="recordingasrwindowresultstatus"
-            ),
-            nullable=False,
-        ),
-    )
-    idempotency_key: str = Field(
-        sa_column=Column(String(255), nullable=False, index=True)
-    )
-    error_summary: Optional[str] = Field(default=None, sa_column=Column(Text))
-    error_payload: Optional[dict[str, Any]] = Field(
-        default=None, sa_column=Column(JSONB)
-    )
-    result_payload: Optional[dict[str, Any]] = Field(
-        default=None, sa_column=Column(JSONB)
-    )
-    produced_utterance_public_ids: Optional[list[str]] = Field(
-        default=None, sa_column=Column(JSONB)
-    )
     started_at: Optional[datetime] = Field(default=None, sa_type=DateTime)
     completed_at: Optional[datetime] = Field(default=None, sa_type=DateTime)
 

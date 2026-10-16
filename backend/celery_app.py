@@ -95,7 +95,7 @@ def release_worker_model_caches() -> None:
             ("backend.processing.diarize", "release_pipeline_cache"),
             ("backend.processing.embedding_core", "release_embedding_model_cache"),
             (
-                "backend.processing.segmentation_refinement",
+                "backend.processing.segmentation_model",
                 "release_segmentation_model_cache",
             ),
             ("backend.processing.text_embedding", "release_embedding_model"),

@@ -8,8 +8,6 @@ LIVE_SPEAKER_PREFIX = "LIVE_"
 LIVE_FINAL_REUSE_MIN_OVERLAP_RATIO = 0.60
 LIVE_FINAL_REUSE_MIN_DURATION_RATIO = 0.60
 LIVE_FINAL_REUSE_AMBIGUITY_MARGIN = 0.12
-LIVE_FINAL_SPEAKER_MAP_MIN_SHARE = 0.60
-LIVE_FINAL_SPEAKER_MAP_MIN_MARGIN = 0.15
 
 
 @dataclass(frozen=True)
@@ -429,53 +427,6 @@ def _is_clear_microphone_source_segment(segment: dict[str, Any]) -> bool:
     except (TypeError, ValueError):
         confidence = 0.0
     return confidence >= 0.65
-
-
-def map_final_speakers_to_live_labels(
-    live_segments: list[dict[str, Any]],
-    combined_segments: list[dict[str, Any]],
-) -> dict[str, str]:
-    scores: dict[str, dict[str, float]] = {}
-
-    for combined_segment in combined_segments:
-        final_label = combined_segment.get("speaker")
-        if not final_label:
-            continue
-
-        for live_segment in live_segments:
-            if live_segment.get("speaker_manually_edited") is True:
-                continue
-            live_label = live_segment.get("speaker")
-            if not live_label or str(live_label).strip().upper() == "UNKNOWN":
-                continue
-            overlap = _segment_overlap_seconds(combined_segment, live_segment)
-            if overlap <= 0.0:
-                continue
-
-            label_scores = scores.setdefault(str(final_label), {})
-            label_scores[str(live_label)] = (
-                label_scores.get(str(live_label), 0.0) + overlap
-            )
-
-    mapping: dict[str, str] = {}
-    for final_label, label_scores in scores.items():
-        ranked_labels = sorted(
-            label_scores.items(), key=lambda item: item[1], reverse=True
-        )
-        best_live_label, best_score = ranked_labels[0]
-        total_score = sum(label_scores.values())
-        best_share = (best_score / total_score) if total_score > 0.0 else 0.0
-        second_score = ranked_labels[1][1] if len(ranked_labels) > 1 else 0.0
-        margin = (
-            ((best_score - second_score) / total_score) if total_score > 0.0 else 0.0
-        )
-        if best_share < LIVE_FINAL_SPEAKER_MAP_MIN_SHARE:
-            continue
-        if len(ranked_labels) > 1 and margin < LIVE_FINAL_SPEAKER_MAP_MIN_MARGIN:
-            continue
-        mapping[final_label] = best_live_label
-
-    return mapping
 
 
 def _segment_public_id(segment: dict[str, Any]) -> str | None:

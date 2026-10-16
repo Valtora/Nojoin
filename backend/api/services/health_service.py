@@ -445,7 +445,7 @@ async def _get_diarization_component(
     ):
         detail = "Pyannote diarization and speaker embeddings are ready."
         if segmentation_ready:
-            detail = "Pyannote diarization, speaker embeddings, and segmentation refinement are ready."
+            detail = "Pyannote diarization, speaker embeddings, and overlap detection are ready."
         return (
             _build_component(
                 "ok",

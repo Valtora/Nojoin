@@ -1,7 +1,6 @@
 import logging
 
 from .constants import *
-from .diarization import *
 from .public_ids import UtterancePublicIds, public_ids_for_write
 from .segmentation import *
 from .speaker import *
@@ -919,8 +918,6 @@ def append_utterances_from_segments(
     config_hash: str | None = None,
     transcription_backend: str | None = None,
     model_metadata: dict[str, Any] | None = None,
-    span_start_ms: int | None = None,
-    span_end_ms: int | None = None,
     reused_live_asr: bool = False,
 ) -> list[TranscriptUtterance]:
     transcript = _load_transcript(session, recording_id)
@@ -952,19 +949,11 @@ def append_utterances_from_segments(
         config_hash=config_hash,
         transcription_backend=transcription_backend,
         model_metadata=model_metadata,
-        span_start_ms=(
-            span_start_ms
-            if span_start_ms is not None
-            else _segment_to_ms(
-                min((segment.get("start", 0.0) for segment in segments), default=0.0)
-            )
+        span_start_ms=_segment_to_ms(
+            min((segment.get("start", 0.0) for segment in segments), default=0.0)
         ),
-        span_end_ms=(
-            span_end_ms
-            if span_end_ms is not None
-            else _segment_to_ms(
-                max((segment.get("end", 0.0) for segment in segments), default=0.0)
-            )
+        span_end_ms=_segment_to_ms(
+            max((segment.get("end", 0.0) for segment in segments), default=0.0)
         ),
         idempotency_key=run_idempotency_key,
     )
@@ -1708,23 +1697,6 @@ def build_transcript_text_for_read(
         else _load_transcript(session, recording_id)
     )
     return str(getattr(transcript, "text", "") or "") if transcript is not None else ""
-
-
-def build_reusable_live_segments(session, recording_id: int) -> list[dict[str, Any]]:
-    reusable_segments: list[dict[str, Any]] = []
-    for payload in serialize_canonical_utterances(
-        session,
-        recording_id,
-        include_confidence_payload=True,
-    ):
-        source_kind = str(payload.get("segment_source") or "")
-        if (
-            source_kind not in {"live", "catch_up"}
-            and payload.get("provisional") is not True
-        ):
-            continue
-        reusable_segments.append(dict(payload))
-    return reusable_segments
 
 
 def refresh_transcript_projection_from_canonical(

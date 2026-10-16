@@ -160,7 +160,6 @@ UNARCHIVED_TABLES: Dict[str, str] = {
     # transcript.segments carries the manual edit flags, so hand corrections survive the
     # round trip; what is lost is audit history. See docs/BACKUP_RESTORE.md.
     "processing_runs": "Canonical pipeline state; rebuilt from the transcript projection.",
-    "recording_asr_window_results": "Canonical pipeline state; rebuilt.",
     "recording_audio_chunks": "Live capture scratch data for in-flight recordings.",
     "recording_audio_chunk_cursors": "Live capture scratch data for in-flight recordings.",
     "recording_audio_window_manifests": "Live capture scratch data for in-flight recordings.",

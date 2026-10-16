@@ -9,7 +9,6 @@ from backend.processing.pipeline_metrics import (
     load_pipeline_metrics_jsonl,
     pipeline_metric_timer,
     record_pipeline_metric,
-    rolling_diarization_window_timer,
     score_turn_overlap_proxy,
     summarize_pipeline_metrics,
     write_pipeline_baseline_report,
@@ -112,45 +111,6 @@ def test_summarize_pipeline_metrics_tracks_phase_zero_counts():
     assert summary["live_segments_emitted"] == 2
     assert summary["speaker_match_kinds"] == {"fallback_last_label": 1}
     assert summary["finalization_ms"] == 123.456
-
-
-def test_rolling_diarization_window_timer_records_window_metadata(monkeypatch):
-    events = []
-
-    def capture_metric(**kwargs):
-        events.append(kwargs)
-        return kwargs
-
-    monkeypatch.setattr(
-        "backend.processing.pipeline_metrics.record_pipeline_metric",
-        capture_metric,
-    )
-
-    with rolling_diarization_window_timer(
-        recording_id=99,
-        window_start_s=10,
-        window_end_s=35,
-        window_index=2,
-        model="pyannote/speaker-diarization-community-1",
-        device="cuda",
-        config_hash="abc123",
-        payload={"chunk_start_sequence": 5, "chunk_end_sequence": 12},
-    ) as metric:
-        metric["payload"]["speaker_turn_count"] = 4
-
-    event = events[0]
-    assert event["stage"] == "rolling_diarization_window"
-    assert event["recording_id"] == 99
-    assert event["payload"]["window_start_s"] == 10.0
-    assert event["payload"]["window_end_s"] == 35.0
-    assert event["payload"]["window_duration_s"] == 25.0
-    assert event["payload"]["window_index"] == 2
-    assert event["payload"]["model"] == "pyannote/speaker-diarization-community-1"
-    assert event["payload"]["device"] == "cuda"
-    assert event["payload"]["config_hash"] == "abc123"
-    assert event["payload"]["chunk_start_sequence"] == 5
-    assert event["payload"]["chunk_end_sequence"] == 12
-    assert event["payload"]["speaker_turn_count"] == 4
 
 
 def test_score_turn_overlap_proxy_counts_matching_speaker_overlap():

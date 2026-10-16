@@ -115,44 +115,6 @@ def pipeline_metric_timer(
         )
 
 
-@contextmanager
-def rolling_diarization_window_timer(
-    *,
-    recording_id: int | str | None,
-    window_start_s: float,
-    window_end_s: float,
-    window_index: int | None = None,
-    model: str | None = None,
-    device: str | None = None,
-    config_hash: str | None = None,
-    payload: dict[str, Any] | None = None,
-    log: logging.Logger | None = None,
-) -> Iterator[dict[str, Any]]:
-    metric_payload: dict[str, Any] = {
-        "window_start_s": round(float(window_start_s), 3),
-        "window_end_s": round(float(window_end_s), 3),
-        "window_duration_s": round(float(window_end_s) - float(window_start_s), 3),
-    }
-    if window_index is not None:
-        metric_payload["window_index"] = window_index
-    if model:
-        metric_payload["model"] = model
-    if device:
-        metric_payload["device"] = device
-    if config_hash:
-        metric_payload["config_hash"] = config_hash
-    if payload:
-        metric_payload.update(payload)
-
-    with pipeline_metric_timer(
-        stage="rolling_diarization_window",
-        recording_id=recording_id,
-        payload=metric_payload,
-        log=log,
-    ) as metric:
-        yield metric
-
-
 def load_pipeline_metrics_jsonl(path: str | Path) -> list[dict[str, Any]]:
     metrics: list[dict[str, Any]] = []
     with Path(path).open("r", encoding="utf-8") as handle:
