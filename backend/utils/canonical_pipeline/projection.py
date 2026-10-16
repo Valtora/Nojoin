@@ -102,6 +102,7 @@ def build_transient_utterance_payloads_from_segments(
                 "text": str(segment.get("text", "") or ""),
                 "speaker": str(segment.get("speaker") or UNKNOWN_SPEAKER),
                 "recording_speaker_id": segment.get("recording_speaker_id"),
+                "diarization_label": segment.get("diarization_label"),
                 "state": str(
                     segment.get("state")
                     or (

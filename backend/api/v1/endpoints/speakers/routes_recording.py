@@ -23,7 +23,9 @@ from backend.models.transcript import Transcript
 from backend.models.user import User
 from backend.processing.embedding import merge_embeddings
 from backend.utils.canonical_pipeline import (
+    list_merged_recording_speakers,
     record_recording_speaker_corrections,
+    unmerge_recording_speaker,
     update_recording_speaker_identity,
 )
 from backend.utils.canonical_pipeline.notes_propagation import (
@@ -34,6 +36,7 @@ from backend.utils.speaker_name_suggestions import (
 )
 
 from .helpers import (
+    MergedRecordingSpeakerRead,
     MergeRequestLabels,
     SpeakerColorUpdate,
     SpeakerSplitRequest,
@@ -539,6 +542,77 @@ async def merge_recording_speakers(
     await db.flush()
     await db.commit()
 
+    await db.refresh(recording)
+    return serialize_recording(recording)
+
+
+@router.get(
+    "/recordings/{recording_id}/merged-speakers",
+    response_model=List[MergedRecordingSpeakerRead],
+)
+async def get_merged_recording_speakers(
+    recording_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    List the clusters processing merged into other speakers, with how many
+    lines an unmerge would give back to each.
+    """
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
+    if not (
+        _canonical_transcript_writes_enabled()
+        and speakers_module.recording_ready_for_canonical_backfill(recording.status)
+    ):
+        return []
+
+    rows = await db.run_sync(
+        lambda sync_session: list_merged_recording_speakers(sync_session, recording.id)
+    )
+    return [MergedRecordingSpeakerRead(**row) for row in rows]
+
+
+@router.post(
+    "/recordings/{recording_id}/speakers/{diarization_label}/unmerge",
+    response_model=RecordingPublicRead,
+)
+async def unmerge_merged_recording_speaker(
+    recording_id: str,
+    diarization_label: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Give a merged cluster back its lines as a speaker of its own. Lines
+    assigned by hand stay where they are.
+    """
+    recording = await _get_owned_recording(db, recording_id, current_user.id)
+    _require_recording_speaker_mutations_supported(recording)
+    if not (
+        _canonical_transcript_writes_enabled()
+        and speakers_module.recording_ready_for_canonical_backfill(recording.status)
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="Canonical utterances are not available for this recording",
+        )
+
+    try:
+        await db.run_sync(
+            lambda sync_session: unmerge_recording_speaker(
+                sync_session,
+                recording_id=recording.id,
+                diarization_label=diarization_label,
+                actor_user_id=current_user.id,
+                source="api",
+            )
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    await db.commit()
     await db.refresh(recording)
     return serialize_recording(recording)
 

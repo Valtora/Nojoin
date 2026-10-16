@@ -123,6 +123,12 @@ SPEAKERS_ROUTE_CONTRACT = [
         "RecordingPublicRead",
     ),
     (
+        "/recordings/{recording_id}/merged-speakers",
+        ("GET",),
+        "get_merged_recording_speakers",
+        "List",
+    ),
+    (
         "/recordings/{recording_id}/speakers/{diarization_label}",
         ("DELETE",),
         "delete_recording_speaker",
@@ -139,6 +145,12 @@ SPEAKERS_ROUTE_CONTRACT = [
         ("POST",),
         "split_local_speaker",
         "List",
+    ),
+    (
+        "/recordings/{recording_id}/speakers/{diarization_label}/unmerge",
+        ("POST",),
+        "unmerge_merged_recording_speaker",
+        "RecordingPublicRead",
     ),
     (
         "/recordings/{recording_id}/speakers/{diarization_label}/voiceprint",

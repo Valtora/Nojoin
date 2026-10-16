@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import {
   BatchVoiceprintResponse,
+  MergedRecordingSpeaker,
   RecordingId,
   VoiceprintExtractResult,
 } from "@/types";
@@ -12,6 +13,7 @@ import {
   extractVoiceprint,
   mergeRecordingSpeakers,
   promoteToGlobalSpeaker,
+  unmergeRecordingSpeaker,
   updateSpeaker,
 } from "@/lib/api";
 import { useNotificationStore } from "@/lib/notificationStore";
@@ -67,6 +69,9 @@ export interface SpeakerPanelActions {
 
   // Promote to global
   promoteToGlobal: (entry: SpeakerPanelEntry) => Promise<void>;
+
+  /** Give a cluster processing merged into this speaker back its own lines. */
+  undoMerge: (cluster: MergedRecordingSpeaker) => Promise<void>;
 
   isSubmitting: boolean;
 
@@ -261,6 +266,31 @@ export function useSpeakerPanelActions(
     }
   };
 
+  const undoMerge = async (cluster: MergedRecordingSpeaker) => {
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+
+    try {
+      await unmergeRecordingSpeaker(recordingId, cluster.diarization_label);
+      window.dispatchEvent(
+        new CustomEvent("recording-updated", { detail: { recordingId } }),
+      );
+      onRefresh();
+      addNotification({
+        type: "success",
+        message: `Gave ${describeLineCount(cluster.restorable_utterance_count)} back to ${cluster.diarization_label}.`,
+      });
+    } catch (e: unknown) {
+      console.error("Failed to undo the speaker merge", e);
+      addNotification({
+        type: "error",
+        message: getErrorMessage(e, "Failed to undo the speaker merge."),
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return {
     renamingSpeaker,
     setRenamingSpeaker,
@@ -298,8 +328,15 @@ export function useSpeakerPanelActions(
 
     promoteToGlobal,
 
+    undoMerge,
+
     isSubmitting,
 
     closeContextMenu,
   };
+}
+
+/** "1 line" or "12 lines". */
+export function describeLineCount(count: number): string {
+  return count === 1 ? "1 line" : `${count} lines`;
 }

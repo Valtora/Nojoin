@@ -187,17 +187,74 @@ def _learn_from_confident_match(session, best_match, embedding, best_score) -> N
 def _identity_from_voiceprint(
     session, recording: Recording, embedding, label: str
 ) -> _ResolvedIdentity | None:
-    """Match a voiceprint against the user's saved people."""
-    from backend.processing.embedding import find_matching_global_speaker
+    """Match a voiceprint against the user's saved people.
+
+    The decision is ``find_matching_global_speaker``'s. The ranking behind it
+    is logged and recorded as a ``speaker_identification`` metric either way,
+    so a miss says who came closest rather than only how close.
+    """
+    from backend.processing.embedding import (
+        IDENTIFICATION_THRESHOLD,
+        MARGIN_OF_VICTORY,
+        find_matching_global_speaker,
+        rank_global_speakers,
+    )
 
     global_speakers = _matchable_global_speakers(session, recording.user_id)
 
     best_match, best_score = find_matching_global_speaker(
-        embedding, global_speakers, threshold=0.75, margin=0.05
+        embedding,
+        global_speakers,
+        threshold=IDENTIFICATION_THRESHOLD,
+        margin=MARGIN_OF_VICTORY,
+    )
+    ranking = rank_global_speakers(embedding, global_speakers)
+
+    record_pipeline_metric(
+        stage="speaker_identification",
+        recording_id=recording.id,
+        payload={
+            "label": label,
+            "matched_global_speaker_id": best_match.id if best_match else None,
+            "matched_name": best_match.name if best_match else None,
+            "score": round(float(best_score), 4) if best_match else None,
+            "threshold": IDENTIFICATION_THRESHOLD,
+            "margin": MARGIN_OF_VICTORY,
+            "comparable_people": len(ranking),
+            "candidates": [
+                {
+                    "global_speaker_id": candidate.id,
+                    "name": candidate.name,
+                    "cosine": round(float(score), 4),
+                }
+                for candidate, score in ranking[:3]
+            ],
+        },
+        log=logger,
     )
 
     if not best_match:
-        logger.info(f"No match found for {label} (Best score: {best_score:.2f}).")
+        if ranking and ranking[0][1] >= IDENTIFICATION_THRESHOLD:
+            # Only a rival within the margin stops a score this high matching.
+            logger.info(
+                "Ambiguous match for %s: %s %.2f and %s %.2f are within the "
+                "%.2f margin.",
+                label,
+                ranking[0][0].name,
+                ranking[0][1],
+                ranking[1][0].name,
+                ranking[1][1],
+                MARGIN_OF_VICTORY,
+            )
+        elif ranking:
+            logger.info(
+                "No match found for %s (closest: %s %.2f).",
+                label,
+                ranking[0][0].name,
+                ranking[0][1],
+            )
+        else:
+            logger.info("No match found for %s (no comparable voiceprints).", label)
         return None
 
     logger.info(f"Identified {label} as {best_match.name} (Score: {best_score:.2f})")
