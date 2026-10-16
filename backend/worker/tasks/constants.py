@@ -50,11 +50,6 @@ from backend.processing.pipeline_metrics import (
     record_pipeline_metric,
 )
 from backend.services.calendar_link_service import auto_link_recording
-from backend.utils.asr_window_results import (
-    complete_recording_asr_window_result,
-    fail_recording_asr_window_result,
-    start_recording_asr_window_result,
-)
 from backend.utils.canonical_pipeline import (
     apply_recording_speaker_identity_fields,
     build_transcript_segments_for_read,
@@ -67,10 +62,7 @@ from backend.utils.config_manager import (
     get_meeting_edge_context_level,
     is_meeting_edge_enabled,
 )
-from backend.utils.languages import (
-    resolve_language_preferences,
-    resolve_transcription_language_code,
-)
+from backend.utils.languages import resolve_language_preferences
 from backend.utils.llm_config import (
     LLM_PURPOSE_MEETING_EDGE,
     ResolvedLLMConfig,
@@ -230,42 +222,6 @@ def build_transcript_segments_for_read(*args, **kwargs):
     return _build_transcript_segments_for_read_orig(*args, **kwargs)
 
 
-_complete_recording_asr_window_result_orig = complete_recording_asr_window_result
-
-
-def complete_recording_asr_window_result(*args, **kwargs):
-    import sys
-
-    tasks = sys.modules.get("backend.worker.tasks")
-    if tasks and hasattr(tasks, "complete_recording_asr_window_result"):
-        actual = tasks.complete_recording_asr_window_result
-        if (
-            actual is not complete_recording_asr_window_result
-            and getattr(actual, "__code__", None)
-            is not complete_recording_asr_window_result.__code__
-        ):
-            return actual(*args, **kwargs)
-    return _complete_recording_asr_window_result_orig(*args, **kwargs)
-
-
-_fail_recording_asr_window_result_orig = fail_recording_asr_window_result
-
-
-def fail_recording_asr_window_result(*args, **kwargs):
-    import sys
-
-    tasks = sys.modules.get("backend.worker.tasks")
-    if tasks and hasattr(tasks, "fail_recording_asr_window_result"):
-        actual = tasks.fail_recording_asr_window_result
-        if (
-            actual is not fail_recording_asr_window_result
-            and getattr(actual, "__code__", None)
-            is not fail_recording_asr_window_result.__code__
-        ):
-            return actual(*args, **kwargs)
-    return _fail_recording_asr_window_result_orig(*args, **kwargs)
-
-
 _finalize_utterances_from_segments_orig = finalize_utterances_from_segments
 
 
@@ -409,24 +365,6 @@ def serialize_meeting_edge_result(*args, **kwargs):
         ):
             return actual(*args, **kwargs)
     return _serialize_meeting_edge_result_orig(*args, **kwargs)
-
-
-_start_recording_asr_window_result_orig = start_recording_asr_window_result
-
-
-def start_recording_asr_window_result(*args, **kwargs):
-    import sys
-
-    tasks = sys.modules.get("backend.worker.tasks")
-    if tasks and hasattr(tasks, "start_recording_asr_window_result"):
-        actual = tasks.start_recording_asr_window_result
-        if (
-            actual is not start_recording_asr_window_result
-            and getattr(actual, "__code__", None)
-            is not start_recording_asr_window_result.__code__
-        ):
-            return actual(*args, **kwargs)
-    return _start_recording_asr_window_result_orig(*args, **kwargs)
 
 
 _update_recording_status_orig = update_recording_status

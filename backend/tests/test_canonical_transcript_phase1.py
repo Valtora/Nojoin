@@ -3527,6 +3527,64 @@ async def test_append_utterances_from_segments_creates_live_provisional_run_and_
 
 
 @pytest.mark.anyio
+async def test_live_append_spans_its_run_from_the_earliest_start_to_the_latest_end(
+    test_session_maker: sessionmaker,
+) -> None:
+    """The run's span covers every segment, whatever order they arrive in, and
+    rounds to the millisecond as the live lane's region bounds do."""
+    from backend.utils.canonical_pipeline import append_utterances_from_segments
+
+    await _seed_uploading_recording(test_session_maker)
+
+    segments = [
+        {
+            "id": "live-utt-late",
+            "start": 3.2004,
+            "end": 4.5,
+            "speaker": "LIVE_01",
+            "text": "second region",
+            "provisional": True,
+            "segment_source": "live",
+        },
+        {
+            "id": "live-utt-early",
+            "start": 1.0006,
+            "end": 2.0,
+            "speaker": "LIVE_01",
+            "text": "first region",
+            "provisional": True,
+            "segment_source": "live",
+        },
+    ]
+
+    async with test_session_maker() as session:
+        await session.run_sync(
+            lambda sync_session: append_utterances_from_segments(
+                sync_session,
+                recording_id=1,
+                segments=segments,
+                run_kind=ProcessingRunKind.LIVE,
+                source="live",
+                state_override=TranscriptUtteranceState.PROVISIONAL,
+                trigger_source="test",
+            )
+        )
+        await session.commit()
+
+    async with test_session_maker() as session:
+        span = (
+            await session.execute(
+                text(
+                    "SELECT span_start_ms, span_end_ms FROM processing_runs "
+                    "WHERE recording_id = 1"
+                )
+            )
+        ).one()
+
+    assert tuple(span) == (1001, 4500)
+
+
+@pytest.mark.anyio
 async def test_append_utterances_from_segments_live_retry_is_idempotent(
     test_session_maker: sessionmaker,
 ) -> None:

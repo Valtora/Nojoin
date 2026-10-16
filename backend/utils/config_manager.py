@@ -202,7 +202,6 @@ DEFAULT_SYSTEM_CONFIG = {
     "worker_url": "redis://localhost:6379/0",  # Default Redis URL for Celery worker
     "web_app_url": "https://localhost:14443",
     "enable_canonical_transcript_writes": True,
-    "enable_asr_window_result_ledger": True,
     "recordings_directory": "recordings",  # Relative to user data directory
     "processing_device": _get_default_device(),  # Default to GPU if available
     "default_input_device_index": None,  # None means system default
@@ -603,7 +602,6 @@ class ConfigManager:
             "auto_remeasure_delivery",
             "auto_analyse_meetings",
             "enable_canonical_transcript_writes",
-            "enable_asr_window_result_ledger",
             "telemetry_enabled",
             "telemetry_notice_acknowledged",
             EXPORT_BRANDING_KEY,

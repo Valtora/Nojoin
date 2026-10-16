@@ -3,9 +3,7 @@ from __future__ import annotations
 import pytest
 
 from backend.processing.llm_services import LLMBackend
-from backend.utils.asr_window_results import (
-    build_recording_asr_window_result_config_hash,
-)
+from backend.utils.asr_config import build_asr_config_hash
 from backend.utils.config_manager import get_default_user_settings
 from backend.utils.languages import (
     get_language_registry_payload,
@@ -98,12 +96,8 @@ def test_asr_config_hash_changes_with_effective_transcription_language() -> None
         "whisper_model_size": "turbo",
     }
 
-    automatic = build_recording_asr_window_result_config_hash(
-        {**base, "transcription_language": "auto"}
-    )
-    french = build_recording_asr_window_result_config_hash(
-        {**base, "transcription_language": "fr"}
-    )
+    automatic = build_asr_config_hash({**base, "transcription_language": "auto"})
+    french = build_asr_config_hash({**base, "transcription_language": "fr"})
 
     assert automatic != french
 
@@ -114,11 +108,7 @@ def test_parakeet_hash_ignores_ineffective_forced_language() -> None:
         "parakeet_model": "parakeet-tdt-0.6b-v3",
     }
 
-    automatic = build_recording_asr_window_result_config_hash(
-        {**base, "transcription_language": "auto"}
-    )
-    french = build_recording_asr_window_result_config_hash(
-        {**base, "transcription_language": "fr"}
-    )
+    automatic = build_asr_config_hash({**base, "transcription_language": "auto"})
+    french = build_asr_config_hash({**base, "transcription_language": "fr"})
 
     assert automatic == french

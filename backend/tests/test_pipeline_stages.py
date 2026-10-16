@@ -224,15 +224,12 @@ def _install_happy_path_modules(monkeypatch, *, diarization_result=None, segment
     monkeypatch.setattr(tasks_module.config_manager, "reload", lambda: None)
 
     def _config_get(key, default=None):
-        # Drive the legacy (non-canonical, no-ledger) path so these seam tests
-        # exercise combine/consolidate + speaker assignment rather than the
-        # canonical-write and ASR-ledger branches.
+        # Drive the legacy (non-canonical) path so these seam tests exercise
+        # combine/consolidate + speaker assignment rather than the
+        # canonical-write branch.
         if key == "keep_models_loaded":
             return True
-        if key in {
-            "enable_canonical_transcript_writes",
-            "enable_asr_window_result_ledger",
-        }:
+        if key == "enable_canonical_transcript_writes":
             return False
         return default
 

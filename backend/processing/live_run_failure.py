@@ -16,14 +16,11 @@ through the module (``lt.``), so tests that patch them there still apply.
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from sqlalchemy.exc import SQLAlchemyError
 
 from backend.processing import live_transcribe as lt
 from backend.processing.pipeline_metrics import record_pipeline_metric
-from backend.utils.asr_window_results import fail_recording_asr_window_result
-from backend.utils.config_manager import config_manager
 
 logger = lt.logger
 
@@ -142,38 +139,6 @@ def _remove_spent_audio(live_run: LiveRun) -> None:
             logger.error("Could not remove spent live audio %s: %s", path, exc)
 
 
-def _fail_pending_asr_results(
-    live_run: LiveRun,
-    exc: Exception,
-    live_config: dict | None,
-    pending_asr_completions: list[dict[str, Any]],
-) -> None:
-    run = live_run.run
-    # Bind error details to plain locals: `exc` is unbound once the caller's
-    # except block exits and the callbacks below run best-effort after.
-    persistence_error_summary = (
-        str(exc).strip()[:500] or "Live utterance persistence failed."
-    )
-    persistence_error_type = exc.__class__.__name__
-    for pending_result in pending_asr_completions:
-        lt._persist_asr_window_result_best_effort(
-            lambda ledger_session, pending_result=pending_result: (
-                fail_recording_asr_window_result(
-                    ledger_session,
-                    recording_id=live_run.recording_id,
-                    source_kind="live",
-                    span_start_ms=pending_result["span_start_ms"],
-                    span_end_ms=pending_result["span_end_ms"],
-                    chunk_start_sequence=run[0] if run else None,
-                    chunk_end_sequence=run[-1] if run else None,
-                    config=live_config,
-                    error_summary=persistence_error_summary,
-                    error_payload={"error_type": persistence_error_type},
-                )
-            )
-        )
-
-
 def _save_advance(live_run: LiveRun, state: dict) -> None:
     """Advance ``next_expected`` and the timeline past the run, then save them.
 
@@ -211,20 +176,13 @@ def _save_advance(live_run: LiveRun, state: dict) -> None:
         _remove_spent_audio(live_run)
 
 
-def record_live_run_failure(
-    live_run: LiveRun,
-    exc: Exception,
-    state: dict,
-    live_config: dict | None,
-    pending_asr_completions: list[dict[str, Any]] | None,
-) -> None:
+def record_live_run_failure(live_run: LiveRun, exc: Exception, state: dict) -> None:
     """Best-effort recovery for a failed live run; never raises.
 
-    Non-fatal by contract: records the failure metric, marks pending ASR ledger
-    rows failed, marks the drained sequences ``failed``, advances next_expected
-    so the lane keeps moving, and moves the timeline past the run's audio.
-    Finalize transcribes the whole recording, so the run's audio still reaches
-    the final transcript.
+    Non-fatal by contract: records the failure metric, marks the drained
+    sequences ``failed``, advances next_expected so the lane keeps moving, and
+    moves the timeline past the run's audio. Finalize transcribes the whole
+    recording, so the run's audio still reaches the final transcript.
     """
     recording_id, sequence, run = live_run.recording_id, live_run.sequence, live_run.run
     record_pipeline_metric(
@@ -245,10 +203,6 @@ def record_live_run_failure(
         exc,
         exc_info=True,
     )
-    if pending_asr_completions is not None and config_manager.get(
-        "enable_asr_window_result_ledger", True
-    ):
-        _fail_pending_asr_results(live_run, exc, live_config, pending_asr_completions)
     if not run:
         return
     for failed_sequence in run:

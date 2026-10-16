@@ -259,13 +259,11 @@ def _run_final_asr_stage(
     processed_audio_path: str,
     engine_override: dict | None,
 ) -> dict:
-    """Run the configured transcription engine with ASR-ledger bookkeeping.
+    """Run the configured transcription engine.
 
-    Records a ledger row (start/complete/fail) when the ledger is enabled so the
-    manifest/asr_status semantics survive a crash mid-finalize. A GPU OOM is
-    retried once. Any failure marks the ledger row and the transcript failed and
-    is re-raised as a TranscriptionError, so the orchestrator's error handler
-    marks the recording ERROR.
+    A GPU OOM is retried once. Any failure marks the transcript failed and is
+    re-raised as a TranscriptionError, so the orchestrator's error handler marks
+    the recording ERROR.
     """
     session = ctx.session
     merged_config = ctx.merged_config
@@ -293,36 +291,11 @@ def _run_final_asr_stage(
         },
         log=logger,
     ) as metric:
-        asr_source_kind = "reprocess" if engine_override else "finalize"
-        span_end_ms = int(round(float(recording.duration_seconds or 0.0) * 1000.0))
-        if config_manager.get("enable_asr_window_result_ledger", True):
-            start_recording_asr_window_result(
-                session,
-                recording_id=recording.id,
-                source_kind=asr_source_kind,
-                span_start_ms=0,
-                span_end_ms=span_end_ms,
-                config=merged_config,
-                config_hash=_final_asr_config_hash(merged_config),
-            )
         try:
             transcription_result = transcribe_with_gpu_oom_retry(
                 processed_audio_path, merged_config, free_gpu=_release_pipeline_vram
             )
         except Exception as exc:
-            if config_manager.get("enable_asr_window_result_ledger", True):
-                fail_recording_asr_window_result(
-                    session,
-                    recording_id=recording.id,
-                    source_kind=asr_source_kind,
-                    span_start_ms=0,
-                    span_end_ms=span_end_ms,
-                    config=merged_config,
-                    config_hash=_final_asr_config_hash(merged_config),
-                    error_summary=str(exc).strip()[:500]
-                    or "Final ASR invocation failed.",
-                    error_payload={"error_type": exc.__class__.__name__},
-                )
             if is_task_interruption(exc):
                 # A time limit or termination is Celery stopping the task, not a
                 # transcription failure: let it through unchanged.
@@ -338,21 +311,6 @@ def _run_final_asr_stage(
             if failure is exc:
                 raise
             raise failure from exc
-        if config_manager.get("enable_asr_window_result_ledger", True):
-            complete_recording_asr_window_result(
-                session,
-                recording_id=recording.id,
-                source_kind=asr_source_kind,
-                span_start_ms=0,
-                span_end_ms=span_end_ms,
-                config=merged_config,
-                config_hash=_final_asr_config_hash(merged_config),
-                result_payload={
-                    "segment_count": len(transcription_result.get("segments", [])),
-                    "text_chars": len(transcription_result.get("text") or ""),
-                    "engine_override": bool(engine_override),
-                },
-            )
         metric["payload"]["segment_count"] = len(
             transcription_result.get("segments", [])
         )
@@ -1054,27 +1012,6 @@ def check_queued_recordings(sender, **kwargs):
         logger.error("Failed to check pending recordings: %s", e, exc_info=True)
     finally:
         session.close()
-
-
-def _final_asr_config_hash(merged_config: dict) -> str:
-    transcription_backend = str(merged_config.get("transcription_backend", "whisper"))
-    effective_language = resolve_transcription_language_code(
-        merged_config,
-        transcription_backend,
-    )
-    return hashlib.sha256(
-        "|".join(
-            [
-                transcription_backend,
-                str(merged_config.get("whisper_model_size", "turbo")),
-                str(merged_config.get("parakeet_model", "parakeet-tdt-0.6b-v3")),
-                str(merged_config.get("canary_model", "nemo-canary-1b-v2")),
-                str(merged_config.get("processing_device", "auto")),
-                str(bool(merged_config.get("use_gpu", True))),
-                str(effective_language or "auto"),
-            ]
-        ).encode("utf-8")
-    ).hexdigest()
 
 
 def _paths_point_to_same_media_impl(path_a: str | None, path_b: str | None) -> bool:
