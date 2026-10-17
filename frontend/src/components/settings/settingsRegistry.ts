@@ -347,15 +347,15 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
   },
   {
     id: "recording-word-padding",
-    label: "Word end padding",
+    label: "Word length cap",
     description:
-      "How long a Parakeet or Canary word lasts when a pause follows it, which decides whether a short word reaches a speaker turn.",
+      "The longest a Parakeet word lasts, which decides whether a short word reaches a speaker turn.",
     category: "recording",
     access: "all",
     advanced: "can-degrade",
     settingsKeys: ["asr_word_end_padding_s"],
     defaultValue: null,
-    keywords: ["word padding", "word end", "parakeet", "canary", "timing", "brief speaker", "tuning"],
+    keywords: ["word padding", "word end", "word length", "parakeet", "timing", "brief speaker", "tuning"],
   },
   {
     id: "recording-phantom-filter",

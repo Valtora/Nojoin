@@ -22,11 +22,11 @@ from backend.utils import transcript_utils
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FRONTEND_MIRROR = REPO_ROOT / "frontend" / "src" / "lib" / "processingTuning.json"
 
-# The values every reader used before any of them could be overridden. A change
-# here is a change to processing defaults, which this feature promised not to make.
+# The shipped defaults. A change here changes processing for every user who has
+# not set the value, so it needs an upgrade note in docs/DEPLOYMENT.md.
 TODAYS_LITERALS = {
     "vad_threshold": 0.5,
-    "asr_word_end_padding_s": 0.2,
+    "asr_word_end_padding_s": 0.4,
     "phantom_max_duration_s": 3.0,
     "phantom_max_segments": 3,
     "phantom_embedding_floor": 0.35,

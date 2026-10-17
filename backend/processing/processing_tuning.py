@@ -47,9 +47,11 @@ TUNING_SPECS: dict[str, TuningSpec] = {
         # Silero exits speech below max(threshold - 0.15, 0.01): under 0.15 the
         # hysteresis collapses and nearly everything counts as speech.
         TuningSpec(VAD_THRESHOLD_KEY, 0.5, 0.15, 0.90),
-        # A pad up to the 0.8 s segment pause can never reach the next word;
-        # a pad of 0 makes zero-length words no speaker turn can overlap.
-        TuningSpec(ASR_WORD_END_PADDING_KEY, 0.2, 0.05, 0.80),
+        # The longest an onnx-asr word lasts (map_onnx_asr_recognition). 0
+        # would make every word an instant. The bounds date from when this was
+        # the length of a word before a pause; they are kept so stored values
+        # stay valid.
+        TuningSpec(ASR_WORD_END_PADDING_KEY, 0.4, 0.05, 0.80),
         # The two candidate ceilings are ANDed, so either at 0 turns the
         # phantom filter off.
         TuningSpec(PHANTOM_MAX_DURATION_KEY, 3.0, 0.0, 10.0),

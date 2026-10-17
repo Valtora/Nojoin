@@ -221,9 +221,9 @@ def test_parakeet_mapping_basic():
     assert "hello" in segment["text"]
     assert "world" in segment["text"]
     assert segment["words"][0]["start"] == 0.0
-    assert segment["words"][0]["end"] == 0.5
+    assert segment["words"][0]["end"] == 0.4
     assert segment["words"][1]["start"] == 0.5
-    assert segment["words"][1]["end"] == 1.0
+    assert segment["words"][1]["end"] == 0.9
     for word in segment["words"]:
         assert word["word"].startswith(" ")
 
@@ -250,8 +250,8 @@ def test_parakeet_mapping_segment_split_on_pause():
         audio_duration=3.0,
     )
     assert len(result["segments"]) == 2
-    # A word followed by a pause lasts the default 0.2 s word end padding.
-    assert result["segments"][0]["words"][0]["end"] == 0.2
+    # A word followed by a pause lasts the default 0.4 s word end padding.
+    assert result["segments"][0]["words"][0]["end"] == 0.4
 
 
 def test_parakeet_mapping_word_leading_space():
@@ -273,6 +273,56 @@ def test_parakeet_mapping_fallback_no_timestamps():
     assert len(result["segments"]) == 1
     assert result["segments"][0]["text"] == "some text"
     assert "words" not in result["segments"][0] or not result["segments"][0]["words"]
+
+
+class _Timed:
+    """An onnx-asr result with one single-token word per start time."""
+
+    def __init__(self, *starts):
+        self.tokens = [f" w{index}" for index in range(len(starts))]
+        self.timestamps = list(starts)
+        self.text = "".join(self.tokens).strip()
+
+
+def _word_ends(recognized, audio_duration=None, silence_starts=()):
+    from backend.processing.engines.onnx_asr_engine import map_onnx_asr_recognition
+
+    result = map_onnx_asr_recognition(
+        recognized, audio_duration, silence_starts=silence_starts
+    )
+    return [word["end"] for s in result["segments"] for word in s["words"]]
+
+
+@pytest.mark.parametrize(
+    ("starts", "audio_duration", "silence_starts", "first_end"),
+    [
+        pytest.param((0.0, 0.3), 5.0, (), 0.3, id="next-word-start"),
+        pytest.param((0.0,), 0.25, (), 0.25, id="window-end"),
+        pytest.param((0.0, 1.0), 5.0, (0.2,), 0.2, id="first-silence"),
+        pytest.param((0.0, 1.0), 5.0, (), 0.4, id="start-plus-padding"),
+    ],
+)
+def test_a_word_ends_at_the_earliest_of_its_four_bounds(
+    starts, audio_duration, silence_starts, first_end
+):
+    ends = _word_ends(_Timed(*starts), audio_duration, silence_starts)
+
+    assert ends[0] == pytest.approx(first_end)
+
+
+def test_a_word_ends_at_the_first_silence_after_its_start():
+    """Only a silence that begins after a word's start ends it, so a token
+    stamped inside a muted run, a frame before its speech, keeps a length."""
+    ends = _word_ends(_Timed(1.0, 3.0), 5.0, silence_starts=(0.5, 1.0, 1.25, 1.3))
+
+    assert ends[0] == pytest.approx(1.25)
+
+
+def test_a_word_never_ends_before_it_starts():
+    # Two words decoded on one frame, then a timestamp past the reported end.
+    ends = _word_ends(_Timed(0.0, 0.0, 0.5), audio_duration=0.4)
+
+    assert ends == [0.0, 0.4, 0.5]
 
 
 def test_dispatcher_selects_parakeet():
@@ -310,13 +360,13 @@ class _FakeRecognized:
     timestamps = [0.0]
 
 
-def _fake_onnx_model(calls):
+def _fake_onnx_model(calls, recognized=None):
     """Build a fake onnx-asr model whose recognize() records each call's path."""
 
     class _Recognizer:
-        def recognize(self, path):
+        def recognize(self, path, **kwargs):
             calls.append(path)
-            return _FakeRecognized()
+            return recognized or _FakeRecognized()
 
     class _Model:
         def with_timestamps(self):
@@ -414,6 +464,121 @@ def test_onnx_asr_skips_silent_windows(tmp_path, monkeypatch):
     # [0, 3) and [13, 16) hold the signal; the five windows between are silent.
     assert len(calls) == 2
     assert [segment["start"] for segment in result["segments"]] == [0.0, 13.0]
+
+
+def _transcribe_returning(monkeypatch, engine, audio_path, recognized):
+    """Run engine.transcribe with every recognize() call returning `recognized`."""
+    model = _fake_onnx_model([], recognized)
+    monkeypatch.setattr(engine, "_get_model", lambda config: model)
+    return engine.transcribe(str(audio_path), {})
+
+
+@pytest.mark.parametrize(
+    ("silent", "first_end"),
+    [
+        # VAD muted the audio from 1.1 s: the word ends where the speech stops.
+        pytest.param([(1.1, 2.0)], 1.1, id="muted"),
+        # Unmuted audio (the live lane's clips) has no zero runs: the cap.
+        pytest.param([], 1.4, id="unmuted"),
+        # A zero run of exactly 0.2 s is a silence; a shorter one is not.
+        pytest.param([(1.1, 1.3)], 1.1, id="shortest-silence"),
+        pytest.param([(1.1, 1.25)], 1.4, id="short-zero-run"),
+    ],
+)
+def test_a_word_ends_at_a_silence_in_the_audio_it_was_decoded_from(
+    tmp_path, monkeypatch, silent, first_end
+):
+    from backend.processing.engines.parakeet_engine import ParakeetEngine
+
+    audio_path = tmp_path / "region.wav"
+    _write_signal(audio_path, 3, silent=silent)
+
+    result = _transcribe_returning(
+        monkeypatch, ParakeetEngine(), audio_path, _Timed(1.0, 2.5)
+    )
+
+    assert result["segments"][0]["words"][0]["end"] == pytest.approx(first_end)
+
+
+def test_without_a_duration_a_word_still_ends_at_a_silence(tmp_path, monkeypatch):
+    import soundfile
+
+    from backend.processing.engines.parakeet_engine import ParakeetEngine
+
+    def _no_info(path):
+        raise RuntimeError("unreadable header")
+
+    audio_path = tmp_path / "region.wav"
+    _write_signal(audio_path, 3, silent=[(1.1, 2.0)])
+    monkeypatch.setattr(soundfile, "info", _no_info)
+
+    result = _transcribe_returning(
+        monkeypatch, ParakeetEngine(), audio_path, _Timed(1.0, 2.5)
+    )
+
+    # No window end bounds the last word, so the cap does.
+    assert [w["end"] for s in result["segments"] for w in s["words"]] == (
+        pytest.approx([1.1, 2.9])
+    )
+
+
+def test_an_unreadable_file_keeps_its_words_without_the_silence_bound(
+    tmp_path, monkeypatch
+):
+    from backend.processing.engines import onnx_asr_engine
+    from backend.processing.engines.parakeet_engine import ParakeetEngine
+
+    def _unreadable(path):
+        raise RuntimeError("cannot decode")
+
+    audio_path = tmp_path / "region.wav"
+    _write_signal(audio_path, 3, silent=[(1.1, 2.0)])
+    monkeypatch.setattr(onnx_asr_engine, "_read_mono", _unreadable)
+
+    result = _transcribe_returning(
+        monkeypatch, ParakeetEngine(), audio_path, _Timed(1.0, 2.5)
+    )
+
+    assert result["segments"][0]["words"][0]["end"] == pytest.approx(1.4)
+
+
+def test_silences_end_words_in_every_window(tmp_path, monkeypatch):
+    from backend.processing.engines import onnx_asr_engine
+    from backend.processing.engines.parakeet_engine import ParakeetEngine
+
+    # Windows open at 0, 2.2, 4.2 and 6.2 s. The first two close on the first
+    # all-zero 0.2 s span, so each muted run has only 0.05 s inside its window.
+    monkeypatch.setattr(onnx_asr_engine, "MAX_CHUNK_DURATION_S", 4.0)
+    audio_path = tmp_path / "long.wav"
+    _write_signal(audio_path, 10, silent=[(2.15, 2.6), (4.15, 4.4)])
+
+    result = _transcribe_returning(
+        monkeypatch, ParakeetEngine(), audio_path, _Timed(1.9)
+    )
+
+    words = [segment["words"][0] for segment in result["segments"]]
+    assert [w["start"] for w in words] == pytest.approx([1.9, 4.1, 6.1, 8.1])
+    assert [w["end"] for w in words[:2]] == pytest.approx([2.15, 4.15])
+
+
+def test_canary_results_without_token_timings_keep_their_window(tmp_path, monkeypatch):
+    """Canary has no word timings: the engine's silence handling must leave its
+    window whole, however much of it VAD muted."""
+    from backend.processing.engines.canary_engine import CanaryEngine
+
+    class _Untimed:
+        text = "bonjour tout le monde"
+        tokens = None
+        timestamps = None
+
+    audio_path = tmp_path / "canary.wav"
+    _write_signal(audio_path, 3, silent=[(0.5, 2.5)])
+
+    result = _transcribe_returning(monkeypatch, CanaryEngine(), audio_path, _Untimed())
+
+    assert result["segments"] == [
+        {"start": 0.0, "end": 3.0, "text": "bonjour tout le monde"}
+    ]
 
 
 def _signal_with_pauses(seconds, pauses, sample_rate=100):

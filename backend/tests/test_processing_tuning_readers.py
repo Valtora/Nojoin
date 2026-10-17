@@ -194,7 +194,7 @@ def test_live_engine_config_drops_an_unusable_value_warning_when_asked(
     assert ("asr_word_end_padding_s" in caplog.text) is warned
 
 
-# --- onnx-asr word end padding -------------------------------------------------
+# --- onnx-asr word length cap --------------------------------------------------
 
 
 class _Recognized:
@@ -205,25 +205,25 @@ class _Recognized:
     timestamps = [0.0, 1.2]
 
 
-def test_default_padding_ends_the_word_early_and_splits_the_segment() -> None:
+def test_default_cap_ends_the_word_early_and_keeps_one_segment() -> None:
     from backend.processing.engines.onnx_asr_engine import map_onnx_asr_recognition
 
     result = map_onnx_asr_recognition(_Recognized(), audio_duration=2.0)
 
-    assert result["segments"][0]["words"][0]["end"] == 0.2
-    assert len(result["segments"]) == 2
+    assert result["segments"][0]["words"][0]["end"] == 0.4
+    # The 0.8 s left before the next word is not over the pause threshold.
+    assert len(result["segments"]) == 1
 
 
-def test_wider_padding_extends_the_word_and_keeps_one_segment() -> None:
+def test_narrower_cap_ends_the_word_earlier_and_splits_the_segment() -> None:
     from backend.processing.engines.onnx_asr_engine import map_onnx_asr_recognition
 
     result = map_onnx_asr_recognition(
-        _Recognized(), audio_duration=2.0, word_end_pad_s=0.5
+        _Recognized(), audio_duration=2.0, word_end_pad_s=0.2
     )
 
-    assert result["segments"][0]["words"][0]["end"] == 0.5
-    # The 0.7 s left before the next word is under the pause threshold.
-    assert len(result["segments"]) == 1
+    assert result["segments"][0]["words"][0]["end"] == 0.2
+    assert len(result["segments"]) == 2
 
 
 def _onnx_engine_over(tmp_path, monkeypatch, seconds: float):
@@ -250,7 +250,7 @@ def _onnx_engine_over(tmp_path, monkeypatch, seconds: float):
 
 @pytest.mark.parametrize(
     ("config", "expected_end"),
-    [(None, 0.2), ({}, 0.2), ({"asr_word_end_padding_s": 0.5}, 0.5)],
+    [(None, 0.4), ({}, 0.4), ({"asr_word_end_padding_s": 0.5}, 0.5)],
 )
 def test_onnx_engine_reads_padding_from_its_config(
     tmp_path, monkeypatch, config, expected_end
@@ -285,7 +285,7 @@ def test_onnx_engine_ignores_unusable_padding(tmp_path, monkeypatch):
 
     result = engine.transcribe(audio_path, {"asr_word_end_padding_s": 0.0})
 
-    assert result["segments"][0]["words"][0]["end"] == 0.2
+    assert result["segments"][0]["words"][0]["end"] == 0.4
 
 
 # --- phantom speaker filter ----------------------------------------------------

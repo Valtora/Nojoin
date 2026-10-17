@@ -57,7 +57,7 @@ function tuningSpec(key: ProcessingTuningKey, label: string, step: number): Proc
 
 export const PROCESSING_TUNING_SPECS: Record<ProcessingTuningKey, ProcessingTuningSpec> = {
   vad_threshold: tuningSpec("vad_threshold", "Speech detection threshold", 0.05),
-  asr_word_end_padding_s: tuningSpec("asr_word_end_padding_s", "Word end padding (seconds)", 0.05),
+  asr_word_end_padding_s: tuningSpec("asr_word_end_padding_s", "Word length cap (seconds)", 0.05),
   phantom_max_duration_s: tuningSpec("phantom_max_duration_s", "Max speech (seconds)", 0.5),
   phantom_max_segments: tuningSpec("phantom_max_segments", "Max segments", 1),
   phantom_embedding_floor: tuningSpec("phantom_embedding_floor", "Non-speech floor", 0.05),

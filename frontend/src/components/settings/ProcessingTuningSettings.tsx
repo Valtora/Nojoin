@@ -211,8 +211,8 @@ export default function ProcessingTuningSettings({
         id="recording-word-padding"
         labelId={labelId("recording-word-padding")}
         descriptionId={descriptionId("recording-word-padding")}
-        label="Word end padding (Parakeet, Canary)"
-        description="How long, in seconds, a word lasts when a pause follows it. Longer gives a short reply more chance to land on its speaker. Whisper ignores it."
+        label="Word length cap (Parakeet)"
+        description="The longest, in seconds, a word lasts. A word also ends where the next one starts or at a silence. Longer gives a short reply more chance to land on its speaker. Canary and Whisper ignore it."
         icon={<Timer className={ICON_CLASS} aria-hidden="true" />}
       >
         {input("recording-word-padding", "asr_word_end_padding_s")}

@@ -534,13 +534,18 @@ inherit. An operator can set an installation default for any of these keys as a 
 | Key | Shipped default | Accepted range |
 | --- | --- | --- |
 | `vad_threshold` | 0.5 | 0.15 to 0.90 |
-| `asr_word_end_padding_s` | 0.2 | 0.05 to 0.80 |
+| `asr_word_end_padding_s` | 0.4 | 0.05 to 0.80 |
 | `phantom_max_duration_s` | 3.0 | 0 to 10 |
 | `phantom_max_segments` | 3 | 0 to 20 (whole number) |
 | `phantom_embedding_floor` | 0.35 | 0 to 0.95, below `phantom_merge_threshold` |
 | `phantom_merge_threshold` | 0.60 | 0.05 to 1.0 |
 | `word_flip_max_duration_s` | 0.45 | 0 to 2.0 |
 | `word_flip_max_gap_s` | 0.25 | 0 to 1.0 |
+
+`asr_word_end_padding_s` used to be how long a Parakeet word lasted before a long pause, with a default
+of 0.2. It is now the longest any Parakeet word lasts, with a default of 0.4. A value set earlier, by a
+user or in `config.json`, is kept and now caps every word; clear it to take the new default. Reprocess a
+recording to apply the change to it.
 
 The legacy `vad_parameters.threshold` in `config.json` is still honoured, used as given, below both a
 user's `vad_threshold` and a flat `vad_threshold`. The worker logs and ignores a value outside its range,
