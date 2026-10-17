@@ -132,14 +132,20 @@ def create_backup_task(
     self, include_audio: bool = True, archive_quality: str = "compressed"
 ):
     """
-    Background task to create a backup zip file.
-    Returns the path to the backup file.
+    Produce a current backup archive, reusing the cached one if nothing has changed.
+
+    The archive itself is described by the cache manifest the API reads, so the result
+    only names it.
     """
+    import time
+
     from backend.core.backup import BackupManager
+    from backend.core.backup.export_job import release_job_sync
 
     def report(stage: str, current: int = 0, total: int = 0) -> None:
-        # Compressing a large library takes minutes. Without per-file reporting the UI
-        # cannot tell a working export from a stalled one, so it reports neither.
+        # Compressing a large library takes hours. Per-file reports let the UI show
+        # progress, and their timestamps are how the API tells a slow export from one
+        # whose worker died.
         status = stage
         if total:
             status = f"{stage} ({current} of {total})"
@@ -151,6 +157,7 @@ def create_backup_task(
                 "stage": stage,
                 "current": current,
                 "total": total,
+                "updated_at": time.time(),
             },
         )
 
@@ -162,18 +169,23 @@ def create_backup_task(
         )
         report("Starting backup")
 
-        zip_path, warnings = BackupManager.create_backup_blocking(
+        entry, reused = BackupManager.export_backup(
+            export_id=self.request.id,
             include_audio=include_audio,
             archive_quality=archive_quality,
             progress_callback=report,
         )
 
-        logger.info(f"Backup created successfully at {zip_path}")
-        return {"status": "success", "zip_path": zip_path, "warnings": warnings}
+        logger.info(
+            "Backup %s ready (%s)", entry.export_id, "reused" if reused else "built"
+        )
+        return {"status": "success", "export_id": entry.export_id, "reused": reused}
 
     except Exception as e:
         logger.error(f"Backup creation failed: {e}", exc_info=True)
         raise e
+    finally:
+        release_job_sync(self.request.id)
 
 
 @celery_app.task(
@@ -235,17 +247,26 @@ def cleanup_backup_artifacts(self, max_age_hours: int = 24):
     Exported archives, uploaded archives, abandoned multipart uploads, and restore
     staging left by a worker that died mid-restore.
 
-    Exports age out on a TTL rather than being deleted on first download, which keeps
-    range requests and interrupted downloads resumable.
+    The cached export is kept. Other exports, left by a build that died or replaced by
+    a newer one, age out on a TTL.
     """
     from backend.core.backup import RESTORE_STAGING_DIRNAME, runtime
+    from backend.core.backup import cache as backup_cache
     from backend.utils.path_manager import PathManager
 
     path_manager = PathManager()
     reclaimed = 0
 
+    export_dir = runtime.backup_export_directory(path_manager)
+    # The cached archive is kept until a newer export replaces it; everything else in
+    # the export directory is an abandoned or superseded build.
+    reclaimed += path_manager.cleanup_temp_files(
+        export_dir,
+        max_age_hours=max_age_hours,
+        keep=backup_cache.protected_names(export_dir),
+    )
+
     targets = [
-        runtime.backup_export_directory(path_manager),
         path_manager.user_data_directory / "temp_restores",
         path_manager.user_data_directory / "temp_uploads",
         path_manager.user_data_directory / RESTORE_STAGING_DIRNAME,

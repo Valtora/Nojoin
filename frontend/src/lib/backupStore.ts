@@ -1,6 +1,10 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
+import type { BackupExport } from '@/lib/api';
+
+export const BACKUP_STORE_KEY = 'nojoin-backup-store';
+
 export interface BackupProgress {
     /** Human-readable phase, e.g. "Compressing audio (12 of 340)". */
     status: string;
@@ -11,43 +15,40 @@ export interface BackupProgress {
 }
 
 interface BackupState {
+    /** The backup build this browser is waiting for. */
     taskId: string | null;
-    /** Epoch milliseconds the task was started, used to abandon a stale poll. */
-    startedAt: number | null;
     /** Latest reported progress, or null when no export is running. */
     progress: BackupProgress | null;
+    /** A finished backup this browser asked for, until it is downloaded or dismissed. */
+    readyExport: BackupExport | null;
     setTaskId: (id: string | null) => void;
     setProgress: (progress: BackupProgress | null) => void;
+    setReadyExport: (readyExport: BackupExport | null) => void;
 }
 
 /**
- * The task id is persisted so a long export survives a page reload. That is also why it
- * needs a start time: Celery reports PENDING for an unknown task id just as it does for
- * a queued one, so a persisted id whose result has expired would otherwise be polled
- * forever with no terminal state to stop on.
+ * The task id and the ready backup are persisted, so a long export survives a reload
+ * and its notification is still waiting when the person comes back hours later. The
+ * server decides when a task is lost, so no start time is kept here.
  *
- * Progress is deliberately not persisted. It is re-reported within one poll interval of
- * a reload, and a stale figure restored from storage would be worse than none.
+ * Progress is not persisted. It is re-reported within one poll interval of a reload,
+ * and a stale figure restored from storage would be worse than none.
  */
 export const useBackupStore = create<BackupState>()(
     persist(
         (set) => ({
             taskId: null,
-            startedAt: null,
             progress: null,
-            setTaskId: (id) =>
-                set({
-                    taskId: id,
-                    startedAt: id ? Date.now() : null,
-                    progress: null,
-                }),
+            readyExport: null,
+            setTaskId: (id) => set({ taskId: id, progress: null }),
             setProgress: (progress) => set({ progress }),
+            setReadyExport: (readyExport) => set({ readyExport }),
         }),
         {
-            name: 'nojoin-backup-store',
+            name: BACKUP_STORE_KEY,
             partialize: (state) => ({
                 taskId: state.taskId,
-                startedAt: state.startedAt,
+                readyExport: state.readyExport,
             }),
         }
     )

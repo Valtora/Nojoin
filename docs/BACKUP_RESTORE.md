@@ -57,13 +57,33 @@ Treat the archive like a secrets file, not just a convenience export.
 
 ## Creating a Backup
 
-1. Open **Settings > Backup and restore**.
+1. Open **Settings > Backup and restore** and select **Download Backup**.
 2. Choose whether to include audio recordings.
 3. If including audio, choose the archive quality (see below).
-4. Start the export.
-5. Store the resulting ZIP file somewhere secure.
+4. Select **Create Backup**.
+5. Store the downloaded ZIP file somewhere secure.
+
+If nothing has changed since the saved backup of the same kind was made, that backup downloads straight away. Otherwise Nojoin prepares a new one in the background. For a large library with audio that can take hours, and you can keep working, leave the page or close the tab meanwhile. When the backup is ready, a notification appears with a **Download Now** button. It stays until you use it or close it, and it comes back if you reload the page or return later in the same browser.
 
 The download streams straight to disk, so a large archive does not need to fit in browser memory, and an interrupted download can be resumed.
+
+### The Saved Backup
+
+Nojoin keeps the most recent finished backup on the server. **Settings > Backup and restore** shows when it was made, what kind it is, its size and whether it is still up to date, with buttons to download it again or delete it. Its date is the moment its data was read, and the downloaded file is named for that time rather than for the download.
+
+It stays until a newer backup replaces it or an administrator deletes it, so it occupies as much disk as the archive does. A new backup is built beside the old one, and the old one is removed only when the new one is complete, so allow room for both, especially with Original quality on a large library.
+
+The saved backup is out of date once anything it would carry has changed: a recording added, deleted or edited, a transcript or its notes, speakers, people and voiceprints, tags, tasks, attached documents, chat history, users and their settings, the system configuration, or an audio or document file on disk. Upgrading Nojoin makes it out of date as well, so the first backup after an upgrade is always a new one.
+
+What the calendar sync writes does not count. Every fifteen minutes it refreshes each connected calendar's access token, sync timestamps and cursor, and its copy of the events, so counting those would make every backup out of date within a quarter of an hour. Nothing is lost by restoring the older copy: a restored calendar connection syncs again and fetches whatever changed since. Connecting or disconnecting a calendar, or changing which calendars are selected or their colours, does count.
+
+### One Backup at a Time
+
+Only one backup is prepared at a time. Asking for the same kind of backup while one is being prepared follows the one already running, and asking for a different kind is refused until it finishes. Backups and restores never overlap: each is refused while the other is running, because a restore rewrites the data a backup is reading.
+
+The notification goes to the browser that asked for the backup. Opening **Settings > Backup and restore** on another device while a backup is being prepared shows its progress there, and that browser is notified too.
+
+A backup that reports no progress for 30 minutes is abandoned. That happens when its worker was restarted or never picked it up, and the next request starts a new one. A large backup that is still working reports progress after every recording, so it is never abandoned for taking a long time.
 
 ### Archive Quality
 
@@ -90,9 +110,9 @@ Backups from earlier versions archived audio only for WAV, MP3, M4A, OGG, FLAC a
 1. Open **Settings > Backup and restore**.
 2. Upload the backup ZIP.
 3. Choose the conflict mode.
-4. Wait for the import to finish before closing the page.
+4. Keep the tab open until the upload finishes. The server then restores the archive, and you can leave the page: a notification reports the result, and the settings page shows any records that could not be restored until you dismiss them. Reload Nojoin afterwards to see the restored data.
 
-Only one restore can run at a time on a server. Starting a second while one is in progress is refused.
+Only one restore can run at a time on a server. Starting a second while one is in progress is refused, and so is starting one while a backup is being prepared.
 
 The restore validates the whole archive before changing anything: it checks the archive format version, confirms every record file is readable, and confirms there is enough free disk space. A backup that fails any of these checks is refused without touching your data.
 
@@ -110,7 +130,7 @@ The restore validates the whole archive before changing anything: it checks the 
 
 #### Clear All Existing Data
 
-- Empties every table except users, and clears the recordings directory.
+- Empties every table except users, and clears the recordings and documents directories.
 - User accounts are preserved to prevent lockout.
 
 ## If Something Goes Wrong
@@ -161,9 +181,9 @@ Browser live recording state is not portable across systems; users should finish
 
 ## Housekeeping
 
-Exported archives, uploaded archives and abandoned uploads are reclaimed automatically by a periodic cleanup task. Exports remain downloadable for a period after they are created rather than being deleted on first download, so an interrupted download can be retried.
+Uploaded archives, abandoned uploads, and exports left behind by a backup that failed are reclaimed after 24 hours by a periodic cleanup task. The saved backup is not: it stays until a newer one replaces it or you delete it (see [The Saved Backup](#the-saved-backup)), and it is not deleted on download, so an interrupted download can be resumed.
 
-An export is built by a worker and served by the API, so it is written to `data/backups`, inside the data directory every service already mounts.
+An export is built by a worker and served by the API, so it is written to `data/backups`, inside the data directory every service already mounts. The saved backup is the `nojoin-backup-*.zip` file there, beside a `latest-backup.json` manifest that records what it contains.
 
 Uploaded archives take the opposite path, through `data/temp_uploads`, and restore staging happens in `data/restore_staging`. Every backup working file therefore lives under the data directory, and none of them depend on a shared `/tmp`.
 

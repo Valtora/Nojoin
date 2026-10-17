@@ -7,6 +7,7 @@ import { themeScript } from "@/lib/theme-script";
 import NotificationToast from "@/components/NotificationToast";
 import AuthGuard from "@/components/AuthGuard";
 import BackupPoller from "@/components/BackupPoller";
+import RestorePoller from "@/components/RestorePoller";
 import { ViewportDensityProvider } from "@/components/ViewportDensityProvider";
 
 const geistSans = Geist({
@@ -54,6 +55,7 @@ export default async function RootLayout({
             </AuthGuard>
             <NotificationToast />
             <BackupPoller />
+            <RestorePoller />
           </ViewportDensityProvider>
         </ThemeProvider>
       </body>

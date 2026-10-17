@@ -94,6 +94,27 @@ def _resolve_source_audio_path(
     return None
 
 
+def _resolve_document_source_path(
+    file_path: str | None,
+    documents_dir: str | os.PathLike[str],
+) -> str | None:
+    """Find a document's file on disk, trying the documents directory as a fallback."""
+    if not file_path:
+        return None
+
+    candidates = [os.path.abspath(file_path)]
+    subpath = _get_document_subpath(file_path)
+    if subpath:
+        candidates.append(
+            os.path.abspath(os.path.join(os.fspath(documents_dir), subpath))
+        )
+    for candidate in candidates:
+        if os.path.isfile(candidate):
+            return candidate
+
+    return None
+
+
 def _build_audio_plan(
     recording_rows: List[Any],
     recordings_dir: str | os.PathLike[str],
@@ -161,18 +182,7 @@ def _build_document_plan(
         if not file_path:
             continue
 
-        source_path = None
-        candidates = [os.path.abspath(file_path)]
-        subpath = _get_document_subpath(file_path)
-        if subpath:
-            candidates.append(
-                os.path.abspath(os.path.join(os.fspath(documents_dir), subpath))
-            )
-        for candidate in candidates:
-            if os.path.isfile(candidate):
-                source_path = candidate
-                break
-
+        source_path = _resolve_document_source_path(file_path, documents_dir)
         if source_path is None:
             logger.warning(
                 "Document file not found on disk; archiving metadata only: %s",

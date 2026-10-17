@@ -33,6 +33,21 @@ RESTORE_LOCK_KEY = "nojoin:backup:restore-lock"
 RESTORE_LOCK_TTL_SECONDS = 6 * 60 * 60
 
 
+# The export being built, if any. One runs at a time install-wide.
+EXPORT_JOB_KEY = "nojoin:backup:export-job"
+
+
+# A backstop only. The worker clears the key when it finishes, and a build that stops
+# reporting progress is treated as lost after EXPORT_STALL_SECONDS whatever the TTL says.
+EXPORT_JOB_TTL_SECONDS = 7 * 24 * 60 * 60
+
+
+# An export reports progress per table and per file. The slowest single step measured is
+# re-encoding one long recording, which takes a few minutes, so half an hour without a
+# report means the worker died or never picked the task up.
+EXPORT_STALL_SECONDS = 30 * 60
+
+
 RESTORE_DISK_HEADROOM_BYTES = 512 * 1024 * 1024
 
 
