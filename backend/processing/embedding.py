@@ -27,6 +27,13 @@ UI_STRONG_MATCH_THRESHOLD = 0.75
 # Embedding-based speaker deduplication: cosine similarity above which two
 # RecordingSpeaker rows within the same recording are merged automatically.
 DUPLICATE_SPEAKER_MERGE_THRESHOLD = 0.70
+# Duplicate merge pass: minimum cosine between a cluster and an identified
+# person's library voiceprint before the cluster may join that person's group.
+# The same floor as DRIFT_GUARD_THRESHOLD, which decides whether an observation
+# is the same person when blending it into a library voiceprint. On this
+# project's own library no two people's recording voiceprints scored above
+# 0.55, while the same person's sat at a median of 0.87 with 5% below 0.73.
+IDENTIFIED_MERGE_VOICEPRINT_FLOOR = 0.60
 # Default threshold for the scan-matches endpoint
 SCAN_MATCH_THRESHOLD = 0.75
 
