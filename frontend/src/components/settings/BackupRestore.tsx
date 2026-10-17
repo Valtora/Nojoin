@@ -1,8 +1,21 @@
 "use client";
 
-import { useState, useRef } from "react";
-import { uploadBackupChunked, type RestoreSkipSummary } from "@/lib/api";
+import { useEffect, useRef, useState } from "react";
+import {
+  deleteLatestBackup,
+  downloadBackupFile,
+  getLatestBackup,
+  uploadBackupArchive,
+  type LatestBackup,
+} from "@/lib/api";
+import {
+  describeBackupKind,
+  formatBackupTime,
+  formatFileSize,
+} from "@/lib/backupMessages";
 import { getErrorMessage } from "@/lib/errors";
+import { useNotificationStore } from "@/lib/notificationStore";
+import { useRestoreStore } from "@/lib/restoreStore";
 import {
   Download,
   Upload,
@@ -13,8 +26,11 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { useBackupStore } from "@/lib/backupStore";
+import ConfirmationModal from "@/components/ConfirmationModal";
 import RestoreOptionsModal from "@/components/settings/RestoreOptionsModal";
 import BackupOptionsModal from "@/components/settings/BackupOptionsModal";
+import { Badge } from "@/components/ui/Badge";
+import Button from "@/components/ui/Button";
 import SettingsBlock from "./SettingsBlock";
 import SettingsCard from "./SettingsCard";
 
@@ -42,40 +58,39 @@ const TABLE_LABELS: Record<string, string> = {
   calendar_events: "Calendar events",
 };
 
-const countSkippedRows = (skipped?: RestoreSkipSummary | null): number =>
-  Object.values(skipped ?? {}).reduce(
-    (total, reasons) =>
-      total + Object.values(reasons).reduce((sum, count) => sum + count, 0),
-    0,
-  );
-
-const formatFileSize = (bytes: number): string => {
-  if (bytes === 0) return "0 Bytes";
-  const k = 1024;
-  const sizes = ["Bytes", "KB", "MB", "GB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
-};
-
 export default function BackupRestore() {
-  const [importing, setImporting] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isValidZip, setIsValidZip] = useState<boolean>(false);
-  const [message, setMessage] = useState<{
-    type: "success" | "error";
-    text: string;
-  } | null>(null);
+  const [fileError, setFileError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [processingStatus, setProcessingStatus] = useState<string>("");
   const [showRestoreOptions, setShowRestoreOptions] = useState(false);
   const [showBackupOptions, setShowBackupOptions] = useState(false);
-  const [skipReport, setSkipReport] = useState<RestoreSkipSummary | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [latest, setLatest] = useState<LatestBackup | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const { addNotification } = useNotificationStore();
 
   // Driven by the global BackupPoller, so the panel keeps reporting even if the user
   // navigates away and comes back mid-export.
   const exportTaskId = useBackupStore((state) => state.taskId);
   const exportProgress = useBackupStore((state) => state.progress);
+  const readyExportId = useBackupStore((state) => state.readyExport?.export_id);
+  const setTaskId = useBackupStore((state) => state.setTaskId);
+  const setReadyExport = useBackupStore((state) => state.setReadyExport);
+
+  // Driven by the global RestorePoller once the archive is uploaded.
+  const uploading = useRestoreStore((state) => state.uploading);
+  const uploadProgress = useRestoreStore((state) => state.uploadPercent);
+  const restoreJobId = useRestoreStore((state) => state.jobId);
+  const processingStatus = useRestoreStore((state) => state.status);
+  const outcome = useRestoreStore((state) => state.outcome);
+  const beginUpload = useRestoreStore((state) => state.beginUpload);
+  const setUploadProgress = useRestoreStore((state) => state.setUploadProgress);
+  const setRestoreStatus = useRestoreStore((state) => state.setStatus);
+  const startRestoreJob = useRestoreStore((state) => state.startJob);
+  const finishRestore = useRestoreStore((state) => state.finish);
+  const dismissOutcome = useRestoreStore((state) => state.dismissOutcome);
+  const importing = uploading || restoreJobId !== null;
 
   const exportPercent =
     exportProgress?.total && exportProgress.total > 0
@@ -88,8 +103,52 @@ export default function BackupRestore() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dropZoneRef = useRef<HTMLDivElement>(null);
 
-  const handleExportClick = () => {
-    setShowBackupOptions(true);
+  // Reloaded when an export starts or finishes here, and after a delete.
+  useEffect(() => {
+    let cancelled = false;
+    getLatestBackup()
+      .then((value) => {
+        if (cancelled) return;
+        setLatest(value);
+        // A backup started from another device or by another administrator is
+        // followed here too, so this browser shows its progress and its notification.
+        if (value.job && !useBackupStore.getState().taskId) {
+          setTaskId(value.job.task_id);
+        }
+      })
+      .catch((error: unknown) => {
+        console.error("Failed to load the latest backup:", error);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshKey, exportTaskId, readyExportId, setTaskId]);
+
+  const latestExport = latest?.export ?? null;
+
+  const handleDownloadLatest = () => {
+    if (!latestExport) return;
+    downloadBackupFile(latestExport.export_id);
+    if (readyExportId === latestExport.export_id) {
+      setReadyExport(null);
+    }
+  };
+
+  const handleDeleteLatest = async () => {
+    try {
+      await deleteLatestBackup();
+      if (latestExport && readyExportId === latestExport.export_id) {
+        setReadyExport(null);
+      }
+      addNotification({ type: "success", message: "Saved backup deleted." });
+    } catch (error: unknown) {
+      addNotification({
+        type: "error",
+        message: getErrorMessage(error, "Failed to delete the saved backup."),
+      });
+    } finally {
+      setRefreshKey((key) => key + 1);
+    }
   };
 
   const validateFile = (file: File): boolean => {
@@ -99,24 +158,18 @@ export default function BackupRestore() {
       file.type === "application/zip" ||
       file.type === "application/x-zip-compressed";
 
-    if (nameValid && typeValid) {
-      return true;
-    }
-    return false;
+    return nameValid && typeValid;
   };
 
   const handleFileSelect = (file: File) => {
     if (validateFile(file)) {
       setSelectedFile(file);
       setIsValidZip(true);
-      setMessage(null);
+      setFileError(null);
     } else {
       setSelectedFile(null);
       setIsValidZip(false);
-      setMessage({
-        type: "error",
-        text: "Please select a valid .zip backup file.",
-      });
+      setFileError("Please select a valid .zip backup file.");
     }
   };
 
@@ -153,7 +206,7 @@ export default function BackupRestore() {
   const handleRemoveFile = () => {
     setSelectedFile(null);
     setIsValidZip(false);
-    setMessage(null);
+    setFileError(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -167,61 +220,38 @@ export default function BackupRestore() {
   const performRestore = async (clear: boolean, overwrite: boolean) => {
     if (!selectedFile) return;
 
+    setShowRestoreOptions(false);
+    beginUpload();
+    setRestoreStatus("Preparing upload...");
+
     try {
-      setImporting(true);
-      setUploadProgress(0);
-      setMessage(null);
-      setSkipReport(null);
-      setShowRestoreOptions(false);
-
-      setProcessingStatus("Preparing upload...");
-
-      // Use chunked upload for robustness
-      const result = await uploadBackupChunked(
+      // Writes its progress to the store, so it keeps reporting if the panel unmounts.
+      const jobId = await uploadBackupArchive(
         selectedFile,
         clear,
         overwrite,
-        (progress) => setUploadProgress(progress),
-        (status) => setProcessingStatus(status),
+        setUploadProgress,
+        setRestoreStatus,
       );
-
+      startRestoreJob(jobId);
       setSelectedFile(null);
       setIsValidZip(false);
-
-      const skipped = result?.skipped;
-      const skippedRows = countSkippedRows(skipped);
-
-      if (skippedRows > 0) {
-        // The restore succeeded but did not bring everything across. Reporting that as a
-        // plain success, then reloading the page two seconds later, would hide it
-        // entirely, so the report stays on screen until the operator dismisses it.
-        setSkipReport(skipped ?? null);
-        setMessage({
-          type: "error",
-          text: `Backup restored, but ${skippedRows} record${skippedRows === 1 ? "" : "s"} could not be restored. Review the details below, then refresh the page.`,
-        });
-        return;
-      }
-
-      setMessage({
-        type: "success",
-        text: "Backup restored successfully. Please refresh the page.",
-      });
-
-      // Refresh page after short delay to show success message
-      setTimeout(() => {
-        window.location.reload();
-      }, 2000);
     } catch (error: unknown) {
       console.error("Import failed:", error);
-      const errorMsg = getErrorMessage(error, "Failed to restore backup.");
-      setMessage({ type: "error", text: errorMsg });
-    } finally {
-      setImporting(false);
-      setUploadProgress(0);
-      setProcessingStatus("");
+      finishRestore({
+        kind: "failed",
+        message: getErrorMessage(error, "Failed to restore backup."),
+        skipped: null,
+      });
     }
   };
+
+  const dismissAndReload = () => {
+    dismissOutcome();
+    window.location.reload();
+  };
+
+  const outcomeIsSuccess = outcome?.kind === "completed";
 
   return (
     <SettingsCard
@@ -246,6 +276,56 @@ export default function BackupRestore() {
               integrations restore correctly. Treat backup files as sensitive.
             </span>
           </p>
+
+          {latestExport && (
+            <div className="mb-4 rounded-lg border border-surface-border bg-surface-inset p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0 space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-medium text-foreground">
+                      Latest backup
+                    </span>
+                    {latest?.current === true && (
+                      <Badge tone="success" size="sm">
+                        Up to date
+                      </Badge>
+                    )}
+                    {latest?.current === false && (
+                      <Badge tone="warning" size="sm">
+                        Changes since
+                      </Badge>
+                    )}
+                  </div>
+                  <p className="text-xs contrast-helper">
+                    {formatBackupTime(latestExport.created_at)} ·{" "}
+                    {describeBackupKind(latestExport)} ·{" "}
+                    {formatFileSize(latestExport.size_bytes)}
+                  </p>
+                  <p className="text-xs contrast-helper">
+                    Kept on the server until a newer backup replaces it.
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    onClick={handleDownloadLatest}
+                    iconLeft={<Download aria-hidden="true" className="h-4 w-4" />}
+                  >
+                    Download
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setConfirmDelete(true)}
+                    iconLeft={<Trash2 aria-hidden="true" className="h-4 w-4" />}
+                  >
+                    Delete
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {exportTaskId ? (
             <div className="rounded-lg border border-action-border bg-action-tint p-4">
               <div className="flex items-center gap-3 mb-2">
@@ -272,14 +352,14 @@ export default function BackupRestore() {
               )}
 
               <p className="mt-2 text-xs contrast-helper">
-                Compressing a large library can take several minutes. The download
-                starts automatically when it is ready, and you can leave this page
-                without interrupting it.
+                Compressing a large library can take hours. You can leave this
+                page or close the tab, and a notification with a download button
+                appears when the backup is ready.
               </p>
             </div>
           ) : (
             <button
-              onClick={handleExportClick}
+              onClick={() => setShowBackupOptions(true)}
               className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-card text-action-on bg-action hover:bg-action-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-action disabled:opacity-50 transition-colors"
             >
               <Download className="w-4 h-4 mr-2" />
@@ -369,9 +449,9 @@ export default function BackupRestore() {
               <div className="space-y-2">
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-contrast-muted">
-                    {uploadProgress < 100
-                      ? "Uploading..."
-                      : "Processing on server (Do not close)..."}
+                    {uploading
+                      ? "Uploading... (keep this tab open)"
+                      : "Restoring on the server..."}
                   </span>
                   <span className="text-foreground font-medium">
                     {uploadProgress}%
@@ -411,39 +491,63 @@ export default function BackupRestore() {
           </div>
         </div>
 
-        {message && (
-          <div
-            className={`p-4 rounded-md ${message.type === "success" ? "bg-status-success-bg text-status-success-fg" : "bg-status-danger-bg text-status-danger-fg"}`}
-          >
+        {fileError && (
+          <div className="p-4 rounded-md bg-status-danger-bg text-status-danger-fg">
             <div className="flex">
-              {message.type === "success" ? (
-                <CheckCircle className="h-5 w-5 mr-2" />
-              ) : (
-                <AlertTriangle className="h-5 w-5 mr-2" />
-              )}
-              <p className="text-sm font-medium">{message.text}</p>
+              <AlertTriangle className="h-5 w-5 mr-2" />
+              <p className="text-sm font-medium">{fileError}</p>
             </div>
           </div>
         )}
 
-        {skipReport && (
+        {outcome && (
+          <div
+            className={`p-4 rounded-md ${outcomeIsSuccess ? "bg-status-success-bg text-status-success-fg" : "bg-status-danger-bg text-status-danger-fg"}`}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex">
+                {outcomeIsSuccess ? (
+                  <CheckCircle className="h-5 w-5 mr-2 shrink-0" />
+                ) : (
+                  <AlertTriangle className="h-5 w-5 mr-2 shrink-0" />
+                )}
+                <p className="text-sm font-medium">{outcome.message}</p>
+              </div>
+              {(outcome.kind === "failed" || outcome.kind === "unknown") && (
+                <button
+                  onClick={dismissOutcome}
+                  className="text-xs font-medium underline shrink-0"
+                >
+                  Dismiss
+                </button>
+              )}
+              {outcomeIsSuccess && (
+                <button
+                  onClick={dismissAndReload}
+                  className="text-xs font-medium underline shrink-0"
+                >
+                  Reload
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {outcome?.kind === "warnings" && outcome.skipped && (
           <div className="rounded-md border border-status-warning-border bg-status-warning-bg p-4">
             <div className="flex items-start justify-between gap-3 mb-3">
               <h5 className="text-sm font-semibold text-status-warning-fg">
                 Records That Could Not Be Restored
               </h5>
               <button
-                onClick={() => {
-                  setSkipReport(null);
-                  window.location.reload();
-                }}
+                onClick={dismissAndReload}
                 className="text-xs font-medium text-status-warning-fg underline shrink-0"
               >
                 Dismiss and refresh
               </button>
             </div>
             <ul className="space-y-2">
-              {Object.entries(skipReport).map(([table, reasons]) => (
+              {Object.entries(outcome.skipped).map(([table, reasons]) => (
                 <li key={table} className="text-xs text-status-warning-fg">
                   <span className="font-medium">
                     {TABLE_LABELS[table] ?? table}
@@ -471,6 +575,16 @@ export default function BackupRestore() {
       <BackupOptionsModal
         isOpen={showBackupOptions}
         onClose={() => setShowBackupOptions(false)}
+        onRequested={() => setRefreshKey((key) => key + 1)}
+      />
+      <ConfirmationModal
+        isOpen={confirmDelete}
+        onClose={() => setConfirmDelete(false)}
+        onConfirm={handleDeleteLatest}
+        title="Delete Saved Backup"
+        message="This deletes the backup kept on the server to free its disk space. Copies you have already downloaded are not affected."
+        confirmText="Delete"
+        isDangerous={true}
       />
     </SettingsCard>
   );

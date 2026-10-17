@@ -1,7 +1,8 @@
 import logging
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 from backend.core.backup import runtime
+from backend.core.backup.cache import CachedExport
 from backend.core.backup.export import (  # noqa: F401  (public surface preserved)
     _compress_to_opus,
     _create_backup_sync,
@@ -9,6 +10,8 @@ from backend.core.backup.export import (  # noqa: F401  (public surface preserve
     _table_dump_statement,
     create_backup,
     create_backup_blocking,
+    export_backup,
+    find_current_export,
 )
 from backend.core.backup.format import (  # noqa: F401  (re-exported for callers and tests)
     ARCHIVE_QUALITIES,
@@ -102,6 +105,26 @@ class BackupManager:
             archive_quality=archive_quality,
             progress_callback=progress_callback,
         )
+
+    @staticmethod
+    def export_backup(
+        export_id: str,
+        include_audio: bool = True,
+        archive_quality: str = ARCHIVE_QUALITY_COMPRESSED,
+        progress_callback: Any = None,
+    ) -> Tuple[CachedExport, bool]:
+        return export_backup(
+            export_id=export_id,
+            include_audio=include_audio,
+            archive_quality=archive_quality,
+            progress_callback=progress_callback,
+        )
+
+    @staticmethod
+    def find_current_export(
+        include_audio: bool, archive_quality: str
+    ) -> Optional[CachedExport]:
+        return find_current_export(include_audio, archive_quality)
 
     @staticmethod
     def _get_app_version() -> str:

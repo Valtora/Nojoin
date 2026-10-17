@@ -112,6 +112,11 @@ export function setCachedUserTimeZone(value: string | null | undefined): string 
   return resolved;
 }
 
+/** The user's time zone if it has been loaded, for code that cannot wait for it. */
+export function getCachedUserTimeZone(): string | null {
+  return cachedUserTimeZone;
+}
+
 export async function getUserTimeZone(): Promise<string> {
   if (cachedUserTimeZone) {
     return cachedUserTimeZone;

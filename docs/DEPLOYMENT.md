@@ -164,7 +164,8 @@ scratch files accumulating for the life of a deployment.
 Only one file has to pass between containers: a finished backup archive, built by
 a worker and served by the API. It travels through `data/backups` on the `./data`
 bind mount that every service already has, so the sharing uses the mount that
-already exists rather than a second one. Uploaded archives and restore staging
+already exists rather than a second one. The most recent archive stays there until
+a newer one replaces it; see [BACKUP_RESTORE.md](BACKUP_RESTORE.md#the-saved-backup). Uploaded archives and restore staging
 work the same way, through `data/temp_uploads` and `data/restore_staging`.
 `BACKUP_EXPORT_DIR` moves exports elsewhere if you want them on a separate disk;
 the API and the workers must agree on the value.
@@ -197,8 +198,8 @@ Check what you are about to reclaim first if you want to see the scale of it:
 docker run --rm -v nojoin_backup_temp:/old alpine du -sh /old
 ```
 
-An export that was in flight when you upgrade is lost. Exports are transient by
-design, with a 24-hour lifetime, so take the backup again if you needed it.
+An export that was in flight when you upgrade is lost, so take the backup again
+if you needed it.
 
 ## Worker Container Startup
 

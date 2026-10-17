@@ -17,7 +17,10 @@ from typing import Any, Dict, Tuple, Type
 
 from sqlmodel import Session, SQLModel, select
 
+from backend.core.backup import cache as backup_cache
 from backend.core.backup import runtime
+from backend.core.backup.cache import CachedExport
+from backend.core.backup.fingerprint import compute_fingerprint
 from backend.core.backup.format import (
     ARCHIVE_QUALITIES,
     ARCHIVE_QUALITY_COMPRESSED,
@@ -279,87 +282,67 @@ def _create_backup_sync(request: _ExportRequest) -> Tuple[str, Dict[str, Any]]:
         raise e
 
 
-async def create_backup(
-    include_audio: bool = True,
-    archive_quality: str = ARCHIVE_QUALITY_COMPRESSED,
-    progress_callback: Any = None,
-) -> Tuple[str, Dict[str, Any]]:
+def snapshot_session() -> Session:
+    """A session whose reads all see the database as it was at its first query.
+
+    PostgreSQL's default isolation gives each statement its own snapshot, so an export
+    reading twenty tables one after another could archive a transcript whose recording
+    was deleted between the two reads, or miss the recording a new transcript belongs to.
+    REPEATABLE READ holds one snapshot for the whole transaction. The SQLite the tests use
+    has no such level and needs none.
+    """
+    engine = runtime.sync_engine
+    if engine.dialect.name == "postgresql":
+        engine = engine.execution_options(isolation_level="REPEATABLE READ")
+    return Session(engine)
+
+
+@dataclass
+class _Snapshot:
+    """The database side of one export, read in a single transaction."""
+
+    db_dump: Dict[str, str]
+    audio_plan: _AudioPlan
+    document_plan: _DocumentPlan
+    fingerprint: str
+    taken_at: str
+
+
+def _report(
+    progress_callback: Any, stage: str, current: int = 0, total: int = 0
+) -> None:
+    if progress_callback is None:
+        return
+    try:
+        progress_callback(stage, current, total)
+    except Exception:  # noqa: BLE001 -- boundary: reporting must never fail an export
+        logger.debug("Backup progress callback failed", exc_info=True)
+
+
+def _read_snapshot(
+    include_audio: bool, archive_quality: str, progress_callback: Any = None
+) -> _Snapshot:
     path_manager = runtime.PathManager()
     recordings_dir = path_manager.recordings_directory
     documents_dir = runtime.documents_directory(path_manager)
-    config_path = path_manager.config_path
-    archive_quality = _normalise_archive_quality(archive_quality)
-
-    import asyncio
-
-    db_dump = {}
-    audio_plan = _AudioPlan()
-    document_plan = _DocumentPlan()
-    async with runtime.async_session_maker() as session:
-        for table_index, (table_name, model_cls) in enumerate(runtime.MODELS, start=1):
-            if progress_callback is not None:
-                try:
-                    progress_callback(
-                        "Reading database", table_index, len(runtime.MODELS)
-                    )
-                except Exception:  # noqa: BLE001 -- boundary: reporting must never fail an export
-                    logger.debug("Backup progress callback failed", exc_info=True)
-            results = await session.execute(
-                _table_dump_statement(table_name, model_cls)
-            )
-            items = results.scalars().all()
-
-            if table_name == "recordings" and include_audio:
-                audio_plan = _build_audio_plan(
-                    list(items), recordings_dir, archive_quality
-                )
-            elif table_name == "documents":
-                document_plan = _build_document_plan(list(items), documents_dir)
-
-            data = _serialise_backup_table_rows(
-                table_name, items, audio_plan, document_plan
-            )
-
-            db_dump[f"{table_name}.json"] = json.dumps(data, indent=2)
-
-    return await asyncio.to_thread(
-        _create_backup_sync,
-        _ExportRequest(
-            recordings_dir=recordings_dir,
-            config_path=config_path,
-            db_dump=db_dump,
-            include_audio=include_audio,
-            audio_plan=audio_plan,
-            document_plan=document_plan,
-            archive_quality=archive_quality,
-            progress_callback=progress_callback,
-        ),
-    )
-
-
-def create_backup_blocking(
-    include_audio: bool = True,
-    archive_quality: str = ARCHIVE_QUALITY_COMPRESSED,
-    progress_callback: Any = None,
-) -> Tuple[str, Dict[str, Any]]:
-    path_manager = runtime.PathManager()
-    recordings_dir = path_manager.recordings_directory
-    documents_dir = runtime.documents_directory(path_manager)
-    config_path = path_manager.config_path
-    archive_quality = _normalise_archive_quality(archive_quality)
 
     db_dump: Dict[str, str] = {}
     audio_plan = _AudioPlan()
     document_plan = _DocumentPlan()
-    with Session(runtime.sync_engine) as session:
+    with snapshot_session() as session:
+        # First, so the fingerprint stored with the archive describes the rows below.
+        fingerprint = compute_fingerprint(
+            session,
+            include_audio=include_audio,
+            archive_quality=archive_quality,
+            path_manager=path_manager,
+        )
+        taken_at = datetime.now(timezone.utc).isoformat()
+
         for table_index, (table_name, model_cls) in enumerate(runtime.MODELS, start=1):
-            if progress_callback is not None:
-                try:
-                    progress_callback(
-                        "Reading database", table_index, len(runtime.MODELS)
-                    )
-                except Exception:  # noqa: BLE001 -- boundary: reporting must never fail an export
-                    logger.debug("Backup progress callback failed", exc_info=True)
+            _report(
+                progress_callback, "Reading database", table_index, len(runtime.MODELS)
+            )
             items = session.exec(_table_dump_statement(table_name, model_cls)).all()
 
             if table_name == "recordings" and include_audio:
@@ -374,15 +357,147 @@ def create_backup_blocking(
             )
             db_dump[f"{table_name}.json"] = json.dumps(data, indent=2)
 
+    return _Snapshot(
+        db_dump=db_dump,
+        audio_plan=audio_plan,
+        document_plan=document_plan,
+        fingerprint=fingerprint,
+        taken_at=taken_at,
+    )
+
+
+def _build_from_snapshot(
+    snapshot: _Snapshot,
+    include_audio: bool,
+    archive_quality: str,
+    progress_callback: Any = None,
+) -> Tuple[str, Dict[str, Any]]:
+    path_manager = runtime.PathManager()
     return _create_backup_sync(
         _ExportRequest(
-            recordings_dir=recordings_dir,
-            config_path=config_path,
-            db_dump=db_dump,
+            recordings_dir=path_manager.recordings_directory,
+            config_path=path_manager.config_path,
+            db_dump=snapshot.db_dump,
             include_audio=include_audio,
-            audio_plan=audio_plan,
-            document_plan=document_plan,
+            audio_plan=snapshot.audio_plan,
+            document_plan=snapshot.document_plan,
             archive_quality=archive_quality,
             progress_callback=progress_callback,
         )
     )
+
+
+def create_backup_blocking(
+    include_audio: bool = True,
+    archive_quality: str = ARCHIVE_QUALITY_COMPRESSED,
+    progress_callback: Any = None,
+) -> Tuple[str, Dict[str, Any]]:
+    """Build a new archive and return its path, bypassing the cache."""
+    archive_quality = _normalise_archive_quality(archive_quality)
+    snapshot = _read_snapshot(include_audio, archive_quality, progress_callback)
+    return _build_from_snapshot(
+        snapshot, include_audio, archive_quality, progress_callback
+    )
+
+
+async def create_backup(
+    include_audio: bool = True,
+    archive_quality: str = ARCHIVE_QUALITY_COMPRESSED,
+    progress_callback: Any = None,
+) -> Tuple[str, Dict[str, Any]]:
+    """The blocking export, run off the event loop.
+
+    A wrapper rather than a second implementation, so the tests that call it exercise the
+    code the worker runs.
+    """
+    import asyncio
+
+    return await asyncio.to_thread(
+        create_backup_blocking,
+        include_audio=include_audio,
+        archive_quality=archive_quality,
+        progress_callback=progress_callback,
+    )
+
+
+def current_fingerprint(include_audio: bool, archive_quality: str) -> str:
+    """Fingerprint the installation as it is now, for comparison with the cache."""
+    with snapshot_session() as session:
+        return compute_fingerprint(
+            session,
+            include_audio=include_audio,
+            archive_quality=_normalise_archive_quality(archive_quality),
+            path_manager=runtime.PathManager(),
+        )
+
+
+def find_current_export(
+    include_audio: bool, archive_quality: str
+) -> CachedExport | None:
+    """Return the cached export if it has these options and nothing has changed since."""
+    archive_quality = _normalise_archive_quality(archive_quality)
+    cached = backup_cache.load(runtime.backup_export_directory(runtime.PathManager()))
+    if cached is None:
+        return None
+    if (
+        cached.include_audio != include_audio
+        or cached.archive_quality != archive_quality
+    ):
+        return None
+    if not cached.matches(
+        current_fingerprint(include_audio, archive_quality),
+        include_audio,
+        archive_quality,
+    ):
+        return None
+    return cached
+
+
+def export_backup(
+    *,
+    export_id: str,
+    include_audio: bool = True,
+    archive_quality: str = ARCHIVE_QUALITY_COMPRESSED,
+    progress_callback: Any = None,
+) -> Tuple[CachedExport, bool]:
+    """Return a current archive for these options, building one only if needed.
+
+    Returns the cached export and whether it was reused. A build reads the database in one
+    snapshot, writes the archive, and then replaces the cache with it, so the fingerprint
+    stored beside the archive describes the data inside it even when the build takes
+    hours and the library changes meanwhile.
+    """
+    archive_quality = _normalise_archive_quality(archive_quality)
+    export_dir = runtime.backup_export_directory(runtime.PathManager())
+
+    _report(progress_callback, "Checking for changes")
+    cached = find_current_export(include_audio, archive_quality)
+    if cached is not None:
+        logger.info("Backup unchanged since export %s; reusing it.", cached.export_id)
+        return cached, True
+
+    snapshot = _read_snapshot(include_audio, archive_quality, progress_callback)
+    zip_path, warnings = _build_from_snapshot(
+        snapshot, include_audio, archive_quality, progress_callback
+    )
+    try:
+        entry = backup_cache.publish(
+            export_dir,
+            zip_path,
+            CachedExport(
+                export_id=export_id,
+                filename="",
+                created_at=snapshot.taken_at,
+                include_audio=include_audio,
+                archive_quality=archive_quality,
+                fingerprint=snapshot.fingerprint,
+                size_bytes=0,
+                warnings=warnings,
+                app_version=runtime.get_app_version(),
+            ),
+        )
+    except Exception:
+        if os.path.exists(zip_path):
+            os.remove(zip_path)
+        raise
+    return entry, False

@@ -1,7 +1,13 @@
 import { useState } from "react";
 import { Download, AlertTriangle, FileAudio } from "lucide-react";
-import { exportBackupAsync, type ArchiveQuality } from "@/lib/api";
+import {
+  downloadBackupFile,
+  requestBackup,
+  type ArchiveQuality,
+} from "@/lib/api";
+import { archiveWarningNotifications, formatBackupTime } from "@/lib/backupMessages";
 import { useBackupStore } from "@/lib/backupStore";
+import { getErrorMessage } from "@/lib/errors";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { Switch } from "@/components/ui/Switch";
 
@@ -11,11 +17,14 @@ import Modal from "../ui/Modal";
 interface BackupOptionsModalProps {
   isOpen: boolean;
   onClose: () => void;
+  /** Called once the server has answered, whichever way. */
+  onRequested?: () => void;
 }
 
 export default function BackupOptionsModal({
   isOpen,
   onClose,
+  onRequested,
 }: BackupOptionsModalProps) {
   const [includeAudio, setIncludeAudio] = useState(true);
   const [archiveQuality, setArchiveQuality] =
@@ -27,25 +36,37 @@ export default function BackupOptionsModal({
   const handleExport = async () => {
     try {
       setIsProcessing(true);
-      const { task_id } = await exportBackupAsync(includeAudio, archiveQuality);
+      const result = await requestBackup(includeAudio, archiveQuality);
 
-      // Set task ID to trigger global poller
-      setTaskId(task_id);
+      if (result.status === "ready") {
+        // Nothing has changed since the cached archive was made, so it is the backup.
+        // The click that asked for it is still recent enough to start a download.
+        downloadBackupFile(result.export.export_id);
+        archiveWarningNotifications(result.export.warnings).forEach(addNotification);
+        addNotification({
+          type: "info",
+          message: `Nothing has changed since your backup from ${formatBackupTime(result.export.created_at)}, so that one is downloading now.`,
+        });
+      } else {
+        // The global poller follows it and says when it is ready.
+        setTaskId(result.task_id);
+        addNotification({
+          type: "info",
+          message:
+            "Preparing your backup. You can keep using Nojoin, and a notification will appear when it is ready to download.",
+        });
+      }
 
-      addNotification({
-        type: "success",
-        message:
-          "Backup started in background. Download will start automatically when ready.",
-        persistent: false,
-      });
-
+      onRequested?.();
       onClose();
-
-        } catch (error: unknown) {
+    } catch (error: unknown) {
       console.error("Backup export failed:", error);
       addNotification({
         type: "error",
-        message: "Failed to start backup process. Please try again.",
+        message: getErrorMessage(
+          error,
+          "Failed to start backup process. Please try again.",
+        ),
       });
     } finally {
       setIsProcessing(false);
