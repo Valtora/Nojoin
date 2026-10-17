@@ -774,6 +774,7 @@ The receiving Cloudflare Worker and its D1 schema live in [telemetry/](../teleme
 4. The dashboard renders month markers, agenda items, next-event summaries, and colour-coded sources, combining synced calendar events with unlinked Nojoin recordings.
 5. Recordings carry a nullable `calendar_event_id`; a recording is auto-linked to a confidently overlapping calendar event during processing (or linked manually), and the linked event enriches notes and speaker prompts while suppressing the recording's standalone dashboard calendar item.
 6. Sync runs incrementally on the worker's embedded Celery Beat scheduler: every connected account with a selected calendar refreshes on a 15-minute cadence using each provider's change cursor (Google `syncToken`, Microsoft Graph `delta`). When an admin enables live sync and the instance is publicly reachable over HTTPS, Nojoin also registers Google `events.watch` channels and Microsoft Graph subscriptions, so changes arrive by webhook and enqueue an immediate incremental sync; the 15-minute schedule remains the always-on fallback.
+7. A sync that cannot go incremental (the monthly shift of the 25-month sync window, a missing or reset cursor, or the Microsoft partial-occurrence repair) fetches the whole window and reconciles it by `provider_event_id`, updating stored events in place so `recordings.calendar_event_id`, which is `ON DELETE SET NULL`, keeps pointing at them. Events the listing omits are deleted, except those that ended before the window and that a recording links to.
 
 ## Authentication Model
 
