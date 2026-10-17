@@ -175,6 +175,8 @@ Processing sometimes joins two of the clusters speaker detection found into one 
 
 Only merges made by processing are listed. A merge you made yourself marks its lines as your edits, so undo one of those with **Split / Unmerge Speaker** or by reassigning lines. Recordings processed by an earlier version did not keep the clusters, so for those **Retry Processing** is the way back.
 
+Processing never merges a cluster into a speaker it recognised from your People library unless the cluster also sounds like that person's saved voiceprint. A cluster that does not is left as its own `Speaker N`. If it was the same person after all, merge the two in the speaker panel.
+
 ### Limiting The Number Of Speakers
 
 Speaker detection is automatic, and that is the default. Occasionally a long meeting comes back split into more speakers than there were people in the room, usually when someone's audio changes partway through.

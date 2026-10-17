@@ -7,9 +7,19 @@ from typing import Optional
 from unittest.mock import MagicMock, patch
 
 import pytest
+from sqlalchemy import create_engine, text
+from sqlmodel import Session, select
 
+from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
 from backend.processing.embedding_core import EMBEDDING_METHOD_VERSION
 from backend.processing.speaker_merge import merge_duplicate_speakers
+from backend.tests.sqlite_schemas import (
+    GLOBAL_SPEAKERS_SCHEMA,
+    P_TAGS_SCHEMA,
+    PEOPLE_TAGS_SCHEMA,
+    RECORDING_SPEAKERS_SCHEMA,
+    TRANSCRIPT_UTTERANCES_SCHEMA,
+)
 
 
 @dataclass
@@ -24,15 +34,27 @@ class FakeSpeaker:
     embedding_version: Optional[int] = EMBEDDING_METHOD_VERSION
 
 
+@dataclass
+class FakeGlobalSpeaker:
+    id: int
+    name: str
+    embedding: Optional[list[float]] = None
+    embedding_version: Optional[int] = EMBEDDING_METHOD_VERSION
+
+
 def _make_embedding(value: float, dim: int = 4) -> list[float]:
     return [value] * dim
 
 
-def _fake_session_with_speakers(speakers: list[FakeSpeaker]) -> MagicMock:
+def _fake_session_with_speakers(
+    speakers: list[FakeSpeaker],
+    people: tuple[FakeGlobalSpeaker, ...] = (),
+) -> MagicMock:
     session = MagicMock()
     session.execute.return_value.scalars.return_value.all.return_value = list(speakers)
+    rows: dict[type, list] = {RecordingSpeaker: speakers, GlobalSpeaker: list(people)}
     session.get.side_effect = lambda cls, pk: next(
-        (s for s in speakers if s.id == pk), None
+        (row for row in rows.get(cls, []) if row.id == pk), None
     )
     return session
 
@@ -645,3 +667,243 @@ def test_a_backchannel_cluster_cannot_bridge_two_different_voices(
     assert groups[1]["merged_labels"] == ["SPEAKER_X"]
     assert groups[0]["min_cosine"] == pytest.approx(0.75, abs=1e-3)
     assert groups[1]["mean_cosine"] == pytest.approx(0.87, abs=1e-3)
+
+
+# --- the library voiceprint as the final guard --------------------------------
+
+# A bridge that complete linkage lets through. R is identified, R2 is a second
+# cluster of R's voice, N is another person, and X is a cluster of N's short
+# backchannel lines scoring 0.92 against N and 0.90 against R. Every pair inside
+# the recording clears 0.70, R~N at 0.72 the weakest, so linkage alone puts all
+# four in R's group. Against R's library voiceprint, R2 scores 0.70, X 0.65 and
+# N 0.40.
+LIBRARY_R = [1.0, 0.0, 0.0, 0.0, 0.0]
+GUARD_R = [0.9, 0.4359, 0.0, 0.0, 0.0]
+GUARD_R2 = [0.7, 0.5047, 0.5052, 0.0, 0.0]
+GUARD_X = [0.65, 0.7227, -0.0787, 0.2215, 0.0]
+GUARD_N = [0.4, 0.8259, 0.026, 0.2943, 0.2657]
+
+PERSON_ID = 22
+
+
+def _guard_speakers() -> list[FakeSpeaker]:
+    return [
+        FakeSpeaker(
+            id=1,
+            diarization_label="SPEAKER_R",
+            embedding=GUARD_R,
+            global_speaker_id=PERSON_ID,
+        ),
+        FakeSpeaker(id=2, diarization_label="SPEAKER_R2", embedding=GUARD_R2),
+        FakeSpeaker(id=3, diarization_label="SPEAKER_X", embedding=GUARD_X),
+        FakeSpeaker(id=4, diarization_label="SPEAKER_N", embedding=GUARD_N),
+    ]
+
+
+def _person(**overrides) -> FakeGlobalSpeaker:
+    fields = {"id": PERSON_ID, "name": "Alice Example", "embedding": LIBRARY_R}
+    fields.update(overrides)
+    return FakeGlobalSpeaker(**fields)
+
+
+@patch("backend.processing.speaker_merge._count_utterances_per_speaker")
+def test_a_cluster_that_does_not_sound_like_the_person_is_refused(
+    mock_counts: MagicMock, monkeypatch
+) -> None:
+    """N stays out of R's group however well it scores inside the recording.
+
+    X joins N first on the strongest link. The R~X link would then put N in
+    R's group, and N scores 0.40 against R's library voiceprint, so it is
+    refused and X stays with N. R keeps R2, which sounds like R.
+    """
+    events = _captured_metrics(monkeypatch)
+    speakers = _guard_speakers()
+    mock_counts.return_value = {1: 66, 2: 40, 3: 192, 4: 209}
+    session = _fake_session_with_speakers(speakers, people=(_person(),))
+
+    merge_pairs = merge_duplicate_speakers(session, recording_id=1, threshold=0.70)
+
+    assert sorted(merge_pairs) == [(2, 1), (3, 4)]
+
+    payload = events[0]["payload"]
+    assert payload["identified_voiceprint_floor"] == 0.6
+    assert payload["library_voiceprints"] == [
+        {
+            "global_speaker_id": PERSON_ID,
+            "name": "Alice Example",
+            "available": True,
+            "reason": None,
+        }
+    ]
+
+    pairs = {(p["a_id"], p["b_id"]): p for p in payload["pairs"]}
+    refused = pairs[(1, 3)]
+    assert refused["cosine"] == pytest.approx(0.90, abs=1e-3)
+    assert refused["merged"] is False
+    assert refused["blocked_by"] == "below_identified_voiceprint_floor"
+    assert refused["identified_global_speaker_id"] == PERSON_ID
+    assert refused["identified_name"] == "Alice Example"
+    assert refused["failing_label"] == "SPEAKER_N"
+    assert refused["identified_voiceprint_cosine"] == pytest.approx(0.40, abs=1e-3)
+    # R~N clears the threshold and complete linkage would allow it, but the
+    # library guard runs first and is the reason recorded.
+    assert pairs[(1, 4)]["blocked_by"] == "below_identified_voiceprint_floor"
+    assert "weakest_cross_cosine" not in pairs[(1, 4)]
+    assert pairs[(1, 2)]["merged"] is True
+    assert pairs[(3, 4)]["merged"] is True
+
+    groups = {g["survivor_label"]: g for g in payload["groups"]}
+    assert groups["SPEAKER_R"]["merged_labels"] == ["SPEAKER_R2"]
+    assert groups["SPEAKER_R"]["identified_global_speaker_id"] == PERSON_ID
+    assert groups["SPEAKER_R"]["merged_identified_voiceprint_cosines"] == [
+        pytest.approx(0.70, abs=1e-3)
+    ]
+    assert groups["SPEAKER_N"]["merged_labels"] == ["SPEAKER_X"]
+    assert groups["SPEAKER_N"]["identified_global_speaker_id"] is None
+    assert groups["SPEAKER_N"]["merged_identified_voiceprint_cosines"] == [None]
+
+
+@patch("backend.processing.speaker_merge._count_utterances_per_speaker")
+def test_a_genuine_second_cluster_of_the_identified_person_still_merges(
+    mock_counts: MagicMock, monkeypatch
+) -> None:
+    """R2 scores 0.70 against R's library voiceprint, above the floor."""
+    events = _captured_metrics(monkeypatch)
+    speakers = _guard_speakers()[:2]
+    mock_counts.return_value = {}
+    session = _fake_session_with_speakers(speakers, people=(_person(),))
+
+    assert merge_duplicate_speakers(session, recording_id=1, threshold=0.70) == [(2, 1)]
+
+    group = events[0]["payload"]["groups"][0]
+    assert group["identified_global_speaker_id"] == PERSON_ID
+    assert group["merged_identified_voiceprint_cosines"] == [
+        pytest.approx(0.70, abs=1e-3)
+    ]
+
+
+@pytest.mark.parametrize(
+    ("people", "reason"),
+    [
+        (
+            (_person(embedding_version=EMBEDDING_METHOD_VERSION - 1),),
+            "embedding_version_mismatch",
+        ),
+        ((_person(embedding=None),), "no_library_voiceprint"),
+        ((), "person_not_found"),
+    ],
+)
+@patch("backend.processing.speaker_merge._count_utterances_per_speaker")
+def test_an_unusable_library_voiceprint_leaves_the_merge_to_linkage(
+    mock_counts: MagicMock, monkeypatch, people, reason
+) -> None:
+    """Without a comparable library voiceprint the guard cannot score anyone.
+
+    The pass falls back to complete linkage, which joins all four clusters
+    here, and the metric says the library was not consulted.
+    """
+    events = _captured_metrics(monkeypatch)
+    speakers = _guard_speakers()
+    mock_counts.return_value = {}
+    session = _fake_session_with_speakers(speakers, people=people)
+
+    merge_pairs = merge_duplicate_speakers(session, recording_id=1, threshold=0.70)
+
+    assert sorted(merge_pairs) == [(2, 1), (3, 1), (4, 1)]
+    payload = events[0]["payload"]
+    [status] = payload["library_voiceprints"]
+    assert status["global_speaker_id"] == PERSON_ID
+    assert status["available"] is False
+    assert status["reason"] == reason
+    assert not any(
+        p["blocked_by"] == "below_identified_voiceprint_floor" for p in payload["pairs"]
+    )
+    [group] = payload["groups"]
+    assert group["identified_global_speaker_id"] == PERSON_ID
+    assert group["merged_identified_voiceprint_cosines"] == [None, None, None]
+
+
+@patch("backend.processing.speaker_merge._count_utterances_per_speaker")
+def test_clusters_identified_as_the_same_person_merge_as_before(
+    mock_counts: MagicMock, monkeypatch
+) -> None:
+    """A member carrying the identity is not scored against the library.
+
+    Both clusters are tied to the person already, by identification or by
+    hand, so N's own 0.40 against the library voiceprint does not count.
+    """
+    events = _captured_metrics(monkeypatch)
+    speakers = [
+        FakeSpeaker(
+            id=1,
+            diarization_label="SPEAKER_R",
+            embedding=GUARD_R,
+            global_speaker_id=PERSON_ID,
+        ),
+        FakeSpeaker(
+            id=2,
+            diarization_label="SPEAKER_N",
+            embedding=GUARD_N,
+            global_speaker_id=PERSON_ID,
+        ),
+    ]
+    mock_counts.return_value = {1: 50, 2: 10}
+    session = _fake_session_with_speakers(speakers, people=(_person(),))
+
+    assert merge_duplicate_speakers(session, recording_id=1, threshold=0.70) == [(2, 1)]
+
+    pair = events[0]["payload"]["pairs"][0]
+    assert pair["merged"] is True
+    assert pair["blocked_by"] is None
+
+
+def test_the_guard_reads_the_library_through_an_orm_session(tmp_path) -> None:
+    """The person is loaded with ``session.get`` on a real session, not a mock."""
+    engine = create_engine(f"sqlite:///{tmp_path / 'merge.sqlite'}", future=True)
+    with engine.begin() as connection:
+        for schema in (
+            GLOBAL_SPEAKERS_SCHEMA,
+            RECORDING_SPEAKERS_SCHEMA,
+            TRANSCRIPT_UTTERANCES_SCHEMA,
+            # GlobalSpeaker loads its tags with the row.
+            PEOPLE_TAGS_SCHEMA,
+            P_TAGS_SCHEMA,
+        ):
+            connection.execute(text(schema))
+
+    with Session(engine) as session:
+        person = _person()
+        session.add(
+            GlobalSpeaker(
+                id=person.id,
+                name=person.name,
+                embedding=person.embedding,
+                embedding_version=person.embedding_version,
+            )
+        )
+        for speaker in _guard_speakers():
+            session.add(
+                RecordingSpeaker(
+                    id=speaker.id,
+                    recording_id=1,
+                    diarization_label=speaker.diarization_label,
+                    embedding=speaker.embedding,
+                    embedding_version=speaker.embedding_version,
+                    global_speaker_id=speaker.global_speaker_id,
+                )
+            )
+        session.commit()
+
+        merge_pairs = merge_duplicate_speakers(
+            session,
+            recording_id=1,
+            threshold=0.70,
+            speech_seconds={"SPEAKER_X": 255.0, "SPEAKER_N": 1405.0},
+        )
+        session.commit()
+        merged_into = {
+            row.id: row.merged_into_id for row in session.exec(select(RecordingSpeaker))
+        }
+
+    assert sorted(merge_pairs) == [(2, 1), (3, 4)]
+    assert merged_into == {1: None, 2: 1, 3: 4, 4: None}
