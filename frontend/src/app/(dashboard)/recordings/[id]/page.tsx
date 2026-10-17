@@ -100,7 +100,6 @@ export default function RecordingPage({ params }: PageProps) {
     handleNotesChange,
     handleNotesUndo,
     handleNotesRedo,
-    handleProcessingNotesChange,
     handleMeetingEdgeFocusChange,
     handleMeetingEdgeContextLevelChange,
     handleExport,
@@ -191,7 +190,6 @@ export default function RecordingPage({ params }: PageProps) {
           <div className="h-full flex-1 min-w-0 overflow-y-auto bg-surface-page">
             <RecordingStatusDisplay
               recording={recording}
-              onSaveProcessingNotes={handleProcessingNotesChange}
               onSaveMeetingEdgeFocus={handleMeetingEdgeFocusChange}
               meetingEdgeContextLevel={meetingEdgeContextLevel}
               onSaveMeetingEdgeContextLevel={

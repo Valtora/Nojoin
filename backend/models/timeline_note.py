@@ -1,0 +1,120 @@
+"""Notes a user writes on a recording, anchored to its audio timeline.
+
+A note hangs off the recording, never the transcript or an utterance: the final
+pass rebuilds utterances and a reprocess deletes the transcript row, and a note
+must outlive both. Its anchor is in milliseconds on the recording's audio
+timeline, the clock ``TranscriptUtterance.start_ms`` runs on, so placing it
+among the lines (``backend.utils.timeline_notes``) is a pure function of the
+note and whatever transcript exists at the time.
+
+Four kinds, distinguished by which anchor columns are set:
+
+* ``point``: one moment, ``anchor_ms``.
+* ``selection``: a span of words, ``start_ms``/``end_ms``, with
+  ``quoted_text`` the words as the user saw them. The quote is a snapshot and is
+  never re-resolved against a later transcript.
+* ``head``: about the meeting as a whole, before the transcript. The textarea
+  shown while a meeting records or processes edits the earliest head note.
+* ``tail``: added after the transcript, such as by an assistant over MCP.
+
+``kind`` is a string checked by a constraint rather than a native enum, so a
+new kind is a constraint swap rather than an ``ALTER TYPE``.
+"""
+
+from enum import Enum
+from typing import Optional
+
+from sqlalchemy import (
+    BigInteger,
+    CheckConstraint,
+    Column,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+)
+from sqlmodel import Field
+
+from backend.models.base import BaseDBModel
+from backend.models.pipeline import generate_pipeline_public_id
+
+
+class TimelineNoteKind(str, Enum):
+    POINT = "point"
+    SELECTION = "selection"
+    HEAD = "head"
+    TAIL = "tail"
+
+
+TIMELINE_NOTE_KIND_CHECK = "kind IN ('point', 'selection', 'head', 'tail')"
+
+# The anchor columns each kind sets, and only those. The API validates the same
+# shape (backend.models.timeline_note_public) so a bad write is a 422, not a
+# constraint error.
+TIMELINE_NOTE_SHAPE_CHECK = (
+    "(kind = 'point' AND anchor_ms IS NOT NULL AND anchor_ms >= 0"
+    " AND start_ms IS NULL AND end_ms IS NULL AND quoted_text IS NULL)"
+    " OR (kind = 'selection' AND anchor_ms IS NULL"
+    " AND start_ms IS NOT NULL AND end_ms IS NOT NULL"
+    " AND start_ms >= 0 AND start_ms < end_ms AND quoted_text IS NOT NULL)"
+    " OR (kind IN ('head', 'tail') AND anchor_ms IS NULL"
+    " AND start_ms IS NULL AND end_ms IS NULL AND quoted_text IS NULL)"
+)
+
+
+class TimelineNote(BaseDBModel, table=True):
+    __tablename__ = "timeline_notes"
+    __table_args__ = (
+        CheckConstraint(TIMELINE_NOTE_KIND_CHECK, name="ck_timeline_notes_kind"),
+        CheckConstraint(TIMELINE_NOTE_SHAPE_CHECK, name="ck_timeline_notes_shape"),
+    )
+
+    public_id: str = Field(
+        default_factory=generate_pipeline_public_id,
+        sa_column=Column(
+            String(36),
+            unique=True,
+            index=True,
+            nullable=False,
+            default=generate_pipeline_public_id,
+        ),
+    )
+    recording_id: int = Field(
+        sa_column=Column(
+            BigInteger,
+            ForeignKey("recordings.id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        )
+    )
+    # Attribution only: every read is scoped by the recording's owner. Kept
+    # through a deleted account so the note itself survives.
+    created_by_user_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(
+            BigInteger,
+            ForeignKey("users.id", ondelete="SET NULL"),
+            nullable=True,
+            index=True,
+        ),
+    )
+    kind: str = Field(sa_column=Column(String(16), nullable=False))
+    body: str = Field(sa_column=Column(Text, nullable=False))
+    anchor_ms: Optional[int] = Field(
+        default=None, sa_column=Column(BigInteger, nullable=True)
+    )
+    start_ms: Optional[int] = Field(
+        default=None, sa_column=Column(BigInteger, nullable=True)
+    )
+    end_ms: Optional[int] = Field(
+        default=None, sa_column=Column(BigInteger, nullable=True)
+    )
+    quoted_text: Optional[str] = Field(
+        default=None, sa_column=Column(Text, nullable=True)
+    )
+    # Bumped by every edit; a write naming an older revision is refused (409),
+    # so two devices editing one note cannot silently overwrite each other.
+    revision: int = Field(
+        default=1,
+        sa_column=Column(Integer, nullable=False, default=1, server_default="1"),
+    )

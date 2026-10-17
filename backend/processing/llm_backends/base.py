@@ -49,7 +49,6 @@ from backend.utils.meeting_intelligence import (
 from backend.utils.meeting_notes import (
     MeetingEventContext,
     NotesPromptContext,
-    append_user_notes_section,
     build_documents_prompt_section,
     build_glossary_prompt_section,
     build_meeting_context_prompt_section,
@@ -205,6 +204,9 @@ class LLMBackend:
     ) -> SpeakerInferenceResult:
         """
         Infer evidence-backed name suggestions for unresolved diarization labels.
+
+        ``user_notes`` is the prompt's ``# User Notes Context`` section, every
+        timeline note listed in order, since this transcript carries none.
         """
         raise NotImplementedError
 
@@ -251,6 +253,11 @@ class LLMBackend:
         """
         Generate meeting notes using the provided speaker mapping to replace generic labels.
         Returns the meeting notes as a string.
+
+        ``user_notes`` is the prompt's ``# User Notes Context`` section, already
+        written from the recording's timeline notes; ``transcript`` carries the
+        notes written at particular moments on lines of their own. The caller
+        appends the user's notes to the result (``append_user_notes_section``).
         """
         raise NotImplementedError
 
@@ -725,8 +732,10 @@ class LLMBackend:
         return parse_meeting_analysis_response(response_text, request=request)
 
     @staticmethod
-    def finalise_meeting_notes(notes: str, user_notes: Optional[str] = None) -> str:
-        return append_user_notes_section(strip_leading_title_heading(notes), user_notes)
+    def finalise_meeting_notes(notes: str) -> str:
+        # The user's own notes are appended by the caller, which holds them
+        # (append_user_notes_section); a backend only sees them as prompt text.
+        return strip_leading_title_heading(notes)
 
     @staticmethod
     def parse_automatic_meeting_intelligence_result(
@@ -737,10 +746,7 @@ class LLMBackend:
             response_text,
             request=request,
         )
-        return finalise_automatic_meeting_intelligence_payload(
-            result,
-            request.user_notes,
-        )
+        return finalise_automatic_meeting_intelligence_payload(result)
 
     @staticmethod
     def parse_speaker_inference_result(

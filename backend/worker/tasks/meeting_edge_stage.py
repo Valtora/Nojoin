@@ -8,6 +8,15 @@ with no call-site changes.
 
 import logging
 
+from backend.services.timeline_note_service import (
+    RecordingTimelineNotes,
+    load_recording_timeline_notes,
+)
+from backend.utils.timeline_notes import (
+    iter_timeline,
+    render_note_line,
+    timeline_notes_signature,
+)
 from backend.worker.tasks.constants import *  # noqa: F401,F403 -- shared task surface
 
 logger = logging.getLogger(__name__)
@@ -53,21 +62,48 @@ def _parse_meeting_edge_generated_at(payload: dict | None) -> datetime | None:
 def _build_recent_meeting_edge_transcript(
     segments: Sequence[dict],
     speaker_map: dict[str, str],
+    timeline_notes: RecordingTimelineNotes,
 ) -> str:
-    lines: list[str] = []
-    total_chars = 0
+    """The latest lines, each with the body notes written after it.
 
-    for segment in reversed(list(segments)[-MEETING_EDGE_RECENT_SEGMENTS:]):
-        rendered = format_segments_for_llm([segment], speaker_map)
-        if not rendered:
+    A note travels with the line it follows, so the window either shows both
+    or neither. Notes before the first line show only once the window reaches
+    back to it. Head and tail notes are not here: the prompt's notes section
+    carries them on every refresh.
+    """
+    segment_list = list(segments)
+    # Index -1 holds the notes before the first line.
+    units: dict[int, list[str]] = {}
+    current = -1
+    for item in iter_timeline(len(segment_list), timeline_notes.place(segment_list)):
+        if isinstance(item, int):
+            current = item
+            rendered = format_segments_for_llm([segment_list[item]], speaker_map)
+        elif item.slot == "body":
+            rendered = render_note_line(item.note, timeline_notes.author_names)
+        else:
             continue
-        rendered_length = len(rendered) + 1
-        if lines and total_chars + rendered_length > MEETING_EDGE_MAX_TRANSCRIPT_CHARS:
-            break
-        lines.append(rendered)
-        total_chars += rendered_length
+        if rendered:
+            units.setdefault(current, []).append(rendered)
 
-    return "\n".join(reversed(lines)).strip()
+    blocks: list[str] = []
+    total_chars = 0
+    window_start = max(len(segment_list) - MEETING_EDGE_RECENT_SEGMENTS, 0)
+    earliest = len(segment_list)
+    for index in range(len(segment_list) - 1, window_start - 1, -1):
+        if index not in units:
+            continue
+        rendered = "\n".join(units[index])
+        rendered_length = len(rendered) + 1
+        if blocks and total_chars + rendered_length > MEETING_EDGE_MAX_TRANSCRIPT_CHARS:
+            break
+        blocks.append(rendered)
+        total_chars += rendered_length
+        earliest = index
+    if earliest == 0 and -1 in units:
+        blocks.append("\n".join(units[-1]))
+
+    return "\n".join(reversed(blocks)).strip()
 
 
 def _build_meeting_edge_source_signature(
@@ -112,7 +148,7 @@ def _should_refresh_meeting_edge_impl(
     current_segment_count: int,
     current_word_count: int,
     focus_text: str | None,
-    user_notes: str | None,
+    notes_signature: str,
     context_level: int | None = None,
 ) -> bool:
     if (
@@ -137,9 +173,11 @@ def _should_refresh_meeting_edge_impl(
     focus_changed = previous_payload.get("focus_hash") != _hash_meeting_edge_text(
         focus_text
     )
-    user_notes_changed = previous_payload.get(
-        "user_notes_hash"
-    ) != _hash_meeting_edge_text(user_notes)
+    # Any note added, edited or deleted refreshes at once, wherever it sits:
+    # the user asked for it to be taken into account.
+    notes_changed = previous_payload.get("notes_hash") != _hash_meeting_edge_text(
+        notes_signature
+    )
     context_level_changed = (
         context_level is not None
         and previous_payload.get("context_level") is not None
@@ -148,7 +186,7 @@ def _should_refresh_meeting_edge_impl(
 
     if (
         focus_changed
-        or user_notes_changed
+        or notes_changed
         or context_level_changed
         or not previous_generated_at
     ):
@@ -273,7 +311,9 @@ def _refresh_meeting_edge(self, recording_id: int):
             if str(segment.get("text", "")).strip()
         ]
         focus_text = transcript.meeting_edge_focus
-        user_notes = transcript.user_notes
+        timeline_notes = load_recording_timeline_notes(session, recording_id)
+        user_notes = timeline_notes.user_notes_context()
+        notes_signature = timeline_notes_signature(timeline_notes.notes)
 
         if not segments:
             if transcript.meeting_edge_status != MEETING_EDGE_STATUS_IDLE:
@@ -329,7 +369,9 @@ def _refresh_meeting_edge(self, recording_id: int):
             )
         ).all()
         speaker_map = build_recording_speaker_map(speakers)
-        recent_transcript = _build_recent_meeting_edge_transcript(segments, speaker_map)
+        recent_transcript = _build_recent_meeting_edge_transcript(
+            segments, speaker_map, timeline_notes
+        )
         context_level = get_meeting_edge_context_level(user_settings)
         source_signature = _build_meeting_edge_source_signature(
             recent_transcript=recent_transcript,
@@ -345,7 +387,7 @@ def _refresh_meeting_edge(self, recording_id: int):
             current_segment_count=segment_count,
             current_word_count=word_count,
             focus_text=focus_text,
-            user_notes=user_notes,
+            notes_signature=notes_signature,
             context_level=context_level,
         ):
             return None
@@ -406,7 +448,7 @@ def _refresh_meeting_edge(self, recording_id: int):
                 "source_word_count": word_count,
                 "source_last_end": float(segments[-1].get("end", 0.0)),
                 "focus_hash": _hash_meeting_edge_text(focus_text),
-                "user_notes_hash": _hash_meeting_edge_text(user_notes),
+                "notes_hash": _hash_meeting_edge_text(notes_signature),
                 "context_level": context_level,
             }
         )

@@ -1,4 +1,9 @@
-import type { RecordingId } from "@/types";
+import type {
+  RecordingId,
+  TimelineNote,
+  TimelineNoteCreate,
+  TimelineNoteUpdate,
+} from "@/types";
 import api from "./client";
 
 export const getNotes = async (
@@ -27,24 +32,46 @@ export const updateNotes = async (
   return response.data;
 };
 
-export const getUserNotes = async (
+const timelineNotesPath = (recordingId: RecordingId) =>
+  `/transcripts/${recordingId}/timeline-notes`;
+
+/** Creates a note. Retrying with the same client `id` returns the first one. */
+export const createTimelineNote = async (
   recordingId: RecordingId,
-): Promise<{ user_notes: string | null }> => {
-  const response = await api.get<{ user_notes: string | null }>(
-    `/transcripts/${recordingId}/user-notes`,
+  note: TimelineNoteCreate,
+): Promise<TimelineNote> => {
+  const response = await api.post<TimelineNote>(
+    timelineNotesPath(recordingId),
+    note,
   );
   return response.data;
 };
 
-export const updateUserNotes = async (
+/** Edits a note; 409 (detail `TimelineNoteConflictDetail`) if it changed since. */
+export const updateTimelineNote = async (
   recordingId: RecordingId,
-  userNotes: string,
-): Promise<{ user_notes: string | null; status: string }> => {
-  const response = await api.put<{ user_notes: string | null; status: string }>(
-    `/transcripts/${recordingId}/user-notes`,
-    { user_notes: userNotes },
+  noteId: string,
+  update: TimelineNoteUpdate,
+): Promise<TimelineNote> => {
+  const response = await api.patch<TimelineNote>(
+    `${timelineNotesPath(recordingId)}/${noteId}`,
+    update,
   );
   return response.data;
+};
+
+/** Deletes a note; with `expectedRevision`, 409 if it changed since. */
+export const deleteTimelineNote = async (
+  recordingId: RecordingId,
+  noteId: string,
+  expectedRevision?: number,
+): Promise<void> => {
+  await api.delete(`${timelineNotesPath(recordingId)}/${noteId}`, {
+    params:
+      expectedRevision === undefined
+        ? undefined
+        : { expected_revision: expectedRevision },
+  });
 };
 
 export const updateMeetingEdgeFocus = async (

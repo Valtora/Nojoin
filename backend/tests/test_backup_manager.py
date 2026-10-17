@@ -43,6 +43,8 @@ from backend.tests.backup_harness import (
     TestRecording,
     TestRecordingSpeaker,
     TestRecordingTag,
+    TestTimelineNote,
+    TestTimelineNoteTombstone,
     TestTranscript,
     TestUser,
     TestUserTask,
@@ -2351,3 +2353,331 @@ async def test_recording_without_archived_audio_never_takes_another_recordings_m
     present = Path(restored["meeting-present"].audio_path)
     assert present.read_bytes() == b"H-WAV-AS-OPUS"
     assert not Path(restored["meeting-lost"].audio_path).exists()
+
+
+def _queue_restore_job(job_id: str) -> None:
+    BackupManager.restore_jobs[job_id] = {
+        "status": "pending",
+        "progress": "Queued",
+        "error": None,
+    }
+
+
+def _write_v2_archive_with_user_notes(backup_zip: Path) -> None:
+    """A format version 2 archive: notes are free text on the transcript row."""
+    stamp = "2026-03-02T10:15:00"
+    user = {
+        "id": 1,
+        "created_at": stamp,
+        "updated_at": stamp,
+        "username": "alice",
+        "hashed_password": "hashed-password",
+        "role": "user",
+        "settings": {},
+    }
+    recordings = [
+        {
+            "id": 40 + offset,
+            "created_at": stamp,
+            "updated_at": stamp,
+            "name": f"Meeting {offset}",
+            "meeting_uid": f"v2-meeting-{offset}",
+            "audio_path": f"recordings/v2-meeting-{offset}.opus",
+            "status": "PROCESSED",
+            "user_id": 1,
+        }
+        for offset in (0, 1)
+    ]
+    transcripts = [
+        {
+            "id": 90,
+            "created_at": stamp,
+            "updated_at": "2026-03-02T11:00:00",
+            "recording_id": 40,
+            "text": "Full transcript",
+            "user_notes": "\n  Budget owner: Dana.\nShip date moves to May.  \n",
+        },
+        # Whitespace-only notes were never worth anything; no note comes of them.
+        {
+            "id": 91,
+            "created_at": stamp,
+            "updated_at": stamp,
+            "recording_id": 41,
+            "text": "Other transcript",
+            "user_notes": "   \n",
+        },
+    ]
+    with zipfile.ZipFile(backup_zip, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr(
+            "backup_info.json", json.dumps({"format_version": 2, "version": "0.6.0"})
+        )
+        archive.writestr("users.json", json.dumps([user]))
+        archive.writestr("recordings.json", json.dumps(recordings))
+        archive.writestr("transcripts.json", json.dumps(transcripts))
+        for recording in recordings:
+            archive.writestr(recording["audio_path"], b"v2-opus-audio")
+
+
+@pytest.mark.anyio
+async def test_a_version_2_archive_restores_its_user_notes_as_one_head_note(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Version 2 archives carry notes as transcripts.user_notes, a column this schema
+    # no longer has. Dropping the unknown field silently would lose the only thing a
+    # person typed into the recording, so the restore converts it the way the
+    # migration does: one head note, authored by the recording's owner.
+    target_context = build_test_context(tmp_path / "target")
+    patch_backup_manager(monkeypatch, target_context)
+    monkeypatch.setenv("DATA_ENCRYPTION_KEY", "target-encryption-key")
+    backup_zip = tmp_path / "v2-notes.zip"
+    _write_v2_archive_with_user_notes(backup_zip)
+
+    _queue_restore_job("v2-notes-job")
+    await BackupManager.restore_backup("v2-notes-job", str(backup_zip))
+    assert BackupManager.restore_jobs["v2-notes-job"]["status"] == "completed"
+
+    with Session(target_context.sync_engine) as session:
+        user = session.exec(select(TestUser)).one()
+        noted = session.exec(
+            select(TestRecording).where(TestRecording.meeting_uid == "v2-meeting-0")
+        ).one()
+        notes = session.exec(select(TestTimelineNote)).all()
+
+    assert len(notes) == 1
+    note = notes[0]
+    assert note.recording_id == noted.id
+    assert note.kind == "head"
+    assert note.body == "Budget owner: Dana.\nShip date moves to May."
+    assert note.created_by_user_id == user.id
+    assert (note.anchor_ms, note.start_ms, note.end_ms) == (None, None, None)
+    # Dated like the migration's backfill: when the notes were last saved.
+    assert note.created_at == datetime(2026, 3, 2, 11, 0)
+
+    # A second safe-merge restore keeps the existing transcript, so it cannot add the
+    # note again.
+    _queue_restore_job("v2-notes-again")
+    await BackupManager.restore_backup("v2-notes-again", str(backup_zip))
+    assert BackupManager.restore_jobs["v2-notes-again"]["status"] == "completed"
+    with Session(target_context.sync_engine) as session:
+        assert len(session.exec(select(TestTimelineNote)).all()) == 1
+
+    await target_context.async_engine.dispose()
+
+
+@pytest.mark.anyio
+async def test_timeline_notes_round_trip_and_a_colliding_or_deleted_id_is_reminted(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_context = build_test_context(tmp_path / "source")
+    patch_backup_manager(monkeypatch, source_context)
+    monkeypatch.setenv("DATA_ENCRYPTION_KEY", "source-encryption-key")
+    await seed_source_data(
+        source_context.async_session_maker,
+        recording_meeting_uid="meeting-uid-notes",
+    )
+    with Session(source_context.sync_engine) as session:
+        session.add(TestTranscript(id=90, recording_id=40, text="Full transcript"))
+        session.add(
+            TestTimelineNote(
+                public_id="note-head",
+                recording_id=40,
+                created_by_user_id=1,
+                kind="head",
+                body="Agenda: budget, then hiring.",
+            )
+        )
+        session.add(
+            TestTimelineNote(
+                public_id="note-shared",
+                recording_id=40,
+                created_by_user_id=1,
+                kind="selection",
+                body="This number is wrong.",
+                start_ms=61_000,
+                end_ms=64_500,
+                quoted_text="forty thousand",
+                revision=3,
+            )
+        )
+        session.add(
+            TestTimelineNote(
+                public_id="note-deleted-since",
+                recording_id=40,
+                created_by_user_id=1,
+                kind="tail",
+                body="Deleted on the target after this backup.",
+            )
+        )
+        session.commit()
+
+    zip_path, _ = await BackupManager.create_backup(include_audio=False)
+    await source_context.async_engine.dispose()
+    with zipfile.ZipFile(zip_path) as archive:
+        info = json.loads(archive.read("backup_info.json"))
+        archived = json.loads(archive.read("timeline_notes.json"))
+    assert info["format_version"] == 3
+    assert {row["public_id"] for row in archived} == {
+        "note-head",
+        "note-shared",
+        "note-deleted-since",
+    }
+
+    # The target already has an unrelated note holding one of the archived ids.
+    target_context = build_test_context(tmp_path / "target")
+    patch_backup_manager(monkeypatch, target_context)
+    monkeypatch.setenv("DATA_ENCRYPTION_KEY", "target-encryption-key")
+    await seed_existing_target_recording(
+        target_context.async_session_maker,
+        meeting_uid="meeting-uid-unrelated",
+        audio_path="data/recordings/unrelated.wav",
+    )
+    with Session(target_context.sync_engine) as session:
+        session.add(
+            TestTimelineNote(
+                public_id="note-shared",
+                recording_id=102,
+                created_by_user_id=101,
+                kind="tail",
+                body="Belongs to the target.",
+            )
+        )
+        # A note deleted on the target leaves its id to its tombstone.
+        session.add(
+            TestTimelineNoteTombstone(
+                public_id="note-deleted-since",
+                recording_id=102,
+                deleted_at=datetime(2026, 3, 2, 10, 0),
+            )
+        )
+        session.commit()
+
+    _queue_restore_job("notes-round-trip")
+    await BackupManager.restore_backup("notes-round-trip", zip_path)
+    assert BackupManager.restore_jobs["notes-round-trip"]["status"] == "completed"
+
+    with Session(target_context.sync_engine) as session:
+        restored_recording = session.exec(
+            select(TestRecording).where(
+                TestRecording.meeting_uid == "meeting-uid-notes"
+            )
+        ).one()
+        restored = session.exec(
+            select(TestTimelineNote).where(
+                TestTimelineNote.recording_id == restored_recording.id
+            )
+        ).all()
+        untouched = session.exec(
+            select(TestTimelineNote).where(TestTimelineNote.recording_id == 102)
+        ).one()
+
+    by_kind = {note.kind: note for note in restored}
+    assert set(by_kind) == {"head", "selection", "tail"}
+    assert by_kind["tail"].body == "Deleted on the target after this backup."
+    assert by_kind["tail"].public_id != "note-deleted-since"
+    assert by_kind["head"].public_id == "note-head"
+    assert by_kind["head"].body == "Agenda: budget, then hiring."
+    selection = by_kind["selection"]
+    assert selection.public_id not in {"note-shared", "note-head"}
+    assert (selection.start_ms, selection.end_ms) == (61_000, 64_500)
+    assert selection.quoted_text == "forty thousand"
+    assert selection.revision == 3
+    # Remapped onto the target's own ids: the archive's user 1 merged into alice (101).
+    assert {note.created_by_user_id for note in restored} == {101}
+    assert untouched.public_id == "note-shared"
+    assert untouched.body == "Belongs to the target."
+
+    await target_context.async_engine.dispose()
+
+
+@pytest.mark.anyio
+async def test_a_recording_listed_twice_in_an_archive_keeps_each_note_once(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The second copy of a duplicated recording is linked to the first, and so
+    # are its rows; the same note arriving twice must not become two notes.
+    target_context = build_test_context(tmp_path / "target")
+    patch_backup_manager(monkeypatch, target_context)
+    monkeypatch.setenv("DATA_ENCRYPTION_KEY", "target-encryption-key")
+    stamp = "2026-03-02T10:15:00"
+    recordings = [
+        {
+            "id": row_id,
+            "created_at": stamp,
+            "updated_at": stamp,
+            "name": "Twice",
+            "meeting_uid": "listed-twice",
+            "audio_path": "recordings/twice.opus",
+            "status": "PROCESSED",
+            "user_id": 1,
+        }
+        for row_id in (40, 41)
+    ]
+    note = {"created_at": stamp, "updated_at": stamp, "created_by_user_id": 1}
+    notes = [
+        {
+            **note,
+            "id": 1,
+            "public_id": "n-shared",
+            "recording_id": 40,
+            "kind": "head",
+            "body": "Agenda",
+        },
+        {
+            **note,
+            "id": 2,
+            "public_id": "n-shared",
+            "recording_id": 41,
+            "kind": "head",
+            "body": "Agenda",
+        },
+        {
+            **note,
+            "id": 3,
+            "public_id": "n-own",
+            "recording_id": 41,
+            "kind": "tail",
+            "body": "Wrap up",
+        },
+    ]
+    backup_zip = tmp_path / "twice.zip"
+    with zipfile.ZipFile(backup_zip, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr(
+            "backup_info.json", json.dumps({"format_version": 3, "version": "0.6.0"})
+        )
+        archive.writestr(
+            "users.json",
+            json.dumps(
+                [
+                    {
+                        "id": 1,
+                        "created_at": stamp,
+                        "updated_at": stamp,
+                        "username": "alice",
+                        "hashed_password": "hashed-password",
+                        "role": "user",
+                        "settings": {},
+                    }
+                ]
+            ),
+        )
+        archive.writestr("recordings.json", json.dumps(recordings))
+        archive.writestr("timeline_notes.json", json.dumps(notes))
+        archive.writestr("recordings/twice.opus", b"twice-audio")
+
+    _queue_restore_job("twice-job")
+    await BackupManager.restore_backup("twice-job", str(backup_zip))
+    assert BackupManager.restore_jobs["twice-job"]["status"] == "completed"
+
+    with Session(target_context.sync_engine) as session:
+        recording = session.exec(select(TestRecording)).one()
+        restored = session.exec(select(TestTimelineNote)).all()
+
+    assert sorted((n.public_id, n.recording_id) for n in restored) == [
+        ("n-own", recording.id),
+        ("n-shared", recording.id),
+    ]
+
+    await target_context.async_engine.dispose()

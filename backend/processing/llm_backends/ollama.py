@@ -450,7 +450,7 @@ class OllamaLLMBackend(LLMBackend):
             response_json = resp.json()
             self._raise_if_truncated(response_json)
             text = response_json.get("message", {}).get("content", "")
-            return self.finalise_meeting_notes(self.parse_notes(text), user_notes)
+            return self.finalise_meeting_notes(self.parse_notes(text))
         except Exception as e:  # noqa: BLE001 -- boundary: HTTP and parse errors share no base class; every failure becomes one actionable error
             raise self._api_error("meeting notes", e)
 
@@ -594,7 +594,7 @@ class OllamaLLMBackend(LLMBackend):
                 partial(self._complete, timeout=timeout),
                 self._parts_budget(overflow, refused),
             )
-            return self.finalise_meeting_notes(self.parse_notes(notes), user_notes)
+            return self.finalise_meeting_notes(self.parse_notes(notes))
         except Exception as e:  # noqa: BLE001 -- boundary: HTTP and parse errors share no base class; every failure becomes one actionable error
             raise self._api_error("meeting notes in parts", e)
 

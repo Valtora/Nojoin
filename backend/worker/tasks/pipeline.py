@@ -505,10 +505,9 @@ def _finalize_transcript_and_notes(
     ).all()
     unresolved_speakers = get_speakers_eligible_for_llm_renaming(recording_speakers)
     speaker_map = build_recording_speaker_map(recording_speakers)
+    timeline_notes = load_recording_timeline_notes(session, recording.id)
     transcript_text = _build_automatic_meeting_intelligence_transcript(
-        updated_segments,
-        speaker_map,
-        unresolved_speakers,
+        updated_segments, speaker_map, unresolved_speakers, timeline_notes
     )
 
     if transcript_text.strip() and _meeting_intelligence_runs_on_io(llm_config):
@@ -544,6 +543,7 @@ def _finalize_transcript_and_notes(
         llm_config=llm_config,
         prefer_short_titles=merged_config.get("prefer_short_titles", True),
         device_suffix=device_suffix,
+        timeline_notes=timeline_notes,
         detected_transcription_language=transcription_result.get("language"),
     )
 

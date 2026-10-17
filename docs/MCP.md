@@ -81,7 +81,7 @@ Two write tools spend your AI provider quota, which undoing their result does no
 | `get_transcript` | `mcp:read` | The speaker-attributed transcript, formatted for reading. |
 | `get_transcript_utterances` | `mcp:read` | The transcript as structured utterances: stable ids, millisecond timestamps, edit provenance, and a revision cursor with tombstones for incremental sync. |
 | `search_context` | `mcp:read` | Semantic search across every transcript, set of AI notes and attached document, with the recording and a timestamp or page on each hit. |
-| `get_meeting_notes` | `mcp:read` | The AI meeting notes plus your own notes. |
+| `get_meeting_notes` | `mcp:read` | The AI meeting notes plus your own notes, in timeline order, each with its time in the recording where it has one. |
 | `get_documents` | `mcp:read` | The documents attached to a recording, with their extracted text. |
 | `get_meeting_analytics` | `mcp:read` | Speaking dynamics for a processed meeting, matching its Analytics tab: talk-time share, turns, response behaviour at speaker changes, a talk-share timeline, silence, and measured overlapping speech (there are no interruption counts). Adds measured delivery (pace, pitch, loudness, pausing, and each linked person's usual figures) where it has been generated, and `ai_analysis` (topics, sentiment read from the words, questions and answers, decision ownership, each claim with timestamped quotes) where the meeting has been analysed. Everything except `ai_analysis` is measured, not inferred by a model, and delivery describes how someone spoke, not their mood. `attribution_warnings` flags unreliable speaker attribution. |
 | `get_speakers` | `mcp:read` | The speakers in a recording, with links to their People records. |
@@ -104,7 +104,7 @@ Two write tools spend your AI provider quota, which undoing their result does no
 | `create_task` / `update_task` | `mcp:write` | Create, edit, complete, archive or restore tasks, with links to recordings and tags. Deleting a task is web-app only. |
 | `import_people` | `mcp:write` | Create or update People records, matching existing people by exact name. Never touches voiceprints or removes data. |
 | `set_speaker_name` | `mcp:write` | Name a meeting's speaker, linking them to the person of that exact name if one exists. The name reaches the transcript and the AI notes, and the speaker panel marks it `AI named`. |
-| `append_meeting_notes` | `mcp:write` | Append text to a meeting's user notes. |
+| `append_meeting_notes` | `mcp:write` | Add a note after the end of a meeting's transcript. |
 
 A connection keeps the scopes it was granted. One authorised before `mcp:write` existed stays read-only, and its write tools reply with an instruction to reconnect. Remove and re-add the connector to grant the wider scope.
 

@@ -82,8 +82,25 @@ TRANSCRIPTS_ROUTE_CONTRACT = [
         "update_transcript_segment_text",
         "TranscriptPublicRead",
     ),
-    ("/{recording_id}/user-notes", ("GET",), "get_user_notes", None),
-    ("/{recording_id}/user-notes", ("PUT",), "update_user_notes", None),
+    ("/{recording_id}/timeline-notes", ("GET",), "list_timeline_notes", "list"),
+    (
+        "/{recording_id}/timeline-notes",
+        ("POST",),
+        "create_timeline_note",
+        "TimelineNoteRead",
+    ),
+    (
+        "/{recording_id}/timeline-notes/{note_id}",
+        ("DELETE",),
+        "delete_timeline_note",
+        None,
+    ),
+    (
+        "/{recording_id}/timeline-notes/{note_id}",
+        ("PATCH",),
+        "update_timeline_note",
+        "TimelineNoteRead",
+    ),
     (
         "/{recording_id}/utterances",
         ("GET",),

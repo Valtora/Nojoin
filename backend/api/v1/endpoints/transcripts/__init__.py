@@ -11,6 +11,7 @@ from . import (
     routes_export,
     routes_notes,
     routes_segments,
+    routes_timeline_notes,
     routes_utterances,
 )
 
@@ -27,7 +28,6 @@ from .helpers import (
     TranscriptUtteranceRead,
     TranscriptUtteranceSpeakerPatch,
     TranscriptUtteranceTextPatch,
-    UserNotesUpdate,
     _apply_find_replace,
     _build_speaker_map,
     _canonical_transcript_writes_enabled,

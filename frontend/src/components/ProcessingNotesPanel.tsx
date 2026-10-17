@@ -1,34 +1,127 @@
 "use client";
 
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useId, useRef, useState } from "react";
+
+import { NOTE_BODY_MAX_CHARS, type HeadNoteConflict } from "@/lib/notes/headNoteSync";
+import type { TimelineNote } from "@/types";
 
 const SAVE_DEBOUNCE_MS = 1800;
+// The character count shows from here, so the limit is never a surprise.
+const LENGTH_WARNING_CHARS = NOTE_BODY_MAX_CHARS - 5_000;
 
 interface ProcessingNotesPanelProps {
   value?: string | null;
   onSave: (notes: string) => Promise<void>;
+  /** Told whenever the box starts or stops holding unsaved text. */
+  onDirtyChange?: (dirty: boolean) => void;
+  /** Set when another device changed or deleted the notes under an edit. */
+  conflict?: HeadNoteConflict | null;
+  onResolveConflict?: (choice: "mine" | "theirs") => void;
   disabled?: boolean;
   disabledMessage?: string;
+  /** The recording's other meeting-wide notes, shown read-only under the box. */
+  otherNotes?: readonly TimelineNote[];
 }
 
+const NO_OTHER_NOTES: readonly TimelineNote[] = [];
+
 type SaveState = "idle" | "saving" | "saved" | "error";
+
+const lengthToShow = (text: string) =>
+  text.length >= LENGTH_WARNING_CHARS ? text.length : null;
+
+// The server trims a note, so text that differs only in its outer whitespace
+// is the same note.
+const sameNote = (a: string, b: string) => a.trim() === b.trim();
+
+function ConflictNotice({
+  conflict,
+  locked,
+  onKeepMine,
+  onUseTheirs,
+}: {
+  conflict: HeadNoteConflict;
+  locked: boolean;
+  onKeepMine: () => void;
+  onUseTheirs: () => void;
+}) {
+  const changed = conflict.kind === "changed";
+  return (
+    <div
+      role="alert"
+      className="mb-3 rounded-surface-subtle border border-status-warning-border bg-status-warning-bg px-3 py-2 text-sm text-status-warning-fg"
+    >
+      <p className="font-semibold">
+        {changed
+          ? "These notes were changed on another device."
+          : "These notes were deleted on another device."}
+      </p>
+      <p className="mt-1">
+        Your text is still in the box and has not been saved.
+        {locked
+          ? " Notes generation has started with the other device's version."
+          : ""}
+        {changed ? " Their version:" : ""}
+      </p>
+      {changed ? (
+        <p className="mt-2 max-h-32 overflow-y-auto whitespace-pre-wrap break-words border-l-2 border-status-warning-border pl-3">
+          {conflict.note.body}
+        </p>
+      ) : null}
+      <div className="mt-2 flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={onKeepMine}
+          className="rounded-pill border border-action-border bg-surface-card px-3 py-1 text-xs font-semibold text-action-text transition-colors hover:bg-action-tint"
+        >
+          Keep mine
+        </button>
+        <button
+          type="button"
+          onClick={onUseTheirs}
+          className="rounded-pill border border-action-border bg-surface-card px-3 py-1 text-xs font-semibold text-action-text transition-colors hover:bg-action-tint"
+        >
+          {changed ? "Use theirs" : "Discard mine"}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function ProcessingNotesPanel({
   value,
   onSave,
+  onDirtyChange,
+  conflict = null,
+  onResolveConflict,
   disabled = false,
   disabledMessage,
+  otherNotes = NO_OTHER_NOTES,
 }: ProcessingNotesPanelProps) {
   const normalisedValue = value ?? "";
+  const otherNotesHeadingId = useId();
   const [saveState, setSaveState] = useState<SaveState>("idle");
+  const [shownLength, setShownLength] = useState(() =>
+    lengthToShow(normalisedValue),
+  );
+  // Text the box takes from the server is counted too.
+  const [countedValue, setCountedValue] = useState(normalisedValue);
+  if (countedValue !== normalisedValue) {
+    setCountedValue(normalisedValue);
+    setShownLength(lengthToShow(normalisedValue));
+  }
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const disabledRef = useRef(disabled);
+  const conflictRef = useRef(conflict);
   const draftRef = useRef(normalisedValue);
   const lastSavedRef = useRef(normalisedValue);
   const lastPropValueRef = useRef(normalisedValue);
+  const reportedDirtyRef = useRef(false);
   const saveStateRef = useRef<SaveState>("idle");
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const flushSaveRef = useRef<(valueToSave: string) => Promise<void>>(
+  const flushSaveRef = useRef<
+    (valueToSave: string, force?: boolean) => Promise<void>
+  >(
     async () => {},
   );
 
@@ -41,6 +134,14 @@ function ProcessingNotesPanel({
     setSaveState(nextState);
   }, []);
 
+  const reportDirty = useCallback(() => {
+    const dirty = !sameNote(draftRef.current, lastSavedRef.current);
+    if (dirty !== reportedDirtyRef.current) {
+      reportedDirtyRef.current = dirty;
+      onDirtyChange?.(dirty);
+    }
+  }, [onDirtyChange]);
+
   const clearPendingSave = useCallback(() => {
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
@@ -48,10 +149,14 @@ function ProcessingNotesPanel({
     }
   }, []);
 
-  const flushSave = useCallback(async (valueToSave: string) => {
+  const flushSave = useCallback(async (valueToSave: string, force = false) => {
     clearPendingSave();
 
-    if (valueToSave === lastSavedRef.current) {
+    // While another device's change is unresolved, nothing is saved over it.
+    if (conflictRef.current) {
+      return;
+    }
+    if (!force && sameNote(valueToSave, lastSavedRef.current)) {
       return;
     }
 
@@ -60,6 +165,7 @@ function ProcessingNotesPanel({
       await onSave(valueToSave);
       lastSavedRef.current = valueToSave;
       lastPropValueRef.current = valueToSave;
+      reportDirty();
       setVisibleSaveState(
         draftRef.current === valueToSave ? "saved" : "idle",
       );
@@ -77,7 +183,7 @@ function ProcessingNotesPanel({
     } catch {
       setVisibleSaveState("error");
     }
-  }, [clearPendingSave, onSave, setVisibleSaveState]);
+  }, [clearPendingSave, onSave, reportDirty, setVisibleSaveState]);
 
   useEffect(() => {
     flushSaveRef.current = flushSave;
@@ -88,13 +194,23 @@ function ProcessingNotesPanel({
   }, [disabled]);
 
   useEffect(() => {
+    conflictRef.current = conflict;
+  }, [conflict]);
+
+  useEffect(() => {
     if (normalisedValue === lastPropValueRef.current) {
       return;
     }
 
     lastPropValueRef.current = normalisedValue;
 
-    if (draftRef.current !== lastSavedRef.current) {
+    // Unsaved text, or what was just saved as the server stored it
+    // (trimmed): leave the box, its trailing space or new line, and the
+    // caret alone.
+    if (
+      !sameNote(draftRef.current, lastSavedRef.current) ||
+      sameNote(draftRef.current, normalisedValue)
+    ) {
       return;
     }
 
@@ -133,12 +249,18 @@ function ProcessingNotesPanel({
     (event: React.ChangeEvent<HTMLTextAreaElement>) => {
       const nextValue = event.target.value;
       draftRef.current = nextValue;
+      setShownLength(lengthToShow(nextValue));
+      reportDirty();
 
       if (saveStateRef.current !== "idle") {
         setVisibleSaveState("idle");
       }
 
-      if (disabledRef.current || nextValue === lastSavedRef.current) {
+      if (
+        disabledRef.current ||
+        conflictRef.current ||
+        sameNote(nextValue, lastSavedRef.current)
+      ) {
         clearPendingSave();
         return;
       }
@@ -149,7 +271,7 @@ function ProcessingNotesPanel({
         void flushSave(draftRef.current);
       }, SAVE_DEBOUNCE_MS);
     },
-    [clearPendingSave, flushSave, setVisibleSaveState],
+    [clearPendingSave, flushSave, reportDirty, setVisibleSaveState],
   );
 
   const handleBlur = useCallback(() => {
@@ -158,9 +280,35 @@ function ProcessingNotesPanel({
     }
   }, [flushSave]);
 
-  // Nothing at rest: only saving, saved, failed and locked say anything.
+  const handleKeepMine = useCallback(() => {
+    // Read by the save below, before the cleared conflict re-renders.
+    conflictRef.current = null;
+    onResolveConflict?.("mine");
+    // Even when the box holds what it last saved: that text goes over theirs.
+    void flushSave(draftRef.current, true);
+  }, [flushSave, onResolveConflict]);
+
+  const handleUseTheirs = useCallback(() => {
+    const theirs =
+      conflictRef.current?.kind === "changed" ? conflictRef.current.note.body : "";
+    draftRef.current = theirs;
+    lastSavedRef.current = theirs;
+    lastPropValueRef.current = theirs;
+    if (textareaRef.current) {
+      textareaRef.current.value = theirs;
+    }
+    setShownLength(lengthToShow(theirs));
+    setVisibleSaveState("idle");
+    reportDirty();
+    onResolveConflict?.("theirs");
+  }, [onResolveConflict, reportDirty, setVisibleSaveState]);
+
+  // Nothing at rest: only saving, saved, failed, conflicting and locked say
+  // anything.
   const saveMessage =
-    disabled
+    conflict
+      ? "Changed elsewhere"
+      : disabled
       ? "Locked"
       : saveState === "saving"
       ? "Saving"
@@ -179,12 +327,21 @@ function ProcessingNotesPanel({
           {saveMessage}
         </span>
       </div>
+      {conflict ? (
+        <ConflictNotice
+          conflict={conflict}
+          locked={disabled}
+          onKeepMine={handleKeepMine}
+          onUseTheirs={handleUseTheirs}
+        />
+      ) : null}
       <div className="relative flex min-h-0 flex-1 flex-col">
         <textarea
           ref={textareaRef}
           defaultValue={normalisedValue}
           onChange={handleChange}
           onBlur={handleBlur}
+          maxLength={NOTE_BODY_MAX_CHARS}
           placeholder="Type quick reminders, decisions, or action items here..."
           disabled={disabled}
           className={`density-surface-panel min-h-[10rem] w-full flex-1 resize-none border border-control-border bg-control-bg px-4 py-4 text-sm leading-6 text-contrast-muted outline-none transition ${disabled ? "cursor-not-allowed opacity-70" : "focus:border-action focus:ring-2 focus:ring-action"}`}
@@ -202,6 +359,38 @@ function ProcessingNotesPanel({
           </div>
         ) : null}
       </div>
+      {shownLength !== null ? (
+        <p
+          className={`mt-2 text-xs ${shownLength > NOTE_BODY_MAX_CHARS ? "text-status-danger-fg" : "text-contrast-helper"}`}
+        >
+          {shownLength.toLocaleString()} / {NOTE_BODY_MAX_CHARS.toLocaleString()} characters
+          {shownLength > NOTE_BODY_MAX_CHARS ? ". Shorten the notes to save them." : ""}
+        </p>
+      ) : null}
+      {otherNotes.length > 0 ? (
+        <div className="mt-3">
+          <h4
+            id={otherNotesHeadingId}
+            className="text-xs font-semibold uppercase tracking-[0.2em] text-contrast-helper"
+          >
+            Other notes
+          </h4>
+          <ul
+            aria-labelledby={otherNotesHeadingId}
+            tabIndex={0}
+            className="mt-2 max-h-40 space-y-2 overflow-y-auto outline-none focus-visible:ring-2 focus-visible:ring-action"
+          >
+            {otherNotes.map((note) => (
+              <li
+                key={note.id}
+                className="density-surface-panel whitespace-pre-wrap break-words bg-surface-inset px-3 py-2 text-sm leading-6 text-contrast-muted"
+              >
+                {note.body}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
       <p className="mt-3 text-xs text-contrast-helper">
         These notes are fed into note generation and the final notes will label them as user-authored.
       </p>

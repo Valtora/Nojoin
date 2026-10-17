@@ -87,7 +87,6 @@ describe("RecordingStatusDisplay", () => {
     render(
       <RecordingStatusDisplay
         recording={buildRecording()}
-        onSaveProcessingNotes={vi.fn()}
         onSaveMeetingEdgeFocus={vi.fn()}
       />,
     );
@@ -103,7 +102,6 @@ describe("RecordingStatusDisplay", () => {
           status: RecordingStatus.UPLOADING,
           client_status: ClientStatus.RECORDING,
         })}
-        onSaveProcessingNotes={vi.fn()}
         onSaveMeetingEdgeFocus={vi.fn()}
       />,
     );
@@ -123,7 +121,6 @@ describe("RecordingStatusDisplay", () => {
           client_status: undefined,
           processing_progress: 40,
         })}
-        onSaveProcessingNotes={vi.fn()}
         onSaveMeetingEdgeFocus={vi.fn()}
       />,
     );
@@ -141,7 +138,6 @@ describe("RecordingStatusDisplay", () => {
     render(
       <RecordingStatusDisplay
         recording={buildRecording()}
-        onSaveProcessingNotes={vi.fn()}
         onSaveMeetingEdgeFocus={vi.fn()}
       />,
     );
@@ -157,7 +153,6 @@ describe("RecordingStatusDisplay", () => {
     render(
       <RecordingStatusDisplay
         recording={buildRecording()}
-        onSaveProcessingNotes={vi.fn()}
         onSaveMeetingEdgeFocus={vi.fn()}
         showMeetingEdge={false}
       />,
@@ -173,7 +168,6 @@ describe("RecordingStatusDisplay", () => {
     render(
       <RecordingStatusDisplay
         recording={buildRecording()}
-        onSaveProcessingNotes={vi.fn()}
         onSaveMeetingEdgeFocus={vi.fn()}
         onBack={onBack}
         showMobileBackButton
@@ -192,7 +186,6 @@ describe("RecordingStatusDisplay", () => {
           status: RecordingStatus.UPLOADING,
           client_status: ClientStatus.RECORDING,
         })}
-        onSaveProcessingNotes={vi.fn()}
         onSaveMeetingEdgeFocus={vi.fn()}
       />,
     );
@@ -209,7 +202,6 @@ describe("RecordingStatusDisplay", () => {
           status: RecordingStatus.QUEUED,
           client_status: ClientStatus.IDLE,
         })}
-        onSaveProcessingNotes={vi.fn()}
         onSaveMeetingEdgeFocus={vi.fn()}
       />,
     );
@@ -230,7 +222,6 @@ describe("RecordingStatusDisplay", () => {
           status: RecordingStatus.UPLOADING,
           client_status: undefined,
         })}
-        onSaveProcessingNotes={vi.fn()}
         onSaveMeetingEdgeFocus={vi.fn()}
       />,
     );
@@ -252,7 +243,6 @@ describe("RecordingStatusDisplay", () => {
           status: RecordingStatus.PAUSED,
           client_status: undefined,
         })}
-        onSaveProcessingNotes={vi.fn()}
         onSaveMeetingEdgeFocus={vi.fn()}
       />,
     );
@@ -276,7 +266,6 @@ describe("RecordingStatusDisplay", () => {
             status: RecordingStatus.UPLOADING,
             client_status: ClientStatus.RECORDING,
           })}
-          onSaveProcessingNotes={vi.fn()}
           onSaveMeetingEdgeFocus={vi.fn()}
         />,
       );
@@ -294,7 +283,6 @@ describe("RecordingStatusDisplay", () => {
             status: RecordingStatus.PROCESSING,
             client_status: undefined,
           })}
-          onSaveProcessingNotes={vi.fn()}
           onSaveMeetingEdgeFocus={vi.fn()}
         />,
       );
@@ -311,7 +299,6 @@ describe("RecordingStatusDisplay", () => {
       render(
         <RecordingStatusDisplay
           recording={buildRecording()}
-          onSaveProcessingNotes={vi.fn()}
           onSaveMeetingEdgeFocus={vi.fn()}
         />,
       );
@@ -330,7 +317,6 @@ describe("RecordingStatusDisplay", () => {
             status: RecordingStatus.UPLOADING,
             client_status: ClientStatus.RECORDING,
           })}
-          onSaveProcessingNotes={vi.fn()}
           onSaveMeetingEdgeFocus={vi.fn()}
         />,
       );
@@ -352,7 +338,6 @@ describe("RecordingStatusDisplay", () => {
             status: RecordingStatus.UPLOADING,
             client_status: ClientStatus.RECORDING,
           })}
-          onSaveProcessingNotes={vi.fn()}
           onSaveMeetingEdgeFocus={vi.fn()}
         />,
       );

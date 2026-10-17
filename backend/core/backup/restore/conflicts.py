@@ -15,6 +15,7 @@ from sqlmodel import select
 from backend.core.backup import runtime
 from backend.core.backup.paths import _build_runtime_document_path
 from backend.core.backup.restore.context import RowOutcome, _RowContext
+from backend.core.backup.restore.identity import _claim_unique_public_id
 
 logger = logging.getLogger(__name__)
 
@@ -436,6 +437,28 @@ def _resolve_transcripts(ctx: "_RowContext") -> "RowOutcome":
     return RowOutcome.INSERT
 
 
+def _resolve_timeline_notes(ctx: "_RowContext") -> "RowOutcome":
+    """Resolve conflicts for a timeline_notes row before insert.
+
+    A note arrives with a recording the restore inserted, or with a duplicate
+    of one in the same archive, whose rows are linked to the first copy. A
+    note already on the recording it is headed for is that same note, so it is
+    kept once. A note id held by another recording (the archive restored as a
+    second copy) is minted afresh.
+    """
+    existing = ctx.session.exec(
+        select(runtime.TimelineNote).where(
+            runtime.TimelineNote.public_id == ctx.item_data.get("public_id")
+        )
+    ).first()
+    if existing is not None and existing.recording_id == ctx.item_data["recording_id"]:
+        if ctx.old_id is not None:
+            ctx.state.id_map["timeline_notes"][ctx.old_id] = existing.id
+        return RowOutcome.HANDLED
+    _claim_unique_public_id(ctx)
+    return RowOutcome.INSERT
+
+
 def _resolve_documents(ctx: "_RowContext") -> "RowOutcome":
     """Resolve conflicts for a documents row before insert."""
     archived_file_path = ctx.item_data.get("file_path")
@@ -490,5 +513,6 @@ CONFLICT_RESOLVERS = {
     "recording_speakers": _resolve_recording_speakers,
     "recording_tags": _resolve_recording_tags,
     "transcripts": _resolve_transcripts,
+    "timeline_notes": _resolve_timeline_notes,
     "documents": _resolve_documents,
 }

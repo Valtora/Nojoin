@@ -201,7 +201,7 @@ class GeminiLLMBackend(LLMBackend):
             )
             self._raise_if_truncated(response)
             text = self._extract_text_from_response(response)
-            notes = self.finalise_meeting_notes(self.parse_notes(text), user_notes)
+            notes = self.finalise_meeting_notes(self.parse_notes(text))
             return notes
         except TruncatedNotesError:
             raise

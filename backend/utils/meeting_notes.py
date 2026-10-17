@@ -188,16 +188,16 @@ def format_segments_for_llm(
 
 
 def build_user_notes_prompt_section(user_notes: Optional[str]) -> str:
+    """The ``# User Notes Context`` section.
+
+    ``user_notes`` is the section already written from the recording's timeline
+    notes (``RecordingTimelineNotes.user_notes_context`` beside a transcript
+    that carries them, ``user_notes_list`` beside one that does not).
+    """
     cleaned_notes = (user_notes or "").strip()
     if not cleaned_notes:
         return "No user-authored notes were provided for this meeting."
-
-    return (
-        "The user recorded the following manual notes while waiting for the meeting to finish processing. "
-        "Use them as high-priority supporting context when composing the final notes. "
-        "Incorporate relevant items into the summary, detailed notes, and action items where they materially improve accuracy.\n\n"
-        f"{cleaned_notes}"
-    )
+    return cleaned_notes
 
 
 @dataclass
@@ -466,25 +466,37 @@ def build_glossary_prompt_section(
     )
 
 
-def append_user_notes_section(notes: str, user_notes: Optional[str]) -> str:
-    cleaned_notes = (user_notes or "").strip()
-    if not cleaned_notes:
-        return notes.strip()
+# The section append_user_notes_section writes: everything from its heading to
+# the end of the notes.
+# The heading alone on its line, wherever it starts, to the end of the notes.
+USER_NOTES_SECTION_PATTERN = re.compile(
+    r"^##[ \t]+User Notes[ \t]*$[\s\S]*\Z", re.IGNORECASE | re.MULTILINE
+)
+_LIST_MARKER_PATTERN = re.compile(r"^(?:[-*+]\s+|\d+[.)]\s+)")
 
-    notes_without_user_section = re.sub(
-        r"\n##\s+User Notes\b[\s\S]*$",
-        "",
-        notes.rstrip(),
-        flags=re.IGNORECASE,
-    )
+
+def split_user_notes_section(notes: str) -> tuple[str, str]:
+    """Generated notes and the ``## User Notes`` section after them, if any."""
+    match = USER_NOTES_SECTION_PATTERN.search(notes)
+    if match is None:
+        return notes, ""
+    return notes[: match.start()], notes[match.start() :]
+
+
+def append_user_notes_section(notes: str, note_lines: Sequence[str]) -> str:
+    """Generated notes with the user's own notes listed after them.
+
+    ``note_lines`` come from ``RecordingTimelineNotes.appendix_lines``, in
+    timeline order. A section the model wrote itself is replaced, so the list
+    is always the user's words.
+    """
+    notes_without_user_section, _ = split_user_notes_section(notes.rstrip())
 
     bullet_lines = []
-    for raw_line in cleaned_notes.splitlines():
-        line = raw_line.strip()
-        if not line:
-            continue
-        line = re.sub(r"^(?:[-*+]\s+|\d+[.)]\s+|\[[^\]]+\]\s+)", "", line)
-        bullet_lines.append(f"- [User] {line}")
+    for raw_line in note_lines:
+        line = _LIST_MARKER_PATTERN.sub("", raw_line.strip())
+        if line:
+            bullet_lines.append(f"- [User] {line}")
 
     if not bullet_lines:
         return notes_without_user_section.strip()

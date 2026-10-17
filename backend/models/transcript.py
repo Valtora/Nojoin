@@ -22,7 +22,6 @@ class Transcript(BaseDBModel, table=True):
     text: Optional[str] = None
     segments: List[Dict[str, Any]] = Field(default=[], sa_column=Column(JSONB))
     notes: Optional[str] = Field(default=None, sa_column=Column(Text))
-    user_notes: Optional[str] = Field(default=None, sa_column=Column(Text))
     meeting_edge_focus: Optional[str] = Field(default=None, sa_column=Column(Text))
     meeting_edge_payload: Optional[Dict[str, Any]] = Field(
         default=None, sa_column=Column(JSONB)

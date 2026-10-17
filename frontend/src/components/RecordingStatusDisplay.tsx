@@ -13,7 +13,7 @@ import LiveDocumentsPanel from "./LiveDocumentsPanel";
 import LiveMeetingControls from "./LiveMeetingControls";
 import LiveTranscriptPanel from "./LiveTranscriptPanel";
 import MeetingEdgePanel from "./MeetingEdgePanel";
-import ProcessingNotesPanel from "./ProcessingNotesPanel";
+import HeadNotePanel from "./HeadNotePanel";
 import { useRecordingActions } from "./recordings/_hooks/useRecordingActions";
 import { useLiveDocuments } from "./useLiveDocuments";
 import { useLiveTranscript } from "./transcript/_hooks/useLiveTranscript";
@@ -55,7 +55,6 @@ function formatEta(seconds: number) {
 
 interface RecordingStatusDisplayProps {
   recording: Recording;
-  onSaveProcessingNotes: (notes: string) => Promise<void>;
   onSaveMeetingEdgeFocus: (focus: string) => Promise<void>;
   meetingEdgeContextLevel?: number;
   onSaveMeetingEdgeContextLevel?: (level: number) => Promise<void>;
@@ -67,7 +66,6 @@ interface RecordingStatusDisplayProps {
 
 export default function RecordingStatusDisplay({
   recording,
-  onSaveProcessingNotes,
   onSaveMeetingEdgeFocus,
   meetingEdgeContextLevel,
   onSaveMeetingEdgeContextLevel,
@@ -379,9 +377,10 @@ export default function RecordingStatusDisplay({
                   : "order-2 flex min-h-0 min-w-0 flex-1 flex-col"
               }
             >
-              <ProcessingNotesPanel
-                value={recording.transcript?.user_notes}
-                onSave={onSaveProcessingNotes}
+              <HeadNotePanel
+                key={recording.id}
+                recordingId={recording.id}
+                timelineNotes={recording.timeline_notes}
                 disabled={notesAreLocked}
                 disabledMessage="Your manual notes are now being folded into the generated meeting notes. Editing will unlock again once generation finishes."
               />

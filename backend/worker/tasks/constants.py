@@ -50,6 +50,7 @@ from backend.processing.pipeline_metrics import (
     record_pipeline_metric,
 )
 from backend.services.calendar_link_service import auto_link_recording
+from backend.services.timeline_note_service import load_recording_timeline_notes
 from backend.utils.canonical_pipeline import (
     apply_recording_speaker_identity_fields,
     build_transcript_segments_for_read,
@@ -80,6 +81,7 @@ from backend.utils.meeting_intelligence import (
 )
 from backend.utils.meeting_notes import (
     MeetingEventContext,
+    append_user_notes_section,
     build_recording_speaker_map,
     format_segments_for_llm,
     meeting_event_context_from_calendar_event,
@@ -106,6 +108,7 @@ from backend.utils.speaker_name_suggestions import (
 )
 from backend.utils.status_manager import update_recording_status
 from backend.utils.time import utc_now
+from backend.utils.timeline_notes import render_timeline_for_llm
 
 if TYPE_CHECKING:
     import torch

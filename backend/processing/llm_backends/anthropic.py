@@ -309,7 +309,7 @@ class AnthropicLLMBackend(LLMBackend):
             # "be comprehensive" notes spec is not silently truncated on long meetings.
             response = self._create_notes_message(prompt)
             text = _response_text(response)
-            notes = self.finalise_meeting_notes(self.parse_notes(text), user_notes)
+            notes = self.finalise_meeting_notes(self.parse_notes(text))
             return notes
         except TruncatedNotesError:
             # Already a precise, user-facing message; wrapping it as a generic

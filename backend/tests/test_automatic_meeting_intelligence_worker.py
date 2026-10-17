@@ -12,10 +12,26 @@ from sqlmodel import Session, select
 import backend.worker.tasks as tasks_module
 from backend.models.recording import Recording
 from backend.models.speaker import RecordingSpeaker
+from backend.models.timeline_note import TimelineNote
 from backend.models.transcript import Transcript
+from backend.services.timeline_note_service import RecordingTimelineNotes
 from backend.utils.context_window import ContextWindowExceededError
 from backend.utils.llm_config import ResolvedLLMConfig
 from backend.utils.meeting_intelligence import AutomaticMeetingIntelligenceResult
+
+NO_NOTES = RecordingTimelineNotes()
+
+
+def _note(kind: str, body: str, **anchor: int) -> TimelineNote:
+    return TimelineNote(
+        public_id=f"note-{body}",
+        recording_id=1,
+        created_by_user_id=1,
+        kind=kind,
+        body=body,
+        **anchor,
+    )
+
 
 BASE_SCHEMA = """
 CREATE TABLE recordings (
@@ -54,7 +70,6 @@ CREATE TABLE transcripts (
     text TEXT,
     segments JSON NOT NULL,
     notes TEXT,
-    user_notes TEXT,
     meeting_edge_focus TEXT,
     meeting_edge_payload JSON,
     meeting_edge_status VARCHAR NOT NULL DEFAULT 'idle',
@@ -192,11 +207,10 @@ def _create_worker_ai_database(tmp_path: Path) -> Any:
                 """
                 INSERT INTO transcripts (
                     id, created_at, updated_at, recording_id, text, segments,
-                    notes, user_notes, notes_status, transcript_status,
-                    error_message
+                    notes, notes_status, transcript_status, error_message
                 ) VALUES (
                     1, :now, :now, 1, 'Transcript text', :segments,
-                    NULL, 'Confirm the rollout date', 'pending', 'completed', NULL
+                    NULL, 'pending', 'completed', NULL
                 )
                 """
             ),
@@ -292,11 +306,79 @@ def test_build_automatic_meeting_intelligence_transcript_keeps_unresolved_labels
         ],
         {"SPEAKER_00": "Speaker 1", "SPEAKER_01": "Dana"},
         ("SPEAKER_00",),
+        NO_NOTES,
     )
 
     assert "SPEAKER_00: Opening update." in transcript
     assert "Dana (with SPEAKER_00): Confirmed the rollout date." in transcript
     assert "Speaker 1" not in transcript
+
+
+def test_build_automatic_meeting_intelligence_transcript_puts_notes_where_written() -> (
+    None
+):
+    notes = RecordingTimelineNotes(
+        notes=[
+            _note("head", "Agenda: rollout."),
+            _note("point", "Ask Dana for the date.", anchor_ms=5_000),
+        ],
+        author_names={1: "mira"},
+    )
+
+    transcript = tasks_module._build_automatic_meeting_intelligence_transcript(
+        [
+            {"start": 0.0, "end": 4.0, "speaker": "SPEAKER_00", "text": "Opening."},
+            {"start": 4.0, "end": 8.0, "speaker": "SPEAKER_01", "text": "Rollout."},
+            {"start": 8.0, "end": 9.0, "speaker": "SPEAKER_00", "text": "Thanks."},
+        ],
+        {"SPEAKER_01": "Dana"},
+        ("SPEAKER_00",),
+        notes,
+    )
+
+    # The head note is in the prompt's notes section, not the transcript.
+    assert transcript.splitlines() == [
+        "[00:00:00 - 00:00:04] SPEAKER_00: Opening.",
+        "[00:00:04 - 00:00:08] Dana: Rollout.",
+        "[Note — mira]: Ask Dana for the date.",
+        "[00:00:08 - 00:00:09] SPEAKER_00: Thanks.",
+    ]
+
+
+def test_a_quoted_note_in_the_unified_prompt_tells_time_like_its_lines() -> None:
+    notes = RecordingTimelineNotes(
+        notes=[
+            _note(
+                "selection",
+                "It is fourteen.",
+                start_ms=3_912_000,
+                end_ms=3_914_000,
+                quoted_text="forty",
+            )
+        ],
+        author_names={1: "mira"},
+    )
+    transcript = tasks_module._build_automatic_meeting_intelligence_transcript(
+        [{"start": 3_910.0, "end": 3_915.0, "speaker": "S", "text": "Forty."}],
+        {},
+        (),
+        notes,
+    )
+    assert transcript.splitlines()[-1] == (
+        '[Note on "forty" at 01:05:12 — mira]: It is fourteen.'
+    )
+
+
+def test_notes_without_a_transcript_leave_the_unified_prompt_empty() -> None:
+    # The stage skips the model on an empty transcript; a note typed during a
+    # meeting nobody was heard in must not become a meeting to summarise.
+    notes = RecordingTimelineNotes(
+        notes=[_note("point", "Mic was muted", anchor_ms=0)],
+    )
+    assert (
+        tasks_module._build_automatic_meeting_intelligence_transcript([], {}, (), notes)
+        == ""
+    )
 
 
 def test_run_automatic_meeting_intelligence_stage_persists_suggestions_title_and_notes(
@@ -313,7 +395,8 @@ def test_run_automatic_meeting_intelligence_stage_persists_suggestions_title_and
             return AutomaticMeetingIntelligenceResult(
                 speaker_mapping={"SPEAKER_00": "Alex"},
                 title="Launch Readiness Review",
-                notes_markdown="# Meeting Notes\n\n## Summary\nGenerated notes.\n\n## User Notes\n- [User] Confirm the rollout date",
+                # A user-notes section the model wrote itself is replaced.
+                notes_markdown="# Meeting Notes\n\n## Summary\nGenerated notes.\n\n## User Notes\n- [User] Invented",
             )
 
     monkeypatch.setattr(
@@ -342,6 +425,12 @@ def test_run_automatic_meeting_intelligence_stage_persists_suggestions_title_and
                 llm_config=_sample_llm_config(),
                 prefer_short_titles=False,
                 device_suffix=" (CPU)",
+                timeline_notes=RecordingTimelineNotes(
+                    notes=[
+                        _note("head", "Confirm the rollout date"),
+                        _note("point", "Dana owns it", anchor_ms=4_500),
+                    ]
+                ),
             )
 
         with Session(engine) as verification_session:
@@ -376,12 +465,17 @@ def test_run_automatic_meeting_intelligence_stage_persists_suggestions_title_and
         assert recording.processing_progress == 97
         assert transcript.notes_status == "completed"
         assert transcript.error_message is None
-        assert (
-            transcript.notes
-            == "## Summary\nGenerated notes.\n\n## User Notes\n- [User] Confirm the rollout date"
+        # Every note, in timeline order, the anchored one with its time.
+        assert transcript.notes == (
+            "## Summary\nGenerated notes.\n\n## User Notes\n"
+            "- [User] Confirm the rollout date\n"
+            "- [User] 00:04 Dana owns it"
         )
         assert captured["request"].unresolved_speakers == ("SPEAKER_00",)
-        assert captured["request"].user_notes == "Confirm the rollout date"
+        # The meeting-wide note is in the section, which also explains the
+        # anchored notes the transcript carries.
+        assert "Confirm the rollout date" in captured["request"].user_notes
+        assert "[Note — name]" in captured["request"].user_notes
         assert captured["request"].prefer_short_titles is False
         assert (
             captured["timeout"]
@@ -435,6 +529,7 @@ def test_run_automatic_meeting_intelligence_stage_skips_when_llm_config_missing(
                 llm_config=_sample_llm_config(model=None),
                 prefer_short_titles=True,
                 device_suffix=" (CPU)",
+                timeline_notes=NO_NOTES,
             )
 
         with Session(engine) as verification_session:
@@ -501,6 +596,7 @@ def test_no_llm_final_processing_applies_only_real_self_introductions(
                 llm_config=_sample_llm_config(model=None),
                 prefer_short_titles=True,
                 device_suffix=" (CPU)",
+                timeline_notes=NO_NOTES,
             )
 
         with Session(engine) as verification_session:
@@ -555,6 +651,7 @@ def test_run_automatic_meeting_intelligence_stage_marks_notes_error_on_failure(
                 llm_config=_sample_llm_config(),
                 prefer_short_titles=True,
                 device_suffix=" (CPU)",
+                timeline_notes=NO_NOTES,
             )
 
         with Session(engine) as verification_session:
@@ -619,6 +716,7 @@ def test_a_meeting_too_long_for_one_call_gets_its_notes_in_parts(
                 llm_config=_sample_llm_config(),
                 prefer_short_titles=True,
                 device_suffix=" (CPU)",
+                timeline_notes=NO_NOTES,
             )
 
         with Session(engine) as verification_session:
@@ -684,6 +782,7 @@ def test_auto_apply_links_exact_global_match_and_respects_voiceprint_lock(
                 llm_config=_sample_llm_config(),
                 prefer_short_titles=True,
                 device_suffix=" (CPU)",
+                timeline_notes=NO_NOTES,
             )
 
         with Session(engine) as verification_session:

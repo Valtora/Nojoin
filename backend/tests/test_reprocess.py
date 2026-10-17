@@ -14,6 +14,7 @@ from sqlalchemy.pool import StaticPool
 
 from backend.api.deps import get_current_user, get_db
 from backend.api.v1.api import api_router
+from backend.tests.sqlite_schemas import TIMELINE_NOTES_SCHEMA
 
 RECORDINGS_SCHEMA = """
 CREATE TABLE recordings (
@@ -54,7 +55,6 @@ CREATE TABLE transcripts (
     text TEXT,
     segments JSON,
     notes TEXT,
-    user_notes TEXT,
     meeting_edge_focus TEXT,
     meeting_edge_payload JSON,
     meeting_edge_status VARCHAR(32) NOT NULL DEFAULT 'idle',
@@ -380,6 +380,7 @@ async def test_session_maker() -> sessionmaker:
         await connection.execute(text(TRANSCRIPT_UTTERANCE_EVENTS_SCHEMA))
         await connection.execute(text(RECORDING_SPEAKER_ALIASES_SCHEMA))
         await connection.execute(text(SPEAKER_CORRECTION_EVENTS_SCHEMA))
+        await connection.execute(text(TIMELINE_NOTES_SCHEMA))
 
     try:
         yield session_maker
@@ -1118,6 +1119,7 @@ async def test_reprocess_resets_and_rebuilds_pipeline_state(
         TranscriptUtteranceState,
     )
     from backend.models.speaker import RecordingSpeaker
+    from backend.models.timeline_note import TimelineNote
     from backend.models.transcript import Transcript
 
     # 1. Setup a processed recording with pipeline metadata
@@ -1187,6 +1189,24 @@ async def test_reprocess_resets_and_rebuilds_pipeline_state(
                 status="completed",
             )
         )
+        session.add(
+            TimelineNote(
+                public_id="note-head",
+                recording_id=201,
+                kind="head",
+                body="Agenda first.",
+            )
+        )
+        session.add(
+            TimelineNote(
+                public_id="note-point",
+                recording_id=201,
+                kind="point",
+                body="Ask about QA.",
+                anchor_ms=750,
+                revision=3,
+            )
+        )
         await session.commit()
 
     # 3. Call reprocess endpoint
@@ -1239,3 +1259,18 @@ async def test_reprocess_resets_and_rebuilds_pipeline_state(
             )
         )
         assert res.scalar() == 0
+
+        # The user's notes hang off the recording, not the transcript, so they
+        # come through the reset exactly as they were.
+        notes = (
+            await session.execute(
+                text(
+                    "SELECT public_id, kind, body, anchor_ms, revision "
+                    "FROM timeline_notes WHERE recording_id = 201 ORDER BY id"
+                )
+            )
+        ).all()
+        assert notes == [
+            ("note-head", "head", "Agenda first.", None, 1),
+            ("note-point", "point", "Ask about QA.", 750, 3),
+        ]

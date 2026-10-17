@@ -34,6 +34,7 @@ from backend.models.recording import Recording  # noqa: F401
 from backend.models.speaker import GlobalSpeaker, RecordingSpeaker  # noqa: F401
 from backend.models.tag import RecordingTag, Tag  # noqa: F401
 from backend.models.task import UserTask, UserTaskRecording, UserTaskTag  # noqa: F401
+from backend.models.timeline_note import TimelineNote
 from backend.models.transcript import Transcript  # noqa: F401
 from backend.models.user import User  # noqa: F401
 from backend.utils.path_manager import PathManager  # noqa: F401
@@ -58,6 +59,9 @@ MODELS: List[Tuple[str, Type[SQLModel]]] = [
     ("recording_speakers", RecordingSpeaker),
     ("recording_tags", RecordingTag),
     ("transcripts", Transcript),
+    # After transcripts, so a version 2 archive's transcript, whose user_notes
+    # become a head note on restore, is in before any note is.
+    ("timeline_notes", TimelineNote),
     ("chat_messages", ChatMessage),
     ("documents", Document),
     # Archived rather than rebuilt, unlike context_chunks. Re-embedding a page

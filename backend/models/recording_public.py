@@ -16,6 +16,7 @@ from backend.models.document import (
 from backend.models.recording import ClientStatus, Recording, RecordingStatus
 from backend.models.speaker import GlobalSpeakerRead, RecordingSpeaker
 from backend.models.tag import Tag, TagRead
+from backend.models.timeline_note_public import TimelineNoteRead
 from backend.models.transcript import Transcript
 from backend.processing.embedding import (
     LIBRARY_VOICEPRINT_MIN_SPEECH_S,
@@ -109,7 +110,6 @@ class TranscriptPublicRead(PublicModel):
     text: Optional[str] = None
     segments: list[dict[str, Any]] = Field(default_factory=list)
     notes: Optional[str] = None
-    user_notes: Optional[str] = None
     meeting_edge_focus: Optional[str] = None
     meeting_edge_payload: Optional[dict[str, Any]] = None
     meeting_edge_status: str = "idle"
@@ -209,6 +209,15 @@ class RecordingPublicRead(PublicModel):
     # where summing per row would be a query per recording for a figure no list
     # view shows.
     captured_audio_seconds: Optional[float] = None
+    # Where on the audio timeline capture is now, in ms: the clock timeline
+    # notes are anchored on. The end of the last transcoded segment, plus the
+    # time since it arrived while recording (at most one segment's worth), so
+    # it trails the truth by the upload and transcode delay. Exact while
+    # paused. None unless capture is open, and on the list endpoint.
+    live_audio_ms: Optional[int] = None
+    # The user's notes on this recording, in timeline order. Only the detail
+    # endpoint fills it; None elsewhere.
+    timeline_notes: Optional[list[TimelineNoteRead]] = None
     is_archived: bool = False
     is_deleted: bool = False
     last_activity_at: Optional[datetime] = None
@@ -283,7 +292,6 @@ def serialize_transcript(
         if segments_override is None
         else segments_override,
         notes=transcript.notes,
-        user_notes=transcript.user_notes,
         meeting_edge_focus=transcript.meeting_edge_focus,
         meeting_edge_payload=transcript.meeting_edge_payload,
         meeting_edge_status=transcript.meeting_edge_status,
@@ -360,6 +368,8 @@ def serialize_recording(
     transcript_text_override: Optional[str] = None,
     speakers_override: Optional[list[RecordingSpeaker]] = None,
     captured_audio_seconds: Optional[float] = None,
+    live_audio_ms: Optional[int] = None,
+    timeline_notes: Optional[list[TimelineNoteRead]] = None,
 ) -> RecordingPublicRead:
     transcript = None
     if include_transcript and recording.transcript is not None:
@@ -418,6 +428,8 @@ def serialize_recording(
         processing_eta_sample_size=processing_eta_sample_size,
         max_speakers=getattr(recording, "max_speakers", None),
         captured_audio_seconds=captured_audio_seconds,
+        live_audio_ms=live_audio_ms,
+        timeline_notes=timeline_notes,
         is_archived=recording.is_archived,
         is_deleted=recording.is_deleted,
         last_activity_at=recording.last_activity_at,

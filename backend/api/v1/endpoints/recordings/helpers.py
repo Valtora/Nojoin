@@ -622,15 +622,15 @@ async def _mark_recording_audio_chunks_failed(
 
 
 async def _reset_generated_recording_state(db: AsyncSession, recording_id: int) -> None:
-    """Delete generated meeting artefacts while preserving recording metadata and documents."""
-    preserved_user_notes: Optional[str] = None
+    """Delete generated meeting artefacts while preserving recording metadata and documents.
 
+    The user's timeline notes hang off the recording, not the transcript, so
+    they survive untouched.
+    """
     transcript_result = await db.execute(
         select(Transcript).where(Transcript.recording_id == recording_id)
     )
     existing_transcript = transcript_result.scalar_one_or_none()
-    if existing_transcript:
-        preserved_user_notes = existing_transcript.user_notes
 
     await db.execute(
         delete(ChatMessage).where(ChatMessage.recording_id == recording_id)
@@ -664,9 +664,6 @@ async def _reset_generated_recording_state(db: AsyncSession, recording_id: int) 
     if existing_transcript:
         await db.delete(existing_transcript)
         await db.flush()
-
-    if preserved_user_notes:
-        db.add(Transcript(recording_id=recording_id, user_notes=preserved_user_notes))
 
 
 async def _requeue_for_processing(

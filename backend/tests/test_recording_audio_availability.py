@@ -24,6 +24,7 @@ from backend.api.deps import get_current_user, get_db
 from backend.api.v1.api import api_router
 from backend.api.v1.endpoints.recordings import helpers, routes_query
 from backend.models.recording import Recording, RecordingStatus
+from backend.tests.sqlite_schemas import TIMELINE_NOTES_SCHEMA
 from backend.tests.test_recording_pause_resume import (
     RECORDING_SPEAKERS_SCHEMA,
     RECORDING_TAGS_SCHEMA,
@@ -188,6 +189,7 @@ async def session_maker() -> AsyncIterator[sessionmaker]:
             RECORDING_SPEAKERS_SCHEMA,
             RECORDING_TAGS_SCHEMA,
             TAGS_SCHEMA,
+            TIMELINE_NOTES_SCHEMA,
         ):
             await connection.execute(text(schema))
     try:

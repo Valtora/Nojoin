@@ -112,7 +112,6 @@ CREATE TABLE transcripts (
     text TEXT,
     segments JSON,
     notes TEXT,
-    user_notes TEXT,
     meeting_edge_focus TEXT,
     meeting_edge_payload JSON,
     meeting_edge_status VARCHAR(32) NOT NULL DEFAULT 'idle',
@@ -130,6 +129,24 @@ CREATE TABLE transcripts (
     analytics_ai_status VARCHAR(32) NOT NULL DEFAULT 'pending',
     analytics_ai_error_message TEXT,
     analytics_error_message TEXT
+)
+"""
+
+TIMELINE_NOTES_SCHEMA = """
+CREATE TABLE timeline_notes (
+    id INTEGER PRIMARY KEY,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    public_id VARCHAR(36) NOT NULL UNIQUE,
+    recording_id INTEGER NOT NULL REFERENCES recordings(id) ON DELETE CASCADE,
+    created_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    kind VARCHAR(16) NOT NULL,
+    body TEXT NOT NULL,
+    anchor_ms BIGINT,
+    start_ms BIGINT,
+    end_ms BIGINT,
+    quoted_text TEXT,
+    revision INTEGER NOT NULL DEFAULT 1
 )
 """
 

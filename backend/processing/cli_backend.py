@@ -125,7 +125,7 @@ class CliLLMBackend(LLMBackend):
             notes_context,
         )
         text = self._run(prompt)
-        return self.finalise_meeting_notes(self.parse_notes(text), user_notes)
+        return self.finalise_meeting_notes(self.parse_notes(text))
 
     def generate_meeting_intelligence(
         self,

@@ -11,9 +11,10 @@ string substitution is not safe in general:
 
 * It matches on word boundaries, so renaming "Matt" does not maul "Matthew"
   or "matter".
-* It only touches ``Transcript.notes``, the generated notes. ``user_notes`` is
-  the user's own writing, and rewriting what a person wrote themselves is a
-  different act from updating text a model produced.
+* It only touches the generated part of ``Transcript.notes``. The timeline
+  notes, and the ``## User Notes`` section that quotes them at the end of the
+  generated notes, are the user's own writing, and rewriting what a person
+  wrote themselves is a different act from updating text a model produced.
 * It skips a rename whose old name is short enough to collide by accident, and
   skips the no-op case where the name has not actually changed.
 
@@ -32,6 +33,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from sqlmodel import select
 
 from backend.models.transcript import Transcript
+from backend.utils.meeting_notes import split_user_notes_section
 
 # Below this length a name is more likely to collide with ordinary words than
 # to be a real reference, even on a word boundary. Initials and short handles
@@ -71,7 +73,9 @@ def propagate_speaker_rename_to_notes(
     if transcript is None or not transcript.notes:
         return 0
 
-    notes = transcript.notes
+    # The ``## User Notes`` section quotes the user's own notes, so it is left
+    # exactly as they wrote it.
+    notes, user_notes_section = split_user_notes_section(transcript.notes)
     replacements = 0
     # Longest first, so a rename from "Mark Clampin" does not get pre-empted by
     # a shorter candidate that is a prefix of it.
@@ -81,7 +85,7 @@ def propagate_speaker_rename_to_notes(
         replacements += count
 
     if replacements:
-        transcript.notes = notes
+        transcript.notes = notes + user_notes_section
         flag_modified(transcript, "notes")
         session.add(transcript)
 

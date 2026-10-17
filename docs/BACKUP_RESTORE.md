@@ -94,6 +94,8 @@ A meeting counts as already here when its `meeting_uid` or `public_id` matches, 
 
 Archives carry a format version. A server restores any archive at or below the format version it understands, so older backups keep working after an upgrade. An archive with a newer format version is refused with a message to upgrade the server first. An archive from a newer Nojoin release with the same format version still restores, with a warning in the API log.
 
+An archive older than format 3 holds each meeting's notes as one text, which restores as a single note at the top of the meeting. The note is added only when the restore inserts the transcript, so Skip mode or a second restore adds no duplicate.
+
 ## Housekeeping
 
 The saved backup lives in `data/backups`, and uploads and restore staging under `data/`; [DEPLOYMENT.md](DEPLOYMENT.md) describes the layout. Uploaded archives, abandoned uploads, restore staging and archives from failed backups are deleted once they are 24 hours old. The saved backup is not.

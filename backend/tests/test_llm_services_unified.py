@@ -146,7 +146,7 @@ def test_gemini_generate_meeting_intelligence_uses_shared_contract() -> None:
 
     assert result.speaker_mapping == {"SPEAKER_00": "Alex"}
     assert result.title == "Launch Readiness Review"
-    assert "## User Notes" in result.notes_markdown
+    assert "Confirm the rollout date" in str(capture["contents"])
     assert "- SPEAKER_00" in str(capture["contents"])
     assert "English (British)" in str(capture["contents"])
 
@@ -172,7 +172,7 @@ def test_openai_generate_meeting_intelligence_uses_shared_contract() -> None:
     result = backend.generate_meeting_intelligence(_sample_request(), timeout=45)
 
     assert result.speaker_mapping == {"SPEAKER_00": "Alex"}
-    assert "## User Notes" in result.notes_markdown
+    assert "Confirm the rollout date" in str(capture["messages"])
     assert capture["timeout"] == 45
     assert capture["temperature"] == 0.2
     assert "Return valid JSON only" in str(capture["messages"][0]["content"])
@@ -198,7 +198,7 @@ def test_anthropic_generate_meeting_intelligence_uses_shared_contract() -> None:
     result = backend.generate_meeting_intelligence(_sample_request(), timeout=90)
 
     assert result.speaker_mapping == {"SPEAKER_00": "Alex"}
-    assert "## User Notes" in result.notes_markdown
+    assert "Confirm the rollout date" in capture["messages"][0]["content"]
     # Raised with issue #137: a user-written notes structure asking for more
     # sections or more detail is what hits this ceiling, and truncation is silent.
     assert capture["max_tokens"] == NOTES_MAX_OUTPUT_TOKENS
@@ -235,7 +235,8 @@ def test_anthropic_reads_the_text_blocks_after_a_thinking_block() -> None:
     result = backend.generate_meeting_intelligence(_sample_request(), timeout=90)
 
     assert result.speaker_mapping == {"SPEAKER_00": "Alex"}
-    assert "## User Notes" in result.notes_markdown
+    # Both halves of the split text block were read.
+    assert result.notes_markdown == "## Summary\nAll teams are ready."
 
 
 def test_ollama_generate_meeting_intelligence_uses_shared_contract() -> None:
@@ -264,7 +265,7 @@ def test_ollama_generate_meeting_intelligence_uses_shared_contract() -> None:
     result = backend.generate_meeting_intelligence(_sample_request(), timeout=30)
 
     assert result.speaker_mapping == {"SPEAKER_00": "Alex"}
-    assert "## User Notes" in result.notes_markdown
+    assert "Confirm the rollout date" in str(capture["json"])
     assert capture["timeout"] == 30
     assert capture["allow_redirects"] is False
     assert capture["url"] == "http://ollama.local/api/chat"

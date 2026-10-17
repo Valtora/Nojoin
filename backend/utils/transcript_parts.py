@@ -18,7 +18,9 @@ def utf8_size(text: str) -> int:
 
 # Both notes transcripts write one utterance per line, opening with its times:
 # "[MM:SS - MM:SS] Name: text" (Regenerate Notes) or "[HH:MM:SS - HH:MM:SS]"
-# (the automatic pipeline). Minutes past an hour stay in the MM field.
+# (the automatic pipeline). Minutes past an hour stay in the MM field. A note
+# the user wrote during the meeting is a line of its own after the utterance,
+# opening "[Note".
 TIMESTAMP_PATTERN = r"\d+:\d{2}(?::\d{2})?"
 _LINE_SPAN = re.compile(rf"^\[({TIMESTAMP_PATTERN})(?:\s*-\s*({TIMESTAMP_PATTERN}))?\]")
 _LINE_PREFIX = re.compile(r"^\[[^\]\n]*\][^:\n]*:\s*")
@@ -39,8 +41,10 @@ class TranscriptPart:
 
 
 def _part(lines: Sequence[str]) -> TranscriptPart:
-    first = _LINE_SPAN.match(lines[0])
-    last = _LINE_SPAN.match(lines[-1])
+    # A user's note line ("[Note — ...]: ...") carries no time of its own.
+    spans = [span for span in map(_LINE_SPAN.match, lines) if span]
+    first = spans[0] if spans else None
+    last = spans[-1] if spans else None
     return TranscriptPart(
         text="\n".join(lines),
         start=first.group(1) if first else None,
@@ -129,8 +133,10 @@ def split_transcript(transcript: str, part_limit: int) -> list[TranscriptPart]:
     for line in lines:
         cost = utf8_size(line) + 1
         # Cut before a line that would overrun the part, or whose middle would
-        # fall past this part's share.
-        if groups[-1] and (size + cost > part_limit or size + cost / 2 > share):
+        # fall past this part's share. A note the user wrote stays with the
+        # utterance it follows unless the part would overrun.
+        past_share = size + cost / 2 > share and bool(_LINE_SPAN.match(line))
+        if groups[-1] and (size + cost > part_limit or past_share):
             groups.append([])
             size = 0
         groups[-1].append(line)

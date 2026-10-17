@@ -72,3 +72,39 @@ describe("polling a recording with no audio and no proxy", () => {
     );
   });
 });
+
+describe("noticing a change to the notes in a poll", () => {
+  const withNote = (revision: number, body: string) =>
+    recordingWith({
+      timeline_notes: [
+        {
+          id: "n1",
+          recording_id: "rec-1",
+          kind: "head",
+          body,
+          revision,
+          created_at: "2026-10-17T10:00:00Z",
+          updated_at: "2026-10-17T10:00:00Z",
+        },
+      ],
+    });
+
+  it("sees an edit, an addition and a removal, by id and revision", () => {
+    const before = withNote(1, "Agenda");
+    expect(hasPolledRecordingChanged(before, withNote(1, "Agenda"))).toBe(false);
+    expect(hasPolledRecordingChanged(before, withNote(2, "Agenda, budget"))).toBe(
+      true,
+    );
+    expect(hasPolledRecordingChanged(before, recordingWith({ timeline_notes: [] }))).toBe(
+      true,
+    );
+    expect(hasPolledRecordingChanged(recordingWith({}), before)).toBe(true);
+  });
+
+  it("ignores the live audio clock, which moves on every poll", () => {
+    const before = recordingWith({ live_audio_ms: 1_000 });
+    expect(
+      hasPolledRecordingChanged(before, { ...before, live_audio_ms: 2_000 }),
+    ).toBe(false);
+  });
+});

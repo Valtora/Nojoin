@@ -75,7 +75,6 @@ SCHEMA_STATEMENTS = [
         text TEXT,
         segments JSON,
         notes TEXT,
-        user_notes TEXT,
         meeting_edge_focus TEXT,
         meeting_edge_payload JSON,
         meeting_edge_status VARCHAR DEFAULT 'idle',

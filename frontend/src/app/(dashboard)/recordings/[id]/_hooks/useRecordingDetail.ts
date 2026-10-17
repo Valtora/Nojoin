@@ -17,7 +17,6 @@ import {
   updateSpeakerColor,
   generateNotes,
   updateNotes,
-  updateUserNotes,
   updateMeetingEdgeFocus,
   exportContent,
   type ExportSelection,
@@ -1071,12 +1070,6 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
     }
   };
 
-  const handleProcessingNotesChange = useCallback(async (notes: string) => {
-    if (!recording?.id) return;
-
-    await updateUserNotes(recording.id, notes);
-  }, [recording?.id]);
-
   const handleMeetingEdgeFocusChange = useCallback(async (focus: string) => {
     if (!recording?.id) return;
 
@@ -1193,7 +1186,6 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
     handleNotesChange,
     handleNotesUndo,
     handleNotesRedo,
-    handleProcessingNotesChange,
     handleMeetingEdgeFocusChange,
     handleMeetingEdgeContextLevelChange,
     handleExport,

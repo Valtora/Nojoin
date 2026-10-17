@@ -75,6 +75,19 @@ VALUES
   (now(), now(), 'mc-rs3', 900001, 'SPEAKER_02', NULL,               'active', 'automated', false),
   (now(), now(), 'mc-rs4', 900001, 'SPEAKER_03', '[]'::jsonb,        'active', 'automated', false),
   (now(), now(), 'mc-rs5', 900001, 'SPEAKER_04', '{"b":2}'::jsonb,   'active', 'automated', false);
+
+-- Notes on a recording with no transcript row (rolling the timeline notes
+-- migration back has to create one), with text that breaks naive quoting and
+-- a body of nothing but whitespace, which must not come back as a blank note.
+INSERT INTO timeline_notes (created_at, updated_at, public_id, recording_id,
+                            created_by_user_id, kind, body, anchor_ms, start_ms,
+                            end_ms, quoted_text)
+VALUES
+  (now(), now(), 'mc-tn1', 900001, 900001, 'head', 'it''s "quoted" \\ back\\slash', NULL, NULL, NULL, NULL),
+  (now(), now(), 'mc-tn2', 900001, NULL,   'point', E'\\n\\t \\n', 0, NULL, NULL, NULL),
+  (now(), now(), 'mc-tn3', 900001, 900001, 'selection', '%s %% $1 — café', NULL, 0, 1, E'quote\\nwith newline'),
+  (now(), now(), 'mc-tn4', 900001, 900001, 'tail', 'tail', NULL, NULL, NULL, NULL)
+ON CONFLICT (public_id) DO NOTHING;
 """
 
 

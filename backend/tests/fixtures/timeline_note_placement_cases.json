@@ -1,0 +1,228 @@
+{
+  "description": "Golden cases for timeline note placement, run by backend/tests/test_timeline_note_placement.py. 'expected' lists every note in timeline order with its slot and, for a body note, the index of the segment it follows (-1: before the first line).",
+  "cases": [
+    {
+      "name": "a point note inside a line follows that line",
+      "segments": [
+        {"start_ms": 0, "end_ms": 4000, "text": "Opening."},
+        {"start_ms": 5000, "end_ms": 9000, "text": "Budget."},
+        {"start_ms": 10000, "end_ms": 14000, "text": "Hiring."}
+      ],
+      "notes": [
+        {"id": "n1", "kind": "point", "anchor_ms": 6000, "created_at": "2026-01-01T10:00:00Z"}
+      ],
+      "expected": [{"id": "n1", "slot": "body", "after_index": 1}]
+    },
+    {
+      "name": "a point note in a gap follows the last line to start",
+      "segments": [
+        {"start_ms": 0, "end_ms": 4000, "text": "Opening."},
+        {"start_ms": 8000, "end_ms": 9000, "text": "Budget."}
+      ],
+      "notes": [
+        {"id": "n1", "kind": "point", "anchor_ms": 6000, "created_at": "2026-01-01T10:00:00Z"}
+      ],
+      "expected": [{"id": "n1", "slot": "body", "after_index": 0}]
+    },
+    {
+      "name": "a point note exactly at a line's start follows that line",
+      "segments": [
+        {"start_ms": 0, "end_ms": 4000, "text": "Opening."},
+        {"start_ms": 5000, "end_ms": 9000, "text": "Budget."}
+      ],
+      "notes": [
+        {"id": "n1", "kind": "point", "anchor_ms": 5000, "created_at": "2026-01-01T10:00:00Z"}
+      ],
+      "expected": [{"id": "n1", "slot": "body", "after_index": 1}]
+    },
+    {
+      "name": "a point note before the first line opens the transcript",
+      "segments": [
+        {"start_ms": 2000, "end_ms": 4000, "text": "Opening."}
+      ],
+      "notes": [
+        {"id": "n1", "kind": "point", "anchor_ms": 1999, "created_at": "2026-01-01T10:00:00Z"}
+      ],
+      "expected": [{"id": "n1", "slot": "body", "after_index": -1}]
+    },
+    {
+      "name": "a point note after the last line follows it",
+      "segments": [
+        {"start_ms": 0, "end_ms": 4000, "text": "Opening."},
+        {"start_ms": 5000, "end_ms": 9000, "text": "Budget."}
+      ],
+      "notes": [
+        {"id": "n1", "kind": "point", "anchor_ms": 3600000, "created_at": "2026-01-01T10:00:00Z"}
+      ],
+      "expected": [{"id": "n1", "slot": "body", "after_index": 1}]
+    },
+    {
+      "name": "with no segments every body note opens the transcript between head and tail",
+      "segments": [],
+      "notes": [
+        {"id": "tail", "kind": "tail", "created_at": "2026-01-01T09:00:00Z"},
+        {"id": "late", "kind": "point", "anchor_ms": 90000, "created_at": "2026-01-01T10:00:00Z"},
+        {"id": "early", "kind": "point", "anchor_ms": 1000, "created_at": "2026-01-01T10:05:00Z"},
+        {"id": "head", "kind": "head", "created_at": "2026-01-01T11:00:00Z"}
+      ],
+      "expected": [
+        {"id": "head", "slot": "head"},
+        {"id": "early", "slot": "body", "after_index": -1},
+        {"id": "late", "slot": "body", "after_index": -1},
+        {"id": "tail", "slot": "tail"}
+      ]
+    },
+    {
+      "name": "a blank line is never an anchor",
+      "segments": [
+        {"start_ms": 0, "end_ms": 4000, "text": "Opening."},
+        {"start_ms": 5000, "end_ms": 9000, "text": "   "},
+        {"start_ms": 10000, "end_ms": 14000, "text": "Hiring."}
+      ],
+      "notes": [
+        {"id": "n1", "kind": "point", "anchor_ms": 6000, "created_at": "2026-01-01T10:00:00Z"}
+      ],
+      "expected": [{"id": "n1", "slot": "body", "after_index": 0}]
+    },
+    {
+      "name": "a blank first line leaves an early note before every line",
+      "segments": [
+        {"start_ms": 0, "end_ms": 4000, "text": ""},
+        {"start_ms": 5000, "end_ms": 9000, "text": "Budget."}
+      ],
+      "notes": [
+        {"id": "n1", "kind": "point", "anchor_ms": 1000, "created_at": "2026-01-01T10:00:00Z"}
+      ],
+      "expected": [{"id": "n1", "slot": "body", "after_index": -1}]
+    },
+    {
+      "name": "out-of-order rows place by list index, never re-sorted",
+      "segments": [
+        {"start_ms": 0, "end_ms": 4000, "text": "First."},
+        {"start_ms": 8000, "end_ms": 9000, "text": "Late row."},
+        {"start_ms": 5000, "end_ms": 7000, "text": "Early row listed last."}
+      ],
+      "notes": [
+        {"id": "at4000", "kind": "point", "anchor_ms": 4000, "created_at": "2026-01-01T10:00:00Z"},
+        {"id": "at6000", "kind": "point", "anchor_ms": 6000, "created_at": "2026-01-01T10:00:00Z"},
+        {"id": "at8000", "kind": "point", "anchor_ms": 8000, "created_at": "2026-01-01T10:00:00Z"}
+      ],
+      "expected": [
+        {"id": "at4000", "slot": "body", "after_index": 0},
+        {"id": "at6000", "slot": "body", "after_index": 2},
+        {"id": "at8000", "slot": "body", "after_index": 2}
+      ]
+    },
+    {
+      "name": "overlapping lines: the note follows the line listed last among those started",
+      "segments": [
+        {"start_ms": 0, "end_ms": 10000, "text": "Long turn."},
+        {"start_ms": 3000, "end_ms": 4000, "text": "Interjection."}
+      ],
+      "notes": [
+        {"id": "n1", "kind": "point", "anchor_ms": 6000, "created_at": "2026-01-01T10:00:00Z"}
+      ],
+      "expected": [{"id": "n1", "slot": "body", "after_index": 1}]
+    },
+    {
+      "name": "a selection ending on the next line's start follows the line it quotes",
+      "segments": [
+        {"start_ms": 0, "end_ms": 5000, "text": "Opening."},
+        {"start_ms": 5000, "end_ms": 9000, "text": "Budget."}
+      ],
+      "notes": [
+        {"id": "s1", "kind": "selection", "start_ms": 1000, "end_ms": 5000, "quoted_text": "Opening", "created_at": "2026-01-01T10:00:00Z"}
+      ],
+      "expected": [{"id": "s1", "slot": "body", "after_index": 0}]
+    },
+    {
+      "name": "a selection across two lines follows the later one",
+      "segments": [
+        {"start_ms": 0, "end_ms": 5000, "text": "Opening."},
+        {"start_ms": 5000, "end_ms": 9000, "text": "Budget."}
+      ],
+      "notes": [
+        {"id": "s1", "kind": "selection", "start_ms": 1000, "end_ms": 5001, "quoted_text": "Opening. Budget", "created_at": "2026-01-01T10:00:00Z"}
+      ],
+      "expected": [{"id": "s1", "slot": "body", "after_index": 1}]
+    },
+    {
+      "name": "a one-millisecond selection within one line",
+      "segments": [
+        {"start_ms": 0, "end_ms": 5000, "text": "Opening."},
+        {"start_ms": 5000, "end_ms": 9000, "text": "Budget."}
+      ],
+      "notes": [
+        {"id": "s1", "kind": "selection", "start_ms": 5200, "end_ms": 5201, "quoted_text": "Bu", "created_at": "2026-01-01T10:00:00Z"}
+      ],
+      "expected": [{"id": "s1", "slot": "body", "after_index": 1}]
+    },
+    {
+      "name": "notes at the same moment order by creation time, then id",
+      "segments": [
+        {"start_ms": 0, "end_ms": 9000, "text": "Opening."}
+      ],
+      "notes": [
+        {"id": "c", "kind": "point", "anchor_ms": 2000, "created_at": "2026-01-01T10:00:02Z"},
+        {"id": "b", "kind": "point", "anchor_ms": 2000, "created_at": "2026-01-01T10:00:01Z"},
+        {"id": "a", "kind": "point", "anchor_ms": 2000, "created_at": "2026-01-01T10:00:01Z"},
+        {"id": "sel", "kind": "selection", "start_ms": 1000, "end_ms": 2001, "quoted_text": "Open", "created_at": "2026-01-01T09:00:00Z"}
+      ],
+      "expected": [
+        {"id": "sel", "slot": "body", "after_index": 0},
+        {"id": "a", "slot": "body", "after_index": 0},
+        {"id": "b", "slot": "body", "after_index": 0},
+        {"id": "c", "slot": "body", "after_index": 0}
+      ]
+    },
+    {
+      "name": "an earlier time wins over an earlier creation",
+      "segments": [
+        {"start_ms": 0, "end_ms": 9000, "text": "Opening."}
+      ],
+      "notes": [
+        {"id": "first-written", "kind": "point", "anchor_ms": 7000, "created_at": "2026-01-01T10:00:00Z"},
+        {"id": "added-later", "kind": "point", "anchor_ms": 3000, "created_at": "2026-01-01T12:00:00Z"}
+      ],
+      "expected": [
+        {"id": "added-later", "slot": "body", "after_index": 0},
+        {"id": "first-written", "slot": "body", "after_index": 0}
+      ]
+    },
+    {
+      "name": "head notes come first and tail notes last, each by creation time",
+      "segments": [
+        {"start_ms": 0, "end_ms": 9000, "text": "Opening."}
+      ],
+      "notes": [
+        {"id": "tail-2", "kind": "tail", "created_at": "2026-01-01T12:00:00Z"},
+        {"id": "body", "kind": "point", "anchor_ms": 0, "created_at": "2026-01-01T08:00:00Z"},
+        {"id": "head-2", "kind": "head", "created_at": "2026-01-01T11:00:00Z"},
+        {"id": "tail-1", "kind": "tail", "created_at": "2026-01-01T07:00:00Z"},
+        {"id": "head-1", "kind": "head", "created_at": "2026-01-01T09:00:00Z"}
+      ],
+      "expected": [
+        {"id": "head-1", "slot": "head"},
+        {"id": "head-2", "slot": "head"},
+        {"id": "body", "slot": "body", "after_index": 0},
+        {"id": "tail-1", "slot": "tail"},
+        {"id": "tail-2", "slot": "tail"}
+      ]
+    },
+    {
+      "name": "legacy lines without start_ms use start in seconds",
+      "segments": [
+        {"start": 0.0, "end": 1.4, "text": "Opening."},
+        {"start": 1.5, "end": 3.0, "text": "Budget."}
+      ],
+      "notes": [
+        {"id": "before", "kind": "point", "anchor_ms": 1499, "created_at": "2026-01-01T10:00:00Z"},
+        {"id": "at", "kind": "point", "anchor_ms": 1500, "created_at": "2026-01-01T10:00:00Z"}
+      ],
+      "expected": [
+        {"id": "before", "slot": "body", "after_index": 0},
+        {"id": "at", "slot": "body", "after_index": 1}
+      ]
+    }
+  ]
+}
