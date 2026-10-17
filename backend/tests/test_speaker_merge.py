@@ -7,10 +7,19 @@ from typing import Optional
 from unittest.mock import MagicMock, patch
 
 import pytest
+from sqlalchemy import create_engine, text
+from sqlmodel import Session, select
 
 from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
 from backend.processing.embedding_core import EMBEDDING_METHOD_VERSION
 from backend.processing.speaker_merge import merge_duplicate_speakers
+from backend.tests.sqlite_schemas import (
+    GLOBAL_SPEAKERS_SCHEMA,
+    P_TAGS_SCHEMA,
+    PEOPLE_TAGS_SCHEMA,
+    RECORDING_SPEAKERS_SCHEMA,
+    TRANSCRIPT_UTTERANCES_SCHEMA,
+)
 
 
 @dataclass
@@ -846,3 +855,55 @@ def test_clusters_identified_as_the_same_person_merge_as_before(
     pair = events[0]["payload"]["pairs"][0]
     assert pair["merged"] is True
     assert pair["blocked_by"] is None
+
+
+def test_the_guard_reads_the_library_through_an_orm_session(tmp_path) -> None:
+    """The person is loaded with ``session.get`` on a real session, not a mock."""
+    engine = create_engine(f"sqlite:///{tmp_path / 'merge.sqlite'}", future=True)
+    with engine.begin() as connection:
+        for schema in (
+            GLOBAL_SPEAKERS_SCHEMA,
+            RECORDING_SPEAKERS_SCHEMA,
+            TRANSCRIPT_UTTERANCES_SCHEMA,
+            # GlobalSpeaker loads its tags with the row.
+            PEOPLE_TAGS_SCHEMA,
+            P_TAGS_SCHEMA,
+        ):
+            connection.execute(text(schema))
+
+    with Session(engine) as session:
+        person = _person()
+        session.add(
+            GlobalSpeaker(
+                id=person.id,
+                name=person.name,
+                embedding=person.embedding,
+                embedding_version=person.embedding_version,
+            )
+        )
+        for speaker in _guard_speakers():
+            session.add(
+                RecordingSpeaker(
+                    id=speaker.id,
+                    recording_id=1,
+                    diarization_label=speaker.diarization_label,
+                    embedding=speaker.embedding,
+                    embedding_version=speaker.embedding_version,
+                    global_speaker_id=speaker.global_speaker_id,
+                )
+            )
+        session.commit()
+
+        merge_pairs = merge_duplicate_speakers(
+            session,
+            recording_id=1,
+            threshold=0.70,
+            speech_seconds={"SPEAKER_X": 255.0, "SPEAKER_N": 1405.0},
+        )
+        session.commit()
+        merged_into = {
+            row.id: row.merged_into_id for row in session.exec(select(RecordingSpeaker))
+        }
+
+    assert sorted(merge_pairs) == [(2, 1), (3, 4)]
+    assert merged_into == {1: None, 2: 1, 3: 4, 4: None}
