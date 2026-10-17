@@ -53,24 +53,23 @@ async def _read(
 
 
 async def _existing_for_retry(
-    db: AsyncSession, recording_pk: int, user_id: int, note_id: str
+    db: AsyncSession, recording_pk: int, note_id: str
 ) -> TimelineNote | None:
     """The note a retried create already made on this recording, if any.
 
-    Looked up on the recording only, so a create never says whether another
-    account's note holds the id; the unique index refuses that one at commit.
+    Looked up on the recording only, so a note on another recording is never
+    returned. An id held there is refused at commit by the unique index, with
+    409: that says the id is taken, which gives nothing away, since ids are
+    random UUIDs that only the client that made a note knows.
     Takes plain ids because a rollback expires the request's ORM rows.
     """
-    existing = (
+    return (
         await db.execute(
             select(TimelineNote)
             .where(TimelineNote.public_id == note_id)
             .where(TimelineNote.recording_id == recording_pk)
         )
     ).scalar_one_or_none()
-    if existing is not None and existing.created_by_user_id != user_id:
-        raise HTTPException(status_code=409, detail=NOTE_ID_TAKEN_DETAIL)
-    return existing
 
 
 async def _get_note(
@@ -141,11 +140,10 @@ async def create_timeline_note(
     """Add a note. Retrying with the same client ``id`` returns the first one (200)."""
     recording = await _get_owned_recording(db, recording_id, current_user.id)
     recording_pk, recording_public_id = recording.id, recording.public_id
-    user_id = current_user.id
     client_id = str(payload.id) if payload.id is not None else None
 
     if client_id is not None:
-        existing = await _existing_for_retry(db, recording_pk, user_id, client_id)
+        existing = await _existing_for_retry(db, recording_pk, client_id)
         if existing is not None:
             # The first create's note, as it is now: a retry never edits it.
             response.status_code = status.HTTP_200_OK
@@ -173,7 +171,7 @@ async def create_timeline_note(
             raise
         # Two retries of one create raced and the other made the note, or the
         # id is held on another recording.
-        existing = await _existing_for_retry(db, recording_pk, user_id, client_id)
+        existing = await _existing_for_retry(db, recording_pk, client_id)
         if existing is None:
             raise HTTPException(status_code=409, detail=NOTE_ID_TAKEN_DETAIL)
         response.status_code = status.HTTP_200_OK
@@ -202,6 +200,15 @@ async def update_timeline_note(
     if payload.anchor_ms is not None and note.kind != TimelineNoteKind.POINT.value:
         await db.rollback()
         raise HTTPException(status_code=422, detail="Only a point note can be moved")
+
+    body_changes = payload.body is not None and payload.body != note.body
+    anchor_moves = payload.anchor_ms is not None and payload.anchor_ms != note.anchor_ms
+    if not (body_changes or anchor_moves):
+        # A repeat of what the note already holds: no new revision, so it
+        # cannot refuse another device's next edit, and nothing to refresh.
+        current = await _read(db, note, recording.public_id)
+        await db.rollback()
+        return current
 
     if payload.body is not None:
         note.body = payload.body

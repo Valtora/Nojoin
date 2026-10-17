@@ -146,6 +146,7 @@ describe("api public surface", () => {
         "linkRecordingCalendarEvent",
         "listModels",
         "listNotesTemplates",
+        "listTimelineNotes",
         "login",
         "logout",
         "markTelemetryNoticeShown",

@@ -282,6 +282,43 @@ async def test_an_edit_bumps_the_revision_and_a_stale_one_gets_the_current_note(
 
 
 @pytest.mark.anyio
+async def test_an_edit_that_changes_nothing_keeps_the_revision(
+    client: AsyncClient, edge_refreshes: list[int]
+) -> None:
+    note = await _create(client, kind="point", anchor_ms=1_000, body="Same")
+    url = f"{BASE}/{note['id']}"
+
+    repeat = await client.patch(
+        url, json={"expected_revision": 1, "body": "  Same\n", "anchor_ms": 1_000}
+    )
+
+    assert repeat.status_code == 200
+    assert repeat.json()["revision"] == 1
+    assert repeat.json()["updated_at"] == note["updated_at"]
+    # Only the create asked for a refresh.
+    assert edge_refreshes == [10]
+    # Another device still holding revision 1 can save.
+    after = await client.patch(url, json={"expected_revision": 1, "body": "New"})
+    assert after.json()["revision"] == 2
+
+
+@pytest.mark.parametrize(
+    ("sent", "stored"),
+    [
+        # What the frontend's stripNote mirrors: Python's str.strip().
+        ("\x1c\x85 note 　", "note"),
+        ("﻿note", "﻿note"),
+    ],
+)
+@pytest.mark.anyio
+async def test_a_body_is_trimmed_as_python_strips(
+    client: AsyncClient, sent: str, stored: str
+) -> None:
+    note = await _create(client, kind="head", body=sent)
+    assert note["body"] == stored
+
+
+@pytest.mark.anyio
 async def test_only_a_point_note_can_be_moved(client: AsyncClient) -> None:
     note = await _create(
         client, kind="selection", start_ms=0, end_ms=10, quoted_text="q"
@@ -444,7 +481,7 @@ async def test_two_racing_retries_of_one_create_both_get_the_note(
     original = notes_routes._existing_for_retry
     calls = 0
 
-    async def _racing(db, recording_pk, user_id, note_id):
+    async def _racing(db, recording_pk, note_id):
         nonlocal calls
         calls += 1
         if calls == 1:
@@ -460,7 +497,7 @@ async def test_two_racing_retries_of_one_create_both_get_the_note(
                 )
                 await other.commit()
             return None
-        return await original(db, recording_pk, user_id, note_id)
+        return await original(db, recording_pk, note_id)
 
     monkeypatch.setattr(notes_routes, "_existing_for_retry", _racing)
     response = await client.post(

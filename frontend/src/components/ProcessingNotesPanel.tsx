@@ -2,7 +2,12 @@
 
 import { memo, useCallback, useEffect, useId, useRef, useState } from "react";
 
-import { NOTE_BODY_MAX_CHARS, type HeadNoteConflict } from "@/lib/notes/headNoteSync";
+import {
+  NOTE_BODY_MAX_CHARS,
+  noteLength,
+  stripNote,
+  type HeadNoteConflict,
+} from "@/lib/notes/headNoteSync";
 import type { TimelineNote } from "@/types";
 
 const SAVE_DEBOUNCE_MS = 1800;
@@ -27,21 +32,33 @@ const NO_OTHER_NOTES: readonly TimelineNote[] = [];
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
-const lengthToShow = (text: string) =>
-  text.length >= LENGTH_WARNING_CHARS ? text.length : null;
+const lengthToShow = (text: string) => {
+  // A text's UTF-16 length is never below its length in code points, so
+  // most text is never counted.
+  if (text.length < LENGTH_WARNING_CHARS) return null;
+  const length = noteLength(stripNote(text));
+  return length >= LENGTH_WARNING_CHARS ? length : null;
+};
 
 // The server trims a note, so text that differs only in its outer whitespace
 // is the same note.
-const sameNote = (a: string, b: string) => a.trim() === b.trim();
+const sameNote = (a: string, b: string) => stripNote(a) === stripNote(b);
+
+// `saved` is null once a save has failed: what the server holds is unknown,
+// so the box's text counts as unsaved until a save succeeds.
+const isSaved = (text: string, saved: string | null) =>
+  saved !== null && sameNote(text, saved);
 
 function ConflictNotice({
   conflict,
   locked,
+  mineIsBlank,
   onKeepMine,
   onUseTheirs,
 }: {
   conflict: HeadNoteConflict;
   locked: boolean;
+  mineIsBlank: boolean;
   onKeepMine: () => void;
   onUseTheirs: () => void;
 }) {
@@ -72,9 +89,10 @@ function ConflictNotice({
         <button
           type="button"
           onClick={onKeepMine}
-          className="rounded-pill border border-action-border bg-surface-card px-3 py-1 text-xs font-semibold text-action-text transition-colors hover:bg-action-tint"
+          disabled={locked}
+          className="rounded-pill border border-action-border bg-surface-card px-3 py-1 text-xs font-semibold text-action-text transition-colors hover:bg-action-tint disabled:cursor-not-allowed disabled:opacity-60"
         >
-          Keep mine
+          {changed && mineIsBlank ? "Delete anyway" : "Keep mine"}
         </button>
         <button
           type="button"
@@ -101,21 +119,31 @@ function ProcessingNotesPanel({
   const normalisedValue = value ?? "";
   const otherNotesHeadingId = useId();
   const [saveState, setSaveState] = useState<SaveState>("idle");
-  const [shownLength, setShownLength] = useState(() =>
-    lengthToShow(normalisedValue),
-  );
-  // Text the box takes from the server is counted too.
-  const [countedValue, setCountedValue] = useState(normalisedValue);
-  if (countedValue !== normalisedValue) {
-    setCountedValue(normalisedValue);
-    setShownLength(lengthToShow(normalisedValue));
+  // The box's text at mount. Later text is written by the effect below:
+  // were `defaultValue` to follow it, React would change an untouched box
+  // without its change tracking seeing it, and clearing that box would then
+  // fire no change at all.
+  const [initialValue] = useState(normalisedValue);
+  // What the box holds, for the character count and the conflict buttons.
+  const [draftText, setDraftText] = useState(normalisedValue);
+  const [dirty, setDirty] = useState(false);
+  // The box takes new text from the server only while it holds no unsaved
+  // text and differs from it (the effect below); the count follows suit.
+  const [syncedValue, setSyncedValue] = useState(normalisedValue);
+  if (syncedValue !== normalisedValue) {
+    setSyncedValue(normalisedValue);
+    if (!dirty && !sameNote(draftText, normalisedValue)) {
+      setDraftText(normalisedValue);
+    }
   }
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const disabledRef = useRef(disabled);
   const conflictRef = useRef(conflict);
   const draftRef = useRef(normalisedValue);
-  const lastSavedRef = useRef(normalisedValue);
+  const lastSavedRef = useRef<string | null>(normalisedValue);
   const lastPropValueRef = useRef(normalisedValue);
+  const inFlightRef = useRef<string | null>(null);
+  const unmountedRef = useRef(false);
   const reportedDirtyRef = useRef(false);
   const saveStateRef = useRef<SaveState>("idle");
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -135,10 +163,11 @@ function ProcessingNotesPanel({
   }, []);
 
   const reportDirty = useCallback(() => {
-    const dirty = !sameNote(draftRef.current, lastSavedRef.current);
-    if (dirty !== reportedDirtyRef.current) {
-      reportedDirtyRef.current = dirty;
-      onDirtyChange?.(dirty);
+    const nowDirty = !isSaved(draftRef.current, lastSavedRef.current);
+    if (nowDirty !== reportedDirtyRef.current) {
+      reportedDirtyRef.current = nowDirty;
+      setDirty(nowDirty);
+      onDirtyChange?.(nowDirty);
     }
   }, [onDirtyChange]);
 
@@ -156,10 +185,15 @@ function ProcessingNotesPanel({
     if (conflictRef.current) {
       return;
     }
-    if (!force && sameNote(valueToSave, lastSavedRef.current)) {
+    if (
+      !force &&
+      (isSaved(valueToSave, lastSavedRef.current) ||
+        (inFlightRef.current !== null && sameNote(valueToSave, inFlightRef.current)))
+    ) {
       return;
     }
 
+    inFlightRef.current = valueToSave;
     setVisibleSaveState("saving");
     try {
       await onSave(valueToSave);
@@ -171,9 +205,9 @@ function ProcessingNotesPanel({
       );
 
       if (
+        !unmountedRef.current &&
         !disabledRef.current &&
-        draftRef.current !== valueToSave &&
-        draftRef.current !== lastSavedRef.current
+        !isSaved(draftRef.current, lastSavedRef.current)
       ) {
         saveTimeoutRef.current = setTimeout(() => {
           saveTimeoutRef.current = null;
@@ -181,7 +215,13 @@ function ProcessingNotesPanel({
         }, SAVE_DEBOUNCE_MS);
       }
     } catch {
+      lastSavedRef.current = null;
+      reportDirty();
       setVisibleSaveState("error");
+    } finally {
+      if (inFlightRef.current === valueToSave) {
+        inFlightRef.current = null;
+      }
     }
   }, [clearPendingSave, onSave, reportDirty, setVisibleSaveState]);
 
@@ -208,7 +248,7 @@ function ProcessingNotesPanel({
     // (trimmed): leave the box, its trailing space or new line, and the
     // caret alone.
     if (
-      !sameNote(draftRef.current, lastSavedRef.current) ||
+      !isSaved(draftRef.current, lastSavedRef.current) ||
       sameNote(draftRef.current, normalisedValue)
     ) {
       return;
@@ -240,8 +280,14 @@ function ProcessingNotesPanel({
   }, [disabled, flushSave]);
 
   useEffect(() => {
+    unmountedRef.current = false;
     return () => {
+      unmountedRef.current = true;
       clearPendingSave();
+      // Unsaved text is saved on the way out, to another recording or page.
+      if (!disabledRef.current && !isSaved(draftRef.current, lastSavedRef.current)) {
+        void flushSaveRef.current(draftRef.current);
+      }
     };
   }, [clearPendingSave]);
 
@@ -249,7 +295,7 @@ function ProcessingNotesPanel({
     (event: React.ChangeEvent<HTMLTextAreaElement>) => {
       const nextValue = event.target.value;
       draftRef.current = nextValue;
-      setShownLength(lengthToShow(nextValue));
+      setDraftText(nextValue);
       reportDirty();
 
       if (saveStateRef.current !== "idle") {
@@ -259,7 +305,7 @@ function ProcessingNotesPanel({
       if (
         disabledRef.current ||
         conflictRef.current ||
-        sameNote(nextValue, lastSavedRef.current)
+        isSaved(nextValue, lastSavedRef.current)
       ) {
         clearPendingSave();
         return;
@@ -281,6 +327,10 @@ function ProcessingNotesPanel({
   }, [flushSave]);
 
   const handleKeepMine = useCallback(() => {
+    // Notes generation has the other version; nothing is saved over it.
+    if (disabledRef.current) {
+      return;
+    }
     // Read by the save below, before the cleared conflict re-renders.
     conflictRef.current = null;
     onResolveConflict?.("mine");
@@ -297,11 +347,13 @@ function ProcessingNotesPanel({
     if (textareaRef.current) {
       textareaRef.current.value = theirs;
     }
-    setShownLength(lengthToShow(theirs));
+    setDraftText(theirs);
     setVisibleSaveState("idle");
     reportDirty();
     onResolveConflict?.("theirs");
   }, [onResolveConflict, reportDirty, setVisibleSaveState]);
+
+  const shownLength = lengthToShow(draftText);
 
   // Nothing at rest: only saving, saved, failed, conflicting and locked say
   // anything.
@@ -331,6 +383,7 @@ function ProcessingNotesPanel({
         <ConflictNotice
           conflict={conflict}
           locked={disabled}
+          mineIsBlank={stripNote(draftText) === ""}
           onKeepMine={handleKeepMine}
           onUseTheirs={handleUseTheirs}
         />
@@ -338,10 +391,9 @@ function ProcessingNotesPanel({
       <div className="relative flex min-h-0 flex-1 flex-col">
         <textarea
           ref={textareaRef}
-          defaultValue={normalisedValue}
+          defaultValue={initialValue}
           onChange={handleChange}
           onBlur={handleBlur}
-          maxLength={NOTE_BODY_MAX_CHARS}
           placeholder="Type quick reminders, decisions, or action items here..."
           disabled={disabled}
           className={`density-surface-panel min-h-[10rem] w-full flex-1 resize-none border border-control-border bg-control-bg px-4 py-4 text-sm leading-6 text-contrast-muted outline-none transition ${disabled ? "cursor-not-allowed opacity-70" : "focus:border-action focus:ring-2 focus:ring-action"}`}

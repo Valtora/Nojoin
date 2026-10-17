@@ -2,11 +2,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { TimelineNote } from "@/types";
 
-import { HeadNoteSync, newNoteId } from "./headNoteSync";
+import { HeadNoteSync, newNoteId, noteLength, stripNote } from "./headNoteSync";
 
 const updateTimelineNote = vi.fn();
 
 vi.mock("@/lib/api", () => ({
+  listTimelineNotes: vi.fn(),
   createTimelineNote: vi.fn(),
   deleteTimelineNote: vi.fn(),
   updateTimelineNote: (...args: unknown[]) => updateTimelineNote(...args),
@@ -67,6 +68,23 @@ describe("HeadNoteSync", () => {
       kind: "changed",
       note: head("Theirs", 2),
     });
+  });
+
+  it("keeps its snapshot when a poll changes nothing it shows", () => {
+    const sync = new HeadNoteSync("rec-1", [head("Original", 1)]);
+    const before = sync.getSnapshot();
+
+    sync.ingest([head("Original", 1)]);
+
+    expect(sync.getSnapshot()).toBe(before);
+  });
+});
+
+describe("stripNote and noteLength", () => {
+  it("trim and count a note as the API's Python does", () => {
+    expect(stripNote("\u001c\u0085 note \u3000")).toBe("note");
+    expect(stripNote("\ufeffnote")).toBe("\ufeffnote");
+    expect(noteLength("\u{1F600}a")).toBe(2);
   });
 });
 

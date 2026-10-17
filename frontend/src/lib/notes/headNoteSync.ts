@@ -1,6 +1,7 @@
 import {
   createTimelineNote,
   deleteTimelineNote,
+  listTimelineNotes,
   updateTimelineNote,
 } from "@/lib/api";
 import { getErrorStatus, isRecord } from "@/lib/errors";
@@ -15,17 +16,20 @@ import type {
  * note, the one a migrated free-text note became, across saves and polls.
  *
  * - Typing into an empty box creates the note, with a client id kept until a
- *   create succeeds, so a retried create cannot make a second note.
+ *   create succeeds, so a retried create cannot make a second note. A retry
+ *   that finds the note changed since an earlier attempt made it raises a
+ *   conflict instead of writing over it.
  * - An edit patches the note against the revision the box's text started
  *   from. While the box holds unsaved text, a poll never moves that base, so
  *   an edit made meanwhile on another device comes back as a conflict rather
- *   than being overwritten.
+ *   than being overwritten. A refusal caused by this device's own earlier
+ *   save, whose response was lost, is not a conflict.
  * - Clearing the box deletes the note, against the same revision, so it
  *   cannot delete an edit made meanwhile on another device either.
  * - A poll answered before this device's own write landed cannot put older
- *   text back, or bring back a note this device deleted. A note is taken as
- *   deleted elsewhere only when two polls running leave it out, since polls
- *   can answer out of order.
+ *   text back, or bring back a note this device deleted. Polls can answer
+ *   out of order, so when one leaves out the box's note, the store asks the
+ *   server again before taking the note as deleted elsewhere.
  * - The box stays on the note it edits. If another device made a head note
  *   at the same moment, that one is listed with the other notes.
  * - A conflict (changed or deleted on another device) stops saving until the
@@ -34,6 +38,37 @@ import type {
 
 /** The API's limit, `TIMELINE_NOTE_BODY_MAX_CHARS` in `timeline_note_public.py`. */
 export const NOTE_BODY_MAX_CHARS = 50_000;
+
+// The characters Python's `str.strip()` removes, which is how the API trims a
+// note. `String.prototype.trim` differs: it keeps U+001C-U+001F and U+0085,
+// and removes U+FEFF.
+const isOuterSpace = (code: number) =>
+  (code >= 0x09 && code <= 0x0d) ||
+  (code >= 0x1c && code <= 0x20) ||
+  code === 0x85 ||
+  code === 0xa0 ||
+  code === 0x1680 ||
+  (code >= 0x2000 && code <= 0x200a) ||
+  code === 0x2028 ||
+  code === 0x2029 ||
+  code === 0x202f ||
+  code === 0x205f ||
+  code === 0x3000;
+
+/** A note's text as the API stores it. */
+export const stripNote = (text: string): string => {
+  let start = 0;
+  let end = text.length;
+  while (start < end && isOuterSpace(text.charCodeAt(start))) start += 1;
+  while (end > start && isOuterSpace(text.charCodeAt(end - 1))) end -= 1;
+  return text.slice(start, end);
+};
+
+const SURROGATE_PAIR = /[\uD800-\uDBFF][\uDC00-\uDFFF]/g;
+
+/** A note's length as the API counts it: code points, not UTF-16 units. */
+export const noteLength = (text: string): number =>
+  text.length - (text.match(SURROGATE_PAIR)?.length ?? 0);
 
 export type HeadNoteConflict =
   | { kind: "changed"; note: TimelineNote }
@@ -53,11 +88,27 @@ interface KnownNote {
   body: string;
 }
 
+/** Texts sent against one revision of a note (0: its create) without an answer. */
+interface Attempts {
+  id: string;
+  revision: number;
+  bodies: Set<string>;
+}
+
 const asKnown = (note: TimelineNote): KnownNote => ({
   id: note.id,
   revision: note.revision,
   body: note.body,
 });
+
+const sameNotes = (a: readonly TimelineNote[], b: readonly TimelineNote[]) =>
+  a.length === b.length &&
+  a.every(
+    (note, index) =>
+      note.id === b[index].id &&
+      note.revision === b[index].revision &&
+      note.body === b[index].body,
+  );
 
 /** A version 4 UUID without `crypto.randomUUID`, which needs a secure context. */
 export const newNoteId = (): string => {
@@ -89,21 +140,22 @@ const conflictingNote = (error: unknown): TimelineNote | null => {
   return isConflictDetail(detail) ? detail.note : null;
 };
 
-const NO_CONFLICT_ERROR = "Resolve the conflict with the other device first.";
+const UNRESOLVED_CONFLICT_ERROR = "Resolve the conflict with the other device first.";
+const TOO_LONG_ERROR = `A note can be at most ${NOTE_BODY_MAX_CHARS} characters.`;
 
 export class HeadNoteSync {
   private polled: TimelineNote[] = [];
   /** The note the box's text is based on. */
   private base: KnownNote | null = null;
   private ownWrite: KnownNote | null = null;
-  /** Every note id a poll has shown. */
-  private readonly seenIds = new Set<string>();
-  /** Polls running that have not shown `base`, once one had. */
-  private absentPolls = 0;
   private dirty = false;
   private conflict: HeadNoteConflict | null = null;
+  /** Deleted here, or found deleted elsewhere: a late poll cannot bring them back. */
   private readonly deletedIds = new Set<string>();
+  /** The note a poll left out, while the server is asked whether it still exists. */
+  private confirmingId: string | null = null;
   private pendingCreateId: string | null = null;
+  private attempts: Attempts | null = null;
   private queue: Promise<void> = Promise.resolve();
   private readonly listeners = new Set<() => void>();
   private snapshot: HeadNoteSnapshot = { body: "", otherNotes: [], conflict: null };
@@ -127,12 +179,6 @@ export class HeadNoteSync {
   /** Takes the notes a poll of the recording returned. */
   ingest = (notes: readonly TimelineNote[] | null | undefined) => {
     this.polled = (notes ?? []).filter((note) => !this.deletedIds.has(note.id));
-    const base = this.base;
-    this.absentPolls =
-      base && this.seenIds.has(base.id) && !this.polled.some((note) => note.id === base.id)
-        ? this.absentPolls + 1
-        : 0;
-    for (const note of this.polled) this.seenIds.add(note.id);
     const conflict = this.conflict;
     if (conflict?.kind === "changed") {
       // Show the other version as it is now, not as the refusal found it.
@@ -142,6 +188,7 @@ export class HeadNoteSync {
       }
     }
     this.adopt();
+    this.confirmAbsence();
     this.emit();
   };
 
@@ -170,7 +217,6 @@ export class HeadNoteSync {
     if (!conflict) return;
     this.conflict = null;
     this.base = conflict.kind === "changed" ? asKnown(conflict.note) : null;
-    this.absentPolls = 0;
     if (conflict.kind === "deleted") this.ownWrite = null;
     if (choice === "theirs") {
       this.dirty = false;
@@ -184,12 +230,9 @@ export class HeadNoteSync {
     const polledBase = base
       ? this.polled.find((note) => note.id === base.id)
       : undefined;
-    // Missing from a poll: just created here, so no poll has shown it yet, or
-    // one poll answered out of order. Missing from two polls running: deleted
-    // on another device.
-    if (base && !polledBase && (!this.seenIds.has(base.id) || this.absentPolls < 2)) {
-      return base;
-    }
+    // Left out of a poll but not known to be deleted: just created here, or
+    // the poll answered out of order (see confirmAbsence).
+    if (base && !polledBase && !this.deletedIds.has(base.id)) return base;
     // The box stays on the note it edits; with none, it takes the earliest
     // head note.
     const note = polledBase ?? this.polled.find((candidate) => candidate.kind === "head");
@@ -201,22 +244,58 @@ export class HeadNoteSync {
   }
 
   private adopt() {
-    if (!this.dirty && !this.conflict) {
-      const next = this.latest();
-      if (next?.id !== this.base?.id) this.absentPolls = 0;
-      this.base = next;
-    }
+    if (!this.dirty && !this.conflict) this.base = this.latest();
     // The note a lost create response made: edit it rather than create again.
     if (this.base && this.base.id === this.pendingCreateId) this.pendingCreateId = null;
   }
 
+  /** A poll left out the box's note: ask the server before taking it as deleted. */
+  private confirmAbsence() {
+    const base = this.base;
+    if (
+      !base ||
+      this.confirmingId === base.id ||
+      this.deletedIds.has(base.id) ||
+      this.polled.some((note) => note.id === base.id)
+    ) {
+      return;
+    }
+    this.confirmingId = base.id;
+    void listTimelineNotes(this.recordingId)
+      .then(
+        (notes) => {
+          if (notes.some((note) => note.id === base.id)) return;
+          this.deletedIds.add(base.id);
+          this.polled = this.polled.filter((note) => note.id !== base.id);
+          this.adopt();
+          this.emit();
+        },
+        // Unanswered: the next poll that leaves the note out asks again.
+        () => undefined,
+      )
+      .finally(() => {
+        if (this.confirmingId === base.id) this.confirmingId = null;
+      });
+  }
+
   private emit() {
-    const baseId = this.base?.id;
+    const conflictNoteId =
+      this.conflict?.kind === "changed" ? this.conflict.note.id : null;
+    // The box's note, a create still unconfirmed and the note in a conflict
+    // notice are each shown already.
+    const shown = new Set([this.base?.id, this.pendingCreateId, conflictNoteId]);
+    const otherNotes = this.polled.filter(
+      (note) => (note.kind === "head" || note.kind === "tail") && !shown.has(note.id),
+    );
+    const body = this.base?.body ?? "";
+    const previous = this.snapshot;
+    const sameOthers = sameNotes(otherNotes, previous.otherNotes);
+    if (sameOthers && body === previous.body && this.conflict === previous.conflict) {
+      return;
+    }
     this.snapshot = {
-      body: this.base?.body ?? "",
-      otherNotes: this.polled.filter(
-        (note) => (note.kind === "head" || note.kind === "tail") && note.id !== baseId,
-      ),
+      body,
+      otherNotes: sameOthers ? previous.otherNotes : otherNotes,
       conflict: this.conflict,
     };
     for (const listener of this.listeners) listener();
@@ -225,20 +304,46 @@ export class HeadNoteSync {
   private recordWrite(note: TimelineNote) {
     this.ownWrite = asKnown(note);
     this.base = this.ownWrite;
-    this.absentPolls = 0;
+    this.attempts = null;
     this.emit();
   }
 
+  private noteAttempt(id: string, revision: number, body: string) {
+    const attempts = this.attempts;
+    if (attempts && attempts.id === id && attempts.revision === revision) {
+      attempts.bodies.add(body);
+    } else {
+      this.attempts = { id, revision, bodies: new Set([body]) };
+    }
+  }
+
+  /** Whether the note is what one of this device's unanswered writes made. */
+  private madeHere(note: TimelineNote) {
+    const attempts = this.attempts;
+    return (
+      attempts !== null &&
+      attempts.id === note.id &&
+      note.revision === attempts.revision + 1 &&
+      attempts.bodies.has(note.body)
+    );
+  }
+
   private async write(text: string) {
-    if (this.conflict) throw new Error(NO_CONFLICT_ERROR);
-    const body = text.trim();
+    if (this.conflict) throw new Error(UNRESOLVED_CONFLICT_ERROR);
+    const body = stripNote(text);
+    if (noteLength(body) > NOTE_BODY_MAX_CHARS) throw new Error(TOO_LONG_ERROR);
     const target = this.base;
     if (!body) {
-      if (target) await this.remove(target);
-    } else if (target) {
-      await this.patch(target, body);
-    } else {
+      if (target) {
+        await this.remove(target);
+      } else if (this.pendingCreateId) {
+        // A create whose answer was lost may have made the note.
+        await this.remove({ id: this.pendingCreateId, revision: 1, body: "" });
+      }
+    } else if (!target) {
       await this.create(body);
+    } else if (body !== target.body) {
+      await this.patch(target, body);
     }
   }
 
@@ -254,24 +359,30 @@ export class HeadNoteSync {
     throw error;
   }
 
-  private async remove(target: KnownNote) {
+  private async remove(target: KnownNote): Promise<void> {
     try {
       // Against its revision, so clearing the box cannot delete an edit
       // another device made meanwhile.
       await deleteTimelineNote(this.recordingId, target.id, target.revision);
     } catch (error) {
+      const latest = conflictingNote(error);
+      if (latest && this.madeHere(latest)) {
+        await this.remove(asKnown(latest));
+        return;
+      }
       if (getErrorStatus(error) !== 404) this.refused(error);
     }
     this.deletedIds.add(target.id);
     if (this.pendingCreateId === target.id) this.pendingCreateId = null;
+    if (this.attempts?.id === target.id) this.attempts = null;
     this.polled = this.polled.filter((note) => note.id !== target.id);
     this.ownWrite = null;
     this.base = null;
-    this.absentPolls = 0;
     this.emit();
   }
 
-  private async patch(target: KnownNote, body: string) {
+  private async patch(target: KnownNote, body: string): Promise<void> {
+    this.noteAttempt(target.id, target.revision, body);
     let saved: TimelineNote;
     try {
       saved = await updateTimelineNote(this.recordingId, target.id, {
@@ -279,25 +390,46 @@ export class HeadNoteSync {
         body,
       });
     } catch (error) {
+      const latest = conflictingNote(error);
+      if (latest && this.madeHere(latest)) {
+        // This device's earlier save landed; only its answer was lost.
+        this.recordWrite(latest);
+        if (latest.body !== body) await this.patch(asKnown(latest), body);
+        return;
+      }
       this.refused(error);
     }
     this.recordWrite(saved);
   }
 
-  private async create(body: string) {
+  private async create(body: string, renamed = false): Promise<void> {
     this.pendingCreateId ??= newNoteId();
-    const created = await createTimelineNote(this.recordingId, {
-      id: this.pendingCreateId,
-      kind: "head",
-      body,
-    });
+    const id = this.pendingCreateId;
+    this.noteAttempt(id, 0, body);
+    let created: TimelineNote;
+    try {
+      created = await createTimelineNote(this.recordingId, { id, kind: "head", body });
+    } catch (error) {
+      if (!renamed && getErrorStatus(error) === 409 && !conflictingNote(error)) {
+        // The id is taken by a note elsewhere: once more under a new one.
+        this.pendingCreateId = null;
+        this.attempts = null;
+        await this.create(body, true);
+        return;
+      }
+      throw error;
+    }
     this.pendingCreateId = null;
-    if (created.body !== body) {
-      // A retry gets the note as the first attempt made it, whose response
-      // was lost; this text is newer.
-      await this.patch(asKnown(created), body);
-      return;
+    if (!this.madeHere(created)) {
+      // A retry found the note an earlier attempt made, changed since on
+      // another device.
+      this.attempts = null;
+      this.conflict = { kind: "changed", note: created };
+      this.emit();
+      throw new Error(UNRESOLVED_CONFLICT_ERROR);
     }
     this.recordWrite(created);
+    // A retry gets the note as an earlier attempt made it; this text is newer.
+    if (created.body !== body) await this.patch(asKnown(created), body);
   }
 }

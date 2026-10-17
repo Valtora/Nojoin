@@ -35,6 +35,14 @@ export const updateNotes = async (
 const timelineNotesPath = (recordingId: RecordingId) =>
   `/transcripts/${recordingId}/timeline-notes`;
 
+/** Every note on the recording, in timeline order. */
+export const listTimelineNotes = async (
+  recordingId: RecordingId,
+): Promise<TimelineNote[]> => {
+  const response = await api.get<TimelineNote[]>(timelineNotesPath(recordingId));
+  return response.data;
+};
+
 /** Creates a note. Retrying with the same client `id` returns the first one. */
 export const createTimelineNote = async (
   recordingId: RecordingId,
