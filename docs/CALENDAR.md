@@ -61,6 +61,8 @@ Connected calendars feed the dashboard month grid and agenda, alongside unlinked
 
 A recording can be linked to the calendar event it belongs to, which gives notes and Meeting Edge the event's description and attendees. A linked recording appears on the dashboard only as its calendar event.
 
+A recording stays linked through every sync for as long as its event exists. Nojoin keeps events from 12 months back to 12 months ahead. When a sync cannot use the provider's change cursor, for example once a month when that range moves on, it fetches the calendar in full and updates each stored event in place. Deleting an event from the calendar, or removing the whole calendar from the account, removes it from Nojoin too and unlinks its recording. An event that has only fallen out of the range is kept for as long as a recording links to it.
+
 ## Sync Frequency and Live Sync
 
 Nojoin keeps connected calendars up to date in two complementary ways.

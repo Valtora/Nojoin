@@ -55,8 +55,8 @@ from .persistence import (
     _apply_incremental_calendar_events,
     _can_use_incremental_sync,
     _microsoft_calendar_has_partial_occurrence_artifacts,
+    _reconcile_calendar_events,
     _refresh_connection_calendars,
-    _replace_calendar_events,
     _serialise_connection,
     _serialise_connection_with_push,
     _upsert_connection,
@@ -448,8 +448,8 @@ async def sync_connection_in_session(db: AsyncSession, connection_id: int) -> No
                             sync_result.deleted_remote_ids,
                         )
                     else:
-                        await _replace_calendar_events(
-                            db, calendar.id, sync_result.events
+                        await _reconcile_calendar_events(
+                            db, calendar.id, sync_result.events, window_start
                         )
                 except IncrementalSyncResetRequired:
                     sync_result = await _sync_google_events(
@@ -459,7 +459,9 @@ async def sync_connection_in_session(db: AsyncSession, connection_id: int) -> No
                         window_end,
                         sync_cursor=None,
                     )
-                    await _replace_calendar_events(db, calendar.id, sync_result.events)
+                    await _reconcile_calendar_events(
+                        db, calendar.id, sync_result.events, window_start
+                    )
             else:
                 if use_incremental_sync:
                     try:
@@ -494,8 +496,8 @@ async def sync_connection_in_session(db: AsyncSession, connection_id: int) -> No
                             deleted_remote_ids=[],
                             cursor=delta_cursor,
                         )
-                        await _replace_calendar_events(
-                            db, calendar.id, sync_result.events
+                        await _reconcile_calendar_events(
+                            db, calendar.id, sync_result.events, window_start
                         )
                 else:
                     provider_events = await _list_microsoft_events(
@@ -515,7 +517,9 @@ async def sync_connection_in_session(db: AsyncSession, connection_id: int) -> No
                         deleted_remote_ids=[],
                         cursor=delta_cursor,
                     )
-                    await _replace_calendar_events(db, calendar.id, sync_result.events)
+                    await _reconcile_calendar_events(
+                        db, calendar.id, sync_result.events, window_start
+                    )
 
             calendar.sync_cursor = sync_result.cursor
             calendar.last_synced_at = _utc_now()
