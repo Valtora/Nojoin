@@ -319,6 +319,41 @@ class SecondaryLLMBackend(LLMBackend):
             return self._secondary.list_models()
 
 
+# (provider, missing field) pairs already logged, so a misconfigured fallback is
+# reported once per process rather than on every LLM call.
+_WARNED_UNUSABLE_SECONDARIES: set[tuple[str, str]] = set()
+
+
+def _warn_unusable_secondary(config) -> None:
+    """Log when a configured secondary provider cannot be used.
+
+    ``ResolvedLLMConfig.has_secondary`` drops a secondary that has no model, or
+    a hosted one with no API key, and the request then runs on the primary
+    alone. Without this the fallback is off with nothing in the logs.
+    """
+    provider = config.secondary_provider
+    if not provider:
+        return
+    if provider != "ollama" and not config.secondary_api_key:
+        missing = "API key"
+        remedy = f"Set SECONDARY_{provider.upper()}_API_KEY in the server's .env."
+    elif not config.secondary_model:
+        missing = "model"
+        remedy = "Choose one in Settings > AI providers."
+    else:
+        return
+    if (provider, missing) in _WARNED_UNUSABLE_SECONDARIES:
+        return
+    _WARNED_UNUSABLE_SECONDARIES.add((provider, missing))
+    logger.warning(
+        "Fallback provider %s has no %s, so requests run on the primary "
+        "provider alone. %s",
+        provider,
+        missing,
+        remedy,
+    )
+
+
 def get_llm_backend_with_secondary(
     primary_config,
     purpose: str = "default",
@@ -345,6 +380,7 @@ def get_llm_backend_with_secondary(
 
     secondary_cfg = primary_config.secondary_config()
     if secondary_cfg is None:
+        _warn_unusable_secondary(primary_config)
         return primary
 
     try:

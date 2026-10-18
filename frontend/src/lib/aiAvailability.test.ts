@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import type { CliOAuthStatus, Settings } from "@/types";
 import {
+  getSecondaryProviderGap,
+  getServerProviderGap,
   isServerProviderConfigured,
   resolveAiAvailability,
 } from "./aiAvailability";
@@ -159,5 +161,73 @@ describe("resolveAiAvailability", () => {
         resolveAiAvailability(base({ ...SERVER_READY, usage_model }), null),
       ).toEqual({ available: true });
     }
+  });
+});
+
+describe("getServerProviderGap", () => {
+  it("names the model as the gap once the credential is present", () => {
+    expect(getServerProviderGap(base(SERVER_READY))).toBeNull();
+    expect(
+      getServerProviderGap(base({ llm_provider: "gemini", gemini_api_key: "k" })),
+    ).toBe("model");
+    expect(
+      getServerProviderGap(
+        base({ llm_provider: "ollama", ollama_api_url: "http://ollama:11434" }),
+      ),
+    ).toBe("model");
+  });
+
+  it("reports the credential before the model", () => {
+    expect(getServerProviderGap(base({ llm_provider: "openai" }))).toBe(
+      "credential",
+    );
+    expect(
+      getServerProviderGap(
+        base({ llm_provider: "anthropic", anthropic_model: "claude-x" }),
+      ),
+    ).toBe("credential");
+  });
+});
+
+describe("getSecondaryProviderGap", () => {
+  it("has no gap when no fallback is configured", () => {
+    expect(getSecondaryProviderGap(base(SERVER_READY))).toBeNull();
+  });
+
+  it("flags a fallback with no model, the case the backend drops", () => {
+    expect(
+      getSecondaryProviderGap(
+        base({
+          secondary_llm_provider: "ollama",
+          secondary_ollama_api_url: "http://ollama:11434",
+        }),
+      ),
+    ).toBe("model");
+    expect(
+      getSecondaryProviderGap(
+        base({
+          secondary_llm_provider: "ollama",
+          secondary_ollama_api_url: "http://ollama:11434",
+          secondary_ollama_model: "qwen-x",
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  it("flags a hosted fallback with no key", () => {
+    expect(
+      getSecondaryProviderGap(
+        base({ secondary_llm_provider: "openai", secondary_openai_model: "gpt-x" }),
+      ),
+    ).toBe("credential");
+    expect(
+      getSecondaryProviderGap(
+        base({
+          secondary_llm_provider: "gemini",
+          secondary_gemini_api_key: "k",
+          secondary_gemini_model: "gemini-x",
+        }),
+      ),
+    ).toBeNull();
   });
 });

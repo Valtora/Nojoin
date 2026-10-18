@@ -13,7 +13,7 @@ import {
   getCodexModels,
   refreshCodexModels,
 } from "@/lib/api/cliOauth";
-import { isServerProviderConfigured } from "@/lib/aiAvailability";
+import { getServerProviderGap } from "@/lib/aiAvailability";
 import { cliModelOptions, type CliModelOption } from "./cliModels";
 
 const SELECT_CLASS =
@@ -67,7 +67,7 @@ export default function AiRoutingSection({
   const [modelReload, setModelReload] = useState(0);
 
   const isCli = settings.usage_model === "cli_oauth";
-  const providerConfigured = isServerProviderConfigured(settings);
+  const serverGap = getServerProviderGap(settings);
   const activeServerProvider = settings.llm_provider || "none";
   const secondaryProvider = settings.secondary_llm_provider;
 
@@ -341,10 +341,12 @@ export default function AiRoutingSection({
                   : "Configured by your server administrator. Every account on the server default shares this provider."}
               </p>
             </div>
-            <SettingsStatusBadge
-              tone={providerConfigured ? "success" : "warning"}
-            >
-              {providerConfigured ? "Configured" : "Not configured"}
+            <SettingsStatusBadge tone={serverGap === null ? "success" : "warning"}>
+              {serverGap === null
+                ? "Configured"
+                : serverGap === "model"
+                  ? "No model selected"
+                  : "Not configured"}
             </SettingsStatusBadge>
           </SettingsBlock>
         )}

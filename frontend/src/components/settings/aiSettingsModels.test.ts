@@ -4,7 +4,6 @@ import type { Settings } from "@/types";
 import {
   DEFAULT_OLLAMA_CONTEXT_WINDOW,
   getModelOptionsForProvider,
-  getSecondaryProviderApiKey,
   getSecondaryProviderLiveModel,
   getSecondaryProviderModel,
   getSelectedModelForProvider,
@@ -65,11 +64,10 @@ describe("aiSettingsModels", () => {
       secondary_openai_live_model: "gpt-s-live",
     });
 
-    it("reads keys and models per provider", () => {
-      expect(getSecondaryProviderApiKey(settings, "openai")).toBe("sk");
+    it("reads models per provider", () => {
       expect(getSecondaryProviderModel(settings, "openai")).toBe("gpt-s");
       expect(getSecondaryProviderLiveModel(settings, "openai")).toBe("gpt-s-live");
-      expect(getSecondaryProviderApiKey(settings, "ollama")).toBe("");
+      expect(getSecondaryProviderModel(settings, "ollama")).toBe("");
     });
 
     it("returns null updates when no provider is given", () => {
