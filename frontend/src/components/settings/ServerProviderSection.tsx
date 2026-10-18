@@ -2,9 +2,10 @@ import { Check, HelpCircle, Info, Loader2, RefreshCw, Server } from "lucide-reac
 
 import { Settings } from "@/types";
 import { listModels } from "@/lib/api";
-import { isServerProviderConfigured } from "@/lib/aiAvailability";
+import { getServerProviderGap } from "@/lib/aiAvailability";
 import Tooltip from "@/components/ui/Tooltip";
 import SettingsBlock from "./SettingsBlock";
+import SettingsCallout from "./SettingsCallout";
 import SettingsCard from "./SettingsCard";
 import SettingsStatusBadge from "./SettingsStatusBadge";
 import type { AISettingsModels } from "./useAISettingsModels";
@@ -40,7 +41,10 @@ export default function ServerProviderSection({
   onPersist,
   models,
 }: ServerProviderSectionProps) {
-  const providerConfigured = isServerProviderConfigured(settings);
+  const gap = getServerProviderGap(settings);
+  // The model list needs only the credential, so the model controls stay
+  // usable while the model itself is what is missing.
+  const hasCredential = gap !== "credential";
   const mainModelOptions = getModelOptionsForProvider(
     settings,
     models.availableModels,
@@ -84,10 +88,23 @@ export default function ServerProviderSection({
                 ).
               </p>
             </div>
-            <SettingsStatusBadge tone={providerConfigured ? "success" : "warning"}>
-              {providerConfigured ? "Configured via server (.env)" : "Not configured"}
+            <SettingsStatusBadge tone={gap === null ? "success" : "warning"}>
+              {gap === null
+                ? "Configured via server (.env)"
+                : gap === "model"
+                  ? "No model selected"
+                  : "Not configured"}
             </SettingsStatusBadge>
           </div>
+
+          {gap === "model" && (
+            <SettingsCallout tone="warning" title="No model selected">
+              Notes, titles, speaker names, Meeting Chat and Meeting Edge fail
+              until you choose a model below.
+              {mainModelOptions.length === 0 &&
+                " If the list is empty, press Refresh, or validate the connection to check the key."}
+            </SettingsCallout>
+          )}
 
           <div>
             <label
@@ -189,7 +206,7 @@ export default function ServerProviderSection({
               </Tooltip>
               <button
                 onClick={refreshModels}
-                disabled={models.fetchingModels || !providerConfigured}
+                disabled={models.fetchingModels || !hasCredential}
                 className="text-xs text-action-text hover:text-action-text flex items-center gap-1 disabled:opacity-50"
               >
                 <RefreshCw
@@ -203,7 +220,7 @@ export default function ServerProviderSection({
               onChange={(e) =>
                 onPersist(withSelectedModelForProvider(settings, "main", e.target.value))
               }
-              disabled={mainModelOptions.length === 0 || !providerConfigured}
+              disabled={mainModelOptions.length === 0 || !hasCredential}
               className={SELECT_CLASS}
             >
               <option value="" disabled>
@@ -217,7 +234,7 @@ export default function ServerProviderSection({
             </select>
           </div>
 
-          {providerConfigured && (
+          {hasCredential && (
             <div>
               <button
                 onClick={() => models.handleValidate(settings.llm_provider || "gemini")}

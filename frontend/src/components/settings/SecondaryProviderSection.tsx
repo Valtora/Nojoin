@@ -2,6 +2,7 @@ import { Check, HelpCircle, Loader2, RefreshCw, Server } from "lucide-react";
 
 import { Settings } from "@/types";
 import { listModels } from "@/lib/api";
+import { getSecondaryProviderGap } from "@/lib/aiAvailability";
 import Tooltip from "@/components/ui/Tooltip";
 import SettingsCallout from "./SettingsCallout";
 import SettingsBlock from "./SettingsBlock";
@@ -10,7 +11,6 @@ import SettingsStatusBadge from "./SettingsStatusBadge";
 import type { AISettingsModels } from "./useAISettingsModels";
 import {
   DEFAULT_OLLAMA_CONTEXT_WINDOW,
-  getSecondaryProviderApiKey,
   getSecondaryProviderLiveModel,
   getSecondaryProviderModel,
   parseContextWindow,
@@ -68,9 +68,8 @@ export default function SecondaryProviderSection({
   }
 
   const isOllama = sp === "ollama";
-  const configured = isOllama
-    ? Boolean(settings.secondary_ollama_api_url)
-    : Boolean(getSecondaryProviderApiKey(settings, sp));
+  const gap = getSecondaryProviderGap(settings);
+  const hasCredential = gap !== "credential";
   const secondaryModel = getSecondaryProviderModel(settings, sp);
   const secondaryLiveModel = getSecondaryProviderLiveModel(settings, sp);
 
@@ -120,10 +119,22 @@ export default function SecondaryProviderSection({
                 file.
               </p>
             </div>
-            <SettingsStatusBadge tone={configured ? "success" : "warning"}>
-              {configured ? "Configured" : "Not configured"}
+            <SettingsStatusBadge tone={gap === null ? "success" : "warning"}>
+              {gap === null
+                ? "Configured"
+                : gap === "model"
+                  ? "No model selected"
+                  : "Not configured"}
             </SettingsStatusBadge>
           </div>
+
+          {gap === "model" && (
+            <SettingsCallout tone="warning" title="Fallback is off">
+              No fallback model is selected, so a request the primary provider
+              fails is not retried. Choose a model below to turn the fallback
+              on.
+            </SettingsCallout>
+          )}
 
           {isOllama && (
             <div className="grid grid-cols-1 @min-[42rem]:grid-cols-2 gap-6">
@@ -241,7 +252,7 @@ export default function SecondaryProviderSection({
             </select>
           </div>
 
-          {configured && (
+          {hasCredential && (
             <div>
               <button
                 onClick={() => models.handleValidate(sp || "gemini")}

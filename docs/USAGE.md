@@ -410,7 +410,7 @@ The secondary provider has its own independent configuration:
 - Model and live model choices.
 - API key or Ollama URL.
 
-Configure the secondary provider through environment variables prefixed with `SECONDARY_` (e.g., `SECONDARY_LLM_PROVIDER`, `SECONDARY_GEMINI_API_KEY`). Leave `SECONDARY_LLM_PROVIDER` empty to disable fallback. The secondary provider configuration is visible in **Settings > AI providers** for administrators.
+Configure the secondary provider through environment variables prefixed with `SECONDARY_` (e.g., `SECONDARY_LLM_PROVIDER`, `SECONDARY_GEMINI_API_KEY`). Leave `SECONDARY_LLM_PROVIDER` empty to disable fallback. The secondary provider configuration is visible in **Settings > AI providers** for administrators, where its model is chosen. The fallback stays off until it has a model, and the card says so.
 
 ## Troubleshooting
 
