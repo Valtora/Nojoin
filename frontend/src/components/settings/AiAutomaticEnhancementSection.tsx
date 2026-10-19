@@ -2,15 +2,13 @@ import { Settings } from "@/types";
 import { Switch } from "@/components/ui/Switch";
 import SettingsCard from "./SettingsCard";
 import SettingsRow from "./SettingsRow";
+import { SETTINGS_CONTROL_END } from "./settingsControls";
 
 interface AiAutomaticEnhancementSectionProps {
   settings: Settings;
   /** Apply and save immediately (the switches are discrete controls). */
   onPersist: (newSettings: Settings) => void;
 }
-
-const SWITCH_COLUMN =
-  "@min-[26rem]:min-w-0 @min-[26rem]:flex @min-[26rem]:justify-end";
 
 /** What the AI does once a meeting has been processed (per user). */
 export default function AiAutomaticEnhancementSection({
@@ -29,7 +27,7 @@ export default function AiAutomaticEnhancementSection({
         labelId="notes-short-titles-label"
         descriptionId="notes-short-titles-help"
         description="Name meetings in three to five words rather than a longer description."
-        controlClassName={SWITCH_COLUMN}
+        controlClassName={SETTINGS_CONTROL_END}
       >
         <Switch
           checked={settings.prefer_short_titles !== false}
@@ -47,7 +45,7 @@ export default function AiAutomaticEnhancementSection({
         labelId="notes-auto-analyse-label"
         descriptionId="notes-auto-analyse-help"
         description="Run the AI analysis of each meeting as soon as it is processed, within any daily limit your administrator has set. Each run uses your AI provider quota, so it is off until you turn it on."
-        controlClassName={SWITCH_COLUMN}
+        controlClassName={SETTINGS_CONTROL_END}
       >
         <Switch
           checked={settings.auto_analyse_meetings === true}

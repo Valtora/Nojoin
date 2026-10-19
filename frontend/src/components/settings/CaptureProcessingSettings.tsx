@@ -9,7 +9,7 @@ import { Switch } from "@/components/ui/Switch";
 
 import SettingsCard from "./SettingsCard";
 import SettingsRow from "./SettingsRow";
-import { SETTINGS_BUTTON_SECONDARY } from "./settingsControls";
+import { SETTINGS_BUTTON_SECONDARY, SETTINGS_CONTROL_END } from "./settingsControls";
 
 /**
  * The browser-side audio processing toggles and the quiet-audio reminder reset.
@@ -26,7 +26,6 @@ export default function CaptureProcessingSettings() {
   );
   const resetWarnings = useAudioWarningStore((state) => state.resetWarnings);
 
-  const toggleControlClass = "@min-[26rem]:min-w-0 @min-[26rem]:flex @min-[26rem]:justify-end";
 
   return (
     <>
@@ -43,7 +42,7 @@ export default function CaptureProcessingSettings() {
           label="Echo cancellation"
           description="Reduces loopback and speaker bleed for headset and speakerphone use."
           icon={<Mic className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
-          controlClassName={toggleControlClass}
+          controlClassName={SETTINGS_CONTROL_END}
         >
           <Switch
             aria-labelledby="recording-echo-cancellation-label"
@@ -62,7 +61,7 @@ export default function CaptureProcessingSettings() {
           label="Noise suppression"
           description="Reduces steady background noise before the mic is mixed into the recording."
           icon={<Mic className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
-          controlClassName={toggleControlClass}
+          controlClassName={SETTINGS_CONTROL_END}
         >
           <Switch
             aria-labelledby="recording-noise-suppression-label"
@@ -81,7 +80,7 @@ export default function CaptureProcessingSettings() {
           label="Browser auto gain"
           description="Lets the browser lift a quiet microphone before Nojoin applies its own balancing."
           icon={<Mic className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
-          controlClassName={toggleControlClass}
+          controlClassName={SETTINGS_CONTROL_END}
         >
           <Switch
             aria-labelledby="recording-browser-auto-gain-label"
@@ -106,22 +105,25 @@ export default function CaptureProcessingSettings() {
               ? "Turned off in this browser."
               : "On in this browser."
           }
-          controlClassName="@min-[26rem]:min-w-0 @min-[26rem]:flex @min-[26rem]:justify-end"
+          controlClassName={SETTINGS_CONTROL_END}
         >
-          <button
-            type="button"
-            onClick={() => {
-              resetWarnings();
-              addNotification({
-                type: "success",
-                message: "Quiet audio warnings are back on.",
-              });
-            }}
-            disabled={!suppressQuietAudioWarnings}
-            className={SETTINGS_BUTTON_SECONDARY}
-          >
-            Turn back on
-          </button>
+          {/* They are only ever turned off from the warning itself, so the
+              row offers the way back and nothing while they are on. */}
+          {suppressQuietAudioWarnings && (
+            <button
+              type="button"
+              onClick={() => {
+                resetWarnings();
+                addNotification({
+                  type: "success",
+                  message: "Quiet audio warnings are back on.",
+                });
+              }}
+              className={SETTINGS_BUTTON_SECONDARY}
+            >
+              Turn back on
+            </button>
+          )}
         </SettingsRow>
       </SettingsCard>
     </>

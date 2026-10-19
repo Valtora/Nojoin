@@ -367,7 +367,7 @@ export default function BackupRestore() {
                 className={SETTINGS_BUTTON_PRIMARY}
               >
                 <Download className="h-4 w-4" aria-hidden="true" />
-                Create backup
+                Back up now
               </button>
             </div>
           </SettingsRow>

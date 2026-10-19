@@ -164,7 +164,7 @@ export default function CliUsageTab() {
               <th className="py-2 font-medium">Status</th>
             </tr>
           </thead>
-          <tbody className="divide-y settings-divider">
+          <tbody className="divide-y divide-surface-divider">
             {loading ? (
               <tr>
                 <td colSpan={6} className="py-6 text-center">
@@ -177,7 +177,9 @@ export default function CliUsageTab() {
             ) : rows.length === 0 ? (
               <tr>
                 <td colSpan={6} className="py-6 text-center contrast-helper">
-                  Nobody has used their own subscription yet.
+                  {debouncedSearch
+                    ? "Nobody matches that search."
+                    : "Nobody has used their own subscription yet."}
                 </td>
               </tr>
             ) : (
@@ -220,33 +222,33 @@ export default function CliUsageTab() {
           </tbody>
         </table>
 
-        <div className="mt-3 flex items-center justify-between gap-3 border-t pt-3 settings-divider">
-          <p className="text-sm contrast-helper">
-            {total === 0
-              ? "No people"
-              : `${(page - 1) * PAGE_SIZE + 1} to ${Math.min(page * PAGE_SIZE, total)} of ${total}`}
-          </p>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              disabled={page === 1}
-              aria-label="Previous page"
-              className={cn(SETTINGS_BUTTON_SECONDARY, "h-9 w-9 px-0")}
-            >
-              <ChevronLeft className="h-4 w-4" aria-hidden="true" />
-            </button>
-            <button
-              type="button"
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              disabled={page >= totalPages}
-              aria-label="Next page"
-              className={cn(SETTINGS_BUTTON_SECONDARY, "h-9 w-9 px-0")}
-            >
-              <ChevronRight className="h-4 w-4" aria-hidden="true" />
-            </button>
+        {total > 0 && (
+          <div className="mt-3 flex items-center justify-between gap-3 border-t pt-3 settings-divider">
+            <p className="text-sm contrast-helper">
+              {`${(page - 1) * PAGE_SIZE + 1} to ${Math.min(page * PAGE_SIZE, total)} of ${total}`}
+            </p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page === 1}
+                aria-label="Previous page"
+                className={cn(SETTINGS_BUTTON_SECONDARY, "h-9 w-9 px-0")}
+              >
+                <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page >= totalPages}
+                aria-label="Next page"
+                className={cn(SETTINGS_BUTTON_SECONDARY, "h-9 w-9 px-0")}
+              >
+                <ChevronRight className="h-4 w-4" aria-hidden="true" />
+              </button>
+            </div>
           </div>
-        </div>
+        )}
       </SettingsBlock>
     </SettingsCard>
   );

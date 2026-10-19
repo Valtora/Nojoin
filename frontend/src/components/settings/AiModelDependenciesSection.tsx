@@ -70,11 +70,10 @@ const DEPENDENCY_MODELS: {
   },
 ];
 
-/** Why Delete is unavailable for a model kept where Nojoin does not delete. */
+/** Why Delete is not offered for a model kept where Nojoin does not delete. */
 const UNDELETABLE_REASON: Partial<Record<ModelSource, string>> = {
-  bundled: "Bundled repo asset",
-  external:
-    "Found in a cache outside Nojoin's model cache. It is used, but not deleted from here.",
+  bundled: "Bundled with Nojoin, so it cannot be deleted here.",
+  external: "Kept in a cache outside Nojoin's, so it is used but not deleted from here.",
 };
 
 function undeletableReason(status?: ModelStatusInfo): string | undefined {
@@ -139,11 +138,7 @@ export default function AiModelDependenciesSection({
               <>
                 {model.desc}
                 {status?.downloaded && reason && (
-                  <span className="block">
-                    {status.source === "bundled"
-                      ? "Bundled with Nojoin, so it cannot be deleted here."
-                      : "Kept in a cache outside Nojoin's, so it is used but not deleted from here."}
-                  </span>
+                  <span className="block">{reason}</span>
                 )}
                 {!status?.downloaded && (status?.checked_paths?.length ?? 0) > 0 && (
                   <details className="mt-1">
@@ -174,20 +169,24 @@ export default function AiModelDependenciesSection({
           >
             <div className="flex flex-wrap items-center gap-2 @min-[26rem]:justify-end">
               {status?.downloaded ? (
-                <button
-                  type="button"
-                  onClick={() => handleDeleteModel(model.id)}
-                  disabled={busy || !isAdmin || reason !== undefined}
-                  title={reason ?? "Delete this model"}
-                  aria-label={`Delete ${model.label}`}
-                  className={ICON_BUTTON}
-                >
-                  {busy ? (
-                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                  ) : (
-                    <Trash2 className="h-4 w-4" aria-hidden="true" />
-                  )}
-                </button>
+                // The description says why a bundled or external model has no
+                // Delete, so there is no disabled button to explain on hover.
+                reason === undefined && (
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteModel(model.id)}
+                    disabled={busy || !isAdmin}
+                    title="Delete this model"
+                    aria-label={`Delete ${model.label}`}
+                    className={ICON_BUTTON}
+                  >
+                    {busy ? (
+                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                    ) : (
+                      <Trash2 className="h-4 w-4" aria-hidden="true" />
+                    )}
+                  </button>
+                )
               ) : (
                 <>
                   {status?.partial && (

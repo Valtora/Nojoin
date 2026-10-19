@@ -24,6 +24,7 @@ import SettingsStatusBadge from "./SettingsStatusBadge";
 import {
   SETTINGS_BUTTON_DANGER,
   SETTINGS_BUTTON_PRIMARY,
+  SETTINGS_CONTROL_END,
   SETTINGS_INPUT_CLASS,
 } from "./settingsControls";
 
@@ -351,7 +352,7 @@ function ProviderConnectRow({
           )}
         </>
       }
-      controlClassName="@min-[26rem]:min-w-0 @min-[26rem]:flex @min-[26rem]:justify-end"
+      controlClassName={SETTINGS_CONTROL_END}
     >
       {connected ? (
         <button

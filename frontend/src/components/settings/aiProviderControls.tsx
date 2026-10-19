@@ -137,7 +137,7 @@ export function TestConnection({
   const result = message?.provider === provider ? message : null;
 
   return (
-    <div className="space-y-2">
+    <div className="flex flex-col gap-2 @min-[26rem]:items-end">
       <button
         id={id}
         type="button"
@@ -156,7 +156,7 @@ export function TestConnection({
       <p
         role="status"
         className={cn(
-          "text-xs",
+          "text-xs @min-[26rem]:text-right",
           result?.type === "success" && "text-status-success-fg",
           result?.type === "error" && "text-status-danger-fg",
         )}

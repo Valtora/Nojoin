@@ -219,7 +219,7 @@ const LogLine = memo(function LogLine({
   return (
     // Below the console's own 36rem the metadata sits above the message, so a
     // phone still gets the full width for the text.
-    <div className="flex flex-col rounded px-2 py-0.5 -mx-2 hover:bg-surface-card @min-[36rem]:flex-row @min-[36rem]:gap-3">
+    <div className="flex flex-col gap-0.5 rounded px-2 py-1 -mx-2 hover:bg-surface-card @min-[36rem]:flex-row @min-[36rem]:gap-3 @min-[36rem]:py-0.5">
       <span className="flex shrink-0 select-none gap-3">
         {showTimestamps && (
           <span className="w-[68px] shrink-0 contrast-helper" title={timestamp}>

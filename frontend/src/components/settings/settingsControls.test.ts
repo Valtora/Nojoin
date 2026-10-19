@@ -43,4 +43,10 @@ describe("settings controls", () => {
     );
     expect(found).toEqual([]);
   });
+
+  it("colours every divide-y with a token", () => {
+    // `divide-y` borders the children, so `settings-divider` on the parent
+    // never reaches them and the rules fall back to the text colour.
+    expect(violations(/^(?!.*\bdivide-(surface|control)-).*\bdivide-y\b/)).toEqual([]);
+  });
 });

@@ -338,7 +338,7 @@ export default function UsersTab() {
               </th>
             </tr>
           </thead>
-          <tbody className="divide-y settings-divider">
+          <tbody className="divide-y divide-surface-divider">
             {loading ? (
               <tr>
                 <td colSpan={4} className="py-6 text-center">

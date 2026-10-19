@@ -40,6 +40,7 @@ import {
   SETTINGS_BUTTON_DANGER,
   SETTINGS_BUTTON_PRIMARY,
   SETTINGS_BUTTON_SECONDARY,
+  SETTINGS_CONTROL_END,
 } from "./settingsControls";
 import { cn } from "@/lib/cn";
 
@@ -333,7 +334,7 @@ export default function CalendarConnectionsSettings() {
                       ? "Needs this installation's app credentials, under Advanced."
                       : "Not set up on this installation yet."
                 }
-                controlClassName="@min-[26rem]:min-w-0 @min-[26rem]:flex @min-[26rem]:justify-end"
+                controlClassName={SETTINGS_CONTROL_END}
               >
                 <button
                   type="button"
@@ -438,7 +439,7 @@ export default function CalendarConnectionsSettings() {
                       </SettingsCallout>
                     )}
 
-                    <ul className="divide-y settings-divider border-y settings-divider">
+                    <ul className="divide-y divide-surface-divider border-y settings-divider">
                       {connection.calendars.map((calendar) => {
                         const labelId = `calendar-${calendar.id}-label`;
                         return (

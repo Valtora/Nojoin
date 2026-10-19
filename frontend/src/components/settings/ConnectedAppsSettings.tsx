@@ -14,7 +14,7 @@ import { useNotificationStore } from "@/lib/notificationStore";
 import SettingsBlock from "./SettingsBlock";
 import SettingsCard from "./SettingsCard";
 import SettingsRow from "./SettingsRow";
-import { SETTINGS_BUTTON_DANGER } from "./settingsControls";
+import { SETTINGS_BUTTON_DANGER, SETTINGS_CONTROL_END } from "./settingsControls";
 
 // Keyed by the grant's full normalised scope string (space-separated,
 // sorted), as recorded when the connection was authorised.
@@ -104,7 +104,7 @@ export default function ConnectedAppsSettings() {
             label={app.client_name}
             description={`${SCOPE_LABELS[app.scope] ?? app.scope} · Connected ${formatTimestamp(app.created_at)} · Last used ${formatTimestamp(app.last_used_at)}`}
             icon={<Plug className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
-            controlClassName="@min-[26rem]:min-w-0 @min-[26rem]:flex @min-[26rem]:justify-end"
+            controlClassName={SETTINGS_CONTROL_END}
           >
             <button
               type="button"

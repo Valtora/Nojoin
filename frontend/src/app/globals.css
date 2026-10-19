@@ -342,6 +342,12 @@ html {
       text-align: left;
     }
 
+    /* A cell with no label, such as the row's actions, spans the row, so an
+       alignment set inside it has the width to act on. */
+    .settings-table td:not([data-label]) {
+      display: block;
+    }
+
     .analytics-table td[data-label],
     .settings-table td[data-label] {
       display: flex;

@@ -27,6 +27,7 @@ import SettingsCard from "./SettingsCard";
 import SettingsRow from "./SettingsRow";
 import {
   SETTINGS_BUTTON_SECONDARY,
+  SETTINGS_CONTROL_END,
   SETTINGS_INPUT_CLASS,
   SETTINGS_SELECT_CLASS,
 } from "./settingsControls";
@@ -362,6 +363,7 @@ export default function GeneralSettings({
           <SettingsRow
             label="Custom words"
             description="Words you have taught Nojoin to accept."
+            controlClassName={SETTINGS_CONTROL_END}
           >
             <button
               type="button"
@@ -392,7 +394,7 @@ export default function GeneralSettings({
             label="Voice activity detection"
             description="Filters out silence and background noise before transcription. Disabling it may increase processing time, but can help if quiet speech is being cut off."
             icon={<Mic className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
-            controlClassName="@min-[26rem]:min-w-0 @min-[26rem]:flex @min-[26rem]:justify-end"
+            controlClassName={SETTINGS_CONTROL_END}
           >
             <Switch
               aria-labelledby="recording-vad-label"
@@ -411,7 +413,7 @@ export default function GeneralSettings({
             label="Re-measure delivery after edits"
             description="Editing a transcript leaves its measured delivery figures describing the old text. With this on, opening the Analytics tab re-reads the audio and refreshes them; with it off, the tab shows the figures as stale until you press Measure delivery."
             icon={<Mic className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
-            controlClassName="@min-[26rem]:min-w-0 @min-[26rem]:flex @min-[26rem]:justify-end"
+            controlClassName={SETTINGS_CONTROL_END}
           >
             <Switch
               aria-labelledby="recording-remeasure-delivery-label"
@@ -430,7 +432,7 @@ export default function GeneralSettings({
             label="Speaker diarization"
             description="Distinguishes between speakers. Disable it for single-speaker recordings to speed up processing."
             icon={<Users className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
-            controlClassName="@min-[26rem]:min-w-0 @min-[26rem]:flex @min-[26rem]:justify-end"
+            controlClassName={SETTINGS_CONTROL_END}
           >
             <Switch
               aria-labelledby="recording-diarization-label"

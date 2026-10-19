@@ -22,6 +22,7 @@ import SettingsStatusBadge from "./SettingsStatusBadge";
 import {
   SETTINGS_BUTTON_PRIMARY,
   SETTINGS_CONTROL_COLUMN_WIDE,
+  SETTINGS_CONTROL_END,
   SETTINGS_INPUT_CLASS,
   SETTINGS_VALUE_CLASS,
 } from "./settingsControls";
@@ -234,7 +235,7 @@ export default function CalendarProviderSettings() {
                   ? `Credentials come from ${provider.source}.`
                   : "Add the app's credentials below, then save."
               }
-              controlClassName="@min-[26rem]:min-w-0 @min-[26rem]:flex @min-[26rem]:justify-end"
+              controlClassName={SETTINGS_CONTROL_END}
             >
               <Switch
                 checked={form.enabled}
@@ -362,7 +363,7 @@ export default function CalendarProviderSettings() {
                   )}
                 </>
               }
-              controlClassName="@min-[26rem]:min-w-0 @min-[26rem]:flex @min-[26rem]:justify-end"
+              controlClassName={SETTINGS_CONTROL_END}
             >
               <Switch
                 checked={form.push_enabled}
