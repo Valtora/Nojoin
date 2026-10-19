@@ -14,8 +14,8 @@
 </div>
 
 <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://github.com/user-attachments/assets/cf1ad2db-f806-4fbb-9a57-acbcfe4e00a9">
-    <img width="2560" height="1440" alt="The Nojoin dashboard" src="https://github.com/user-attachments/assets/760392cd-4409-48e6-88e1-a14bc4bff880">
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/Valtora/Nojoin/main/site/public/images/dashboard-dark.webp">
+    <img alt="The Nojoin dashboard: calendar, agenda, tasks and recent meetings" src="https://raw.githubusercontent.com/Valtora/Nojoin/main/site/public/images/dashboard-light.webp">
 </picture>
 
 Nojoin records your Meet, Teams and Zoom calls from the browser and transcribes them on your own hardware, so no bot joins the call and the audio stays with you. Connect Claude or ChatGPT and they can read and edit the whole library.
