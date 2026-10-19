@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
-from datetime import datetime, time, timedelta, timezone
+from datetime import datetime, time, timedelta
 from pathlib import Path
 
 from sqlmodel import select
@@ -61,19 +61,25 @@ CALENDARS = (("Reporting", "blue", True), ("Space desk", "emerald", False))
 async def main() -> int:
     async with async_session_maker() as session:
         user = (
-            await session.exec(select(User).where(User.username == USERNAME))
-        ).first()
+            (await session.execute(select(User).where(User.username == USERNAME)))
+            .scalars()
+            .first()
+        )
         if user is None:
             print(f"No user named {USERNAME!r}.")
             return 1
 
         old = (
-            await session.exec(
-                select(CalendarConnection).where(
-                    CalendarConnection.provider_account_id == ACCOUNT_ID
+            (
+                await session.execute(
+                    select(CalendarConnection).where(
+                        CalendarConnection.provider_account_id == ACCOUNT_ID
+                    )
                 )
             )
-        ).first()
+            .scalars()
+            .first()
+        )
         if old is not None:
             await session.delete(old)
             await session.commit()
@@ -131,14 +137,19 @@ async def main() -> int:
 
         # The entry each recording was made from, at the time it was recorded.
         recordings = (
-            await session.exec(select(Recording).where(Recording.user_id == user.id))
-        ).all()
+            (
+                await session.execute(
+                    select(Recording).where(Recording.user_id == user.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
         linked = 0
         for recording in recordings:
-            # An import's recorded_at is stored as created_at.
+            # An import's recorded_at is stored as created_at. Every time here
+            # is naive UTC, which is how the columns store it.
             started = recording.created_at
-            if started.tzinfo is None:
-                started = started.replace(tzinfo=timezone.utc)
             minutes = max(15, round((recording.duration_seconds or 0) / 60))
             event = add_event(
                 f"rec:{recording.id}", recording.name, started, minutes, "Reporting"
@@ -151,7 +162,7 @@ async def main() -> int:
         monday = now.date() - timedelta(days=now.weekday())
         for index, (title, offset, hour, minute, minutes, calendar) in enumerate(DIARY):
             day = monday + timedelta(days=offset)
-            starts_at = datetime.combine(day, time(hour, minute), tzinfo=timezone.utc)
+            starts_at = datetime.combine(day, time(hour, minute))
             add_event(f"diary:{index}", title, starts_at, minutes, calendar)
         await session.commit()
 
