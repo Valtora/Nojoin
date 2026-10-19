@@ -636,7 +636,7 @@ export default function SystemTab() {
             >
               {containers.map((c) => (
                 <option key={c} value={c}>
-                  {c}
+                  {c === "all" ? "All services" : c}
                 </option>
               ))}
             </select>
@@ -653,7 +653,7 @@ export default function SystemTab() {
             >
               {logLevels.map((l) => (
                 <option key={l} value={l}>
-                  {l}
+                  {l === "ALL" ? "All levels" : l}
                 </option>
               ))}
             </select>

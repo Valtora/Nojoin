@@ -2,6 +2,11 @@ import { useState } from "react";
 
 import { Settings } from "@/types";
 import { getModelsStatus } from "@/lib/api";
+import {
+  WHISPER_MODELS,
+  describeWhisperModel,
+  type WhisperModelOption,
+} from "@/lib/whisperModels";
 import SettingsCard from "./SettingsCard";
 import SettingsRow from "./SettingsRow";
 import WhisperModelModal from "./WhisperModelModal";
@@ -13,37 +18,11 @@ import {
   SETTINGS_VALUE_CLASS,
 } from "./settingsControls";
 
-const WHISPER_MODELS = [
-  { id: "tiny", label: "Tiny", params: "39 M", vram: "~1 GB", speed: "~10x" },
-  { id: "base", label: "Base", params: "74 M", vram: "~1 GB", speed: "~7x" },
-  { id: "small", label: "Small", params: "244 M", vram: "~2 GB", speed: "~4x" },
-  {
-    id: "medium",
-    label: "Medium",
-    params: "769 M",
-    vram: "~5 GB",
-    speed: "~2x",
-  },
-  {
-    id: "large",
-    label: "Large",
-    params: "1550 M",
-    vram: "~10 GB",
-    speed: "1x",
-  },
-  { id: "turbo", label: "Turbo", params: "809 M", vram: "~6 GB", speed: "~8x" },
-];
 
-function describeWhisper(model: (typeof WHISPER_MODELS)[number] | undefined): string {
-  if (!model) {
-    return "Turbo suits most installations.";
-  }
-  const memory = model.vram.replace("~", "about ");
-  const speed =
-    model.id === "large"
-      ? "the slowest and most accurate"
-      : `about ${model.speed.replace("~", "").replace("x", "")} times as fast as Large`;
-  return `${model.params} parameters, ${memory} of GPU memory, ${speed}. Turbo suits most installations.`;
+function describeWhisper(model: WhisperModelOption | undefined): string {
+  return model
+    ? `${describeWhisperModel(model)}. Turbo suits most installations.`
+    : "Turbo suits most installations.";
 }
 
 interface AiTranscriptionSectionProps {

@@ -72,29 +72,29 @@ function validateSettings(settings: Settings): string | null {
       settings.whisper_model_size,
     )
   ) {
-    return "Invalid Whisper model size.";
+    return "Choose one of the listed Whisper sizes.";
   }
   if (settings.theme && !["dark", "light"].includes(settings.theme)) {
-    return "Invalid theme.";
+    return "Choose one of the listed themes.";
   }
   if (
     settings.llm_provider &&
     !["gemini", "openai", "anthropic", "ollama"].includes(settings.llm_provider)
   ) {
-    return "Invalid LLM provider.";
+    return "Choose one of the listed AI providers.";
   }
   if (settings.ollama_api_url && !isValidUrl(settings.ollama_api_url)) {
-    return "Invalid Ollama API URL.";
+    return "The Ollama address is not a valid web address.";
   }
   if (settings.timezone && !isValidTimeZone(settings.timezone)) {
-    return "Invalid timezone. Use a valid IANA timezone such as Europe/London.";
+    return "Choose a timezone from the list, such as Europe/London.";
   }
   if (
     settings.meeting_edge_context_level !== undefined &&
     (settings.meeting_edge_context_level < 1 ||
       settings.meeting_edge_context_level > 5)
   ) {
-    return "Meeting Edge Technical Context must be between 1 and 5.";
+    return "Technical context must be between 1 and 5.";
   }
   return validateProcessingTuning(settings);
 }
@@ -141,7 +141,7 @@ export default function SettingsProvider({ children }: { children: ReactNode }) 
     pendingMessage: "Changes pending...",
     savingMessage: "Saving changes...",
     savedMessage: "All changes saved",
-    fallbackErrorMessage: "Failed to save settings",
+    fallbackErrorMessage: "Could not save the settings.",
   });
 
   useEffect(() => {

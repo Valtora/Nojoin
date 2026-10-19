@@ -196,8 +196,8 @@ export default function NotesTemplateEditorModal({
             {readOnly
               ? template?.name
               : template
-                ? "Edit Notes Structure"
-                : "New Notes Structure"}
+                ? "Edit notes structure"
+                : "New notes structure"}
           </span>
           <span className="mt-0.5 block text-xs font-normal text-contrast-helper">
             Describe what you want, edit the structure, then check the prompt
@@ -355,7 +355,7 @@ export default function NotesTemplateEditorModal({
           <div className="flex flex-col min-h-0 gap-3">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-medium text-contrast-muted">
-                Assembled Prompt
+                Full prompt
               </h3>
               <button
                 type="button"

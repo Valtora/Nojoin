@@ -5,7 +5,11 @@ import { getMatchScore } from "@/lib/searchUtils";
 
 import type { Settings } from "@/types";
 
-import type { SettingsAccess, SettingsCategoryId } from "./settingsCategories";
+import type {
+  SettingsAccess,
+  SettingsCategoryId,
+  SettingsScope,
+} from "./settingsCategories";
 
 /**
  * The settings manifest.
@@ -56,6 +60,15 @@ export interface SettingsRegistryEntry {
   category: SettingsCategoryId;
   /** "admin" hides the entry from non-admins, independently of the Advanced gate. */
   access: SettingsAccess;
+  /**
+   * Present when the setting is not per account: "everyone" for one value the
+   * whole installation shares, "browser" for one kept in this browser's local
+   * storage. The card, row or block rendering this id shows it as a badge, and
+   * search results show it too; a row inside a card of the same scope leaves
+   * it to the card. Entries on admin-only pages leave it out, because every
+   * setting there is install-wide and the page description says so once.
+   */
+  scope?: SettingsScope;
   /**
    * Present means gated. Absent means always visible. A setting that is the
    * primary purpose of its page is left ungated even where a criterion
@@ -148,12 +161,13 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
   // ------------------------------------------------------------- appearance
   {
     id: "appearance-theme",
-    label: "Theme, palette and density",
-    description: "Choose how Nojoin looks in your browser.",
+    label: "Look and feel",
+    description: "Theme, colour palette, corner style and density, saved in this browser.",
     category: "appearance",
     access: "all",
+    scope: "browser",
     keywords: [
-      "theme", "appearance", "dark", "light", "colour", "color", "mode", "system default",
+      "look and feel", "theme", "appearance", "dark", "light", "colour", "color", "mode", "system default",
       "palette", "accent", "corners", "rounded", "square", "radius", "density", "compact",
       "comfortable", "dense", "spacing",
     ],
@@ -173,6 +187,7 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
     description: "Whether exported PDF, Word and text files carry the Nojoin letterhead and footer line.",
     category: "appearance",
     access: "admin",
+    scope: "everyone",
     settingsKeys: ["export_branding"],
     defaultValue: true,
     keywords: [
@@ -194,11 +209,11 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
   // ----------------------------------------------------------- integrations
   {
     id: "integrations-calendars",
-    label: "Calendar connections",
-    description: "Connect Gmail or Outlook calendars and choose which ones Nojoin syncs.",
+    label: "Calendars",
+    description: "Connect a Google or Outlook calendar and choose which ones Nojoin shows.",
     category: "integrations",
     access: "all",
-    keywords: ["calendar", "calendars", "gmail", "google", "outlook", "microsoft", "agenda", "events", "sync"],
+    keywords: ["calendar connections", "calendar", "calendars", "gmail", "google", "outlook", "microsoft", "agenda", "events", "sync"],
   },
   {
     id: "integrations-connected-apps",
@@ -210,21 +225,32 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
   },
   {
     id: "integrations-calendar-providers",
-    label: "Calendar provider credentials",
-    description: "Installation-wide Google and Microsoft OAuth client credentials.",
+    label: "Calendar sign-in",
+    description: "The Google and Microsoft apps this installation registers, so people can connect their calendars.",
     category: "integrations",
     access: "admin",
+    scope: "everyone",
     advanced: "external-credentials",
-    keywords: ["oauth", "client id", "client secret", "calendar provider", "google", "microsoft", "credentials", "live sync"],
+    keywords: ["calendar sign-in", "calendar provider credentials", "oauth", "client id", "client secret", "calendar provider", "google", "microsoft", "credentials", "live sync"],
   },
 
   // -------------------------------------------------------------- recording
+  {
+    id: "recording-input",
+    label: "Input",
+    description: "The microphone added to shared audio, and the levels it is mixed at.",
+    category: "recording",
+    access: "all",
+    scope: "browser",
+    keywords: ["input", "audio input", "levels", "refresh devices"],
+  },
   {
     id: "recording-microphone",
     label: "Microphone",
     description: "The input mixed with shared tab or system audio during capture.",
     category: "recording",
     access: "all",
+    scope: "browser",
     defaultValue: DEFAULT_CAPTURE_SETTINGS.microphoneDeviceId,
     keywords: ["microphone", "mic", "device", "input", "capture", "browser capture"],
   },
@@ -234,6 +260,7 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
     description: "The local microphone level mixed into the recording.",
     category: "recording",
     access: "all",
+    scope: "browser",
     defaultValue: DEFAULT_CAPTURE_SETTINGS.microphoneGain,
     keywords: ["microphone gain", "mic gain", "level", "volume", "louder", "quieter"],
   },
@@ -243,6 +270,7 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
     description: "The shared tab or system audio level relative to your microphone.",
     category: "recording",
     access: "all",
+    scope: "browser",
     defaultValue: DEFAULT_CAPTURE_SETTINGS.systemGain,
     keywords: ["shared audio", "system audio", "tab audio", "gain", "level", "volume"],
   },
@@ -263,11 +291,22 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
     keywords: ["input test", "test microphone", "meter", "preview", "waveform", "check mic"],
   },
   {
+    id: "recording-browser-processing",
+    label: "Browser processing",
+    description: "What the browser does to the microphone before Nojoin receives it.",
+    category: "recording",
+    access: "all",
+    scope: "browser",
+    advanced: "safe-default",
+    keywords: ["browser processing", "echo", "noise", "auto gain", "agc", "constraints"],
+  },
+  {
     id: "recording-echo-cancellation",
     label: "Echo cancellation",
     description: "Reduces loopback and speaker bleed for headset and speakerphone use.",
     category: "recording",
     access: "all",
+    scope: "browser",
     advanced: "safe-default",
     defaultValue: DEFAULT_CAPTURE_SETTINGS.echoCancellation,
     keywords: ["echo cancellation", "echo", "loopback", "speaker bleed", "feedback"],
@@ -278,6 +317,7 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
     description: "Reduces steady background noise before the mic is mixed into the recording.",
     category: "recording",
     access: "all",
+    scope: "browser",
     advanced: "safe-default",
     defaultValue: DEFAULT_CAPTURE_SETTINGS.noiseSuppression,
     keywords: ["noise suppression", "noise", "background", "hiss", "fan"],
@@ -288,18 +328,20 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
     description: "Lets the browser lift a quiet microphone before Nojoin applies its own balancing.",
     category: "recording",
     access: "all",
+    scope: "browser",
     advanced: "safe-default",
     defaultValue: DEFAULT_CAPTURE_SETTINGS.autoGainControl,
     keywords: ["auto gain", "automatic gain control", "agc", "quiet microphone", "browser"],
   },
   {
     id: "recording-quiet-reminders",
-    label: "Quiet-audio reminders",
-    description: "Warnings shown when a recording captures little or no sound.",
+    label: "Quiet audio warnings",
+    description: "Warnings shown when a recording picks up little or no sound.",
     category: "recording",
     access: "all",
+    scope: "browser",
     advanced: "safe-default",
-    keywords: ["quiet", "silence", "warning", "warnings", "reminder", "dismiss", "reset warnings"],
+    keywords: ["quiet audio warnings", "quiet-audio reminders", "quiet", "silence", "warning", "warnings", "reminder", "dismiss", "reset warnings"],
   },
   {
     id: "recording-vad",
@@ -327,15 +369,14 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
   },
   {
     id: "recording-diarization",
-    label: "Speaker diarization",
-    description:
-      "Distinguishes between speakers. Disable it for single-speaker recordings to speed up processing.",
+    label: "Speaker separation",
+    description: "Tells the speakers apart. Turn it off for single-speaker recordings to speed up processing.",
     category: "recording",
     access: "all",
     advanced: "can-degrade",
     settingsKeys: ["enable_diarization"],
     defaultValue: true,
-    keywords: ["diarization", "speakers", "speaker separation", "who spoke", "pyannote", "processing"],
+    keywords: ["diarisation", "speaker diarization", "diarization", "speakers", "speaker separation", "who spoke", "pyannote", "processing"],
   },
   // Processing tuning. defaultValue null: unset means inherit, so only a value
   // the user actually set counts as changed.
@@ -400,6 +441,7 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
     description: "The speech-to-text engine used for every recording on this installation.",
     category: "transcription",
     access: "admin",
+    scope: "everyone",
     settingsKeys: ["transcription_backend"],
     keywords: ["engine", "transcription", "speech to text", "asr", "whisper", "parakeet", "canary", "backend"],
   },
@@ -409,6 +451,7 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
     description: "The model size or variant the selected engine runs.",
     category: "transcription",
     access: "admin",
+    scope: "everyone",
     advanced: "can-degrade",
     settingsKeys: ["whisper_model_size", "parakeet_model", "canary_model"],
     keywords: ["whisper model", "model size", "tiny", "base", "small", "medium", "large", "turbo", "parakeet", "canary", "accuracy"],
@@ -429,8 +472,19 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
       "Project names, acronyms, and corrections for words the AI commonly mishears, one per line.",
     category: "transcription",
     access: "all",
-    settingsKeys: ["glossary_terms", "install_glossary_terms"],
+    settingsKeys: ["glossary_terms"],
     keywords: ["glossary", "terms", "acronyms", "vocabulary", "jargon", "spelling", "corrections", "names"],
+  },
+  {
+    id: "transcription-shared-glossary",
+    label: "Shared glossary",
+    description:
+      "Terms everyone on this installation shares, added to each person's own glossary. Only an administrator can change them.",
+    category: "transcription",
+    access: "all",
+    scope: "everyone",
+    settingsKeys: ["install_glossary_terms"],
+    keywords: ["shared glossary", "install glossary", "organisation glossary", "glossary", "shared terms"],
   },
 
   // ------------------------------------------------------------------ notes
@@ -454,13 +508,13 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
   },
   {
     id: "notes-short-titles",
-    label: "Short meeting titles",
+    label: "Short titles",
     description: "Prefer concise generated titles over descriptive ones.",
     category: "notes",
     access: "all",
     settingsKeys: ["prefer_short_titles"],
     defaultValue: true,
-    keywords: ["short titles", "title", "titles", "automatic enhancement", "meeting intelligence", "naming"],
+    keywords: ["short meeting titles", "short titles", "title", "titles", "automatic enhancement", "meeting intelligence", "naming"],
   },
   {
     id: "notes-auto-analyse",
@@ -475,34 +529,34 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
   },
   {
     id: "notes-meeting-edge-context",
-    label: "Technical context level",
-    description: "How strict or detailed Meeting Edge concept explanations are.",
+    label: "Technical context",
+    description: "How strict or detailed Meeting Edge explanations of terms are.",
     category: "notes",
     access: "all",
     settingsKeys: ["meeting_edge_context_level"],
     defaultValue: DEFAULT_MEETING_EDGE_CONTEXT_LEVEL,
-    keywords: ["technical context", "context level", "verbosity", "threshold", "jargon", "detail", "meeting edge"],
+    keywords: ["technical context level", "technical context", "context level", "verbosity", "threshold", "jargon", "detail", "meeting edge"],
   },
 
   // ---------------------------------------------------------------- your-ai
   {
     id: "your-ai-routing",
-    label: "AI routing",
+    label: "How AI runs for you",
     description:
       "Whether your meetings use this installation's AI or your own connected subscription.",
     category: "your-ai",
     access: "all",
     settingsKeys: ["usage_model"],
-    keywords: ["ai routing", "routing", "usage model", "server default", "my own subscription", "byok"],
+    keywords: ["how ai runs for you", "ai routing", "routing", "usage model", "server default", "my own subscription", "byok"],
   },
   {
     id: "your-ai-subscription",
-    label: "Connected AI subscription",
-    description: "Connect a Claude or ChatGPT subscription to run your own inference.",
+    label: "Your subscriptions",
+    description: "Connect a Claude or ChatGPT subscription to run your meetings on your own plan.",
     category: "your-ai",
     access: "all",
     settingsKeys: ["cli_provider"],
-    keywords: ["subscription", "claude", "chatgpt", "codex", "cli oauth", "connect", "sign in", "pro", "max", "plus"],
+    keywords: ["your subscriptions", "connected ai subscription", "subscription", "claude", "chatgpt", "codex", "cli oauth", "connect", "sign in", "pro", "max", "plus"],
   },
   {
     id: "your-ai-model",
@@ -526,7 +580,7 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
   // ---------------------------------------------------------- ai-providers
   {
     id: "ai-providers-primary",
-    label: "Default provider and model",
+    label: "Default provider",
     description: "The provider and model used for everyone who has not connected their own.",
     category: "ai-providers",
     access: "admin",
@@ -540,7 +594,7 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
       "openai_api_key",
       "anthropic_api_key",
     ],
-    keywords: ["provider", "llm", "gemini", "openai", "anthropic", "ollama", "model", "api key", "primary", "server default", "default provider"],
+    keywords: ["default provider", "default model", "provider", "llm", "gemini", "openai", "anthropic", "ollama", "model", "api key", "primary", "server default", "default provider"],
   },
   {
     id: "ai-providers-ollama",
@@ -604,22 +658,22 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
   },
   {
     id: "ai-providers-hf-token",
-    label: "Hugging Face token",
-    description: "Required to download the speaker diarization models.",
+    label: "Hugging Face access token",
+    description: "Needed to download the speaker separation models.",
     category: "ai-providers",
     access: "admin",
     advanced: "external-credentials",
     settingsKeys: ["hf_token"],
-    keywords: ["hugging face", "hf token", "token", "diarization", "pyannote", "download", "gated model"],
+    keywords: ["access token", "speaker separation", "hugging face", "hf token", "token", "diarization", "pyannote", "download", "gated model"],
   },
   {
     id: "ai-providers-model-assets",
-    label: "Model assets",
+    label: "Model downloads",
     description: "Local model files, their download status, and disk usage.",
     category: "ai-providers",
     access: "admin",
     advanced: "safe-default",
-    keywords: ["model assets", "dependencies", "download", "disk", "delete model", "prepare", "status"],
+    keywords: ["model downloads", "model assets", "dependencies", "download", "disk", "delete model", "prepare", "status"],
   },
   {
     id: "ai-providers-usage",
@@ -635,16 +689,16 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
   // ----------------------------------------------------------------- backup
   {
     id: "backup-export",
-    label: "Backup",
-    description: "Export application data as a restorable archive.",
+    label: "Back up",
+    description: "Download a zip of everything on this installation, to restore later.",
     category: "backup",
     access: "admin",
-    keywords: ["backup", "export", "archive", "download", "snapshot", "save"],
+    keywords: ["back up", "back up now", "backup", "export", "archive", "download", "snapshot", "save"],
   },
   {
     id: "backup-restore",
     label: "Restore",
-    description: "Recover application data from an archive, transactionally.",
+    description: "Bring this installation back from a backup zip.",
     category: "backup",
     access: "admin",
     keywords: ["restore", "import", "recovery", "recover", "rollback", "upload"],
@@ -672,11 +726,11 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
   },
   {
     id: "system-logs",
-    label: "Live logs",
-    description: "Operational output from the Nojoin services.",
+    label: "Logs",
+    description: "Live output from the Nojoin services.",
     category: "system",
     access: "admin",
-    keywords: ["logs", "system", "operations", "docker", "worker", "redis", "infrastructure", "debug", "errors"],
+    keywords: ["live logs", "logs", "system", "operations", "docker", "worker", "redis", "infrastructure", "debug", "errors"],
   },
 
   // ---------------------------------------------------------------- updates
@@ -708,19 +762,19 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
   // ------------------------------------------------------------------- help
   {
     id: "help-tours",
-    label: "Tours and demos",
+    label: "Tours and demo",
     description: "Guided walkthroughs and demo content for trying Nojoin out.",
     category: "help",
     access: "all",
-    keywords: ["help", "tour", "tours", "demo", "tutorial", "walkthrough", "onboarding", "guide"],
+    keywords: ["tours and demos", "help", "tour", "tours", "demo", "tutorial", "walkthrough", "onboarding", "guide"],
   },
   {
     id: "help-report-bug",
-    label: "Report a bug",
+    label: "Report a problem",
     description: "Send a problem report with the details needed to investigate it.",
     category: "help",
     access: "all",
-    keywords: ["bug", "report", "issue", "problem", "support", "feedback", "broken"],
+    keywords: ["report a bug", "bug", "report", "issue", "problem", "support", "feedback", "broken"],
   },
 ];
 
@@ -739,8 +793,15 @@ export function getRegistryEntriesForCategory(
   return entries.filter((entry) => entry.access === "all" || isAdmin);
 }
 
+const REGISTRY_BY_ID = new Map(SETTINGS_REGISTRY.map((entry) => [entry.id, entry]));
+
 export function getRegistryEntry(id: string): SettingsRegistryEntry | undefined {
-  return SETTINGS_REGISTRY.find((entry) => entry.id === id);
+  return REGISTRY_BY_ID.get(id);
+}
+
+/** The scope a card, row or block with this id carries, if it has one. */
+export function getSettingsScope(id: string | undefined): SettingsScope | undefined {
+  return id ? REGISTRY_BY_ID.get(id)?.scope : undefined;
 }
 
 /**

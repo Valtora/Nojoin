@@ -4,7 +4,7 @@ import { updatePasswordMe, updateUserMe } from '@/lib/api';
 import { getErrorMessage } from '@/lib/errors';
 import { consentReturnPathFromSearch } from '@/lib/passwordChangeReturn';
 import { fuzzyMatch } from '@/lib/searchUtils';
-import { Loader2, User, Lock } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useNotificationStore } from '@/lib/notificationStore';
 import { trimString } from '@/lib/validation';
 import CalendarConnectionsSettings from './CalendarConnectionsSettings';
@@ -183,7 +183,6 @@ export default function AccountSettings({
           <SettingsRow
             label="Username"
             controlId="account-username"
-            icon={<User className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
           >
             <input
               id="account-username"
@@ -231,7 +230,6 @@ export default function AccountSettings({
             <SettingsRow
               label="Current password"
               controlId="account-current-password"
-              icon={<Lock className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
             >
               <input
                 id="account-current-password"
@@ -251,7 +249,6 @@ export default function AccountSettings({
               label="New password"
               controlId="account-new-password"
               description="At least 8 characters."
-              icon={<Lock className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
             >
               <input
                 id="account-new-password"
@@ -272,7 +269,6 @@ export default function AccountSettings({
             <SettingsRow
               label="Confirm new password"
               controlId="account-confirm-password"
-              icon={<Lock className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
             >
               <input
                 id="account-confirm-password"

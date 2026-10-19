@@ -449,7 +449,7 @@ export default function UsersTab() {
               Cancel
             </Button>
             <Button type="submit" form="edit-user-form" variant="primary">
-              Save Changes
+              Save changes
             </Button>
           </>
         }

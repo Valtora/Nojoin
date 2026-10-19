@@ -12,6 +12,7 @@ import {
   settingsCategoryHref,
   type SettingsCategoryId,
 } from "./settingsCategories";
+import { SettingsScopeText } from "./SettingsScopeBadge";
 import { searchSettingsRegistry } from "./settingsRegistry";
 import { SETTINGS_INPUT_CLASS } from "./settingsControls";
 
@@ -139,7 +140,7 @@ export default function SettingsSearch({
         <div
           id="settings-search-results"
           role="listbox"
-          className="settings-card absolute left-0 right-0 top-full z-[var(--z-dropdown)] mt-2 max-h-80 overflow-y-auto p-1"
+          className="settings-card absolute left-0 right-0 top-full z-[var(--z-dropdown)] mt-2 max-h-80 min-w-72 overflow-y-auto p-1"
         >
           {results.length === 0 ? (
             <p className="px-3 py-4 text-sm contrast-helper">
@@ -167,9 +168,13 @@ export default function SettingsSearch({
                   <span className="block truncate text-sm font-medium text-foreground">
                     {result.entry.label}
                   </span>
-                  <span className="mt-0.5 block truncate text-xs contrast-helper">
-                    {category.label}
-                    {result.entry.advanced ? " · Advanced" : ""}
+                  <span className="mt-0.5 flex min-w-0 items-center gap-1 text-xs contrast-helper">
+                    <span className="truncate">
+                      {category.label}
+                      {result.entry.advanced ? " · Advanced" : ""}
+                      {result.entry.scope ? " · " : ""}
+                    </span>
+                    {result.entry.scope && <SettingsScopeText scope={result.entry.scope} />}
                   </span>
                 </button>
               );

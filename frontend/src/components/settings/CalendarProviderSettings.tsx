@@ -218,8 +218,9 @@ export default function CalendarProviderSettings() {
           <SettingsCard
             key={key}
             id={`integrations-calendar-${key}`}
+            scopeId="integrations-calendar-providers"
             title={`${provider.display_name} calendar sign-in`}
-            description={`The app this installation registers with ${provider.display_name}. Once it is saved, everyone connects with one click.`}
+            description={`The app this installation registers with ${provider.display_name}. Once it is saved, everyone can connect their own calendar.`}
             badge={
               <SettingsStatusBadge tone={provider.configured ? "success" : "warning"}>
                 {provider.configured ? "Ready" : "Needs credentials"}
