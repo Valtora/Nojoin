@@ -1,9 +1,6 @@
 <!-- markdownlint-disable -->
 <div align="center">
-    <h1><img src="assets/images/nojoin-mark.svg" alt="Nojoin Logo" height="45" width="45" style="vertical-align: middle; horizontal-align: middle;"/> <span style="color: #F36012;"><br>Nojoin</span></h1>
-    <p>
-        <strong>Open-Source Meeting Notes on a Server You Own</strong>
-    </p>
+    <img src="site/public/images/og-card.png" alt="Nojoin: open-source meeting notes on a server you own. Records Meet, Teams and Zoom from your browser, with no bot in the call.">
     <p>
         <img src="https://img.shields.io/badge/License-AGPL_v3-blue.svg" alt="License">
         <img src="https://badgen.net/github/release/Valtora/Nojoin" alt="Latest Version">
@@ -12,11 +9,6 @@
         <a href="https://www.nojoin.co.uk">Website</a> · <a href="docs/README.md">Docs</a> · <a href="https://www.nojoin.co.uk/compare/">How It Compares</a> · <a href="https://www.nojoin.co.uk/managed/">Managed Nojoin</a>
     </p>
 </div>
-
-<picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/Valtora/Nojoin/main/site/public/images/dashboard-dark.webp">
-    <img alt="The Nojoin dashboard: calendar, agenda, tasks and recent meetings" src="https://raw.githubusercontent.com/Valtora/Nojoin/main/site/public/images/dashboard-light.webp">
-</picture>
 
 Nojoin records your Meet, Teams and Zoom calls from the browser and transcribes them on your own hardware, so no bot joins the call and the audio stays with you. Connect Claude or ChatGPT and they can read and edit the whole library.
 
