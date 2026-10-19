@@ -1,6 +1,6 @@
 # Legal Disclaimer and Terms of Use
 
-This is the canonical legal disclaimer for Nojoin, linked from the [README](../README.md#legal).
+This is the canonical legal disclaimer for Nojoin, linked from the [README](../README.md#licence-and-legal).
 
 ## 1. Compliance With Laws
 
