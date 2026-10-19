@@ -33,7 +33,7 @@ docker run --rm --network host --user "$(id -u):$(id -g)" -e HOME=/tmp \
   sh -c 'cd /tmp && npm i -s playwright@1.62.1 && cp /capture/capture.mjs . && node capture.mjs'
 ```
 
-`capture/capture.mjs` signs in, visits every page and every tab of each recording, requests the archived, deleted and per-tag recording lists directly, fetches each recording's audio whole, and writes `index.json` plus one file per distinct response body. It marks the captured account as a non-administrator, because the demo account is one.
+`capture/capture.mjs` signs in, visits every page and every tab of each recording, requests the archived, deleted and per-tag recording lists directly, fetches each recording's audio whole, and writes `index.json` plus one file per distinct response body. It marks the captured account as a non-administrator, because the demo account is one, and records the instance as healthy, because a refresh captures with the seed's workers stopped and the demo has no background work for a warning to describe.
 
 The fixtures are a snapshot of the API at capture time. A release that changes a response the frontend reads breaks the matching panel until the capture is rerun. `refresh.sh` reruns it for every release.
 

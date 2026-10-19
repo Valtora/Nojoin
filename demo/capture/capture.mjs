@@ -152,16 +152,29 @@ for (const recording of recordings) {
 
 await browser.close();
 
+// Rewrites one captured JSON body in place.
+async function rewrite(key, change) {
+  const entry = entries.get(key);
+  if (!entry) return;
+  const { readFileSync } = await import("node:fs");
+  const body = JSON.parse(readFileSync(join(OUT, entry.body), "utf8"));
+  change(body);
+  save(entry.path, entry.query, entry.status, entry.content_type, entry.content_disposition, Buffer.from(JSON.stringify(body)));
+}
+
 // The seeded account owns the library, so it is the instance's administrator.
 // The demo account is not, and the demo frontend must not offer admin pages.
-const me = entries.get("/api/v1/users/me?");
-if (me) {
-  const { readFileSync } = await import("node:fs");
-  const user = JSON.parse(readFileSync(join(OUT, me.body), "utf8"));
+await rewrite("/api/v1/users/me?", (user) => {
   user.is_superuser = false;
-  const buffer = Buffer.from(JSON.stringify(user));
-  save(me.path, me.query, me.status, me.content_type, undefined, buffer);
-}
+});
+
+// A refresh captures with the seed's workers stopped so it never touches the
+// GPU, and the health check reports them inactive. The demo has no background
+// work to pause, so it reports a healthy instance instead of a warning toast.
+await rewrite("/api/v1/system/health?", (health) => {
+  health.status = "ok";
+  health.components = { ...health.components, worker: "active" };
+});
 
 const sorted = [...entries.values()].sort((a, b) => `${a.path}?${a.query}`.localeCompare(`${b.path}?${b.query}`));
 writeFileSync(
