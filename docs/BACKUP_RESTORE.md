@@ -57,7 +57,7 @@ Treat the archive like a secrets file, not just a convenience export.
 
 ## Creating a Backup
 
-1. Open **Settings > Backup and restore** and select **Download Backup**.
+1. Open **Settings > Backup and restore** and select **Back up now**.
 2. Choose whether to include audio recordings.
 3. If including audio, choose the archive quality (see below).
 4. Select **Create Backup**.

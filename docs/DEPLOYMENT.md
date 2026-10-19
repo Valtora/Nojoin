@@ -140,7 +140,7 @@ that case the container still starts and reports the problem rather than
 crash-looping:
 
 - The API logs an explicit error at startup naming the unwritable path.
-- **Settings > System** shows the **Storage** readiness card as an error, and the
+- **Settings > System and logs** shows the **Storage** check as an error, and the
   pipeline summary is reported as blocked.
 - Uploads and imports fail with an actionable 503 rather than a bare 500.
 

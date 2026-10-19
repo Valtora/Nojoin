@@ -101,7 +101,7 @@ The live lane also feeds Meeting Edge and speeds up later processing. The full, 
 
 Meeting Edge uses the recent live transcript window, an internally maintained rolling summary of the meeting so far (decisions, open threads, and action items), its own previous suggestions (so guidance stays fresh instead of repeating), your optional focus text, your manual notes, and linked calendar context when available.
 
-It can surface live questions, missed points, and quick concept help during a meeting. In **Settings > Notes and live assistance**, everyone can tune the per-user **Technical context** slider to make concept explanations stricter or more detailed; administrators can additionally enable or disable Meeting Edge install-wide and choose a separate Meeting Edge model (if left empty, Nojoin reuses the main model).
+It can surface live questions, missed points, and quick concept help during a meeting. In **Settings > Notes and live assistance**, everyone can move their own **Technical context** slider towards fewer or more explained terms. Administrators turn Meeting Edge on or off for the whole installation, and can choose a separate Meeting Edge model, in **Settings > AI providers**; left empty, Nojoin uses the default model.
 
 ## Importing Recordings
 
@@ -268,7 +268,7 @@ Two limits worth knowing:
 
 #### What Was Discussed
 
-The rest of the tab is measured. This last section is different: it is an AI model reading the transcript, so it needs an AI provider and it uses your provider quota. Select **Analyse meeting** to run it. It is not run automatically unless you ask for that, because it answers questions most meetings are never asked and running it for every recording would spend your quota on meetings nobody opens. Your administrator may cap how many analyses you can start per day; the section says how many you have left and when the count resets (midnight UTC). Turn on **Analyse meetings automatically** under Settings > Recording to have each new meeting analysed when it finishes processing, within that cap.
+The rest of the tab is measured. This last section is different: it is an AI model reading the transcript, so it needs an AI provider and it uses your provider quota. Select **Analyse meeting** to run it. It is not run automatically unless you ask for that, because it answers questions most meetings are never asked and running it for every recording would spend your quota on meetings nobody opens. Your administrator may cap how many analyses you can start per day; the section says how many you have left and when the count resets (midnight UTC). Turn on **Analyse meetings automatically** under **Settings > Notes and live assistance** to have each new meeting analysed when it finishes processing, within that cap.
 
 If your installation has no AI provider configured, this section says so and nothing else on the tab is affected.
 
@@ -330,13 +330,13 @@ The default notes cover a summary, key decisions, action items, per-topic detail
 - **Generate** drafts a structure for you. Describe the meetings you run and what you need out of them, and the AI writes a structure, a name and a description into the editor for you to review and edit. Nothing is saved until you save it.
 - **Preview** shows the exact prompt a structure produces, protected parts included, using a short sample transcript. It makes no AI request.
 - The recording title, date, duration, and participants are always supplied to the model, so a structure can ask for them without any placeholder syntax.
-- Administrators can additionally publish install structures, which everyone can see and use but only an administrator can change. Anyone can copy one into their own list to vary it. One install structure can be marked the install default, which applies to every user who has not chosen their own.
+- Administrators can additionally publish shared structures, which everyone can see and use but only an administrator can change. Anyone can copy one into their own list to vary it. One shared structure can be marked the shared default, which applies to every user who has not chosen their own.
 - Your chosen structure applies to notes generated automatically after processing. On the recording page, the arrow beside **Regenerate Notes** generates with a different structure for that meeting only, without changing your default.
 - When a Nojoin update improves the built-in structure, any copy made from it is marked as out of date and offers a reset. Nothing is changed for you automatically.
 
 ### Glossary
 
-**Settings > Transcription > Glossary** holds project names, acronyms, products, and corrections for words the AI commonly mishears, one per line as `Term: meaning`. Administrators maintain an install glossary for the whole installation, and each user can add their own; the two are merged rather than replaced, and a personal entry wins where both define the same term.
+**Settings > Transcription > Glossary** holds project names, acronyms, products, and corrections for words the AI commonly mishears, one per line as `Term: meaning`. Administrators maintain a shared glossary for the whole installation, which everyone can read there, and each user can add their own; the two are merged rather than replaced, and a personal entry wins where both define the same term.
 
 The glossary is used when writing notes and by Meeting Edge when it explains a term during a live meeting. It does not change the transcript, which is produced by the speech model before the glossary is ever read.
 
@@ -374,10 +374,10 @@ Theme, colour palette, corner style and density are saved in the browser rather 
 
 ### Language Preferences
 
-Use **Settings > Transcription > Language** to configure two independent choices:
+Two independent choices, on two pages:
 
-- **Transcription language** controls ASR. The default is **Auto-detect**. Whisper supports auto-detection or a forced language, Canary supports the listed forced languages, and Parakeet continues to use multilingual auto-detection without forced-language support.
-- **Notes generation language** controls AI-generated meeting titles, Markdown headings, summaries, detailed notes, and action items. The default is **English**. British English, American English, the transcription language, another listed language, or a custom language/style instruction can be selected.
+- **Transcription language**, under **Settings > Transcription**, controls ASR. The default is **Auto-detect**. Whisper supports auto-detection or a forced language, Canary supports the listed forced languages, and Parakeet continues to use multilingual auto-detection without forced-language support.
+- **Notes language**, under **Settings > Notes and live assistance**, controls AI-generated meeting titles, Markdown headings, summaries, detailed notes, and action items. The default is **English**. British English, American English, the transcription language, another listed language, or a custom language/style instruction can be selected.
 
 The LLM prompt and machine-readable response contract remain stable even when generated content is localized: JSON keys, speaker labels, and application-owned metadata are not translated.
 
@@ -387,7 +387,7 @@ Language preferences are per-user. Per-meeting overrides, full interface transla
 
 ### Your own subscription (CLI OAuth)
 
-Instead of using the server's configured provider, you can route your own AI through your own **Claude** (Pro/Max) or **ChatGPT** (Plus/Pro) subscription — usually faster, and you can pick a stronger model. In **Settings > Your AI**, connect a subscription in the "Your AI subscription" panel, then set routing to **My own AI subscription**:
+Instead of using the server's configured provider, you can route your own AI through your own **Claude** (Pro/Max) or **ChatGPT** (Plus/Pro) subscription. It is usually faster, and you can pick a stronger model. In **Settings > Your AI**, connect a subscription under **Your subscriptions**, then choose **My own subscription** under **How AI runs for you**:
 
 - **Claude** — open the grant link and paste back the code Anthropic shows you.
 - **ChatGPT** — open the sign-in page, enter the code shown, and approve access; the panel finishes automatically once you approve.
@@ -398,7 +398,7 @@ Because this uses your subscription quota, a cheaper model conserves *quota*, no
 
 ### CLI usage and quota (admin)
 
-Administrators can review per-user Claude-subscription usage under **Settings > AI providers > Usage and quota**: a searchable table of each user's token usage over the last 7 days, last 30 days, and lifetime, alongside their rate-limit status. Tokens count what Nojoin sent through each user's own subscription. A subscription exposes no live "remaining quota" figure, so the status column reflects the rate-limit signal (OK, approaching a limit, or limited until a reset time) rather than a balance. Usage is shown in tokens, never money — a subscription is flat-rate, so a per-turn currency figure would be misleading.
+Administrators can review per-user subscription usage under **Settings > AI providers**, in **Subscription usage** behind the **Advanced** block: a searchable table of each user's token usage over the last 7 days, last 30 days, and lifetime, alongside their rate-limit status. Tokens count what Nojoin sent through each user's own subscription. A subscription exposes no live "remaining quota" figure, so the status column reflects the rate-limit signal (OK, approaching a limit, or limited until a reset time) rather than a balance. Usage is shown in tokens, never money: a subscription is flat-rate, so a per-turn currency figure would be misleading.
 
 ### Secondary LLM Provider
 
@@ -410,7 +410,7 @@ The secondary provider has its own independent configuration:
 - Model and live model choices.
 - API key or Ollama URL.
 
-Configure the secondary provider through environment variables prefixed with `SECONDARY_` (e.g., `SECONDARY_LLM_PROVIDER`, `SECONDARY_GEMINI_API_KEY`). Leave `SECONDARY_LLM_PROVIDER` empty to disable fallback. The secondary provider configuration is visible in **Settings > AI providers** for administrators, where its model is chosen. The fallback stays off until it has a model, and the card says so.
+Configure the secondary provider through environment variables prefixed with `SECONDARY_` (e.g., `SECONDARY_LLM_PROVIDER`, `SECONDARY_GEMINI_API_KEY`). Leave `SECONDARY_LLM_PROVIDER` empty to disable fallback. The secondary provider configuration is visible in **Settings > AI providers** for administrators, where its model is chosen. The fallback stays off until it has a model. The card says so, and the collapsed **Advanced** block on that page reads **1 needs attention** until it is fixed.
 
 ## Troubleshooting
 
