@@ -6,7 +6,7 @@
         <img src="https://badgen.net/github/release/Valtora/Nojoin" alt="Latest Version">
     </p>
     <p>
-        <a href="https://www.nojoin.co.uk">Website</a> · <a href="docs/README.md">Docs</a> · <a href="https://www.nojoin.co.uk/compare/">How It Compares</a> · <a href="https://www.nojoin.co.uk/managed/">Managed Nojoin</a>
+        <a href="https://demo.nojoin.co.uk">Live Demo</a> · <a href="https://www.nojoin.co.uk">Website</a> · <a href="docs/README.md">Docs</a> · <a href="https://www.nojoin.co.uk/compare/">How It Compares</a> · <a href="https://www.nojoin.co.uk/managed/">Managed Nojoin</a>
     </p>
 </div>
 
