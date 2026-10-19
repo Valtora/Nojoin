@@ -5,6 +5,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { login, getCurrentUser } from "@/lib/api";
+import { DEMO_MODE, DEMO_PASSWORD, DEMO_USERNAME } from "@/lib/demo";
 import { Lock, User } from "lucide-react";
 
 function formatLoginError(error: unknown): string {
@@ -52,13 +53,12 @@ export default function LoginPage() {
     checkCurrentUser();
   }, [router]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const signIn = async (name: string, secret: string) => {
     setError("");
     setLoading(true);
 
     try {
-      const response = await login(username, password);
+      const response = await login(name, secret);
 
       if (response.force_password_change) {
         router.push("/settings/profile");
@@ -71,6 +71,11 @@ export default function LoginPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    void signIn(username, password);
   };
 
   return (
@@ -90,83 +95,110 @@ export default function LoginPage() {
             <h2 className="text-3xl font-bold text-action-text">Nojoin</h2>
           </div>
         </div>
-        <form
-          id="login-form"
-          name="login-form"
-          method="post"
-          className="mt-8 space-y-6"
-          onSubmit={handleSubmit}
-          autoComplete="on"
-        >
-          <div className="space-y-4">
-            <div className="relative">
-              <label htmlFor="login-username" className="sr-only">
-                Username
-              </label>
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <User className="h-5 w-5 text-contrast-icon-muted" />
+        {DEMO_MODE ? (
+          <div className="mt-8 space-y-6 text-center">
+            <p className="text-sm text-contrast-muted">
+              A read-only demo with sample meetings. Look around the dashboard,
+              transcripts, notes and analytics; recording and AI are switched
+              off.
+            </p>
+            {error && (
+              <div
+                role="alert"
+                aria-live="polite"
+                className="text-status-danger-fg text-sm bg-status-danger-bg p-3 rounded-lg border border-status-danger-border"
+              >
+                {error}
               </div>
-              <input
-                id="login-username"
-                name="username"
-                type="text"
-                autoComplete="username"
-                autoCapitalize="none"
-                autoCorrect="off"
-                spellCheck={false}
-                aria-describedby={error ? "login-error" : undefined}
-                aria-invalid={Boolean(error)}
-                required
-                className="appearance-none block w-full pl-10 pr-3 py-3 border border-control-border rounded-lg bg-control-bg text-foreground placeholder:text-control-placeholder focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-focus-ring sm:text-sm transition-colors"
-                placeholder="Username"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-              />
-            </div>
-            <div className="relative">
-              <label htmlFor="login-current-password" className="sr-only">
-                Password
-              </label>
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Lock className="h-5 w-5 text-contrast-icon-muted" />
-              </div>
-              <input
-                id="login-current-password"
-                name="password"
-                type="password"
-                autoComplete="current-password"
-                aria-describedby={error ? "login-error" : undefined}
-                aria-invalid={Boolean(error)}
-                required
-                className="appearance-none block w-full pl-10 pr-3 py-3 border border-control-border rounded-lg bg-control-bg text-foreground placeholder:text-control-placeholder focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-focus-ring sm:text-sm transition-colors"
-                placeholder="Password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </div>
-          </div>
-
-          {error && (
-            <div
-              id="login-error"
-              role="alert"
-              aria-live="polite"
-              className="text-status-danger-fg text-sm text-center bg-status-danger-bg p-3 rounded-lg border border-status-danger-border"
-            >
-              {error}
-            </div>
-          )}
-
-          <div>
+            )}
             <button
-              type="submit"
+              type="button"
               disabled={loading}
-              className="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-semibold rounded-lg text-action-on bg-action hover:bg-action-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+              onClick={() => void signIn(DEMO_USERNAME, DEMO_PASSWORD)}
+              className="w-full flex justify-center py-3 px-4 border border-transparent text-sm font-semibold rounded-lg text-action-on bg-action hover:bg-action-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
             >
-              {loading ? "Signing in..." : "Sign in"}
+              {loading ? "Opening the demo..." : "Enter the demo"}
             </button>
           </div>
-        </form>
+        ) : (
+          <form
+            id="login-form"
+            name="login-form"
+            method="post"
+            className="mt-8 space-y-6"
+            onSubmit={handleSubmit}
+            autoComplete="on"
+          >
+            <div className="space-y-4">
+              <div className="relative">
+                <label htmlFor="login-username" className="sr-only">
+                  Username
+                </label>
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <User className="h-5 w-5 text-contrast-icon-muted" />
+                </div>
+                <input
+                  id="login-username"
+                  name="username"
+                  type="text"
+                  autoComplete="username"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  aria-describedby={error ? "login-error" : undefined}
+                  aria-invalid={Boolean(error)}
+                  required
+                  className="appearance-none block w-full pl-10 pr-3 py-3 border border-control-border rounded-lg bg-control-bg text-foreground placeholder:text-control-placeholder focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-focus-ring sm:text-sm transition-colors"
+                  placeholder="Username"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                />
+              </div>
+              <div className="relative">
+                <label htmlFor="login-current-password" className="sr-only">
+                  Password
+                </label>
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Lock className="h-5 w-5 text-contrast-icon-muted" />
+                </div>
+                <input
+                  id="login-current-password"
+                  name="password"
+                  type="password"
+                  autoComplete="current-password"
+                  aria-describedby={error ? "login-error" : undefined}
+                  aria-invalid={Boolean(error)}
+                  required
+                  className="appearance-none block w-full pl-10 pr-3 py-3 border border-control-border rounded-lg bg-control-bg text-foreground placeholder:text-control-placeholder focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-focus-ring sm:text-sm transition-colors"
+                  placeholder="Password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+              </div>
+            </div>
+
+            {error && (
+              <div
+                id="login-error"
+                role="alert"
+                aria-live="polite"
+                className="text-status-danger-fg text-sm text-center bg-status-danger-bg p-3 rounded-lg border border-status-danger-border"
+              >
+                {error}
+              </div>
+            )}
+
+            <div>
+              <button
+                type="submit"
+                disabled={loading}
+                className="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-semibold rounded-lg text-action-on bg-action hover:bg-action-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+              >
+                {loading ? "Signing in..." : "Sign in"}
+              </button>
+            </div>
+          </form>
+        )}
       </div>
     </div>
   );

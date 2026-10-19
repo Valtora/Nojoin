@@ -4,6 +4,7 @@ import { FilePlus } from "lucide-react";
 
 import { useCapture } from "@/lib/capture/CaptureProvider";
 import { cn } from "@/lib/cn";
+import { DEMO_MODE } from "@/lib/demo";
 import { useImportAudioStore } from "@/lib/importAudioStore";
 
 import Button from "../ui/Button";
@@ -33,16 +34,19 @@ export default function ImportAudioButton({
   const { pausedRecording, runtimeActive } = useCapture();
   const openImportAudio = useImportAudioStore((state) => state.openImportAudio);
   const locked = Boolean(pausedRecording && !runtimeActive);
+  // Imports are switched off on the public demo, like recording.
+  const disabled = locked || DEMO_MODE;
+  const title = DEMO_MODE ? "Importing is switched off in the demo." : LABEL;
 
   if (appearance === "icon") {
     return (
       <IconButton
         aria-label={LABEL}
-        title={LABEL}
+        title={title}
         size="sm"
         icon={<FilePlus aria-hidden="true" />}
         onClick={openImportAudio}
-        disabled={locked}
+        disabled={disabled}
         className="text-rail-fg-muted hover:bg-rail-item-hover hover:text-rail-fg"
       />
     );
@@ -53,7 +57,8 @@ export default function ImportAudioButton({
       variant="secondary"
       iconLeft={<FilePlus aria-hidden="true" className="h-4 w-4 shrink-0" />}
       onClick={openImportAudio}
-      disabled={locked}
+      disabled={disabled}
+      title={DEMO_MODE ? title : undefined}
       // The short form keeps the full name for assistive tech.
       aria-label={appearance === "compact" ? LABEL : undefined}
       // Rounded and disabled like Start Meeting, which it sits beside.
