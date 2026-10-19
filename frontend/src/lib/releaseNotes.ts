@@ -18,17 +18,30 @@ export interface PreparedReleaseNotes {
   notes: string;
 }
 
-const HTML_COMMENT = /<!--[\s\S]*?-->/g;
+// An unterminated comment runs to the end of the body, as it would in HTML.
+const HTML_COMMENT = /<!--[\s\S]*?(?:-->|$)/g;
 const SUMMARY = /<summary>([\s\S]*?)<\/summary>/g;
 const DETAILS_TAG = /<\/?details>/g;
 // The page already names the release, so the body's own title is dropped.
 const LEADING_TITLE = /^\s*#{1,2} [^\n]*\n/;
 const FIRST_SECTION = /^### /m;
 
+/**
+ * Removing one comment can join the text either side of it into a new `<!--`,
+ * so this repeats until nothing changes.
+ */
+function stripComments(text: string): string {
+  let previous: string;
+  let current = text;
+  do {
+    previous = current;
+    current = current.replace(HTML_COMMENT, "");
+  } while (current !== previous);
+  return current;
+}
+
 export function prepareReleaseNotes(body: string): PreparedReleaseNotes {
-  const text = body
-    .replace(/\r\n?/g, "\n")
-    .replace(HTML_COMMENT, "")
+  const text = stripComments(body.replace(/\r\n?/g, "\n"))
     .replace(SUMMARY, (_, summary: string) => `#### ${summary.trim()}`)
     .replace(DETAILS_TAG, "")
     .replace(LEADING_TITLE, "")

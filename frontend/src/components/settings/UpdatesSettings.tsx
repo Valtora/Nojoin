@@ -135,6 +135,7 @@ function ReleaseNotes({ release }: { release: ReleaseInfo }) {
         content={notes}
         className={NOTES_CLASS}
         linkClassName={NOTES_LINK_CLASS}
+        html={false}
       />
       {images && (
         <Disclosure
@@ -148,6 +149,7 @@ function ReleaseNotes({ release }: { release: ReleaseInfo }) {
             content={images}
             className={NOTES_CLASS}
             linkClassName={NOTES_LINK_CLASS}
+        html={false}
           />
         </Disclosure>
       )}

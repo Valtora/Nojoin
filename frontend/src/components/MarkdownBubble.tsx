@@ -13,6 +13,8 @@ interface MarkdownBubbleProps {
   className?: string;
   /** Replaces the default classes on links. */
   linkClassName?: string;
+  /** Whether raw HTML in the Markdown is parsed. Off shows it as text. */
+  html?: boolean;
 }
 
 const DEFAULT_CLASS = 'prose prose-sm dark:prose-invert max-w-none focus:outline-none';
@@ -22,6 +24,7 @@ export default function MarkdownBubble({
   content,
   className = DEFAULT_CLASS,
   linkClassName = DEFAULT_LINK_CLASS,
+  html = true,
 }: MarkdownBubbleProps) {
   const editor = useEditor({
     editable: false,
@@ -39,7 +42,7 @@ export default function MarkdownBubble({
       // Read-only surface, so column resizing would only get in the way; the
       // nodes are here purely so a table in a chat answer renders as a table.
       TableKit.configure({ table: { resizable: false } }),
-      Markdown,
+      Markdown.configure({ html }),
     ],
     content: content,
     editorProps: {

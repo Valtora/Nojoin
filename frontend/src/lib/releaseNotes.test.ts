@@ -33,6 +33,16 @@ describe("prepareReleaseNotes", () => {
     expect(images).not.toContain("Nojoin 9.9.0");
   });
 
+  it("leaves no comment opener behind, even one built from two halves", () => {
+    const { notes } = prepareReleaseNotes(
+      "### Notes\n\nBefore <!<!-- x -->-- hidden --> after <!-- unterminated",
+    );
+
+    expect(notes).not.toContain("<!--");
+    expect(notes).not.toContain("hidden");
+    expect(notes).not.toContain("unterminated");
+  });
+
   it("splits the image digests from the notes", () => {
     const { notes, images } = prepareReleaseNotes(BODY);
 
