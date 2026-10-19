@@ -3,23 +3,15 @@ import { useNavigationStore } from "@/lib/store";
 import { seedDemoData } from "@/lib/api";
 import { useState } from "react";
 import { useNotificationStore } from "@/lib/notificationStore";
-import { fuzzyMatch } from "@/lib/searchUtils";
-import SettingsCallout from "./SettingsCallout";
-import SettingsBlock from "./SettingsBlock";
 import SettingsCard from "./SettingsCard";
-
-const ACTION_BUTTON_STYLES =
-  "inline-flex items-center gap-2 self-start rounded-xl bg-action-tint px-3 py-2 text-sm font-medium text-action-text transition hover:bg-action-tint disabled:opacity-50 sm:self-auto";
+import SettingsRow from "./SettingsRow";
+import { SETTINGS_BUTTON_SECONDARY } from "./settingsControls";
 
 interface HelpSettingsProps {
   userId: number | null;
-  searchQuery?: string;
 }
 
-export default function HelpSettings({
-  userId,
-  searchQuery = "",
-}: HelpSettingsProps) {
+export default function HelpSettings({ userId }: HelpSettingsProps) {
   const {
     setHasSeenTour,
     setHasSeenRecordingsTour,
@@ -36,7 +28,7 @@ export default function HelpSettings({
       addNotification({
         type: "success",
         message:
-          "Tours reset. Go to the dashboard to start the Welcome Tour again.",
+          "Tours reset. They start again the next time you open each page.",
       });
     }
   };
@@ -60,106 +52,73 @@ export default function HelpSettings({
     }
   };
 
-  const showTours = fuzzyMatch(searchQuery, [
-    "tour",
-    "demo",
-    "welcome",
-    "tutorial",
-    "guide",
-    "help",
-  ]);
-
-  if (!showTours && searchQuery)
-    return (
-      <SettingsCallout
-        tone="neutral"
-        title="No matching settings"
-        message="Try a broader search term for tours, demos, or issue reporting."
-      />
-    );
-
   return (
-    <div className="space-y-6">
+    <>
       <SettingsCard
-        title="Tours and Demos"
-        description="Reset onboarding helpers or recreate the sample meeting used for first-run guidance."
+        id="help-tours"
+        title="Tours and demo"
+        description="Walk through Nojoin again, or bring back the sample meeting."
       >
-        <div className="space-y-4">
-          <SettingsBlock inset
-            className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
-          >
-            <div>
-              <h4 className="flex items-center gap-2 text-sm font-medium text-foreground">
-                <PlayCircle className="h-4 w-4 text-action-text" />
-                Restart Welcome Tour
-              </h4>
-              <p className="mt-1 text-xs contrast-helper">
-                Reset the Dashboard welcome tour, the Recordings walkthrough,
-                and the transcript walkthrough.
-              </p>
-            </div>
+        <SettingsRow
+          label="Guided tours"
+          description="Shows the dashboard, recordings and transcript tours again the next time you open each page."
+        >
+          <div className="flex @min-[26rem]:justify-end">
             <button
+              type="button"
               onClick={handleRestartTour}
               disabled={!userId}
-              className={ACTION_BUTTON_STYLES}
+              className={SETTINGS_BUTTON_SECONDARY}
             >
-              Restart Tour
+              <PlayCircle className="h-4 w-4" aria-hidden="true" />
+              Restart tours
             </button>
-          </SettingsBlock>
+          </div>
+        </SettingsRow>
 
-          <SettingsBlock inset
-            className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
-          >
-            <div>
-              <h4 className="flex items-center gap-2 text-sm font-medium text-foreground">
-                <RefreshCw className="h-4 w-4 text-action-text" />
-                Re-create Demo Meeting
-              </h4>
-              <p className="mt-1 text-xs contrast-helper">
-                If you deleted the &quot;Welcome to Nojoin&quot; meeting, this
-                will create it again.
-              </p>
-            </div>
+        <SettingsRow
+          label="Demo meeting"
+          description="Creates the Welcome to Nojoin meeting again, if you deleted it."
+        >
+          <div className="flex @min-[26rem]:justify-end">
             <button
+              type="button"
               onClick={handleRecreateDemo}
               disabled={isSeeding}
-              className={ACTION_BUTTON_STYLES}
+              className={SETTINGS_BUTTON_SECONDARY}
             >
-              {isSeeding && <RefreshCw className="w-3 h-3 animate-spin" />}
-              {isSeeding ? "Creating..." : "Re-create Meeting"}
+              <RefreshCw
+                className={isSeeding ? "h-4 w-4 animate-spin" : "h-4 w-4"}
+                aria-hidden="true"
+              />
+              {isSeeding ? "Creating..." : "Create it again"}
             </button>
-          </SettingsBlock>
-        </div>
+          </div>
+        </SettingsRow>
       </SettingsCard>
 
       <SettingsCard
-        title="Report a Bug"
-        description="Open the project issue tracker when you hit a reproducible problem or need to share diagnostics with the team."
+        id="help-report-bug"
+        title="Report a problem"
+        description="Bugs and feature requests go to the project's issue tracker on GitHub."
       >
-        <div className="space-y-4">
-          <SettingsBlock inset
-            className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
-          >
-            <div>
-              <h4 className="flex items-center gap-2 text-sm font-medium text-foreground">
-                <Bug className="h-4 w-4 text-action-text" />
-                Report an Issue
-              </h4>
-              <p className="mt-1 text-xs contrast-helper">
-                Found a bug? Report it on our GitHub Issues page.
-              </p>
-            </div>
+        <SettingsRow
+          label="GitHub issues"
+          description="Say what you did, what you expected and what happened."
+        >
+          <div className="flex @min-[26rem]:justify-end">
             <a
               href="https://github.com/Valtora/Nojoin/issues"
               target="_blank"
               rel="noopener noreferrer"
-              className={ACTION_BUTTON_STYLES}
+              className={SETTINGS_BUTTON_SECONDARY}
             >
-              Report Issue
+              <Bug className="h-4 w-4" aria-hidden="true" />
+              Open an issue
             </a>
-          </SettingsBlock>
-        </div>
+          </div>
+        </SettingsRow>
       </SettingsCard>
-    </div>
+    </>
   );
 }

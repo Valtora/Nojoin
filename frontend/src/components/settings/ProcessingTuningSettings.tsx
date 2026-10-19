@@ -82,7 +82,7 @@ function TuningInput({
   return (
     <div className="min-w-0">
       {labelled && (
-        <label htmlFor={inputId} className="mb-1 block text-xs font-medium contrast-helper">
+        <label htmlFor={inputId} className="mb-2 block text-xs font-medium contrast-helper">
           {spec.label}
         </label>
       )}

@@ -13,6 +13,7 @@ import {
   type SettingsCategoryId,
 } from "./settingsCategories";
 import { searchSettingsRegistry } from "./settingsRegistry";
+import { SETTINGS_INPUT_CLASS } from "./settingsControls";
 
 interface SettingsSearchProps {
   isAdmin: boolean;
@@ -130,7 +131,8 @@ export default function SettingsSearch({
         }}
         onFocus={() => setOpen(true)}
         onKeyDown={handleKeyDown}
-        className="w-full rounded-lg border border-control-border bg-surface-card py-2 pl-9 pr-3 text-sm text-foreground placeholder:text-contrast-helper focus:border-transparent focus:ring-2 focus:ring-action"
+        aria-label="Search settings"
+        className={`${SETTINGS_INPUT_CLASS} pl-9`}
       />
 
       {showResults && (

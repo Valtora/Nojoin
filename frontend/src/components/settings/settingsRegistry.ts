@@ -663,6 +663,14 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
 
   // ----------------------------------------------------------------- system
   {
+    id: "system-health",
+    label: "Service health",
+    description: "Whether the database, queue, worker, models and AI are ready.",
+    category: "system",
+    access: "admin",
+    keywords: ["health", "status", "worker", "queue", "database", "readiness", "pipeline", "gpu"],
+  },
+  {
     id: "system-logs",
     label: "Live logs",
     description: "Operational output from the Nojoin services.",

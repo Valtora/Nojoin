@@ -35,7 +35,13 @@ import SettingsCallout from "./SettingsCallout";
 import SettingsCard from "./SettingsCard";
 import { useSettingsContext } from "./SettingsProvider";
 import SettingsRow from "./SettingsRow";
-import { SETTINGS_BUTTON_PRIMARY } from "./settingsControls";
+import SettingsStatusBadge from "./SettingsStatusBadge";
+import {
+  SETTINGS_BUTTON_DANGER,
+  SETTINGS_BUTTON_PRIMARY,
+  SETTINGS_BUTTON_SECONDARY,
+} from "./settingsControls";
+import { cn } from "@/lib/cn";
 
 const PROVIDER_LABELS: Record<CalendarProvider, string> = {
   google: "Google",
@@ -302,8 +308,8 @@ export default function CalendarConnectionsSettings() {
   return (
     <SettingsCard
       id="integrations-calendars"
-      title="Calendar Connections"
-      description="Connect Gmail or Outlook calendars, approve access in the provider's own consent screen, then choose which calendars Nojoin syncs for this account."
+      title="Calendars"
+      description="Connect a Google or Outlook account, approve access on its own sign-in page, then choose which calendars Nojoin shows you."
     >
       {loading ? (
         <SettingsBlock>
@@ -371,59 +377,39 @@ export default function CalendarConnectionsSettings() {
             </SettingsBlock>
           )}
 
-          {overview?.connections.length ? (
-            <SettingsBlock className="space-y-4">
-              {overview.connections.map((connection) => {
+          {overview?.connections.length
+            ? overview.connections.map((connection) => {
                 const isBusy = busyKey?.endsWith(`:${connection.id}`) ?? false;
                 return (
-                  <div
+                  <SettingsBlock
                     key={connection.id}
-                    className="settings-inset space-y-4 rounded-xl p-4"
-                  >
-                    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="inline-flex rounded-pill bg-action-tint px-2.5 py-1 text-xs font-medium text-action-text">
-                            {PROVIDER_LABELS[connection.provider]}
-                          </span>
-                          <span className="text-xs contrast-helper">
-                            {STATUS_LABELS[connection.sync_status]}
-                          </span>
-                          {connection.push_active && (
-                            <span
-                              className="inline-flex items-center gap-1 rounded-pill bg-status-success-bg px-2 py-0.5 text-[11px] font-medium text-status-success-fg"
-                              title="Live sync active: changes arrive by push notification"
-                            >
-                              <Zap className="h-3 w-3" />
-                              Live
-                            </span>
-                          )}
-                        </div>
-                        <div className="mt-2 text-base font-semibold text-foreground">
-                          {connection.email || connection.display_name || "Connected account"}
-                        </div>
-                        <div className="mt-1 text-sm text-contrast-helper">
-                          {connection.selected_calendar_count} selected calendar{connection.selected_calendar_count === 1 ? "" : "s"}
-                        </div>
-                        {connection.sync_error && (
-                          <div className="mt-2 flex items-start gap-2 rounded-md border border-action-border bg-action-tint px-3 py-2 text-xs text-action-text">
-                            <ShieldAlert className="mt-0.5 w-4 h-4 shrink-0" />
-                            <span>{connection.sync_error}</span>
-                          </div>
+                    label={
+                      <span className="flex flex-wrap items-center gap-2">
+                        {connection.email || connection.display_name || "Connected account"}
+                        <SettingsStatusBadge tone="neutral">
+                          {PROVIDER_LABELS[connection.provider]}
+                        </SettingsStatusBadge>
+                        {connection.push_active && (
+                          <SettingsStatusBadge tone="success">
+                            <Zap className="mr-1 h-3 w-3" aria-hidden="true" />
+                            Live sync
+                          </SettingsStatusBadge>
                         )}
-                      </div>
-
-                      <div className="flex flex-wrap items-center gap-2">
+                      </span>
+                    }
+                    description={`${STATUS_LABELS[connection.sync_status]}. ${connection.selected_calendar_count} calendar${connection.selected_calendar_count === 1 ? "" : "s"} selected.`}
+                    aside={
+                      <div className="flex flex-wrap gap-2">
                         <button
                           type="button"
                           disabled={isBusy}
                           onClick={() => handleManualSync(connection.id)}
-                          className="inline-flex items-center gap-2 rounded-md border border-control-border bg-surface-card px-3 py-2 text-sm font-medium text-contrast-muted transition-colors hover:border-action-border hover:text-action-text disabled:opacity-50"
+                          className={SETTINGS_BUTTON_SECONDARY}
                         >
                           {busyKey === `sync:${connection.id}` ? (
-                            <Loader2 className="w-4 h-4 animate-spin" />
+                            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
                           ) : (
-                            <RefreshCw className="w-4 h-4" />
+                            <RefreshCw className="h-4 w-4" aria-hidden="true" />
                           )}
                           Sync now
                         </button>
@@ -431,54 +417,60 @@ export default function CalendarConnectionsSettings() {
                           type="button"
                           disabled={isBusy}
                           onClick={() => handleDisconnect(connection.id)}
-                          className="inline-flex items-center gap-2 rounded-md border border-status-danger-border bg-surface-card px-3 py-2 text-sm font-medium text-status-danger-fg transition-colors hover:bg-status-danger-bg disabled:opacity-50"
+                          className={SETTINGS_BUTTON_DANGER}
                         >
                           {busyKey === `disconnect:${connection.id}` ? (
-                            <Loader2 className="w-4 h-4 animate-spin" />
+                            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
                           ) : (
-                            <Trash2 className="w-4 h-4" />
+                            <Trash2 className="h-4 w-4" aria-hidden="true" />
                           )}
                           Disconnect
                         </button>
                       </div>
-                    </div>
+                    }
+                  >
+                    {connection.sync_error && (
+                      <SettingsCallout tone="warning" className="mb-3">
+                        <span className="flex items-start gap-2">
+                          <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                          <span>{connection.sync_error}</span>
+                        </span>
+                      </SettingsCallout>
+                    )}
 
-                    <div className="grid gap-2 @min-[35rem]:grid-cols-2">
-                      {connection.calendars.map((calendar) => (
-                        <div
-                          key={calendar.id}
-                          className={`@container rounded-xl border px-4 py-4 transition-all ${
-                            calendar.is_selected
-                              ? "border-action-border bg-action-tint shadow-card hover:border-action-border hover:bg-action-tint"
-                              : "border-surface-border bg-surface-card hover:border-action-border hover:bg-action-tint"
-                          }`}
-                        >
-                          <div className="flex flex-col gap-3 @min-[24rem]:flex-row @min-[24rem]:items-start @min-[24rem]:justify-between">
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-2 text-foreground">
-                                <span className="truncate text-sm font-semibold">
+                    <ul className="divide-y settings-divider border-y settings-divider">
+                      {connection.calendars.map((calendar) => {
+                        const labelId = `calendar-${calendar.id}-label`;
+                        return (
+                          <li
+                            key={calendar.id}
+                            className="flex flex-col gap-3 py-3 @min-[30rem]:flex-row @min-[30rem]:items-center @min-[30rem]:justify-between"
+                          >
+                            <div className="min-w-0">
+                              <p className="flex flex-wrap items-center gap-2 text-sm text-foreground">
+                                <span id={labelId} className="font-medium">
                                   {calendar.name}
                                 </span>
                                 {calendar.is_primary && (
-                                  <span className="inline-flex items-center gap-1 rounded-pill bg-action-tint px-2 py-0.5 text-[11px] font-medium text-action-text">
-                                    <CheckCircle2 className="h-3 w-3" />
+                                  <SettingsStatusBadge tone="neutral">
+                                    <CheckCircle2 className="mr-1 h-3 w-3" aria-hidden="true" />
                                     Primary
-                                  </span>
+                                  </SettingsStatusBadge>
                                 )}
-                              </div>
+                              </p>
                               {calendar.description && (
-                                <p className="mt-1 text-xs contrast-helper line-clamp-2">
+                                <p className="mt-1 line-clamp-2 text-xs contrast-helper">
                                   {calendar.description}
                                 </p>
                               )}
                             </div>
 
-                            <div className="flex flex-wrap items-center gap-2 @min-[24rem]:shrink-0">
+                            <div className="flex flex-wrap items-center gap-2 @min-[30rem]:shrink-0">
                               {busyKey === `colour:${calendar.id}` ? (
-                                <div className="inline-flex items-center gap-2 rounded-pill border border-surface-border bg-surface-card px-3 py-2 text-xs font-medium text-contrast-helper">
-                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                <span className="inline-flex items-center gap-2 text-xs contrast-helper">
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
                                   Saving
-                                </div>
+                                </span>
                               ) : (
                                 <ColorPicker
                                   selectedColor={calendar.custom_colour ?? undefined}
@@ -494,15 +486,20 @@ export default function CalendarConnectionsSettings() {
                                       calendar.colour,
                                     );
                                     return (
-                                      <div className="inline-flex items-center gap-2 rounded-pill border border-surface-border bg-surface-card px-3 py-2 text-xs font-medium text-contrast-muted transition-colors hover:border-action-border hover:text-action-text">
+                                      // A button, so the picker the wrapper opens
+                                      // on click is reachable from the keyboard.
+                                      <button
+                                        type="button"
+                                        className={cn(SETTINGS_BUTTON_SECONDARY, "px-3")}
+                                        aria-label={`Colour for ${calendar.name}`}
+                                      >
                                         <span
+                                          aria-hidden="true"
                                           className={`h-3 w-3 rounded-full ${indicator.className}`}
                                           style={indicator.style}
                                         />
-                                        <span>
-                                          {calendar.custom_colour ? "Custom" : "Auto"}
-                                        </span>
-                                      </div>
+                                        {calendar.custom_colour ? "Custom colour" : "Calendar colour"}
+                                      </button>
                                     );
                                   })()}
                                 />
@@ -518,14 +515,15 @@ export default function CalendarConnectionsSettings() {
                                       null,
                                     )
                                   }
-                                  className="rounded-pill border border-surface-border px-2.5 py-2 text-xs font-medium text-contrast-helper transition-colors hover:border-action-border hover:text-action-text"
+                                  className={SETTINGS_BUTTON_SECONDARY}
                                 >
-                                  Auto
+                                  Reset colour
                                 </button>
                               )}
 
                               <Switch
                                 checked={calendar.is_selected}
+                                aria-labelledby={labelId}
                                 onCheckedChange={(checked) =>
                                   void handleToggleCalendar(
                                     connection,
@@ -536,21 +534,20 @@ export default function CalendarConnectionsSettings() {
                                 disabled={busyKey === `selection:${connection.id}`}
                               />
                             </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </SettingsBlock>
                 );
-              })}
-            </SettingsBlock>
-          ) : configuredProviders.length > 0 ? (
+              })
+            : configuredProviders.length > 0 && (
             <SettingsBlock>
               <p className="text-sm contrast-helper">
                 No calendar accounts are connected yet.
               </p>
             </SettingsBlock>
-          ) : null}
+            )}
         </>
       )}
     </SettingsCard>

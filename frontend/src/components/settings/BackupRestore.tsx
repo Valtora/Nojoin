@@ -20,19 +20,24 @@ import {
   Download,
   Upload,
   Loader2,
-  CheckCircle,
   FileArchive,
   Trash2,
-  AlertTriangle,
 } from "lucide-react";
 import { useBackupStore } from "@/lib/backupStore";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import RestoreOptionsModal from "@/components/settings/RestoreOptionsModal";
 import BackupOptionsModal from "@/components/settings/BackupOptionsModal";
 import { Badge } from "@/components/ui/Badge";
-import Button from "@/components/ui/Button";
+import { cn } from "@/lib/cn";
 import SettingsBlock from "./SettingsBlock";
+import SettingsCallout from "./SettingsCallout";
 import SettingsCard from "./SettingsCard";
+import SettingsRow from "./SettingsRow";
+import {
+  SETTINGS_BUTTON_DANGER,
+  SETTINGS_BUTTON_PRIMARY,
+  SETTINGS_BUTTON_SECONDARY,
+} from "./settingsControls";
 
 /** Turns the machine-readable reason codes into something an operator can act on. */
 const SKIP_REASON_LABELS: Record<string, string> = {
@@ -253,339 +258,335 @@ export default function BackupRestore() {
 
   const outcomeIsSuccess = outcome?.kind === "completed";
 
+  const openFilePicker = () => {
+    if (!importing) fileInputRef.current?.click();
+  };
+
   return (
-    <SettingsCard
-      id="backup-export"
-      title="Backup and Restore"
-      description="Export application data as a restorable archive, and recover it transactionally."
-    >
-      <SettingsBlock contentClassName="space-y-6">
-        {/* Export Section */}
-        <div className="pb-6 border-b border-surface-border">
-          <h4 className="text-sm font-medium text-foreground mb-2">
-            Export Backup
-          </h4>
-          <p className="text-sm contrast-helper mb-4">
-            Download a zip file containing your database, recordings, and
-            settings, tasks from the Task List, people voiceprints, and calendar
-            data.
-            <br />
-            <span className="text-xs text-action-text font-medium">
-              AI and Hugging Face keys stay redacted. Calendar provider
-              credentials and connected calendar tokens are included so calendar
-              integrations restore correctly. Treat backup files as sensitive.
-            </span>
-          </p>
+    <>
+      <SettingsCard
+        id="backup-export"
+        title="Back up"
+        description="A zip of the database, recordings, settings, tasks, voiceprints and calendar data."
+      >
+        <SettingsBlock>
+          <SettingsCallout tone="warning" title="Keep backups somewhere safe">
+            They hold the calendar app credentials and each person&apos;s
+            connected calendar tokens, so calendar sign-in survives a restore. AI
+            and Hugging Face keys are left out.
+          </SettingsCallout>
+        </SettingsBlock>
 
-          {latestExport && (
-            <div className="mb-4 rounded-lg border border-surface-border bg-surface-inset p-4">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0 space-y-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-sm font-medium text-foreground">
-                      Latest backup
-                    </span>
-                    {latest?.current === true && (
-                      <Badge tone="success" size="sm">
-                        Up to date
-                      </Badge>
-                    )}
-                    {latest?.current === false && (
-                      <Badge tone="warning" size="sm">
-                        Changes since
-                      </Badge>
-                    )}
-                  </div>
-                  <p className="text-xs contrast-helper">
-                    {formatBackupTime(latestExport.created_at)} ·{" "}
-                    {describeBackupKind(latestExport)} ·{" "}
-                    {formatFileSize(latestExport.size_bytes)}
-                  </p>
-                  <p className="text-xs contrast-helper">
-                    Kept on the server until a newer backup replaces it.
-                  </p>
-                </div>
-                <div className="flex gap-2">
-                  <Button
-                    size="sm"
-                    onClick={handleDownloadLatest}
-                    iconLeft={<Download aria-hidden="true" className="h-4 w-4" />}
-                  >
-                    Download
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => setConfirmDelete(true)}
-                    iconLeft={<Trash2 aria-hidden="true" className="h-4 w-4" />}
-                  >
-                    Delete
-                  </Button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {exportTaskId ? (
-            <div className="rounded-lg border border-action-border bg-action-tint p-4">
-              <div className="flex items-center gap-3 mb-2">
-                <Loader2 className="w-4 h-4 animate-spin text-action-text shrink-0" />
-                <span className="text-sm font-medium text-foreground">
-                  {exportProgress?.status ?? "Preparing backup..."}
+        {latestExport && (
+          <SettingsRow
+            label="Latest backup"
+            badge={
+              latest?.current === true ? (
+                <Badge tone="success" size="sm">
+                  Up to date
+                </Badge>
+              ) : latest?.current === false ? (
+                <Badge tone="warning" size="sm">
+                  Changes since
+                </Badge>
+              ) : undefined
+            }
+            description={
+              <>
+                <span className="block">
+                  {formatBackupTime(latestExport.created_at)},{" "}
+                  {describeBackupKind(latestExport)},{" "}
+                  {formatFileSize(latestExport.size_bytes)}.
                 </span>
-              </div>
-
-              {/* A determinate bar while the server can count what it is doing, and an
-                  indeterminate shimmer otherwise. Either way the panel shows work is
-                  happening. */}
-              {exportPercent !== null ? (
-                <div className="h-2 w-full rounded-full bg-action-tint overflow-hidden">
-                  <div
-                    className="h-full bg-action transition-all duration-500"
-                    style={{ width: `${exportPercent}%` }}
-                  />
-                </div>
-              ) : (
-                <div className="h-2 w-full rounded-full bg-action-tint overflow-hidden">
-                  <div className="h-full w-1/3 bg-action animate-pulse" />
-                </div>
-              )}
-
-              <p className="mt-2 text-xs contrast-helper">
-                Compressing a large library can take hours. You can leave this
-                page or close the tab, and a notification with a download button
-                appears when the backup is ready.
-              </p>
+                <span className="block">
+                  Kept on the server until a newer backup replaces it.
+                </span>
+              </>
+            }
+            controlClassName="@min-[26rem]:min-w-0"
+          >
+            <div className="flex flex-wrap gap-2 @min-[26rem]:justify-end">
+              <button
+                type="button"
+                onClick={handleDownloadLatest}
+                className={SETTINGS_BUTTON_SECONDARY}
+              >
+                <Download aria-hidden="true" className="h-4 w-4" />
+                Download
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(true)}
+                className={SETTINGS_BUTTON_DANGER}
+              >
+                <Trash2 aria-hidden="true" className="h-4 w-4" />
+                Delete
+              </button>
             </div>
-          ) : (
-            <button
-              onClick={() => setShowBackupOptions(true)}
-              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-card text-action-on bg-action hover:bg-action-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-action disabled:opacity-50 transition-colors"
-            >
-              <Download className="w-4 h-4 mr-2" />
-              Download Backup
-            </button>
-          )}
-        </div>
+          </SettingsRow>
+        )}
 
-        {/* Import Section */}
-        <div>
-          <h4 className="text-sm font-medium text-foreground mb-2">
-            Import Backup
-          </h4>
-          <p className="text-sm contrast-helper mb-4">
-            Restore data from a previously exported backup file.
-          </p>
-
-          <div className="space-y-4">
-            {/* Drag & Drop Zone */}
+        {exportTaskId ? (
+          <SettingsBlock
+            label={exportProgress?.status ?? "Preparing backup..."}
+          >
+            {/* A determinate bar while the server can count what it is doing,
+                and an indeterminate shimmer otherwise. */}
             <div
-              ref={dropZoneRef}
-              onClick={() => !importing && fileInputRef.current?.click()}
-              onDragEnter={handleDragEnter}
-              onDragLeave={handleDragLeave}
-              onDragOver={handleDragOver}
-              onDrop={handleDrop}
-              className={`
-                  relative border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors
-                  ${
-                    isDragging
-                      ? "border-action bg-action-tint"
-                      : selectedFile
-                        ? "border-status-success-border bg-status-success-bg"
-                        : "border-control-border hover:border-action-border"
-                  }
-                  ${importing ? "pointer-events-none opacity-75" : ""}
-                `}
+              role="progressbar"
+              aria-label="Backup progress"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={exportPercent ?? undefined}
+              className="h-2 w-full overflow-hidden rounded-full bg-action-tint"
             >
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".zip"
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) handleFileSelect(f);
-                }}
-                className="hidden"
-              />
-
-              {selectedFile ? (
-                <div className="space-y-2">
-                  <FileArchive className="w-12 h-12 mx-auto text-status-success-fg" />
-                  <p className="font-medium text-foreground truncate max-w-xs mx-auto">
-                    {selectedFile.name}
-                  </p>
-                  <p className="text-sm text-contrast-helper">
-                    {formatFileSize(selectedFile.size)}
-                  </p>
-                  {!importing && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleRemoveFile();
-                      }}
-                      className="text-sm text-status-danger-fg hover:text-status-danger-fg underline flex items-center justify-center gap-1 mx-auto"
-                    >
-                      <Trash2 className="w-3 h-3" /> Remove
-                    </button>
-                  )}
-                </div>
+              {exportPercent !== null ? (
+                <div
+                  className="h-full bg-action transition-all duration-500"
+                  style={{ width: `${exportPercent}%` }}
+                />
               ) : (
-                <div className="space-y-2">
-                  <Upload className="w-12 h-12 mx-auto text-contrast-helper" />
-                  <p className="text-contrast-muted">
-                    <span className="font-medium text-action-text">
-                      Click to browse
-                    </span>{" "}
-                    or drag and drop
-                  </p>
-                  <p className="text-xs contrast-helper">ZIP files only</p>
-                </div>
+                <div className="h-full w-1/3 animate-pulse bg-action" />
               )}
             </div>
+            <p className="mt-2 text-xs contrast-helper">
+              Compressing a large library can take hours. You can leave this
+              page or close the tab; a notification with a download button
+              appears when the backup is ready.
+            </p>
+          </SettingsBlock>
+        ) : (
+          <SettingsRow
+            label="New backup"
+            description="Choose what goes in it and how far to compress it."
+          >
+            <div className="flex @min-[26rem]:justify-end">
+              <button
+                type="button"
+                onClick={() => setShowBackupOptions(true)}
+                className={SETTINGS_BUTTON_PRIMARY}
+              >
+                <Download className="h-4 w-4" aria-hidden="true" />
+                Create backup
+              </button>
+            </div>
+          </SettingsRow>
+        )}
+      </SettingsCard>
 
-            {/* Upload Progress */}
-            {importing && (
+      <SettingsCard
+        id="backup-restore"
+        title="Restore"
+        description="Bring data back from a backup zip. You choose whether it merges with or replaces what is here before anything changes."
+      >
+        <SettingsBlock>
+          <div
+            ref={dropZoneRef}
+            role="button"
+            tabIndex={importing ? -1 : 0}
+            aria-label={selectedFile ? `Selected ${selectedFile.name}. Choose another backup file` : "Choose a backup file"}
+            onClick={openFilePicker}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                openFilePicker();
+              }
+            }}
+            onDragEnter={handleDragEnter}
+            onDragLeave={handleDragLeave}
+            onDragOver={handleDragOver}
+            onDrop={handleDrop}
+            className={cn(
+              "relative cursor-pointer rounded-lg border-2 border-dashed p-8 text-center transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring",
+              isDragging
+                ? "border-action bg-action-tint"
+                : selectedFile
+                  ? "border-status-success-border bg-status-success-bg"
+                  : "border-control-border hover:border-action-border",
+              importing && "pointer-events-none opacity-75",
+            )}
+          >
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".zip"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) handleFileSelect(f);
+              }}
+              className="hidden"
+            />
+
+            {selectedFile ? (
               <div className="space-y-2">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-contrast-muted">
-                    {uploading
-                      ? "Uploading... (keep this tab open)"
-                      : "Restoring on the server..."}
-                  </span>
-                  <span className="text-foreground font-medium">
-                    {uploadProgress}%
-                  </span>
-                </div>
-                <div className="w-full bg-surface-inset rounded-full h-2">
-                  <div
-                    className={`h-2 rounded-full transition-all duration-300 ${uploadProgress === 100 ? "bg-status-success-bg animate-pulse" : "bg-action"}`}
-                    style={{ width: `${uploadProgress}%` }}
-                  />
-                </div>
-                {processingStatus && (
-                  <p className="mt-1 text-center text-xs italic contrast-helper">
-                    {processingStatus}
-                  </p>
-                )}
+                <FileArchive className="mx-auto h-10 w-10 text-status-success-fg" aria-hidden="true" />
+                <p className="mx-auto max-w-xs truncate font-medium text-foreground">
+                  {selectedFile.name}
+                </p>
+                <p className="text-sm contrast-helper">
+                  {formatFileSize(selectedFile.size)}
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <Upload className="mx-auto h-10 w-10 contrast-icon-muted" aria-hidden="true" />
+                <p className="text-sm text-foreground">
+                  <span className="font-medium text-action-text">Choose a file</span>{" "}
+                  or drop it here
+                </p>
+                <p className="text-xs contrast-helper">A .zip backup from Nojoin</p>
               </div>
             )}
+          </div>
 
+          {selectedFile && !importing && (
             <button
+              type="button"
+              onClick={handleRemoveFile}
+              className={cn(SETTINGS_BUTTON_SECONDARY, "mt-3")}
+            >
+              <Trash2 className="h-4 w-4" aria-hidden="true" />
+              Remove file
+            </button>
+          )}
+
+          {importing && (
+            <div className="mt-4 space-y-2">
+              <div className="flex items-center justify-between text-sm">
+                <span className="contrast-helper">
+                  {uploading
+                    ? "Uploading. Keep this tab open."
+                    : "Restoring on the server..."}
+                </span>
+                <span className="font-medium tabular-nums text-foreground">
+                  {uploadProgress}%
+                </span>
+              </div>
+              <div
+                role="progressbar"
+                aria-label="Restore progress"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={uploadProgress}
+                className="h-2 w-full overflow-hidden rounded-full bg-action-tint"
+              >
+                <div
+                  className={cn(
+                    "h-2 rounded-full transition-all duration-300 bg-action",
+                    uploadProgress === 100 && "animate-pulse",
+                  )}
+                  style={{ width: `${uploadProgress}%` }}
+                />
+              </div>
+              {processingStatus && (
+                <p className="text-xs contrast-helper">{processingStatus}</p>
+              )}
+            </div>
+          )}
+
+          <div className="mt-4 flex justify-end">
+            <button
+              type="button"
               onClick={handleRestoreClick}
               disabled={!isValidZip || importing}
-              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-card text-action-on bg-action hover:bg-action-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-action disabled:opacity-50 transition-colors"
+              className={SETTINGS_BUTTON_PRIMARY}
             >
               {importing ? (
-                <>
-                  <Loader2 className="animate-spin -ml-1 mr-2 h-4 w-4" />
-                  Restoring...
-                </>
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
               ) : (
-                <>
-                  <Upload className="-ml-1 mr-2 h-4 w-4" />
-                  Restore Backup
-                </>
+                <Upload className="h-4 w-4" aria-hidden="true" />
               )}
+              {importing ? "Restoring..." : "Restore"}
             </button>
           </div>
-        </div>
+        </SettingsBlock>
 
         {fileError && (
-          <div className="p-4 rounded-md bg-status-danger-bg text-status-danger-fg">
-            <div className="flex">
-              <AlertTriangle className="h-5 w-5 mr-2" />
-              <p className="text-sm font-medium">{fileError}</p>
-            </div>
-          </div>
+          <SettingsBlock>
+            <SettingsCallout tone="error" message={fileError} />
+          </SettingsBlock>
         )}
 
         {outcome && (
-          <div
-            className={`p-4 rounded-md ${outcomeIsSuccess ? "bg-status-success-bg text-status-success-fg" : "bg-status-danger-bg text-status-danger-fg"}`}
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex">
-                {outcomeIsSuccess ? (
-                  <CheckCircle className="h-5 w-5 mr-2 shrink-0" />
-                ) : (
-                  <AlertTriangle className="h-5 w-5 mr-2 shrink-0" />
+          <SettingsBlock>
+            <SettingsCallout tone={outcomeIsSuccess ? "success" : "error"}>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <p className="font-medium">{outcome.message}</p>
+                {(outcome.kind === "failed" || outcome.kind === "unknown") && (
+                  <button
+                    type="button"
+                    onClick={dismissOutcome}
+                    className="shrink-0 text-xs font-semibold underline"
+                  >
+                    Dismiss
+                  </button>
                 )}
-                <p className="text-sm font-medium">{outcome.message}</p>
+                {outcomeIsSuccess && (
+                  <button
+                    type="button"
+                    onClick={dismissAndReload}
+                    className="shrink-0 text-xs font-semibold underline"
+                  >
+                    Reload
+                  </button>
+                )}
               </div>
-              {(outcome.kind === "failed" || outcome.kind === "unknown") && (
-                <button
-                  onClick={dismissOutcome}
-                  className="text-xs font-medium underline shrink-0"
-                >
-                  Dismiss
-                </button>
-              )}
-              {outcomeIsSuccess && (
-                <button
-                  onClick={dismissAndReload}
-                  className="text-xs font-medium underline shrink-0"
-                >
-                  Reload
-                </button>
-              )}
-            </div>
-          </div>
+            </SettingsCallout>
+          </SettingsBlock>
         )}
 
         {outcome?.kind === "warnings" && outcome.skipped && (
-          <div className="rounded-md border border-status-warning-border bg-status-warning-bg p-4">
-            <div className="flex items-start justify-between gap-3 mb-3">
-              <h5 className="text-sm font-semibold text-status-warning-fg">
-                Records That Could Not Be Restored
-              </h5>
+          <SettingsBlock>
+            <SettingsCallout tone="warning" title="Some records could not be restored">
+              <ul className="mt-1 space-y-2 text-xs">
+                {Object.entries(outcome.skipped).map(([table, reasons]) => (
+                  <li key={table}>
+                    <span className="font-medium">
+                      {TABLE_LABELS[table] ?? table}
+                    </span>
+                    <ul className="ml-4 mt-1 list-disc space-y-0.5">
+                      {Object.entries(reasons).map(([reason, count]) => (
+                        <li key={reason}>
+                          {count} skipped because{" "}
+                          {SKIP_REASON_LABELS[reason] ?? reason}
+                        </li>
+                      ))}
+                    </ul>
+                  </li>
+                ))}
+              </ul>
               <button
+                type="button"
                 onClick={dismissAndReload}
-                className="text-xs font-medium text-status-warning-fg underline shrink-0"
+                className="mt-3 text-xs font-semibold underline"
               >
-                Dismiss and refresh
+                Dismiss and reload
               </button>
-            </div>
-            <ul className="space-y-2">
-              {Object.entries(outcome.skipped).map(([table, reasons]) => (
-                <li key={table} className="text-xs text-status-warning-fg">
-                  <span className="font-medium">
-                    {TABLE_LABELS[table] ?? table}
-                  </span>
-                  <ul className="mt-1 ml-4 list-disc space-y-0.5">
-                    {Object.entries(reasons).map(([reason, count]) => (
-                      <li key={reason}>
-                        {count} skipped because{" "}
-                        {SKIP_REASON_LABELS[reason] ?? reason}
-                      </li>
-                    ))}
-                  </ul>
-                </li>
-              ))}
-            </ul>
-          </div>
+            </SettingsCallout>
+          </SettingsBlock>
         )}
-      </SettingsBlock>
-      <RestoreOptionsModal
-        isOpen={showRestoreOptions}
-        onClose={() => setShowRestoreOptions(false)}
-        onConfirm={performRestore}
-        fileName={selectedFile?.name || "backup.zip"}
-      />
-      <BackupOptionsModal
-        isOpen={showBackupOptions}
-        onClose={() => setShowBackupOptions(false)}
-        onRequested={() => setRefreshKey((key) => key + 1)}
-      />
-      <ConfirmationModal
-        isOpen={confirmDelete}
-        onClose={() => setConfirmDelete(false)}
-        onConfirm={handleDeleteLatest}
-        title="Delete Saved Backup"
-        message="This deletes the backup kept on the server to free its disk space. Copies you have already downloaded are not affected."
-        confirmText="Delete"
-        isDangerous={true}
-      />
-    </SettingsCard>
+
+        <RestoreOptionsModal
+          isOpen={showRestoreOptions}
+          onClose={() => setShowRestoreOptions(false)}
+          onConfirm={performRestore}
+          fileName={selectedFile?.name || "backup.zip"}
+        />
+        <BackupOptionsModal
+          isOpen={showBackupOptions}
+          onClose={() => setShowBackupOptions(false)}
+          onRequested={() => setRefreshKey((key) => key + 1)}
+        />
+        <ConfirmationModal
+          isOpen={confirmDelete}
+          onClose={() => setConfirmDelete(false)}
+          onConfirm={handleDeleteLatest}
+          title="Delete the saved backup"
+          message="This deletes the backup kept on the server to free its disk space. Copies you have already downloaded are not affected."
+          confirmText="Delete"
+          isDangerous={true}
+        />
+      </SettingsCard>
+    </>
   );
 }
