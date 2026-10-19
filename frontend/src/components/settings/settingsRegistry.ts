@@ -1,6 +1,9 @@
+import { getSecondaryProviderGap } from "@/lib/aiAvailability";
 import { DEFAULT_MEETING_EDGE_CONTEXT_LEVEL } from "@/lib/meetingEdgeContext";
 import { DEFAULT_CAPTURE_SETTINGS } from "@/lib/capture/shared";
 import { getMatchScore } from "@/lib/searchUtils";
+
+import type { Settings } from "@/types";
 
 import type { SettingsAccess, SettingsCategoryId } from "./settingsCategories";
 
@@ -68,6 +71,12 @@ export interface SettingsRegistryEntry {
    * silently ignored rather than counted wrongly.
    */
   defaultValue?: unknown;
+  /**
+   * True when the setting is in a state that stops something working. A gated
+   * entry that needs attention is announced on the collapsed Advanced block, so
+   * a warning is never hidden behind it.
+   */
+  needsAttention?: (settings: Settings) => boolean;
   keywords: string[];
 }
 
@@ -585,6 +594,7 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
       "secondary_openai_api_key",
       "secondary_anthropic_api_key",
     ],
+    needsAttention: (settings) => getSecondaryProviderGap(settings) !== null,
     keywords: ["fallback", "secondary", "backup provider", "failover", "resilience"],
   },
   {
@@ -772,6 +782,16 @@ export function countChangedAdvanced(
       return value !== undefined && value !== entry.defaultValue;
     });
   }).length;
+}
+
+/** How many gated settings in a category need attention; see `needsAttention`. */
+export function countAttentionAdvanced(
+  category: SettingsCategoryId,
+  settings: Settings,
+  { isAdmin }: { isAdmin: boolean },
+): number {
+  const { advanced } = partitionByAdvanced(category, { isAdmin });
+  return advanced.filter((entry) => entry.needsAttention?.(settings)).length;
 }
 
 export interface SettingsSearchResult {

@@ -40,6 +40,24 @@ export default function SettingsBlock({
 }: SettingsBlockProps) {
   const hasHeader = Boolean(label || description || aside);
 
+  // With nothing to separate, the content needs no wrapper of its own, and a
+  // layout class such as `space-y-*` or `flex` then reaches the children it was
+  // written for. Behind a wrapper it styled a div with one child and did nothing.
+  if (!hasHeader && !inset) {
+    return (
+      <div
+        id={id}
+        className={cn(
+          "@container settings-cell px-5 py-4 sm:px-6 scroll-mt-24",
+          className,
+          contentClassName,
+        )}
+      >
+        {children}
+      </div>
+    );
+  }
+
   return (
     // The block is a container so any grid in its content can query the width
     // it actually has, which the viewport cannot see once the page is capped.

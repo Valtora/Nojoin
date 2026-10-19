@@ -11,6 +11,12 @@ interface SettingsRowProps {
   description?: ReactNode;
   /** Id for the description, so a control can be described by it. */
   descriptionId?: string;
+  /**
+   * Id of the row's single control. The label then becomes a real `<label>`
+   * for it, and the description defaults to `${controlId}-help`, so the control
+   * only needs `aria-describedby` pointing there.
+   */
+  controlId?: string;
   /** Optional leading icon, sized by the caller. */
   icon?: ReactNode;
   /** Trailing badge next to the label, for status or scope. */
@@ -37,6 +43,7 @@ export default function SettingsRow({
   labelId,
   description,
   descriptionId,
+  controlId,
   icon,
   badge,
   className,
@@ -59,14 +66,27 @@ export default function SettingsRow({
         <div className="min-w-0 @min-[26rem]:max-w-md">
           <div className="flex flex-wrap items-center gap-2">
             {icon}
-            <span id={labelId} className="text-sm font-medium text-foreground">
-              {label}
-            </span>
+            {controlId ? (
+              <label
+                id={labelId}
+                htmlFor={controlId}
+                className="text-sm font-medium text-foreground"
+              >
+                {label}
+              </label>
+            ) : (
+              <span id={labelId} className="text-sm font-medium text-foreground">
+                {label}
+              </span>
+            )}
             {badge}
           </div>
 
           {description && (
-            <p id={descriptionId} className="mt-1 text-xs leading-5 contrast-helper">
+            <p
+              id={descriptionId ?? (controlId ? `${controlId}-help` : undefined)}
+              className="mt-1 text-xs leading-5 contrast-helper"
+            >
               {description}
             </p>
           )}
