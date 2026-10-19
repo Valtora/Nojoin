@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+
+import { DEMO_MODE } from "@/lib/demo";
 import {
   Search,
   ArrowRightLeft,
@@ -691,6 +693,8 @@ export default function NotesView({
               content={localNotes}
               onChange={handleEditorChange}
               onEditorReady={setEditor}
+              // The public demo cannot save, so its notes are read-only.
+              editable={!DEMO_MODE}
             />
           </div>
         ) : (

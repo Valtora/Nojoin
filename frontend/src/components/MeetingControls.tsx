@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 import { useConnectivityStore } from "@/lib/connectivity/monitor";
 import { isReachable } from "@/lib/connectivity/reducer";
 import { useCapture } from "@/lib/capture/CaptureProvider";
+import { DEMO_MODE, DEMO_RECORDING_OFF } from "@/lib/demo";
 import { useNotificationStore } from "@/lib/notificationStore";
 
 import CaptureUnsupportedNotice from "./CaptureUnsupportedNotice";
@@ -76,7 +77,14 @@ export default function MeetingControls({
           ? "releasing the microphone"
           : "finalizing";
 
-  const meetingSurfaceState: MeetingSurfaceState = !backend
+  const meetingSurfaceState: MeetingSurfaceState = DEMO_MODE
+    ? {
+        buttonLabel: "Start Meeting",
+        buttonMode: "wait",
+        buttonDisabled: true,
+        buttonTooltip: DEMO_RECORDING_OFF,
+      }
+    : !backend
     ? {
         buttonLabel: "Nojoin unavailable",
         buttonMode: "wait",
