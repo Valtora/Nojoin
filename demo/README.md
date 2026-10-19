@@ -35,7 +35,26 @@ docker run --rm --network host --user "$(id -u):$(id -g)" -e HOME=/tmp \
 
 `capture/capture.mjs` signs in, visits every page and every tab of each recording, requests the archived, deleted and per-tag recording lists directly, fetches each recording's audio whole, and writes `index.json` plus one file per distinct response body. It marks the captured account as a non-administrator, because the demo account is one.
 
-**Recapture after every release.** The fixtures are a snapshot of the API at capture time. When a release changes a response the frontend reads, the matching panel in the demo breaks until the seed instance is upgraded and the capture rerun.
+The fixtures are a snapshot of the API at capture time. A release that changes a response the frontend reads breaks the matching panel until the capture is rerun. `refresh.sh` reruns it for every release.
+
+## Refreshing on Each Release
+
+`refresh.sh` keeps the demo on the latest release. It runs hourly from cron and does nothing unless GitHub reports a release newer than the one it last built. When one appears it:
+
+1. pulls that release's API and frontend images and points the seed instance at them;
+2. checks out the release tag in the demo's clone;
+3. starts the seed instance without its workers, so a refresh never touches the GPU, and captures into a fresh directory;
+4. swaps the new fixtures in only if the capture is complete, then rebuilds and recreates the demo from the tag;
+5. checks the public demo answers, and if it does not, puts the previous fixtures back;
+6. stops the seed instance, records the release and sends a notification either way.
+
+```bash
+41 * * * * DEMO_REFRESH_ENV=$HOME/nojoin-demo/refresh.env $HOME/nojoin-demo/repo/demo/refresh.sh >> $HOME/nojoin-demo/refresh.log 2>&1
+```
+
+The configuration file is the host's and holds the seed password, so it is not in this repository. `refresh.sh` lists the variables it needs at the top; `NOTIFY_URL` and `NOTIFY_TAG` point it at an Apprise endpoint. The seed instance's compose file takes its API and frontend images from `SEED_API_IMAGE` and `SEED_FRONTEND_IMAGE`, which the script sets in the seed's `.env`.
+
+`refresh.sh --recapture` recaptures and rebuilds at the current checkout without upgrading anything, for after the seeded library itself changes. `--force` reruns the latest release.
 
 ## Running It
 
