@@ -127,6 +127,12 @@ export default function NotesView({
       clearTimeout(saveTimeoutRef.current);
     }
 
+    // The editor can report the notes exactly as they were saved: on load, or
+    // after an edit is undone. Saving that would rewrite them for nothing.
+    if (newContent === lastSavedNotes.current) {
+      return;
+    }
+
     saveTimeoutRef.current = setTimeout(() => {
       lastSavedNotes.current = newContent;
       onNotesChange(newContent);
