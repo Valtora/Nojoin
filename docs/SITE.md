@@ -624,7 +624,11 @@ Reverting the route removes the Worker and leaves the DNS record pointing at not
 Pages, which served the previous Jekyll site, was disabled and its sources deleted when the
 Astro site went live, so there is no older origin to fall back to, and re-enabling it is a
 repository settings change that no `git revert` can perform. `assets/images/nojoin-mark.svg`
-stayed, because `README.md` still references it.
+stayed, because it is the source of truth for the site's `Mark` component.
+
+`README.md` opens with `site/public/images/og-card.png`, the same image as the share card and
+the repository's GitHub social preview. Regenerating the card changes all three; the social
+preview is uploaded by hand in the repository settings.
 
 Cloudflare Web Analytics is wired through `PUBLIC_CF_BEACON_TOKEN`, a build-time environment
 variable read in `Base.astro` and supplied by CI as a **repository variable, not a secret**.
