@@ -18,8 +18,20 @@ import Modal from "../ui/Modal";
 import Select from "../ui/Select";
 import { User, UserRole } from "@/types";
 import { trimString } from "@/lib/validation";
+import { cn } from "@/lib/cn";
 import SettingsBlock from "./SettingsBlock";
 import SettingsCard from "./SettingsCard";
+import { useSettingsContext } from "./SettingsProvider";
+import SettingsStatusBadge from "./SettingsStatusBadge";
+import {
+  SETTINGS_BUTTON_PRIMARY,
+  SETTINGS_BUTTON_SECONDARY,
+  SETTINGS_INPUT_CLASS,
+  SETTINGS_SELECT_CLASS,
+} from "./settingsControls";
+
+const ICON_BUTTON =
+  "inline-flex h-9 w-9 items-center justify-center rounded-lg border border-control-border bg-control-bg contrast-icon-muted transition-colors hover:bg-surface-inset hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:cursor-not-allowed disabled:opacity-60";
 
 type NewUserFormState = {
   username: string;
@@ -34,6 +46,7 @@ const EMPTY_NEW_USER: NewUserFormState = {
 };
 
 export default function UsersTab() {
+  const { userId: currentUserId } = useSettingsContext();
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const { addNotification } = useNotificationStore();
@@ -194,223 +207,242 @@ export default function UsersTab() {
     }
   };
 
+  const roleLabel = (role: string) => role.charAt(0).toUpperCase() + role.slice(1);
+  const roleTone = (role: string) =>
+    role === "owner" ? "warning" : role === "admin" ? "info" : "neutral";
+  const totalPages = Math.max(1, Math.ceil(total / limit));
+
   return (
     <SettingsCard
       id="users-accounts"
       title="Users"
-      description="Accounts on this installation, their roles, and the access each one has."
-    >
-      <SettingsBlock contentClassName="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="relative w-full sm:max-w-xs">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-contrast-helper" />
-          <input
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setPage(1);
-            }}
-            placeholder="Search users..."
-            className="w-full pl-9 pr-4 py-2 text-sm border border-control-border rounded-xl bg-surface-card text-foreground focus:ring-2 focus-visible:outline-focus-ring focus:border-transparent"
-          />
-        </div>
+      description="Each person's role and whether their account is active."
+      headerAside={
         <button
+          type="button"
           onClick={toggleCreateForm}
-          className="inline-flex items-center justify-center gap-2 rounded-xl bg-action px-4 py-2 text-sm font-semibold text-action-on transition hover:bg-action-hover"
+          aria-expanded={isCreating}
+          className={SETTINGS_BUTTON_PRIMARY}
         >
-          <UserPlus className="w-4 h-4" />
-          Add User
+          <UserPlus className="h-4 w-4" aria-hidden="true" />
+          Add user
         </button>
-      </div>
-
+      }
+    >
       {isCreating && (
-        <div className="settings-inset rounded-xl p-4 space-y-4">
-          <div>
-            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-contrast-helper">
-              Create user
-            </div>
-            <h4 className="mt-2 text-base font-semibold text-foreground">
-              New Account
-            </h4>
-          </div>
+        <SettingsBlock label="New user" description="They choose a new password the first time they sign in.">
           <form
             onSubmit={handleCreateUser}
             autoComplete="off"
-            className="grid grid-cols-1 @min-[44rem]:grid-cols-2 gap-4"
+            className="grid grid-cols-1 gap-4 @min-[40rem]:grid-cols-3"
           >
-            <input
-              name="new-user-username"
-              placeholder="Username"
-              value={newUser.username}
-              onChange={(e) =>
-                setNewUser((prev) => ({ ...prev, username: e.target.value }))
-              }
-              autoComplete="off"
-              className="bg-surface-card border border-control-border rounded px-3 py-2 text-sm text-foreground"
-              required
-            />
-            <input
-              name="new-user-password"
-              placeholder="Password"
-              type="password"
-              value={newUser.password}
-              onChange={(e) =>
-                setNewUser((prev) => ({ ...prev, password: e.target.value }))
-              }
-              autoComplete="new-password"
-              minLength={8}
-              className="bg-surface-card border border-control-border rounded px-3 py-2 text-sm text-foreground"
-              required
-            />
-            <select
-              value={newUser.role}
-              onChange={(e) =>
-                setNewUser((prev) => ({ ...prev, role: e.target.value }))
-              }
-              className="bg-surface-card border border-control-border rounded px-3 py-2 text-sm text-foreground"
-            >
-              <option value="user">User</option>
-              <option value="admin">Admin</option>
-              <option value="owner">Owner</option>
-            </select>
-            <div className="@min-[44rem]:col-span-2 flex justify-end gap-2">
+            <div>
+              <label htmlFor="new-user-username" className="mb-1 block text-sm font-medium text-foreground">
+                Username
+              </label>
+              <input
+                id="new-user-username"
+                name="new-user-username"
+                value={newUser.username}
+                onChange={(e) =>
+                  setNewUser((prev) => ({ ...prev, username: e.target.value }))
+                }
+                autoComplete="off"
+                className={SETTINGS_INPUT_CLASS}
+                required
+              />
+            </div>
+            <div>
+              <label htmlFor="new-user-password" className="mb-1 block text-sm font-medium text-foreground">
+                Temporary password
+              </label>
+              <input
+                id="new-user-password"
+                name="new-user-password"
+                type="password"
+                value={newUser.password}
+                onChange={(e) =>
+                  setNewUser((prev) => ({ ...prev, password: e.target.value }))
+                }
+                autoComplete="new-password"
+                minLength={8}
+                className={SETTINGS_INPUT_CLASS}
+                required
+              />
+            </div>
+            <div>
+              <label htmlFor="new-user-role" className="mb-1 block text-sm font-medium text-foreground">
+                Role
+              </label>
+              <select
+                id="new-user-role"
+                value={newUser.role}
+                onChange={(e) =>
+                  setNewUser((prev) => ({ ...prev, role: e.target.value }))
+                }
+                className={SETTINGS_SELECT_CLASS}
+              >
+                <option value="user">User</option>
+                <option value="admin">Admin</option>
+                <option value="owner">Owner</option>
+              </select>
+            </div>
+            <div className="flex justify-end gap-2 @min-[40rem]:col-span-3">
               <button
                 type="button"
                 onClick={() => {
                   setIsCreating(false);
                   setNewUser({ ...EMPTY_NEW_USER });
                 }}
-                className="px-3 py-1 text-sm contrast-helper hover:text-foreground"
+                className={SETTINGS_BUTTON_SECONDARY}
               >
                 Cancel
               </button>
-              <button
-                type="submit"
-                className="rounded-xl bg-action px-4 py-2 text-sm font-semibold text-action-on transition hover:bg-action-hover"
-              >
-                Create User
+              <button type="submit" className={SETTINGS_BUTTON_PRIMARY}>
+                Create user
               </button>
             </div>
           </form>
-        </div>
+        </SettingsBlock>
       )}
 
-      <div className="settings-inset rounded-xl p-4 overflow-hidden p-0">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm text-foreground whitespace-nowrap">
-            <thead className="bg-surface-inset/80 text-foreground uppercase font-medium">
+      <SettingsBlock>
+        <div className="relative @min-[32rem]:max-w-xs">
+          <Search
+            className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 contrast-icon-muted"
+            aria-hidden="true"
+          />
+          <input
+            type="search"
+            aria-label="Search users"
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
+            placeholder="Search users"
+            className={cn(SETTINGS_INPUT_CLASS, "pl-9")}
+          />
+        </div>
+      </SettingsBlock>
+
+      <SettingsBlock>
+        <table className="settings-table w-full text-left text-sm text-foreground">
+          <thead className="border-b settings-divider text-xs font-medium contrast-helper">
+            <tr>
+              <th className="py-2 pr-4 font-medium">Username</th>
+              <th className="py-2 pr-4 font-medium">Role</th>
+              <th className="py-2 pr-4 font-medium">Status</th>
+              <th className="py-2 text-right font-medium">
+                <span className="sr-only">Actions</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y settings-divider">
+            {loading ? (
               <tr>
-                <th className="px-4 py-3">ID</th>
-                <th className="px-4 py-3">Username</th>
-                <th className="px-4 py-3">Role</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3 text-right">Actions</th>
+                <td colSpan={4} className="py-6 text-center">
+                  <Loader2
+                    className="mx-auto h-5 w-5 animate-spin contrast-icon-muted"
+                    aria-label="Loading"
+                  />
+                </td>
               </tr>
-            </thead>
-            <tbody className="divide-y divide-control-border">
-              {loading ? (
-                <tr>
-                  <td colSpan={5} className="p-4 text-center">
-                    <Loader2 className="w-5 h-5 animate-spin mx-auto" />
-                  </td>
-                </tr>
-              ) : users.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={5}
-                    className="p-8 text-center text-sm text-contrast-helper"
-                  >
-                    No users found.
-                  </td>
-                </tr>
-              ) : (
-                users.map((user) => (
-                  <tr
-                    key={user.id}
-                    className="hover:bg-surface-inset/40"
-                  >
-                    <td className="px-4 py-3">{user.id}</td>
-
-                    {/* Username */}
-                    <td className="px-4 py-3">{user.username}</td>
-
-                    {/* Role */}
-                    <td className="px-4 py-3">
-                      <span
-                        className={`px-2 py-0.5 rounded text-xs ${
-                          user.role === "owner"
-                            ? "bg-action-tint text-action-text"
-                            : user.role === "admin"
-                              ? "bg-status-info-bg text-status-info-fg"
-                              : "bg-surface-inset text-foreground"
-                        }`}
-                      >
-                        {user.role.charAt(0).toUpperCase() + user.role.slice(1)}
-                      </span>
+            ) : users.length === 0 ? (
+              <tr>
+                <td colSpan={4} className="py-6 text-center contrast-helper">
+                  No users match that search.
+                </td>
+              </tr>
+            ) : (
+              users.map((user) => {
+                const isSelf = user.id === currentUserId;
+                return (
+                  <tr key={user.id}>
+                    <td className="py-3 pr-4 font-medium">
+                      {user.username}
+                      {isSelf && (
+                        <span className="ml-2 text-xs font-normal contrast-helper">
+                          You
+                        </span>
+                      )}
                     </td>
-
-                    {/* Status */}
-                    <td className="px-4 py-3">
-                      <span
-                        className={`px-2 py-0.5 rounded text-xs ${user.is_active ? "bg-status-success-bg text-status-success-fg" : "bg-status-danger-bg text-status-danger-fg"}`}
-                      >
+                    <td data-label="Role" className="py-3 pr-4">
+                      <SettingsStatusBadge tone={roleTone(user.role)}>
+                        {roleLabel(user.role)}
+                      </SettingsStatusBadge>
+                    </td>
+                    <td data-label="Status" className="py-3 pr-4">
+                      <SettingsStatusBadge tone={user.is_active ? "success" : "error"}>
                         {user.is_active ? "Active" : "Inactive"}
-                      </span>
+                      </SettingsStatusBadge>
                     </td>
-
-                    {/* Actions */}
-                    <td className="px-4 py-3 text-right flex justify-end gap-2">
-                      <button
-                        onClick={() => startEdit(user)}
-                        className="text-status-info-fg hover:text-status-info-fg"
-                      >
-                        <Edit2 className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteUser(user.id)}
-                        className="text-danger-text hover:text-status-danger-fg"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                    <td className="py-3">
+                      <div className="flex justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => startEdit(user)}
+                          aria-label={`Edit ${user.username}`}
+                          title="Edit"
+                          className={ICON_BUTTON}
+                        >
+                          <Edit2 className="h-4 w-4" aria-hidden="true" />
+                        </button>
+                        {!isSelf && (
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteUser(user.id)}
+                            aria-label={`Delete ${user.username}`}
+                            title="Delete"
+                            className={cn(ICON_BUTTON, "text-danger-text")}
+                          >
+                            <Trash2 className="h-4 w-4" aria-hidden="true" />
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-        <div className="flex items-center justify-between border-t border-surface-border px-4 py-3">
-          <div className="text-sm contrast-helper">
-            Showing {users.length > 0 ? (page - 1) * limit + 1 : 0} to{" "}
-            {Math.min(page * limit, total)} of {total} users
-          </div>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+
+        <div className="mt-3 flex items-center justify-between gap-3 border-t pt-3 settings-divider">
+          <p className="text-sm contrast-helper">
+            {total === 0
+              ? "No users"
+              : `${(page - 1) * limit + 1} to ${Math.min(page * limit, total)} of ${total}`}
+          </p>
           <div className="flex gap-2">
             <button
+              type="button"
               onClick={() => setPage((p) => Math.max(1, p - 1))}
               disabled={page === 1}
-              className="p-1 rounded text-contrast-muted hover:bg-surface-inset disabled:opacity-50"
+              aria-label="Previous page"
+              className={ICON_BUTTON}
             >
-              <ChevronLeft className="w-5 h-5" />
+              <ChevronLeft className="h-4 w-4" aria-hidden="true" />
             </button>
             <button
-              onClick={() =>
-                setPage((p) => Math.min(Math.ceil(total / limit), p + 1))
-              }
-              disabled={page >= Math.ceil(total / limit)}
-              className="p-1 rounded text-contrast-muted hover:bg-surface-inset disabled:opacity-50"
+              type="button"
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page >= totalPages}
+              aria-label="Next page"
+              className={ICON_BUTTON}
             >
-              <ChevronRight className="w-5 h-5" />
+              <ChevronRight className="h-4 w-4" aria-hidden="true" />
             </button>
           </div>
         </div>
-      </div>
+      </SettingsBlock>
 
       {/* Edit User Modal */}
       <Modal
         open={editModalOpen}
         onClose={() => setEditModalOpen(false)}
         size="sm"
-        title="Edit User"
+        title="Edit user"
         footer={
           <>
             <Button variant="ghost" onClick={() => setEditModalOpen(false)}>
@@ -497,13 +529,11 @@ export default function UsersTab() {
               htmlFor="is_active"
               className="text-sm font-medium text-contrast-muted"
             >
-              Active Account
+              Active account
             </label>
           </div>
         </form>
       </Modal>
-
-      </SettingsBlock>
 
       <ConfirmationModal
         isOpen={deleteModalOpen}

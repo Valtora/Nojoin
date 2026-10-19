@@ -1,54 +1,53 @@
 import { Settings } from "@/types";
-import SettingsBlock from "./SettingsBlock";
 import SettingsCard from "./SettingsCard";
+import SettingsRow from "./SettingsRow";
 import SettingsStatusBadge from "./SettingsStatusBadge";
+import { SETTINGS_VALUE_CLASS } from "./settingsControls";
+
+const DIARISATION_MODEL_URL =
+  "https://huggingface.co/pyannote/speaker-diarization-community-1";
 
 interface AiHuggingFaceSectionProps {
   settings: Settings;
 }
 
-/** Admin-only "Hugging Face access" section of {@link AISettings}. */
+/** Whether the install's Hugging Face token is set. Admins only. */
 export default function AiHuggingFaceSection({
   settings,
 }: AiHuggingFaceSectionProps) {
+  const configured = Boolean(settings.hf_token);
+
   return (
     <SettingsCard
-      title="Hugging Face Access"
-      description="View status of the installation token required for diarization and related model downloads."
+      id="ai-providers-hf-token"
+      title="Hugging Face"
+      description="Speaker separation downloads its models from Hugging Face."
     >
-      <SettingsBlock className="space-y-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between p-4 bg-surface-inset border border-surface-border rounded-xl">
-          <div>
-            <div className="text-sm font-semibold text-foreground flex items-center gap-2">
-              Hugging Face Integration
-            </div>
-            <p className="text-xs text-contrast-helper mt-1">
-              The access token is configured globally in the server&apos;s
-              environment variable file (
-              <code className="bg-surface-inset px-1 py-0.5 rounded">
-                .env
-              </code>
-              ).
-            </p>
-          </div>
-          <div>
-            {settings.hf_token ? (
-              <SettingsStatusBadge tone="success">
-                Configured via Server (.env)
-              </SettingsStatusBadge>
-            ) : (
-              <SettingsStatusBadge tone="warning">
-                Missing Config
-              </SettingsStatusBadge>
-            )}
-          </div>
-        </div>
-        <p className="text-xs contrast-helper">
-          Required for Pyannote speaker diarization. Ensure you have accepted
-          the user agreement for{" "}
-          <code>pyannote/speaker-diarization-community-1</code> on Hugging Face.
-        </p>
-      </SettingsBlock>
+      <SettingsRow
+        label="Access token"
+        description={
+          <>
+            Set by HF_TOKEN in .env. The account must also have accepted the
+            terms of{" "}
+            <a
+              href={DIARISATION_MODEL_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium text-action-text underline underline-offset-2 hover:text-action-text-hover"
+            >
+              pyannote/speaker-diarization-community-1
+            </a>
+            .
+          </>
+        }
+        badge={
+          <SettingsStatusBadge tone={configured ? "success" : "warning"}>
+            {configured ? "Ready" : "Not set up"}
+          </SettingsStatusBadge>
+        }
+      >
+        <p className={SETTINGS_VALUE_CLASS}>{configured ? "Set" : "Missing"}</p>
+      </SettingsRow>
     </SettingsCard>
   );
 }

@@ -382,17 +382,22 @@ export default function GeneralSettings({
 
       {showProcessing && (
         <SettingsCard
-          title="Processing Defaults"
-          description="How recorded audio is prepared before it is transcribed."
+          id="recording-processing"
+          title="Processing"
+          description="How recordings are prepared for transcription, and when delivery is measured again."
         >
           <SettingsRow
             id="recording-vad"
+            labelId="recording-vad-label"
+            descriptionId="recording-vad-help"
             label="Voice activity detection"
             description="Filters out silence and background noise before transcription. Disabling it may increase processing time, but can help if quiet speech is being cut off."
             icon={<Mic className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
             controlClassName="@min-[26rem]:min-w-0 @min-[26rem]:flex @min-[26rem]:justify-end"
           >
             <Switch
+              aria-labelledby="recording-vad-label"
+              aria-describedby="recording-vad-help"
               checked={settings.enable_vad !== false} // Default true
               onCheckedChange={(checked) =>
                 onUpdate({ ...settings, enable_vad: checked })
@@ -402,12 +407,16 @@ export default function GeneralSettings({
 
           <SettingsRow
             id="recording-remeasure-delivery"
+            labelId="recording-remeasure-delivery-label"
+            descriptionId="recording-remeasure-delivery-help"
             label="Re-measure delivery after edits"
             description="Editing a transcript leaves its measured delivery figures describing the old text. With this on, opening the Analytics tab re-reads the audio and refreshes them; with it off, the tab shows the figures as stale until you press Measure delivery."
             icon={<Mic className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
             controlClassName="@min-[26rem]:min-w-0 @min-[26rem]:flex @min-[26rem]:justify-end"
           >
             <Switch
+              aria-labelledby="recording-remeasure-delivery-label"
+              aria-describedby="recording-remeasure-delivery-help"
               checked={settings.auto_remeasure_delivery !== false} // Default true
               onCheckedChange={(checked) =>
                 onUpdate({ ...settings, auto_remeasure_delivery: checked })
@@ -416,28 +425,17 @@ export default function GeneralSettings({
           </SettingsRow>
 
           <SettingsRow
-            id="recording-auto-analyse"
-            label="Analyse meetings automatically"
-            description="Queue the AI analysis of each meeting as soon as it finishes processing, within any daily budget your administrator has set. Each run uses your AI provider quota, so this is off unless you turn it on."
-            icon={<Mic className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
-            controlClassName="@min-[26rem]:min-w-0 @min-[26rem]:flex @min-[26rem]:justify-end"
-          >
-            <Switch
-              checked={settings.auto_analyse_meetings === true} // Default false
-              onCheckedChange={(checked) =>
-                onUpdate({ ...settings, auto_analyse_meetings: checked })
-              }
-            />
-          </SettingsRow>
-
-          <SettingsRow
             id="recording-diarization"
+            labelId="recording-diarization-label"
+            descriptionId="recording-diarization-help"
             label="Speaker diarization"
             description="Distinguishes between speakers. Disable it for single-speaker recordings to speed up processing."
             icon={<Users className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
             controlClassName="@min-[26rem]:min-w-0 @min-[26rem]:flex @min-[26rem]:justify-end"
           >
             <Switch
+              aria-labelledby="recording-diarization-label"
+              aria-describedby="recording-diarization-help"
               checked={settings.enable_diarization !== false} // Default true
               onCheckedChange={(checked) =>
                 onUpdate({ ...settings, enable_diarization: checked })

@@ -83,12 +83,13 @@ export default function SettingsRow({
           </div>
 
           {description && (
-            <p
+            // A div, so a description can hold a list or a disclosure.
+            <div
               id={descriptionId ?? (controlId ? `${controlId}-help` : undefined)}
               className="mt-1 text-xs leading-5 contrast-helper"
             >
               {description}
-            </p>
+            </div>
           )}
         </div>
 

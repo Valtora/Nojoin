@@ -10,9 +10,14 @@ import {
 import { CliUsageRow } from "@/types";
 import { getCliUsageOverview } from "@/lib/api/cliOauth";
 import { useNotificationStore } from "@/lib/notificationStore";
+import { cn } from "@/lib/cn";
 import SettingsBlock from "./SettingsBlock";
-import SettingsCallout from "./SettingsCallout";
 import SettingsCard from "./SettingsCard";
+import SettingsStatusBadge from "./SettingsStatusBadge";
+import {
+  SETTINGS_BUTTON_SECONDARY,
+  SETTINGS_INPUT_CLASS,
+} from "./settingsControls";
 
 const PAGE_SIZE = 10;
 
@@ -33,13 +38,6 @@ function parseUtcDate(value?: string | null): Date | null {
 
 type QuotaTone = "success" | "warning" | "error" | "neutral";
 
-const TONE_CLASS: Record<QuotaTone, string> = {
-  success:
-    "bg-status-success-bg text-status-success-fg",
-  warning: "bg-status-warning-bg text-status-warning-fg",
-  error: "bg-status-danger-bg text-status-danger-fg",
-  neutral: "bg-surface-inset text-foreground",
-};
 
 /**
  * Map a row to a quota pill. A Claude subscription exposes no live remaining
@@ -101,7 +99,7 @@ export default function CliUsageTab() {
       setRows(data.items);
       setTotal(data.total);
     } catch {
-      addNotification({ message: "Failed to load CLI usage", type: "error" });
+      addNotification({ message: "Could not load subscription usage.", type: "error" });
     } finally {
       setLoading(false);
     }
@@ -119,137 +117,136 @@ export default function CliUsageTab() {
   return (
     <SettingsCard
       id="ai-providers-usage"
-      title="Usage and Quota"
-      description="Per-user subscription token usage and rate-limit status, across Claude and ChatGPT."
+      title="Subscription usage"
+      description="Tokens each person sent through their own Claude or ChatGPT subscription in the last 7 and 30 days. A subscription reports no remaining balance, so Status shows whether it is being rate-limited."
     >
-      <SettingsBlock contentClassName="space-y-4">
-      <SettingsCallout tone="info">
-        Tokens are what Nojoin sent through each user&apos;s own Claude
-        subscription. A subscription exposes no live remaining-quota figure, so
-        status shows the rate-limit signal (OK, approaching, or limited), not a
-        balance.
-      </SettingsCallout>
-
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="relative w-full sm:max-w-xs">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-contrast-helper" />
+      <SettingsBlock className="flex flex-col gap-3 @min-[32rem]:flex-row @min-[32rem]:items-center @min-[32rem]:justify-between">
+        <div className="relative w-full @min-[32rem]:max-w-xs">
+          <Search
+            className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 contrast-icon-muted"
+            aria-hidden="true"
+          />
           <input
+            type="search"
+            aria-label="Search people"
             value={search}
             onChange={(e) => {
               setSearch(e.target.value);
               setPage(1);
             }}
-            placeholder="Search users..."
-            className="w-full pl-9 pr-4 py-2 text-sm border border-control-border rounded-xl bg-surface-card text-foreground focus:ring-2 focus:ring-action focus:border-transparent"
+            placeholder="Search people"
+            className={cn(SETTINGS_INPUT_CLASS, "pl-9")}
           />
         </div>
         <button
+          type="button"
           onClick={fetchUsage}
           disabled={loading}
-          className="inline-flex items-center justify-center gap-2 rounded-xl border border-control-border px-4 py-2 text-sm font-semibold text-contrast-muted transition hover:bg-surface-inset disabled:opacity-50"
+          className={SETTINGS_BUTTON_SECONDARY}
         >
-          <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+          <RefreshCw
+            className={cn("h-4 w-4", loading && "animate-spin")}
+            aria-hidden="true"
+          />
           Refresh
         </button>
-      </div>
+      </SettingsBlock>
 
-      <SettingsBlock className="px-0 pb-0 sm:px-0" contentClassName="overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm text-foreground whitespace-nowrap">
-            <thead className="bg-surface-inset text-foreground uppercase font-medium">
+      <SettingsBlock>
+        <table className="settings-table w-full text-left text-sm text-foreground">
+          <thead className="border-b settings-divider text-xs font-medium contrast-helper">
+            <tr>
+              <th className="py-2 pr-4 font-medium">Person</th>
+              <th className="py-2 pr-4 text-right font-medium">Last 7 days</th>
+              <th className="py-2 pr-4 text-right font-medium">Last 30 days</th>
+              <th className="py-2 pr-4 text-right font-medium">All time</th>
+              <th className="py-2 pr-4 text-right font-medium">Requests</th>
+              <th className="py-2 font-medium">Status</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y settings-divider">
+            {loading ? (
               <tr>
-                <th className="px-4 py-3">User</th>
-                <th className="px-4 py-3 text-right">Last 7 days</th>
-                <th className="px-4 py-3 text-right">Last 30 days</th>
-                <th className="px-4 py-3 text-right">Lifetime</th>
-                <th className="px-4 py-3 text-right">Requests</th>
-                <th className="px-4 py-3">Quota status</th>
+                <td colSpan={6} className="py-6 text-center">
+                  <Loader2
+                    className="mx-auto h-5 w-5 animate-spin contrast-icon-muted"
+                    aria-label="Loading"
+                  />
+                </td>
               </tr>
-            </thead>
-            <tbody className="divide-y divide-control-border">
-              {loading ? (
-                <tr>
-                  <td colSpan={6} className="p-4 text-center">
-                    <Loader2 className="w-5 h-5 animate-spin mx-auto" />
-                  </td>
-                </tr>
-              ) : rows.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={6}
-                    className="p-6 text-center text-contrast-helper"
-                  >
-                    No CLI subscription usage recorded yet.
-                  </td>
-                </tr>
-              ) : (
-                rows.map((row) => {
-                  const pill = quotaPill(row);
-                  const lastUsed = parseUtcDate(row.last_used_on);
-                  return (
-                    <tr
-                      key={row.user_id}
-                      className="hover:bg-surface-inset"
-                    >
-                      <td className="px-4 py-3">
-                        <div className="font-medium text-foreground">
-                          {row.username}
+            ) : rows.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="py-6 text-center contrast-helper">
+                  Nobody has used their own subscription yet.
+                </td>
+              </tr>
+            ) : (
+              rows.map((row) => {
+                const pill = quotaPill(row);
+                const lastUsed = parseUtcDate(row.last_used_on);
+                return (
+                  <tr key={row.user_id}>
+                    <td className="py-3 pr-4">
+                      <div className="font-medium text-foreground">
+                        {row.username}
+                      </div>
+                      {lastUsed && (
+                        <div className="text-xs contrast-helper">
+                          Last used {lastUsed.toLocaleDateString()}
                         </div>
-                        {lastUsed && (
-                          <div className="text-xs text-contrast-helper">
-                            Last used {lastUsed.toLocaleDateString()}
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-right tabular-nums">
-                        {formatTokens(row.tokens_7d)}
-                      </td>
-                      <td className="px-4 py-3 text-right tabular-nums">
-                        {formatTokens(row.tokens_30d)}
-                      </td>
-                      <td className="px-4 py-3 text-right tabular-nums">
-                        {formatTokens(row.tokens_total)}
-                      </td>
-                      <td className="px-4 py-3 text-right tabular-nums">
-                        {row.requests_total}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span
-                          className={`px-2 py-0.5 rounded text-xs ${TONE_CLASS[pill.tone]}`}
-                        >
-                          {pill.label}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-        <div className="flex items-center justify-between border-t border-surface-border px-4 py-3">
-          <div className="text-sm contrast-helper">
-            Showing {rows.length > 0 ? (page - 1) * PAGE_SIZE + 1 : 0} to{" "}
-            {Math.min(page * PAGE_SIZE, total)} of {total} users
-          </div>
+                      )}
+                    </td>
+                    <td data-label="Last 7 days" className="py-3 pr-4 text-right tabular-nums">
+                      {formatTokens(row.tokens_7d)}
+                    </td>
+                    <td data-label="Last 30 days" className="py-3 pr-4 text-right tabular-nums">
+                      {formatTokens(row.tokens_30d)}
+                    </td>
+                    <td data-label="All time" className="py-3 pr-4 text-right tabular-nums">
+                      {formatTokens(row.tokens_total)}
+                    </td>
+                    <td data-label="Requests" className="py-3 pr-4 text-right tabular-nums">
+                      {row.requests_total}
+                    </td>
+                    <td data-label="Status" className="py-3">
+                      <SettingsStatusBadge tone={pill.tone}>
+                        {pill.label}
+                      </SettingsStatusBadge>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+
+        <div className="mt-3 flex items-center justify-between gap-3 border-t pt-3 settings-divider">
+          <p className="text-sm contrast-helper">
+            {total === 0
+              ? "No people"
+              : `${(page - 1) * PAGE_SIZE + 1} to ${Math.min(page * PAGE_SIZE, total)} of ${total}`}
+          </p>
           <div className="flex gap-2">
             <button
+              type="button"
               onClick={() => setPage((p) => Math.max(1, p - 1))}
               disabled={page === 1}
-              className="p-1 rounded text-contrast-muted hover:bg-surface-inset disabled:opacity-50"
+              aria-label="Previous page"
+              className={cn(SETTINGS_BUTTON_SECONDARY, "h-9 w-9 px-0")}
             >
-              <ChevronLeft className="w-5 h-5" />
+              <ChevronLeft className="h-4 w-4" aria-hidden="true" />
             </button>
             <button
+              type="button"
               onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
               disabled={page >= totalPages}
-              className="p-1 rounded text-contrast-muted hover:bg-surface-inset disabled:opacity-50"
+              aria-label="Next page"
+              className={cn(SETTINGS_BUTTON_SECONDARY, "h-9 w-9 px-0")}
             >
-              <ChevronRight className="w-5 h-5" />
+              <ChevronRight className="h-4 w-4" aria-hidden="true" />
             </button>
           </div>
         </div>
-      </SettingsBlock>
       </SettingsBlock>
     </SettingsCard>
   );

@@ -39,30 +39,38 @@ describe("SecondaryProviderSection", () => {
     renderSection(OLLAMA_FALLBACK);
 
     expect(screen.getByText("No model selected")).toBeTruthy();
-    expect(screen.queryByText("Configured")).toBeNull();
-    expect(screen.getByText("Fallback is off")).toBeTruthy();
-    expect(
-      screen.getByRole("button", { name: /Validate fallback connection/ }),
-    ).toBeTruthy();
+    expect(screen.queryByText("Ready")).toBeNull();
+    expect(screen.getByText("The fallback is off")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Test connection" })).toBeTruthy();
   });
 
-  it("reads as configured once a model is chosen", () => {
+  it("reads as ready once a model is chosen", () => {
     renderSection({ ...OLLAMA_FALLBACK, secondary_ollama_model: "qwen-x" });
 
-    expect(screen.getByText("Configured")).toBeTruthy();
-    expect(screen.queryByText("Fallback is off")).toBeNull();
+    expect(screen.getByText("Ready")).toBeTruthy();
+    expect(screen.queryByText("The fallback is off")).toBeNull();
   });
 
-  it("reports a hosted fallback with no key as not configured", () => {
+  it("explains that a hosted fallback with no key is off", () => {
     renderSection({
       secondary_llm_provider: "openai",
       secondary_openai_model: "gpt-x",
     });
 
-    expect(screen.getByText("Not configured")).toBeTruthy();
-    expect(screen.queryByText("Fallback is off")).toBeNull();
-    expect(
-      screen.queryByRole("button", { name: /Validate fallback connection/ }),
-    ).toBeNull();
+    expect(screen.getByText("Not set up")).toBeTruthy();
+    expect(screen.getByText(/OpenAI has no key in \.env/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Test connection" })).toBeNull();
+  });
+
+  it("lets the Meeting Edge model fall back to the fallback's own model", () => {
+    renderSection({ ...OLLAMA_FALLBACK, secondary_ollama_model: "qwen-x" });
+
+    const live = screen.getByRole("combobox", { name: "Meeting Edge model" });
+    const empty = live.querySelector('option[value=""]') as HTMLOptionElement;
+    expect(empty.disabled).toBe(false);
+
+    const main = screen.getByRole("combobox", { name: "Model" });
+    const required = main.querySelector('option[value=""]') as HTMLOptionElement;
+    expect(required.disabled).toBe(true);
   });
 });

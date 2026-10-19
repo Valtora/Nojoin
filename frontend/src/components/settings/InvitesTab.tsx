@@ -9,17 +9,22 @@ import {
   deleteInvitation,
 } from "@/lib/api";
 import { sanitizeIntegerString } from "@/lib/validation";
-import { Plus, Trash2, Copy, Users, Clock, XCircle } from "lucide-react";
+import { Plus, Trash2, Copy, XCircle } from "lucide-react";
 import ConfirmationModal from "../ConfirmationModal";
 import Button from "../ui/Button";
 import Input from "../ui/Input";
 import Modal from "../ui/Modal";
 import Select from "../ui/Select";
 import { useNotificationStore } from "@/lib/notificationStore";
-import SettingsCallout from "./SettingsCallout";
 import SettingsBlock from "./SettingsBlock";
 import SettingsCard from "./SettingsCard";
-import { SETTINGS_BUTTON_PRIMARY } from "./settingsControls";
+import SettingsRow from "./SettingsRow";
+import SettingsStatusBadge from "./SettingsStatusBadge";
+import {
+  SETTINGS_BUTTON_DANGER,
+  SETTINGS_BUTTON_PRIMARY,
+  SETTINGS_BUTTON_SECONDARY,
+} from "./settingsControls";
 
 export default function InvitesTab() {
   const [invitations, setInvitations] = useState<Invitation[]>([]);
@@ -158,122 +163,92 @@ export default function InvitesTab() {
     <SettingsCard
       id="users-invitations"
       title="Invitations"
-      description="Invitation links for new sign-ups. Each can be revoked before it is used."
+      description="Sign-up links for new people. Revoke one to stop it working."
       headerAside={
         <button
+          type="button"
           onClick={() => setShowCreateModal(true)}
           className={SETTINGS_BUTTON_PRIMARY}
         >
           <Plus className="w-4 h-4" aria-hidden="true" />
-          Create invite
+          Create invitation
         </button>
       }
     >
-      <SettingsBlock contentClassName="space-y-6">
-
       {loading ? (
-        <SettingsCallout tone="neutral" message="Loading invitations..." />
+        <SettingsBlock>
+          <p className="text-sm contrast-helper">Loading invitations...</p>
+        </SettingsBlock>
       ) : invitations.length === 0 ? (
-        <SettingsCallout
-          tone="neutral"
-          title="No invitations yet"
-          message="Create an invitation to generate a registration link for a new user."
-        />
+        <SettingsBlock>
+          <p className="text-sm contrast-helper">
+            No invitations yet. Create one to get a sign-up link for a new
+            person.
+          </p>
+        </SettingsBlock>
       ) : (
-        <div className="grid gap-4 grid-cols-1 @min-[33rem]:grid-cols-2 @min-[50rem]:grid-cols-3">
-          {invitations.map((inv) => (
-            <div
+        invitations.map((inv) => {
+          const role = inv.role.charAt(0).toUpperCase() + inv.role.slice(1);
+          const expires = inv.expires_at
+            ? new Date(inv.expires_at).toLocaleDateString()
+            : null;
+          return (
+            <SettingsRow
               key={inv.id}
-              className={`settings-inset rounded-xl p-4 ${inv.is_revoked ? "opacity-75" : ""}`}
-            >
-              <div className="flex justify-between items-start mb-3">
-                <div className="flex items-center gap-2">
-                  <span
-                    className={`px-2 py-0.5 text-xs font-medium rounded-pill ${
-                      inv.role === UserRole.ADMIN
-                        ? "bg-status-info-bg text-status-info-fg"
-                        : "bg-status-info-bg text-status-info-fg"
-                    }`}
-                  >
-                    {inv.role}
+              label={`${role} invitation`}
+              badge={
+                inv.is_revoked ? (
+                  <SettingsStatusBadge tone="error">Revoked</SettingsStatusBadge>
+                ) : undefined
+              }
+              description={
+                <>
+                  <span className="block break-all font-mono">{inv.link}</span>
+                  <span className="block">
+                    Used {inv.used_count} of {inv.max_uses || "unlimited"}.{" "}
+                    {expires ? `Expires ${expires}.` : "Never expires."}
                   </span>
-                  {inv.is_revoked && (
-                    <span className="px-2 py-0.5 text-xs font-medium rounded-pill bg-status-danger-bg text-status-danger-fg">
-                      Revoked
-                    </span>
+                  {inv.users.length > 0 && (
+                    <span className="block">Joined: {inv.users.join(", ")}</span>
                   )}
-                </div>
+                </>
+              }
+              controlClassName="@min-[26rem]:min-w-0"
+            >
+              <div className="flex flex-wrap gap-2 @min-[26rem]:justify-end">
+                {!inv.is_revoked && (
+                  <button
+                    type="button"
+                    onClick={() => copyLink(inv.link)}
+                    className={SETTINGS_BUTTON_SECONDARY}
+                  >
+                    <Copy className="h-4 w-4" aria-hidden="true" />
+                    Copy link
+                  </button>
+                )}
                 {!inv.is_revoked ? (
                   <button
+                    type="button"
                     onClick={() => handleRevokeClick(inv.id)}
-                    className="text-contrast-helper hover:text-danger-text transition-colors"
-                    title="Revoke"
+                    className={SETTINGS_BUTTON_DANGER}
                   >
-                    <XCircle className="w-4 h-4" />
+                    <XCircle className="h-4 w-4" aria-hidden="true" />
+                    Revoke
                   </button>
                 ) : (
                   <button
+                    type="button"
                     onClick={() => handleDeleteClick(inv.id)}
-                    className="text-contrast-helper hover:text-danger-text transition-colors"
-                    title="Delete"
+                    className={SETTINGS_BUTTON_DANGER}
                   >
-                    <Trash2 className="w-4 h-4" />
+                    <Trash2 className="h-4 w-4" aria-hidden="true" />
+                    Delete
                   </button>
                 )}
               </div>
-
-              <div className="flex items-center gap-2 mb-4 rounded-2xl border border-surface-border bg-surface-inset p-2">
-                <input
-                  readOnly
-                  value={inv.link}
-                  className="flex-1 bg-transparent text-sm text-contrast-helper outline-none truncate"
-                />
-                <button
-                  onClick={() => copyLink(inv.link)}
-                  className="text-contrast-helper hover:text-action-text"
-                >
-                  <Copy className="w-4 h-4" />
-                </button>
-              </div>
-
-              <div className="space-y-2 text-sm contrast-helper">
-                <div className="flex items-center gap-2">
-                  <Users className="w-4 h-4" />
-                  <span>
-                    Used: {inv.used_count} / {inv.max_uses || "∞"}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Clock className="w-4 h-4" />
-                  <span>
-                    Expires:{" "}
-                    {inv.expires_at
-                      ? new Date(inv.expires_at).toLocaleDateString()
-                      : "Never"}
-                  </span>
-                </div>
-              </div>
-
-              {inv.users.length > 0 && (
-                <div className="mt-4 pt-3 border-t border-surface-border">
-                  <p className="text-xs font-medium contrast-helper mb-1">
-                    Joined Users:
-                  </p>
-                  <div className="flex flex-wrap gap-1">
-                    {inv.users.map((u) => (
-                      <span
-                        key={u}
-                        className="text-xs px-1.5 py-0.5 bg-surface-inset rounded text-contrast-helper"
-                      >
-                        {u}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
+            </SettingsRow>
+          );
+        })
       )}
 
       {/* Create Modal */}
@@ -281,7 +256,7 @@ export default function InvitesTab() {
         open={showCreateModal}
         onClose={() => setShowCreateModal(false)}
         size="sm"
-        title="Create Invitation"
+        title="Create invitation"
         footer={
           <>
             <Button variant="ghost" onClick={() => setShowCreateModal(false)}>
@@ -293,7 +268,7 @@ export default function InvitesTab() {
               disabled={creating}
               loading={creating}
             >
-              {creating ? "Creating..." : "Create Invite"}
+              {creating ? "Creating..." : "Create invitation"}
             </Button>
           </>
         }
@@ -332,13 +307,11 @@ export default function InvitesTab() {
         </div>
       </Modal>
 
-      </SettingsBlock>
-
       <ConfirmationModal
         isOpen={revokeModalOpen}
         onClose={() => setRevokeModalOpen(false)}
         onConfirm={confirmRevoke}
-        title="Revoke Invitation"
+        title="Revoke invitation"
         message="Are you sure you want to revoke this invitation? The link will no longer be valid for new registrations."
         confirmText="Revoke"
         isDangerous={true}

@@ -57,12 +57,12 @@ describe("NotesTemplatesSection install default", () => {
       />,
     );
 
-    fireEvent.click(await screen.findByText("Use as install default"));
+    fireEvent.click(await screen.findByText("Make the shared default"));
 
     await waitFor(() =>
-      expect(screen.getByText("Remove as install default")).toBeTruthy(),
+      expect(screen.getByText("Stop using as the shared default")).toBeTruthy(),
     );
-    expect(screen.getByText("Install default")).toBeTruthy();
+    expect(screen.getByText("Shared default")).toBeTruthy();
     expect(onPersist).toHaveBeenCalledWith(
       expect.objectContaining({ install_notes_template_id: 7 }),
     );
@@ -83,10 +83,10 @@ describe("NotesTemplatesSection install default", () => {
       />,
     );
 
-    fireEvent.click(await screen.findByText("Remove as install default"));
+    fireEvent.click(await screen.findByText("Stop using as the shared default"));
 
     await waitFor(() =>
-      expect(screen.getByText("Use as install default")).toBeTruthy(),
+      expect(screen.getByText("Make the shared default")).toBeTruthy(),
     );
     expect(onPersist).toHaveBeenCalledWith(
       expect.objectContaining({ install_notes_template_id: null }),
@@ -107,10 +107,10 @@ describe("NotesTemplatesSection install default", () => {
       />,
     );
 
-    fireEvent.click(await screen.findByText("Use as install default"));
+    fireEvent.click(await screen.findByText("Make the shared default"));
 
     await waitFor(() => expect(onPersist).toHaveBeenCalled());
-    expect(screen.getByText("Use as install default")).toBeTruthy();
+    expect(screen.getByText("Make the shared default")).toBeTruthy();
     expect(screen.queryByText("Install default")).toBeNull();
   });
 
@@ -125,6 +125,6 @@ describe("NotesTemplatesSection install default", () => {
     );
 
     await screen.findByText("Board pack");
-    expect(screen.queryByText("Use as install default")).toBeNull();
+    expect(screen.queryByText("Make the shared default")).toBeNull();
   });
 });

@@ -1,4 +1,4 @@
-import { Check, Download, Loader2, Trash2, X } from "lucide-react";
+import { Download, Loader2, Trash2 } from "lucide-react";
 
 import {
   DownloadProgress,
@@ -7,9 +7,12 @@ import {
   ModelStatusInfo,
   SystemModelStatus,
 } from "@/types";
+import { cn } from "@/lib/cn";
 import SettingsBlock from "./SettingsBlock";
 import SettingsCard from "./SettingsCard";
+import SettingsRow from "./SettingsRow";
 import SettingsStatusBadge from "./SettingsStatusBadge";
+import { SETTINGS_BUTTON_SECONDARY } from "./settingsControls";
 
 interface AiModelDependenciesSectionProps {
   modelStatus: SystemModelStatus | null;
@@ -31,38 +34,38 @@ const DEPENDENCY_MODELS: {
 }[] = [
   {
     id: "whisper",
-    label: "Whisper (Transcription)",
-    desc: "OpenAI Whisper model for speech-to-text. (MIT License)",
+    label: "Whisper",
+    desc: "OpenAI's speech-to-text model, MIT licence.",
     target: "core",
   },
   {
     id: "parakeet",
-    label: "Parakeet ASR Model (Transcription)",
-    desc: "NVIDIA FastConformer ASR model.",
+    label: "Parakeet",
+    desc: "NVIDIA's FastConformer speech-to-text model.",
     target: "parakeet",
   },
   {
     id: "canary",
-    label: "Canary ASR Model (Transcription)",
-    desc: "NVIDIA Canary 1B multi-lingual ASR model.",
+    label: "Canary 1B",
+    desc: "NVIDIA's multilingual speech-to-text model.",
     target: "canary",
   },
   {
     id: "pyannote",
-    label: "Pyannote (Diarization)",
-    desc: "Speaker diarization model weights.",
+    label: "Speaker separation",
+    desc: "Pyannote's diarisation model.",
     target: "core",
   },
   {
     id: "embedding",
-    label: "Voice Embedding",
-    desc: "Speaker identification model weights.",
+    label: "Voice embedding",
+    desc: "Recognises speakers from their voiceprints.",
     target: "core",
   },
   {
     id: "segmentation",
-    label: "Pyannote Segmentation (Overlap Detection)",
-    desc: "Overlapping speech model weights.",
+    label: "Overlap detection",
+    desc: "Pyannote's model for two people speaking at once.",
     target: "core",
   },
 ];
@@ -78,7 +81,9 @@ function undeletableReason(status?: ModelStatusInfo): string | undefined {
   return status?.source ? UNDELETABLE_REASON[status.source] : undefined;
 }
 
-/** Admin-only "Model dependencies" section of {@link AISettings}. */
+const ICON_BUTTON = cn(SETTINGS_BUTTON_SECONDARY, "h-9 w-9 px-0");
+
+/** The speech and speaker models on the server. Admins only. */
 export default function AiModelDependenciesSection({
   modelStatus,
   deleting,
@@ -95,151 +100,131 @@ export default function AiModelDependenciesSection({
 
   return (
     <SettingsCard
-      title="Model Dependencies"
-      description="Inspect and manage local AI model assets on the server."
+      id="ai-providers-model-assets"
+      title="Model downloads"
+      description="Required models download on first run. A missing model downloads when it is first needed, which holds up live transcription and Meeting Edge until it arrives."
     >
-      <SettingsBlock className="space-y-6">
-        {preparationRunning && (
-          <div className="rounded-lg border border-action-border bg-action-tint p-4">
-            <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-              <Loader2 className="w-4 h-4 animate-spin text-action-text" />
-              Preparing models
-              <span className="ml-auto tabular-nums">{progressPercent}%</span>
-            </div>
-            <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-action-tint">
-              <div
-                className="h-full rounded-full bg-action transition-all duration-500"
-                style={{ width: `${progressPercent}%` }}
-              />
-            </div>
-            <p className="mt-2 text-xs contrast-helper">
-              {downloadProgress?.message || "Waiting for the worker..."}
-              {downloadProgress?.eta ? ` (${downloadProgress.eta} left)` : ""}
-            </p>
+      {preparationRunning && (
+        <SettingsBlock label="Preparing models" aside={<span className="text-sm tabular-nums text-foreground">{progressPercent}%</span>}>
+          <div
+            role="progressbar"
+            aria-label="Model preparation"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={progressPercent}
+            className="h-2 w-full overflow-hidden rounded-full bg-action-tint"
+          >
+            <div
+              className="h-full rounded-full bg-action transition-all duration-500"
+              style={{ width: `${progressPercent}%` }}
+            />
           </div>
-        )}
-
-        <div className="bg-surface-inset p-4 rounded-lg border border-surface-border">
-          <div className="space-y-3">
-            {DEPENDENCY_MODELS.map((model) => (
-              <div
-                key={model.id}
-                className="flex justify-between items-center p-3 bg-surface-card rounded-lg border border-surface-border shadow-card"
-              >
-                <div>
-                  <div className="text-sm font-medium text-foreground">
-                    {model.label}
-                  </div>
-                  <div className="text-xs contrast-helper">{model.desc}</div>
-                </div>
-                <div className="flex items-center gap-3">
-                  {modelStatus?.[model.id]?.downloaded ? (
-                    <>
-                      <SettingsStatusBadge tone="success" className="gap-1">
-                        <Check className="w-3 h-3" /> Ready
-                      </SettingsStatusBadge>
-                      {modelStatus?.[model.id]?.source === "bundled" && (
-                        <SettingsStatusBadge tone="info">
-                          Bundled
-                        </SettingsStatusBadge>
-                      )}
-                      {modelStatus?.[model.id]?.source === "external" && (
-                        <span title={UNDELETABLE_REASON.external}>
-                          <SettingsStatusBadge tone="neutral">
-                            External
-                          </SettingsStatusBadge>
-                        </span>
-                      )}
-                      <button
-                        onClick={() => handleDeleteModel(model.id)}
-                        disabled={
-                          deleting === model.id ||
-                          !isAdmin ||
-                          undeletableReason(modelStatus?.[model.id]) !==
-                            undefined
-                        }
-                        className="text-contrast-helper hover:text-status-danger-fg transition-colors p-1.5 hover:bg-surface-inset rounded-md disabled:opacity-50"
-                        title={
-                          undeletableReason(modelStatus?.[model.id]) ??
-                          "Delete Model"
-                        }
-                        aria-label={`Delete ${model.label}`}
-                      >
-                        {deleting === model.id ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <Trash2 className="w-4 h-4" />
-                        )}
-                      </button>
-                    </>
-                  ) : (
-                    <div className="flex flex-col items-end">
-                      <div className="flex items-center gap-3">
-                        <SettingsStatusBadge tone="error" className="gap-1">
-                          <X className="w-3 h-3" /> Missing
-                        </SettingsStatusBadge>
-                        {modelStatus?.[model.id]?.partial && (
-                          <button
-                            onClick={() => handleDeleteModel(model.id)}
-                            disabled={
-                              deleting === model.id ||
-                              !isAdmin ||
-                              preparationRunning
-                            }
-                            className="text-contrast-helper hover:text-status-danger-fg transition-colors p-1.5 hover:bg-surface-inset rounded-md disabled:opacity-50"
-                            title={
-                              preparationRunning
-                                ? "A model preparation is running and may still be writing this download"
-                                : "Clear the partial download left in the model cache"
-                            }
-                            aria-label={`Clear partial download of ${model.label}`}
-                          >
-                            {deleting === model.id ? (
-                              <Loader2 className="w-4 h-4 animate-spin" />
-                            ) : (
-                              <Trash2 className="w-4 h-4" />
-                            )}
-                          </button>
-                        )}
-                        <button
-                          onClick={() => void startPreparation(model.target)}
-                          disabled={!isAdmin || preparationRunning}
-                          className="flex items-center gap-1.5 rounded-md border border-control-border px-2.5 py-1.5 text-xs font-medium text-contrast-muted transition-colors hover:bg-surface-inset disabled:opacity-50"
-                          title={
-                            preparationRunning
-                              ? "A model preparation is already running"
-                              : "Download this model now"
-                          }
-                        >
-                          <Download className="w-3.5 h-3.5" />
-                          Download
-                        </button>
-                      </div>
-                      {modelStatus?.[model.id]?.checked_paths &&
-                        modelStatus[model.id].checked_paths.length > 0 && (
-                          <span
-                            className="mt-1 max-w-[200px] truncate cursor-help text-[10px] text-contrast-helper"
-                            title={`Checked paths:\n${modelStatus[model.id].checked_paths.join("\n")}`}
-                          >
-                            Hover for debug info
-                          </span>
-                        )}
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <p className="mt-6 pt-4 border-t border-surface-border text-center text-xs contrast-helper">
-            Required default models are prepared on first run. After that,
-            changing the transcription model asks whether to download it now,
-            and a missing model can be fetched here at any time. Anything left
-            missing is downloaded on first use, which delays live transcription
-            and Meeting Edge until it is ready.
+          <p className="mt-2 text-xs contrast-helper">
+            {downloadProgress?.message || "Waiting for the worker..."}
+            {downloadProgress?.eta ? ` (${downloadProgress.eta} left)` : ""}
           </p>
-        </div>
-      </SettingsBlock>
+        </SettingsBlock>
+      )}
+
+      {DEPENDENCY_MODELS.map((model) => {
+        const status = modelStatus?.[model.id];
+        const reason = undeletableReason(status);
+        const busy = deleting === model.id;
+
+        return (
+          <SettingsRow
+            key={model.id}
+            label={model.label}
+            description={
+              <>
+                {model.desc}
+                {status?.downloaded && reason && (
+                  <span className="block">
+                    {status.source === "bundled"
+                      ? "Bundled with Nojoin, so it cannot be deleted here."
+                      : "Kept in a cache outside Nojoin's, so it is used but not deleted from here."}
+                  </span>
+                )}
+                {!status?.downloaded && (status?.checked_paths?.length ?? 0) > 0 && (
+                  <details className="mt-1">
+                    <summary className="cursor-pointer text-action-text">
+                      Paths checked
+                    </summary>
+                    <ul className="mt-1 space-y-0.5 font-mono break-all">
+                      {status?.checked_paths.map((path) => <li key={path}>{path}</li>)}
+                    </ul>
+                  </details>
+                )}
+              </>
+            }
+            badge={
+              status?.downloaded ? (
+                <SettingsStatusBadge tone="success">
+                  {status.source === "bundled"
+                    ? "Bundled"
+                    : status.source === "external"
+                      ? "External"
+                      : "Ready"}
+                </SettingsStatusBadge>
+              ) : (
+                <SettingsStatusBadge tone="error">Missing</SettingsStatusBadge>
+              )
+            }
+            controlClassName="@min-[26rem]:min-w-0"
+          >
+            <div className="flex flex-wrap items-center gap-2 @min-[26rem]:justify-end">
+              {status?.downloaded ? (
+                <button
+                  type="button"
+                  onClick={() => handleDeleteModel(model.id)}
+                  disabled={busy || !isAdmin || reason !== undefined}
+                  title={reason ?? "Delete this model"}
+                  aria-label={`Delete ${model.label}`}
+                  className={ICON_BUTTON}
+                >
+                  {busy ? (
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <Trash2 className="h-4 w-4" aria-hidden="true" />
+                  )}
+                </button>
+              ) : (
+                <>
+                  {status?.partial && (
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteModel(model.id)}
+                      disabled={busy || !isAdmin || preparationRunning}
+                      title={
+                        preparationRunning
+                          ? "A model preparation is running and may still be writing this download"
+                          : "Clear the partial download left in the model cache"
+                      }
+                      aria-label={`Clear partial download of ${model.label}`}
+                      className={ICON_BUTTON}
+                    >
+                      {busy ? (
+                        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                      ) : (
+                        <Trash2 className="h-4 w-4" aria-hidden="true" />
+                      )}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => void startPreparation(model.target)}
+                    disabled={!isAdmin || preparationRunning}
+                    className={SETTINGS_BUTTON_SECONDARY}
+                  >
+                    <Download className="h-4 w-4" aria-hidden="true" />
+                    Download
+                  </button>
+                </>
+              )}
+            </div>
+          </SettingsRow>
+        );
+      })}
     </SettingsCard>
   );
 }

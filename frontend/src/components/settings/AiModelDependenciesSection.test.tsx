@@ -41,7 +41,7 @@ const renderSection = (
 
 const deleteEmbedding = () =>
   screen.getByRole("button", {
-    name: "Delete Voice Embedding",
+    name: "Delete Voice embedding",
   }) as HTMLButtonElement;
 
 describe("AiModelDependenciesSection delete", () => {
@@ -87,7 +87,7 @@ const statusWithParakeet = (partial?: boolean): SystemModelStatus => ({
 });
 
 const CLEAR_PARAKEET = {
-  name: "Clear partial download of Parakeet ASR Model (Transcription)",
+  name: "Clear partial download of Parakeet",
 };
 
 const clearParakeet = () =>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Check, ExternalLink, Loader2, Trash2 } from "lucide-react";
+import { ExternalLink, Loader2, Trash2 } from "lucide-react";
 import Button from "../ui/Button";
 import Modal from "../ui/Modal";
 import type {
@@ -17,6 +17,15 @@ import {
   startCliOAuth,
 } from "@/lib/api/cliOauth";
 import { useNotificationStore } from "@/lib/notificationStore";
+import SettingsBlock from "./SettingsBlock";
+import SettingsCard from "./SettingsCard";
+import SettingsRow from "./SettingsRow";
+import SettingsStatusBadge from "./SettingsStatusBadge";
+import {
+  SETTINGS_BUTTON_DANGER,
+  SETTINGS_BUTTON_PRIMARY,
+  SETTINGS_INPUT_CLASS,
+} from "./settingsControls";
 
 // Backend datetimes are naive UTC (no offset); ensure Date parses them as UTC.
 function parseUtcDate(value?: string | null): Date | null {
@@ -53,16 +62,16 @@ const PROVIDER_META: Record<
   }
 > = {
   claude_code: {
-    title: "Claude subscription",
+    title: "Claude",
     label: "Claude",
-    plan: "Claude Pro/Max",
+    plan: "Claude Pro or Max",
     connectLabel: "Connect Claude",
     vendor: "Anthropic",
   },
   codex: {
-    title: "ChatGPT subscription",
+    title: "ChatGPT",
     label: "ChatGPT",
-    plan: "ChatGPT Plus/Pro",
+    plan: "ChatGPT Plus or Pro",
     connectLabel: "Connect ChatGPT",
     vendor: "OpenAI",
   },
@@ -107,35 +116,30 @@ export default function CliOAuthPanel({
   const connectedProvider = status?.providers?.find((p) => p.connected)?.provider;
 
   return (
-    <div className="col-span-2 p-4 bg-surface-inset border border-surface-border rounded-xl space-y-3">
-      <div>
-        <div className="text-sm font-semibold text-foreground">
-          Your AI subscription
-        </div>
-        <p className="text-xs text-contrast-helper mt-1">
-          Connect Claude or ChatGPT (one at a time) to route AI through your own
-          plan, then choose &ldquo;My own AI subscription&rdquo; above.
-        </p>
-      </div>
-
+    <SettingsCard
+      id="your-ai-subscription"
+      title="Your subscriptions"
+      description="Connect Claude or ChatGPT, one at a time, to run your meetings on your own plan."
+    >
       {loading ? (
-        <div className="flex items-center gap-2 text-xs text-contrast-helper">
-          <Loader2 className="w-4 h-4 animate-spin" /> Checking connections…
-        </div>
+        <SettingsBlock>
+          <p className="flex items-center gap-2 text-sm contrast-helper">
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+            Checking connections...
+          </p>
+        </SettingsBlock>
       ) : (
-        <div className="space-y-3">
-          {PROVIDER_ORDER.map((provider) => (
-            <ProviderConnectRow
-              key={provider}
-              provider={provider}
-              status={byProvider(provider)}
-              connectedProvider={connectedProvider}
-              onChanged={refresh}
-            />
-          ))}
-        </div>
+        PROVIDER_ORDER.map((provider) => (
+          <ProviderConnectRow
+            key={provider}
+            provider={provider}
+            status={byProvider(provider)}
+            connectedProvider={connectedProvider}
+            onChanged={refresh}
+          />
+        ))
       )}
-    </div>
+    </SettingsCard>
   );
 }
 
@@ -276,7 +280,7 @@ function ProviderConnectRow({
         type: "error",
         message: apiErrorMessage(
           err,
-          "Could not complete sign-in — the code may have expired. Open the sign-in page again for a fresh code.",
+          "Could not complete sign-in. The code may have expired, so open the sign-in page again for a fresh one.",
         ),
       });
     } finally {
@@ -309,82 +313,71 @@ function ProviderConnectRow({
     setFlowKind(null);
   };
 
+  const statusBadge = usageLimited ? (
+    <SettingsStatusBadge tone="warning">Rate-limited</SettingsStatusBadge>
+  ) : connected ? (
+    <SettingsStatusBadge tone="success">Connected</SettingsStatusBadge>
+  ) : (
+    <SettingsStatusBadge tone="neutral">Not connected</SettingsStatusBadge>
+  );
+
   return (
-    <div className="settings-inset space-y-2 rounded-xl p-3">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <div className="text-sm font-semibold text-foreground">
-            {meta.title}
-          </div>
-          <p className="text-xs text-contrast-helper mt-0.5">
-            Route AI through your own {meta.plan} plan.
-          </p>
-        </div>
-        <div className="shrink-0">
-          {usageLimited ? (
-            <span className="inline-flex items-center px-3 py-1 rounded-pill text-xs font-semibold bg-status-warning-bg text-status-warning-fg">
-              Usage limited
-            </span>
-          ) : connected ? (
-            <span className="inline-flex items-center gap-1 px-3 py-1 rounded-pill text-xs font-semibold bg-status-success-bg text-status-success-fg">
-              <Check className="w-3 h-3" /> Connected
-            </span>
-          ) : (
-            <span className="inline-flex items-center px-3 py-1 rounded-pill text-xs font-semibold bg-surface-inset text-contrast-helper text-contrast-icon-muted">
-              Not connected
+    <SettingsRow
+      label={meta.label}
+      badge={statusBadge}
+      description={
+        <>
+          <span className="block">Your {meta.plan} plan.</span>
+          {usageLimited && (
+            <span className="block text-status-warning-fg">
+              Limit reached until {usageLimitedUntil!.toLocaleString()}. The
+              server&apos;s providers answer until then.
             </span>
           )}
-        </div>
-      </div>
-
-      {usageLimited && (
-        <p className="text-xs text-status-warning-fg">
-          Subscription limit reached; it resets around{" "}
-          {usageLimitedUntil!.toLocaleString()}. Your fallback provider (if
-          configured) is used until then.
-        </p>
-      )}
-
-      {connected && typeof tokens7d === "number" && tokens7d > 0 && (
-        <p className="text-xs text-contrast-helper">
-          {formatTokens(tokens7d)} tokens in the last 7 days
-          {typeof tokensTotal === "number"
-            ? ` (${formatTokens(tokensTotal)} all time)`
-            : ""}
-          .
-        </p>
-      )}
-
+          {connected && typeof tokens7d === "number" && tokens7d > 0 && (
+            <span className="block">
+              {formatTokens(tokens7d)} tokens in the last 7 days
+              {typeof tokensTotal === "number"
+                ? `, ${formatTokens(tokensTotal)} in all`
+                : ""}
+              .
+            </span>
+          )}
+          {!connected && blockedBy && (
+            <span className="block">
+              Disconnect {blockedBy} first. Only one subscription can be
+              connected at a time.
+            </span>
+          )}
+        </>
+      }
+      controlClassName="@min-[26rem]:min-w-0 @min-[26rem]:flex @min-[26rem]:justify-end"
+    >
       {connected ? (
         <button
           type="button"
           onClick={handleDisconnect}
           disabled={busy}
-          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-status-danger-border text-status-danger-fg text-sm font-medium hover:bg-status-danger-bg disabled:opacity-50"
+          className={SETTINGS_BUTTON_DANGER}
         >
           {busy ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
           ) : (
-            <Trash2 className="w-4 h-4" />
+            <Trash2 className="h-4 w-4" aria-hidden="true" />
           )}
           Disconnect
         </button>
-      ) : blockedBy ? (
-        <p className="text-xs contrast-helper">
-          Disconnect your {blockedBy} subscription above to switch to {meta.label}{" "}
-          — only one can be connected at a time.
-        </p>
-      ) : (
+      ) : blockedBy ? null : (
         <button
           type="button"
           onClick={beginFlow}
           disabled={busy}
-          className="inline-flex items-center gap-1 px-4 py-2 rounded-lg bg-action hover:bg-action-hover text-action-on text-sm font-semibold disabled:opacity-50"
+          className={SETTINGS_BUTTON_PRIMARY}
         >
           {busy ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
           ) : (
-            <ExternalLink className="w-4 h-4" />
+            <ExternalLink className="h-4 w-4" aria-hidden="true" />
           )}
           {meta.connectLabel}
         </button>
@@ -468,17 +461,21 @@ function ProviderConnectRow({
                     </a>
                   )}
                   <div>
-                    <label className="block text-xs font-medium text-contrast-helper mb-1">
+                    <label
+                      htmlFor={`cli-code-${provider}`}
+                      className="mb-1 block text-sm font-medium text-foreground"
+                    >
                       Paste the code {meta.vendor} shows you
                     </label>
                     <input
+                      id={`cli-code-${provider}`}
                       type="text"
                       autoComplete="off"
                       value={code}
                       onChange={(event) => setCode(event.target.value)}
                       placeholder="Paste the code here"
                       disabled={busy}
-                      className="w-full px-3 py-2 rounded-lg border border-surface-border bg-surface-card text-foreground focus:ring-2 focus-visible:outline-focus-ring outline-none disabled:opacity-50"
+                      className={SETTINGS_INPUT_CLASS}
                     />
                   </div>
                   <button
@@ -494,6 +491,6 @@ function ProviderConnectRow({
               )}
         </div>
       </Modal>
-    </div>
+    </SettingsRow>
   );
 }

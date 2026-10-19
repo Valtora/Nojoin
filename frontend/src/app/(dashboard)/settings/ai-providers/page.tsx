@@ -3,6 +3,7 @@
 import AiHuggingFaceSection from "@/components/settings/AiHuggingFaceSection";
 import AiModelDependenciesSection from "@/components/settings/AiModelDependenciesSection";
 import CliUsageTab from "@/components/settings/CliUsageTab";
+import MeetingEdgeProviderSection from "@/components/settings/MeetingEdgeProviderSection";
 import SecondaryProviderSection from "@/components/settings/SecondaryProviderSection";
 import ServerProviderSection from "@/components/settings/ServerProviderSection";
 import SettingsAdvancedSection from "@/components/settings/SettingsAdvancedSection";
@@ -23,7 +24,11 @@ export default function AiProvidersSettingsPage() {
         models={models}
       />
 
-      <CliUsageTab />
+      <MeetingEdgeProviderSection
+        settings={settings}
+        onPersist={persistNow}
+        models={models}
+      />
 
       <SettingsAdvancedSection categoryId="ai-providers">
         <SecondaryProviderSection
@@ -44,6 +49,8 @@ export default function AiProvidersSettingsPage() {
           preparationRunning={models.preparationRunning}
           startPreparation={models.startPreparation}
         />
+
+        <CliUsageTab />
       </SettingsAdvancedSection>
     </SettingsCategoryLayout>
   );

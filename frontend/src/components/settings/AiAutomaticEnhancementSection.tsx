@@ -1,46 +1,63 @@
-import { Cpu } from "lucide-react";
-
 import { Settings } from "@/types";
 import { Switch } from "@/components/ui/Switch";
-import SettingsBlock from "./SettingsBlock";
 import SettingsCard from "./SettingsCard";
+import SettingsRow from "./SettingsRow";
 
 interface AiAutomaticEnhancementSectionProps {
   settings: Settings;
-  /** Apply and save immediately (the switch is a discrete control). */
+  /** Apply and save immediately (the switches are discrete controls). */
   onPersist: (newSettings: Settings) => void;
 }
 
-/** "Automatic enhancement" AI section (per-user). */
+const SWITCH_COLUMN =
+  "@min-[26rem]:min-w-0 @min-[26rem]:flex @min-[26rem]:justify-end";
+
+/** What the AI does once a meeting has been processed (per user). */
 export default function AiAutomaticEnhancementSection({
   settings,
   onPersist,
 }: AiAutomaticEnhancementSectionProps) {
   return (
     <SettingsCard
-      title="Automatic Enhancement"
-      description="Control how AI-generated titles are written for your meetings and summaries."
+      id="notes-after-meeting"
+      title="After the meeting"
+      description="What the AI does once a meeting has been processed."
     >
-      <SettingsBlock
-        className="flex items-start gap-3"
+      <SettingsRow
+        id="notes-short-titles"
+        label="Short titles"
+        labelId="notes-short-titles-label"
+        descriptionId="notes-short-titles-help"
+        description="Name meetings in three to five words rather than a longer description."
+        controlClassName={SWITCH_COLUMN}
       >
-        <div className="flex-1">
-          <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-            <Cpu className="h-4 w-4 text-action-text" />
-            Prefer short titles
-          </div>
-          <p className="mt-2 text-xs contrast-helper">
-            Use concise 3-5 word AI-generated meeting titles instead of longer
-            descriptive ones.
-          </p>
-        </div>
         <Switch
           checked={settings.prefer_short_titles !== false}
+          aria-labelledby="notes-short-titles-label"
+          aria-describedby="notes-short-titles-help"
           onCheckedChange={(checked) =>
             onPersist({ ...settings, prefer_short_titles: checked })
           }
         />
-      </SettingsBlock>
+      </SettingsRow>
+
+      <SettingsRow
+        id="notes-auto-analyse"
+        label="Analyse meetings automatically"
+        labelId="notes-auto-analyse-label"
+        descriptionId="notes-auto-analyse-help"
+        description="Run the AI analysis of each meeting as soon as it is processed, within any daily limit your administrator has set. Each run uses your AI provider quota, so it is off until you turn it on."
+        controlClassName={SWITCH_COLUMN}
+      >
+        <Switch
+          checked={settings.auto_analyse_meetings === true}
+          aria-labelledby="notes-auto-analyse-label"
+          aria-describedby="notes-auto-analyse-help"
+          onCheckedChange={(checked) =>
+            onPersist({ ...settings, auto_analyse_meetings: checked })
+          }
+        />
+      </SettingsRow>
     </SettingsCard>
   );
 }

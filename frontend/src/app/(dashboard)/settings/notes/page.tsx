@@ -2,20 +2,18 @@
 
 import AiAutomaticEnhancementSection from "@/components/settings/AiAutomaticEnhancementSection";
 import MeetingEdgeSection from "@/components/settings/MeetingEdgeSection";
+import NotesLanguageSection from "@/components/settings/NotesLanguageSection";
 import NotesTemplatesSection from "@/components/settings/NotesTemplatesSection";
-import SettingsAdvancedSection from "@/components/settings/SettingsAdvancedSection";
 import SettingsCategoryLayout from "@/components/settings/SettingsCategoryLayout";
 import { useSettingsContext } from "@/components/settings/SettingsProvider";
-import { useAISettingsModels } from "@/components/settings/useAISettingsModels";
 
 /**
- * Meeting Edge is AI during a meeting; notes and enhancement are AI after one.
- * One page covers what the AI produces for you, rather than splitting it by
- * when it runs.
+ * Everything the AI writes for you: the notes and their language, what happens
+ * once a meeting is processed, and how Meeting Edge explains terms while it
+ * runs. Whether Meeting Edge runs, and on which model, is under AI providers.
  */
 export default function NotesSettingsPage() {
   const { settings, updateSetting, persistNow, isAdmin } = useSettingsContext();
-  const models = useAISettingsModels({ settings });
 
   return (
     <SettingsCategoryLayout categoryId="notes">
@@ -25,20 +23,19 @@ export default function NotesSettingsPage() {
         isAdmin={isAdmin}
       />
 
-      <MeetingEdgeSection
+      <NotesLanguageSection
         settings={settings}
         onUpdate={updateSetting}
         onPersist={persistNow}
-        isAdmin={isAdmin}
-        models={models}
       />
 
-      <SettingsAdvancedSection categoryId="notes">
-        <AiAutomaticEnhancementSection
-          settings={settings}
-          onPersist={persistNow}
-        />
-      </SettingsAdvancedSection>
+      <AiAutomaticEnhancementSection settings={settings} onPersist={persistNow} />
+
+      <MeetingEdgeSection
+        settings={settings}
+        onUpdate={updateSetting}
+        isAdmin={isAdmin}
+      />
     </SettingsCategoryLayout>
   );
 }
