@@ -175,3 +175,83 @@ def test_unwritable_storage_blocks_the_pipeline_summary() -> None:
 
     assert summary["pipeline_status"] == "blocked"
     assert any("not writable" in reason for reason in summary["blocking_reasons"])
+
+
+def _llm_config(**overrides):
+    from backend.utils.llm_config import ResolvedLLMConfig
+
+    values = {
+        "provider": "gemini",
+        "api_key": None,
+        "model": None,
+        "api_url": None,
+        "merged_config": {},
+    }
+    values.update(overrides)
+    return ResolvedLLMConfig(**values)
+
+
+async def _optional_ai_with(monkeypatch, config) -> dict:
+    async def _resolve(_db):
+        return config
+
+    monkeypatch.setattr(health_service, "resolve_llm_config_async", _resolve)
+    return await health_service._get_optional_ai_component(db=None)
+
+
+@pytest.mark.anyio
+async def test_optional_ai_is_configured_only_with_a_credential_and_a_model(
+    monkeypatch,
+) -> None:
+    component = await _optional_ai_with(
+        monkeypatch,
+        _llm_config(provider="openai", api_key="sk-test", model="gpt-test"),
+    )
+
+    assert component["status"] == "ok"
+    assert component["configured"] is True
+    assert "OpenAI (gpt-test)" in component["detail"]
+
+
+@pytest.mark.anyio
+async def test_optional_ai_reports_a_provider_with_no_model(monkeypatch) -> None:
+    """A key or an Ollama URL alone used to count as configured, while every AI
+    feature failed for want of a model."""
+    component = await _optional_ai_with(
+        monkeypatch,
+        _llm_config(provider="ollama", api_url="http://ollama.test:11434"),
+    )
+
+    assert component["status"] == "warning"
+    assert component["label"] == "No model selected"
+    assert component["configured"] is False
+
+
+@pytest.mark.anyio
+async def test_optional_ai_names_the_fallback_when_only_it_can_answer(
+    monkeypatch,
+) -> None:
+    component = await _optional_ai_with(
+        monkeypatch,
+        _llm_config(
+            provider="ollama",
+            secondary_provider="anthropic",
+            secondary_api_key="sk-ant-test",
+            secondary_model="claude-test",
+        ),
+    )
+
+    assert component["status"] == "warning"
+    assert component["label"] == "Fallback only"
+    assert "Anthropic" in component["detail"]
+    assert component["configured"] is True
+
+
+@pytest.mark.anyio
+async def test_optional_ai_is_informational_when_nothing_is_set_up(
+    monkeypatch,
+) -> None:
+    component = await _optional_ai_with(monkeypatch, _llm_config())
+
+    assert component["status"] == "info"
+    assert component["configured"] is False

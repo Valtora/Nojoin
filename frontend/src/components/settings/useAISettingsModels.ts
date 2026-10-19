@@ -29,7 +29,6 @@ export interface ValidationMessage {
 
 export interface UseAISettingsModelsOptions {
   settings: Settings;
-  onPersist?: (newSettings: Settings) => Promise<void>;
 }
 
 export interface AISettingsModels {
@@ -71,7 +70,7 @@ export interface AISettingsModels {
 export function useAISettingsModels(
   options: UseAISettingsModelsOptions,
 ): AISettingsModels {
-  const { settings, onPersist } = options;
+  const { settings } = options;
   const { addNotification } = useNotificationStore();
 
   const [validating, setValidating] = useState<string | null>(null);
@@ -195,13 +194,11 @@ export function useAISettingsModels(
         }
       }
 
-      if (onPersist) {
-        await onPersist(settings);
-      }
-
+      // Validation only tests the connection. Settings save through their own
+      // controls, so pressing Validate never commits an edit as a side effect.
       setValidationMsg({
         type: "success",
-        msg: `${res.message || "Validation successful"}${onPersist ? " Settings saved." : ""}`,
+        msg: res.message || "Connection works.",
         provider,
       });
     } catch (e: unknown) {

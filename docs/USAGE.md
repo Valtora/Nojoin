@@ -427,7 +427,7 @@ Notifications appear in the bottom-right corner, in two kinds. Transient ones cl
 
 ## Updates
 
-The Updates area shows the installed server version, latest available release, and release notes. Release metadata comes from GitHub Releases when the deployment can reach GitHub.
+**Settings > Updates** shows the installed version, the latest release, and each release's notes. The installed and latest releases are open, and older ones expand when you choose them. Release information comes from GitHub Releases when the server can reach GitHub.
 
 When a newer release is out, owners and administrators also get a persistent notification about it whenever they open Nojoin:
 

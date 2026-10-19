@@ -32,26 +32,49 @@ export default function SettingsCategoryLayout({
 }: SettingsCategoryLayoutProps) {
   const category = SETTINGS_CATEGORIES[categoryId];
 
-  // Bring a search result into view. The browser will not do this itself when
-  // the target is rendered after navigation, and an Advanced block may still be
-  // expanding as we arrive, so this runs after paint rather than on mount.
+  // Bring a search result, or an in-page link's target, into view. The browser
+  // will not do this itself when the target is rendered after navigation, and
+  // an Advanced block opened by the same hash renders a frame later, so this
+  // waits two frames rather than running on mount.
   useEffect(() => {
-    const hash = window.location.hash.slice(1);
-    if (!hash) {
-      return;
-    }
+    let frame = 0;
 
-    const frame = window.requestAnimationFrame(() => {
-      const target = document.getElementById(hash);
-      if (!target) {
+    const reveal = () => {
+      const hash = window.location.hash.slice(1);
+      if (!hash) {
         return;
       }
 
-      target.scrollIntoView({ block: "center", behavior: "smooth" });
-      target.classList.add("settings-target");
-    });
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => {
+        frame = window.requestAnimationFrame(() => {
+          const target = document.getElementById(hash);
+          if (!target) {
+            return;
+          }
 
-    return () => window.cancelAnimationFrame(frame);
+          // Centre a row; align a whole card that is taller than most of
+          // the window to its top, so it does not open on its middle.
+          const tall =
+            target.getBoundingClientRect().height > window.innerHeight * 0.6;
+          target.scrollIntoView({
+            block: tall ? "start" : "center",
+            behavior: "smooth",
+          });
+          // Restart the highlight when the same target is revealed twice.
+          target.classList.remove("settings-target");
+          void target.offsetWidth;
+          target.classList.add("settings-target");
+        });
+      });
+    };
+
+    reveal();
+    window.addEventListener("hashchange", reveal);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("hashchange", reveal);
+    };
   }, [categoryId]);
 
   return (

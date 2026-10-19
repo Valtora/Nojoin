@@ -658,27 +658,27 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
   // ---------------------------------------------------------------- updates
   {
     id: "updates-overview",
-    label: "Release overview",
+    label: "Version",
     description: "The version running here and whether a newer one is published.",
     category: "updates",
     access: "all",
-    keywords: ["version", "update", "updates", "upgrade", "latest", "installed", "release"],
+    keywords: ["version", "update", "updates", "upgrade", "latest", "installed", "release", "check for updates"],
   },
   {
-    id: "updates-latest",
-    label: "Latest release",
-    description: "What changed in the most recent published release.",
+    id: "updates-upgrade",
+    label: "How to upgrade",
+    description: "The commands that pull a new release and recreate the stack.",
     category: "updates",
-    access: "all",
-    keywords: ["release notes", "changelog", "latest release", "what's new", "published"],
+    access: "admin",
+    keywords: ["upgrade", "docker", "compose", "pull", "deployment", "install update"],
   },
   {
-    id: "updates-history",
-    label: "Release history",
-    description: "Previous releases and their notes.",
+    id: "updates-release-notes",
+    label: "Release notes",
+    description: "What changed in each published release.",
     category: "updates",
     access: "all",
-    keywords: ["history", "releases", "previous versions", "changelog", "archive"],
+    keywords: ["release notes", "changelog", "latest release", "what's new", "history", "releases", "previous versions"],
   },
 
   // ------------------------------------------------------------------- help

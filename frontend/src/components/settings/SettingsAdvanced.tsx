@@ -14,10 +14,12 @@ interface SettingsAdvancedProps {
    */
   changedCount?: number;
   /**
-   * Opens the block and keeps it open. Set when a search result lives inside,
-   * so search can never point at something the page then refuses to show.
+   * Opens the block whenever the value changes to a positive number. Bumped
+   * when a search result or an in-page link points inside, so neither can land
+   * on something the page then refuses to show, even after the block was
+   * closed again.
    */
-  forceOpen?: boolean;
+  openRequest?: number;
   className?: string;
   children: ReactNode;
 }
@@ -31,15 +33,15 @@ interface SettingsAdvancedProps {
  */
 export default function SettingsAdvanced({
   changedCount = 0,
-  forceOpen = false,
+  openRequest = 0,
   className,
   children,
 }: SettingsAdvancedProps) {
-  const [open, setOpen] = useState(forceOpen);
+  const [open, setOpen] = useState(openRequest > 0);
   const contentId = useId();
 
-  useOnDepsChange([forceOpen], () => {
-    if (forceOpen) setOpen(true);
+  useOnDepsChange([openRequest], () => {
+    if (openRequest > 0) setOpen(true);
   });
 
   return (

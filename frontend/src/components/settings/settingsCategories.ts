@@ -200,11 +200,9 @@ export const SETTINGS_CATEGORIES: Record<
     id: "updates",
     group: "about",
     label: "Updates",
-    description:
-      "The version running here, what has been published since, and how to upgrade.",
+    description: "The version running here and what each release changed.",
     icon: ArrowUpCircle,
     access: "all",
-    fullBleed: true,
   },
   help: {
     id: "help",

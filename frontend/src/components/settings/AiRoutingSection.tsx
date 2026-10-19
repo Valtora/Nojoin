@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Check, Cloud, Info, RefreshCw, Server } from "lucide-react";
 
@@ -8,6 +9,7 @@ import SettingsCallout from "./SettingsCallout";
 import SettingsBlock from "./SettingsBlock";
 import SettingsCard from "./SettingsCard";
 import SettingsStatusBadge from "./SettingsStatusBadge";
+import { settingsCategoryHref } from "./settingsCategories";
 import {
   getClaudeCliModels,
   getCodexModels,
@@ -336,9 +338,24 @@ export default function AiRoutingSection({
                 </span>
               </div>
               <p className="mt-1 text-xs contrast-helper">
-                {isAdmin
-                  ? "Configured on this server. Change the provider and model in the Server provider section below."
-                  : "Configured by your server administrator. Every account on the server default shares this provider."}
+                {isAdmin ? (
+                  <>
+                    Set for everyone on this installation.{" "}
+                    <Link
+                      href={settingsCategoryHref("ai-providers")}
+                      className="font-medium text-action-text underline underline-offset-2 hover:text-action-text-hover"
+                    >
+                      Change it under AI providers
+                    </Link>
+                    .
+                  </>
+                ) : serverGap === "model" ? (
+                  "Your administrator has not chosen a model yet, so AI features do not work until they do."
+                ) : serverGap === "credential" ? (
+                  "Your administrator has not set up an AI provider yet."
+                ) : (
+                  "Set by your administrator for everyone who uses the server default."
+                )}
               </p>
             </div>
             <SettingsStatusBadge tone={serverGap === null ? "success" : "warning"}>
