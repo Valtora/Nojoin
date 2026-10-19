@@ -24,6 +24,11 @@ import {
 import { useNotificationStore } from "@/lib/notificationStore";
 import SettingsBlock from "./SettingsBlock";
 import SettingsCard from "./SettingsCard";
+import SettingsStatusBadge from "./SettingsStatusBadge";
+import { SETTINGS_BUTTON_SECONDARY } from "./settingsControls";
+
+const ICON_BUTTON =
+  "inline-flex h-8 w-8 items-center justify-center rounded-lg contrast-helper transition-colors hover:bg-surface-inset hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring";
 import NotesTemplateEditorModal from "./NotesTemplateEditorModal";
 
 interface NotesTemplatesSectionProps {
@@ -166,7 +171,8 @@ export default function NotesTemplatesSection({
 
   return (
     <SettingsCard
-      title="Notes Structure"
+      id="notes-structure"
+      title="Notes structure"
       description="Choose how generated meeting notes are organised. Accuracy rules, table formatting and the transcript itself are fixed; the sections and their emphasis are yours."
     >
       <SettingsBlock className="space-y-4">
@@ -184,7 +190,7 @@ export default function NotesTemplatesSection({
                 className={`w-full text-left p-3 rounded-lg border transition-colors ${
                   selectedId === null
                     ? "border-action bg-action-tint"
-                    : "border-surface-border hover:border-control-border"
+                    : "border-control-border hover:bg-surface-inset"
                 }`}
               >
                 <div className="flex items-center justify-between gap-3">
@@ -195,7 +201,7 @@ export default function NotesTemplatesSection({
                     <p className="text-xs contrast-helper mt-0.5">
                       {data?.builtin.description ??
                         "Summary, decisions, action items, detailed notes."}{" "}
-                      Follows the install default when an administrator has set
+                      Follows the shared default when your administrator has set
                       one.
                     </p>
                   </div>
@@ -211,7 +217,7 @@ export default function NotesTemplatesSection({
                   className={`p-3 rounded-lg border transition-colors ${
                     selectedId === template.id
                       ? "border-action bg-action-tint"
-                      : "border-surface-border"
+                      : "border-control-border"
                   }`}
                 >
                   <div className="flex items-start justify-between gap-3">
@@ -223,14 +229,14 @@ export default function NotesTemplatesSection({
                       <p className="text-sm font-medium text-foreground flex items-center gap-2 flex-wrap">
                         {template.name}
                         {template.scope === "install" && (
-                          <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-surface-inset contrast-helper">
-                            Install
-                          </span>
+                          <SettingsStatusBadge tone="neutral" className="px-2 py-0.5">
+                            Shared
+                          </SettingsStatusBadge>
                         )}
                         {template.is_install_default && (
-                          <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-surface-inset contrast-helper">
-                            Install default
-                          </span>
+                          <SettingsStatusBadge tone="info" className="px-2 py-0.5">
+                            Shared default
+                          </SettingsStatusBadge>
                         )}
                       </p>
                       {template.description && (
@@ -254,7 +260,8 @@ export default function NotesTemplatesSection({
                         type="button"
                         onClick={() => setEditing(template)}
                         title={template.is_editable ? "Edit" : "View"}
-                        className="p-1.5 rounded contrast-helper hover:text-foreground"
+                        aria-label={`${template.is_editable ? "Edit" : "View"} ${template.name}`}
+                        className={ICON_BUTTON}
                       >
                         <Pencil className="w-4 h-4" />
                       </button>
@@ -262,7 +269,8 @@ export default function NotesTemplatesSection({
                         type="button"
                         onClick={() => handleCopy(template)}
                         title="Copy to my structures"
-                        className="p-1.5 rounded contrast-helper hover:text-foreground"
+                        aria-label={`Copy ${template.name} to my structures`}
+                        className={ICON_BUTTON}
                       >
                         <Copy className="w-4 h-4" />
                       </button>
@@ -271,7 +279,8 @@ export default function NotesTemplatesSection({
                           type="button"
                           onClick={() => handleDelete(template)}
                           title="Delete"
-                          className="p-1.5 rounded contrast-helper hover:text-status-danger-fg"
+                          aria-label={`Delete ${template.name}`}
+                          className={ICON_BUTTON}
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -301,8 +310,8 @@ export default function NotesTemplatesSection({
                       className="mt-2 text-xs contrast-helper hover:text-foreground disabled:opacity-60"
                     >
                       {template.is_install_default
-                        ? "Remove as install default"
-                        : "Use as install default"}
+                        ? "Stop using as the shared default"
+                        : "Make the shared default"}
                     </button>
                   )}
                 </div>
@@ -316,9 +325,9 @@ export default function NotesTemplatesSection({
                   setCreatingScope("personal");
                   setCreating(true);
                 }}
-                className="inline-flex items-center gap-2 px-3 py-2 text-sm rounded-lg bg-surface-inset text-foreground hover:bg-surface-inset transition-colors"
+                className={SETTINGS_BUTTON_SECONDARY}
               >
-                <Plus className="w-4 h-4" />
+                <Plus className="h-4 w-4" aria-hidden="true" />
                 New structure
               </button>
               {isAdmin && (
@@ -328,10 +337,10 @@ export default function NotesTemplatesSection({
                     setCreatingScope("install");
                     setCreating(true);
                   }}
-                  className="inline-flex items-center gap-2 px-3 py-2 text-sm rounded-lg bg-surface-inset text-foreground hover:bg-surface-inset transition-colors"
+                  className={SETTINGS_BUTTON_SECONDARY}
                 >
-                  <Plus className="w-4 h-4" />
-                  New install structure
+                  <Plus className="h-4 w-4" aria-hidden="true" />
+                  New shared structure
                 </button>
               )}
             </div>

@@ -39,11 +39,14 @@ export default function SettingsNav({
     <nav className={cn("space-y-6 p-4", className)} aria-label="Settings">
       {groups.map((group) => (
         <div key={group.id}>
-          <h2 className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-[0.16em] contrast-icon-muted">
+          <p
+            id={`settings-nav-${group.id}`}
+            className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-[0.16em] contrast-icon-muted"
+          >
             {group.label}
-          </h2>
+          </p>
 
-          <ul className="space-y-0.5">
+          <ul className="space-y-0.5" aria-labelledby={`settings-nav-${group.id}`}>
             {group.items.map((category) => {
               const href = settingsCategoryHref(category.id);
               const isActive = pathname === href;
@@ -77,6 +80,7 @@ export default function SettingsNav({
 
                     {matching?.has(category.id) && (
                       <span
+                        role="img"
                         className="h-1.5 w-1.5 shrink-0 rounded-full bg-action"
                         aria-label="Matches your search"
                       />

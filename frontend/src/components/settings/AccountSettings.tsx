@@ -8,6 +8,7 @@ import { Loader2, User, Lock } from 'lucide-react';
 import { useNotificationStore } from '@/lib/notificationStore';
 import { trimString } from '@/lib/validation';
 import CalendarConnectionsSettings from './CalendarConnectionsSettings';
+import { useSettingsDraft } from './SettingsProvider';
 import ConnectedAppsSettings from './ConnectedAppsSettings';
 import SettingsBlock from './SettingsBlock';
 import SettingsCallout from './SettingsCallout';
@@ -50,6 +51,10 @@ export default function AccountSettings({
     new_password: '',
     confirm_password: ''
   });
+  useSettingsDraft(
+    "profile-password",
+    Object.values(passwordData).some((value) => value.length > 0),
+  );
 
   const { markAsSaved: markProfileAsSaved } = useDebouncedAutosave({
     value: { username },
@@ -177,6 +182,7 @@ export default function AccountSettings({
         >
           <SettingsRow
             label="Username"
+            controlId="account-username"
             icon={<User className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
           >
             <input
@@ -218,11 +224,13 @@ export default function AccountSettings({
             id="account-password-form"
             name="account-password-form"
             onSubmit={handlePasswordUpdate}
-            className="settings-card-body"
+            // A cell, so the card body does not pad it as well as its rows.
+            className="settings-cell settings-card-body"
             autoComplete="on"
           >
             <SettingsRow
               label="Current password"
+              controlId="account-current-password"
               icon={<Lock className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
             >
               <input
@@ -241,6 +249,7 @@ export default function AccountSettings({
 
             <SettingsRow
               label="New password"
+              controlId="account-new-password"
               description="At least 8 characters."
               icon={<Lock className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
             >
@@ -253,6 +262,7 @@ export default function AccountSettings({
                 onChange={(e) =>
                   setPasswordData({ ...passwordData, new_password: e.target.value })
                 }
+                aria-describedby="account-new-password-help"
                 className={SETTINGS_INPUT_CLASS}
                 required
                 minLength={8}
@@ -261,6 +271,7 @@ export default function AccountSettings({
 
             <SettingsRow
               label="Confirm new password"
+              controlId="account-confirm-password"
               icon={<Lock className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
             >
               <input

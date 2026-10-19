@@ -66,9 +66,13 @@ export default function SettingsShell({ children }: { children: ReactNode }) {
   return (
     <div className="settings-page flex h-full flex-col">
       <header className="flex shrink-0 items-center justify-between gap-4 border-b px-4 py-3 contrast-border md:px-6">
-        <h1 className="text-lg font-semibold text-foreground">
-          Settings
-        </h1>
+        {/* The page's own heading is the category title, so this is a heading
+            only on the index, where there is no category. */}
+        {isIndex ? (
+          <h1 className="text-lg font-semibold text-foreground">Settings</h1>
+        ) : (
+          <p className="text-lg font-semibold text-foreground">Settings</p>
+        )}
         <VersionTag />
       </header>
 

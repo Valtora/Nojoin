@@ -30,6 +30,11 @@ const renderSection = (settings: Partial<Settings>, availableModels: string[]) =
     />,
   );
 
+const modelSelect = () =>
+  screen.getByRole("combobox", { name: "Model" }) as HTMLSelectElement;
+const refreshButton = () =>
+  screen.getByRole("button", { name: "Reload the model list" }) as HTMLButtonElement;
+
 describe("ServerProviderSection", () => {
   it("warns when the key is set but no model is selected, and still lets one be chosen", () => {
     renderSection({ llm_provider: "gemini", gemini_api_key: "k" }, [
@@ -37,19 +42,24 @@ describe("ServerProviderSection", () => {
       "gemini-b",
     ]);
 
-    expect(screen.getAllByText("No model selected")).toHaveLength(2);
-    expect(screen.getByText(/fail\s+until you choose a model below/)).toBeTruthy();
+    expect(screen.getByText("No model selected")).toBeTruthy();
+    expect(screen.getByText("AI is off until a model is chosen")).toBeTruthy();
     // The model list needs only the key, so the controls stay usable.
-    expect((screen.getByRole("combobox") as HTMLSelectElement).disabled).toBe(false);
-    // Found by text: the surrounding <label> gives the button its accessible name.
-    expect(screen.getByText("Refresh").closest("button")?.disabled).toBe(false);
-    expect(screen.getByRole("button", { name: /Validate API connection/ })).toBeTruthy();
+    expect(modelSelect().disabled).toBe(false);
+    expect(refreshButton().disabled).toBe(false);
+    expect(screen.getByRole("button", { name: "Test connection" })).toBeTruthy();
   });
 
-  it("points at Refresh when the model list is empty", () => {
+  it("names the provider properly rather than capitalising its id", () => {
+    renderSection({ llm_provider: "openai", openai_api_key: "k" }, []);
+
+    expect(screen.getByText("OpenAI")).toBeTruthy();
+  });
+
+  it("points at the reload button when the model list is empty", () => {
     renderSection({ llm_provider: "gemini", gemini_api_key: "k" }, []);
 
-    expect(screen.getByText(/If the list is empty, press Refresh/)).toBeTruthy();
+    expect(screen.getByText(/If the list is empty, reload it/)).toBeTruthy();
   });
 
   it("shows no warning once a model is selected", () => {
@@ -58,16 +68,31 @@ describe("ServerProviderSection", () => {
       ["gemini-a"],
     );
 
-    expect(screen.getByText("Configured via server (.env)")).toBeTruthy();
+    expect(screen.getByText("Ready")).toBeTruthy();
     expect(screen.queryByText("No model selected")).toBeNull();
+    expect(modelSelect().value).toBe("gemini-a");
   });
 
   it("keeps the model controls off without a key", () => {
     renderSection({ llm_provider: "openai" }, []);
 
-    expect(screen.getByText("Not configured")).toBeTruthy();
-    expect(screen.queryByText("No model selected")).toBeNull();
-    expect((screen.getByRole("combobox") as HTMLSelectElement).disabled).toBe(true);
-    expect(screen.queryByRole("button", { name: /Validate API connection/ })).toBeNull();
+    expect(screen.getByText("Not set up")).toBeTruthy();
+    expect(screen.getByText("OpenAI is not set up")).toBeTruthy();
+    expect(modelSelect().disabled).toBe(true);
+    expect(refreshButton().disabled).toBe(true);
+    expect(screen.queryByRole("button", { name: "Test connection" })).toBeNull();
+  });
+
+  it("shows how much GPU memory the Ollama context window needs", () => {
+    renderSection(
+      { llm_provider: "ollama", ollama_api_url: "http://ollama.test:11434", ollama_context_window: 131072 },
+      [],
+    );
+
+    const contextWindow = screen.getByRole("spinbutton", { name: "Context window" });
+    expect(contextWindow.getAttribute("aria-describedby")).toBe(
+      "ai-primary-context-window-help",
+    );
+    expect(screen.getByText("23.8 GB")).toBeTruthy();
   });
 });

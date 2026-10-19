@@ -49,6 +49,8 @@ interface SettingsContextValue {
   autosave: SettingsAutosaveSnapshot;
   /** Account settings save on their own schedule; their status merges into the footer. */
   setAccountAutosaveState: (snapshot: SettingsAutosaveSnapshot | null) => void;
+  /** A form that saves on a button reports whether it holds unsaved edits. */
+  setDraftDirty: (key: string, dirty: boolean) => void;
 }
 
 const SettingsContext = createContext<SettingsContextValue | null>(null);
@@ -106,6 +108,22 @@ export default function SettingsProvider({ children }: { children: ReactNode }) 
   const [forcePasswordChange, setForcePasswordChange] = useState(false);
   const [accountAutosaveState, setAccountAutosaveState] =
     useState<SettingsAutosaveSnapshot | null>(null);
+  const [drafts, setDrafts] = useState<ReadonlySet<string>>(() => new Set());
+
+  const setDraftDirty = useCallback((key: string, dirty: boolean) => {
+    setDrafts((previous) => {
+      if (previous.has(key) === dirty) {
+        return previous;
+      }
+      const next = new Set(previous);
+      if (dirty) {
+        next.add(key);
+      } else {
+        next.delete(key);
+      }
+      return next;
+    });
+  }, []);
 
   const {
     autosaveState,
@@ -175,7 +193,11 @@ export default function SettingsProvider({ children }: { children: ReactNode }) 
   const value = useMemo<SettingsContextValue>(() => {
     const autosave: SettingsAutosaveSnapshot = forcePasswordChange
       ? { status: "blocked" }
-      : mergeAutosaveStates(autosaveState, accountAutosaveState);
+      : mergeAutosaveStates(
+          autosaveState,
+          accountAutosaveState,
+          drafts.size > 0 ? { status: "unsaved" } : null,
+        );
 
     return {
       settings,
@@ -189,14 +211,17 @@ export default function SettingsProvider({ children }: { children: ReactNode }) 
       loading,
       autosave,
       setAccountAutosaveState,
+      setDraftDirty,
     };
   }, [
     accountAutosaveState,
     autosaveState,
+    drafts,
     forcePasswordChange,
     isAdmin,
     loading,
     persistNow,
+    setDraftDirty,
     settings,
     userId,
     username,
@@ -207,6 +232,20 @@ export default function SettingsProvider({ children }: { children: ReactNode }) 
       {children}
     </SettingsContext.Provider>
   );
+}
+
+/**
+ * Reports a button-saved form's unsaved edits to the footer while it is
+ * mounted. Outside a settings page it does nothing, so a form can be reused.
+ */
+export function useSettingsDraft(key: string, dirty: boolean): void {
+  const setDraftDirty = useContext(SettingsContext)?.setDraftDirty;
+
+  useEffect(() => {
+    setDraftDirty?.(key, dirty);
+  }, [dirty, key, setDraftDirty]);
+
+  useEffect(() => () => setDraftDirty?.(key, false), [key, setDraftDirty]);
 }
 
 export function SettingsAutosaveFooter() {

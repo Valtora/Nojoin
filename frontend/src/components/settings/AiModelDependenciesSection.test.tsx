@@ -41,8 +41,11 @@ const renderSection = (
 
 const deleteEmbedding = () =>
   screen.getByRole("button", {
-    name: "Delete Voice Embedding",
+    name: "Delete Voice embedding",
   }) as HTMLButtonElement;
+
+const queryDeleteEmbedding = () =>
+  screen.queryByRole("button", { name: "Delete Voice embedding" });
 
 describe("AiModelDependenciesSection delete", () => {
   it("offers Delete for a model in Nojoin's own cache", () => {
@@ -54,22 +57,21 @@ describe("AiModelDependenciesSection delete", () => {
     expect(handleDeleteModel).toHaveBeenCalledWith("embedding");
   });
 
-  it("disables Delete and says why for a model outside Nojoin's cache", () => {
-    const handleDeleteModel = renderSection(statusWithEmbedding("external"));
+  it("offers no Delete and says why for a model outside Nojoin's cache", () => {
+    renderSection(statusWithEmbedding("external"));
 
-    fireEvent.click(deleteEmbedding());
-
-    expect(deleteEmbedding().disabled).toBe(true);
-    expect(deleteEmbedding().title).toMatch(/outside Nojoin's model cache/);
+    expect(queryDeleteEmbedding()).toBeNull();
+    expect(
+      screen.getByText("Kept in a cache outside Nojoin's, so it is used but not deleted from here."),
+    ).toBeTruthy();
     expect(screen.getByText("External")).toBeTruthy();
-    expect(handleDeleteModel).not.toHaveBeenCalled();
   });
 
-  it("keeps Delete disabled for a bundled model", () => {
+  it("offers no Delete and says why for a bundled model", () => {
     renderSection(statusWithEmbedding("bundled"));
 
-    expect(deleteEmbedding().disabled).toBe(true);
-    expect(deleteEmbedding().title).toBe("Bundled repo asset");
+    expect(queryDeleteEmbedding()).toBeNull();
+    expect(screen.getByText("Bundled with Nojoin, so it cannot be deleted here.")).toBeTruthy();
     expect(screen.queryByText("External")).toBeNull();
   });
 });
@@ -87,7 +89,7 @@ const statusWithParakeet = (partial?: boolean): SystemModelStatus => ({
 });
 
 const CLEAR_PARAKEET = {
-  name: "Clear partial download of Parakeet ASR Model (Transcription)",
+  name: "Clear partial download of Parakeet",
 };
 
 const clearParakeet = () =>

@@ -1,14 +1,18 @@
-import { Check, HelpCircle, Loader2, RefreshCw, Server } from "lucide-react";
-
 import { Settings } from "@/types";
 import { listModels } from "@/lib/api";
 import { getSecondaryProviderGap } from "@/lib/aiAvailability";
-import Tooltip from "@/components/ui/Tooltip";
-import SettingsCallout from "./SettingsCallout";
+import { aiProviderLabel } from "@/lib/aiProviders";
 import SettingsBlock from "./SettingsBlock";
+import SettingsCallout from "./SettingsCallout";
 import SettingsCard from "./SettingsCard";
-import SettingsStatusBadge from "./SettingsStatusBadge";
+import SettingsRow from "./SettingsRow";
 import type { AISettingsModels } from "./useAISettingsModels";
+import {
+  ContextWindowHelp,
+  ModelPicker,
+  ProviderStatusBadge,
+  TestConnection,
+} from "./aiProviderControls";
 import {
   DEFAULT_OLLAMA_CONTEXT_WINDOW,
   getSecondaryProviderLiveModel,
@@ -17,13 +21,11 @@ import {
   withSecondaryProviderLiveModel,
   withSecondaryProviderModel,
 } from "./aiSettingsModels";
-
-const SELECT_CLASS =
-  "w-full p-2.5 rounded-lg border border-control-border bg-control-bg text-foreground focus:ring-2 focus:ring-action outline-none transition-all disabled:opacity-50";
+import { SETTINGS_INPUT_CLASS, SETTINGS_VALUE_CLASS, SETTINGS_CONTROL_COLUMN_WIDE } from "./settingsControls";
 
 interface SecondaryProviderSectionProps {
   settings: Settings;
-  /** Debounced apply (Ollama URL and context window). */
+  /** Debounced apply (Ollama address and context window). */
   onUpdate: (newSettings: Settings) => void;
   /** Apply and save immediately (model selects). */
   onPersist: (newSettings: Settings) => void;
@@ -31,10 +33,8 @@ interface SecondaryProviderSectionProps {
 }
 
 /**
- * Admin-only "Fallback provider" section. All secondary_* fields are
- * install-wide (and some are .env-overridden), so the orchestrator renders this
- * only for admins. Used automatically when the primary provider — or a user's
- * CLI subscription — is unavailable.
+ * The install's fallback provider, used when the default provider, or a
+ * user's own subscription, cannot answer. Install-wide, so admins only.
  */
 export default function SecondaryProviderSection({
   settings,
@@ -42,241 +42,183 @@ export default function SecondaryProviderSection({
   onPersist,
   models,
 }: SecondaryProviderSectionProps) {
-  const sp = settings.secondary_llm_provider;
+  const provider = settings.secondary_llm_provider;
+  const description =
+    "Retries a request when the default provider, or someone's own subscription, cannot answer.";
 
-  if (!sp) {
+  if (!provider) {
     return (
       <SettingsCard
-        title="Fallback Provider"
-        badge={<SettingsStatusBadge tone="neutral">Managed by server</SettingsStatusBadge>}
-        description="Used automatically when the primary provider is unavailable."
+        id="ai-providers-fallback"
+        title="Fallback provider"
+        description={description}
       >
-        <SettingsCallout tone="neutral" className="space-y-4">
-          No fallback provider is configured. Set{" "}
-          <code className="bg-surface-inset px-1 py-0.5 rounded">
-            SECONDARY_LLM_PROVIDER
-          </code>{" "}
-          in the server&apos;s{" "}
-          <code className="bg-surface-inset px-1 py-0.5 rounded">
-            .env
-          </code>{" "}
-          file to enable automatic fallback for all AI features when the primary
-          provider fails.
-        </SettingsCallout>
+        <SettingsRow
+          label="Provider"
+          description="Set SECONDARY_LLM_PROVIDER and its key in .env, then restart Nojoin, to turn the fallback on."
+        >
+          <p className={SETTINGS_VALUE_CLASS}>None</p>
+        </SettingsRow>
       </SettingsCard>
     );
   }
 
-  const isOllama = sp === "ollama";
+  const providerLabel = aiProviderLabel(provider);
+  const isOllama = provider === "ollama";
   const gap = getSecondaryProviderGap(settings);
   const hasCredential = gap !== "credential";
-  const secondaryModel = getSecondaryProviderModel(settings, sp);
-  const secondaryLiveModel = getSecondaryProviderLiveModel(settings, sp);
+  const options = models.secondaryAvailableModels;
+  const contextWindow =
+    settings.secondary_ollama_context_window || DEFAULT_OLLAMA_CONTEXT_WINDOW;
 
   const refreshModels = () => {
     const url = isOllama ? settings.secondary_ollama_api_url : undefined;
     models.setSecondaryFetchingModels(true);
-    listModels(sp, "", url)
+    listModels(provider, "", url)
       .then((res) => models.setSecondaryAvailableModels(res.models))
       .catch(console.error)
       .finally(() => models.setSecondaryFetchingModels(false));
   };
 
   const applyModel = (value: string) => {
-    const updates = withSecondaryProviderModel(settings, sp, value);
+    const updates = withSecondaryProviderModel(settings, provider, value);
     if (updates) onPersist(updates);
   };
   const applyLiveModel = (value: string) => {
-    const updates = withSecondaryProviderLiveModel(settings, sp, value);
+    const updates = withSecondaryProviderLiveModel(settings, provider, value);
     if (updates) onPersist(updates);
   };
 
   return (
     <SettingsCard
-      title="Fallback Provider"
-      badge={<SettingsStatusBadge tone="neutral">Managed by server</SettingsStatusBadge>}
-      description="Used automatically when the primary provider — or a user's own Claude or ChatGPT subscription — is unavailable."
+      id="ai-providers-fallback"
+      title="Fallback provider"
+      description={description}
     >
-      <div className="space-y-4">
-        <SettingsBlock className="space-y-6">
-          <div className="p-4 bg-surface-inset border border-surface-border rounded-xl flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <div className="text-sm font-semibold text-foreground flex items-center gap-2">
-                Secondary AI provider:{" "}
-                <span className="capitalize text-action-text">
-                  {sp}
-                </span>
-              </div>
-              <p className="text-xs text-contrast-helper mt-1">
-                Configured via{" "}
-                <code className="bg-surface-inset px-1 py-0.5 rounded">
-                  SECONDARY_LLM_PROVIDER
-                </code>{" "}
-                in the server&apos;s{" "}
-                <code className="bg-surface-inset px-1 py-0.5 rounded">
-                  .env
-                </code>{" "}
-                file.
-              </p>
-            </div>
-            <SettingsStatusBadge tone={gap === null ? "success" : "warning"}>
-              {gap === null
-                ? "Configured"
-                : gap === "model"
-                  ? "No model selected"
-                  : "Not configured"}
-            </SettingsStatusBadge>
-          </div>
+      <SettingsRow
+        label="Provider"
+        description="Set by SECONDARY_LLM_PROVIDER in .env."
+        badge={<ProviderStatusBadge gap={gap} />}
+      >
+        <p className={SETTINGS_VALUE_CLASS}>{providerLabel}</p>
+      </SettingsRow>
 
-          {gap === "model" && (
-            <SettingsCallout tone="warning" title="Fallback is off">
-              No fallback model is selected, so a request the primary provider
-              fails is not retried. Choose a model below to turn the fallback
-              on.
-            </SettingsCallout>
-          )}
-
-          {isOllama && (
-            <div className="grid grid-cols-1 @min-[42rem]:grid-cols-2 gap-6">
-              <div>
-                <label className="block text-sm font-medium text-contrast-muted mb-2">
-                  Secondary Ollama API URL
-                </label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    value={
-                      settings.secondary_ollama_api_url ||
-                      "http://host.docker.internal:11434"
-                    }
-                    onChange={(e) =>
-                      onUpdate({
-                        ...settings,
-                        secondary_ollama_api_url: e.target.value,
-                      })
-                    }
-                    className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-surface-border bg-surface-inset text-foreground focus:ring-2 focus:ring-action outline-none transition-all"
-                  />
-                  <Server className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-contrast-icon-muted" />
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-contrast-muted mb-2">
-                  Secondary Ollama context window
-                </label>
-                <input
-                  type="number"
-                  min={1024}
-                  step={1024}
-                  value={
-                    settings.secondary_ollama_context_window ||
-                    DEFAULT_OLLAMA_CONTEXT_WINDOW
-                  }
-                  onChange={(e) =>
-                    onUpdate({
-                      ...settings,
-                      secondary_ollama_context_window: parseContextWindow(
-                        e.target.value,
-                      ),
-                    })
-                  }
-                  className="w-full px-4 py-2.5 rounded-lg border border-surface-border bg-surface-inset text-foreground focus:ring-2 focus:ring-action outline-none transition-all"
-                />
-              </div>
-            </div>
-          )}
-
-          <div>
-            <label className="text-sm font-medium text-contrast-muted mb-2 flex justify-between">
-              <Tooltip
-                content="The model for the fallback provider. Used when the primary is unavailable."
-                position="right"
-              >
-                <span className="flex items-center gap-1 cursor-help">
-                  Model{" "}
-                  <HelpCircle className="w-3 h-3 text-contrast-helper" />
-                </span>
-              </Tooltip>
-              <button
-                onClick={refreshModels}
-                disabled={models.secondaryFetchingModels}
-                className="text-xs text-action-text hover:text-action-text flex items-center gap-1 disabled:opacity-50"
-              >
-                <RefreshCw
-                  className={`w-3 h-3 ${models.secondaryFetchingModels ? "animate-spin" : ""}`}
-                />{" "}
-                Refresh
-              </button>
-            </label>
-            <select
-              value={secondaryModel}
-              onChange={(e) => applyModel(e.target.value)}
-              disabled={models.secondaryAvailableModels.length === 0}
-              className={SELECT_CLASS}
-            >
-              <option value="" disabled>
-                Select a model...
-              </option>
-              {models.secondaryAvailableModels.map((model) => (
-                <option key={`secondary-${model}`} value={model}>
-                  {model}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="text-sm font-medium text-contrast-muted mb-2 flex items-center gap-1">
-              <Tooltip
-                content="Optional separate model for Meeting Edge when using the fallback provider. Leave blank to reuse the fallback model."
-                position="right"
-              >
-                <span className="flex items-center gap-1 cursor-help">
-                  Meeting Edge model{" "}
-                  <HelpCircle className="w-3 h-3 text-contrast-helper" />
-                </span>
-              </Tooltip>
-            </label>
-            <select
-              value={secondaryLiveModel}
-              onChange={(e) => applyLiveModel(e.target.value)}
-              disabled={models.secondaryAvailableModels.length === 0}
-              className={SELECT_CLASS}
-            >
-              <option value="">Use fallback model</option>
-              {models.secondaryAvailableModels.map((model) => (
-                <option key={`secondary-live-${model}`} value={model}>
-                  {model}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {hasCredential && (
-            <div>
-              <button
-                onClick={() => models.handleValidate(sp || "gemini")}
-                disabled={Boolean(models.validating)}
-                className="px-4 py-2.5 bg-surface-inset text-foreground border border-control-border rounded-lg hover:bg-surface-inset transition-colors disabled:opacity-50 flex items-center gap-2 text-sm font-semibold"
-              >
-                {models.validating === sp ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Check className="w-4 h-4" />
-                )}
-                Validate fallback connection
-              </button>
-              {models.validationMsg && models.validationMsg.provider === sp && (
-                <p
-                  className={`mt-2 text-sm font-semibold ${models.validationMsg.type === "success" ? "text-status-success-fg" : "text-status-danger-fg"}`}
-                >
-                  {models.validationMsg.msg}
-                </p>
-              )}
-            </div>
-          )}
+      {gap !== null && (
+        <SettingsBlock>
+          <SettingsCallout tone="warning" title="The fallback is off">
+            {gap === "model"
+              ? "No fallback model is selected, so a failed request is not retried. Choose a model to turn the fallback on."
+              : `${providerLabel} has no ${isOllama ? "address" : "key"} in .env, so a failed request is not retried.`}
+          </SettingsCallout>
         </SettingsBlock>
-      </div>
+      )}
+
+      <SettingsRow
+        label="Model"
+        controlId="ai-fallback-model"
+        controlClassName={SETTINGS_CONTROL_COLUMN_WIDE}
+        description="Answers in place of the default provider's model."
+      >
+        <ModelPicker
+          id="ai-fallback-model"
+          value={getSecondaryProviderModel(settings, provider)}
+          options={options}
+          placeholder="Choose a model"
+          disabled={options.length === 0 || !hasCredential}
+          onChange={applyModel}
+          onRefresh={refreshModels}
+          refreshing={models.secondaryFetchingModels}
+          refreshDisabled={!hasCredential}
+        />
+      </SettingsRow>
+
+      <SettingsRow
+        id="ai-providers-fallback-live-model"
+        label="Meeting Edge model"
+        controlId="ai-fallback-live-model"
+        controlClassName={SETTINGS_CONTROL_COLUMN_WIDE}
+        description="Answers live guidance when the default provider cannot. A faster model keeps it responsive."
+      >
+        <ModelPicker
+          id="ai-fallback-live-model"
+          value={getSecondaryProviderLiveModel(settings, provider)}
+          options={options}
+          placeholder="Same as the fallback model"
+          allowEmpty
+          disabled={options.length === 0 || !hasCredential}
+          onChange={applyLiveModel}
+        />
+      </SettingsRow>
+
+      {isOllama && (
+        <>
+          <SettingsRow
+            label="Ollama address"
+            controlId="ai-fallback-ollama-url"
+        controlClassName={SETTINGS_CONTROL_COLUMN_WIDE}
+            description="Where the fallback's Ollama server listens."
+          >
+            <input
+              id="ai-fallback-ollama-url"
+              aria-describedby="ai-fallback-ollama-url-help"
+              type="url"
+              value={
+                settings.secondary_ollama_api_url ||
+                "http://host.docker.internal:11434"
+              }
+              onChange={(event) =>
+                onUpdate({
+                  ...settings,
+                  secondary_ollama_api_url: event.target.value,
+                })
+              }
+              className={`${SETTINGS_INPUT_CLASS} font-mono`}
+            />
+          </SettingsRow>
+
+          <SettingsRow
+            label="Context window"
+            controlId="ai-fallback-context-window"
+        controlClassName={SETTINGS_CONTROL_COLUMN_WIDE}
+            description={<ContextWindowHelp tokens={contextWindow} />}
+          >
+            <input
+              id="ai-fallback-context-window"
+              aria-describedby="ai-fallback-context-window-help"
+              type="number"
+              inputMode="numeric"
+              min={1024}
+              step={1024}
+              value={contextWindow}
+              onChange={(event) =>
+                onUpdate({
+                  ...settings,
+                  secondary_ollama_context_window: parseContextWindow(
+                    event.target.value,
+                  ),
+                })
+              }
+              className={SETTINGS_INPUT_CLASS}
+            />
+          </SettingsRow>
+        </>
+      )}
+
+      {hasCredential && (
+        <SettingsRow
+          label="Connection"
+          description="Checks the fallback's key or address and reloads its model list. Nothing is saved."
+          descriptionId="ai-fallback-test-help"
+        >
+          <TestConnection
+            id="ai-fallback-test"
+            provider={provider}
+            validating={models.validating}
+            message={models.validationMsg}
+            onTest={() => void models.handleValidate(provider)}
+          />
+        </SettingsRow>
+      )}
     </SettingsCard>
   );
 }

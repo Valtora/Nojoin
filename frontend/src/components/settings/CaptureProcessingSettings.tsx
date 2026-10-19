@@ -7,11 +7,9 @@ import { useCapture } from "@/lib/capture/CaptureProvider";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { Switch } from "@/components/ui/Switch";
 
-import SettingsBlock from "./SettingsBlock";
-import SettingsCallout from "./SettingsCallout";
 import SettingsCard from "./SettingsCard";
 import SettingsRow from "./SettingsRow";
-import { SETTINGS_BUTTON_SECONDARY } from "./settingsControls";
+import { SETTINGS_BUTTON_SECONDARY, SETTINGS_CONTROL_END } from "./settingsControls";
 
 /**
  * The browser-side audio processing toggles and the quiet-audio reminder reset.
@@ -28,29 +26,27 @@ export default function CaptureProcessingSettings() {
   );
   const resetWarnings = useAudioWarningStore((state) => state.resetWarnings);
 
-  const toggleControlClass = "@min-[26rem]:min-w-0 @min-[26rem]:flex @min-[26rem]:justify-end";
 
   return (
     <>
       <SettingsCard
-        title="Browser Processing"
-        description="What the browser does to microphone audio before Nojoin receives it."
+        id="recording-browser-processing"
+        title="Browser processing"
+        description="What the browser does to the microphone before Nojoin receives it. Changes apply at the next input test, recording start or resume."
       >
-        <SettingsBlock>
-          <SettingsCallout
-            tone="info"
-            message="These toggles take effect on the next input test, and on the next recording start or resume. Gain changes apply immediately."
-          />
-        </SettingsBlock>
 
         <SettingsRow
           id="recording-echo-cancellation"
+          labelId="recording-echo-cancellation-label"
+          descriptionId="recording-echo-cancellation-help"
           label="Echo cancellation"
           description="Reduces loopback and speaker bleed for headset and speakerphone use."
           icon={<Mic className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
-          controlClassName={toggleControlClass}
+          controlClassName={SETTINGS_CONTROL_END}
         >
           <Switch
+            aria-labelledby="recording-echo-cancellation-label"
+            aria-describedby="recording-echo-cancellation-help"
             checked={settings.echoCancellation}
             onCheckedChange={(checked) =>
               updateSettings({ echoCancellation: checked })
@@ -60,12 +56,16 @@ export default function CaptureProcessingSettings() {
 
         <SettingsRow
           id="recording-noise-suppression"
+          labelId="recording-noise-suppression-label"
+          descriptionId="recording-noise-suppression-help"
           label="Noise suppression"
           description="Reduces steady background noise before the mic is mixed into the recording."
           icon={<Mic className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
-          controlClassName={toggleControlClass}
+          controlClassName={SETTINGS_CONTROL_END}
         >
           <Switch
+            aria-labelledby="recording-noise-suppression-label"
+            aria-describedby="recording-noise-suppression-help"
             checked={settings.noiseSuppression}
             onCheckedChange={(checked) =>
               updateSettings({ noiseSuppression: checked })
@@ -75,12 +75,16 @@ export default function CaptureProcessingSettings() {
 
         <SettingsRow
           id="recording-browser-auto-gain"
+          labelId="recording-browser-auto-gain-label"
+          descriptionId="recording-browser-auto-gain-help"
           label="Browser auto gain"
           description="Lets the browser lift a quiet microphone before Nojoin applies its own balancing."
           icon={<Mic className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
-          controlClassName={toggleControlClass}
+          controlClassName={SETTINGS_CONTROL_END}
         >
           <Switch
+            aria-labelledby="recording-browser-auto-gain-label"
+            aria-describedby="recording-browser-auto-gain-help"
             checked={settings.autoGainControl}
             onCheckedChange={(checked) =>
               updateSettings({ autoGainControl: checked })
@@ -91,31 +95,35 @@ export default function CaptureProcessingSettings() {
 
       <SettingsCard
         id="recording-quiet-reminders"
-        title="Quiet-Audio Reminders"
-        description="Browser-local prompts warning that a recording captured little or no sound."
+        title="Quiet audio warnings"
+        description="This browser warns you when a recording picks up little or no sound."
       >
         <SettingsRow
-          label="Reminders"
+          label="Warnings"
           description={
             suppressQuietAudioWarnings
-              ? "Currently suppressed. Reset them to see the prompts again."
-              : "Currently enabled."
+              ? "Turned off in this browser."
+              : "On in this browser."
           }
-          controlClassName="@min-[26rem]:min-w-0 @min-[26rem]:flex @min-[26rem]:justify-end"
+          controlClassName={SETTINGS_CONTROL_END}
         >
-          <button
-            type="button"
-            onClick={() => {
-              resetWarnings();
-              addNotification({
-                type: "success",
-                message: "Audio warnings have been reset.",
-              });
-            }}
-            className={SETTINGS_BUTTON_SECONDARY}
-          >
-            Reset warnings
-          </button>
+          {/* They are only ever turned off from the warning itself, so the
+              row offers the way back and nothing while they are on. */}
+          {suppressQuietAudioWarnings && (
+            <button
+              type="button"
+              onClick={() => {
+                resetWarnings();
+                addNotification({
+                  type: "success",
+                  message: "Quiet audio warnings are back on.",
+                });
+              }}
+              className={SETTINGS_BUTTON_SECONDARY}
+            >
+              Turn back on
+            </button>
+          )}
         </SettingsRow>
       </SettingsCard>
     </>

@@ -1,9 +1,12 @@
 import type { SettingsAutosaveSnapshot } from "./SettingsAutosaveState";
 
 const AUTOSAVE_STATE_PRIORITY: Record<SettingsAutosaveSnapshot["status"], number> = {
-  blocked: 4,
-  error: 3,
-  saving: 2,
+  blocked: 5,
+  error: 4,
+  saving: 3,
+  // A form that saves on a button waits for the person, so it outranks an
+  // autosave that is about to happen on its own.
+  unsaved: 2,
   pending: 1,
   saved: 0,
 };

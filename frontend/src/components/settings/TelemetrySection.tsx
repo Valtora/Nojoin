@@ -15,6 +15,7 @@ import SettingsBlock from "./SettingsBlock";
 import SettingsRow from "./SettingsRow";
 import SettingsCard from "./SettingsCard";
 import SettingsStatusBadge from "./SettingsStatusBadge";
+import { SETTINGS_CONTROL_END } from "./settingsControls";
 
 /**
  * The exact fields each payload carries. Mirrored from build_heartbeat and
@@ -172,7 +173,7 @@ export default function TelemetrySection() {
             ? "Counts and settings, every six hours."
             : "No diagnostics are sent."
         }
-        controlClassName="@min-[26rem]:min-w-0 @min-[26rem]:flex @min-[26rem]:justify-end"
+        controlClassName={SETTINGS_CONTROL_END}
       >
         <Switch
           checked={status.enabled}

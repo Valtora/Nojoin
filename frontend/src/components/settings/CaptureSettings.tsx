@@ -10,10 +10,11 @@ import SettingsBlock from "./SettingsBlock";
 import SettingsCallout from "./SettingsCallout";
 import SettingsCard from "./SettingsCard";
 import SettingsRow from "./SettingsRow";
-import SettingsStatusBadge from "./SettingsStatusBadge";
 import {
   SETTINGS_BUTTON_SECONDARY,
+  SETTINGS_CONTROL_END,
   SETTINGS_SELECT_CLASS,
+  SETTINGS_VALUE_CLASS,
 } from "./settingsControls";
 
 interface MicrophoneOption {
@@ -81,7 +82,8 @@ const MeterBar = ({
         <span>{label}</span>
         <span>{value}%</span>
       </div>
-      <div className="h-3 overflow-hidden rounded-full bg-surface-inset">
+      {/* The meter sits in an inset block, so the inset fill would vanish. */}
+      <div className="h-3 overflow-hidden rounded-full bg-surface-border">
         <div
           className={`h-full rounded-full transition-[width] duration-75 ${backgroundClass}`}
           style={{ width: `${value}%` }}
@@ -429,13 +431,11 @@ export default function CaptureSettings() {
       <SettingsRow
         id="recording-automatic-levels"
         label="Automatic levels"
-        description="Nojoin balances sources while recording. The sliders above set the baseline mix it starts from."
+        description="Nojoin balances the sources while recording, starting from the mix the sliders above set."
         icon={<Volume2 className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
-        controlClassName="@min-[26rem]:min-w-0 @min-[26rem]:flex @min-[26rem]:justify-end"
+        controlClassName={SETTINGS_CONTROL_END}
       >
-        <SettingsStatusBadge tone="success">
-          Enabled with manual baseline
-        </SettingsStatusBadge>
+        <p className={SETTINGS_VALUE_CLASS}>Always on</p>
       </SettingsRow>
 
       <SettingsBlock

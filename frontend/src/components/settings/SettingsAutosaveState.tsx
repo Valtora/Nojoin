@@ -1,9 +1,17 @@
-import { AlertCircle, Clock3, Loader2, Save, Shield } from "lucide-react";
+import {
+  AlertCircle,
+  CircleDot,
+  Clock3,
+  Loader2,
+  Save,
+  Shield,
+} from "lucide-react";
 
 import { cn } from "@/lib/cn";
 
 export type SettingsAutosaveStatus =
   | "pending"
+  | "unsaved"
   | "saved"
   | "saving"
   | "error"
@@ -25,6 +33,11 @@ const STATUS_CONFIG = {
     icon: Clock3,
     defaultMessage: "Changes pending...",
     className: "contrast-helper",
+  },
+  unsaved: {
+    icon: CircleDot,
+    defaultMessage: "Unsaved changes",
+    className: "text-status-warning-fg",
   },
   saved: {
     icon: Save,

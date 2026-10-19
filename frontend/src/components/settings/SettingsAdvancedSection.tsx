@@ -5,7 +5,11 @@ import { useEffect, useState, type ReactNode } from "react";
 import SettingsAdvanced from "./SettingsAdvanced";
 import { useSettingsContext } from "./SettingsProvider";
 import type { SettingsCategoryId } from "./settingsCategories";
-import { countChangedAdvanced, partitionByAdvanced } from "./settingsRegistry";
+import {
+  countAttentionAdvanced,
+  countChangedAdvanced,
+  partitionByAdvanced,
+} from "./settingsRegistry";
 
 interface SettingsAdvancedSectionProps {
   categoryId: SettingsCategoryId;
@@ -62,6 +66,7 @@ export default function SettingsAdvancedSection({
   return (
     <SettingsAdvanced
       changedCount={countChangedAdvanced(categoryId, settings, { isAdmin })}
+      attentionCount={countAttentionAdvanced(categoryId, settings, { isAdmin })}
       openRequest={openRequest}
     >
       {children}

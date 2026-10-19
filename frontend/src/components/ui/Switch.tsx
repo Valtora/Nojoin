@@ -7,14 +7,26 @@ interface SwitchProps {
   onCheckedChange: (checked: boolean) => void;
   disabled?: boolean;
   id?: string;
+  /** The visible label's id. Without it the switch is named "Use setting". */
+  'aria-labelledby'?: string;
+  'aria-describedby'?: string;
 }
 
-export function Switch({ checked, onCheckedChange, disabled, id }: SwitchProps) {
+export function Switch({
+  checked,
+  onCheckedChange,
+  disabled,
+  id,
+  'aria-labelledby': labelledBy,
+  'aria-describedby': describedBy,
+}: SwitchProps) {
   return (
     <button
       type="button"
       role="switch"
       aria-checked={checked}
+      aria-labelledby={labelledBy}
+      aria-describedby={describedBy}
       id={id}
       disabled={disabled}
       onClick={() => onCheckedChange(!checked)}
@@ -29,7 +41,7 @@ export function Switch({ checked, onCheckedChange, disabled, id }: SwitchProps) 
         disabled && 'cursor-not-allowed opacity-60',
       )}
     >
-      <span className="sr-only">Use setting</span>
+      {!labelledBy && <span className="sr-only">Use setting</span>}
       <span
         aria-hidden="true"
         className={cn(

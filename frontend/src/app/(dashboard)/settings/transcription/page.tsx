@@ -16,7 +16,6 @@ export default function TranscriptionSettingsPage() {
     <SettingsCategoryLayout categoryId="transcription">
       <AiLanguageSection
         settings={settings}
-        onUpdate={updateSetting}
         onPersist={persistNow}
         languageRegistry={models.languageRegistry}
       />

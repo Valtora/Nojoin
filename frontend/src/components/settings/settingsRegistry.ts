@@ -1,6 +1,9 @@
+import { getSecondaryProviderGap } from "@/lib/aiAvailability";
 import { DEFAULT_MEETING_EDGE_CONTEXT_LEVEL } from "@/lib/meetingEdgeContext";
 import { DEFAULT_CAPTURE_SETTINGS } from "@/lib/capture/shared";
 import { getMatchScore } from "@/lib/searchUtils";
+
+import type { Settings } from "@/types";
 
 import type { SettingsAccess, SettingsCategoryId } from "./settingsCategories";
 
@@ -68,6 +71,12 @@ export interface SettingsRegistryEntry {
    * silently ignored rather than counted wrongly.
    */
   defaultValue?: unknown;
+  /**
+   * True when the setting is in a state that stops something working. A gated
+   * entry that needs attention is announced on the collapsed Advanced block, so
+   * a warning is never hidden behind it.
+   */
+  needsAttention?: (settings: Settings) => boolean;
   keywords: string[];
 }
 
@@ -125,6 +134,15 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
     category: "users",
     access: "admin",
     keywords: ["invite", "invitation", "link", "join", "registration", "sign up", "revoke"],
+  },
+  {
+    id: "users-ai-analysis-limit",
+    label: "Analyses per person per day",
+    description: "The daily limit on AI meeting analyses, for everyone without their own.",
+    category: "users",
+    access: "admin",
+    settingsKeys: ["ai_analysis_daily_limit"],
+    keywords: ["analysis budget", "daily limit", "quota", "ai analysis", "limit", "cap"],
   },
 
   // ------------------------------------------------------------- appearance
@@ -308,18 +326,6 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
     keywords: ["analytics", "delivery", "re-measure", "remeasure", "stale", "edit", "pace", "pitch"],
   },
   {
-    id: "recording-auto-analyse",
-    label: "Analyse meetings automatically",
-    description:
-      "Queue the AI analysis of each meeting when it finishes processing, within the daily budget. Uses your AI provider quota.",
-    category: "recording",
-    access: "all",
-    advanced: "safe-default",
-    settingsKeys: ["auto_analyse_meetings"],
-    defaultValue: false,
-    keywords: ["analytics", "analyse", "analysis", "automatic", "budget", "quota", "topics", "decisions"],
-  },
-  {
     id: "recording-diarization",
     label: "Speaker diarization",
     description:
@@ -409,17 +415,12 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
   },
   {
     id: "transcription-language",
-    label: "Language",
-    description:
-      "The language spoken in your recordings, and the language notes and titles are written in.",
+    label: "Transcription language",
+    description: "The language spoken in your recordings, or detect it automatically.",
     category: "transcription",
     access: "all",
-    settingsKeys: [
-      "transcription_language",
-      "notes_language",
-      "notes_language_custom_instruction",
-    ],
-    keywords: ["language", "transcription language", "notes language", "british english", "american english", "localisation", "translation", "detect"],
+    settingsKeys: ["transcription_language"],
+    keywords: ["language", "transcription language", "spoken language", "detect", "auto-detect", "forced language"],
   },
   {
     id: "transcription-glossary",
@@ -443,24 +444,34 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
     keywords: ["notes structure", "notes template", "template", "templates", "sections", "headings", "action items", "decisions", "summary", "prompt"],
   },
   {
+    id: "notes-language",
+    label: "Notes language",
+    description: "The language and style generated titles and notes are written in.",
+    category: "notes",
+    access: "all",
+    settingsKeys: ["notes_language", "notes_language_custom_instruction"],
+    keywords: ["language", "notes language", "british english", "american english", "localisation", "translation", "style"],
+  },
+  {
     id: "notes-short-titles",
     label: "Short meeting titles",
     description: "Prefer concise generated titles over descriptive ones.",
     category: "notes",
     access: "all",
-    advanced: "safe-default",
     settingsKeys: ["prefer_short_titles"],
     defaultValue: true,
     keywords: ["short titles", "title", "titles", "automatic enhancement", "meeting intelligence", "naming"],
   },
   {
-    id: "notes-meeting-edge",
-    label: "Meeting Edge",
-    description: "Live assistance during a meeting: questions, missed points, and concept help.",
+    id: "notes-auto-analyse",
+    label: "Analyse meetings automatically",
+    description:
+      "Run the AI analysis of each meeting when it finishes processing, within the daily limit. Uses your AI provider quota.",
     category: "notes",
     access: "all",
-    settingsKeys: ["enable_meeting_edge"],
-    keywords: ["meeting edge", "live", "assistant", "live assistance", "during meeting", "real time"],
+    settingsKeys: ["auto_analyse_meetings"],
+    defaultValue: false,
+    keywords: ["analytics", "analyse", "analysis", "automatic", "budget", "quota", "topics", "decisions"],
   },
   {
     id: "notes-meeting-edge-context",
@@ -468,36 +479,9 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
     description: "How strict or detailed Meeting Edge concept explanations are.",
     category: "notes",
     access: "all",
-    advanced: "safe-default",
     settingsKeys: ["meeting_edge_context_level"],
     defaultValue: DEFAULT_MEETING_EDGE_CONTEXT_LEVEL,
     keywords: ["technical context", "context level", "verbosity", "threshold", "jargon", "detail", "meeting edge"],
-  },
-  {
-    id: "notes-meeting-edge-subscription-model",
-    label: "Meeting Edge model (your subscription)",
-    description: "The model your connected subscription uses for live assistance.",
-    category: "notes",
-    access: "all",
-    advanced: "safe-default",
-    settingsKeys: ["cli_live_model", "codex_live_model"],
-    keywords: ["meeting edge model", "live model", "claude", "chatgpt", "codex", "subscription"],
-  },
-  {
-    id: "notes-meeting-edge-install-model",
-    label: "Meeting Edge model",
-    description:
-      "A separate model for live assistance. Left empty, Nojoin reuses the main model.",
-    category: "notes",
-    access: "admin",
-    advanced: "safe-default",
-    settingsKeys: [
-      "gemini_live_model",
-      "openai_live_model",
-      "anthropic_live_model",
-      "ollama_live_model",
-    ],
-    keywords: ["meeting edge model", "live model", "gemini", "openai", "anthropic", "ollama"],
   },
 
   // ---------------------------------------------------------------- your-ai
@@ -526,15 +510,23 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
     description: "The model your connected subscription uses for notes and chat.",
     category: "your-ai",
     access: "all",
-    advanced: "safe-default",
     settingsKeys: ["cli_model", "codex_model"],
     keywords: ["model", "claude model", "codex model", "opus", "sonnet", "gpt", "preferred"],
+  },
+  {
+    id: "your-ai-live-model",
+    label: "Meeting Edge model (your subscription)",
+    description: "The model your connected subscription uses for live guidance.",
+    category: "your-ai",
+    access: "all",
+    settingsKeys: ["cli_live_model", "codex_live_model"],
+    keywords: ["meeting edge model", "live model", "claude", "chatgpt", "codex", "subscription"],
   },
 
   // ---------------------------------------------------------- ai-providers
   {
     id: "ai-providers-primary",
-    label: "Primary provider and model",
+    label: "Default provider and model",
     description: "The provider and model used for everyone who has not connected their own.",
     category: "ai-providers",
     access: "admin",
@@ -547,19 +539,41 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
       "gemini_api_key",
       "openai_api_key",
       "anthropic_api_key",
-      "ai_analysis_daily_limit",
     ],
-    keywords: ["provider", "llm", "gemini", "openai", "anthropic", "ollama", "model", "api key", "primary", "server default", "analysis budget", "daily limit", "quota"],
+    keywords: ["provider", "llm", "gemini", "openai", "anthropic", "ollama", "model", "api key", "primary", "server default", "default provider"],
   },
   {
     id: "ai-providers-ollama",
-    label: "Ollama connection",
+    label: "Ollama address and context window",
     description: "The Ollama endpoint and context window used when Ollama is the provider.",
     category: "ai-providers",
     access: "admin",
-    advanced: "external-credentials",
     settingsKeys: ["ollama_api_url", "ollama_context_window"],
     keywords: ["ollama", "api url", "endpoint", "context window", "local model", "self hosted"],
+  },
+  {
+    id: "ai-providers-meeting-edge",
+    label: "Meeting Edge",
+    description: "Live guidance during a recording, for everyone on this installation.",
+    category: "ai-providers",
+    access: "admin",
+    settingsKeys: ["enable_meeting_edge"],
+    keywords: ["meeting edge", "live", "assistant", "live assistance", "during meeting", "real time"],
+  },
+  {
+    id: "ai-providers-meeting-edge-model",
+    label: "Meeting Edge model",
+    description:
+      "A separate model for live guidance. Left empty, Nojoin uses the default model.",
+    category: "ai-providers",
+    access: "admin",
+    settingsKeys: [
+      "gemini_live_model",
+      "openai_live_model",
+      "anthropic_live_model",
+      "ollama_live_model",
+    ],
+    keywords: ["meeting edge model", "live model", "gemini", "openai", "anthropic", "ollama"],
   },
   {
     id: "ai-providers-fallback",
@@ -585,6 +599,7 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
       "secondary_openai_api_key",
       "secondary_anthropic_api_key",
     ],
+    needsAttention: (settings) => getSecondaryProviderGap(settings) !== null,
     keywords: ["fallback", "secondary", "backup provider", "failover", "resilience"],
   },
   {
@@ -608,11 +623,12 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
   },
   {
     id: "ai-providers-usage",
-    label: "Usage and quota",
+    label: "Subscription usage",
     description:
-      "Per-user subscription token usage and rate-limit status, across Claude and ChatGPT.",
+      "Tokens each person sent through their own Claude or ChatGPT subscription, and whether it is rate-limited.",
     category: "ai-providers",
     access: "admin",
+    advanced: "scale-only",
     keywords: ["usage", "quota", "tokens", "rate limit", "consumption", "cli usage", "subscription"],
   },
 
@@ -646,6 +662,14 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
   },
 
   // ----------------------------------------------------------------- system
+  {
+    id: "system-health",
+    label: "Service health",
+    description: "Whether the database, queue, worker, models and AI are ready.",
+    category: "system",
+    access: "admin",
+    keywords: ["health", "status", "worker", "queue", "database", "readiness", "pipeline", "gpu"],
+  },
   {
     id: "system-logs",
     label: "Live logs",
@@ -772,6 +796,16 @@ export function countChangedAdvanced(
       return value !== undefined && value !== entry.defaultValue;
     });
   }).length;
+}
+
+/** How many gated settings in a category need attention; see `needsAttention`. */
+export function countAttentionAdvanced(
+  category: SettingsCategoryId,
+  settings: Settings,
+  { isAdmin }: { isAdmin: boolean },
+): number {
+  const { advanced } = partitionByAdvanced(category, { isAdmin });
+  return advanced.filter((entry) => entry.needsAttention?.(settings)).length;
 }
 
 export interface SettingsSearchResult {

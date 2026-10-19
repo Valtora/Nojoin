@@ -1,6 +1,11 @@
 import Link from "next/link";
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Check, Cloud, Info, RefreshCw, Server } from "lucide-react";
+import {
+  useEffect,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
+import { Check, Cloud, Server } from "lucide-react";
 
 import { CliOAuthStatus, CliProvider, Settings } from "@/types";
 import { cn } from "@/lib/cn";
@@ -8,8 +13,11 @@ import CliOAuthPanel from "./CliOAuthPanel";
 import SettingsCallout from "./SettingsCallout";
 import SettingsBlock from "./SettingsBlock";
 import SettingsCard from "./SettingsCard";
-import SettingsStatusBadge from "./SettingsStatusBadge";
+import SettingsRow from "./SettingsRow";
 import { settingsCategoryHref } from "./settingsCategories";
+import { ModelPicker, ProviderStatusBadge } from "./aiProviderControls";
+import { SETTINGS_VALUE_CLASS, SETTINGS_CONTROL_COLUMN_WIDE } from "./settingsControls";
+import { aiProviderLabel } from "@/lib/aiProviders";
 import {
   getClaudeCliModels,
   getCodexModels,
@@ -18,8 +26,6 @@ import {
 import { getServerProviderGap } from "@/lib/aiAvailability";
 import { cliModelOptions, type CliModelOption } from "./cliModels";
 
-const SELECT_CLASS =
-  "w-full p-2.5 rounded-lg border border-control-border bg-control-bg text-foreground focus:ring-2 focus:ring-action outline-none transition-all disabled:opacity-50";
 
 const PROVIDER_LABEL: Record<CliProvider, string> = {
   claude_code: "Claude",
@@ -70,7 +76,6 @@ export default function AiRoutingSection({
 
   const isCli = settings.usage_model === "cli_oauth";
   const serverGap = getServerProviderGap(settings);
-  const activeServerProvider = settings.llm_provider || "none";
   const secondaryProvider = settings.secondary_llm_provider;
 
   // Only one subscription can be connected at a time; the active provider is
@@ -91,9 +96,6 @@ export default function AiRoutingSection({
     }
   }, [isCli, connectedProvider, settings, onPersist]);
 
-  // Scroll target for the "not connected yet" call-to-action (see chooseCli).
-  const connectPanelRef = useRef<HTMLDivElement>(null);
-
   const chooseServer = () => {
     if (!isCli) return;
     onPersist({ ...settings, usage_model: null });
@@ -103,9 +105,9 @@ export default function AiRoutingSection({
     if (!anyConnected) {
       // Nothing connected yet — guide the user to the connect panel below
       // instead of dead-ending on a disabled control.
-      connectPanelRef.current?.scrollIntoView({
+      document.getElementById("your-ai-subscription")?.scrollIntoView({
         behavior: "smooth",
-        block: "center",
+        block: "start",
       });
       return;
     }
@@ -182,203 +184,213 @@ export default function AiRoutingSection({
   const liveModelOptions = activeProvider === "codex" ? codexModels : claudeModels;
   const modelOptions = liveModelOptions ?? cliModelOptions(activeProvider);
 
+  const serverLabel = aiProviderLabel(settings.llm_provider || "gemini");
+  const fallbackLabel = secondaryProvider ? aiProviderLabel(secondaryProvider) : null;
+
   return (
-    <SettingsCard
-      title="AI Routing"
-      description="Choose how AI runs for your account. This is a per-user preference and does not change anything for other users."
-    >
-      <div className="space-y-4">
-        <div
-          role="radiogroup"
-          aria-label="AI routing"
-          className="grid gap-3 @min-[36rem]:grid-cols-2"
-        >
-          <RoutingCard
-            selected={!isCli}
-            onSelect={chooseServer}
-            icon={<Server className="h-4 w-4" />}
-            title="Use server default"
-            description="AI runs on the provider your server administrator configured."
-          />
-          <RoutingCard
-            selected={isCli}
-            onSelect={chooseCli}
-            icon={<Cloud className="h-4 w-4" />}
-            title="My own AI subscription"
-            description={
+    <>
+      <SettingsCard
+        id="your-ai-routing"
+        title="How AI runs for you"
+        description="Only your own meetings follow this choice."
+      >
+        <SettingsBlock>
+          <RoutingChoice
+            isCli={isCli}
+            onChooseServer={chooseServer}
+            onChooseCli={chooseCli}
+            serverDescription={
+              isAdmin
+                ? "Runs on the default provider set under AI providers."
+                : "Runs on the provider your administrator set up."
+            }
+            cliDescription={
               anyConnected || isCli
-                ? "Route AI through your own Claude or ChatGPT plan — usually faster, and you can pick a stronger model."
-                : "Not connected yet — click to set it up below. Usually faster than the shared server default."
+                ? "Runs on your own Claude or ChatGPT plan, usually faster, with a model you choose."
+                : "Connect a subscription below to use this."
             }
           />
-        </div>
-
-        <p className="text-xs contrast-helper">
-          You choose how AI runs for your account: the server default is managed
-          by your administrator with nothing for you to set up, or connect your
-          own Claude or ChatGPT subscription to run on your personal plan —
-          usually faster and often higher quality.
-        </p>
-
-        <div ref={connectPanelRef}>
-          <CliOAuthPanel onStatusChange={setCliStatus} />
-        </div>
+        </SettingsBlock>
 
         {isCli ? (
-          <div className="space-y-4">
+          <>
             {!activeProviderConnected && (
-              <SettingsCallout tone="warning">
-                Your {PROVIDER_LABEL[activeProvider]} subscription is not
-                connected right now. Reconnect it above, or use the server
-                default, so AI keeps working.
-              </SettingsCallout>
+              <SettingsBlock>
+                <SettingsCallout tone="warning">
+                  Your {PROVIDER_LABEL[activeProvider]} subscription is not
+                  connected. Reconnect it below, or switch to the server
+                  default, so AI keeps working.
+                </SettingsCallout>
+              </SettingsBlock>
             )}
 
-            <div className="grid grid-cols-1 gap-4 @min-[44rem]:grid-cols-2">
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="block text-sm font-medium text-contrast-muted">
-                    Model for your subscription
-                  </label>
-                  <button
-                    type="button"
-                    onClick={handleRefreshModels}
-                    disabled={refreshingModels}
-                    title={
-                      activeProvider === "codex"
-                        ? "Re-query your Codex CLI for its current models"
-                        : "Reload the model list"
-                    }
-                    className="inline-flex items-center gap-1.5 text-xs contrast-helper hover:text-foreground disabled:opacity-60"
-                  >
-                    <RefreshCw
-                      className={`h-3.5 w-3.5 ${refreshingModels ? "animate-spin" : ""}`}
-                    />
-                    {refreshingModels ? "Refreshing..." : "Refresh models"}
-                  </button>
-                </div>
-                <select
-                  value={mainModel}
-                  onChange={(event) => setModel("main", event.target.value)}
-                  className={SELECT_CLASS}
-                >
-                  <option value="">{DEFAULT_MODEL_HINT[activeProvider]}</option>
-                  {modelOptions.map((model) => (
-                    <option key={model.id} value={model.id}>
-                      {model.label}
-                    </option>
-                  ))}
-                </select>
-                <p className="mt-1 text-xs contrast-helper">
-                  Used for notes, titles, speaker inference, and chat.
-                </p>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-contrast-muted mb-2">
-                  Meeting Edge model for your subscription
-                </label>
-                <select
-                  value={liveModel}
-                  onChange={(event) => setModel("live", event.target.value)}
-                  className={SELECT_CLASS}
-                >
-                  <option value="">Same as the model above</option>
-                  {modelOptions.map((model) => (
-                    <option key={model.id} value={model.id}>
-                      {model.label}
-                    </option>
-                  ))}
-                </select>
-                <p className="mt-1 text-xs contrast-helper">
-                  Used for live Meeting Edge. A faster model keeps guidance
-                  responsive and conserves your subscription quota.
-                </p>
-              </div>
-            </div>
-            <SettingsCallout tone="info">
-              <span className="flex items-start gap-2">
-                <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                <span>
-                  When your subscription is unavailable or usage-limited, Nojoin
-                  falls back to the server&apos;s default provider chain: its
-                  primary provider
-                  {settings.llm_provider ? (
-                    <>
-                      {" "}
-                      (
-                      <span className="capitalize">
-                        {settings.llm_provider}
-                      </span>
-                      )
-                    </>
-                  ) : null}
-                  {secondaryProvider ? (
-                    <>
-                      {", then its secondary provider ("}
-                      <span className="capitalize">{secondaryProvider}</span>
-                      {") if the primary also fails"}
-                    </>
-                  ) : (
-                    " (a secondary is used after that if the administrator has configured one)"
-                  )}
-                  .
-                </span>
-              </span>
-            </SettingsCallout>
-          </div>
+            <SettingsRow
+              id="your-ai-model"
+              label="Model"
+              controlId="your-ai-model-select"
+        controlClassName={SETTINGS_CONTROL_COLUMN_WIDE}
+              description="Used for your notes, titles, speaker names and Meeting Chat."
+            >
+              <ModelPicker
+                id="your-ai-model-select"
+                value={mainModel}
+                options={modelOptions.map((model) => ({
+                  value: model.id,
+                  label: model.label,
+                }))}
+                placeholder={DEFAULT_MODEL_HINT[activeProvider]}
+                allowEmpty
+                onChange={(value) => setModel("main", value)}
+                onRefresh={() => void handleRefreshModels()}
+                refreshing={refreshingModels}
+                refreshLabel={
+                  activeProvider === "codex"
+                    ? "Ask Codex for its current models"
+                    : "Reload the model list"
+                }
+              />
+            </SettingsRow>
+
+            <SettingsRow
+              id="your-ai-live-model"
+              label="Meeting Edge model"
+              controlId="your-ai-live-model-select"
+        controlClassName={SETTINGS_CONTROL_COLUMN_WIDE}
+              description="Used for live guidance. A faster model keeps it responsive and uses less of your quota."
+            >
+              <ModelPicker
+                id="your-ai-live-model-select"
+                value={liveModel}
+                options={modelOptions.map((model) => ({
+                  value: model.id,
+                  label: model.label,
+                }))}
+                placeholder="Same as the model above"
+                allowEmpty
+                onChange={(value) => setModel("live", value)}
+              />
+            </SettingsRow>
+
+            <SettingsBlock>
+              <SettingsCallout tone="info">
+                When your subscription is unavailable or rate-limited, the
+                server&apos;s default provider ({serverLabel}) answers
+                {fallbackLabel
+                  ? `, then its fallback (${fallbackLabel}) if that fails too.`
+                  : ". A fallback answers after that if your administrator has set one up."}
+              </SettingsCallout>
+            </SettingsBlock>
+          </>
         ) : (
-          <SettingsBlock inset
-            className="flex items-center justify-between gap-3"
+          <SettingsRow
+            label="Server provider"
+            badge={<ProviderStatusBadge gap={serverGap} />}
+            description={
+              isAdmin ? (
+                <>
+                  Set for everyone on this installation.{" "}
+                  <Link
+                    href={settingsCategoryHref("ai-providers")}
+                    className="font-medium text-action-text underline underline-offset-2 hover:text-action-text-hover"
+                  >
+                    Change it under AI providers
+                  </Link>
+                  .
+                </>
+              ) : serverGap === "model" ? (
+                "Your administrator has not chosen a model yet, so AI features do not work until they do."
+              ) : serverGap === "credential" ? (
+                "Your administrator has not set up an AI provider yet."
+              ) : (
+                "Set by your administrator for everyone who uses the server default."
+              )
+            }
           >
-            <div>
-              <div className="text-sm font-semibold text-foreground">
-                Server provider:{" "}
-                <span className="capitalize text-action-text">
-                  {activeServerProvider}
-                </span>
-              </div>
-              <p className="mt-1 text-xs contrast-helper">
-                {isAdmin ? (
-                  <>
-                    Set for everyone on this installation.{" "}
-                    <Link
-                      href={settingsCategoryHref("ai-providers")}
-                      className="font-medium text-action-text underline underline-offset-2 hover:text-action-text-hover"
-                    >
-                      Change it under AI providers
-                    </Link>
-                    .
-                  </>
-                ) : serverGap === "model" ? (
-                  "Your administrator has not chosen a model yet, so AI features do not work until they do."
-                ) : serverGap === "credential" ? (
-                  "Your administrator has not set up an AI provider yet."
-                ) : (
-                  "Set by your administrator for everyone who uses the server default."
-                )}
-              </p>
-            </div>
-            <SettingsStatusBadge tone={serverGap === null ? "success" : "warning"}>
-              {serverGap === null
-                ? "Configured"
-                : serverGap === "model"
-                  ? "No model selected"
-                  : "Not configured"}
-            </SettingsStatusBadge>
-          </SettingsBlock>
+            <p className={SETTINGS_VALUE_CLASS}>{serverLabel}</p>
+          </SettingsRow>
         )}
-      </div>
-    </SettingsCard>
+      </SettingsCard>
+
+      <CliOAuthPanel onStatusChange={setCliStatus} />
+    </>
   );
 }
 
-function RoutingCard({
+const CHOICES = ["server", "cli"] as const;
+
+/**
+ * The two ways AI can run, as a radio group: one tab stop, arrow keys move
+ * between the options, as the ARIA radio pattern expects.
+ */
+function RoutingChoice({
+  isCli,
+  onChooseServer,
+  onChooseCli,
+  serverDescription,
+  cliDescription,
+}: {
+  isCli: boolean;
+  onChooseServer: () => void;
+  onChooseCli: () => void;
+  serverDescription: string;
+  cliDescription: string;
+}) {
+  const selected = isCli ? "cli" : "server";
+  const choose = (choice: (typeof CHOICES)[number]) =>
+    choice === "cli" ? onChooseCli() : onChooseServer();
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    const step =
+      event.key === "ArrowRight" || event.key === "ArrowDown"
+        ? 1
+        : event.key === "ArrowLeft" || event.key === "ArrowUp"
+          ? -1
+          : 0;
+    if (!step) return;
+    event.preventDefault();
+    const next = CHOICES[(CHOICES.indexOf(selected) + step + CHOICES.length) % CHOICES.length];
+    choose(next);
+    event.currentTarget
+      .querySelector<HTMLButtonElement>(`[data-choice="${next}"]`)
+      ?.focus();
+  };
+
+  return (
+    <div
+      role="radiogroup"
+      aria-label="How AI runs for you"
+      onKeyDown={handleKeyDown}
+      className="grid gap-3 @min-[36rem]:grid-cols-2"
+    >
+      <RoutingOption
+        choice="server"
+        selected={selected === "server"}
+        onSelect={() => choose("server")}
+        icon={<Server className="h-4 w-4" aria-hidden="true" />}
+        title="Server default"
+        description={serverDescription}
+      />
+      <RoutingOption
+        choice="cli"
+        selected={selected === "cli"}
+        onSelect={() => choose("cli")}
+        icon={<Cloud className="h-4 w-4" aria-hidden="true" />}
+        title="My own subscription"
+        description={cliDescription}
+      />
+    </div>
+  );
+}
+
+function RoutingOption({
+  choice,
   selected,
   onSelect,
   icon,
   title,
   description,
 }: {
+  choice: (typeof CHOICES)[number];
   selected: boolean;
   onSelect: () => void;
   icon: ReactNode;
@@ -390,15 +402,17 @@ function RoutingCard({
       type="button"
       role="radio"
       aria-checked={selected}
+      tabIndex={selected ? 0 : -1}
+      data-choice={choice}
       onClick={onSelect}
       className={cn(
-        "flex flex-col gap-2 rounded-2xl border p-4 text-left transition-all",
+        "flex flex-col gap-2 rounded-lg border p-4 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring",
         selected
-          ? "border-action bg-action-tint shadow-card"
-          : "settings-inset border-transparent hover:border-control-border",
+          ? "border-action bg-action-tint"
+          : "border-control-border bg-control-bg hover:bg-surface-inset",
       )}
     >
-      <div className="flex items-center justify-between">
+      <span className="flex items-center justify-between gap-3">
         <span className="flex items-center gap-2 text-sm font-semibold text-foreground">
           <span className={selected ? "text-action-text" : "contrast-icon-muted"}>
             {icon}
@@ -406,8 +420,9 @@ function RoutingCard({
           {title}
         </span>
         <span
+          aria-hidden="true"
           className={cn(
-            "flex h-5 w-5 items-center justify-center rounded-full border",
+            "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border",
             selected
               ? "border-action bg-action text-action-on"
               : "border-control-border",
@@ -415,8 +430,8 @@ function RoutingCard({
         >
           {selected && <Check className="h-3 w-3" />}
         </span>
-      </div>
-      <p className="text-xs leading-5 contrast-helper">{description}</p>
+      </span>
+      <span className="text-xs leading-5 contrast-helper">{description}</span>
     </button>
   );
 }

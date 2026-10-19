@@ -5,7 +5,7 @@ import type { SettingsAutosaveStatus } from "./SettingsAutosaveState";
 export const SETTINGS_AUTOSAVE_DEBOUNCE_MS = 1000;
 
 export interface SettingsAutosaveSnapshot {
-  status: Exclude<SettingsAutosaveStatus, "blocked">;
+  status: Exclude<SettingsAutosaveStatus, "blocked" | "unsaved">;
   message?: string;
 }
 

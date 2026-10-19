@@ -104,10 +104,9 @@ export const SETTINGS_CATEGORIES: Record<
     group: "general",
     label: "Users and access",
     description:
-      "Accounts on this installation, their roles, and the invitations used to add new ones.",
+      "Accounts on this installation, the invitations that add new ones, and their daily AI analysis limit.",
     icon: Users,
     access: "admin",
-    fullBleed: true,
   },
   appearance: {
     id: "appearance",
