@@ -15,7 +15,7 @@ import { useAISettingsModels } from "@/components/settings/useAISettingsModels";
  */
 export default function NotesSettingsPage() {
   const { settings, updateSetting, persistNow, isAdmin } = useSettingsContext();
-  const models = useAISettingsModels({ settings, onPersist: persistNow });
+  const models = useAISettingsModels({ settings });
 
   return (
     <SettingsCategoryLayout categoryId="notes">

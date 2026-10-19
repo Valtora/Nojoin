@@ -9,9 +9,20 @@ import { useEffect } from 'react';
 
 interface MarkdownBubbleProps {
   content: string;
+  /** Replaces the default prose classes on the rendered document. */
+  className?: string;
+  /** Replaces the default classes on links. */
+  linkClassName?: string;
 }
 
-export default function MarkdownBubble({ content }: MarkdownBubbleProps) {
+const DEFAULT_CLASS = 'prose prose-sm dark:prose-invert max-w-none focus:outline-none';
+const DEFAULT_LINK_CLASS = 'text-status-info-fg underline hover:text-status-info-fg cursor-pointer';
+
+export default function MarkdownBubble({
+  content,
+  className = DEFAULT_CLASS,
+  linkClassName = DEFAULT_LINK_CLASS,
+}: MarkdownBubbleProps) {
   const editor = useEditor({
     editable: false,
     extensions: [
@@ -20,7 +31,7 @@ export default function MarkdownBubble({ content }: MarkdownBubbleProps) {
         openOnClick: true,
         autolink: true,
         HTMLAttributes: {
-          class: 'text-status-info-fg underline hover:text-status-info-fg cursor-pointer',
+          class: linkClassName,
           target: '_blank',
           rel: 'noopener noreferrer',
         },
@@ -33,7 +44,7 @@ export default function MarkdownBubble({ content }: MarkdownBubbleProps) {
     content: content,
     editorProps: {
       attributes: {
-        class: 'prose prose-sm dark:prose-invert max-w-none focus:outline-none',
+        class: className,
       },
     },
     immediatelyRender: false, // Fix for SSR hydration mismatch

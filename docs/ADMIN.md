@@ -137,6 +137,7 @@ Read [BACKUP_RESTORE.md](BACKUP_RESTORE.md) before relying on it operationally, 
 
 Use **Settings > System and logs** for operational controls such as:
 
+- Checking service health. The Optional AI check reads **Configured** only when the default provider has both its credential and a model, **No model selected** when it has a credential and no model, and **Fallback only** when only the fallback provider can answer.
 - Restarting the stack.
 - Viewing live logs.
 - Filtering merged or per-service log output.
@@ -148,7 +149,8 @@ Use **Settings > Updates** to see:
 
 - The installed server version from the current API build.
 - The latest stable published release.
-- Release history and release notes.
+- Each release's notes. The installed and latest releases are open; older ones expand when chosen, and each release's container image digests sit in their own collapsed section.
+- The commands that upgrade the installation. Only administrators see them.
 
 Owners and administrators are also told about a new release by a notification with **Go to Releases**, **Skip Update** and **Remind Me**, which [USAGE.md](USAGE.md#updates) describes. Users without an administrator role do not see it, since they cannot upgrade the installation.
 

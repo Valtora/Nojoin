@@ -33,6 +33,7 @@ import {
 import SettingsBlock from "./SettingsBlock";
 import SettingsCallout from "./SettingsCallout";
 import SettingsCard from "./SettingsCard";
+import { useSettingsContext } from "./SettingsProvider";
 import SettingsRow from "./SettingsRow";
 import { SETTINGS_BUTTON_PRIMARY } from "./settingsControls";
 
@@ -90,6 +91,7 @@ function getCalendarColourIndicator(colour: string | null | undefined) {
 
 
 export default function CalendarConnectionsSettings() {
+  const { isAdmin } = useSettingsContext();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -321,7 +323,9 @@ export default function CalendarConnectionsSettings() {
                 description={
                   provider.configured
                     ? `You will be redirected to ${PROVIDER_LABELS[provider.provider]} to sign in and approve access.`
-                    : "Not configured by an administrator yet."
+                    : isAdmin
+                      ? "Needs this installation's app credentials, under Advanced."
+                      : "Not set up on this installation yet."
                 }
                 controlClassName="@min-[26rem]:min-w-0 @min-[26rem]:flex @min-[26rem]:justify-end"
               >
@@ -344,10 +348,26 @@ export default function CalendarConnectionsSettings() {
 
           {configuredProviders.length === 0 && (
             <SettingsBlock>
-              <SettingsCallout
-                tone="warning"
-                message="Calendar providers are not configured yet. An owner or admin must add the one-time Google and Microsoft OAuth app credentials first. Everyone else only clicks Connect and approves access."
-              />
+              {isAdmin ? (
+                <SettingsCallout tone="warning">
+                  <p>
+                    Calendar sign-in needs a Google or Microsoft app registered
+                    for this installation. Once its credentials are saved,
+                    everyone connects with one click.
+                  </p>
+                  <a
+                    href="#integrations-calendar-providers"
+                    className="mt-2 inline-flex font-semibold underline underline-offset-2"
+                  >
+                    Add app credentials
+                  </a>
+                </SettingsCallout>
+              ) : (
+                <SettingsCallout
+                  tone="info"
+                  message="Calendar sign-in is not set up on this installation yet. Ask an administrator to add it."
+                />
+              )}
             </SettingsBlock>
           )}
 

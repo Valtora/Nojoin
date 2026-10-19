@@ -22,6 +22,7 @@ from backend.utils.download_progress import (
     get_download_progress,
     is_download_in_progress,
 )
+from backend.utils.llm_config import resolve_llm_config_async
 from backend.utils.version import get_installed_version
 
 HF_VALIDATE_URL = "https://huggingface.co/api/whoami-v2"
@@ -607,31 +608,58 @@ async def _get_device_component(worker_status: str) -> tuple[dict[str, Any], boo
     )
 
 
-async def _get_optional_ai_component(db: AsyncSession) -> dict[str, Any]:
-    system_keys = await async_get_system_api_keys(db)
-    has_cloud_provider = any(
-        bool(system_keys.get(key))
-        for key in ("gemini_api_key", "openai_api_key", "anthropic_api_key")
-    )
-    has_ollama = bool(config_manager.get("ollama_api_url")) and bool(
-        config_manager.get("ollama_model")
-    )
-    configured = has_cloud_provider or has_ollama
+AI_PROVIDER_LABELS = {
+    "gemini": "Gemini",
+    "openai": "OpenAI",
+    "anthropic": "Anthropic",
+    "ollama": "Ollama",
+}
 
-    if configured:
+
+async def _get_optional_ai_component(db: AsyncSession) -> dict[str, Any]:
+    # Judged on the same resolved server-default config the workers use, so a
+    # provider with a credential but no model is not reported as configured.
+    config = await resolve_llm_config_async(db)
+    label = AI_PROVIDER_LABELS.get(config.provider, config.provider)
+    has_credential = config.provider == "ollama" or bool(config.api_key)
+
+    if has_credential and config.model:
         return _build_component(
             "ok",
             "Configured",
-            "Optional AI enhancement is configured separately from the core transcription pipeline.",
+            f"Notes, titles, chat and Meeting Edge run on {label} ({config.model}).",
             None,
             configured=True,
         )
 
+    if not has_credential and not config.has_secondary:
+        return _build_component(
+            "info",
+            "Not configured",
+            "No AI provider is set up. Transcription and speaker separation still work.",
+            "Add a provider key to .env, then choose a model in Settings > AI providers.",
+            configured=False,
+        )
+
+    if config.has_secondary:
+        fallback = AI_PROVIDER_LABELS.get(
+            config.secondary_provider or "", config.secondary_provider or ""
+        )
+        return _build_component(
+            "warning",
+            "Fallback only",
+            f"{label} has no {'model' if has_credential else 'credential'}, so every AI request goes to the fallback, {fallback}.",
+            "Choose a model in Settings > AI providers."
+            if has_credential
+            else f"Add the {label} key to .env and restart Nojoin.",
+            configured=True,
+        )
+
     return _build_component(
-        "info",
-        "Not configured",
-        "Optional AI enhancement is not configured. Core transcription and diarization checks still apply independently.",
-        "Add provider credentials in AI settings if you want titles, notes, or Meeting Edge generation.",
+        "warning",
+        "No model selected",
+        f"{label} has no model selected, so notes, titles, chat and Meeting Edge fail.",
+        "Choose a model in Settings > AI providers.",
         configured=False,
     )
 

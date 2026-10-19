@@ -12,7 +12,7 @@ import { useAISettingsModels } from "@/components/settings/useAISettingsModels";
 
 export default function AiProvidersSettingsPage() {
   const { settings, updateSetting, persistNow, isAdmin } = useSettingsContext();
-  const models = useAISettingsModels({ settings, onPersist: persistNow });
+  const models = useAISettingsModels({ settings });
 
   return (
     <SettingsCategoryLayout categoryId="ai-providers">

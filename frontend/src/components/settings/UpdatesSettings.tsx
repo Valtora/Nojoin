@@ -1,254 +1,175 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
 import { format, formatDistanceToNow } from "date-fns";
-import {
-  ArrowUpCircle,
-  ExternalLink,
-  GitBranch,
-  RefreshCw,
-} from "lucide-react";
+import { ChevronRight, ExternalLink, RefreshCw } from "lucide-react";
 
+import MarkdownBubble from "@/components/MarkdownBubble";
 import { getVersion } from "@/lib/api";
-import { fuzzyMatch } from "@/lib/searchUtils";
-import { UpdateStatus, VersionInfo } from "@/types";
-import SettingsCallout from "./SettingsCallout";
+import { cn } from "@/lib/cn";
+import { prepareReleaseNotes } from "@/lib/releaseNotes";
+import type { ReleaseInfo, UpdateStatus, VersionInfo } from "@/types";
 import SettingsBlock from "./SettingsBlock";
+import SettingsCallout from "./SettingsCallout";
 import SettingsCard from "./SettingsCard";
+import { useSettingsContext } from "./SettingsProvider";
+import SettingsRow from "./SettingsRow";
 import SettingsStatusBadge, {
   type SettingsStatusBadgeTone,
 } from "./SettingsStatusBadge";
+import { SETTINGS_BUTTON_SECONDARY } from "./settingsControls";
 
 const RELEASES_PAGE_URL = "https://github.com/Valtora/Nojoin/releases";
 const DEPLOYMENT_GUIDE_URL =
   "https://github.com/Valtora/Nojoin/blob/main/docs/DEPLOYMENT.md";
 
-const PRIMARY_ACTION_STYLES =
-  "inline-flex items-center gap-2 rounded-xl bg-action px-4 py-2 text-sm font-semibold text-action-on transition hover:bg-action-hover";
+const UPGRADE_COMMANDS = "docker compose pull\ndocker compose up -d";
 
-const SECONDARY_ACTION_STYLES =
-  "inline-flex items-center gap-2 rounded-xl border border-control-border bg-surface-card px-4 py-2 text-sm font-medium text-contrast-muted transition hover:bg-surface-inset";
+const NOTES_CLASS =
+  "prose prose-sm dark:prose-invert max-w-none focus:outline-none prose-headings:text-foreground prose-h3:text-sm prose-h3:font-semibold prose-h4:text-sm prose-p:text-contrast-muted prose-li:text-contrast-muted prose-li:my-1 prose-code:before:content-none prose-code:after:content-none";
+const NOTES_LINK_CLASS =
+  "text-action-text underline underline-offset-2 hover:text-action-text-hover";
 
-interface UpdatesSettingsProps {
-  searchQuery?: string;
-}
+const LINK_CLASS =
+  "inline-flex items-center gap-1.5 rounded-sm text-sm font-medium text-action-text hover:text-action-text-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring";
 
-function formatPublishedAt(value: string | null | undefined): string {
+function parseDate(value: string | null | undefined): Date | null {
   if (!value) {
-    return "Unknown publish date";
+    return null;
   }
-
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return "Unknown publish date";
-  }
-
-  return `${format(date, "dd MMM yyyy")}`;
+  return Number.isNaN(date.getTime()) ? null : date;
 }
 
-function formatPublishedRelative(value: string | null | undefined): string {
-  if (!value) {
+function describePublished(value: string | null | undefined): string {
+  const date = parseDate(value);
+  if (!date) {
     return "Publish date unavailable";
   }
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return "Publish date unavailable";
-  }
-
-  return formatDistanceToNow(date, { addSuffix: true });
+  return `${format(date, "d MMM yyyy")}, ${formatDistanceToNow(date, { addSuffix: true })}`;
 }
 
-function renderInlineMarkdown(text: string, keyPrefix: string) {
-  const parts: Array<string | ReactNode> = [];
-  const linkPattern = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
-  let lastIndex = 0;
-  let match: RegExpExecArray | null = null;
-  let index = 0;
+const STATUS: Record<
+  UpdateStatus,
+  { label: string; tone: SettingsStatusBadgeTone; copy: string }
+> = {
+  current: {
+    label: "Up to date",
+    tone: "success",
+    copy: "This is the latest published release.",
+  },
+  "update-available": {
+    label: "Update available",
+    tone: "warning",
+    copy: "A newer release has been published.",
+  },
+  ahead: {
+    label: "Ahead of release",
+    tone: "info",
+    copy: "This build is newer than the latest published release.",
+  },
+  unknown: {
+    label: "Status unavailable",
+    tone: "neutral",
+    copy: "The latest release could not be checked.",
+  },
+};
 
-  while ((match = linkPattern.exec(text)) !== null) {
-    if (match.index > lastIndex) {
-      parts.push(text.slice(lastIndex, match.index));
-    }
+/**
+ * A button that shows and hides its content. The content renders only while
+ * open, so a long release history does not build an editor per release.
+ */
+function Disclosure({
+  summary,
+  defaultOpen = false,
+  className,
+  children,
+}: {
+  summary: ReactNode;
+  defaultOpen?: boolean;
+  className?: string;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  const contentId = useId();
 
-    parts.push(
-      <a
-        key={`${keyPrefix}-link-${index}`}
-        href={match[2]}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="text-action-text underline decoration-action underline-offset-2 hover:text-action-text-hover"
+  return (
+    <div className={className}>
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={contentId}
+        onClick={() => setOpen((value) => !value)}
+        className="flex w-full items-center gap-2 rounded-lg py-1 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
       >
-        {match[1]}
-      </a>,
-    );
-
-    lastIndex = match.index + match[0].length;
-    index += 1;
-  }
-
-  if (lastIndex < text.length) {
-    parts.push(text.slice(lastIndex));
-  }
-
-  return parts;
+        <ChevronRight
+          className={cn(
+            "h-4 w-4 shrink-0 contrast-icon-muted transition-transform",
+            open && "rotate-90",
+          )}
+          aria-hidden="true"
+        />
+        {summary}
+      </button>
+      {open && (
+        <div id={contentId} className="mt-3 pl-6">
+          {children}
+        </div>
+      )}
+    </div>
+  );
 }
 
-function ReleaseNotes({ body, releaseVersion }: { body: string | null; releaseVersion: string }) {
-  if (!body?.trim()) {
+function ReleaseNotes({ release }: { release: ReleaseInfo }) {
+  if (!release.body?.trim()) {
     return (
       <p className="text-sm contrast-helper">
-        No release notes were published for this release.
+        No notes were published with this release.
       </p>
     );
   }
 
-  const elements: ReactNode[] = [];
-  const lines = body.replace(/\r/g, "").split("\n");
-  const paragraphBuffer: string[] = [];
-  const listBuffer: string[] = [];
-  let elementIndex = 0;
+  const { images, notes } = prepareReleaseNotes(release.body);
 
-  const flushParagraph = () => {
-    if (!paragraphBuffer.length) {
-      return;
-    }
-
-    const text = paragraphBuffer.join(" ");
-    elements.push(
-      <p
-        key={`${releaseVersion}-paragraph-${elementIndex}`}
-        className="text-sm leading-6 text-contrast-muted"
-      >
-        {renderInlineMarkdown(text, `${releaseVersion}-paragraph-${elementIndex}`)}
-      </p>,
-    );
-    paragraphBuffer.length = 0;
-    elementIndex += 1;
-  };
-
-  const flushList = () => {
-    if (!listBuffer.length) {
-      return;
-    }
-
-    elements.push(
-      <ul
-        key={`${releaseVersion}-list-${elementIndex}`}
-        className="space-y-2 pl-5 text-sm text-contrast-muted list-disc"
-      >
-        {listBuffer.map((item, itemIndex) => (
-          <li key={`${releaseVersion}-list-${elementIndex}-${itemIndex}`}>
-            {renderInlineMarkdown(item, `${releaseVersion}-item-${elementIndex}-${itemIndex}`)}
-          </li>
-        ))}
-      </ul>,
-    );
-    listBuffer.length = 0;
-    elementIndex += 1;
-  };
-
-  lines.forEach((line) => {
-    const trimmed = line.trim();
-
-    if (!trimmed) {
-      flushParagraph();
-      flushList();
-      return;
-    }
-
-    if (trimmed.startsWith("### ") || trimmed.startsWith("## ") || trimmed.startsWith("# ")) {
-      flushParagraph();
-      flushList();
-
-      const title = trimmed.replace(/^#+\s*/, "");
-      elements.push(
-        <h5
-          key={`${releaseVersion}-heading-${elementIndex}`}
-          className="text-sm font-semibold uppercase tracking-wide text-foreground"
+  return (
+    <div className="space-y-4">
+      <MarkdownBubble
+        content={notes}
+        className={NOTES_CLASS}
+        linkClassName={NOTES_LINK_CLASS}
+      />
+      {images && (
+        <Disclosure
+          summary={
+            <span className="text-sm font-medium text-foreground">
+              Container images
+            </span>
+          }
         >
-          {title}
-        </h5>,
-      );
-      elementIndex += 1;
-      return;
-    }
-
-    if (trimmed.startsWith("- ") || trimmed.startsWith("* ")) {
-      flushParagraph();
-      listBuffer.push(trimmed.slice(2).trim());
-      return;
-    }
-
-    flushList();
-    paragraphBuffer.push(trimmed);
-  });
-
-  flushParagraph();
-  flushList();
-
-  return <div className="space-y-3">{elements}</div>;
+          <MarkdownBubble
+            content={images}
+            className={NOTES_CLASS}
+            linkClassName={NOTES_LINK_CLASS}
+          />
+        </Disclosure>
+      )}
+      <a
+        href={release.html_url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={LINK_CLASS}
+      >
+        <ExternalLink className="h-4 w-4" aria-hidden="true" />
+        View {release.tag_name} on GitHub
+      </a>
+    </div>
+  );
 }
 
-function getStatusCopy(versionInfo: VersionInfo): string {
-  switch (versionInfo.update_status) {
-    case "update-available":
-      return "A newer stable release is available.";
-    case "ahead":
-      return "This instance is ahead of the latest published stable release.";
-    case "current":
-      return "This instance is on the latest published stable release.";
-    default:
-      return "Release metadata could not be fully resolved.";
-  }
-}
-
-function getUpdateStatusTone(
-  status: UpdateStatus,
-): SettingsStatusBadgeTone {
-  switch (status) {
-    case "update-available":
-      return "warning";
-    case "ahead":
-      return "info";
-    case "current":
-      return "success";
-    default:
-      return "neutral";
-  }
-}
-
-function getUpdateStatusLabel(status: UpdateStatus): string {
-  switch (status) {
-    case "update-available":
-      return "Update available";
-    case "ahead":
-      return "Ahead of stable";
-    case "current":
-      return "Up to date";
-    default:
-      return "Status unavailable";
-  }
-}
-
-export default function UpdatesSettings({
-  searchQuery = "",
-}: UpdatesSettingsProps) {
+export default function UpdatesSettings() {
+  const { isAdmin } = useSettingsContext();
   const [versionInfo, setVersionInfo] = useState<VersionInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const showUpdates = fuzzyMatch(searchQuery, [
-    "update",
-    "updates",
-    "release",
-    "releases",
-    "version",
-    "changelog",
-    "release notes",
-    "installer",
-    "download",
-    "github",
-  ]);
 
   const loadVersionInfo = async (isRefresh = false) => {
     if (isRefresh) {
@@ -261,10 +182,9 @@ export default function UpdatesSettings({
       const data = await getVersion({ refresh: isRefresh });
       setVersionInfo(data);
       setError(null);
-
-        } catch (fetchError: unknown) {
+    } catch (fetchError: unknown) {
       console.error("Failed to fetch update metadata", fetchError);
-      setError("Could not load update metadata.");
+      setError("Could not reach the release information.");
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -275,23 +195,26 @@ export default function UpdatesSettings({
     void loadVersionInfo();
   }, []);
 
-  const latestRelease = versionInfo?.releases?.[0] || null;
-
-  if (!showUpdates && searchQuery) {
-    return (
-      <SettingsCallout
-        tone="neutral"
-        title="No matching settings"
-        message="Try a broader search term for releases, versions, deployment, or downloads."
+  const refreshButton = (
+    <button
+      type="button"
+      onClick={() => void loadVersionInfo(true)}
+      disabled={refreshing}
+      className={SETTINGS_BUTTON_SECONDARY}
+    >
+      <RefreshCw
+        className={cn("h-4 w-4", refreshing && "animate-spin")}
+        aria-hidden="true"
       />
-    );
-  }
+      {refreshing ? "Checking..." : "Check for updates"}
+    </button>
+  );
 
   if (loading) {
     return (
       <SettingsCallout tone="neutral">
         <div className="flex items-center gap-3">
-          <RefreshCw className="h-4 w-4 animate-spin" />
+          <RefreshCw className="h-4 w-4 animate-spin" aria-hidden="true" />
           Loading release information...
         </div>
       </SettingsCallout>
@@ -300,250 +223,134 @@ export default function UpdatesSettings({
 
   if (error || !versionInfo) {
     return (
-      <SettingsCallout tone="error" title="Update metadata unavailable">
+      <SettingsCallout tone="error" title="Release information unavailable">
         <div className="space-y-3">
-          <p>{error || "Could not load update metadata."}</p>
-          <button
-            onClick={() => void loadVersionInfo(true)}
-            className={SECONDARY_ACTION_STYLES}
-          >
-            <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
-            Retry
-          </button>
+          <p>{error || "Could not reach the release information."} Check that this server can reach GitHub, then try again.</p>
+          {refreshButton}
         </div>
       </SettingsCallout>
     );
   }
 
+  const status = STATUS[versionInfo.update_status] ?? STATUS.unknown;
+  const releases = versionInfo.releases ?? [];
+
   return (
-    <div className="space-y-8">
+    <>
       <SettingsCard
-        title="Release Overview"
-        description="Track the installed version, the latest stable release, and the published release links."
-        headerAside={
-          <button
-            onClick={() => void loadVersionInfo(true)}
-            className={SECONDARY_ACTION_STYLES}
+        id="updates-overview"
+        title="Version"
+        headerAside={refreshButton}
+      >
+        <SettingsRow
+          label="Installed"
+          description={status.copy}
+          badge={
+            <SettingsStatusBadge tone={status.tone}>
+              {status.label}
+            </SettingsStatusBadge>
+          }
+        >
+          <p className="text-sm font-semibold tabular-nums text-foreground @min-[26rem]:text-right">
+            {versionInfo.current_version}
+          </p>
+        </SettingsRow>
+
+        <SettingsRow
+          label="Latest release"
+          description={
+            versionInfo.latest_version
+              ? `Published ${describePublished(versionInfo.latest_published_at)}.`
+              : "Not available."
+          }
+        >
+          <p className="text-sm font-semibold tabular-nums text-foreground @min-[26rem]:text-right">
+            {versionInfo.latest_version ?? "Unknown"}
+          </p>
+        </SettingsRow>
+
+        {isAdmin && (
+          <SettingsBlock
+            id="updates-upgrade"
+            label="How to upgrade"
+            description="Pull the published images and recreate the stack. If you build from source, rebuild instead of pulling."
           >
-            <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
-            Refresh
-          </button>
-        }
-      >
-        <div className="grid gap-6 @min-[46rem]:grid-cols-[minmax(0,1.45fr)_minmax(20rem,0.85fr)]">
-          {/* The column is a container of its own so the stat pair below
-              queries the column's width, not the whole card's. */}
-          <div className="@container space-y-4">
-            <div className="grid gap-4 @min-[33rem]:grid-cols-2">
-              <SettingsBlock inset>
-                <p className="text-xs font-semibold uppercase tracking-wide contrast-helper">
-                  Installed version
-                </p>
-                <p className="mt-2 text-2xl font-semibold text-foreground">
-                  {versionInfo.current_version}
-                </p>
-                <p className="mt-2 text-sm text-contrast-helper">
-                  {getStatusCopy(versionInfo)}
-                </p>
-              </SettingsBlock>
-
-              <SettingsBlock inset>
-                <p className="text-xs font-semibold uppercase tracking-wide contrast-helper">
-                  Latest stable release
-                </p>
-                <p className="mt-2 text-2xl font-semibold text-foreground">
-                  {versionInfo.latest_version || "Unavailable"}
-                </p>
-                <p className="mt-2 text-sm text-contrast-helper">
-                  {formatPublishedRelative(versionInfo.latest_published_at)}
-                </p>
-              </SettingsBlock>
+            <div className="space-y-3">
+              <pre className="settings-inset overflow-x-auto rounded-lg px-4 py-3 font-mono text-sm text-foreground">
+                {UPGRADE_COMMANDS}
+              </pre>
+              <a
+                href={DEPLOYMENT_GUIDE_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={LINK_CLASS}
+              >
+                <ExternalLink className="h-4 w-4" aria-hidden="true" />
+                Deployment guide
+              </a>
             </div>
-
-            <SettingsBlock className="space-y-4">
-              <div>
-                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-contrast-helper">
-                  Release links
-                </div>
-                <p className="mt-2 text-sm leading-6 text-contrast-helper">
-                  Open the published release pages, compare versions, and review deployment guidance for upgrading your installation.
-                </p>
-              </div>
-
-              <div className="flex flex-wrap gap-3">
-                <a
-                  href={versionInfo.release_url || RELEASES_PAGE_URL}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className={PRIMARY_ACTION_STYLES}
-                >
-                  <ExternalLink className="h-4 w-4" />
-                  View latest release
-                </a>
-                <a
-                  href={RELEASES_PAGE_URL}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className={SECONDARY_ACTION_STYLES}
-                >
-                  <GitBranch className="h-4 w-4" />
-                  Browse all releases
-                </a>
-              </div>
-            </SettingsBlock>
-          </div>
-
-          <SettingsBlock inset className="space-y-4">
-            <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
-              <ArrowUpCircle className="h-4 w-4 text-action-text" />
-              Server update guidance
-            </div>
-            <p className="text-sm leading-6 text-contrast-helper">
-              Most hosted installations update by pulling the published container images and restarting the stack. If you build from source instead, rebuild locally rather than pulling from GHCR.
-            </p>
-            <div className="rounded-2xl bg-surface-card p-4 text-sm text-contrast-icon-muted">
-              <code>docker compose pull && docker compose up -d</code>
-            </div>
-            <a
-              href={DEPLOYMENT_GUIDE_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 text-sm font-medium text-action-text hover:text-action-text-hover"
-            >
-              <ExternalLink className="h-4 w-4" />
-              Read the deployment guide
-            </a>
           </SettingsBlock>
-        </div>
+        )}
       </SettingsCard>
 
       <SettingsCard
-        title="Latest Release Snapshot"
-        description="The latest stable release metadata is sourced from GitHub Releases."
-        badge={
-          <SettingsStatusBadge tone={getUpdateStatusTone(versionInfo.update_status)}>
-            {getUpdateStatusLabel(versionInfo.update_status)}
-          </SettingsStatusBadge>
+        id="updates-release-notes"
+        title="Release notes"
+        description="From GitHub Releases. The installed and latest releases are open."
+        headerAside={
+          <a
+            href={RELEASES_PAGE_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={SETTINGS_BUTTON_SECONDARY}
+          >
+            <ExternalLink className="h-4 w-4" aria-hidden="true" />
+            All releases
+          </a>
         }
       >
-        {latestRelease ? (
-          <div className="space-y-5">
-            <SettingsBlock inset className="space-y-4">
-              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                <div>
-                  <div className="flex flex-wrap items-center gap-3">
-                    <h5 className="text-xl font-semibold text-foreground">
-                      {latestRelease.tag_name}
-                    </h5>
-                    <SettingsStatusBadge tone="neutral">
-                      Published {formatPublishedAt(latestRelease.published_at)}
-                    </SettingsStatusBadge>
-                    {versionInfo.current_version === latestRelease.version && (
-                      <SettingsStatusBadge tone="success">
-                        Installed
-                      </SettingsStatusBadge>
-                    )}
-                  </div>
-                  <p className="mt-2 text-sm text-contrast-helper">
-                    Published {formatPublishedRelative(latestRelease.published_at)}.
-                  </p>
-                </div>
+        {releases.length > 0 ? (
+          releases.map((release) => {
+            const isInstalled = release.version === versionInfo.current_version;
+            const isLatest = release.version === versionInfo.latest_version;
 
-                <div className="flex flex-wrap gap-3">
-                  <a
-                    href={latestRelease.html_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={SECONDARY_ACTION_STYLES}
-                  >
-                    <ExternalLink className="h-4 w-4" />
-                    Open on GitHub
-                  </a>
-                </div>
-              </div>
-            </SettingsBlock>
-
-            <SettingsBlock>
-              <ReleaseNotes
-                body={latestRelease.body}
-                releaseVersion={latestRelease.version}
-              />
-            </SettingsBlock>
-          </div>
+            return (
+              <SettingsBlock key={release.tag_name}>
+                <Disclosure
+                  defaultOpen={isInstalled || isLatest}
+                  summary={
+                    <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1">
+                      <span className="text-sm font-semibold text-foreground">
+                        {release.tag_name}
+                      </span>
+                      {isInstalled && (
+                        <SettingsStatusBadge tone="success">
+                          Installed
+                        </SettingsStatusBadge>
+                      )}
+                      {isLatest && (
+                        <SettingsStatusBadge tone="info">Latest</SettingsStatusBadge>
+                      )}
+                      <span className="text-xs contrast-helper">
+                        {describePublished(release.published_at)}
+                      </span>
+                    </span>
+                  }
+                >
+                  <ReleaseNotes release={release} />
+                </Disclosure>
+              </SettingsBlock>
+            );
+          })
         ) : (
-          <SettingsCallout
-            tone="neutral"
-            message="Release history is not available right now. Version checks are using the fallback metadata source."
-          />
+          <SettingsBlock>
+            <p className="text-sm contrast-helper">
+              No release history is available. This server may not be able to
+              reach GitHub.
+            </p>
+          </SettingsBlock>
         )}
       </SettingsCard>
-
-      <SettingsCard
-        title="Release History"
-        description="Recent Nojoin releases published on GitHub."
-      >
-        {versionInfo.releases.length > 0 ? (
-          <div className="space-y-4">
-            {versionInfo.releases.map((release) => {
-              const isInstalled = release.version === versionInfo.current_version;
-              const isLatest = release.version === versionInfo.latest_version;
-
-              return (
-                <SettingsBlock key={release.tag_name} className="space-y-4">
-                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                    <div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h5 className="text-lg font-semibold text-foreground">
-                          {release.tag_name}
-                        </h5>
-                        {isInstalled && (
-                          <SettingsStatusBadge tone="success">
-                            Installed
-                          </SettingsStatusBadge>
-                        )}
-                        {isLatest && (
-                          <SettingsStatusBadge tone="warning">
-                            Latest
-                          </SettingsStatusBadge>
-                        )}
-                      </div>
-                      <p className="mt-1 text-sm contrast-helper">
-                        Published {formatPublishedAt(release.published_at)} • {formatPublishedRelative(release.published_at)}
-                      </p>
-                    </div>
-
-                    <div className="flex flex-wrap gap-3">
-                      <a
-                        href={release.html_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className={SECONDARY_ACTION_STYLES}
-                      >
-                        <ExternalLink className="h-4 w-4" />
-                        View release
-                      </a>
-                    </div>
-                  </div>
-
-                  <SettingsBlock inset
-                    className="max-h-72 overflow-y-auto"
-                  >
-                    <ReleaseNotes
-                      body={release.body}
-                      releaseVersion={release.version}
-                    />
-                  </SettingsBlock>
-                </SettingsBlock>
-              );
-            })}
-          </div>
-        ) : (
-          <SettingsCallout
-            tone="neutral"
-            message="Release history is unavailable right now."
-          />
-        )}
-      </SettingsCard>
-    </div>
+    </>
   );
 }
