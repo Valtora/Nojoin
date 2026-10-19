@@ -104,7 +104,9 @@ class Fixtures:
             # The capture with the shortest query is the unfiltered request,
             # and the most useful stand-in for a query never captured.
             current = self.by_path.get(entry["path"])
-            if current is None or len(query) < len(canonical_query(current.get("query", ""))):
+            if current is None or len(query) < len(
+                canonical_query(current.get("query", ""))
+            ):
                 self.by_path[entry["path"]] = entry
 
     def offset_days(self, today: date | None = None) -> int:
@@ -129,13 +131,21 @@ def narrow(payload: Any, term: str) -> Any:
     needle = term.casefold()
 
     def keep(items: list) -> list:
-        return [item for item in items if needle in json.dumps(item, ensure_ascii=False).casefold()]
+        return [
+            item
+            for item in items
+            if needle in json.dumps(item, ensure_ascii=False).casefold()
+        ]
 
     if isinstance(payload, list):
         return keep(payload)
     if isinstance(payload, dict) and isinstance(payload.get("items"), list):
         items = keep(payload["items"])
-        return {**payload, "items": items, **({"total": len(items)} if "total" in payload else {})}
+        return {
+            **payload,
+            "items": items,
+            **({"total": len(items)} if "total" in payload else {}),
+        }
     return payload
 
 
@@ -160,7 +170,10 @@ def replay(entry: dict, days: int, term: str = "") -> Response:
         return JSONResponse(payload, status_code=status, headers=headers)
     # FileResponse answers Range requests, which audio seeking depends on.
     return FileResponse(
-        FIXTURES / entry["body"], status_code=status, media_type=content_type, headers=headers
+        FIXTURES / entry["body"],
+        status_code=status,
+        media_type=content_type,
+        headers=headers,
     )
 
 

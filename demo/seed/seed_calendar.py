@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
 
 from sqlmodel import select
@@ -60,14 +60,18 @@ CALENDARS = (("Reporting", "blue", True), ("Space desk", "emerald", False))
 
 async def main() -> int:
     async with async_session_maker() as session:
-        user = (await session.exec(select(User).where(User.username == USERNAME))).first()
+        user = (
+            await session.exec(select(User).where(User.username == USERNAME))
+        ).first()
         if user is None:
             print(f"No user named {USERNAME!r}.")
             return 1
 
         old = (
             await session.exec(
-                select(CalendarConnection).where(CalendarConnection.provider_account_id == ACCOUNT_ID)
+                select(CalendarConnection).where(
+                    CalendarConnection.provider_account_id == ACCOUNT_ID
+                )
             )
         ).first()
         if old is not None:
@@ -104,8 +108,12 @@ async def main() -> int:
             sources[name] = source
         await session.commit()
 
-        def add_event(key: str, title: str, starts_at: datetime | None, minutes: int, day: date, calendar: str):
+        def add_event(
+            key: str, title: str, starts_at: datetime, minutes: int, calendar: str
+        ) -> CalendarEvent:
+            # Zero minutes is the all-day shape: a date rather than times.
             all_day = minutes == 0
+            day = starts_at.date()
             event = CalendarEvent(
                 calendar_id=sources[calendar].id,
                 provider_event_id=f"{ACCOUNT_ID}:{key}",
@@ -122,7 +130,9 @@ async def main() -> int:
             return event
 
         # The entry each recording was made from, at the time it was recorded.
-        recordings = (await session.exec(select(Recording).where(Recording.user_id == user.id))).all()
+        recordings = (
+            await session.exec(select(Recording).where(Recording.user_id == user.id))
+        ).all()
         linked = 0
         for recording in recordings:
             # An import's recorded_at is stored as created_at.
@@ -130,7 +140,9 @@ async def main() -> int:
             if started.tzinfo is None:
                 started = started.replace(tzinfo=timezone.utc)
             minutes = max(15, round((recording.duration_seconds or 0) / 60))
-            event = add_event(f"rec:{recording.id}", recording.name, started, minutes, started.date(), "Reporting")
+            event = add_event(
+                f"rec:{recording.id}", recording.name, started, minutes, "Reporting"
+            )
             await session.commit()
             recording.calendar_event_id = event.id
             session.add(recording)
@@ -140,7 +152,7 @@ async def main() -> int:
         for index, (title, offset, hour, minute, minutes, calendar) in enumerate(DIARY):
             day = monday + timedelta(days=offset)
             starts_at = datetime.combine(day, time(hour, minute), tzinfo=timezone.utc)
-            add_event(f"diary:{index}", title, starts_at, minutes, day, calendar)
+            add_event(f"diary:{index}", title, starts_at, minutes, calendar)
         await session.commit()
 
     print(f"Calendar seeded: {linked} recordings linked, {len(DIARY)} diary entries.")

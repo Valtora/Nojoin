@@ -18,16 +18,38 @@ def demo(tmp_path, monkeypatch):
     bodies = tmp_path / "bodies"
     bodies.mkdir()
     (bodies / "recordings.json").write_text(
-        json.dumps([{"id": "r1", "created_at": "2026-10-18T19:00:00Z", "name": "On 2026-10-18 we met"}])
+        json.dumps(
+            [
+                {
+                    "id": "r1",
+                    "created_at": "2026-10-18T19:00:00Z",
+                    "name": "On 2026-10-18 we met",
+                }
+            ]
+        )
     )
     (bodies / "recordings-q.json").write_text(json.dumps([]))
-    (bodies / "calendar.json").write_text(json.dumps({"2026-10-20": [{"start": "2026-10-20"}]}))
+    (bodies / "calendar.json").write_text(
+        json.dumps({"2026-10-20": [{"start": "2026-10-20"}]})
+    )
     (bodies / "version.json").write_text(json.dumps({"version": "2.9.0"}))
     (bodies / "audio.m4a").write_bytes(b"0123456789")
     entries = [
-        {"path": "/api/v1/recordings", "query": "limit=50", "body": "bodies/recordings.json"},
-        {"path": "/api/v1/recordings", "query": "limit=50&q=moon", "body": "bodies/recordings-q.json"},
-        {"path": "/api/v1/calendar", "query": "start=2026-10-01&end=2026-10-31", "body": "bodies/calendar.json"},
+        {
+            "path": "/api/v1/recordings",
+            "query": "limit=50",
+            "body": "bodies/recordings.json",
+        },
+        {
+            "path": "/api/v1/recordings",
+            "query": "limit=50&q=moon",
+            "body": "bodies/recordings-q.json",
+        },
+        {
+            "path": "/api/v1/calendar",
+            "query": "start=2026-10-01&end=2026-10-31",
+            "body": "bodies/calendar.json",
+        },
         {"path": "/api/v1/version", "query": "", "body": "bodies/version.json"},
         {
             "path": "/api/v1/recordings/r1/stream",
@@ -36,7 +58,9 @@ def demo(tmp_path, monkeypatch):
             "content_type": "audio/mp4",
         },
     ]
-    (tmp_path / "index.json").write_text(json.dumps({"captured_on": CAPTURED_ON, "entries": entries}))
+    (tmp_path / "index.json").write_text(
+        json.dumps({"captured_on": CAPTURED_ON, "entries": entries})
+    )
     monkeypatch.setenv("DEMO_FIXTURES", str(tmp_path))
     sys.modules.pop("app", None)
     module = importlib.import_module("app")
@@ -45,7 +69,12 @@ def demo(tmp_path, monkeypatch):
 
 def signed_in(module) -> TestClient:
     client = TestClient(module.app, base_url="https://testserver")
-    assert client.post("/api/v1/login/session", data={"username": "x", "password": "y"}).status_code == 200
+    assert (
+        client.post(
+            "/api/v1/login/session", data={"username": "x", "password": "y"}
+        ).status_code
+        == 200
+    )
     return client
 
 
@@ -100,13 +129,15 @@ def test_dates_move_forward_and_text_does_not(demo, monkeypatch):
 
 def test_query_dates_move_back_before_matching(demo, monkeypatch):
     monkeypatch.setattr(demo.FIXTURE_SET, "offset_days", lambda today=None: 7)
-    assert demo.FIXTURE_SET.find("/api/v1/calendar", "start=2026-10-08&end=2026-11-07", 7)[0]["query"].startswith(
-        "start=2026-10-01"
-    )
+    assert demo.FIXTURE_SET.find(
+        "/api/v1/calendar", "start=2026-10-08&end=2026-11-07", 7
+    )[0]["query"].startswith("start=2026-10-01")
 
 
 def test_audio_is_served_with_ranges(demo):
     client = signed_in(demo)
-    response = client.get("/api/v1/recordings/r1/stream", headers={"Range": "bytes=2-5"})
+    response = client.get(
+        "/api/v1/recordings/r1/stream", headers={"Range": "bytes=2-5"}
+    )
     assert response.status_code == 206
     assert response.content == b"2345"
