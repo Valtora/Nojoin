@@ -2,6 +2,8 @@ import type { ReactNode } from "react";
 
 import { cn } from "@/lib/cn";
 
+import { useScopeBadge } from "./SettingsScopeBadge";
+
 interface SettingsRowProps {
   /** Registry entry id, used as the anchor a search result scrolls to. */
   id?: string;
@@ -17,9 +19,7 @@ interface SettingsRowProps {
    * only needs `aria-describedby` pointing there.
    */
   controlId?: string;
-  /** Optional leading icon, sized by the caller. */
-  icon?: ReactNode;
-  /** Trailing badge next to the label, for status or scope. */
+  /** Status badge next to the label. A scope badge from the registry follows it. */
   badge?: ReactNode;
   className?: string;
   controlClassName?: string;
@@ -44,12 +44,13 @@ export default function SettingsRow({
   description,
   descriptionId,
   controlId,
-  icon,
   badge,
   className,
   controlClassName,
   children,
 }: SettingsRowProps) {
+  const scopeBadge = useScopeBadge(id);
+
   return (
     <div
       id={id}
@@ -65,7 +66,6 @@ export default function SettingsRow({
       <div className="flex flex-col gap-3 @min-[26rem]:flex-row @min-[26rem]:items-start @min-[26rem]:justify-between @min-[26rem]:gap-6">
         <div className="min-w-0 @min-[26rem]:max-w-md">
           <div className="flex flex-wrap items-center gap-2">
-            {icon}
             {controlId ? (
               <label
                 id={labelId}
@@ -80,6 +80,7 @@ export default function SettingsRow({
               </span>
             )}
             {badge}
+            {scopeBadge}
           </div>
 
           {description && (

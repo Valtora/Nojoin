@@ -1,7 +1,5 @@
 "use client";
 
-import { Mic } from "lucide-react";
-
 import { useAudioWarningStore } from "@/lib/audioWarningStore";
 import { useCapture } from "@/lib/capture/CaptureProvider";
 import { useNotificationStore } from "@/lib/notificationStore";
@@ -41,7 +39,6 @@ export default function CaptureProcessingSettings() {
           descriptionId="recording-echo-cancellation-help"
           label="Echo cancellation"
           description="Reduces loopback and speaker bleed for headset and speakerphone use."
-          icon={<Mic className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
           controlClassName={SETTINGS_CONTROL_END}
         >
           <Switch
@@ -60,7 +57,6 @@ export default function CaptureProcessingSettings() {
           descriptionId="recording-noise-suppression-help"
           label="Noise suppression"
           description="Reduces steady background noise before the mic is mixed into the recording."
-          icon={<Mic className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
           controlClassName={SETTINGS_CONTROL_END}
         >
           <Switch
@@ -79,7 +75,6 @@ export default function CaptureProcessingSettings() {
           descriptionId="recording-browser-auto-gain-help"
           label="Browser auto gain"
           description="Lets the browser lift a quiet microphone before Nojoin applies its own balancing."
-          icon={<Mic className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
           controlClassName={SETTINGS_CONTROL_END}
         >
           <Switch

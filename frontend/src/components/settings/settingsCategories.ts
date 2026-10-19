@@ -64,6 +64,12 @@ export type SettingsCategoryId = (typeof SETTINGS_CATEGORY_IDS)[number];
 /** Who a category (or a single setting) is for. */
 export type SettingsAccess = "all" | "admin";
 
+/**
+ * Who a setting applies to, when that is not just the signed-in person:
+ * everyone on the installation, or only the browser it was set in.
+ */
+export type SettingsScope = "everyone" | "browser";
+
 export interface SettingsCategoryMetadata {
   id: SettingsCategoryId;
   group: SettingsGroupId;
@@ -174,7 +180,7 @@ export const SETTINGS_CATEGORIES: Record<
     group: "data",
     label: "Backup and restore",
     description:
-      "Export application data, and recover it with explicit, transactional restores.",
+      "Back up everything on this installation, and restore it from a backup.",
     icon: Archive,
     access: "admin",
   },
@@ -190,7 +196,7 @@ export const SETTINGS_CATEGORIES: Record<
     id: "system",
     group: "data",
     label: "System and logs",
-    description: "Live service output and operational configuration.",
+    description: "The health of this installation's services, and their live logs.",
     icon: Server,
     access: "admin",
     fullBleed: true,

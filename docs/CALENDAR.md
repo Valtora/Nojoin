@@ -50,7 +50,7 @@ Supported environment variables:
 Once the installation credentials exist:
 
 1. Open **Settings > Integrations** and go to **Calendars**.
-2. Choose **Connect Gmail Calendar** or **Connect Outlook Calendar**.
+2. Select **Connect** beside **Google Calendar** or **Outlook Calendar**.
 3. Complete the provider sign-in and consent flow.
 4. Return to Nojoin and choose which calendars to sync.
 5. Optionally apply per-calendar colour overrides.

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Loader2, Plug, Trash2 } from "lucide-react";
+import { Loader2, Trash2 } from "lucide-react";
 
 import {
   getConnectedApps,
@@ -74,7 +74,7 @@ export default function ConnectedAppsSettings() {
   return (
     <SettingsCard
       id="integrations-connected-apps"
-      title="Connected Apps"
+      title="Connected apps"
       description="Assistants connected through the Nojoin MCP connector. They can read your meeting library, and, when write access is granted, change it: correcting transcripts, regenerating notes, re-running processing, organising recordings, managing tasks, attaching documents, and maintaining your People library. Nothing they do is permanent, and edits they make are labelled as theirs in the transcript."
     >
       {apps === null ? (
@@ -103,7 +103,6 @@ export default function ConnectedAppsSettings() {
             key={app.grant_id}
             label={app.client_name}
             description={`${SCOPE_LABELS[app.scope] ?? app.scope} · Connected ${formatTimestamp(app.created_at)} · Last used ${formatTimestamp(app.last_used_at)}`}
-            icon={<Plug className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
             controlClassName={SETTINGS_CONTROL_END}
           >
             <button

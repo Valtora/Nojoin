@@ -50,7 +50,7 @@ const PROVIDER_LABELS: Record<CalendarProvider, string> = {
 };
 
 const CONNECT_LABELS: Record<CalendarProvider, string> = {
-  google: "Gmail Calendar",
+  google: "Google Calendar",
   microsoft: "Outlook Calendar",
 };
 
@@ -184,7 +184,7 @@ export default function CalendarConnectionsSettings() {
       addNotification({
         type: "error",
         message:
-          getErrorMessage(error, `Failed to start ${CONNECT_LABELS[provider] || "calendar"} sign-in`),
+          getErrorMessage(error, `Could not start ${CONNECT_LABELS[provider] || "calendar"} sign-in`),
       });
       setBusyKey(null);
     }
@@ -360,7 +360,7 @@ export default function CalendarConnectionsSettings() {
                   <p>
                     Calendar sign-in needs a Google or Microsoft app registered
                     for this installation. Once its credentials are saved,
-                    everyone connects with one click.
+                    everyone can connect their own calendar.
                   </p>
                   <a
                     href="#integrations-calendar-providers"

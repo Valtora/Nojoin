@@ -82,6 +82,11 @@ The search box matches individual settings rather than categories, so searching
 for a control by name reaches it directly, including one behind the Advanced
 gate.
 
+On the pages everyone can open, a setting that applies to the whole
+installation is marked **Everyone**, and one kept in the browser is marked
+**This browser**. The administrator-only categories carry no marks, because
+everything on them applies to the whole installation.
+
 ## Administration Settings Areas
 
 ### Calendar

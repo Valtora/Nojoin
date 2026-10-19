@@ -284,7 +284,7 @@ export default function InvitesTab() {
           </Select>
 
           <Input
-            label="Expires In (Days)"
+            label="Expires after (days)"
             type="text"
             inputMode="numeric"
             value={expiresIn.toString()}
@@ -295,7 +295,7 @@ export default function InvitesTab() {
           />
 
           <Input
-            label="Max Uses"
+            label="Maximum uses"
             type="text"
             inputMode="numeric"
             value={maxUses.toString()}

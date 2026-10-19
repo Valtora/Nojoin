@@ -191,7 +191,7 @@ It is an upper bound, not an exact count. Setting 4 for a meeting with 3 speaker
 
 ### Tuning Speech Detection And Speaker Separation
 
-The defaults suit most meetings. Large meetings are harder: quiet or distant voices can be muted as noise before they are transcribed, and people who say one or two things can be folded into someone else. **Settings > Recording > Advanced > Speech and Speaker Tuning** lets you adjust the values behind both for your own recordings.
+The defaults suit most meetings. Large meetings are harder: quiet or distant voices can be muted as noise before they are transcribed, and people who say one or two things can be folded into someone else. **Settings > Recording > Advanced > Speech and speaker tuning** lets you adjust the values behind both for your own recordings.
 
 Every field starts empty, which means inherit: your installation's value if an administrator set one, otherwise the default shown in the field. A value saved earlier that is no longer accepted, for example after an upgrade narrowed its range, also shows as empty, but until the page next saves it uses the shipped default rather than your installation's value. **Reset to defaults** empties them all again. Changes apply to recordings processed after the change, and to any recording you reprocess; finished transcripts are not rewritten.
 
@@ -370,7 +370,7 @@ Nojoin includes a built-in MCP connector, so AI assistants such as Claude can re
 
 Settings are grouped by subject, and each category is its own page. Every user has Profile and security, Appearance, Integrations (calendar connections and connected apps), Recording, Transcription, Notes and live assistance, Your AI, Updates, and Help; [ADMIN.md](ADMIN.md#settings-structure) lists the administrator categories as well. A search box finds an individual setting by name.
 
-Theme, colour palette, corner style and density are saved in the browser rather than on the server, so each browser can look different.
+Most settings are your own and follow your account. A setting marked **This browser** is kept in the browser you set it in, such as the theme, the microphone and its levels, so each browser can differ. One marked **Everyone** applies to the whole installation, and only an administrator can change it.
 
 ### Language Preferences
 

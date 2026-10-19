@@ -60,7 +60,7 @@ Treat the archive like a secrets file, not just a convenience export.
 1. Open **Settings > Backup and restore** and select **Back up now**.
 2. Choose whether to include audio recordings.
 3. If including audio, choose the archive quality (see below).
-4. Select **Create Backup**.
+4. Select **Create backup**.
 5. Store the downloaded ZIP file somewhere secure.
 
 If nothing has changed since the saved backup of the same kind was made, that backup downloads straight away. Otherwise Nojoin prepares a new one in the background. For a large library with audio that can take hours, and you can keep working, leave the page or close the tab meanwhile. When the backup is ready, a notification appears with a **Download Now** button. It stays until you use it or close it, and it comes back if you reload the page or return later in the same browser.
@@ -103,13 +103,13 @@ If a recording's audio file is missing from disk or empty when the backup runs, 
 
 Backups from earlier versions archived audio only for WAV, MP3, M4A, OGG, FLAC and Opus recordings. Browser recordings made since v1.1.0 (stored as WebM) and AAC, MP4, WMA or WebM imports were left out of the archive. Backups taken with v1.7.0 or later counted them among recordings that had no audio file on disk, and earlier versions did not report them. Those recordings are metadata only in such an archive. Take a new backup to capture their audio.
 
-> **Warning:** restoring one of those earlier archives with **Clear All Existing Data** deletes the audio of those recordings from the server, because the archive has none to put back. **Skip** and **Overwrite** keep the audio already on disk. If you need Clear All, take a new backup and restore that instead.
+> **Warning:** restoring one of those earlier archives with **Clear all existing data** deletes the audio of those recordings from the server, because the archive has none to put back. **Skip** and **Overwrite** keep the audio already on disk. If you need to clear existing data, take a new backup and restore that instead.
 
 ## Restoring a Backup
 
 1. Open **Settings > Backup and restore**.
 2. Upload the backup ZIP.
-3. Choose the conflict mode.
+3. Choose what happens to meetings that are already here (the conflict mode), or turn on **Clear all existing data**.
 4. Keep the tab open until the upload finishes. The server then restores the archive, and you can leave the page: a notification reports the result, and the settings page shows any records that could not be restored until you dismiss them. Reload Nojoin afterwards to see the restored data.
 
 Only one restore can run at a time on a server. Starting a second while one is in progress is refused, and so is starting one while a backup is being prepared.
@@ -135,7 +135,7 @@ The restore validates the whole archive before changing anything: it checks the 
 
 ## If Something Goes Wrong
 
-A restore is applied as a single database transaction, and files are only moved into place once that transaction has committed. If a restore fails at any point, the installation is left exactly as it was, including when **Clear All Existing Data** was selected.
+A restore is applied as a single database transaction, and files are only moved into place once that transaction has committed. If a restore fails at any point, the installation is left exactly as it was, including when **Clear all existing data** was selected.
 
 ## Partial Restores
 

@@ -45,6 +45,7 @@ export default function GlossarySection({
       description="Names, acronyms and products the AI should spell correctly, and words it often mishears. Notes and Meeting Edge use it; the transcript is written before it is read, so it does not change."
     >
       <SettingsBlock
+        id="transcription-shared-glossary"
         label={<label htmlFor="glossary-shared">Shared glossary</label>}
         description={
           isAdmin

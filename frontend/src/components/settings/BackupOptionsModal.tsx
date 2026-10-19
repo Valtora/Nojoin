@@ -65,7 +65,7 @@ export default function BackupOptionsModal({
         type: "error",
         message: getErrorMessage(
           error,
-          "Failed to start backup process. Please try again.",
+          "Could not start the backup. Try again.",
         ),
       });
     } finally {
@@ -91,9 +91,9 @@ export default function BackupOptionsModal({
             <Download aria-hidden="true" className="h-6 w-6 text-action-tint-fg" />
           </span>
           <span>
-            <span className="block text-xl">Create Backup</span>
+            <span className="block text-xl">New backup</span>
             <span className="block text-sm font-normal text-contrast-helper">
-              Export your data and recordings
+              A zip of everything on this installation
             </span>
           </span>
         </span>
@@ -109,7 +109,7 @@ export default function BackupOptionsModal({
             loading={isProcessing}
             iconLeft={<Download aria-hidden="true" className="h-4 w-4" />}
           >
-            {isProcessing ? "Starting..." : "Create Backup"}
+            {isProcessing ? "Starting..." : "Create backup"}
           </Button>
         </>
       }
@@ -125,7 +125,7 @@ export default function BackupOptionsModal({
                 htmlFor="include-audio"
                 className="cursor-pointer font-medium text-foreground"
               >
-                Include Audio Files
+                Include audio
               </label>
               <Switch
                 id="include-audio"
@@ -134,7 +134,7 @@ export default function BackupOptionsModal({
               />
             </div>
             <p className="text-sm text-contrast-helper">
-              Include original audio recordings in the backup archive.
+              Adds each recording&apos;s audio, so restored meetings can be played.
             </p>
           </div>
         </div>
@@ -142,7 +142,7 @@ export default function BackupOptionsModal({
         {includeAudio && (
           <div className="rounded-lg border border-surface-border p-4">
             <h3 className="mb-3 text-sm font-semibold text-foreground">
-              Audio Quality
+              Audio quality
             </h3>
             <div className="space-y-3">
               <label className={qualityClass(archiveQuality === "compressed")}>
@@ -158,8 +158,8 @@ export default function BackupOptionsModal({
                     Compressed
                   </span>
                   <span className="mt-1 block text-xs text-contrast-helper">
-                    Re-encodes audio to Opus for a much smaller archive. Ideal
-                    for routine backups you only need to listen to.
+                    Re-encodes audio to Opus for a much smaller archive. Suits
+                    routine backups you only need to listen to.
                   </span>
                 </div>
               </label>
@@ -191,9 +191,9 @@ export default function BackupOptionsModal({
           <div className="flex items-start gap-3 rounded-lg bg-status-warning-bg p-4 text-sm text-status-warning-fg">
             <AlertTriangle aria-hidden="true" className="mt-0.5 h-5 w-5 shrink-0" />
             <p>
-              Excluding audio files will create a much smaller backup, but
-              restored meetings will <strong>not be playable</strong>.
-              Metadata, transcripts, and notes will still be preserved.
+              Without audio the backup is much smaller, but restored meetings
+              <strong> cannot be played</strong>. Their transcripts, notes and
+              details are kept.
             </p>
           </div>
         )}
@@ -201,10 +201,10 @@ export default function BackupOptionsModal({
         <div className="flex items-start gap-3 rounded-lg bg-status-warning-bg p-4 text-sm text-status-warning-fg">
           <AlertTriangle aria-hidden="true" className="mt-0.5 h-5 w-5 shrink-0" />
           <p>
-            Backup archives include restorable calendar OAuth credentials and
-            connection tokens so dashboard calendar data can be recovered.
-            AI and Hugging Face keys remain redacted. Store the archive like a
-            secrets file.
+            Keep the file somewhere safe. It holds the calendar sign-in
+            credentials and each person&apos;s calendar connections, so
+            calendars work again after a restore. AI and Hugging Face keys are
+            left out.
           </p>
         </div>
       </div>

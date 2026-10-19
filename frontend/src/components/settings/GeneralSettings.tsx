@@ -3,10 +3,6 @@ import { Popover, Transition } from "@headlessui/react";
 import { fuzzyMatch } from "@/lib/searchUtils";
 import { Settings } from "@/types";
 import {
-  Mic,
-  Users,
-  SpellCheck,
-  Clock3,
   ChevronDown,
   Search,
   Check,
@@ -225,7 +221,6 @@ export default function GeneralSettings({
           <SettingsRow
             label="Timezone"
             description={`This browser reports ${browserTimeZone}. Times show in the timezone chosen here and are stored in UTC, so they stay put if you travel.`}
-            icon={<Clock3 className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
           >
                 <Popover className="relative block">
                   {({ open, close }) => (
@@ -344,7 +339,6 @@ export default function GeneralSettings({
         >
           <SettingsRow
             label="Language"
-            icon={<SpellCheck className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
           >
             <select
               value={settings.spellcheck_language || "en-GB"}
@@ -393,7 +387,6 @@ export default function GeneralSettings({
             descriptionId="recording-vad-help"
             label="Voice activity detection"
             description="Filters out silence and background noise before transcription. Disabling it may increase processing time, but can help if quiet speech is being cut off."
-            icon={<Mic className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
             controlClassName={SETTINGS_CONTROL_END}
           >
             <Switch
@@ -412,7 +405,6 @@ export default function GeneralSettings({
             descriptionId="recording-remeasure-delivery-help"
             label="Re-measure delivery after edits"
             description="Editing a transcript leaves its measured delivery figures describing the old text. With this on, opening the Analytics tab re-reads the audio and refreshes them; with it off, the tab shows the figures as stale until you press Measure delivery."
-            icon={<Mic className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
             controlClassName={SETTINGS_CONTROL_END}
           >
             <Switch
@@ -429,9 +421,8 @@ export default function GeneralSettings({
             id="recording-diarization"
             labelId="recording-diarization-label"
             descriptionId="recording-diarization-help"
-            label="Speaker diarization"
-            description="Distinguishes between speakers. Disable it for single-speaker recordings to speed up processing."
-            icon={<Users className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
+            label="Speaker separation"
+            description="Tells the speakers apart. Turn it off for single-speaker recordings to speed up processing."
             controlClassName={SETTINGS_CONTROL_END}
           >
             <Switch

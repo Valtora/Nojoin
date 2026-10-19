@@ -28,3 +28,16 @@ export const WHISPER_MODELS: WhisperModelOption[] = [
   },
   { id: "turbo", label: "Turbo", params: "809 M", vram: "~6 GB", speed: "~8x" },
 ];
+
+/**
+ * A model's size, memory and speed in words, such as "809 M parameters,
+ * about 6 GB of GPU memory, about 8 times as fast as Large".
+ */
+export function describeWhisperModel(model: WhisperModelOption): string {
+  const memory = model.vram.replace("~", "about ");
+  const speed =
+    model.id === "large"
+      ? "the slowest and most accurate"
+      : `about ${model.speed.replace("~", "").replace("x", "")} times as fast as Large`;
+  return `${model.params} parameters, ${memory} of GPU memory, ${speed}`;
+}

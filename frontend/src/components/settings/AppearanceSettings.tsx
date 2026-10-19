@@ -45,7 +45,7 @@ export default function AppearanceSettings() {
   return (
     <SettingsCard
       id="appearance-theme"
-      title="Appearance"
+      title="Look and feel"
       description="How Nojoin looks in this browser. Each choice is saved in this browser only, not with your account."
     >
       <SettingsRow label="Theme">

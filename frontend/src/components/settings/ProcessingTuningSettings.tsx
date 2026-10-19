@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useId, useState } from "react";
-import { ArrowLeftRight, Ghost, Mic, RotateCcw, Timer } from "lucide-react";
+import { RotateCcw } from "lucide-react";
 
 import { cn } from "@/lib/cn";
 import {
@@ -136,8 +136,6 @@ function TuningInput({
   );
 }
 
-const ICON_CLASS = "h-4 w-4 contrast-icon-muted";
-
 /**
  * Speech detection and speaker separation values a user may override for
  * their own recordings. Every field left empty inherits the installation's
@@ -180,7 +178,7 @@ export default function ProcessingTuningSettings({
 
   return (
     <SettingsCard
-      title="Speech and Speaker Tuning"
+      title="Speech and speaker tuning"
       description="Fine-tune how recordings are split into speech and speakers. Empty fields use the installation's value, or the default shown; a saved value that is no longer accepted uses the default until this page saves again. Changes apply to recordings processed or reprocessed afterwards."
       headerAside={
         <button
@@ -202,7 +200,6 @@ export default function ProcessingTuningSettings({
         descriptionId={descriptionId("recording-vad-threshold")}
         label="Speech detection threshold"
         description="Lower keeps quiet or distant speech that would otherwise be muted before transcription; higher drops more background noise. Also used by the live transcript, even with voice activity detection off."
-        icon={<Mic className={ICON_CLASS} aria-hidden="true" />}
       >
         {input("recording-vad-threshold", "vad_threshold")}
       </SettingsRow>
@@ -213,7 +210,6 @@ export default function ProcessingTuningSettings({
         descriptionId={descriptionId("recording-word-padding")}
         label="Word end padding (Parakeet, Canary)"
         description="How long, in seconds, a word lasts when a pause follows it. Longer gives a short reply more chance to land on its speaker. Whisper ignores it."
-        icon={<Timer className={ICON_CLASS} aria-hidden="true" />}
       >
         {input("recording-word-padding", "asr_word_end_padding_s")}
       </SettingsRow>
@@ -224,7 +220,6 @@ export default function ProcessingTuningSettings({
         descriptionId={descriptionId("recording-phantom-filter")}
         label="Phantom speaker filter"
         description="A speaker under both limits is checked: below the floor it is treated as noise and reassigned, at or above the merge similarity it joins the closest speaker, and in between it is kept. Lower limits or a higher merge similarity keep more brief speakers. A limit of 0 turns the filter off."
-        icon={<Ghost className={ICON_CLASS} aria-hidden="true" />}
       >
         {group("recording-phantom-filter", [
           "phantom_max_duration_s",
@@ -240,7 +235,6 @@ export default function ProcessingTuningSettings({
         descriptionId={descriptionId("recording-word-flip")}
         label="Single-word flip smoothing"
         description="A word up to this long, this close to its neighbours, is given back to the speaker on both sides of it. Lower values keep more one-word interjections; 0 turns smoothing off."
-        icon={<ArrowLeftRight className={ICON_CLASS} aria-hidden="true" />}
       >
         {group("recording-word-flip", ["word_flip_max_duration_s", "word_flip_max_gap_s"])}
       </SettingsRow>

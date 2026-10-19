@@ -117,7 +117,7 @@ export default function TelemetrySection() {
   if (loading) {
     return (
       <SettingsCard
-        title="Anonymous Usage Data"
+        title="Anonymous usage data"
         description="Loading the current setting."
       >
         <Loader2 className="h-4 w-4 animate-spin text-contrast-icon-muted" />
@@ -131,7 +131,7 @@ export default function TelemetrySection() {
 
   return (
     <SettingsCard
-      title="Anonymous Usage Data"
+      title="Anonymous usage data"
       description="A daily heartbeat counts installations, and optional diagnostics help decide what to build next. Neither includes recordings, transcripts, notes, names, or keys, and the data is never sold."
     >
       {status.managed_by_env && (

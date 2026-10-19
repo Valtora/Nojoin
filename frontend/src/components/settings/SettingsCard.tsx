@@ -2,14 +2,24 @@ import type { ReactNode } from "react";
 
 import { cn } from "@/lib/cn";
 
+import SettingsScopeBadge, { SettingsCardScope } from "./SettingsScopeBadge";
+import { getSettingsScope } from "./settingsRegistry";
+
 interface SettingsCardProps {
   /**
    * Registry entry id. Doubles as the anchor a search result scrolls to, so it
    * should match the id in settingsRegistry.ts where one exists.
    */
   id?: string;
+  /**
+   * Registry entry whose scope the title shows, for a card that renders part
+   * of an entry under another id, such as one provider's calendar sign-in.
+   * Defaults to `id`.
+   */
+  scopeId?: string;
   title: string;
   description?: ReactNode;
+  /** Status badge beside the title. The scope badge is added after it. */
   badge?: ReactNode;
   /** Header-right slot for a control that acts on the whole card. */
   headerAside?: ReactNode;
@@ -28,6 +38,7 @@ interface SettingsCardProps {
  */
 export default function SettingsCard({
   id,
+  scopeId,
   title,
   description,
   badge,
@@ -36,6 +47,8 @@ export default function SettingsCard({
   contentClassName,
   children,
 }: SettingsCardProps) {
+  const scope = getSettingsScope(scopeId ?? id);
+
   return (
     <section id={id} className={cn("settings-card scroll-mt-24", className)}>
       <div className="flex flex-col gap-3 p-5 sm:flex-row sm:items-start sm:justify-between sm:gap-4 sm:p-6">
@@ -45,6 +58,7 @@ export default function SettingsCard({
               {title}
             </h2>
             {badge}
+            {scope && <SettingsScopeBadge scope={scope} />}
           </div>
 
           {description && (
@@ -60,7 +74,7 @@ export default function SettingsCard({
       {/* The body is a container so grids placed directly in a card, outside
           any block, can query the card's width rather than the viewport's. */}
       <div className={cn("@container settings-card-body border-t settings-divider", contentClassName)}>
-        {children}
+        <SettingsCardScope.Provider value={scope}>{children}</SettingsCardScope.Provider>
       </div>
     </section>
   );

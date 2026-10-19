@@ -532,6 +532,41 @@ tokens exclusively. Build a surface out of these rather than out of raw elements
 | `Switch`, `Tooltip`, `ModernDatePicker`, `MultiSelect` | Pre-existing widgets, restyled onto tokens. |
 | `FitText` | A single line that must fit its container, meaning the meeting title. Steps the font from a designed size down to a readability floor, then wraps to two clamped lines. CSS cannot do this: `clamp()` tracks the container's size, never the text's own length. |
 
+### Settings pages
+
+Settings has its own primitives in
+[frontend/src/components/settings/](../frontend/src/components/settings/), and a settings page is
+built from them alone.
+
+- **`SettingsCard`** is the only container: a title, an optional description and status badge,
+  then rows and blocks separated by hairlines. No card nests inside another.
+- **`SettingsRow`** puts a label and description on the left and one control on the right, and
+  stacks them below 26rem of its own width. Pass `controlId` for a single control: the label
+  becomes a real `<label>` for it, and the description takes the id `${controlId}-help` for the
+  control's `aria-describedby`. A group of controls takes `labelId` and `aria-labelledby` instead.
+  Rows carry no leading icon. Repeated down a card, the icons added a column and told no two rows
+  apart. Category icons in the navigation stay.
+- **`SettingsBlock`** holds what is not a label and a control: tables, meters, consoles, editors.
+  With no label, description, aside or inset it renders its children straight into its padded
+  cell, so a layout class passed to it, such as `space-y-4` or `flex`, reaches those children.
+  With a header, the content sits in its own wrapper under it.
+- **Controls** take their classes from `settingsControls.ts` or from the `ui/` primitives:
+  `SETTINGS_INPUT_CLASS`, `SETTINGS_SELECT_CLASS` and `SETTINGS_TEXTAREA_CLASS` for fields, the
+  three button classes, `SETTINGS_VALUE_CLASS` for a read-only value, and `SETTINGS_CONTROL_END`
+  for a switch or lone button held at the card's right edge. `settingsControls.test.ts` fails on a
+  hand-written focus ring, a translucent fill on a field, and a `divide-y` with no colour.
+
+**Scope badges.** A setting belongs to the signed-in person unless it is marked. Two badges mark
+the rest: **Everyone** for one value the whole installation shares, and **This browser** for one
+kept in the browser's local storage. Scope is declared once, as `scope` on the setting's entry in
+`settingsRegistry.ts`. The card, row or block that renders the entry's id shows the badge, and so
+do search results. When every setting in a card shares a scope, the card's own entry declares it
+and the badge goes on the title; rows of the same scope inside leave it to the card. A card that
+renders part of an entry under another id names the entry with `scopeId`. Administrator-only
+pages carry no badges, because everything on them applies to the whole installation and their
+description says so. `settingsScope.test.tsx` keeps those pages unmarked, keeps browser settings
+off the `Settings` object, and checks that every scoped entry is rendered.
+
 ## Typography
 
 `Geist` and `Geist_Mono` are loaded in

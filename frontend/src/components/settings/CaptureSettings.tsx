@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Loader2, Mic, RefreshCw, Volume2 } from "lucide-react";
+import { Loader2, Mic, RefreshCw } from "lucide-react";
 
 import { useCapture } from "@/lib/capture/CaptureProvider";
 import { getErrorMessage } from "@/lib/errors";
@@ -344,6 +344,7 @@ export default function CaptureSettings() {
 
   return (
     <SettingsCard
+      id="recording-input"
       title="Input"
       description={
         microphoneOnly
@@ -382,7 +383,6 @@ export default function CaptureSettings() {
             ? "Recorded directly on mobile Chrome."
             : "Mixed with shared tab or system audio during capture."
         }
-        icon={<Mic className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
       >
         <select
           value={settings.microphoneDeviceId || ""}
@@ -406,7 +406,6 @@ export default function CaptureSettings() {
         id="recording-microphone-gain"
         label="Microphone gain"
         description="The local microphone level mixed into the recording."
-        icon={<Volume2 className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
       >
         <GainSlider
           value={settings.microphoneGain}
@@ -419,7 +418,6 @@ export default function CaptureSettings() {
         id="recording-shared-audio-gain"
         label="Shared-audio gain"
         description="The shared tab or system audio level, relative to your microphone."
-        icon={<Volume2 className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
       >
         <GainSlider
           value={settings.systemGain}
@@ -432,7 +430,6 @@ export default function CaptureSettings() {
         id="recording-automatic-levels"
         label="Automatic levels"
         description="Nojoin balances the sources while recording, starting from the mix the sliders above set."
-        icon={<Volume2 className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
         controlClassName={SETTINGS_CONTROL_END}
       >
         <p className={SETTINGS_VALUE_CLASS}>Always on</p>
