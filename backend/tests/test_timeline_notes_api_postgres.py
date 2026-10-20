@@ -173,6 +173,47 @@ async def test_a_recording_deleted_during_a_create_is_not_reported_as_an_id_in_u
 
 
 @pytest.mark.anyio
+async def test_two_deletes_of_unknown_ids_race_to_one_place_under_the_cap(
+    client: AsyncClient, database: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(notes_routes, "NEVER_HELD_TOMBSTONES_PER_RECORDING", 1)
+    counted, release = asyncio.Event(), asyncio.Event()
+    kept = notes_routes._never_held_tombstones_kept
+
+    async def _first_held_after_its_count(*args, **kwargs):
+        found = await kept(*args, **kwargs)
+        if not counted.is_set():
+            counted.set()
+            await release.wait()
+        return found
+
+    monkeypatch.setattr(
+        notes_routes, "_never_held_tombstones_kept", _first_held_after_its_count
+    )
+
+    def clear(note_id: str):
+        return client.delete(
+            f"{BASE}/{note_id}",
+            params={"expected_revision": 1, "write_token": str(uuid4())},
+        )
+
+    first = asyncio.create_task(clear(str(uuid4())))
+    await asyncio.wait_for(counted.wait(), 10)
+    second = asyncio.create_task(clear(str(uuid4())))
+    await _until_done_or_waiting(second, database)
+    release.set()
+    responses = await asyncio.gather(first, second)
+
+    # The second waited on the first's count, then found the place taken.
+    assert sorted(r.status_code for r in responses) == [204, 404]
+    with psycopg.connect(database) as conn:
+        tombstones = conn.execute(
+            "SELECT count(*) FROM timeline_note_tombstones WHERE never_held"
+        ).fetchone()
+    assert tombstones == (1,)
+
+
+@pytest.mark.anyio
 async def test_two_deletes_of_one_note_race_to_one_tombstone(
     client: AsyncClient, database: str
 ) -> None:

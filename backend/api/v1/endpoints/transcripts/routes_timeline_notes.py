@@ -15,21 +15,22 @@ token, so a write for a deleted note hears who deleted it (410
 and a retried create cannot bring a deleted note back. An edit with a token
 always makes a new revision, so it fences off an earlier write of the same
 revision still in transit. A delete with a token of an id that no note has held
-leaves a tombstone too, so a create whose answer was lost cannot land after the
-user cleared it. Creates and deletes of one id are serialised by an advisory
-lock on it. Every refusal's detail is ``{code, message}``, the ``code`` stable
-(``TimelineNoteErrorCode``).
+leaves a tombstone too, for as long as a create whose answer was lost can still
+arrive, so it cannot land after the user cleared it. Creates and deletes of one
+id are serialised by an advisory lock on it. Every refusal's detail is
+``{code, message}``, the ``code`` stable (``TimelineNoteErrorCode``).
 """
 
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import Any, NoReturn
 from uuid import UUID
 
 from fastapi import Depends, HTTPException, Query, Response, status
-from sqlalchemy import text
+from sqlalchemy import delete, func, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel import select
+from sqlmodel import col, select
 
 from backend.api.deps import get_current_user, get_db
 from backend.models.recording import Recording
@@ -64,6 +65,24 @@ NOTE_DELETED_ELSEWHERE_DETAIL = "The note was deleted elsewhere"
 NOTE_REVISION_CONFLICT_DETAIL = "The note was changed elsewhere since you loaded it"
 NOTE_ID_TAKEN_DETAIL = "That note id is already in use"
 NOTE_NOT_MOVABLE_DETAIL = "Only a point note can be moved"
+
+# How long the tombstone of an id no note held is kept. It refuses a create
+# sent before the delete that left it but arriving after, so it must outlive
+# any request still in transit. The bundled nginx (nginx/nginx.conf) reads a
+# request within its default 60 s header and 60 s body timeouts, then allows
+# 300 s to connect to the API and 300 s to send it on: a create it accepted
+# reaches the API within about 12 minutes. Uvicorn sets no request timeout, but
+# a create waits only on a pool connection and on the id's lock, which no
+# transaction holds for long. An hour is five times that.
+NEVER_HELD_TOMBSTONE_TTL = timedelta(hours=1)
+# How many such tombstones a recording keeps within that hour. A user makes one
+# only by clearing the box after a create went unanswered, so the cap bounds
+# what deleting made-up ids can store; past it, a delete of an unknown id is the
+# plain 404 again.
+NEVER_HELD_TOMBSTONES_PER_RECORDING = 20
+# The first key of the two-key advisory lock on a recording's count of them, a
+# key space of its own (``RECORDING_AUDIO_LOCK_NAMESPACE`` is another).
+NEVER_HELD_TOMBSTONE_LOCK_NAMESPACE = 470_001
 
 
 def _refused(
@@ -258,6 +277,34 @@ async def _replayed_create(
     raise _deleted(tombstone, write_token)
 
 
+async def _never_held_tombstones_kept(db: AsyncSession, recording_pk: int) -> int:
+    """Purge the recording's expired never-held tombstones; count the rest.
+
+    Under a lock on the recording's count, held to the commit, so two deletes
+    cannot both take the last place under the cap.
+    """
+    if db.get_bind().dialect.name == "postgresql":
+        await db.execute(
+            text("SELECT pg_advisory_xact_lock(:namespace, :key)"),
+            {
+                "namespace": NEVER_HELD_TOMBSTONE_LOCK_NAMESPACE,
+                "key": recording_pk & 0x7FFFFFFF,
+            },
+        )
+    never_held = (
+        col(TimelineNoteTombstone.recording_id) == recording_pk,
+        col(TimelineNoteTombstone.never_held).is_(True),
+    )
+    expired = col(TimelineNoteTombstone.deleted_at) < (
+        utc_now() - NEVER_HELD_TOMBSTONE_TTL
+    )
+    await db.execute(delete(TimelineNoteTombstone).where(*never_held, expired))
+    kept = await db.execute(
+        select(func.count(col(TimelineNoteTombstone.id))).where(*never_held)
+    )
+    return kept.scalar_one()
+
+
 async def _record_unused_id(
     db: AsyncSession, recording_pk: int, note_id: str, write_token: str | None
 ) -> bool:
@@ -265,18 +312,25 @@ async def _record_unused_id(
 
     Such a delete clears a create whose answer was lost and which has not
     landed (yet): the tombstone makes that create a 410 when it arrives. Only
-    an id a create could have stored is recorded, and none held elsewhere.
+    an id a create could have stored is recorded, none held elsewhere, and
+    only while the recording keeps fewer than the cap. The tombstone is marked
+    ``never_held``, and purged once no such create can still arrive.
     """
     canonical = _canonical_note_id(note_id)
     if write_token is None or canonical is None:
         return False
     if await _note_id_in_use(db, canonical) or await _tombstone(db, canonical):
         return False
+    kept = await _never_held_tombstones_kept(db, recording_pk)
+    if kept >= NEVER_HELD_TOMBSTONES_PER_RECORDING:
+        await db.commit()
+        return False
     db.add(
         TimelineNoteTombstone(
             public_id=canonical,
             recording_id=recording_pk,
             deleted_write_token=write_token,
+            never_held=True,
         )
     )
     await db.commit()
@@ -454,7 +508,8 @@ async def delete_timeline_note(
     Deleting a note already deleted with the same ``write_token`` is a 204: a
     retry of that delete. A delete with a ``write_token`` of an id no note or
     tombstone holds is a 204 too, and leaves a tombstone: it clears a create
-    whose answer was lost, which must not land later.
+    whose answer was lost, which must not land later. Past a cap of such
+    tombstones on the recording, it is the 404 instead.
     """
     edge_enabled = is_meeting_edge_enabled(getattr(current_user, "settings", None))
     recording = await _owned_recording(db, recording_id, current_user.id)

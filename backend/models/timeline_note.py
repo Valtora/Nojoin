@@ -27,6 +27,7 @@ from typing import Optional
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     Column,
     DateTime,
@@ -34,6 +35,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    text,
 )
 from sqlmodel import Field, SQLModel
 
@@ -137,9 +139,12 @@ class TimelineNoteTombstone(SQLModel, table=True):
     whether the delete was made with its own write token or someone else's,
     instead of re-creating the note or reading as a plain 404. Readers of
     notes never see tombstones: they are a table of their own. A delete with a
-    token of an id no note has held leaves one too, so a create whose answer
-    was lost cannot land after it. A public id names at most one note ever
-    while its recording exists, so a tombstone's id is unique.
+    token of an id no note has held leaves one too (``never_held``), so a
+    create whose answer was lost cannot land after it. Those are kept only as
+    long as such a create can still be in transit, and a recording holds only
+    a few of them at a time (``routes_timeline_notes``). A public id names at
+    most one note ever while its recording exists, so a tombstone's id is
+    unique.
     """
 
     __tablename__ = "timeline_note_tombstones"
@@ -161,4 +166,10 @@ class TimelineNoteTombstone(SQLModel, table=True):
     )
     deleted_at: datetime = Field(
         default_factory=utc_now, sa_column=Column(DateTime, nullable=False)
+    )
+    # Left by a delete of an id no note held: it only refuses a create still
+    # in transit, so it is purged once none can be.
+    never_held: bool = Field(
+        default=False,
+        sa_column=Column(Boolean, nullable=False, server_default=text("false")),
     )

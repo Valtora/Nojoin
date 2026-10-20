@@ -157,7 +157,8 @@ CREATE TABLE timeline_note_tombstones (
     public_id VARCHAR(36) NOT NULL UNIQUE,
     recording_id INTEGER NOT NULL REFERENCES recordings(id) ON DELETE CASCADE,
     deleted_write_token VARCHAR(36),
-    deleted_at DATETIME NOT NULL
+    deleted_at DATETIME NOT NULL,
+    never_held BOOLEAN NOT NULL DEFAULT 0
 )
 """
 

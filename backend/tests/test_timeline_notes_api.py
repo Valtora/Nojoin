@@ -809,6 +809,97 @@ async def test_a_tokened_delete_records_no_id_it_cannot_own(
     assert (await client.delete(f"{elsewhere}/{held}")).status_code == 204
 
 
+async def _never_held(session_maker) -> dict[str, bool]:
+    async with session_maker() as session:
+        rows = await session.execute(
+            text("SELECT public_id, never_held FROM timeline_note_tombstones")
+        )
+        return {public_id: bool(never_held) for public_id, never_held in rows}
+
+
+async def _age_tombstone(session_maker, note_id: str, age: timedelta) -> None:
+    async with session_maker() as session:
+        await session.execute(
+            text(
+                "UPDATE timeline_note_tombstones SET deleted_at = :at "
+                "WHERE public_id = :note_id"
+            ),
+            {"at": utc_now() - age, "note_id": note_id},
+        )
+        await session.commit()
+
+
+@pytest.mark.anyio
+async def test_a_never_held_tombstone_is_purged_once_no_create_can_still_arrive(
+    client: AsyncClient, session_maker
+) -> None:
+    token = str(uuid4())
+    held = await _create(client, kind="head", id=str(uuid4()))
+    await client.delete(f"{BASE}/{held['id']}", params={"write_token": token})
+    expired, recent, fresh = str(uuid4()), str(uuid4()), str(uuid4())
+    for note_id in (expired, recent):
+        response = await client.delete(
+            f"{BASE}/{note_id}", params={"write_token": token}
+        )
+        assert response.status_code == 204
+    assert await _never_held(session_maker) == {
+        held["id"]: False,
+        expired: True,
+        recent: True,
+    }
+    window = notes_routes.NEVER_HELD_TOMBSTONE_TTL
+    await _age_tombstone(session_maker, expired, window + timedelta(minutes=1))
+    await _age_tombstone(session_maker, recent, window - timedelta(minutes=1))
+    # A deleted note's tombstone is kept however old.
+    await _age_tombstone(session_maker, held["id"], timedelta(days=365))
+
+    # The next one recorded purges the recording's expired ones.
+    assert (
+        await client.delete(f"{BASE}/{fresh}", params={"write_token": token})
+    ).status_code == 204
+
+    assert await _never_held(session_maker) == {
+        held["id"]: False,
+        recent: True,
+        fresh: True,
+    }
+
+
+@pytest.mark.anyio
+async def test_a_recording_keeps_only_a_few_never_held_tombstones(
+    client: AsyncClient, session_maker
+) -> None:
+    token = str(uuid4())
+    cap = notes_routes.NEVER_HELD_TOMBSTONES_PER_RECORDING
+    ids = [str(uuid4()) for _ in range(cap + 1)]
+    for note_id in ids[:cap]:
+        response = await client.delete(
+            f"{BASE}/{note_id}", params={"write_token": token}
+        )
+        assert response.status_code == 204
+
+    # Past the cap, an unknown id is the plain 404, and records nothing.
+    over = await client.delete(f"{BASE}/{ids[cap]}", params={"write_token": token})
+    assert (over.status_code, _code(over)) == (404, "note_not_found")
+    assert len(await _never_held(session_maker)) == cap
+    # A deleted note still leaves its tombstone, and another recording has a
+    # cap of its own.
+    note = await _create(client, kind="head")
+    deleted = await client.delete(f"{BASE}/{note['id']}", params={"write_token": token})
+    assert deleted.status_code == 204
+    elsewhere = await client.delete(
+        f"/api/v1/transcripts/{OTHER_REC}/timeline-notes/{uuid4()}",
+        params={"write_token": token},
+    )
+    assert elsewhere.status_code == 204
+
+    # Once one expires, there is room again.
+    window = notes_routes.NEVER_HELD_TOMBSTONE_TTL
+    await _age_tombstone(session_maker, ids[0], window + timedelta(minutes=1))
+    again = await client.delete(f"{BASE}/{ids[cap]}", params={"write_token": token})
+    assert again.status_code == 204
+
+
 @pytest.mark.anyio
 async def test_a_missing_recording_is_named_as_such(client: AsyncClient) -> None:
     foreign = f"/api/v1/transcripts/{FOREIGN_REC}/timeline-notes"

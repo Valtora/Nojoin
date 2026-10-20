@@ -14,7 +14,9 @@ The column is then dropped: every reader is rewritten in the same change.
 Each note keeps the client-chosen token of the write that made its revision
 (last_write_token), and a delete leaves a row in timeline_note_tombstones with
 the note's id and the delete's token, so a write still in flight for a deleted
-note hears whose delete it was instead of re-creating the note.
+note hears whose delete it was instead of re-creating the note. A tombstone left
+by a delete of an id no note held is marked never_held: it only refuses a create
+still in transit, and the API purges it once none can be.
 
 Downgrade folds each recording's notes back into user_notes, head notes first,
 then the anchored notes in timeline order, then tail notes, separated by blank
@@ -113,6 +115,9 @@ def upgrade():
         sa.Column("recording_id", sa.BigInteger(), nullable=False),
         sa.Column("deleted_write_token", sa.String(length=36), nullable=True),
         sa.Column("deleted_at", sa.DateTime(), nullable=False),
+        sa.Column(
+            "never_held", sa.Boolean(), server_default=sa.text("false"), nullable=False
+        ),
         sa.ForeignKeyConstraint(
             ["recording_id"], ["recordings.id"], ondelete="CASCADE"
         ),
