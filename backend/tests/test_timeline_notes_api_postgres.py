@@ -173,6 +173,35 @@ async def test_a_recording_deleted_during_a_create_is_not_reported_as_an_id_in_u
 
 
 @pytest.mark.anyio
+async def test_a_recording_deleted_while_an_unknown_id_is_recorded_is_not_found(
+    client: AsyncClient, database: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    owned = notes_routes._get_owned_recording
+    calls = 0
+
+    async def _then_deleted(*args, **kwargs):
+        # The recording is found, then deleted elsewhere before the tombstone
+        # for the id is written.
+        nonlocal calls
+        calls += 1
+        recording = await owned(*args, **kwargs)
+        if calls == 1:
+            with psycopg.connect(database, autocommit=True) as conn:
+                conn.execute("DELETE FROM recordings WHERE public_id = %s", (REC,))
+        return recording
+
+    monkeypatch.setattr(notes_routes, "_get_owned_recording", _then_deleted)
+
+    response = await client.delete(
+        f"{BASE}/{uuid4()}",
+        params={"expected_revision": 1, "write_token": str(uuid4())},
+    )
+
+    assert response.status_code == 404, response.text
+    assert response.json()["detail"]["code"] == "recording_not_found"
+
+
+@pytest.mark.anyio
 async def test_two_deletes_of_unknown_ids_race_to_one_place_under_the_cap(
     client: AsyncClient, database: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:

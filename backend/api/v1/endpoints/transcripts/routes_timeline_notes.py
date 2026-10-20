@@ -511,8 +511,10 @@ async def delete_timeline_note(
     whose answer was lost, which must not land later. Past a cap of such
     tombstones on the recording, it is the 404 instead.
     """
+    # Read before any rollback, which expires the request's user.
+    user_id = current_user.id
     edge_enabled = is_meeting_edge_enabled(getattr(current_user, "settings", None))
-    recording = await _owned_recording(db, recording_id, current_user.id)
+    recording = await _owned_recording(db, recording_id, user_id)
     recording_pk, recording_public_id = recording.id, recording.public_id
     token = conditions.write_token
     await _lock_note_id(db, note_id)
@@ -521,9 +523,16 @@ async def delete_timeline_note(
         tombstone = await _tombstone_on(db, recording_pk, note_id)
         if tombstone is not None and _deleted_by(tombstone, token):
             return Response(status_code=status.HTTP_204_NO_CONTENT)
-        if tombstone is None and await _record_unused_id(
-            db, recording_pk, note_id, token
-        ):
+        try:
+            recorded = tombstone is None and await _record_unused_id(
+                db, recording_pk, note_id, token
+            )
+        except IntegrityError:
+            # The recording was deleted meanwhile: its 404, as for a create.
+            await db.rollback()
+            await _owned_recording(db, recording_id, user_id)
+            raise
+        if recorded:
             return Response(status_code=status.HTTP_204_NO_CONTENT)
         raise _missing(tombstone, token)
     expected_revision = conditions.expected_revision
