@@ -765,10 +765,10 @@ def _extract_region_segment_payloads(
         seg_text = (seg.get("text") or "").strip()
         if not seg_text:
             continue
-        if end <= prefix_s + EPS:
+        if not exceeds(end, prefix_s + EPS):
             # Pure context: entirely within the run-up.
             continue
-        if start >= prefix_s - EPS:
+        if exceeds(start, prefix_s - EPS):
             # Entirely within the region.
             kept_segment = {
                 "start": max(0.0, start - prefix_s),

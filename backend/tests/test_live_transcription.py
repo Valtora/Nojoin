@@ -1792,6 +1792,26 @@ def test_a_context_word_ending_exactly_at_the_trim_allowance_is_trimmed():
     assert kept == []
 
 
+@pytest.mark.parametrize(
+    "steps",
+    [(-20, 0, 20), (-20, 0, 5)],
+    ids=["alone_in_its_segment", "leading_its_segment"],
+)
+def test_a_tied_context_word_is_trimmed_when_its_segment_starts_with_it(steps):
+    # At a 0.2 s cap the tied word starts exactly 0.1 s before the context
+    # ends, so its segment's start and end both sit on the segment-level
+    # allowances, and the word is never shared with an earlier context word.
+    kept = [
+        prefix_s
+        for prefix_s, frame, cap_s in _context_ties()
+        if cap_s == 0.2
+        and _region_text(prefix_s, [(frame + step) * 0.08 for step in steps], cap_s)
+        != ["w2"]
+    ]
+
+    assert kept == []
+
+
 def test_extract_region_segment_payloads_and_confidence_payload_keep_word_timestamps():
     from backend.processing.live_transcribe import (
         _build_live_confidence_payload,
