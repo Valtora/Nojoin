@@ -52,17 +52,19 @@ const isSaved = (text: string, saved: string | null) =>
 function ConflictNotice({
   conflict,
   locked,
-  mineIsBlank,
+  mine,
   onKeepMine,
   onUseTheirs,
 }: {
   conflict: HeadNoteConflict;
   locked: boolean;
-  mineIsBlank: boolean;
+  /** The box's text, shown here while the lock covers the box. */
+  mine: string;
   onKeepMine: () => void;
   onUseTheirs: () => void;
 }) {
   const changed = conflict.kind === "changed";
+  const mineIsBlank = stripNote(mine) === "";
   return (
     <div
       role="alert"
@@ -74,16 +76,23 @@ function ConflictNotice({
           : "These notes were deleted on another device."}
       </p>
       <p className="mt-1">
-        Your text is still in the box and has not been saved.
         {locked
-          ? " Notes generation has started with the other device's version."
-          : ""}
+          ? "Notes generation has started with the other device's version, so your text cannot be kept now. Copy it from below to keep it."
+          : "Your text is still in the box and has not been saved."}
         {changed ? " Their version:" : ""}
       </p>
       {changed ? (
         <p className="mt-2 max-h-32 overflow-y-auto whitespace-pre-wrap break-words border-l-2 border-status-warning-border pl-3">
           {conflict.note.body}
         </p>
+      ) : null}
+      {locked && !mineIsBlank ? (
+        <>
+          <p className="mt-2 font-semibold">Your text:</p>
+          <p className="mt-1 max-h-32 select-text overflow-y-auto whitespace-pre-wrap break-words border-l-2 border-status-warning-border pl-3">
+            {mine}
+          </p>
+        </>
       ) : null}
       <div className="mt-2 flex flex-wrap gap-2">
         <button
@@ -117,6 +126,8 @@ function ProcessingNotesPanel({
   otherNotes = NO_OTHER_NOTES,
 }: ProcessingNotesPanelProps) {
   const normalisedValue = value ?? "";
+  const headingId = useId();
+  const countId = useId();
   const otherNotesHeadingId = useId();
   const [saveState, setSaveState] = useState<SaveState>("idle");
   // The box's text at mount. Later text is written by the effect below:
@@ -137,6 +148,7 @@ function ProcessingNotesPanel({
     }
   }
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const lockRef = useRef<HTMLDivElement | null>(null);
   const disabledRef = useRef(disabled);
   const conflictRef = useRef(conflict);
   const draftRef = useRef(normalisedValue);
@@ -319,6 +331,12 @@ function ProcessingNotesPanel({
     }
   }, [flushSave]);
 
+  // The notice and its focused button go once a conflict is resolved, so
+  // focus moves to the box, or to the lock when the box is locked.
+  const focusBox = useCallback(() => {
+    (disabledRef.current ? lockRef.current : textareaRef.current)?.focus();
+  }, []);
+
   const handleKeepMine = useCallback(() => {
     // Notes generation has the other version; nothing is saved over it.
     if (disabledRef.current) {
@@ -327,9 +345,10 @@ function ProcessingNotesPanel({
     // Read by the save below, before the cleared conflict re-renders.
     conflictRef.current = null;
     onResolveConflict?.("mine");
+    focusBox();
     // Even when the box holds what it last saved: that text goes over theirs.
     void flushSave(draftRef.current, true);
-  }, [flushSave, onResolveConflict]);
+  }, [flushSave, focusBox, onResolveConflict]);
 
   const handleUseTheirs = useCallback(() => {
     const theirs =
@@ -344,9 +363,11 @@ function ProcessingNotesPanel({
     setVisibleSaveState("idle");
     reportDirty();
     onResolveConflict?.("theirs");
-  }, [onResolveConflict, reportDirty, setVisibleSaveState]);
+    focusBox();
+  }, [focusBox, onResolveConflict, reportDirty, setVisibleSaveState]);
 
   const shownLength = lengthToShow(draftText);
+  const overLimit = shownLength !== null && shownLength > NOTE_BODY_MAX_CHARS;
 
   // Nothing at rest: only saving, saved, failed, conflicting and locked say
   // anything.
@@ -367,8 +388,13 @@ function ProcessingNotesPanel({
     <section className="density-surface flex h-full min-h-0 flex-col border border-surface-border bg-surface-card shadow-card">
       {/* One row: title and save state. */}
       <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1">
-        <h3 className="text-base font-semibold text-foreground">Notes</h3>
-        <span className="ml-auto text-xs font-semibold uppercase tracking-[0.2em] text-contrast-helper">
+        <h3 id={headingId} className="text-base font-semibold text-foreground">
+          Notes
+        </h3>
+        <span
+          role="status"
+          className="ml-auto text-xs font-semibold uppercase tracking-[0.2em] text-contrast-helper"
+        >
           {saveMessage}
         </span>
       </div>
@@ -376,7 +402,7 @@ function ProcessingNotesPanel({
         <ConflictNotice
           conflict={conflict}
           locked={disabled}
-          mineIsBlank={stripNote(draftText) === ""}
+          mine={draftText}
           onKeepMine={handleKeepMine}
           onUseTheirs={handleUseTheirs}
         />
@@ -388,11 +414,18 @@ function ProcessingNotesPanel({
           onChange={handleChange}
           onBlur={handleBlur}
           placeholder="Type quick reminders, decisions, or action items here..."
+          aria-labelledby={headingId}
+          aria-describedby={shownLength !== null ? countId : undefined}
+          aria-invalid={overLimit}
           disabled={disabled}
           className={`density-surface-panel min-h-[10rem] w-full flex-1 resize-none border border-control-border bg-control-bg px-4 py-4 text-sm leading-6 text-contrast-muted outline-none transition ${disabled ? "cursor-not-allowed opacity-70" : "focus:border-action focus:ring-2 focus:ring-action"}`}
         />
         {disabled ? (
-          <div className="density-surface-panel absolute inset-0 flex items-center justify-center border border-surface-border bg-surface-card px-6 text-center">
+          <div
+            ref={lockRef}
+            tabIndex={-1}
+            className="density-surface-panel absolute inset-0 flex items-center justify-center border border-surface-border bg-surface-card px-6 text-center outline-none"
+          >
             <div>
               <div className="text-sm font-semibold text-foreground">
                 Notes are temporarily locked
@@ -406,10 +439,11 @@ function ProcessingNotesPanel({
       </div>
       {shownLength !== null ? (
         <p
-          className={`mt-2 text-xs ${shownLength > NOTE_BODY_MAX_CHARS ? "text-status-danger-fg" : "text-contrast-helper"}`}
+          id={countId}
+          className={`mt-2 text-xs ${overLimit ? "text-status-danger-fg" : "text-contrast-helper"}`}
         >
           {shownLength.toLocaleString()} / {NOTE_BODY_MAX_CHARS.toLocaleString()} characters
-          {shownLength > NOTE_BODY_MAX_CHARS ? ". Shorten the notes to save them." : ""}
+          {overLimit ? ". Shorten the notes to save them." : ""}
         </p>
       ) : null}
       {otherNotes.length > 0 ? (

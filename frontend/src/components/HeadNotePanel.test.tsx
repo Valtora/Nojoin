@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { TimelineNote, TimelineNoteCreate, TimelineNoteUpdate } from "@/types";
@@ -804,5 +804,55 @@ describe("HeadNotePanel", () => {
 
     expect(screen.getByText("Saved")).toBeInTheDocument();
     expect(bodies()).toEqual(["Mine"]);
+  });
+
+  it("returns focus to the box once a conflict is resolved", async () => {
+    server.add("h1", "head", "Original");
+    const { poll } = mount();
+    type("Mine");
+    server.edit("h1", "Theirs");
+    await poll();
+    await waitForSave();
+
+    screen.getByRole("button", { name: "Use theirs" }).focus();
+    await click("Use theirs");
+    expect(box()).toHaveFocus();
+
+    type("Mine again");
+    server.edit("h1", "Theirs again");
+    await poll();
+    await waitForSave();
+    screen.getByRole("button", { name: "Keep mine" }).focus();
+    await click("Keep mine");
+    expect(box()).toHaveFocus();
+  });
+
+  it("shows the box's text in the notice while notes generation covers the box", async () => {
+    server.add("h1", "head", "Original");
+    const { poll, lock } = mount();
+    type("Mine, to copy");
+    server.edit("h1", "Theirs");
+    await poll();
+    await waitForSave();
+    await lock(true);
+
+    const notice = screen.getByRole("alert");
+    expect(within(notice).getByText("Mine, to copy")).toBeInTheDocument();
+    expect(notice).toHaveTextContent("Theirs");
+
+    screen.getByRole("button", { name: "Use theirs" }).focus();
+    await click("Use theirs");
+    expect(document.activeElement).toHaveTextContent("Notes are temporarily locked");
+  });
+
+  it("names the box, and announces its state and why text over the limit is not saved", async () => {
+    mount();
+    type("x".repeat(50_001));
+    await waitForSave();
+
+    const notes = screen.getByRole("textbox", { name: "Notes" });
+    expect(notes).toHaveAttribute("aria-invalid", "true");
+    expect(notes).toHaveAccessibleDescription(/Shorten the notes to save them/);
+    expect(screen.getByRole("status")).toHaveTextContent("Save failed");
   });
 });
