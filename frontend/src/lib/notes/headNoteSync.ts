@@ -276,11 +276,9 @@ export class HeadNoteSync {
 
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
-    // Nothing is checked or resent while nothing listens; take it up again.
-    if (this.listeners.size === 1) {
-      this.confirmAbsence();
-      this.retryClear();
-    }
+    // Nothing is checked while nothing listens; take it up again. (Nothing is
+    // resent either, but no clear can be outstanding before the box mounts.)
+    if (this.listeners.size === 1) this.confirmAbsence();
     return () => {
       this.listeners.delete(listener);
       if (this.listeners.size === 0) {
