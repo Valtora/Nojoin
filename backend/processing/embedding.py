@@ -144,16 +144,19 @@ def blend_voiceprint(
 
     ``row`` is a ``GlobalSpeaker`` or a ``RecordingSpeaker``, and ``version`` is
     the extraction method version ``embedding`` was produced with (``None`` for
-    a voiceprint that predates versioning). Every path that writes a voiceprint
-    it did not extract itself goes through here, because identification only
-    compares voiceprints of one version: a row whose version is wrong is
-    ignored, or compared with vectors it can't be compared with.
+    a voiceprint that predates versioning). Every path that blends another
+    row's voiceprint into a speaker row goes through here, because
+    identification only compares voiceprints of one version: a row whose
+    version is wrong is ignored, or compared with vectors it can't be compared
+    with. A path that copies a vector outright, such as promoting a speaker to
+    a new person or restoring a backup, copies its version alongside it.
 
     A row without a voiceprint takes a copy of ``embedding`` and its version.
     A row of the same version has ``embedding`` folded in at ``alpha`` by
     ``merge_embeddings``, drift guard included. Two versions are never blended,
     since the average of two unrelated regions of the space matches neither: a
-    current-version ``embedding`` replaces a stale row voiceprint, and a stale
+    current-version ``embedding`` replaces a stale row voiceprint without the
+    drift guard (a cosine across versions says nothing), and a stale
     ``embedding`` leaves a current row as it is.
     """
     if not row.embedding:
