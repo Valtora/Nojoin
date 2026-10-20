@@ -20,6 +20,7 @@ import os
 from typing import List, Optional
 
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm.exc import ObjectDeletedError, StaleDataError
 from sqlmodel import select
 
 from backend.models.context_chunk import ContextChunk
@@ -322,7 +323,13 @@ def _record_parse_failure(
     message = (
         DATABASE_FAILURE_DETAIL if isinstance(error, SQLAlchemyError) else str(error)
     )
-    _fail(session, document, message)
+    try:
+        _fail(session, document, message)
+    except (ObjectDeletedError, StaleDataError):
+        # Deleted between the check above and this write: the reload for the
+        # write finds no row, or the UPDATE matches none.
+        session.rollback()
+        logger.info("Document %s was deleted while parsing; stopped.", document_id)
 
 
 def _fail(session, document: Document, message: str) -> None:

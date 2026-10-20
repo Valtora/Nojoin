@@ -23,7 +23,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import create_engine, func, text
+from sqlalchemy import create_engine, event, func, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 from sqlmodel import Session, SQLModel, select
@@ -417,6 +417,63 @@ def test_a_parse_whose_page_insert_fails_ends_in_error(harness, monkeypatch, cap
     assert path.is_file()
     assert f"Failed to process document {document_id}" in caplog.text
     assert "uq_document_page_number" in caplog.text
+
+
+@pytest.mark.parametrize("deleted", ["before_the_write", "during_the_write"])
+def test_a_parse_failure_stops_quietly_when_the_row_goes_before_it_is_recorded(
+    harness, monkeypatch, caplog, deleted
+):
+    """The document is deleted after the handler found it, before it is marked ERROR.
+
+    Deleted before the handler writes, the row cannot be reloaded for the write
+    (ObjectDeletedError). Deleted after that reload, just before the UPDATE, the
+    UPDATE matches no row (StaleDataError). Either way it is the same deleted
+    document, so the handler stops as for one already gone.
+    """
+    target = _add_recording(harness, "target")
+    asyncio.run(_attach(harness, target))
+    with Session(harness.engine) as session:
+        document_id = session.exec(select(Document.id)).one()
+
+    def unreadable(file_path, **kwargs):
+        raise RuntimeError("The file could not be read.")
+
+    def delete_the_row():
+        with harness.engine.begin() as connection:
+            connection.execute(
+                text("DELETE FROM documents WHERE id = :id"), {"id": document_id}
+            )
+
+    real_fail = document_tasks._fail
+    armed = SimpleNamespace(update=False)
+
+    def delete_or_arm_then_fail(session, document, message):
+        if deleted == "before_the_write":
+            delete_the_row()
+        else:
+            armed.update = True
+        real_fail(session, document, message)
+
+    def delete_before_the_update(_conn, _cursor, statement, *_args):
+        if armed.update and statement.startswith("UPDATE documents"):
+            armed.update = False
+            delete_the_row()
+
+    monkeypatch.setattr(document_tasks, "open_document", unreadable)
+    monkeypatch.setattr(document_tasks, "_fail", delete_or_arm_then_fail)
+    event.listen(harness.engine, "before_cursor_execute", delete_before_the_update)
+    task = document_tasks.process_document_task
+    task._session = Session(harness.engine)
+    try:
+        with caplog.at_level(logging.INFO):
+            task.run(document_id)
+    finally:
+        event.remove(harness.engine, "before_cursor_execute", delete_before_the_update)
+        task._session.close()
+        task._session = None
+
+    assert _document_rows(harness) == 0
+    assert f"Document {document_id} was deleted while parsing" in caplog.text
 
 
 @pytest.mark.anyio
