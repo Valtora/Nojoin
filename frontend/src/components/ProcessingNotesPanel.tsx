@@ -347,11 +347,9 @@ function ProcessingNotesPanel({
     (disabledRef.current ? lockRef.current : textareaRef.current)?.focus();
   }, []);
 
+  // Only its button calls this, and that button is disabled while notes
+  // generation holds the notes, so nothing is saved over their version then.
   const handleKeepMine = useCallback(() => {
-    // Notes generation has the other version; nothing is saved over it.
-    if (disabledRef.current) {
-      return;
-    }
     // Read by the save below, before the cleared conflict re-renders.
     conflictRef.current = null;
     onResolveConflict?.("mine");
