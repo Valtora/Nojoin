@@ -15,7 +15,9 @@ from collections.abc import Iterable, Sequence
 from functools import partial
 from pathlib import Path
 
+from fastapi import HTTPException
 from fastapi.concurrency import run_in_threadpool
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col, select
 
@@ -23,6 +25,9 @@ from backend.models.document import Document
 from backend.utils.db_batching import bind_batches
 from backend.utils.path_manager import PathManager
 from backend.utils.recording_storage import resolve_path_within_root
+
+# PostgreSQL's SQLSTATE for a foreign key violation.
+_FOREIGN_KEY_VIOLATION = "23503"
 
 
 def documents_root_dir() -> Path:
@@ -100,14 +105,22 @@ async def insert_document_or_remove_file(
 
     If the insert fails, nothing would ever reference the file, so it is removed.
     That is what happens when the recording is deleted during the upload: the
-    insert waits on the delete's lock, then fails its foreign key. Only the insert
-    is guarded. A commit that raises may still have landed, so its file stays.
+    insert waits on the delete's lock, then fails its foreign key, and that
+    becomes the 404 a missing recording gets everywhere else. Only the insert is
+    guarded. A commit that raises may still have landed, so its file stays.
     """
     file_path = document.file_path
     db.add(document)
     try:
         await db.flush()
-    except Exception:
+    except Exception as error:
         await delete_document_files([file_path], logger=logger)
         await db.rollback()
+        if (
+            isinstance(error, IntegrityError)
+            and getattr(error.orig, "sqlstate", None) == _FOREIGN_KEY_VIOLATION
+        ):
+            raise HTTPException(
+                status_code=404, detail="Recording not found"
+            ) from error
         raise

@@ -517,7 +517,8 @@ async def test_an_upload_whose_recording_is_deleted_meanwhile_removes_its_file(
 
     The recording's delete is made and held open, so the upload reads the
     recording, stores the file, and waits at its insert. Once the delete commits
-    the insert fails, and the file it wrote must not stay behind.
+    the insert fails, the file it wrote must not stay behind, and the client gets
+    the same 404 as for any recording that is gone.
     """
     public_id = _add_recording(harness, "target")
     deleter = Session(harness.engine)
@@ -542,6 +543,7 @@ async def test_an_upload_whose_recording_is_deleted_meanwhile_removes_its_file(
         deleter.close()
     response = await request
 
-    assert response.status_code == 500
+    assert response.status_code == 404, response.text
+    assert response.json() == {"detail": "Recording not found"}
     assert list(harness.documents_dir.iterdir()) == []
     assert _document_rows(harness) == 0
