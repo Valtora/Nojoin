@@ -38,8 +38,14 @@ const timelineNotesPath = (recordingId: RecordingId) =>
 /** Every note on the recording, in timeline order. */
 export const listTimelineNotes = async (
   recordingId: RecordingId,
+  signal?: AbortSignal,
 ): Promise<TimelineNote[]> => {
-  const response = await api.get<TimelineNote[]>(timelineNotesPath(recordingId));
+  const response = await api.get<TimelineNote[]>(
+    timelineNotesPath(recordingId),
+    {
+      signal,
+    },
+  );
   return response.data;
 };
 
@@ -55,7 +61,10 @@ export const createTimelineNote = async (
   return response.data;
 };
 
-/** Edits a note; 409 (detail `TimelineNoteConflictDetail`) if it changed since. */
+/**
+ * Edits a note; 409 (detail `TimelineNoteConflictDetail`) if it changed since,
+ * 410 if it was deleted (detail `code` says whether by this write's token).
+ */
 export const updateTimelineNote = async (
   recordingId: RecordingId,
   noteId: string,
@@ -68,17 +77,20 @@ export const updateTimelineNote = async (
   return response.data;
 };
 
-/** Deletes a note; with `expectedRevision`, 409 if it changed since. */
+/**
+ * Deletes a note; with `expectedRevision`, 409 if it changed since. A delete
+ * already made under the same `writeToken` succeeds again.
+ */
 export const deleteTimelineNote = async (
   recordingId: RecordingId,
   noteId: string,
-  expectedRevision?: number,
+  conditions: { expectedRevision?: number; writeToken?: string } = {},
 ): Promise<void> => {
   await api.delete(`${timelineNotesPath(recordingId)}/${noteId}`, {
-    params:
-      expectedRevision === undefined
-        ? undefined
-        : { expected_revision: expectedRevision },
+    params: {
+      expected_revision: conditions.expectedRevision,
+      write_token: conditions.writeToken,
+    },
   });
 };
 

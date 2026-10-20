@@ -37,7 +37,9 @@ describe("HeadNoteSync", () => {
     await Promise.all([sync.save("One"), sync.save("Two")]);
 
     expect(
-      updateTimelineNote.mock.calls.map(([, , update]) => update.expected_revision),
+      updateTimelineNote.mock.calls.map(
+        ([, , update]) => update.expected_revision,
+      ),
     ).toEqual([1, 2]);
     expect(sync.getSnapshot().body).toBe("Two");
   });
@@ -57,7 +59,16 @@ describe("HeadNoteSync", () => {
   it("saves nothing while a conflict is unresolved", async () => {
     updateTimelineNote.mockRejectedValueOnce({
       isAxiosError: true,
-      response: { status: 409, data: { detail: { message: "x", note: head("Theirs", 2) } } },
+      response: {
+        status: 409,
+        data: {
+          detail: {
+            code: "revision_conflict",
+            message: "x",
+            note: head("Theirs", 2),
+          },
+        },
+      },
     });
     const sync = new HeadNoteSync("rec-1", [head("Original", 1)]);
     await expect(sync.save("Mine")).rejects.toBeTruthy();

@@ -1,6 +1,14 @@
 "use client";
 
-import { memo, useCallback, useEffect, useId, useRef, useState } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 
 import {
   NOTE_BODY_MAX_CHARS,
@@ -32,6 +40,11 @@ interface ProcessingNotesPanelProps {
 const NO_OTHER_NOTES: readonly TimelineNote[] = [];
 
 type SaveState = "idle" | "saving" | "saved" | "error";
+
+// What the status region announces. A routine save says nothing, since one
+// runs every pause in typing; a failure, and the save that recovers from it,
+// are announced. A conflict is announced by its notice alone.
+type Announcement = "" | "Save failed" | "Saved";
 
 // A textarea holds, and so sends, every line end as "\n"; text from the
 // server may carry "\r\n", which the box would send, and the API count, as "\n".
@@ -139,7 +152,10 @@ function ProcessingNotesPanel({
   const headingId = useId();
   const countId = useId();
   const otherNotesHeadingId = useId();
+  const lockTitleId = useId();
+  const lockMessageId = useId();
   const [saveState, setSaveState] = useState<SaveState>("idle");
+  const [announcement, setAnnouncement] = useState<Announcement>("");
   // The box's text at mount. Later text is written by the effect below:
   // were `defaultValue` to follow it, React would change an untouched box
   // without its change tracking seeing it, and clearing that box would then
@@ -159,6 +175,11 @@ function ProcessingNotesPanel({
   }
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const lockRef = useRef<HTMLDivElement | null>(null);
+  // Whether the box held focus when the lock took it, and whether the lock
+  // holds focus, so focus can be handed on rather than dropped to the page.
+  const boxFocusedRef = useRef(false);
+  const lockFocusedRef = useRef(false);
+  const lastSaveFailedRef = useRef(false);
   const disabledRef = useRef(disabled);
   const conflictRef = useRef(conflict);
   const draftRef = useRef(normalisedValue);
@@ -214,6 +235,7 @@ function ProcessingNotesPanel({
     }
 
     setVisibleSaveState("saving");
+    setAnnouncement("");
     try {
       await onSave(valueToSave);
       lastSavedRef.current = valueToSave;
@@ -222,6 +244,10 @@ function ProcessingNotesPanel({
       setVisibleSaveState(
         draftRef.current === valueToSave ? "saved" : "idle",
       );
+      if (lastSaveFailedRef.current) {
+        lastSaveFailedRef.current = false;
+        setAnnouncement("Saved");
+      }
 
       if (
         !unmountedRef.current &&
@@ -235,8 +261,10 @@ function ProcessingNotesPanel({
       }
     } catch {
       lastSavedRef.current = null;
+      lastSaveFailedRef.current = true;
       reportDirty();
       setVisibleSaveState("error");
+      setAnnouncement("Save failed");
     }
   }, [clearPendingSave, onSave, reportDirty, setVisibleSaveState]);
 
@@ -294,6 +322,23 @@ function ProcessingNotesPanel({
     void flushSave(draftRef.current);
   }, [disabled, flushSave]);
 
+  // Disabling the box drops the caret to the page, and so does removing the
+  // lock while it holds focus: hand focus to the lock, then back to the box.
+  useLayoutEffect(() => {
+    if (disabled) {
+      if (boxFocusedRef.current || document.activeElement === textareaRef.current) {
+        lockRef.current?.focus();
+      }
+      return;
+    }
+    const lostFocus =
+      document.activeElement === null || document.activeElement === document.body;
+    if (lockFocusedRef.current && lostFocus) {
+      textareaRef.current?.focus();
+    }
+    lockFocusedRef.current = false;
+  }, [disabled]);
+
   useEffect(() => {
     unmountedRef.current = false;
     return () => {
@@ -335,11 +380,36 @@ function ProcessingNotesPanel({
     [clearPendingSave, flushSave, reportDirty, setVisibleSaveState],
   );
 
-  const handleBlur = useCallback(() => {
-    if (!disabledRef.current) {
-      void flushSave(draftRef.current);
+  const handleBlur = useCallback(
+    (event: React.FocusEvent<HTMLTextAreaElement>) => {
+      // A blur from being disabled is the lock's doing; the box keeps its
+      // claim on focus for when the lock hands it back.
+      if (!event.currentTarget.disabled) {
+        boxFocusedRef.current = false;
+      }
+      if (!disabledRef.current) {
+        void flushSave(draftRef.current);
+      }
+    },
+    [flushSave],
+  );
+
+  const handleFocus = useCallback(() => {
+    boxFocusedRef.current = true;
+  }, []);
+
+  const handleLockFocus = useCallback(() => {
+    lockFocusedRef.current = true;
+    boxFocusedRef.current = false;
+  }, []);
+
+  const handleLockBlur = useCallback((event: React.FocusEvent<HTMLDivElement>) => {
+    // Focus moved on to something else; a lock removed from the page moves it
+    // nowhere, and then the box takes it back.
+    if (event.relatedTarget !== null) {
+      lockFocusedRef.current = false;
     }
-  }, [flushSave]);
+  }, []);
 
   // The notice and its focused button go once a conflict is resolved, so
   // focus moves to the box, or to the lock when the box is locked.
@@ -352,6 +422,7 @@ function ProcessingNotesPanel({
   const handleKeepMine = useCallback(() => {
     // Read by the save below, before the cleared conflict re-renders.
     conflictRef.current = null;
+    setAnnouncement("");
     onResolveConflict?.("mine");
     focusBox();
     // Even when the box holds what it last saved: that text goes over theirs.
@@ -373,6 +444,8 @@ function ProcessingNotesPanel({
     }
     setDraftText(theirs);
     setVisibleSaveState("idle");
+    lastSaveFailedRef.current = false;
+    setAnnouncement("");
     reportDirty();
     focusBox();
   }, [focusBox, onResolveConflict, reportDirty, setVisibleSaveState]);
@@ -384,7 +457,9 @@ function ProcessingNotesPanel({
   // anything.
   const saveMessage =
     conflict
-      ? "Changed elsewhere"
+      ? conflict.kind === "changed"
+        ? "Changed elsewhere"
+        : "Deleted elsewhere"
       : disabled
       ? "Locked"
       : saveState === "saving"
@@ -402,11 +477,16 @@ function ProcessingNotesPanel({
         <h3 id={headingId} className="text-base font-semibold text-foreground">
           Notes
         </h3>
+        {/* Hidden from assistive technology, which hears the status region
+            below, the conflict notice and the lock instead. */}
         <span
-          role="status"
+          aria-hidden="true"
           className="ml-auto text-xs font-semibold uppercase tracking-[0.2em] text-contrast-helper"
         >
           {saveMessage}
+        </span>
+        <span role="status" className="sr-only">
+          {conflict ? "" : announcement}
         </span>
       </div>
       {conflict ? (
@@ -423,6 +503,7 @@ function ProcessingNotesPanel({
           ref={textareaRef}
           defaultValue={initialValue}
           onChange={handleChange}
+          onFocus={handleFocus}
           onBlur={handleBlur}
           placeholder="Type quick reminders, decisions, or action items here..."
           aria-labelledby={headingId}
@@ -431,17 +512,25 @@ function ProcessingNotesPanel({
           disabled={disabled}
           className={`density-surface-panel min-h-[10rem] w-full flex-1 resize-none border border-control-border bg-control-bg px-4 py-4 text-sm leading-6 text-contrast-muted outline-none transition ${disabled ? "cursor-not-allowed opacity-70" : "focus:border-action focus:ring-2 focus:ring-action"}`}
         />
+        {/* Focusable only from code: it takes focus when the lock takes the
+            box from under the caret, so the reason is read out, and hands it
+            back when the lock ends. Not a tab stop, since it does nothing. */}
         {disabled ? (
           <div
             ref={lockRef}
+            role="group"
+            aria-labelledby={lockTitleId}
+            aria-describedby={lockMessageId}
             tabIndex={-1}
+            onFocus={handleLockFocus}
+            onBlur={handleLockBlur}
             className="density-surface-panel absolute inset-0 flex items-center justify-center border border-surface-border bg-surface-card px-6 text-center outline-none"
           >
             <div>
-              <div className="text-sm font-semibold text-foreground">
+              <div id={lockTitleId} className="text-sm font-semibold text-foreground">
                 Notes are temporarily locked
               </div>
-              <p className="mt-2 text-sm leading-6 text-contrast-muted">
+              <p id={lockMessageId} className="mt-2 text-sm leading-6 text-contrast-muted">
                 {disabledMessage || "Your manual notes are being incorporated into the generated meeting notes."}
               </p>
             </div>

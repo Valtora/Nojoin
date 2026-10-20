@@ -1,7 +1,12 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { TimelineNote, TimelineNoteCreate, TimelineNoteUpdate } from "@/types";
+import type {
+  TimelineNote,
+  TimelineNoteCreate,
+  TimelineNoteErrorCode,
+  TimelineNoteUpdate,
+} from "@/types";
 
 import HeadNotePanel from "./HeadNotePanel";
 
@@ -10,9 +15,9 @@ const RECORDING = "rec-1";
 // The code points Python's str.isspace() accepts: what the API's strip()
 // trims from a note's body.
 const PYTHON_SPACE = new Set([
-  0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x1c, 0x1d, 0x1e, 0x1f, 0x20, 0x85, 0xa0, 0x1680,
-  0x2000, 0x2001, 0x2002, 0x2003, 0x2004, 0x2005, 0x2006, 0x2007, 0x2008, 0x2009,
-  0x200a, 0x2028, 0x2029, 0x202f, 0x205f, 0x3000,
+  0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x1c, 0x1d, 0x1e, 0x1f, 0x20, 0x85, 0xa0,
+  0x1680, 0x2000, 0x2001, 0x2002, 0x2003, 0x2004, 0x2005, 0x2006, 0x2007,
+  0x2008, 0x2009, 0x200a, 0x2028, 0x2029, 0x202f, 0x205f, 0x3000,
 ]);
 
 const pythonStrip = (text: string) => {
@@ -28,19 +33,34 @@ const refusal = (status: number, detail: unknown) => ({
   response: { status, data: { detail } },
 });
 
+/** A refusal as the notes routes send it: a stable code and some text. */
+const coded = (
+  status: number,
+  code: TimelineNoteErrorCode,
+  extra: Record<string, unknown> = {},
+) => refusal(status, { code, message: `Refused (${code})`, ...extra });
+
+/** The write token another device's writes carry. */
+const OTHER_DEVICE = "device-b-token";
+
 type Write = "create" | "update" | "remove";
 
 /**
  * The real panel and the real store against a fake of the notes routes that
  * behaves like them: notes scoped to the recording, the caller as author,
- * per-note revisions, 409 with the current note on a stale edit or delete,
- * 404 for a missing note, 422 for an empty or too long body after Python's
- * strip, a retried create returning the note as it is now, an edit that
- * changes nothing keeping its revision, writes that commit but lose their
+ * per-note revisions and write tokens, 409 `revision_conflict` with the
+ * current note on a stale edit or delete, a tombstone for every delete so a
+ * write to a deleted note gets 410 `note_deleted_by_you` (its token made the
+ * delete) or `note_deleted_elsewhere`, 404 `note_not_found` for a note that
+ * never was, 422 for an empty or too long body after Python's strip, a
+ * retried create returning the note as it is now, an edit that changes
+ * nothing keeping its revision and token, writes that commit but lose their
  * response, and requests refused before they run.
  */
 class FakeServer {
   notes: TimelineNote[] = [];
+  /** Deleted note ids and the token each delete carried. */
+  readonly tombstones = new Map<string, string | null>();
   private clock = 0;
   /** The next write of each kind commits, but its response is lost. */
   readonly lose = new Set<Write>();
@@ -53,7 +73,14 @@ class FakeServer {
   /** How many of the next lists fail without an answer. */
   failLists = 0;
 
-  add(id: string, kind: TimelineNote["kind"], body: string, author = "dana") {
+  /** A note as another device (or, with this device's token, this one) made it. */
+  add(
+    id: string,
+    kind: TimelineNote["kind"],
+    body: string,
+    author = "dana",
+    token: string | null = OTHER_DEVICE,
+  ) {
     this.clock += 1;
     const at = new Date(Date.UTC(2026, 9, 17, 10, 0, this.clock)).toISOString();
     const note: TimelineNote = {
@@ -62,6 +89,7 @@ class FakeServer {
       kind,
       body,
       revision: 1,
+      last_write_token: token,
       created_by: { id: author === "dana" ? 1 : 2, username: author },
       created_at: at,
       updated_at: at,
@@ -76,11 +104,12 @@ class FakeServer {
     const note = this.notes.find((candidate) => candidate.id === id)!;
     note.body = body;
     note.revision += 1;
+    note.last_write_token = OTHER_DEVICE;
   }
 
   /** Another device's delete. */
   drop(id: string) {
-    this.notes = this.notes.filter((candidate) => candidate.id !== id);
+    this.bury(id, OTHER_DEVICE);
   }
 
   list = () => this.notes.map((note) => ({ ...note }));
@@ -101,50 +130,90 @@ class FakeServer {
     if (this.gate) await this.gate;
     const existing = this.notes.find((note) => note.id === payload.id);
     if (existing) return { ...existing };
+    if (this.tombstones.has(payload.id!))
+      throw this.deleted(payload.id!, payload.write_token);
     if (this.nextIdTaken) {
       this.nextIdTaken = false;
-      throw refusal(409, "That note id is already in use");
+      throw coded(409, "note_id_in_use");
     }
-    const created = this.add(payload.id!, payload.kind, body);
+    const created = this.add(
+      payload.id!,
+      payload.kind,
+      body,
+      "dana",
+      payload.write_token ?? null,
+    );
     this.respond("create");
     return { ...created };
   };
 
-  update = async (recordingId: string, id: string, update: TimelineNoteUpdate) => {
+  update = async (
+    recordingId: string,
+    id: string,
+    update: TimelineNoteUpdate,
+  ) => {
     this.scope(recordingId);
     this.refused("update");
     const body = update.body == null ? null : this.clean(update.body);
     if (this.gate) await this.gate;
-    const note = this.find(id);
+    const note = this.find(id, update.write_token);
     if (note.revision !== update.expected_revision) {
-      throw refusal(409, { message: "changed", note: { ...note } });
+      throw coded(409, "revision_conflict", { note: { ...note } });
     }
     if (body === null || body === note.body) return { ...note };
     note.body = body;
     note.revision += 1;
+    note.last_write_token = update.write_token ?? null;
     this.respond("update");
     return { ...note };
   };
 
-  remove = async (recordingId: string, id: string, expectedRevision?: number) => {
+  remove = async (
+    recordingId: string,
+    id: string,
+    conditions: { expectedRevision?: number; writeToken?: string } = {},
+  ) => {
     this.scope(recordingId);
     this.refused("remove");
-    const note = this.find(id);
-    if (expectedRevision !== undefined && note.revision !== expectedRevision) {
-      throw refusal(409, { message: "changed", note: { ...note } });
+    const { expectedRevision, writeToken } = conditions;
+    if (
+      writeToken !== undefined &&
+      this.tombstones.get(id) === writeToken &&
+      !this.notes.some((note) => note.id === id)
+    ) {
+      return; // A retry of the delete that made the tombstone.
     }
-    this.drop(id);
+    const note = this.find(id, writeToken);
+    if (expectedRevision !== undefined && note.revision !== expectedRevision) {
+      throw coded(409, "revision_conflict", { note: { ...note } });
+    }
+    this.bury(id, writeToken ?? null);
     this.respond("remove");
   };
 
-  private scope(recordingId: string) {
-    if (recordingId !== RECORDING) throw refusal(404, "Recording not found");
+  private bury(id: string, token: string | null) {
+    this.notes = this.notes.filter((candidate) => candidate.id !== id);
+    this.tombstones.set(id, token);
   }
 
-  private find(id: string) {
+  private scope(recordingId: string) {
+    if (recordingId !== RECORDING) throw coded(404, "recording_not_found");
+  }
+
+  private deleted(id: string, token: string | undefined) {
+    return coded(
+      410,
+      token !== undefined && this.tombstones.get(id) === token
+        ? "note_deleted_by_you"
+        : "note_deleted_elsewhere",
+    );
+  }
+
+  private find(id: string, token: string | undefined) {
     const note = this.notes.find((candidate) => candidate.id === id);
-    if (!note) throw refusal(404, "Note not found");
-    return note;
+    if (note) return note;
+    if (this.tombstones.has(id)) throw this.deleted(id, token);
+    throw coded(404, "note_not_found");
   }
 
   private clean(body: string) {
@@ -166,12 +235,17 @@ class FakeServer {
 }
 
 let server: FakeServer;
-const calls = { list: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn() };
+const calls = {
+  list: vi.fn(),
+  create: vi.fn(),
+  update: vi.fn(),
+  remove: vi.fn(),
+};
 
 vi.mock("@/lib/api", () => ({
-  listTimelineNotes: (...args: [string]) => {
-    calls.list(...args);
-    return server.listFor(...args);
+  listTimelineNotes: (recordingId: string, signal?: AbortSignal) => {
+    calls.list(recordingId, signal);
+    return server.listFor(recordingId);
   },
   createTimelineNote: (...args: [string, TimelineNoteCreate]) => {
     calls.create(...args);
@@ -181,7 +255,13 @@ vi.mock("@/lib/api", () => ({
     calls.update(...args);
     return server.update(...args);
   },
-  deleteTimelineNote: (...args: [string, string, number?]) => {
+  deleteTimelineNote: (
+    ...args: [
+      string,
+      string,
+      { expectedRevision?: number; writeToken?: string }?,
+    ]
+  ) => {
     calls.remove(...args);
     return server.remove(...args);
   },
@@ -196,7 +276,11 @@ const mount = (props: { disabled?: boolean } = {}) => {
   let shown = server.list();
   let disabled = props.disabled;
   const element = () => (
-    <HeadNotePanel recordingId={RECORDING} timelineNotes={shown} disabled={disabled} />
+    <HeadNotePanel
+      recordingId={RECORDING}
+      timelineNotes={shown}
+      disabled={disabled}
+    />
   );
   const view = render(element());
   // Like useRecordingDetail, the page takes a polled recording only when its
@@ -226,7 +310,8 @@ const mount = (props: { disabled?: boolean } = {}) => {
 };
 
 const box = () => screen.getByRole("textbox") as HTMLTextAreaElement;
-const type = (text: string) => fireEvent.change(box(), { target: { value: text } });
+const type = (text: string) =>
+  fireEvent.change(box(), { target: { value: text } });
 const waitForSave = () => act(() => vi.advanceTimersByTimeAsync(1800));
 const blur = () =>
   act(async () => {
@@ -239,6 +324,8 @@ const click = (name: string) =>
     await settle();
   });
 const bodies = () => server.notes.map((note) => note.body);
+// The save state as shown; the status region repeats some of it for screen readers.
+const SHOWN = { ignore: "script, style, [role=status]" };
 
 describe("HeadNotePanel", () => {
   beforeEach(() => {
@@ -262,22 +349,24 @@ describe("HeadNotePanel", () => {
     expect(box().value).toBe("Original, mine");
 
     await waitForSave();
-    expect(calls.update).toHaveBeenLastCalledWith(RECORDING, "h1", {
-      expected_revision: 1,
-      body: "Original, mine",
-    });
+    expect(calls.update).toHaveBeenLastCalledWith(
+      RECORDING,
+      "h1",
+      expect.objectContaining({ expected_revision: 1, body: "Original, mine" }),
+    );
     expect(screen.getByRole("alert")).toHaveTextContent("Theirs");
-    expect(screen.getByText("Changed elsewhere")).toBeInTheDocument();
+    expect(screen.getByText("Changed elsewhere", SHOWN)).toBeInTheDocument();
 
     // Leaving the box does not save over their version unasked.
     await blur();
     expect(calls.update).toHaveBeenCalledTimes(1);
 
     await click("Keep mine");
-    expect(calls.update).toHaveBeenLastCalledWith(RECORDING, "h1", {
-      expected_revision: 2,
-      body: "Original, mine",
-    });
+    expect(calls.update).toHaveBeenLastCalledWith(
+      RECORDING,
+      "h1",
+      expect.objectContaining({ expected_revision: 2, body: "Original, mine" }),
+    );
     expect(bodies()).toEqual(["Original, mine"]);
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
@@ -304,12 +393,14 @@ describe("HeadNotePanel", () => {
 
     type("Agenda");
     await waitForSave();
-    expect(screen.getByText("Save failed")).toBeInTheDocument();
+    expect(screen.getByText("Save failed", SHOWN)).toBeInTheDocument();
 
     type("Agenda, budget");
     await waitForSave();
 
-    const [first, second] = calls.create.mock.calls.map(([, payload]) => payload.id);
+    const [first, second] = calls.create.mock.calls.map(
+      ([, payload]) => payload.id,
+    );
     expect(second).toBe(first);
     expect(bodies()).toEqual(["Agenda, budget"]);
     expect(box().value).toBe("Agenda, budget");
@@ -329,7 +420,9 @@ describe("HeadNotePanel", () => {
     await waitForSave();
 
     expect(bodies()).toEqual(["Device B: the decision"]);
-    expect(screen.getByRole("alert")).toHaveTextContent("Device B: the decision");
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Device B: the decision",
+    );
     expect(box().value).toBe("Agenda, budget");
 
     await click("Keep mine");
@@ -342,7 +435,7 @@ describe("HeadNotePanel", () => {
     server.lose.add("update");
     type("Mine");
     await waitForSave();
-    expect(screen.getByText("Save failed")).toBeInTheDocument();
+    expect(screen.getByText("Save failed", SHOWN)).toBeInTheDocument();
 
     type("Mine, more");
     await waitForSave();
@@ -384,7 +477,11 @@ describe("HeadNotePanel", () => {
     expect(box().value).toBe("");
 
     await waitForSave();
-    expect(calls.remove).toHaveBeenCalledWith(RECORDING, id, 1);
+    expect(calls.remove).toHaveBeenCalledWith(
+      RECORDING,
+      id,
+      expect.objectContaining({ expectedRevision: 1 }),
+    );
     expect(server.notes).toEqual([]);
     expect(box().value).toBe("");
   });
@@ -397,7 +494,9 @@ describe("HeadNotePanel", () => {
     type("Agenda, more");
     await poll();
 
-    expect(screen.queryByRole("list", { name: "Other notes" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("list", { name: "Other notes" }),
+    ).not.toBeInTheDocument();
   });
 
   it("makes the note under a new id when its id is taken elsewhere", async () => {
@@ -406,10 +505,14 @@ describe("HeadNotePanel", () => {
     type("Agenda");
     await waitForSave();
 
-    const [first, second] = calls.create.mock.calls.map(([, payload]) => payload.id);
+    const [first, second] = calls.create.mock.calls.map(
+      ([, payload]) => payload.id,
+    );
     expect(second).not.toBe(first);
-    expect(server.notes.map((note) => [note.id, note.body])).toEqual([[second, "Agenda"]]);
-    expect(screen.getByText("Saved")).toBeInTheDocument();
+    expect(server.notes.map((note) => [note.id, note.body])).toEqual([
+      [second, "Agenda"],
+    ]);
+    expect(screen.getByText("Saved", SHOWN)).toBeInTheDocument();
   });
 
   it("keeps its own note when another device created one at the same time", async () => {
@@ -468,7 +571,11 @@ describe("HeadNotePanel", () => {
     type("");
     await waitForSave();
 
-    expect(calls.remove).toHaveBeenCalledWith(RECORDING, "h1", 1);
+    expect(calls.remove).toHaveBeenCalledWith(
+      RECORDING,
+      "h1",
+      expect.objectContaining({ expectedRevision: 1 }),
+    );
     expect(server.notes).toEqual([]);
   });
 
@@ -532,7 +639,7 @@ describe("HeadNotePanel", () => {
     expect(calls.create).toHaveBeenCalledTimes(1);
     expect(calls.update).not.toHaveBeenCalled();
     // The box knows it holds the saved note, so it starts no save at all.
-    expect(screen.queryByText("Saved")).not.toBeInTheDocument();
+    expect(screen.queryByText("Saved", SHOWN)).not.toBeInTheDocument();
   });
 
   it("asks before re-creating a note deleted under an edit", async () => {
@@ -543,7 +650,9 @@ describe("HeadNotePanel", () => {
     await poll();
     await waitForSave();
 
-    expect(screen.getByRole("alert")).toHaveTextContent("deleted on another device");
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "deleted on another device",
+    );
     expect(calls.create).not.toHaveBeenCalled();
 
     await click("Keep mine");
@@ -647,8 +756,10 @@ describe("HeadNotePanel", () => {
     await waitForSave();
 
     expect(box().value).toHaveLength(50_001);
-    expect(screen.getByText(/Shorten the notes to save them/)).toBeInTheDocument();
-    expect(screen.getByText("Save failed")).toBeInTheDocument();
+    expect(
+      screen.getByText(/Shorten the notes to save them/),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Save failed", SHOWN)).toBeInTheDocument();
     expect(calls.create).not.toHaveBeenCalled();
   });
 
@@ -667,8 +778,11 @@ describe("HeadNotePanel", () => {
     await waitForSave();
 
     expect(server.notes).toEqual([]);
-    expect(screen.getByRole("alert")).toHaveTextContent("deleted on another device");
-    expect(calls.create).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "deleted on another device",
+    );
+    // The retry was told the note was deleted elsewhere, and made nothing.
+    expect(calls.create).toHaveBeenCalledTimes(2);
 
     await click("Keep mine");
     expect(bodies()).toEqual(["Agenda, budget"]);
@@ -694,10 +808,13 @@ describe("HeadNotePanel", () => {
   it("does not take a delete refused for a missing recording as done", async () => {
     server.add("h1", "head", "Original");
     mount();
-    server.refuse.push({ write: "remove", error: refusal(404, "Recording not found") });
+    server.refuse.push({
+      write: "remove",
+      error: coded(404, "recording_not_found"),
+    });
     type("");
     await waitForSave();
-    expect(screen.getByText("Save failed")).toBeInTheDocument();
+    expect(screen.getByText("Save failed", SHOWN)).toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 
     // The box still edits that note, rather than making a second one.
@@ -708,16 +825,25 @@ describe("HeadNotePanel", () => {
 
   it("shows a note whose create lands after the box was cleared", async () => {
     const { poll } = mount();
-    server.refuse.push({ write: "create", error: refusal(504, "Gateway Timeout") });
+    server.refuse.push({
+      write: "create",
+      error: refusal(504, "Gateway Timeout"),
+    });
     type("Secret");
     await waitForSave();
-    expect(screen.getByText("Save failed")).toBeInTheDocument();
+    expect(screen.getByText("Save failed", SHOWN)).toBeInTheDocument();
     const [[, { id }]] = calls.create.mock.calls;
 
     type("");
     await waitForSave();
     // The proxy gave up on the create, but the backend commits it now.
-    server.add(id, "head", "Secret");
+    server.add(
+      id,
+      "head",
+      "Secret",
+      "dana",
+      calls.create.mock.calls[0][1].write_token,
+    );
     await poll();
 
     expect(box().value).toBe("Secret");
@@ -729,7 +855,7 @@ describe("HeadNotePanel", () => {
     server.lose.add("remove");
     type("");
     await waitForSave();
-    expect(screen.getByText("Save failed")).toBeInTheDocument();
+    expect(screen.getByText("Save failed", SHOWN)).toBeInTheDocument();
 
     type("Fresh start");
     await waitForSave();
@@ -744,12 +870,16 @@ describe("HeadNotePanel", () => {
     server.lose.add("update");
     type("Mine");
     await waitForSave();
-    expect(screen.getByText("Save failed")).toBeInTheDocument();
+    expect(screen.getByText("Save failed", SHOWN)).toBeInTheDocument();
 
     type("");
     await waitForSave();
 
-    expect(calls.remove.mock.calls.map(([, , revision]) => revision)).toEqual([1, 2]);
+    expect(
+      calls.remove.mock.calls.map(
+        ([, , conditions]) => conditions?.expectedRevision,
+      ),
+    ).toEqual([1, 2]);
     expect(server.notes).toEqual([]);
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
@@ -762,26 +892,8 @@ describe("HeadNotePanel", () => {
     await waitForSave();
 
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    expect(screen.getByText("Saved")).toBeInTheDocument();
+    expect(screen.getByText("Saved", SHOWN)).toBeInTheDocument();
     expect(server.notes).toEqual([]);
-  });
-
-  it("forgets texts older than its last three unanswered saves", async () => {
-    server.add("h1", "head", "Original");
-    mount();
-    for (const text of ["a", "b", "c", "d"]) {
-      server.refuse.push({ write: "update", error: new Error("Network Error") });
-      type(text);
-      await waitForSave();
-    }
-    // Another device writes what this one tried first, four saves ago.
-    server.edit("h1", "a");
-
-    type("e");
-    await waitForSave();
-
-    expect(screen.getByRole("alert")).toHaveTextContent("changed on another device");
-    expect(bodies()).toEqual(["a"]);
   });
 
   it("saves again when the box is left during a save that then fails", async () => {
@@ -802,7 +914,7 @@ describe("HeadNotePanel", () => {
       await settle();
     });
 
-    expect(screen.getByText("Saved")).toBeInTheDocument();
+    expect(screen.getByText("Saved", SHOWN)).toBeInTheDocument();
     expect(bodies()).toEqual(["Mine"]);
   });
 
@@ -842,7 +954,9 @@ describe("HeadNotePanel", () => {
 
     screen.getByRole("button", { name: "Use theirs" }).focus();
     await click("Use theirs");
-    expect(document.activeElement).toHaveTextContent("Notes are temporarily locked");
+    expect(document.activeElement).toHaveTextContent(
+      "Notes are temporarily locked",
+    );
   });
 
   it("names the box, and announces its state and why text over the limit is not saved", async () => {
@@ -863,11 +977,17 @@ describe("HeadNotePanel", () => {
     server.drop("h1");
     await poll();
     await waitForSave();
-    expect(screen.getByRole("alert")).toHaveTextContent("deleted on another device");
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "deleted on another device",
+    );
 
     type("");
-    expect(screen.queryByRole("button", { name: "Keep mine" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Discard mine" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Keep mine" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Discard mine" }),
+    ).not.toBeInTheDocument();
     await click("Dismiss");
 
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
@@ -890,7 +1010,9 @@ describe("HeadNotePanel", () => {
     expect(box().value).toBe("Shared");
     type("Shared, more");
     await waitForSave();
-    expect(server.notes.map((note) => [note.id, note.body])).toEqual([["h2", "Shared, more"]]);
+    expect(server.notes.map((note) => [note.id, note.body])).toEqual([
+      ["h2", "Shared, more"],
+    ]);
   });
 
   it("counts text with Windows line ends as the box will send it", () => {
@@ -899,5 +1021,409 @@ describe("HeadNotePanel", () => {
 
     expect(screen.getByText(/47,999 \/ 50,000 characters/)).toBeInTheDocument();
     expect(screen.queryByText(/Shorten the notes/)).not.toBeInTheDocument();
+  });
+
+  it("takes its own unanswered delete of a lost create as its own when typing again", async () => {
+    server.lose.add("create");
+    const { poll } = mount();
+    type("Agenda");
+    await waitForSave();
+    // A poll shows the note the lost create made, while the box is unsaved.
+    await poll();
+    server.lose.add("remove");
+    type("");
+    await waitForSave();
+    expect(server.notes).toEqual([]);
+
+    type("Fresh");
+    await waitForSave();
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(bodies()).toEqual(["Fresh"]);
+    // The retried create heard its own delete's token, and made a new note.
+    const [lost, retry, fresh] = calls.create.mock.calls.map(
+      ([, payload]) => payload,
+    );
+    expect(retry.id).toBe(lost.id);
+    expect(fresh.id).not.toBe(lost.id);
+  });
+
+  it("does not bring a note back after Discard mine with no poll since its delete", async () => {
+    server.add("h1", "head", "Original");
+    mount();
+    type("Mine");
+    server.drop("h1");
+    await waitForSave();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "deleted on another device",
+    );
+
+    await click("Discard mine");
+    expect(box().value).toBe("");
+    type("Next");
+    await waitForSave();
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(bodies()).toEqual(["Next"]);
+    expect(calls.update).toHaveBeenCalledTimes(1);
+  });
+
+  it("takes its own landed save as its own however many saves failed after it", async () => {
+    server.add("h1", "head", "Original");
+    mount();
+    server.lose.add("update");
+    type("a");
+    await waitForSave();
+    for (const text of ["ab", "abc", "abcd"]) {
+      server.refuse.push({
+        write: "update",
+        error: new Error("Network Error"),
+      });
+      type(text);
+      await waitForSave();
+    }
+
+    type("abcde");
+    await waitForSave();
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(bodies()).toEqual(["abcde"]);
+  });
+
+  it("takes another device's write of the very text it sent as a conflict", async () => {
+    server.add("h1", "head", "Original");
+    mount();
+    server.refuse.push({ write: "update", error: new Error("Network Error") });
+    type("Same words");
+    await waitForSave();
+    // The other device happens to save exactly what this one tried.
+    server.edit("h1", "Same words");
+
+    type("Same words, and more");
+    await waitForSave();
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "changed on another device",
+    );
+    expect(bodies()).toEqual(["Same words"]);
+  });
+
+  it("asks before re-creating a lost create's note deleted elsewhere, with no poll between", async () => {
+    server.lose.add("create");
+    mount();
+    type("Agenda");
+    await waitForSave();
+    server.drop(server.notes[0].id);
+
+    type("Agenda, budget");
+    await waitForSave();
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "deleted on another device",
+    );
+    expect(server.notes).toEqual([]);
+    await click("Keep mine");
+    expect(bodies()).toEqual(["Agenda, budget"]);
+  });
+
+  it("saves the old text again after its own unanswered delete, rather than taking it as saved", async () => {
+    server.add("h1", "head", "Original");
+    mount();
+    server.lose.add("remove");
+    type("");
+    await waitForSave();
+    expect(server.notes).toEqual([]);
+
+    // Typed back exactly as the deleted note read.
+    type("Original");
+    await waitForSave();
+
+    expect(bodies()).toEqual(["Original"]);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("takes a delete elsewhere of a note it was clearing itself as agreed", async () => {
+    server.add("h1", "head", "Original");
+    mount();
+    // This device's delete never reaches the server; another device's does.
+    server.refuse.push({ write: "remove", error: new Error("Network Error") });
+    type("");
+    await waitForSave();
+    server.drop("h1");
+
+    type("A new start");
+    await waitForSave();
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(bodies()).toEqual(["A new start"]);
+  });
+
+  it("sends a retry under the same token and the next write under a new one", async () => {
+    server.add("h1", "head", "Original");
+    mount();
+    server.refuse.push({ write: "update", error: new Error("Network Error") });
+    type("One");
+    await waitForSave();
+    type("Two");
+    await waitForSave();
+    type("Three");
+    await waitForSave();
+
+    const tokens = calls.update.mock.calls.map(
+      ([, , update]) => update.write_token,
+    );
+    expect(tokens).toHaveLength(3);
+    expect(tokens[1]).toBe(tokens[0]);
+    expect(tokens[2]).not.toBe(tokens[1]);
+    expect(server.notes[0].last_write_token).toBe(tokens[2]);
+  });
+
+  it("branches on the refusal's code, not its text", async () => {
+    server.add("h1", "head", "Original");
+    mount();
+    // "Note not found" as text, but the code says the recording is gone.
+    server.refuse.push({
+      write: "update",
+      error: refusal(404, {
+        code: "recording_not_found",
+        message: "Note not found",
+      }),
+    });
+    type("Mine");
+    await waitForSave();
+    expect(screen.getByText("Save failed", SHOWN)).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+
+    // And a deleted note is known by its code whatever the text says.
+    server.drop("h1");
+    server.refuse.push({
+      write: "update",
+      error: refusal(410, {
+        code: "note_deleted_elsewhere",
+        message: "Recording not found",
+      }),
+    });
+    type("Mine, again");
+    await waitForSave();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "deleted on another device",
+    );
+  });
+
+  it("names the conflict's kind in the save state, without announcing it twice", async () => {
+    server.add("h1", "head", "Original");
+    server.add("h2", "head", "Second");
+    const { poll } = mount();
+    type("Mine");
+    server.edit("h1", "Theirs");
+    await poll();
+    await waitForSave();
+    expect(screen.getByText("Changed elsewhere", SHOWN)).toBeInTheDocument();
+    // One announcement: the notice's own, as an alert.
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "changed on another device",
+    );
+    expect(screen.getByRole("status")).toBeEmptyDOMElement();
+
+    await click("Use theirs");
+    type("Mine once more");
+    server.drop("h1");
+    await waitForSave();
+    expect(screen.getByText("Deleted elsewhere", SHOWN)).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "deleted on another device",
+    );
+    expect(screen.getByRole("status")).toBeEmptyDOMElement();
+  });
+
+  it("announces a failed save and its recovery, not every routine save", async () => {
+    server.add("h1", "head", "Original");
+    mount();
+    type("Mine");
+    await waitForSave();
+    expect(screen.getByText("Saved", SHOWN)).toBeInTheDocument();
+    expect(screen.getByRole("status")).toBeEmptyDOMElement();
+
+    server.refuse.push({ write: "update", error: new Error("Network Error") });
+    type("Mine, more");
+    await waitForSave();
+    expect(screen.getByRole("status")).toHaveTextContent("Save failed");
+
+    type("Mine, more again");
+    await waitForSave();
+    expect(screen.getByRole("status")).toHaveTextContent("Saved");
+
+    type("Mine, and on");
+    await waitForSave();
+    expect(screen.getByRole("status")).toBeEmptyDOMElement();
+  });
+
+  it("hands focus to the lock when it covers the box, and back when it ends", async () => {
+    server.add("h1", "head", "Original");
+    const { lock } = mount();
+    box().focus();
+
+    await lock(true);
+    const locked = screen.getByRole("group", {
+      name: "Notes are temporarily locked",
+    });
+    expect(locked).toHaveFocus();
+    expect(locked).toHaveAccessibleDescription(/being incorporated|folded/);
+
+    await lock(false);
+    expect(box()).toHaveFocus();
+  });
+
+  it("returns focus to the box after a conflict resolved during the lock, once it ends", async () => {
+    server.add("h1", "head", "Original");
+    const { lock } = mount();
+    type("Mine");
+    server.edit("h1", "Theirs");
+    await waitForSave();
+    await lock(true);
+    await click("Use theirs");
+    expect(
+      screen.getByRole("group", { name: /temporarily locked/ }),
+    ).toHaveFocus();
+
+    await lock(false);
+    expect(box()).toHaveFocus();
+  });
+
+  it("leaves focus alone when the lock ends after focus moved on", async () => {
+    server.add("h1", "head", "Original");
+    const { lock } = mount();
+    const elsewhere = document.createElement("button");
+    document.body.append(elsewhere);
+    box().focus();
+    await lock(true);
+    act(() => elsewhere.focus());
+
+    await lock(false);
+    expect(elsewhere).toHaveFocus();
+    elsewhere.remove();
+  });
+
+  it("asks again after a failed check from 2 s, doubling up to 30 s", async () => {
+    server.add("h1", "head", "Original");
+    const { poll } = mount();
+    server.drop("h1");
+    server.failLists = 100;
+    await poll();
+    expect(calls.list).toHaveBeenCalledTimes(1);
+
+    const waits = [2_000, 4_000, 8_000, 16_000, 30_000, 30_000];
+    for (const [index, wait] of waits.entries()) {
+      await act(() => vi.advanceTimersByTimeAsync(wait - 1));
+      expect(calls.list).toHaveBeenCalledTimes(index + 1);
+      await act(() => vi.advanceTimersByTimeAsync(1));
+      expect(calls.list).toHaveBeenCalledTimes(index + 2);
+    }
+    // One timer at a time: the next ask, and nothing else.
+    expect(vi.getTimerCount()).toBe(1);
+
+    server.failLists = 0;
+    await act(() => vi.advanceTimersByTimeAsync(30_000));
+    expect(box().value).toBe("");
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("stops asking once a poll shows the note again", async () => {
+    server.add("h1", "head", "Original");
+    const { answer } = mount();
+    server.failLists = 100;
+    await answer([]);
+    expect(calls.list).toHaveBeenCalledTimes(1);
+
+    await answer(server.list());
+    await act(() => vi.advanceTimersByTimeAsync(120_000));
+
+    expect(calls.list).toHaveBeenCalledTimes(1);
+    expect(box().value).toBe("Original");
+  });
+
+  it("does not ask again after a check refused with a 4xx", async () => {
+    server.add("h1", "head", "Original");
+    const { poll } = mount();
+    server.drop("h1");
+    server.listFor = async () => {
+      throw coded(404, "recording_not_found");
+    };
+    await poll();
+    await act(() => vi.advanceTimersByTimeAsync(120_000));
+
+    expect(calls.list).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("cancels the check and its timer when the box goes away", async () => {
+    server.add("h1", "head", "Original");
+    const { poll, unmount } = mount();
+    server.drop("h1");
+    server.failLists = 100;
+    await poll();
+    await act(() => vi.advanceTimersByTimeAsync(2_000));
+    expect(calls.list).toHaveBeenCalledTimes(2);
+
+    await unmount();
+    await act(() => vi.advanceTimersByTimeAsync(120_000));
+
+    expect(calls.list).toHaveBeenCalledTimes(2);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("aborts a check still in flight when the box goes away", async () => {
+    server.add("h1", "head", "Original");
+    const { poll, unmount } = mount();
+    server.drop("h1");
+    let answerList!: () => void;
+    server.listFor = () =>
+      new Promise<TimelineNote[]>((resolve) => {
+        answerList = () => resolve([]);
+      });
+    await poll();
+    const [[, signal]] = calls.list.mock.calls as [string, AbortSignal][];
+    expect(signal.aborted).toBe(false);
+
+    await unmount();
+    expect(signal.aborted).toBe(true);
+    await act(async () => {
+      answerList();
+      await settle();
+    });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("stops the old recording's checks when the box moves to another recording", async () => {
+    server.add("h1", "head", "Original");
+    let recordingId = RECORDING;
+    let shown = server.list();
+    const element = () => (
+      <HeadNotePanel
+        key={recordingId}
+        recordingId={recordingId}
+        timelineNotes={shown}
+      />
+    );
+    const view = render(element());
+    server.drop("h1");
+    server.failLists = 100;
+    shown = server.list();
+    await act(async () => {
+      view.rerender(element());
+      await settle();
+    });
+    expect(calls.list).toHaveBeenCalledTimes(1);
+
+    recordingId = "rec-2";
+    shown = [];
+    await act(async () => {
+      view.rerender(element());
+      await settle();
+    });
+    await act(() => vi.advanceTimersByTimeAsync(120_000));
+
+    expect(calls.list).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

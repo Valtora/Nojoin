@@ -4,57 +4,67 @@ import {
   listTimelineNotes,
   updateTimelineNote,
 } from "@/lib/api";
-import { getErrorDetail, getErrorStatus, isRecord } from "@/lib/errors";
-import type {
-  RecordingId,
-  TimelineNote,
-  TimelineNoteConflictDetail,
+import { getErrorStatus, isRecord } from "@/lib/errors";
+import {
+  TIMELINE_NOTE_ERROR_CODES,
+  type RecordingId,
+  type TimelineNote,
+  type TimelineNoteConflictDetail,
+  type TimelineNoteErrorCode,
 } from "@/types";
 
 /**
  * Keeps the processing notes box in step with the recording's earliest head
  * note, the one a migrated free-text note became, across saves and polls.
  *
- * - Typing into an empty box creates the note, with a client id kept until a
- *   create succeeds, so a retried create cannot make a second note. A retry
- *   that finds the note changed since an earlier attempt made it raises a
- *   conflict instead of writing over it, and so does one whose note a poll
- *   showed and the server no longer has: the server keeps no record of
- *   deleted ids, so the retry would bring the deleted note back.
- * - An edit patches the note against the revision the box's text started
- *   from. While the box holds unsaved text, a poll never moves that base, so
- *   an edit made meanwhile on another device comes back as a conflict rather
- *   than being overwritten. A refusal caused by this device's own earlier
- *   save, whose response was lost, is not a conflict.
- * - Clearing the box deletes the note, against the same revision, so it
- *   cannot delete an edit made meanwhile on another device either. A note
- *   already gone counts as deleted. An edit whose note is gone is a conflict,
- *   unless this device's own unanswered delete may have removed it: then the
- *   text becomes new notes, as after any clear.
- * - A poll answered before this device's own write landed cannot put older
- *   text back, or bring back a note this device deleted. Polls can answer
- *   out of order, so when one leaves out the box's note, the store asks the
- *   server again before taking the note as deleted elsewhere, and keeps
- *   asking, less often each time, while that request fails: the page hands
- *   on only polls that changed, so a later poll may never come.
- * - The box stays on the note it edits. If another device made a head note
- *   at the same moment, that one is listed with the other notes.
- * - A conflict (changed or deleted on another device) stops saving until the
- *   user keeps their text or takes the other version.
+ * The server says what happened to every write, so nothing here is guessed:
+ *
+ * - Each write carries a write token. The token stays the same until an
+ *   answer arrives, so the requests sent while answers were being lost share
+ *   it, and a fresh one is used after. The note keeps the token of the write
+ *   that made its revision (`last_write_token`): a refusal or a retried
+ *   create showing a token this device sent is this device's own write.
+ * - A delete leaves a tombstone holding its token, so a write to a deleted
+ *   note gets a 410 whose `code` says whether the delete carried this write's
+ *   token (`note_deleted_by_you`) or not (`note_deleted_elsewhere`), and a
+ *   retried create can never bring the note back.
+ * - The store branches on the refusal's `code`, never on its text.
+ *
+ * State: `base` (the note the box's text is based on), `pending` (a create's
+ * id while its answer is unknown), `clearing` (a note whose delete's answer is
+ * unknown), `conflict`, and `dirty` (the box holds unsaved text).
+ *
+ * | Situation | Event | Outcome |
+ * | --- | --- | --- |
+ * | no base, no pending | save text | create under a new id; `pending` = id until answered |
+ * | pending | save text | create again: same id, same token |
+ * | pending | create 201, or 200 with own token | `base` = note; newer text is patched on |
+ * | pending | create 200 with another token | conflict "changed" (edited elsewhere since) |
+ * | pending or base | 410 (or 404 for an edit) while `clearing` that note | its own delete, or one elsewhere that beat it: the text is a new note under a new id |
+ * | pending or base | 410 (or 404 for an edit) otherwise | conflict "deleted"; the id is never written again |
+ * | pending | create 409 `note_id_in_use` | once more under a new id |
+ * | base | save other text | patch against `base.revision` |
+ * | base | patch 409 with own token | own earlier write landed: `base` = it, patch again |
+ * | base | patch or delete 409 with another token | conflict "changed" |
+ * | base or pending | save empty | delete against the revision; unknown answer: `clearing` |
+ * | clearing | delete 204, 410 or 404 | gone (404 on a pending id: never made, not taken as deleted) |
+ * | any | no answer, or 5xx | nothing changes but `clearing`; the next save retries under the same token |
+ * | any | other 4xx (422, recording gone) | save failed; nothing changes |
+ * | conflict | save | refused until resolved |
+ * | conflict "changed" | Keep mine / Use theirs | `base` = their note; next save goes over it / the box takes it |
+ * | conflict "deleted" | Keep mine / Discard mine | `base` = none; next save makes a new note / the box moves to the next head note |
+ * | not dirty | poll | `base` = the polled note, unless the poll is older than `base` |
+ * | dirty | poll | `base` stays, so an edit made elsewhere meanwhile comes back as a 409 |
+ * | any | poll leaves out `base` | ask the server; gone: deleted. A failed ask is asked again from 2 s, doubling to 30 s; a refused ask is not |
+ * | any | last listener leaves | the ask and its timer are cancelled; saves already asked for still run |
  */
 
 /** The API's limit, `TIMELINE_NOTE_BODY_MAX_CHARS` in `timeline_note_public.py`. */
 export const NOTE_BODY_MAX_CHARS = 50_000;
 
-/** The API's 404 for a missing note, `NOTE_NOT_FOUND_DETAIL` in `routes_timeline_notes.py`. */
-const NOTE_NOT_FOUND_DETAIL = "Note not found";
-
-/** Unanswered texts remembered per revision: the one in flight and the two before it. */
-const ATTEMPT_MEMORY = 3;
-
 /** How long a failed check for a missing note waits before asking again, doubling. */
-const CONFIRM_RETRY_MS = 2_000;
-const CONFIRM_RETRY_MAX_MS = 30_000;
+export const CONFIRM_RETRY_MS = 2_000;
+export const CONFIRM_RETRY_MAX_MS = 30_000;
 
 // The characters Python's `str.strip()` removes, which is how the API trims a
 // note. `String.prototype.trim` differs: it keeps U+001C-U+001F and U+0085,
@@ -88,8 +98,7 @@ export const noteLength = (text: string): number =>
   text.length - (text.match(SURROGATE_PAIR)?.length ?? 0);
 
 export type HeadNoteConflict =
-  | { kind: "changed"; note: TimelineNote }
-  | { kind: "deleted" };
+  { kind: "changed"; note: TimelineNote } | { kind: "deleted" };
 
 export interface HeadNoteSnapshot {
   /** The edited note's text, or "" when there is none. */
@@ -103,13 +112,6 @@ interface KnownNote {
   id: string;
   revision: number;
   body: string;
-}
-
-/** Texts sent against one revision of a note (0: its create) without an answer. */
-interface Attempts {
-  id: string;
-  revision: number;
-  bodies: string[];
 }
 
 const asKnown = (note: TimelineNote): KnownNote => ({
@@ -142,24 +144,32 @@ export const newNoteId = (): string => {
   ].join("-");
 };
 
-const isConflictDetail = (value: unknown): value is TimelineNoteConflictDetail =>
-  isRecord(value) &&
-  isRecord(value.note) &&
-  typeof value.note.id === "string" &&
-  typeof value.note.body === "string" &&
-  typeof value.note.revision === "number";
+/** What an answer, or its absence, says about a write. */
+type Outcome =
+  | { kind: "unknown" }
+  | { kind: "conflict"; note: TimelineNote }
+  | { kind: "gone" }
+  | { kind: "notFound" }
+  | { kind: "idInUse" }
+  | { kind: "refused" };
 
-const conflictingNote = (error: unknown): TimelineNote | null => {
-  if (getErrorStatus(error) !== 409 || !isRecord(error)) return null;
-  const response = error.response;
-  const data = isRecord(response) ? response.data : null;
-  const detail = isRecord(data) ? data.detail : null;
-  return isConflictDetail(detail) ? detail.note : null;
+const errorDetail = (error: unknown): Record<string, unknown> | null => {
+  if (!isRecord(error) || !isRecord(error.response)) return null;
+  const data = error.response.data;
+  return isRecord(data) && isRecord(data.detail) ? data.detail : null;
 };
 
-/** The note is gone, as against its recording being gone (also a 404). */
-const noteGone = (error: unknown) =>
-  getErrorStatus(error) === 404 && getErrorDetail(error) === NOTE_NOT_FOUND_DETAIL;
+const isNoteErrorCode = (value: unknown): value is TimelineNoteErrorCode =>
+  typeof value === "string" &&
+  (TIMELINE_NOTE_ERROR_CODES as readonly string[]).includes(value);
+
+const isConflictDetail = (
+  detail: Record<string, unknown>,
+): detail is Record<string, unknown> & TimelineNoteConflictDetail =>
+  isRecord(detail.note) &&
+  typeof detail.note.id === "string" &&
+  typeof detail.note.body === "string" &&
+  typeof detail.note.revision === "number";
 
 /** No answer, or a server error: the write may have landed. */
 const outcomeUnknown = (error: unknown) => {
@@ -167,31 +177,54 @@ const outcomeUnknown = (error: unknown) => {
   return status === null || status >= 500;
 };
 
-const UNRESOLVED_CONFLICT_ERROR = "Resolve the conflict with the other device first.";
+const outcomeOf = (error: unknown): Outcome => {
+  if (outcomeUnknown(error)) return { kind: "unknown" };
+  const detail = errorDetail(error);
+  const code = isNoteErrorCode(detail?.code) ? detail.code : null;
+  if (code === "revision_conflict" && detail && isConflictDetail(detail)) {
+    return { kind: "conflict", note: detail.note };
+  }
+  // `note_deleted_by_you` follows only this device's own unanswered delete,
+  // which `clearingId` records, so the two codes are told apart there.
+  if (code === "note_deleted_by_you" || code === "note_deleted_elsewhere") {
+    return { kind: "gone" };
+  }
+  if (code === "note_not_found") return { kind: "notFound" };
+  if (code === "note_id_in_use") return { kind: "idInUse" };
+  return { kind: "refused" };
+};
+
+const UNRESOLVED_CONFLICT_ERROR =
+  "Resolve the conflict with the other device first.";
 const TOO_LONG_ERROR = `A note can be at most ${NOTE_BODY_MAX_CHARS} characters.`;
 
 export class HeadNoteSync {
   private polled: TimelineNote[] = [];
   /** The note the box's text is based on. */
   private base: KnownNote | null = null;
-  private ownWrite: KnownNote | null = null;
   private dirty = false;
   private conflict: HeadNoteConflict | null = null;
-  /** Deleted here, or found deleted elsewhere: a late poll cannot bring them back. */
+  /** Deleted here, or found deleted: a late poll cannot bring them back. */
   private readonly deletedIds = new Set<string>();
-  /** The note a poll left out, while the server is asked whether it still exists. */
-  private confirmingId: string | null = null;
-  private pendingCreateId: string | null = null;
-  /** A poll showed the note the pending create made. */
-  private pendingSeen = false;
-  /** A delete of this note went unanswered, so it may be gone by this device's hand. */
-  private maybeDeletedId: string | null = null;
-  private confirmRetry: ReturnType<typeof setTimeout> | null = null;
-  private confirmDelayMs = CONFIRM_RETRY_MS;
-  private attempts: Attempts | null = null;
+  /** A create's id while its answer is unknown. */
+  private pendingId: string | null = null;
+  /** A note whose delete was sent without an answer. */
+  private clearingId: string | null = null;
+  /** The token the next write carries; replaced once an answer arrives. */
+  private token = newNoteId();
+  private readonly sentTokens = new Set<string>();
+  /** The note a poll left out, while the server is asked about it. */
+  private checkingId: string | null = null;
+  private checkAbort: AbortController | null = null;
+  private checkTimer: ReturnType<typeof setTimeout> | null = null;
+  private checkDelayMs = CONFIRM_RETRY_MS;
   private queue: Promise<void> = Promise.resolve();
   private readonly listeners = new Set<() => void>();
-  private snapshot: HeadNoteSnapshot = { body: "", otherNotes: [], conflict: null };
+  private snapshot: HeadNoteSnapshot = {
+    body: "",
+    otherNotes: [],
+    conflict: null,
+  };
 
   constructor(
     private readonly recordingId: RecordingId,
@@ -201,13 +234,12 @@ export class HeadNoteSync {
   }
 
   subscribe = (listener: () => void) => {
-    const first = this.listeners.size === 0;
     this.listeners.add(listener);
-    // A check for a missing note stops while nothing listens; take it up.
-    if (first) this.confirmAbsence();
+    // Nothing is checked while nothing listens; take it up again.
+    if (this.listeners.size === 1) this.confirmAbsence();
     return () => {
       this.listeners.delete(listener);
-      if (this.listeners.size === 0) this.stopConfirmRetry();
+      if (this.listeners.size === 0) this.stopChecking();
     };
   };
 
@@ -216,10 +248,6 @@ export class HeadNoteSync {
   /** Takes the notes a poll of the recording returned. */
   ingest = (notes: readonly TimelineNote[] | null | undefined) => {
     this.polled = (notes ?? []).filter((note) => !this.deletedIds.has(note.id));
-    const pendingId = this.pendingCreateId;
-    if (pendingId && this.polled.some((note) => note.id === pendingId)) {
-      this.pendingSeen = true;
-    }
     const conflict = this.conflict;
     if (conflict?.kind === "changed") {
       // Show the other version as it is now, not as the refusal found it.
@@ -259,7 +287,6 @@ export class HeadNoteSync {
     if (!conflict) return this.snapshot.body;
     this.conflict = null;
     this.base = conflict.kind === "changed" ? asKnown(conflict.note) : null;
-    if (conflict.kind === "deleted") this.ownWrite = null;
     if (choice === "theirs") {
       this.dirty = false;
       this.adopt();
@@ -278,85 +305,40 @@ export class HeadNoteSync {
     if (base && !polledBase && !this.deletedIds.has(base.id)) return base;
     // The box stays on the note it edits; with none, it takes the earliest
     // head note.
-    const note = polledBase ?? this.polled.find((candidate) => candidate.kind === "head");
+    const note =
+      polledBase ?? this.polled.find((candidate) => candidate.kind === "head");
     if (!note) return null;
-    const own = this.ownWrite;
-    return own && own.id === note.id && own.revision > note.revision
-      ? own
-      : asKnown(note);
+    // A poll answered before this device's own write landed.
+    if (base && base.id === note.id && base.revision > note.revision) {
+      return base;
+    }
+    return asKnown(note);
   }
 
   private adopt() {
     if (!this.dirty && !this.conflict) this.base = this.latest();
-    // The note a lost create response made: edit it rather than create again.
-    if (this.base && this.base.id === this.pendingCreateId) this.setPending(null);
-  }
-
-  private setPending(id: string | null) {
-    this.pendingCreateId = id;
-    this.pendingSeen = false;
-  }
-
-  /** A poll left out the box's note: ask the server before taking it as deleted. */
-  private confirmAbsence() {
-    const base = this.base;
-    if (
-      !base ||
-      this.confirmingId === base.id ||
-      this.deletedIds.has(base.id) ||
-      this.polled.some((note) => note.id === base.id)
-    ) {
-      return;
-    }
-    this.stopConfirmRetry();
-    this.confirmingId = base.id;
-    void listTimelineNotes(this.recordingId)
-      .then(
-        (notes) => {
-          this.confirmDelayMs = CONFIRM_RETRY_MS;
-          if (notes.some((note) => note.id === base.id)) return;
-          this.deletedIds.add(base.id);
-          this.polled = this.polled.filter((note) => note.id !== base.id);
-          this.adopt();
-          this.emit();
-        },
-        // Unanswered: ask again later, while the note is still missing.
-        () => this.retryConfirmation(),
-      )
-      .finally(() => {
-        if (this.confirmingId === base.id) this.confirmingId = null;
-      });
-  }
-
-  private retryConfirmation() {
-    if (this.listeners.size === 0) return;
-    const delay = this.confirmDelayMs;
-    this.confirmDelayMs = Math.min(delay * 2, CONFIRM_RETRY_MAX_MS);
-    this.confirmRetry = setTimeout(() => {
-      this.confirmRetry = null;
-      this.confirmAbsence();
-    }, delay);
-  }
-
-  private stopConfirmRetry() {
-    if (this.confirmRetry === null) return;
-    clearTimeout(this.confirmRetry);
-    this.confirmRetry = null;
+    // A poll showed the note a create made: edit it rather than create again.
+    if (this.base && this.base.id === this.pendingId) this.pendingId = null;
   }
 
   private emit() {
     const conflictNoteId =
       this.conflict?.kind === "changed" ? this.conflict.note.id : null;
-    // The box's note, a create still unconfirmed and the note in a conflict
+    // The box's note, a create still unanswered and the note in a conflict
     // notice are each shown already.
-    const shown = new Set([this.base?.id, this.pendingCreateId, conflictNoteId]);
+    const shown = new Set([this.base?.id, this.pendingId, conflictNoteId]);
     const otherNotes = this.polled.filter(
-      (note) => (note.kind === "head" || note.kind === "tail") && !shown.has(note.id),
+      (note) =>
+        (note.kind === "head" || note.kind === "tail") && !shown.has(note.id),
     );
     const body = this.base?.body ?? "";
     const previous = this.snapshot;
     const sameOthers = sameNotes(otherNotes, previous.otherNotes);
-    if (sameOthers && body === previous.body && this.conflict === previous.conflict) {
+    if (
+      sameOthers &&
+      body === previous.body &&
+      this.conflict === previous.conflict
+    ) {
       return;
     }
     this.snapshot = {
@@ -367,177 +349,237 @@ export class HeadNoteSync {
     for (const listener of this.listeners) listener();
   }
 
-  private recordWrite(note: TimelineNote) {
-    this.ownWrite = asKnown(note);
-    this.base = this.ownWrite;
-    this.attempts = null;
-    if (this.maybeDeletedId === note.id) this.maybeDeletedId = null;
+  /** A poll left out the box's note: ask the server before taking it as deleted. */
+  private confirmAbsence() {
+    const base = this.base;
+    const missing =
+      base !== null &&
+      this.listeners.size > 0 &&
+      !this.deletedIds.has(base.id) &&
+      !this.polled.some((note) => note.id === base.id);
+    if (!missing) {
+      this.stopChecking();
+      return;
+    }
+    // Already asking about it, or waiting to ask again.
+    if (this.checkingId === base.id) return;
+    this.stopChecking();
+    this.checkingId = base.id;
+    this.ask(base.id);
+  }
+
+  private ask(id: string) {
+    const abort = new AbortController();
+    this.checkAbort = abort;
+    void listTimelineNotes(this.recordingId, abort.signal).then(
+      (notes) => {
+        if (abort.signal.aborted) return;
+        this.checkAbort = null;
+        this.checkingId = null;
+        this.checkDelayMs = CONFIRM_RETRY_MS;
+        if (notes.some((note) => note.id === id)) return;
+        this.deletedIds.add(id);
+        this.polled = this.polled.filter((note) => note.id !== id);
+        this.adopt();
+        this.emit();
+      },
+      (error: unknown) => {
+        if (abort.signal.aborted) return;
+        this.checkAbort = null;
+        if (!outcomeUnknown(error)) {
+          // Refused: asking again would be refused again. A later poll asks anew.
+          this.checkingId = null;
+          return;
+        }
+        const delay = this.checkDelayMs;
+        this.checkDelayMs = Math.min(delay * 2, CONFIRM_RETRY_MAX_MS);
+        this.checkTimer = setTimeout(() => {
+          this.checkTimer = null;
+          this.ask(id);
+        }, delay);
+      },
+    );
+  }
+
+  private stopChecking() {
+    this.checkAbort?.abort();
+    this.checkAbort = null;
+    if (this.checkTimer !== null) clearTimeout(this.checkTimer);
+    this.checkTimer = null;
+    this.checkingId = null;
+    this.checkDelayMs = CONFIRM_RETRY_MS;
+  }
+
+  /** The token for a request; the same until an answer arrives. */
+  private sendToken(): string {
+    this.sentTokens.add(this.token);
+    return this.token;
+  }
+
+  /** An answer says how the requests sent under this token went. */
+  private answered() {
+    this.token = newNoteId();
+  }
+
+  /** Whether the note is as a write of this device left it. */
+  private mine(note: TimelineNote): boolean {
+    const token = note.last_write_token;
+    return typeof token === "string" && this.sentTokens.has(token);
+  }
+
+  /** The server holds this note: the box's text is based on it. */
+  private settle(note: TimelineNote) {
+    this.base = asKnown(note);
+    if (this.pendingId === note.id) this.pendingId = null;
+    if (this.clearingId === note.id) this.clearingId = null;
     this.emit();
   }
 
   /** The note is gone: deleted here, or found deleted. */
   private forget(id: string) {
     this.deletedIds.add(id);
-    if (this.pendingCreateId === id) this.setPending(null);
-    if (this.attempts?.id === id) this.attempts = null;
-    if (this.maybeDeletedId === id) this.maybeDeletedId = null;
+    if (this.pendingId === id) this.pendingId = null;
+    if (this.clearingId === id) this.clearingId = null;
     this.polled = this.polled.filter((note) => note.id !== id);
-    this.ownWrite = null;
-    this.base = null;
+    if (this.base?.id === id) this.base = null;
     this.emit();
   }
 
-  private noteAttempt(id: string, revision: number, body: string) {
-    const attempts = this.attempts;
-    if (attempts && attempts.id === id && attempts.revision === revision) {
-      const earlier = attempts.bodies.filter((sent) => sent !== body);
-      attempts.bodies = [...earlier, body].slice(-ATTEMPT_MEMORY);
-    } else {
-      this.attempts = { id, revision, bodies: [body] };
-    }
-  }
-
-  /** Whether the note is what one of this device's unanswered writes made. */
-  private madeHere(note: TimelineNote) {
-    const attempts = this.attempts;
-    return (
-      attempts !== null &&
-      attempts.id === note.id &&
-      note.revision === attempts.revision + 1 &&
-      attempts.bodies.includes(note.body)
-    );
+  private raise(conflict: HeadNoteConflict): never {
+    this.conflict = conflict;
+    this.emit();
+    throw new Error(UNRESOLVED_CONFLICT_ERROR);
   }
 
   private async write(text: string) {
     if (this.conflict) throw new Error(UNRESOLVED_CONFLICT_ERROR);
     const body = stripNote(text);
     if (noteLength(body) > NOTE_BODY_MAX_CHARS) throw new Error(TOO_LONG_ERROR);
-    const target = this.base;
+    const base = this.base;
     if (!body) {
-      if (target) {
-        await this.remove(target);
-      } else if (this.pendingCreateId) {
-        // A create whose answer was lost may have made the note.
-        await this.remove({ id: this.pendingCreateId, revision: 1, body: "" }, true);
-      }
-    } else if (!target) {
+      const id = base?.id ?? this.pendingId;
+      if (id) await this.remove(id, base?.revision ?? 1);
+    } else if (!base) {
       await this.create(body);
-    } else if (body !== target.body) {
-      await this.patch(target, body);
+    } else if (body !== base.body || this.clearingId === base.id) {
+      // After an unanswered delete the note may be gone even if the text
+      // matches it, so the edit is sent to find out.
+      await this.patch(base, body);
     }
   }
 
-  /** Records a refusal as a conflict when another device caused it. */
-  private refused(error: unknown): never {
-    const latest = conflictingNote(error);
-    if (latest) {
-      this.conflict = { kind: "changed", note: latest };
-    } else if (noteGone(error)) {
-      this.conflict = { kind: "deleted" };
-    }
-    this.emit();
-    throw error;
+  /**
+   * A write found its note deleted, or never there. When this device was
+   * clearing it (its own delete landed, or one elsewhere beat it), the box's
+   * text becomes a new note, as after any clear; otherwise it is a conflict.
+   */
+  private async deleted(id: string, body: string): Promise<void> {
+    const ours = this.clearingId === id;
+    this.forget(id);
+    if (!ours) this.raise({ kind: "deleted" });
+    await this.create(body);
   }
 
-  /** Deletes the note; `pending`: the one a create may have made. */
-  private async remove(target: KnownNote, pending = false): Promise<void> {
+  private async create(body: string, renamed = false): Promise<void> {
+    const id = this.pendingId ?? newNoteId();
+    this.pendingId = id;
+    let note: TimelineNote;
     try {
-      // Against its revision, so clearing the box cannot delete an edit
-      // another device made meanwhile.
-      await deleteTimelineNote(this.recordingId, target.id, target.revision);
+      note = await createTimelineNote(this.recordingId, {
+        id,
+        kind: "head",
+        body,
+        write_token: this.sendToken(),
+      });
     } catch (error) {
-      const latest = conflictingNote(error);
-      if (latest && this.madeHere(latest)) {
-        await this.remove(asKnown(latest));
-        return;
+      const outcome = outcomeOf(error);
+      if (outcome.kind === "unknown") throw error;
+      this.answered();
+      if (outcome.kind === "gone") return this.deleted(id, body);
+      if (outcome.kind === "idInUse" && !renamed) {
+        // The id is taken by a note elsewhere: once more under a new one.
+        this.pendingId = null;
+        return this.create(body, true);
       }
-      if (!noteGone(error)) {
-        if (outcomeUnknown(error)) this.maybeDeletedId = target.id;
-        this.refused(error);
-      }
-      if (pending) {
-        // The create has not made the note, or not yet. One it makes later
-        // reaches the box on a poll, to be cleared again, so its id is not
-        // taken as deleted.
-        this.setPending(null);
-        this.attempts = null;
-        return;
-      }
+      throw error;
     }
-    this.forget(target.id);
+    this.answered();
+    this.pendingId = null;
+    // A retry found the note an earlier attempt made, changed since elsewhere.
+    if (!this.mine(note)) this.raise({ kind: "changed", note });
+    this.settle(note);
+    // A retry gets the note as an earlier attempt made it; this text is newer.
+    if (note.body !== body) await this.patch(asKnown(note), body);
   }
 
   private async patch(target: KnownNote, body: string): Promise<void> {
-    this.noteAttempt(target.id, target.revision, body);
     let saved: TimelineNote;
     try {
       saved = await updateTimelineNote(this.recordingId, target.id, {
         expected_revision: target.revision,
         body,
+        write_token: this.sendToken(),
       });
     } catch (error) {
-      const latest = conflictingNote(error);
-      if (latest && this.madeHere(latest)) {
+      const outcome = outcomeOf(error);
+      if (outcome.kind === "unknown") throw error;
+      this.answered();
+      if (outcome.kind === "conflict") {
+        if (!this.mine(outcome.note)) {
+          this.raise({ kind: "changed", note: outcome.note });
+        }
         // This device's earlier save landed; only its answer was lost.
-        this.recordWrite(latest);
-        if (latest.body !== body) await this.patch(asKnown(latest), body);
+        this.settle(outcome.note);
+        if (outcome.note.body !== body) {
+          await this.patch(asKnown(outcome.note), body);
+        }
         return;
       }
-      if (noteGone(error) && this.maybeDeletedId === target.id) {
-        // This device's own delete landed; only its answer was lost. The
-        // text typed since is new notes, as after any clear.
-        this.forget(target.id);
-        await this.create(body);
-        return;
-      }
-      this.refused(error);
-    }
-    this.recordWrite(saved);
-  }
-
-  private async create(body: string, renamed = false): Promise<void> {
-    const id = this.pendingCreateId ?? newNoteId();
-    if (id !== this.pendingCreateId) this.setPending(id);
-    if (this.pendingSeen) await this.ensurePendingExists(id);
-    this.noteAttempt(id, 0, body);
-    let created: TimelineNote;
-    try {
-      created = await createTimelineNote(this.recordingId, { id, kind: "head", body });
-    } catch (error) {
-      if (!renamed && getErrorStatus(error) === 409 && !conflictingNote(error)) {
-        // The id is taken by a note elsewhere: once more under a new one.
-        this.setPending(null);
-        this.attempts = null;
-        await this.create(body, true);
-        return;
+      if (outcome.kind === "gone" || outcome.kind === "notFound") {
+        return this.deleted(target.id, body);
       }
       throw error;
     }
-    this.setPending(null);
-    if (!this.madeHere(created)) {
-      // A retry found the note an earlier attempt made, changed since on
-      // another device.
-      this.attempts = null;
-      this.conflict = { kind: "changed", note: created };
-      this.emit();
-      throw new Error(UNRESOLVED_CONFLICT_ERROR);
-    }
-    this.recordWrite(created);
-    // A retry gets the note as an earlier attempt made it; this text is newer.
-    if (created.body !== body) await this.patch(asKnown(created), body);
+    this.answered();
+    this.settle(saved);
   }
 
-  /**
-   * A poll showed the note an earlier create made. If the server no longer
-   * has it, it was deleted elsewhere, and a retry would make it again.
-   */
-  private async ensurePendingExists(id: string) {
-    const notes = await listTimelineNotes(this.recordingId);
-    if (notes.some((note) => note.id === id)) return;
+  /** Deletes the note, against the revision the box's text started from. */
+  private async remove(id: string, revision: number): Promise<void> {
+    try {
+      await deleteTimelineNote(this.recordingId, id, {
+        expectedRevision: revision,
+        writeToken: this.sendToken(),
+      });
+    } catch (error) {
+      const outcome = outcomeOf(error);
+      if (outcome.kind === "unknown") {
+        this.clearingId = id;
+        throw error;
+      }
+      this.answered();
+      if (outcome.kind === "conflict") {
+        if (!this.mine(outcome.note)) {
+          this.raise({ kind: "changed", note: outcome.note });
+        }
+        // This device's own earlier write made that revision: clear it too.
+        this.settle(outcome.note);
+        return this.remove(id, outcome.note.revision);
+      }
+      if (outcome.kind === "notFound" && this.base?.id !== id) {
+        // The create had not made the note, or not yet. One it makes later
+        // reaches the box on a poll, to be cleared again, so its id is not
+        // taken as deleted.
+        if (this.pendingId === id) this.pendingId = null;
+        if (this.clearingId === id) this.clearingId = null;
+        return;
+      }
+      if (outcome.kind !== "gone" && outcome.kind !== "notFound") throw error;
+      // Deleted already, by anyone: what clearing the box asked for.
+      this.forget(id);
+      return;
+    }
+    this.answered();
     this.forget(id);
-    this.attempts = null;
-    this.conflict = { kind: "deleted" };
-    this.emit();
-    throw new Error(UNRESOLVED_CONFLICT_ERROR);
   }
 }
