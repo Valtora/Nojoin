@@ -25,6 +25,7 @@ from backend.core.db import driver_urls
 from backend.models.calendar import CalendarConnection, CalendarEvent, CalendarSource
 from backend.models.recording import Recording
 from backend.models.speaker import GlobalSpeaker
+from backend.models.timeline_note import TimelineNote
 from backend.models.transcript import Transcript
 from backend.models.user import User
 from backend.utils.time import utc_now
@@ -143,6 +144,26 @@ def test_a_transcript_edit_changes_the_fingerprint_on_postgres(engine, library) 
         transcript = session.exec(select(Transcript)).one()
         transcript.segments = [{"start": 0.0, "end": 1.0, "text": "Hello again."}]
         session.add(transcript)
+        session.commit()
+
+    assert _fingerprint() != before
+
+
+def test_a_timeline_note_edit_changes_the_fingerprint_on_postgres(
+    engine, library
+) -> None:
+    with Session(engine) as session:
+        session.add(
+            TimelineNote(recording_id=library.recording_id, kind="head", body="Agenda")
+        )
+        session.commit()
+    before = _fingerprint()
+
+    with Session(engine) as session:
+        note = session.exec(select(TimelineNote)).one()
+        note.body = "Agenda, budget"
+        note.revision += 1
+        session.add(note)
         session.commit()
 
     assert _fingerprint() != before
