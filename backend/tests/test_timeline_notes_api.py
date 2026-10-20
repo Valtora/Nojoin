@@ -306,8 +306,8 @@ async def test_an_edit_that_changes_nothing_keeps_the_revision(
     ("sent", "stored"),
     [
         # What the frontend's stripNote mirrors: Python's str.strip().
-        ("\x1c\x85 note 　", "note"),
-        ("﻿note", "﻿note"),
+        ("\x1c\x85 note \u3000", "note"),
+        ("\ufeffnote", "\ufeffnote"),
     ],
 )
 @pytest.mark.anyio

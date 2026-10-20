@@ -72,6 +72,14 @@ async def _existing_for_retry(
     ).scalar_one_or_none()
 
 
+async def _note_id_in_use(db: AsyncSession, note_id: str) -> bool:
+    """Whether any note holds this id, so a refused insert clashed on it."""
+    held = await db.execute(
+        select(TimelineNote.id).where(TimelineNote.public_id == note_id)
+    )
+    return held.first() is not None
+
+
 async def _get_note(
     db: AsyncSession, recording: Recording, note_id: str, *, for_update: bool = False
 ) -> TimelineNote:
@@ -167,15 +175,19 @@ async def create_timeline_note(
         await db.commit()
     except IntegrityError:
         await db.rollback()
-        if client_id is None:
-            raise
-        # Two retries of one create raced and the other made the note, or the
-        # id is held on another recording.
-        existing = await _existing_for_retry(db, recording_pk, client_id)
-        if existing is None:
-            raise HTTPException(status_code=409, detail=NOTE_ID_TAKEN_DETAIL)
-        response.status_code = status.HTTP_200_OK
-        return await _read(db, existing, recording_public_id)
+        if client_id is not None:
+            # Two retries of one create raced and the other made the note, or
+            # the id is held on another recording.
+            existing = await _existing_for_retry(db, recording_pk, client_id)
+            if existing is not None:
+                response.status_code = status.HTTP_200_OK
+                return await _read(db, existing, recording_public_id)
+            if await _note_id_in_use(db, client_id):
+                raise HTTPException(status_code=409, detail=NOTE_ID_TAKEN_DETAIL)
+        # Not a clash of ids: the recording was deleted meanwhile (404), or
+        # something else refused the row.
+        await _get_owned_recording(db, recording_id, current_user.id)
+        raise
     await db.refresh(note)
     await _notes_changed(recording, current_user)
     return await _read(db, note, recording_public_id)
