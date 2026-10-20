@@ -4,7 +4,7 @@ Documents are stored flat in the documents directory as ``<uuid>.<ext>``, apart
 from the recording's own audio, so removing a recording's audio leaves them behind.
 Each delete path collects its documents' paths before the rows go and removes the
 files once the delete has committed. An upload writes its file before inserting
-its row, and removes the file again if that insert fails.
+its row, and removes the file again if that insert fails or is cancelled.
 """
 
 from __future__ import annotations
@@ -103,18 +103,23 @@ async def insert_document_or_remove_file(
 ) -> None:
     """Insert a new document's row, whose file is already written; commit is the caller's.
 
-    If the insert fails, nothing would ever reference the file, so it is removed.
-    That is what happens when the recording is deleted during the upload: the
-    insert waits on the delete's lock, then fails its foreign key, and that
-    becomes the 404 a missing recording gets everywhere else. Only the insert is
-    guarded. A commit that raises may still have landed, so its file stays.
+    If the insert fails or is cancelled, nothing would ever reference the file,
+    so it is removed before the error propagates. A recording deleted during the
+    upload is the usual failure: the insert waits on the delete's lock, then
+    fails its foreign key, and that becomes the 404 a missing recording gets
+    everywhere else. Only the insert is guarded. A commit that raises may still
+    have landed, so its file stays.
     """
     file_path = document.file_path
     db.add(document)
     try:
         await db.flush()
-    except Exception as error:
+    except BaseException as error:
         await delete_document_files([file_path], logger=logger)
+        if not isinstance(error, Exception):
+            # Cancelled: the request is ending, and closing the session rolls
+            # back what the flush left.
+            raise
         await db.rollback()
         if (
             isinstance(error, IntegrityError)

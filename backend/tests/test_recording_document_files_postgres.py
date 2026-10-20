@@ -547,3 +547,38 @@ async def test_an_upload_whose_recording_is_deleted_meanwhile_removes_its_file(
     assert response.json() == {"detail": "Recording not found"}
     assert list(harness.documents_dir.iterdir()) == []
     assert _document_rows(harness) == 0
+
+
+@pytest.mark.anyio
+async def test_an_upload_cancelled_at_its_insert_removes_its_file(harness):
+    """A request cancelled while its insert waits must not leave the file it wrote.
+
+    The cancellation is a BaseException, so a guard that catches only
+    Exception lets it through with the file still on disk.
+    """
+    public_id = _add_recording(harness, "target")
+    holder = Session(harness.engine)
+    holder.connection().execute(
+        text("SELECT id FROM recordings WHERE id = :id FOR UPDATE"),
+        {"id": _recording_id(harness, public_id)},
+    )
+    request = asyncio.create_task(
+        _request(
+            harness,
+            "POST",
+            f"/recordings/{public_id}/documents",
+            files={"file": ("agenda.md", b"# Agenda\n", "text/markdown")},
+            data={"deep_parse": "false"},
+        )
+    )
+    try:
+        await _wait_until_blocked_by(harness, _backend_pid(holder), request)
+        request.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await request
+    finally:
+        holder.rollback()
+        holder.close()
+
+    assert list(harness.documents_dir.iterdir()) == []
+    assert _document_rows(harness) == 0
