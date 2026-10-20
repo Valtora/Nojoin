@@ -352,7 +352,7 @@ describe("HeadNotePanel", () => {
     expect(server.notes[0].revision).toBe(3);
   });
 
-  it("sends nothing more when the box is left during a save of the same text", async () => {
+  it("sends one request when the box is left while the same text is saving", async () => {
     server.add("h1", "head", "Original");
     mount();
     let release!: () => void;
@@ -531,6 +531,8 @@ describe("HeadNotePanel", () => {
 
     expect(calls.create).toHaveBeenCalledTimes(1);
     expect(calls.update).not.toHaveBeenCalled();
+    // The box knows it holds the saved note, so it starts no save at all.
+    expect(screen.queryByText("Saved")).not.toBeInTheDocument();
   });
 
   it("asks before re-creating a note deleted under an edit", async () => {
@@ -780,5 +782,27 @@ describe("HeadNotePanel", () => {
 
     expect(screen.getByRole("alert")).toHaveTextContent("changed on another device");
     expect(bodies()).toEqual(["a"]);
+  });
+
+  it("saves again when the box is left during a save that then fails", async () => {
+    server.add("h1", "head", "Original");
+    mount();
+    let release!: () => void;
+    server.gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    type("Mine");
+    await waitForSave();
+    await blur();
+    // The save in flight lands, but its response is lost.
+    server.lose.add("update");
+    server.gate = null;
+    await act(async () => {
+      release();
+      await settle();
+    });
+
+    expect(screen.getByText("Saved")).toBeInTheDocument();
+    expect(bodies()).toEqual(["Mine"]);
   });
 });

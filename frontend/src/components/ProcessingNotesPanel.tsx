@@ -142,7 +142,6 @@ function ProcessingNotesPanel({
   const draftRef = useRef(normalisedValue);
   const lastSavedRef = useRef<string | null>(normalisedValue);
   const lastPropValueRef = useRef(normalisedValue);
-  const inFlightRef = useRef<string | null>(null);
   const unmountedRef = useRef(false);
   const reportedDirtyRef = useRef(false);
   const saveStateRef = useRef<SaveState>("idle");
@@ -185,15 +184,13 @@ function ProcessingNotesPanel({
     if (conflictRef.current) {
       return;
     }
-    if (
-      !force &&
-      (isSaved(valueToSave, lastSavedRef.current) ||
-        (inFlightRef.current !== null && sameNote(valueToSave, inFlightRef.current)))
-    ) {
+    // A save of text already being saved is let through: the store runs
+    // saves in turn and sends nothing for text the note already holds, and
+    // when the first save fails, this one is its retry.
+    if (!force && isSaved(valueToSave, lastSavedRef.current)) {
       return;
     }
 
-    inFlightRef.current = valueToSave;
     setVisibleSaveState("saving");
     try {
       await onSave(valueToSave);
@@ -218,10 +215,6 @@ function ProcessingNotesPanel({
       lastSavedRef.current = null;
       reportDirty();
       setVisibleSaveState("error");
-    } finally {
-      if (inFlightRef.current === valueToSave) {
-        inFlightRef.current = null;
-      }
     }
   }, [clearPendingSave, onSave, reportDirty, setVisibleSaveState]);
 
