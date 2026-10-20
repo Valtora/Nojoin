@@ -14,7 +14,7 @@ from ...utils.onnx_asr_cache import onnx_asr_model
 from ..onnx_providers import gpu_is_present, sessions_use_cuda, verify_gpu_providers
 from ..onnx_threads import onnx_session_options
 from ..processing_tuning import (
-    ASR_WORD_END_PADDING_KEY,
+    ASR_WORD_LENGTH_CAP_KEY,
     TUNING_SPECS,
     resolve_tuning,
 )
@@ -37,7 +37,7 @@ SEGMENT_PAUSE_THRESHOLD_S = 0.8
 # so a word ends at the earliest of the next word's start, the end of the
 # window, the first silence after it starts, and its start plus this. A user's
 # settings may override it (processing_tuning.py).
-WORD_END_PAD_S = TUNING_SPECS[ASR_WORD_END_PADDING_KEY].default
+WORD_LENGTH_CAP_S = TUNING_SPECS[ASR_WORD_LENGTH_CAP_KEY].default
 
 # Shortest run (seconds) of exact zeros that counts as silence when ending a
 # word. VAD writes non-speech as exact zeros, so in the final pass these runs
@@ -107,14 +107,14 @@ def map_onnx_asr_recognition(
     recognized: Recognition,
     audio_duration: float | None = None,
     language: str | None = None,
-    word_end_pad_s: float = WORD_END_PAD_S,
+    word_length_cap_s: float = WORD_LENGTH_CAP_S,
     silence_starts: Sequence[float] = (),
 ) -> dict:
     """Map an onnx-asr timestamped result into the canonical transcription schema.
 
     onnx-asr gives each token a start time only, so a word ends at the earliest
     of the next word's start, audio_duration, the first of silence_starts after
-    the word starts, and its start plus word_end_pad_s. Without token timings
+    the word starts, and its start plus word_length_cap_s. Without token timings
     (Canary) the text becomes one segment spanning the audio, and none of this
     applies.
 
@@ -123,7 +123,7 @@ def map_onnx_asr_recognition(
             and per-token start times in seconds (either may be None).
         audio_duration: Total audio duration in seconds, optional.
         language: The forced language code, if any.
-        word_end_pad_s: The longest a word lasts.
+        word_length_cap_s: The longest a word lasts.
         silence_starts: Ascending times (seconds) at which a silence begins.
 
     Returns:
@@ -159,7 +159,7 @@ def map_onnx_asr_recognition(
     # speaker's turn and be matched to them.
     for index, word in enumerate(words):
         start = word["start"]
-        bounds = [start + word_end_pad_s]
+        bounds = [start + word_length_cap_s]
         if index + 1 < len(words):
             bounds.append(words[index + 1]["start"])
         if audio_duration is not None:
@@ -447,14 +447,14 @@ class OnnxAsrEngine(TranscriptionEngine):
                 logger.warning(f"Could not read audio duration for {audio_path}: {e}")
 
             logger.info(f"Starting {self.name} transcription for {audio_path}")
-            word_end_pad_s = resolve_tuning(config, ASR_WORD_END_PADDING_KEY)
+            word_length_cap_s = resolve_tuning(config, ASR_WORD_LENGTH_CAP_KEY)
 
             if audio_duration is not None and audio_duration > MAX_CHUNK_DURATION_S:
                 result = self._transcribe_chunked(
                     recognizer,
                     audio_path,
                     language_code=language_code,
-                    word_end_pad_s=word_end_pad_s,
+                    word_length_cap_s=word_length_cap_s,
                 )
             else:
                 recognize_kwargs = {"language": language_code} if language_code else {}
@@ -464,7 +464,11 @@ class OnnxAsrEngine(TranscriptionEngine):
                 if recognized.timestamps:
                     silence = self._file_silence_starts(audio_path)
                 result = map_onnx_asr_recognition(
-                    recognized, audio_duration, language_code, word_end_pad_s, silence
+                    recognized,
+                    audio_duration,
+                    language_code,
+                    word_length_cap_s,
+                    silence,
                 )
 
             logger.info(f"{self.name} transcription completed for {audio_path}")
@@ -514,7 +518,7 @@ class OnnxAsrEngine(TranscriptionEngine):
         audio_path: str,
         *,
         language_code: str | None = None,
-        word_end_pad_s: float = WORD_END_PAD_S,
+        word_length_cap_s: float = WORD_LENGTH_CAP_S,
     ) -> dict:
         """Transcribe long audio as a sequence of windows, then merge.
 
@@ -566,7 +570,7 @@ class OnnxAsrEngine(TranscriptionEngine):
                 recognized,
                 chunk_duration,
                 language_code,
-                word_end_pad_s,
+                word_length_cap_s,
                 _silence_starts(audio, start_frame, end_frame, sample_rate),
             )
             if chunk_result["text"]:

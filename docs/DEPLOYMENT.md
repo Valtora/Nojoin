@@ -535,7 +535,7 @@ inherit. An operator can set an installation default for any of these keys as a 
 | Key | Shipped default | Accepted range |
 | --- | --- | --- |
 | `vad_threshold` | 0.5 | 0.15 to 0.90 |
-| `asr_word_end_padding_s` | 0.4 | 0.05 to 0.80 |
+| `asr_word_length_cap_s` | 0.4 | 0.2 to 0.45 |
 | `phantom_max_duration_s` | 3.0 | 0 to 10 |
 | `phantom_max_segments` | 3 | 0 to 20 (whole number) |
 | `phantom_embedding_floor` | 0.35 | 0 to 0.95, below `phantom_merge_threshold` |
@@ -543,10 +543,9 @@ inherit. An operator can set an installation default for any of these keys as a 
 | `word_flip_max_duration_s` | 0.45 | 0 to 2.0 |
 | `word_flip_max_gap_s` | 0.25 | 0 to 1.0 |
 
-`asr_word_end_padding_s` used to be how long a Parakeet word lasted before a long pause, with a default
-of 0.2. It is now the longest any Parakeet word lasts, with a default of 0.4. A value set earlier, by a
-user or in `config.json`, is kept and now caps every word; clear it to take the new default. Reprocess a
-recording to apply the change to it.
+`asr_word_length_cap_s` is the longest any Parakeet word lasts. Its maximum is the default
+`word_flip_max_duration_s`, so with default smoothing no capped word is too long to be smoothed. It
+replaces the retired `asr_word_end_padding_s` (see [Upgrading and Migration](#upgrading-and-migration)).
 
 The legacy `vad_parameters.threshold` in `config.json` is still honoured, used as given, below both a
 user's `vad_threshold` and a flat `vad_threshold`. The worker logs and ignores a value outside its range,
@@ -921,6 +920,7 @@ The notes below describe one-time migrations that run automatically when you fir
 - **Transcription engine made install-wide (2.6.0).** The engine (`transcription_backend`) and its model (`whisper_model_size`, `parakeet_model`, `canary_model`) are kept in `data/config.json` and apply to every user; earlier releases stored them on the account of whoever saved the settings page. On the first start after the upgrade, the API copies the owner's choice into `config.json` and removes it from the owner's account. An owner value equal to the shipped default does not replace a different value already in `config.json`, because the settings page saved defaults that nobody chose. Choices stored on other accounts are ignored. The api log names every value carried, kept or rejected; if `config.json` cannot be written, the next start tries again.
 - **ASR window result ledger removed.** Alembic revision `3b804f4435a1` drops the `recording_asr_window_results` table. Its rows were an advisory log of transcription attempts that nothing read; no transcript, utterance or speaker refers to them, and backups never included them. A downgrade recreates the table empty. The `enable_asr_window_result_ledger` setting is retired with it: a stored value is ignored and dropped from `config.json` on the next save, and the `ENABLE_ASR_WINDOW_RESULT_LEDGER` environment variable is ignored. Upgrade with the containers stopped (`docker compose down`, then up), as in [Updating a Deployment](#updating-a-deployment): a worker from an earlier release that is still running after the migration fails every final pass when it tries to write the dropped table.
 - **fp32 ASR weights fetched again (#448).** huggingface_hub 1.32 and later keep Xet downloads in a store shared across the hub cache and sharded by hash, so the fp32 Parakeet and Canary encoders and their external weights landed in different directories, and ONNX Runtime 1.31 (Nojoin 2.8.0 and later) refuses to load them. The worker now sets `HF_HUB_DISABLE_SHARED_BLOBS=1`, which keeps every file of a repo in the repo's own `blobs/`. A copy already downloaded into the shared store is reported as not downloaded, and the model preparation queued at startup deletes it and downloads it again, about 2.5 GB for Parakeet and 4 GB for Canary. A repo directory that is a link to somewhere else is not deleted; the worker log says so, and it has to be removed by hand.
+- **Parakeet word ends bounded by silence, word end padding retired.** A Parakeet word now ends at the earliest of the next word's start, its window's end, the first silence after it starts and its start plus the new `asr_word_length_cap_s` (default 0.4 s, 0.2 to 0.45). The `asr_word_end_padding_s` setting it replaces was how long a word lasted before a long pause, with a default of 0.2. It is retired, not converted, because the same number means something else as a cap: a stored value is ignored and dropped from `config.json` and from a user's settings on the next save, and an older settings page that still sends it is ignored. A user or operator who had set it gets the new default until they set the cap. Reprocess a recording to apply the change to it.
 - **Parakeet and Canary windows shortened, GPU transcription window retired (#445).** Both engines now transcribe in windows of at most 30 seconds on every host, because longer windows lost speech, and Parakeet loads its fp32 weights on a CPU as well, because its int8 weights did too. A CPU host running Parakeet therefore downloads the fp32 weights, about 2.5 GB, in the model preparation queued at the first start after the upgrade. The int8 files, about 0.7 GB, stay beside them in the same cache entry; deleting Parakeet in **Model dependencies** under **Settings > AI providers** removes both, and preparing it again fetches only fp32. The `gpu_asr_window_s` setting is retired: a stored value is ignored and dropped from `config.json` on the next save, and an older settings page that still sends it is ignored. Reprocess a recording to transcribe it again with the shorter windows.
 
 ### Live Pipeline Readiness Notes

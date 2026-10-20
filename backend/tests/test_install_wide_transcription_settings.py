@@ -183,9 +183,14 @@ def test_a_null_engine_is_not_written_over_the_install_engine(install_config):
     assert _config_file(install_config)["transcription_backend"] == "parakeet"
 
 
-# Retired settings: the ASR window result ledger switch (issue #428), and the
-# GPU transcription window, now a fixed 30 s on every device (issue #445).
-RETIRED_KEYS = {"enable_asr_window_result_ledger": False, "gpu_asr_window_s": 60}
+# Retired settings: the ASR window result ledger switch (issue #428), the GPU
+# transcription window, now a fixed 30 s on every device (issue #445), and the
+# onnx-asr word end padding, replaced by asr_word_length_cap_s.
+RETIRED_KEYS = {
+    "enable_asr_window_result_ledger": False,
+    "gpu_asr_window_s": 60,
+    "asr_word_end_padding_s": 0.2,
+}
 
 
 @pytest.mark.parametrize(("retired_key", "stored"), RETIRED_KEYS.items())
@@ -225,6 +230,57 @@ def test_a_gpu_window_sent_by_an_older_page_is_ignored(install_config):
     assert "gpu_asr_window_s" not in _config_file(install_config)
     assert "gpu_asr_window_s" not in body
     assert "gpu_asr_window_s" not in row
+
+
+def test_a_word_end_padding_on_a_users_row_is_dropped_not_converted(install_config):
+    row = {"asr_word_end_padding_s": 0.05, "prefer_short_titles": False}
+
+    status, body, _ = asyncio.run(_call_settings("user", row, "GET"))
+
+    assert status == 200
+    assert "asr_word_end_padding_s" not in body
+    # Inherit, not the old value carried over to the new key.
+    assert body["asr_word_length_cap_s"] is None
+
+    status, body, saved_row = asyncio.run(
+        _call_settings("user", row, "POST", {"vad_threshold": 0.4})
+    )
+
+    assert status == 200
+    assert "asr_word_end_padding_s" not in saved_row
+    assert "asr_word_length_cap_s" not in saved_row
+    assert saved_row["prefer_short_titles"] is False
+    assert "asr_word_end_padding_s" not in body
+
+
+def test_a_word_end_padding_sent_by_an_older_page_is_ignored(install_config):
+    """A tab opened before the upgrade still sends the field it shows."""
+    status, body, row = asyncio.run(
+        _call_settings("user", {}, "POST", {"asr_word_end_padding_s": 0.8})
+    )
+
+    assert status == 200
+    assert "asr_word_end_padding_s" not in row
+    assert "asr_word_length_cap_s" not in row
+    assert "asr_word_end_padding_s" not in body
+    assert "asr_word_end_padding_s" not in _config_file(install_config)
+
+
+def test_a_word_length_cap_outside_its_bounds_is_refused(install_config):
+    for bad in (0.05, 0.19, 0.46, 0.8):
+        status, _, row = asyncio.run(
+            _call_settings("user", {}, "POST", {"asr_word_length_cap_s": bad})
+        )
+        assert status == 422
+        assert "asr_word_length_cap_s" not in row
+
+    status, body, row = asyncio.run(
+        _call_settings("user", {}, "POST", {"asr_word_length_cap_s": 0.45})
+    )
+
+    assert status == 200
+    assert row["asr_word_length_cap_s"] == 0.45
+    assert body["asr_word_length_cap_s"] == 0.45
 
 
 class _SetupSession:

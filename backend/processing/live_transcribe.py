@@ -35,7 +35,7 @@ from backend.processing.pipeline_metrics import (
     record_pipeline_metric,
 )
 from backend.processing.processing_tuning import (
-    ASR_WORD_END_PADDING_KEY,
+    ASR_WORD_LENGTH_CAP_KEY,
     VAD_THRESHOLD_KEY,
     normalise_tuning_value,
 )
@@ -1044,10 +1044,10 @@ def _resolve_live_engine_config(
                         VAD_THRESHOLD_KEY,
                         warn=warn_unusable,
                     ),
-                    "asr_word_end_padding_s": _live_tuning_value(
+                    "asr_word_length_cap_s": _live_tuning_value(
                         recording_id,
                         merged_config,
-                        ASR_WORD_END_PADDING_KEY,
+                        ASR_WORD_LENGTH_CAP_KEY,
                         warn=warn_unusable,
                     ),
                 }

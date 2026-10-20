@@ -393,14 +393,14 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
     keywords: ["vad threshold", "speech detection", "quiet speech", "soft speech", "silero", "large meeting", "tuning"],
   },
   {
-    id: "recording-word-padding",
+    id: "recording-word-length-cap",
     label: "Word length cap",
     description:
       "The longest a Parakeet word lasts, which decides whether a short word reaches a speaker turn.",
     category: "recording",
     access: "all",
     advanced: "can-degrade",
-    settingsKeys: ["asr_word_end_padding_s"],
+    settingsKeys: ["asr_word_length_cap_s"],
     defaultValue: null,
     keywords: ["word padding", "word end", "word length", "parakeet", "timing", "brief speaker", "tuning"],
   },

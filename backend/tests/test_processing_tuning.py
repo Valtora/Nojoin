@@ -26,7 +26,7 @@ FRONTEND_MIRROR = REPO_ROOT / "frontend" / "src" / "lib" / "processingTuning.jso
 # not set the value, so it needs an upgrade note in docs/DEPLOYMENT.md.
 TODAYS_LITERALS = {
     "vad_threshold": 0.5,
-    "asr_word_end_padding_s": 0.4,
+    "asr_word_length_cap_s": 0.4,
     "phantom_max_duration_s": 3.0,
     "phantom_max_segments": 3,
     "phantom_embedding_floor": 0.35,
@@ -59,8 +59,8 @@ def test_module_constants_keep_todays_literals() -> None:
     [
         ("vad_threshold", 0.15),
         ("vad_threshold", 0.90),
-        ("asr_word_end_padding_s", 0.05),
-        ("asr_word_end_padding_s", 0.80),
+        ("asr_word_length_cap_s", 0.2),
+        ("asr_word_length_cap_s", 0.45),
         ("phantom_max_duration_s", 0),
         ("phantom_max_segments", 20),
         ("phantom_merge_threshold", 1),
@@ -77,6 +77,11 @@ def test_boundary_values_are_accepted(key, value) -> None:
         ("vad_threshold", 0.1499),
         ("vad_threshold", 0.95),
         ("phantom_merge_threshold", 0.04),
+        # The old word end padding range, 0.05 to 0.80, reaches past both ends.
+        ("asr_word_length_cap_s", 0.05),
+        ("asr_word_length_cap_s", 0.19),
+        ("asr_word_length_cap_s", 0.46),
+        ("asr_word_length_cap_s", 0.80),
         ("phantom_max_segments", 21),
         ("phantom_max_segments", -1),
         ("phantom_max_segments", 2.5),
@@ -93,6 +98,14 @@ def test_boundary_values_are_accepted(key, value) -> None:
 )
 def test_unusable_values_are_rejected(key, value) -> None:
     assert normalise_tuning_value(key, value) is None
+
+
+def test_the_word_length_cap_never_exceeds_the_flip_smoothing_word_length() -> None:
+    """A capped word longer than smoothing's limit could not be smoothed."""
+    cap = TUNING_SPECS["asr_word_length_cap_s"]
+    flip = TUNING_SPECS["word_flip_max_duration_s"]
+
+    assert cap.maximum == flip.default
 
 
 def test_integer_key_accepts_an_integral_float_as_int() -> None:

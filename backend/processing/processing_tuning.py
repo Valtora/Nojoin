@@ -33,7 +33,7 @@ class TuningSpec:
 
 
 VAD_THRESHOLD_KEY = "vad_threshold"
-ASR_WORD_END_PADDING_KEY = "asr_word_end_padding_s"
+ASR_WORD_LENGTH_CAP_KEY = "asr_word_length_cap_s"
 PHANTOM_MAX_DURATION_KEY = "phantom_max_duration_s"
 PHANTOM_MAX_SEGMENTS_KEY = "phantom_max_segments"
 PHANTOM_EMBEDDING_FLOOR_KEY = "phantom_embedding_floor"
@@ -41,17 +41,21 @@ PHANTOM_MERGE_THRESHOLD_KEY = "phantom_merge_threshold"
 WORD_FLIP_MAX_DURATION_KEY = "word_flip_max_duration_s"
 WORD_FLIP_MAX_GAP_KEY = "word_flip_max_gap_s"
 
+# Longest word (seconds) single-word flip smoothing relabels by default. The
+# onnx-asr word length cap may not exceed it.
+WORD_FLIP_MAX_DURATION_DEFAULT_S = 0.45
+
 TUNING_SPECS: dict[str, TuningSpec] = {
     spec.key: spec
     for spec in (
         # Silero exits speech below max(threshold - 0.15, 0.01): under 0.15 the
         # hysteresis collapses and nearly everything counts as speech.
         TuningSpec(VAD_THRESHOLD_KEY, 0.5, 0.15, 0.90),
-        # The longest an onnx-asr word lasts (map_onnx_asr_recognition). 0
-        # would make every word an instant. The bounds date from when this was
-        # the length of a word before a pause; they are kept so stored values
-        # stay valid.
-        TuningSpec(ASR_WORD_END_PADDING_KEY, 0.4, 0.05, 0.80),
+        # The longest an onnx-asr word lasts (map_onnx_asr_recognition). The
+        # shortest cap measured, 0.2 s, already left the most speech outside
+        # every segment, and nothing shorter was measured. Above the default
+        # flip smoothing length, a capped word is too long to smooth again.
+        TuningSpec(ASR_WORD_LENGTH_CAP_KEY, 0.4, 0.2, WORD_FLIP_MAX_DURATION_DEFAULT_S),
         # The two candidate ceilings are ANDed, so either at 0 turns the
         # phantom filter off.
         TuningSpec(PHANTOM_MAX_DURATION_KEY, 3.0, 0.0, 10.0),
@@ -61,7 +65,9 @@ TUNING_SPECS: dict[str, TuningSpec] = {
         TuningSpec(PHANTOM_EMBEDDING_FLOOR_KEY, 0.35, 0.0, 0.95),
         TuningSpec(PHANTOM_MERGE_THRESHOLD_KEY, 0.60, 0.05, 1.0),
         # Past about 2 s a single-word "flip" is a genuine interjection.
-        TuningSpec(WORD_FLIP_MAX_DURATION_KEY, 0.45, 0.0, 2.0),
+        TuningSpec(
+            WORD_FLIP_MAX_DURATION_KEY, WORD_FLIP_MAX_DURATION_DEFAULT_S, 0.0, 2.0
+        ),
         TuningSpec(WORD_FLIP_MAX_GAP_KEY, 0.25, 0.0, 1.0),
     )
 }
