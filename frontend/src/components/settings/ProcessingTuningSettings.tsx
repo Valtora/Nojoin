@@ -209,7 +209,7 @@ export default function ProcessingTuningSettings({
         labelId={labelId("recording-word-length-cap")}
         descriptionId={descriptionId("recording-word-length-cap")}
         label="Word length cap (Parakeet)"
-        description="The longest, in seconds, a word lasts. A word also ends where the next one starts or at a silence. Longer gives a short reply more chance to land on its speaker. Canary and Whisper ignore it."
+        description="The longest, in seconds, a word lasts. A word also ends where the next one starts. Longer gives a short reply more chance to land on its speaker. Canary and Whisper ignore it."
       >
         {input("recording-word-length-cap", "asr_word_length_cap_s")}
       </SettingsRow>

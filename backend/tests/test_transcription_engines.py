@@ -1,7 +1,5 @@
 """Tests for the pluggable transcription engine (config + dispatch + engine schema)."""
 
-import math
-
 import pytest
 
 from backend.processing import transcribe
@@ -286,73 +284,27 @@ class _Timed:
         self.text = "".join(self.tokens).strip()
 
 
-def _word_ends(recognized, audio_duration=None, silence_starts=()):
+def _word_ends(recognized, audio_duration=None):
     from backend.processing.engines.onnx_asr_engine import map_onnx_asr_recognition
 
-    result = map_onnx_asr_recognition(
-        recognized, audio_duration, silence_starts=silence_starts
-    )
+    result = map_onnx_asr_recognition(recognized, audio_duration)
     return [word["end"] for s in result["segments"] for word in s["words"]]
 
 
 @pytest.mark.parametrize(
-    ("starts", "audio_duration", "silence_starts", "first_end"),
+    ("starts", "audio_duration", "first_end"),
     [
-        pytest.param((0.0, 0.3), 5.0, (), 0.3, id="next-word-start"),
-        pytest.param((0.0,), 0.25, (), 0.25, id="window-end"),
-        pytest.param((0.0, 1.0), 5.0, (0.2,), 0.2, id="first-silence"),
-        pytest.param((0.0, 1.0), 5.0, (), 0.4, id="start-plus-cap"),
+        pytest.param((0.0, 0.3), 5.0, 0.3, id="next-word-start"),
+        pytest.param((0.0,), 0.25, 0.25, id="window-end"),
+        pytest.param((0.0, 1.0), 5.0, 0.4, id="start-plus-cap"),
     ],
 )
-def test_a_word_ends_at_the_earliest_of_its_four_bounds(
-    starts, audio_duration, silence_starts, first_end
+def test_a_word_ends_at_the_earliest_of_its_three_bounds(
+    starts, audio_duration, first_end
 ):
-    ends = _word_ends(_Timed(*starts), audio_duration, silence_starts)
+    ends = _word_ends(_Timed(*starts), audio_duration)
 
     assert ends[0] == pytest.approx(first_end)
-
-
-def test_a_word_ends_at_the_first_silence_after_its_start():
-    """Only a silence that begins after a word's start ends it, so a token
-    stamped inside a muted run, a frame before its speech, keeps a length."""
-    ends = _word_ends(_Timed(1.0, 3.0), 5.0, silence_starts=(0.5, 1.0, 1.25, 1.3))
-
-    assert ends[0] == pytest.approx(1.25)
-
-
-# onnx-asr stamps the 36th encoder frame at 0.08 * 35, which rounds above
-# 44800 / 16000, the time of the zero run that begins on that frame's sample.
-TOKEN_ON_A_RUN_START = 0.08 * 35
-
-
-@pytest.mark.parametrize(
-    "silence_start",
-    [
-        pytest.param(44800 / 16000, id="rounded-below"),
-        pytest.param(TOKEN_ON_A_RUN_START, id="equal"),
-        pytest.param(
-            math.nextafter(TOKEN_ON_A_RUN_START, math.inf), id="rounded-above"
-        ),
-        pytest.param(TOKEN_ON_A_RUN_START + 0.5e-6, id="within-tolerance"),
-    ],
-)
-def test_a_silence_beginning_at_the_words_own_start_does_not_end_it(silence_start):
-    """The run holds the word's token, as one the token is stamped inside does.
-
-    Counted, a run rounded a hair after the token's time ended the word there,
-    with no length for any speaker turn to overlap.
-    """
-    ends = _word_ends(_Timed(TOKEN_ON_A_RUN_START, 4.0), 5.0, (silence_start,))
-
-    assert ends[0] == pytest.approx(TOKEN_ON_A_RUN_START + 0.4)
-
-
-def test_a_silence_one_sample_after_the_words_start_ends_it():
-    one_sample_later = (44800 + 1) / 16000
-
-    ends = _word_ends(_Timed(TOKEN_ON_A_RUN_START, 4.0), 5.0, (one_sample_later,))
-
-    assert ends[0] == one_sample_later
 
 
 def test_a_word_never_ends_before_it_starts():
@@ -510,123 +462,9 @@ def _transcribe_returning(monkeypatch, engine, audio_path, recognized):
     return engine.transcribe(str(audio_path), {})
 
 
-@pytest.mark.parametrize(
-    ("silent", "first_end"),
-    [
-        # VAD muted the audio from 1.1 s: the word ends where the speech stops.
-        pytest.param([(1.1, 2.0)], 1.1, id="muted"),
-        # Unmuted audio (the live lane's clips) has no zero runs: the cap.
-        pytest.param([], 1.4, id="unmuted"),
-        # A zero run of exactly 0.2 s is a silence; a shorter one is not.
-        pytest.param([(1.1, 1.3)], 1.1, id="shortest-silence"),
-        pytest.param([(1.1, 1.25)], 1.4, id="short-zero-run"),
-    ],
-)
-def test_a_word_ends_at_a_silence_in_the_audio_it_was_decoded_from(
-    tmp_path, monkeypatch, silent, first_end
-):
-    from backend.processing.engines.parakeet_engine import ParakeetEngine
-
-    audio_path = tmp_path / "region.wav"
-    _write_signal(audio_path, 3, silent=silent)
-
-    result = _transcribe_returning(
-        monkeypatch, ParakeetEngine(), audio_path, _Timed(1.0, 2.5)
-    )
-
-    assert result["segments"][0]["words"][0]["end"] == pytest.approx(first_end)
-
-
-def test_without_a_duration_a_word_still_ends_at_a_silence(tmp_path, monkeypatch):
-    import soundfile
-
-    from backend.processing.engines.parakeet_engine import ParakeetEngine
-
-    def _no_info(path):
-        raise RuntimeError("unreadable header")
-
-    audio_path = tmp_path / "region.wav"
-    _write_signal(audio_path, 3, silent=[(1.1, 2.0)])
-    monkeypatch.setattr(soundfile, "info", _no_info)
-
-    result = _transcribe_returning(
-        monkeypatch, ParakeetEngine(), audio_path, _Timed(1.0, 2.5)
-    )
-
-    # No window end bounds the last word, so the cap does.
-    assert [w["end"] for s in result["segments"] for w in s["words"]] == (
-        pytest.approx([1.1, 2.9])
-    )
-
-
-def test_an_unreadable_file_keeps_its_words_without_the_silence_bound(
-    tmp_path, monkeypatch
-):
-    from backend.processing.engines import onnx_asr_engine
-    from backend.processing.engines.parakeet_engine import ParakeetEngine
-
-    def _unreadable(path):
-        raise RuntimeError("cannot decode")
-
-    audio_path = tmp_path / "region.wav"
-    _write_signal(audio_path, 3, silent=[(1.1, 2.0)])
-    monkeypatch.setattr(onnx_asr_engine, "_read_mono", _unreadable)
-
-    result = _transcribe_returning(
-        monkeypatch, ParakeetEngine(), audio_path, _Timed(1.0, 2.5)
-    )
-
-    assert result["segments"][0]["words"][0]["end"] == pytest.approx(1.4)
-
-
-def test_silences_end_words_in_every_window(tmp_path, monkeypatch):
-    from backend.processing.engines import onnx_asr_engine
-    from backend.processing.engines.parakeet_engine import ParakeetEngine
-
-    # Windows open at 0, 2.2, 4.2 and 6.2 s. The first two close on the first
-    # all-zero 0.2 s span, so each muted run has only 0.05 s inside its window.
-    monkeypatch.setattr(onnx_asr_engine, "MAX_CHUNK_DURATION_S", 4.0)
-    audio_path = tmp_path / "long.wav"
-    _write_signal(audio_path, 10, silent=[(2.15, 2.6), (4.15, 4.4)])
-
-    result = _transcribe_returning(
-        monkeypatch, ParakeetEngine(), audio_path, _Timed(1.9)
-    )
-
-    words = [segment["words"][0] for segment in result["segments"]]
-    assert [w["start"] for w in words] == pytest.approx([1.9, 4.1, 6.1, 8.1])
-    assert [w["end"] for w in words[:2]] == pytest.approx([2.15, 4.15])
-
-
-def test_a_window_that_opens_inside_a_zero_run_bounds_no_word_with_it(
-    tmp_path, monkeypatch
-):
-    """A window cut inside a muted run sees the run begin at its own start.
-
-    A token stamped inside that run, before its speech, keeps a length, and
-    the run that the first window's end cuts short still ends the word
-    before it.
-    """
-    from backend.processing.engines import onnx_asr_engine
-    from backend.processing.engines.parakeet_engine import ParakeetEngine
-
-    # 4 s windows over 6 s: the first closes at 2.0 s, inside the run.
-    monkeypatch.setattr(onnx_asr_engine, "MAX_CHUNK_DURATION_S", 4.0)
-    audio_path = tmp_path / "long.wav"
-    _write_signal(audio_path, 6, silent=[(1.9, 2.6)])
-
-    result = _transcribe_returning(
-        monkeypatch, ParakeetEngine(), audio_path, _Timed(0.24, 1.6)
-    )
-
-    words = [w for segment in result["segments"] for w in segment["words"]]
-    assert [w["start"] for w in words] == pytest.approx([0.24, 1.6, 2.24, 3.6])
-    assert [w["end"] for w in words] == pytest.approx([0.64, 1.9, 2.64, 4.0])
-
-
 def test_canary_results_without_token_timings_keep_their_window(tmp_path, monkeypatch):
-    """Canary has no word timings: the engine's silence handling must leave its
-    window whole, however much of it VAD muted."""
+    """Canary has no word timings, so the word length cap has no word to end
+    and its window stays whole, however much of it VAD muted."""
     from backend.processing.engines.canary_engine import CanaryEngine
 
     class _Untimed:

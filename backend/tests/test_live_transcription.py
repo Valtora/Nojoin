@@ -1713,8 +1713,8 @@ def test_extract_region_text_straddle_with_words():
 
 
 def test_a_capped_parakeet_context_word_stays_out_of_the_region():
-    """The live clip is left context then the region, unmuted, so a Parakeet
-    word ends at the next word's start or its start plus the 0.4 s cap.
+    """The live clip is left context then the region, and a Parakeet word
+    ends at the next word's start or its start plus the 0.4 s cap.
 
     A context word 0.45 s before the boundary now ends 0.05 s before it and is
     trimmed with the context. Ending at the next word's start, as before the

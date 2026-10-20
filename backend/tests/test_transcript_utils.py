@@ -370,14 +370,12 @@ def test_word_flip_unusable_limit_keeps_the_default():
 
 @pytest.mark.parametrize("spacing_s", [0.5, 0.55, 0.6])
 def test_a_parakeet_one_word_reply_with_no_pause_around_it_is_smoothed(spacing_s):
-    """The trade-off the Parakeet word length cap admits, with VAD off.
+    """The trade-off the Parakeet word length cap admits.
 
-    Unmuted audio has no silences, so only the next word's start and the
-    0.4 s cap end a word. A one-word reply spacing_s after the word before it
-    and before the next one is capped below smoothing's 0.45 s limit, its gaps
-    are under 0.25 s, and it goes to the speaker on both sides. The rule
-    before the cap ended it at the next word's start, which made it too long
-    to smooth.
+    A one-word reply spacing_s after the word before it and before the next
+    one is capped at 0.4 s, below smoothing's 0.45 s limit, its gaps are under
+    0.25 s, and it goes to the speaker on both sides. The rule before the cap
+    ended it at the next word's start, which made it too long to smooth.
     """
     from backend.processing.engines.onnx_asr_engine import (
         _Recognition,
