@@ -19,14 +19,6 @@ SEGMENT_OVERLAP_MIN_DURATION_S = 0.25
 # Defaults; a user's settings may override each (processing_tuning.py).
 ISOLATED_WORD_FLIP_MAX_DURATION_S = TUNING_SPECS[WORD_FLIP_MAX_DURATION_KEY].default
 ISOLATED_WORD_FLIP_MAX_GAP_S = TUNING_SPECS[WORD_FLIP_MAX_GAP_KEY].default
-# Slack (seconds) on flip smoothing's length and gap limits. Word times are
-# float sums: a Parakeet word ends at its start plus the cap, and its window's
-# offset is added to both, so a word capped at exactly the limit can measure a
-# few 1e-12 s over it, or one with a gap equal to the limit just past it. The
-# float error stays under 1e-10 s at offsets up to 100 hours; 1e-6 s is far
-# above that and far below any duration that means something (one sample at
-# 16 kHz lasts 62.5e-6 s).
-ISOLATED_WORD_FLIP_TOLERANCE_S = 1e-6
 _PUNCTUATION_ONLY_RE = re.compile(r"^[\.,!?;:%)\]\}]+$")
 _CONTRACTION_SUFFIXES = {
     "'d",
@@ -132,6 +124,7 @@ from backend.utils.short_segment_fold import (
     CONTIGUOUS_GAP_TOLERANCE_S,
     fold_short_segments,
 )
+from backend.utils.word_times import exceeds
 
 if TYPE_CHECKING:
     pass
@@ -342,7 +335,7 @@ def _combine_word_level(segments, speaker_turns, config=None):
 
         gap = w_start - current_segment["end"]
 
-        if speaker != current_segment["speaker"] or gap > 1.0:
+        if speaker != current_segment["speaker"] or exceeds(gap, 1.0):
             final_segments.append(_with_word_source_public_ids(current_segment))
             current_segment = {
                 "start": w_start,
@@ -547,7 +540,7 @@ def _smooth_isolated_word_speaker_flips(
 
     A word no longer than ``max_duration_s``, within ``max_gap_s`` of the words
     on both sides, is relabelled when both neighbours share a speaker; both
-    limits allow ISOLATED_WORD_FLIP_TOLERANCE_S of float error. A
+    limits allow float error (word_times.exceeds). A
     ``max_duration_s`` of 0 turns the smoothing off.
     """
     if max_duration_s <= 0:
@@ -575,10 +568,9 @@ def _smooth_isolated_word_speaker_flips(
         previous_gap = float(current_word["start"]) - float(previous_word["end"])
         next_gap = float(next_word["start"]) - float(current_word["end"])
 
-        if current_duration > max_duration_s + ISOLATED_WORD_FLIP_TOLERANCE_S:
+        if exceeds(current_duration, max_duration_s):
             continue
-        gap_limit_s = max_gap_s + ISOLATED_WORD_FLIP_TOLERANCE_S
-        if previous_gap > gap_limit_s or next_gap > gap_limit_s:
+        if exceeds(previous_gap, max_gap_s) or exceeds(next_gap, max_gap_s):
             continue
 
         assignment["speaker"] = previous_speaker

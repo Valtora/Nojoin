@@ -475,6 +475,35 @@ def test_a_gap_equal_to_the_flip_gap_limit_is_within_it(offset_s):
     assert unsmoothed == []
 
 
+@pytest.mark.parametrize("offset_s", [0.0, 7000.0])
+def test_a_gap_of_exactly_one_second_does_not_split_a_speakers_words(offset_s):
+    """Starts 15 frames (1.2 s) apart at the shortest cap, 0.2 s, leave a 1.0 s
+    gap: the merge's own threshold, which a new segment must exceed."""
+    from backend.processing.engines.onnx_asr_engine import (
+        _Recognition,
+        _shift_segment,
+        map_onnx_asr_recognition,
+    )
+
+    cap = TUNING_SPECS["asr_word_length_cap_s"].minimum
+    turns = FakeDiarization([(offset_s, offset_s + 30.0, "A")])
+    split = []
+    for frame in range(375 - 15 - 3):
+        starts = [frame * 0.08, (frame + 15) * 0.08]
+        mapped = map_onnx_asr_recognition(
+            _Recognition(" a b", [" a", " b"], starts),
+            audio_duration=30.0,
+            word_length_cap_s=cap,
+        )
+        transcription = {
+            "segments": [_shift_segment(s, offset_s) for s in mapped["segments"]]
+        }
+        if len(combine_transcription_diarization(transcription, turns)) != 1:
+            split.append(frame)
+
+    assert split == []
+
+
 @pytest.mark.parametrize(("max_duration_s", "expected"), [(0.45, "A"), (0, "B")])
 def test_zero_word_flip_limit_leaves_even_a_zero_length_word(max_duration_s, expected):
     """A zero-length word is no longer than a limit of 0, so only the explicit

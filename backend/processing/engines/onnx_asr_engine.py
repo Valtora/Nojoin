@@ -10,6 +10,7 @@ from typing import NamedTuple, Protocol
 
 from ...utils.languages import resolve_transcription_language_code
 from ...utils.onnx_asr_cache import onnx_asr_model
+from ...utils.word_times import exceeds
 from ..onnx_providers import gpu_is_present, sessions_use_cuda, verify_gpu_providers
 from ..onnx_threads import onnx_session_options
 from ..processing_tuning import (
@@ -29,7 +30,8 @@ logger = logging.getLogger(__name__)
 
 os.environ.setdefault("ORT_LOG_SEVERITY_LEVEL", "1")
 
-# Gap (seconds) between consecutive words that starts a new segment.
+# Gap (seconds) between consecutive words that starts a new segment. A gap
+# equal to it, as two starts the cap plus 0.8 s apart leave, does not.
 SEGMENT_PAUSE_THRESHOLD_S = 0.8
 
 # The longest (seconds) a word lasts. onnx-asr returns only token start times,
@@ -177,7 +179,7 @@ def map_onnx_asr_recognition(
     segments: list[dict] = []
     current: list[dict] = [words[0]]
     for word in words[1:]:
-        if word["start"] - current[-1]["end"] > SEGMENT_PAUSE_THRESHOLD_S:
+        if exceeds(word["start"] - current[-1]["end"], SEGMENT_PAUSE_THRESHOLD_S):
             segments.append(current)
             current = [word]
         else:

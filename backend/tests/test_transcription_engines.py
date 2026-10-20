@@ -317,6 +317,26 @@ def test_a_word_never_ends_before_it_starts():
     assert ends == [0.0, 0.4, 0.5]
 
 
+@pytest.mark.parametrize("offset_s", [0.0, 7000.0])
+def test_a_pause_equal_to_the_segment_threshold_does_not_split(offset_s):
+    """Starts 15 of onnx-asr's 80 ms frames apart, 1.2 s, leave 0.8 s after a
+    word capped at 0.4 s: the threshold itself, which a split must exceed. The
+    mapper splits on window times, so a window's offset cannot change it."""
+    from backend.processing.engines.onnx_asr_engine import _shift_segment
+
+    split = []
+    for frame in range(375 - 15):
+        starts = (frame * 0.08, (frame + 15) * 0.08)
+        result = map_parakeet_result(
+            "w0 w1", [" w0", " w1"], list(starts), audio_duration=30.0
+        )
+        segments = [_shift_segment(s, offset_s) for s in result["segments"]]
+        if len(segments) != 1:
+            split.append(frame)
+
+    assert split == []
+
+
 def test_dispatcher_selects_parakeet():
     """transcribe_audio routes to the parakeet engine in the registry."""
     fake = _FakeEngine("parakeet")
