@@ -575,12 +575,12 @@ class OnnxAsrEngine(TranscriptionEngine):
                 except OSError:
                     pass
 
+            silence: list[float] = []
+            # Only token timings have ends to bound (Canary has none).
+            if recognized.timestamps:
+                silence = _silence_starts(audio, start_frame, end_frame, sample_rate)
             chunk_result = map_onnx_asr_recognition(
-                recognized,
-                chunk_duration,
-                language_code,
-                word_length_cap_s,
-                _silence_starts(audio, start_frame, end_frame, sample_rate),
+                recognized, chunk_duration, language_code, word_length_cap_s, silence
             )
             if chunk_result["text"]:
                 texts.append(chunk_result["text"])
