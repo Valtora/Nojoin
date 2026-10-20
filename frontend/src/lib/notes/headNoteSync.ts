@@ -51,6 +51,7 @@ import {
  * | base or pending | save empty | delete against the revision |
  * | any | delete 204, 410 or 404 | gone; a delete of an id no note has held leaves a tombstone too, so a create still on its way is refused |
  * | any | no answer, or 5xx | nothing changes but `clearing` (for a delete) or `unansweredEdit` (for an edit); the next save retries under the same token |
+ * | pending | delete gets no answer, or 5xx | `pending` ends too: the next text is a new note under a new id, out of the late delete's reach |
  * | any | a 200 or 409 showing the note, or a 410 or 404 for it | its `clearing` and `unansweredEdit` end; a conflict ends both |
  * | any | other 4xx (422, recording gone) | save failed; nothing changes |
  * | conflict | save | refused until resolved |
@@ -577,6 +578,9 @@ export class HeadNoteSync {
       const outcome = outcomeOf(error);
       if (outcome.kind === "unknown") {
         this.clearingId = id;
+        // The cleared create is never sent again: text typed next is a new
+        // note under a new id, which this delete, landing late, cannot reach.
+        if (this.pendingId === id) this.pendingId = null;
         throw error;
       }
       this.answered();

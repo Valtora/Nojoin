@@ -1039,7 +1039,7 @@ describe("HeadNotePanel", () => {
     expect(screen.queryByText(/Shorten the notes/)).not.toBeInTheDocument();
   });
 
-  it("takes its own unanswered delete of a lost create as its own when typing again", async () => {
+  it("makes a new note after its own unanswered delete of a lost create, never retrying that create", async () => {
     server.lose.add("create");
     const { poll } = mount();
     type("Agenda");
@@ -1056,11 +1056,11 @@ describe("HeadNotePanel", () => {
 
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(bodies()).toEqual(["Fresh"]);
-    // The retried create heard its own delete's token, and made a new note.
-    const [lost, retry, fresh] = calls.create.mock.calls.map(
+    // The cleared create's id is not sent again.
+    const [lost, fresh, ...rest] = calls.create.mock.calls.map(
       ([, payload]) => payload,
     );
-    expect(retry.id).toBe(lost.id);
+    expect(rest).toEqual([]);
     expect(fresh.id).not.toBe(lost.id);
   });
 
@@ -1620,5 +1620,33 @@ describe("HeadNotePanel", () => {
 
     expect(box()).not.toHaveFocus();
     expect(document.body).toHaveFocus();
+  });
+
+  it("keeps the note typed after clearing a lost create, when the clear's delete lands late", async () => {
+    const { poll } = mount();
+    server.refuse.push({ write: "create", error: refusal(504, "Gateway Timeout") });
+    type("Secret");
+    await waitForSave();
+    // The clear's delete gets no answer, and reaches the server only later.
+    server.refuse.push({ write: "remove", error: refusal(504, "Gateway Timeout") });
+    type("");
+    await waitForSave();
+    const [lostDelete] = calls.remove.mock.calls;
+    type("Kept");
+    await waitForSave();
+    expect(bodies()).toEqual(["Kept"]);
+
+    await server.remove(lostDelete[0], lostDelete[1], lostDelete[2]);
+    await poll();
+    expect(bodies()).toEqual(["Kept"]);
+    type("Kept, more");
+    await waitForSave();
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(bodies()).toEqual(["Kept, more"]);
+    // The cleared create's id is recorded, so that create cannot land either.
+    const [cleared, kept] = calls.create.mock.calls.map(([, payload]) => payload.id);
+    expect(kept).not.toBe(cleared);
+    expect(server.tombstones.has(cleared!)).toBe(true);
   });
 });
