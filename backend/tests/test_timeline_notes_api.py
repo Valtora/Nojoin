@@ -10,11 +10,12 @@ from __future__ import annotations
 import json
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Awaitable, Callable
 from uuid import uuid4
 
 import pytest
 from fastapi import Depends, FastAPI
-from httpx import ASGITransport, AsyncClient
+from httpx import ASGITransport, AsyncClient, Response
 from sqlalchemy import event, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
@@ -963,3 +964,139 @@ async def test_deleting_a_recording_removes_its_notes_and_tombstones(
 
     assert [row[0] for row in notes] == [kept.json()["id"]]
     assert await _tombstones(session_maker) == []
+
+
+@pytest.fixture
+def transactions_left_open(app: FastAPI, session_maker) -> list[bool]:
+    """Whether each request's session still held a transaction as it ended.
+
+    An answer given under a note id's advisory lock must end its transaction
+    first, so the lock is released before the client hears back rather than at
+    the session's teardown.
+    """
+    left_open: list[bool] = []
+
+    async def _db():
+        async with session_maker() as session:
+            try:
+                yield session
+            finally:
+                left_open.append(session.in_transaction())
+
+    app.dependency_overrides[get_db] = _db
+    return left_open
+
+
+async def _deleted_with_token(client: AsyncClient, url: str = BASE) -> tuple[str, str]:
+    """A note made under a client id and deleted with a token: its id and the token."""
+    token = str(uuid4())
+    created = await client.post(
+        url,
+        json={"kind": "head", "body": "x", "id": str(uuid4()), "write_token": token},
+    )
+    note_id = created.json()["id"]
+    deleted = await client.delete(f"{url}/{note_id}", params={"write_token": token})
+    assert deleted.status_code == 204
+    return note_id, token
+
+
+Request = Callable[[], Awaitable[Response]]
+
+
+async def _replayed_create(client: AsyncClient) -> Request:
+    note_id = str(uuid4())
+    await _create(client, kind="head", id=note_id)
+    return lambda: client.post(BASE, json={"kind": "head", "body": "x", "id": note_id})
+
+
+async def _create_deleted_here(client: AsyncClient) -> Request:
+    note_id, token = await _deleted_with_token(client)
+    payload = {"kind": "head", "body": "x", "id": note_id, "write_token": token}
+    return lambda: client.post(BASE, json=payload)
+
+
+async def _create_deleted_elsewhere(client: AsyncClient) -> Request:
+    other = f"/api/v1/transcripts/{OTHER_REC}/timeline-notes"
+    note_id, _ = await _deleted_with_token(client, other)
+    return lambda: client.post(BASE, json={"kind": "head", "body": "x", "id": note_id})
+
+
+async def _retried_delete(client: AsyncClient) -> Request:
+    note_id, token = await _deleted_with_token(client)
+    return lambda: client.delete(f"{BASE}/{note_id}", params={"write_token": token})
+
+
+async def _delete_unknown(client: AsyncClient) -> Request:
+    return lambda: client.delete(f"{BASE}/{uuid4()}")
+
+
+async def _delete_deleted_elsewhere(client: AsyncClient) -> Request:
+    note_id, _ = await _deleted_with_token(client)
+    other_token = str(uuid4())
+    return lambda: client.delete(
+        f"{BASE}/{note_id}", params={"write_token": other_token}
+    )
+
+
+async def _delete_past_the_cap(client: AsyncClient) -> Request:
+    token = str(uuid4())
+    for _ in range(notes_routes.NEVER_HELD_TOMBSTONES_PER_RECORDING):
+        await client.delete(f"{BASE}/{uuid4()}", params={"write_token": token})
+    return lambda: client.delete(f"{BASE}/{uuid4()}", params={"write_token": token})
+
+
+async def _note_url(client: AsyncClient) -> str:
+    return f"{BASE}/{(await _create(client, kind='head', body='A'))['id']}"
+
+
+async def _stale_edit(client: AsyncClient) -> Request:
+    url = await _note_url(client)
+    return lambda: client.patch(url, json={"expected_revision": 2, "body": "B"})
+
+
+async def _stale_delete(client: AsyncClient) -> Request:
+    url = await _note_url(client)
+    return lambda: client.delete(url, params={"expected_revision": 2})
+
+
+async def _move_head_note(client: AsyncClient) -> Request:
+    url = await _note_url(client)
+    return lambda: client.patch(url, json={"expected_revision": 1, "anchor_ms": 5})
+
+
+async def _tokenless_repeat(client: AsyncClient) -> Request:
+    url = await _note_url(client)
+    return lambda: client.patch(url, json={"expected_revision": 1, "body": "A"})
+
+
+@pytest.mark.parametrize(
+    ("arrange", "status_code"),
+    [
+        (_replayed_create, 200),
+        (_create_deleted_here, 410),
+        (_create_deleted_elsewhere, 409),
+        (_retried_delete, 204),
+        (_delete_unknown, 404),
+        (_delete_deleted_elsewhere, 410),
+        (_delete_past_the_cap, 404),
+        (_stale_edit, 409),
+        (_stale_delete, 409),
+        (_move_head_note, 422),
+        (_tokenless_repeat, 200),
+    ],
+    ids=lambda value: value.__name__.strip("_") if callable(value) else str(value),
+)
+@pytest.mark.anyio
+async def test_every_early_answer_ends_its_transaction(
+    client: AsyncClient,
+    transactions_left_open: list[bool],
+    arrange: Callable[[AsyncClient], Awaitable[Request]],
+    status_code: int,
+) -> None:
+    request = await arrange(client)
+    transactions_left_open.clear()
+
+    response = await request()
+
+    assert response.status_code == status_code, response.text
+    assert transactions_left_open == [False]
