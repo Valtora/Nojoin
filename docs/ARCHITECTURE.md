@@ -42,7 +42,9 @@ for pool sizing. To avoid reloading the live ASR model between segments, the GPU
 lane keeps it resident while a capture is uploading and releases it when idle.
 During finalise the meeting-intelligence step (notes, title, speaker suggestions)
 is handed to the IO lane for non-local providers, so a network-bound LLM call
-never occupies the GPU worker; local Ollama runs it inline.
+never occupies the GPU worker; local Ollama runs it inline. Every lane reloads
+`config.json` before each task, so a settings change applies from the next task
+without a restart.
 
 Document parsing has its own lane because it is unbounded: there is no page
 cap, so one large upload can hold a worker slot for a long time. On the IO lane

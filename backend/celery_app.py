@@ -4,7 +4,7 @@ import time
 
 import redis
 from celery import Celery, bootsteps
-from celery.signals import setup_logging, task_postrun, worker_ready
+from celery.signals import setup_logging, task_postrun, task_prerun, worker_ready
 
 from backend.core.redis import REDIS_URL
 from backend.utils.deployment_warnings import log_deployment_warnings
@@ -130,6 +130,20 @@ def release_worker_model_caches() -> None:
         logger.info("Worker model caches released.")
     except Exception as exc:  # noqa: BLE001 -- boundary: cache release is housekeeping and must never fail the task
         logger.warning("Failed to release worker model caches: %s", exc)
+
+
+@task_prerun.connect
+def reload_config_before_task(**kwargs):
+    """Give every task the install-wide settings as config.json holds them now.
+
+    Each prefork child keeps its own copy of the config, taken when it forked
+    or last reloaded, and an administrator saves settings through the API, a
+    different process. A child that never reloads keeps running on settings
+    from before the save (issue #468). Unchanged files cost one stat.
+    """
+    from backend.utils.config_manager import config_manager
+
+    config_manager.reload()
 
 
 @task_postrun.connect

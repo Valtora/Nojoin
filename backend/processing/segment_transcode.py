@@ -144,8 +144,6 @@ def _advance_past_failed_segment(recording_id: int, temp_dir: Path) -> None:
 
 @celery_app.task
 def transcode_segment_task(recording_id: int, sequence: int):
-    config_manager.reload()
-
     failure_marker = _transcode_failed_marker_path(recording_id, sequence)
     wav_path = _wav_segment_path(recording_id, sequence)
     raw_segment_path = _locate_staged_browser_segment(recording_id, sequence)

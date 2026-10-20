@@ -530,6 +530,7 @@ Use `requirements/local.txt` instead of `dev.txt` for a full GPU host with the l
 
 ### System Configuration
 - **Configuration Management**: `backend.utils.config_manager` is the central utility handling system and user settings persisted in `data/config.json`. Do not implement parallel ad-hoc configuration storage mechanisms.
+- **Config in workers**: every worker process holds its own copy of `config.json`, and the API writes the file. A `task_prerun` hook in [backend/celery_app.py](../backend/celery_app.py) reloads that copy before every task, at the cost of one `stat` when the file is unchanged, so a task does not call `config_manager.reload()` itself. Saves write a temporary file and rename it over `config.json`, so a reader never sees a partly written file.
 
 ### Audio Processing & ML Operations
 - **Library Imports**: ML libraries (such as `torch`, `whisper`, `pyannote`) are computationally heavy and must be imported **inside** Celery task functions (under [backend/worker/tasks/](../backend/worker/tasks/)) to ensure quick backend API startup.

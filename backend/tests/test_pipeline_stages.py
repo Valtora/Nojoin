@@ -224,7 +224,6 @@ def _install_happy_path_modules(monkeypatch, *, diarization_result=None, segment
     )
 
     monkeypatch.setattr("os.path.exists", lambda path: True)
-    monkeypatch.setattr(tasks_module.config_manager, "reload", lambda: None)
 
     def _config_get(key, default=None):
         # Drive the legacy (non-canonical) path so these seam tests exercise

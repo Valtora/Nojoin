@@ -453,7 +453,6 @@ def test_infer_speakers_task_updates_speakers_and_restores_recording_state(
             )
 
     monkeypatch.setattr(tasks_module, "get_sync_session", lambda: Session(engine))
-    monkeypatch.setattr(tasks_module.config_manager, "reload", lambda: None)
     monkeypatch.setattr(llm_config_module.config_manager, "get_all", lambda: {})
     monkeypatch.setattr(
         tasks_module, "_llm_backend_from_config", lambda config: FakeLLM()
@@ -568,7 +567,6 @@ def test_infer_speakers_task_uses_llm_for_self_intro_labels_when_configured(
             )
 
     monkeypatch.setattr(tasks_module, "get_sync_session", lambda: Session(engine))
-    monkeypatch.setattr(tasks_module.config_manager, "reload", lambda: None)
     monkeypatch.setattr(llm_config_module.config_manager, "get_all", lambda: {})
     monkeypatch.setattr(
         tasks_module, "_llm_backend_from_config", lambda config: FakeLLM()
@@ -674,7 +672,6 @@ def test_infer_speakers_task_supersedes_pending_suggestion_omitted_by_llm(
             return SpeakerInferenceResult()
 
     monkeypatch.setattr(tasks_module, "get_sync_session", lambda: Session(engine))
-    monkeypatch.setattr(tasks_module.config_manager, "reload", lambda: None)
     monkeypatch.setattr(llm_config_module.config_manager, "get_all", lambda: {})
     monkeypatch.setattr(
         tasks_module, "_llm_backend_from_config", lambda config: FakeLLM()
@@ -722,7 +719,6 @@ def test_infer_speakers_task_skips_without_complete_llm_configuration_and_restor
         )
 
     monkeypatch.setattr(tasks_module, "get_sync_session", lambda: Session(engine))
-    monkeypatch.setattr(tasks_module.config_manager, "reload", lambda: None)
     monkeypatch.setattr(llm_config_module.config_manager, "get_all", lambda: {})
     monkeypatch.setattr(tasks_module, "_llm_backend_from_config", fail_if_called)
 
@@ -779,7 +775,6 @@ def test_infer_speakers_task_leaves_a_failed_transcription_in_error(
         )
 
     monkeypatch.setattr(tasks_module, "get_sync_session", lambda: Session(engine))
-    monkeypatch.setattr(tasks_module.config_manager, "reload", lambda: None)
     monkeypatch.setattr(llm_config_module.config_manager, "get_all", lambda: {})
 
     verification_engine = create_engine(str(engine.url), future=True)
@@ -830,7 +825,6 @@ def test_infer_speakers_task_persists_rule_based_self_intro_without_llm(
         )
 
     monkeypatch.setattr(tasks_module, "get_sync_session", lambda: Session(engine))
-    monkeypatch.setattr(tasks_module.config_manager, "reload", lambda: None)
     monkeypatch.setattr(llm_config_module.config_manager, "get_all", lambda: {})
     monkeypatch.setattr(tasks_module, "_llm_backend_from_config", fail_if_called)
 
@@ -916,7 +910,6 @@ def test_infer_speakers_task_uses_canonical_segments_when_projection_is_empty(
             )
 
     monkeypatch.setattr(tasks_module, "get_sync_session", lambda: Session(engine))
-    monkeypatch.setattr(tasks_module.config_manager, "reload", lambda: None)
     monkeypatch.setattr(llm_config_module.config_manager, "get_all", lambda: {})
     monkeypatch.setattr(
         tasks_module,
@@ -1013,7 +1006,6 @@ def test_infer_speakers_task_skips_suggestion_persistence_for_legacy_recordings(
             )
 
     monkeypatch.setattr(tasks_module, "get_sync_session", lambda: Session(engine))
-    monkeypatch.setattr(tasks_module.config_manager, "reload", lambda: None)
     monkeypatch.setattr(llm_config_module.config_manager, "get_all", lambda: {})
     monkeypatch.setattr(
         tasks_module, "_llm_backend_from_config", lambda config: FakeLLM()

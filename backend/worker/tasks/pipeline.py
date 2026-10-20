@@ -651,8 +651,6 @@ def process_recording_task(
     -> speaker assignment -> finalize/notes). The surrounding try/except/finally
     owns Celery retry and error semantics, temp-file cleanup, and VRAM release.
     """
-    config_manager.reload()
-
     start_time = time.time()
     session = self.session
     temp_files: list[str] = []
