@@ -317,7 +317,7 @@ def test_a_word_never_ends_before_it_starts():
     assert ends == [0.0, 0.4, 0.5]
 
 
-@pytest.mark.parametrize("offset_s", [0.0, 7000.0])
+@pytest.mark.parametrize("offset_s", [0.0, 60.0])
 def test_a_pause_equal_to_the_segment_threshold_does_not_split(offset_s):
     """Starts 15 of onnx-asr's 80 ms frames apart, 1.2 s, leave 0.8 s after a
     word capped at 0.4 s: the threshold itself, which a split must exceed. The

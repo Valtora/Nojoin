@@ -475,7 +475,7 @@ def test_a_gap_equal_to_the_flip_gap_limit_is_within_it(offset_s):
     assert unsmoothed == []
 
 
-@pytest.mark.parametrize("offset_s", [0.0, 7000.0])
+@pytest.mark.parametrize("offset_s", [0.0, 60.0])
 def test_a_gap_of_exactly_one_second_does_not_split_a_speakers_words(offset_s):
     """Starts 15 frames (1.2 s) apart at the shortest cap, 0.2 s, leave a 1.0 s
     gap: the merge's own threshold, which a new segment must exceed."""

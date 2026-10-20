@@ -3,9 +3,11 @@
 Token starts lie on onnx-asr's 80 ms grid and a capped word ends at its start
 plus the cap, so a span or gap built from word times can equal a threshold.
 Each time here is computed as the mapper and _shift_segment compute it, at
-every frame of a window and at two window offsets, so float rounding lands it
-on both sides of the threshold somewhere in the sweep. A value equal to its
-threshold must be treated the same at every frame.
+every frame of a window and at window offsets of 0 and 60 s, where float
+rounding lands it on both sides of the threshold within the sweep. A much
+larger offset would not do: at 7000 s the sum's rounding falls mostly on one
+side, and most of these tests pass even without the tolerance. A value equal to
+its threshold must be treated the same at every frame.
 """
 
 from __future__ import annotations
@@ -14,7 +16,7 @@ import pytest
 
 from backend.utils.transcript_utils import consolidate_diarized_transcript
 
-OFFSETS_S = [0.0, 7000.0]
+OFFSETS_S = [0.0, 60.0]
 FRAMES = range(30, 230)
 
 
