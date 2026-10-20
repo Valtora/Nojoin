@@ -1511,6 +1511,27 @@ describe("HeadNotePanel", () => {
     expect(calls.create).not.toHaveBeenCalled();
   });
 
+  it("does not take a delete elsewhere for its own after a save showed its unanswered delete had not landed", async () => {
+    server.add("h1", "head", "A");
+    mount();
+    server.refuse.push({ write: "remove", error: new Error("Network Error") });
+    type("");
+    await waitForSave();
+    // The edit is answered: the note is still there.
+    type("Back again");
+    await waitForSave();
+    expect(bodies()).toEqual(["Back again"]);
+
+    server.drop("h1");
+    type("Back again, more");
+    await waitForSave();
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "deleted on another device",
+    );
+    expect(calls.create).not.toHaveBeenCalled();
+  });
+
   it("takes its own delete answered with a server error as its own when typing again", async () => {
     server.add("h1", "head", "Original");
     mount();

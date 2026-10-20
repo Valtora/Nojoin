@@ -194,14 +194,55 @@ async def test_two_deletes_of_one_note_race_to_one_tombstone(
     assert tombstones == (1,)
 
 
-def _waiting_on_an_advisory_lock(database_url: str) -> bool:
+def _waiting_on_a_lock(database_url: str) -> bool:
+    """Whether a session on this database waits on a lock (row or advisory)."""
     with psycopg.connect(database_url) as conn:
         row = conn.execute(
-            "SELECT count(*) FROM pg_locks WHERE locktype = 'advisory'"
-            " AND NOT granted AND database ="
-            " (SELECT oid FROM pg_database WHERE datname = current_database())"
+            "SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock'"
+            " AND datname = current_database()"
         ).fetchone()
     return row is not None and row[0] > 0
+
+
+async def _until_done_or_waiting(task: asyncio.Task, database_url: str) -> None:
+    for _ in range(200):
+        if task.done() or _waiting_on_a_lock(database_url):
+            return
+        await asyncio.sleep(0.05)
+
+
+@pytest.mark.anyio
+async def test_two_edits_against_one_revision_race_to_one_conflict(
+    client: AsyncClient, database: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    note = (await client.post(BASE, json={"kind": "head", "body": "Original"})).json()
+    url = f"{BASE}/{note['id']}"
+    checked, release = asyncio.Event(), asyncio.Event()
+    locked_note = notes_routes._locked_note
+
+    async def _first_held_after_its_read(*args, **kwargs):
+        found = await locked_note(*args, **kwargs)
+        if not checked.is_set():
+            checked.set()
+            await release.wait()
+        return found
+
+    monkeypatch.setattr(notes_routes, "_locked_note", _first_held_after_its_read)
+    first = asyncio.create_task(
+        client.patch(url, json={"expected_revision": 1, "body": "First"})
+    )
+    await asyncio.wait_for(checked.wait(), 10)
+    second = asyncio.create_task(
+        client.patch(url, json={"expected_revision": 1, "body": "Second"})
+    )
+    await _until_done_or_waiting(second, database)
+    release.set()
+    responses = await asyncio.gather(first, second)
+
+    # The second waited on the first's row lock, then found revision 2.
+    assert sorted(r.status_code for r in responses) == [200, 409]
+    current = (await client.get(BASE)).json()
+    assert [(n["body"], n["revision"]) for n in current] == [("First", 2)]
 
 
 @pytest.mark.anyio
@@ -239,10 +280,7 @@ async def test_a_delete_racing_a_create_of_its_id_never_leaves_both(
             f"{BASE}/{note_id}", params={"expected_revision": 1, "write_token": token}
         )
     )
-    for _ in range(200):
-        if delete.done() or _waiting_on_an_advisory_lock(database):
-            break
-        await asyncio.sleep(0.05)
+    await _until_done_or_waiting(delete, database)
     release.set()
     created, deleted = await asyncio.gather(create, delete)
 
