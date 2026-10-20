@@ -1815,6 +1815,72 @@ describe("HeadNotePanel", () => {
     expect(calls.create).toHaveBeenCalledTimes(1);
   });
 
+  /** As above, but a poll showed the create's note before the clear, which then gets no answer. */
+  const clearPolledLostCreateOffline = async (failures: unknown[]) => {
+    server.lose.add("create");
+    const view = mount();
+    type("Agenda");
+    await waitForSave();
+    await view.poll();
+    for (const error of failures) server.refuse.push({ write: "remove", error });
+    type("");
+    await waitForSave();
+    expect(calls.remove).toHaveBeenCalledTimes(1);
+    return view;
+  };
+  const offline = () => new Error("Network Error");
+  const after = (ms: number) => act(() => vi.advanceTimersByTimeAsync(ms));
+
+  it("sends a cleared lost create's delete again from 2 s, doubling to 30 s, with no new poll", async () => {
+    await clearPolledLostCreateOffline(Array.from({ length: 6 }, offline));
+
+    // The page passes on no poll: the notes it holds have not changed.
+    for (const [wait, sent] of [
+      [2_000, 2],
+      [4_000, 3],
+      [8_000, 4],
+      [16_000, 5],
+      [30_000, 6],
+      [30_000, 7],
+    ]) {
+      await after(wait - 1);
+      expect(calls.remove).toHaveBeenCalledTimes(sent - 1);
+      await after(1);
+      expect(calls.remove).toHaveBeenCalledTimes(sent);
+    }
+
+    expect(bodies()).toEqual([]);
+    await after(120_000);
+    expect(calls.remove).toHaveBeenCalledTimes(7);
+    expect(otherNotes()).not.toBeInTheDocument();
+  });
+
+  it("stops sending a cleared create's delete again once the box goes away", async () => {
+    const { unmount } = await clearPolledLostCreateOffline([offline(), offline()]);
+
+    // Going away saves the unsaved clear once more, which fails too.
+    await unmount();
+    expect(calls.remove).toHaveBeenCalledTimes(2);
+    expect(vi.getTimerCount()).toBe(0);
+    await after(120_000);
+
+    expect(calls.remove).toHaveBeenCalledTimes(2);
+    expect(bodies()).toEqual(["Agenda"]);
+  });
+
+  it("does not send a cleared create's delete again after a refusal", async () => {
+    await clearPolledLostCreateOffline([
+      offline(),
+      coded(404, "recording_not_found"),
+    ]);
+
+    await after(2_000);
+    expect(calls.remove).toHaveBeenCalledTimes(2);
+    await after(120_000);
+
+    expect(calls.remove).toHaveBeenCalledTimes(2);
+  });
+
   /** Another tab resends the note's own text under its token: a new revision of the same note. */
   const resendElsewhere = (id: string) => {
     const note = server.notes.find((candidate) => candidate.id === id)!;

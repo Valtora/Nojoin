@@ -54,6 +54,7 @@ import {
  * | any | no answer, or 5xx | nothing changes but `clearing` (for a delete) or `unansweredEdit` (for an edit); the next save retries under the same token |
  * | pending | delete gets no answer, or 5xx | `pending` ends too: the next text is a new note under a new id, out of the late delete's reach |
  * | `clearing` a note other than `base` (a cleared pending create) | save, or a poll showing that note | that delete is sent again first, under the same token while no answer came between; a failed one fails the save. The note is not listed among the others meanwhile |
+ * | `clearing` a note other than `base`, which the last poll showed | its delete gets no answer | sent again from 2 s, doubling to 30 s, while anything listens; a refused one is not |
  * | any | a 200 or 409 showing the note, or a 410 or 404 for it | its `clearing` and `unansweredEdit` end; a conflict ends both |
  * | any | other 4xx (422, recording gone) | save failed; nothing changes |
  * | conflict | save | refused until resolved |
@@ -243,8 +244,11 @@ export class HeadNoteSync {
   private clearingId: string | null = null;
   /** The revision that delete was made against. */
   private clearingRevision = 1;
-  /** A poll asked for that delete to be sent again, and it waits in the queue. */
+  /** That delete is to be sent again, and waits in the queue. */
   private clearQueued = false;
+  /** Waiting to send it again after a resend got no answer. */
+  private clearTimer: ReturnType<typeof setTimeout> | null = null;
+  private clearDelayMs = CONFIRM_RETRY_MS;
   /** A note whose edit was sent without an answer: it may hold that edit. */
   private unansweredEditId: string | null = null;
   /** The token the next write carries; replaced once an answer arrives. */
@@ -272,11 +276,17 @@ export class HeadNoteSync {
 
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
-    // Nothing is checked while nothing listens; take it up again.
-    if (this.listeners.size === 1) this.confirmAbsence();
+    // Nothing is checked or resent while nothing listens; take it up again.
+    if (this.listeners.size === 1) {
+      this.confirmAbsence();
+      this.retryClear();
+    }
     return () => {
       this.listeners.delete(listener);
-      if (this.listeners.size === 0) this.stopChecking();
+      if (this.listeners.size === 0) {
+        this.stopChecking();
+        this.stopClearRetry();
+      }
     };
   };
 
@@ -294,12 +304,7 @@ export class HeadNoteSync {
       }
     }
     this.adopt();
-    // A note this device cleared without an answer is still there: nothing
-    // else would ever delete it, so the delete is sent again now.
-    const clearing = this.outstandingClear();
-    if (clearing && this.polled.some((note) => note.id === clearing)) {
-      this.queueClear();
-    }
+    this.retryClear();
     this.confirmAbsence();
     this.emit();
   };
@@ -555,13 +560,54 @@ export class HeadNoteSync {
     if (id !== null) await this.remove(id, this.clearingRevision, null);
   }
 
-  private queueClear() {
-    if (this.clearQueued) return;
+  /** Whether the last poll showed the note of an outstanding clear. */
+  private clearShown(): boolean {
+    const id = this.outstandingClear();
+    return id !== null && this.polled.some((note) => note.id === id);
+  }
+
+  /**
+   * A poll shows the note of an outstanding clear: nothing else would ever
+   * delete it, so the delete is sent again now. The page passes on only polls
+   * that changed, so the poll showing it may be one already held: a resend
+   * that gets no answer is sent again from 2 s, doubling to 30 s, while
+   * anything listens, without waiting for a new poll. A refused one is not.
+   */
+  private retryClear() {
+    if (!this.clearShown() || this.listeners.size === 0) {
+      this.stopClearRetry();
+      return;
+    }
+    if (this.clearQueued || this.clearTimer !== null) return;
     this.clearQueued = true;
     void this.enqueue(() => {
       this.clearQueued = false;
       return this.finishClear();
-    }).catch(() => undefined);
+    }).then(
+      () => {
+        this.clearDelayMs = CONFIRM_RETRY_MS;
+      },
+      (error: unknown) => {
+        if (outcomeUnknown(error)) this.scheduleClear();
+      },
+    );
+  }
+
+  private scheduleClear() {
+    if (this.clearTimer !== null || !this.clearShown()) return;
+    if (this.listeners.size === 0) return;
+    const delay = this.clearDelayMs;
+    this.clearDelayMs = Math.min(delay * 2, CONFIRM_RETRY_MAX_MS);
+    this.clearTimer = setTimeout(() => {
+      this.clearTimer = null;
+      this.retryClear();
+    }, delay);
+  }
+
+  private stopClearRetry() {
+    if (this.clearTimer !== null) clearTimeout(this.clearTimer);
+    this.clearTimer = null;
+    this.clearDelayMs = CONFIRM_RETRY_MS;
   }
 
   /**
@@ -667,6 +713,7 @@ export class HeadNoteSync {
         // note under a new id, which this delete, landing late, cannot reach.
         // (Before that text is sent, finishClear sends this delete again.)
         if (this.pendingId === id) this.pendingId = null;
+        this.scheduleClear();
         throw error;
       }
       this.answered();
