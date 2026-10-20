@@ -25,6 +25,8 @@ from sqlmodel.ext.asyncio.session import AsyncSession as SQLModelAsyncSession
 from backend.api.deps import get_current_user, get_db
 from backend.api.v1.api import api_router
 from backend.core.backup.restore.conflicts import _resolve_global_speakers
+from backend.models.recording import Recording
+from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
 from backend.processing.embedding import (
     find_matching_global_speaker,
     merge_embeddings,
@@ -575,6 +577,150 @@ async def test_linking_a_stale_voiceprint_leaves_a_current_person_alone(
     assert response.status_code == 200
     person = await _person(session_maker, "Dana")
     assert (person.embedding, person.embedding_version) == (VOICE, CURRENT)
+
+
+@pytest.mark.anyio
+async def test_a_legacy_voiceprint_founding_a_person_stays_legacy(
+    client, session_maker, write_path
+) -> None:
+    await _seed(
+        session_maker,
+        speakers=[{"label": "SPEAKER_00", "embedding": VOICE, "version": None}],
+        people=[{"id": 7, "name": "Dana"}],
+    )
+
+    response = await client.put(
+        f"/api/v1/speakers/recordings/{REC}",
+        json={"diarization_label": "SPEAKER_00", "global_speaker_name": "Dana"},
+    )
+
+    # Still stale, so the voiceprint rebuild picks the person up.
+    assert response.status_code == 200
+    person = await _person(session_maker, "Dana")
+    assert (person.embedding, person.embedding_version) == (VOICE, None)
+    assert not await _identified(session_maker, "Dana", VOICE)
+
+
+@pytest.mark.anyio
+# The canonical rename overrides the lock on purpose, as a user correction.
+@pytest.mark.parametrize("write_path", ["legacy"], indirect=True)
+async def test_a_legacy_rename_leaves_a_locked_voiceprint_alone(
+    client, session_maker, write_path
+) -> None:
+    near = [0.8, 0.6]
+    await _seed(
+        session_maker,
+        speakers=[{"label": "SPEAKER_00", "embedding": near}],
+        people=[
+            {
+                "id": 7,
+                "name": "Dana",
+                "embedding": VOICE,
+                "version": CURRENT,
+                "locked": True,
+            }
+        ],
+    )
+
+    response = await client.put(
+        f"/api/v1/speakers/recordings/{REC}",
+        json={"diarization_label": "SPEAKER_00", "global_speaker_name": "Dana"},
+    )
+
+    assert response.status_code == 200
+    person = await _person(session_maker, "Dana")
+    assert (person.embedding, person.embedding_version) == (VOICE, CURRENT)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("target", "source"),
+    [
+        # A stale source passes the drift guard, so only its version keeps it out.
+        ({"embedding": VOICE, "version": CURRENT}, {"embedding": [0.8, 0.6]}),
+        # A current source is orthogonal, so the drift guard would refuse a blend.
+        ({"embedding": OTHER}, {"embedding": VOICE, "version": CURRENT}),
+    ],
+    ids=["stale-into-current", "current-into-stale"],
+)
+async def test_merging_two_people_keeps_the_current_voiceprint(
+    client, session_maker, target, source
+) -> None:
+    await _seed(
+        session_maker,
+        speakers=[],
+        people=[
+            {"id": 7, "name": "Dana", **target},
+            {"id": 8, "name": "Dana (2)", **source},
+        ],
+    )
+
+    response = await client.post(
+        "/api/v1/speakers/merge",
+        json={"source_speaker_id": 8, "target_speaker_id": 7},
+    )
+
+    assert response.status_code == 200
+    person = await _person(session_maker, "Dana")
+    assert (person.embedding, person.embedding_version) == (VOICE, CURRENT)
+    assert await _identified(session_maker, "Dana", VOICE)
+
+
+def test_segment_learning_stamps_the_current_version(
+    monkeypatch, stub_celery_dispatch
+) -> None:
+    from backend.processing import embedding_core
+    from backend.worker.tasks import embeddings as embedding_tasks
+
+    speaker = SimpleNamespace(
+        embedding=None,
+        embedding_version=None,
+        global_speaker_id=7,
+        diarization_label="SPEAKER_00",
+    )
+    person = SimpleNamespace(name="Dana", embedding=list(OTHER), embedding_version=None)
+    rows = {
+        (Recording, 1): SimpleNamespace(audio_path="/tmp/meeting.wav"),
+        (RecordingSpeaker, 3): speaker,
+        (GlobalSpeaker, 7): person,
+    }
+
+    class _Session:
+        committed = False
+
+        def get(self, model, identifier):
+            return rows.get((model, identifier))
+
+        def add(self, row) -> None:
+            assert row in (speaker, person)
+
+        def commit(self) -> None:
+            self.committed = True
+
+        def rollback(self) -> None:
+            raise AssertionError("the task failed and rolled back")
+
+    session = _Session()
+    monkeypatch.setattr(
+        embedding_tasks,
+        "select_recording_audio_for_embedding",
+        lambda recording: recording.audio_path,
+    )
+    monkeypatch.setattr(
+        embedding_core,
+        "extract_embedding_for_segments",
+        lambda *args, **kwargs: list(VOICE),
+    )
+    task = embedding_tasks.update_speaker_embedding_task
+    monkeypatch.setattr(task, "_session", session)
+
+    task.run(1, 0.0, 5.0, 3)
+
+    assert session.committed
+    assert (speaker.embedding, speaker.embedding_version) == (VOICE, CURRENT)
+    assert (person.embedding, person.embedding_version) == (VOICE, CURRENT)
+    assert find_matching_global_speaker(VOICE, [person])[0] is person
+    assert stub_celery_dispatch == []
 
 
 def test_a_same_version_blend_folds_through_the_drift_guard() -> None:
