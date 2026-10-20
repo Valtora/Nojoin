@@ -17,8 +17,10 @@ always makes a new revision, so it fences off an earlier write of the same
 revision still in transit. A delete with a token of an id that no note has held
 leaves a tombstone too, for as long as a create whose answer was lost can still
 arrive, so it cannot land after the user cleared it. Creates and deletes of one
-id are serialised by an advisory lock on it. Every refusal's detail is
-``{code, message}``, the ``code`` stable (``TimelineNoteErrorCode``).
+id are serialised by an advisory lock on it. Every refusal these routes raise
+has the detail ``{code, message}``, the ``code`` stable
+(``TimelineNoteErrorCode``); a request the schemas refuse keeps FastAPI's 422,
+whose detail is a list.
 """
 
 from dataclasses import dataclass
