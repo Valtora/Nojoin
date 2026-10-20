@@ -856,6 +856,26 @@ describe("HeadNotePanel", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Save failed");
   });
 
+  it("offers only Dismiss for a deleted note when the box is blank", async () => {
+    server.add("h1", "head", "Original");
+    const { poll } = mount();
+    type("Mine");
+    server.drop("h1");
+    await poll();
+    await waitForSave();
+    expect(screen.getByRole("alert")).toHaveTextContent("deleted on another device");
+
+    type("");
+    expect(screen.queryByRole("button", { name: "Keep mine" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Discard mine" })).not.toBeInTheDocument();
+    await click("Dismiss");
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(box().value).toBe("");
+    await waitForSave();
+    expect(server.notes).toEqual([]);
+  });
+
   it("counts text with Windows line ends as the box will send it", () => {
     server.add("h1", "head", "abcdefg\r\n".repeat(6_000));
     mount();

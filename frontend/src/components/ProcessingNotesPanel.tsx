@@ -69,6 +69,9 @@ function ConflictNotice({
 }) {
   const changed = conflict.kind === "changed";
   const mineIsBlank = stripNote(mine) === "";
+  // Deleted elsewhere with nothing in the box: keeping and discarding both
+  // leave no note, so there is nothing to choose.
+  const nothingToKeep = !changed && mineIsBlank;
   return (
     <div
       role="alert"
@@ -99,20 +102,22 @@ function ConflictNotice({
         </>
       ) : null}
       <div className="mt-2 flex flex-wrap gap-2">
-        <button
-          type="button"
-          onClick={onKeepMine}
-          disabled={locked}
-          className="rounded-pill border border-action-border bg-surface-card px-3 py-1 text-xs font-semibold text-action-text transition-colors hover:bg-action-tint disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {changed && mineIsBlank ? "Delete anyway" : "Keep mine"}
-        </button>
+        {nothingToKeep ? null : (
+          <button
+            type="button"
+            onClick={onKeepMine}
+            disabled={locked}
+            className="rounded-pill border border-action-border bg-surface-card px-3 py-1 text-xs font-semibold text-action-text transition-colors hover:bg-action-tint disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {changed && mineIsBlank ? "Delete anyway" : "Keep mine"}
+          </button>
+        )}
         <button
           type="button"
           onClick={onUseTheirs}
           className="rounded-pill border border-action-border bg-surface-card px-3 py-1 text-xs font-semibold text-action-text transition-colors hover:bg-action-tint"
         >
-          {changed ? "Use theirs" : "Discard mine"}
+          {changed ? "Use theirs" : nothingToKeep ? "Dismiss" : "Discard mine"}
         </button>
       </div>
     </div>
