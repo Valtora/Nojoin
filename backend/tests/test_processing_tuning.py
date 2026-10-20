@@ -100,14 +100,6 @@ def test_unusable_values_are_rejected(key, value) -> None:
     assert normalise_tuning_value(key, value) is None
 
 
-def test_the_word_length_cap_never_exceeds_the_flip_smoothing_word_length() -> None:
-    """A capped word longer than smoothing's limit could not be smoothed."""
-    cap = TUNING_SPECS["asr_word_length_cap_s"]
-    flip = TUNING_SPECS["word_flip_max_duration_s"]
-
-    assert cap.maximum == flip.default
-
-
 def test_integer_key_accepts_an_integral_float_as_int() -> None:
     value = normalise_tuning_value("phantom_max_segments", 5.0)
 
