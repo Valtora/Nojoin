@@ -25,6 +25,7 @@ from backend.api.deps import get_current_user, get_db
 from backend.api.v1.api import api_router
 from backend.models.timeline_note_public import TimelineNoteErrorCode
 from backend.models.user import User
+from backend.services.timeline_note_service import load_recording_timeline_notes_async
 from backend.tests.sqlite_schemas import (
     GLOBAL_SPEAKERS_SCHEMA,
     RECORDING_AUDIO_CHUNKS_SCHEMA,
@@ -36,6 +37,7 @@ from backend.tests.sqlite_schemas import (
     USERS_SCHEMA,
 )
 from backend.utils.time import utc_now
+from backend.utils.timeline_notes import timeline_notes_signature
 
 OWNER_ID = 1
 OTHER_ID = 2
@@ -659,6 +661,32 @@ async def test_a_repeat_with_a_token_makes_a_revision_that_fences_off_a_late_edi
     assert again.json()["revision"] == 3
     # No text changed, so only the create asked for a refresh.
     assert edge_refreshes == [10]
+
+
+@pytest.mark.anyio
+async def test_a_fence_leaves_the_notes_signature_as_it_was_and_an_edit_changes_it(
+    client: AsyncClient, session_maker
+) -> None:
+    async def signature() -> str:
+        async with session_maker() as session:
+            notes = await load_recording_timeline_notes_async(session, 10)
+        return timeline_notes_signature(notes.notes)
+
+    note = await _create(client, kind="head", body="A")
+    url = f"{BASE}/{note['id']}"
+    before = await signature()
+
+    fenced = await client.patch(
+        url, json={"expected_revision": 1, "body": "A", "write_token": str(uuid4())}
+    )
+    assert fenced.json()["revision"] == 2
+    # Meeting Edge compares this signature: unchanged, so no refresh skips its
+    # throttle and no LLM call is made for a revision that changed nothing.
+    assert await signature() == before
+
+    edited = await client.patch(url, json={"expected_revision": 2, "body": "A, edited"})
+    assert edited.status_code == 200
+    assert await signature() != before
 
 
 @pytest.mark.anyio

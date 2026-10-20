@@ -31,6 +31,8 @@ loads the notes.
 from __future__ import annotations
 
 import bisect
+import hashlib
+import json
 from dataclasses import dataclass
 from datetime import datetime
 from typing import (
@@ -75,8 +77,6 @@ class TimelineNoteLike(Protocol):
     def created_by_user_id(self) -> Optional[int]: ...
     @property
     def created_at(self) -> datetime: ...
-    @property
-    def revision(self) -> int: ...
 
 
 N = TypeVar("N", bound=TimelineNoteLike)
@@ -370,5 +370,29 @@ def render_notes_list_context(
 
 
 def timeline_notes_signature(notes: Iterable[TimelineNoteLike]) -> str:
-    """Changes whenever a note is added, edited or deleted."""
-    return ",".join(sorted(f"{note.public_id}:{note.revision}" for note in notes))
+    """Changes whenever what the prompts show of the notes changes.
+
+    Built from each note's content: what the prompts render (kind, body,
+    anchors, quote and author) and what orders it (id and creation time). Not
+    from its revision: an edit with a write token that changes nothing still
+    makes one, to fence off a lost write, and must not ask for a refresh.
+    Empty for no notes.
+    """
+    rows = [
+        [
+            note.public_id,
+            note.kind,
+            note.body,
+            note.anchor_ms,
+            note.start_ms,
+            note.end_ms,
+            note.quoted_text,
+            note.created_by_user_id,
+            note.created_at.isoformat(),
+        ]
+        for note in sorted(notes, key=lambda note: note.public_id)
+    ]
+    if not rows:
+        return ""
+    encoded = json.dumps(rows, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()

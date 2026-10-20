@@ -173,8 +173,10 @@ def _should_refresh_meeting_edge_impl(
     focus_changed = previous_payload.get("focus_hash") != _hash_meeting_edge_text(
         focus_text
     )
-    # Any note added, edited or deleted refreshes at once, wherever it sits:
-    # the user asked for it to be taken into account.
+    # Any note added, deleted or changed in what the prompts show of it
+    # refreshes at once, wherever it sits: the user asked for it to be taken
+    # into account. A revision that changed nothing (a write token's fence)
+    # leaves the signature as it was.
     notes_changed = previous_payload.get("notes_hash") != _hash_meeting_edge_text(
         notes_signature
     )

@@ -238,12 +238,43 @@ def test_the_notes_list_is_in_timeline_order_with_times() -> None:
     assert render_notes_list_context([]) is None
 
 
-def test_the_notes_signature_changes_on_every_edit() -> None:
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"body": "edited"},
+        {"anchor_ms": 2_000},
+        {"start_ms": 1_000},
+        {"end_ms": 3_000},
+        {"quoted_text": "other words"},
+        {"created_by_user_id": None},
+        {"created_at": CREATED + timedelta(seconds=1)},
+    ],
+)
+def test_the_notes_signature_changes_with_what_the_prompts_show(
+    change: dict[str, Any],
+) -> None:
+    fields = {
+        "anchor_ms": 1_500,
+        "start_ms": 500,
+        "end_ms": 2_500,
+        "quoted_text": "words",
+    }
+    a = _note("a", "point", **fields)
+    base = timeline_notes_signature([a])
+    assert base != timeline_notes_signature(
+        [_note("a", "point", **{**fields, **change})]
+    )
+
+
+def test_the_notes_signature_ignores_a_revision_that_changed_nothing() -> None:
     a = _note("a", "head")
     b = _note("b", "tail")
     base = timeline_notes_signature([a, b])
     assert base == timeline_notes_signature([b, a])
-    assert base != timeline_notes_signature([a, _note("b", "tail", revision=2)])
+    # A fence: a tokened repeat of the note's own text makes a revision.
+    assert base == timeline_notes_signature([a, _note("b", "tail", revision=2)])
+    assert base != timeline_notes_signature([a, _note("b", "head")])
+    assert base != timeline_notes_signature([a, _note("c", "tail")])
     assert base != timeline_notes_signature([a])
     assert timeline_notes_signature([]) == ""
 
