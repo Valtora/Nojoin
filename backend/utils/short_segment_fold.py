@@ -8,6 +8,8 @@ segment, and neighbours whose pieces tiled one turn are rejoined afterwards.
 import logging
 from typing import Callable, Optional
 
+from backend.utils.word_times import exceeds, falls_short
+
 logger = logging.getLogger(__name__)
 
 # A short segment folds only into a neighbour within this gap, so one fold
@@ -149,13 +151,20 @@ def _short_segment_fold(
         span = max(neighbour["end"], short["end"]) - min(
             neighbour["start"], short["start"]
         )
-        if gap <= SHORT_SEGMENT_FOLD_MAX_GAP_S and span <= max_duration_s:
+        if not exceeds(gap, SHORT_SEGMENT_FOLD_MAX_GAP_S) and not exceeds(
+            span, max_duration_s
+        ):
             candidates.append((kind, neighbour, max(gap, 0.0)))
     if not candidates:
         return _FOLD_NONE
     same_speaker = [c for c in candidates if c[1]["speaker"] == short["speaker"]]
-    # min() keeps the first of equal gaps, so the earlier neighbour wins a tie.
-    return min(same_speaker or candidates, key=lambda candidate: candidate[2])[0]
+    pool = same_speaker or candidates
+    # The earlier neighbour wins a tie, gaps within float error included.
+    nearest = pool[0]
+    for candidate in pool[1:]:
+        if falls_short(candidate[2], nearest[2]):
+            nearest = candidate
+    return nearest[0]
 
 
 def _same_turn_within(previous: dict, following: dict, max_duration_s: float) -> bool:
@@ -167,7 +176,7 @@ def _same_turn_within(previous: dict, following: dict, max_duration_s: float) ->
         following["speaker"] == previous["speaker"]
         and set(following["overlapping_speakers"])
         == set(previous["overlapping_speakers"])
-        and span <= max_duration_s
+        and not exceeds(span, max_duration_s)
     )
 
 

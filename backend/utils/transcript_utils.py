@@ -124,7 +124,7 @@ from backend.utils.short_segment_fold import (
     CONTIGUOUS_GAP_TOLERANCE_S,
     fold_short_segments,
 )
-from backend.utils.word_times import exceeds
+from backend.utils.word_times import exceeds, falls_short
 
 if TYPE_CHECKING:
     pass
@@ -604,7 +604,7 @@ def consolidate_diarized_transcript(
         curr_words = curr.get("words", [])
 
         # Split a segment longer than max_duration_s; Whisper can return 30s blocks.
-        if (curr_end - curr_start) > max_duration_s:
+        if exceeds(curr_end - curr_start, max_duration_s):
             if curr_words:
                 # Split within an 8-12s window centred on a 10s target: prefer the
                 # sentence break (.!?) nearest the target, otherwise the nearest word
@@ -623,9 +623,9 @@ def consolidate_diarized_transcript(
                 for idx, w in enumerate(curr_words):
                     w_end_time = w["end"]
 
-                    if w_end_time < soft_min:
+                    if falls_short(w_end_time, soft_min):
                         continue
-                    if w_end_time > soft_max:
+                    if exceeds(w_end_time, soft_max):
                         break  # Exceeded strict search window
 
                     dist = abs(w_end_time - hard_target)
@@ -633,11 +633,11 @@ def consolidate_diarized_transcript(
                     is_sentence_end = w["word"].strip().endswith((".", "!", "?"))
 
                     if is_sentence_end:
-                        if dist < min_sentence_dist:
+                        if falls_short(dist, min_sentence_dist):
                             best_sentence_idx = idx + 1
                             min_sentence_dist = dist
 
-                    if dist < min_word_dist:
+                    if falls_short(dist, min_word_dist):
                         best_word_idx = idx + 1
                         min_word_dist = dist
 
@@ -755,7 +755,7 @@ def consolidate_diarized_transcript(
 
             # Stop merging if adding this segment would exceed max_duration_s.
             potential_end = max(curr_end, next_seg["end"])
-            if (potential_end - curr_start) > max_duration_s:
+            if exceeds(potential_end - curr_start, max_duration_s):
                 break
 
             if next_seg["start"] < curr_end:
@@ -799,7 +799,7 @@ def consolidate_diarized_transcript(
             "words": curr_words,
         }
         consolidated_segment.update(_merge_consolidation_metadata(segments[i:j]))
-        if (curr_end - curr_start) < min_duration_s:
+        if falls_short(curr_end - curr_start, min_duration_s):
             short_indices.add(len(consolidated))
         consolidated.append(consolidated_segment)
         sources.append(segments[i:j])
