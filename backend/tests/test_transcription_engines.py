@@ -485,6 +485,30 @@ def test_canary_results_without_token_timings_keep_their_window(tmp_path, monkey
     ]
 
 
+def test_a_single_pass_without_its_duration_has_no_window_end(tmp_path, monkeypatch):
+    """When the audio's duration cannot be read, the one pass has no window end
+    to bound its words, so the last word ends at its start plus the cap, past
+    the end of the audio."""
+    import soundfile
+
+    from backend.processing.engines.parakeet_engine import ParakeetEngine
+
+    audio_path = tmp_path / "one-second.wav"
+    _write_silence(audio_path, 1)
+
+    def _unreadable(path):
+        raise RuntimeError(f"{path}: unreadable header")
+
+    monkeypatch.setattr(soundfile, "info", _unreadable)
+
+    result = _transcribe_returning(
+        monkeypatch, ParakeetEngine(), audio_path, _Timed(0.0, 0.9)
+    )
+
+    ends = [word["end"] for s in result["segments"] for word in s["words"]]
+    assert ends == pytest.approx([0.4, 1.3])
+
+
 def _signal_with_pauses(seconds, pauses, sample_rate=100):
     import numpy as np
 
