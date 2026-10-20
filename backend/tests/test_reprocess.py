@@ -692,7 +692,6 @@ def test_process_recording_task_applies_engine_override(monkeypatch):
         def close(self):
             pass
 
-    monkeypatch.setattr(tasks_module.config_manager, "reload", lambda: None)
     monkeypatch.setattr(
         tasks_module.config_manager,
         "get",
@@ -853,7 +852,6 @@ def test_process_recording_task_rolls_back_before_persisting_error_state(monkeyp
         def close(self):
             pass
 
-    monkeypatch.setattr(tasks_module.config_manager, "reload", lambda: None)
     monkeypatch.setattr(
         tasks_module.config_manager,
         "get",

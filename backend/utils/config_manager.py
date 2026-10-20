@@ -1,6 +1,8 @@
+import contextlib
 import json
 import logging
 import os
+import tempfile
 from collections.abc import Mapping
 from typing import Any
 from urllib.parse import urlparse
@@ -503,8 +505,23 @@ class ConfigManager:
             safe_config = {
                 k: v for k, v in config_data.items() if k not in SENSITIVE_KEYS
             }
-            with open(self.config_path, "w", encoding="utf-8") as f:
-                json.dump(safe_config, f, indent=4)
+            # Write a sibling and rename it into place. Other processes reload
+            # this file before every worker task, and writing it in place let a
+            # reader catch it truncated and fall back to the defaults. mkstemp's
+            # 0600 is the mode path_manager gives files in the data directory.
+            # realpath so a symlinked config.json keeps its link.
+            target = os.path.realpath(self.config_path)
+            fd, temp_path = tempfile.mkstemp(
+                prefix=".config.", suffix=".tmp", dir=os.path.dirname(target)
+            )
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    json.dump(safe_config, f, indent=4)
+                os.replace(temp_path, target)
+            except BaseException:
+                with contextlib.suppress(OSError):
+                    os.unlink(temp_path)
+                raise
             logger.info(f"Configuration saved to {self.config_path}")
         except OSError as e:
             logger.error(

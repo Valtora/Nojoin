@@ -1443,7 +1443,6 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
     )
     from backend.processing.vad import detect_speech_segments
 
-    config_manager.reload()
     record_pipeline_metric(
         stage="live_task_started",
         recording_id=recording_id,

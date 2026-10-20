@@ -109,6 +109,37 @@ class TestWriteThenRead:
         assert manager.get("whisper_model_size") == "tiny"
 
 
+class TestSaveReplacesTheFileWhole:
+    """Workers reload config.json before every task, so a save must never leave
+    a reader looking at a half-written file."""
+
+    def test_a_failed_save_leaves_the_old_file_and_no_temp_file(
+        self, manager, config_file
+    ):
+        before = config_file.read_text(encoding="utf-8")
+
+        with pytest.raises(TypeError):
+            manager.save_config({"whisper_model_size": object()})
+
+        assert config_file.read_text(encoding="utf-8") == before
+        assert not list(config_file.parent.glob(".config.*"))
+
+    def test_a_symlinked_config_keeps_its_link(self, tmp_path):
+        real = tmp_path / "real" / "config.json"
+        real.parent.mkdir()
+        real.write_text("{}", encoding="utf-8")
+        link = tmp_path / "config.json"
+        link.symlink_to(real)
+        manager = ConfigManager(config_path=str(link))
+
+        manager.save_values({"whisper_model_size": "small"})
+
+        assert link.is_symlink()
+        assert json.loads(real.read_text(encoding="utf-8")) == {
+            "whisper_model_size": "small"
+        }
+
+
 class TestDirectoryLogging:
     def test_existing_directory_is_not_announced(self, manager, caplog):
         # This used to log "Created directory" on every load, which read as
