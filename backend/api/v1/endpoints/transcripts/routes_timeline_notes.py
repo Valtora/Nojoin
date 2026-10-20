@@ -191,6 +191,12 @@ async def _lock_note_id(db: AsyncSession, note_id: str) -> None:
     advisory lock on the id's hash (a clash of hashes only makes two writes
     wait for each other). Other databases run only in tests, one request at a
     time, and take no lock.
+
+    It relies on READ COMMITTED, PostgreSQL's default and the engine's: each
+    statement after the lock sees what the transaction that held it before
+    committed. Under REPEATABLE READ or SERIALIZABLE the snapshot is taken by
+    the transaction's first query, the recording lookup before the lock, so
+    the check after it would miss the other's note or tombstone.
     """
     if db.get_bind().dialect.name != "postgresql":
         return
@@ -263,7 +269,8 @@ async def _replayed_create(
     """What a create under a client id already used finds, before inserting.
 
     The note an earlier attempt made (returned, as it is now), or the
-    tombstone it left when deleted (refused, so it is not made again).
+    tombstone it left when deleted (refused, so it is not made again). A
+    refusal ends the transaction first, releasing the id's lock.
     """
     existing = await _existing_for_retry(db, recording_pk, note_id)
     if existing is not None:
@@ -273,8 +280,13 @@ async def _replayed_create(
         return None
     if tombstone.recording_id != recording_pk:
         # A public id names one note while its recording exists, deleted or not.
-        raise _refused(409, TimelineNoteErrorCode.NOTE_ID_IN_USE, NOTE_ID_TAKEN_DETAIL)
-    raise _deleted(tombstone, write_token)
+        refusal = _refused(
+            409, TimelineNoteErrorCode.NOTE_ID_IN_USE, NOTE_ID_TAKEN_DETAIL
+        )
+    else:
+        refusal = _deleted(tombstone, write_token)
+    await db.rollback()
+    raise refusal
 
 
 async def _never_held_tombstones_kept(db: AsyncSession, recording_pk: int) -> int:
@@ -393,7 +405,9 @@ async def create_timeline_note(
         if existing is not None:
             # The first create's note, as it is now: a retry never edits it.
             response.status_code = status.HTTP_200_OK
-            return await _read(db, existing, recording_public_id)
+            current = await _read(db, existing, recording_public_id)
+            await db.rollback()
+            return current
 
     fields: dict[str, Any] = {
         "recording_id": recording_pk,
@@ -522,6 +536,7 @@ async def delete_timeline_note(
     if note is None:
         tombstone = await _tombstone_on(db, recording_pk, note_id)
         if tombstone is not None and _deleted_by(tombstone, token):
+            await db.rollback()
             return Response(status_code=status.HTTP_204_NO_CONTENT)
         try:
             recorded = tombstone is None and await _record_unused_id(
@@ -534,7 +549,9 @@ async def delete_timeline_note(
             raise
         if recorded:
             return Response(status_code=status.HTTP_204_NO_CONTENT)
-        raise _missing(tombstone, token)
+        refusal = _missing(tombstone, token)
+        await db.rollback()
+        raise refusal
     expected_revision = conditions.expected_revision
     if expected_revision is not None and note.revision != expected_revision:
         await _refuse_stale_revision(db, note, recording_public_id)
