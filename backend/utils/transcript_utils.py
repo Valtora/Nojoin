@@ -768,7 +768,9 @@ def consolidate_diarized_transcript(
                 j += 1
             elif (
                 next_speaker == curr_speaker
-                and abs(next_seg["start"] - curr_end) < CONTIGUOUS_GAP_TOLERANCE_S
+                and falls_short(
+                    abs(next_seg["start"] - curr_end), CONTIGUOUS_GAP_TOLERANCE_S
+                )
                 and next_overlapping == curr_overlapping
             ):
                 # Consecutive, same speaker, same overlapping set, no gap

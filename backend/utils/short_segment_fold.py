@@ -128,10 +128,10 @@ def _pieces_tile(
     """Whether the short segments fill the gap between two neighbours, end to end."""
     end = previous_end
     for short in shorts:
-        if abs(short["start"] - end) >= CONTIGUOUS_GAP_TOLERANCE_S:
+        if not falls_short(abs(short["start"] - end), CONTIGUOUS_GAP_TOLERANCE_S):
             return False
         end = short["end"]
-    return abs(following_start - end) < CONTIGUOUS_GAP_TOLERANCE_S
+    return falls_short(abs(following_start - end), CONTIGUOUS_GAP_TOLERANCE_S)
 
 
 def _short_segment_fold(

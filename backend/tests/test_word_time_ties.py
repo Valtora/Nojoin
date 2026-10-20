@@ -1,4 +1,4 @@
-"""Consolidation thresholds that Parakeet word times can meet exactly.
+"""Consolidation thresholds that word times can meet exactly.
 
 Token starts lie on onnx-asr's 80 ms grid and a capped word ends at its start
 plus the cap, so a span or gap built from word times can equal a threshold.
@@ -7,7 +7,8 @@ every frame of a window and at window offsets of 0 and 60 s, where float
 rounding lands it on both sides of the threshold within the sweep. A much
 larger offset would not do: at 7000 s the sum's rounding falls mostly on one
 side, and most of these tests pass even without the tolerance. A value equal to
-its threshold must be treated the same at every frame.
+its threshold must be treated the same at every frame. The last tests here use
+Whisper's 0.01 s times instead.
 """
 
 from __future__ import annotations
@@ -184,3 +185,53 @@ def test_neighbours_a_folded_segment_tiled_rejoin_at_exactly_the_maximum():
         ]
 
     assert _frames_where(build, lambda r: len(r) == 1) == []
+
+
+# Whisper word times are hundredths of a second, so a gap between two segments
+# can be exactly CONTIGUOUS_GAP_TOLERANCE_S (0.01 s), which "no gap" must be
+# under. Two such times, parsed from JSON, differ by 0.01 s plus or minus about
+# 1e-15 s depending on where they fall.
+WHISPER_CENTISECONDS = range(100, 6000)
+
+
+def _cs(centiseconds: int) -> float:
+    return centiseconds / 100
+
+
+def test_segments_exactly_the_contiguous_tolerance_apart_do_not_merge():
+    merged = [
+        c
+        for c in WHISPER_CENTISECONDS
+        if len(
+            consolidate_diarized_transcript(
+                [
+                    _segment("A", [(_cs(c), _cs(c + 150), " one")]),
+                    _segment("A", [(_cs(c + 151), _cs(c + 300), " two")]),
+                ]
+            )
+        )
+        != 2
+    ]
+
+    assert merged == []
+
+
+def test_a_folded_segment_with_gaps_of_exactly_the_contiguous_tolerance_does_not_tile():
+    # The short reply folds into the earlier neighbour; its 0.01 s gaps are not
+    # "no gap", so the neighbours stay apart.
+    rejoined = [
+        c
+        for c in WHISPER_CENTISECONDS
+        if len(
+            consolidate_diarized_transcript(
+                [
+                    _segment("A", [(_cs(c), _cs(c + 150), " one")]),
+                    _segment("B", [(_cs(c + 151), _cs(c + 156), " yes")]),
+                    _segment("A", [(_cs(c + 157), _cs(c + 300), " two")]),
+                ]
+            )
+        )
+        != 2
+    ]
+
+    assert rejoined == []
