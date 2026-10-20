@@ -312,6 +312,73 @@ def test_generate_notes_task_completes_with_saved_provider_config(
         verification_engine.dispose()
 
 
+def test_generate_notes_task_sees_a_model_saved_after_the_worker_started(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Issue #468. A prefork child keeps the config it forked with until
+    something reloads it, so a model saved in Settings after the worker started
+    was missing from every child that had not run a task that reloaded."""
+    from celery.signals import task_prerun
+
+    from backend.utils.config_manager import ConfigManager, config_manager
+
+    monkeypatch.setenv("LLM_PROVIDER", "anthropic")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-valid")
+    config_path = tmp_path / "config.json"
+    config_path.write_text("{}", encoding="utf-8")
+    # This process plays the worker child and loads the file before the model
+    # is saved. Each attribute is set first so monkeypatch restores it.
+    monkeypatch.setattr(config_manager, "config_path", str(config_path))
+    monkeypatch.setattr(config_manager, "config", config_manager.config)
+    monkeypatch.setattr(config_manager, "_loaded_stat", config_manager._loaded_stat)
+    config_manager.reload(force=True)
+    assert config_manager.get("anthropic_model") is None
+
+    # A second manager plays the API process saving the model.
+    ConfigManager(config_path=str(config_path)).save_values(
+        {"anthropic_model": "claude-test"}
+    )
+
+    engine = _create_notes_task_database(tmp_path, owner_settings={})
+    models: list[str | None] = []
+
+    class FakeLLM:
+        def generate_meeting_notes(self, transcript, speaker_mapping, **kwargs):
+            return "# Meeting Notes"
+
+    def fake_get_llm_backend(provider: str, api_key=None, model=None, **kwargs):
+        models.append(model)
+        return FakeLLM()
+
+    monkeypatch.setattr(tasks_module, "get_sync_session", lambda: Session(engine))
+    monkeypatch.setattr(
+        "backend.processing.llm_backends.factory.get_llm_backend", fake_get_llm_backend
+    )
+
+    verification_engine = create_engine(str(engine.url), future=True)
+    try:
+        # What the Celery tracer does in the worker before the task body runs.
+        task_prerun.send(
+            sender=tasks_module.generate_notes_task,
+            task_id="notes-1",
+            task=tasks_module.generate_notes_task,
+            args=(1,),
+            kwargs={},
+        )
+        _run_generate_notes_task(engine)
+
+        with Session(verification_engine) as session:
+            row = session.exec(
+                text("SELECT notes_status, error_message FROM transcripts WHERE id = 1")
+            ).one()
+
+        assert row[0] == "completed", row[1]
+        assert models[0] == "claude-test"
+    finally:
+        verification_engine.dispose()
+
+
 def test_generate_notes_task_writes_a_meeting_too_long_for_one_call_in_parts(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

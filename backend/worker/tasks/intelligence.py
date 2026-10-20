@@ -208,8 +208,6 @@ def infer_speakers_task(self, recording_id: int):
     """
     Independent task to re-run speaker inference using LLM.
     """
-    config_manager.reload()
-
     session = self.session
     try:
         recording = session.get(Recording, recording_id)
@@ -790,7 +788,6 @@ def generate_meeting_intelligence_task(self, recording_id: int):
     constructs, then runs the shared stage with update_processing_status disabled:
     the recording is already marked Completed, so only notes_status is driven here.
     """
-    config_manager.reload()
     session = self.session
     recording = None
     transcript = None

@@ -1191,12 +1191,10 @@ def _run_live_task(monkeypatch, recording_id, sequence, fake_session):
     from sqlalchemy.orm import attributes
 
     from backend.core import db as db_module
-    from backend.processing import live_transcribe as lt
     from backend.processing.live_transcribe import transcribe_segment_live_task
 
     monkeypatch.setattr(db_module, "get_sync_session", lambda: fake_session)
     monkeypatch.setattr(attributes, "flag_modified", lambda obj, key: None)
-    monkeypatch.setattr(lt.config_manager, "reload", lambda: None)
     transcribe_segment_live_task.run(recording_id, sequence)
 
 
