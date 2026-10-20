@@ -855,4 +855,12 @@ describe("HeadNotePanel", () => {
     expect(notes).toHaveAccessibleDescription(/Shorten the notes to save them/);
     expect(screen.getByRole("status")).toHaveTextContent("Save failed");
   });
+
+  it("counts text with Windows line ends as the box will send it", () => {
+    server.add("h1", "head", "abcdefg\r\n".repeat(6_000));
+    mount();
+
+    expect(screen.getByText(/47,999 \/ 50,000 characters/)).toBeInTheDocument();
+    expect(screen.queryByText(/Shorten the notes/)).not.toBeInTheDocument();
+  });
 });

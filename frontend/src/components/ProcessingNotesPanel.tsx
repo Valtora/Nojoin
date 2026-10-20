@@ -32,11 +32,15 @@ const NO_OTHER_NOTES: readonly TimelineNote[] = [];
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
+// A textarea holds, and so sends, every line end as "\n"; text from the
+// server may carry "\r\n", which the box would send, and the API count, as "\n".
+const asSent = (text: string) => text.replace(/\r\n?/g, "\n");
+
 const lengthToShow = (text: string) => {
-  // A text's UTF-16 length is never below its length in code points, so
-  // most text is never counted.
+  // A text's UTF-16 length is never below its counted length (code points,
+  // line ends normalised), so most text is never counted.
   if (text.length < LENGTH_WARNING_CHARS) return null;
-  const length = noteLength(stripNote(text));
+  const length = noteLength(stripNote(asSent(text)));
   return length >= LENGTH_WARNING_CHARS ? length : null;
 };
 
