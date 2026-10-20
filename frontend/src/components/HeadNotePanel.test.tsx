@@ -1695,4 +1695,53 @@ describe("HeadNotePanel", () => {
     expect(box().value).toBe("A");
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
+
+  it("hands focus back to the box after the window lost focus during the lock", async () => {
+    server.add("h1", "head", "Original");
+    const { lock } = mount();
+    box().focus();
+    await lock(true);
+    const locked = screen.getByRole("group", { name: /temporarily locked/ });
+
+    // Another window takes focus: the lock blurs with nowhere for focus to go,
+    // yet stays the page's focused element.
+    await act(async () => {
+      fireEvent.blur(locked, { relatedTarget: null });
+      await settle();
+    });
+    expect(locked).toHaveFocus();
+    await lock(false);
+
+    expect(box()).toHaveFocus();
+  });
+
+  it("sends nothing for the note's own text once an answer showed the note an unanswered edit was for", async () => {
+    server.add("h1", "head", "A");
+    mount();
+    server.refuse.push({ write: "update", error: refusal(504, "Gateway Timeout") });
+    type("AB");
+    await waitForSave();
+    type("ABC");
+    await waitForSave();
+    expect(bodies()).toEqual(["ABC"]);
+    // A validation refusal, whose detail is FastAPI's list: the save failed,
+    // and nothing else changed.
+    server.refuse.push({
+      write: "update",
+      error: refusal(422, [{ loc: ["body", "body"], msg: "invalid" }]),
+    });
+    type("ABCD");
+    await waitForSave();
+    expect(screen.getByText("Save failed", SHOWN)).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    const sent = calls.update.mock.calls.length;
+
+    type("ABC");
+    await waitForSave();
+
+    // The note holds that text and no write to it is unanswered.
+    expect(calls.update).toHaveBeenCalledTimes(sent);
+    expect(server.notes[0].revision).toBe(2);
+    expect(screen.getByText("Saved", SHOWN)).toBeInTheDocument();
+  });
 });
