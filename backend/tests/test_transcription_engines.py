@@ -598,6 +598,32 @@ def test_silences_end_words_in_every_window(tmp_path, monkeypatch):
     assert [w["end"] for w in words[:2]] == pytest.approx([2.15, 4.15])
 
 
+def test_a_window_that_opens_inside_a_zero_run_bounds_no_word_with_it(
+    tmp_path, monkeypatch
+):
+    """A window cut inside a muted run sees the run begin at its own start.
+
+    A token stamped inside that run, before its speech, keeps a length, and
+    the run that the first window's end cuts short still ends the word
+    before it.
+    """
+    from backend.processing.engines import onnx_asr_engine
+    from backend.processing.engines.parakeet_engine import ParakeetEngine
+
+    # 4 s windows over 6 s: the first closes at 2.0 s, inside the run.
+    monkeypatch.setattr(onnx_asr_engine, "MAX_CHUNK_DURATION_S", 4.0)
+    audio_path = tmp_path / "long.wav"
+    _write_signal(audio_path, 6, silent=[(1.9, 2.6)])
+
+    result = _transcribe_returning(
+        monkeypatch, ParakeetEngine(), audio_path, _Timed(0.24, 1.6)
+    )
+
+    words = [w for segment in result["segments"] for w in segment["words"]]
+    assert [w["start"] for w in words] == pytest.approx([0.24, 1.6, 2.24, 3.6])
+    assert [w["end"] for w in words] == pytest.approx([0.64, 1.9, 2.64, 4.0])
+
+
 def test_canary_results_without_token_timings_keep_their_window(tmp_path, monkeypatch):
     """Canary has no word timings: the engine's silence handling must leave its
     window whole, however much of it VAD muted."""

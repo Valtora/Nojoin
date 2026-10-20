@@ -1714,6 +1714,44 @@ def test_extract_region_text_straddle_with_words():
     assert _extract_region_text(result, prefix_s=2.0) == "after after"
 
 
+def test_a_capped_parakeet_context_word_stays_out_of_the_region():
+    """The live clip is left context then the region, unmuted, so a Parakeet
+    word ends at the next word's start or its start plus the 0.4 s cap.
+
+    A context word 0.45 s before the boundary now ends 0.05 s before it and is
+    trimmed with the context. Ending at the next word's start, as before the
+    cap, it reached 0.3 s into the region and was kept.
+    """
+    from backend.processing.engines.onnx_asr_engine import (
+        _Recognition,
+        map_onnx_asr_recognition,
+    )
+    from backend.processing.live_transcribe import _extract_region_segment_payloads
+
+    clip = map_onnx_asr_recognition(
+        _Recognition(
+            " so then region words",
+            [" so", " then", " region", " words"],
+            [1.0, 1.55, 2.3, 2.7],
+        ),
+        audio_duration=3.5,
+    )
+
+    region = _extract_region_segment_payloads(clip, prefix_s=2.0)
+
+    assert [segment["text"] for segment in region] == ["region words"]
+    assert region[0]["words"] == [
+        {"start": pytest.approx(0.3), "end": pytest.approx(0.7), "word": "region"},
+        {"start": pytest.approx(0.7), "end": pytest.approx(1.1), "word": "words"},
+    ]
+
+    then = clip["segments"][0]["words"][1]
+    then["end"] = 2.3
+    assert _extract_region_segment_payloads(clip, prefix_s=2.0)[0]["text"] == (
+        "then region words"
+    )
+
+
 def test_extract_region_segment_payloads_and_confidence_payload_keep_word_timestamps():
     from backend.processing.live_transcribe import (
         _build_live_confidence_payload,
