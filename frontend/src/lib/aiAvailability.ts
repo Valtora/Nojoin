@@ -10,28 +10,88 @@ import type { CliOAuthStatus, Settings } from "@/types";
  */
 
 /**
- * Whether the install-wide (server default) provider has everything it needs to
- * answer a request: its credential *and* a model.
+ * What a provider still lacks before it can answer a request, or `null` when it
+ * has everything. A missing credential is reported before a missing model,
+ * since the model list cannot be fetched without one.
+ */
+export type ProviderConfigGap = "credential" | "model";
+
+function providerGap(
+  credential: string | null | undefined,
+  model: string | null | undefined,
+): ProviderConfigGap | null {
+  if (!credential) return "credential";
+  if (!model) return "model";
+  return null;
+}
+
+/**
+ * The install-wide (server default) provider's gap. No hosted provider has a
+ * default model, so a credential alone is not a usable configuration.
  *
  * An unset `llm_provider` resolves to gemini, matching the backend's
  * `DEFAULT_USER_SETTINGS`. Unrecognised providers are treated as unconfigured.
  */
-export function isServerProviderConfigured(settings: Settings): boolean {
+export function getServerProviderGap(
+  settings: Settings,
+): ProviderConfigGap | null {
   const provider = settings.llm_provider || "gemini";
 
   switch (provider) {
     case "gemini":
-      return Boolean(settings.gemini_api_key && settings.gemini_model);
+      return providerGap(settings.gemini_api_key, settings.gemini_model);
     case "openai":
-      return Boolean(settings.openai_api_key && settings.openai_model);
+      return providerGap(settings.openai_api_key, settings.openai_model);
     case "anthropic":
-      return Boolean(settings.anthropic_api_key && settings.anthropic_model);
+      return providerGap(settings.anthropic_api_key, settings.anthropic_model);
     // Ollama needs no key, but a bare URL is not a usable configuration: the
     // request still has to name a model, and `ollama_model` has no default.
     case "ollama":
-      return Boolean(settings.ollama_api_url && settings.ollama_model);
+      return providerGap(settings.ollama_api_url, settings.ollama_model);
     default:
-      return false;
+      return "credential";
+  }
+}
+
+/**
+ * Whether the install-wide (server default) provider has everything it needs to
+ * answer a request: its credential *and* a model.
+ */
+export function isServerProviderConfigured(settings: Settings): boolean {
+  return getServerProviderGap(settings) === null;
+}
+
+/**
+ * The fallback provider's gap, or `null` when it is usable or none is set.
+ * The backend drops a fallback with a gap (`ResolvedLLMConfig.has_secondary`),
+ * so requests then run on the primary alone.
+ */
+export function getSecondaryProviderGap(
+  settings: Settings,
+): ProviderConfigGap | null {
+  switch (settings.secondary_llm_provider) {
+    case "gemini":
+      return providerGap(
+        settings.secondary_gemini_api_key,
+        settings.secondary_gemini_model,
+      );
+    case "openai":
+      return providerGap(
+        settings.secondary_openai_api_key,
+        settings.secondary_openai_model,
+      );
+    case "anthropic":
+      return providerGap(
+        settings.secondary_anthropic_api_key,
+        settings.secondary_anthropic_model,
+      );
+    case "ollama":
+      return providerGap(
+        settings.secondary_ollama_api_url,
+        settings.secondary_ollama_model,
+      );
+    default:
+      return null;
   }
 }
 

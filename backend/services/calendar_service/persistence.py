@@ -1,7 +1,7 @@
 """Database persistence and read-model serialisation for calendar state.
 
 Upserts connections, reconciles calendar sources, writes event models (full
-replace and incremental apply), and serialises connections/sources into the
+reconcile and incremental apply), and serialises connections/sources into the
 API read models, including live push-channel status.
 """
 
@@ -25,6 +25,7 @@ from backend.models.calendar import (
     CalendarSourceRead,
     CalendarSyncStatus,
 )
+from backend.models.recording import Recording
 from backend.models.user import User
 from backend.utils.db_batching import bind_batches
 from backend.utils.timezones import utc_naive_to_aware
@@ -163,16 +164,118 @@ def _build_calendar_event_model(
     )
 
 
-async def _replace_calendar_events(
+def _upsert_calendar_events(
     db: AsyncSession,
     calendar_id: int,
     provider_events: list[ProviderEventRecord],
+    existing_by_remote_id: dict[str, CalendarEvent],
 ) -> None:
-    await db.execute(
-        delete(CalendarEvent).where(CalendarEvent.calendar_id == calendar_id)
-    )
     for provider_event in provider_events:
-        db.add(_build_calendar_event_model(calendar_id, provider_event))
+        existing_event = existing_by_remote_id.get(provider_event.remote_id)
+        if existing_event is None:
+            db.add(_build_calendar_event_model(calendar_id, provider_event))
+            continue
+        db.add(_apply_provider_event_to_model(existing_event, provider_event))
+
+
+def _calendar_event_ended_before(
+    calendar_event: CalendarEvent, moment: datetime
+) -> bool:
+    if calendar_event.is_all_day:
+        # end_date is exclusive, as both providers report it.
+        return (
+            calendar_event.end_date is not None
+            and calendar_event.end_date <= moment.date()
+        )
+    return calendar_event.ends_at is not None and calendar_event.ends_at <= moment
+
+
+async def _linked_calendar_event_ids(
+    db: AsyncSession, event_ids: list[int]
+) -> set[int]:
+    """The subset of ``event_ids`` that at least one recording links to.
+
+    Recordings in the bin count, since restoring one brings its link back.
+    """
+    linked_ids: set[int] = set()
+    for event_batch in bind_batches(sorted(event_ids)):
+        linked_ids.update(
+            (
+                await db.execute(
+                    select(Recording.calendar_event_id)
+                    .where(Recording.calendar_event_id.in_(event_batch))
+                    .distinct()
+                )
+            )
+            .scalars()
+            .all()
+        )
+    return linked_ids
+
+
+async def _reconcile_calendar_events(
+    db: AsyncSession,
+    calendar_id: int,
+    provider_events: list[ProviderEventRecord],
+    window_start: datetime,
+) -> None:
+    """Bring a calendar's stored events in line with a full provider listing.
+
+    Events are matched on ``provider_event_id`` and updated in place, so each
+    keeps its id and with it any recording linked to it. Deleting and inserting
+    them again would unlink every recording, because
+    ``recordings.calendar_event_id`` is ``ON DELETE SET NULL``.
+
+    An event the listing leaves out is deleted, unless it ended before
+    ``window_start`` and a recording links to it. The sync window moving past
+    an event is not the provider deleting it, and the link should outlive the
+    window. Inside the window a missing event was deleted upstream, and goes as
+    it would on the incremental path.
+    """
+    existing_events = list(
+        (
+            await db.execute(
+                select(CalendarEvent).where(CalendarEvent.calendar_id == calendar_id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    returned_remote_ids = {
+        provider_event.remote_id for provider_event in provider_events
+    }
+    missing_events = [
+        existing_event
+        for existing_event in existing_events
+        if existing_event.provider_event_id not in returned_remote_ids
+    ]
+    kept_event_ids = await _linked_calendar_event_ids(
+        db,
+        [
+            missing_event.id
+            for missing_event in missing_events
+            if _calendar_event_ended_before(missing_event, window_start)
+        ],
+    )
+    stale_event_ids = sorted(
+        missing_event.id
+        for missing_event in missing_events
+        if missing_event.id not in kept_event_ids
+    )
+    # A calendar emptied upstream leaves every stored event stale, so the ids
+    # are bounded only by the provider. See backend/utils/db_batching.py.
+    for stale_batch in bind_batches(stale_event_ids):
+        await db.execute(delete(CalendarEvent).where(CalendarEvent.id.in_(stale_batch)))
+
+    _upsert_calendar_events(
+        db,
+        calendar_id,
+        provider_events,
+        {
+            existing_event.provider_event_id: existing_event
+            for existing_event in existing_events
+        },
+    )
 
 
 async def _apply_incremental_calendar_events(
@@ -214,17 +317,15 @@ async def _apply_incremental_calendar_events(
             .scalars()
             .all()
         )
-    existing_by_remote_id = {
-        existing_event.provider_event_id: existing_event
-        for existing_event in existing_events
-    }
-
-    for provider_event in provider_events:
-        existing_event = existing_by_remote_id.get(provider_event.remote_id)
-        if existing_event is None:
-            db.add(_build_calendar_event_model(calendar_id, provider_event))
-            continue
-        db.add(_apply_provider_event_to_model(existing_event, provider_event))
+    _upsert_calendar_events(
+        db,
+        calendar_id,
+        provider_events,
+        {
+            existing_event.provider_event_id: existing_event
+            for existing_event in existing_events
+        },
+    )
 
 
 def _can_use_incremental_sync(

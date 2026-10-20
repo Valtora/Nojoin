@@ -624,6 +624,7 @@ Nojoin uses a single Git tag (`vX.Y.Z`) to release the API, Worker, Worker-IO, a
    ```
    It finishes by pushing the tag and watching the workflow run, and prints the release URL.
 4. **Refine the release notes** in the GitHub Releases interface if the release needs specific guidance under Migration, Rollback, Known Issues, or Browser-Capture Compatibility.
+5. **Check the public demo refreshed.** Within the hour, `demo/refresh.sh` on the release host upgrades the demo's seed instance to the release, recaptures its fixtures and rebuilds `demo.nojoin.co.uk` from the tag, then sends a notification saying whether it worked. A failed refresh leaves the previous demo running. [demo/README.md](../demo/README.md) has the details.
 
 **What the script does**, stopping at the first failure:
 

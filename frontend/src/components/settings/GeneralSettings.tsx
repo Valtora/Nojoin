@@ -3,10 +3,6 @@ import { Popover, Transition } from "@headlessui/react";
 import { fuzzyMatch } from "@/lib/searchUtils";
 import { Settings } from "@/types";
 import {
-  Mic,
-  Users,
-  SpellCheck,
-  Clock3,
   ChevronDown,
   Search,
   Check,
@@ -27,6 +23,8 @@ import SettingsCard from "./SettingsCard";
 import SettingsRow from "./SettingsRow";
 import {
   SETTINGS_BUTTON_SECONDARY,
+  SETTINGS_CONTROL_END,
+  SETTINGS_INPUT_CLASS,
   SETTINGS_SELECT_CLASS,
 } from "./settingsControls";
 
@@ -217,28 +215,24 @@ export default function GeneralSettings({
       {showDateTime && (
         <SettingsCard
           id="appearance-timezone"
-          title="Date and Time"
-          description="The timezone used across the dashboard, calendars, and task deadlines."
+          title="Date and time"
+          description="The timezone used across the dashboard, calendars and task deadlines."
         >
           <SettingsRow
             label="Timezone"
-            description={`Browser detected: ${browserTimeZone}. Times are shown in this timezone and converted to UTC on save, so they stay stable if you travel or change timezone later.`}
-            icon={<Clock3 className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
+            description={`This browser reports ${browserTimeZone}. Times show in the timezone chosen here and are stored in UTC, so they stay put if you travel.`}
           >
                 <Popover className="relative block">
                   {({ open, close }) => (
                     <>
-                      <Popover.Button className="flex w-full items-center justify-between gap-3 rounded-lg border border-control-border bg-surface-card px-3 py-2 text-left text-foreground transition-colors focus:outline-none focus:ring-2 focus:ring-action focus:border-transparent">
-                        <div className="min-w-0">
-                          <span className="block truncate text-sm font-medium">
-                            {selectedTimeZone}
-                          </span>
-                          <span className="mt-0.5 block text-xs contrast-helper">
-                            Select the timezone used across your dashboard.
-                          </span>
-                        </div>
+                      <Popover.Button
+                        aria-label={`Timezone: ${selectedTimeZone}`}
+                        className={`${SETTINGS_SELECT_CLASS} flex items-center justify-between gap-3 text-left`}
+                      >
+                        <span className="min-w-0 truncate">{selectedTimeZone}</span>
                         <ChevronDown
-                          className={`h-4 w-4 shrink-0 text-contrast-helper transition-transform ${open ? "rotate-180" : ""}`}
+                          aria-hidden="true"
+                          className={`h-4 w-4 shrink-0 contrast-icon-muted transition-transform ${open ? "rotate-180" : ""}`}
                         />
                       </Popover.Button>
 
@@ -251,8 +245,8 @@ export default function GeneralSettings({
                         leaveFrom="transform opacity-100 scale-100"
                         leaveTo="transform opacity-0 scale-95"
                       >
-                        <Popover.Panel className="absolute left-0 z-20 mt-2 w-full overflow-hidden rounded-xl border border-surface-border bg-surface-card shadow-float">
-                          <div className="border-b border-surface-border p-3">
+                        <Popover.Panel className="absolute left-0 z-[var(--z-dropdown)] mt-2 w-full overflow-hidden rounded-lg border border-surface-float-border bg-surface-float shadow-float">
+                          <div className="border-b border-surface-float-border p-3">
                             <div className="relative">
                               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-contrast-icon-muted" />
                               <input
@@ -263,7 +257,8 @@ export default function GeneralSettings({
                                 }
                                 placeholder="Filter timezones"
                                 autoFocus
-                                className="w-full rounded-lg border border-control-border bg-surface-card py-2 pl-9 pr-3 text-sm text-foreground outline-none transition-colors focus:border-transparent focus:ring-2 focus:ring-action"
+                                aria-label="Search timezones"
+                                className={`${SETTINGS_INPUT_CLASS} pl-9`}
                               />
                             </div>
                           </div>
@@ -344,7 +339,6 @@ export default function GeneralSettings({
         >
           <SettingsRow
             label="Language"
-            icon={<SpellCheck className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
           >
             <select
               value={settings.spellcheck_language || "en-GB"}
@@ -363,6 +357,7 @@ export default function GeneralSettings({
           <SettingsRow
             label="Custom words"
             description="Words you have taught Nojoin to accept."
+            controlClassName={SETTINGS_CONTROL_END}
           >
             <button
               type="button"
@@ -382,17 +377,21 @@ export default function GeneralSettings({
 
       {showProcessing && (
         <SettingsCard
-          title="Processing Defaults"
-          description="How recorded audio is prepared before it is transcribed."
+          id="recording-processing"
+          title="Processing"
+          description="How recordings are prepared for transcription, and when delivery is measured again."
         >
           <SettingsRow
             id="recording-vad"
+            labelId="recording-vad-label"
+            descriptionId="recording-vad-help"
             label="Voice activity detection"
             description="Filters out silence and background noise before transcription. Disabling it may increase processing time, but can help if quiet speech is being cut off."
-            icon={<Mic className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
-            controlClassName="@min-[26rem]:min-w-0 @min-[26rem]:flex @min-[26rem]:justify-end"
+            controlClassName={SETTINGS_CONTROL_END}
           >
             <Switch
+              aria-labelledby="recording-vad-label"
+              aria-describedby="recording-vad-help"
               checked={settings.enable_vad !== false} // Default true
               onCheckedChange={(checked) =>
                 onUpdate({ ...settings, enable_vad: checked })
@@ -402,12 +401,15 @@ export default function GeneralSettings({
 
           <SettingsRow
             id="recording-remeasure-delivery"
+            labelId="recording-remeasure-delivery-label"
+            descriptionId="recording-remeasure-delivery-help"
             label="Re-measure delivery after edits"
             description="Editing a transcript leaves its measured delivery figures describing the old text. With this on, opening the Analytics tab re-reads the audio and refreshes them; with it off, the tab shows the figures as stale until you press Measure delivery."
-            icon={<Mic className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
-            controlClassName="@min-[26rem]:min-w-0 @min-[26rem]:flex @min-[26rem]:justify-end"
+            controlClassName={SETTINGS_CONTROL_END}
           >
             <Switch
+              aria-labelledby="recording-remeasure-delivery-label"
+              aria-describedby="recording-remeasure-delivery-help"
               checked={settings.auto_remeasure_delivery !== false} // Default true
               onCheckedChange={(checked) =>
                 onUpdate({ ...settings, auto_remeasure_delivery: checked })
@@ -416,28 +418,16 @@ export default function GeneralSettings({
           </SettingsRow>
 
           <SettingsRow
-            id="recording-auto-analyse"
-            label="Analyse meetings automatically"
-            description="Queue the AI analysis of each meeting as soon as it finishes processing, within any daily budget your administrator has set. Each run uses your AI provider quota, so this is off unless you turn it on."
-            icon={<Mic className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
-            controlClassName="@min-[26rem]:min-w-0 @min-[26rem]:flex @min-[26rem]:justify-end"
-          >
-            <Switch
-              checked={settings.auto_analyse_meetings === true} // Default false
-              onCheckedChange={(checked) =>
-                onUpdate({ ...settings, auto_analyse_meetings: checked })
-              }
-            />
-          </SettingsRow>
-
-          <SettingsRow
             id="recording-diarization"
-            label="Speaker diarization"
-            description="Distinguishes between speakers. Disable it for single-speaker recordings to speed up processing."
-            icon={<Users className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
-            controlClassName="@min-[26rem]:min-w-0 @min-[26rem]:flex @min-[26rem]:justify-end"
+            labelId="recording-diarization-label"
+            descriptionId="recording-diarization-help"
+            label="Speaker separation"
+            description="Tells the speakers apart. Turn it off for single-speaker recordings to speed up processing."
+            controlClassName={SETTINGS_CONTROL_END}
           >
             <Switch
+              aria-labelledby="recording-diarization-label"
+              aria-describedby="recording-diarization-help"
               checked={settings.enable_diarization !== false} // Default true
               onCheckedChange={(checked) =>
                 onUpdate({ ...settings, enable_diarization: checked })

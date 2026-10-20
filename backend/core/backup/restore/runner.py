@@ -381,9 +381,12 @@ def _restore_backup_sync(request: _RestoreRequest):
             # Past the point of no return. Everything below changes files on disk
             # and is safe to do only now that the database has accepted the restore.
             if state.clear_existing:
-                if recordings_dir.exists():
-                    shutil.rmtree(recordings_dir)
-                recordings_dir.mkdir(parents=True, exist_ok=True)
+                # The clear deleted every recording and document row, so the files
+                # they named go too. Staged files move in below, after the wipe.
+                for directory in (recordings_dir, Path(request.documents_dir)):
+                    if directory.exists():
+                        shutil.rmtree(directory)
+                    directory.mkdir(parents=True, exist_ok=True)
 
             stages._restore_apply_pending_moves(state)
             stages._restore_config(zipf, state)

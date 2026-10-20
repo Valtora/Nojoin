@@ -309,7 +309,8 @@ html {
   }
 
   /* A per-speaker figures table that becomes a list of speakers when its own
-     container is too narrow for the columns.
+     container is too narrow for the columns. Settings tables (users, subscription
+     usage) reflow the same way, as .settings-table.
 
      The analytics tab sits in a resizable panel between two collapsible rails,
      so its width is not the window's and this queries the wrapper rather than
@@ -324,21 +325,31 @@ html {
      figure announced twice: once from the header association and once from the
      generated label. */
   @container (max-width: 34rem) {
-    .analytics-table thead {
+    .analytics-table thead,
+    .settings-table thead {
       display: none;
     }
 
-    .analytics-table tr {
+    .analytics-table tr,
+    .settings-table tr {
       display: block;
       padding: 0.5rem 0;
     }
 
-    .analytics-table td {
+    .analytics-table td,
+    .settings-table td {
       padding: 0.125rem 0;
       text-align: left;
     }
 
-    .analytics-table td[data-label] {
+    /* A cell with no label, such as the row's actions, spans the row, so an
+       alignment set inside it has the width to act on. */
+    .settings-table td:not([data-label]) {
+      display: block;
+    }
+
+    .analytics-table td[data-label],
+    .settings-table td[data-label] {
       display: flex;
       align-items: baseline;
       justify-content: space-between;
@@ -346,7 +357,8 @@ html {
       text-align: right;
     }
 
-    .analytics-table td[data-label]::before {
+    .analytics-table td[data-label]::before,
+    .settings-table td[data-label]::before {
       content: attr(data-label);
       flex: none;
       color: var(--contrast-helper);

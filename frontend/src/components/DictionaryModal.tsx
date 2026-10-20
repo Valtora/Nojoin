@@ -99,7 +99,7 @@ export default function DictionaryModal({ isOpen, onClose }: DictionaryModalProp
       title={
         <span className="flex items-center gap-2">
           <BookOpen aria-hidden="true" className="w-5 h-5 text-action-text" />
-          Custom Dictionary
+          Custom words
         </span>
       }
       footer={
@@ -114,7 +114,7 @@ export default function DictionaryModal({ isOpen, onClose }: DictionaryModalProp
               onClick={handleClear}
               disabled={words.length === 0}
             >
-              Clear All
+              Clear all
             </Button>
             <Button size="sm" variant="ghost" onClick={onClose}>
               Close
@@ -166,7 +166,7 @@ export default function DictionaryModal({ isOpen, onClose }: DictionaryModalProp
             className="text-action-text"
             iconLeft={<Plus aria-hidden="true" className="w-4 h-4" />}
           >
-            Add Word
+            Add word
           </Button>
         )}
       </div>
@@ -176,7 +176,7 @@ export default function DictionaryModal({ isOpen, onClose }: DictionaryModalProp
         {filteredWords.length === 0 ? (
           <div className="p-6 text-center text-sm text-contrast-helper">
             {words.length === 0
-              ? "Your custom dictionary is empty. Words added via the spell check context menu will appear here."
+              ? "No custom words yet. Words you teach the spellchecker while editing appear here."
               : "No words match your search."}
           </div>
         ) : (

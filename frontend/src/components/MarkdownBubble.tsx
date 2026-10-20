@@ -9,9 +9,23 @@ import { useEffect } from 'react';
 
 interface MarkdownBubbleProps {
   content: string;
+  /** Replaces the default prose classes on the rendered document. */
+  className?: string;
+  /** Replaces the default classes on links. */
+  linkClassName?: string;
+  /** Whether raw HTML in the Markdown is parsed. Off shows it as text. */
+  html?: boolean;
 }
 
-export default function MarkdownBubble({ content }: MarkdownBubbleProps) {
+const DEFAULT_CLASS = 'prose prose-sm dark:prose-invert max-w-none focus:outline-none';
+const DEFAULT_LINK_CLASS = 'text-status-info-fg underline hover:text-status-info-fg cursor-pointer';
+
+export default function MarkdownBubble({
+  content,
+  className = DEFAULT_CLASS,
+  linkClassName = DEFAULT_LINK_CLASS,
+  html = true,
+}: MarkdownBubbleProps) {
   const editor = useEditor({
     editable: false,
     extensions: [
@@ -20,7 +34,7 @@ export default function MarkdownBubble({ content }: MarkdownBubbleProps) {
         openOnClick: true,
         autolink: true,
         HTMLAttributes: {
-          class: 'text-status-info-fg underline hover:text-status-info-fg cursor-pointer',
+          class: linkClassName,
           target: '_blank',
           rel: 'noopener noreferrer',
         },
@@ -28,12 +42,12 @@ export default function MarkdownBubble({ content }: MarkdownBubbleProps) {
       // Read-only surface, so column resizing would only get in the way; the
       // nodes are here purely so a table in a chat answer renders as a table.
       TableKit.configure({ table: { resizable: false } }),
-      Markdown,
+      Markdown.configure({ html }),
     ],
     content: content,
     editorProps: {
       attributes: {
-        class: 'prose prose-sm dark:prose-invert max-w-none focus:outline-none',
+        class: className,
       },
     },
     immediatelyRender: false, // Fix for SSR hydration mismatch

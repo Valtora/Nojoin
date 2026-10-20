@@ -5,7 +5,11 @@ import { useEffect, useState, type ReactNode } from "react";
 import SettingsAdvanced from "./SettingsAdvanced";
 import { useSettingsContext } from "./SettingsProvider";
 import type { SettingsCategoryId } from "./settingsCategories";
-import { countChangedAdvanced, partitionByAdvanced } from "./settingsRegistry";
+import {
+  countAttentionAdvanced,
+  countChangedAdvanced,
+  partitionByAdvanced,
+} from "./settingsRegistry";
 
 interface SettingsAdvancedSectionProps {
   categoryId: SettingsCategoryId;
@@ -30,17 +34,30 @@ export default function SettingsAdvancedSection({
   children,
 }: SettingsAdvancedSectionProps) {
   const { settings, isAdmin } = useSettingsContext();
-  const [forceOpen, setForceOpen] = useState(false);
+  const [openRequest, setOpenRequest] = useState(0);
 
   const { advanced } = partitionByAdvanced(categoryId, { isAdmin });
+  // A string, because the partition is a fresh array on every render.
+  const advancedIds = advanced.map((entry) => entry.id).join(" ");
 
   useEffect(() => {
-    const hash = window.location.hash.slice(1);
-    if (hash && advanced.some((entry) => entry.id === hash)) {
+    const ids = new Set(advancedIds.split(" ").filter(Boolean));
+    const pointsInside = () => ids.has(window.location.hash.slice(1));
+
+    if (pointsInside()) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- the hash exists only in the browser; read during render it would hydrate differently from the server
-      setForceOpen(true);
+      setOpenRequest((request) => request + 1);
     }
-  }, [advanced]);
+
+    // An in-page link to a gated setting changes only the hash.
+    const handleHashChange = () => {
+      if (pointsInside()) {
+        setOpenRequest((request) => request + 1);
+      }
+    };
+    window.addEventListener("hashchange", handleHashChange);
+    return () => window.removeEventListener("hashchange", handleHashChange);
+  }, [advancedIds]);
 
   if (advanced.length === 0) {
     return null;
@@ -49,7 +66,8 @@ export default function SettingsAdvancedSection({
   return (
     <SettingsAdvanced
       changedCount={countChangedAdvanced(categoryId, settings, { isAdmin })}
-      forceOpen={forceOpen}
+      attentionCount={countAttentionAdvanced(categoryId, settings, { isAdmin })}
+      openRequest={openRequest}
     >
       {children}
     </SettingsAdvanced>

@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+
+import { DEMO_MODE } from "@/lib/demo";
 import {
   Search,
   ArrowRightLeft,
@@ -123,6 +125,12 @@ export default function NotesView({
 
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
+    }
+
+    // The editor can report the notes exactly as they were saved: on load, or
+    // after an edit is undone. Saving that would rewrite them for nothing.
+    if (newContent === lastSavedNotes.current) {
+      return;
     }
 
     saveTimeoutRef.current = setTimeout(() => {
@@ -691,6 +699,8 @@ export default function NotesView({
               content={localNotes}
               onChange={handleEditorChange}
               onEditorReady={setEditor}
+              // The public demo cannot save, so its notes are read-only.
+              editable={!DEMO_MODE}
             />
           </div>
         ) : (

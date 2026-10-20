@@ -69,16 +69,23 @@ Each category is its own route, such as `/settings/recording`, so a link to a
 specific area can be shared or bookmarked. Pre-existing `?tab=` links still
 work and redirect to the matching category.
 
-Settings that ship with a sensible default, that can quietly degrade output if
-set wrong, that need credentials obtained elsewhere, or that only matter on a
-multi-user installation are collapsed behind an **Advanced** block at the foot
-of their category. The block opens itself when a search result lives inside it,
-and shows a count when anything inside differs from its default, so nothing is
-ever hidden without a trace. A category never hides all of its content.
+Settings that ship with a sensible default, that degrade output without an
+error if set wrong, that need credentials obtained elsewhere, or that only
+matter on a multi-user installation are collapsed behind an **Advanced** block
+at the foot of their category. The block opens itself when a search result or a
+link on the page points inside it. It shows a count when anything inside differs
+from its default, and a warning when a setting inside needs attention, such as a
+fallback provider with no model, so nothing is ever hidden without a trace. A
+category never hides all of its content.
 
 The search box matches individual settings rather than categories, so searching
 for a control by name reaches it directly, including one behind the Advanced
 gate.
+
+On the pages everyone can open, a setting that applies to the whole
+installation is marked **Everyone**, and one kept in the browser is marked
+**This browser**. The administrator-only categories carry no marks, because
+everything on them applies to the whole installation.
 
 ## Administration Settings Areas
 
@@ -98,9 +105,12 @@ Use **Settings > AI providers** for installation-wide provider defaults, model o
 Admin-only sections let you:
 
 - Choose the default LLM provider. Current Anthropic models do not accept a temperature setting, so their notes and titles vary more from run to run than other providers', which Nojoin runs at a low temperature. The limit is in Anthropic's API. Older Claude models that still accept the setting get the same value as the other providers.
-- Cap the AI analysis runs each user may start per day (**Daily AI analysis budget**). Each run is one long call against the user's own provider quota. Leave it blank or 0 for no cap. The cap is the install's default; an individual user's cap can be raised or lowered when editing them under Users, where 0 means no cap for that user.
-- Configure the Ollama API URL and context window. The window is sent to Ollama as `num_ctx`; `OLLAMA_CONTEXT_WINDOW` in [DEPLOYMENT.md](DEPLOYMENT.md) explains how to size it, and [Long Meetings And Ollama](USAGE.md#long-meetings-and-ollama) what happens to a meeting longer than it.
+- Cap the AI analyses each person may start per day, under **Settings > Users and access > AI analysis**. Each run is one long call against the user's own provider quota. Leave it blank or 0 for no cap. The cap is the install's default; an individual user's cap can be raised or lowered when editing them in the users table, where 0 means no cap for that user.
+- See the Ollama address and set the context window. The window is sent to Ollama as `num_ctx`, and the page shows the GPU memory it needs at about 190 KiB per token on a 14B model; `OLLAMA_CONTEXT_WINDOW` in [DEPLOYMENT.md](DEPLOYMENT.md) explains how to size it, and [Long Meetings And Ollama](USAGE.md#long-meetings-and-ollama) what happens to a meeting longer than it.
 - Configure a secondary LLM provider for fallback, through `SECONDARY_` prefixed environment variables ([USAGE.md](USAGE.md#secondary-llm-provider)). With Ollama as the primary, a hosted secondary is the recommended setup for long meetings.
+- Turn Meeting Edge on or off for everyone, and choose its model, in the **Meeting Edge** card.
+- Choose a model for the primary provider and for the fallback. No provider has a default model, so a provider with its key or URL set but no model reads **No model selected** with a warning. Without a primary model every AI feature fails; without a fallback model the fallback is off, the workers log a warning once, and the collapsed **Advanced** block reads **1 needs attention**. **Test connection** checks a provider's key or address and reloads its model list without saving anything.
+- Review the tokens each person sent through their own Claude or ChatGPT subscription in **Subscription usage**, behind **Advanced**.
 - Choose the transcription engine and model in **Settings > Transcription**. They apply to every user on the installation and are stored in `data/config.json`. Parakeet and Canary transcribe in windows of at most 30 seconds on every host, which [DEPLOYMENT.md](DEPLOYMENT.md#gpu-acceleration) explains; the **GPU transcription window** setting that 2.7.0 added is retired.
 - View installed Whisper models.
 - Remove local model cache entries. Required default models are prepared on first run, and repo-bundled model assets remain read-only in the UI. Deletion runs on a worker, since the API mounts the model cache read-only, so it needs a running worker to succeed. Status and Delete look in the caches the models download into: `$XDG_CACHE_HOME/whisper` for Whisper, and the Hugging Face hub cache (`$HF_HOME/hub`, or `HF_HUB_CACHE` if set) for Parakeet, Canary and Pyannote. A Parakeet, Canary or Pyannote download that stopped part-way shows as **Missing** with a Delete button to clear it. A Pyannote model already in the personal cache, `~/.cache/huggingface/hub`, is still used, but shows as **External** and is not deleted from here.
@@ -109,12 +119,12 @@ Admin-only sections let you:
 
 **Notes structure** is administered from **Settings > Notes and live assistance**, and **Glossary** from **Settings > Transcription**. Both are two-tier: an install value you maintain for everyone, plus a per-user value.
 
-- Install structures are visible to every user and editable only by an administrator. One can be marked the install default, which applies to anyone who has not chosen their own. Users can copy an install structure into their own list to vary it, which is the intended route when someone wants a change to shared text.
-- The install glossary is merged into each user's own glossary rather than replacing it, so a user adding one personal term keeps the organisation's vocabulary. Where both define the same term, the user's definition is used.
+- Shared structures are visible to every user and editable only by an administrator. One can be marked the shared default, which applies to anyone who has not chosen their own. Users can copy a shared structure into their own list to vary it, which is the intended route when someone wants a change to shared text.
+- The shared glossary is shown read-only to every user and merged into each user's own glossary rather than replacing it, so a user adding one personal term keeps the organisation's vocabulary. Where both define the same term, the user's definition is used.
 - Only the section structure is editable. Accuracy, attribution, table formatting, and the response contract are fixed by the application, because other parts of Nojoin depend on them and improvements to the shipped wording have to keep reaching everyone.
 - A template's structure text is snapshotted onto each set of notes it generates, so editing or deleting a template never changes what past notes were produced from. Restores remap template references; a reference that cannot be remapped is dropped rather than pointed at an unrelated template.
 
-Each user configures **Language** in **Settings > Transcription**; [USAGE.md](USAGE.md#language-preferences) describes the options.
+Each user sets their **Transcription language** in **Settings > Transcription** and their **Notes language** in **Settings > Notes and live assistance**; [USAGE.md](USAGE.md#language-preferences) describes the options.
 
 ### Anonymous Usage Data
 
@@ -136,6 +146,7 @@ Read [BACKUP_RESTORE.md](BACKUP_RESTORE.md) before relying on it operationally, 
 
 Use **Settings > System and logs** for operational controls such as:
 
+- Checking service health. The AI check reads **Configured** only when the default provider has both its credential and a model, **No model selected** when it has a credential and no model, and **Fallback only** when only the fallback provider can answer.
 - Restarting the stack.
 - Viewing live logs.
 - Filtering merged or per-service log output.
@@ -147,7 +158,8 @@ Use **Settings > Updates** to see:
 
 - The installed server version from the current API build.
 - The latest stable published release.
-- Release history and release notes.
+- Each release's notes. The installed and latest releases are open; older ones expand when chosen, and each release's container image digests sit in their own collapsed section.
+- The commands that upgrade the installation. Only administrators see them.
 
 Owners and administrators are also told about a new release by a notification with **Go to Releases**, **Skip Update** and **Remind Me**, which [USAGE.md](USAGE.md#updates) describes. Users without an administrator role do not see it, since they cannot upgrade the installation.
 

@@ -6,7 +6,7 @@ import Underline from '@tiptap/extension-underline';
 import Link from '@tiptap/extension-link';
 import { TableKit } from '@tiptap/extension-table';
 import { Markdown } from 'tiptap-markdown';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
 import { SearchExtension } from '@/lib/SearchExtension';
 import { SpellCheckExtension } from '@/lib/SpellCheckExtension';
@@ -32,6 +32,12 @@ function getMarkdown(editor: Editor): string {
 }
 
 export default function RichTextEditor({ content, onChange, editable = true, onEditorReady }: RichTextEditorProps) {
+  // The Markdown of the document as loaded or last reported. Loading emits
+  // updates that change nothing a user wrote (a re-serialised setContent, a
+  // table normalised on mount), and NotesView autosaves every update, so an
+  // update whose Markdown matches this is not passed on.
+  const reported = useRef<string | null>(null);
+
   const editor = useEditor({
     immediatelyRender: false,
     extensions: [
@@ -61,9 +67,14 @@ export default function RichTextEditor({ content, onChange, editable = true, onE
     editable: editable,
     onUpdate: ({ editor }) => {
       const markdown = getMarkdown(editor);
+      if (markdown === reported.current) {
+        return;
+      }
+      reported.current = markdown;
       onChange(markdown);
     },
     onCreate: ({ editor }) => {
+      reported.current = getMarkdown(editor);
       onEditorReady?.(editor);
     },
     editorProps: {
@@ -77,7 +88,8 @@ export default function RichTextEditor({ content, onChange, editable = true, onE
   // Update content if it changes externally (e.g. reset)
   useEffect(() => {
     if (editor && content !== getMarkdown(editor)) {
-      editor.commands.setContent(content);
+      editor.commands.setContent(content, { emitUpdate: false });
+      reported.current = getMarkdown(editor);
     }
   }, [content, editor]);
 

@@ -2,12 +2,14 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { updatePasswordMe, updateUserMe } from '@/lib/api';
 import { getErrorMessage } from '@/lib/errors';
+import { DEMO_MODE } from '@/lib/demo';
 import { consentReturnPathFromSearch } from '@/lib/passwordChangeReturn';
 import { fuzzyMatch } from '@/lib/searchUtils';
-import { Loader2, User, Lock } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useNotificationStore } from '@/lib/notificationStore';
 import { trimString } from '@/lib/validation';
 import CalendarConnectionsSettings from './CalendarConnectionsSettings';
+import { useSettingsDraft } from './SettingsProvider';
 import ConnectedAppsSettings from './ConnectedAppsSettings';
 import SettingsBlock from './SettingsBlock';
 import SettingsCallout from './SettingsCallout';
@@ -50,6 +52,10 @@ export default function AccountSettings({
     new_password: '',
     confirm_password: ''
   });
+  useSettingsDraft(
+    "profile-password",
+    Object.values(passwordData).some((value) => value.length > 0),
+  );
 
   const { markAsSaved: markProfileAsSaved } = useDebouncedAutosave({
     value: { username },
@@ -177,7 +183,7 @@ export default function AccountSettings({
         >
           <SettingsRow
             label="Username"
-            icon={<User className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
+            controlId="account-username"
           >
             <input
               id="account-username"
@@ -190,7 +196,7 @@ export default function AccountSettings({
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               className={SETTINGS_INPUT_CLASS}
-              disabled={initialUsername === null}
+              disabled={initialUsername === null || DEMO_MODE}
               required
             />
           </SettingsRow>
@@ -214,83 +220,94 @@ export default function AccountSettings({
 
           {/* One form spanning the rows, so the browser still treats these as a
               single credential change and password managers behave. */}
-          <form
-            id="account-password-form"
-            name="account-password-form"
-            onSubmit={handlePasswordUpdate}
-            className="settings-card-body"
-            autoComplete="on"
-          >
-            <SettingsRow
-              label="Current password"
-              icon={<Lock className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
-            >
-              <input
-                id="account-current-password"
-                name="account-current-password"
-                type="password"
-                autoComplete="section-account-password current-password"
-                value={passwordData.current_password}
-                onChange={(e) =>
-                  setPasswordData({ ...passwordData, current_password: e.target.value })
-                }
-                className={SETTINGS_INPUT_CLASS}
-                required
+          {DEMO_MODE ? (
+            <SettingsBlock>
+              <SettingsCallout
+                tone="info"
+                message="Account changes are switched off in the demo."
               />
-            </SettingsRow>
-
-            <SettingsRow
-              label="New password"
-              description="At least 8 characters."
-              icon={<Lock className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
-            >
-              <input
-                id="account-new-password"
-                name="account-new-password"
-                type="password"
-                autoComplete="section-account-password new-password"
-                value={passwordData.new_password}
-                onChange={(e) =>
-                  setPasswordData({ ...passwordData, new_password: e.target.value })
-                }
-                className={SETTINGS_INPUT_CLASS}
-                required
-                minLength={8}
-              />
-            </SettingsRow>
-
-            <SettingsRow
-              label="Confirm new password"
-              icon={<Lock className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
-            >
-              <input
-                id="account-confirm-password"
-                name="account-confirm-password"
-                type="password"
-                autoComplete="section-account-password new-password"
-                value={passwordData.confirm_password}
-                onChange={(e) =>
-                  setPasswordData({ ...passwordData, confirm_password: e.target.value })
-                }
-                className={SETTINGS_INPUT_CLASS}
-                required
-                minLength={8}
-              />
-            </SettingsRow>
-
-            <SettingsBlock className="flex justify-end">
-              <button
-                type="submit"
-                disabled={passwordLoading}
-                className={SETTINGS_BUTTON_PRIMARY}
-              >
-                {passwordLoading && (
-                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                )}
-                Update password
-              </button>
             </SettingsBlock>
-          </form>
+          ) : (
+            <form
+              id="account-password-form"
+              name="account-password-form"
+              onSubmit={handlePasswordUpdate}
+              // A cell, so the card body does not pad it as well as its rows.
+              className="settings-cell settings-card-body"
+              autoComplete="on"
+            >
+              <SettingsRow
+                label="Current password"
+                controlId="account-current-password"
+              >
+                <input
+                  id="account-current-password"
+                  name="account-current-password"
+                  type="password"
+                  autoComplete="section-account-password current-password"
+                  value={passwordData.current_password}
+                  onChange={(e) =>
+                    setPasswordData({ ...passwordData, current_password: e.target.value })
+                  }
+                  className={SETTINGS_INPUT_CLASS}
+                  required
+                />
+              </SettingsRow>
+
+              <SettingsRow
+                label="New password"
+                controlId="account-new-password"
+                description="At least 8 characters."
+              >
+                <input
+                  id="account-new-password"
+                  name="account-new-password"
+                  type="password"
+                  autoComplete="section-account-password new-password"
+                  value={passwordData.new_password}
+                  onChange={(e) =>
+                    setPasswordData({ ...passwordData, new_password: e.target.value })
+                  }
+                  aria-describedby="account-new-password-help"
+                  className={SETTINGS_INPUT_CLASS}
+                  required
+                  minLength={8}
+                />
+              </SettingsRow>
+
+              <SettingsRow
+                label="Confirm new password"
+                controlId="account-confirm-password"
+              >
+                <input
+                  id="account-confirm-password"
+                  name="account-confirm-password"
+                  type="password"
+                  autoComplete="section-account-password new-password"
+                  value={passwordData.confirm_password}
+                  onChange={(e) =>
+                    setPasswordData({ ...passwordData, confirm_password: e.target.value })
+                  }
+                  className={SETTINGS_INPUT_CLASS}
+                  required
+                  minLength={8}
+                />
+              </SettingsRow>
+
+              <SettingsBlock className="flex justify-end">
+                <button
+                  type="submit"
+                  disabled={passwordLoading}
+                  className={SETTINGS_BUTTON_PRIMARY}
+                >
+                  {passwordLoading && (
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                  )}
+                  Update password
+                </button>
+              </SettingsBlock>
+            </form>
+          )}
         </SettingsCard>
       )}
 

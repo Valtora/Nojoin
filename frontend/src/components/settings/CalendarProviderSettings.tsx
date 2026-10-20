@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   CalendarProvider,
   CalendarProviderConfigUpdate,
@@ -13,9 +13,19 @@ import {
 import { getErrorMessage } from "@/lib/errors";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { Loader2, Save } from "lucide-react";
+import { Switch } from "@/components/ui/Switch";
 import SettingsBlock from "./SettingsBlock";
-import SettingsRow from "./SettingsRow";
 import SettingsCard from "./SettingsCard";
+import { useSettingsDraft } from "./SettingsProvider";
+import SettingsRow from "./SettingsRow";
+import SettingsStatusBadge from "./SettingsStatusBadge";
+import {
+  SETTINGS_BUTTON_PRIMARY,
+  SETTINGS_CONTROL_COLUMN_WIDE,
+  SETTINGS_CONTROL_END,
+  SETTINGS_INPUT_CLASS,
+  SETTINGS_VALUE_CLASS,
+} from "./settingsControls";
 
 
 interface ProviderFormState {
@@ -170,209 +180,221 @@ export default function CalendarProviderSettings() {
     }
   };
 
-  return (
-    <SettingsCard
-      id="integrations-calendar-providers"
-      title="Calendar Provider Credentials"
-      description="The installation's OAuth app credentials for Google and Microsoft. Nobody else pastes these values; everyone else only clicks Connect and completes the provider's own sign-in."
-    >
-      {loading ? (
+  const savedForms = useMemo(() => buildInitialForms(providers), [providers]);
+  const isDirty = (provider: CalendarProvider) =>
+    JSON.stringify(forms[provider]) !== JSON.stringify(savedForms[provider]);
+  useSettingsDraft(
+    "calendar-providers",
+    !loading && providers.some((provider) => isDirty(provider.provider)),
+  );
+
+  if (loading) {
+    return (
+      <SettingsCard
+        id="integrations-calendar-providers"
+        title="Calendar sign-in"
+        description="The app this installation registers with Google and Microsoft."
+      >
         <SettingsBlock>
-          <div className="flex items-center gap-2 text-sm contrast-helper">
-            <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
+          <p className="flex items-center gap-2 text-sm contrast-helper">
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
             Loading provider configuration...
-          </div>
+          </p>
         </SettingsBlock>
-      ) : (
-        // Two provider columns only once each gets ~26rem, so under the settings
-        // page cap the card stays single-column; a viewport breakpoint would split
-        // a ~45rem block at every desktop width.
-        <SettingsBlock contentClassName="grid gap-4 @min-[54rem]:grid-cols-2">
-          {providers.map((provider) => {
-            const form = forms[provider.provider];
-            const isSaving = savingProvider === provider.provider;
-            return (
-              <div
-                key={provider.provider}
-                className="settings-inset space-y-4 rounded-xl p-4"
+      </SettingsCard>
+    );
+  }
+
+  return (
+    <div id="integrations-calendar-providers" className="scroll-mt-24 space-y-4">
+      {providers.map((provider) => {
+        const form = forms[provider.provider];
+        const isSaving = savingProvider === provider.provider;
+        const isMicrosoft = provider.provider === "microsoft";
+        const key = provider.provider;
+        const dirty = isDirty(key);
+
+        return (
+          <SettingsCard
+            key={key}
+            id={`integrations-calendar-${key}`}
+            scopeId="integrations-calendar-providers"
+            title={`${provider.display_name} calendar sign-in`}
+            description={`The app this installation registers with ${provider.display_name}. Once it is saved, everyone can connect their own calendar.`}
+            badge={
+              <SettingsStatusBadge tone={provider.configured ? "success" : "warning"}>
+                {provider.configured ? "Ready" : "Needs credentials"}
+              </SettingsStatusBadge>
+            }
+          >
+            <SettingsRow
+              label="Enabled"
+              labelId={`${key}-enabled-label`}
+              descriptionId={`${key}-enabled-help`}
+              description={
+                provider.configured
+                  ? `Credentials come from ${provider.source}.`
+                  : "Add the app's credentials below, then save."
+              }
+              controlClassName={SETTINGS_CONTROL_END}
+            >
+              <Switch
+                checked={form.enabled}
+                aria-labelledby={`${key}-enabled-label`}
+                aria-describedby={`${key}-enabled-help`}
+                onCheckedChange={(checked) => updateForm(key, { enabled: checked })}
+              />
+            </SettingsRow>
+
+            {provider.redirect_uri && (
+              <SettingsRow
+                label="Redirect URI"
+                description={
+                  isMicrosoft
+                    ? "Register it on the app. With the tenant set to common, the app must allow personal and work or school accounts."
+                    : "Register it on a Web application OAuth client."
+                }
+                controlClassName={SETTINGS_CONTROL_COLUMN_WIDE}
               >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="text-base font-semibold text-foreground">
-                      {provider.display_name}
-                    </div>
-                    <div className="mt-1 text-xs contrast-helper">
-                      {provider.configured
-                        ? `Configured via ${provider.source}`
-                        : "Missing OAuth credentials"}
-                    </div>
-                    {provider.redirect_uri && (
-                      <div className="settings-inset rounded-xl p-4 mt-3 space-y-1 text-xs contrast-helper">
-                        <div>
-                          Register redirect URI:
-                        </div>
-                        <div className="break-all rounded bg-surface-inset px-2 py-1 font-mono text-[11px] text-contrast-muted">
-                          {provider.redirect_uri}
-                        </div>
-                        <div>
-                          {provider.provider === "google"
-                            ? "Google app type: Web application"
-                            : "Microsoft account types: if Tenant ID is common, the app must allow personal Microsoft accounts and work/school accounts"}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  <label className="flex items-center gap-2 text-xs font-medium text-contrast-helper">
+                <p className={`${SETTINGS_VALUE_CLASS} font-mono text-xs break-all`}>
+                  {provider.redirect_uri}
+                </p>
+              </SettingsRow>
+            )}
+
+            <SettingsRow
+              label={isMicrosoft ? "Application (client) ID" : "Client ID"}
+              controlId={`${key}-client-id`}
+              controlClassName={SETTINGS_CONTROL_COLUMN_WIDE}
+            >
+              <input
+                id={`${key}-client-id`}
+                type="text"
+                value={form.client_id}
+                onChange={(event) => updateForm(key, { client_id: event.target.value })}
+                className={SETTINGS_INPUT_CLASS}
+                autoComplete="off"
+              />
+            </SettingsRow>
+
+            {isMicrosoft && (
+              <SettingsRow
+                label="Tenant"
+                controlId={`${key}-tenant`}
+                description="Use common for both Outlook.com and Microsoft 365 accounts, or a tenant ID to restrict sign-in to one directory."
+                controlClassName={SETTINGS_CONTROL_COLUMN_WIDE}
+              >
+                <input
+                  id={`${key}-tenant`}
+                  aria-describedby={`${key}-tenant-help`}
+                  type="text"
+                  value={form.tenant_id}
+                  onChange={(event) => updateForm(key, { tenant_id: event.target.value })}
+                  className={SETTINGS_INPUT_CLASS}
+                  placeholder="common"
+                  autoComplete="off"
+                />
+              </SettingsRow>
+            )}
+
+            <SettingsRow
+              label={isMicrosoft ? "Client secret value" : "Client secret"}
+              controlId={`${key}-client-secret`}
+              description={
+                provider.has_client_secret
+                  ? "A secret is saved. Enter a new one to replace it."
+                  : "Paste the secret from the provider's console."
+              }
+              controlClassName={SETTINGS_CONTROL_COLUMN_WIDE}
+            >
+              <div className="space-y-2">
+                <input
+                  id={`${key}-client-secret`}
+                  aria-describedby={`${key}-client-secret-help`}
+                  type="password"
+                  value={form.client_secret}
+                  onChange={(event) =>
+                    updateForm(key, {
+                      client_secret: event.target.value,
+                      clear_client_secret: false,
+                    })
+                  }
+                  className={SETTINGS_INPUT_CLASS}
+                  autoComplete="new-password"
+                />
+                {provider.has_client_secret && (
+                  <label className="flex items-center gap-2 text-sm text-foreground">
                     <input
                       type="checkbox"
-                      checked={form.enabled}
+                      checked={form.clear_client_secret}
                       onChange={(event) =>
-                        updateForm(provider.provider, {
-                          enabled: event.target.checked,
+                        updateForm(key, {
+                          clear_client_secret: event.target.checked,
+                          client_secret: event.target.checked ? "" : form.client_secret,
                         })
                       }
-                      className="h-4 w-4 rounded border-control-border text-action-text focus:ring-action"
+                      className="h-4 w-4 rounded accent-action focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
                     />
-                    Enabled
+                    Remove the saved secret
                   </label>
-                </div>
-
-                <SettingsRow
-                  label={
-                    provider.provider === "microsoft"
-                      ? "Application (client) ID"
-                      : "OAuth Client ID"
-                  }
-                >
-                  <input
-                    type="text"
-                    value={form.client_id}
-                    onChange={(event) =>
-                      updateForm(provider.provider, {
-                        client_id: event.target.value,
-                      })
-                    }
-                    className="w-full bg-surface-card border border-control-border rounded px-3 py-2 focus:outline-none focus:border-action text-foreground"
-                    placeholder={provider.provider === "microsoft"
-                      ? "Paste the Application (client) ID"
-                      : "Paste the OAuth client ID"}
-                  />
-                </SettingsRow>
-
-                {provider.provider === "microsoft" && (
-                  <SettingsRow
-                    label="Tenant ID or common"
-                    description="Use common for both Outlook.com and Microsoft 365 accounts. Use a specific tenant ID only for a single-tenant app or to restrict sign-in to one directory."
-                  >
-                    <input
-                      type="text"
-                      value={form.tenant_id}
-                      onChange={(event) =>
-                        updateForm(provider.provider, {
-                          tenant_id: event.target.value,
-                        })
-                      }
-                      className="w-full bg-surface-card border border-control-border rounded px-3 py-2 focus:outline-none focus:border-action text-foreground"
-                      placeholder="common"
-                    />
-                  </SettingsRow>
                 )}
-
-                <SettingsRow
-                  label={
-                    provider.provider === "microsoft"
-                      ? "Client Secret Value"
-                      : "OAuth Client Secret"
-                  }
-                >
-                  <input
-                    type="password"
-                    value={form.client_secret}
-                    onChange={(event) =>
-                      updateForm(provider.provider, {
-                        client_secret: event.target.value,
-                        clear_client_secret: false,
-                      })
-                    }
-                    className="w-full bg-surface-card border border-control-border rounded px-3 py-2 focus:outline-none focus:border-action text-foreground"
-                    placeholder={provider.provider === "microsoft"
-                      ? provider.has_client_secret
-                        ? "Stored. Enter a new value to replace it."
-                        : "Paste the client secret value"
-                      : provider.has_client_secret
-                        ? "Stored. Enter a new value to replace it."
-                        : "Paste the provider secret"}
-                  />
-                </SettingsRow>
-
-                <label className="flex items-center gap-2 text-sm contrast-helper">
-                  <input
-                    type="checkbox"
-                    checked={form.clear_client_secret}
-                    onChange={(event) =>
-                      updateForm(provider.provider, {
-                        clear_client_secret: event.target.checked,
-                        client_secret: event.target.checked ? "" : form.client_secret,
-                      })
-                    }
-                    className="h-4 w-4 rounded border-control-border text-action-text focus:ring-action"
-                  />
-                  Clear saved secret on next save
-                </label>
-
-                <div className="settings-inset space-y-2 rounded-xl p-4 text-xs contrast-helper">
-                  <label className="flex items-center gap-2 text-sm contrast-helper">
-                    <input
-                      type="checkbox"
-                      checked={form.push_enabled}
-                      onChange={(event) =>
-                        updateForm(provider.provider, {
-                          push_enabled: event.target.checked,
-                        })
-                      }
-                      className="h-4 w-4 rounded border-control-border text-action-text focus:ring-action"
-                    />
-                    Enable live sync (push notifications)
-                  </label>
-                  <div>
-                    Requires this Nojoin instance to be reachable over public
-                    HTTPS. When live sync cannot be established, connected
-                    calendars still refresh every 15 minutes.
-                  </div>
-                  {provider.push_notification_url && (
-                    <>
-                      <div>
-                        {provider.provider === "google"
-                          ? "Verify this notification URL's domain in Google Cloud, then Nojoin registers the watch channels:"
-                          : "Nojoin registers this notification URL automatically:"}
-                      </div>
-                      <div className="break-all rounded bg-surface-inset px-2 py-1 font-mono text-[11px] text-contrast-muted">
-                        {provider.push_notification_url}
-                      </div>
-                    </>
-                  )}
-                </div>
-
-                <div className="flex justify-end">
-                  <button
-                    type="button"
-                    onClick={() => handleSave(provider.provider)}
-                    disabled={isSaving}
-                    className="inline-flex items-center gap-2 rounded-xl bg-action px-4 py-2 text-sm font-medium text-action-on transition-colors hover:bg-action-hover disabled:opacity-50"
-                  >
-                    {isSaving ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Save className="w-4 h-4" />
-                    )}
-                    Save provider
-                  </button>
-                </div>
               </div>
-            );
-          })}
-        </SettingsBlock>
-      )}
-    </SettingsCard>
+            </SettingsRow>
+
+            <SettingsRow
+              label="Live sync"
+              labelId={`${key}-push-label`}
+              descriptionId={`${key}-push-help`}
+              description={
+                <>
+                  <span className="block">
+                    Pushes calendar changes as they happen. Needs this
+                    installation on public HTTPS; without it, connected
+                    calendars refresh every 15 minutes.
+                  </span>
+                  {provider.push_notification_url && (
+                    <span className="mt-1 block">
+                      {isMicrosoft
+                        ? "Nojoin registers this address automatically: "
+                        : "Verify this address's domain in Google Cloud first: "}
+                      <span className="font-mono break-all">
+                        {provider.push_notification_url}
+                      </span>
+                    </span>
+                  )}
+                </>
+              }
+              controlClassName={SETTINGS_CONTROL_END}
+            >
+              <Switch
+                checked={form.push_enabled}
+                aria-labelledby={`${key}-push-label`}
+                aria-describedby={`${key}-push-help`}
+                onCheckedChange={(checked) => updateForm(key, { push_enabled: checked })}
+              />
+            </SettingsRow>
+
+            <SettingsBlock className="flex flex-wrap items-center justify-end gap-3">
+              {dirty && (
+                <span className="text-sm text-status-warning-fg">Unsaved changes</span>
+              )}
+              <button
+                type="button"
+                onClick={() => handleSave(key)}
+                disabled={isSaving || !dirty}
+                className={SETTINGS_BUTTON_PRIMARY}
+              >
+                {isSaving ? (
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  <Save className="h-4 w-4" aria-hidden="true" />
+                )}
+                Save {provider.display_name}
+              </button>
+            </SettingsBlock>
+          </SettingsCard>
+        );
+      })}
+    </div>
   );
 }

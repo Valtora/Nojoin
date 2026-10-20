@@ -1,155 +1,69 @@
 <!-- markdownlint-disable -->
 <div align="center">
-    <h1><img src="assets/images/nojoin-mark.svg" alt="Nojoin Logo" height="45" width="45" style="vertical-align: middle; horizontal-align: middle;"/> <span style="color: #F36012;"><br>Nojoin</span></h1>
-        <p>
-           <strong>Self-Hosted Meeting Transcription and Notes</strong>
-            </p>
+    <img src="site/public/images/og-card.png" alt="Nojoin: open-source meeting notes on a server you own. Records Meet, Teams and Zoom from your browser, with no bot in the call.">
     <p>
         <img src="https://img.shields.io/badge/License-AGPL_v3-blue.svg" alt="License">
         <img src="https://badgen.net/github/release/Valtora/Nojoin" alt="Latest Version">
-        <img src="https://github.com/Valtora/Nojoin/actions/workflows/ci.yml/badge.svg" alt="CI">
-        <img src="https://github.com/Valtora/Nojoin/actions/workflows/release.yml/badge.svg" alt="Release">
+    </p>
+    <p>
+        <a href="https://demo.nojoin.co.uk">Live Demo</a> · <a href="https://www.nojoin.co.uk">Website</a> · <a href="docs/README.md">Docs</a> · <a href="https://www.nojoin.co.uk/compare/">How It Compares</a> · <a href="https://www.nojoin.co.uk/managed/">Managed Nojoin</a>
     </p>
 </div>
 
-<img width="2560" height="1440" alt="dark" src="https://github.com/user-attachments/assets/cf1ad2db-f806-4fbb-9a57-acbcfe4e00a9" />
-
----
-
-<img width="2560" height="1440" alt="light" src="https://github.com/user-attachments/assets/760392cd-4409-48e6-88e1-a14bc4bff880" />
-
----
-
-## What Is Nojoin?
-
-Nojoin is a self-hosted meeting transcription and notes solution.
-
-It captures audio through a supported browser, processes recordings on your own server, and gives you transcripts, speaker separation, meeting notes, search, meeting chat, and a web-based dashboard for day-to-day work.
-
-Nojoin is built for people who want the usefulness of meeting assistants without inviting bots into meetings or defaulting to a SaaS platform for storage and processing.
+Nojoin records your Meet, Teams and Zoom calls from the browser and transcribes them on your own hardware, so no bot joins the call and the audio stays with you. Connect Claude or ChatGPT and they can read and edit the whole library.
 
 ## Why Nojoin?
 
-- No meeting bot awkwardly joins your calls
-- Works across Google Meet, Microsoft Teams, Zoom, etc. without any integration or meeting links
-- Built-in transcription and speaker attribution.
-- Optional fully local AI with Ollama
-- `Meeting Edge` live meeting guidance with questions, missed points, and concept help
-- AI-generated meeting notes
-- Meeting analytics measured from the transcript and the audio: talk-time share, turn structure, overlapping speech, and how the balance shifted through the call, plus an optional AI reading of the topics, the questions nobody answered, and who owned each decision
-- AI-powered Meeting Chat grounded in the transcript, notes, and uploaded documents
-- Global speaker library with voiceprints and speaker matching
-- Google and Outlook calendar sync with meeting context in the dashboard
-- Search across recordings, notes, and documents
-- Dedicated Task workspace
-
-## Managed Nojoin
-
-Nojoin is free, and running it yourself means a machine with a GPU, a compose file, and the upgrades that follow. If you'd rather not, the developer who built Nojoin will scope the hardware, set an instance up on a machine you own, and keep it patched, watched and backed up.
-
-£24.99 a person a month, from five people. You buy and own the hardware directly, so the fee covers labour and nothing else. Nothing is capped: no monthly allowance, no ceiling on call length, no history that expires.
-
-[Managed Nojoin](https://www.nojoin.co.uk/managed/)
-
-## Supported Browsers and OSes
-
-- Chrome for Windows, Linux, and macOS (shared-audio recording)
-- Chromium-family browsers on Windows and Linux (shared-audio recording)
-- Chromium-family browsers on macOS (best-effort shared-audio recording)
-- Chrome (mobile) for Android and iOS (microphone-only recording)
+- **Your assistant works on your meetings.** A built-in [MCP server](docs/MCP.md) gives Claude, ChatGPT and other clients 32 tools, 19 of which write: search every meeting and document, fix a misheard line, file the action items as tasks, reconcile attendees with your CRM. The most an assistant can delete is a move to the bin.
+- **Speakers recognised across meetings.** Name someone once and their voiceprint matches them in later calls. You can correct the speaker library and rebuild it.
+- **Notes from the model you choose:** an API provider, your existing Claude or ChatGPT subscription, or Ollama on the same machine for fully local processing.
+- **Meeting Edge** suggests questions, flags points you've missed and explains terms while the call is still running.
+- **Analytics measured from the audio:** talk-time share, turn-taking and overlapping speech, with an optional AI reading of decisions and unanswered questions.
+- Also: Google and Outlook calendar sync, search across every meeting and document, a chat for each meeting, tasks, and PDF, Word or plain-text export.
 
 ## Quick Start
 
-1. Clone the repository.
+You need Docker with Compose. An NVIDIA GPU is strongly recommended (GTX 16 or RTX 20 series or newer, driver 580 or newer); CPU-only mode works but is much slower.
+
+1. Clone the repository and create your deployment files from the tracked examples.
 
    ```bash
    git clone https://github.com/Valtora/Nojoin
    cd Nojoin
-   ```
-
-2. Create local deployment files from the tracked examples.
-
-   ```bash
    cp docker-compose.example.yml docker-compose.yml
    cp .env.example .env
    ```
 
-3. Set required environment variables in `.env`.
-   - `FIRST_RUN_PASSWORD`
-   - `DATA_ENCRYPTION_KEY` (for any persistent deployment)
-   - And other API keys as needed for your desired features.
+2. Set `FIRST_RUN_PASSWORD` and `DATA_ENCRYPTION_KEY` in `.env`. Keep the encryption key stable once set, since it protects stored calendar credentials across restores and host moves. No AI provider key is needed: the setup wizard can route AI through your own Claude or ChatGPT subscription, or leave it for later.
 
-   No AI provider key is required here. The setup wizard also lets you route AI through your own Claude or ChatGPT subscription, or leave AI unconfigured and set it up later.
-
-4. Start Nojoin.
+3. Start Nojoin.
 
    ```bash
    docker compose up -d
    ```
 
-5. Open the setup wizard.
+4. Open `https://localhost:14443/setup`, enter your `FIRST_RUN_PASSWORD` and complete the wizard. Its last screen checks that your browser can record.
 
-   ```text
-   https://localhost:14443/setup
-   ```
+Recording works in Chrome on Windows, Linux and macOS, in other Chromium browsers on Windows and Linux, and in Chrome on Android and iOS with the microphone only; the [capture guide](docs/CAPTURE.md) has the details. Reaching Nojoin from another device needs HTTPS through a reverse proxy, which [Remote Access](docs/DEPLOYMENT.md#remote-access-and-trusted-public-origin) covers. [Getting Started](docs/GETTING_STARTED.md) walks through the whole path.
 
-6. Unlock the wizard with your `FIRST_RUN_PASSWORD` and complete the first-run setup: terms, transcription model, owner account, AI route, and a finish screen that checks this browser can record. The sign-in page does not link to setup; the wizard is only reachable at `/setup`.
+## Managed Nojoin
 
-7. Open Nojoin in a [supported browser](#supported-browsers-and-oses) and start a short test meeting. See [docs/CAPTURE.md](docs/CAPTURE.md) for browser capture guidance.
-
-Notes:
-
-- An NVIDIA GPU is strongly recommended for faster processing: GTX 16 or RTX 20 series or newer, with driver 580 or newer.
-- CPU-only mode is supported but it is much slower.
-
-- Set `DATA_ENCRYPTION_KEY` once and keep it stable to avoid losing access to previously encrypted calendar credentials after restores or host changes.
-- To reach Nojoin from another device, a phone, a VPN, or a tailnet, read [Remote Access and Trusted Public Origin](docs/DEPLOYMENT.md#remote-access-and-trusted-public-origin). Live capture requires an HTTPS origin, so remote access means putting a reverse proxy in front of Nojoin rather than only changing a port.
-- For calendar OAuth, updates, and backup guidance, use the documentation below.
+Nojoin's developer will set up an instance on a machine you own and look after its upgrades, monitoring and backups, for £24.99 a person a month from five people. See [Managed Nojoin](https://www.nojoin.co.uk/managed/).
 
 ## Documentation
 
-- [Documentation Index](docs/README.md)
 - [Getting Started](docs/GETTING_STARTED.md)
-- [Deployment & Configuration](docs/DEPLOYMENT.md)
-- [Browser Capture Guide](docs/CAPTURE.md)
 - [User Guide](docs/USAGE.md)
-- [Calendar Guide](docs/CALENDAR.md)
 - [MCP Connector Guide](docs/MCP.md)
-- [Administration Guide](docs/ADMIN.md)
-- [Backup & Restore](docs/BACKUP_RESTORE.md)
-- [Architecture Overview](docs/ARCHITECTURE.md)
-- [Security Policy](docs/SECURITY.md)
-- [Anonymous Usage Data](docs/TELEMETRY.md)
-- [Legal Disclaimer](docs/LEGAL.md)
-
-## Project Status
-
-Nojoin is under active development. Back up your instance regularly before upgrading.
-
-## Contributing
-
-Contributions are welcome. See [CONTRIBUTING.md](.github/CONTRIBUTING.md) for the development workflow and contribution expectations.
+- [Deployment & Configuration](docs/DEPLOYMENT.md)
+- [Documentation Index](docs/README.md), for administration, calendar, backup, architecture and security
 
 ## Anonymous Usage Data
 
-Nojoin sends a daily heartbeat containing a random install ID and the version, so the number of installations can be counted. Separately, it can send anonymous usage diagnostics every six hours: user and recording counts, and which features are switched on. Neither contains **any of your meeting data**: no audio, transcripts, notes, names, hostnames, or keys. The data is never sold.
+Nojoin sends a daily heartbeat with a random install ID and the version, plus anonymous usage diagnostics every six hours: user and recording counts, and which features are switched on. Neither contains any of your meeting data, and the data is never sold. Diagnostics can be turned off in **Settings > Privacy**; the heartbeat has no switch in the app, and `NOJOIN_TELEMETRY_ENABLED=false` in `.env` stops both. The receiving service is open source in [telemetry/](telemetry/), and [docs/TELEMETRY.md](docs/TELEMETRY.md) is the full disclosure.
 
-Diagnostics are on by default and can be turned off in **Settings > Privacy**; on an existing installation none are sent until an administrator has seen the notice explaining them. The heartbeat has no switch in the app. Setting `NOJOIN_TELEMETRY_ENABLED=false` in `.env` or blocking `telemetry.nojoin.co.uk` stops both, and an installation that turned telemetry off before 2.7.0 sends neither.
+## Licence and Legal
 
-The receiving service is open source in [telemetry/](telemetry/), so what is stored can be checked rather than taken on trust. See [docs/TELEMETRY.md](docs/TELEMETRY.md) for the full disclosure.
+Nojoin is licensed under the **GNU Affero General Public License v3.0 (AGPLv3)**. Recording laws vary by jurisdiction, so review the [legal disclaimer](docs/LEGAL.md) before using it. Report vulnerabilities through the [security policy](docs/SECURITY.md). Contributions are welcome: see [CONTRIBUTING.md](.github/CONTRIBUTING.md).
 
-## Security
-
-If you discover a vulnerability, follow the [security policy](docs/SECURITY.md).
-
-## Licence
-
-Nojoin is licensed under the **GNU Affero General Public License v3.0 (AGPLv3)**.
-
-## Legal
-
-Recording laws vary by jurisdiction. Review the [legal disclaimer](docs/LEGAL.md) before using Nojoin.
-
-## Support
-
-If Nojoin is useful, please consider [buying me a coffee](https://ko-fi.com/valtorra).
+If Nojoin is useful to you, please consider [buying me a coffee](https://ko-fi.com/valtorra).

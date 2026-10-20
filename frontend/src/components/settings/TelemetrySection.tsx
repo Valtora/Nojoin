@@ -15,6 +15,7 @@ import SettingsBlock from "./SettingsBlock";
 import SettingsRow from "./SettingsRow";
 import SettingsCard from "./SettingsCard";
 import SettingsStatusBadge from "./SettingsStatusBadge";
+import { SETTINGS_CONTROL_END } from "./settingsControls";
 
 /**
  * The exact fields each payload carries. Mirrored from build_heartbeat and
@@ -116,7 +117,7 @@ export default function TelemetrySection() {
   if (loading) {
     return (
       <SettingsCard
-        title="Anonymous Usage Data"
+        title="Anonymous usage data"
         description="Loading the current setting."
       >
         <Loader2 className="h-4 w-4 animate-spin text-contrast-icon-muted" />
@@ -130,7 +131,7 @@ export default function TelemetrySection() {
 
   return (
     <SettingsCard
-      title="Anonymous Usage Data"
+      title="Anonymous usage data"
       description="A daily heartbeat counts installations, and optional diagnostics help decide what to build next. Neither includes recordings, transcripts, notes, names, or keys, and the data is never sold."
     >
       {status.managed_by_env && (
@@ -172,7 +173,7 @@ export default function TelemetrySection() {
             ? "Counts and settings, every six hours."
             : "No diagnostics are sent."
         }
-        controlClassName="@min-[26rem]:min-w-0 @min-[26rem]:flex @min-[26rem]:justify-end"
+        controlClassName={SETTINGS_CONTROL_END}
       >
         <Switch
           checked={status.enabled}

@@ -422,3 +422,75 @@ CREATE TABLE ai_analysis_runs (
     source VARCHAR(16) NOT NULL
 )
 """
+
+CALENDAR_CONNECTIONS_SCHEMA = """
+CREATE TABLE calendar_connections (
+    id INTEGER PRIMARY KEY,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    user_id INTEGER NOT NULL,
+    provider VARCHAR(32) NOT NULL,
+    provider_account_id VARCHAR(255) NOT NULL,
+    email VARCHAR(320),
+    display_name VARCHAR(255),
+    access_token_encrypted TEXT,
+    refresh_token_encrypted TEXT,
+    granted_scopes JSON NOT NULL,
+    token_expires_at DATETIME,
+    sync_status VARCHAR(32) NOT NULL,
+    sync_error VARCHAR(512),
+    last_sync_started_at DATETIME,
+    last_sync_completed_at DATETIME,
+    last_synced_at DATETIME,
+    UNIQUE(user_id, provider, provider_account_id)
+)
+"""
+
+CALENDAR_SOURCES_SCHEMA = """
+CREATE TABLE calendar_sources (
+    id INTEGER PRIMARY KEY,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    connection_id INTEGER NOT NULL
+        REFERENCES calendar_connections(id) ON DELETE CASCADE,
+    provider_calendar_id VARCHAR(512) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    time_zone VARCHAR(128),
+    colour VARCHAR(32),
+    user_colour VARCHAR(32),
+    is_primary BOOLEAN NOT NULL,
+    is_read_only BOOLEAN NOT NULL,
+    is_selected BOOLEAN NOT NULL,
+    sync_cursor TEXT,
+    last_synced_at DATETIME,
+    sync_window_start DATETIME,
+    sync_window_end DATETIME,
+    UNIQUE(connection_id, provider_calendar_id)
+)
+"""
+
+CALENDAR_EVENTS_SCHEMA = """
+CREATE TABLE calendar_events (
+    id INTEGER PRIMARY KEY,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    calendar_id INTEGER NOT NULL
+        REFERENCES calendar_sources(id) ON DELETE CASCADE,
+    provider_event_id VARCHAR(512) NOT NULL,
+    title VARCHAR(512) NOT NULL,
+    status VARCHAR(32) NOT NULL,
+    is_all_day BOOLEAN NOT NULL,
+    starts_at DATETIME,
+    ends_at DATETIME,
+    start_date DATE,
+    end_date DATE,
+    location_text TEXT,
+    description TEXT,
+    attendees JSON,
+    meeting_url VARCHAR(2048),
+    source_url VARCHAR(2048),
+    external_updated_at DATETIME,
+    UNIQUE(calendar_id, provider_event_id)
+)
+"""

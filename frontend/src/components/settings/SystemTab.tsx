@@ -6,26 +6,18 @@ import {
   useRef,
   memo,
   Fragment,
-  type ComponentType,
 } from "react";
 import { Popover, Transition } from "@headlessui/react";
 import {
-  Activity,
   AlertTriangle,
-  Cpu,
-  Database,
-  Download,
-  FolderTree,
-  HardDrive,
-  Loader2,
-  Terminal,
-  Play,
-  Trash2,
-  Settings,
-  Pause,
   Check,
-  Server,
-  Sparkles,
+  Download,
+  Loader2,
+  Pause,
+  Play,
+  Settings,
+  Terminal,
+  Trash2,
 } from "lucide-react";
 import api, { API_BASE_URL, getAdminHealth } from "@/lib/api";
 import { useNotificationStore } from "@/lib/notificationStore";
@@ -35,78 +27,39 @@ import type { AdminHealthCheckStatus, AdminHealthStatus } from "@/types";
 import SettingsBlock from "./SettingsBlock";
 import SettingsCallout from "./SettingsCallout";
 import SettingsCard from "./SettingsCard";
+import SettingsRow from "./SettingsRow";
+import SettingsStatusBadge, {
+  type SettingsStatusBadgeTone,
+} from "./SettingsStatusBadge";
+import {
+  SETTINGS_BUTTON_SECONDARY,
+  SETTINGS_INPUT_CLASS,
+  SETTINGS_SELECT_CLASS,
+} from "./settingsControls";
+import { cn } from "@/lib/cn";
 
 const HEALTH_REFRESH_INTERVAL_MS = 30_000;
 
 type HealthCardKey = keyof AdminHealthStatus["checks"];
-type HealthIcon = ComponentType<{ className?: string }>;
-
-const HEALTH_CARDS: Array<{
-  key: HealthCardKey;
-  title: string;
-  icon: HealthIcon;
-}> = [
-  { key: "database", title: "Database", icon: Database },
-  { key: "queue", title: "Queue", icon: Server },
-  { key: "worker", title: "Worker", icon: Activity },
-  { key: "ffmpeg", title: "FFmpeg", icon: Terminal },
-  { key: "storage", title: "Storage", icon: FolderTree },
-  { key: "transcription_model", title: "Transcription", icon: HardDrive },
-  { key: "diarization", title: "Diarization", icon: Activity },
-  { key: "device", title: "Device", icon: Cpu },
-  { key: "optional_ai", title: "Optional AI", icon: Sparkles },
+const HEALTH_CARDS: Array<{ key: HealthCardKey; title: string }> = [
+  { key: "database", title: "Database" },
+  { key: "queue", title: "Queue" },
+  { key: "worker", title: "Worker" },
+  { key: "ffmpeg", title: "FFmpeg" },
+  { key: "storage", title: "Storage" },
+  { key: "transcription_model", title: "Transcription model" },
+  { key: "diarization", title: "Speaker separation" },
+  { key: "device", title: "Processing device" },
+  { key: "optional_ai", title: "AI" },
 ];
 
-const STATUS_STYLES: Record<
-  AdminHealthCheckStatus,
-  {
-    badge: string;
-    dot: string;
-    iconSurface: string;
-    iconColor: string;
-  }
-> = {
-  ok: {
-    badge:
-      "bg-status-success-bg text-status-success-fg",
-    dot: "bg-status-success-bg",
-    iconSurface: "bg-status-success-bg",
-    iconColor: "text-status-success-fg",
-  },
-  warning: {
-    badge:
-      "bg-status-warning-bg text-status-warning-fg",
-    dot: "bg-status-warning-bg",
-    iconSurface: "bg-status-warning-bg",
-    iconColor: "text-status-warning-fg",
-  },
-  error: {
-    badge: "bg-status-danger-bg text-status-danger-fg",
-    dot: "bg-status-danger-bg",
-    iconSurface: "bg-status-danger-bg",
-    iconColor: "text-status-danger-fg",
-  },
-  disabled: {
-    badge:
-      "bg-surface-inset text-contrast-muted",
-    dot: "bg-surface-card",
-    iconSurface: "bg-surface-inset",
-    iconColor: "text-contrast-helper",
-  },
-  info: {
-    badge:
-      "bg-status-info-bg text-status-info-fg",
-    dot: "bg-status-info-bg",
-    iconSurface: "bg-status-info-bg",
-    iconColor: "text-status-info-fg",
-  },
-  unknown: {
-    badge:
-      "bg-surface-inset text-contrast-muted",
-    dot: "bg-surface-card",
-    iconSurface: "bg-surface-inset",
-    iconColor: "text-contrast-helper",
-  },
+const STATUS_TONE: Record<AdminHealthCheckStatus, SettingsStatusBadgeTone> = {
+  ok: "success",
+  warning: "warning",
+  error: "error",
+  disabled: "neutral",
+  info: "info",
+  unknown: "neutral",
 };
 
 /**
@@ -264,34 +217,27 @@ const LogLine = memo(function LogLine({
   }
 
   return (
-    <div className="flex gap-3 hover:bg-surface-card py-0.5 px-2 -mx-2 rounded">
-      {showTimestamps && (
+    // Below the console's own 36rem the metadata sits above the message, so a
+    // phone still gets the full width for the text.
+    <div className="flex flex-col gap-0.5 rounded px-2 py-1 -mx-2 hover:bg-surface-card @min-[36rem]:flex-row @min-[36rem]:gap-3 @min-[36rem]:py-0.5">
+      <span className="flex shrink-0 select-none gap-3">
+        {showTimestamps && (
+          <span className="w-[68px] shrink-0 contrast-helper" title={timestamp}>
+            {timeDisplay}
+          </span>
+        )}
         <span
-          className="text-contrast-helper shrink-0 select-none w-[68px] font-mono"
-          title={timestamp}
+          className="w-[110px] shrink-0 truncate contrast-helper @min-[36rem]:text-right"
+          title={container}
         >
-          {timeDisplay}
+          {container}
         </span>
-      )}
-
-      {/* Container Name */}
-      <span
-        className="text-contrast-helper shrink-0 select-none w-[110px] truncate text-right"
-        title={container}
-      >
-        {container}
+        <span className={`${levelColor} w-12 shrink-0 font-semibold @min-[36rem]:text-right`}>
+          {level}
+        </span>
       </span>
-
-      {/* Log Level */}
       <span
-        className={`${levelColor} font-bold shrink-0 w-10 select-none text-right`}
-      >
-        {level}
-      </span>
-
-      {/* Content */}
-      <span
-        className={`break-all flex-1 ${wordWrap ? "whitespace-pre-wrap" : "whitespace-nowrap"}`}
+        className={`min-w-0 flex-1 break-words text-foreground ${wordWrap ? "whitespace-pre-wrap" : "whitespace-nowrap"}`}
       >
         {content}
       </span>
@@ -556,291 +502,289 @@ export default function SystemTab() {
     : [];
 
   return (
-    <SettingsCard
-      id="system-logs"
-      title="Service Health and Logs"
-      description="Live operational output from the Nojoin services."
-    >
-      <SettingsBlock contentClassName="animate-in fade-in duration-500 space-y-4">
-      {adminHealth ? (
-        <SettingsCallout tone={summaryTone} title={summaryTitle}>
-          <div className="space-y-2">
-            <p>{adminHealth.summary.message}</p>
-            <div className="flex flex-wrap items-center gap-2 text-xs font-medium uppercase tracking-[0.2em] opacity-80">
-              <span>Server {adminHealth.version}</span>
-              <span aria-hidden="true">/</span>
-              <span>{adminHealth.summary.pipeline_status}</span>
-            </div>
-            {summaryReasons.length > 0 && (
-              <ul className="space-y-1 text-xs leading-5 opacity-90">
-                {summaryReasons.map((reason) => (
-                  <li key={reason} className="flex items-start gap-2">
-                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                    <span>{reason}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </SettingsCallout>
-      ) : healthLoading ? (
-        <SettingsCallout
-          tone="neutral"
-          title="Operational readiness"
-          message="Checking worker status, queue reachability, model readiness, and fallback state."
-        />
-      ) : null}
-
-      {healthError && (
-        <SettingsCallout
-          tone="warning"
-          title="Health data may be stale"
-          message={healthError}
-        />
-      )}
-
-      {adminHealth?.download.in_progress && (
-        <div className="settings-inset rounded-xl p-4 space-y-3">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <div className="text-sm font-semibold text-foreground">
-                Model preparation in progress
+    <>
+      <SettingsCard
+        id="system-health"
+        title="Service health"
+        description="Whether each part of the processing pipeline is ready."
+      >
+        {adminHealth ? (
+          <SettingsBlock>
+            <SettingsCallout tone={summaryTone} title={summaryTitle}>
+              <div className="space-y-2">
+                <p>
+                  {adminHealth.summary.message} Server {adminHealth.version}.
+                </p>
+                {summaryReasons.length > 0 && (
+                  <ul className="space-y-1 text-xs leading-5">
+                    {summaryReasons.map((reason) => (
+                      <li key={reason} className="flex items-start gap-2">
+                        <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                        <span>{reason}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
-              <p className="mt-1 text-xs contrast-helper">
-                {adminHealth.download.message ||
-                  "Model assets are still being prepared for the pipeline."}
-              </p>
-            </div>
-            <div className="flex items-center gap-2 text-sm font-medium text-contrast-muted">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              <span>
+            </SettingsCallout>
+          </SettingsBlock>
+        ) : healthLoading ? (
+          <SettingsBlock>
+            <p className="flex items-center gap-2 text-sm contrast-helper">
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              Checking the worker, queue, models and AI...
+            </p>
+          </SettingsBlock>
+        ) : null}
+
+        {healthError && (
+          <SettingsBlock>
+            <SettingsCallout
+              tone="warning"
+              title="Health data may be out of date"
+              message={healthError}
+            />
+          </SettingsBlock>
+        )}
+
+        {adminHealth?.download.in_progress && (
+          <SettingsBlock
+            label="Preparing models"
+            description={
+              adminHealth.download.message ||
+              "Model files are still being prepared for the pipeline."
+            }
+            aside={
+              <span className="text-sm tabular-nums text-foreground">
                 {typeof adminHealth.download.progress === "number"
                   ? `${Math.min(adminHealth.download.progress, 100)}%`
                   : "Running"}
               </span>
-            </div>
-          </div>
-          <div className="h-2 overflow-hidden rounded-full bg-surface-inset">
+            }
+          >
             <div
-              className="h-full rounded-full bg-action transition-all"
-              style={{
-                width: `${Math.min(adminHealth.download.progress ?? 10, 100)}%`,
-              }}
-            />
-          </div>
-        </div>
-      )}
+              role="progressbar"
+              aria-label="Model preparation"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={
+                typeof adminHealth.download.progress === "number"
+                  ? Math.min(adminHealth.download.progress, 100)
+                  : undefined
+              }
+              className="h-2 overflow-hidden rounded-full bg-action-tint"
+            >
+              <div
+                className="h-full rounded-full bg-action transition-all"
+                style={{
+                  width: `${Math.min(adminHealth.download.progress ?? 10, 100)}%`,
+                }}
+              />
+            </div>
+          </SettingsBlock>
+        )}
 
-      {adminHealth && (
-        <div className="grid gap-4 @min-[33rem]:grid-cols-2 @min-[67rem]:grid-cols-4">
-          {HEALTH_CARDS.map(({ key, title, icon: Icon }) => {
+        {adminHealth &&
+          HEALTH_CARDS.map(({ key, title }) => {
             const check = adminHealth.checks[key];
-            const styles = STATUS_STYLES[check.status as AdminHealthCheckStatus];
             const meta = formatCheckMeta(key, check);
 
             return (
-              <div key={key} className="settings-inset rounded-xl p-4 space-y-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="text-xs font-semibold uppercase tracking-[0.2em] contrast-helper">
-                      {title}
-                    </div>
-                    <div className="mt-1 text-sm font-semibold text-foreground">
-                      {check.label}
-                    </div>
-                  </div>
-                  <div
-                    className={`rounded-full p-2 ${styles.iconSurface}`}
-                    aria-hidden="true"
+              <SettingsRow
+                key={key}
+                label={title}
+                badge={
+                  <SettingsStatusBadge
+                    tone={STATUS_TONE[check.status as AdminHealthCheckStatus] ?? "neutral"}
                   >
-                    <Icon className={`h-4 w-4 ${styles.iconColor}`} />
-                  </div>
-                </div>
-
-                <div>
-                  <span
-                    className={`inline-flex items-center gap-2 rounded-pill px-2.5 py-1 text-xs font-medium ${styles.badge}`}
-                  >
-                    <span className={`h-2 w-2 rounded-full ${styles.dot}`} />
-                    {check.status.replace(/_/g, " ")}
-                  </span>
-                </div>
-
-                {meta.length > 0 && (
-                  <div className="flex flex-wrap gap-2 text-xs contrast-helper">
-                    {meta.map((item) => (
-                      <span
-                        key={item}
-                        className="rounded-pill bg-surface-inset px-2.5 py-1"
-                      >
-                        {item}
+                    {check.label}
+                  </SettingsStatusBadge>
+                }
+                description={
+                  <>
+                    <span className="block">{check.detail}</span>
+                    {meta.length > 0 && (
+                      <span className="block">{meta.join(", ")}.</span>
+                    )}
+                    {check.action && (
+                      <span className="mt-1 block font-medium text-foreground">
+                        {check.action}
                       </span>
-                    ))}
-                  </div>
-                )}
-
-                <p className="text-sm contrast-helper">{check.detail}</p>
-
-                {check.action && (
-                  <p className="text-xs font-medium text-contrast-muted">
-                    {check.action}
-                  </p>
-                )}
-              </div>
+                    )}
+                  </>
+                }
+              />
             );
           })}
-        </div>
-      )}
+      </SettingsCard>
 
-      <div className="bg-[#0d1117] rounded-lg border border-control-border shadow-float overflow-hidden flex flex-col h-[600px]">
-          {/* Toolbar */}
-          <div className="flex flex-wrap items-center gap-3 p-2 bg-[#161b22] border-b border-control-border">
-            {/* Container Select */}
-            <div className="relative">
-              <select
-                value={selectedContainer}
-                onChange={(e) => setSelectedContainer(e.target.value)}
-                className="appearance-none bg-[#0d1117] text-contrast-icon-muted text-xs font-medium px-3 py-1.5 pr-8 rounded border border-control-border focus:border-status-info-border focus:ring-1 focus:ring-status-info-border outline-none w-40"
-              >
-                {containers.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </select>
-              {/* Status Dot Overlay */}
-              <div className="absolute right-7 top-1/2 -translate-y-1/2 pointer-events-none">
-                <span
-                  className={`block w-2 h-2 rounded-full ${isConnected ? "bg-status-success-bg" : "bg-surface-card"}`}
-                />
-              </div>
-            </div>
-
-            {/* Log Level Select */}
-            <div className="relative">
-              <select
-                value={logLevel}
-                onChange={(e) => setLogLevel(e.target.value)}
-                className="appearance-none bg-[#0d1117] text-contrast-icon-muted text-xs font-medium px-3 py-1.5 pr-6 rounded border border-control-border focus:border-status-info-border focus:ring-1 focus:ring-status-info-border outline-none w-20 text-center"
-              >
-                {logLevels.map((l) => (
-                  <option key={l} value={l}>
-                    {l}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="flex-1 relative">
-              <input
-                type="text"
-                placeholder="Enter a regex pattern to filter logs by..."
-                className="w-full bg-[#0d1117] text-contrast-icon-muted text-xs px-3 py-1.5 rounded border border-control-border focus:border-status-info-border focus:ring-1 focus:ring-status-info-border outline-none placeholder:text-control-placeholder font-mono"
-                value={logFilter}
-                onChange={(e) => setLogFilter(e.target.value)}
-              />
-            </div>
-
-            {/* Actions */}
+      <SettingsCard
+        id="system-logs"
+        title="Logs"
+        description="Live output from the Nojoin services."
+      >
+        <SettingsBlock className="grid gap-3 @min-[44rem]:grid-cols-[10rem_7rem_minmax(0,1fr)_auto]">
+          <div>
+            <label htmlFor="logs-service" className="mb-1 block text-xs font-medium contrast-helper">
+              Service
+            </label>
+            <select
+              id="logs-service"
+              value={selectedContainer}
+              onChange={(e) => setSelectedContainer(e.target.value)}
+              className={SETTINGS_SELECT_CLASS}
+            >
+              {containers.map((c) => (
+                <option key={c} value={c}>
+                  {c === "all" ? "All services" : c}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label htmlFor="logs-level" className="mb-1 block text-xs font-medium contrast-helper">
+              Level
+            </label>
+            <select
+              id="logs-level"
+              value={logLevel}
+              onChange={(e) => setLogLevel(e.target.value)}
+              className={SETTINGS_SELECT_CLASS}
+            >
+              {logLevels.map((l) => (
+                <option key={l} value={l}>
+                  {l === "ALL" ? "All levels" : l}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label htmlFor="logs-filter" className="mb-1 block text-xs font-medium contrast-helper">
+              Filter
+            </label>
+            <input
+              id="logs-filter"
+              type="text"
+              placeholder="A regular expression"
+              className={cn(SETTINGS_INPUT_CLASS, "font-mono")}
+              value={logFilter}
+              onChange={(e) => setLogFilter(e.target.value)}
+            />
+          </div>
+          <div className="flex flex-wrap items-end gap-2">
             <button
+              type="button"
               onClick={() => setAutoScroll(!autoScroll)}
-              title={autoScroll ? "Pause Auto-scroll" : "Resume Auto-scroll"}
-              className={`p-1.5 rounded transition-colors ${autoScroll ? "text-status-success-fg hover:bg-surface-card" : "text-contrast-icon-muted hover:text-foreground hover:bg-surface-card"}`}
+              aria-pressed={!autoScroll}
+              className={SETTINGS_BUTTON_SECONDARY}
             >
               {autoScroll ? (
-                <Pause className="w-4 h-4" />
+                <Pause className="h-4 w-4" aria-hidden="true" />
               ) : (
-                <Play className="w-4 h-4" />
+                <Play className="h-4 w-4" aria-hidden="true" />
               )}
+              {autoScroll ? "Pause" : "Follow"}
             </button>
             <button
+              type="button"
               onClick={() => setLogs([])}
-              title="Clear Logs"
-              className="p-1.5 text-contrast-icon-muted hover:text-foreground hover:bg-surface-card rounded transition-colors"
+              aria-label="Clear the console"
+              title="Clear the console"
+              className={cn(SETTINGS_BUTTON_SECONDARY, "w-10 px-0")}
             >
-              <Trash2 className="w-4 h-4" />
+              <Trash2 className="h-4 w-4" aria-hidden="true" />
             </button>
             <Popover className="relative">
               <Popover.Button
-                className="p-1.5 text-contrast-icon-muted hover:text-foreground hover:bg-surface-card rounded transition-colors outline-none"
-                title="Log Settings"
+                aria-label="Display options"
+                title="Display options"
+                className={cn(SETTINGS_BUTTON_SECONDARY, "w-10 px-0")}
               >
-                <Settings className="w-4 h-4" />
+                <Settings className="h-4 w-4" aria-hidden="true" />
               </Popover.Button>
-
               <Transition
                 as={Fragment}
                 enter="transition ease-out duration-100"
-                enterFrom="transform opacity-0 scale-95"
-                enterTo="transform opacity-100 scale-100"
+                enterFrom="opacity-0"
+                enterTo="opacity-100"
                 leave="transition ease-in duration-75"
-                leaveFrom="transform opacity-100 scale-100"
-                leaveTo="transform opacity-0 scale-95"
+                leaveFrom="opacity-100"
+                leaveTo="opacity-0"
               >
-                <Popover.Panel className="absolute right-0 z-10 mt-2 w-56 origin-top-right rounded-md bg-[#1c2128] shadow-float ring-1 ring-surface-border ring-opacity-5 focus:outline-none border border-control-border p-1">
-                  <div className="p-1 space-y-1">
-                    <button
-                      onClick={toggleLogShowTimestamps}
-                      className="group flex w-full items-center justify-between rounded-md px-2 py-2 text-sm text-contrast-icon-muted hover:bg-surface-card hover:text-foreground"
-                    >
-                      <span>Show Timestamps</span>
-                      {logShowTimestamps && (
-                        <Check className="h-4 w-4 text-action-text" />
-                      )}
-                    </button>
-                    <button
-                      onClick={toggleLogWordWrap}
-                      className="group flex w-full items-center justify-between rounded-md px-2 py-2 text-sm text-contrast-icon-muted hover:bg-surface-card hover:text-foreground"
-                    >
-                      <span>Word Wrap</span>
-                      {logWordWrap && (
-                        <Check className="h-4 w-4 text-action-text" />
-                      )}
-                    </button>
-                  </div>
+                <Popover.Panel className="absolute right-0 z-[var(--z-dropdown)] mt-2 w-56 rounded-lg border border-surface-float-border bg-surface-float p-1 shadow-float">
+                  <button
+                    type="button"
+                    aria-pressed={logShowTimestamps}
+                    onClick={toggleLogShowTimestamps}
+                    className="flex w-full items-center justify-between rounded-md px-3 py-2 text-sm text-foreground hover:bg-surface-inset"
+                  >
+                    <span>Show times</span>
+                    {logShowTimestamps && <Check className="h-4 w-4 text-action-text" aria-hidden="true" />}
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={logWordWrap}
+                    onClick={toggleLogWordWrap}
+                    className="flex w-full items-center justify-between rounded-md px-3 py-2 text-sm text-foreground hover:bg-surface-inset"
+                  >
+                    <span>Wrap long lines</span>
+                    {logWordWrap && <Check className="h-4 w-4 text-action-text" aria-hidden="true" />}
+                  </button>
                 </Popover.Panel>
               </Transition>
             </Popover>
-            <div className="w-px h-4 bg-surface-card mx-1"></div>
             <button
+              type="button"
               onClick={handleDownloadLogs}
-              className="flex items-center gap-2 px-3 py-1.5 bg-[#21262d] hover:bg-[#30363d] text-contrast-icon-muted text-xs font-medium rounded border border-control-border transition-colors"
+              className={SETTINGS_BUTTON_SECONDARY}
             >
-              <Download className="w-3.5 h-3.5" />
+              <Download className="h-4 w-4" aria-hidden="true" />
               Download
             </button>
           </div>
+        </SettingsBlock>
 
-          {/* Log Output */}
-          <div
-            ref={scrollRef}
-            onScroll={handleLogScroll}
-            className="flex-1 overflow-y-auto overscroll-contain p-4 font-mono text-[11px] leading-relaxed text-contrast-icon-muted scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent"
-          >
-            {filteredLogs.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center opacity-30 select-none">
-                <Terminal className="w-12 h-12 mb-4" />
-                <p>No logs to display</p>
-              </div>
-            ) : (
-              filteredLogs.map((log, i) => (
-                <LogLine
-                  key={i}
-                  text={log}
-                  showTimestamps={logShowTimestamps}
-                  wordWrap={logWordWrap}
+        <SettingsBlock>
+          <div className="@container flex h-[32rem] flex-col overflow-hidden rounded-lg border border-control-border bg-control-bg">
+            <div
+              ref={scrollRef}
+              onScroll={handleLogScroll}
+              role="log"
+              aria-label="Service logs"
+              className="flex-1 overflow-y-auto overscroll-contain p-3 font-mono text-[11px] leading-relaxed"
+            >
+              {filteredLogs.length === 0 ? (
+                <div className="flex h-full flex-col items-center justify-center gap-3 select-none contrast-helper">
+                  <Terminal className="h-10 w-10" aria-hidden="true" />
+                  <p>No log lines to show</p>
+                </div>
+              ) : (
+                filteredLogs.map((log, i) => (
+                  <LogLine
+                    key={i}
+                    text={log}
+                    showTimestamps={logShowTimestamps}
+                    wordWrap={logWordWrap}
+                  />
+                ))
+              )}
+            </div>
+            <div className="flex items-center justify-between border-t border-control-border px-3 py-1.5 text-xs contrast-helper">
+              <span className="flex items-center gap-2">
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    "h-2 w-2 rounded-full",
+                    isConnected ? "bg-status-success-fg" : "bg-control-border",
+                  )}
                 />
-              ))
-            )}
+                {isConnected ? "Connected" : "Disconnected"}
+              </span>
+              <span className="tabular-nums">{filteredLogs.length} lines</span>
+            </div>
           </div>
-
-          {/* Status Footer */}
-          <div className="px-3 py-1 bg-[#161b22] border-t border-control-border flex items-center justify-between text-[10px] text-contrast-helper font-mono">
-            <span>{isConnected ? "Connected" : "Disconnected"}</span>
-            <span>{filteredLogs.length} lines</span>
-          </div>
-      </div>
-      </SettingsBlock>
-    </SettingsCard>
+        </SettingsBlock>
+      </SettingsCard>
+    </>
   );
 }

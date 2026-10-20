@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Loader2, Mic, RefreshCw, Volume2 } from "lucide-react";
+import { Loader2, Mic, RefreshCw } from "lucide-react";
 
 import { useCapture } from "@/lib/capture/CaptureProvider";
 import { getErrorMessage } from "@/lib/errors";
@@ -10,10 +10,11 @@ import SettingsBlock from "./SettingsBlock";
 import SettingsCallout from "./SettingsCallout";
 import SettingsCard from "./SettingsCard";
 import SettingsRow from "./SettingsRow";
-import SettingsStatusBadge from "./SettingsStatusBadge";
 import {
   SETTINGS_BUTTON_SECONDARY,
+  SETTINGS_CONTROL_END,
   SETTINGS_SELECT_CLASS,
+  SETTINGS_VALUE_CLASS,
 } from "./settingsControls";
 
 interface MicrophoneOption {
@@ -81,7 +82,8 @@ const MeterBar = ({
         <span>{label}</span>
         <span>{value}%</span>
       </div>
-      <div className="h-3 overflow-hidden rounded-full bg-surface-inset">
+      {/* The meter sits in an inset block, so the inset fill would vanish. */}
+      <div className="h-3 overflow-hidden rounded-full bg-surface-border">
         <div
           className={`h-full rounded-full transition-[width] duration-75 ${backgroundClass}`}
           style={{ width: `${value}%` }}
@@ -342,6 +344,7 @@ export default function CaptureSettings() {
 
   return (
     <SettingsCard
+      id="recording-input"
       title="Input"
       description={
         microphoneOnly
@@ -380,7 +383,6 @@ export default function CaptureSettings() {
             ? "Recorded directly on mobile Chrome."
             : "Mixed with shared tab or system audio during capture."
         }
-        icon={<Mic className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
       >
         <select
           value={settings.microphoneDeviceId || ""}
@@ -404,7 +406,6 @@ export default function CaptureSettings() {
         id="recording-microphone-gain"
         label="Microphone gain"
         description="The local microphone level mixed into the recording."
-        icon={<Volume2 className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
       >
         <GainSlider
           value={settings.microphoneGain}
@@ -417,7 +418,6 @@ export default function CaptureSettings() {
         id="recording-shared-audio-gain"
         label="Shared-audio gain"
         description="The shared tab or system audio level, relative to your microphone."
-        icon={<Volume2 className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
       >
         <GainSlider
           value={settings.systemGain}
@@ -429,13 +429,10 @@ export default function CaptureSettings() {
       <SettingsRow
         id="recording-automatic-levels"
         label="Automatic levels"
-        description="Nojoin balances sources while recording. The sliders above set the baseline mix it starts from."
-        icon={<Volume2 className="h-4 w-4 contrast-icon-muted" aria-hidden="true" />}
-        controlClassName="@min-[26rem]:min-w-0 @min-[26rem]:flex @min-[26rem]:justify-end"
+        description="Nojoin balances the sources while recording, starting from the mix the sliders above set."
+        controlClassName={SETTINGS_CONTROL_END}
       >
-        <SettingsStatusBadge tone="success">
-          Enabled with manual baseline
-        </SettingsStatusBadge>
+        <p className={SETTINGS_VALUE_CLASS}>Always on</p>
       </SettingsRow>
 
       <SettingsBlock

@@ -1,7 +1,13 @@
 import { useState } from "react";
 import { Download, AlertTriangle, FileAudio } from "lucide-react";
-import { exportBackupAsync, type ArchiveQuality } from "@/lib/api";
+import {
+  downloadBackupFile,
+  requestBackup,
+  type ArchiveQuality,
+} from "@/lib/api";
+import { archiveWarningNotifications, formatBackupTime } from "@/lib/backupMessages";
 import { useBackupStore } from "@/lib/backupStore";
+import { getErrorMessage } from "@/lib/errors";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { Switch } from "@/components/ui/Switch";
 
@@ -11,11 +17,14 @@ import Modal from "../ui/Modal";
 interface BackupOptionsModalProps {
   isOpen: boolean;
   onClose: () => void;
+  /** Called once the server has answered, whichever way. */
+  onRequested?: () => void;
 }
 
 export default function BackupOptionsModal({
   isOpen,
   onClose,
+  onRequested,
 }: BackupOptionsModalProps) {
   const [includeAudio, setIncludeAudio] = useState(true);
   const [archiveQuality, setArchiveQuality] =
@@ -27,25 +36,37 @@ export default function BackupOptionsModal({
   const handleExport = async () => {
     try {
       setIsProcessing(true);
-      const { task_id } = await exportBackupAsync(includeAudio, archiveQuality);
+      const result = await requestBackup(includeAudio, archiveQuality);
 
-      // Set task ID to trigger global poller
-      setTaskId(task_id);
+      if (result.status === "ready") {
+        // Nothing has changed since the cached archive was made, so it is the backup.
+        // The click that asked for it is still recent enough to start a download.
+        downloadBackupFile(result.export.export_id);
+        archiveWarningNotifications(result.export.warnings).forEach(addNotification);
+        addNotification({
+          type: "info",
+          message: `Nothing has changed since your backup from ${formatBackupTime(result.export.created_at)}, so that one is downloading now.`,
+        });
+      } else {
+        // The global poller follows it and says when it is ready.
+        setTaskId(result.task_id);
+        addNotification({
+          type: "info",
+          message:
+            "Preparing your backup. You can keep using Nojoin, and a notification will appear when it is ready to download.",
+        });
+      }
 
-      addNotification({
-        type: "success",
-        message:
-          "Backup started in background. Download will start automatically when ready.",
-        persistent: false,
-      });
-
+      onRequested?.();
       onClose();
-
-        } catch (error: unknown) {
+    } catch (error: unknown) {
       console.error("Backup export failed:", error);
       addNotification({
         type: "error",
-        message: "Failed to start backup process. Please try again.",
+        message: getErrorMessage(
+          error,
+          "Could not start the backup. Try again.",
+        ),
       });
     } finally {
       setIsProcessing(false);
@@ -70,9 +91,9 @@ export default function BackupOptionsModal({
             <Download aria-hidden="true" className="h-6 w-6 text-action-tint-fg" />
           </span>
           <span>
-            <span className="block text-xl">Create Backup</span>
+            <span className="block text-xl">New backup</span>
             <span className="block text-sm font-normal text-contrast-helper">
-              Export your data and recordings
+              A zip of everything on this installation
             </span>
           </span>
         </span>
@@ -88,7 +109,7 @@ export default function BackupOptionsModal({
             loading={isProcessing}
             iconLeft={<Download aria-hidden="true" className="h-4 w-4" />}
           >
-            {isProcessing ? "Starting..." : "Create Backup"}
+            {isProcessing ? "Starting..." : "Create backup"}
           </Button>
         </>
       }
@@ -104,7 +125,7 @@ export default function BackupOptionsModal({
                 htmlFor="include-audio"
                 className="cursor-pointer font-medium text-foreground"
               >
-                Include Audio Files
+                Include audio
               </label>
               <Switch
                 id="include-audio"
@@ -113,7 +134,7 @@ export default function BackupOptionsModal({
               />
             </div>
             <p className="text-sm text-contrast-helper">
-              Include original audio recordings in the backup archive.
+              Adds each recording&apos;s audio, so restored meetings can be played.
             </p>
           </div>
         </div>
@@ -121,7 +142,7 @@ export default function BackupOptionsModal({
         {includeAudio && (
           <div className="rounded-lg border border-surface-border p-4">
             <h3 className="mb-3 text-sm font-semibold text-foreground">
-              Audio Quality
+              Audio quality
             </h3>
             <div className="space-y-3">
               <label className={qualityClass(archiveQuality === "compressed")}>
@@ -137,8 +158,8 @@ export default function BackupOptionsModal({
                     Compressed
                   </span>
                   <span className="mt-1 block text-xs text-contrast-helper">
-                    Re-encodes audio to Opus for a much smaller archive. Ideal
-                    for routine backups you only need to listen to.
+                    Re-encodes audio to Opus for a much smaller archive. Suits
+                    routine backups you only need to listen to.
                   </span>
                 </div>
               </label>
@@ -170,9 +191,9 @@ export default function BackupOptionsModal({
           <div className="flex items-start gap-3 rounded-lg bg-status-warning-bg p-4 text-sm text-status-warning-fg">
             <AlertTriangle aria-hidden="true" className="mt-0.5 h-5 w-5 shrink-0" />
             <p>
-              Excluding audio files will create a much smaller backup, but
-              restored meetings will <strong>not be playable</strong>.
-              Metadata, transcripts, and notes will still be preserved.
+              Without audio the backup is much smaller, but restored meetings
+              <strong> cannot be played</strong>. Their transcripts, notes and
+              details are kept.
             </p>
           </div>
         )}
@@ -180,10 +201,10 @@ export default function BackupOptionsModal({
         <div className="flex items-start gap-3 rounded-lg bg-status-warning-bg p-4 text-sm text-status-warning-fg">
           <AlertTriangle aria-hidden="true" className="mt-0.5 h-5 w-5 shrink-0" />
           <p>
-            Backup archives include restorable calendar OAuth credentials and
-            connection tokens so dashboard calendar data can be recovered.
-            AI and Hugging Face keys remain redacted. Store the archive like a
-            secrets file.
+            Keep the file somewhere safe. It holds the calendar sign-in
+            credentials and each person&apos;s calendar connections, so
+            calendars work again after a restore. AI and Hugging Face keys are
+            left out.
           </p>
         </div>
       </div>

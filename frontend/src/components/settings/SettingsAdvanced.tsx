@@ -2,7 +2,7 @@
 
 import { useId, useState, type ReactNode } from "react";
 import { useOnDepsChange } from "@/lib/useOnDepsChange";
-import { ChevronRight } from "lucide-react";
+import { AlertTriangle, ChevronRight } from "lucide-react";
 
 import { cn } from "@/lib/cn";
 
@@ -13,11 +13,15 @@ interface SettingsAdvancedProps {
    * a disclosure causes confusion months later.
    */
   changedCount?: number;
+  /** Settings inside in a state that stops something working. */
+  attentionCount?: number;
   /**
-   * Opens the block and keeps it open. Set when a search result lives inside,
-   * so search can never point at something the page then refuses to show.
+   * Opens the block whenever the value changes to a positive number. Bumped
+   * when a search result or an in-page link points inside, so neither can land
+   * on something the page then refuses to show, even after the block was
+   * closed again.
    */
-  forceOpen?: boolean;
+  openRequest?: number;
   className?: string;
   children: ReactNode;
 }
@@ -31,15 +35,16 @@ interface SettingsAdvancedProps {
  */
 export default function SettingsAdvanced({
   changedCount = 0,
-  forceOpen = false,
+  attentionCount = 0,
+  openRequest = 0,
   className,
   children,
 }: SettingsAdvancedProps) {
-  const [open, setOpen] = useState(forceOpen);
+  const [open, setOpen] = useState(openRequest > 0);
   const contentId = useId();
 
-  useOnDepsChange([forceOpen], () => {
-    if (forceOpen) setOpen(true);
+  useOnDepsChange([openRequest], () => {
+    if (openRequest > 0) setOpen(true);
   });
 
   return (
@@ -52,7 +57,7 @@ export default function SettingsAdvanced({
         onClick={() => setOpen((previous) => !previous)}
         aria-expanded={open}
         aria-controls={contentId}
-        className="settings-card flex w-full items-center justify-between gap-3 px-5 py-4 text-left transition-colors hover:bg-surface-inset focus:outline-none focus-visible:ring-2 focus-visible:ring-action sm:px-6"
+        className="settings-card flex w-full items-center justify-between gap-3 px-5 py-4 text-left transition-colors hover:bg-surface-inset focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring sm:px-6"
       >
         <span className="flex items-center gap-2">
           <ChevronRight
@@ -67,9 +72,19 @@ export default function SettingsAdvanced({
           </span>
         </span>
 
-        {changedCount > 0 && (
-          <span className="text-xs font-medium text-action-text">
-            {changedCount} changed
+        {(attentionCount > 0 || changedCount > 0) && (
+          <span className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 text-xs font-medium">
+            {attentionCount > 0 && (
+              <span className="inline-flex items-center gap-1 text-status-warning-fg">
+                <AlertTriangle className="h-3.5 w-3.5" aria-hidden="true" />
+                {attentionCount === 1
+                  ? "1 needs attention"
+                  : `${attentionCount} need attention`}
+              </span>
+            )}
+            {changedCount > 0 && (
+              <span className="text-action-text">{changedCount} changed</span>
+            )}
           </span>
         )}
       </button>

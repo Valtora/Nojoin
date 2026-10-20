@@ -1,129 +1,115 @@
 "use client";
 
-import { useEffect, useRef } from "react";
-import { useBackupStore } from "@/lib/backupStore";
+import { useEffect } from "react";
+import { BACKUP_STORE_KEY, useBackupStore } from "@/lib/backupStore";
 import { getBackupStatus, downloadBackupFile } from "@/lib/api";
+import { archiveWarningNotifications, formatBackupTime } from "@/lib/backupMessages";
 import { useNotificationStore } from "@/lib/notificationStore";
 
-// A backup that never reaches a terminal state within this window is presumed lost:
-// either the worker never received it or its result has expired from the backend. Celery
-// cannot tell those apart from "still queued", so the client needs its own stopping rule.
-const POLL_TIMEOUT_MS = 6 * 60 * 60 * 1000;
+const POLL_INTERVAL_MS = 2000;
 
+/**
+ * Follows the backup this browser asked for, wherever in the app the person is, and
+ * tells them when it is ready. Nothing downloads on its own: a download that starts from
+ * a timer hours after the request is easy to miss and some browsers block it, so the
+ * notification carries a Download Now button instead. It stays until used or closed,
+ * and comes back after a reload.
+ */
 export default function BackupPoller() {
-  const { taskId, startedAt, setTaskId, setProgress } = useBackupStore();
-  const { addNotification } = useNotificationStore();
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const taskId = useBackupStore((state) => state.taskId);
+  const readyExport = useBackupStore((state) => state.readyExport);
+  const setTaskId = useBackupStore((state) => state.setTaskId);
+  const setProgress = useBackupStore((state) => state.setProgress);
+  const setReadyExport = useBackupStore((state) => state.setReadyExport);
+  const addNotification = useNotificationStore((state) => state.addNotification);
+  const dismissToast = useNotificationStore((state) => state.dismissToast);
 
   useEffect(() => {
-    if (!taskId) {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
-      return;
-    }
+    if (!taskId) return;
+    let cancelled = false;
 
     const poll = async () => {
       try {
-        const {
-          state,
-          status: statusMsg,
-          stage,
-          current,
-          total,
-          result,
-        } = await getBackupStatus(taskId);
+        const status = await getBackupStatus(taskId);
+        if (cancelled) return;
 
-        if (state !== "SUCCESS" && state !== "FAILURE" && state !== "REVOKED") {
+        if (status.state === "PENDING" || status.state === "PROCESSING") {
           // Publish progress so the settings panel can show what the server is doing.
-          // Without this the export is indistinguishable from nothing happening.
           setProgress({
-            status: statusMsg || "Working...",
-            stage,
-            current,
-            total,
+            status: status.status || "Working...",
+            stage: status.stage,
+            current: status.current,
+            total: status.total,
           });
-
-          const elapsed = Date.now() - (startedAt ?? Date.now());
-          if (elapsed > POLL_TIMEOUT_MS) {
-            setTaskId(null);
-            addNotification({
-              type: "error",
-              message:
-                "Gave up waiting for the backup. If it is still running, check the server logs and try again.",
-            });
-            return;
-          }
+          return;
         }
 
-        if (state === "SUCCESS") {
-          setProgress(null);
-          setTaskId(null);
-
-          addNotification({
-            type: "success",
-            message: "Backup created successfully! Downloading...",
-          });
-
-          // Recordings archived as metadata only: their audio file was missing from
-          // disk, or reading or re-encoding it failed. The archive records this too,
-          // but the person who took the backup should be told at the point they take it.
-          const warnings = (result as { warnings?: Record<string, number> } | undefined)
-            ?.warnings;
-          const missingAudio = warnings?.recordings_without_audio ?? 0;
-          if (missingAudio > 0) {
-            addNotification({
-              type: "error",
-              message: `${missingAudio} recording${missingAudio === 1 ? "" : "s"} had no audio file on disk and ${missingAudio === 1 ? "was" : "were"} backed up as metadata only.`,
-              persistent: true,
-            });
-          }
-          const failedAudio = warnings?.recordings_audio_failed ?? 0;
-          if (failedAudio > 0) {
-            addNotification({
-              type: "error",
-              message: `The audio of ${failedAudio} recording${failedAudio === 1 ? "" : "s"} could not be archived, so ${failedAudio === 1 ? "it was" : "they were"} backed up as metadata only. Check the worker logs.`,
-              persistent: true,
-            });
-          }
-
-          try {
-            await downloadBackupFile(taskId);
-
-                    } catch (err: unknown) {
-            console.error(err);
-            addNotification({
-              type: "error",
-              message: "Backup ready but download failed. Please try again.",
-            });
-          }
-        } else if (state === "FAILURE" || state === "REVOKED") {
-          setProgress(null);
-          setTaskId(null);
+        setTaskId(null);
+        if (status.state === "SUCCESS" && status.export) {
+          archiveWarningNotifications(status.export.warnings).forEach(addNotification);
+          setReadyExport(status.export);
+        } else if (status.state === "EXPIRED") {
+          addNotification({ type: "info", message: status.status });
+        } else {
           addNotification({
             type: "error",
-            message: `Backup creation failed: ${statusMsg}`,
+            message: `Backup creation failed: ${status.status}`,
           });
         }
-        // PENDING or PROCESSING: Continue polling
-
-            } catch (error: unknown) {
-        console.error("Backup polling error:", error);
+      } catch (error: unknown) {
         // The task id is kept so polling retries: a transient network error
         // says nothing about whether the backup is still running.
+        console.error("Backup polling error:", error);
       }
     };
 
     poll();
-    intervalRef.current = setInterval(poll, 2000);
-
+    const interval = setInterval(poll, POLL_INTERVAL_MS);
     return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [taskId, setTaskId, setProgress, setReadyExport, addNotification]);
+
+  // Keyed on the id rather than the object, which a rehydrate replaces with an equal copy.
+  const readyId = readyExport?.export_id;
+  const readyCreatedAt = readyExport?.created_at;
+
+  useEffect(() => {
+    if (!readyId || !readyCreatedAt) return;
+    const id = `backup-ready-${readyId}`;
+    addNotification({
+      id,
+      type: "success",
+      persistent: true,
+      message: `Your backup from ${formatBackupTime(readyCreatedAt)} is ready to download.`,
+      actions: [
+        {
+          label: "Download Now",
+          variant: "primary",
+          onClick: () => {
+            downloadBackupFile(readyId);
+            setReadyExport(null);
+          },
+        },
+      ],
+      onClose: () => setReadyExport(null),
+    });
+    // Another tab downloading or dismissing it clears it here too, via the storage
+    // listener below, and this takes the toast down with it.
+    return () => dismissToast(id);
+  }, [readyId, readyCreatedAt, addNotification, dismissToast, setReadyExport]);
+
+  useEffect(() => {
+    // Zustand's persist writes to localStorage but does not read other tabs' writes.
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === BACKUP_STORE_KEY) {
+        void useBackupStore.persist.rehydrate();
       }
     };
-  }, [taskId, startedAt, setTaskId, setProgress, addNotification]);
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
 
-  return null; // Invisible component
+  return null;
 }

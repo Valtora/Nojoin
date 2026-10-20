@@ -50,7 +50,7 @@ export default function RestoreOptionsModal({
                         <FileArchive aria-hidden="true" className="h-6 w-6 text-action-tint-fg" />
                     </span>
                     <span>
-                        <span className="block">Restore Backup</span>
+                        <span className="block">Restore a backup</span>
                         <span className="block text-sm font-normal text-contrast-helper">{fileName}</span>
                     </span>
                 </span>
@@ -67,7 +67,7 @@ export default function RestoreOptionsModal({
                             onClose();
                         }}
                     >
-                        Start Restore
+                        Start restore
                     </Button>
                 </>
             }
@@ -75,18 +75,22 @@ export default function RestoreOptionsModal({
             <div className="space-y-6">
                 {/* Option 1: Clear Existing Data */}
                 <div className="rounded-lg border border-surface-border bg-surface-inset p-4">
-                    <div className="mb-2 flex items-center justify-between">
-                        <label className="text-sm font-semibold text-foreground">
-                            Clear All Existing Data
-                        </label>
-                        <Switch checked={clearExisting} onCheckedChange={setClearExisting} />
+                    <div className="mb-2 flex items-center justify-between gap-4">
+                        <span id="restore-clear-label" className="text-sm font-semibold text-foreground">
+                            Clear all existing data
+                        </span>
+                        <Switch
+                            aria-labelledby="restore-clear-label"
+                            aria-describedby="restore-clear-help"
+                            checked={clearExisting}
+                            onCheckedChange={setClearExisting}
+                        />
                     </div>
                     <div className="flex items-start gap-2 text-xs text-status-warning-fg">
                         <AlertTriangle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
-                        <p>
-                            WARNING: This will delete all current recordings and settings.
-                            <br />
-                            <span className="font-bold">User accounts are preserved to prevent lockout.</span>
+                        <p id="restore-clear-help">
+                            Deletes every current recording and setting before the restore.
+                            User accounts are kept, so nobody is locked out.
                         </p>
                     </div>
                 </div>
@@ -95,10 +99,10 @@ export default function RestoreOptionsModal({
                 {!clearExisting && (
                     <div className="rounded-lg border border-surface-border p-4">
                         <h4 className="mb-3 text-sm font-semibold text-foreground">
-                            Conflict Resolution
+                            Meetings that are already here
                         </h4>
                         <p className="mb-4 text-xs text-contrast-helper">
-                            How should we handle meetings in the backup that already exist on this system?
+                            What happens to a meeting in the backup that this installation already has.
                         </p>
 
                         <div className="space-y-3">
@@ -113,10 +117,10 @@ export default function RestoreOptionsModal({
                                 />
                                 <div>
                                     <span className="block text-sm font-medium text-foreground">
-                                        Skip (Safe Merge)
+                                        Skip
                                     </span>
                                     <span className="mt-1 block text-xs text-contrast-helper">
-                                        If a meeting already exists, keep the current version. Only add new meetings.
+                                        Keeps the current version and adds only the meetings that are new.
                                     </span>
                                 </div>
                             </label>
@@ -135,7 +139,7 @@ export default function RestoreOptionsModal({
                                         Overwrite
                                     </span>
                                     <span className="mt-1 block text-xs text-contrast-helper">
-                                        If a meeting already exists, <strong>delete</strong> the current version and replace it with the backup.
+                                        Deletes the current version and puts the backup&apos;s copy in its place.
                                     </span>
                                 </div>
                             </label>

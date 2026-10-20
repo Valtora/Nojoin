@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2, Eye, RotateCcw, Sparkles } from "lucide-react";
 import Button from "../ui/Button";
+import { cn } from "@/lib/cn";
 import Modal from "../ui/Modal";
 import {
   NotesTemplate,
@@ -11,6 +12,11 @@ import {
   previewNotesPrompt,
 } from "@/lib/api";
 import { useNotificationStore } from "@/lib/notificationStore";
+import {
+  SETTINGS_BUTTON_PRIMARY,
+  SETTINGS_INPUT_CLASS,
+  SETTINGS_TEXTAREA_CLASS,
+} from "./settingsControls";
 
 interface NotesTemplateEditorModalProps {
   isOpen: boolean;
@@ -190,8 +196,8 @@ export default function NotesTemplateEditorModal({
             {readOnly
               ? template?.name
               : template
-                ? "Edit Notes Structure"
-                : "New Notes Structure"}
+                ? "Edit notes structure"
+                : "New notes structure"}
           </span>
           <span className="mt-0.5 block text-xs font-normal text-contrast-helper">
             Describe what you want, edit the structure, then check the prompt
@@ -234,17 +240,18 @@ export default function NotesTemplateEditorModal({
               </p>
             </div>
             <textarea
+              aria-label="Describe your meetings"
               value={brief}
               disabled={readOnly || generating}
               onChange={(event) => setBrief(event.target.value)}
-              placeholder="e.g. I run weekly user interviews. I need the questions I asked, what the participant did and said, the insights worth acting on, and follow-ups for next time. No action item table."
-              className="flex-1 min-h-[9rem] w-full p-3 text-sm rounded-lg border border-control-border bg-surface-page text-foreground focus:ring-2 focus-visible:outline-focus-ring outline-none transition-all disabled:opacity-60 resize-none"
+              placeholder="I run weekly user interviews. I need the questions I asked, what the participant did and said, the insights worth acting on, and follow-ups for next time. No action item table."
+              className={cn(SETTINGS_TEXTAREA_CLASS, "min-h-[9rem] flex-1 resize-none")}
             />
             <button
               type="button"
               onClick={handleGenerate}
               disabled={readOnly || generating || !brief.trim()}
-              className="inline-flex items-center justify-center gap-2 px-4 py-2 text-sm rounded-lg bg-action text-action-on hover:bg-action-hover transition-colors disabled:opacity-60"
+              className={SETTINGS_BUTTON_PRIMARY}
             >
               {generating ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -262,22 +269,29 @@ export default function NotesTemplateEditorModal({
           {/* Edit */}
           <div className="flex flex-col min-h-0 gap-4">
             <div>
-              <label className="block text-sm font-medium text-contrast-muted mb-2">
+              <label
+                htmlFor="notes-structure-name"
+                className="mb-2 block text-sm font-medium text-foreground"
+              >
                 Name
               </label>
               <input
+                id="notes-structure-name"
                 type="text"
                 value={name}
                 disabled={readOnly}
                 onChange={(event) => setName(event.target.value)}
-                placeholder="e.g. User interview notes"
-                className="w-full p-2.5 rounded-lg border border-control-border bg-surface-page text-foreground focus:ring-2 focus-visible:outline-focus-ring outline-none transition-all disabled:opacity-60"
+                placeholder="User interview notes"
+                className={SETTINGS_INPUT_CLASS}
               />
             </div>
 
             <div>
               <div className="flex items-center justify-between mb-2">
-                <label className="block text-sm font-medium text-contrast-muted">
+                <label
+                  htmlFor="notes-structure-description"
+                  className="block text-sm font-medium text-foreground"
+                >
                   Description
                 </label>
                 <span className="text-xs contrast-helper">
@@ -285,20 +299,24 @@ export default function NotesTemplateEditorModal({
                 </span>
               </div>
               <input
+                id="notes-structure-description"
                 type="text"
                 value={description}
                 disabled={readOnly}
                 maxLength={maxDescriptionLength}
                 onChange={(event) => setDescription(event.target.value)}
-                placeholder="e.g. Questions, observations and follow-ups for user interviews"
-                className="w-full p-2.5 rounded-lg border border-control-border bg-surface-page text-foreground focus:ring-2 focus-visible:outline-focus-ring outline-none transition-all disabled:opacity-60"
+                placeholder="Questions, observations and follow-ups"
+                className={SETTINGS_INPUT_CLASS}
               />
             </div>
 
             <div className="flex flex-col min-h-0 flex-1">
               <div className="flex items-center justify-between mb-2">
-                <label className="block text-sm font-medium text-contrast-muted">
-                  Section Structure
+                <label
+                  htmlFor="notes-structure-sections"
+                  className="block text-sm font-medium text-foreground"
+                >
+                  Sections
                 </label>
                 <span
                   className={`text-xs ${overLimit ? "text-danger-text" : "contrast-helper"}`}
@@ -307,11 +325,12 @@ export default function NotesTemplateEditorModal({
                 </span>
               </div>
               <textarea
+                id="notes-structure-sections"
                 value={sections}
                 disabled={readOnly}
                 onChange={(event) => setSections(event.target.value)}
                 spellCheck={false}
-                className="flex-1 min-h-[18rem] w-full p-3 font-mono text-xs rounded-lg border border-control-border bg-surface-page text-foreground focus:ring-2 focus-visible:outline-focus-ring outline-none transition-all disabled:opacity-60 resize-none"
+                className={cn(SETTINGS_TEXTAREA_CLASS, "min-h-[18rem] flex-1 resize-none font-mono text-xs")}
               />
               <p className="mt-2 text-xs contrast-helper">
                 Markdown headings and their descriptions. This controls what the
@@ -336,7 +355,7 @@ export default function NotesTemplateEditorModal({
           <div className="flex flex-col min-h-0 gap-3">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-medium text-contrast-muted">
-                Assembled Prompt
+                Full prompt
               </h3>
               <button
                 type="button"

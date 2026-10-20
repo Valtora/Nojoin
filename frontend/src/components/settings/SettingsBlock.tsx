@@ -2,6 +2,8 @@ import type { ReactNode } from "react";
 
 import { cn } from "@/lib/cn";
 
+import { useScopeBadge } from "./SettingsScopeBadge";
+
 interface SettingsBlockProps {
   /** Registry entry id, used as the anchor a search result scrolls to. */
   id?: string;
@@ -39,6 +41,26 @@ export default function SettingsBlock({
   children,
 }: SettingsBlockProps) {
   const hasHeader = Boolean(label || description || aside);
+  // Shown beside the label, so a block that carries a scope needs one.
+  const scopeBadge = useScopeBadge(label ? id : undefined);
+
+  // With nothing to separate, the content needs no wrapper of its own, and a
+  // layout class such as `space-y-*` or `flex` then reaches the children it was
+  // written for. Behind a wrapper it styled a div with one child and did nothing.
+  if (!hasHeader && !inset) {
+    return (
+      <div
+        id={id}
+        className={cn(
+          "@container settings-cell px-5 py-4 sm:px-6 scroll-mt-24",
+          className,
+          contentClassName,
+        )}
+      >
+        {children}
+      </div>
+    );
+  }
 
   return (
     // The block is a container so any grid in its content can query the width
@@ -48,9 +70,12 @@ export default function SettingsBlock({
         <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
           <div className="min-w-0">
             {label && (
-              <span className="text-sm font-medium text-foreground">
-                {label}
-              </span>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm font-medium text-foreground">
+                  {label}
+                </span>
+                {scopeBadge}
+              </div>
             )}
             {description && (
               <p className="mt-1 text-xs leading-5 contrast-helper">

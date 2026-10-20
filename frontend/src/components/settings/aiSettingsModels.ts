@@ -75,22 +75,6 @@ export function withSelectedModelForProvider(
   return updates;
 }
 
-export function getSecondaryProviderApiKey(
-  settings: Settings,
-  provider: Settings["secondary_llm_provider"],
-): string {
-  switch (provider) {
-    case "openai":
-      return settings.secondary_openai_api_key || "";
-    case "anthropic":
-      return settings.secondary_anthropic_api_key || "";
-    case "gemini":
-      return settings.secondary_gemini_api_key || "";
-    default:
-      return "";
-  }
-}
-
 export function getSecondaryProviderModel(
   settings: Settings,
   provider: Settings["secondary_llm_provider"],

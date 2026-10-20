@@ -10,6 +10,7 @@ import TelemetryNotice from "@/components/TelemetryNotice";
 import UpdateNotice from "@/components/UpdateNotice";
 import TourGuide from "@/components/TourGuide";
 import CaptureShell from "@/components/CaptureShell";
+import DemoBanner, { DEMO_BANNER_STYLE } from "@/components/DemoBanner";
 import RecordingFloatingBadge from "@/components/RecordingFloatingBadge";
 import ImportAudioHost from "@/components/importAudio/ImportAudioHost";
 import { CaptureProvider } from "@/lib/capture/CaptureProvider";
@@ -41,8 +42,12 @@ export default function DashboardLayout({
             keeps the shell inside the visible area so the browser toolbar never
             clips the bottom of scroll views. On desktop TopBar is hidden, so the
             column collapses to a single row. */}
-        <div className="flex flex-col h-dvh w-full overflow-hidden">
+        <div
+          className="flex flex-col h-dvh w-full overflow-hidden"
+          style={DEMO_BANNER_STYLE}
+        >
           <TourGuide />
+          <DemoBanner />
           <TopBar />
           <div className="flex flex-1 min-h-0 w-full overflow-hidden">
             <MainNav />

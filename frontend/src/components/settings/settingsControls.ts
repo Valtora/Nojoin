@@ -32,3 +32,19 @@ export const SETTINGS_BUTTON_PRIMARY = `${BUTTON_BASE} border border-transparent
 export const SETTINGS_BUTTON_SECONDARY = `${BUTTON_BASE} border border-control-border bg-surface-card font-medium text-foreground hover:bg-surface-inset active:bg-surface-inset`;
 
 export const SETTINGS_BUTTON_DANGER = `${BUTTON_BASE} border border-danger-text bg-surface-card font-medium text-danger-text hover:bg-surface-inset active:bg-surface-inset`;
+
+/** A read-only value in a row's control column, such as one set in `.env`. */
+export const SETTINGS_VALUE_CLASS =
+  "text-sm text-foreground break-words @min-[26rem]:text-right";
+
+/**
+ * A row's control column at a fixed width, for cards whose selects would
+ * otherwise size to their longest option and leave the columns ragged.
+ */
+export const SETTINGS_CONTROL_COLUMN_WIDE = "@min-[26rem]:w-80 @min-[26rem]:max-w-none";
+
+/**
+ * A row's control column that holds a switch or a lone button against the
+ * card's right edge, where the default column would leave it on the left.
+ */
+export const SETTINGS_CONTROL_END = "@min-[26rem]:min-w-0 @min-[26rem]:flex @min-[26rem]:justify-end";

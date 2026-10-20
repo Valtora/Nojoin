@@ -13,6 +13,7 @@ import logging
 import os
 import platform
 import sys
+from collections.abc import Collection
 from pathlib import Path
 from typing import Optional
 
@@ -431,7 +432,12 @@ class PathManager:
             logger.error(f"Migration failed: {e}")
             return False
 
-    def cleanup_temp_files(self, temp_dir: Path, max_age_hours: int = 24) -> int:
+    def cleanup_temp_files(
+        self,
+        temp_dir: Path,
+        max_age_hours: int = 24,
+        keep: Collection[str] = (),
+    ) -> int:
         """
         Clean up old temporary entries from the specified directory.
 
@@ -442,6 +448,7 @@ class PathManager:
         Args:
             temp_dir: Directory to clean up
             max_age_hours: Delete entries older than this (default: 24h)
+            keep: Names of entries in temp_dir to leave alone whatever their age
 
         Returns:
             int: Number of entries removed.
@@ -456,6 +463,8 @@ class PathManager:
                 return 0
 
             for p in temp_dir.glob("*"):
+                if p.name in keep:
+                    continue
                 try:
                     age_hours = (current_time - p.stat().st_mtime) / 3600
                     if age_hours <= max_age_hours:

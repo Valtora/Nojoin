@@ -56,12 +56,10 @@ describe("RichTextEditor table support", () => {
   });
 
   it("preserves the table in the content it emits when notes are opened", async () => {
-    // Regression guard for silent data loss. Opening notes emits one change
-    // even when nothing was typed, and NotesView autosaves it a second later.
-    // That was harmless for plain notes and fatal for tables: the editor
-    // mangled the table on mount, so the autosave overwrote the stored notes
-    // with the wreckage without any user input. What matters is therefore not
-    // that the emission stops, but that whatever it emits still round trips.
+    // Regression guard for silent data loss. NotesView autosaves every change
+    // the editor emits, and the editor once mangled tables on mount, so the
+    // autosave overwrote the stored notes without any user input. Opening
+    // notes now emits nothing; anything that is emitted must still round trip.
     const onChange = vi.fn();
     render(<RichTextEditor content={TABLE_NOTES} onChange={onChange} />);
 
@@ -69,6 +67,31 @@ describe("RichTextEditor table support", () => {
     for (const [emitted] of onChange.mock.calls) {
       expect(emitted).toBe(TABLE_NOTES);
     }
+  });
+
+  it("emits nothing when notes open, even if their Markdown is re-serialised", async () => {
+    // "*" bullets come back as "-", so the stored notes and the editor's
+    // Markdown differ before anyone types. The resync must not count as an edit.
+    const onChange = vi.fn();
+    let ready: Editor | null = null;
+    render(
+      <RichTextEditor
+        content={"## Summary\n\n* first point\n* second point"}
+        onChange={onChange}
+        onEditorReady={(editor) => {
+          ready = editor as unknown as Editor;
+        }}
+      />,
+    );
+
+    await waitFor(() => expect(screen.getByText("first point")).toBeInTheDocument());
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(onChange).not.toHaveBeenCalled();
+
+    // An edit still reaches the autosave.
+    ready!.commands.insertContentAt(ready!.state.doc.content.size, "<p>Added.</p>");
+    await waitFor(() => expect(onChange).toHaveBeenCalledTimes(1));
+    expect(onChange.mock.calls[0][0]).toContain("Added.");
   });
 
   it("keeps a hard break inside a cell on a single Markdown row", () => {

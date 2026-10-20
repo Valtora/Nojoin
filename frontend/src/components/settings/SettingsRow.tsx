@@ -2,6 +2,8 @@ import type { ReactNode } from "react";
 
 import { cn } from "@/lib/cn";
 
+import { useScopeBadge } from "./SettingsScopeBadge";
+
 interface SettingsRowProps {
   /** Registry entry id, used as the anchor a search result scrolls to. */
   id?: string;
@@ -11,9 +13,13 @@ interface SettingsRowProps {
   description?: ReactNode;
   /** Id for the description, so a control can be described by it. */
   descriptionId?: string;
-  /** Optional leading icon, sized by the caller. */
-  icon?: ReactNode;
-  /** Trailing badge next to the label, for status or scope. */
+  /**
+   * Id of the row's single control. The label then becomes a real `<label>`
+   * for it, and the description defaults to `${controlId}-help`, so the control
+   * only needs `aria-describedby` pointing there.
+   */
+  controlId?: string;
+  /** Status badge next to the label. A scope badge from the registry follows it. */
   badge?: ReactNode;
   className?: string;
   controlClassName?: string;
@@ -37,12 +43,14 @@ export default function SettingsRow({
   labelId,
   description,
   descriptionId,
-  icon,
+  controlId,
   badge,
   className,
   controlClassName,
   children,
 }: SettingsRowProps) {
+  const scopeBadge = useScopeBadge(id);
+
   return (
     <div
       id={id}
@@ -58,17 +66,31 @@ export default function SettingsRow({
       <div className="flex flex-col gap-3 @min-[26rem]:flex-row @min-[26rem]:items-start @min-[26rem]:justify-between @min-[26rem]:gap-6">
         <div className="min-w-0 @min-[26rem]:max-w-md">
           <div className="flex flex-wrap items-center gap-2">
-            {icon}
-            <span id={labelId} className="text-sm font-medium text-foreground">
-              {label}
-            </span>
+            {controlId ? (
+              <label
+                id={labelId}
+                htmlFor={controlId}
+                className="text-sm font-medium text-foreground"
+              >
+                {label}
+              </label>
+            ) : (
+              <span id={labelId} className="text-sm font-medium text-foreground">
+                {label}
+              </span>
+            )}
             {badge}
+            {scopeBadge}
           </div>
 
           {description && (
-            <p id={descriptionId} className="mt-1 text-xs leading-5 contrast-helper">
+            // A div, so a description can hold a list or a disclosure.
+            <div
+              id={descriptionId ?? (controlId ? `${controlId}-help` : undefined)}
+              className="mt-1 text-xs leading-5 contrast-helper"
+            >
               {description}
-            </p>
+            </div>
           )}
         </div>
 

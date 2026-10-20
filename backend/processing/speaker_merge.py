@@ -12,6 +12,14 @@ scored far below the threshold against each other. The direct score between two
 clusters is the evidence that they are the same voice, and no chain of third
 parties is allowed to overrule it.
 
+A group that carries an identity is held to the library as well. Every member
+that was not itself identified as that person must score at or above
+``IDENTIFIED_MERGE_VOICEPRINT_FLOOR`` against the person's library voiceprint,
+whatever it scores against the group's clusters. Two clusters can score as one
+voice inside a recording and still not be the person the group is named after.
+A refused cluster stays a speaker of its own, and if it was the person after
+all, one merge in the speaker panel puts it right.
+
 Every run emits a ``speaker_merge_pass`` pipeline metric -- including runs that
 merge nothing and runs that cannot score anything at all. A pass that merged
 nothing used to be indistinguishable from one that never ran, which made
@@ -26,11 +34,13 @@ from typing import Any
 
 from sqlmodel import select
 
-from backend.models.speaker import RecordingSpeaker
+from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
 from backend.processing.embedding import (
     DUPLICATE_SPEAKER_MERGE_THRESHOLD,
+    IDENTIFIED_MERGE_VOICEPRINT_FLOOR,
     cosine_similarity,
     embedding_version_of,
+    embeddings_are_comparable,
 )
 from backend.processing.pipeline_metrics import record_pipeline_metric
 
@@ -43,6 +53,16 @@ REASON_NO_ELIGIBLE_SPEAKERS = "fewer_than_two_speakers_with_embeddings"
 # Recorded on a pair that cleared the threshold but whose union would have put
 # two clusters scoring below it into one group.
 BLOCKED_CROSS_PAIR_BELOW_THRESHOLD = "cross_pair_below_threshold"
+
+# Recorded on a pair whose union would have put a cluster that does not sound
+# like the identified person into that person's group.
+BLOCKED_BELOW_IDENTIFIED_VOICEPRINT_FLOOR = "below_identified_voiceprint_floor"
+
+# Why an identified person's library voiceprint could not be consulted. Merges
+# into that person then rest on the in-recording scores alone.
+LIBRARY_PERSON_NOT_FOUND = "person_not_found"
+LIBRARY_NO_VOICEPRINT = "no_library_voiceprint"
+LIBRARY_VERSION_MISMATCH = "embedding_version_mismatch"
 
 
 def _find(parent: dict[int, int], speaker_id: int) -> int:
@@ -161,6 +181,140 @@ def _weakest_cross_pair(
     return weakest
 
 
+class _LibraryVoiceprints:
+    """The library voiceprints of the people this recording's clusters carry.
+
+    Identification reads the library once per cluster, and this is the merge
+    pass's own reading. A voiceprint from another extraction version is not
+    scored, so that person's merges rest on the in-recording scores alone. The
+    rebuild task repairs a stale voiceprint within hours, and identification
+    can only have matched through a comparable one.
+    """
+
+    def __init__(self, session, eligible: list[RecordingSpeaker]) -> None:
+        self._embeddings: dict[int, list[float]] = {}
+        self._names: dict[int, str] = {}
+        self._scores: dict[tuple[int, int], float] = {}
+        # One entry per identity in the recording, consulted or not.
+        self.status: list[dict[str, Any]] = []
+
+        global_ids = sorted(
+            {
+                int(speaker.global_speaker_id)
+                for speaker in eligible
+                if speaker.global_speaker_id is not None
+            }
+        )
+        for global_id in global_ids:
+            # Every eligible cluster carries the same extraction version, so
+            # any of them stands in for the recording.
+            self._load(session.get(GlobalSpeaker, global_id), global_id, eligible[0])
+
+    def _load(self, person, global_id: int, reference: RecordingSpeaker) -> None:
+        reason = None
+        if person is None:
+            reason = LIBRARY_PERSON_NOT_FOUND
+        elif not person.embedding:
+            reason = LIBRARY_NO_VOICEPRINT
+        elif not embeddings_are_comparable(person, reference):
+            reason = LIBRARY_VERSION_MISMATCH
+
+        name = person.name if person is not None else None
+        self.status.append(
+            {
+                "global_speaker_id": global_id,
+                "name": name,
+                "available": reason is None,
+                "reason": reason,
+            }
+        )
+        if reason is not None:
+            logger.info(
+                "[SpeakerMerge] Library voiceprint of %s (id=%d) not consulted (%s); "
+                "merges into them rest on the in-recording scores.",
+                name,
+                global_id,
+                reason,
+            )
+            return
+        self._embeddings[global_id] = list(person.embedding)
+        self._names[global_id] = person.name
+
+    def name(self, global_id: int) -> str | None:
+        return self._names.get(global_id)
+
+    def score(self, speaker: RecordingSpeaker, global_id: int | None) -> float | None:
+        """A cluster's cosine against a person's library voiceprint, when usable."""
+        if global_id is None or global_id not in self._embeddings:
+            return None
+        key = (int(speaker.id), global_id)
+        if key not in self._scores:
+            self._scores[key] = float(
+                cosine_similarity(speaker.embedding, self._embeddings[global_id])
+            )
+        return self._scores[key]
+
+    def weakest_unidentified_member(
+        self, global_id: int, speakers: list[RecordingSpeaker]
+    ) -> tuple[float, RecordingSpeaker] | None:
+        """The lowest-scoring member not itself identified as the person.
+
+        A member carrying the identity is not scored: identification or the
+        user already tied it to the person. None when the person has no usable
+        library voiceprint or every member carries the identity.
+        """
+        weakest: tuple[float, RecordingSpeaker] | None = None
+        for speaker in speakers:
+            if speaker.global_speaker_id == global_id:
+                continue
+            score = self.score(speaker, global_id)
+            if score is None:
+                return None
+            if weakest is None or score < weakest[0]:
+                weakest = (score, speaker)
+        return weakest
+
+
+def _refused_by_library(
+    pair: dict[str, Any],
+    library: _LibraryVoiceprints,
+    merged_globals: set[int],
+    merged_speakers: list[RecordingSpeaker],
+) -> bool:
+    """Refuse a union that would put a stranger into an identified group.
+
+    Runs before the linkage rule and overrides it: clusters that score as one
+    voice against each other are still refused when one of them does not sound
+    like the person the group would be named after.
+    """
+    if len(merged_globals) != 1:
+        return False
+    (global_id,) = merged_globals
+    weakest = library.weakest_unidentified_member(global_id, merged_speakers)
+    if weakest is None or weakest[0] >= IDENTIFIED_MERGE_VOICEPRINT_FLOOR:
+        return False
+
+    score, failing = weakest
+    pair["blocked_by"] = BLOCKED_BELOW_IDENTIFIED_VOICEPRINT_FLOOR
+    pair["identified_global_speaker_id"] = global_id
+    pair["identified_name"] = library.name(global_id)
+    pair["failing_label"] = failing.diarization_label
+    pair["identified_voiceprint_cosine"] = round(score, 4)
+    logger.info(
+        "[SpeakerMerge] %s ~ %s scored %.3f but was not merged: %s scores %.3f "
+        "against the library voiceprint of %s (id=%d), below %.2f.",
+        pair["a_label"],
+        pair["b_label"],
+        pair["cosine"],
+        failing.diarization_label,
+        score,
+        library.name(global_id),
+        global_id,
+        IDENTIFIED_MERGE_VOICEPRINT_FLOOR,
+    )
+    return True
+
+
 def _survivor_sort_key(
     speaker: RecordingSpeaker,
     utterance_counts: dict[int, int],
@@ -243,6 +397,7 @@ def _score_and_union_pairs(
     threshold: float,
     parent: dict[int, int],
     rank: dict[int, int],
+    library: _LibraryVoiceprints,
 ) -> tuple[list[dict[str, Any]], dict[tuple[int, int], float]]:
     """Score every pair, union those that qualify, and report all of them.
 
@@ -252,13 +407,17 @@ def _score_and_union_pairs(
     arbitrary weaker link claim a component and push a stronger one out. The
     strongest evidence should win, so it is applied first.
 
-    A link is refused when any pair across the two components it would join
-    scores below the threshold (complete linkage), so two clusters only ever
-    share a group when they score as the same voice against each other.
-    Returns the scored pairs and the score of every pair, keyed by id pair.
+    A link is refused when the group it would form carries an identity and a
+    member not identified as that person scores below the library floor
+    against their voiceprint. Failing that, it is refused when any pair across
+    the two components scores below the threshold (complete linkage), so two
+    clusters only ever share a group when they score as the same voice against
+    each other. Returns the scored pairs and the score of every pair, keyed by
+    id pair.
     """
     scored_pairs, scores, candidates = _score_pairs(eligible, threshold)
     labels = {int(speaker.id): speaker.diarization_label for speaker in eligible}
+    by_id = {int(speaker.id): speaker for speaker in eligible}
 
     # The identities and members each component currently carries. Read
     # through _find, so only the live root's entry is ever consulted.
@@ -306,6 +465,16 @@ def _score_and_union_pairs(
             )
             continue
 
+        merged_globals = component_globals[root_a] | component_globals[root_b]
+        merged_members = members[root_a] | members[root_b]
+        if _refused_by_library(
+            pair,
+            library,
+            merged_globals,
+            [by_id[speaker_id] for speaker_id in sorted(merged_members)],
+        ):
+            continue
+
         weakest, weak_a, weak_b = _weakest_cross_pair(
             members[root_a], members[root_b], scores
         )
@@ -334,9 +503,7 @@ def _score_and_union_pairs(
             score,
             threshold,
         )
-        merged_globals = component_globals[root_a] | component_globals[root_b]
         merged_names = component_names[root_a] | component_names[root_b]
-        merged_members = members[root_a] | members[root_b]
         new_root = _union(parent, rank, int(speaker_a.id), int(speaker_b.id))
         component_globals[new_root] = merged_globals
         component_names[new_root] = merged_names
@@ -344,6 +511,42 @@ def _score_and_union_pairs(
         pair["merged"] = True
 
     return scored_pairs, scores
+
+
+def _describe_group(
+    group: list[RecordingSpeaker],
+    scores: dict[tuple[int, int], float],
+    library: _LibraryVoiceprints,
+) -> dict[str, Any]:
+    """One merged group for the metric, survivor first.
+
+    Carries who survived, who was absorbed, the weakest and mean score inside
+    the group, and each absorbed member's score against the identified
+    person's library voiceprint, so a log reader can judge the evidence a merge
+    rested on without recomputing it from the pairs.
+    """
+    survivor, absorbed = group[0], group[1:]
+    group_scores = [
+        scores[_pair_key(int(a.id), int(b.id))] for a, b in combinations(group, 2)
+    ]
+    # _union_is_blocked leaves a group at most one identity.
+    identities = {
+        int(s.global_speaker_id) for s in group if s.global_speaker_id is not None
+    }
+    identity = next(iter(identities)) if len(identities) == 1 else None
+    library_scores = [library.score(s, identity) for s in absorbed]
+    return {
+        "survivor_id": int(survivor.id),
+        "survivor_label": survivor.diarization_label,
+        "merged_ids": [int(s.id) for s in absorbed],
+        "merged_labels": [s.diarization_label for s in absorbed],
+        "min_cosine": round(min(group_scores), 4),
+        "mean_cosine": round(sum(group_scores) / len(group_scores), 4),
+        "identified_global_speaker_id": identity,
+        "merged_identified_voiceprint_cosines": [
+            round(score, 4) if score is not None else None for score in library_scores
+        ],
+    }
 
 
 def merge_duplicate_speakers(
@@ -403,6 +606,9 @@ def merge_duplicate_speakers(
     base_payload: dict[str, Any] = {
         "threshold": round(float(threshold), 4),
         "linkage": "complete",
+        "identified_voiceprint_floor": round(
+            float(IDENTIFIED_MERGE_VOICEPRINT_FLOOR), 4
+        ),
         "total_speaker_count": len(speakers),
         "eligible_speaker_count": len(eligible),
         "skipped_no_embedding": len(speakers) - len(with_embedding),
@@ -428,7 +634,10 @@ def merge_duplicate_speakers(
     parent: dict[int, int] = {int(s.id): int(s.id) for s in eligible}
     rank: dict[int, int] = {int(s.id): 0 for s in eligible}
 
-    scored_pairs, scores = _score_and_union_pairs(eligible, threshold, parent, rank)
+    library = _LibraryVoiceprints(session, eligible)
+    scored_pairs, scores = _score_and_union_pairs(
+        eligible, threshold, parent, rank, library
+    )
 
     groups: dict[int, list[RecordingSpeaker]] = {}
     for speaker in eligible:
@@ -437,9 +646,6 @@ def merge_duplicate_speakers(
 
     merge_pairs: list[tuple[int, int]] = []
     label_remap: dict[str, str] = {}
-    # One entry per merged group: who survived, who was absorbed, and the
-    # weakest and mean score inside the group, so a log reader can judge the
-    # group without recomputing it from the pairs.
     group_payloads: list[dict[str, Any]] = []
 
     for _root, group in groups.items():
@@ -465,19 +671,7 @@ def merge_duplicate_speakers(
                 survivor.id,
             )
 
-        group_scores = [
-            scores[_pair_key(int(a.id), int(b.id))] for a, b in combinations(group, 2)
-        ]
-        group_payloads.append(
-            {
-                "survivor_id": int(survivor.id),
-                "survivor_label": survivor.diarization_label,
-                "merged_ids": [int(s.id) for s in group[1:]],
-                "merged_labels": [s.diarization_label for s in group[1:]],
-                "min_cosine": round(min(group_scores), 4),
-                "mean_cosine": round(sum(group_scores) / len(group_scores), 4),
-            }
-        )
+        group_payloads.append(_describe_group(group, scores, library))
 
     _emit(
         {
@@ -489,6 +683,7 @@ def merge_duplicate_speakers(
             "surviving_speaker_count": len(eligible) - len(merge_pairs),
             "max_cosine": max((p["cosine"] for p in scored_pairs), default=None),
             "groups": group_payloads,
+            "library_voiceprints": library.status,
             "speech_seconds": {
                 s.diarization_label: round(
                     float(speech_seconds.get(s.diarization_label, 0.0)), 2
