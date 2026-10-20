@@ -52,6 +52,7 @@ import {
  * | any | delete 204, 410 or 404 | gone; a delete of an id no note has held leaves a tombstone too, so a create still on its way is refused |
  * | any | no answer, or 5xx | nothing changes but `clearing` (for a delete) or `unansweredEdit` (for an edit); the next save retries under the same token |
  * | pending | delete gets no answer, or 5xx | `pending` ends too: the next text is a new note under a new id, out of the late delete's reach |
+ * | `clearing` a note other than `base` (a cleared pending create) | save, or a poll showing that note | that delete is sent again first, under the same token while no answer came between; a failed one fails the save. The note is not listed among the others meanwhile |
  * | any | a 200 or 409 showing the note, or a 410 or 404 for it | its `clearing` and `unansweredEdit` end; a conflict ends both |
  * | any | other 4xx (422, recording gone) | save failed; nothing changes |
  * | conflict | save | refused until resolved |
@@ -214,6 +215,10 @@ export class HeadNoteSync {
   private pendingId: string | null = null;
   /** A note whose delete was sent without an answer. */
   private clearingId: string | null = null;
+  /** The revision that delete was made against. */
+  private clearingRevision = 1;
+  /** A poll asked for that delete to be sent again, and it waits in the queue. */
+  private clearQueued = false;
   /** A note whose edit was sent without an answer: it may hold that edit. */
   private unansweredEditId: string | null = null;
   /** The token the next write carries; replaced once an answer arrives. */
@@ -263,6 +268,12 @@ export class HeadNoteSync {
       }
     }
     this.adopt();
+    // A note this device cleared without an answer is still there: nothing
+    // else would ever delete it, so the delete is sent again now.
+    const clearing = this.outstandingClear();
+    if (clearing && this.polled.some((note) => note.id === clearing)) {
+      this.queueClear();
+    }
     this.confirmAbsence();
     this.emit();
   };
@@ -276,11 +287,13 @@ export class HeadNoteSync {
   };
 
   /** Saves the box's text; saves run one at a time, in the order asked. */
-  save = (text: string): Promise<void> => {
-    const run = this.queue.then(() => this.write(text));
+  save = (text: string): Promise<void> => this.enqueue(() => this.write(text));
+
+  private enqueue(task: () => Promise<void>): Promise<void> {
+    const run = this.queue.then(task);
     this.queue = run.catch(() => undefined);
     return run;
-  };
+  }
 
   /**
    * Ends a conflict. "mine": the next save goes over the other version, or
@@ -331,8 +344,13 @@ export class HeadNoteSync {
     const conflictNoteId =
       this.conflict?.kind === "changed" ? this.conflict.note.id : null;
     // The box's note, a create still unanswered and the note in a conflict
-    // notice are each shown already.
-    const shown = new Set([this.base?.id, this.pendingId, conflictNoteId]);
+    // notice are each shown already; a note being cleared is on its way out.
+    const shown = new Set([
+      this.base?.id,
+      this.pendingId,
+      this.clearingId,
+      conflictNoteId,
+    ]);
     const otherNotes = this.polled.filter(
       (note) =>
         (note.kind === "head" || note.kind === "tail") && !shown.has(note.id),
@@ -471,6 +489,7 @@ export class HeadNoteSync {
     if (this.conflict) throw new Error(UNRESOLVED_CONFLICT_ERROR);
     const body = stripNote(text);
     if (noteLength(body) > NOTE_BODY_MAX_CHARS) throw new Error(TOO_LONG_ERROR);
+    await this.finishClear();
     const base = this.base;
     if (!body) {
       const id = base?.id ?? this.pendingId;
@@ -486,6 +505,40 @@ export class HeadNoteSync {
       // edit, even if the text matches it, so the edit is sent to find out.
       await this.patch(base, body);
     }
+  }
+
+  /**
+   * The note an unanswered delete was for, when the box no longer edits it
+   * and it may still be there: a cleared create whose answer was lost. While
+   * the box edits the note, its next write finds out what became of it.
+   */
+  private outstandingClear(): string | null {
+    const id = this.clearingId;
+    if (id === null || id === this.base?.id || this.deletedIds.has(id)) {
+      return null;
+    }
+    return id;
+  }
+
+  /**
+   * Sends that delete again, before anything else is written. It goes under
+   * the current token, which is still the one the delete carried unless an
+   * answer refused this resend before: the server then takes it as a retry
+   * of that delete. A 204, 404 or 410 means the note is gone. Any other
+   * failure fails the save that asked for it, and the next one sends it again.
+   */
+  private async finishClear() {
+    const id = this.outstandingClear();
+    if (id !== null) await this.remove(id, this.clearingRevision);
+  }
+
+  private queueClear() {
+    if (this.clearQueued) return;
+    this.clearQueued = true;
+    void this.enqueue(() => {
+      this.clearQueued = false;
+      return this.finishClear();
+    }).catch(() => undefined);
   }
 
   /**
@@ -578,8 +631,10 @@ export class HeadNoteSync {
       const outcome = outcomeOf(error);
       if (outcome.kind === "unknown") {
         this.clearingId = id;
+        this.clearingRevision = revision;
         // The cleared create is never sent again: text typed next is a new
         // note under a new id, which this delete, landing late, cannot reach.
+        // (Before that text is sent, finishClear sends this delete again.)
         if (this.pendingId === id) this.pendingId = null;
         throw error;
       }

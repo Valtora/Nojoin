@@ -1744,4 +1744,74 @@ describe("HeadNotePanel", () => {
     expect(server.notes[0].revision).toBe(2);
     expect(screen.getByText("Saved", SHOWN)).toBeInTheDocument();
   });
+
+  /** A create lands with its answer lost; the clear after it never reaches the server. */
+  const clearLostCreateOffline = async () => {
+    server.lose.add("create");
+    const view = mount();
+    type("Agenda");
+    await waitForSave();
+    server.refuse.push({ write: "remove", error: new Error("Network Error") });
+    type("");
+    await waitForSave();
+    expect(bodies()).toEqual(["Agenda"]);
+    return view;
+  };
+  const otherNotes = () => screen.queryByRole("list", { name: "Other notes" });
+
+  it("deletes a cleared lost create's note before the next write, when the clear never reached the server", async () => {
+    const { poll } = await clearLostCreateOffline();
+
+    type("Fresh");
+    await waitForSave();
+    await poll();
+
+    expect(bodies()).toEqual(["Fresh"]);
+    expect(otherNotes()).not.toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    // The delete went again, under the token it first carried, before the create.
+    const [first, again] = calls.remove.mock.calls;
+    expect(again.slice(0, 2)).toEqual(first.slice(0, 2));
+    expect(again[2]?.writeToken).toBe(first[2]?.writeToken);
+    expect(calls.remove.mock.invocationCallOrder[1]).toBeLessThan(
+      calls.create.mock.invocationCallOrder[1],
+    );
+    const [lost, fresh] = calls.create.mock.calls.map(([, payload]) => payload);
+    expect(fresh.id).not.toBe(lost.id);
+  });
+
+  it("sends a cleared lost create's delete again when a poll shows its note", async () => {
+    const { poll } = await clearLostCreateOffline();
+
+    await poll();
+
+    expect(bodies()).toEqual([]);
+    expect(calls.remove).toHaveBeenCalledTimes(2);
+    expect(box().value).toBe("");
+    expect(otherNotes()).not.toBeInTheDocument();
+  });
+
+  it("does not list a note it is clearing among the others while its delete keeps failing", async () => {
+    const { poll } = await clearLostCreateOffline();
+    server.refuse.push({ write: "remove", error: new Error("Network Error") });
+
+    await poll();
+
+    expect(calls.remove).toHaveBeenCalledTimes(2);
+    expect(bodies()).toEqual(["Agenda"]);
+    expect(otherNotes()).not.toBeInTheDocument();
+    expect(box().value).toBe("");
+  });
+
+  it("asks before a resent clear deletes a lost create's note edited on another device", async () => {
+    await clearLostCreateOffline();
+    server.edit(server.notes[0].id, "B's agenda");
+
+    type("Fresh");
+    await waitForSave();
+
+    expect(screen.getByRole("alert")).toHaveTextContent("B's agenda");
+    expect(bodies()).toEqual(["B's agenda"]);
+    expect(calls.create).toHaveBeenCalledTimes(1);
+  });
 });
