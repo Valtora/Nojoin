@@ -22,6 +22,7 @@ from backend.models.recording_public import DocumentPublicRead, serialize_docume
 from backend.models.user import User
 from backend.processing.documents import SUPPORTED_EXTENSIONS
 from backend.services.recording_identity_service import get_recording_by_public_id
+from backend.utils.document_storage import delete_document_files
 from backend.utils.path_manager import PathManager
 from backend.utils.rate_limit import enforce_upload_concurrency
 from backend.utils.time import utc_now
@@ -374,13 +375,9 @@ async def delete_document(
     if not recording or recording.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Document not found")
 
-    if document.file_path and os.path.exists(document.file_path):
-        try:
-            os.remove(document.file_path)
-        except OSError:
-            pass
-
+    file_path = document.file_path
     await db.delete(document)
     await db.commit()
+    delete_document_files([file_path], logger=logger)
 
     return {"status": "success"}

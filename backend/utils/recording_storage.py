@@ -100,7 +100,13 @@ def probe_recordings_storage() -> tuple[bool, str | None]:
     return True, None
 
 
-def _resolve_path_within_recordings_root(target_path: str | None) -> Path | None:
+def resolve_path_within_root(target_path: str | None, root: Path) -> Path | None:
+    """Resolve a stored path, or None unless it lands inside ``root``.
+
+    Relative paths resolve against the working directory, as the code that opens
+    them does. Symlinks are followed before the check, so a link pointing out of
+    ``root`` is refused rather than followed by a delete.
+    """
     if not target_path:
         return None
 
@@ -110,14 +116,16 @@ def _resolve_path_within_recordings_root(target_path: str | None) -> Path | None
 
     try:
         resolved = candidate.resolve()
-        root = recordings_root_dir(create=False)
         if not root.is_absolute():
             root = Path.cwd() / root
-        root = root.resolve()
-        resolved.relative_to(root)
+        resolved.relative_to(root.resolve())
         return resolved
     except (OSError, RuntimeError, ValueError):
         return None
+
+
+def _resolve_path_within_recordings_root(target_path: str | None) -> Path | None:
+    return resolve_path_within_root(target_path, recordings_root_dir(create=False))
 
 
 def delete_recording_artifacts(

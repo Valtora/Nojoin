@@ -92,6 +92,23 @@ widens that — a model transcribing a page reproduces any instruction printed o
 it — so both prompt sinks fence it in `<attached_document>` delimiters with an
 explicit data-not-instructions rule.
 
+Each document's original file is stored once, flat in the documents directory
+as `<uuid>.<ext>`, apart from the recording's audio. `documents.file_path` is
+unique, so no two rows share a file, and every row belongs to one recording.
+Deleting a document removes its file, and so does every path that deletes a
+recording: delete, permanent delete, batch permanent delete, discard and
+deleting a user ([backend/utils/document_storage.py](../backend/utils/document_storage.py)).
+Each reads the paths before the rows cascade away and unlinks the files after
+the commit, so a commit that fails never leaves a row whose file is gone. Only
+paths that resolve inside the documents directory are unlinked; any other is
+logged and left. A parse still running when its document is deleted stops at
+its next write. The daily cleanup task removes files in the documents directory
+that no row references once they are 24 hours old, which reclaims files left by
+versions that did not remove them, by a process that died between commit and
+unlink, and by an upload whose row never committed. It scans the directory
+before reading the rows, so a file moved into place after its row commits, as a
+restore does, is never mistaken for an orphan.
+
 ### Meeting Analytics
 
 Speaking-dynamics analytics for a recording (talk-time share, turn structure,
@@ -509,7 +526,7 @@ Stale voiceprints are repaired by `rebuild_voiceprints_task` rather than by comp
 
 Three `pipeline_metric` stages make diarisation quality inspectable from a worker log. `final_diarization_speaker_stats` records per-cluster speech duration, segment count and share, plus overlapped speech and whether a cap bound. `speaker_identification` records, for each cluster, the three closest people in the library with their cosine scores and which one matched, so a miss says who came closest and an ambiguous pair is visible as one. `speaker_merge_pass` is emitted on **every** run of the duplicate-merge pass, including runs that merge nothing and runs that could not score anything (which carry an explicit reason); it lists each pair's cosine score, why a pair that cleared the threshold was still refused, each merged group with its survivor, its weakest and mean score and each absorbed cluster's score against the identified person's library voiceprint, and whether each identified person's library voiceprint could be consulted.
 
-A user can discard a recording at any in-flight stage: uploading, paused, queued, or processing. Discard is a single graceful operation that revokes the running Celery task with `terminate=True`, deletes every on-disk artefact, and removes the recording row, so no manual cancel-then-delete sequence is required. Terminating the task stops the worker from continuing the pipeline, and the worker's start-of-task cancellation guard prevents a revoked-but-requeued task from resuming work. Terminal recordings (processed, errored, or already removed) are deleted through the standard delete flow instead.
+A user can discard a recording at any in-flight stage: uploading, paused, queued, or processing. Discard is a single graceful operation that revokes the running Celery task with `terminate=True`, deletes the recording's audio, its upload temp files and its attached documents' files, and removes the recording row, so no manual cancel-then-delete sequence is required. Terminating the task stops the worker from continuing the pipeline, and the worker's start-of-task cancellation guard prevents a revoked-but-requeued task from resuming work. Terminal recordings (processed, errored, or already removed) are deleted through the standard delete flow instead.
 
 Per-user language preferences are resolved once through the shared backend language registry. The effective transcription language is propagated to live, final, imported, and reprocessed ASR calls and included in ASR result hashes. Whisper receives an explicit language only when one is selected; Canary receives its supported source-language parameter; Parakeet remains multilingual auto-detection and therefore hashes as automatic language.
 

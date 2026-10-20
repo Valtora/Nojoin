@@ -22,6 +22,10 @@ from backend.models.user import (
 )
 from backend.seed_demo import seed_demo_data
 from backend.services.jwt_revocation_service import bump_user_token_version
+from backend.utils.document_storage import (
+    delete_document_files,
+    recording_document_paths,
+)
 from backend.utils.invitation_roles import resolve_invitation_role
 from backend.utils.rate_limit import enforce_rate_limit
 from backend.utils.recording_storage import delete_recording_artifacts
@@ -266,6 +270,10 @@ async def delete_user(
     )
     recordings = recordings_result.scalars().all()
 
+    # The user's recordings, and their documents, go by FK cascade.
+    document_paths = await recording_document_paths(
+        db, [recording.id for recording in recordings]
+    )
     for recording in recordings:
         delete_recording_artifacts(
             recording_id=recording.id,
@@ -279,7 +287,6 @@ async def delete_user(
         await db.delete(user)
         await db.commit()
         logger.info(f"Successfully deleted user {user_id}")
-        return user
     except Exception as e:  # noqa: BLE001 -- boundary: the delete is rolled back and becomes one sanitised 500
         await db.rollback()
         raise sanitized_http_exception(
@@ -289,6 +296,9 @@ async def delete_user(
             log_message=f"Failed to delete user {user_id}.",
             exc=e,
         )
+
+    delete_document_files(document_paths, logger=logger)
+    return user
 
 
 @router.patch("/{user_id}/role", response_model=UserRead)

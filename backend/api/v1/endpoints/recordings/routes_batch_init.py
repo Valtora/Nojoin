@@ -17,6 +17,10 @@ from backend.models.recording import (
 )
 from backend.models.transcript import Transcript
 from backend.models.user import User
+from backend.utils.document_storage import (
+    delete_document_files,
+    recording_document_paths,
+)
 from backend.utils.time import utc_now
 
 from .router import router
@@ -132,6 +136,12 @@ async def batch_permanently_delete_recordings(
         # Locked, as in delete_recording, so keep_imported_audio_task cannot
         # repoint audio_path between this read and the delete.
         await db.refresh(recording, with_for_update=True)
+
+    # Read before any delete is flushed, which would cascade the rows away.
+    document_paths = await recording_document_paths(
+        db, [recording.id for recording in recordings]
+    )
+    for recording in recordings:
         recordings_module.delete_recording_artifacts(
             recording_id=recording.id,
             audio_path=recording.audio_path,
@@ -141,6 +151,7 @@ async def batch_permanently_delete_recordings(
         await db.delete(recording)
 
     await db.commit()
+    delete_document_files(document_paths, logger=logger)
     return {"ok": True, "count": len(recordings)}
 
 

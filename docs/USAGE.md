@@ -303,6 +303,8 @@ No warning does not mean the attribution is certainly right, only that nothing o
 
 Upload PDF, PowerPoint, Word, Excel, CSV, text, Markdown, or image files, up to 250 MB each. Documents can be attached at any point: from the Documents tab of a processed meeting, or with **Attach Docs** in the recording toolbar while a meeting is still recording or processing.
 
+Deleting a document removes its uploaded file from the server, and so does anything that removes its meeting for good: deleting it permanently, discarding it while unfinished, or deleting the account it belongs to. Moving a meeting to the bin keeps its documents.
+
 Several files can be attached at once. Browse to them or drag them onto the dialog, in one go or a few at a time, and each queued file is listed with its own **Analyse visually with AI** switch, so a deck can be read visually while the plain-text agenda beside it is not. Uploads run one after another rather than all at once, and the documents panel fills as they land. If one fails the rest still go through, and the dialog stays open with the failed files listed so they can be retried without re-sending what already uploaded.
 
 Timing matters. Meeting notes are generated once, at the end of processing, and they use every document that has finished parsing by then. A document attached during the meeting is normally ready in time to be included on the first pass. A document attached afterwards cannot be, so the Notes tab shows a banner offering to regenerate. Regenerating is never automatic: it uses your AI provider and overwrites any edits you have made to the notes.

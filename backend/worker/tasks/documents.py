@@ -19,6 +19,8 @@ import logging
 import os
 from typing import List, Optional
 
+from sqlmodel import select
+
 from backend.models.context_chunk import ContextChunk
 from backend.models.document import Document, DocumentParseMode, DocumentStatus
 from backend.models.document_page import DocumentPage, PageParseMode
@@ -273,11 +275,31 @@ def process_document_task(self, document_id: int, force_reparse: bool = False):
 
         _parse_document(session, document)
 
-    except UnsupportedDocumentError as e:
-        _fail(session, document, str(e))
     except Exception as e:  # noqa: BLE001 -- boundary: any parse failure marks the document
-        logger.error("Failed to process document %s: %s", document_id, e, exc_info=True)
+        if not _document_row_exists(session, document_id):
+            # Deleted mid-parse, with its recording or on its own. Every write
+            # from here would fail against the missing row, so stop quietly.
+            session.rollback()
+            logger.info("Document %s was deleted while parsing; stopped.", document_id)
+            return
+        if not isinstance(e, UnsupportedDocumentError):
+            logger.error(
+                "Failed to process document %s: %s", document_id, e, exc_info=True
+            )
         _fail(session, document, str(e))
+
+
+def _document_row_exists(session, document_id: int) -> bool:
+    """Whether the row is still committed, read on a connection of its own.
+
+    The task's session may be unusable at this point (a write against the
+    deleted row aborts its transaction), so it cannot be asked.
+    """
+    with session.get_bind().connect() as connection:
+        found = connection.execute(
+            select(Document.id).where(Document.id == document_id)
+        ).first()
+    return found is not None
 
 
 def _fail(session, document: Document, message: str) -> None:

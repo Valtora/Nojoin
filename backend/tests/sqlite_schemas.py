@@ -83,6 +83,26 @@ CREATE TABLE recordings (
 )
 """
 
+DOCUMENTS_SCHEMA = """
+CREATE TABLE documents (
+    id INTEGER PRIMARY KEY,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    recording_id INTEGER,
+    title VARCHAR NOT NULL,
+    file_path VARCHAR NOT NULL UNIQUE,
+    file_type VARCHAR NOT NULL,
+    file_size_bytes INTEGER,
+    status VARCHAR NOT NULL,
+    error_message TEXT,
+    parse_mode VARCHAR NOT NULL,
+    parse_warning TEXT,
+    page_count INTEGER,
+    pages_parsed INTEGER NOT NULL,
+    parse_stage VARCHAR
+)
+"""
+
 TRANSCRIPTS_SCHEMA = """
 CREATE TABLE transcripts (
     id INTEGER PRIMARY KEY,
