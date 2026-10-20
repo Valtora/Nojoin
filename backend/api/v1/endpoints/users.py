@@ -265,8 +265,14 @@ async def delete_user(
                 status_code=400, detail="Cannot delete the last admin account"
             )
 
+    # Locked, as in delete_recording, before the document paths are read. An
+    # upload's document insert waits on the recording's lock, so it cannot
+    # commit a row that the read misses and the cascade deletes, leaving its
+    # file behind. The user row is locked first, so no recording can be added
+    # to the set meanwhile.
+    await db.refresh(user, with_for_update=True)
     recordings_result = await db.execute(
-        select(Recording).where(Recording.user_id == user_id)
+        select(Recording).where(Recording.user_id == user_id).with_for_update()
     )
     recordings = recordings_result.scalars().all()
 
@@ -297,7 +303,7 @@ async def delete_user(
             exc=e,
         )
 
-    delete_document_files(document_paths, logger=logger)
+    await delete_document_files(document_paths, logger=logger)
     return user
 
 

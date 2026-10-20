@@ -22,7 +22,10 @@ from backend.models.recording_public import DocumentPublicRead, serialize_docume
 from backend.models.user import User
 from backend.processing.documents import SUPPORTED_EXTENSIONS
 from backend.services.recording_identity_service import get_recording_by_public_id
-from backend.utils.document_storage import delete_document_files
+from backend.utils.document_storage import (
+    delete_document_files,
+    insert_document_or_remove_file,
+)
 from backend.utils.path_manager import PathManager
 from backend.utils.rate_limit import enforce_upload_concurrency
 from backend.utils.time import utc_now
@@ -84,7 +87,7 @@ async def create_text_document(
         status=DocumentStatus.PENDING,
         parse_mode=DocumentParseMode.STRUCTURAL,
     )
-    db.add(document)
+    await insert_document_or_remove_file(db, document, logger=logger)
     await db.commit()
     await db.refresh(document)
 
@@ -277,7 +280,7 @@ async def upload_document(  # noqa: PLR0913 - FastAPI dependencies are parameter
             DocumentParseMode.VISUAL if deep_parse else DocumentParseMode.STRUCTURAL
         ),
     )
-    db.add(document)
+    await insert_document_or_remove_file(db, document, logger=logger)
     await db.commit()
     await db.refresh(document)
 
@@ -378,6 +381,6 @@ async def delete_document(
     file_path = document.file_path
     await db.delete(document)
     await db.commit()
-    delete_document_files([file_path], logger=logger)
+    await delete_document_files([file_path], logger=logger)
 
     return {"status": "success"}

@@ -696,7 +696,9 @@ async def discard_upload(
         except Exception:  # noqa: BLE001 -- boundary: a revoke that cannot reach the broker must not block the delete
             pass
 
-    # Attached documents go with the row by FK cascade, so read their paths first.
+    # Attached documents go with the row by FK cascade, so read their paths
+    # first. The lock taken above holds back any document insert until the
+    # delete commits, so none can land between this read and the cascade.
     document_paths = await recording_document_paths(db, [recording.id])
     recordings_module.delete_recording_artifacts(
         recording_id=recording.id,
@@ -718,7 +720,7 @@ async def discard_upload(
     await db.execute(delete(Transcript).where(Transcript.recording_id == recording.id))
     await db.execute(delete(Recording).where(Recording.id == recording.id))
     await db.commit()
-    delete_document_files(document_paths, logger=logger)
+    await delete_document_files(document_paths, logger=logger)
 
     return {"ok": True}
 

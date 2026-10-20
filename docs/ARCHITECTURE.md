@@ -94,18 +94,26 @@ explicit data-not-instructions rule.
 
 Each document's original file is stored once, flat in the documents directory
 as `<uuid>.<ext>`, apart from the recording's audio. `documents.file_path` is
-unique, so no two rows share a file, and every row belongs to one recording.
-Deleting a document removes its file, and so does every path that deletes a
-recording: delete, permanent delete, batch permanent delete, discard and
-deleting a user ([backend/utils/document_storage.py](../backend/utils/document_storage.py)).
-Each reads the paths before the rows cascade away and unlinks the files after
-the commit, so a commit that fails never leaves a row whose file is gone. Only
-paths that resolve inside the documents directory are unlinked; any other is
-logged and left. A parse still running when its document is deleted stops at
-its next write. Nothing sweeps the documents directory for files without a row,
-as nothing sweeps any live directory: a file left by a process that died between
-commit and unlink, or by a version that did not remove documents, stays until
-an operator removes it.
+unique as a string, which does not stop two spellings of one path; no two rows
+share a file because every upload writes a new `<uuid>` name, and every row
+belongs to one recording. Deleting a document removes its file, and so does
+every path that deletes a recording: delete, permanent delete, batch permanent
+delete, discard and deleting a user ([backend/utils/document_storage.py](../backend/utils/document_storage.py)).
+Each locks the recordings (`FOR UPDATE`; deleting a user locks the user first),
+reads the paths before the rows cascade away, and unlinks the files after the
+commit, so a commit that fails never leaves a row whose file is gone. A
+document insert waits on that lock, so an upload cannot commit a row that the
+read misses and the cascade deletes. An upload writes its file before its row;
+if the insert fails, as it does when the recording was deleted meanwhile, the
+upload removes the file. Only paths that resolve inside the documents directory
+are unlinked: a legacy row whose path is elsewhere keeps its file on delete,
+and the path is logged. Unlinking runs in a worker thread, off the event loop,
+and a file that cannot be removed is logged without stopping the rest. A parse
+still running when its document is deleted stops at its next write; one that
+fails on a write is rolled back and still marked `ERROR`. Nothing sweeps the
+documents directory for files without a row, as nothing sweeps any live
+directory: a file left by a process that died between commit and unlink, or by
+a version that did not remove documents, stays until an operator removes it.
 
 ### Meeting Analytics
 

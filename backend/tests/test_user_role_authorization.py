@@ -59,7 +59,7 @@ class _FakeSession:
     def add(self, obj):
         self.added.append(obj)
 
-    async def refresh(self, _obj):
+    async def refresh(self, _obj, with_for_update: bool = False):
         return None
 
 

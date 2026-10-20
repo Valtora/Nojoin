@@ -119,7 +119,7 @@ async def delete_recording(
 
     await db.delete(recording)
     await db.commit()
-    delete_document_files(document_paths, logger=logger)
+    await delete_document_files(document_paths, logger=logger)
 
     return {"ok": True}
 
@@ -312,7 +312,7 @@ async def permanently_delete_recording(
 
     await db.delete(recording)
     await db.commit()
-    delete_document_files(document_paths, logger=logger)
+    await delete_document_files(document_paths, logger=logger)
 
     return {"ok": True}
 

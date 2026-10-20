@@ -151,7 +151,7 @@ async def batch_permanently_delete_recordings(
         await db.delete(recording)
 
     await db.commit()
-    delete_document_files(document_paths, logger=logger)
+    await delete_document_files(document_paths, logger=logger)
     return {"ok": True, "count": len(recordings)}
 
 

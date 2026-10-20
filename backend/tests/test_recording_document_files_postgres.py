@@ -1,11 +1,12 @@
-"""Deleting a recording removes its attached documents' files (PostgreSQL).
+"""Document files are removed with their rows, and never orphaned by a race (PostgreSQL).
 
 Documents are stored flat in the documents directory, apart from the recording's
-audio, and their rows go by cascade. Each test attaches a document through the
-real upload route, deletes through one of the paths that remove a recording, and
-checks the disk. Postgres because two of those paths delete with Core statements
-and rely on the foreign keys' ON DELETE CASCADE, which the SQLite suites do not
-enforce.
+audio, and their rows go by cascade. Most tests attach a document through the
+real upload route, delete through one of the paths that remove a recording or a
+document, and check the disk. Postgres because two of those paths delete with
+Core statements and rely on the foreign keys' ON DELETE CASCADE, which the SQLite
+suites do not enforce, and because the race tests hold one side's transaction
+open at a known point and wait until the other is blocked on its lock.
 
 Skips unless NOJOIN_TEST_POSTGRES_URL names a server. CI sets it for the backend
 suite.
@@ -123,10 +124,13 @@ def harness(postgres_test_url, tmp_path, monkeypatch, stub_celery_dispatch):
         sync_engine.dispose()
 
 
-async def _request(harness, method: str, url: str, **kwargs):
-    async with AsyncClient(
-        transport=ASGITransport(app=harness.app), base_url="http://t"
-    ) as client:
+async def _request(
+    harness, method: str, url: str, *, raise_app_exceptions: bool = True, **kwargs
+):
+    transport = ASGITransport(
+        app=harness.app, raise_app_exceptions=raise_app_exceptions
+    )
+    async with AsyncClient(transport=transport, base_url="http://t") as client:
         return await client.request(method, url, **kwargs)
 
 
@@ -173,6 +177,53 @@ async def _attach(harness, public_id: str, filename: str = "agenda.md") -> Path:
 def _document_rows(harness) -> int:
     with Session(harness.engine) as session:
         return session.exec(select(func.count()).select_from(Document)).one()
+
+
+def _recording_id(harness, public_id: str) -> int:
+    with Session(harness.engine) as session:
+        return session.exec(
+            select(Recording.id).where(Recording.public_id == public_id)
+        ).one()
+
+
+def _document_id(harness, path: Path) -> int:
+    with Session(harness.engine) as session:
+        return session.exec(
+            select(Document.id).where(Document.file_path == str(path))
+        ).one()
+
+
+def _add_document_row(harness, public_id: str, path: Path) -> None:
+    with Session(harness.engine) as session:
+        session.add(
+            Document(
+                recording_id=_recording_id(harness, public_id),
+                title=path.name,
+                file_path=str(path),
+            )
+        )
+        session.commit()
+
+
+def _backend_pid(session: Session) -> int:
+    return session.connection().execute(text("SELECT pg_backend_pid()")).scalar_one()
+
+
+async def _wait_until_blocked_by(harness, pid: int, request: asyncio.Task) -> None:
+    """Return once some backend is waiting on a lock that ``pid`` holds."""
+    query = text(
+        "SELECT count(*) FROM pg_stat_activity WHERE :pid = ANY(pg_blocking_pids(pid))"
+    )
+    for _ in range(400):
+        with harness.engine.connect() as connection:
+            if connection.execute(query, {"pid": pid}).scalar_one():
+                return
+        if request.done():
+            raise AssertionError(
+                f"the request finished without waiting: {request.result()!r}"
+            )
+        await asyncio.sleep(0.025)
+    raise AssertionError("the request never waited on the held transaction")
 
 
 @pytest.mark.anyio
@@ -362,3 +413,135 @@ def test_a_parse_whose_page_insert_fails_ends_in_error(harness, monkeypatch, cap
         assert "uq_document_page_number" in document.error_message
     assert path.is_file()
     assert f"Failed to process document {document_id}" in caplog.text
+
+
+@pytest.mark.anyio
+async def test_deleting_one_document_removes_its_file_and_no_other(harness, caplog):
+    target = _add_recording(harness, "target")
+    gone = await _attach(harness, target, "agenda.md")
+    kept = await _attach(harness, target, "minutes.md")
+    # A legacy row, stored before documents lived in the documents directory.
+    legacy = harness.tmp_path / "legacy" / "old.md"
+    legacy.parent.mkdir()
+    legacy.write_text("legacy")
+    _add_document_row(harness, target, legacy)
+
+    first = await _request(
+        harness, "DELETE", f"/documents/{_document_id(harness, gone)}"
+    )
+    with caplog.at_level(logging.WARNING):
+        second = await _request(
+            harness, "DELETE", f"/documents/{_document_id(harness, legacy)}"
+        )
+
+    assert first.status_code == 200, first.text
+    assert second.status_code == 200, second.text
+    assert not gone.exists()
+    assert kept.is_file()
+    assert legacy.read_text() == "legacy"
+    assert f"Left document file {legacy} in place" in caplog.text
+    assert _document_rows(harness) == 1
+
+
+@pytest.mark.anyio
+async def test_a_file_that_cannot_be_removed_does_not_stop_the_rest(harness, caplog):
+    target = _add_recording(harness, "target")
+    # A directory where a file should be: unlinking it fails with an OSError.
+    stuck = harness.documents_dir / "stuck.md"
+    stuck.mkdir()
+    _add_document_row(harness, target, stuck)
+    others = [
+        await _attach(harness, target, "agenda.md"),
+        await _attach(harness, target, "minutes.md"),
+    ]
+
+    with caplog.at_level(logging.WARNING):
+        response = await _request(harness, "DELETE", f"/recordings/{target}")
+
+    assert response.status_code == 200, response.text
+    assert not any(path.exists() for path in others)
+    assert stuck.is_dir()
+    assert f"Failed to delete document file {stuck}" in caplog.text
+    assert _document_rows(harness) == 0
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("path", ["delete_user", "discard"])
+async def test_a_delete_waits_for_an_upload_in_flight_and_removes_its_file(
+    harness, path
+):
+    """A document row that commits while the recording is being deleted.
+
+    The upload's insert is made and its transaction held open; the delete is
+    started and allowed to run until it waits on that transaction's lock. Only
+    then does the upload commit. If the delete read its document paths before
+    taking its lock, it would miss the row, the cascade would still delete it,
+    and the file would stay with nothing referencing it.
+    """
+    if path == "delete_user":
+        public_id = _add_recording(harness, "theirs", owner="member")
+        method, url = "DELETE", f"/users/{harness.users['member']}"
+    else:
+        public_id = _add_recording(harness, "live", status=RecordingStatus.UPLOADING)
+        method, url = "POST", f"/recordings/{public_id}/discard"
+    late = harness.documents_dir / "late.md"
+    late.write_text("# Late upload")
+
+    upload = Session(harness.engine)
+    upload.add(
+        Document(
+            recording_id=_recording_id(harness, public_id),
+            title=late.name,
+            file_path=str(late),
+        )
+    )
+    upload.flush()
+    request = asyncio.create_task(_request(harness, method, url))
+    try:
+        await _wait_until_blocked_by(harness, _backend_pid(upload), request)
+    finally:
+        upload.commit()
+        upload.close()
+    response = await request
+
+    assert response.status_code == 200, response.text
+    assert not late.exists()
+    assert _document_rows(harness) == 0
+
+
+@pytest.mark.anyio
+async def test_an_upload_whose_recording_is_deleted_meanwhile_removes_its_file(
+    harness,
+):
+    """The upload writes its file, then its insert fails the recording's foreign key.
+
+    The recording's delete is made and held open, so the upload reads the
+    recording, stores the file, and waits at its insert. Once the delete commits
+    the insert fails, and the file it wrote must not stay behind.
+    """
+    public_id = _add_recording(harness, "target")
+    deleter = Session(harness.engine)
+    deleter.connection().execute(
+        text("DELETE FROM recordings WHERE id = :id"),
+        {"id": _recording_id(harness, public_id)},
+    )
+    request = asyncio.create_task(
+        _request(
+            harness,
+            "POST",
+            f"/recordings/{public_id}/documents",
+            files={"file": ("agenda.md", b"# Agenda\n", "text/markdown")},
+            data={"deep_parse": "false"},
+            raise_app_exceptions=False,
+        )
+    )
+    try:
+        await _wait_until_blocked_by(harness, _backend_pid(deleter), request)
+    finally:
+        deleter.commit()
+        deleter.close()
+    response = await request
+
+    assert response.status_code == 500
+    assert list(harness.documents_dir.iterdir()) == []
+    assert _document_rows(harness) == 0
