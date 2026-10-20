@@ -50,6 +50,7 @@ from backend.utils.canonical_pipeline import (
 )
 from backend.utils.config_manager import config_manager, is_meeting_edge_enabled
 from backend.utils.recording_storage import recording_upload_temp_dir
+from backend.utils.word_times import exceeds
 
 logger = logging.getLogger(__name__)
 
@@ -803,7 +804,7 @@ def _extract_region_segment_payloads(
                     continue
                 word_start = float(word.get("start", 0.0))
                 word_end = float(word.get("end", word_start))
-                if word_end <= prefix_s + EPS:
+                if not exceeds(word_end, prefix_s + EPS):
                     continue
                 kept_words.append(
                     {

@@ -1750,6 +1750,48 @@ def test_a_capped_parakeet_context_word_stays_out_of_the_region():
     )
 
 
+def _context_ties():
+    """(prefix_s, frame, cap_s) where a word on that 80 ms frame, capped at
+    cap_s, ends exactly at the 0.1 s trim allowance past the context, for left
+    contexts of 1 to 10 s in 0.1 s steps and caps in 0.01 s steps."""
+    for prefix_cs in range(100, 1001, 10):
+        for cap_cs in range(20, 46):
+            frame, rest = divmod(prefix_cs + 10 - cap_cs, 8)
+            if rest == 0:
+                yield prefix_cs / 100, frame, cap_cs / 100
+
+
+def _region_text(prefix_s, starts, cap_s) -> list[str]:
+    from backend.processing.engines.onnx_asr_engine import (
+        _Recognition,
+        map_onnx_asr_recognition,
+    )
+    from backend.processing.live_transcribe import _extract_region_segment_payloads
+
+    tokens = [f" w{index}" for index in range(len(starts))]
+    clip = map_onnx_asr_recognition(
+        _Recognition("".join(tokens), tokens, starts),
+        audio_duration=prefix_s + 5.0,
+        word_length_cap_s=cap_s,
+    )
+    return [
+        word["word"]
+        for segment in _extract_region_segment_payloads(clip, prefix_s)
+        for word in segment.get("words", [])
+    ]
+
+
+def test_a_context_word_ending_exactly_at_the_trim_allowance_is_trimmed():
+    kept = [
+        (prefix_s, frame, cap_s)
+        for prefix_s, frame, cap_s in _context_ties()
+        if _region_text(prefix_s, [(frame + step) * 0.08 for step in (-6, 0, 8)], cap_s)
+        != ["w2"]
+    ]
+
+    assert kept == []
+
+
 def test_extract_region_segment_payloads_and_confidence_payload_keep_word_timestamps():
     from backend.processing.live_transcribe import (
         _build_live_confidence_payload,
