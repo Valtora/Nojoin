@@ -102,12 +102,10 @@ Each reads the paths before the rows cascade away and unlinks the files after
 the commit, so a commit that fails never leaves a row whose file is gone. Only
 paths that resolve inside the documents directory are unlinked; any other is
 logged and left. A parse still running when its document is deleted stops at
-its next write. The daily cleanup task removes files in the documents directory
-that no row references once they are 24 hours old, which reclaims files left by
-versions that did not remove them, by a process that died between commit and
-unlink, and by an upload whose row never committed. It scans the directory
-before reading the rows, so a file moved into place after its row commits, as a
-restore does, is never mistaken for an orphan.
+its next write. Nothing sweeps the documents directory for files without a row,
+as nothing sweeps any live directory: a file left by a process that died between
+commit and unlink, or by a version that did not remove documents, stays until
+an operator removes it.
 
 ### Meeting Analytics
 

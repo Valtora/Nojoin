@@ -176,15 +176,6 @@ finalise pipeline removes when it completes. The pipeline clears its own
 intermediates, and the daily cleanup task reclaims any left by a worker that was
 killed before it could.
 
-The same daily task, on `worker-io`, also removes files in `data/documents` that
-no document references once they are 24 hours old. Deleting a document or a
-recording removes its files directly; the sweep reclaims files left by earlier
-versions, which kept attached documents on disk after their recording was
-deleted, and by uploads that failed before they were saved. Each run logs a line
-such as `Orphaned document sweep: removed 12 file(s), reclaimed 48210331 bytes`.
-Only regular files directly inside the documents directory are considered, so
-do not keep anything else there.
-
 ### Reclaiming the Old Shared /tmp Volume
 
 Deployments created before 2.0.0 mounted a `backup_temp` named volume at
