@@ -36,8 +36,8 @@ type Write = "create" | "update" | "remove";
  * per-note revisions, 409 with the current note on a stale edit or delete,
  * 404 for a missing note, 422 for an empty or too long body after Python's
  * strip, a retried create returning the note as it is now, an edit that
- * changes nothing keeping its revision, and writes that commit but lose
- * their response.
+ * changes nothing keeping its revision, writes that commit but lose their
+ * response, and requests refused before they run.
  */
 class FakeServer {
   notes: TimelineNote[] = [];
@@ -48,6 +48,10 @@ class FakeServer {
   nextIdTaken = false;
   /** Writes wait for this before they run. */
   gate: Promise<void> | null = null;
+  /** Refusals for the next writes, in order, each before its write runs. */
+  readonly refuse: { write: Write; error: unknown }[] = [];
+  /** How many of the next lists fail without an answer. */
+  failLists = 0;
 
   add(id: string, kind: TimelineNote["kind"], body: string, author = "dana") {
     this.clock += 1;
@@ -83,11 +87,16 @@ class FakeServer {
 
   listFor = async (recordingId: string) => {
     this.scope(recordingId);
+    if (this.failLists > 0) {
+      this.failLists -= 1;
+      throw new Error("Network Error");
+    }
     return this.list();
   };
 
   create = async (recordingId: string, payload: TimelineNoteCreate) => {
     this.scope(recordingId);
+    this.refused("create");
     const body = this.clean(payload.body);
     if (this.gate) await this.gate;
     const existing = this.notes.find((note) => note.id === payload.id);
@@ -103,6 +112,7 @@ class FakeServer {
 
   update = async (recordingId: string, id: string, update: TimelineNoteUpdate) => {
     this.scope(recordingId);
+    this.refused("update");
     const body = update.body == null ? null : this.clean(update.body);
     if (this.gate) await this.gate;
     const note = this.find(id);
@@ -118,6 +128,7 @@ class FakeServer {
 
   remove = async (recordingId: string, id: string, expectedRevision?: number) => {
     this.scope(recordingId);
+    this.refused("remove");
     const note = this.find(id);
     if (expectedRevision !== undefined && note.revision !== expectedRevision) {
       throw refusal(409, { message: "changed", note: { ...note } });
@@ -142,6 +153,11 @@ class FakeServer {
       throw refusal(422, [{ msg: "body must not be empty or too long" }]);
     }
     return cleaned;
+  }
+
+  private refused(write: Write) {
+    if (this.refuse[0]?.write !== write) return;
+    throw this.refuse.shift()!.error;
   }
 
   private respond(write: Write) {
@@ -632,5 +648,137 @@ describe("HeadNotePanel", () => {
     expect(screen.getByText(/Shorten the notes to save them/)).toBeInTheDocument();
     expect(screen.getByText("Save failed")).toBeInTheDocument();
     expect(calls.create).not.toHaveBeenCalled();
+  });
+
+  it("asks before re-creating a note its lost create made and another device deleted", async () => {
+    server.lose.add("create");
+    const { poll } = mount();
+    type("Agenda");
+    await waitForSave();
+    const [{ id }] = server.notes;
+    // A poll here shows the note; another device then deletes it.
+    await poll();
+    server.drop(id);
+    await poll();
+
+    type("Agenda, budget");
+    await waitForSave();
+
+    expect(server.notes).toEqual([]);
+    expect(screen.getByRole("alert")).toHaveTextContent("deleted on another device");
+    expect(calls.create).toHaveBeenCalledTimes(1);
+
+    await click("Keep mine");
+    expect(bodies()).toEqual(["Agenda, budget"]);
+    expect(server.notes[0].id).not.toBe(id);
+  });
+
+  it("asks again when the check for a note missing from a poll fails", async () => {
+    server.add("h1", "head", "Original");
+    const { poll } = mount();
+    server.drop("h1");
+    server.failLists = 1;
+    await poll();
+    expect(box().value).toBe("Original");
+
+    // Later polls are unchanged, so the page hands none of them on.
+    await poll();
+    await act(() => vi.advanceTimersByTimeAsync(2_000));
+
+    expect(calls.list).toHaveBeenCalledTimes(2);
+    expect(box().value).toBe("");
+  });
+
+  it("does not take a delete refused for a missing recording as done", async () => {
+    server.add("h1", "head", "Original");
+    mount();
+    server.refuse.push({ write: "remove", error: refusal(404, "Recording not found") });
+    type("");
+    await waitForSave();
+    expect(screen.getByText("Save failed")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+
+    // The box still edits that note, rather than making a second one.
+    type("Original, kept");
+    await waitForSave();
+    expect(bodies()).toEqual(["Original, kept"]);
+  });
+
+  it("shows a note whose create lands after the box was cleared", async () => {
+    const { poll } = mount();
+    server.refuse.push({ write: "create", error: refusal(504, "Gateway Timeout") });
+    type("Secret");
+    await waitForSave();
+    expect(screen.getByText("Save failed")).toBeInTheDocument();
+    const [[, { id }]] = calls.create.mock.calls;
+
+    type("");
+    await waitForSave();
+    // The proxy gave up on the create, but the backend commits it now.
+    server.add(id, "head", "Secret");
+    await poll();
+
+    expect(box().value).toBe("Secret");
+  });
+
+  it("takes its own delete whose response was lost as done when typing again", async () => {
+    server.add("h1", "head", "Original");
+    mount();
+    server.lose.add("remove");
+    type("");
+    await waitForSave();
+    expect(screen.getByText("Save failed")).toBeInTheDocument();
+
+    type("Fresh start");
+    await waitForSave();
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(bodies()).toEqual(["Fresh start"]);
+  });
+
+  it("clears the note its own unanswered edit made", async () => {
+    server.add("h1", "head", "Original");
+    mount();
+    server.lose.add("update");
+    type("Mine");
+    await waitForSave();
+    expect(screen.getByText("Save failed")).toBeInTheDocument();
+
+    type("");
+    await waitForSave();
+
+    expect(calls.remove.mock.calls.map(([, , revision]) => revision)).toEqual([1, 2]);
+    expect(server.notes).toEqual([]);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("takes clearing a note already deleted elsewhere as done", async () => {
+    server.add("h1", "head", "Original");
+    mount();
+    server.drop("h1");
+    type("");
+    await waitForSave();
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByText("Saved")).toBeInTheDocument();
+    expect(server.notes).toEqual([]);
+  });
+
+  it("forgets texts older than its last three unanswered saves", async () => {
+    server.add("h1", "head", "Original");
+    mount();
+    for (const text of ["a", "b", "c", "d"]) {
+      server.refuse.push({ write: "update", error: new Error("Network Error") });
+      type(text);
+      await waitForSave();
+    }
+    // Another device writes what this one tried first, four saves ago.
+    server.edit("h1", "a");
+
+    type("e");
+    await waitForSave();
+
+    expect(screen.getByRole("alert")).toHaveTextContent("changed on another device");
+    expect(bodies()).toEqual(["a"]);
   });
 });
