@@ -381,7 +381,9 @@ def test_a_parse_whose_page_insert_fails_ends_in_error(harness, monkeypatch, cap
 
     A second parse of the same document stores page 1 after this one has read
     which pages exist, so this parse's insert of page 1 breaks the unique
-    constraint. The row is still there, so the failure must be recorded on it.
+    constraint. The row is still there, so the failure must be recorded on it,
+    in words a user can read: the database's own text, SQL and all, goes only
+    to the log.
     """
     target = _add_recording(harness, "target")
     path = asyncio.run(_attach(harness, target))
@@ -410,9 +412,11 @@ def test_a_parse_whose_page_insert_fails_ends_in_error(harness, monkeypatch, cap
     with Session(harness.engine) as session:
         document = session.get(Document, document_id)
         assert document.status == DocumentStatus.ERROR
-        assert "uq_document_page_number" in document.error_message
+        assert "INSERT INTO" not in document.error_message
+        assert document.error_message == document_tasks.DATABASE_FAILURE_DETAIL
     assert path.is_file()
     assert f"Failed to process document {document_id}" in caplog.text
+    assert "uq_document_page_number" in caplog.text
 
 
 @pytest.mark.anyio

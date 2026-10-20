@@ -19,6 +19,7 @@ import logging
 import os
 from typing import List, Optional
 
+from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import select
 
 from backend.models.context_chunk import ContextChunk
@@ -53,6 +54,11 @@ PAGE_FLUSH_BATCH = 8
 STAGE_READING = "Reading pages"
 STAGE_ANALYSING = "Analysing pages with AI"
 STAGE_INDEXING = "Indexing for search"
+
+# Shown on the document in place of a database error's own text.
+DATABASE_FAILURE_DETAIL = (
+    "The server failed while storing this document. Parse it again to retry."
+)
 
 # A page whose own text layer is at least this long is left alone by OCR. OCR
 # transcribes glyphs and is strictly worse than a real text layer, so it is only
@@ -311,7 +317,12 @@ def _record_parse_failure(
         logger.error(
             "Failed to process document %s: %s", document_id, error, exc_info=error
         )
-    _fail(session, document, str(error))
+    # The message is shown to the user. A database error's text carries SQL,
+    # parameters and a link, so it stays in the log above.
+    message = (
+        DATABASE_FAILURE_DETAIL if isinstance(error, SQLAlchemyError) else str(error)
+    )
+    _fail(session, document, message)
 
 
 def _fail(session, document: Document, message: str) -> None:
