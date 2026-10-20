@@ -597,7 +597,7 @@ def test_the_error_codes_are_the_ones_the_frontend_pins() -> None:
 
 
 @pytest.mark.anyio
-async def test_each_write_records_its_token_and_a_repeat_keeps_the_last_one(
+async def test_each_write_records_its_token_and_a_tokenless_repeat_keeps_it(
     client: AsyncClient,
 ) -> None:
     created_by, edited_by = str(uuid4()), str(uuid4())
@@ -611,18 +611,54 @@ async def test_each_write_records_its_token_and_a_repeat_keeps_the_last_one(
     assert edited.json()["last_write_token"] == edited_by
     assert (await client.get(BASE)).json()[0]["last_write_token"] == edited_by
 
-    # A repeat makes no revision, so the revision's token stays its maker's.
-    repeat = await client.patch(
-        url,
-        json={"expected_revision": 2, "body": "Edited", "write_token": str(uuid4())},
+    # A repeat without a token makes no revision, so the token stays its maker's.
+    repeat = await client.patch(url, json={"expected_revision": 2, "body": "Edited"})
+    assert (repeat.json()["revision"], repeat.json()["last_write_token"]) == (
+        2,
+        edited_by,
     )
-    assert repeat.json()["last_write_token"] == edited_by
 
     stale = await client.patch(
         url, json={"expected_revision": 1, "body": "Late", "write_token": created_by}
     )
     assert stale.status_code == 409
     assert stale.json()["detail"]["note"]["last_write_token"] == edited_by
+
+
+@pytest.mark.anyio
+async def test_a_repeat_with_a_token_makes_a_revision_that_fences_off_a_late_edit(
+    client: AsyncClient, edge_refreshes: list[int]
+) -> None:
+    # An edit to "AB" went unanswered and has not landed. The box is typed back
+    # to "A", which is resent under the same token, as the store does.
+    token = str(uuid4())
+    note = await _create(client, kind="head", body="A")
+    url = f"{BASE}/{note['id']}"
+
+    resent = await client.patch(
+        url, json={"expected_revision": 1, "body": "A", "write_token": token}
+    )
+    assert resent.status_code == 200
+    assert (resent.json()["revision"], resent.json()["last_write_token"]) == (2, token)
+
+    # The edit lands late, and is refused: nobody waits for that answer, and the
+    # note keeps the text the box holds.
+    late = await client.patch(
+        url, json={"expected_revision": 1, "body": "AB", "write_token": token}
+    )
+    assert (late.status_code, _code(late)) == (409, "revision_conflict")
+    assert [(n["body"], n["revision"]) for n in (await client.get(BASE)).json()] == [
+        ("A", 2)
+    ]
+
+    # Under the token that made the revision too: a write of that token sent
+    # against it may still be in transit.
+    again = await client.patch(
+        url, json={"expected_revision": 2, "body": "A", "write_token": token}
+    )
+    assert again.json()["revision"] == 3
+    # No text changed, so only the create asked for a refresh.
+    assert edge_refreshes == [10]
 
 
 @pytest.mark.anyio

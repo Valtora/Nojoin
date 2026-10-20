@@ -55,8 +55,9 @@ type Write = "create" | "update" | "remove";
  * never was (except a delete with a token, which leaves a tombstone so a late
  * create of the id is refused), 422 for an empty or too long body after Python's strip, a
  * retried create returning the note as it is now, an edit that changes
- * nothing keeping its revision and token, writes that commit but lose their
- * response, and requests refused before they run.
+ * nothing keeping its revision and token only when it carries no token,
+ * writes that commit but lose their response, and requests refused before
+ * they run.
  */
 class FakeServer {
   notes: TimelineNote[] = [];
@@ -163,8 +164,11 @@ class FakeServer {
     if (note.revision !== update.expected_revision) {
       throw coded(409, "revision_conflict", { note: { ...note } });
     }
-    if (body === null || body === note.body) return { ...note };
-    note.body = body;
+    // A repeat without a token keeps its revision; with one, it makes one, so
+    // a write of the same revision still in transit is refused when it lands.
+    const repeat = body === null || body === note.body;
+    if (repeat && update.write_token === undefined) return { ...note };
+    if (body !== null) note.body = body;
     note.revision += 1;
     note.last_write_token = update.write_token ?? null;
     this.respond("update");
@@ -1648,5 +1652,47 @@ describe("HeadNotePanel", () => {
     const [cleared, kept] = calls.create.mock.calls.map(([, payload]) => payload.id);
     expect(kept).not.toBe(cleared);
     expect(server.tombstones.has(cleared!)).toBe(true);
+  });
+
+  it("keeps the text typed back after a lost edit, when that edit lands late", async () => {
+    server.add("h1", "head", "A");
+    const { poll } = mount();
+    server.refuse.push({ write: "update", error: refusal(504, "Gateway Timeout") });
+    type("AB");
+    await waitForSave();
+    const [lostEdit] = calls.update.mock.calls;
+    type("A");
+    await waitForSave();
+    expect(bodies()).toEqual(["A"]);
+
+    // The resend made a revision, so the lost edit is refused when it lands.
+    await expect(
+      server.update(lostEdit[0], lostEdit[1], lostEdit[2]),
+    ).rejects.toMatchObject({ response: { status: 409 } });
+    await poll();
+
+    expect(bodies()).toEqual(["A"]);
+    expect(box().value).toBe("A");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("keeps the text typed again after an unanswered clear, when that delete lands late", async () => {
+    server.add("h1", "head", "A");
+    const { poll } = mount();
+    server.refuse.push({ write: "remove", error: refusal(504, "Gateway Timeout") });
+    type("");
+    await waitForSave();
+    const [lostDelete] = calls.remove.mock.calls;
+    type("A");
+    await waitForSave();
+
+    await expect(
+      server.remove(lostDelete[0], lostDelete[1], lostDelete[2]),
+    ).rejects.toMatchObject({ response: { status: 409 } });
+    await poll();
+
+    expect(bodies()).toEqual(["A"]);
+    expect(box().value).toBe("A");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 });

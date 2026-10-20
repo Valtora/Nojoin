@@ -12,11 +12,13 @@ Every write may carry a ``write_token``. The note keeps the token of the write
 that made its revision, and a delete leaves a tombstone holding the delete's
 token, so a write for a deleted note hears who deleted it (410
 ``note_deleted_by_you`` or ``note_deleted_elsewhere``) rather than a bare 404,
-and a retried create cannot bring a deleted note back. A delete with a token
-of an id that no note has held leaves a tombstone too, so a create whose answer
-was lost cannot land after the user cleared it. Creates and deletes of one id
-are serialised by an advisory lock on it. Every refusal's detail is
-``{code, message}``, the ``code`` stable (``TimelineNoteErrorCode``).
+and a retried create cannot bring a deleted note back. An edit with a token
+always makes a new revision, so it fences off an earlier write of the same
+revision still in transit. A delete with a token of an id that no note has held
+leaves a tombstone too, so a create whose answer was lost cannot land after the
+user cleared it. Creates and deletes of one id are serialised by an advisory
+lock on it. Every refusal's detail is ``{code, message}``, the ``code`` stable
+(``TimelineNoteErrorCode``).
 """
 
 from dataclasses import dataclass
@@ -407,12 +409,17 @@ async def update_timeline_note(
 
     body_changes = payload.body is not None and payload.body != note.body
     anchor_moves = payload.anchor_ms is not None and payload.anchor_ms != note.anchor_ms
-    if not (body_changes or anchor_moves):
+    changes = body_changes or anchor_moves
+    if not changes and write_token is None:
         # A repeat of what the note already holds: no new revision, so it
         # cannot refuse another device's next edit, and nothing to refresh.
         current = await _read(db, note, recording_public_id)
         await db.rollback()
         return current
+    # With a token, a repeat makes a revision too. A client resends the text
+    # the note holds after an edit of its went unanswered, under that edit's
+    # token: the new revision fences the edit off, so if it lands later it is
+    # a 409 rather than a revision of its own that a poll would bring back.
 
     if payload.body is not None:
         note.body = payload.body
@@ -426,7 +433,8 @@ async def update_timeline_note(
     db.add(note)
     await db.commit()
     await db.refresh(note)
-    await _dispatch_meeting_edge_refresh(recording_pk, enabled=edge_enabled)
+    if changes:
+        await _dispatch_meeting_edge_refresh(recording_pk, enabled=edge_enabled)
     return await _read(db, note, recording_public_id)
 
 
