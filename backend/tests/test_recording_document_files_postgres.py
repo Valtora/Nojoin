@@ -31,7 +31,7 @@ from backend.api.deps import get_current_recording_client_user, get_current_user
 from backend.api.v1.api import api_router
 from backend.api.v1.endpoints import documents as documents_ep
 from backend.core.db import driver_urls
-from backend.models.document import Document
+from backend.models.document import Document, DocumentStatus
 from backend.models.document_page import DocumentPage
 from backend.models.recording import Recording, RecordingStatus
 from backend.models.user import User, UserRole
@@ -323,3 +323,42 @@ def test_a_parse_in_flight_stops_cleanly_when_its_recording_is_deleted(
     with Session(harness.engine) as session:
         assert session.exec(select(func.count()).select_from(DocumentPage)).one() == 0
     assert f"Document {document_id} was deleted while parsing" in caplog.text
+
+
+def test_a_parse_whose_page_insert_fails_ends_in_error(harness, monkeypatch, caplog):
+    """A failed insert aborts the parse's transaction; the document still ends ERROR.
+
+    A second parse of the same document stores page 1 after this one has read
+    which pages exist, so this parse's insert of page 1 breaks the unique
+    constraint. The row is still there, so the failure must be recorded on it.
+    """
+    target = _add_recording(harness, "target")
+    path = asyncio.run(_attach(harness, target))
+    with Session(harness.engine) as session:
+        document_id = session.exec(select(Document.id)).one()
+
+    real_existing = document_tasks._existing_page_numbers
+
+    def existing_then_race(session, doc_id):
+        found = real_existing(session, doc_id)
+        with Session(harness.engine) as other:
+            other.add(DocumentPage(document_id=doc_id, page_number=1, content="other"))
+            other.commit()
+        return found
+
+    monkeypatch.setattr(document_tasks, "_existing_page_numbers", existing_then_race)
+    task = document_tasks.process_document_task
+    task._session = Session(harness.engine)
+    try:
+        with caplog.at_level(logging.ERROR):
+            task.run(document_id)
+    finally:
+        task._session.close()
+        task._session = None
+
+    with Session(harness.engine) as session:
+        document = session.get(Document, document_id)
+        assert document.status == DocumentStatus.ERROR
+        assert "uq_document_page_number" in document.error_message
+    assert path.is_file()
+    assert f"Failed to process document {document_id}" in caplog.text

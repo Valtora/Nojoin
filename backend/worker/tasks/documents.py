@@ -276,30 +276,42 @@ def process_document_task(self, document_id: int, force_reparse: bool = False):
         _parse_document(session, document)
 
     except Exception as e:  # noqa: BLE001 -- boundary: any parse failure marks the document
-        if not _document_row_exists(session, document_id):
-            # Deleted mid-parse, with its recording or on its own. Every write
-            # from here would fail against the missing row, so stop quietly.
-            session.rollback()
-            logger.info("Document %s was deleted while parsing; stopped.", document_id)
-            return
-        if not isinstance(e, UnsupportedDocumentError):
-            logger.error(
-                "Failed to process document %s: %s", document_id, e, exc_info=True
-            )
-        _fail(session, document, str(e))
+        _record_parse_failure(session, document, document_id, e)
 
 
-def _document_row_exists(session, document_id: int) -> bool:
-    """Whether the row is still committed, read on a connection of its own.
+def _record_parse_failure(
+    session, document: Document, document_id: int, error: Exception
+) -> None:
+    """Mark the document failed, or stop quietly if it was deleted meanwhile.
 
-    The task's session may be unusable at this point (a write against the
-    deleted row aborts its transaction), so it cannot be asked.
+    The failure may have aborted the session's transaction, as a failed insert
+    does, so it is rolled back before the session is used again. Whatever the
+    parse wrote and had not committed goes with it; a resumed parse redoes it.
     """
-    with session.get_bind().connect() as connection:
-        found = connection.execute(
-            select(Document.id).where(Document.id == document_id)
-        ).first()
-    return found is not None
+    try:
+        session.rollback()
+        still_exists = (
+            session.exec(select(Document.id).where(Document.id == document_id)).first()
+            is not None
+        )
+    except Exception:
+        logger.error(
+            "Failed to process document %s: %s", document_id, error, exc_info=error
+        )
+        logger.exception(
+            "Could not check whether document %s still exists", document_id
+        )
+        return
+
+    if not still_exists:
+        # Deleted mid-parse, with its recording or on its own.
+        logger.info("Document %s was deleted while parsing; stopped.", document_id)
+        return
+    if not isinstance(error, UnsupportedDocumentError):
+        logger.error(
+            "Failed to process document %s: %s", document_id, error, exc_info=error
+        )
+    _fail(session, document, str(error))
 
 
 def _fail(session, document: Document, message: str) -> None:
