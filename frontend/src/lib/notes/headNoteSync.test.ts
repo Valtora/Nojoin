@@ -23,6 +23,15 @@ const head = (body: string, revision: number): TimelineNote => ({
   updated_at: "2026-10-17T10:00:00Z",
 });
 
+/** The 409 for a write made against a stale revision, carrying the note as it is. */
+const stale = (note: TimelineNote) => ({
+  isAxiosError: true,
+  response: {
+    status: 409,
+    data: { detail: { code: "revision_conflict", message: "x", note } },
+  },
+});
+
 describe("HeadNoteSync", () => {
   beforeEach(() => {
     updateTimelineNote.mockReset();
@@ -80,6 +89,46 @@ describe("HeadNoteSync", () => {
       note: head("Theirs", 2),
     });
   });
+
+  it("sends an edit again over a write elsewhere that left the note's content as it was", async () => {
+    updateTimelineNote
+      .mockRejectedValueOnce(stale(head("Original", 2)))
+      .mockResolvedValueOnce(head("Mine", 3));
+    const sync = new HeadNoteSync("rec-1", [head("Original", 1)]);
+
+    await sync.save("Mine");
+
+    expect(
+      updateTimelineNote.mock.calls.map(
+        ([, , update]) => update.expected_revision,
+      ),
+    ).toEqual([1, 2]);
+    expect(sync.getSnapshot()).toMatchObject({ body: "Mine", conflict: null });
+  });
+
+  it.each([
+    ["kind", { kind: "tail" }],
+    ["text", { body: "Theirs" }],
+    ["anchor", { anchor_ms: 5_000 }],
+    ["start", { start_ms: 1_000 }],
+    ["end", { end_ms: 2_000 }],
+    ["quote", { quoted_text: "the words" }],
+  ] as const)(
+    "takes a write elsewhere that changed the note's %s as a conflict",
+    async (_, change) => {
+      const theirs: TimelineNote = { ...head("Original", 2), ...change };
+      updateTimelineNote.mockRejectedValueOnce(stale(theirs));
+      const sync = new HeadNoteSync("rec-1", [head("Original", 1)]);
+
+      await expect(sync.save("Mine")).rejects.toThrow(/conflict/);
+
+      expect(updateTimelineNote).toHaveBeenCalledTimes(1);
+      expect(sync.getSnapshot().conflict).toEqual({
+        kind: "changed",
+        note: theirs,
+      });
+    },
+  );
 
   it("keeps its snapshot when a poll changes nothing it shows", () => {
     const sync = new HeadNoteSync("rec-1", [head("Original", 1)]);

@@ -1814,4 +1814,47 @@ describe("HeadNotePanel", () => {
     expect(bodies()).toEqual(["B's agenda"]);
     expect(calls.create).toHaveBeenCalledTimes(1);
   });
+
+  /** Another tab resends the note's own text under its token: a new revision of the same note. */
+  const resendElsewhere = (id: string) => {
+    const note = server.notes.find((candidate) => candidate.id === id)!;
+    return server.update(RECORDING, id, {
+      expected_revision: note.revision,
+      body: note.body,
+      write_token: OTHER_DEVICE,
+    });
+  };
+
+  it("saves over a write elsewhere that left the note's text as it was, without asking", async () => {
+    server.add("h1", "head", "A");
+    mount();
+    await resendElsewhere("h1");
+    expect(server.notes[0].revision).toBe(2);
+
+    type("A plus mine");
+    await waitForSave();
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(bodies()).toEqual(["A plus mine"]);
+    expect(
+      calls.update.mock.calls.map(([, , update]) => update.expected_revision),
+    ).toEqual([1, 2]);
+  });
+
+  it("clears a note over a write elsewhere that left its text as it was, without asking", async () => {
+    server.add("h1", "head", "A");
+    mount();
+    await resendElsewhere("h1");
+
+    type("");
+    await waitForSave();
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(server.notes).toEqual([]);
+    expect(
+      calls.remove.mock.calls.map(
+        ([, , conditions]) => conditions?.expectedRevision,
+      ),
+    ).toEqual([1, 2]);
+  });
 });

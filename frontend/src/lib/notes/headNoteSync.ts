@@ -47,7 +47,8 @@ import {
  * | base | save other text | patch against `base.revision` |
  * | base, with `clearing` or `unansweredEdit` naming it | save the text it holds | patch anyway: the note may be gone, or hold the unanswered edit |
  * | base | patch 409 with own token | own earlier write landed: `base` = it, patch again |
- * | base | patch or delete 409 with another token | conflict "changed" |
+ * | base | patch or delete 409 with another token, the note's content (kind, text, anchors) as `base` had it | a write that changed nothing, such as another tab's resend: `base` = it, the write is sent again |
+ * | base | patch or delete 409 with another token, the content changed | conflict "changed" |
  * | base or pending | save empty | delete against the revision |
  * | any | delete 204, 410 or 404 | gone; a delete of an id no note has held leaves a tombstone too, so a create still on its way is refused |
  * | any | no answer, or 5xx | nothing changes but `clearing` (for a delete) or `unansweredEdit` (for an edit); the next save retries under the same token |
@@ -113,17 +114,42 @@ export interface HeadNoteSnapshot {
   conflict: HeadNoteConflict | null;
 }
 
-interface KnownNote {
-  id: string;
-  revision: number;
-  body: string;
-}
+/**
+ * What a note says, to the box and to every reader of it: a write that leaves
+ * all of these as they were changed nothing that a text based on the note
+ * could have missed.
+ */
+const CONTENT_FIELDS = [
+  "kind",
+  "body",
+  "anchor_ms",
+  "start_ms",
+  "end_ms",
+  "quoted_text",
+] as const;
+
+type KnownNote = Pick<
+  TimelineNote,
+  "id" | "revision" | (typeof CONTENT_FIELDS)[number]
+>;
 
 const asKnown = (note: TimelineNote): KnownNote => ({
   id: note.id,
   revision: note.revision,
+  kind: note.kind,
   body: note.body,
+  anchor_ms: note.anchor_ms,
+  start_ms: note.start_ms,
+  end_ms: note.end_ms,
+  quoted_text: note.quoted_text,
 });
+
+/** Whether the note holds what `target` held, at whatever revision. */
+const sameContent = (target: KnownNote | null, note: TimelineNote) =>
+  target !== null &&
+  CONTENT_FIELDS.every(
+    (field) => (target[field] ?? null) === (note[field] ?? null),
+  );
 
 const sameNotes = (a: readonly TimelineNote[], b: readonly TimelineNote[]) =>
   a.length === b.length &&
@@ -493,7 +519,7 @@ export class HeadNoteSync {
     const base = this.base;
     if (!body) {
       const id = base?.id ?? this.pendingId;
-      if (id) await this.remove(id, base?.revision ?? 1);
+      if (id) await this.remove(id, base?.revision ?? 1, base);
     } else if (!base) {
       await this.create(body);
     } else if (
@@ -529,7 +555,7 @@ export class HeadNoteSync {
    */
   private async finishClear() {
     const id = this.outstandingClear();
-    if (id !== null) await this.remove(id, this.clearingRevision);
+    if (id !== null) await this.remove(id, this.clearingRevision, null);
   }
 
   private queueClear() {
@@ -601,10 +627,11 @@ export class HeadNoteSync {
       }
       this.answered();
       if (outcome.kind === "conflict") {
-        if (!this.mine(outcome.note)) {
+        if (!this.mine(outcome.note) && !sameContent(target, outcome.note)) {
           this.raise({ kind: "changed", note: outcome.note });
         }
-        // This device's earlier save landed; only its answer was lost.
+        // This device's earlier save landed, only its answer lost; or a write
+        // elsewhere left the note as the box's text found it.
         this.settle(outcome.note);
         if (outcome.note.body !== body) {
           await this.patch(asKnown(outcome.note), body);
@@ -620,8 +647,15 @@ export class HeadNoteSync {
     this.settle(saved);
   }
 
-  /** Deletes the note, against the revision the box's text started from. */
-  private async remove(id: string, revision: number): Promise<void> {
+  /**
+   * Deletes the note, against the revision the box's text started from.
+   * `target` is the note as the box knew it, or null when it never saw it.
+   */
+  private async remove(
+    id: string,
+    revision: number,
+    target: KnownNote | null,
+  ): Promise<void> {
     try {
       await deleteTimelineNote(this.recordingId, id, {
         expectedRevision: revision,
@@ -640,12 +674,13 @@ export class HeadNoteSync {
       }
       this.answered();
       if (outcome.kind === "conflict") {
-        if (!this.mine(outcome.note)) {
+        if (!this.mine(outcome.note) && !sameContent(target, outcome.note)) {
           this.raise({ kind: "changed", note: outcome.note });
         }
-        // This device's own earlier write made that revision: clear it too.
+        // This device's own earlier write made that revision, or one elsewhere
+        // left the note as the box knew it: clear it too.
         this.settle(outcome.note);
-        return this.remove(id, outcome.note.revision);
+        return this.remove(id, outcome.note.revision, asKnown(outcome.note));
       }
       if (outcome.kind !== "gone" && outcome.kind !== "notFound") throw error;
       // Deleted already, by anyone, or not on this recording: what clearing
