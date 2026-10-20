@@ -266,6 +266,50 @@ def test_a_word_end_padding_sent_by_an_older_page_is_ignored(install_config):
     assert "asr_word_end_padding_s" not in _config_file(install_config)
 
 
+def test_a_word_end_padding_sent_by_an_older_admin_page_is_ignored(install_config):
+    """An administrator's save also rewrites config.json, which must not pick
+    the retired key up from the request."""
+    status, body, row = asyncio.run(
+        _call_settings(
+            "admin",
+            {},
+            "POST",
+            {"asr_word_end_padding_s": 0.8, "canary_model": "canary-new"},
+        )
+    )
+
+    assert status == 200
+    saved = _config_file(install_config)
+    assert saved["canary_model"] == "canary-new"
+    assert "asr_word_end_padding_s" not in saved
+    assert "asr_word_end_padding_s" not in row
+    assert "asr_word_length_cap_s" not in row
+    assert "asr_word_end_padding_s" not in body
+
+
+@pytest.mark.parametrize(("retired_key", "stored"), RETIRED_KEYS.items())
+def test_a_retired_setting_on_disk_survives_save_values_and_stays_ignored(
+    tmp_path: Path, monkeypatch, retired_key, stored
+):
+    """First-run setup and the startup carry-over write through save_values,
+    which keeps every key already in config.json, a retired one included."""
+    monkeypatch.setattr(ConfigManager, "_ensure_dirs_exist", lambda self, cfg: None)
+    path = tmp_path / "config.json"
+    path.write_text(
+        json.dumps({**INSTALL_ENGINE, retired_key: stored}), encoding="utf-8"
+    )
+    manager = ConfigManager(config_path=str(path))
+
+    manager.save_values({"transcription_backend": "canary"})
+
+    on_disk = _config_file(manager)
+    assert on_disk[retired_key] == stored
+    assert on_disk["transcription_backend"] == "canary"
+    for loaded in (manager, ConfigManager(config_path=str(path))):
+        assert retired_key not in loaded.get_all()
+        assert loaded.get("transcription_backend") == "canary"
+
+
 def test_a_word_length_cap_outside_its_bounds_is_refused(install_config):
     for bad in (0.05, 0.19, 0.46, 0.8):
         status, _, row = asyncio.run(
