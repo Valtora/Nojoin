@@ -12,8 +12,10 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Iterable, Sequence
+from functools import partial
 from pathlib import Path
 
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col, select
 
@@ -77,9 +79,18 @@ async def delete_document_files(
     error, and one that cannot be removed is logged without stopping the rest.
     Called after the deleting transaction commits, so a failed commit never
     leaves a row pointing at a removed file. The resolving and unlinking run in
-    a worker thread, off the event loop.
+    a worker thread, off the event loop. A cancellation can arrive before that
+    thread has picked the job up, as it does while the thread pool is busy, and
+    the job would then never run; so a cancelled call unlinks on the event loop
+    before the cancellation propagates. If the thread had already started, the
+    files are unlinked twice, which is harmless: a missing file is not an error.
     """
-    await asyncio.to_thread(_unlink_document_files, list(file_paths), logger=logger)
+    unlink = partial(_unlink_document_files, list(file_paths), logger=logger)
+    try:
+        await run_in_threadpool(unlink)
+    except asyncio.CancelledError:
+        unlink()
+        raise
 
 
 async def insert_document_or_remove_file(
