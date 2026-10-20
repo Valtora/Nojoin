@@ -392,6 +392,7 @@ export const TIMELINE_NOTE_ERROR_CODES = [
   "note_deleted_elsewhere",
   "revision_conflict",
   "note_id_in_use",
+  "note_not_movable",
 ] as const;
 
 export type TimelineNoteErrorCode = (typeof TIMELINE_NOTE_ERROR_CODES)[number];

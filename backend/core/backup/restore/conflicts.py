@@ -445,8 +445,9 @@ def _resolve_timeline_notes(ctx: "_RowContext") -> "RowOutcome":
     note already on the recording it is headed for is that same note, so it is
     kept once. A note id held by another recording (the archive restored as a
     second copy), or by the tombstone of a note deleted since the backup, is
-    minted afresh: a public id names one note ever, so a write still in
-    flight for the deleted note cannot land on the restored one.
+    minted afresh: a public id names one note while its recording exists, so
+    a write still in flight for the deleted note cannot land on the restored
+    one.
     """
     public_id = ctx.item_data.get("public_id")
     existing = ctx.session.exec(

@@ -341,7 +341,8 @@ async def test_only_a_point_note_can_be_moved(client: AsyncClient) -> None:
     response = await client.patch(
         f"{BASE}/{note['id']}", json={"expected_revision": 1, "anchor_ms": 5}
     )
-    assert response.status_code == 422
+    assert (response.status_code, _code(response)) == (422, "note_not_movable")
+    assert response.json()["detail"]["message"] == "Only a point note can be moved"
     assert (await client.get(BASE)).json()[0]["revision"] == 1
 
 
@@ -721,6 +722,54 @@ async def test_a_tombstone_belongs_to_its_recording(client: AsyncClient) -> None
         elsewhere, json={"id": note["id"], "kind": "head", "body": "x"}
     )
     assert (reused.status_code, _code(reused)) == (409, "note_id_in_use")
+
+
+@pytest.mark.anyio
+async def test_a_tokened_delete_of_an_id_never_used_refuses_its_late_create(
+    client: AsyncClient, session_maker, edge_refreshes: list[int]
+) -> None:
+    # A create's answer was lost and it has not landed yet when the box is
+    # cleared: the delete records the id, so the create cannot land later.
+    note_id, token = str(uuid4()), str(uuid4())
+    deleted = await client.delete(
+        f"{BASE}/{note_id}", params={"expected_revision": 1, "write_token": token}
+    )
+    assert deleted.status_code == 204
+    assert await _tombstones(session_maker) == [(note_id, 10, token)]
+
+    late = await client.post(
+        BASE,
+        json={"id": note_id, "kind": "head", "body": "Secret", "write_token": token},
+    )
+
+    assert (late.status_code, _code(late)) == (410, "note_deleted_by_you")
+    assert (await client.get(BASE)).json() == []
+    # No note changed, so nothing is refreshed.
+    assert edge_refreshes == []
+
+
+@pytest.mark.anyio
+async def test_a_tokened_delete_records_no_id_it_cannot_own(
+    client: AsyncClient, session_maker
+) -> None:
+    elsewhere = f"/api/v1/transcripts/{OTHER_REC}/timeline-notes"
+    held = (
+        await client.post(
+            elsewhere, json={"id": str(uuid4()), "kind": "head", "body": "Theirs"}
+        )
+    ).json()["id"]
+    token = str(uuid4())
+
+    # An id another recording's note holds, one not in a create's form, and
+    # one a create would store differently are not this recording's to record.
+    for note_id in (held, "not-a-uuid", held.upper()):
+        response = await client.delete(
+            f"{BASE}/{note_id}", params={"write_token": token}
+        )
+        assert (response.status_code, _code(response)) == (404, "note_not_found")
+
+    assert await _tombstones(session_maker) == []
+    assert (await client.delete(f"{elsewhere}/{held}")).status_code == 204
 
 
 @pytest.mark.anyio

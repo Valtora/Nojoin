@@ -1533,10 +1533,11 @@ async def test_append_meeting_notes_is_refused_on_another_users_recording(
     )
     bind_mcp_identity(stranger)
 
-    with pytest.raises(HTTPException) as exc_info:
+    # The route's refusal reaches the assistant as its message alone.
+    with pytest.raises(ToolError) as exc_info:
         await append_meeting_notes(public_id, "Not yours.")
 
-    assert exc_info.value.status_code == 404
+    assert str(exc_info.value) == "Recording not found"
     assert await stored_notes(session_maker) == []
 
 

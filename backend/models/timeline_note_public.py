@@ -42,6 +42,8 @@ class TimelineNoteErrorCode(str, Enum):
     NOTE_DELETED_ELSEWHERE = "note_deleted_elsewhere"
     REVISION_CONFLICT = "revision_conflict"
     NOTE_ID_IN_USE = "note_id_in_use"
+    # An edit moved a note that is not a point note.
+    NOTE_NOT_MOVABLE = "note_not_movable"
 
 
 def _clean_body(value: str) -> str:

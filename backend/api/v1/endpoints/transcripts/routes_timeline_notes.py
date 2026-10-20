@@ -12,8 +12,11 @@ Every write may carry a ``write_token``. The note keeps the token of the write
 that made its revision, and a delete leaves a tombstone holding the delete's
 token, so a write for a deleted note hears who deleted it (410
 ``note_deleted_by_you`` or ``note_deleted_elsewhere``) rather than a bare 404,
-and a retried create cannot bring a deleted note back. Every refusal's detail
-carries a stable ``code`` (``TimelineNoteErrorCode``).
+and a retried create cannot bring a deleted note back. A delete with a token
+of an id that no note has held leaves a tombstone too, so a create whose answer
+was lost cannot land after the user cleared it. Creates and deletes of one id
+are serialised by an advisory lock on it. Every refusal's detail is
+``{code, message}``, the ``code`` stable (``TimelineNoteErrorCode``).
 """
 
 from dataclasses import dataclass
@@ -21,6 +24,7 @@ from typing import Any, NoReturn
 from uuid import UUID
 
 from fastapi import Depends, HTTPException, Query, Response, status
+from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
@@ -57,6 +61,7 @@ NOTE_DELETED_BY_YOU_DETAIL = "The note was deleted by this write's own token"
 NOTE_DELETED_ELSEWHERE_DETAIL = "The note was deleted elsewhere"
 NOTE_REVISION_CONFLICT_DETAIL = "The note was changed elsewhere since you loaded it"
 NOTE_ID_TAKEN_DETAIL = "That note id is already in use"
+NOTE_NOT_MOVABLE_DETAIL = "Only a point note can be moved"
 
 
 def _refused(
@@ -154,6 +159,35 @@ def _missing(
     return _refused(404, TimelineNoteErrorCode.NOTE_NOT_FOUND, NOTE_NOT_FOUND_DETAIL)
 
 
+async def _lock_note_id(db: AsyncSession, note_id: str) -> None:
+    """Hold a note id until the commit, against creates and deletes of it.
+
+    A create checks that no tombstone holds its id and then inserts; a delete
+    of an id with no note on the recording records a tombstone for it. Both
+    take this lock first, so neither runs between the other's check and its
+    commit: a create retried while its note is cleared can never leave the
+    note beside its tombstone. On PostgreSQL this is a transaction-scoped
+    advisory lock on the id's hash (a clash of hashes only makes two writes
+    wait for each other). Other databases run only in tests, one request at a
+    time, and take no lock.
+    """
+    if db.get_bind().dialect.name != "postgresql":
+        return
+    await db.execute(
+        text("SELECT pg_advisory_xact_lock(hashtext(:note_id))"),
+        {"note_id": note_id},
+    )
+
+
+def _canonical_note_id(note_id: str) -> str | None:
+    """The id as a create stores it (a lowercase hyphenated UUID), or None."""
+    try:
+        canonical = str(UUID(note_id))
+    except ValueError:
+        return None
+    return canonical if canonical == note_id else None
+
+
 async def _note_id_in_use(db: AsyncSession, note_id: str) -> bool:
     """Whether any note holds this id, so a refused insert clashed on it."""
     held = await db.execute(
@@ -217,9 +251,34 @@ async def _replayed_create(
     if tombstone is None:
         return None
     if tombstone.recording_id != recording_pk:
-        # A public id names one note ever, deleted or not.
+        # A public id names one note while its recording exists, deleted or not.
         raise _refused(409, TimelineNoteErrorCode.NOTE_ID_IN_USE, NOTE_ID_TAKEN_DETAIL)
     raise _deleted(tombstone, write_token)
+
+
+async def _record_unused_id(
+    db: AsyncSession, recording_pk: int, note_id: str, write_token: str | None
+) -> bool:
+    """Tombstone an id no note or tombstone holds, for a delete with a token.
+
+    Such a delete clears a create whose answer was lost and which has not
+    landed (yet): the tombstone makes that create a 410 when it arrives. Only
+    an id a create could have stored is recorded, and none held elsewhere.
+    """
+    canonical = _canonical_note_id(note_id)
+    if write_token is None or canonical is None:
+        return False
+    if await _note_id_in_use(db, canonical) or await _tombstone(db, canonical):
+        return False
+    db.add(
+        TimelineNoteTombstone(
+            public_id=canonical,
+            recording_id=recording_pk,
+            deleted_write_token=write_token,
+        )
+    )
+    await db.commit()
+    return True
 
 
 @dataclass(frozen=True)
@@ -273,6 +332,7 @@ async def create_timeline_note(
     write_token = _token(payload.write_token)
 
     if client_id is not None:
+        await _lock_note_id(db, client_id)
         existing = await _replayed_create(db, recording_pk, client_id, write_token)
         if existing is not None:
             # The first create's note, as it is now: a retry never edits it.
@@ -341,7 +401,9 @@ async def update_timeline_note(
         await _refuse_stale_revision(db, note, recording_public_id)
     if payload.anchor_ms is not None and note.kind != TimelineNoteKind.POINT.value:
         await db.rollback()
-        raise HTTPException(status_code=422, detail="Only a point note can be moved")
+        raise _refused(
+            422, TimelineNoteErrorCode.NOTE_NOT_MOVABLE, NOTE_NOT_MOVABLE_DETAIL
+        )
 
     body_changes = payload.body is not None and payload.body != note.body
     anchor_moves = payload.anchor_ms is not None and payload.anchor_ms != note.anchor_ms
@@ -382,16 +444,23 @@ async def delete_timeline_note(
     """Remove a note; with ``expected_revision``, only if it is still that one.
 
     Deleting a note already deleted with the same ``write_token`` is a 204: a
-    retry of that delete.
+    retry of that delete. A delete with a ``write_token`` of an id no note or
+    tombstone holds is a 204 too, and leaves a tombstone: it clears a create
+    whose answer was lost, which must not land later.
     """
     edge_enabled = is_meeting_edge_enabled(getattr(current_user, "settings", None))
     recording = await _owned_recording(db, recording_id, current_user.id)
     recording_pk, recording_public_id = recording.id, recording.public_id
     token = conditions.write_token
+    await _lock_note_id(db, note_id)
     note = await _locked_note(db, recording_pk, note_id)
     if note is None:
         tombstone = await _tombstone_on(db, recording_pk, note_id)
         if tombstone is not None and _deleted_by(tombstone, token):
+            return Response(status_code=status.HTTP_204_NO_CONTENT)
+        if tombstone is None and await _record_unused_id(
+            db, recording_pk, note_id, token
+        ):
             return Response(status_code=status.HTTP_204_NO_CONTENT)
         raise _missing(tombstone, token)
     expected_revision = conditions.expected_revision

@@ -194,6 +194,71 @@ async def test_two_deletes_of_one_note_race_to_one_tombstone(
     assert tombstones == (1,)
 
 
+def _waiting_on_an_advisory_lock(database_url: str) -> bool:
+    with psycopg.connect(database_url) as conn:
+        row = conn.execute(
+            "SELECT count(*) FROM pg_locks WHERE locktype = 'advisory'"
+            " AND NOT granted AND database ="
+            " (SELECT oid FROM pg_database WHERE datname = current_database())"
+        ).fetchone()
+    return row is not None and row[0] > 0
+
+
+@pytest.mark.anyio
+async def test_a_delete_racing_a_create_of_its_id_never_leaves_both(
+    client: AsyncClient, database: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A create whose answer was lost, and the clear that follows it, reach the
+    # server together. The create is held between its check for a tombstone
+    # and its insert; the delete runs in that gap, or waits on the create.
+    note_id, token = str(uuid4()), str(uuid4())
+    checked, release = asyncio.Event(), asyncio.Event()
+    replayed = notes_routes._replayed_create
+
+    async def _held_after_its_check(*args, **kwargs):
+        found = await replayed(*args, **kwargs)
+        checked.set()
+        await release.wait()
+        return found
+
+    monkeypatch.setattr(notes_routes, "_replayed_create", _held_after_its_check)
+    create = asyncio.create_task(
+        client.post(
+            BASE,
+            json={
+                "id": note_id,
+                "kind": "head",
+                "body": "Secret",
+                "write_token": token,
+            },
+        )
+    )
+    await asyncio.wait_for(checked.wait(), 10)
+    delete = asyncio.create_task(
+        client.delete(
+            f"{BASE}/{note_id}", params={"expected_revision": 1, "write_token": token}
+        )
+    )
+    for _ in range(200):
+        if delete.done() or _waiting_on_an_advisory_lock(database):
+            break
+        await asyncio.sleep(0.05)
+    release.set()
+    created, deleted = await asyncio.gather(create, delete)
+
+    # The delete waited, then found the note and removed it.
+    assert (created.status_code, deleted.status_code) == (201, 204), deleted.text
+    with psycopg.connect(database) as conn:
+        notes = conn.execute(
+            "SELECT count(*) FROM timeline_notes WHERE public_id = %s", (note_id,)
+        ).fetchone()
+        tombstones = conn.execute(
+            "SELECT count(*) FROM timeline_note_tombstones WHERE public_id = %s",
+            (note_id,),
+        ).fetchone()
+    assert (notes, tombstones) == ((0,), (1,))
+
+
 @pytest.mark.anyio
 async def test_deleting_a_recording_removes_its_notes_and_tombstones(
     client: AsyncClient, database: str, maker: async_sessionmaker[AsyncSession]

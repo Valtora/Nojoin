@@ -136,8 +136,10 @@ class TimelineNoteTombstone(SQLModel, table=True):
     create retried under the id, or an edit or delete of it, then hears
     whether the delete was made with its own write token or someone else's,
     instead of re-creating the note or reading as a plain 404. Readers of
-    notes never see tombstones: they are a table of their own. A public id
-    names at most one note ever, so a tombstone's id is unique.
+    notes never see tombstones: they are a table of their own. A delete with a
+    token of an id no note has held leaves one too, so a create whose answer
+    was lost cannot land after it. A public id names at most one note ever
+    while its recording exists, so a tombstone's id is unique.
     """
 
     __tablename__ = "timeline_note_tombstones"

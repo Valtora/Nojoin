@@ -695,7 +695,7 @@ async def append_meeting_notes(recording_id: str, text: str) -> dict[str, Any]:
         recording_id: The recording's string id from list_recordings.
         text: The note text to append.
     """
-    from fastapi import Response
+    from fastapi import HTTPException, Response
 
     from backend.api.v1.endpoints.transcripts.routes_timeline_notes import (
         create_timeline_note,
@@ -718,13 +718,22 @@ async def append_meeting_notes(recording_id: str, text: str) -> dict[str, Any]:
         )
 
     async with async_session_maker() as db:
-        note = await create_timeline_note(
-            recording_id,
-            TimelineNoteCreate(kind=TimelineNoteKind.TAIL, body=addition),
-            Response(),
-            db=db,
-            current_user=user,
-        )
+        try:
+            note = await create_timeline_note(
+                recording_id,
+                TimelineNoteCreate(kind=TimelineNoteKind.TAIL, body=addition),
+                Response(),
+                db=db,
+                current_user=user,
+            )
+        except HTTPException as error:
+            # The route refuses with {code, message}; the assistant gets the
+            # message, not the status and the dict.
+            detail = error.detail
+            message = detail.get("message") if isinstance(detail, dict) else None
+            raise ToolError(
+                message if isinstance(message, str) else str(detail)
+            ) from error
     return {
         "recording_id": recording_id,
         "note": {"id": note.id, "kind": note.kind.value, "body": note.body},
