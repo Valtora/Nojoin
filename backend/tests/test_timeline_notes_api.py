@@ -761,8 +761,9 @@ async def test_a_tokened_delete_records_no_id_it_cannot_own(
     token = str(uuid4())
 
     # An id another recording's note holds, one not in a create's form, and
-    # one a create would store differently are not this recording's to record.
-    for note_id in (held, "not-a-uuid", held.upper()):
+    # ones a create would store differently (and so lock differently) are not
+    # this recording's to record.
+    for note_id in (held, "not-a-uuid", held.upper(), str(uuid4()).upper()):
         response = await client.delete(
             f"{BASE}/{note_id}", params={"write_token": token}
         )
