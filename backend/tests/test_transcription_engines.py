@@ -296,6 +296,9 @@ def _word_ends(recognized, audio_duration=None):
     [
         pytest.param((0.0, 0.3), 5.0, 0.3, id="next-word-start"),
         pytest.param((0.0,), 0.25, 0.25, id="window-end"),
+        # A token stamped past the reported end: the window end still bounds
+        # the word before it.
+        pytest.param((0.0, 0.5), 0.3, 0.3, id="window-end-before-next-word"),
         pytest.param((0.0, 1.0), 5.0, 0.4, id="start-plus-cap"),
     ],
 )
