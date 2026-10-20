@@ -534,16 +534,13 @@ export class HeadNoteSync {
   }
 
   /**
-   * The note an unanswered delete was for, when the box no longer edits it
-   * and it may still be there: a cleared create whose answer was lost. While
-   * the box edits the note, its next write finds out what became of it.
+   * The note an unanswered delete was for, when the box no longer edits it:
+   * a cleared create whose answer was lost. While the box edits the note, its
+   * next write finds out what became of it.
    */
   private outstandingClear(): string | null {
     const id = this.clearingId;
-    if (id === null || id === this.base?.id || this.deletedIds.has(id)) {
-      return null;
-    }
-    return id;
+    return id === this.base?.id ? null : id;
   }
 
   /**
