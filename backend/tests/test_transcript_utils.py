@@ -368,6 +368,55 @@ def test_word_flip_unusable_limit_keeps_the_default():
     assert [seg["speaker"] for seg in result] == ["SPEAKER_00"]
 
 
+@pytest.mark.parametrize("spacing_s", [0.5, 0.55, 0.6])
+def test_a_parakeet_one_word_reply_with_no_pause_around_it_is_smoothed(spacing_s):
+    """The trade-off the Parakeet word length cap admits, with VAD off.
+
+    Unmuted audio has no silences, so only the next word's start and the
+    0.4 s cap end a word. A one-word reply spacing_s after the word before it
+    and before the next one is capped below smoothing's 0.45 s limit, its gaps
+    are under 0.25 s, and it goes to the speaker on both sides. The rule
+    before the cap ended it at the next word's start, which made it too long
+    to smooth.
+    """
+    from backend.processing.engines.onnx_asr_engine import (
+        _Recognition,
+        map_onnx_asr_recognition,
+    )
+
+    reply, after = 1.0 + spacing_s, 1.0 + 2 * spacing_s
+    turns = [(0.0, reply, "A"), (reply, after, "B"), (after, 3.0, "A")]
+    transcription = map_onnx_asr_recognition(
+        _Recognition(" so yes and", [" so", " yes", " and"], [1.0, reply, after]),
+        audio_duration=3.0,
+    )
+
+    result = combine_transcription_diarization(transcription, FakeDiarization(turns))
+
+    assert [seg["speaker"] for seg in result] == ["A"]
+    assert result[0]["text"] == "so yes and"
+
+    # The same words ending where the rule before the cap ended them.
+    uncapped = {
+        "segments": [
+            {
+                "start": 1.0,
+                "end": 3.0,
+                "text": " so yes and",
+                "words": [
+                    {"start": 1.0, "end": reply, "word": " so"},
+                    {"start": reply, "end": after, "word": " yes"},
+                    {"start": after, "end": 3.0, "word": " and"},
+                ],
+            }
+        ]
+    }
+
+    kept = combine_transcription_diarization(uncapped, FakeDiarization(turns))
+
+    assert [seg["speaker"] for seg in kept] == ["A", "B", "A"]
+
+
 @pytest.mark.parametrize(("max_duration_s", "expected"), [(0.45, "A"), (0, "B")])
 def test_zero_word_flip_limit_leaves_even_a_zero_length_word(max_duration_s, expected):
     """A zero-length word is no longer than a limit of 0, so only the explicit
