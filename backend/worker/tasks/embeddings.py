@@ -14,8 +14,11 @@ def update_speaker_embedding_task(
     """
     Update the speaker embedding for a specific segment (Active Learning).
     """
-    from backend.processing.embedding import merge_embeddings
-    from backend.processing.embedding_core import extract_embedding_for_segments
+    from backend.processing.embedding import blend_voiceprint
+    from backend.processing.embedding_core import (
+        EMBEDDING_METHOD_VERSION,
+        extract_embedding_for_segments,
+    )
 
     session = self.session
     try:
@@ -38,22 +41,9 @@ def update_speaker_embedding_task(
         )
 
         if new_embedding:
-            from backend.processing.embedding import embedding_version_of
-            from backend.processing.embedding_core import EMBEDDING_METHOD_VERSION
 
             def _blend(row, incoming):
-                """Merge in the new vector, or replace a stale-version one.
-
-                Blending across extraction versions would average two unrelated
-                regions of the vector space and produce a voiceprint that
-                matches neither, so a version mismatch replaces outright.
-                """
-                current = row.embedding if row.embedding is not None else []
-                if current and embedding_version_of(row) != EMBEDDING_METHOD_VERSION:
-                    row.embedding = incoming
-                else:
-                    row.embedding = merge_embeddings(current, incoming, alpha=0.5)
-                row.embedding_version = EMBEDDING_METHOD_VERSION
+                blend_voiceprint(row, incoming, EMBEDDING_METHOD_VERSION, alpha=0.5)
                 session.add(row)
 
             _blend(target_recording_speaker, new_embedding)

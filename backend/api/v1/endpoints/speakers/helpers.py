@@ -22,7 +22,7 @@ from backend.models.recording_public import (
 )
 from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
 from backend.models.transcript import Transcript
-from backend.processing.embedding import merge_embeddings
+from backend.processing.embedding import blend_voiceprint
 from backend.services.recording_identity_service import get_recording_by_public_id
 from backend.utils.canonical_pipeline import (
     apply_compatibility_segment_replace,
@@ -288,13 +288,13 @@ async def _merge_local_speakers(
                     segments=new_segments,
                 )
 
-    if source_speaker.embedding and target_speaker.embedding:
-        target_speaker.embedding = merge_embeddings(
-            target_speaker.embedding, source_speaker.embedding, alpha=0.5
+    if source_speaker.embedding:
+        blend_voiceprint(
+            target_speaker,
+            source_speaker.embedding,
+            source_speaker.embedding_version,
+            alpha=0.5,
         )
-        db.add(target_speaker)
-    elif source_speaker.embedding and not target_speaker.embedding:
-        target_speaker.embedding = source_speaker.embedding
         db.add(target_speaker)
 
     # Kept rather than deleted, so the merge history survives reprocessing.

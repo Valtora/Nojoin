@@ -31,9 +31,10 @@ from backend.models.user import User
 from backend.processing.embedding import (
     MARGIN_OF_VICTORY,
     SCAN_MATCH_THRESHOLD,
+    blend_voiceprint,
     cosine_similarity,
-    merge_embeddings,
 )
+from backend.processing.embedding_version import EMBEDDING_METHOD_VERSION
 from backend.services.recording_identity_service import get_recordings_by_public_ids
 from backend.utils.canonical_pipeline import (
     recording_ready_for_canonical_backfill,
@@ -276,12 +277,8 @@ async def merge_speakers(
                 rs.local_name = None
                 db.add(rs)
 
-    if source.embedding and target.embedding:
-        target.embedding = merge_embeddings(
-            target.embedding, source.embedding, alpha=0.5
-        )
-    elif source.embedding and not target.embedding:
-        target.embedding = source.embedding
+    if source.embedding:
+        blend_voiceprint(target, source.embedding, source.embedding_version, alpha=0.5)
     db.add(target)
 
     await db.delete(source)
@@ -551,6 +548,7 @@ async def recalibrate_voiceprint(
     final_emb = np.mean(np.array(all_embeddings), axis=0).tolist()
 
     speaker.embedding = final_emb
+    speaker.embedding_version = EMBEDDING_METHOD_VERSION
     speaker.is_voiceprint_locked = True
     db.add(speaker)
     await db.commit()
@@ -726,19 +724,16 @@ async def split_speaker(
                 name=new_speaker.name,
                 global_speaker_id=new_speaker.id,
                 embedding=emb,
+                embedding_version=EMBEDDING_METHOD_VERSION if emb else None,
             )
             db.add(rs)
 
     if new_speaker_embeddings:
         final_new_emb = np.mean(np.array(new_speaker_embeddings), axis=0).tolist()
 
-        if new_speaker.embedding:
-            new_speaker.embedding = merge_embeddings(
-                new_speaker.embedding, final_new_emb
-            )
-        else:
-            new_speaker.embedding = final_new_emb
-
+        blend_voiceprint(
+            new_speaker, final_new_emb, EMBEDDING_METHOD_VERSION, alpha=0.1
+        )
         new_speaker.is_voiceprint_locked = True
         db.add(new_speaker)
 
@@ -792,6 +787,7 @@ async def split_speaker(
     if original_speaker_embeddings:
         final_orig_emb = np.mean(np.array(original_speaker_embeddings), axis=0).tolist()
         original_speaker.embedding = final_orig_emb
+        original_speaker.embedding_version = EMBEDDING_METHOD_VERSION
         original_speaker.is_voiceprint_locked = True
         db.add(original_speaker)
 
