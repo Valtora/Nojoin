@@ -88,6 +88,13 @@ VALUES
   (now(), now(), 'mc-tn3', 900001, 900001, 'selection', '%s %% $1 — café', NULL, 0, 1, E'quote\\nwith newline'),
   (now(), now(), 'mc-tn4', 900001, 900001, 'tail', 'tail', NULL, NULL, NULL, NULL)
 ON CONFLICT (public_id) DO NOTHING;
+
+-- A note written with a write token, and a deleted note's tombstone: the
+-- rollback must drop both the column and the table with rows in them.
+UPDATE timeline_notes SET last_write_token = 'mc-token-1' WHERE public_id = 'mc-tn4';
+INSERT INTO timeline_note_tombstones (public_id, recording_id, deleted_write_token, deleted_at)
+VALUES ('mc-tt1', 900001, 'mc-token-2', now())
+ON CONFLICT (public_id) DO NOTHING;
 """
 
 

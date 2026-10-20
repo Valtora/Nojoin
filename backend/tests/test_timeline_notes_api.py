@@ -1,14 +1,21 @@
-"""The timeline notes API: ownership, validation, revisions and retried creates."""
+"""The timeline notes API: ownership, validation, revisions and retried creates.
+
+The routes run against SQLite with foreign keys enforced, and the caller is
+loaded through the request's own session, as ``get_current_user`` does in
+production, so a route that reads the user after a rollback fails here too.
+"""
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import text
+from sqlalchemy import event, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -16,12 +23,14 @@ from sqlalchemy.pool import StaticPool
 import backend.api.v1.endpoints.transcripts.routes_timeline_notes as notes_routes
 from backend.api.deps import get_current_user, get_db
 from backend.api.v1.api import api_router
+from backend.models.timeline_note_public import TimelineNoteErrorCode
 from backend.models.user import User
 from backend.tests.sqlite_schemas import (
     GLOBAL_SPEAKERS_SCHEMA,
     RECORDING_AUDIO_CHUNKS_SCHEMA,
     RECORDING_SPEAKERS_SCHEMA,
     RECORDINGS_SCHEMA,
+    TIMELINE_NOTE_TOMBSTONES_SCHEMA,
     TIMELINE_NOTES_SCHEMA,
     TRANSCRIPTS_SCHEMA,
     USERS_SCHEMA,
@@ -49,16 +58,19 @@ CREATE TABLE recording_tags (
 """
 
 
-def _user(user_id: int, username: str) -> User:
-    return User(
-        id=user_id,
-        username=username,
-        hashed_password="hashed-password",
-        role="user",
-        is_active=True,
-        is_superuser=False,
-        force_password_change=False,
-    )
+def _session_user(user_id: int):
+    """A ``get_current_user`` that loads the user in the request's session."""
+
+    async def _load(db: AsyncSession = Depends(get_db)) -> User:
+        return (await db.execute(select(User).where(User.id == user_id))).scalar_one()
+
+    return _load
+
+
+def _enforce_foreign_keys(dbapi_connection, _record) -> None:
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.close()
 
 
 async def _seed(session_maker: sessionmaker) -> None:
@@ -105,12 +117,14 @@ async def session_maker():
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
+    event.listen(engine.sync_engine, "connect", _enforce_foreign_keys)
     async with engine.begin() as connection:
         for schema in (
             USERS_SCHEMA,
             RECORDINGS_SCHEMA,
             TRANSCRIPTS_SCHEMA,
             TIMELINE_NOTES_SCHEMA,
+            TIMELINE_NOTE_TOMBSTONES_SCHEMA,
         ):
             await connection.execute(text(schema))
     maker = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
@@ -143,7 +157,7 @@ async def app(session_maker, edge_refreshes) -> FastAPI:
             yield session
 
     application.dependency_overrides[get_db] = _db
-    application.dependency_overrides[get_current_user] = lambda: _user(OWNER_ID, "mira")
+    application.dependency_overrides[get_current_user] = _session_user(OWNER_ID)
     return application
 
 
@@ -275,6 +289,7 @@ async def test_an_edit_bumps_the_revision_and_a_stale_one_gets_the_current_note(
     stale = await client.patch(url, json={"expected_revision": 1, "body": "Mine"})
     assert stale.status_code == 409
     detail = stale.json()["detail"]
+    assert detail["code"] == "revision_conflict"
     assert detail["message"] == notes_routes.NOTE_REVISION_CONFLICT_DETAIL
     assert detail["note"]["body"] == "Edited"
     assert detail["note"]["revision"] == 2
@@ -351,9 +366,13 @@ async def test_a_deleted_note_is_gone_for_edits_and_deletes(
     url = f"{BASE}/{note['id']}"
     assert (await client.delete(url)).status_code == 204
     assert (await client.get(BASE)).json() == []
+    # Neither names a token, so neither is the delete's own retry.
     patched = await client.patch(url, json={"expected_revision": 1, "body": "y"})
-    assert patched.status_code == 404
-    assert (await client.delete(url)).status_code == 404
+    assert patched.status_code == 410
+    assert patched.json()["detail"]["code"] == "note_deleted_elsewhere"
+    again = await client.delete(url)
+    assert again.status_code == 410
+    assert again.json()["detail"]["code"] == "note_deleted_elsewhere"
     assert edge_refreshes == [10, 10]
 
 
@@ -387,7 +406,7 @@ async def test_a_client_id_in_use_elsewhere_is_refused(
         json={"id": client_id, "kind": "head", "body": "x"},
     )
     assert on_another_recording.status_code == 409
-    assert on_another_recording.json()["detail"] == notes_routes.NOTE_ID_TAKEN_DETAIL
+    assert on_another_recording.json()["detail"]["code"] == "note_id_in_use"
 
     malformed = await client.post(
         BASE, json={"id": "not-a-uuid", "kind": "head", "body": "x"}
@@ -515,7 +534,7 @@ async def test_another_accounts_note_is_not_found_for_edits_and_deletes(
     client: AsyncClient, app: FastAPI
 ) -> None:
     note = await _create(client, kind="head")
-    app.dependency_overrides[get_current_user] = lambda: _user(OTHER_ID, "otto")
+    app.dependency_overrides[get_current_user] = _session_user(OTHER_ID)
     url = f"{BASE}/{note['id']}"
     patched = await client.patch(url, json={"expected_revision": 1, "body": "Mine"})
     assert patched.status_code == 404
@@ -547,3 +566,195 @@ async def test_a_delete_naming_a_stale_revision_is_refused_with_the_current_note
     ).status_code == 204
     assert (await client.get(BASE)).json() == []
     assert edge_refreshes == [10, 10, 10]
+
+
+# Write tokens, tombstones and error codes: a client that loses a response
+# learns what happened from the server.
+
+CODES_PATH = Path(__file__).parent / "fixtures" / "timeline_note_error_codes.json"
+
+
+def _code(response) -> str:
+    return response.json()["detail"]["code"]
+
+
+async def _tombstones(session_maker) -> list[tuple]:
+    async with session_maker() as session:
+        rows = await session.execute(
+            text(
+                "SELECT public_id, recording_id, deleted_write_token "
+                "FROM timeline_note_tombstones ORDER BY id"
+            )
+        )
+        return [tuple(row) for row in rows]
+
+
+def test_the_error_codes_are_the_ones_the_frontend_pins() -> None:
+    # frontend/src/lib/notes/noteErrorCodes.test.ts reads the same file.
+    pinned = json.loads(CODES_PATH.read_text())
+    assert sorted(code.value for code in TimelineNoteErrorCode) == sorted(pinned)
+
+
+@pytest.mark.anyio
+async def test_each_write_records_its_token_and_a_repeat_keeps_the_last_one(
+    client: AsyncClient,
+) -> None:
+    created_by, edited_by = str(uuid4()), str(uuid4())
+    note = await _create(client, kind="head", write_token=created_by)
+    assert note["last_write_token"] == created_by
+    url = f"{BASE}/{note['id']}"
+
+    edited = await client.patch(
+        url, json={"expected_revision": 1, "body": "Edited", "write_token": edited_by}
+    )
+    assert edited.json()["last_write_token"] == edited_by
+    assert (await client.get(BASE)).json()[0]["last_write_token"] == edited_by
+
+    # A repeat makes no revision, so the revision's token stays its maker's.
+    repeat = await client.patch(
+        url,
+        json={"expected_revision": 2, "body": "Edited", "write_token": str(uuid4())},
+    )
+    assert repeat.json()["last_write_token"] == edited_by
+
+    stale = await client.patch(
+        url, json={"expected_revision": 1, "body": "Late", "write_token": created_by}
+    )
+    assert stale.status_code == 409
+    assert stale.json()["detail"]["note"]["last_write_token"] == edited_by
+
+
+@pytest.mark.anyio
+async def test_a_write_without_a_token_leaves_none(client: AsyncClient) -> None:
+    note = await _create(client, kind="head", write_token=str(uuid4()))
+    edited = await client.patch(
+        f"{BASE}/{note['id']}", json={"expected_revision": 1, "body": "From a script"}
+    )
+    assert edited.json()["last_write_token"] is None
+
+
+@pytest.mark.anyio
+async def test_a_delete_leaves_a_tombstone_with_its_token(
+    client: AsyncClient, session_maker
+) -> None:
+    token = str(uuid4())
+    note = await _create(client, kind="head")
+    response = await client.delete(
+        f"{BASE}/{note['id']}", params={"expected_revision": 1, "write_token": token}
+    )
+    assert response.status_code == 204
+    assert await _tombstones(session_maker) == [(note["id"], 10, token)]
+    assert (await client.get(BASE)).json() == []
+
+
+@pytest.mark.anyio
+async def test_writes_to_a_deleted_note_hear_whose_delete_it_was(
+    client: AsyncClient, session_maker, edge_refreshes: list[int]
+) -> None:
+    mine, theirs = str(uuid4()), str(uuid4())
+    note = await _create(client, kind="head", id=str(uuid4()), write_token=mine)
+    url = f"{BASE}/{note['id']}"
+    assert (await client.delete(url, params={"write_token": mine})).status_code == 204
+
+    def edit(token: str):
+        return client.patch(
+            url, json={"expected_revision": 1, "body": "y", "write_token": token}
+        )
+
+    assert (await edit(mine)).status_code == 410
+    assert _code(await edit(mine)) == "note_deleted_by_you"
+    assert _code(await edit(theirs)) == "note_deleted_elsewhere"
+
+    # The delete's own retry is done; anyone else's is told it was not theirs.
+    assert (await client.delete(url, params={"write_token": mine})).status_code == 204
+    elsewhere = await client.delete(url, params={"write_token": theirs})
+    assert (elsewhere.status_code, _code(elsewhere)) == (410, "note_deleted_elsewhere")
+
+    # A retried create cannot bring the note back, under any token.
+    for token, code in (
+        (mine, "note_deleted_by_you"),
+        (theirs, "note_deleted_elsewhere"),
+    ):
+        retry = await client.post(
+            BASE,
+            json={
+                "id": note["id"],
+                "kind": "head",
+                "body": "A note",
+                "write_token": token,
+            },
+        )
+        assert (retry.status_code, _code(retry)) == (410, code)
+    assert (await client.get(BASE)).json() == []
+    assert len(await _tombstones(session_maker)) == 1
+    # Only the create and the delete changed anything.
+    assert edge_refreshes == [10, 10]
+
+
+@pytest.mark.anyio
+async def test_a_note_that_never_existed_is_not_found(client: AsyncClient) -> None:
+    url = f"{BASE}/{uuid4()}"
+    patched = await client.patch(url, json={"expected_revision": 1, "body": "y"})
+    assert (patched.status_code, _code(patched)) == (404, "note_not_found")
+    deleted = await client.delete(url)
+    assert (deleted.status_code, _code(deleted)) == (404, "note_not_found")
+
+
+@pytest.mark.anyio
+async def test_a_tombstone_belongs_to_its_recording(client: AsyncClient) -> None:
+    token = str(uuid4())
+    note = await _create(client, kind="head", id=str(uuid4()))
+    await client.delete(f"{BASE}/{note['id']}", params={"write_token": token})
+
+    elsewhere = f"/api/v1/transcripts/{OTHER_REC}/timeline-notes"
+    patched = await client.patch(
+        f"{elsewhere}/{note['id']}",
+        json={"expected_revision": 1, "body": "y", "write_token": token},
+    )
+    assert (patched.status_code, _code(patched)) == (404, "note_not_found")
+    deleted = await client.delete(
+        f"{elsewhere}/{note['id']}", params={"write_token": token}
+    )
+    assert (deleted.status_code, _code(deleted)) == (404, "note_not_found")
+    # A public id names one note ever, deleted or not.
+    reused = await client.post(
+        elsewhere, json={"id": note["id"], "kind": "head", "body": "x"}
+    )
+    assert (reused.status_code, _code(reused)) == (409, "note_id_in_use")
+
+
+@pytest.mark.anyio
+async def test_a_missing_recording_is_named_as_such(client: AsyncClient) -> None:
+    foreign = f"/api/v1/transcripts/{FOREIGN_REC}/timeline-notes"
+    for response in (
+        await client.get(foreign),
+        await client.post(foreign, json={"kind": "head", "body": "x"}),
+        await client.patch(
+            f"{foreign}/{uuid4()}", json={"expected_revision": 1, "body": "y"}
+        ),
+        await client.delete(f"{foreign}/{uuid4()}"),
+    ):
+        assert (response.status_code, _code(response)) == (404, "recording_not_found")
+
+
+@pytest.mark.anyio
+async def test_deleting_a_recording_removes_its_notes_and_tombstones(
+    client: AsyncClient, session_maker
+) -> None:
+    kept = await client.post(
+        f"/api/v1/transcripts/{OTHER_REC}/timeline-notes",
+        json={"kind": "head", "body": "Another meeting's"},
+    )
+    await _create(client, kind="head")
+    gone = await _create(client, kind="head")
+    await client.delete(f"{BASE}/{gone['id']}")
+
+    async with session_maker() as session:
+        await session.execute(text("DELETE FROM recordings WHERE id = 10"))
+        await session.commit()
+        notes = (
+            await session.execute(text("SELECT public_id FROM timeline_notes"))
+        ).all()
+
+    assert [row[0] for row in notes] == [kept.json()["id"]]
+    assert await _tombstones(session_maker) == []

@@ -141,10 +141,29 @@ def test_user_notes_become_a_head_note_and_fold_back_on_downgrade(
         # Deleting a recording takes its notes with it; a backup restore's
         # overwrite mode relies on this.
         _add_note(conn, 3, "head", "Goes with its recording.")
+        conn.execute(
+            "INSERT INTO timeline_note_tombstones (public_id, recording_id,"
+            " deleted_write_token, deleted_at) VALUES (%s, 3, %s, now())",
+            (str(uuid4()), str(uuid4())),
+        )
         conn.execute("DELETE FROM recordings WHERE id = 3")
         assert conn.execute(
             "SELECT count(*) FROM timeline_notes WHERE recording_id = 3"
         ).fetchone() == (0,)
+        assert conn.execute(
+            "SELECT count(*) FROM timeline_note_tombstones"
+        ).fetchone() == (0,)
+        # A deleted note's id is held once.
+        conn.execute(
+            "INSERT INTO timeline_note_tombstones (public_id, recording_id,"
+            " deleted_at) VALUES ('held', 1, now())"
+        )
+        with pytest.raises(psycopg.errors.UniqueViolation):
+            with conn.transaction():
+                conn.execute(
+                    "INSERT INTO timeline_note_tombstones (public_id, recording_id,"
+                    " deleted_at) VALUES ('held', 4, now())"
+                )
         with pytest.raises(psycopg.errors.CheckViolation):
             with conn.transaction():
                 _add_note(conn, 1, "selection", "No quote.", start_ms=0, end_ms=1)
@@ -157,6 +176,9 @@ def test_user_notes_become_a_head_note_and_fold_back_on_downgrade(
             ).fetchall()
         )
         table = conn.execute("SELECT to_regclass('timeline_notes')").fetchone()
+        tombstones = conn.execute(
+            "SELECT to_regclass('timeline_note_tombstones')"
+        ).fetchone()
 
     assert folded == {
         1: "Agenda: budget.\nOwner: Dana.\n\nEarly quote.\n\nLate point.\n\nWrap up.",
@@ -164,6 +186,7 @@ def test_user_notes_become_a_head_note_and_fold_back_on_downgrade(
         4: "On a recording with no transcript.",
     }
     assert table == (None,)
+    assert tombstones == (None,)
 
     # And back up again: the folded text is one head note once more.
     _alembic(scratch_database, "upgrade", TIMELINE_NOTES)

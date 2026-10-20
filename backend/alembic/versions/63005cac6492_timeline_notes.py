@@ -11,10 +11,15 @@ prompts read in the same place the free text used to sit. The note is
 attributed to the recording's owner and dated by the transcript's last update.
 The column is then dropped: every reader is rewritten in the same change.
 
+Each note keeps the client-chosen token of the write that made its revision
+(last_write_token), and a delete leaves a row in timeline_note_tombstones with
+the note's id and the delete's token, so a write still in flight for a deleted
+note hears whose delete it was instead of re-creating the note.
+
 Downgrade folds each recording's notes back into user_notes, head notes first,
 then the anchored notes in timeline order, then tail notes, separated by blank
 lines, creating the transcript row where none exists. It is lossy: anchors,
-quotes, authors and per-note timestamps are dropped.
+quotes, authors, per-note timestamps, write tokens and tombstones are dropped.
 
 Revision ID: 63005cac6492
 Revises: 3b804f4435a1
@@ -38,6 +43,11 @@ INDEXES = (
     ("ix_timeline_notes_public_id", ["public_id"], True),
     ("ix_timeline_notes_recording_id", ["recording_id"], False),
     ("ix_timeline_notes_created_by_user_id", ["created_by_user_id"], False),
+)
+TOMBSTONES = "timeline_note_tombstones"
+TOMBSTONE_INDEXES = (
+    ("ix_timeline_note_tombstones_public_id", ["public_id"], True),
+    ("ix_timeline_note_tombstones_recording_id", ["recording_id"], False),
 )
 
 # Copied rather than imported from the model: a migration must keep meaning
@@ -82,6 +92,7 @@ def upgrade():
         sa.Column("end_ms", sa.BigInteger(), nullable=True),
         sa.Column("quoted_text", sa.Text(), nullable=True),
         sa.Column("revision", sa.Integer(), server_default="1", nullable=False),
+        sa.Column("last_write_token", sa.String(length=36), nullable=True),
         sa.CheckConstraint(KIND_CHECK, name="ck_timeline_notes_kind"),
         sa.CheckConstraint(SHAPE_CHECK, name="ck_timeline_notes_shape"),
         sa.ForeignKeyConstraint(
@@ -94,6 +105,21 @@ def upgrade():
     )
     for name, columns, unique in INDEXES:
         op.create_index(name, TABLE, columns, unique=unique)
+
+    op.create_table(
+        TOMBSTONES,
+        sa.Column("id", sa.BigInteger(), nullable=False),
+        sa.Column("public_id", sa.String(length=36), nullable=False),
+        sa.Column("recording_id", sa.BigInteger(), nullable=False),
+        sa.Column("deleted_write_token", sa.String(length=36), nullable=True),
+        sa.Column("deleted_at", sa.DateTime(), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["recording_id"], ["recordings.id"], ondelete="CASCADE"
+        ),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    for name, columns, unique in TOMBSTONE_INDEXES:
+        op.create_index(name, TOMBSTONES, columns, unique=unique)
 
     bind = op.get_bind()
     rows = bind.execute(
@@ -156,6 +182,9 @@ def downgrade():
         " WHERE t.recording_id = folded.recording_id)"
     )
 
+    for name, _columns, _unique in reversed(TOMBSTONE_INDEXES):
+        op.drop_index(name, table_name=TOMBSTONES)
+    op.drop_table(TOMBSTONES)
     for name, _columns, _unique in reversed(INDEXES):
         op.drop_index(name, table_name=TABLE)
     op.drop_table(TABLE)

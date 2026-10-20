@@ -3,11 +3,17 @@
 Mirrored in ``frontend/src/types/index.ts``. Creation validates the same
 per-kind shape the database enforces (``TIMELINE_NOTE_SHAPE_CHECK``), so a bad
 request is a 422 naming the problem rather than a constraint error.
+
+Every write may carry a client-chosen ``write_token``. The note keeps the token
+of the write that made its current revision (``last_write_token``), and a
+delete keeps it on the note's tombstone, so a client that lost a response can
+tell its own write from another device's by comparing tokens.
 """
 
 from __future__ import annotations
 
 from datetime import datetime
+from enum import Enum
 from typing import Optional
 from uuid import UUID
 
@@ -20,6 +26,22 @@ TIMELINE_NOTE_QUOTE_MAX_CHARS = 2_000
 # The largest integer a browser holds exactly; the frontend does arithmetic on
 # these values.
 TIMELINE_MS_MAX = 2**53 - 1
+
+
+class TimelineNoteErrorCode(str, Enum):
+    """The ``code`` of a refused note write, which clients branch on.
+
+    Pinned with the frontend by ``backend/tests/fixtures/timeline_note_error_codes.json``.
+    """
+
+    RECORDING_NOT_FOUND = "recording_not_found"
+    NOTE_NOT_FOUND = "note_not_found"
+    # The note was deleted by a write carrying this request's token.
+    NOTE_DELETED_BY_YOU = "note_deleted_by_you"
+    # The note was deleted by a write carrying another token, or none.
+    NOTE_DELETED_ELSEWHERE = "note_deleted_elsewhere"
+    REVISION_CONFLICT = "revision_conflict"
+    NOTE_ID_IN_USE = "note_id_in_use"
 
 
 def _clean_body(value: str) -> str:
@@ -49,6 +71,8 @@ class TimelineNoteRead(BaseModel):
     quoted_text: Optional[str] = None
     created_by: Optional[TimelineNoteAuthorRead] = None
     revision: int
+    # The token of the write that made this revision, if it named one.
+    last_write_token: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
@@ -59,6 +83,7 @@ class TimelineNoteCreate(BaseModel):
     # Chosen by the client so a retried create cannot make a second note: the
     # same id for the same recording returns the note it already made.
     id: Optional[UUID] = None
+    write_token: Optional[UUID] = None
     kind: TimelineNoteKind
     body: str
     anchor_ms: Optional[int] = Field(default=None, ge=0, le=TIMELINE_MS_MAX)
@@ -116,6 +141,7 @@ class TimelineNoteUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     expected_revision: int = Field(ge=1)
+    write_token: Optional[UUID] = None
     body: Optional[str] = None
     # Moves a point note (B4 drags it); refused for any other kind.
     anchor_ms: Optional[int] = Field(default=None, ge=0, le=TIMELINE_MS_MAX)

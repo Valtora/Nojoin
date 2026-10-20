@@ -146,7 +146,18 @@ CREATE TABLE timeline_notes (
     start_ms BIGINT,
     end_ms BIGINT,
     quoted_text TEXT,
-    revision INTEGER NOT NULL DEFAULT 1
+    revision INTEGER NOT NULL DEFAULT 1,
+    last_write_token VARCHAR(36)
+)
+"""
+
+TIMELINE_NOTE_TOMBSTONES_SCHEMA = """
+CREATE TABLE timeline_note_tombstones (
+    id INTEGER PRIMARY KEY,
+    public_id VARCHAR(36) NOT NULL UNIQUE,
+    recording_id INTEGER NOT NULL REFERENCES recordings(id) ON DELETE CASCADE,
+    deleted_write_token VARCHAR(36),
+    deleted_at DATETIME NOT NULL
 )
 """
 

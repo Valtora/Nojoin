@@ -353,6 +353,8 @@ export interface TimelineNote {
   created_by?: TimelineNoteAuthor | null;
   /** Bumped on every edit; an edit names the revision it was made against. */
   revision: number;
+  /** The `write_token` of the write that made this revision, if it named one. */
+  last_write_token?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -360,6 +362,8 @@ export interface TimelineNote {
 export interface TimelineNoteCreate {
   /** Chosen by the client, so a retried create returns the first note. */
   id?: string;
+  /** Chosen by the client; kept on the note, and on its tombstone once deleted. */
+  write_token?: string;
   kind: TimelineNoteKind;
   body: string;
   anchor_ms?: number;
@@ -370,14 +374,37 @@ export interface TimelineNoteCreate {
 
 export interface TimelineNoteUpdate {
   expected_revision: number;
+  write_token?: string;
   body?: string;
   /** Point notes only. */
   anchor_ms?: number;
 }
 
-/** The 409 detail of an edit made against a stale revision. */
-export interface TimelineNoteConflictDetail {
+/**
+ * The `code`s of a refused note write, `TimelineNoteErrorCode` in
+ * `timeline_note_public.py`; both are pinned by
+ * `backend/tests/fixtures/timeline_note_error_codes.json`.
+ */
+export const TIMELINE_NOTE_ERROR_CODES = [
+  "recording_not_found",
+  "note_not_found",
+  "note_deleted_by_you",
+  "note_deleted_elsewhere",
+  "revision_conflict",
+  "note_id_in_use",
+] as const;
+
+export type TimelineNoteErrorCode = (typeof TIMELINE_NOTE_ERROR_CODES)[number];
+
+/** The detail of a refused note write. */
+export interface TimelineNoteErrorDetail {
+  code: TimelineNoteErrorCode;
   message: string;
+}
+
+/** The 409 detail of a write made against a stale revision. */
+export interface TimelineNoteConflictDetail extends TimelineNoteErrorDetail {
+  code: "revision_conflict";
   note: TimelineNote;
 }
 

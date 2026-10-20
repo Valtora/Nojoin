@@ -444,17 +444,26 @@ def _resolve_timeline_notes(ctx: "_RowContext") -> "RowOutcome":
     of one in the same archive, whose rows are linked to the first copy. A
     note already on the recording it is headed for is that same note, so it is
     kept once. A note id held by another recording (the archive restored as a
-    second copy) is minted afresh.
+    second copy), or by the tombstone of a note deleted since the backup, is
+    minted afresh: a public id names one note ever, so a write still in
+    flight for the deleted note cannot land on the restored one.
     """
+    public_id = ctx.item_data.get("public_id")
     existing = ctx.session.exec(
-        select(runtime.TimelineNote).where(
-            runtime.TimelineNote.public_id == ctx.item_data.get("public_id")
-        )
+        select(runtime.TimelineNote).where(runtime.TimelineNote.public_id == public_id)
     ).first()
     if existing is not None and existing.recording_id == ctx.item_data["recording_id"]:
         if ctx.old_id is not None:
             ctx.state.id_map["timeline_notes"][ctx.old_id] = existing.id
         return RowOutcome.HANDLED
+    if public_id and runtime.note_id_tombstoned(ctx.session, public_id):
+        new_pid = str(uuid4())
+        logger.warning(
+            f"restored timeline note {public_id!r} was deleted since the backup; "
+            f"restoring it as {new_pid}."
+        )
+        ctx.item_data["public_id"] = new_pid
+        return RowOutcome.INSERT
     _claim_unique_public_id(ctx)
     return RowOutcome.INSERT
 

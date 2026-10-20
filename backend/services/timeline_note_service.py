@@ -120,6 +120,7 @@ def serialize_timeline_note(
             else None
         ),
         revision=note.revision,
+        last_write_token=note.last_write_token,
         created_at=note.created_at,
         updated_at=note.updated_at,
     )

@@ -7,9 +7,18 @@ creates never collide; an edit names the revision it was made against and is
 refused with 409 (carrying the note as it now is) when another device has
 changed it since. A delete may name the revision too, and is refused the same
 way; without one it is unconditional.
+
+Every write may carry a ``write_token``. The note keeps the token of the write
+that made its revision, and a delete leaves a tombstone holding the delete's
+token, so a write for a deleted note hears who deleted it (410
+``note_deleted_by_you`` or ``note_deleted_elsewhere``) rather than a bare 404,
+and a retried create cannot bring a deleted note back. Every refusal's detail
+carries a stable ``code`` (``TimelineNoteErrorCode``).
 """
 
+from dataclasses import dataclass
 from typing import Any, NoReturn
+from uuid import UUID
 
 from fastapi import Depends, HTTPException, Query, Response, status
 from sqlalchemy.exc import IntegrityError
@@ -18,9 +27,14 @@ from sqlmodel import select
 
 from backend.api.deps import get_current_user, get_db
 from backend.models.recording import Recording
-from backend.models.timeline_note import TimelineNote, TimelineNoteKind
+from backend.models.timeline_note import (
+    TimelineNote,
+    TimelineNoteKind,
+    TimelineNoteTombstone,
+)
 from backend.models.timeline_note_public import (
     TimelineNoteCreate,
+    TimelineNoteErrorCode,
     TimelineNoteRead,
     TimelineNoteUpdate,
 )
@@ -37,9 +51,38 @@ from backend.utils.time import utc_now
 from .helpers import _dispatch_meeting_edge_refresh, _get_owned_recording
 from .router import router
 
+RECORDING_NOT_FOUND_DETAIL = "Recording not found"
 NOTE_NOT_FOUND_DETAIL = "Note not found"
+NOTE_DELETED_BY_YOU_DETAIL = "The note was deleted by this write's own token"
+NOTE_DELETED_ELSEWHERE_DETAIL = "The note was deleted elsewhere"
 NOTE_REVISION_CONFLICT_DETAIL = "The note was changed elsewhere since you loaded it"
 NOTE_ID_TAKEN_DETAIL = "That note id is already in use"
+
+
+def _refused(
+    status_code: int, code: TimelineNoteErrorCode, message: str, **extra: Any
+) -> HTTPException:
+    return HTTPException(
+        status_code=status_code,
+        detail={"code": code.value, "message": message, **extra},
+    )
+
+
+def _token(value: UUID | None) -> str | None:
+    return str(value) if value is not None else None
+
+
+async def _owned_recording(
+    db: AsyncSession, recording_id: str, user_id: int
+) -> Recording:
+    try:
+        return await _get_owned_recording(db, recording_id, user_id)
+    except HTTPException as error:
+        if error.status_code != status.HTTP_404_NOT_FOUND:
+            raise
+        raise _refused(
+            404, TimelineNoteErrorCode.RECORDING_NOT_FOUND, RECORDING_NOT_FOUND_DETAIL
+        ) from error
 
 
 async def _read(
@@ -72,6 +115,45 @@ async def _existing_for_retry(
     ).scalar_one_or_none()
 
 
+async def _tombstone(db: AsyncSession, note_id: str) -> TimelineNoteTombstone | None:
+    return (
+        await db.execute(
+            select(TimelineNoteTombstone).where(
+                TimelineNoteTombstone.public_id == note_id
+            )
+        )
+    ).scalar_one_or_none()
+
+
+def _deleted_by(tombstone: TimelineNoteTombstone, write_token: str | None) -> bool:
+    """Whether the delete that left this tombstone carried this write's token."""
+    return write_token is not None and tombstone.deleted_write_token == write_token
+
+
+def _deleted(
+    tombstone: TimelineNoteTombstone, write_token: str | None
+) -> HTTPException:
+    """The 410 for a write to a deleted note, naming whose delete it was."""
+    if _deleted_by(tombstone, write_token):
+        return _refused(
+            410, TimelineNoteErrorCode.NOTE_DELETED_BY_YOU, NOTE_DELETED_BY_YOU_DETAIL
+        )
+    return _refused(
+        410,
+        TimelineNoteErrorCode.NOTE_DELETED_ELSEWHERE,
+        NOTE_DELETED_ELSEWHERE_DETAIL,
+    )
+
+
+def _missing(
+    tombstone: TimelineNoteTombstone | None, write_token: str | None
+) -> HTTPException:
+    """The refusal for a note this recording does not have: deleted, or never there."""
+    if tombstone is not None:
+        return _deleted(tombstone, write_token)
+    return _refused(404, TimelineNoteErrorCode.NOTE_NOT_FOUND, NOTE_NOT_FOUND_DETAIL)
+
+
 async def _note_id_in_use(db: AsyncSession, note_id: str) -> bool:
     """Whether any note holds this id, so a refused insert clashed on it."""
     held = await db.execute(
@@ -80,29 +162,31 @@ async def _note_id_in_use(db: AsyncSession, note_id: str) -> bool:
     return held.first() is not None
 
 
-async def _get_note(
-    db: AsyncSession, recording: Recording, note_id: str, *, for_update: bool = False
-) -> TimelineNote:
-    statement = (
-        select(TimelineNote)
-        .where(TimelineNote.public_id == note_id)
-        .where(TimelineNote.recording_id == recording.id)
-    )
-    if for_update:
-        # Holds the row from the revision check to the commit, so two edits
-        # made against the same revision cannot both pass the check.
-        statement = statement.with_for_update()
-    note = (await db.execute(statement)).scalar_one_or_none()
-    if note is None:
-        raise HTTPException(status_code=404, detail=NOTE_NOT_FOUND_DETAIL)
-    return note
+async def _locked_note(
+    db: AsyncSession, recording_pk: int, note_id: str
+) -> TimelineNote | None:
+    return (
+        await db.execute(
+            select(TimelineNote)
+            .where(TimelineNote.public_id == note_id)
+            .where(TimelineNote.recording_id == recording_pk)
+            # Holds the row from the revision check to the commit, so two
+            # writes made against the same revision cannot both pass the
+            # check, and a write that waited on a delete finds no row and
+            # then the tombstone.
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
 
 
-async def _notes_changed(recording: Recording, user: User) -> None:
-    await _dispatch_meeting_edge_refresh(
-        recording.id,
-        enabled=is_meeting_edge_enabled(getattr(user, "settings", None)),
-    )
+async def _tombstone_on(
+    db: AsyncSession, recording_pk: int, note_id: str
+) -> TimelineNoteTombstone | None:
+    """The tombstone of a note deleted from this recording; another's is a 404."""
+    tombstone = await _tombstone(db, note_id)
+    if tombstone is None or tombstone.recording_id != recording_pk:
+        return None
+    return tombstone
 
 
 async def _refuse_stale_revision(
@@ -110,13 +194,46 @@ async def _refuse_stale_revision(
 ) -> NoReturn:
     current = await _read(db, note, recording_public_id)
     await db.rollback()
-    raise HTTPException(
-        status_code=409,
-        detail={
-            "message": NOTE_REVISION_CONFLICT_DETAIL,
-            "note": current.model_dump(mode="json"),
-        },
+    raise _refused(
+        409,
+        TimelineNoteErrorCode.REVISION_CONFLICT,
+        NOTE_REVISION_CONFLICT_DETAIL,
+        note=current.model_dump(mode="json"),
     )
+
+
+async def _replayed_create(
+    db: AsyncSession, recording_pk: int, note_id: str, write_token: str | None
+) -> TimelineNote | None:
+    """What a create under a client id already used finds, before inserting.
+
+    The note an earlier attempt made (returned, as it is now), or the
+    tombstone it left when deleted (refused, so it is not made again).
+    """
+    existing = await _existing_for_retry(db, recording_pk, note_id)
+    if existing is not None:
+        return existing
+    tombstone = await _tombstone(db, note_id)
+    if tombstone is None:
+        return None
+    if tombstone.recording_id != recording_pk:
+        # A public id names one note ever, deleted or not.
+        raise _refused(409, TimelineNoteErrorCode.NOTE_ID_IN_USE, NOTE_ID_TAKEN_DETAIL)
+    raise _deleted(tombstone, write_token)
+
+
+@dataclass(frozen=True)
+class _DeleteConditions:
+    expected_revision: int | None
+    write_token: str | None
+
+
+def _delete_conditions(
+    expected_revision: int | None = Query(default=None, ge=1),
+    write_token: UUID | None = Query(default=None),
+) -> _DeleteConditions:
+    """A delete's query: the revision it was made against, and its write token."""
+    return _DeleteConditions(expected_revision, _token(write_token))
 
 
 @router.get("/{recording_id}/timeline-notes", response_model=list[TimelineNoteRead])
@@ -126,7 +243,7 @@ async def list_timeline_notes(
     current_user: User = Depends(get_current_user),
 ):
     """Every note on the recording, in timeline order."""
-    recording = await _get_owned_recording(db, recording_id, current_user.id)
+    recording = await _owned_recording(db, recording_id, current_user.id)
     return serialize_recording_timeline_notes(
         await load_recording_timeline_notes_async(db, recording.id),
         recording_public_id=recording.public_id,
@@ -146,26 +263,32 @@ async def create_timeline_note(
     current_user: User = Depends(get_current_user),
 ):
     """Add a note. Retrying with the same client ``id`` returns the first one (200)."""
-    recording = await _get_owned_recording(db, recording_id, current_user.id)
+    # Read before any rollback, which expires every row the session holds,
+    # the request's user included.
+    user_id = current_user.id
+    edge_enabled = is_meeting_edge_enabled(getattr(current_user, "settings", None))
+    recording = await _owned_recording(db, recording_id, user_id)
     recording_pk, recording_public_id = recording.id, recording.public_id
     client_id = str(payload.id) if payload.id is not None else None
+    write_token = _token(payload.write_token)
 
     if client_id is not None:
-        existing = await _existing_for_retry(db, recording_pk, client_id)
+        existing = await _replayed_create(db, recording_pk, client_id, write_token)
         if existing is not None:
             # The first create's note, as it is now: a retry never edits it.
             response.status_code = status.HTTP_200_OK
             return await _read(db, existing, recording_public_id)
 
     fields: dict[str, Any] = {
-        "recording_id": recording.id,
-        "created_by_user_id": current_user.id,
+        "recording_id": recording_pk,
+        "created_by_user_id": user_id,
         "kind": payload.kind.value,
         "body": payload.body,
         "anchor_ms": payload.anchor_ms,
         "start_ms": payload.start_ms,
         "end_ms": payload.end_ms,
         "quoted_text": payload.quoted_text,
+        "last_write_token": write_token,
     }
     if client_id is not None:
         fields["public_id"] = client_id
@@ -183,13 +306,15 @@ async def create_timeline_note(
                 response.status_code = status.HTTP_200_OK
                 return await _read(db, existing, recording_public_id)
             if await _note_id_in_use(db, client_id):
-                raise HTTPException(status_code=409, detail=NOTE_ID_TAKEN_DETAIL)
+                raise _refused(
+                    409, TimelineNoteErrorCode.NOTE_ID_IN_USE, NOTE_ID_TAKEN_DETAIL
+                ) from None
         # Not a clash of ids: the recording was deleted meanwhile (404), or
         # something else refused the row.
-        await _get_owned_recording(db, recording_id, current_user.id)
+        await _owned_recording(db, recording_id, user_id)
         raise
     await db.refresh(note)
-    await _notes_changed(recording, current_user)
+    await _dispatch_meeting_edge_refresh(recording_pk, enabled=edge_enabled)
     return await _read(db, note, recording_public_id)
 
 
@@ -204,11 +329,16 @@ async def update_timeline_note(
     current_user: User = Depends(get_current_user),
 ):
     """Edit a note's text, or move a point note."""
-    recording = await _get_owned_recording(db, recording_id, current_user.id)
-    note = await _get_note(db, recording, note_id, for_update=True)
+    edge_enabled = is_meeting_edge_enabled(getattr(current_user, "settings", None))
+    recording = await _owned_recording(db, recording_id, current_user.id)
+    recording_pk, recording_public_id = recording.id, recording.public_id
+    write_token = _token(payload.write_token)
+    note = await _locked_note(db, recording_pk, note_id)
+    if note is None:
+        raise _missing(await _tombstone_on(db, recording_pk, note_id), write_token)
 
     if note.revision != payload.expected_revision:
-        await _refuse_stale_revision(db, note, recording.public_id)
+        await _refuse_stale_revision(db, note, recording_public_id)
     if payload.anchor_ms is not None and note.kind != TimelineNoteKind.POINT.value:
         await db.rollback()
         raise HTTPException(status_code=422, detail="Only a point note can be moved")
@@ -218,7 +348,7 @@ async def update_timeline_note(
     if not (body_changes or anchor_moves):
         # A repeat of what the note already holds: no new revision, so it
         # cannot refuse another device's next edit, and nothing to refresh.
-        current = await _read(db, note, recording.public_id)
+        current = await _read(db, note, recording_public_id)
         await db.rollback()
         return current
 
@@ -227,14 +357,15 @@ async def update_timeline_note(
     if payload.anchor_ms is not None:
         note.anchor_ms = payload.anchor_ms
     note.revision += 1
+    note.last_write_token = write_token
     # Set here as well as by the column's onupdate, so the response carries it
     # without reloading the row.
     note.updated_at = utc_now()
     db.add(note)
     await db.commit()
     await db.refresh(note)
-    await _notes_changed(recording, current_user)
-    return await _read(db, note, recording.public_id)
+    await _dispatch_meeting_edge_refresh(recording_pk, enabled=edge_enabled)
+    return await _read(db, note, recording_public_id)
 
 
 @router.delete(
@@ -244,18 +375,36 @@ async def update_timeline_note(
 async def delete_timeline_note(
     recording_id: str,
     note_id: str,
-    expected_revision: int | None = Query(default=None, ge=1),
+    conditions: _DeleteConditions = Depends(_delete_conditions),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Remove a note; with ``expected_revision``, only if it is still that one."""
-    recording = await _get_owned_recording(db, recording_id, current_user.id)
-    note = await _get_note(
-        db, recording, note_id, for_update=expected_revision is not None
-    )
+    """Remove a note; with ``expected_revision``, only if it is still that one.
+
+    Deleting a note already deleted with the same ``write_token`` is a 204: a
+    retry of that delete.
+    """
+    edge_enabled = is_meeting_edge_enabled(getattr(current_user, "settings", None))
+    recording = await _owned_recording(db, recording_id, current_user.id)
+    recording_pk, recording_public_id = recording.id, recording.public_id
+    token = conditions.write_token
+    note = await _locked_note(db, recording_pk, note_id)
+    if note is None:
+        tombstone = await _tombstone_on(db, recording_pk, note_id)
+        if tombstone is not None and _deleted_by(tombstone, token):
+            return Response(status_code=status.HTTP_204_NO_CONTENT)
+        raise _missing(tombstone, token)
+    expected_revision = conditions.expected_revision
     if expected_revision is not None and note.revision != expected_revision:
-        await _refuse_stale_revision(db, note, recording.public_id)
+        await _refuse_stale_revision(db, note, recording_public_id)
+    db.add(
+        TimelineNoteTombstone(
+            public_id=note.public_id,
+            recording_id=recording_pk,
+            deleted_write_token=token,
+        )
+    )
     await db.delete(note)
     await db.commit()
-    await _notes_changed(recording, current_user)
+    await _dispatch_meeting_edge_refresh(recording_pk, enabled=edge_enabled)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

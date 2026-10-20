@@ -1,13 +1,15 @@
 """The timeline notes routes on a real PostgreSQL, against the migrated schema.
 
-SQLite in the main API tests enforces neither the foreign keys nor the unique
-index the way Postgres does, so what a create does when its insert is refused
-is shown here. Skips unless NOJOIN_TEST_POSTGRES_URL names a server; CI sets it
+Here the foreign keys, the unique ids and the row locks are Postgres's own, so
+what a create does when its insert is refused, and what racing writes do, is
+shown here. The caller is loaded through the request's session, as in
+production. Skips unless NOJOIN_TEST_POSTGRES_URL names a server; CI sets it
 for the backend suite.
 """
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator, Iterator
 from uuid import uuid4
 
@@ -17,11 +19,13 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlmodel import select
 
 import backend.api.v1.endpoints.transcripts.routes_timeline_notes as notes_routes
 from backend.api.deps import get_current_user, get_db
 from backend.api.v1.api import api_router
-from backend.tests.test_timeline_notes_api import OWNER_ID, _user
+from backend.models.recording import Recording
+from backend.tests.test_timeline_notes_api import OWNER_ID, _session_user
 from backend.tests.test_timeline_notes_migration_postgres import _alembic, _psycopg_url
 
 REC = "rec-pg"
@@ -66,18 +70,25 @@ def database(postgres_test_url: str) -> Iterator[str]:
 
 
 @pytest.fixture
+async def maker(database: str) -> AsyncIterator[async_sessionmaker[AsyncSession]]:
+    engine = create_async_engine(
+        make_url(database).set(drivername="postgresql+asyncpg")
+    )
+    try:
+        yield async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    finally:
+        await engine.dispose()
+
+
+@pytest.fixture
 async def client(
-    database: str, monkeypatch: pytest.MonkeyPatch
+    maker: async_sessionmaker[AsyncSession], monkeypatch: pytest.MonkeyPatch
 ) -> AsyncIterator[AsyncClient]:
 
     async def _no_refresh(recording_id: int, *, enabled: bool = True) -> None:
         return None
 
     monkeypatch.setattr(notes_routes, "_dispatch_meeting_edge_refresh", _no_refresh)
-    engine = create_async_engine(
-        make_url(database).set(drivername="postgresql+asyncpg")
-    )
-    maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     application = FastAPI()
     application.include_router(api_router, prefix="/api/v1")
 
@@ -86,32 +97,30 @@ async def client(
             yield session
 
     application.dependency_overrides[get_db] = _db
-    application.dependency_overrides[get_current_user] = lambda: _user(OWNER_ID, "mira")
-    try:
-        async with AsyncClient(
-            transport=ASGITransport(app=application), base_url="http://testserver"
-        ) as async_client:
-            yield async_client
-    finally:
-        await engine.dispose()
+    application.dependency_overrides[get_current_user] = _session_user(OWNER_ID)
+    async with AsyncClient(
+        transport=ASGITransport(app=application), base_url="http://testserver"
+    ) as async_client:
+        yield async_client
 
 
 @pytest.mark.anyio
-async def test_a_retried_create_after_a_delete_makes_the_note_anew(
+async def test_a_retried_create_after_a_delete_does_not_make_the_note_again(
     client: AsyncClient,
 ) -> None:
-    # Deleted ids are not remembered, so the server cannot tell this retry from
-    # a first create. The notes box guards against it (headNoteSync.ts).
-    note_id = str(uuid4())
+    note_id, token = str(uuid4()), str(uuid4())
     first = await client.post(BASE, json={"id": note_id, "kind": "head", "body": "A"})
     assert first.status_code == 201
-    assert (await client.delete(f"{BASE}/{note_id}")).status_code == 204
+    deleted = await client.delete(f"{BASE}/{note_id}", params={"write_token": token})
+    assert deleted.status_code == 204
 
-    retry = await client.post(BASE, json={"id": note_id, "kind": "head", "body": "A"})
+    retry = await client.post(
+        BASE, json={"id": note_id, "kind": "head", "body": "A", "write_token": token}
+    )
 
-    assert retry.status_code == 201
-    assert retry.json()["revision"] == 1
-    assert [note["id"] for note in (await client.get(BASE)).json()] == [note_id]
+    assert retry.status_code == 410
+    assert retry.json()["detail"]["code"] == "note_deleted_by_you"
+    assert (await client.get(BASE)).json() == []
 
 
 @pytest.mark.anyio
@@ -130,7 +139,7 @@ async def test_an_id_held_on_another_recording_is_refused_as_in_use(
     )
 
     assert clash.status_code == 409
-    assert clash.json()["detail"] == notes_routes.NOTE_ID_TAKEN_DETAIL
+    assert clash.json()["detail"]["code"] == "note_id_in_use"
     assert (await client.get(BASE)).json() == []
 
 
@@ -157,5 +166,54 @@ async def test_a_recording_deleted_during_a_create_is_not_reported_as_an_id_in_u
         BASE, json={"id": str(uuid4()), "kind": "head", "body": "Too late"}
     )
 
+    # The insert's refusal rolls the session back, expiring the request's user,
+    # which is loaded in that session: the route must not read it afterwards.
     assert response.status_code == 404
-    assert response.json()["detail"] == "Recording not found"
+    assert response.json()["detail"]["code"] == "recording_not_found"
+
+
+@pytest.mark.anyio
+async def test_two_deletes_of_one_note_race_to_one_tombstone(
+    client: AsyncClient, database: str
+) -> None:
+    note = await client.post(BASE, json={"kind": "head", "body": "Both clear it"})
+    url = f"{BASE}/{note.json()['id']}"
+
+    first, second = await asyncio.gather(
+        client.delete(url, params={"write_token": str(uuid4())}),
+        client.delete(url, params={"write_token": str(uuid4())}),
+    )
+
+    # The second waits on the first's row lock, then finds the tombstone.
+    statuses = sorted([first.status_code, second.status_code])
+    assert statuses == [204, 410], (first.text, second.text)
+    with psycopg.connect(database) as conn:
+        tombstones = conn.execute(
+            "SELECT count(*) FROM timeline_note_tombstones"
+        ).fetchone()
+    assert tombstones == (1,)
+
+
+@pytest.mark.anyio
+async def test_deleting_a_recording_removes_its_notes_and_tombstones(
+    client: AsyncClient, database: str, maker: async_sessionmaker[AsyncSession]
+) -> None:
+    # One recording goes through the ORM, as the delete routes do; the other
+    # by a bulk statement, as discarding a capture does.
+    for base in (BASE, f"/api/v1/transcripts/{OTHER_REC}/timeline-notes"):
+        await client.post(base, json={"kind": "head", "body": "Kept until the end"})
+        gone = (await client.post(base, json={"kind": "tail", "body": "x"})).json()
+        assert (await client.delete(f"{base}/{gone['id']}")).status_code == 204
+    async with maker() as session:
+        recording = (
+            await session.execute(select(Recording).where(Recording.public_id == REC))
+        ).scalar_one()
+        await session.delete(recording)
+        await session.commit()
+    with psycopg.connect(database) as conn:
+        conn.execute("DELETE FROM recordings WHERE public_id = %s", (OTHER_REC,))
+        notes = conn.execute("SELECT count(*) FROM timeline_notes").fetchone()
+        tombstones = conn.execute(
+            "SELECT count(*) FROM timeline_note_tombstones"
+        ).fetchone()
+    assert (notes, tombstones) == ((0,), (0,))

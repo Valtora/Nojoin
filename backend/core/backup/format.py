@@ -191,6 +191,10 @@ UNARCHIVED_TABLES: Dict[str, str] = {
     "diarization_window_turns": "Canonical pipeline state; rebuilt.",
     "transcript_utterances": "Canonical pipeline state; rebuilt from transcript.segments.",
     "transcript_utterance_events": "Canonical pipeline audit history; not rebuilt.",
+    "timeline_note_tombstones": (
+        "Ids of deleted timeline notes, which only a write still in flight from a "
+        "browser consults; a restored instance has none of those."
+    ),
 }
 
 

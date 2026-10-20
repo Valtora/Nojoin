@@ -21,6 +21,7 @@ Four kinds, distinguished by which anchor columns are set:
 new kind is a constraint swap rather than an ``ALTER TYPE``.
 """
 
+from datetime import datetime
 from enum import Enum
 from typing import Optional
 
@@ -28,15 +29,17 @@ from sqlalchemy import (
     BigInteger,
     CheckConstraint,
     Column,
+    DateTime,
     ForeignKey,
     Integer,
     String,
     Text,
 )
-from sqlmodel import Field
+from sqlmodel import Field, SQLModel
 
 from backend.models.base import BaseDBModel
 from backend.models.pipeline import generate_pipeline_public_id
+from backend.utils.time import utc_now
 
 
 class TimelineNoteKind(str, Enum):
@@ -117,4 +120,43 @@ class TimelineNote(BaseDBModel, table=True):
     revision: int = Field(
         default=1,
         sa_column=Column(Integer, nullable=False, default=1, server_default="1"),
+    )
+    # The client-chosen token of the write that made this revision. A client
+    # that finds its own token here knows the note is as its write left it.
+    # Empty for a write that named none: the migration, the MCP tool.
+    last_write_token: Optional[str] = Field(
+        default=None, sa_column=Column(String(36), nullable=True)
+    )
+
+
+class TimelineNoteTombstone(SQLModel, table=True):
+    """A deleted note's id, so a write still in flight for it learns its fate.
+
+    A delete removes the note and adds its tombstone in one transaction. A
+    create retried under the id, or an edit or delete of it, then hears
+    whether the delete was made with its own write token or someone else's,
+    instead of re-creating the note or reading as a plain 404. Readers of
+    notes never see tombstones: they are a table of their own. A public id
+    names at most one note ever, so a tombstone's id is unique.
+    """
+
+    __tablename__ = "timeline_note_tombstones"
+
+    id: Optional[int] = Field(default=None, primary_key=True, sa_type=BigInteger)
+    public_id: str = Field(
+        sa_column=Column(String(36), unique=True, index=True, nullable=False)
+    )
+    recording_id: int = Field(
+        sa_column=Column(
+            BigInteger,
+            ForeignKey("recordings.id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        )
+    )
+    deleted_write_token: Optional[str] = Field(
+        default=None, sa_column=Column(String(36), nullable=True)
+    )
+    deleted_at: datetime = Field(
+        default_factory=utc_now, sa_column=Column(DateTime, nullable=False)
     )
