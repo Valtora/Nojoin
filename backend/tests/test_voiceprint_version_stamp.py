@@ -20,6 +20,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
+from sqlmodel.ext.asyncio.session import AsyncSession as SQLModelAsyncSession
 
 from backend.api.deps import get_current_user, get_db
 from backend.api.v1.api import api_router
@@ -44,12 +45,14 @@ from backend.tests.sqlite_schemas import (
     TRANSCRIPT_UTTERANCES_SCHEMA,
     TRANSCRIPTS_SCHEMA,
 )
+from backend.worker.tasks.speaker_assignment import _matchable_global_speakers
 
 VOICE = [1.0, 0.0]
 OTHER = [0.0, 1.0]
 NOW = "2026-10-20 00:00:00"
 REC = "vs-rec"
 CURRENT = 2
+ALICE = 1
 
 
 @pytest.fixture
@@ -94,7 +97,7 @@ async def client(session_maker, stub_meeting_edge_dispatch):
 
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
-        id=1, username="alice", settings={}, force_password_change=False
+        id=ALICE, username="alice", settings={}, force_password_change=False
     )
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://testserver"
@@ -200,7 +203,8 @@ async def _seed(
                     INSERT INTO global_speakers (
                         id, created_at, updated_at, user_id, name, embedding,
                         embedding_version, is_voiceprint_locked
-                    ) VALUES (:id, :now, :now, 1, :name, :embedding, :version, 0)
+                    ) VALUES (:id, :now, :now, 1, :name, :embedding, :version,
+                              :locked)
                     """
                 ),
                 {
@@ -209,6 +213,7 @@ async def _seed(
                     "name": person["name"],
                     "embedding": _json_or_none(person.get("embedding")),
                     "version": person.get("version"),
+                    "locked": person.get("locked", False),
                 },
             )
         for index, speaker in enumerate(speakers, start=1):
@@ -261,10 +266,17 @@ async def _person(session_maker, name: str) -> SimpleNamespace:
 
 
 async def _identified(session_maker, name: str, voice: list[float]) -> bool:
-    """Whether identification picks ``name`` for ``voice`` among the saved people."""
-    person = await _person(session_maker, name)
-    match, _score = find_matching_global_speaker(voice, [person])
-    return match is person
+    """Whether identification picks ``name`` for ``voice``.
+
+    The candidates come from the loader the pipeline itself uses, so a person
+    it would never load can't pass.
+    """
+    async with SQLModelAsyncSession(session_maker.kw["bind"]) as session:
+        people = await session.run_sync(
+            lambda sync_session: _matchable_global_speakers(sync_session, ALICE)
+        )
+    match, _score = find_matching_global_speaker(voice, people)
+    return match is not None and match.name == name
 
 
 @pytest.mark.anyio
@@ -336,31 +348,42 @@ async def test_promoting_into_a_person_without_a_voiceprint_founds_an_identified
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize(
-    "body",
-    [
-        {"action": "create_new", "new_speaker_name": "Dana"},
-        {"action": "link_existing", "global_speaker_id": 7},
-        {"action": "force_link", "global_speaker_id": 7},
-    ],
-)
-async def test_a_person_founded_from_the_voiceprint_dialog_is_identified(
-    client, session_maker, body
+@pytest.mark.parametrize("action", ["link_existing", "force_link"])
+async def test_a_person_linked_from_the_voiceprint_dialog_is_identified(
+    client, session_maker, action
 ) -> None:
-    people = [{"id": 7, "name": "Dana"}] if "global_speaker_id" in body else []
     await _seed(
         session_maker,
         speakers=[{"label": "SPEAKER_00", "embedding": VOICE}],
-        people=people,
+        people=[{"id": 7, "name": "Dana"}],
     )
 
     response = await client.post(
         f"/api/v1/speakers/recordings/{REC}/speakers/SPEAKER_00/voiceprint/apply",
-        json=body,
+        json={"action": action, "global_speaker_id": 7},
     )
 
     assert response.status_code == 200
     assert await _identified(session_maker, "Dana", VOICE)
+
+
+@pytest.mark.anyio
+async def test_a_person_created_from_the_voiceprint_dialog_keeps_its_version(
+    client, session_maker
+) -> None:
+    await _seed(
+        session_maker,
+        speakers=[{"label": "SPEAKER_00", "embedding": VOICE}],
+    )
+
+    response = await client.post(
+        f"/api/v1/speakers/recordings/{REC}/speakers/SPEAKER_00/voiceprint/apply",
+        json={"action": "create_new", "new_speaker_name": "Dana"},
+    )
+
+    assert response.status_code == 200
+    person = await _person(session_maker, "Dana")
+    assert (person.embedding, person.embedding_version) == (VOICE, CURRENT)
 
 
 @pytest.mark.anyio
@@ -371,19 +394,20 @@ async def test_a_person_founded_from_the_voiceprint_dialog_is_identified(
         ("voiceprints/extract-all", None),
     ],
 )
-async def test_a_re_extracted_voiceprint_founds_an_identified_person(
+async def test_a_re_extracted_voiceprint_linked_to_a_person_is_identified(
     client, session_maker, extraction, endpoint, seeded
 ) -> None:
     await _seed(
         session_maker,
         speakers=[{"label": "SPEAKER_00", "embedding": seeded, "version": None}],
+        people=[{"id": 7, "name": "Robin"}],
     )
     extraction.append(VOICE)
 
     extracted = await client.post(f"/api/v1/speakers/recordings/{REC}/{endpoint}")
     applied = await client.post(
         f"/api/v1/speakers/recordings/{REC}/speakers/SPEAKER_00/voiceprint/apply",
-        json={"action": "create_new", "new_speaker_name": "Robin"},
+        json={"action": "link_existing", "global_speaker_id": 7},
     )
 
     assert (extracted.status_code, applied.status_code) == (200, 200)
