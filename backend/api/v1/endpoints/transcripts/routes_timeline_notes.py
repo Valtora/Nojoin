@@ -69,13 +69,15 @@ NOTE_ID_TAKEN_DETAIL = "That note id is already in use"
 NOTE_NOT_MOVABLE_DETAIL = "Only a point note can be moved"
 
 # How long the tombstone of an id no note held is kept. It refuses a create
-# sent before the delete that left it but arriving after, so it must outlive
-# any request still in transit. The bundled nginx (nginx/nginx.conf) reads a
-# request within its default 60 s header and 60 s body timeouts, then allows
-# 300 s to connect to the API and 300 s to send it on: a create it accepted
-# reaches the API within about 12 minutes. Uvicorn sets no request timeout, but
-# a create waits only on a pool connection and on the id's lock, which no
-# transaction holds for long. An hour is five times that.
+# sent before the delete that left it but arriving after, so it should outlive
+# any request still in transit. Nothing bounds that delay exactly. The bundled
+# nginx's timeouts (nginx/nginx.conf, and its 60 s defaults for reading the
+# header and body) each limit a gap between two reads or writes, not a
+# request's whole time, and once the API has a create it can still wait on a
+# pool connection, on the id's lock, or on a stalled database. An hour is a
+# generous allowance for a request stuck in transit, not a guarantee, and
+# nothing else here depends on it: a create arriving later still finds no
+# tombstone, and makes its note as it would have without the delete.
 NEVER_HELD_TOMBSTONE_TTL = timedelta(hours=1)
 # How many such tombstones a recording keeps within that hour. A user makes one
 # only by clearing the box after a create went unanswered, so the cap bounds
