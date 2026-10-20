@@ -52,7 +52,8 @@ type Write = "create" | "update" | "remove";
  * current note on a stale edit or delete, a tombstone for every delete so a
  * write to a deleted note gets 410 `note_deleted_by_you` (its token made the
  * delete) or `note_deleted_elsewhere`, 404 `note_not_found` for a note that
- * never was, 422 for an empty or too long body after Python's strip, a
+ * never was (except a delete with a token, which leaves a tombstone so a late
+ * create of the id is refused), 422 for an empty or too long body after Python's strip, a
  * retried create returning the note as it is now, an edit that changes
  * nothing keeping its revision and token, writes that commit but lose their
  * response, and requests refused before they run.
@@ -64,6 +65,8 @@ class FakeServer {
   private clock = 0;
   /** The next write of each kind commits, but its response is lost. */
   readonly lose = new Set<Write>();
+  /** The next write of each kind commits, and is answered with this error. */
+  readonly answerWith = new Map<Write, unknown>();
   /** The next create's new id turns out to be held on another recording. */
   nextIdTaken = false;
   /** Writes wait for this before they run. */
@@ -183,6 +186,16 @@ class FakeServer {
     ) {
       return; // A retry of the delete that made the tombstone.
     }
+    if (
+      writeToken !== undefined &&
+      !this.tombstones.has(id) &&
+      !this.notes.some((note) => note.id === id)
+    ) {
+      // An id no note has held: recorded, so a late create of it is refused.
+      this.bury(id, writeToken);
+      this.respond("remove");
+      return;
+    }
     const note = this.find(id, writeToken);
     if (expectedRevision !== undefined && note.revision !== expectedRevision) {
       throw coded(409, "revision_conflict", { note: { ...note } });
@@ -231,6 +244,11 @@ class FakeServer {
 
   private respond(write: Write) {
     if (this.lose.delete(write)) throw new Error("Network Error");
+    if (this.answerWith.has(write)) {
+      const error = this.answerWith.get(write);
+      this.answerWith.delete(write);
+      throw error;
+    }
   }
 }
 
@@ -823,7 +841,7 @@ describe("HeadNotePanel", () => {
     expect(bodies()).toEqual(["Original, kept"]);
   });
 
-  it("shows a note whose create lands after the box was cleared", async () => {
+  it("keeps a create that arrives after the box was cleared from landing", async () => {
     const { poll } = mount();
     server.refuse.push({
       write: "create",
@@ -832,21 +850,19 @@ describe("HeadNotePanel", () => {
     type("Secret");
     await waitForSave();
     expect(screen.getByText("Save failed", SHOWN)).toBeInTheDocument();
-    const [[, { id }]] = calls.create.mock.calls;
+    const [[, lostCreate]] = calls.create.mock.calls;
 
     type("");
     await waitForSave();
-    // The proxy gave up on the create, but the backend commits it now.
-    server.add(
-      id,
-      "head",
-      "Secret",
-      "dana",
-      calls.create.mock.calls[0][1].write_token,
-    );
+    // The proxy gave up on the create, but it reaches the backend now.
+    await expect(server.create(RECORDING, lostCreate)).rejects.toMatchObject({
+      response: { status: 410 },
+    });
     await poll();
 
-    expect(box().value).toBe("Secret");
+    expect(box().value).toBe("");
+    expect(server.notes).toEqual([]);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("takes its own delete whose response was lost as done when typing again", async () => {
@@ -1425,5 +1441,163 @@ describe("HeadNotePanel", () => {
 
     expect(calls.list).toHaveBeenCalledTimes(1);
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("sends text typed back to what the note held after a lost edit, so the lost edit does not return", async () => {
+    server.add("h1", "head", "A");
+    const { poll } = mount();
+    server.lose.add("update");
+    type("AB");
+    await waitForSave();
+    expect(screen.getByText("Save failed", SHOWN)).toBeInTheDocument();
+    expect(bodies()).toEqual(["AB"]);
+
+    type("A");
+    await waitForSave();
+    await poll();
+
+    // The first patch hears its own lost edit (409, own token), the second
+    // puts "A" over it.
+    expect(calls.update).toHaveBeenCalledTimes(3);
+    expect(bodies()).toEqual(["A"]);
+    expect(box().value).toBe("A");
+    expect(screen.getByText("Saved", SHOWN)).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("does not take a delete elsewhere for its own after a 409 showed its unanswered delete had not landed", async () => {
+    server.add("h1", "head", "A");
+    mount();
+    // This device's delete never reaches the server.
+    server.refuse.push({ write: "remove", error: new Error("Network Error") });
+    type("");
+    await waitForSave();
+    server.edit("h1", "B's");
+    type("C");
+    await waitForSave();
+    expect(screen.getByRole("alert")).toHaveTextContent("B's");
+    await click("Use theirs");
+
+    server.drop("h1");
+    type("B's plus mine");
+    await waitForSave();
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "deleted on another device",
+    );
+    expect(server.notes).toEqual([]);
+    expect(calls.create).not.toHaveBeenCalled();
+  });
+
+  it("does not take a delete elsewhere for its own after a refused clear showed the note", async () => {
+    server.add("h1", "head", "A");
+    mount();
+    server.refuse.push({ write: "remove", error: new Error("Network Error") });
+    type("");
+    await waitForSave();
+    server.edit("h1", "B's");
+    // Leaving the box clears it again, against the old revision.
+    await blur();
+    expect(screen.getByRole("alert")).toHaveTextContent("B's");
+    await click("Use theirs");
+
+    server.drop("h1");
+    type("B's plus mine");
+    await waitForSave();
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "deleted on another device",
+    );
+    expect(calls.create).not.toHaveBeenCalled();
+  });
+
+  it("takes its own delete answered with a server error as its own when typing again", async () => {
+    server.add("h1", "head", "Original");
+    mount();
+    // The delete lands, but the proxy answers 502.
+    server.answerWith.set("remove", refusal(502, "Bad Gateway"));
+    type("");
+    await waitForSave();
+    expect(server.notes).toEqual([]);
+    expect(screen.getByText("Save failed", SHOWN)).toBeInTheDocument();
+
+    type("Fresh start");
+    await waitForSave();
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(bodies()).toEqual(["Fresh start"]);
+  });
+
+  it("leaves the visible save state to be read in browse mode, without a live role", async () => {
+    server.add("h1", "head", "Original");
+    const { lock } = mount();
+    type("Mine");
+    await waitForSave();
+
+    const saved = screen.getByText("Saved", SHOWN);
+    expect(saved.closest("[aria-hidden]")).toBeNull();
+    expect(saved).not.toHaveAttribute("role");
+    expect(saved).not.toHaveAttribute("aria-live");
+
+    await lock(true);
+    expect(screen.getByText("Locked", SHOWN).closest("[aria-hidden]")).toBeNull();
+  });
+
+  it("announces a failed save once, not again on each failed retry", async () => {
+    server.add("h1", "head", "Original");
+    mount();
+    server.refuse.push({ write: "update", error: new Error("Network Error") });
+    type("Mine");
+    await waitForSave();
+    const status = screen.getByRole("status");
+    expect(status).toHaveTextContent("Save failed");
+
+    const changes: string[] = [];
+    const observer = new MutationObserver(() => {
+      changes.push(status.textContent ?? "");
+    });
+    observer.observe(status, {
+      childList: true,
+      characterData: true,
+      subtree: true,
+    });
+    // The retry is held in flight, then its answer is lost.
+    let release!: () => void;
+    server.gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    server.lose.add("update");
+    type("Mine, more");
+    await waitForSave();
+    expect(status).toHaveTextContent("Save failed");
+    server.gate = null;
+    await act(async () => {
+      release();
+      await settle();
+    });
+    observer.disconnect();
+
+    expect(screen.getByText("Save failed", SHOWN)).toBeInTheDocument();
+    expect(changes).toEqual([]);
+    expect(status).toHaveTextContent("Save failed");
+  });
+
+  it("leaves focus on the page when the lock ends after a click on no control", async () => {
+    server.add("h1", "head", "Original");
+    const { lock } = mount();
+    box().focus();
+    await lock(true);
+    const locked = screen.getByRole("group", { name: /temporarily locked/ });
+    expect(locked).toHaveFocus();
+
+    // A click on text, not a control, moves focus to the page.
+    await act(async () => {
+      locked.blur();
+      await settle();
+    });
+    await lock(false);
+
+    expect(box()).not.toHaveFocus();
+    expect(document.body).toHaveFocus();
   });
 });

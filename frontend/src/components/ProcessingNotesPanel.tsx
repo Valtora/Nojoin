@@ -235,7 +235,11 @@ function ProcessingNotesPanel({
     }
 
     setVisibleSaveState("saving");
-    setAnnouncement("");
+    // A failure stays announced through its retries, so a retry that fails
+    // too changes nothing there and is not announced again.
+    if (!lastSaveFailedRef.current) {
+      setAnnouncement("");
+    }
     try {
       await onSave(valueToSave);
       lastSavedRef.current = valueToSave;
@@ -404,11 +408,21 @@ function ProcessingNotesPanel({
   }, []);
 
   const handleLockBlur = useCallback((event: React.FocusEvent<HTMLDivElement>) => {
-    // Focus moved on to something else; a lock removed from the page moves it
-    // nowhere, and then the box takes it back.
     if (event.relatedTarget !== null) {
       lockFocusedRef.current = false;
+      return;
     }
+    // Focus went nowhere. If the lock was removed from the page, the box takes
+    // focus back; if the user clicked something that takes no focus, it stays
+    // on the page. Which one is known once this event is over: a removed lock
+    // has lost its ref by then. A window losing focus leaves the lock focused,
+    // so the box keeps its claim.
+    queueMicrotask(() => {
+      const lock = lockRef.current;
+      if (lock !== null && document.activeElement !== lock) {
+        lockFocusedRef.current = false;
+      }
+    });
   }, []);
 
   // The notice and its focused button go once a conflict is resolved, so
@@ -477,12 +491,9 @@ function ProcessingNotesPanel({
         <h3 id={headingId} className="text-base font-semibold text-foreground">
           Notes
         </h3>
-        {/* Hidden from assistive technology, which hears the status region
-            below, the conflict notice and the lock instead. */}
-        <span
-          aria-hidden="true"
-          className="ml-auto text-xs font-semibold uppercase tracking-[0.2em] text-contrast-helper"
-        >
+        {/* Plain text, read in browse mode; changes are announced by the
+            status region below, the conflict notice and the lock. */}
+        <span className="ml-auto text-xs font-semibold uppercase tracking-[0.2em] text-contrast-helper">
           {saveMessage}
         </span>
         <span role="status" className="sr-only">

@@ -32,7 +32,8 @@ import {
  *
  * State: `base` (the note the box's text is based on), `pending` (a create's
  * id while its answer is unknown), `clearing` (a note whose delete's answer is
- * unknown), `conflict`, and `dirty` (the box holds unsaved text).
+ * unknown), `unansweredEdit` (a note whose edit's answer is unknown),
+ * `conflict`, and `dirty` (the box holds unsaved text).
  *
  * | Situation | Event | Outcome |
  * | --- | --- | --- |
@@ -44,11 +45,13 @@ import {
  * | pending or base | 410 (or 404 for an edit) otherwise | conflict "deleted"; the id is never written again |
  * | pending | create 409 `note_id_in_use` | once more under a new id |
  * | base | save other text | patch against `base.revision` |
+ * | base, with `clearing` or `unansweredEdit` naming it | save the text it holds | patch anyway: the note may be gone, or hold the unanswered edit |
  * | base | patch 409 with own token | own earlier write landed: `base` = it, patch again |
  * | base | patch or delete 409 with another token | conflict "changed" |
- * | base or pending | save empty | delete against the revision; unknown answer: `clearing` |
- * | clearing | delete 204, 410 or 404 | gone (404 on a pending id: never made, not taken as deleted) |
- * | any | no answer, or 5xx | nothing changes but `clearing`; the next save retries under the same token |
+ * | base or pending | save empty | delete against the revision |
+ * | any | delete 204, 410 or 404 | gone; a delete of an id no note has held leaves a tombstone too, so a create still on its way is refused |
+ * | any | no answer, or 5xx | nothing changes but `clearing` (for a delete) or `unansweredEdit` (for an edit); the next save retries under the same token |
+ * | any | a 200 or 409 showing the note, or a 410 or 404 for it | its `clearing` and `unansweredEdit` end; a conflict ends both |
  * | any | other 4xx (422, recording gone) | save failed; nothing changes |
  * | conflict | save | refused until resolved |
  * | conflict "changed" | Keep mine / Use theirs | `base` = their note; next save goes over it / the box takes it |
@@ -210,6 +213,8 @@ export class HeadNoteSync {
   private pendingId: string | null = null;
   /** A note whose delete was sent without an answer. */
   private clearingId: string | null = null;
+  /** A note whose edit was sent without an answer: it may hold that edit. */
+  private unansweredEditId: string | null = null;
   /** The token the next write carries; replaced once an answer arrives. */
   private token = newNoteId();
   private readonly sentTokens = new Set<string>();
@@ -431,21 +436,31 @@ export class HeadNoteSync {
   private settle(note: TimelineNote) {
     this.base = asKnown(note);
     if (this.pendingId === note.id) this.pendingId = null;
-    if (this.clearingId === note.id) this.clearingId = null;
+    this.answeredFor(note.id);
     this.emit();
+  }
+
+  /** An answer showed the note as it is: no write to it is unanswered. */
+  private answeredFor(id: string) {
+    if (this.clearingId === id) this.clearingId = null;
+    if (this.unansweredEditId === id) this.unansweredEditId = null;
   }
 
   /** The note is gone: deleted here, or found deleted. */
   private forget(id: string) {
     this.deletedIds.add(id);
     if (this.pendingId === id) this.pendingId = null;
-    if (this.clearingId === id) this.clearingId = null;
+    this.answeredFor(id);
     this.polled = this.polled.filter((note) => note.id !== id);
     if (this.base?.id === id) this.base = null;
     this.emit();
   }
 
   private raise(conflict: HeadNoteConflict): never {
+    // Every conflict follows an answer showing the note as it is, or gone,
+    // so no earlier write of this device's is unanswered.
+    this.clearingId = null;
+    this.unansweredEditId = null;
     this.conflict = conflict;
     this.emit();
     throw new Error(UNRESOLVED_CONFLICT_ERROR);
@@ -461,9 +476,13 @@ export class HeadNoteSync {
       if (id) await this.remove(id, base?.revision ?? 1);
     } else if (!base) {
       await this.create(body);
-    } else if (body !== base.body || this.clearingId === base.id) {
-      // After an unanswered delete the note may be gone even if the text
-      // matches it, so the edit is sent to find out.
+    } else if (
+      body !== base.body ||
+      this.clearingId === base.id ||
+      this.unansweredEditId === base.id
+    ) {
+      // After an unanswered delete or edit the note may be gone, or hold the
+      // edit, even if the text matches it, so the edit is sent to find out.
       await this.patch(base, body);
     }
   }
@@ -522,7 +541,10 @@ export class HeadNoteSync {
       });
     } catch (error) {
       const outcome = outcomeOf(error);
-      if (outcome.kind === "unknown") throw error;
+      if (outcome.kind === "unknown") {
+        this.unansweredEditId = target.id;
+        throw error;
+      }
       this.answered();
       if (outcome.kind === "conflict") {
         if (!this.mine(outcome.note)) {
@@ -566,16 +588,9 @@ export class HeadNoteSync {
         this.settle(outcome.note);
         return this.remove(id, outcome.note.revision);
       }
-      if (outcome.kind === "notFound" && this.base?.id !== id) {
-        // The create had not made the note, or not yet. One it makes later
-        // reaches the box on a poll, to be cleared again, so its id is not
-        // taken as deleted.
-        if (this.pendingId === id) this.pendingId = null;
-        if (this.clearingId === id) this.clearingId = null;
-        return;
-      }
       if (outcome.kind !== "gone" && outcome.kind !== "notFound") throw error;
-      // Deleted already, by anyone: what clearing the box asked for.
+      // Deleted already, by anyone, or not on this recording: what clearing
+      // the box asked for.
       this.forget(id);
       return;
     }
