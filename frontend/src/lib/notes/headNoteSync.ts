@@ -251,11 +251,12 @@ export class HeadNoteSync {
   /**
    * Ends a conflict. "mine": the next save goes over the other version, or
    * makes a new note in place of a deleted one. "theirs": the box takes the
-   * other version.
+   * other version. Returns the text the box shows now: after a delete, that
+   * of whichever head note it moves to, which may match what it showed.
    */
-  resolveConflict = (choice: "mine" | "theirs") => {
+  resolveConflict = (choice: "mine" | "theirs"): string => {
     const conflict = this.conflict;
-    if (!conflict) return;
+    if (!conflict) return this.snapshot.body;
     this.conflict = null;
     this.base = conflict.kind === "changed" ? asKnown(conflict.note) : null;
     if (conflict.kind === "deleted") this.ownWrite = null;
@@ -264,6 +265,7 @@ export class HeadNoteSync {
       this.adopt();
     }
     this.emit();
+    return this.snapshot.body;
   };
 
   private latest(): KnownNote | null {

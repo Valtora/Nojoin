@@ -876,6 +876,23 @@ describe("HeadNotePanel", () => {
     expect(server.notes).toEqual([]);
   });
 
+  it("shows the head note the box moves to after discarding, even with the same text", async () => {
+    server.add("h1", "head", "Shared");
+    server.add("h2", "head", "Shared", "otto");
+    const { poll } = mount();
+    type("Mine");
+    server.drop("h1");
+    await poll();
+    await waitForSave();
+
+    await click("Discard mine");
+
+    expect(box().value).toBe("Shared");
+    type("Shared, more");
+    await waitForSave();
+    expect(server.notes.map((note) => [note.id, note.body])).toEqual([["h2", "Shared, more"]]);
+  });
+
   it("counts text with Windows line ends as the box will send it", () => {
     server.add("h1", "head", "abcdefg\r\n".repeat(6_000));
     mount();

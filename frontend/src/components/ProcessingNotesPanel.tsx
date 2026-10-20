@@ -21,7 +21,8 @@ interface ProcessingNotesPanelProps {
   onDirtyChange?: (dirty: boolean) => void;
   /** Set when another device changed or deleted the notes under an edit. */
   conflict?: HeadNoteConflict | null;
-  onResolveConflict?: (choice: "mine" | "theirs") => void;
+  /** Ends the conflict; returns the text the box shows now. */
+  onResolveConflict?: (choice: "mine" | "theirs") => string;
   disabled?: boolean;
   disabledMessage?: string;
   /** The recording's other meeting-wide notes, shown read-only under the box. */
@@ -360,8 +361,12 @@ function ProcessingNotesPanel({
   }, [flushSave, focusBox, onResolveConflict]);
 
   const handleUseTheirs = useCallback(() => {
+    // After a delete the box moves to another head note, if there is one,
+    // whose text may equal what it showed: then no new value arrives to
+    // put it back in the box, so the store's answer is written here.
     const theirs =
-      conflictRef.current?.kind === "changed" ? conflictRef.current.note.body : "";
+      onResolveConflict?.("theirs") ??
+      (conflictRef.current?.kind === "changed" ? conflictRef.current.note.body : "");
     draftRef.current = theirs;
     lastSavedRef.current = theirs;
     lastPropValueRef.current = theirs;
@@ -371,7 +376,6 @@ function ProcessingNotesPanel({
     setDraftText(theirs);
     setVisibleSaveState("idle");
     reportDirty();
-    onResolveConflict?.("theirs");
     focusBox();
   }, [focusBox, onResolveConflict, reportDirty, setVisibleSaveState]);
 
