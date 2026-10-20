@@ -46,6 +46,15 @@ WORD_LENGTH_CAP_S = TUNING_SPECS[ASR_WORD_LENGTH_CAP_KEY].default
 # 0.5 s end words almost exactly as 0.2 s does.
 SILENCE_MIN_RUN_S = 0.2
 
+# How much later (seconds) than a word's start a silence must begin to end it.
+# Token times are multiples of 80 ms and silence starts are sample counts over
+# the sample rate, so a run that begins at a token's own time can land a
+# rounding error either side of it. Within this tolerance the run counts as
+# holding the token, like one the token is stamped inside, and does not end
+# the word; past it the run begins at least one sample later (62.5 us at
+# 16 kHz) and does.
+SILENCE_TIE_TOLERANCE_S = 1e-6
+
 # Longest audio (seconds) fed to onnx-asr in a single recognize() call, on any
 # device. onnx-asr has no long-form support, and both models lose speech long
 # before a window runs out of memory (#445). On House of Lords recordings,
@@ -113,10 +122,10 @@ def map_onnx_asr_recognition(
     """Map an onnx-asr timestamped result into the canonical transcription schema.
 
     onnx-asr gives each token a start time only, so a word ends at the earliest
-    of the next word's start, audio_duration, the first of silence_starts after
-    the word starts, and its start plus word_length_cap_s. Without token timings
-    (Canary) the text becomes one segment spanning the audio, and none of this
-    applies.
+    of the next word's start, audio_duration, the first of silence_starts that
+    begins more than SILENCE_TIE_TOLERANCE_S after the word starts, and its
+    start plus word_length_cap_s. Without token timings (Canary) the text
+    becomes one segment spanning the audio, and none of this applies.
 
     Args:
         recognized: The recognize() result: text, plus parallel subword tokens
@@ -164,7 +173,7 @@ def map_onnx_asr_recognition(
             bounds.append(words[index + 1]["start"])
         if audio_duration is not None:
             bounds.append(audio_duration)
-        pause = bisect.bisect_right(silence_starts, start)
+        pause = bisect.bisect_right(silence_starts, start + SILENCE_TIE_TOLERANCE_S)
         if pause < len(silence_starts):
             bounds.append(silence_starts[pause])
         word["end"] = max(start, min(bounds))

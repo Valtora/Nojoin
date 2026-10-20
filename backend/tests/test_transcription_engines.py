@@ -1,5 +1,7 @@
 """Tests for the pluggable transcription engine (config + dispatch + engine schema)."""
 
+import math
+
 import pytest
 
 from backend.processing import transcribe
@@ -299,7 +301,7 @@ def _word_ends(recognized, audio_duration=None, silence_starts=()):
         pytest.param((0.0, 0.3), 5.0, (), 0.3, id="next-word-start"),
         pytest.param((0.0,), 0.25, (), 0.25, id="window-end"),
         pytest.param((0.0, 1.0), 5.0, (0.2,), 0.2, id="first-silence"),
-        pytest.param((0.0, 1.0), 5.0, (), 0.4, id="start-plus-padding"),
+        pytest.param((0.0, 1.0), 5.0, (), 0.4, id="start-plus-cap"),
     ],
 )
 def test_a_word_ends_at_the_earliest_of_its_four_bounds(
@@ -316,6 +318,41 @@ def test_a_word_ends_at_the_first_silence_after_its_start():
     ends = _word_ends(_Timed(1.0, 3.0), 5.0, silence_starts=(0.5, 1.0, 1.25, 1.3))
 
     assert ends[0] == pytest.approx(1.25)
+
+
+# onnx-asr stamps the 36th encoder frame at 0.08 * 35, which rounds above
+# 44800 / 16000, the time of the zero run that begins on that frame's sample.
+TOKEN_ON_A_RUN_START = 0.08 * 35
+
+
+@pytest.mark.parametrize(
+    "silence_start",
+    [
+        pytest.param(44800 / 16000, id="rounded-below"),
+        pytest.param(TOKEN_ON_A_RUN_START, id="equal"),
+        pytest.param(
+            math.nextafter(TOKEN_ON_A_RUN_START, math.inf), id="rounded-above"
+        ),
+        pytest.param(TOKEN_ON_A_RUN_START + 0.5e-6, id="within-tolerance"),
+    ],
+)
+def test_a_silence_beginning_at_the_words_own_start_does_not_end_it(silence_start):
+    """The run holds the word's token, as one the token is stamped inside does.
+
+    Counted, a run rounded a hair after the token's time ended the word there,
+    with no length for any speaker turn to overlap.
+    """
+    ends = _word_ends(_Timed(TOKEN_ON_A_RUN_START, 4.0), 5.0, (silence_start,))
+
+    assert ends[0] == pytest.approx(TOKEN_ON_A_RUN_START + 0.4)
+
+
+def test_a_silence_one_sample_after_the_words_start_ends_it():
+    one_sample_later = (44800 + 1) / 16000
+
+    ends = _word_ends(_Timed(TOKEN_ON_A_RUN_START, 4.0), 5.0, (one_sample_later,))
+
+    assert ends[0] == one_sample_later
 
 
 def test_a_word_never_ends_before_it_starts():
