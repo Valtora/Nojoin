@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import {
+  holdSignInInPlace,
+  noteSignedIn,
+  resetSessionForTests,
+  useSessionStore,
+} from "@/lib/session";
 import type { TimelineNote, TimelineNoteCreate } from "@/types";
 
 import { NOTE_BODY_MAX_CHARS } from "./headNoteSync";
@@ -435,6 +441,94 @@ describe("NoteOutbox: notes that can't be made again", () => {
     outbox.discard(outbox.getSnapshot().entries[0].key);
     await settle();
     expect(wrote).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("NoteOutbox: a sign-in that ends during a capture", () => {
+  // While a capture holds sign-in in place (#518), the page stays put on a
+  // 401 and a dialog asks the recording's owner to sign back in.
+  const SESSION_ENDED = {
+    isAxiosError: true,
+    response: { status: 401, data: { detail: "Not authenticated" } },
+  };
+  const signedIn = (username: string) =>
+    noteSignedIn({ username, force_password_change: false });
+
+  beforeEach(() => {
+    server.notes.clear();
+    server.tombstones.clear();
+    server.creates = [];
+    server.loseNextAnswer = false;
+    server.failures = [];
+    createTimelineNote.mockClear();
+    deleteTimelineNote.mockClear();
+    resetSessionForTests();
+    signedIn("alice");
+    holdSignInInPlace(true);
+  });
+
+  afterEach(() => {
+    resetSessionForTests();
+  });
+
+  it("saves a note refused for an ended session once its owner signs back in, never as another account", async () => {
+    const outbox = new NoteOutbox(RECORDING);
+    server.failures.push(SESSION_ENDED);
+
+    outbox.submit({ kind: "point", body: "Budget agreed", anchorMs: 61_250 });
+    await settle();
+
+    const [waiting] = outbox.getSnapshot().entries;
+    expect(waiting).toMatchObject({
+      status: "failed",
+      error: "Not saved yet: it saves once you sign in again.",
+    });
+    expect(useSessionStore.getState().signInRequired).toBe(true);
+
+    // The browser is now signed in as someone else: nothing goes under them.
+    signedIn("bob");
+    await settle();
+    expect(server.creates).toHaveLength(1);
+
+    signedIn("alice");
+    await vi.waitFor(() => expect(outbox.getSnapshot().entries).toEqual([]));
+    expect(server.creates).toHaveLength(2);
+    expect(server.creates[1]).toEqual(server.creates[0]);
+    expect(server.notes.size).toBe(1);
+    expect(outbox.getSnapshot().saved.map((note) => note.id)).toEqual([waiting.id]);
+  });
+
+  it("sends a discard refused for an ended session again once its owner signs back in", async () => {
+    const outbox = new NoteOutbox(RECORDING);
+    server.failures.push(NO_ANSWER);
+    outbox.submit({ kind: "point", body: "Scrap this", anchorMs: 1_000 });
+    await settle();
+    const [failed] = outbox.getSnapshot().entries;
+
+    server.failures.push(SESSION_ENDED);
+    outbox.discard(failed.key);
+    await settle();
+    expect(deleteTimelineNote).toHaveBeenCalledTimes(1);
+
+    signedIn("alice");
+    await vi.waitFor(() => expect(deleteTimelineNote).toHaveBeenCalledTimes(2));
+    await settle();
+    expect(server.tombstones.get(failed.id)).toBe(failed.writeToken);
+    expect(outbox.getSnapshot().discarded.size).toBe(0);
+  });
+
+  it("fails as before when no capture holds sign-in", async () => {
+    holdSignInInPlace(false);
+    const outbox = new NoteOutbox(RECORDING);
+    server.failures.push(SESSION_ENDED);
+
+    outbox.submit({ kind: "point", body: "Budget agreed", anchorMs: 61_250 });
+    await settle();
+
+    expect(outbox.getSnapshot().entries[0]).toMatchObject({
+      status: "failed",
+      error: "Not saved: Nojoin refused this note.",
+    });
   });
 });
 

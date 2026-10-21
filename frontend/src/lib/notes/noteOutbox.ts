@@ -1,5 +1,6 @@
 import { createTimelineNote, deleteTimelineNote } from "@/lib/api";
 import { getErrorStatus, isRecord } from "@/lib/errors";
+import { useSessionStore, waitForSignInAfter } from "@/lib/session";
 import type { RecordingId, TimelineNote, TimelineNoteCreate } from "@/types";
 
 import { NOTE_BODY_MAX_CHARS, newNoteId, noteLength, stripNote } from "./headNoteSync";
@@ -26,6 +27,7 @@ import { formatTimelineMs } from "./placement";
  * | `saving` | 409 `note_id_in_use` | the id is another note's: once more under a new id and token, then `failed` |
  * | `saving` | 410 `note_deleted_by_you` | discarded here while on its way: entry gone |
  * | `saving` | 410 `note_deleted_elsewhere` | a lost create landed and another device deleted it: entry gone, with a notice; never made again |
+ * | `saving` | refused while a capture holds sign-in (`@/lib/session`) | `failed` ("sign in again"); sent again once the owner signs back in |
  * | `saving` | other refusal | `failed`, saying why |
  * | `failed` | Retry | `saving`; the same create again |
  * | `failed` | Discard | entry gone; a delete under its token removes the note if the lost create landed, or leaves a tombstone so it can't land later |
@@ -116,6 +118,16 @@ const NO_ANSWER_ERROR = "Not saved: no answer from Nojoin.";
 const NO_ANSWER_YET_ERROR = "No answer from Nojoin yet.";
 const RECORDING_GONE_ERROR = "Not saved: this recording no longer exists.";
 const REFUSED_ERROR = "Not saved: Nojoin refused this note.";
+const SIGN_IN_ERROR = "Not saved yet: it saves once you sign in again.";
+
+/**
+ * Whether a failed request waits for sign-in (`waitForSignInAfter`) rather
+ * than failing: a capture holds sign-in in place and the session is unusable.
+ */
+const signInPending = () => {
+  const { heldInPlace, signInRequired } = useSessionStore.getState();
+  return heldInPlace && signInRequired;
+};
 
 type Failure =
   | "unknown"
@@ -404,6 +416,18 @@ export class NoteOutbox {
       this.settle(key, note);
     } catch (error) {
       if (!isLatest()) return;
+      // While a capture holds sign-in in place, a create refused for an ended
+      // session, or sent while the browser is signed in as someone else, waits
+      // for the recording's owner to sign back in and goes again, as the
+      // capture's uploads do. Same id and token, so it can't add a second note.
+      const waiting = waitForSignInAfter(error);
+      if (signInPending()) this.patch(key, { status: "failed", error: SIGN_IN_ERROR });
+      if (await waiting) {
+        clearTimeout(slow);
+        if (isLatest()) await this.send(key, freshIdsLeft);
+        return;
+      }
+      if (!isLatest()) return;
       const failure = failureOf(error);
       if (failure === "idInUse" && freshIdsLeft > 0) {
         this.patch(key, { id: newNoteId(), writeToken: newNoteId() });
@@ -449,6 +473,11 @@ export class NoteOutbox {
       this.discards.delete(id);
       this.discardedIds = new Set(this.discards.keys());
     } catch (error) {
+      if (await waitForSignInAfter(error)) {
+        discard.inFlight = false;
+        await this.sendDiscard(id);
+        return;
+      }
       const status = getErrorStatus(error);
       if (status === null || status >= 500) {
         // Sent again when a listing still has the note.

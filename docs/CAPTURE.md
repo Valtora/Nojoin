@@ -66,7 +66,7 @@ If the tab was lost before any audio reached the server, Nojoin discards the emp
 
 ### Signing In Again During A Recording
 
-A sign-in lasts 12 hours. If it ends while you record, because it expired or because you signed out in another tab, Nojoin keeps recording and asks for your password in a dialog on the same page. Going to the sign-in page would reload the tab and end the capture. Uploads wait meanwhile and the audio is kept in this browser. Once you sign in, it uploads and the recording carries on with no gap.
+A sign-in lasts 12 hours. If it ends while you record, because it expired or because you signed out in another tab, Nojoin keeps recording and asks for your password in a dialog on the same page. Going to the sign-in page would reload the tab and end the capture. Uploads wait meanwhile and the audio is kept in this browser. Once you sign in, it uploads and the recording carries on with no gap. A note from the [note box](#notes-during-capture) that had not saved waits too, and saves once you sign in.
 
 Sign in as the account that started the recording. Signing in from another tab works as well: the recording tab notices within 15 seconds, or as soon as you return to it. While the browser is signed in as another account, the recording waits for its own account. If an administrator has reset your password, choose a new one in another tab, then sign in with it.
 
