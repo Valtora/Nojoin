@@ -160,6 +160,7 @@ SCHEMA_STATEMENTS = [
     """
     CREATE TABLE recording_speakers (
         embedding_version INTEGER,
+        embedding_speech_seconds FLOAT,
         id INTEGER PRIMARY KEY,
         created_at DATETIME NOT NULL,
         updated_at DATETIME NOT NULL,
@@ -1384,6 +1385,7 @@ async def test_set_speaker_name_maps_to_global_speaker_name_field(
             SimpleNamespace(
                 diarization_label=update.diarization_label,
                 global_speaker=SimpleNamespace(name=update.global_speaker_name),
+                library_voiceprint=None,
             )
         ]
 

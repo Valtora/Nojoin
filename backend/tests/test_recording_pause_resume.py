@@ -143,6 +143,7 @@ CREATE TABLE recording_audio_window_manifests (
 RECORDING_SPEAKERS_SCHEMA = """
 CREATE TABLE recording_speakers (
     embedding_version INTEGER,
+    embedding_speech_seconds FLOAT,
     id INTEGER PRIMARY KEY,
     created_at DATETIME,
     updated_at DATETIME,

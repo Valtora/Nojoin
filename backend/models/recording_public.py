@@ -17,10 +17,30 @@ from backend.models.recording import ClientStatus, Recording, RecordingStatus
 from backend.models.speaker import GlobalSpeakerRead, RecordingSpeaker
 from backend.models.tag import Tag, TagRead
 from backend.models.transcript import Transcript
+from backend.processing.embedding import (
+    LIBRARY_VOICEPRINT_MIN_SPEECH_S,
+    LibraryVoiceprintUpdate,
+    VoiceprintStatus,
+)
 
 
 class PublicModel(BaseModel):
     model_config = ConfigDict(from_attributes=True)
+
+
+class LibraryVoiceprintRead(PublicModel):
+    """What linking a recording speaker did to the person's library voiceprint."""
+
+    status: VoiceprintStatus
+    # Seconds of selected crop speech in the recording's voiceprint; None when
+    # it predates measurement.
+    speech_seconds: Optional[float] = None
+    # The least speech a person's first voiceprint may be created from.
+    required_speech_seconds: float = LIBRARY_VOICEPRINT_MIN_SPEECH_S
+
+    @classmethod
+    def from_update(cls, update: LibraryVoiceprintUpdate) -> LibraryVoiceprintRead:
+        return cls(status=update.status, speech_seconds=update.speech_seconds)
 
 
 class RecordingSpeakerPublicRead(PublicModel):
@@ -46,6 +66,9 @@ class RecordingSpeakerPublicRead(PublicModel):
     # name came from the pipeline or predates provenance being recorded.
     name_last_edit_source: Optional[str] = None
     global_speaker: Optional[GlobalSpeakerRead] = None
+    # Set only on the rename and promote responses, and only when the speaker's
+    # voiceprint was offered to a person's library voiceprint.
+    library_voiceprint: Optional[LibraryVoiceprintRead] = None
 
 
 class SpeakerNameSuggestionEvidenceRead(PublicModel):
@@ -205,6 +228,7 @@ def serialize_recording_speaker(
     speaker: RecordingSpeaker,
     *,
     recording_public_id: str,
+    library_update: Optional[LibraryVoiceprintUpdate] = None,
 ) -> RecordingSpeakerPublicRead:
     # serialize_* helpers only ever receive persisted rows, so the primary key
     # is always populated despite the ORM model typing it as Optional.
@@ -231,6 +255,11 @@ def serialize_recording_speaker(
         global_speaker=(
             GlobalSpeakerRead.model_validate(speaker.global_speaker)
             if speaker.global_speaker is not None
+            else None
+        ),
+        library_voiceprint=(
+            LibraryVoiceprintRead.from_update(library_update)
+            if library_update is not None
             else None
         ),
     )

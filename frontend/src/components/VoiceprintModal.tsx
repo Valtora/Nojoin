@@ -7,6 +7,8 @@ import Modal from './ui/Modal';
 import { RecordingId, VoiceprintExtractResult, VoiceprintMatchInfo, BatchVoiceprintResult } from '@/types';
 import { applyVoiceprintAction, VoiceprintAction } from '@/lib/api';
 import { getErrorMessage } from '@/lib/errors';
+import { describeLibraryVoiceprint } from '@/lib/libraryVoiceprint';
+import { useNotificationStore } from '@/lib/notificationStore';
 
 interface VoiceprintModalProps {
   isOpen: boolean;
@@ -39,6 +41,7 @@ export default function VoiceprintModal({
 }: VoiceprintModalProps) {
   const [mounted, setMounted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const { addNotification } = useNotificationStore();
   const [error, setError] = useState<string | null>(null);
 
   // Single speaker mode state
@@ -83,7 +86,7 @@ export default function VoiceprintModal({
     setError(null);
 
     try {
-      await applyVoiceprintAction(
+      const result = await applyVoiceprintAction(
         recordingId,
         extractResult.diarization_label,
         selectedAction,
@@ -94,6 +97,11 @@ export default function VoiceprintModal({
       );
       onComplete();
       onClose();
+      const notice = describeLibraryVoiceprint(
+        result.library_voiceprint,
+        result.matched_speaker?.name,
+      );
+      if (notice) addNotification({ type: 'info', message: notice });
 
         } catch (e: unknown) {
       setError(getErrorMessage(e, 'Failed to apply voiceprint action'));
@@ -110,10 +118,11 @@ export default function VoiceprintModal({
 
     try {
       // Process each speaker action
+      const notices = new Set<string>();
       for (const result of successfulResults) {
         const action = batchActions[result.diarization_label];
         if (action) {
-          await applyVoiceprintAction(
+          const applied = await applyVoiceprintAction(
             recordingId,
             result.diarization_label,
             action.action,
@@ -122,10 +131,16 @@ export default function VoiceprintModal({
               newSpeakerName: action.newSpeakerName,
             }
           );
+          const notice = describeLibraryVoiceprint(
+            applied.library_voiceprint,
+            applied.matched_speaker?.name,
+          );
+          if (notice) notices.add(notice);
         }
       }
       onComplete();
       onClose();
+      notices.forEach((message) => addNotification({ type: 'info', message }));
 
         } catch (e: unknown) {
       setError(getErrorMessage(e, 'Failed to apply voiceprint actions'));

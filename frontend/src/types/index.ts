@@ -99,6 +99,48 @@ export interface RecordingSpeaker extends BaseDBModel {
    * rather than on each utterance, because a rename relabels every line.
    */
   name_last_edit_source?: string | null;
+  /**
+   * What linking this speaker did to the person's library voiceprint. Only the
+   * rename and promote responses carry it, and only when the speaker's
+   * voiceprint was offered to a person.
+   */
+  library_voiceprint?: LibraryVoiceprintOutcome | null;
+}
+
+/**
+ * What happened to a person's library voiceprint when a recording speaker was
+ * linked to them. Mirrors `VoiceprintStatus` in backend/processing/embedding.py.
+ */
+export type LibraryVoiceprintStatus =
+  | "saved"
+  | "folded"
+  | "skipped_insufficient_speech"
+  | "skipped_drift"
+  | "skipped_locked"
+  | "skipped_outdated";
+
+/**
+ * What splitting a person did: the person the clips moved to, and what
+ * happened to both people's voiceprints. Mirrors `SpeakerSplitRead` in
+ * backend/api/v1/endpoints/speakers/helpers.py.
+ */
+export interface SpeakerSplitResult {
+  id: number;
+  name: string;
+  has_voiceprint: boolean;
+  is_voiceprint_locked: boolean;
+  /** The person the clips moved to. */
+  library_voiceprint: LibraryVoiceprintOutcome;
+  /** The person they were split from. */
+  original_library_voiceprint: LibraryVoiceprintOutcome;
+}
+
+export interface LibraryVoiceprintOutcome {
+  status: LibraryVoiceprintStatus;
+  /** Seconds of clear speech in the recording's voiceprint; null if never measured. */
+  speech_seconds: number | null;
+  /** The least speech a person's first voiceprint may be created from. */
+  required_speech_seconds: number;
 }
 
 /**
@@ -755,6 +797,7 @@ export interface VoiceprintApplyResult {
   has_voiceprint: boolean;
   matched_speaker: { id: number; name: string } | null;
   message: string | null;
+  library_voiceprint?: LibraryVoiceprintOutcome | null;
 }
 
 export interface BatchVoiceprintResult {
@@ -972,6 +1015,13 @@ export interface SpeakerSegment {
   start: number;
   end: number;
   text: string;
+}
+
+/** The recalibrate endpoint's answer. */
+export interface RecalibrateResult {
+  success: boolean;
+  /** Says how many of the selected recordings were used, when not all were. */
+  message: string;
 }
 
 export interface SegmentSelection {

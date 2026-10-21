@@ -366,6 +366,11 @@ async def set_speaker_name(
     is applied to this recording only. To link to a new person, import them
     first with import_people, then call this. Requires the mcp:write scope.
 
+    When the speaker is linked, ``library_voiceprint`` says what happened to
+    the person's voiceprint: "saved" or "folded", or why it was skipped (for
+    example "skipped_insufficient_speech": a person's first voiceprint needs
+    ``required_speech_seconds`` of clear speech).
+
     Args:
         recording_id: The recording's string id from list_recordings.
         diarization_label: The speaker's diarisation label from
@@ -400,9 +405,15 @@ async def set_speaker_name(
         if updated is not None and updated.global_speaker is not None
         else None
     )
+    library_voiceprint = updated.library_voiceprint if updated is not None else None
     return {
         "recording_id": recording_id,
         "diarization_label": diarization_label,
         "name": name,
         "linked_person": linked_person,
+        "library_voiceprint": (
+            library_voiceprint.model_dump(mode="json")
+            if library_voiceprint is not None
+            else None
+        ),
     }

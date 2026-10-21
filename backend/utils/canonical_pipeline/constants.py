@@ -35,7 +35,11 @@ from backend.models.transcript import Transcript
 from backend.processing.browser_live_audio import (
     source_channel_from_confidence_payload,
 )
-from backend.processing.embedding import blend_voiceprint
+from backend.processing.embedding import (
+    LibraryVoiceprintUpdate,
+    RecordingVoiceprint,
+    fold_recording_voiceprint,
+)
 from backend.utils.speaker_assignment import (
     matches_speaker_name,
     reconcile_segment_assignment,

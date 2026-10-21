@@ -20,6 +20,7 @@ import {
 } from "@/lib/api";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { getErrorMessage } from "@/lib/errors";
+import { describeSplitVoiceprints } from "@/lib/libraryVoiceprint";
 
 interface SplitPersonModalProps {
   isOpen: boolean;
@@ -54,6 +55,7 @@ export default function SplitPersonModal({
   >({});
   const [newSpeakerName, setNewSpeakerName] = useState("");
   const [success, setSuccess] = useState(false);
+  const [voiceprintSummary, setVoiceprintSummary] = useState<string[]>([]);
 
   // Audio preview state
   const [playingIndex, setPlayingIndex] = useState<number | null>(null);
@@ -101,6 +103,7 @@ export default function SplitPersonModal({
     if (isOpen && (speaker || localSpeaker)) {
       fetchSegments();
       setSuccess(false);
+      setVoiceprintSummary([]);
       setPlayingIndex(null);
     }
   }, [isOpen, speaker, localSpeaker, fetchSegments]);
@@ -191,7 +194,12 @@ export default function SplitPersonModal({
 
       if (speaker) {
         // Global Split
-        await splitSpeaker(speaker.id, newSpeakerName, selectedSegments);
+        const result = await splitSpeaker(
+          speaker.id,
+          newSpeakerName,
+          selectedSegments,
+        );
+        setVoiceprintSummary(describeSplitVoiceprints(result, speaker.name));
       } else if (localSpeaker) {
         // Local Split
         const { splitLocalSpeaker } = await import("@/lib/api");
@@ -276,9 +284,17 @@ export default function SplitPersonModal({
                 Split Complete
               </h3>
               <p className="text-contrast-helper max-w-sm text-center mb-8">
-                <b>{newSpeakerName}</b> has been created and the selected
-                segments have been moved. Both speakers have been recalibrated.
+                The selected segments have been moved to{" "}
+                <b>{newSpeakerName}</b>.
               </p>
+              {voiceprintSummary.map((line) => (
+                <p
+                  key={line}
+                  className="text-contrast-helper max-w-sm text-center mb-4"
+                >
+                  {line}
+                </p>
+              ))}
               <button
                 onClick={() => {
                   onComplete();

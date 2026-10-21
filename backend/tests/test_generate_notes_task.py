@@ -101,6 +101,7 @@ CREATE TABLE transcripts (
 
 CREATE TABLE recording_speakers (
     embedding_version INTEGER,
+    embedding_speech_seconds FLOAT,
     id INTEGER PRIMARY KEY,
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL,

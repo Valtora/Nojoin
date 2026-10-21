@@ -11,7 +11,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
-from backend.processing.embedding import blend_voiceprint
+from backend.processing.embedding import (
+    LibraryVoiceprintUpdate,
+    offer_linked_voiceprint,
+)
 
 if TYPE_CHECKING:
     from sqlmodel import Session
@@ -27,7 +30,7 @@ def apply_recording_speaker_identity_fields(
     identity_confidence: float | None = None,
     identity_locked: bool | None = None,
     respect_voiceprint_lock: bool = True,
-) -> None:
+) -> LibraryVoiceprintUpdate | None:
     """Mutate one recording speaker's identity fields in place.
 
     When ``respect_voiceprint_lock`` is True (the default, used by automated
@@ -39,30 +42,32 @@ def apply_recording_speaker_identity_fields(
     updates only. ``identity_confidence`` and ``identity_locked`` are written
     only when a value is provided, so callers control whether the identity is
     asserted as human-confirmed.
+
+    Returns what happened to the person's library voiceprint, or None when no
+    voiceprint was offered to it (no person, no merge weight, or no recording
+    voiceprint).
     """
     # Imported lazily: speaker.py imports this module at load time, and the
     # alias helper lives there.
     from .speaker import ensure_recording_speaker_aliases_for_speaker
 
+    library_update = None
     if target_global_speaker is not None:
         recording_speaker.global_speaker_id = target_global_speaker.id
         recording_speaker.global_speaker = target_global_speaker
         recording_speaker.local_name = None
-        embedding_locked = (
-            respect_voiceprint_lock and target_global_speaker.is_voiceprint_locked
-        )
-        if (
-            merge_global_embedding_alpha is not None
-            and recording_speaker.embedding
-            and not embedding_locked
-        ):
-            blend_voiceprint(
+        if merge_global_embedding_alpha is not None and recording_speaker.embedding:
+            library_update = offer_linked_voiceprint(
                 target_global_speaker,
-                recording_speaker.embedding,
-                recording_speaker.embedding_version,
+                recording_speaker,
                 alpha=merge_global_embedding_alpha,
+                locked=(
+                    respect_voiceprint_lock
+                    and target_global_speaker.is_voiceprint_locked
+                ),
             )
-            session.add(target_global_speaker)
+            if library_update.changed:
+                session.add(target_global_speaker)
     else:
         recording_speaker.global_speaker_id = None
         recording_speaker.global_speaker = None
@@ -75,3 +80,4 @@ def apply_recording_speaker_identity_fields(
         recording_speaker.identity_locked = identity_locked
     ensure_recording_speaker_aliases_for_speaker(session, recording_speaker)
     session.add(recording_speaker)
+    return library_update

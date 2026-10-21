@@ -1,11 +1,13 @@
 import type {
   GlobalSpeaker,
   MergedRecordingSpeaker,
+  RecalibrateResult,
   Recording,
   RecordingId,
   RecordingSpeaker,
   SegmentSelection,
   SpeakerSegment,
+  SpeakerSplitResult,
 } from "@/types";
 import api from "./client";
 
@@ -70,11 +72,15 @@ export const updateSpeaker = async (
   recordingId: RecordingId,
   diarizationLabel: string,
   newName: string,
-): Promise<void> => {
-  await api.put(`/speakers/recordings/${recordingId}`, {
-    diarization_label: diarizationLabel,
-    global_speaker_name: newName,
-  });
+): Promise<RecordingSpeaker[]> => {
+  const response = await api.put<RecordingSpeaker[]>(
+    `/speakers/recordings/${recordingId}`,
+    {
+      diarization_label: diarizationLabel,
+      global_speaker_name: newName,
+    },
+  );
+  return response.data;
 };
 
 export const updateSpeakerColor = async (
@@ -159,16 +165,20 @@ export const getSpeakerSegments = async (
 export const recalibrateSpeaker = async (
   speakerId: number,
   segments: SegmentSelection[],
-): Promise<void> => {
-  await api.post(`/speakers/${speakerId}/recalibrate`, segments);
+): Promise<RecalibrateResult> => {
+  const response = await api.post<RecalibrateResult>(
+    `/speakers/${speakerId}/recalibrate`,
+    segments,
+  );
+  return response.data;
 };
 
 export const splitSpeaker = async (
   speakerId: number,
   newSpeakerName: string,
   segments: SegmentSelection[],
-): Promise<GlobalSpeaker> => {
-  const response = await api.post<GlobalSpeaker>(
+): Promise<SpeakerSplitResult> => {
+  const response = await api.post<SpeakerSplitResult>(
     `/speakers/${speakerId}/split`,
     {
       new_speaker_name: newSpeakerName,

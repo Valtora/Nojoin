@@ -17,12 +17,17 @@ from backend.models.recording import (
     recording_supports_unified_mutations,
 )
 from backend.models.recording_public import (
+    LibraryVoiceprintRead,
     RecordingSpeakerPublicRead,
     serialize_recording_speaker,
 )
 from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
 from backend.models.transcript import Transcript
-from backend.processing.embedding import blend_voiceprint
+from backend.processing.embedding import (
+    LibraryVoiceprintUpdate,
+    RecordingVoiceprint,
+    fold_recording_voiceprint,
+)
 from backend.services.recording_identity_service import get_recording_by_public_id
 from backend.utils.canonical_pipeline import (
     apply_compatibility_segment_replace,
@@ -36,6 +41,11 @@ from backend.utils.speaker_name_suggestions import (
 )
 
 logger = logging.getLogger(__name__)
+
+# The worker task that extracts a voiceprint and measures the speech behind it.
+# The older extract_embedding_task still answers with a bare vector, for an API
+# older than its worker.
+MEASURED_EXTRACTION_TASK = "backend.worker.tasks.extract_measured_embedding_task"
 
 
 async def _get_owned_recording(
@@ -160,9 +170,15 @@ def _serialize_recording_speakers(
     speakers: list[RecordingSpeaker],
     *,
     recording_public_id: str,
+    library_updates: dict[int, LibraryVoiceprintUpdate] | None = None,
 ) -> list[RecordingSpeakerPublicRead]:
+    updates = library_updates or {}
     return [
-        serialize_recording_speaker(speaker, recording_public_id=recording_public_id)
+        serialize_recording_speaker(
+            speaker,
+            recording_public_id=recording_public_id,
+            library_update=updates.get(speaker.id) if speaker.id is not None else None,
+        )
         for speaker in speakers
     ]
 
@@ -288,18 +304,18 @@ async def _merge_local_speakers(
                     segments=new_segments,
                 )
 
+    added_seconds = None
     if source_speaker.embedding:
-        blend_voiceprint(
-            target_speaker,
-            source_speaker.embedding,
-            source_speaker.embedding_version,
-            alpha=0.5,
+        added_seconds = fold_recording_voiceprint(
+            target_speaker, RecordingVoiceprint.of_speaker(source_speaker), alpha=0.5
         )
         db.add(target_speaker)
 
-    # Kept rather than deleted, so the merge history survives reprocessing.
+    # Kept rather than deleted, so the merge history survives reprocessing. It
+    # keeps the speech it added to the target's figure, for an unmerge.
     source_speaker.merged_into_id = target_speaker.id
     source_speaker.embedding = None
+    source_speaker.embedding_speech_seconds = added_seconds
     db.add(source_speaker)
 
 
@@ -361,11 +377,26 @@ class VoiceprintResult(BaseModel):
     has_voiceprint: bool
     matched_speaker: Optional[dict] = None  # {id, name, similarity_score}
     message: Optional[str] = None
+    # What the action did to the person's library voiceprint, when it had one.
+    library_voiceprint: Optional[LibraryVoiceprintRead] = None
 
 
 class SpeakerSplitRequest(BaseModel):
     new_speaker_name: str
     segments: List[SegmentSelection]
+
+
+class SpeakerSplitRead(BaseModel):
+    """The person a split moved the clips to, and what it did to both voiceprints."""
+
+    id: int
+    name: str
+    has_voiceprint: bool
+    is_voiceprint_locked: bool
+    # The person the clips moved to.
+    library_voiceprint: LibraryVoiceprintRead
+    # The person they were split from.
+    original_library_voiceprint: LibraryVoiceprintRead
 
 
 class SpeakerColorUpdate(BaseModel):

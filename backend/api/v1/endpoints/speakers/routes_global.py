@@ -3,7 +3,6 @@ import time
 from collections import defaultdict
 from typing import List, Optional
 
-import numpy as np
 from fastapi import Depends, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy import func, or_
@@ -19,6 +18,7 @@ from backend.models.recording import (
     Recording,
     recording_supports_unified_mutations,
 )
+from backend.models.recording_public import LibraryVoiceprintRead
 from backend.models.speaker import (
     GlobalSpeaker,
     GlobalSpeakerCreate,
@@ -29,10 +29,14 @@ from backend.models.speaker import (
 from backend.models.transcript import Transcript
 from backend.models.user import User
 from backend.processing.embedding import (
+    LIBRARY_VOICEPRINT_MIN_SPEECH_S,
     MARGIN_OF_VICTORY,
     SCAN_MATCH_THRESHOLD,
+    RecordingVoiceprint,
     blend_voiceprint,
     cosine_similarity,
+    pool_recording_voiceprints,
+    too_little_speech_detail,
 )
 from backend.processing.embedding_version import EMBEDDING_METHOD_VERSION
 from backend.services.recording_identity_service import get_recordings_by_public_ids
@@ -43,9 +47,11 @@ from backend.utils.canonical_pipeline import (
 from backend.utils.embedding_audio import select_recording_audio_for_embedding
 
 from .helpers import (
+    MEASURED_EXTRACTION_TASK,
     MergeRequest,
     SegmentSelection,
     SpeakerSegment,
+    SpeakerSplitRead,
     SpeakerSplitRequest,
     _canonical_transcript_writes_enabled,
     _load_segments_for_speaker_work,
@@ -54,6 +60,12 @@ from .helpers import (
     _require_recordings_support_speaker_mutations,
 )
 from .router import router
+from .split_voiceprints import (
+    apply_split_to_new_person,
+    apply_split_to_original,
+    apply_split_to_original_speaker,
+    split_extraction_failed,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -505,7 +517,7 @@ async def recalibrate_voiceprint(
         recording.public_id: recording for recording in recordings
     }
 
-    all_embeddings = []
+    voiceprints: list[RecordingVoiceprint] = []
     device_str = speakers_module.config_manager.get("processing_device", "cpu")
 
     for recording_public_id, segs in recording_segments.items():
@@ -526,34 +538,46 @@ async def recalibrate_voiceprint(
             continue
 
         task = await dispatch_task(
-            "backend.worker.tasks.extract_embedding_task",
+            MEASURED_EXTRACTION_TASK,
             args=[target_audio, segs, device_str, hf_token],
         )
         try:
-            emb = await run_in_threadpool(task.get, timeout=120)
-            if emb:
-                all_embeddings.append(emb)
+            voiceprint = RecordingVoiceprint.from_task_result(
+                await run_in_threadpool(task.get, timeout=120)
+            )
+            if voiceprint:
+                voiceprints.append(voiceprint)
         except Exception as e:  # noqa: BLE001 -- boundary: task.get re-raises whatever the worker raised; one recording must not fail recalibration
             logger.error(
                 f"Failed to extract embedding for recalibration (Rec {recording_public_id}): {e}"
             )
 
-    if not all_embeddings:
+    if not voiceprints:
         raise HTTPException(
             status_code=500,
             detail="Failed to extract embeddings from selected segments",
         )
 
-    # Equal-weight arithmetic mean across all recordings.
-    final_emb = np.mean(np.array(all_embeddings), axis=0).tolist()
+    # A recalibration founds the voiceprint afresh, so each recording's sample
+    # needs the same evidence as a first voiceprint.
+    pool = pool_recording_voiceprints(voiceprints)
+    if pool.voiceprint is None:
+        raise HTTPException(status_code=400, detail=too_little_speech_detail(pool))
 
-    speaker.embedding = final_emb
+    speaker.embedding = pool.voiceprint.embedding
     speaker.embedding_version = EMBEDDING_METHOD_VERSION
     speaker.is_voiceprint_locked = True
     db.add(speaker)
     await db.commit()
 
-    return {"success": True, "message": "Voiceprint recalibrated and locked."}
+    message = "Voiceprint recalibrated and locked."
+    if pool.used < pool.offered:
+        message = (
+            f"Voiceprint recalibrated from {pool.used} of {pool.offered} "
+            f"recordings and locked. The others held less than "
+            f"{LIBRARY_VOICEPRINT_MIN_SPEECH_S:.0f} s of clear speech."
+        )
+    return {"success": True, "message": message}
 
 
 @router.delete("/{speaker_id}/embedding")
@@ -577,7 +601,7 @@ async def delete_global_speaker_embedding(
     return {"ok": True}
 
 
-@router.post("/{speaker_id}/split", response_model=GlobalSpeaker)
+@router.post("/{speaker_id}/split", response_model=SpeakerSplitRead)
 async def split_speaker(
     speaker_id: int,
     request: SpeakerSplitRequest,
@@ -586,7 +610,10 @@ async def split_speaker(
 ):
     """
     Split a global speaker into a new speaker based on selected audio segments.
-    Recalibrates both the new speaker (using selected segments) and the original speaker (using remaining segments).
+
+    Rebuilds both people's voiceprints, the new speaker's from the selected
+    segments and the original's from the remaining ones, under the evidence
+    floor (see ``split_voiceprints``), and says what happened to each.
     """
     original_speaker = await db.get(GlobalSpeaker, speaker_id)
     if not original_speaker or original_speaker.user_id != current_user.id:
@@ -608,10 +635,12 @@ async def split_speaker(
     if existing_new:
         new_speaker = existing_new
     else:
+        # Locked only once the split gives them a voiceprint (see
+        # apply_split_to_new_person); a lock on none would only stop an
+        # auto-applied name suggestion from founding one later.
         new_speaker = GlobalSpeaker(
             name=request.new_speaker_name,
             user_id=current_user.id,
-            is_voiceprint_locked=True,
         )
         db.add(new_speaker)
         await db.flush()
@@ -641,7 +670,7 @@ async def split_speaker(
         "hf_token"
     )
 
-    new_speaker_embeddings = []
+    new_speaker_voiceprints: list[RecordingVoiceprint] = []
 
     for recording_public_id, segments in recording_segments.items():
         rec = recordings_by_public_id.get(recording_public_id)
@@ -705,39 +734,38 @@ async def split_speaker(
             target_audio = select_recording_audio_for_embedding(rec)
 
             task = await dispatch_task(
-                "backend.worker.tasks.extract_embedding_task",
+                MEASURED_EXTRACTION_TASK,
                 args=[target_audio, seg_tuples, device_str, hf_token],
             )
             try:
-                emb = await run_in_threadpool(task.get, timeout=60)
-                if emb:
-                    new_speaker_embeddings.append(emb)
-            except Exception as e:  # noqa: BLE001 -- boundary: task.get re-raises whatever the worker raised; the split continues without the embedding
+                voiceprint = RecordingVoiceprint.from_task_result(
+                    await run_in_threadpool(task.get, timeout=60)
+                )
+                if voiceprint:
+                    new_speaker_voiceprints.append(voiceprint)
+            except Exception as e:  # noqa: BLE001 -- boundary: task.get re-raises whatever the worker raised; all of it refuses the split
                 logger.error(
                     f"Failed embedding extract during split (Rec {rec_id}): {e}"
                 )
-                emb = None
+                raise split_extraction_failed() from e
 
             rs = RecordingSpeaker(
                 recording_id=rec_id,
                 diarization_label=split_label,
                 name=new_speaker.name,
                 global_speaker_id=new_speaker.id,
-                embedding=emb,
-                embedding_version=EMBEDDING_METHOD_VERSION if emb else None,
+                embedding=voiceprint.embedding if voiceprint else None,
+                embedding_version=EMBEDDING_METHOD_VERSION if voiceprint else None,
+                embedding_speech_seconds=(
+                    voiceprint.speech_seconds if voiceprint else None
+                ),
             )
             db.add(rs)
 
-    if new_speaker_embeddings:
-        final_new_emb = np.mean(np.array(new_speaker_embeddings), axis=0).tolist()
+    new_update = apply_split_to_new_person(new_speaker, new_speaker_voiceprints)
+    db.add(new_speaker)
 
-        blend_voiceprint(
-            new_speaker, final_new_emb, EMBEDDING_METHOD_VERSION, alpha=0.1
-        )
-        new_speaker.is_voiceprint_locked = True
-        db.add(new_speaker)
-
-    original_speaker_embeddings = []
+    original_speaker_voiceprints: list[RecordingVoiceprint] = []
 
     for recording_public_id in recording_segments.keys():
         rec = recordings_by_public_id.get(recording_public_id)
@@ -751,9 +779,11 @@ async def split_speaker(
         if not transcript:
             continue
 
+        # A row merged into another keeps its link but is not a speaker any more.
         stmt = select(RecordingSpeaker).where(
             RecordingSpeaker.recording_id == rec_id,
             RecordingSpeaker.global_speaker_id == original_speaker.id,
+            RecordingSpeaker.merged_into_id.is_(None),
         )
         result = await db.execute(stmt)
         original_rss = result.scalars().all()
@@ -769,31 +799,43 @@ async def split_speaker(
             if t_seg.get("speaker") in valid_labels:
                 remaining_seg_tuples.append((t_seg["start"], t_seg["end"]))
 
+        voiceprint = None
         if remaining_seg_tuples:
             target_audio = select_recording_audio_for_embedding(rec)
             task = await dispatch_task(
-                "backend.worker.tasks.extract_embedding_task",
+                MEASURED_EXTRACTION_TASK,
                 args=[target_audio, remaining_seg_tuples, device_str, hf_token],
             )
             try:
-                emb = await run_in_threadpool(task.get, timeout=60)
-                if emb:
-                    original_speaker_embeddings.append(emb)
-            except Exception as e:  # noqa: BLE001 -- boundary: task.get re-raises whatever the worker raised; the split continues without the embedding
+                voiceprint = RecordingVoiceprint.from_task_result(
+                    await run_in_threadpool(task.get, timeout=60)
+                )
+            except Exception as e:  # noqa: BLE001 -- boundary: task.get re-raises whatever the worker raised; all of it refuses the split
                 logger.error(
                     f"Failed embedding extract for original (Rec {rec_id}): {e}"
                 )
+                raise split_extraction_failed() from e
+        if voiceprint:
+            original_speaker_voiceprints.append(voiceprint)
+        if len(original_rss) == 1:
+            apply_split_to_original_speaker(original_rss[0], voiceprint)
+            db.add(original_rss[0])
 
-    if original_speaker_embeddings:
-        final_orig_emb = np.mean(np.array(original_speaker_embeddings), axis=0).tolist()
-        original_speaker.embedding = final_orig_emb
-        original_speaker.embedding_version = EMBEDDING_METHOD_VERSION
-        original_speaker.is_voiceprint_locked = True
-        db.add(original_speaker)
+    original_update = apply_split_to_original(
+        original_speaker, original_speaker_voiceprints
+    )
+    db.add(original_speaker)
 
     await db.commit()
     await db.refresh(new_speaker)
-    return new_speaker
+    return SpeakerSplitRead(
+        id=new_speaker.id,
+        name=new_speaker.name,
+        has_voiceprint=new_speaker.has_voiceprint,
+        is_voiceprint_locked=new_speaker.is_voiceprint_locked,
+        library_voiceprint=LibraryVoiceprintRead.from_update(new_update),
+        original_library_voiceprint=LibraryVoiceprintRead.from_update(original_update),
+    )
 
 
 @router.post("/{speaker_id}/scan-matches")

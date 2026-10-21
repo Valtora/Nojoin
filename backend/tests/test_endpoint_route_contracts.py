@@ -193,7 +193,7 @@ SPEAKERS_ROUTE_CONTRACT = [
     ("/{speaker_id}/recalibrate", ("POST",), "recalibrate_voiceprint", None),
     ("/{speaker_id}/scan-matches", ("POST",), "scan_for_matches", None),
     ("/{speaker_id}/segments", ("GET",), "get_speaker_segments", "List"),
-    ("/{speaker_id}/split", ("POST",), "split_speaker", "GlobalSpeaker"),
+    ("/{speaker_id}/split", ("POST",), "split_speaker", "SpeakerSplitRead"),
 ]
 
 

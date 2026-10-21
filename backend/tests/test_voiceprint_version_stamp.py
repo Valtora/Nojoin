@@ -28,6 +28,7 @@ from backend.core.backup.restore.conflicts import _resolve_global_speakers
 from backend.models.recording import Recording
 from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
 from backend.processing.embedding import (
+    RecordingVoiceprint,
     find_matching_global_speaker,
     merge_embeddings,
 )
@@ -54,6 +55,8 @@ OTHER = [0.0, 1.0]
 NOW = "2026-10-20 00:00:00"
 REC = "vs-rec"
 CURRENT = 2
+# Enough speech to found a library voiceprint, so only the version is in question.
+SPEECH = 25.0
 ALICE = 1
 
 
@@ -225,11 +228,11 @@ async def _seed(
                     INSERT INTO recording_speakers (
                         id, created_at, updated_at, public_id, recording_id,
                         global_speaker_id, diarization_label, local_name, name,
-                        embedding, embedding_version, speaker_status,
-                        speaker_kind, identity_locked
+                        embedding, embedding_version, embedding_speech_seconds,
+                        speaker_status, speaker_kind, identity_locked
                     ) VALUES (
                         :id, :now, :now, :public_id, 1, :global_id, :label,
-                        :local_name, :name, :embedding, :version,
+                        :local_name, :name, :embedding, :version, :seconds,
                         'active', 'automated', 0
                     )
                     """
@@ -244,6 +247,7 @@ async def _seed(
                     "name": speaker.get("name", f"Speaker {index}"),
                     "embedding": _json_or_none(speaker.get("embedding")),
                     "version": speaker.get("version", CURRENT),
+                    "seconds": SPEECH if speaker.get("embedding") else None,
                 },
             )
         await session.commit()
@@ -404,7 +408,7 @@ async def test_a_re_extracted_voiceprint_linked_to_a_person_is_identified(
         speakers=[{"label": "SPEAKER_00", "embedding": seeded, "version": None}],
         people=[{"id": 7, "name": "Robin"}],
     )
-    extraction.append(VOICE)
+    extraction.append({"embedding": VOICE, "speech_seconds": SPEECH})
 
     extracted = await client.post(f"/api/v1/speakers/recordings/{REC}/{endpoint}")
     applied = await client.post(
@@ -425,7 +429,7 @@ async def test_a_recalibrated_legacy_voiceprint_is_identified(
         speakers=[{"label": "SPEAKER_00", "global_speaker_id": 7}],
         people=[{"id": 7, "name": "Dana", "embedding": OTHER, "version": None}],
     )
-    extraction.append(VOICE)
+    extraction.append({"embedding": VOICE, "speech_seconds": SPEECH})
 
     response = await client.post(
         "/api/v1/speakers/7/recalibrate",
@@ -456,7 +460,12 @@ async def test_both_people_of_a_split_are_identified(
             {"segments": json.dumps(segments)},
         )
         await session.commit()
-    extraction.extend([selected, remaining])
+    extraction.extend(
+        [
+            {"embedding": selected, "speech_seconds": SPEECH},
+            {"embedding": remaining, "speech_seconds": SPEECH},
+        ]
+    )
 
     response = await client.post(
         "/api/v1/speakers/7/split",
@@ -675,10 +684,17 @@ def test_segment_learning_stamps_the_current_version(
     speaker = SimpleNamespace(
         embedding=None,
         embedding_version=None,
+        embedding_speech_seconds=None,
         global_speaker_id=7,
         diarization_label="SPEAKER_00",
     )
-    person = SimpleNamespace(name="Dana", embedding=list(OTHER), embedding_version=None)
+    person = SimpleNamespace(
+        id=7,
+        name="Dana",
+        embedding=list(OTHER),
+        embedding_version=None,
+        is_voiceprint_locked=False,
+    )
     rows = {
         (Recording, 1): SimpleNamespace(audio_path="/tmp/meeting.wav"),
         (RecordingSpeaker, 3): speaker,
@@ -709,7 +725,9 @@ def test_segment_learning_stamps_the_current_version(
     monkeypatch.setattr(
         embedding_core,
         "extract_embedding_for_segments",
-        lambda *args, **kwargs: list(VOICE),
+        lambda *args, **kwargs: RecordingVoiceprint(
+            embedding=list(VOICE), speech_seconds=SPEECH
+        ),
     )
     task = embedding_tasks.update_speaker_embedding_task
     monkeypatch.setattr(task, "_session", session)

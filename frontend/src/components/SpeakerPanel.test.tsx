@@ -10,6 +10,7 @@ import type {
 
 const addNotification = vi.fn();
 const updateSpeaker = vi.fn();
+const promoteToGlobalSpeaker = vi.fn();
 const deleteRecordingSpeaker = vi.fn();
 const getMergedRecordingSpeakers = vi.fn();
 const unmergeRecordingSpeaker = vi.fn();
@@ -23,7 +24,7 @@ vi.mock("@/lib/api", () => ({
   mergeRecordingSpeakers: vi.fn(),
   deleteRecordingSpeaker: (...a: unknown[]) => deleteRecordingSpeaker(...a),
   extractVoiceprint: vi.fn(),
-  promoteToGlobalSpeaker: vi.fn(),
+  promoteToGlobalSpeaker: (...a: unknown[]) => promoteToGlobalSpeaker(...a),
   getMergedRecordingSpeakers: (...a: unknown[]) =>
     getMergedRecordingSpeakers(...a),
   unmergeRecordingSpeaker: (...a: unknown[]) => unmergeRecordingSpeaker(...a),
@@ -76,6 +77,7 @@ function buildSpeaker(
     has_voiceprint: overrides.has_voiceprint,
     merged_into_id: overrides.merged_into_id,
     name_last_edit_source: overrides.name_last_edit_source,
+    library_voiceprint: overrides.library_voiceprint,
   } as RecordingSpeaker;
 }
 
@@ -131,7 +133,8 @@ function renderPanel(
 describe("SpeakerPanel", () => {
   beforeEach(() => {
     addNotification.mockReset();
-    updateSpeaker.mockReset().mockResolvedValue(undefined);
+    updateSpeaker.mockReset().mockResolvedValue([]);
+    promoteToGlobalSpeaker.mockReset();
     deleteRecordingSpeaker.mockReset().mockResolvedValue(undefined);
     lastMenuItems = [];
   });
@@ -186,6 +189,70 @@ describe("SpeakerPanel", () => {
       expect(updateSpeaker).toHaveBeenCalledWith("rec-1", "SPEAKER_00", "Alicia");
     });
     await waitFor(() => expect(onRefresh).toHaveBeenCalled());
+  });
+
+  it("says when a rename left the person without a voiceprint, and why", async () => {
+    updateSpeaker.mockResolvedValue([
+      buildSpeaker({
+        diarization_label: "SPEAKER_00",
+        global_speaker_id: 7,
+        library_voiceprint: {
+          status: "skipped_insufficient_speech",
+          speech_seconds: 12.4,
+          required_speech_seconds: 20,
+        },
+      }),
+    ]);
+    renderPanel({
+      speakers: [
+        buildSpeaker({ diarization_label: "SPEAKER_00", local_name: "Alice" }),
+      ],
+      segments: [buildSegment({ speaker: "SPEAKER_00", start: 0, end: 2 })],
+    });
+
+    fireEvent.doubleClick(screen.getByText("Alice"));
+    const input = screen.getByDisplayValue("Alice");
+    fireEvent.change(input, { target: { value: "Dana" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() =>
+      expect(addNotification).toHaveBeenCalledWith({
+        type: "info",
+        message:
+          "Voiceprint not saved: 12.4 s of clear speech, 20 s needed. A later recording linked to this person with at least 20 s of clear speech will save it.",
+      }),
+    );
+  });
+
+  it("says when a promote kept the person's voiceprint from drifting", async () => {
+    promoteToGlobalSpeaker.mockResolvedValue(
+      buildSpeaker({
+        diarization_label: "SPEAKER_00",
+        global_speaker: { id: 7, name: "Alice" } as GlobalSpeaker,
+        library_voiceprint: {
+          status: "skipped_drift",
+          speech_seconds: 40,
+          required_speech_seconds: 20,
+        },
+      }),
+    );
+    renderPanel({
+      speakers: [
+        buildSpeaker({ diarization_label: "SPEAKER_00", local_name: "Alice" }),
+      ],
+      segments: [buildSegment({ speaker: "SPEAKER_00", start: 0, end: 2 })],
+    });
+
+    fireEvent.contextMenu(screen.getByText("Alice"));
+    lastMenuItems.find((item) => item.label === "Add to People")?.onClick();
+
+    await waitFor(() =>
+      expect(addNotification).toHaveBeenCalledWith({
+        type: "info",
+        message:
+          "Voiceprint not updated: this speaker sounds too unlike Alice's saved voiceprint. Check that the name is right.",
+      }),
+    );
   });
 
   it("deletes a speaker after confirmation", async () => {

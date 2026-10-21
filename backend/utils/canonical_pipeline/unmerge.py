@@ -127,6 +127,31 @@ def _restore_merged_speaker_row(
     ensure_recording_speaker_aliases_for_speaker(session, restored)
 
 
+def _take_back_merged_speech(
+    session, *, restored: RecordingSpeaker, survivor: RecordingSpeaker
+) -> None:
+    """Take a merged row's speech back out of the survivor's speech figure.
+
+    A merge that folded this row's voiceprint into the survivor's added its
+    figure to the survivor's and left the amount on this row, without a
+    voiceprint (``fold_recording_voiceprint``); a merge made by processing
+    folds nothing and keeps the row's voiceprint. Undoing a fold leaves the
+    survivor's blended voiceprint as it is, as before, but its figure must not
+    go on counting speech that has moved back out, so the amount comes off it
+    again. The restored row has no voiceprint to describe, so it keeps no
+    figure either.
+    """
+    added = restored.embedding_speech_seconds
+    if restored.embedding or added is None:
+        return
+    if survivor.embedding_speech_seconds is not None:
+        survivor.embedding_speech_seconds = max(
+            0.0, survivor.embedding_speech_seconds - added
+        )
+        session.add(survivor)
+    restored.embedding_speech_seconds = None
+
+
 @dataclass(frozen=True)
 class _Unmerge:
     """One unmerge in progress: who gets the lines, who loses them, who asked."""
@@ -252,6 +277,7 @@ def unmerge_recording_speaker(
             f"No lines carry the label '{diarization_label}' that are not assigned by hand"
         )
 
+    _take_back_merged_speech(session, restored=restored, survivor=survivor)
     _restore_merged_speaker_row(
         session, restored=restored, speakers=speakers, moving=moving
     )

@@ -42,11 +42,13 @@ class _LabelWork:
     label: str
     identity: _ResolvedIdentity
     embedding: list | None
+    # Seconds of selected crop speech behind ``embedding``.
+    speech_seconds: float | None
     existing_speaker: RecordingSpeaker | None
 
 
 def _extract_speaker_voiceprints(ctx, recording: Recording, diarization_result) -> dict:
-    """Extract a voiceprint per diarized speaker, if enabled."""
+    """Extract a measured voiceprint per diarized speaker, if enabled."""
     from backend.processing.embedding_core import extract_embeddings
 
     merged_config = ctx.merged_config
@@ -310,6 +312,7 @@ def _absorb_into_existing_name(
                 embedding_version=(
                     EMBEDDING_METHOD_VERSION if work.embedding is not None else None
                 ),
+                embedding_speech_seconds=work.speech_seconds,
                 global_speaker_id=work.identity.global_speaker_id,
                 merged_into_id=target_id,
             )
@@ -333,6 +336,7 @@ def _persist_speaker(session, work: _LabelWork) -> int | None:
             embedding_version=(
                 EMBEDDING_METHOD_VERSION if work.embedding is not None else None
             ),
+            embedding_speech_seconds=work.speech_seconds,
             global_speaker_id=work.identity.global_speaker_id,
         )
         session.add(rec_speaker)
@@ -342,6 +346,7 @@ def _persist_speaker(session, work: _LabelWork) -> int | None:
     if work.embedding is not None:
         work.existing_speaker.embedding = work.embedding
         work.existing_speaker.embedding_version = EMBEDDING_METHOD_VERSION
+        work.existing_speaker.embedding_speech_seconds = work.speech_seconds
     elif work.existing_speaker.embedding:
         logger.info(
             "Preserving existing voiceprint for %s because final diarization "
@@ -443,7 +448,7 @@ def assign_and_identify_speakers(
         f"Extracted {len(ordered_speakers)} unique speakers from segments: {ordered_speakers}"
     )
 
-    speaker_embeddings = _extract_speaker_voiceprints(
+    speaker_voiceprints = _extract_speaker_voiceprints(
         ctx, recording, diarization_result
     )
 
@@ -458,7 +463,8 @@ def assign_and_identify_speakers(
             .where(RecordingSpeaker.diarization_label == label)
         ).first()
 
-        embedding = speaker_embeddings.get(label)
+        voiceprint = speaker_voiceprints.get(label)
+        embedding = voiceprint.embedding if voiceprint is not None else None
         identity = _resolve_identity(
             session,
             recording=recording,
@@ -476,6 +482,9 @@ def assign_and_identify_speakers(
             label=label,
             identity=identity,
             embedding=embedding,
+            speech_seconds=(
+                voiceprint.speech_seconds if voiceprint is not None else None
+            ),
             existing_speaker=existing_speaker,
         )
 

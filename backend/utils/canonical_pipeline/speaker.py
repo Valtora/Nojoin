@@ -719,7 +719,12 @@ def update_recording_speaker_identity(
     merge_global_embedding_alpha: float | None = None,
     event_type: SpeakerCorrectionEventType | None = None,
     source: str = "api",
-) -> list[RecordingSpeaker]:
+) -> dict[int, LibraryVoiceprintUpdate]:
+    """Rename or link a recording speaker everywhere in its recording.
+
+    Returns, per recording speaker id, what happened to the linked person's
+    library voiceprint; speakers whose voiceprint was not offered are absent.
+    """
     from .core import (
         list_active_utterances,
         recording_ready_for_canonical_backfill,
@@ -761,8 +766,9 @@ def update_recording_speaker_identity(
         if target_global_speaker is None:
             raise LookupError("Global speaker not found")
 
+    library_updates: dict[int, LibraryVoiceprintUpdate] = {}
     for recording_speaker in matching_speakers:
-        apply_recording_speaker_identity_fields(
+        library_update = apply_recording_speaker_identity_fields(
             session,
             recording_speaker,
             new_speaker_name=new_speaker_name,
@@ -775,6 +781,8 @@ def update_recording_speaker_identity(
             # the voiceprint (pre-refactor behaviour of this path).
             respect_voiceprint_lock=False,
         )
+        if library_update is not None and recording_speaker.id is not None:
+            library_updates[recording_speaker.id] = library_update
         recording_speaker.name_last_edit_source = source
 
     effective_event_type = event_type or (
@@ -820,7 +828,7 @@ def update_recording_speaker_identity(
         new_name=resolved_new_name,
     )
 
-    return matching_speakers
+    return library_updates
 
 
 def merge_recording_speakers_by_label(
@@ -880,12 +888,10 @@ def merge_recording_speakers_by_label(
     if source_speaker.id == target_speaker.id:
         raise ValueError("Cannot merge speaker into itself")
 
+    added_seconds = None
     if source_speaker.embedding:
-        blend_voiceprint(
-            target_speaker,
-            source_speaker.embedding,
-            source_speaker.embedding_version,
-            alpha=0.5,
+        added_seconds = fold_recording_voiceprint(
+            target_speaker, RecordingVoiceprint.of_speaker(source_speaker), alpha=0.5
         )
         session.add(target_speaker)
 
@@ -942,7 +948,10 @@ def merge_recording_speakers_by_label(
             update_source_provenance=True,
         )
 
+    # The merged row keeps the speech it added to the target's figure, so that
+    # an unmerge can take it out again.
     source_speaker.embedding = None
+    source_speaker.embedding_speech_seconds = added_seconds
     session.add(source_speaker)
 
     if list_active_utterances(session, recording_id):

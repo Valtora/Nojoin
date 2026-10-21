@@ -138,6 +138,12 @@ Processing sometimes merges two detected voices into one speaker because they so
 
 Only merges made by processing are listed. To undo a merge you made yourself, use **Split / Unmerge Speaker** or reassign the lines. Recordings processed by versions that did not keep this record need **Retry Processing** instead.
 
+### When A Voiceprint Is Not Saved
+
+A person's voiceprint is saved only from a meeting where they have at least 20 seconds of clear speech, meaning their own talk without overlap. With less, renaming the speaker, **Add to People** and **Create Voiceprint** still link the person, and a notice says how much the meeting held, such as "Voiceprint not saved: 12 s of clear speech, 20 s needed." The next meeting where you link them to a speaker with enough speech saves it. Merging two speakers of one meeting adds their speech together.
+
+Once a person has a voiceprint, a speaker you link later is blended in only if it sounds like them. If it doesn't, the notice says so; check the name. A locked voiceprint (**Recalibrate Voiceprint** locks it) changes only when you link a speaker yourself, and not when you rename a speaker while its meeting is still processing. Recalibrating or splitting a person uses only the meetings whose selected samples hold 20 seconds, so pick a good stretch from at least one meeting.
+
 ### Limiting The Number Of Speakers
 
 Speaker detection is automatic. If a long meeting comes back with more speakers than there were people, usually because someone's audio changed partway through, set **Max Speakers** (1 to 50) for that recording. Leave it empty to auto-detect.
@@ -166,7 +172,7 @@ To keep more brief speakers, lower the phantom filter's limits or raise its merg
 
 ### When Voiceprints Need Rebuilding
 
-When an upgrade changes how voiceprints are made, Nojoin rebuilds your saved voiceprints from the original audio in the background, a few meetings at a time. There is nothing to press. Until a voiceprint is rebuilt it is not used for automatic identification, so recognition can be weaker for a while after such an upgrade.
+When an upgrade changes how voiceprints are made, Nojoin rebuilds your saved voiceprints from the original audio in the background, a few meetings at a time. There is nothing to press. Until a voiceprint is rebuilt it is not used for automatic identification, so recognition can be weaker for a while after such an upgrade. A person whose meetings each hold less than 20 seconds of their clear speech keeps the outdated voiceprint, and is not recognised until you link them to a speaker in a meeting with enough.
 
 A voiceprint that cannot be rebuilt, because its meeting's audio was removed or its speaker no longer has any speech in the transcript, is cleared. The person and the meeting's speaker remain, so you can link them by hand or save a new voiceprint from a later meeting.
 
