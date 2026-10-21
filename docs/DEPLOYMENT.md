@@ -245,7 +245,7 @@ Operations:
 | `DEFAULT_TIMEZONE` | `UTC` | Timezone for users who have not saved their own. |
 | `BACKUP_EXPORT_DIR` | `data/backups` | Where exported backup archives are written ([Temporary Files](#temporary-files-and-the-data-directory)). |
 | `NOJOIN_UMASK` | `0077` | Umask for the application processes. The default gives owner-only files (`0600`) and directories (`0700`). |
-| `NOJOIN_STALL_WATCHDOG_ENABLED` | `true` | Stall detection. Not passed by the shipped compose file ([Stall Detection](#stall-detection)). |
+| `NOJOIN_STALL_WATCHDOG_ENABLED` | `true` | Logs API stalls and host pressure ([Stall Detection](#stall-detection)). |
 | `WHISPER_ENABLE_WORD_TIMESTAMPS` | `true` | Whisper word timestamps, which let the merge assign speakers word by word. |
 | `NVIDIA_VISIBLE_DEVICES`, `NVIDIA_DRIVER_CAPABILITIES` | `all`, `compute,utility` | GPU passthrough for `worker-gpu`. |
 | `NOJOIN_CODEX_PATH` | `/usr/local/bin/codex` | Codex CLI path on the workers ([CLI OAuth](#cli-oauth-worker-io-image)). Not in `.env.example`. |
@@ -288,7 +288,7 @@ Both are quiet on a healthy deployment. If either appears during meetings, check
 | `NOJOIN_STALL_WATCHDOG_LAG_THRESHOLD_SECONDS` | `1` | Overshoot above which a stall is reported. Below a second, ordinary scheduling produces noise. |
 | `NOJOIN_STALL_WATCHDOG_PRESSURE_THRESHOLD` | `20` | Percentage of the last ten seconds spent blocked above which host pressure is reported on its own. |
 
-The shipped compose file does not pass these variables to the `api` container, so a value in `.env` has no effect. Set them in the `api` service's `environment:` block in `docker-compose.yml`.
+Set any of them in `.env`. Only `NOJOIN_STALL_WATCHDOG_ENABLED` is listed in `.env.example`.
 
 ## Configuration Model
 
@@ -561,6 +561,7 @@ These run on the first start after the upgrade and need no action unless a note 
 - **Parakeet word length capped, word end padding retired (#473).** A Parakeet word now ends at the earliest of the next word's start, its window's end and its start plus `asr_word_length_cap_s` (default 0.4 s, range 0.2 to 0.45). The retired `asr_word_end_padding_s` (default 0.2) set how long a word lasted before a long pause. It is not converted, because the same number means something else as a cap. A stored value is ignored, dropped from a user's settings on their next save, and dropped from `config.json` when an administrator next saves an install-wide setting. An older settings page that still sends it is ignored. Anyone who had set it gets the new default until they set the cap. Reprocess a recording to apply the change to it.
 - **Voiceprints measured on extraction (#498).** Migration `7c3e5a91d2f4` adds the nullable column `recording_speakers.embedding_speech_seconds`, with no backfill; a downgrade drops it. The voiceprint dialog's extract actions, recalibration and person split now call `extract_measured_embedding_task`, which an older worker fails with `NotRegistered`, and a newer worker fails on the missing column until the API has migrated, so upgrade the API and the workers together. Voiceprints extracted earlier have no speech figure and work as before until they are extracted again ([USAGE.md](USAGE.md#when-a-voiceprint-is-not-saved)).
 - **Drift guard refusals remembered (#499).** Migration `7ff0bbdadad8` adds the table `recording_speaker_drift_refusals`, one row for each person the guard refused a recording speaker for, so a rebuild of a person's voiceprint leaves out a speaker the guard refused for them. It starts empty, since earlier refusals were never recorded. Deleting the speaker or the person deletes its rows, backups carry them, and a downgrade drops the table. As with the note above, a newer worker fails on the missing table until the API has migrated.
+- **Stall detection settings reach the API (#476).** `docker-compose.example.yml` now passes the four `NOJOIN_STALL_WATCHDOG_*` variables to `api`. A `docker-compose.yml` copied from an earlier example does not, so a value set in `.env` has no effect until you copy those four lines into its `api` service's `environment:` block ([Stall Detection](#stall-detection)).
 
 #### Upgrading From Before 2.10.0
 

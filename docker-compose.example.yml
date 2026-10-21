@@ -168,6 +168,12 @@ services:
       XDG_CACHE_HOME: /shared_model_cache
       HF_HOME: /shared_model_cache/huggingface
       NOJOIN_TRUSTED_PROXIES: ${NOJOIN_TRUSTED_PROXIES:-127.0.0.1,::1,nginx}
+      # Only the api runs the stall watchdog. No defaults here:
+      # backend/utils/stall_watchdog.py owns them and reads an empty value as unset.
+      NOJOIN_STALL_WATCHDOG_ENABLED: ${NOJOIN_STALL_WATCHDOG_ENABLED:-}
+      NOJOIN_STALL_WATCHDOG_INTERVAL_SECONDS: ${NOJOIN_STALL_WATCHDOG_INTERVAL_SECONDS:-}
+      NOJOIN_STALL_WATCHDOG_LAG_THRESHOLD_SECONDS: ${NOJOIN_STALL_WATCHDOG_LAG_THRESHOLD_SECONDS:-}
+      NOJOIN_STALL_WATCHDOG_PRESSURE_THRESHOLD: ${NOJOIN_STALL_WATCHDOG_PRESSURE_THRESHOLD:-}
     depends_on:
       db:
         condition: service_healthy
