@@ -19,7 +19,7 @@ from backend.processing.embedding import (
     UI_STRONG_MATCH_THRESHOLD,
     RecordingVoiceprint,
     cosine_similarity,
-    forget_drift_verdict,
+    judge_drift,
     offer_linked_voiceprint,
 )
 from backend.processing.embedding_version import EMBEDDING_METHOD_VERSION
@@ -36,6 +36,24 @@ from .helpers import (
 from .router import router
 
 logger = logging.getLogger(__name__)
+
+
+async def _judge_extracted_voiceprint(
+    db: AsyncSession, rec_speaker: RecordingSpeaker
+) -> None:
+    """Judge a speaker's freshly extracted voiceprint against its person.
+
+    Extracting offers the voiceprint to no one: the dialog may never apply a
+    link. So the drift guard judges it against the person the speaker is
+    already linked to (``judge_drift``), and a voice it refused stays out of
+    that person's rebuilds until a verdict lets it in.
+    """
+    person = (
+        await db.get(GlobalSpeaker, rec_speaker.global_speaker_id)
+        if rec_speaker.global_speaker_id
+        else None
+    )
+    judge_drift(rec_speaker, person)
 
 
 @router.post(
@@ -121,7 +139,7 @@ async def extract_voiceprint(
     rec_speaker.embedding = embedding
     rec_speaker.embedding_version = EMBEDDING_METHOD_VERSION
     rec_speaker.embedding_speech_seconds = voiceprint.speech_seconds
-    forget_drift_verdict(rec_speaker)
+    await _judge_extracted_voiceprint(db, rec_speaker)
     db.add(rec_speaker)
     await db.commit()
     await db.refresh(rec_speaker)
@@ -422,7 +440,7 @@ async def extract_all_voiceprints(
         rec_speaker.embedding = embedding
         rec_speaker.embedding_version = EMBEDDING_METHOD_VERSION
         rec_speaker.embedding_speech_seconds = voiceprint.speech_seconds
-        forget_drift_verdict(rec_speaker)
+        await _judge_extracted_voiceprint(db, rec_speaker)
         db.add(rec_speaker)
 
         matched_speaker = None

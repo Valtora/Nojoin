@@ -159,9 +159,9 @@ def _matchable_global_speakers(session, user_id) -> list:
 def _learn_from_confident_match(session, best_match, embedding, best_score) -> None:
     """Fold a high-confidence observation back into the person's voiceprint.
 
-    No link's drift refusal changes: their voiceprints are as they were, and
-    the matched speaker's own, new this run, is stored with none
-    (``_persist_speaker``).
+    No other link's drift refusal changes, since their voiceprints are as they
+    were. The matched speaker's own, new this run, is judged against the
+    person when it is stored (``_persist_speaker``).
     """
     from backend.processing.embedding import (
         AUTO_UPDATE_THRESHOLD,
@@ -349,13 +349,9 @@ def _persist_speaker(session, work: _LabelWork) -> int | None:
         return rec_speaker.id
 
     if work.embedding is not None:
-        from backend.processing.embedding import forget_drift_verdict
-
         work.existing_speaker.embedding = work.embedding
         work.existing_speaker.embedding_version = EMBEDDING_METHOD_VERSION
         work.existing_speaker.embedding_speech_seconds = work.speech_seconds
-        # Extracted from this run's diarisation, so not the voiceprint judged.
-        forget_drift_verdict(work.existing_speaker)
     elif work.existing_speaker.embedding:
         logger.info(
             "Preserving existing voiceprint for %s because final diarization "
@@ -368,6 +364,16 @@ def _persist_speaker(session, work: _LabelWork) -> int | None:
         or work.existing_speaker.global_speaker_id is None
     ):
         work.existing_speaker.global_speaker_id = work.identity.global_speaker_id
+    if work.embedding is not None:
+        from backend.processing.embedding import judge_drift
+
+        # This run's voiceprint was offered to no one, so the guard judges it
+        # against the person the speaker ends up linked to.
+        person_id = work.existing_speaker.global_speaker_id
+        judge_drift(
+            work.existing_speaker,
+            session.get(GlobalSpeaker, person_id) if person_id else None,
+        )
     session.add(work.existing_speaker)
     session.flush()
     return work.existing_speaker.id

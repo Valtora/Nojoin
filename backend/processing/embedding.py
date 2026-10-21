@@ -484,27 +484,27 @@ def lift_drift_refusal(speaker: Any, person_id: int) -> None:
 
 
 def forget_drift_verdict(speaker: Any) -> None:
-    """Drop all of a link's drift refusals: its voiceprint is not the one judged.
+    """Drop all of a link's drift refusals: a split decides about its remainder.
 
-    A refusal describes the voiceprint the guard judged. A voiceprint
-    extracted afresh from other speech (the voiceprint dialog's extract,
-    reprocessing, a split's remainder) has not been judged by anyone, so the
-    refusals for every person go with the old one. Speech folded into the
-    old voiceprint (a merge, a segment moved onto the link) is judged again
-    instead (``judge_drift``). Re-extracting the same speech under a new
-    extraction method (the voiceprint rebuild) keeps them: carrying the
+    A split gives the original's speaker the voiceprint of the clips that
+    remain, and the moved clips may be what the guard refused. The split
+    itself decides whether that remainder joins the original person's
+    voiceprint (``apply_split_to_original``), so the refusals for every person
+    go with the old voiceprint. Every other new voiceprint for a link is
+    judged instead (``judge_drift``), and re-extracting the same speech under
+    a new extraction method (the voiceprint rebuild) keeps them: carrying the
     verdict across that change is what they are for.
     """
     speaker.drift_refusals.clear()
 
 
 def judge_drift(speaker: Any, person: Any) -> None:
-    """Judge a link's voiceprint again once more speech is folded into it.
+    """Judge a link's new voiceprint against the person it is linked to.
 
-    A segment moved onto the link, or a speaker merged into it, changes the
-    link's voiceprint without offering it to anyone, and the speech the guard
-    judged is still part of it. So the guard judges the result against
-    ``person``, the person the link is linked to, without changing their
+    A segment moved onto the link, a speaker merged into it, the voiceprint
+    dialog's extract and reprocessing each give the link a voiceprint that is
+    offered to no one, and the voice the guard refused is usually still in
+    it. So the guard judges it against ``person``, without changing their
     voiceprint, and the verdict is kept as ``record_drift_verdict`` keeps one:
     a refusal adds ``person`` to the people the link was refused for, and a
     pass lifts only their refusal. With no person, or no voiceprint of theirs

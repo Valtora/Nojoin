@@ -619,13 +619,13 @@ def test_the_pipeline_records_the_speech_behind_each_voiceprint(session) -> None
     assert seconds == {"SPEAKER_01": 31.0, "SPEAKER_02": 24.0, "SPEAKER_03": 4.0}
 
 
-def test_reprocessing_drops_the_refusal_of_the_voiceprint_it_replaces(session) -> None:
+def test_reprocessing_lifts_the_refusal_of_a_speaker_that_now_matches(session) -> None:
     """A run that re-extracts a speaker gives it this run's voiceprint.
 
-    The guard refused the old one for person 7; the new one has not been
-    judged, so its refusal goes. Folding a confident match into the person
-    changes no speaker's voiceprint, so another speaker's refusal for them
-    stays.
+    The guard refused the old one for person 7; the new one matches them, so
+    judged against them it passes and the refusal goes. Folding a confident
+    match into the person changes no other speaker's voiceprint, so another
+    speaker's refusal for them stays.
     """
     from backend.worker.tasks.speaker_assignment import (
         _LabelWork,
@@ -672,3 +672,55 @@ def test_reprocessing_drops_the_refusal_of_the_voiceprint_it_replaces(session) -
     assert session.get(GlobalSpeaker, 7).embedding == pytest.approx(
         _blend(PERSON, new_voiceprint, 0.1)
     )
+
+
+def test_reprocessing_a_refused_speaker_judges_its_new_voiceprint(session) -> None:
+    """Speaker 2 was refused for person 7 and stays linked to them.
+
+    Reprocessing gives it this run's voiceprint, still a stranger's, and no
+    match moves it elsewhere. The guard judges the new voiceprint against
+    person 7 and refuses it again, so their rebuild from links leaves it out.
+    """
+    from backend.worker.tasks.speaker_assignment import (
+        _LabelWork,
+        _persist_speaker,
+        _ResolvedIdentity,
+    )
+    from backend.worker.tasks.voiceprint_rebuild import _rebuild_global_speaker
+
+    _add_person(session, 7, PERSON)
+    _add_speaker(session, 1, PERSON, 30.0)
+    _add_speaker(session, 2, _at_cosine(0.1), 30.0)
+    session.execute(text("UPDATE recording_speakers SET global_speaker_id = 7"))
+    session.execute(
+        text(
+            "INSERT INTO recording_speaker_drift_refusals "
+            "(recording_speaker_id, global_speaker_id) VALUES (2, 7)"
+        )
+    )
+    session.commit()
+
+    _persist_speaker(
+        session,
+        _LabelWork(
+            recording=session.get(Recording, 1),
+            label="SPEAKER_02",
+            identity=_ResolvedIdentity(name="Speaker 2"),
+            embedding=_at_cosine(0.15),
+            speech_seconds=30.0,
+            existing_speaker=session.get(RecordingSpeaker, 2),
+        ),
+    )
+    session.commit()
+    _rebuild_global_speaker(session, session.get(GlobalSpeaker, 7), 2)
+    session.commit()
+
+    refused = session.execute(
+        text(
+            "SELECT recording_speaker_id, global_speaker_id "
+            "FROM recording_speaker_drift_refusals"
+        )
+    ).all()
+    assert [tuple(row) for row in refused] == [(2, 7)]
+    assert session.get(RecordingSpeaker, 2).global_speaker_id == 7
+    assert session.get(GlobalSpeaker, 7).embedding == pytest.approx(PERSON)

@@ -1884,14 +1884,26 @@ async def test_a_split_that_removes_what_the_guard_refused_rebuilds_the_person(
     "endpoint",
     ["speakers/SPEAKER_00/voiceprint/extract", "voiceprints/extract-all"],
 )
-async def test_extracting_a_voiceprint_again_drops_the_old_ones_refusal(
-    client, session_maker, extraction, endpoint
+@pytest.mark.parametrize(
+    # The voiceprint extracted, and the people SPEAKER_00 is refused for after.
+    "case",
+    [
+        pytest.param((_at_cosine(0.1), (7,)), id="stranger"),
+        pytest.param((_at_cosine(0.9), ()), id="like-dana"),
+    ],
+)
+async def test_extracting_a_refused_speakers_voiceprint_again_judges_it(
+    client, session_maker, extraction, endpoint, case
 ) -> None:
-    """A refusal describes the voiceprint the guard judged, not its successor.
+    """SPEAKER_00 was refused for Dana, and its voiceprint has been deleted
+    since (extract-all extracts only speakers who have none).
 
-    The judged voiceprint was deleted since, which leaves the refusal in place
-    (and extract-all extracts only speakers who have none).
+    Extracting one again, with no link applied after it, gives the speaker a
+    voiceprint no one offered to Dana, so the guard judges it against her. A
+    stranger's stays refused, and a rebuild of Dana from her links leaves it
+    out; her own voice is let back in, and the rebuild uses it.
     """
+    extracted_voiceprint, refused_after = case
     await _seed(
         session_maker,
         speakers=[
@@ -1904,12 +1916,15 @@ async def test_extracting_a_voiceprint_again_drops_the_old_ones_refusal(
         ],
         people=[{"id": 7, "name": "Dana", "embedding": PERSON}],
     )
-    extraction.append({"embedding": _at_cosine(0.9), "speech_seconds": 30.0})
+    extraction.append({"embedding": extracted_voiceprint, "speech_seconds": 30.0})
 
     extracted = await client.post(f"/api/v1/speakers/recordings/{REC}/{endpoint}")
+    await _rebuild_person(session_maker, 7)
 
     assert extracted.status_code == 200
-    assert await _refused_for(session_maker) == {"SPEAKER_00": ()}
+    assert await _refused_for(session_maker) == {"SPEAKER_00": refused_after}
+    dana = PERSON if refused_after else extracted_voiceprint
+    assert await _person_voiceprint(session_maker, "Dana") == pytest.approx(dana)
 
 
 @pytest.mark.anyio
