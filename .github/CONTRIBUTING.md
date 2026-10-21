@@ -30,7 +30,7 @@ Install only what your change needs:
 
 - **Documentation:** nothing. `python3 scripts/validate_docs.py` uses only the standard library.
 - **Frontend:** Node and `npm install` in `frontend/`. No Python or GPU.
-- **Backend without a GPU:** a virtual environment with `requirements/dev.txt`, the test stack plus Ruff, mypy and pre-commit. `requirements/local.txt` adds pyannote.audio for running the processing pipeline on a GPU host.
+- **Backend without a GPU:** a virtual environment with `requirements/dev.txt`, the test stack plus Ruff, mypy and pre-commit, followed by `requirements/worker-no-deps.txt` installed with `--no-deps` ([Fresh Checkout Setup](../docs/DEVELOPMENT.md#fresh-checkout-setup)). `requirements/local.txt` adds pyannote.audio for running the processing pipeline on a GPU host.
 
 Before opening a pull request, run the checks for every area you touched, as listed in [Verification By Change Scope](../docs/DEVELOPMENT.md#verification-by-change-scope). `python scripts/check.py` runs every Python-side check, pytest included. CI runs the same checks and the aggregate `CI gate` must pass to merge ([Required Pull Request Checks](../docs/DEVELOPMENT.md#required-pull-request-checks)).
 
