@@ -54,8 +54,15 @@ async def recording_document_paths(
 
 
 def _unlink_document_files(
-    file_paths: Iterable[str | None], *, logger: logging.Logger
+    file_paths: list[str | None], *, logger: logging.Logger
 ) -> None:
+    try:
+        _unlink_each(file_paths, logger=logger)
+    except Exception:
+        logger.exception("Failed to delete document files %s", file_paths)
+
+
+def _unlink_each(file_paths: list[str | None], *, logger: logging.Logger) -> None:
     root = documents_root_dir()
     for raw_path in file_paths:
         if not raw_path:
@@ -83,8 +90,10 @@ async def delete_document_files(
     edited row, is left alone and logged. A file that is already gone is not an
     error, and one that cannot be removed is logged without stopping the rest.
     Called after the deleting transaction commits, so a failed commit never
-    leaves a row pointing at a removed file. The resolving and unlinking run in
-    a worker thread, off the event loop. A cancellation can arrive before that
+    leaves a row pointing at a removed file; and so, bar a cancellation, it
+    never raises, as nothing may turn a committed delete into an error: any
+    other failure is logged. The resolving and unlinking run in a worker
+    thread, off the event loop. A cancellation can arrive before that
     thread has picked the job up, as it does while the thread pool is busy, and
     the job would then never run; so a cancelled call unlinks on the event loop
     before the cancellation propagates. If the thread had already started, the

@@ -114,10 +114,12 @@ directory are unlinked: a legacy row whose path is elsewhere keeps its file on
 delete, and the path is logged. Unlinking runs in a worker thread, off the event
 loop; a cancelled unlink still runs, on the event loop, so a cancellation cannot
 skip it while the thread pool is busy. A file that cannot be removed is logged
-without stopping the rest. A parse still running when its document is deleted
-stops at its next write; one that fails on a write is rolled back and still
-marked `ERROR`, with a fixed message rather than the database's own text, which
-goes only to the log.
+without stopping the rest. No cleanup after a delete's commit can turn the
+committed delete into an error: a failure is logged, and a deleted user's
+document files go even when a recording's audio cannot. A parse still running
+when its document is deleted stops at its next write; one that fails on a write
+is rolled back and still marked `ERROR`, with a fixed message rather than the
+database's own text, which goes only to the log.
 
 Nothing sweeps the documents directory for files without a row, as nothing
 sweeps any live directory. A document file is left behind, until an operator

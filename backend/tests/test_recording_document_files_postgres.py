@@ -36,7 +36,7 @@ from backend.core.db import driver_urls
 from backend.models.document import Document, DocumentStatus
 from backend.models.document_page import DocumentPage
 from backend.models.recording import Recording, RecordingStatus
-from backend.models.user import User, UserRole
+from backend.models.user import User, UserRead, UserRole
 from backend.utils import rate_limit
 from backend.worker.tasks import documents as document_tasks
 
@@ -739,6 +739,92 @@ async def test_a_user_delete_whose_commit_fails_keeps_every_file(harness):
     assert audio.is_file()
     assert document.is_file()
     assert _document_rows(harness) == 1
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("audio_removal", ["clean", "refused"])
+async def test_a_user_delete_answers_the_same_when_its_audio_cannot_be_removed(
+    harness, monkeypatch, caplog, audio_removal
+):
+    """Cleanup after the commit never turns a committed delete into an error.
+
+    Checking the audio raises PermissionError, as it does under a directory the
+    server may not search. The delete has committed by then, so the response is
+    the clean delete's, the failure is logged, and the next recording's audio and
+    every document file are still removed.
+    """
+    harness.act_as("member")
+    refused_id = _add_recording(harness, "refused", owner="member")
+    other_id = _add_recording(harness, "other", owner="member")
+    documents = [
+        await _attach(harness, refused_id, "agenda.md"),
+        await _attach(harness, other_id, "minutes.md"),
+    ]
+    harness.act_as("admin")
+    refused_recording = _recording_id(harness, refused_id)
+    refused_audio = harness.recordings_dir / "refused.wav"
+    other_audio = harness.recordings_dir / "other.wav"
+    with Session(harness.engine) as session:
+        member = session.get(User, harness.users["member"])
+        expected = UserRead.model_validate(member).model_dump(mode="json")
+
+    if audio_removal == "refused":
+        refused = refused_audio.resolve()
+        exists = Path.exists
+
+        def refuse(self: Path, *args, **kwargs) -> bool:
+            if self == refused:
+                raise PermissionError(13, "Permission denied", str(self))
+            return exists(self, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "exists", refuse)
+
+    with caplog.at_level(logging.WARNING):
+        response = await _request(
+            harness,
+            "DELETE",
+            f"/users/{harness.users['member']}",
+            raise_app_exceptions=False,
+        )
+
+    assert response.status_code == 200, response.text
+    assert response.json() == expected
+    assert not any(path.exists() for path in documents)
+    assert not other_audio.exists()
+    assert _document_rows(harness) == 0
+    if audio_removal == "refused":
+        assert refused_audio.is_file()
+        assert (
+            f"Failed to remove the files of deleted recording {refused_recording}"
+            in caplog.text
+        )
+        assert "Permission denied" in caplog.text
+
+
+@pytest.mark.anyio
+async def test_a_recording_delete_succeeds_when_its_document_cleanup_fails(
+    harness, monkeypatch, caplog
+):
+    """The same rule for the paths whose only cleanup after the commit is documents."""
+    target = _add_recording(harness, "target")
+    document = await _attach(harness, target)
+
+    def refuse() -> Path:
+        raise PermissionError(13, "Permission denied", str(harness.documents_dir))
+
+    monkeypatch.setattr("backend.utils.document_storage.documents_root_dir", refuse)
+
+    with caplog.at_level(logging.WARNING):
+        response = await _request(
+            harness, "DELETE", f"/recordings/{target}", raise_app_exceptions=False
+        )
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {"ok": True}
+    assert _document_rows(harness) == 0
+    assert document.is_file()
+    assert f"Failed to delete document files ['{document}']" in caplog.text
+    assert "Permission denied" in caplog.text
 
 
 @pytest.mark.anyio

@@ -306,13 +306,21 @@ async def delete_user(
             exc=e,
         )
 
+    # The delete has committed, so no cleanup failure may turn it into an
+    # error. Each recording's files are removed on their own, and a failure is
+    # logged and skipped; the document files never raise, and still go.
     for recording_id, audio_path, proxy_path in artifacts:
-        delete_recording_artifacts(
-            recording_id=recording_id,
-            audio_path=audio_path,
-            proxy_path=proxy_path,
-            logger=logger,
-        )
+        try:
+            delete_recording_artifacts(
+                recording_id=recording_id,
+                audio_path=audio_path,
+                proxy_path=proxy_path,
+                logger=logger,
+            )
+        except Exception:
+            logger.exception(
+                "Failed to remove the files of deleted recording %s", recording_id
+            )
     await delete_document_files(document_paths, logger=logger)
     return user
 
