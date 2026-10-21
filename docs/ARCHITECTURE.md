@@ -99,21 +99,34 @@ share a file because every upload writes a new `<uuid>` name, and every row
 belongs to one recording. Deleting a document removes its file, and so does
 every path that deletes a recording: delete, permanent delete, batch permanent
 delete, discard and deleting a user ([backend/utils/document_storage.py](../backend/utils/document_storage.py)).
-Each locks the recordings (`FOR UPDATE`; deleting a user locks the user first),
-reads the paths before the rows cascade away, and unlinks the files after the
-commit, so a commit that fails never leaves a row whose file is gone. A
-document insert waits on that lock, so an upload cannot commit a row that the
-read misses and the cascade deletes. An upload writes its file before its row;
-if the insert fails, as it does when the recording was deleted meanwhile, the
-upload removes the file. Only paths that resolve inside the documents directory
-are unlinked: a legacy row whose path is elsewhere keeps its file on delete,
-and the path is logged. Unlinking runs in a worker thread, off the event loop,
-and a file that cannot be removed is logged without stopping the rest. A parse
-still running when its document is deleted stops at its next write; one that
-fails on a write is rolled back and still marked `ERROR`. Nothing sweeps the
-documents directory for files without a row, as nothing sweeps any live
-directory: a file left by a process that died between commit and unlink, or by
-a version that did not remove documents, stays until an operator removes it.
+Each locks the recordings (`FOR UPDATE`, in id order), reads the paths before
+the rows cascade away, and unlinks the files after the commit, so a commit that
+fails never leaves a row whose file is gone. Deleting a user locks the user as
+it reads it, before its recordings, so a recording created for the user
+meanwhile waits too, and a user deleted meanwhile is a 404; it also removes the
+recordings' audio after the commit, so the locks are not held while files are
+unlinked. A document insert waits on the recording's lock, so an upload cannot
+commit a row that the read misses and the cascade deletes. An upload writes its
+file before its row; if the insert fails or is cancelled, the upload removes the
+file, and an insert that failed because the recording was deleted meanwhile is
+the 404 a missing recording gets. Only paths that resolve inside the documents
+directory are unlinked: a legacy row whose path is elsewhere keeps its file on
+delete, and the path is logged. Unlinking runs in a worker thread, off the event
+loop; a cancelled unlink still runs, on the event loop, so a cancellation cannot
+skip it while the thread pool is busy. A file that cannot be removed is logged
+without stopping the rest. A parse still running when its document is deleted
+stops at its next write; one that fails on a write is rolled back and still
+marked `ERROR`, with a fixed message rather than the database's own text, which
+goes only to the log.
+
+Nothing sweeps the documents directory for files without a row, as nothing
+sweeps any live directory. A document file is left behind, until an operator
+removes it, by a process that dies between a delete's commit and its unlink (a
+deleted user's audio too); by a version that did not remove documents on
+delete; by a process killed between an upload's file write and its row's
+commit; by an upload whose commit raises or is cancelled without landing, since
+a commit that raises may still have landed and so its file is kept; and by an
+unlink that fails, which is logged.
 
 ### Meeting Analytics
 
