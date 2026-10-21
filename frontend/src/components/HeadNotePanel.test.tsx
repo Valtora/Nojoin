@@ -1901,6 +1901,7 @@ describe("HeadNotePanel", () => {
 
     await after(2_000);
     expect(calls.remove).toHaveBeenCalledTimes(2);
+    expect(vi.getTimerCount()).toBe(0);
     await after(120_000);
     // Polls that changed send nothing either.
     server.add("t1", "tail", "Appended");
@@ -1953,17 +1954,38 @@ describe("HeadNotePanel", () => {
   it("keeps another device's edit of a note whose clear is resent in the background, without asking", async () => {
     const { poll } = await clearPolledLostCreateOffline([offline()]);
     server.edit(server.notes[0].id, "B's agenda");
+    server.add("h2", "head", "B's second note");
     await poll();
-    expect(otherNotes()).not.toBeInTheDocument();
+    expect(within(otherNotes()!).getAllByRole("listitem")).toHaveLength(1);
 
     await after(2_000);
 
     expect(calls.remove).toHaveBeenCalledTimes(2);
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    expect(bodies()).toEqual(["B's agenda"]);
-    // The empty box saved nothing, so it takes the head note, as with any.
+    expect(bodies()).toEqual(["B's agenda", "B's second note"]);
+    // The empty box saved nothing, so it takes the earliest head note, as
+    // with any; the later one is listed under it.
     expect(screen.queryByText("Save failed", SHOWN)).not.toBeInTheDocument();
     expect(box().value).toBe("B's agenda");
+    expect(within(otherNotes()!).getByText("B's second note")).toBeInTheDocument();
+    expect(calls.create).toHaveBeenCalledTimes(1);
+  });
+
+  it("saves nothing while notes generation holds the box when a background resend ends a clear", async () => {
+    const { lock } = await clearPolledLostCreateOffline([offline()]);
+    server.refuse.push({ write: "remove", error: offline() });
+    type("Fresh");
+    await waitForSave();
+    expect(calls.remove).toHaveBeenCalledTimes(2);
+    // Taking the lock saves the box once more, and that resend fails too.
+    server.refuse.push({ write: "remove", error: offline() });
+    await lock(true);
+    expect(calls.remove).toHaveBeenCalledTimes(3);
+
+    await after(2_000);
+
+    expect(calls.remove).toHaveBeenCalledTimes(4);
+    expect(bodies()).toEqual([]);
     expect(calls.create).toHaveBeenCalledTimes(1);
   });
 

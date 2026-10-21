@@ -333,14 +333,15 @@ function ProcessingNotesPanel({
     void flushSave(draftRef.current);
   }, [disabled, flushSave]);
 
-  // Not on mount: only a change says a failure has cleared up.
+  // Not on mount: only a change says a failure has cleared up. Text already
+  // saved is not sent again, and nothing is saved while the lock holds.
   const retrySavesRef = useRef(retrySaves);
   useEffect(() => {
     if (retrySaves === retrySavesRef.current) {
       return;
     }
     retrySavesRef.current = retrySaves;
-    if (lastSaveFailedRef.current && !disabledRef.current) {
+    if (!disabledRef.current) {
       void flushSave(draftRef.current);
     }
   }, [retrySaves, flushSave]);
