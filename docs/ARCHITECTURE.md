@@ -127,10 +127,8 @@ removes it, by a process that dies between a delete's commit and its unlink (a
 deleted user's audio too); by a version that did not remove documents on
 delete; by a process killed between an upload's file write and its row's
 commit; by an upload whose commit raises or is cancelled without landing, since
-a commit that raises may still have landed and so its file is kept; by an
-upload cancelled while its body is still streaming, which leaves its
-`.upload-tmp` file, since the stream's cleanup catches only `Exception`; and by
-an unlink that fails, which is logged.
+a commit that raises may still have landed and so its file is kept; and by an
+unlink that fails, which is logged.
 
 ### Meeting Analytics
 

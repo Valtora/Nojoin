@@ -121,8 +121,10 @@ async def stream_and_validate_upload(
                     )
                 await out_file.write(chunk)
         os.replace(temp_path, dest_path)
-    except Exception as e:
-        # Clean up partial file on failure
+    except BaseException:
+        # Clean up the partial file on any failure, including a cancellation
+        # from a client that disconnects mid-body. The unlink is synchronous,
+        # so a cancelled task still runs it before the cancellation propagates.
         try:
             if os.path.exists(temp_path):
                 os.unlink(temp_path)
@@ -130,6 +132,6 @@ async def stream_and_validate_upload(
             logger.error(
                 f"Failed to clean up partial upload file {temp_path}: {cleanup_err}"
             )
-        raise e
+        raise
 
     return size_so_far
