@@ -289,6 +289,11 @@ class RecordingSpeakerDriftRefusal(SQLModel, table=True):
     """
 
     __tablename__ = "recording_speaker_drift_refusals"
+    # Two sessions can delete the same row, as when two folds into a person
+    # lift one refusal at once; the second delete then matches nothing. The
+    # row is gone either way, so that is not worth a warning. Without a
+    # version column a short delete only ever warned, so no error is lost.
+    __mapper_args__ = {"confirm_deleted_rows": False}
 
     recording_speaker_id: int = Field(
         sa_column=Column(

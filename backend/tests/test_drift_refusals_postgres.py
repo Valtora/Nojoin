@@ -10,12 +10,13 @@ from __future__ import annotations
 
 import importlib
 import time
+import warnings
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, exc, text
 from sqlmodel import Session, SQLModel, select
 
 from backend.core.db import driver_urls
@@ -173,6 +174,42 @@ def test_two_sessions_refusing_a_link_for_one_person_both_commit(
             (library.link, fay_id),
         ]
     )
+
+
+def test_two_sessions_lifting_one_refusal_both_commit_quietly(engine, library) -> None:
+    """Two folds of Dana's speaker into her can lift the same refusal at once.
+
+    Both sessions see the row. The first deletes it, and the second's delete
+    then matches nothing: the refusal is gone, which is what both meant, so
+    neither commit warns about a row it expected to find.
+    """
+    with Session(engine) as session:
+        for row in (
+            session.get(GlobalSpeaker, library.dana),
+            session.get(RecordingSpeaker, library.link),
+        ):
+            row.embedding = [1.0, 0.0]
+            row.embedding_version = EMBEDDING_METHOD_VERSION
+            session.add(row)
+        session.get(RecordingSpeaker, library.link).embedding_speech_seconds = 25.0
+        session.commit()
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        with Session(engine) as first, Session(engine) as second:
+            for session in (first, second):
+                link = session.get(RecordingSpeaker, library.link)
+                person = session.get(GlobalSpeaker, library.dana)
+                update = offer_linked_voiceprint(person, link, alpha=0.3)
+                assert update.status == VoiceprintStatus.FOLDED
+                session.add_all([link, person])
+            first.commit()
+            second.commit()
+
+    assert [
+        str(w.message) for w in caught if issubclass(w.category, exc.SAWarning)
+    ] == []
+    assert _refusals(engine) == [(library.link, library.eli)]
 
 
 def test_deleting_a_link_deletes_all_of_its_refusals(engine, library) -> None:
