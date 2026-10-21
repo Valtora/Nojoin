@@ -72,7 +72,11 @@ def _build_analysis_inputs(session, recording) -> dict[str, Any]:
     analytics keys use. A name the model can see but the parser cannot resolve
     would silently discard every item attributed to it.
     """
-    from backend.services.meeting_analytics import compute_recording_analytics
+    from backend.services.meeting_analytics import (
+        compute_recording_analytics,
+        speaker_key,
+        split_analysed_utterances,
+    )
     from backend.utils.canonical_pipeline import list_active_utterances
 
     analytics = compute_recording_analytics(session, recording)
@@ -81,7 +85,9 @@ def _build_analysis_inputs(session, recording) -> dict[str, Any]:
         speaker["speaker_key"]: speaker["name"] for speaker in analytics["speakers"]
     }
 
-    utterances = list_active_utterances(session, recording.id)
+    utterances, _ = split_analysed_utterances(
+        list_active_utterances(session, recording.id)
+    )
     lines: list[str] = []
     texts: list[str] = []
     used_chars = 0
@@ -92,11 +98,7 @@ def _build_analysis_inputs(session, recording) -> dict[str, Any]:
         text = (utterance.text or "").strip()
         if not text:
             continue
-        key = (
-            f"rs:{utterance.recording_speaker_id}"
-            if utterance.recording_speaker_id is not None
-            else f"label:{utterance.speaker_label or 'unknown'}"
-        )
+        key = speaker_key(utterance)
         line = _format_line(
             utterance.start_ms or 0,
             utterance.end_ms or 0,

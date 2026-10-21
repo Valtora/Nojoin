@@ -1238,6 +1238,8 @@ export interface AnalyticsMetrics {
   turn_taking: AnalyticsTurnTaking;
   timeline: AnalyticsTimeline;
   silence: { speech_ms: number; silence_ms: number; silence_share: number };
+  // Finalised UNKNOWN lines left out because the transcript view hides them.
+  unattributed: { utterance_count: number; speech_ms: number };
   overlap: {
     overlapped_ms: number;
     overlap_share: number;

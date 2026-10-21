@@ -93,6 +93,7 @@ Speaking dynamics (talk-time share, turn structure, response latency, a talk-sha
 
 - Per-speaker talk time counts overlapping speech once for each speaker, so shares are reported against total speech, and both denominators are carried.
 - Anything excluded from a statistic is counted.
+- Finalised `UNKNOWN` lines, which the transcript view hides once any line has a speaker, are left out of every speaker figure, transition and warning, and counted under `metrics.unattributed`. Delivery and AI analysis read the same lines through `split_analysed_utterances`.
 - There are no interruption counts. The merge gives each segment one speaker from a mixed stream, so a transcript holds no overlapping speech. Overlap is measured from the audio and never attributed to a person.
 - Gaps at speaker changes are reported in three counted parts: immediate handovers (under the 250 ms collar, `LATENCY_COLLAR_MS`), a reply-time median over gaps from the collar to 5 s, and lapses of 5 s or more.
 - A structured warning flags doubtful speaker attribution with reason codes (`low_share_clusters`, `high_overlap`, `speaker_cap_bound`, `unnamed_speakers`). The web client owns the wording.
