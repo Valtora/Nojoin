@@ -281,14 +281,24 @@ class RecordingSpeakerDriftRefusal(SQLModel, table=True):
     Eli does not lift an earlier one for Dana: a link that returns to Dana
     without a new verdict stays out of her voiceprint. A save or fold of the
     link into a person deletes only that person's row (``record_drift_verdict``).
-    Speech folded into the link's voiceprint (a merge, a moved segment) is
-    judged again against its person (``judge_drift``), while a voiceprint
-    extracted afresh deletes all of them, since none was judged
-    (``forget_drift_verdict``). A person merge moves the source's rows to the
-    target, and deleting the link or the person deletes its rows.
+    Any other new voiceprint for the link (a merge, a moved segment, an
+    extract, a processing run that finds the speaker already there) is judged
+    against its person (``judge_drift``). A split's remainder deletes all of
+    them (``forget_drift_verdict``), and the voiceprint rebuild's
+    re-extraction under a new method keeps them unjudged. A person merge moves
+    the source's rows to the target, and deleting the link or the person
+    deletes its rows.
     """
 
     __tablename__ = "recording_speaker_drift_refusals"
+    # Two sessions can delete the same row, as when two folds into a person
+    # lift one refusal at once; the second delete then matches nothing, and
+    # that is not worth a warning. It is not always harmless: a person merge
+    # moving the row while another session lifts it inserts it for the target
+    # anyway, so the link stays out of their voiceprint, the cautious side.
+    # Deletes go by the full key, and without a version column a short one
+    # only ever warned, so no error is hidden.
+    __mapper_args__ = {"confirm_deleted_rows": False}
 
     recording_speaker_id: int = Field(
         sa_column=Column(
