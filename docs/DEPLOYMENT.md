@@ -147,6 +147,8 @@ Every run keeps:
 - anything a row names, soft-deleted recordings included, however its path is spelled;
 - `temp/` and `failed/`, which the existing 24-hour sweep owns, and dotfiles and symlinks.
 
+Any other regular file directly inside `data/documents/` or `data/recordings/` counts as unreferenced, so keep nothing of your own there.
+
 The circuit breaker removes nothing when any of these holds:
 
 - the `recordings` table is empty while the directories hold files;
