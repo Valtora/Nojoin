@@ -75,6 +75,25 @@ describe("RecalibrateModal", () => {
     expect(screen.getByText(/^Up to 15 s from one recording/)).toBeTruthy();
   });
 
+  it("says when the server recalibrated from only some of the recordings", async () => {
+    const partial =
+      "Voiceprint recalibrated from 1 of 2 recordings and locked. The others held less than 20 s of clear speech.";
+    recalibrateSpeaker.mockResolvedValue({ success: true, message: partial });
+    renderModal();
+
+    const approve = await screen.findAllByTitle("Verify / Approve");
+    fireEvent.click(approve[0]);
+    fireEvent.click(approve[2]);
+    fireEvent.click(screen.getByRole("button", { name: /Recalibrate/ }));
+
+    await waitFor(() =>
+      expect(addNotification).toHaveBeenCalledWith({
+        type: "success",
+        message: `${partial} You can now scan for matches.`,
+      }),
+    );
+  });
+
   it("sends only the approved samples and shows the server's refusal", async () => {
     recalibrateSpeaker.mockRejectedValue({
       response: {
