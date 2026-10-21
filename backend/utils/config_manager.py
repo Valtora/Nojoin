@@ -224,9 +224,12 @@ DEFAULT_SYSTEM_CONFIG = {
     "telemetry_policy_version": None,
 }
 
+# The install's provider when LLM_PROVIDER is empty.
+DEFAULT_LLM_PROVIDER = "gemini"
+
 DEFAULT_USER_SETTINGS = {
     "theme": "dark",  # Default theme (dark, light)
-    "llm_provider": "gemini",
+    "llm_provider": DEFAULT_LLM_PROVIDER,
     # Per-user AI usage model. Unset (or ollama/byok) resolves via the
     # install-wide llm_provider path unchanged; cli_oauth routes inference
     # through the user's own subscription (CLI OAuth). Kept out of
@@ -494,6 +497,17 @@ class ConfigManager:
                         )
                 else:
                     config[config_key] = env_val
+
+        # An empty LLM_PROVIDER selects the default provider and outranks
+        # config.json, as a set one does. Compose used to fill in gemini itself
+        # and now passes the variable through empty, so that the setup wizard
+        # can tell an operator who chose gemini from one who chose nothing
+        # (#477). Skipping the empty value as the loop above does would hand
+        # the choice to whatever provider config.json or the owner's settings
+        # still hold, and switch an install that relied on the old default.
+        llm_provider_env = os.environ.get(ENV_OVERRIDES["llm_provider"])
+        if llm_provider_env is not None and not llm_provider_env.strip():
+            config["llm_provider"] = DEFAULT_LLM_PROVIDER
 
         return config
 
