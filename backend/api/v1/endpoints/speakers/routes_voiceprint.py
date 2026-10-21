@@ -20,6 +20,7 @@ from backend.processing.embedding import (
     RecordingVoiceprint,
     cosine_similarity,
     judge_drift,
+    lock_blocks_user_link,
     offer_linked_voiceprint,
 )
 from backend.processing.embedding_version import EMBEDDING_METHOD_VERSION
@@ -272,7 +273,9 @@ async def apply_voiceprint_action(
             raise HTTPException(status_code=404, detail="Global Speaker not found")
 
         alpha = 0.4 if action.action == "force_link" else 0.3
-        library_update = offer_linked_voiceprint(gs, rec_speaker, alpha=alpha)
+        library_update = offer_linked_voiceprint(
+            gs, rec_speaker, alpha=alpha, locked=lock_blocks_user_link(gs)
+        )
         if library_update.changed:
             db.add(gs)
 

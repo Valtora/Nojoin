@@ -900,6 +900,52 @@ async def test_voiceprint_link_applies_the_floor_and_the_drift_guard(
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("action", ["link_existing", "force_link"])
+@pytest.mark.parametrize(
+    # Dana's voiceprint, the speaker's cosine to it, the people the speaker is
+    # refused for before the link, the outcome, and the refusals after it.
+    "case",
+    [
+        pytest.param((PERSON, 0.65, None, "skipped_locked", (7,)), id="unlike-refused"),
+        pytest.param((PERSON, 0.75, 7, "skipped_locked", ()), id="like-let-back-in"),
+        pytest.param((None, 0.9, 7, "saved", ()), id="first-voiceprint"),
+    ],
+)
+async def test_the_voiceprint_dialogs_link_leaves_a_locked_voiceprint_alone(
+    client, session_maker, action, case
+) -> None:
+    """Link and force-link take the rename's lock rule. Dana's locked
+    voiceprint stays as it is, and the guard still judges the link against
+    it; a locked person with no voiceprint gets one from the link."""
+    dana_voiceprint, cosine, refused_before, status, refused_after = case
+    voice = _at_cosine(cosine)
+    await _seed(
+        session_maker,
+        speakers=[
+            {
+                "label": "SPEAKER_00",
+                "embedding": voice,
+                "seconds": 25.0,
+                "refused_for": refused_before,
+            }
+        ],
+        people=[
+            {"id": 7, "name": "Dana", "embedding": dana_voiceprint, "locked": True}
+        ],
+    )
+
+    response = await client.post(
+        f"/api/v1/speakers/recordings/{REC}/speakers/SPEAKER_00/voiceprint/apply",
+        json={"action": action, "global_speaker_id": 7},
+    )
+
+    assert response.json()["library_voiceprint"] == _outcome(status, 25.0)
+    expected = PERSON if dana_voiceprint else pytest.approx(voice)
+    assert await _person_voiceprint(session_maker, "Dana") == expected
+    assert await _refused_for(session_maker) == {"SPEAKER_00": refused_after}
+
+
+@pytest.mark.anyio
 @pytest.mark.parametrize(
     "case",
     [
@@ -1291,6 +1337,36 @@ async def test_merging_people_folds_voiceprints_only_past_the_drift_guard(
         _blend(PERSON, near, 0.5)
     )
     assert await _person_voiceprint(session_maker, "Eli") == PERSON
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("dana_voiceprint", [PERSON, None], ids=["has-one", "has-none"])
+async def test_merging_into_a_locked_person_leaves_their_voiceprint_alone(
+    client, session_maker, dana_voiceprint
+) -> None:
+    """Eli, whose voiceprint sounds like Dana's, is merged into a locked Dana.
+
+    Her voiceprint stays as it is, and Eli's refusals become hers as in any
+    merge. A locked person with no voiceprint takes Eli's.
+    """
+    near = _at_cosine(0.75)
+    await _seed(
+        session_maker,
+        speakers=[{"label": "SPEAKER_00", "global_speaker_id": 8, "refused_for": 8}],
+        people=[
+            {"id": 7, "name": "Dana", "embedding": dana_voiceprint, "locked": True},
+            {"id": 8, "name": "Eli", "embedding": near},
+        ],
+    )
+
+    response = await client.post(
+        "/api/v1/speakers/merge", json={"source_speaker_id": 8, "target_speaker_id": 7}
+    )
+
+    assert response.status_code == 200
+    expected = PERSON if dana_voiceprint else pytest.approx(near)
+    assert await _person_voiceprint(session_maker, "Dana") == expected
+    assert await _links(session_maker) == {"SPEAKER_00": (7, (7,))}
 
 
 @pytest.mark.anyio

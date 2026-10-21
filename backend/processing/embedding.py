@@ -561,13 +561,16 @@ def record_drift_verdict(
 def lock_blocks_user_link(person: Any) -> bool:
     """Whether a person's lock keeps a link the user makes out of their voiceprint.
 
-    A rename and **Add to People** into an existing person take this rule on
-    every write path. The lock blocks any change to a voiceprint the person
-    has, a stale one included, so the link is ``skipped_locked``. A locked
-    person with no voiceprint still gets one from it: the voiceprint rebuild
-    can found one from their links whatever the lock, so refusing it would
-    only delay it. Automated links (auto-applied names, segment learning) are
-    blocked by the lock outright.
+    Every user action that would change a person's voiceprint from a link or
+    another person takes this rule: a rename on either write path, **Add to
+    People** into an existing person, the voiceprint dialog's link and
+    force-link, and merging another person into them. The lock blocks any
+    change to a voiceprint the person has, a stale one included, so a link is
+    ``skipped_locked``. A locked person with no voiceprint still gets one: the
+    voiceprint rebuild can found one from their links whatever the lock, so
+    refusing it would only delay it. Unlocking is the user's override;
+    recalibrating and a split set the lock themselves. Automated links
+    (auto-applied names, segment learning) are blocked by the lock outright.
     """
     return bool(person.is_voiceprint_locked and person.embedding)
 

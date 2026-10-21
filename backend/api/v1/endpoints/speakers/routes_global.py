@@ -36,6 +36,7 @@ from backend.processing.embedding import (
     blend_voiceprint,
     cosine_similarity,
     is_drift_refused,
+    lock_blocks_user_link,
     meets_library_evidence_floor,
     pool_recording_voiceprints,
     too_little_speech_detail,
@@ -294,7 +295,9 @@ async def merge_speakers(
                 rs.local_name = None
                 db.add(rs)
 
-    if source.embedding:
+    # A locked target keeps their voiceprint; one with none still takes the
+    # source's, as any link the user makes would give them one.
+    if source.embedding and not lock_blocks_user_link(target):
         blend_voiceprint(target, source.embedding, source.embedding_version, alpha=0.5)
     db.add(target)
 
@@ -350,8 +353,8 @@ async def update_global_speaker(
     if speaker_in.color is not None:
         speaker.color = speaker_in.color
 
-    # Only the lock: unlocking lets renames and automatic learning update the
-    # voiceprint again, and neither way changes it now.
+    # Only the lock: unlocking lets renames, links, merges and automatic
+    # learning update the voiceprint again, and neither way changes it now.
     if speaker_in.is_voiceprint_locked is not None:
         speaker.is_voiceprint_locked = speaker_in.is_voiceprint_locked
 
