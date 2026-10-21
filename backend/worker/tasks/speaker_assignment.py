@@ -160,8 +160,9 @@ def _learn_from_confident_match(session, best_match, embedding, best_score) -> N
     """Fold a high-confidence observation back into the person's voiceprint.
 
     No other link's drift refusal changes, since their voiceprints are as they
-    were. The matched speaker's own, new this run, is judged against the
-    person when it is stored (``_persist_speaker``).
+    were. A new speaker matched the person at least as closely as the guard
+    requires; one already there has its new voiceprint judged against them
+    when it is stored (``_persist_speaker``).
     """
     from backend.processing.embedding import (
         AUTO_UPDATE_THRESHOLD,
@@ -368,7 +369,9 @@ def _persist_speaker(session, work: _LabelWork) -> int | None:
         from backend.processing.embedding import judge_drift
 
         # This run's voiceprint was offered to no one, so the guard judges it
-        # against the person the speaker ends up linked to.
+        # against the person the speaker ends up linked to. Only a speaker
+        # already there reaches this (named during capture, or a requeued
+        # run): reprocessing deletes the recording's speakers first.
         person_id = work.existing_speaker.global_speaker_id
         judge_drift(
             work.existing_speaker,
