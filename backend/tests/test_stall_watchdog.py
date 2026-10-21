@@ -260,6 +260,27 @@ class TestLifecycle:
         monkeypatch.delenv(stall_watchdog.ENABLED_ENV, raising=False)
         assert stall_watchdog.is_enabled() is True
 
+    def test_empty_env_values_read_as_unset(self, monkeypatch):
+        # The compose file passes each setting as ${VAR:-}, so a setting left
+        # out of .env reaches the API as an empty string, not as an absence.
+        for name in (
+            stall_watchdog.ENABLED_ENV,
+            stall_watchdog.INTERVAL_ENV,
+            stall_watchdog.LAG_THRESHOLD_ENV,
+            stall_watchdog.PRESSURE_THRESHOLD_ENV,
+        ):
+            monkeypatch.setenv(name, "")
+        assert stall_watchdog.is_enabled() is True
+        watchdog = StallWatchdog(
+            environment=WatchdogEnvironment(pressure_reader=lambda: None)
+        )
+        assert watchdog.interval_seconds == stall_watchdog.DEFAULT_INTERVAL_SECONDS
+        assert (
+            watchdog.lag_threshold_seconds
+            == stall_watchdog.DEFAULT_LAG_THRESHOLD_SECONDS
+        )
+        assert watchdog.pressure_threshold == stall_watchdog.DEFAULT_PRESSURE_THRESHOLD
+
     def test_bad_env_values_fall_back_to_defaults(self, monkeypatch):
         monkeypatch.setenv(stall_watchdog.INTERVAL_ENV, "not-a-number")
         monkeypatch.setenv(stall_watchdog.LAG_THRESHOLD_ENV, "-5")

@@ -21,6 +21,12 @@ import re
 from pathlib import Path
 
 from backend.utils.config_manager import ENV_OVERRIDES
+from backend.utils.stall_watchdog import (
+    ENABLED_ENV,
+    INTERVAL_ENV,
+    LAG_THRESHOLD_ENV,
+    PRESSURE_THRESHOLD_ENV,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 COMPOSE_PATH = REPO_ROOT / "docker-compose.example.yml"
@@ -32,29 +38,52 @@ ENV_EXAMPLE_PATH = REPO_ROOT / ".env.example"
 # side only makes a worker disagree with the API about the active provider.
 SHARED_ANCHOR = "x-shared-app-environment"
 
+# Read by the API process alone (backend/main.py starts the watchdog), so the
+# api service is where they belong rather than the shared anchor.
+STALL_WATCHDOG_ENV = (
+    ENABLED_ENV,
+    INTERVAL_ENV,
+    LAG_THRESHOLD_ENV,
+    PRESSURE_THRESHOLD_ENV,
+)
+
 _ENV_KEY_RE = re.compile(r"^(\s+)([A-Z][A-Z0-9_]*):")
 _BLANK_DEFAULT_RE = re.compile(r"^\s+([A-Z][A-Z0-9_]*):\s*\$\{\1:-\}\s*$", re.MULTILINE)
+_INTERPOLATION_RE = re.compile(r"\$\{([A-Z][A-Z0-9_]*)")
 
 
-def _shared_anchor_env_keys(text: str) -> set[str]:
-    """Collect the variable names declared in the shared environment anchor.
+def _block_env_keys(text: str, opening: str) -> set[str]:
+    """Collect the variable names declared under the first ``opening`` line.
 
-    Reads from the anchor's opening line until the first line at or left of its
-    own indentation, which is where the block ends in any valid YAML.
+    Reads from that line until the first line at or left of its own
+    indentation, which is where the block ends in any valid YAML.
     """
+    indent = len(opening) - len(opening.lstrip(" "))
     keys: set[str] = set()
     in_block = False
     for line in text.splitlines():
         if not in_block:
-            if line.startswith(f"{SHARED_ANCHOR}:"):
+            if line.startswith(opening):
                 in_block = True
             continue
-        if line.strip() and not line.startswith((" ", "\t")):
+        if line.strip() and len(line) - len(line.lstrip(" ")) <= indent:
             break
         match = _ENV_KEY_RE.match(line)
         if match:
             keys.add(match.group(2))
     return keys
+
+
+def _shared_anchor_env_keys(text: str) -> set[str]:
+    """Collect the variable names declared in the shared environment anchor."""
+    return _block_env_keys(text, f"{SHARED_ANCHOR}:")
+
+
+def _api_env_keys(text: str) -> set[str]:
+    """Collect the variable names the api service declares itself."""
+    _, _, after_api = text.partition("\n  api:\n")
+    assert after_api, "no api service found"
+    return _block_env_keys(after_api, "    environment:")
 
 
 def _blank_default_keys(text: str) -> set[str]:
@@ -110,6 +139,44 @@ def test_env_overrides_reach_the_containers() -> None:
         f"{missing} are read by config_manager but no service passes them in. "
         f"Add them to the {SHARED_ANCHOR} anchor in docker-compose.example.yml, "
         "or an operator who sets them gets the application default and no warning."
+    )
+
+
+def test_api_environment_is_parsed_at_all() -> None:
+    """Guard the api parser, including where it stops."""
+    keys = _api_env_keys(COMPOSE_PATH.read_text(encoding="utf-8"))
+    assert "FIRST_RUN_PASSWORD" in keys
+    assert "NOJOIN_TRUSTED_PROXIES" in keys
+    # worker-gpu's own variable: seeing it means the block ran past the api.
+    assert "NVIDIA_VISIBLE_DEVICES" not in keys
+
+
+def test_stall_watchdog_settings_reach_the_api() -> None:
+    """DEPLOYMENT.md documents all four, and the api never received them."""
+    keys = _api_env_keys(COMPOSE_PATH.read_text(encoding="utf-8"))
+    missing = [name for name in STALL_WATCHDOG_ENV if name not in keys]
+    assert not missing, (
+        f"{missing} are read by backend/utils/stall_watchdog.py but the api "
+        "service in docker-compose.example.yml does not pass them in, so a "
+        "value set in .env has no effect."
+    )
+
+
+def test_every_env_example_setting_reaches_compose() -> None:
+    """A line in .env.example that compose never interpolates is read by nobody.
+
+    Compose reads .env only to fill ``${VAR}`` references, so a key the file
+    never references is dropped before any container starts. That is how
+    ``NOJOIN_STALL_WATCHDOG_ENABLED`` was offered to operators and did nothing.
+    """
+    offered = _env_example_keys(ENV_EXAMPLE_PATH.read_text(encoding="utf-8"))
+    referenced = set(
+        _INTERPOLATION_RE.findall(COMPOSE_PATH.read_text(encoding="utf-8"))
+    )
+    missing = sorted(offered - referenced)
+    assert not missing, (
+        f"{missing} are offered in .env.example but docker-compose.example.yml "
+        "never references them, so setting them changes nothing."
     )
 
 
