@@ -46,8 +46,10 @@ updates:
       # numpy 2.5 forces an ancient numba that breaks the openai-whisper resolve.
       - dependency-name: "numpy"
         versions: [">=2.5.0"]
-      # fastembed 0.9.0, the newest release, declares huggingface-hub<2.0, so a
-      # 2.x pin cannot resolve in the worker. Remove when fastembed allows 2.x.
+      # fastembed 0.9.0, the newest release, declares huggingface-hub<2.0. It is
+      # installed with --no-deps (requirements/worker-no-deps.txt), so pip no
+      # longer enforces that, but backend/tests/test_no_deps_requirements.py
+      # fails a 2.x pin. Remove when fastembed allows 2.x.
       - dependency-name: "huggingface-hub"
         versions: [">=2.0.0"]
 

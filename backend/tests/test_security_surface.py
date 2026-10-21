@@ -12,6 +12,7 @@ from httpx import ASGITransport, AsyncClient
 from backend.api.deps import get_current_admin_user, get_current_user, get_db
 from backend.api.v1.endpoints import invitations, setup, system
 from backend.main import create_app
+from backend.utils.config_manager import ConfigManager
 
 BOOTSTRAP_PASSWORD = "bootstrap-secret"
 LEGACY_FIRST_RUN_PASSWORD_HEADER = "X-First-Run-Password"
@@ -561,19 +562,20 @@ async def test_initial_config_masks_prefilled_secrets(monkeypatch) -> None:
     assert "hf_super_secret_value" not in response.text
 
 
-@pytest.mark.anyio
-async def test_initial_config_reports_no_provider_when_none_was_chosen(
-    monkeypatch,
-) -> None:
-    """`llm_provider` always resolves to gemini, so the wizard needs a separate
-    signal to tell "the operator chose gemini" from "the operator chose
-    nothing". Without it, an install with an empty LLM_PROVIDER (which is what
-    .env.example ships) was told its gemini key was missing."""
+async def _initial_config_with_empty_llm_provider(monkeypatch, tmp_path) -> dict:
+    """GET /setup/initial-config as the container sees it with LLM_PROVIDER
+    empty in .env, which compose now passes through empty (#477).
+
+    The config is loaded after the environment is set, as it is at process
+    start, so the empty variable goes through config_manager's own handling."""
     app, _ = _build_app(initialized=False)
-    monkeypatch.setitem(setup.config_manager.config, "llm_provider", None)
     monkeypatch.setenv(setup.FIRST_RUN_PASSWORD_ENV_KEY, BOOTSTRAP_PASSWORD)
     monkeypatch.setenv("LLM_PROVIDER", "")
-    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.setattr(
+        setup,
+        "config_manager",
+        ConfigManager(config_path=str(tmp_path / "config.json")),
+    )
 
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL
@@ -584,9 +586,39 @@ async def test_initial_config_reports_no_provider_when_none_was_chosen(
         )
 
     assert response.status_code == 200
-    body = response.json()
+    return response.json()
+
+
+@pytest.mark.anyio
+async def test_initial_config_reports_no_provider_when_none_was_chosen(
+    monkeypatch, tmp_path
+) -> None:
+    """`llm_provider` always resolves to gemini, so the wizard needs a separate
+    signal to tell "the operator chose gemini" from "the operator chose
+    nothing". Without it, an install with an empty LLM_PROVIDER (which is what
+    .env.example ships) was told its gemini key was missing."""
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+
+    body = await _initial_config_with_empty_llm_provider(monkeypatch, tmp_path)
+
+    assert body["llm_provider"] == "gemini"
     assert body["llm_provider_selected"] is False
     assert body["gemini_api_key"] is None
+
+
+@pytest.mark.anyio
+async def test_initial_config_offers_a_gemini_key_when_no_provider_was_chosen(
+    monkeypatch, tmp_path
+) -> None:
+    """Gemini is the default provider, so a Gemini key alone is a working
+    server route, and the wizard has to be told the provider it belongs to."""
+    monkeypatch.setenv("GEMINI_API_KEY", "gemini-secret-value")
+
+    body = await _initial_config_with_empty_llm_provider(monkeypatch, tmp_path)
+
+    assert body["llm_provider"] == "gemini"
+    assert body["llm_provider_selected"] is False
+    assert body["gemini_api_key"] == "gem...alue"
 
 
 @pytest.mark.anyio

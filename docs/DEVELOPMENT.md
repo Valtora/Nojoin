@@ -45,13 +45,14 @@ python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -r requirements/dev.txt
+python -m pip install --no-deps -r requirements/worker-no-deps.txt
 pre-commit install   # optional: Ruff, whitespace and the doc and Alembic validators on commit
 
 cd frontend
 npm install
 ```
 
-`requirements/dev.txt` is the test stack (with PyPI's torch, which runs on the CPU) plus the lint, format and type tooling. On a GPU host that runs the live processing stack, install `requirements/local.txt` instead. `requirements/backend.txt` and `requirements/worker.txt` are the API and worker runtime sets.
+`requirements/dev.txt` is the test stack (with PyPI's torch, which runs on the CPU) plus the lint, format and type tooling. On a GPU host that runs the live processing stack, install `requirements/local.txt` instead. `requirements/backend.txt` and `requirements/worker.txt` are the API and worker runtime sets. Whichever of these includes `worker.txt`, follow it with the `--no-deps` line, which installs fastembed without the dependencies it declares ([fastembed's Pillow cap](#fastembeds-pillow-cap)).
 
 ## Required Pull Request Checks
 
@@ -500,6 +501,12 @@ The base image also fixes the worker's Python minor. The API image, CI, mypy and
 
 To move torch, change test.txt, local.txt, both `FROM` lines in Dockerfile.worker (tag and digest) and `MATCHED_STACKS` together, and move torchvision to its pair. Keep the base on the CUDA build PyPI's torch uses (CUDA 13.0 for 2.14.1), so that local.txt installs the same build without an index URL; pip ignores an `--index-url` written on a requirement line. Then run diarisation, Whisper, an ONNX engine and text embeddings on a GPU in the rebuilt worker image, because CI has no GPU and installs torch from PyPI. Dependabot raises the pip and Docker halves as separate pull requests, each of which fails the drift check alone, so combine them.
 
+#### fastembed's Pillow cap
+
+fastembed 0.9.0, the newest release, declares `pillow<13.0`. Pillow 13.0.0 is the first release with the fixes for 20 advisories, two of them critical (#526), and the cap serves fastembed's image models, which Nojoin never loads: it uses fastembed only for `TextEmbedding`. So fastembed is the one package in [requirements/worker-no-deps.txt](../requirements/worker-no-deps.txt), and every surface installs that file with `pip install --no-deps` after `worker.txt`: Dockerfile.worker, CI's `Backend tests` job and the [Fresh Checkout Setup](#fresh-checkout-setup). `worker.txt` pins everything else fastembed declares, the CPU `onnxruntime` included, which Dockerfile.worker then swaps for `onnxruntime-gpu`.
+
+pip no longer checks fastembed's requirements, so [backend/tests/test_no_deps_requirements.py](../backend/tests/test_no_deps_requirements.py) does. It fails when a requirement is not pinned in `worker.txt` or `base.txt`, or is pinned outside the range fastembed accepts. The `huggingface-hub` hold in [dependabot.yml](../.github/dependabot.yml) now rests on that check. The test also fails once fastembed accepts the pinned Pillow, normally on Dependabot's fastembed bump. Then move fastembed back into `worker.txt`, delete `worker-no-deps.txt` and its install lines (this guide, CONTRIBUTING.md, CI, Dockerfile.worker and the comments in the requirements files), and delete the test. The worker image build also imports fastembed, and the import loads every dependency it declares.
+
 #### Holding a pin
 
 `HOLDS` is empty: no pin is held under an open advisory. Dependabot's `ignore:` stops version-update pull requests but not security alerts, and an advisory raises a fresh alert each time its range is revised, once per manifest that resolves the package (three for a package in test.txt and local.txt, which [requirements/dev.txt](../requirements/dev.txt) includes). To hold a pin:
@@ -546,10 +553,10 @@ Nothing reaches the registry until every gate has passed on the host. In release
 
 Some findings need an image-level fix rather than a requirements bump:
 
-- **Worker base Python.** The base's own interpreter keeps older copies of packages such as `pillow` and `urllib3` on disk. [docker/Dockerfile.worker](../docker/Dockerfile.worker) upgrades them with `/usr/bin/python3 -m pip install --break-system-packages`, in step with the requirements pins, then removes that system pip.
+- **Worker base Python.** The base's own interpreter keeps older copies of packages such as `pillow` and `urllib3` on disk. [docker/Dockerfile.worker](../docker/Dockerfile.worker) upgrades them with `/usr/bin/python3 -m pip install --break-system-packages`, in step with the requirements pins, then removes that system pip. `certifi` has no requirements pin and the worker's venv imports the system copy, so the same step takes its newest release above a floor that keeps the last advisory fix.
 - **Base OS packages.** The distribution often ships a fix before the base image is republished. [docker/Dockerfile.api](../docker/Dockerfile.api) runs `apt-get upgrade -y`, and Dockerfile.worker upgrades named packages (OpenSSL, `linux-libc-dev`) with `--only-upgrade`. Still merge Dependabot's digest bumps. `linux-libc-dev` findings concern kernel headers, not the host kernel, so a dated trivyignore entry is acceptable where no fixed build exists.
 - **A wrong advisory range.** Confirm the fix in the package source, pin every package that ships the affected code, add a dated trivyignore entry citing the evidence, and dismiss the Dependabot alert as `inaccurate`. Entries match on the CVE id alone, so note in the entry that it would also hide a real regression if the pin were lowered.
-- **Build tooling.** Remove tools the runtime never runs, as the frontend runner drops `npm` and the worker drops `uv` and `uvx`.
+- **Build tooling.** Remove tools the runtime never runs, as the frontend runner drops `npm` and the worker uninstalls `uv`. Remove a Python tool with pip rather than by deleting its binaries: Trivy reads the package's `dist-info`, which a deleted binary leaves behind.
 - **Secrets in the build context.** [.dockerignore](../.dockerignore) excludes key and certificate files, with a `**/` prefix so nested paths match. Release builds come from a clean worktree; a local build sees every untracked file the ignore list misses, so the secret scanner can flag a local build and not a release.
 - **Secret-scanner false positives.** Add a narrow path allow rule to [.github/trivy-secret.yaml](../.github/trivy-secret.yaml) with a comment saying why the match is not a credential. A rule id in `.github/trivyignore` would switch the rule off everywhere. Never quote the matched text in a file the images copy, which includes everything under `.github/`.
 
@@ -595,7 +602,10 @@ x-shared-app-environment: &shared-app-environment
   # directory. Setting it on one service only breaks the download.
   BACKUP_EXPORT_DIR: ${BACKUP_EXPORT_DIR:-}
   NOJOIN_UMASK: ${NOJOIN_UMASK:-}
-  LLM_PROVIDER: ${LLM_PROVIDER:-gemini}
+  # Left empty: config_manager reads an empty value as gemini, and the setup
+  # wizard can only report that no provider was chosen if the variable reaches
+  # it empty.
+  LLM_PROVIDER: ${LLM_PROVIDER:-}
   GEMINI_API_KEY: ${GEMINI_API_KEY:-}
   OPENAI_API_KEY: ${OPENAI_API_KEY:-}
   ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}

@@ -1,10 +1,12 @@
+# Follow this file with:
+#   python -m pip install --no-deps -r requirements/worker-no-deps.txt
 -r base.txt
 celery[redis]==5.6.3
 openai-whisper==20250625
 # Parakeet ASR engine (pluggable transcription backend)
 onnx-asr==0.12.0
 # onnxruntime-gpu (CUDA build) is installed in docker/Dockerfile.worker: it must
-# replace the CPU-only onnxruntime that fastembed pulls in, not coexist with it.
+# replace the CPU-only onnxruntime pinned below, not coexist with it.
 silero-vad==6.2.3
 numpy==2.4.6
 pandas==3.0.6
@@ -61,4 +63,17 @@ pyannoteai-sdk==0.4.0
 # PyPI builds torchcodec against the CUDA of PyPI's torch. docker/Dockerfile.worker
 # swaps it for the CPU build of this version, which links no CUDA library.
 torchcodec==0.17.0
-fastembed==0.9.0
+
+# fastembed's own dependencies. fastembed itself is in worker-no-deps.txt and is
+# installed with --no-deps, because it caps pillow below the release that fixes
+# its advisories (#526), so everything else it declares is pinned here.
+# backend/tests/test_no_deps_requirements.py fails if a pin is missing or falls
+# outside fastembed's range. huggingface_hub, numpy and requests are above and
+# in base.txt. Keep onnxruntime in step with onnxruntime-gpu in
+# docker/Dockerfile.worker, which replaces it in the image.
+onnxruntime==1.31.0
+tokenizers==0.23.3
+loguru==0.7.3
+mmh3==5.3.1
+py-rust-stemmers==0.1.8
+tqdm==4.70.1
