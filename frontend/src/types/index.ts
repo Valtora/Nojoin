@@ -1275,7 +1275,6 @@ export interface AnalyticsMetrics {
 // the MCP surface stays stable for an assistant to branch on.
 export type AnalyticsWarningCode =
   | "low_share_clusters"
-  | "high_overlap"
   | "speaker_cap_bound"
   | "unnamed_speakers";
 
@@ -1283,7 +1282,6 @@ export interface AnalyticsWarningReason {
   code: AnalyticsWarningCode;
   speaker_count?: number;
   speaker_keys?: string[];
-  overlap_share?: number;
   max_speakers?: number;
 }
 
