@@ -13,14 +13,25 @@ vi.mock("@/lib/api", () => ({
   updateTimelineNote: (...args: unknown[]) => updateTimelineNote(...args),
 }));
 
+/**
+ * A head note as the API returns it, each revision written by another
+ * device. Its kind never changes and it has no anchors or quote, so a write
+ * can change only its text.
+ */
 const head = (body: string, revision: number): TimelineNote => ({
   id: "h1",
   recording_id: "rec-1",
   kind: "head",
   body,
+  anchor_ms: null,
+  start_ms: null,
+  end_ms: null,
+  quoted_text: null,
+  created_by: { id: 1, username: "dana" },
   revision,
+  last_write_token: "device-b-token",
   created_at: "2026-10-17T10:00:00Z",
-  updated_at: "2026-10-17T10:00:00Z",
+  updated_at: `2026-10-17T10:0${revision}:00Z`,
 });
 
 /** The 409 for a write made against a stale revision, carrying the note as it is. */
@@ -106,29 +117,19 @@ describe("HeadNoteSync", () => {
     expect(sync.getSnapshot()).toMatchObject({ body: "Mine", conflict: null });
   });
 
-  it.each([
-    ["kind", { kind: "tail" }],
-    ["text", { body: "Theirs" }],
-    ["anchor", { anchor_ms: 5_000 }],
-    ["start", { start_ms: 1_000 }],
-    ["end", { end_ms: 2_000 }],
-    ["quote", { quoted_text: "the words" }],
-  ] as const)(
-    "takes a write elsewhere that changed the note's %s as a conflict",
-    async (_, change) => {
-      const theirs: TimelineNote = { ...head("Original", 2), ...change };
-      updateTimelineNote.mockRejectedValueOnce(stale(theirs));
-      const sync = new HeadNoteSync("rec-1", [head("Original", 1)]);
+  it("takes a write elsewhere that changed the note's text as a conflict", async () => {
+    const theirs = head("Original, and theirs", 2);
+    updateTimelineNote.mockRejectedValueOnce(stale(theirs));
+    const sync = new HeadNoteSync("rec-1", [head("Original", 1)]);
 
-      await expect(sync.save("Mine")).rejects.toThrow(/conflict/);
+    await expect(sync.save("Mine")).rejects.toThrow(/conflict/);
 
-      expect(updateTimelineNote).toHaveBeenCalledTimes(1);
-      expect(sync.getSnapshot().conflict).toEqual({
-        kind: "changed",
-        note: theirs,
-      });
-    },
-  );
+    expect(updateTimelineNote).toHaveBeenCalledTimes(1);
+    expect(sync.getSnapshot().conflict).toEqual({
+      kind: "changed",
+      note: theirs,
+    });
+  });
 
   it("keeps its snapshot when a poll changes nothing it shows", () => {
     const sync = new HeadNoteSync("rec-1", [head("Original", 1)]);

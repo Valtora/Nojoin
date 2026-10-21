@@ -1967,6 +1967,33 @@ describe("HeadNotePanel", () => {
     expect(calls.create).toHaveBeenCalledTimes(1);
   });
 
+  it("starts the resend's wait at 2 s again once a resend has landed", async () => {
+    const { poll } = await clearPolledLostCreateOffline([offline(), offline()]);
+    await after(2_000);
+    await after(4_000);
+    expect(calls.remove).toHaveBeenCalledTimes(3);
+    expect(bodies()).toEqual([]);
+
+    // Another lost create, cleared offline before a poll shows it.
+    server.lose.add("create");
+    type("Second");
+    await waitForSave();
+    server.refuse.push(
+      { write: "remove", error: offline() },
+      { write: "remove", error: offline() },
+    );
+    type("");
+    await waitForSave();
+    await poll();
+    expect(calls.remove).toHaveBeenCalledTimes(5);
+
+    await after(1_999);
+    expect(calls.remove).toHaveBeenCalledTimes(5);
+    await after(1);
+    expect(calls.remove).toHaveBeenCalledTimes(6);
+    expect(bodies()).toEqual([]);
+  });
+
   /** Another tab resends the note's own text under its token: a new revision of the same note. */
   const resendElsewhere = (id: string) => {
     const note = server.notes.find((candidate) => candidate.id === id)!;
