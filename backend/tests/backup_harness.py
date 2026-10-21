@@ -309,7 +309,11 @@ class TestChatMessage(TestBase, table=True):
 class TestDocument(TestBase, table=True):
     __tablename__ = "backup_test_documents"
 
-    recording_id: int = Field(foreign_key="backup_test_recordings.id")
+    # Cascades like documents.recording_id, so an overwrite can delete a recording
+    # that has documents.
+    recording_id: int = Field(
+        foreign_key="backup_test_recordings.id", ondelete="CASCADE"
+    )
     title: str
     file_path: str = Field(sa_column=Column(Text, unique=True, nullable=False))
     file_type: str = "text/plain"

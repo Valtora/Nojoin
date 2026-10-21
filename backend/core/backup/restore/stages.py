@@ -27,6 +27,7 @@ from backend.core.backup.format import (
 )
 from backend.core.backup.paths import _get_recording_match_keys
 from backend.core.backup.restore.state import _RestoreState
+from backend.utils.db_batching import bind_batches
 
 logger = logging.getLogger(__name__)
 
@@ -258,6 +259,47 @@ def _restore_cleanup_staging(state: "_RestoreState") -> None:
         logger.warning("Failed to remove restore staging directory: %s", e)
 
 
+def _note_replaced_document_paths(
+    session: Any, state: "_RestoreState", recording_ids: List[int]
+) -> None:
+    """Record the document files of recordings an overwrite is about to delete.
+
+    The document rows go with the recordings by cascade, and with them the only
+    record of where the files are. The recordings are locked first, in id order,
+    as the API's deletes lock theirs, so no upload commits a document this misses.
+    """
+    for id_batch in bind_batches(sorted(recording_ids)):
+        session.exec(
+            select(runtime.Recording.id)
+            .where(runtime.Recording.id.in_(id_batch))
+            .order_by(runtime.Recording.id)
+            .with_for_update()
+        ).all()
+        paths = session.exec(
+            select(runtime.Document.file_path).where(
+                runtime.Document.recording_id.in_(id_batch)
+            )
+        ).all()
+        state.replaced_document_paths.extend(path for path in paths if path)
+
+
+def _keep_document_files_still_named(session: Any, state: "_RestoreState") -> None:
+    """Drop every replaced file that a document row still names, before the commit.
+
+    A restored document can land on the name its replaced copy had: its staged
+    file moves in on top, or, with none in the archive, the old file is all it has.
+    """
+    if not state.replaced_document_paths:
+        return
+    rows = session.exec(select(runtime.Document.file_path)).all()
+    named = {os.path.realpath(path) for path in rows if path}
+    state.replaced_document_paths = [
+        path
+        for path in state.replaced_document_paths
+        if os.path.realpath(path) not in named
+    ]
+
+
 def _restore_preflight_overwrite(
     zipf: zipfile.ZipFile, session: Any, state: "_RestoreState"
 ) -> None:
@@ -303,6 +345,7 @@ def _restore_preflight_overwrite(
             logger.info(
                 f"Overwrite: Pre-deleting {len(existing_ids)} conflicting recordings."
             )
+            _note_replaced_document_paths(session, state, existing_ids)
             # Delete via the Recording table so the configured
             # ON DELETE cascades remove dependent rows.
             session.exec(

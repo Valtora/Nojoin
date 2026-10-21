@@ -1,9 +1,10 @@
 """Attached document files on disk: written before their row, removed after it.
 
-Documents are stored flat in the documents directory as ``<uuid>.<ext>``, apart
-from the recording's own audio, so removing a recording's audio leaves them behind.
-Each delete path collects its documents' paths before the rows go and removes the
-files once the delete has committed. An upload writes its file before inserting
+Documents are stored flat in the documents directory, each under a name of its
+own, apart from the recording's own audio, so removing a recording's audio leaves
+them behind. Each delete path, a restore in Overwrite mode included, collects its
+documents' paths before the rows go and removes the files once the delete has
+committed. An upload writes its file before inserting
 its row, and removes the file again if that insert fails or is cancelled.
 """
 
@@ -53,17 +54,30 @@ async def recording_document_paths(
     return paths
 
 
-def _unlink_document_files(
-    file_paths: list[str | None], *, logger: logging.Logger
+def unlink_document_files(
+    file_paths: Sequence[str | None],
+    *,
+    logger: logging.Logger,
+    root: Path | None = None,
 ) -> None:
+    """The synchronous core of :func:`delete_document_files`, which never raises.
+
+    For callers already off the event loop, such as the restore. ``root`` is the
+    documents directory, resolved through :class:`PathManager` when not given.
+    """
     try:
-        _unlink_each(file_paths, logger=logger)
+        _unlink_each(
+            file_paths,
+            root=root if root is not None else documents_root_dir(),
+            logger=logger,
+        )
     except Exception:
         logger.exception("Failed to delete document files %s", file_paths)
 
 
-def _unlink_each(file_paths: list[str | None], *, logger: logging.Logger) -> None:
-    root = documents_root_dir()
+def _unlink_each(
+    file_paths: Sequence[str | None], *, root: Path, logger: logging.Logger
+) -> None:
     for raw_path in file_paths:
         if not raw_path:
             continue
@@ -99,7 +113,7 @@ async def delete_document_files(
     before the cancellation propagates. If the thread had already started, the
     files are unlinked twice, which is harmless: a missing file is not an error.
     """
-    unlink = partial(_unlink_document_files, list(file_paths), logger=logger)
+    unlink = partial(unlink_document_files, list(file_paths), logger=logger)
     try:
         await run_in_threadpool(unlink)
     except asyncio.CancelledError:

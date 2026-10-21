@@ -56,6 +56,8 @@ class _RestoreState:
     # Final paths already claimed by a pending move, so two restored rows cannot both
     # try to land on the same file.
     claimed_destinations: Set[str] = field(default_factory=set)
+    # Files of the documents an overwrite deleted along with their recordings.
+    replaced_document_paths: List[str] = field(default_factory=list)
     # Progress sink, so a Celery-hosted restore can stream status to its result backend.
     progress_callback: Any = None
     # table_name -> reason -> count, surfaced to the operator when the restore finishes.

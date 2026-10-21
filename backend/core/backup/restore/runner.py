@@ -34,6 +34,7 @@ from backend.core.backup.restore.conflicts import CONFLICT_RESOLVERS
 from backend.core.backup.restore.context import RowOutcome, _RowContext
 from backend.core.backup.restore.identity import IDENTITY_RESOLVERS
 from backend.core.backup.restore.state import _RestoreState
+from backend.utils.document_storage import unlink_document_files
 
 logger = logging.getLogger(__name__)
 
@@ -372,6 +373,7 @@ def _restore_backup_sync(request: _RestoreRequest):
                 _remap_user_notes_template_settings(session, state)
 
                 stages._normalise_restored_recording_state(session, state)
+                stages._keep_document_files_still_named(session, state)
 
                 session.commit()
 
@@ -388,6 +390,14 @@ def _restore_backup_sync(request: _RestoreRequest):
                         shutil.rmtree(directory)
                     directory.mkdir(parents=True, exist_ok=True)
 
+            # The files of the documents an overwrite replaced, inside the
+            # documents directory only. Before the moves, so that no file a
+            # restored row names can be removed.
+            unlink_document_files(
+                state.replaced_document_paths,
+                root=Path(request.documents_dir),
+                logger=logger,
+            )
             stages._restore_apply_pending_moves(state)
             stages._restore_config(zipf, state)
     finally:
