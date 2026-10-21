@@ -110,6 +110,7 @@ const analytics = (
       buckets: [{ start_ms: 0, end_ms: 60_000, speech_ms: { "rs:1": 40_000 } }],
     },
     silence: { speech_ms: 45_000, silence_ms: 15_000, silence_share: 0.25 },
+    unattributed: { utterance_count: 0, speech_ms: 0 },
     overlap: {
       overlapped_ms: 5_000,
       overlap_share: 0.1,

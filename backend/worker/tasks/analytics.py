@@ -30,19 +30,20 @@ logger = logging.getLogger(__name__)
 def _load_delivery_utterances(session, recording_id: int) -> list:
     """Canonical utterances, reduced to what the delivery pass measures."""
     from backend.processing.delivery_descriptors import DeliveryUtterance
+    from backend.services.meeting_analytics import (
+        speaker_key,
+        split_analysed_utterances,
+    )
     from backend.utils.canonical_pipeline import list_active_utterances
 
-    utterances = list_active_utterances(session, recording_id)
+    utterances, _ = split_analysed_utterances(
+        list_active_utterances(session, recording_id)
+    )
     rows = []
     for utterance in utterances:
-        speaker_key = (
-            f"rs:{utterance.recording_speaker_id}"
-            if utterance.recording_speaker_id is not None
-            else f"label:{utterance.speaker_label or 'unknown'}"
-        )
         rows.append(
             DeliveryUtterance(
-                speaker_key=speaker_key,
+                speaker_key=speaker_key(utterance),
                 start_ms=int(utterance.start_ms or 0),
                 end_ms=int(utterance.end_ms or 0),
                 word_count=len((utterance.text or "").split()),

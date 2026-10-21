@@ -382,3 +382,102 @@ class TestAssembly:
         metrics = compute_deterministic_metrics([row("a", 0, 45_000)], duration_ms=0)
 
         assert metrics["duration_ms"] == 45_000
+
+
+class TestUnattributedLines:
+    """Finalised UNKNOWN lines are left out, as the transcript view hides them."""
+
+    @staticmethod
+    def _line(speaker_id, label, start_ms, end_ms, state="finalized"):
+        from backend.models.pipeline import (
+            TranscriptUtterance,
+            TranscriptUtteranceState,
+        )
+
+        return TranscriptUtterance(
+            recording_id=1,
+            recording_speaker_id=speaker_id,
+            speaker_label=label,
+            start_ms=start_ms,
+            end_ms=end_ms,
+            text="words",
+            state=TranscriptUtteranceState(state),
+        )
+
+    @staticmethod
+    def _analyse(monkeypatch, lines):
+        from types import SimpleNamespace
+
+        from backend.services.meeting_analytics import query
+
+        monkeypatch.setattr(query, "list_active_utterances", lambda session, rid: lines)
+        directory = {
+            f"rs:{pk}": {
+                "speaker_key": f"rs:{pk}",
+                "public_id": f"speaker-{pk}",
+                "name": name,
+                "diarization_label": f"SPEAKER_0{pk}",
+                "color": None,
+                "global_speaker_id": None,
+                "is_named": True,
+            }
+            for pk, name in ((1, "Alice Example"), (2, "Bob Example"))
+        }
+        monkeypatch.setattr(
+            query, "_build_speaker_directory", lambda session, rid: directory
+        )
+        recording = SimpleNamespace(id=1, duration_seconds=60.0, max_speakers=2)
+        return query.compute_recording_analytics(None, recording)
+
+    def test_unknown_lines_are_no_speaker_and_are_counted(self, monkeypatch):
+        lines = [
+            self._line(1, "SPEAKER_01", 0, 10_000),
+            self._line(None, "UNKNOWN", 10_000, 10_400),
+            self._line(2, "SPEAKER_02", 11_000, 20_000),
+            self._line(None, None, 30_000, 31_000),
+        ]
+
+        analytics = self._analyse(monkeypatch, lines)
+
+        assert [s["speaker_key"] for s in analytics["speakers"]] == ["rs:1", "rs:2"]
+        assert analytics["metrics"]["unattributed"] == {
+            "utterance_count": 2,
+            "speech_ms": 1_400,
+        }
+        assert set(analytics["metrics"]["talk_time"]) == {"rs:1", "rs:2"}
+        transitions = analytics["metrics"]["turn_taking"]["transitions"]
+        assert {(t["from_speaker"], t["to_speaker"]) for t in transitions} == {
+            ("rs:1", "rs:2")
+        }
+        # Two speakers against a cap of two, all named: nothing to warn about.
+        reasons = (analytics["attribution_warning"] or {}).get("reasons", [])
+        assert {r["code"] for r in reasons} == {"speaker_cap_bound"}
+
+    def test_a_live_line_and_an_all_unknown_transcript_stay(self, monkeypatch):
+        live = self._line(None, "UNKNOWN", 0, 5_000, state="provisional")
+        analytics = self._analyse(
+            monkeypatch, [self._line(1, "SPEAKER_01", 5_000, 9_000), live]
+        )
+        assert analytics["metrics"]["unattributed"]["utterance_count"] == 0
+
+        analytics = self._analyse(
+            monkeypatch, [self._line(None, "UNKNOWN", 0, 5_000, state="finalized")]
+        )
+        assert [s["speaker_key"] for s in analytics["speakers"]] == ["label:UNKNOWN"]
+        assert analytics["metrics"]["unattributed"]["utterance_count"] == 0
+
+    def test_delivery_measures_the_same_lines(self, monkeypatch):
+        import backend.utils.canonical_pipeline as canonical_pipeline
+        from backend.worker.tasks.analytics import _load_delivery_utterances
+
+        lines = [
+            self._line(1, "SPEAKER_01", 0, 10_000),
+            self._line(None, "UNKNOWN", 10_000, 10_400),
+        ]
+        monkeypatch.setattr(
+            canonical_pipeline, "list_active_utterances", lambda session, rid: lines
+        )
+
+        rows = _load_delivery_utterances(None, 1)
+
+        assert [row.speaker_key for row in rows] == ["rs:1"]
