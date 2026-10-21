@@ -2,7 +2,7 @@
 
 ## Description
 
-Summarise the change, the motivation, and any context. List any new dependencies.
+What changed and why. List any new dependencies.
 
 Fixes # (issue)
 
@@ -15,37 +15,32 @@ Fixes # (issue)
 
 ## Checks run
 
-Tick the checks you ran for the areas you touched (see `CONTRIBUTING.md`).
+Tick the checks you ran for the areas you touched (`docs/DEVELOPMENT.md`, "Verification By Change Scope").
 
-- [ ] Backend tests: `source .venv/bin/activate && pytest`
-- [ ] Python quality: `python scripts/check.py` (Ruff lint, format check, mypy, doc and Alembic validators)
-- [ ] Frontend lint: `cd frontend && npm run lint`
-- [ ] Frontend unit tests: `cd frontend && npm run test`
-- [ ] Frontend build: `cd frontend && npm run build`
-- [ ] Site build: `cd site && npm ci && npm run build`
-- [ ] Docs validation: `python3 scripts/validate_docs.py`
-- [ ] Alembic validation: `python3 scripts/validate_alembic.py`
-- [ ] Whitespace check: `python3 scripts/check_whitespace.py`
+- [ ] Python: `python scripts/check.py` (Ruff, format, whitespace and other gates, mypy, doc and Alembic validators, pytest)
+- [ ] Frontend: `cd frontend && npm run lint && npm run check:contrast && npm run test && npm run build`
+- [ ] Site: `cd site && npm ci && npm run build`
+- [ ] Docs only: `python3 scripts/validate_docs.py`
 
 ## Migration impact
 
-- [ ] No database migration in this PR.
-- [ ] Adds an Alembic migration. Single checked-in head preserved; no committed revisions deleted or renamed. Upgrade and downgrade behaviour described above.
+- [ ] No database migration.
+- [ ] Adds an Alembic migration: one checked-in head, no committed revision deleted or renamed, upgrade and downgrade behaviour described above, and `python3 scripts/check_migrations.py` run against a throwaway Postgres.
 
 ## Documentation impact
 
 - [ ] No documentation change required.
-- [ ] Updated the relevant guide(s) in the same PR (behaviour, setup, deployment, or support changes must update their guide — see CONTRIBUTING.md "Documentation Ownership").
+- [ ] Updated the guide that owns each changed behaviour, setup, deployment or support topic (`.github/CONTRIBUTING.md`, "Documentation Ownership").
 
 ## Security impact
 
 - [ ] No security-sensitive change.
-- [ ] Touches auth, tokens, encryption, capture ownership, or exposure. `docs/SECURITY.md` boundaries preserved and updated where behaviour changed.
+- [ ] Touches auth, tokens, encryption, capture ownership or exposure; `docs/SECURITY.md` boundaries preserved and updated where behaviour changed.
 
 ## Manual verification
 
-Describe what you tested manually. Capture-related changes require browser smoke testing for start, pause/resume, stop/finalize, discard, unsupported-browser messaging, and selected-microphone behaviour. Recording action changes must go through the shared `useRecordingActions` hook.
+What you tested by hand. Capture changes need a browser smoke test of start, pause and resume, stop and finalise, discard, unsupported-browser messaging and the selected microphone.
 
 ## Screenshots (if relevant)
 
-Drag and drop images directly into the markdown box (redact sensitive content).
+Drag images into the box, with sensitive content redacted.

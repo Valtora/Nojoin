@@ -1,6 +1,6 @@
 # Legal Disclaimer and Terms of Use
 
-This is the canonical legal disclaimer for Nojoin, linked from the [README](../README.md#licence-and-legal).
+The canonical legal disclaimer for Nojoin. The setup wizard asks the first administrator to accept sections 1 and 2.
 
 ## 1. Compliance With Laws
 
@@ -10,14 +10,14 @@ You acknowledge that many legal jurisdictions require the consent of all parties
 
 Nojoin is designed with a privacy-first architecture.
 
-- Your meeting data — audio, transcripts, meeting notes, chat, uploaded documents, speaker voiceprints, and calendar content — is never stored or transmitted to third parties without your explicit consent.
+- Your meeting data (audio, transcripts, meeting notes, chat, uploaded documents, speaker voiceprints, and calendar content) is never stored or transmitted to third parties without your explicit consent.
 - All audio processing (transcription, diarisation, and similar) is performed locally on your machine or your self-hosted server, unless you explicitly configure an external provider.
 
 ## 3. Anonymous Usage Data
 
 Separately from your meeting data, Nojoin sends a daily heartbeat containing a random number generated on your own server and the Nojoin version, so installations can be counted. It can also send anonymous usage diagnostics every six hours describing how the installation is configured and how much it is used, identified by the same random number. Neither contains the meeting data listed above, names, hostnames or addresses, or credentials, and the data is never sold.
 
-Diagnostics can be switched off in Settings. Both are disabled permanently with the `NOJOIN_TELEMETRY_ENABLED` environment variable, or blocked at the network layer. [TELEMETRY.md](TELEMETRY.md) documents exactly what is sent, when, how long it is kept, and how to verify it.
+Diagnostics can be switched off in **Settings > Privacy**. Both are disabled permanently with the `NOJOIN_TELEMETRY_ENABLED` environment variable, or blocked at the network layer. [TELEMETRY.md](TELEMETRY.md) documents exactly what is sent, when, how long it is kept, and how to verify it.
 
 ## 4. Liability
 

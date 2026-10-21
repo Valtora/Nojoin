@@ -1,137 +1,10 @@
 # Security Policy
 
-The Nojoin team and community take all security vulnerabilities seriously. Thank you for your efforts to improve the security of Nojoin. We appreciate your efforts and responsible disclosure and will make every effort to acknowledge your contributions.
-
-## Active Development
-
-Nojoin is still in active development and all releases should be considered pre-release. There may be security vulnerabilities in the application. Nojoin's maintainers are not responsible for any data loss or security breaches that may occur as a result of using the application. We also advise users to take additional security measures in general but especially when deploying Nojoin over a publicly accessible URL. For example, we recommend using a VPN or a reverse proxy to secure your Nojoin instance.
-
-## First-Run Bootstrap Protection
-
-Nojoin requires an operator-defined `FIRST_RUN_PASSWORD` before the first successful system initialisation can occur.
-
-- The bootstrap password is only used while the system is uninitialised.
-- The web client sends the bootstrap secret via the standard `Authorization` header using the `Bootstrap` scheme rather than a bespoke setup header.
-- If `FIRST_RUN_PASSWORD` is missing, first-run setup fails closed until the operator sets it and restarts or redeploys.
-- The setup surface does not disclose initialisation state. The sign-in page never references setup, the `/setup` page renders the same unlock gate in every state, and every anonymous setup denial returns the same `403` with the detail `First-run setup access denied.` whether the bootstrap password is wrong, `FIRST_RUN_PASSWORD` is unset, or the system is already initialised. The specific reason is written to the server log only, and the API startup log points operators at `/setup` while the system is uninitialised.
-- Setup endpoints are rate limited per client address before any state-dependent processing, so throttling behaviour is also identical across states and the bootstrap password cannot be brute-forced quickly.
-- After initialisation, normal authenticated admin operations do not use the bootstrap password path. The setup wizard creates the owner account partway through and signs in, so its remaining steps are ordinary authenticated admin requests carrying the session cookie; the client stops sending the bootstrap credential from that point, and the server would refuse it anyway.
-- The bootstrap password is never returned by the API or persisted into Nojoin configuration.
-- Application log output redacts `Authorization`, cookies, bootstrap credentials, passwords, tokens, and API-key fields if they are accidentally included in a log record.
-
-Operators should treat `FIRST_RUN_PASSWORD` as a secret and ensure reverse proxies, ingress layers, and HTTP logging do not record `Authorization` headers or setup request bodies.
-Nojoin also warns operators when `FIRST_RUN_PASSWORD`, `DATA_ENCRYPTION_KEY`,
-or the tracked Redis/PostgreSQL placeholder secrets still match the shipped
-deployment-template values. Those warnings appear in API or worker startup logs
-and in the authenticated frontend, but they are advisory only and do not block
-startup or first-run setup.
-
-## Browser Session Request Protection
-
-Nojoin's normal browser session uses a Secure HttpOnly cookie, but state-changing browser requests are not trusted solely because that cookie is present.
-
-- Cookie-authenticated browser requests using unsafe methods must come from the trusted Nojoin web origin.
-- The backend validates the standard `Origin` header, or falls back to `Referer` when needed, for those cookie-authenticated unsafe requests.
-- Explicit bearer-token API clients are not subject to that browser-origin check.
-- The session cookie remains `SameSite=Lax` to preserve expected top-level redirect flows such as OAuth callbacks, so unsafe GET-style side effects should continue to be avoided.
-
-## Standard JWT Containment
-
-Standard browser session, explicit API, and MCP connector JWTs (token types `session`, `api`, and `mcp`) support active invalidation in addition to natural expiry.
-
-- Every issued session/API JWT carries a unique `jti` (token id), an `iat` (issued-at) timestamp, and a `tv` claim that mirrors the user's current `token_version`.
-- Verification rejects a token whose `tv` no longer matches the user record. Bumping `token_version` therefore acts as an immediate kill-switch for every previously issued session and API token belonging to that user.
-- `token_version` is bumped automatically when the user changes their own password, when an admin resets the password, and when an account is deactivated.
-- Admins and Owners may also call `POST /api/v1/users/{user_id}/sessions/revoke-all` to forcibly invalidate every session for another user. Users themselves may call `POST /api/v1/users/me/sessions/revoke-all` to sign out of all other devices.
-- Calling `POST /api/v1/login/logout` records the cookie token's `jti` in a server-side denylist (`revoked_jwts`), so the captured JWT stops verifying immediately even if a copy was made outside the browser cookie.
-- The denylist also supports targeted revocation of an individual `jti`. Expired entries are pruned opportunistically.
-
-Recording capture uses the normal browser session token. There is no separate desktop-helper JWT path for live recording.
-
-## MCP Connector Access
-
-Nojoin's built-in MCP connector ([MCP.md](MCP.md)) issues OAuth 2.1 access tokens of type `mcp` through Nojoin's own authorization server.
-
-- MCP tokens authenticate only the `/mcp` endpoint. They carry the `mcp:read` scope (all read tools) and, for grants consented since the write tools were introduced, the `mcp:write` scope, plus a resource binding; they are rejected by every general API route regardless of scope.
-- The `mcp:write` scope gates recoverable mutations only: organising recordings (rename, tag, archive, soft delete, restore), task management (archive at the strongest; task deletion is web-app only), transcript corrections (attributed with source `mcp` in the edit log and on the utterance itself, surfaced in the app as an `AI corrected text` or `AI corrected speaker` label, and reversible via further edits), releasing an utterance's edit locks, notes regeneration through Nojoin's own pipeline, re-running processing on a recording, running the AI meeting analysis, text-document attachment, calendar linking, naming a recording's speakers (attributed on the speaker and shown as `AI named`, and propagated to the transcript and the AI notes so a meeting does not carry two names for one person), and the additive People tools. Nothing under `mcp:write` permanently destroys data or modifies voiceprints, and assistants never author AI-note content directly. Two of these tools (`regenerate_notes` and `analyse_meeting`) consume the user's own AI provider quota, which undoing the change does not refund; both say so in their tool descriptions so an assistant asks rather than calling them speculatively.
-- Permanent deletion is not reachable through the connector at all: no MCP tool destroys data, and the strongest deletion verb is moving a recording to the bin. The retired `mcp:destroy` scope is stripped from any client that still requests it by name. Independently, the permanent-delete REST endpoint (web app only; MCP tokens are rejected by every REST route) refuses any recording not already in the bin, so even in the web app destruction requires binning first. Grants that predate a scope keep working for everything else; the gated tools refuse them with an instruction to reconnect.
-- Authorization codes are single-use, PKCE-bound (S256), and expire after 60 seconds. Refresh tokens are stored hashed and rotate on every use; reuse of a rotated refresh token revokes the entire grant family.
-- Dynamic client registration is open (as the MCP specification requires) but rate limited, accepts only public PKCE clients with HTTPS redirect URIs, and grants no access by itself — every grant requires an interactive, origin-checked consent by a signed-in user.
-- Users can list and revoke connector grants under **Settings > Integrations > Connected apps**. Password changes, admin resets, and session revocation invalidate outstanding MCP access tokens through the shared `token_version` mechanism.
-- A user who must change their password before consenting is sent to `/settings/profile` with the consent URL in `?next=`, and returned to it after the change. The return target is accepted only if it resolves to `/oauth/authorize` on Nojoin's own origin (`frontend/src/lib/passwordChangeReturn.ts`), so a crafted link cannot redirect anywhere else. The most it can do is open a consent screen, which still needs the user's approval.
-- With anonymous discovery enabled (`MCP_ANONYMOUS_DISCOVERY`, default on), the `/mcp` endpoint answers the MCP protocol handshake and tool listing without a token, and an unauthenticated tool call receives an in-band authentication challenge instead of executing. This exists for clients that cannot start OAuth from a bare `401` (Codex Desktop). The disclosure is limited to generic tool metadata — names, descriptions, schemas, and scopes, identical on every deployment and already published in [MCP.md](MCP.md). No tool executes without an authenticated user, enforced at a single choke point ahead of every tool rather than per tool; no user data is reachable anonymously; everything outside the fixed five-method allowlist (including malformed requests) keeps the strict `401`; and the anonymous surface is rate limited per client IP. Set `MCP_ANONYMOUS_DISCOVERY=false` to restore the strict `401` for every unauthenticated request.
-- Operators can remove the entire connector surface with `MCP_ENABLED=false` (see [DEPLOYMENT.md](DEPLOYMENT.md)); every connector endpoint then responds `404`.
-
-## CLI OAuth Subscription Access
-
-Nojoin can route a user's AI inference through their own **Claude** (Pro/Max) or **ChatGPT** (Plus/Pro) subscription (the per-user **CLI OAuth** AI-routing option, off by default). This is an accepted risk taken deliberately: it uses a consumer subscription contrary to the provider's terms (Anthropic's, or OpenAI's for ChatGPT/Codex).
-
-- The subscription OAuth token is stored **encrypted at rest** (`encrypt_secret`, one row per `(user, provider)`), never in `User.settings`, never logged, and never returned by the API.
-- Inference runs as a **tools-off, single-turn** subprocess in the `worker-io` lane — the Claude Code CLI, or `codex exec --sandbox read-only` for ChatGPT — as a non-root user (uid 1000, which the worker entrypoint drops to via `gosu` at startup), under a wall-clock timeout. With tools disabled / read-only, an untrusted transcript can only produce text, not act — so no dedicated OS sandbox is used. That is a considered position rather than an omission: with no tools available, a prompt-injected transcript cannot write files, run a shell, or make network calls, and the text it can produce is handled by tolerant parsers and simply read by the user. The Agent SDK's own sandbox targets *tool* use, which is off; its network lockdown would sever the connection the CLI needs to reach the provider at all; and its OS-level enforcement does not engage inside an already non-root container.
-- The subprocess environment is **scrubbed** so an install-wide key cannot out-rank the user's subscription token: for Claude, `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` / `CLAUDE_CODE_USE_*` are removed and only `CLAUDE_CODE_OAUTH_TOKEN` is injected; for ChatGPT, `OPENAI_API_KEY` / `CODEX_API_KEY` are excluded from the Codex subprocess env (or Codex would bill the API instead of the subscription). Both scrub invariants are locked by unit tests. The two are implemented differently for a reason worth knowing before changing either: the Claude Agent SDK merges the worker's `os.environ` *underneath* whatever is passed as `options.env`, so handing it a clean dictionary does not work and the variables must be removed from `os.environ` itself for the duration of the call. The Codex driver spawns a plain subprocess and passes `env` explicitly, so it can build a clean environment without mutating the parent's.
-- CLI OAuth is **swappable and non-load-bearing**: any failure (auth, usage limit) degrades through the server's default provider chain — the primary provider first, then the secondary if that also fails. Usage limits set a best-effort reset time surfaced in Settings.
-- Usage accounting stores **aggregate counts only**: a per-user daily rollup of token counts and request totals, plus the latest rate-limit reading, so administrators can review subscription usage. Prompt and response **content is never stored**, and the SDK's notional per-turn cost is kept for reference but never surfaced as money (a subscription is flat-rate).
-- Disconnecting (Settings > Your AI) deletes the encrypted credential and wipes the user's per-user CLI working directory.
-- The two CLIs are installed unpinned, so each image build takes the latest release. The build **verifies both against the npm registry's signatures and provenance attestations** and fails if either does not verify, and it records the installed versions at `/usr/local/share/nojoin/cli-versions.json` in the image (the SBOM attestation carries them too). The Codex CLI ships as a stripped native binary that the image scanner cannot inspect, so the release script looks its version up in the GitHub advisory database before anything is pushed; see [DEVELOPMENT.md](DEVELOPMENT.md#release-gates).
-
-## JWT Signing Key Rotation
-
-JWT signing material is stored as a small keyring rather than a single static value.
-
-- The keyring is persisted to `<user_data>/.secret_keys.json` and contains an `active` key id (`kid`) plus any prior keys that are still trusted.
-- Every issued JWT carries a `kid` header. Verification picks the matching key from the keyring; if the `kid` is not known the token is rejected.
-- Tokens are signed and verified with PyJWT using HS256 only. Verification refuses any other `alg` (including `none` and the asymmetric algorithms), a malformed header, an expired token, and a token whose `iat` lies in the future. The api process both issues and verifies every token, so no clock-skew leeway is applied. Keyring entries are always symmetric secrets, never public keys.
-- Operators with shell access can rotate the key by calling `backend.core.security.rotate_signing_key()`. Rotation generates a fresh `kid`, makes it active, and (by default) keeps the previous key in the ring so currently outstanding tokens keep verifying until their natural expiry.
-- After enough time has passed for outstanding tokens to expire, `prune_signing_keys()` removes retired keys from the keyring. Any token still signed by a removed key fails verification immediately, providing a hard cut-over.
-- Setting the `SECRET_KEY` environment variable overrides the keyring with a single static key (intended for advanced deployments and tests). In that mode the rotation API is disabled. Use a random value carrying at least 256 bits, for example `openssl rand -hex 32` (a 64-character hex string, the same form as a generated keyring key): RFC 7518 Section 3.2 requires an HS256 key at least as long as its 256-bit hash output. A shorter value still works, so existing deployments keep signing in, but PyJWT emits an `InsecureKeyLengthWarning` when it signs or verifies with it.
-- Existing single-key installs are migrated automatically: the legacy `<user_data>/.secret_key` file is loaded into the keyring as `kid="legacy"` on first startup and the legacy file is renamed.
-- The api loads the keyring at startup. PyJWT cannot sign or verify with an empty key, so if the active key is empty (an empty legacy `.secret_key`, an empty active entry in `.secret_keys.json`, or a blank `.secret_keys.json` left by a write that was cut short, for example by a full disk) or a key file is malformed, unreadable or a directory, the api still starts but logs an error that names the file and the fix. For an empty or malformed key the fix is to delete the named file and restart, which generates a new key; everyone signed in has to sign in again. For an unreadable file, the fix is to give the api read and write access to the data directory. A key file that is a directory, usually left by a Docker bind mount of a host file that did not exist, has to be removed together with that bind mount before restarting. Until it is fixed, sign-in fails with a message pointing to the api log and every token is rejected.
-
-## Browser Capture Security
-
-Live recording is initiated and controlled by the authenticated web app.
-
-- Browser recording endpoints use the normal Secure HttpOnly session cookie and enforce recording ownership on every init, segment, pause, resume, discard, and finalize request.
-- Unsafe cookie-authenticated requests still require the trusted Nojoin web origin through the origin checks described above.
-- Browser capture permissions are mediated by the browser. Nojoin cannot silently capture screen, tab, system audio, or microphone input without the user granting permission.
-- The browser share picker determines the visible surface and whether shared audio is included on desktop. Nojoin warns when the browser does not grant a shared-audio track and then records microphone audio only. Mobile Chrome capture is microphone-only and does not expose tab, app, or system audio to Nojoin.
-- A paused recording blocks new capture starts for that user until it is resumed or discarded, preventing overlapping segment streams. Nojoin resolves one case itself: a capture the same browser tab lost before the server acknowledged any segment holds no audio, so it is discarded rather than offered. The decision reads that tab's own capture context, and the discard goes through the same ownership-checked endpoint as a manual one, so it can never reach a recording belonging to another tab, device, or user.
-- Refreshing, closing, or navigating away from the Nojoin tab moves the recording to `PAUSED`; uploaded segments remain server-side and only the unfinished segment is dropped.
-- Segments recorded but not yet acknowledged by the server are kept in the browser's IndexedDB storage for the Nojoin origin, so a closed tab does not lose them. Each is removed when the server acknowledges it, and a recording's are all removed when it is discarded or finalized from that browser. Until then they sit in that browser profile unencrypted, like any other site data, and clearing the site's data in the browser deletes them. They are keyed by recording, and only the signed-in owner of the recording can upload them.
-- Switching focus to another tab, window, or application does not pause recording.
-- Browser capture uploads FLAC segments, which the API decodes in process and accepts only as 16 kHz, two-channel, 16-bit audio; anything else is quarantined rather than processed. WebM/Opus, Ogg/Opus, and MP4 audio segments from older browser builds are transcoded in worker tasks before final processing.
-- Retired native-helper endpoints return structured `410 Gone` responses and do not issue credentials or accept uploads.
-- Calendar push webhook endpoints (`/api/v1/calendar/webhooks/google` and `/api/v1/calendar/webhooks/microsoft`) are called by Google and Microsoft rather than by an authenticated user, so they carry no session auth. Each inbound notification is authenticated by a per-subscription secret stored encrypted at rest (the Google channel token or Microsoft `clientState`); the payload is treated only as a change signal, and the handler merely enqueues an incremental sync that runs with the account's own stored tokens. Unrecognised or mismatched notifications are ignored, the endpoints never echo whether a subscription exists, and they are rate limited.
-
-For end-user capture setup and troubleshooting, see [CAPTURE.md](CAPTURE.md).
-
-## Outbound Connections and Anonymous Telemetry
-
-Nojoin makes a small number of outbound connections from the server. Operators running in restricted networks should know what they are.
-
-- **Release metadata**: the API queries the GitHub Releases API to show update availability in Settings and in the update notification shown to administrators. The result is cached for ten minutes.
-- **AI providers**: only when a non-local provider is configured; local Ollama keeps inference on your own network.
-- **Calendar providers**: only when a user connects a Google or Microsoft account.
-- **Anonymous telemetry**: a daily heartbeat, and optionally one diagnostics ping every six hours, to `telemetry.nojoin.co.uk` from the `worker-io` lane.
-
-Both are anonymous by construction rather than by policy. They are identified only by a UUID4 generated on your own server. The heartbeat carries that ID and the version and nothing else, and the receiving service discards any other heartbeat field. The diagnostics carry counts and configuration shape, never meeting content, names, hostnames, URLs, credentials, or model names. The receiving service records nothing derived from the connection: the client IP is used only for rate limiting and is never stored.
-
-Diagnostics are enabled by default, but an installation upgraded into the feature sends none until an administrator has been shown the notice, and they can be disabled from Settings. The heartbeat has no switch in the app. `NOJOIN_TELEMETRY_ENABLED=false`, which the UI cannot override, stops both, as does a block at the network layer, with no effect on any other function. An installation that turned telemetry off before 2.7.0 sends neither.
-
-Each payload is assembled in exactly one function and locked by a test that fails if a field is added without updating the disclosure, and the receiving Worker is open source in [telemetry/](../telemetry/). See [TELEMETRY.md](TELEMETRY.md).
-
-## Vulnerability Scanning and Severity Policy
-
-Published container images are scanned for known vulnerabilities by [Trivy](https://github.com/aquasecurity/trivy) before they are pushed to the registry. The policy balances strong assurance against the reality that the worker image is built on a large CUDA/PyTorch base with a slow-moving, inherited CVE surface.
-
-- The release pipeline scans each image and **fails the release on CRITICAL or HIGH findings that have a fix available** (`ignore-unfixed: true`). Such findings are addressable by us — usually by pulling in a patched base image or dependency — so they block publication.
-- Findings **without an upstream fix** do not block the release. They cannot be actioned by Nojoin and are unavoidable for the GPU worker base image. They remain visible in scan output for tracking.
-- A *fixed* CRITICAL/HIGH finding may be **temporarily accepted only by an explicit, documented exception** in [.github/trivyignore](../.github/trivyignore), recording the CVE id, the reason, the owner, and a review-by date. Exceptions are expected to be short-lived and are removed once the fix is pulled in, typically through a Dependabot base-image or dependency update.
-- Pull requests additionally run an informational dependency and configuration scan, covering the npm lockfiles and the pinned Python requirements in `requirements/`, that surfaces CVEs without blocking merges.
+Nojoin is in active development, and every release should be treated as pre-release. The maintainers accept no responsibility for data loss or security breaches arising from its use. If you expose Nojoin on a public URL, put it behind a VPN or a reverse proxy you control.
 
 ## Supported Versions
 
-As Nojoin is in active development, only the latest version is supported. We encourage all users to use the most up-to-date version of the application.
+Only the latest release receives security fixes.
 
 | Version | Supported          |
 | ------- | ------------------ |
@@ -139,41 +12,179 @@ As Nojoin is in active development, only the latest version is supported. We enc
 
 ## Reporting a Vulnerability
 
-Please report any security vulnerabilities privately. Do not open public GitHub issues or discuss vulnerabilities in public forums before they have been resolved.
+Report vulnerabilities privately. Do not open a public issue or discuss a vulnerability in public before it is fixed.
 
 ### Private Reporting Channel
 
-We use GitHub's Private Vulnerability Reporting feature to receive security disclosures securely and privately.
-
-- **Submit a Report:** Visit [GitHub Private Vulnerability Report](https://github.com/Valtora/Nojoin/security/advisories/new) to submit your report.
-- **Provide Details:** Please include a detailed description of the vulnerability, steps to reproduce, and any proof of concept (PoC) or exploit code.
+Use GitHub's [Private Vulnerability Reporting](https://github.com/Valtora/Nojoin/security/advisories/new). Include a description, steps to reproduce, and any proof of concept or exploit code.
 
 ### Expected Workflow
 
-1. **Acknowledgement:** You will receive an initial response confirming receipt of your report within 48 hours.
-2. **Evaluation:** The maintainers will investigate the report and determine the severity and scope of the vulnerability.
-3. **Remediation:** If the vulnerability is confirmed, we will work on a patch. A security advisory will be drafted, and a fix will be released.
-4. **Disclosure:** Once a patch is available and deployed, we will coordinate public disclosure through a GitHub Security Advisory.
+1. **Acknowledgement:** you get a first response within 48 hours.
+2. **Evaluation:** the maintainers establish the severity and scope.
+3. **Remediation:** a confirmed vulnerability gets a patch, a draft security advisory and a release.
+4. **Disclosure:** once the fix is released, disclosure is coordinated through a GitHub Security Advisory that credits the reporter.
+
+## Operator Rules
+
+- Set `FIRST_RUN_PASSWORD` and `DATA_ENCRYPTION_KEY` to long random values before first start, and keep `DATA_ENCRYPTION_KEY` unchanged afterwards, since changing it makes the secrets it protects unreadable ([DEPLOYMENT.md](DEPLOYMENT.md#configure-env)).
+- Make sure reverse proxies, ingress layers and HTTP logging do not record `Authorization` headers or setup request bodies.
+- Set `WEB_APP_URL` to the exact public HTTPS origin, and configure the proxy and `NOJOIN_TRUSTED_PROXIES` as [DEPLOYMENT.md](DEPLOYMENT.md#reverse-proxy-requirements) describes. Without the trusted proxy list, every client behind the proxy shares one rate-limit bucket.
+- Treat backup archives as secrets. They hold every password hash and the calendar credentials in decrypted form ([BACKUP_RESTORE.md](BACKUP_RESTORE.md)).
+- Verify image signatures before deploying ([DEPLOYMENT.md](DEPLOYMENT.md#verifying-an-image-before-deploying)), and subscribe to the repository's releases and security advisories.
+
+## First-Run Bootstrap Protection
+
+First-run setup needs the operator's `FIRST_RUN_PASSWORD`, which the web client sends in the `Authorization` header with the `Bootstrap` scheme. If the variable is unset, setup stays closed until it is set and the stack is restarted.
+
+- The password works only while the system is uninitialised. The wizard creates the owner account partway through and signs in, and the server refuses the bootstrap credential from then on.
+- The setup surface does not reveal whether the system is initialised. The sign-in page never mentions setup, `/setup` shows the same password prompt in every state, and every anonymous denial returns the same `403` (`First-run setup access denied.`) whether the password is wrong, unset, or the system is already set up. The reason goes to the server log only, and while the system is uninitialised the API startup log points to `/setup`.
+- Setup requests are rate limited per client address before any state-dependent check, so throttling is the same in every state.
+- The password is never returned by the API or stored in Nojoin's configuration.
+- Application logs redact `Authorization`, cookies, bootstrap credentials, passwords, tokens and API-key fields.
+
+The api and worker startup logs, and the web app once you are signed in, warn when `FIRST_RUN_PASSWORD`, `DATA_ENCRYPTION_KEY`, `REDIS_PASSWORD` or `POSTGRES_PASSWORD` still holds the template placeholder. The warnings do not block startup or setup.
+
+## Passwords, Sign-In and Rate Limits
+
+Passwords are hashed with Argon2 and need at least eight characters, not all of them whitespace. Registration needs an invitation code. After an admin password reset, the API accepts only three requests from that user until they choose a new password: reading their own profile, changing the password and signing out.
+
+These endpoints are rate limited per client address:
+
+| Endpoint | Limit |
+| --- | --- |
+| Sign-in (session and API token combined) | 10 per 10 minutes |
+| Registration | 10 per hour |
+| Invitation check | 30 per 10 minutes |
+| First-run setup | 60 per 10 minutes |
+| OAuth client registration | 10 per 10 minutes |
+| OAuth token | 60 per 10 minutes |
+| Anonymous MCP requests | 30 per minute |
+| Calendar webhooks, per provider | 300 per minute |
+
+## Browser Session Request Protection
+
+The browser session is a `Secure`, `HttpOnly`, `SameSite=Lax` cookie that lasts 12 hours. A cookie-authenticated request with an unsafe method (anything but `GET`, `HEAD` or `OPTIONS`) must carry an `Origin` header, or failing that a `Referer`, that matches the trusted web origin, `WEB_APP_URL` ([DEPLOYMENT.md](DEPLOYMENT.md#remote-access-and-trusted-public-origin)). Otherwise it is refused with `403`. Session sign-in is held to the same rule. Requests that present a bearer token are not origin-checked.
+
+`SameSite=Lax` keeps top-level redirects such as OAuth callbacks working, so a `GET` request must never change state.
+
+The API also refuses plain HTTP: a safe request is redirected to the HTTPS origin and an unsafe one gets `400`. It rejects a `Host` header naming anything other than the `WEB_APP_URL` host or a loopback address, answers CORS only for that origin and the local development origins, and serves its OpenAPI schema and docs only to signed-in users. The bundled nginx adds `Content-Security-Policy`, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy` and, outside the MCP endpoint, `Permissions-Policy`.
+
+## Standard JWT Containment
+
+Nojoin issues three kinds of JWT: browser sessions (12 hours), API tokens from `POST /api/v1/login/access-token` (1 hour) and MCP connector tokens (1 hour). Each carries a unique `jti`, an `iat`, and a `tv` claim copied from the user's `token_version`, and each can be cut off before it expires.
+
+- A token whose `tv` no longer matches the user record is rejected. `token_version` is bumped when users change their own password, when an admin resets a password or deactivates an account, and by two endpoints:
+  - `POST /api/v1/users/me/sessions/revoke-all` invalidates every session and API token of the caller, the current session included.
+  - `POST /api/v1/users/{user_id}/sessions/revoke-all` does the same for another user. Admins and owners may call it, and only an owner may revoke an owner's sessions.
+- `POST /api/v1/login/logout` adds the session's `jti` to a server-side denylist (`revoked_jwts`), so a copy of the cookie stops working at once.
+
+## JWT Signing Key Rotation
+
+The api signs every token with HS256 using a keyring at `<user_data>/.secret_keys.json` (`data/.secret_keys.json` in the default deployment). The keyring holds an active key id (`kid`) and any older keys still trusted. Each token names its `kid` in its header, and a token with an unknown `kid` is rejected. Verification also refuses any other algorithm (including `none` and asymmetric ones), a malformed header, an expired token and an `iat` in the future, with no clock-skew leeway.
+
+- **Rotation.** With shell access, call `backend.core.security.rotate_signing_key()`. It makes a new active key and keeps the old ones, so tokens already issued keep verifying until they expire. Then `prune_signing_keys(keep_kids)` removes retired keys, and any token they signed stops verifying immediately.
+- **Static key.** Setting `SECRET_KEY` replaces the keyring with one static key and disables rotation. Use at least 256 bits of randomness, for example `openssl rand -hex 32`, as RFC 7518 requires for HS256. A shorter key still works, but PyJWT logs an `InsecureKeyLengthWarning`. The compose template does not pass `SECRET_KEY` to the api, so add it to the api service's `environment` if you use it.
+
+If the key file is empty, malformed, unreadable or a directory, the api still starts but logs an error that names the file and the fix. Until it is fixed, sign-in fails with a message pointing to the api log, and every token is rejected.
+
+| Problem | Fix |
+| --- | --- |
+| Empty or malformed key file (for example a blank file left by a full disk) | Delete the named file and restart. A new key is generated and everyone has to sign in again. |
+| Unreadable key file | Give the api read and write access to the data directory. |
+| Key file is a directory, usually left by a Docker bind mount of a host file that did not exist | Remove the directory and that bind mount, then restart. |
+
+## Encryption at Rest
+
+Nojoin encrypts these secrets in the database with a key derived from `DATA_ENCRYPTION_KEY`:
+
+- calendar provider OAuth client secrets
+- users' calendar access and refresh tokens
+- calendar push-notification channel secrets
+- CLI OAuth subscription credentials
+
+If `DATA_ENCRYPTION_KEY` is unset, Nojoin generates `data/.data_encryption_key` and uses that. Changing the key makes these secrets unreadable. MCP authorization codes and refresh tokens are stored only as SHA-256 hashes. Nojoin encrypts nothing else: the database, recordings and transcripts rely on the host's own storage security.
+
+## MCP Connector Access
+
+The MCP connector ([MCP.md](MCP.md)) runs its own OAuth 2.1 authorization server and issues `mcp` tokens.
+
+- An `mcp` token is bound to the `/mcp` resource and works nowhere else; every general API route rejects it.
+- Grants carry `mcp:read` and, if consented to since the write tools shipped, `mcp:write`. Any other scope, including the never-released `mcp:destroy`, is refused with `invalid_scope`. An older grant without `mcp:write` keeps working for reads, and the write tools tell the user to reconnect.
+- `mcp:write` covers recoverable changes only. No tool deletes data permanently or changes voiceprints, and assistants cannot write AI notes directly. The strongest deletion is moving a recording to the bin. Transcript corrections and speaker names made through MCP are labelled as AI edits in the app. `regenerate_notes` and `analyse_meeting` spend the user's own AI provider quota, and their tool descriptions say so.
+- Authorization codes are single-use, PKCE-bound (S256 only) and expire after 60 seconds. Refresh tokens last 180 days and rotate on every use. Reusing a rotated refresh token revokes the whole grant.
+- Dynamic client registration is open, as the MCP specification requires, but rate limited. It accepts only public PKCE clients with HTTPS or loopback HTTP redirect URIs, and a registration grants nothing: every grant needs consent from a signed-in user on an origin-checked page.
+- Users list and revoke grants under **Settings > Integrations > Connected apps**. Revoking a grant stops it refreshing, and its current access token expires within the hour. A password change, an admin reset or a revoke-all invalidates every MCP access token at once through `token_version`, but refresh tokens survive it, so a client that refreshes keeps its access. Only revoking the grant, or deactivating the account, cuts a connection off.
+- A user who must change their password before consenting is sent to `/settings/profile` and back to the consent page afterwards. The return target must resolve to `/oauth/authorize` on Nojoin's own origin, so a crafted link can at most open a consent screen.
+- `MCP_ANONYMOUS_DISCOVERY` (default `true`) lets `/mcp` answer five JSON-RPC methods without a token (`initialize`, `notifications/initialized`, `ping`, `tools/list` and `tools/call`), for clients such as Codex Desktop that cannot start OAuth from a bare `401`. An anonymous `tools/call` gets an in-band authentication challenge and runs nothing. The only data disclosed is generic tool metadata, the same on every deployment and published in MCP.md. Any other request, malformed ones included, gets `401`. Set the variable to `false` to send `401` to every unauthenticated request.
+- `MCP_ENABLED=false` removes the connector: `/mcp`, the OAuth endpoints and the discovery documents all return `404` ([DEPLOYMENT.md](DEPLOYMENT.md#configure-env)).
+
+## CLI OAuth Subscription Access
+
+Each user can route their AI inference through their own **Claude** (Pro/Max) or **ChatGPT** (Plus/Pro) subscription (the per-user **CLI OAuth** route, off until the user connects one). This is an accepted risk: it uses a consumer subscription contrary to the provider's terms (Anthropic's, or OpenAI's for ChatGPT and Codex).
+
+- The subscription token is encrypted at rest, one row per user and provider. It is never stored in user settings, logged or returned by the API.
+- Inference runs as a single-turn subprocess on the `worker-io` lane with tools off (the Claude Code CLI with no allowed tools, or `codex exec --sandbox read-only`), as uid 1000, under a wall-clock timeout. A prompt-injected transcript can therefore only produce text: it cannot write files, run a shell or make network calls. No OS sandbox is added, because the Agent SDK's sandbox governs tool use, which is already off, and its network lockdown would cut the CLI off from the provider.
+- The subprocess environment is scrubbed so an install-wide key cannot take precedence over the user's subscription. For Claude, `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` and `CLAUDE_CODE_USE_*` are removed and only `CLAUDE_CODE_OAUTH_TOKEN` is set. For ChatGPT, `OPENAI_API_KEY` and `CODEX_API_KEY` are left out. Unit tests lock both.
+- Any failure, an exhausted usage limit included, falls back to the server's primary and then secondary provider.
+- Usage records hold only a daily per-user rollup of token and request counts and the latest rate-limit reading. Prompt and response content is never stored.
+- Disconnecting under **Settings > Your AI** deletes the encrypted credential and the user's CLI working directory.
+- Both CLIs are installed unpinned, so each image build takes the latest release. The build verifies them against the npm registry's signatures and provenance attestations and fails if either does not verify. It records the installed versions at `/usr/local/share/nojoin/cli-versions.json`, and the SBOM attestation carries them too.
+
+## Browser Capture Security
+
+- Capture endpoints authenticate with the session cookie or an API token, apply the origin check above to the cookie, and enforce recording ownership on every init, segment, pause, resume, discard and finalize request.
+- The browser mediates capture permissions. Nojoin cannot capture the screen, a tab, system audio or the microphone unless the user grants it in the browser's picker.
+- Each user can have one capture in progress or paused at a time. When a tab loses its own capture before any audio reached the server, Nojoin discards it through the same ownership-checked endpoint as a manual discard, so this can never touch another tab's, device's or user's recording.
+- Segments the server has not yet acknowledged are kept in the browser's IndexedDB storage for the Nojoin origin, unencrypted like any other site data, until they are acknowledged or the recording is discarded or finalized from that browser. Only the recording's owner can upload them, and clearing the site's data deletes them.
+- Capture segments are accepted as FLAC, WAV, WebM, Ogg or MP4. A FLAC segment, which every current browser build sends, must decode as 16 kHz, two-channel, 16-bit audio or it is quarantined. The other formats come from tabs on an older build and are transcoded on the CPU lane before use.
+- The retired Companion app's endpoints return `410 Gone` and issue no credentials.
+
+For capture setup and troubleshooting, see [CAPTURE.md](CAPTURE.md).
+
+## Calendar Webhooks
+
+Google and Microsoft call the push endpoints (`/api/v1/calendar/webhooks/google` and `/api/v1/calendar/webhooks/microsoft`) without a user session. Each notification is authenticated by a per-subscription secret encrypted at rest (the Google channel token or the Microsoft `clientState`). The payload only signals a change: the handler queues an incremental sync that runs with the account's stored tokens. Unknown or mismatched notifications are ignored, and the response never reveals whether a subscription exists.
+
+## Outbound Connections and Anonymous Telemetry
+
+The server makes these outbound connections:
+
+- **Release metadata:** the GitHub Releases API (`api.github.com`), falling back to the GHCR tag list (`ghcr.io`) and the `docs/VERSION` file on `raw.githubusercontent.com`, for the update status in Settings and the admin update notice. Results are cached for ten minutes.
+- **Models:** the transcription, diarisation and embedding models, mostly from Hugging Face, when first-run setup or an administrator prepares them, or on first use.
+- **AI providers:** only when a non-local provider or a CLI OAuth subscription is in use. Local Ollama keeps inference on your own network.
+- **Calendar providers:** only when a user connects a Google or Microsoft account.
+- **Anonymous telemetry:** a daily heartbeat (a random install ID and the version), and optional diagnostics every six hours, sent from `worker-io` to `telemetry.nojoin.co.uk`. Neither contains meeting content, names, hostnames, URLs, credentials or model names, and the collector stores nothing derived from the connection. `NOJOIN_TELEMETRY_ENABLED=false` or a network block stops both without affecting anything else. [TELEMETRY.md](TELEMETRY.md) lists every field and opt-out.
+
+## Vulnerability Scanning and Severity Policy
+
+`scripts/release.py` scans every image with [Trivy](https://github.com/aquasecurity/trivy), for vulnerabilities and embedded secrets, before anything is pushed to the registry.
+
+- A CRITICAL or HIGH finding that has a fix available fails the release (`--severity CRITICAL,HIGH --ignore-unfixed`).
+- Findings with no upstream fix do not block the release. Nojoin cannot act on them, and the CUDA/PyTorch worker base image carries many. They stay visible in the scan output.
+- A fixed CRITICAL or HIGH finding can be accepted only by a short-lived, documented exception in [.github/trivyignore](../.github/trivyignore) that records the CVE id, the reason, an owner and a review-by date. The entry is removed once the fix lands, usually through a Dependabot base-image or dependency update.
+- Trivy cannot inspect the Codex CLI in `worker-io`, a stripped native binary, so the release script looks the installed Codex and Claude Code versions up in the GitHub advisory database and fails on any advisory ([DEVELOPMENT.md](DEVELOPMENT.md#release-gates)).
+- CI also runs an informational Trivy scan of the npm lockfiles and the pinned Python requirements in `requirements/`. It reports CRITICAL and HIGH findings without blocking merges.
+
+[DEPLOYMENT.md](DEPLOYMENT.md#verifying-an-image-before-deploying) covers image signing, provenance and SBOM attestations, the non-root runtime check, and how to verify an image.
 
 ## Emergency Security Release and Artifact Revocation
 
-When a confirmed vulnerability requires an out-of-band fix, maintainers follow an expedited release path. The goal is to ship a patched, verifiable image quickly without bypassing the integrity controls that make a release trustworthy.
-
 ### Expedited Release
 
-1. **Draft privately.** Develop the fix on a private branch or through a GitHub Security Advisory draft so the change is not disclosed before an image is available.
-2. **Bump and release.** Merge the `docs/VERSION` bump and run `scripts/release.py` exactly as for a normal release. The same gates run: a green `CI gate` on every commit since the last release, then the image build, vulnerability scan, the health and non-root smoke, and the CLI advisory lookup on the release host, followed by verification and cosign signing in the release workflow. The security urgency does not remove these gates; it only compresses the schedule.
-3. **Publish notes.** The automated release notes are generated for the tag. Add an explicit security section describing the affected versions, severity, and required operator action (for example, "upgrade immediately").
-4. **Advisory.** Publish or update the GitHub Security Advisory, request a CVE where appropriate, and credit the reporter per the coordinated-disclosure workflow above.
+An out-of-band security fix skips none of the release gates; only the schedule is compressed.
+
+1. **Draft privately.** Develop the fix on a private branch or in a GitHub Security Advisory draft, so nothing is disclosed before an image exists.
+2. **Bump and release.** Merge the `docs/VERSION` bump and run `scripts/release.py` as for a normal release: a green `CI gate` on every commit since the last release, the build, the vulnerability scan, the health and non-root smoke and the CLI advisory lookup on the release host, then verification and cosign signing in the release workflow.
+3. **Publish notes.** Add a security section to the generated release notes giving the affected versions, the severity and the required operator action, for example "upgrade immediately".
+4. **Advisory.** Publish or update the GitHub Security Advisory, request a CVE where appropriate, and credit the reporter.
 
 ### Artifact Revocation
 
-If a published image is found to be compromised or dangerously vulnerable, revoke it rather than relying on a newer tag alone, because deployments may still be pulling the old tag or digest.
+If a published image is compromised or dangerously vulnerable, revoke it as well as releasing a fix, because deployments may still pull the old tag or digest.
 
-1. **Stop the bleeding.** Repoint the rolling tags (`latest`, `major.minor`) to the patched image immediately by cutting the patched release; never leave `latest` pointing at a known-bad image.
-2. **Remove or mark the bad version.** Delete the affected immutable version tag and its digest from the GitHub Container Registry package, or, where deletion would break audit history, mark the version as deprecated and document it in the advisory. Note that container digests cannot be silently rewritten — a removed digest fails to pull, which is the intended fail-closed behaviour.
-3. **Invalidate trust signals.** Because images are signed by digest, a revoked digest should be called out in the advisory as no-longer-to-be-trusted. Operators verifying signatures should treat the advisory's listed bad digests as untrusted even if a historical signature exists.
-4. **Notify operators.** Communicate the revocation through the GitHub Security Advisory and the release notes, including the bad digests, the fixed digest to upgrade to, and any data-safety steps. Operators who pin by digest must be told the exact digest to move to.
-5. **Rotate exposed secrets.** If the incident could have exposed signing material, deployment credentials, or registry tokens, rotate them and record the rotation in the advisory timeline.
-
-Operators should subscribe to repository releases and security advisories so that emergency releases and revocations reach them promptly.
+1. **Stop the bleeding.** Cut the patched release so the rolling tags (`latest`, `major.minor`) move to it. Never leave `latest` on a known-bad image.
+2. **Remove or mark the bad version.** Delete the version tag and its digest from the GitHub Container Registry, or, where deletion would break audit history, mark it deprecated in the advisory. A deleted digest fails to pull.
+3. **Invalidate trust signals.** Signatures attach to digests, so list every bad digest in the advisory as untrusted, valid signature or not.
+4. **Notify operators.** Give the bad digests, the exact fixed digest to move to and any data-safety steps in the advisory and the release notes.
+5. **Rotate exposed secrets.** If signing material, deployment credentials or registry tokens could have been exposed, rotate them and record it in the advisory timeline.

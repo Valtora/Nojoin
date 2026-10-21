@@ -1,211 +1,141 @@
 # Nojoin Calendar Guide
 
-Nojoin supports Google Calendar and Microsoft Outlook calendar integration for dashboard month and agenda views.
-
-This guide covers both sides of the feature:
-
-- Admin and owner setup of the installation OAuth credentials.
-- End-user connection of their own calendar accounts.
-- Dashboard behaviour, colours, links, and troubleshooting.
-
-## Overview
-
-Calendar integration has two distinct layers:
-
-1. The installation must be configured with Google and/or Microsoft OAuth credentials.
-2. Individual users then connect their own accounts and choose which calendars to sync.
-
-Users do not enter OAuth client IDs, client secrets, or tenant IDs themselves.
+Nojoin shows Google Calendar and Microsoft Outlook events on the dashboard. An Owner or Admin registers a Google or Microsoft OAuth app for the installation once; each user then connects their own calendar accounts. Users never enter client IDs, secrets or tenant IDs.
 
 ## Before You Begin
 
-- Use a stable HTTPS browser origin whenever possible.
-- Set `WEB_APP_URL` to the exact public browser origin used to access Nojoin.
-- Set a stable `DATA_ENCRYPTION_KEY` before storing provider secrets or connecting user calendars.
-- If you deploy behind a reverse proxy, make sure the browser origin and provider callback origin are identical.
+- Set `WEB_APP_URL` to the exact origin users open Nojoin at, ideally a stable HTTPS one. Nojoin builds the OAuth redirect URI and the webhook addresses from it, so behind a reverse proxy it must match the public origin.
+- Set a stable `DATA_ENCRYPTION_KEY` before anyone stores provider secrets or connects a calendar. It encrypts both.
 
-For the full hosting context, see [DEPLOYMENT.md](DEPLOYMENT.md).
+[DEPLOYMENT.md](DEPLOYMENT.md) covers both variables.
 
 ## Admin Configuration Options
 
-You can provide the installation OAuth credentials in either of these ways:
+Save the app credentials in either of two places:
 
-1. Preferred: sign in as an Owner or Admin and save them in **Settings > Integrations**, under **Advanced**, in **Google calendar sign-in** or **Microsoft calendar sign-in**. Until they are saved, the **Calendars** card offers administrators an **Add app credentials** link that opens them.
-2. Alternative: set the matching environment variables and restart the stack.
+1. **Settings > Integrations**, under **Advanced**, in **Google calendar sign-in** or **Microsoft calendar sign-in** (preferred). Each card shows the exact **Redirect URI** to register with the provider. Until a provider is set up, the **Calendars** card offers administrators an **Add app credentials** link to these cards.
+2. Environment variables, followed by a restart: `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `MICROSOFT_OAUTH_CLIENT_ID`, `MICROSOFT_OAUTH_CLIENT_SECRET` and `MICROSOFT_OAUTH_TENANT_ID` (default `common`).
 
-Supported environment variables:
-
-- `WEB_APP_URL`
-- `DATA_ENCRYPTION_KEY`
-- `GOOGLE_OAUTH_CLIENT_ID`
-- `GOOGLE_OAUTH_CLIENT_SECRET`
-- `MICROSOFT_OAUTH_CLIENT_ID`
-- `MICROSOFT_OAUTH_CLIENT_SECRET`
-- `MICROSOFT_OAUTH_TENANT_ID`
-
-`DATA_ENCRYPTION_KEY` is not an OAuth credential, but it is what keeps stored calendar provider secrets and user calendar tokens readable across upgrades and infrastructure changes.
-
-## End-User Connection Flow
-
-Once the installation credentials exist:
-
-1. Open **Settings > Integrations** and go to **Calendars**.
-2. Select **Connect** beside **Google Calendar** or **Outlook Calendar**.
-3. Complete the provider sign-in and consent flow.
-4. Return to Nojoin and choose which calendars to sync.
-5. Optionally apply per-calendar colour overrides.
-
-## Dashboard Behaviour
-
-Connected calendars feed the dashboard month grid and agenda, alongside unlinked Nojoin recordings in Nojoin orange. Each calendar keeps its own colour, which can be overridden per calendar. [USAGE.md](USAGE.md#calendar-surface) describes the dashboard itself. With no calendar connected and no recordings in view, the dashboard shows an empty state rather than mock data.
-
-A recording can be linked to the calendar event it belongs to, which gives notes and Meeting Edge the event's description and attendees. A linked recording appears on the dashboard only as its calendar event.
-
-A recording stays linked through every sync for as long as its event exists. Nojoin keeps events from 12 months back to 12 months ahead. When a sync cannot use the provider's change cursor, for example once a month when that range moves on, it fetches the calendar in full and updates each stored event in place. Deleting an event from the calendar, or removing the whole calendar from the account, removes it from Nojoin too and unlinks its recording. An event that has only fallen out of the range is kept for as long as a recording links to it.
-
-## Sync Frequency and Live Sync
-
-Nojoin keeps connected calendars up to date in two complementary ways.
-
-- **Scheduled sync (always on):** A background scheduler refreshes every connected account that has at least one selected calendar every 15 minutes. Sync is incremental, using each provider's change cursor (Google `syncToken`, Microsoft Graph `delta`), so only changes since the last run are fetched. This runs entirely on the worker and needs no inbound network access.
-- **Live sync (optional push notifications):** When enabled and supported, Nojoin registers a per-calendar push subscription with the provider so changes arrive by webhook within seconds instead of waiting for the next 15-minute cycle. Scheduled sync keeps running as a safety net, so calendars stay correct even if a push subscription lapses.
-
-You can also trigger an immediate refresh at any time with the **Sync now** action on a connected account.
-
-### Enabling Live Sync
-
-Live sync is off by default and is turned on per provider by an Owner or Admin with the **Live sync** switch in **Settings > Integrations**, under **Advanced**.
-
-Requirements:
-
-- The installation must be reachable from the public internet over HTTPS at the exact `WEB_APP_URL` origin. Localhost or LAN-only deployments cannot receive provider webhooks and should rely on scheduled sync.
-- For **Google**, the webhook domain must be verified in the Google Cloud project, because Google only delivers push notifications to verified domains.
-- For **Microsoft**, no extra verification is needed; Microsoft validates the webhook automatically when the subscription is created.
-
-When live sync is active for a connected account, that account shows a **Live sync** badge in **Settings > Integrations > Calendars**. If a subscription cannot be created (for example, the instance is not publicly reachable, or the Google domain is unverified), Nojoin records the failure and continues with scheduled sync; no data is lost.
-
-Nojoin exposes these webhook endpoints for the providers to call:
-
-- Google: `<public-origin>/api/v1/calendar/webhooks/google`
-- Microsoft: `<public-origin>/api/v1/calendar/webhooks/microsoft`
+Values saved in Settings take precedence over the environment variables.
 
 ## Google OAuth Setup
 
-1. Open Google Cloud Console and create or select the project you want to use.
+1. In Google Cloud Console, create or select a project.
 2. Enable the **Google Calendar API**.
-3. Configure the OAuth consent screen.
-4. Add the scopes used by Nojoin:
+3. Configure the OAuth consent screen with these scopes:
    - `openid`
    - `email`
    - `profile`
    - `https://www.googleapis.com/auth/calendar.readonly`
-5. If the app remains in testing mode, add every Google account that needs access as a test user.
-6. Create an OAuth client ID of type **Web application**.
-7. Add this redirect URI exactly:
+4. While the app is in testing mode, add every Google account that will connect as a test user.
+5. Create an OAuth client ID of type **Web application** with this redirect URI:
 
    ```text
    <public-origin>/api/v1/calendar/oauth/google/callback
    ```
 
-8. Save the client.
-9. Enter the generated client ID and client secret in **Settings > Integrations** or the matching environment variables.
-10. Optional, for Live Sync only: verify the Nojoin public domain under the project's **Domain verification** settings so Google will deliver calendar push notifications to `<public-origin>/api/v1/calendar/webhooks/google`. Scheduled 15-minute sync works without this step.
+6. Enter the client ID and client secret in Nojoin.
+7. For [Live Sync](#enabling-live-sync) only: verify the Nojoin domain under the project's **Domain verification** settings, so Google will deliver push notifications.
 
 ## Microsoft OAuth Setup
 
-Microsoft setup is slightly more sensitive because tenant choice affects which accounts can sign in.
+The supported account type decides who can sign in:
 
-### Supported Account Type
-
-- In the current Entra registration UI, use **Any Entra ID Tenant + Personal Microsoft Accounts** if you want both Microsoft 365 work or school accounts and personal Outlook.com or Hotmail accounts.
-
-- Use **Accounts in this organisational directory only** only if you deliberately want a single-tenant work or school deployment.
+- **Any Entra ID Tenant + Personal Microsoft Accounts** allows both Microsoft 365 work or school accounts and personal Outlook.com or Hotmail accounts. Use tenant `common` in Nojoin.
+- **Accounts in this organisational directory only** restricts sign-in to one work or school tenant. Use that tenant's ID in Nojoin instead of `common`.
 
 ### Registration Steps
 
-1. Open Microsoft Entra admin centre.
-2. Go to **Identity > Applications > App registrations**.
-3. Create a new registration.
-4. Choose the supported account type that matches your intended users. For mixed Microsoft 365 and personal Microsoft account support, select **Any Entra ID Tenant + Personal Microsoft Accounts**.
-5. Add this redirect URI as a **Web** platform redirect:
+1. In the Microsoft Entra admin centre, go to **Identity > Applications > App registrations** and create a new registration.
+2. Choose the supported account type for your users.
+3. Add this redirect URI as a **Web** platform redirect:
 
    ```text
    <public-origin>/api/v1/calendar/oauth/microsoft/callback
    ```
 
-6. Copy the **Application (client) ID**.
-7. If the app is single-tenant, also copy the **Directory (tenant) ID**.
-8. Open **API permissions** and add delegated permissions for:
+4. Copy the **Application (client) ID**, and for a single-tenant app the **Directory (tenant) ID**.
+5. Under **API permissions**, add these delegated permissions (no application permissions):
    - `openid`
    - `profile`
    - `email`
    - `offline_access`
    - `User.Read`
    - `Calendars.Read`
-9. Do not add application permissions for this user-consent flow.
-10. Open **Certificates & secrets** and create a client secret.
-11. Copy the secret **Value** immediately. Do not use the **Secret ID**.
-12. Save the values in **Settings > Integrations** or the matching environment variables.
-13. Live Sync needs no extra Microsoft setup: the existing `Calendars.Read` permission covers change-notification subscriptions, and Microsoft validates the webhook automatically. It still requires Nojoin to be publicly reachable over HTTPS at `WEB_APP_URL`.
+6. Under **Certificates & secrets**, create a client secret and copy its **Value** straight away. Do not use the **Secret ID**.
+7. Enter the client ID, secret value and tenant in Nojoin.
 
-### Tenant Selection Rules
+Live sync needs no extra Microsoft setup: `Calendars.Read` covers change-notification subscriptions.
 
-- Use `common` only when the app registration supports both organisational directories and personal Microsoft accounts.
-- If the app is single-tenant, use the explicit tenant ID instead of `common`.
-- If the app is meant to support personal Microsoft accounts but Nojoin is pointed at a specific tenant GUID, sign-in may succeed while the first calendar read still fails. In that case, switch back to `common`, save, disconnect the failed connection, and reconnect it.
+## Connecting a Calendar
 
-## Verification Checklist
+1. Open **Settings > Integrations** and go to **Calendars**.
+2. Select **Connect** beside **Google Calendar** or **Outlook Calendar**, then sign in and approve access at the provider.
+3. Back in Nojoin, your primary calendar is selected and synced. Tick any other calendars you want, and change a calendar's colour if you like.
 
-After setup:
+Each connected account has **Sync now** and **Disconnect** buttons, and shows its status: **Up to date**, **Syncing**, **Needs attention** or **Reconnect required**.
 
-1. Sign in as a normal user.
-2. Connect Google or Microsoft from **Settings > Integrations > Calendars**.
-3. Approve the provider consent flow.
-4. Select one or more calendars.
-5. Confirm the dashboard shows calendar markers and agenda items.
+To check a new setup, connect an account as a normal user, select a calendar, and confirm the dashboard shows its events.
+
+## Dashboard and Linked Recordings
+
+Selected calendars appear on the dashboard month grid and agenda, each in its own colour, alongside unlinked Nojoin recordings in orange. [USAGE.md](USAGE.md#calendar-surface) describes the dashboard.
+
+When a recording finishes processing, Nojoin links it to the calendar event it clearly overlaps, if exactly one does. To link or change an event yourself, use **Link calendar event** in the recording's header, which lists events within two hours of the recording. A linked recording gives notes and Meeting Edge the event's description and attendees, and appears on the dashboard as its event.
+
+## Sync Behaviour
+
+Nojoin keeps events from 12 months back to 12 months ahead. Every 15 minutes the worker syncs each connected account with at least one selected calendar, fetching only what changed since the last run. When the provider's change cursor cannot be used, for example once a month when the 12-month range moves on, Nojoin fetches the calendar in full and updates each stored event in place, so linked recordings stay linked. An account showing **Reconnect required** is skipped until you reconnect it.
+
+Deleting an event at the provider, removing a calendar from the account, or disconnecting the account removes those events from Nojoin and unlinks their recordings. An event that has only fallen out of the 12-month range is kept for as long as a recording links to it.
+
+### Enabling Live Sync
+
+Live sync is optional. With it on, the provider sends changes to Nojoin by webhook within seconds. The 15-minute sync keeps running either way.
+
+An Owner or Admin turns it on per provider with the **Live sync** switch in **Settings > Integrations**, under **Advanced**. It requires:
+
+- Nojoin reachable from the public internet over HTTPS at exactly `WEB_APP_URL`. Localhost and LAN-only installations cannot receive webhooks.
+- For Google, the webhook domain verified in the Google Cloud project.
+- A reverse proxy or tunnel that forwards `POST` requests to these paths and preserves the `Host` header:
+  - `<public-origin>/api/v1/calendar/webhooks/google`
+  - `<public-origin>/api/v1/calendar/webhooks/microsoft`
+
+An account with live sync running shows a **Live sync** badge in **Settings > Integrations > Calendars**. If Nojoin cannot set up a subscription, it records the failure, retries no more than every 30 minutes, and carries on with the 15-minute sync.
 
 ## Troubleshooting
 
 ### Redirect Origin Is Wrong
 
-- Confirm `WEB_APP_URL` matches the exact browser origin users open.
-- Confirm the provider registration uses the same callback origin.
+Confirm that `WEB_APP_URL` matches the origin users open, and that the provider registration uses the redirect URI shown in **Settings > Integrations**.
 
 ### `AADSTS50194` with Microsoft
 
-Your Microsoft app is still single-tenant while Nojoin is using `common`.
-
-Fix one of these:
-
-- Change the app registration to **Any Entra ID Tenant + Personal Microsoft Accounts**.
-- Or set Nojoin to the explicit tenant ID instead of `common`.
+The Microsoft app is single-tenant while Nojoin uses `common`. Either change the registration to **Any Entra ID Tenant + Personal Microsoft Accounts**, or set Nojoin's tenant to the explicit tenant ID.
 
 ### Microsoft Sign-In Works but Calendar Sync Still Fails
 
-If you intend to support personal Microsoft accounts or mixed account types, confirm Nojoin is using `common`, then disconnect and reconnect the Outlook calendar connection.
+If the app should accept personal or mixed account types but Nojoin points at a specific tenant ID, sign-in can succeed while the first calendar read fails. Set the tenant back to `common`, save, then disconnect and reconnect the Outlook calendar.
 
 ### `invalid_client` During Token Exchange
 
-Make sure Nojoin stores the client secret **Value**, not the **Secret ID**.
+Nojoin holds the **Secret ID** instead of the secret **Value**. Enter the **Value**.
 
 ### Admin Approval Message in Microsoft
 
-The delegated permissions exist, but the tenant blocks user consent. A tenant administrator must grant consent.
+The tenant blocks user consent for the delegated permissions. A tenant administrator must grant consent.
 
 ### Google Testing Mode Blocks a User
 
-If the Google app is still in testing mode, that Google account must be listed as a test user until the consent screen is published.
+While the Google app is in testing mode, only listed test users can connect. Add the account as a test user or publish the consent screen.
+
+### Calendars Disconnect After the Encryption Key Changes
+
+If the database outlives its encryption key, for example because `DATA_ENCRYPTION_KEY` changed or was never set and the data directory was replaced, Nojoin can no longer read the stored secrets. It removes the saved provider credentials, falling back to the environment variables, and removes each user's connection, so users must connect their calendars again. A Nojoin backup restores onto a different key without this problem ([BACKUP_RESTORE.md](BACKUP_RESTORE.md)).
 
 ### Live Sync Not Activating
 
-If a connected account never shows the **Live sync** badge:
-
-- Confirm the provider's **Live sync** switch is on in **Settings > Integrations**, under **Advanced**.
-- Confirm Nojoin is reachable from the public internet over HTTPS at exactly `WEB_APP_URL`. Localhost or LAN-only deployments cannot receive webhooks; scheduled 15-minute sync still works.
-- For Google, confirm the webhook domain is verified in the Google Cloud project.
-- Confirm a reverse proxy or tunnel forwards `POST` requests to `/api/v1/calendar/webhooks/google` and `/api/v1/calendar/webhooks/microsoft` and preserves the `Host` header.
-
-Live sync is an accelerator only. When it cannot be established, calendars still refresh on the 15-minute schedule.
+If an account never shows the **Live sync** badge, check each requirement under [Enabling Live Sync](#enabling-live-sync), starting with the provider's **Live sync** switch. Calendars still refresh every 15 minutes.
 
 ## Related Docs
 
