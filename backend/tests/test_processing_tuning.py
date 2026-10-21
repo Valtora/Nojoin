@@ -22,11 +22,11 @@ from backend.utils import transcript_utils
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FRONTEND_MIRROR = REPO_ROOT / "frontend" / "src" / "lib" / "processingTuning.json"
 
-# The values every reader used before any of them could be overridden. A change
-# here is a change to processing defaults, which this feature promised not to make.
+# The shipped defaults. A change here changes processing for every user who has
+# not set the value, so it needs an upgrade note in docs/DEPLOYMENT.md.
 TODAYS_LITERALS = {
     "vad_threshold": 0.5,
-    "asr_word_end_padding_s": 0.2,
+    "asr_word_length_cap_s": 0.4,
     "phantom_max_duration_s": 3.0,
     "phantom_max_segments": 3,
     "phantom_embedding_floor": 0.35,
@@ -59,8 +59,8 @@ def test_module_constants_keep_todays_literals() -> None:
     [
         ("vad_threshold", 0.15),
         ("vad_threshold", 0.90),
-        ("asr_word_end_padding_s", 0.05),
-        ("asr_word_end_padding_s", 0.80),
+        ("asr_word_length_cap_s", 0.2),
+        ("asr_word_length_cap_s", 0.45),
         ("phantom_max_duration_s", 0),
         ("phantom_max_segments", 20),
         ("phantom_merge_threshold", 1),
@@ -77,6 +77,11 @@ def test_boundary_values_are_accepted(key, value) -> None:
         ("vad_threshold", 0.1499),
         ("vad_threshold", 0.95),
         ("phantom_merge_threshold", 0.04),
+        # The old word end padding range, 0.05 to 0.80, reaches past both ends.
+        ("asr_word_length_cap_s", 0.05),
+        ("asr_word_length_cap_s", 0.19),
+        ("asr_word_length_cap_s", 0.46),
+        ("asr_word_length_cap_s", 0.80),
         ("phantom_max_segments", 21),
         ("phantom_max_segments", -1),
         ("phantom_max_segments", 2.5),

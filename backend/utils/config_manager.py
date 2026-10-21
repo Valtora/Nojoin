@@ -72,6 +72,13 @@ LEGACY_AUTOMATIC_AI_SETTING_KEYS = frozenset(
     }
 )
 
+# Retired settings a user's row may still hold. They are dropped from the row
+# on its next save and never shown; config.json drops them on load, as it does
+# every key outside the tables below. asr_word_end_padding_s became
+# asr_word_length_cap_s with a new meaning, so a stored value is not carried
+# over.
+RETIRED_USER_SETTING_KEYS = frozenset({"asr_word_end_padding_s"})
+
 # The transcription engine and its model. An administrator picks them under
 # Settings > Transcription, and every recording on the install uses them.
 TRANSCRIPTION_SETTING_KEYS = (

@@ -476,7 +476,7 @@ export interface Settings {
   // Processing tuning (lib/processingTuning.ts). null means inherit the
   // install's value, else the shipped default.
   vad_threshold?: number | null;
-  asr_word_end_padding_s?: number | null;
+  asr_word_length_cap_s?: number | null;
   phantom_max_duration_s?: number | null;
   phantom_max_segments?: number | null;
   phantom_embedding_floor?: number | null;

@@ -25,6 +25,7 @@ from backend.utils.config_manager import (
     INSTALL_WIDE_AI_SETTING_KEYS,
     MEETING_EDGE_CONTEXT_LEVEL_MAX,
     MEETING_EDGE_CONTEXT_LEVEL_MIN,
+    RETIRED_USER_SETTING_KEYS,
     SENSITIVE_KEYS,
     TRANSCRIPTION_BACKENDS,
     TRANSCRIPTION_SETTING_KEYS,
@@ -120,7 +121,7 @@ class SettingsUpdate(BaseModel):
     # Processing tuning (backend/processing/processing_tuning.py). Explicit null
     # resets a value to inherit.
     vad_threshold: Optional[float] = None
-    asr_word_end_padding_s: Optional[float] = None
+    asr_word_length_cap_s: Optional[float] = None
     phantom_max_duration_s: Optional[float] = None
     phantom_max_segments: Optional[int] = None
     phantom_embedding_floor: Optional[float] = None
@@ -487,7 +488,7 @@ def _get_mutable_user_settings(user_settings: dict | None) -> dict[str, Any]:
     sanitized = strip_legacy_automatic_ai_settings(
         dict(user_settings) if user_settings else {}
     )
-    for key in INSTALL_WIDE_ONLY_USER_SETTING_KEYS:
+    for key in INSTALL_WIDE_ONLY_USER_SETTING_KEYS | RETIRED_USER_SETTING_KEYS:
         sanitized.pop(key, None)
     return sanitized
 

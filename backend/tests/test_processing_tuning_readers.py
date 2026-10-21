@@ -167,10 +167,10 @@ def test_live_engine_config_carries_the_owners_vad_threshold(monkeypatch):
     assert live_config["vad_threshold"] == 0.3
 
 
-def test_live_engine_config_carries_the_owners_word_end_padding(monkeypatch):
-    live_config = _resolve_live(monkeypatch, {"asr_word_end_padding_s": 0.5})
+def test_live_engine_config_carries_the_owners_word_length_cap(monkeypatch):
+    live_config = _resolve_live(monkeypatch, {"asr_word_length_cap_s": 0.3})
 
-    assert live_config["asr_word_end_padding_s"] == 0.5
+    assert live_config["asr_word_length_cap_s"] == 0.3
 
 
 @pytest.mark.parametrize(
@@ -184,17 +184,17 @@ def test_live_engine_config_drops_an_unusable_value_warning_when_asked(
     with caplog.at_level(logging.WARNING):
         live_config = _resolve_live(
             monkeypatch,
-            {"vad_threshold": 1.7, "asr_word_end_padding_s": 10**400},
+            {"vad_threshold": 1.7, "asr_word_length_cap_s": 10**400},
             warn_unusable=warn_unusable,
         )
 
     assert live_config["vad_threshold"] is None
-    assert live_config["asr_word_end_padding_s"] is None
+    assert live_config["asr_word_length_cap_s"] is None
     assert ("vad_threshold" in caplog.text) is warned
-    assert ("asr_word_end_padding_s" in caplog.text) is warned
+    assert ("asr_word_length_cap_s" in caplog.text) is warned
 
 
-# --- onnx-asr word end padding -------------------------------------------------
+# --- onnx-asr word length cap --------------------------------------------------
 
 
 class _Recognized:
@@ -205,25 +205,25 @@ class _Recognized:
     timestamps = [0.0, 1.2]
 
 
-def test_default_padding_ends_the_word_early_and_splits_the_segment() -> None:
+def test_default_cap_ends_the_word_early_and_keeps_one_segment() -> None:
     from backend.processing.engines.onnx_asr_engine import map_onnx_asr_recognition
 
     result = map_onnx_asr_recognition(_Recognized(), audio_duration=2.0)
 
-    assert result["segments"][0]["words"][0]["end"] == 0.2
-    assert len(result["segments"]) == 2
+    assert result["segments"][0]["words"][0]["end"] == 0.4
+    # The 0.8 s left before the next word is not over the pause threshold.
+    assert len(result["segments"]) == 1
 
 
-def test_wider_padding_extends_the_word_and_keeps_one_segment() -> None:
+def test_narrower_cap_ends_the_word_earlier_and_splits_the_segment() -> None:
     from backend.processing.engines.onnx_asr_engine import map_onnx_asr_recognition
 
     result = map_onnx_asr_recognition(
-        _Recognized(), audio_duration=2.0, word_end_pad_s=0.5
+        _Recognized(), audio_duration=2.0, word_length_cap_s=0.2
     )
 
-    assert result["segments"][0]["words"][0]["end"] == 0.5
-    # The 0.7 s left before the next word is under the pause threshold.
-    assert len(result["segments"]) == 1
+    assert result["segments"][0]["words"][0]["end"] == 0.2
+    assert len(result["segments"]) == 2
 
 
 def _onnx_engine_over(tmp_path, monkeypatch, seconds: float):
@@ -250,9 +250,9 @@ def _onnx_engine_over(tmp_path, monkeypatch, seconds: float):
 
 @pytest.mark.parametrize(
     ("config", "expected_end"),
-    [(None, 0.2), ({}, 0.2), ({"asr_word_end_padding_s": 0.5}, 0.5)],
+    [(None, 0.4), ({}, 0.4), ({"asr_word_length_cap_s": 0.3}, 0.3)],
 )
-def test_onnx_engine_reads_padding_from_its_config(
+def test_onnx_engine_reads_the_cap_from_its_config(
     tmp_path, monkeypatch, config, expected_end
 ):
     engine, audio_path = _onnx_engine_over(tmp_path, monkeypatch, 2.0)
@@ -262,14 +262,14 @@ def test_onnx_engine_reads_padding_from_its_config(
     assert result["segments"][0]["words"][0]["end"] == expected_end
 
 
-def test_onnx_engine_passes_padding_to_every_window(tmp_path, monkeypatch):
+def test_onnx_engine_passes_the_cap_to_every_window(tmp_path, monkeypatch):
     from backend.processing.engines import onnx_asr_engine
 
     # 4 s windows over 10 s of a steady signal: cuts at 2, 4 and 6 s.
     monkeypatch.setattr(onnx_asr_engine, "MAX_CHUNK_DURATION_S", 4.0)
     engine, audio_path = _onnx_engine_over(tmp_path, monkeypatch, 10.0)
 
-    result = engine.transcribe(audio_path, {"asr_word_end_padding_s": 0.5})
+    result = engine.transcribe(audio_path, {"asr_word_length_cap_s": 0.3})
 
     first_words = [
         segment["words"][0]
@@ -277,15 +277,15 @@ def test_onnx_engine_passes_padding_to_every_window(tmp_path, monkeypatch):
         if segment["words"][0]["word"] == " hello"
     ]
     assert len(first_words) == 4
-    assert all(round(word["end"] - word["start"], 6) == 0.5 for word in first_words)
+    assert all(round(word["end"] - word["start"], 6) == 0.3 for word in first_words)
 
 
-def test_onnx_engine_ignores_unusable_padding(tmp_path, monkeypatch):
+def test_onnx_engine_ignores_an_unusable_cap(tmp_path, monkeypatch):
     engine, audio_path = _onnx_engine_over(tmp_path, monkeypatch, 2.0)
 
-    result = engine.transcribe(audio_path, {"asr_word_end_padding_s": 0.0})
+    result = engine.transcribe(audio_path, {"asr_word_length_cap_s": 0.0})
 
-    assert result["segments"][0]["words"][0]["end"] == 0.2
+    assert result["segments"][0]["words"][0]["end"] == 0.4
 
 
 # --- phantom speaker filter ----------------------------------------------------

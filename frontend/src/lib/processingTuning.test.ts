@@ -15,7 +15,7 @@ describe("validateProcessingTuning", () => {
     [{ vad_threshold: 0.95 }],
     [{ phantom_merge_threshold: 0.04 }],
     [{ phantom_max_segments: 2.5 }],
-    [{ asr_word_end_padding_s: Number.NaN }],
+    [{ asr_word_length_cap_s: Number.NaN }],
   ])("rejects %o", (settings) => {
     expect(validateProcessingTuning(settings)).not.toBeNull();
   });
