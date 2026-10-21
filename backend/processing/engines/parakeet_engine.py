@@ -14,3 +14,4 @@ class ParakeetEngine(OnnxAsrEngine):
     config_key = "parakeet_model"
     default_model_id = "parakeet-tdt-0.6b-v3"
     onnx_id_map = {"parakeet-tdt-0.6b-v3": "nemo-parakeet-tdt-0.6b-v3"}
+    recovers_skipped_speech = True

@@ -197,9 +197,12 @@ The playback proxy is built by `generate_proxy_task` on the CPU lane, queued alo
 The engine and its model are install-wide settings.
 
 - **Whisper** re-decodes a window by sampling when its greedy output fails a quality check. The sampling is seeded, so reprocessing on the same image gives the same transcript.
-- **Parakeet and Canary** share `OnnxAsrEngine`. They transcribe in windows of 15 to 30 s that close at a pause, and skip a window with no signal (`_chunk_boundaries` in `onnx_asr_engine.py`).
+- **Parakeet and Canary** share `OnnxAsrEngine`. They transcribe in windows of 15 to 30 s that close at a pause (either may be shorter when less than 30.2 s is left), and skip a window with no signal (`_chunk_boundaries` in `onnx_asr_engine.py`).
 - onnx-asr returns no token timings for **Canary**, so each Canary window is one segment and takes its dominant speaker in the merge.
 - For **Parakeet** it returns each token's start only. `map_onnx_asr_recognition` ends each word at the earliest of the next word's start, the window's end, and its start plus `asr_word_length_cap_s` (default 0.4 s), never before the word starts. A word stretched across a pause could otherwise end inside the next speaker's turn and be given to them. The cap cannot exceed flip smoothing's default maximum word length (0.45 s), so a capped word stays short enough to smooth.
+- **Parakeet** decodes once more any stretch of a decoded window (input of 30 s or less is one window) that holds 3 s or more of kept audio and no word, in calls of at most 20 s (`onnx_asr_backstop.py`). A stretch ends at the pause before the next word or 0.16 s before its stamp. It reads exact zeros as VAD silence, so it runs only when `VAD_MUTED_INPUT` says the VAD stage muted the audio: with VAD off, in the live lane and with Canary nothing changes.
+- A stretch that retry leaves wordless is decoded a second time from the last subtoken of the word before it, keeping only the words that start inside the stretch. A stretch with no word before it in its window gets no second try.
+- Invariant: a stretch is retried at most twice, and nothing is retried a third time. Stretches don't overlap, and neither do second tries, so the retries decode at most twice the window's own audio. One INFO line per recording counts both retries, what the second recovered or skipped, and what is still wordless.
 
 Each user's transcription language reaches live, final, import and reprocess ASR and is part of the ASR result hash. Whisper gets a language only when one is selected, Canary gets its source-language parameter, and Parakeet always auto-detects.
 

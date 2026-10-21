@@ -26,9 +26,12 @@ from __future__ import annotations
 import sys
 import types
 
+import pytest
+
 from backend.models.recording import ClientStatus, RecordingStatus
 from backend.models.transcript import Transcript
 from backend.processing import transcribe as real_transcribe
+from backend.processing.engines.base import VAD_MUTED_INPUT
 from backend.worker import tasks as tasks_module
 
 
@@ -1120,3 +1123,32 @@ def test_combine_stage_receives_the_owners_merged_settings(monkeypatch):
     _run_task(monkeypatch, session, recording_id=721, llm_config=llm_config)
 
     assert seen["config"]["word_flip_max_duration_s"] == 0
+
+
+@pytest.mark.parametrize("enable_vad", [True, False])
+def test_asr_stage_is_told_whether_vad_muted_its_audio(monkeypatch, enable_vad):
+    """An engine may decode skipped speech again only in VAD-muted audio, so
+    the stage says whether VAD ran, whatever the stored settings hold."""
+    recording = _FakeRecording(722)
+    transcript = _FakeTranscript(722)
+    session = _FakeSession(recording, transcript)
+    _install_happy_path_modules(monkeypatch)
+    seen: dict = {}
+
+    def _capture_asr(path, config=None):
+        seen["config"] = dict(config)
+        return {"text": "hello", "language": "en", "segments": []}
+
+    _install(
+        monkeypatch,
+        "backend.processing.transcribe",
+        transcribe_audio=_capture_asr,
+        release_model_cache=lambda: None,
+    )
+    llm_config = _tuned_llm_config(
+        enable_vad=enable_vad, **{VAD_MUTED_INPUT: not enable_vad}
+    )
+
+    _run_task(monkeypatch, session, recording_id=722, llm_config=llm_config)
+
+    assert seen["config"][VAD_MUTED_INPUT] is enable_vad

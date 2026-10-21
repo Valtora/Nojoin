@@ -1,5 +1,11 @@
 from abc import ABC, abstractmethod
 
+# Config key the finalize pipeline sets on the config it hands an engine: True
+# when VAD muted the audio, so every sample outside the speech VAD kept is an
+# exact zero. An engine may rely on that only when it is set; the live lane
+# never sets it.
+VAD_MUTED_INPUT = "vad_muted_input"
+
 
 class TranscriptionEngine(ABC):
     """Base of a pluggable transcription engine.
