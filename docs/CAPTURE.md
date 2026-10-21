@@ -1,254 +1,180 @@
 # Browser Capture Guide
 
-Nojoin records live meetings directly from the web app using browser capture APIs. There is no desktop helper or native tray process in the browser-only release.
-
-Use this guide when you are preparing a browser for live recording, choosing what to share, troubleshooting missing audio, or recovering a paused recording.
+Nojoin records live meetings in the browser. This guide covers which browsers can record, what to share, and what to do when audio goes missing.
 
 ## Supported Environments
 
-Live capture has two browser modes:
-
-- **Shared-audio capture** on Chrome for Windows, Linux, and macOS, and on Chromium-family browsers for Windows and Linux. Other Chromium-family browsers on macOS are best-effort. This captures the shared tab, window, or screen audio plus microphone audio when the browser grants a shared-audio track.
-- **Microphone-only capture** on Chrome for Android and iOS. This records the phone microphone only; mobile browsers do not expose the shared tab, app, or system audio that Nojoin uses on desktop.
-
-| Browser or OS | Capture support |
+| Browser | Live capture |
 | --- | --- |
-| Chrome on Windows | Shared audio + microphone |
-| Edge on Windows | Shared audio + microphone |
-| Brave on Windows | Shared audio + microphone |
-| Arc on Windows | Shared audio + microphone |
-| Chrome, Edge, Brave, or Arc on Linux with PipeWire screen capture | Shared audio + microphone |
-| Chrome on macOS | Shared audio + microphone |
-| Other Chromium browsers on macOS | Best-effort shared audio + microphone |
-| Chrome on Android | Microphone-only |
-| Chrome on iOS | Microphone-only |
-| Firefox | Not supported for live capture |
-| Safari | Not supported for live capture |
-| Other mobile browsers | Not supported for live capture |
+| Chrome on Windows, Linux or macOS | Shared audio and microphone |
+| Edge, Brave, Arc or another Chromium-family browser on Windows or Linux | Shared audio and microphone |
+| Other Chromium-family browsers on macOS | Shared audio and microphone, best-effort |
+| Chrome on Android or iOS | Microphone only |
+| Firefox, Safari, other mobile browsers | Not supported |
 
-Unsupported browsers can still review recordings, play audio, edit transcripts, manage speakers, use search, and administer Nojoin. They cannot start live capture.
+Shared-audio capture records the tab, window or screen you share plus your microphone. On Linux it needs PipeWire screen capture. Mobile browsers cannot share another tab's or app's audio, so a phone records only what its microphone hears.
 
-Chrome on macOS is a supported desktop capture path. Tab audio is the most reliable macOS option. Window and entire-screen audio should work on current Chrome and current macOS when the browser picker exposes and grants the audio toggle, but older browser or OS versions may return video without a shared-audio track. Other Chromium-family browsers on macOS are allowed by Nojoin but treated as best-effort because their picker behaviour can lag Chrome.
+On macOS, tab audio is the most reliable choice. Window and entire-screen audio work on current Chrome and current macOS when the share picker offers an audio toggle; older versions may share video with no audio. Other Chromium-family browsers on macOS are best-effort because their picker can lag Chrome's.
+
+Browsers that cannot record can still play recordings, edit transcripts, manage speakers, search and administer Nojoin.
 
 ## What Nojoin Captures
 
-Nojoin combines two browser-granted audio sources:
+Nojoin records two channels: the shared tab, window or screen audio, and your microphone. It uploads them as you record, in two-second lossless segments, using about 0.15 Mbit/s while one source carries sound and 0.3 Mbit/s while both do. The finished recording is a FLAC file exactly as long as the audio captured.
 
-- **Shared tab, window, or screen audio** for meeting participants and other system output.
-- **Microphone audio** for the local speaker.
+If you do not share tab audio, the shared channel is silent and everyone in the room is recorded through the microphone. On a phone, remote participants are recorded only if the phone's microphone can hear them.
 
-On desktop shared-audio capture, the browser mixes those sources in the Nojoin tab, resamples the mix to 16 kHz, and uploads it in segments of exactly two seconds, each a small lossless FLAC file. The backend decodes each segment straight into the canonical 16 kHz, two-channel WAV that live transcription and final processing read. Channel 0 carries shared/system audio when available and channel 1 carries microphone audio; speech recognition can use a mono mix derived from those preserved channels.
+While you record, the recording page shows a live waveform and a **Live Transcript** panel a few seconds behind the conversation ([USAGE.md](USAGE.md#live-transcription)).
 
-Segments are cut by counting audio samples, so they join with no gap and the finished recording is exactly as long as the audio captured. Uploading takes about 0.15 Mbit/s while one source carries sound and about 0.3 Mbit/s while both do, because a silent channel costs almost nothing. The finished recording is stored as a FLAC file.
-
-The recording page shows those transcribed segments in a **Live Transcript** panel as each sentence finalizes, a few seconds behind the conversation. Where one channel clearly carried a line, the panel labels it **Microphone** or **Shared audio**. Those labels describe the audio source and not the speaker: the capture always produces two channels, so if you do not share tab audio, channel 0 is silent and everyone in the room arrives on the microphone channel. Speaker names appear only after the recording is processed.
-
-On mobile Chrome, Nojoin records only the phone microphone. The browser still uploads live segments into the same backend pipeline, but remote participants are captured only if the phone microphone can hear them from the room or device speaker. Keep the Nojoin tab open and the phone awake while recording.
-
-For support cases: segments are numbered from `0` and resume after the last uploaded one. A segment that cannot be decoded is set aside and leaves a two-second gap rather than stopping the meeting, and finalization skips one that repeatedly fails to transcode; both are logged as a `segment_corrupt_skipped` pipeline metric. [ARCHITECTURE.md](ARCHITECTURE.md) covers how the live and final pipelines fit together.
-
-## Before Your First Recording
-
-1. Open Nojoin in Chrome on Windows, Linux, or macOS for shared-audio capture, in Chrome, Edge, Brave, or Arc on Windows or Linux, or in Chrome on Android/iOS for microphone-only capture. Other Chromium-family browsers on macOS are best-effort.
-2. Confirm your meeting platform is open in a browser tab if you want reliable tab audio capture.
-3. Check that your microphone is available to the browser.
-4. Open **Settings > Recording** if you need to choose a microphone or adjust system and microphone gain.
-5. Start a short test meeting and verify that the live waveform responds before relying on Nojoin for an important meeting. If AI is configured, Meeting Edge guidance should begin updating once enough speech has accumulated.
+A segment the server cannot decode is set aside and leaves a two-second gap instead of stopping the meeting. The API logs it as a `segment_corrupt_skipped` pipeline metric.
 
 ## Starting A Recording
 
-1. Open the Nojoin dashboard.
-2. Select **Start Meeting**.
-3. On desktop, when the browser share picker opens, choose the meeting tab, application window, or entire screen you want Nojoin to hear.
-4. On desktop, enable the browser's audio-sharing or system-audio option when the picker offers one, then select **Share**.
-5. Allow microphone access if prompted.
-6. On mobile Chrome, keep the phone close enough for the microphone to hear the meeting audio.
-7. Keep the Nojoin tab open and the device awake while recording.
+1. On the dashboard, select **Start Meeting**.
+2. On desktop, choose the meeting tab, window or entire screen in the browser's share picker, turn on its audio option if it offers one, and select **Share**.
+3. Allow microphone access if asked.
+4. Keep the Nojoin tab open and the device awake until you stop.
 
-Chrome and Edge may focus the chosen tab, window, or screen after you select **Share**. That is normal. You can continue using your computer, switch windows, or interact with the meeting while Nojoin keeps recording in the original browser tab.
+The browser may switch to the tab or window you shared; Nojoin keeps recording in its own tab. Selecting **Cancel** in the picker returns you to where you were with no recording started. Before relying on Nojoin for an important meeting, record a short test and check that the live waveform moves.
 
-If you close the browser share picker with **Cancel** instead of **Share**, Nojoin silently returns to the pre-start state and no recording is started.
-
-Mobile Chrome does not show a share picker for Nojoin because the mobile path is microphone-only.
+A phone shows no share picker. Allow microphone access, keep the phone near the meeting audio, keep Nojoin in the foreground and stop the phone locking.
 
 ## Choosing Tab, Window, Or Entire Screen
 
-### Browser Tab
+- **Browser tab** suits Google Meet, Microsoft Teams, Zoom, Webex and other web meeting apps. Chrome and Edge offer **Share tab audio**. Some enterprise sign-in or protected meeting pages need you to share a different tab once sign-in completes.
+- **Window** can work, but some browsers and operating systems give no audio for a window. If Nojoin then warns that no system or tab audio was detected, share the meeting tab instead.
+- **Entire screen** suits a native meeting app or audio from several windows. On Windows, turn on **Also share system audio**. On Linux, screen audio depends on the browser, the desktop environment and PipeWire. On macOS, see [Supported Environments](#supported-environments).
 
-Tab sharing is the preferred option for Google Meet, Microsoft Teams, Zoom, Webex, and other web meeting apps.
-
-- It is the most reliable way to capture meeting audio.
-- It usually exposes a clear `Share tab audio` option.
-- It avoids accidentally showing unrelated windows to the browser capture session.
-- Enterprise sign-in pages or protected meeting surfaces may occasionally require you to share a different tab after sign-in completes.
-
-### Window
-
-Window sharing can work, but some Chromium builds and operating systems do not provide window audio. If Nojoin warns that no shared audio track is present, share the meeting browser tab instead.
-
-### Entire Screen
-
-Entire-screen sharing is useful when the meeting audio comes from a native app or from multiple windows. On Windows, enable **Also share system audio** in the picker. On Linux, entire-screen audio depends on the browser, desktop environment, and PipeWire support.
-
-On macOS, entire-screen and window audio should work on current Chrome and current macOS when Chrome offers an audio toggle in the picker. If the toggle is absent or Nojoin warns that no shared-audio track was granted, update Chrome and macOS, then retry with tab sharing.
-
-## Browser Picker Audio Options
-
-The exact wording is browser-dependent:
-
-- Chrome on Windows usually shows **Also share system audio** for entire-screen sharing and **Share tab audio** for tab sharing.
-- Edge on Windows follows the same general behaviour as Chrome.
-- Chrome on macOS usually offers reliable tab audio. Window and entire-screen audio should work on latest Chrome and macOS when the picker shows the audio toggle.
-- Brave may require shields or site settings to allow capture prompts on hardened profiles.
-- Linux Chromium builds require working desktop capture through PipeWire for screen capture. PulseAudio-only environments are expected to fail for system or screen audio.
-
-If the share button is disabled, select a source first and confirm that any required audio toggle is enabled.
-
-## Mobile Chrome Microphone Recording
-
-Chrome on Android and iOS can start recording from the same **Start Meeting** button, but it records only the phone microphone. It does not capture another mobile app, browser tab, headset output, or system audio. For best results, keep the meeting audio audible to the phone microphone, keep Nojoin visible, and prevent the phone from locking.
+Brave may need its shields or site settings relaxed before it shows capture prompts on a hardened profile. If **Share** is disabled, select a source first and check that any required audio toggle is on.
 
 ## Pause, Resume, Stop, And Discard
 
-- **Pause** keeps uploaded segments and stops new segment capture until you resume.
-- **Resume** reopens the browser share picker and continues with the next 0-based segment sequence.
-- **Stop** finalizes the recording once every recorded segment has uploaded, then queues final processing. While a stop is still sending queued audio, the recording controls say **Uploading** and show how much is left. The microphone and any shared tab or screen are released as soon as the recorded audio has been handed off, so the browser recording indicator disappears while Nojoin waits for the last segments to be processed; the meeting button names the current stage during that wait (stopping the recorder, uploading the last segments, releasing the microphone, finalizing). Stop works on a paused recording too, and does not need the original browser capture session to still be active.
-- **Discard** permanently removes a recording in one step. It works for any recording that has not finished: uploading, paused, queued, or processing. Discard revokes any running processing task, releases the capture lock, deletes the captured audio, derived files and any attached documents, and removes the meeting. Nojoin asks you to confirm first because this cannot be undone.
+- **Pause** stops capturing and keeps everything recorded so far.
+- **Resume** continues the same recording. After a pause in the live controls it carries on with the same shared tab and microphone. After the tab was closed or reloaded, the browser asks you to share again.
+- **Stop** uploads any audio still queued, releases the microphone and shared tab, and queues the recording for processing. While queued audio uploads, the controls read **Uploading** and show how much is left, and the meeting button names the current stage. Stop also works on a paused recording, including one whose tab was closed.
+- **Discard** permanently deletes an unfinished recording, whether it is recording, paused, queued or processing: its audio, any attached documents, any processing under way and the meeting itself. Nojoin asks you to confirm first. Discard is in the live controls, the floating recording badge, the resume-or-discard dialog and the recordings list's context menu (**Discard Recording**).
 
-Discard is available from the live recording controls, the floating recording badge, the resume-or-discard modal, and the recordings menu. Wherever you discard from, the meeting leaves the recordings list and the dashboard immediately, and the recording page closes if you were on it.
+Selecting the browser's own **Stop sharing** button, or closing its sharing indicator, stops and saves the recording with everything captured so far, and Nojoin tells you it did.
 
-Closing the browser share picker with **Cancel** is different from Nojoin's in-app **Discard** action. Picker cancel simply backs out of starting or resuming capture without creating a visible error in the UI, and never deletes an existing recording.
+Switching tabs or windows, using another application or moving between Nojoin pages does not pause recording. On every page except the recording itself, a floating badge at the top of the screen shows the status and elapsed time, with pause, resume, stop and discard controls, and opens the recording when clicked.
 
-If you are recording in a shared-audio capture mode and click the browser's native **Stop sharing** button (or close the sharing indicator), Nojoin automatically detects that the sharing stream has ended. It will immediately stop and finalise the recording, saving all audio captured up to that point, and display a notification informing you that screen sharing ended and the recording was saved.
+### Closing Or Reloading The Tab
 
-Refreshing or closing the Nojoin tab (actual tab unload) during a recording moves that recording to `PAUSED` and shows a mandatory resume-or-discard modal the next time you open the app. Segments the server already has are kept on the server. Segments recorded but not yet uploaded are kept in this browser's storage for the Nojoin site, and resuming or choosing **Stop and process** in the same browser uploads them first. Only the unfinished segment, less than two seconds of audio, is lost.
+Closing or reloading the Nojoin tab pauses the recording. Audio the server already has stays there, and audio recorded but not yet uploaded is kept in this browser's storage for the Nojoin site. Only the unfinished last segment, under two seconds, is lost. Next time you open Nojoin, it asks you to resume, stop and process, or discard; resuming or stopping in the same browser uploads the kept audio first.
 
-An interruption that happened before any audio reached the server is cleared instead of being put to you as a decision. There is nothing to resume and nothing to keep, so Nojoin discards the empty recording, releases the capture lock, and tells you the recording was interrupted and needs starting again. This only applies to a capture the same browser tab lost: a recording paused any other way, or one that banked even a single segment, always goes to the modal.
+If the tab was lost before any audio reached the server, Nojoin discards the empty recording and tells you to start again. The usual cause is a server upgrade while the tab was open: the first page change after **Start Meeting** reloads the app. Select **Start Meeting** again.
 
-The usual cause is an upgrade under an open tab. When the Nojoin server is updated while you have the app open, the browser is still running the previous version, so the next page transition reloads the whole app. If that transition is the one Nojoin makes after **Start Meeting**, the reload unloads the page a second into the recording. Press **Start Meeting** again.
+### Background Tabs And Sleep
 
-Switching to another browser tab, changing the active window, using another application, or navigating between pages within the Nojoin app does not pause recording. The Nojoin tab only pauses automatically when it is actually unloaded. A floating recording badge remains visible at the top of the viewport on every page so you can always see the recording status and control it.
+If the browser or operating system suspends the Nojoin tab, capture receives no audio until it wakes, and that audio cannot be recovered. The recording does not pause and nothing reports it at the time. Nojoin notices afterwards by comparing the audio the server holds with the elapsed time, and warns you (see [Recorded audio is shorter than the meeting](#recorded-audio-is-shorter-than-the-meeting)).
 
-Not pausing is not the same as being safe in the background. If the browser or the operating system suspends the Nojoin tab, browser capture stops receiving audio for as long as the suspension lasts, and that audio cannot be recovered afterwards. The recording is not paused and no error is raised, because nothing in a web page can prevent or undo being suspended. Nojoin detects the shortfall by comparing the audio the server holds against elapsed recording time, and shows a dismissible warning naming how much was captured and, where it can tell, what caused the gap. Keep the Nojoin tab open, keep the device awake, and do not rely on a background tab for a long meeting. See [Recorded audio is shorter than the meeting](#recorded-audio-is-shorter-than-the-meeting).
-
-While recording, Nojoin holds a screen wake lock so the display does not blank and the machine does not idle to sleep. That covers device sleep only. It does not prevent the browser suspending the tab, which no web page can do.
-
-## Floating Recording Badge
-
-While a recording is active, a floating badge on every page shows its status and elapsed time, with pause, resume and stop controls. Clicking it opens the recording. It is hidden on the recording's own page.
+While recording, Nojoin holds a screen wake lock so the display does not blank and the device does not idle to sleep. It cannot stop the browser suspending a tab, a laptop lid being closed, or the device being put to sleep by hand. Keep the Nojoin tab open and the device awake, and do not rely on a background tab for a long meeting.
 
 ## Paused Recording Lock
 
-Nojoin allows one active browser capture per user. If a paused recording exists, new capture and import entry points stay blocked until you choose one of the modal actions:
+Each user can run one browser capture at a time. While a paused recording exists, the **Start Meeting** button reads **Paused recording needs attention** and imports are blocked until you choose in the dialog:
 
-- **Resume recording** to continue capture from the same recording.
-- **Stop and process** to finalize the audio already uploaded and queue processing, without recording any more. Use this when the meeting is over, or when the browser capture session was lost and you only want to keep what was captured. It does not reopen the share picker.
-- **Discard recording** to remove the partial upload and start fresh.
+- **Resume recording** continues the same recording. The browser asks you to share again.
+- **Stop and process** finalizes the audio already captured and queues processing without opening the share picker. Use it when the meeting is over or the capture was lost.
+- **Discard recording** deletes the partial recording.
 
-Paused recordings are retained indefinitely. They are not cleaned up automatically, and Nojoin never finalizes one on your behalf. The one exception is a capture the tab lost before any audio reached the server, which is discarded rather than offered, because it holds nothing to resume or keep. See [Pause, Resume, Stop, And Discard](#pause-resume-stop-and-discard).
+Nojoin keeps a paused recording until you choose. It never cleans one up or finalizes it for you.
 
 ## Capture Settings
 
-Open **Settings > Recording** to choose the microphone and set the shared-audio and microphone gain. The browser's echo cancellation, noise suppression and automatic gain control are under its **Advanced** section. The page also has a local microphone input test that shows raw and gain-adjusted levels in real time.
+**Settings > Recording** holds the capture settings for this browser:
 
-These settings are stored in the browser, so they do not roam between browsers or devices.
+- **Microphone**, the input mixed with shared audio (**System default** unless you pick one).
+- **Microphone gain** and **Shared-audio gain**. Nojoin also balances the two levels automatically while recording.
+- **Live microphone input test**, which shows raw and gain-adjusted levels.
+- Under **Advanced**, the browser's echo cancellation, noise suppression and auto gain, and the **Quiet audio warnings** reset.
 
-If you explicitly choose a microphone and that device is no longer available when a recording starts or resumes, Nojoin fails closed rather than falling back to the system default microphone. Choose another device in **Settings > Recording** before retrying.
+These settings are stored in the browser, so they do not follow you to another browser or device.
 
-Nojoin logs the requested microphone, the browser-granted microphone track metadata, whether shared audio was granted, and the backend browser-live source-channel analysis. Browser APIs still do not reliably expose the physical OS speaker or headset name behind shared system audio, so those logs describe the granted browser capture surface and track metadata rather than a guaranteed output-device identity.
+If the microphone you chose is unavailable when a recording starts or resumes, Nojoin stops with an error instead of falling back to the system default. Pick another microphone first.
 
-Nojoin intentionally does not include a settings-page capture preview. Validate capture by recording a short test meeting.
+Each start and resume writes a `Capture source report` line to the API log with the requested and granted microphone and whether shared audio was granted. Browsers do not reveal which speaker or headset sits behind shared system audio.
 
 ## Troubleshooting
 
 ### No audio track in the shared stream
 
-The browser granted screen or tab visibility but no audio track. Start again and make sure the audio sharing checkbox is enabled. If you shared a window, try sharing the meeting browser tab instead.
+The browser shared the screen or tab without audio, and Nojoin is recording your microphone only. Start again with the picker's audio option on. If you shared a window, share the meeting tab instead.
 
 ### Live waveform is quiet
 
-Check that the meeting is producing audible sound, verify the browser share picker audio option, then adjust gain in **Settings > Recording**. Use the local microphone input test to verify mic lift before recording. If only your microphone appears, the shared tab/window/screen audio was not granted.
+Check that the meeting is making sound, that the picker's audio option was on, and the gain in **Settings > Recording**. The input test there shows whether the microphone level is high enough. If only your microphone moves the waveform, shared audio was not granted.
+
+After 20 seconds without sound, Nojoin shows an "Audio has been quiet for a bit" hint. **Don't show again** turns these hints off in this browser; turn them back on under **Settings > Recording**, **Advanced**, **Quiet audio warnings**.
 
 ### Meeting Edge is still empty during capture
 
-Confirm the waveform shows speech activity. Meeting Edge only updates after Nojoin has enough completed speech to build guidance, so very short tests may show waveform activity before any live guidance appears. The Live Transcript panel fills sooner than Meeting Edge does, so text appearing there while Meeting Edge is still empty is expected rather than a fault.
+Meeting Edge needs AI configured and enough completed speech to work from, so a short test can show waveform activity and live transcript lines before any guidance appears.
 
 ### The Live Transcript panel stays empty
 
-Text appears a few seconds behind speech, so allow for that before treating an empty panel as broken. Confirm the waveform is responding to audio: if it is flat, the problem is capture rather than transcription. The panel is also empty by design for an imported file, which is transcribed in a single pass after upload rather than by the live lane.
+Text appears a few seconds behind speech. If the waveform is flat too, the problem is capture, not transcription. The panel is always empty for an imported file, which is transcribed after upload.
 
 ### Linux screen audio does not work
 
-Use a recent Chromium-family browser and a desktop session with PipeWire screen capture. PulseAudio-only screen capture is not supported for reliable system audio.
+Use a recent Chromium-family browser in a desktop session with PipeWire screen capture. PulseAudio-only systems cannot capture screen or system audio.
 
 ### macOS shared audio does not work
 
-Use current Chrome and current macOS, then choose the meeting tab and enable the audio option in the picker. If window or entire-screen audio is missing, retry with tab sharing first. Other Chromium-family browsers on macOS are best-effort, so switch to Chrome when troubleshooting.
+Use current Chrome and current macOS, share the meeting tab and turn on the picker's audio option. If window or entire-screen audio is missing, use tab sharing. If you use another Chromium-family browser, try Chrome.
 
 ### The browser asks for permissions again on resume
 
-That is expected. Browsers do not let Nojoin silently recreate shared tab, window, screen, or microphone capture after a reload, close, or pause that released the previous tracks.
+This is expected after a reload, a closed tab or a failed stop. Browsers do not let a page reopen shared tab, window, screen or microphone capture without asking.
 
 ### Recorded audio is shorter than the meeting
 
-Nojoin compares the audio the server actually holds against the elapsed recording time, and warns when the two diverge, showing the captured duration next to the elapsed timer. It warns again when the recording is stopped.
+Every 15 seconds Nojoin compares the audio the server holds with the elapsed time. When more than a minute is missing, and more than 2% of the meeting, the controls show the captured time next to the elapsed time and a notification names one of three causes. Nojoin warns again when you stop.
 
-The warning names one of three causes, and they need different things from you.
+**The tab was suspended.** The browser or operating system suspended the Nojoin tab, or the device slept. That stretch was never recorded and cannot be recovered; the rest of the recording processes normally. To avoid it:
 
-**The tab was suspended.** The browser or the operating system suspended the Nojoin tab during capture. A suspended tab stops feeding audio to the recorder, so that stretch of the meeting was never recorded and cannot be recovered. The recording itself is intact and processes normally; it is only shorter than the elapsed time. To avoid it:
+- Keep the Nojoin tab open, preferably visible in its own window.
+- Keep the device awake for the whole meeting. Closing a laptop lid or putting the machine to sleep suspends capture.
+- On a phone, keep Nojoin in the foreground and stop the phone locking.
+- If it keeps happening in desktop Chrome, see [Chrome Memory Saver](#chrome-memory-saver).
 
-- Keep the Nojoin tab open, and prefer keeping it visible in its own window.
-- Prevent the device from sleeping for the length of the meeting. Closing a laptop lid or letting the machine enter standby suspends capture. Nojoin holds a screen wake lock while recording, which stops the display blanking, but it cannot stop a lid being closed or the machine being suspended by hand.
-- On mobile Chrome, keep Nojoin in the foreground and stop the phone locking.
-- If it happens repeatedly on Chrome for desktop, exempt Nojoin from tab suspension. See [Chrome Memory Saver](#chrome-memory-saver).
+**Nojoin could not reach the server.** Audio recorded meanwhile waits in the browser and uploads when the connection returns ([Uploads are behind](#uploads-are-behind)). If the tab closes first, reopen Nojoin in the same browser and resume or choose **Stop and process**. This is a server or network problem, so browser settings will not help. An outage stays named as the cause for five minutes after the server answers again, while the queue drains.
 
-**Nojoin could not reach the server.** Recording continued and the audio is queued in the browser; it uploads when the connection returns. The queue is kept in the browser's storage, so even a tab closed before it drains loses nothing: reopen Nojoin in the same browser and resume, or choose **Stop and process**. This is a server or network problem, not a browser one, and changing browser settings will not help.
+**No cause identified.** The warning gives only the shortfall. Check that the tab stayed open and the device awake, and that the connection to your Nojoin server is healthy.
 
-**Neither could be established.** The warning says only how much audio is missing. Check both: that the tab has stayed open and the device awake, and that the connection to your Nojoin server is healthy.
-
-The warning can be dismissed with the close control. It stays dismissed unless the shortfall grows substantially further, so a problem that is getting worse will say so again.
-
-The captured figure is the audio the server has decoded, which is exact, so the warning reports a shortfall only when audio is missing.
-
-Audio still queued in the browser is not counted as missing, and the warning names it separately when there is any. A shortfall that persists after the queue drains is audio that is lost.
-
-An outage also keeps explaining a shortfall for a few minutes after the server answers again, because the check runs every fifteen seconds and the queue takes longer than that to drain, so the connection has usually recovered by the time the warning appears.
+Audio still queued in the browser is not counted as missing; the warning lists it separately. A shortfall that remains after the queue drains is lost audio. Dismissing the warning hides it until the shortfall grows by another minute.
 
 ### Chrome Memory Saver
 
-Chrome's Memory Saver puts inactive tabs to sleep to reclaim memory. **You should not normally need to do anything about this for Nojoin.** Memory Saver exempts tabs that are actively using the microphone or camera or sharing a screen, and Nojoin holds those for the whole of a recording, so a recording tab is exempt for as long as it is recording.
+Memory Saver puts inactive Chrome tabs to sleep. You should not normally need to change anything: Chrome exempts tabs that are using the microphone or sharing a screen, and a recording tab does both until you stop.
 
-If you do see repeated shortfalls attributed to tab suspension on Chrome for desktop, add Nojoin to the exemption list by hand:
+If shortfalls blamed on tab suspension keep happening in desktop Chrome, exempt Nojoin by hand:
 
 1. Open **Settings > Performance > Memory Saver**.
 2. Under **Always keep these sites active**, select **Add**.
-3. Enter the address you use to reach Nojoin, for example `nojoin.example.com`.
+3. Enter the address you use for Nojoin, for example `nojoin.example.com`.
 
-Nojoin cannot do this for you and cannot check whether it is done. No browser API lets a page opt out of Memory Saver, and none lets a page read whether Memory Saver is switched on. This is why the shortfall warning describes what it can measure rather than asserting a cause it cannot observe.
-
-Chrome documents the feature at [Memory Saver in Chrome](https://support.google.com/chrome/answer/12929150).
+No browser API lets a page opt out of Memory Saver or read whether it is on, so Nojoin cannot do this or check it for you. Chrome documents the feature at [Memory Saver in Chrome](https://support.google.com/chrome/answer/12929150).
 
 ### Uploads are behind
 
-When uploads fall more than about 30 seconds behind the recording, the recording controls say how far behind they are. The audio is recorded and kept in the browser, and it is sent as the connection allows. Keep the tab open; if it does close, nothing is lost as long as you return in the same browser.
+When more than 30 seconds of audio is waiting to upload, the controls say how far behind uploads are. The audio is kept in this browser and sent as the connection allows. Keep the tab open, though nothing is lost if it closes and you return in the same browser.
+
+If a segment keeps failing to upload for about 15 seconds, Nojoin pauses the recording and shows the error. The queued audio is kept, and resuming or stopping uploads it first.
 
 ### Stop did not finish
 
-The meeting button names the stage it is on while stopping. If stopping fails, the recording returns to paused with an error rather than being left in an unusable state, and you can stop it again from the live controls, the floating badge, or the resume-or-discard modal. Stopping does not need the original capture session, so it still works after a reload or after the browser has released the shared audio and microphone tracks.
+The meeting button names the stage while stopping. If stopping fails, the recording returns to paused with an error, and you can stop it again from the live controls, the floating badge or the resume-or-discard dialog. Stopping does not need the original capture, so it works after a reload.
 
-### Nojoin says a paused recording exists
+### Browser recording unavailable
 
-Use the modal. Resume to keep recording, **Stop and process** to keep what was already captured, or discard to remove the partial upload. Starting a second recording while a paused upload exists is intentionally blocked to avoid overlapping segment streams and accidental data loss.
+The meeting button reads **Unsupported browser**. Open Nojoin in a browser from [Supported Environments](#supported-environments).
 
-### Unsupported browser notice appears
-
-Open Nojoin in Chrome on desktop for shared-audio recording, another supported desktop Chromium browser, or Chrome on Android/iOS for microphone-only recording. Review and playback still work in unsupported browsers, but live recording does not.
-
-If the browser is already a supported one, check the address you opened. Browsers expose capture APIs only on a secure context, so a supported browser reaching Nojoin over plain HTTP on any address other than `localhost` reports as unsupported. See [HTTPS Is Required for Live Capture](DEPLOYMENT.md#https-is-required-for-live-capture).
+If the browser is already supported, check the address. Browsers allow capture only on a secure origin, so a supported browser reaching Nojoin over plain HTTP on any address other than `localhost` reports as unsupported. See [HTTPS Is Required for Live Capture](DEPLOYMENT.md#https-is-required-for-live-capture).
 
 ## Privacy Notes
 
-The browser picker controls what Nojoin can receive on desktop. Nojoin cannot silently capture your screen, tab, system audio, or microphone without browser permission. On mobile Chrome, Nojoin receives only the microphone stream granted by the browser. Stop sharing from the browser's sharing indicator or stop the meeting in Nojoin to end capture.
+The browser decides what Nojoin receives: on desktop, the tab, window or screen you pick and the microphone you allow; on a phone, the microphone only. To end capture, stop the meeting in Nojoin or stop sharing from the browser's indicator.
 
 ## Related Docs
 

@@ -1,584 +1,297 @@
 # The Marketing Site
 
-The brand, voice and maintenance rules for `www.nojoin.co.uk`, which lives in `site/` as an
-Astro build deployed to Cloudflare Workers static assets. This document is the durable
-record: the site's working plan documents are PR-scoped and deleted when their work ships,
-but the decisions below outlive them. [DESIGN.md](DESIGN.md) governs the app; the site runs
-the app's design system at marketing scale, and where the two overlap, DESIGN.md is the
-authority on tokens and this document is the authority on the site's composition and copy.
+`www.nojoin.co.uk` is an Astro static build in `site/`, served by a Cloudflare Worker with static
+assets. This document covers the site's composition, copy, claims and maintenance.
+[DESIGN.md](DESIGN.md#the-marketing-site) is the authority on tokens, theming and the contrast
+gate.
 
 ## What the site is
 
-Three pages: landing, comparison and the managed service. Documentation stays on GitHub as
-`docs/*.md` and the site links out to it; the site never holds a copy that can drift.
-`/docs/*` URLs 301 to the corresponding GitHub blob URL forever, because released images
-hardcode `www.nojoin.co.uk/docs/TELEMETRY` and a URL compiled into an image can never 404.
+| Route | Source | Content |
+| --- | --- | --- |
+| `/` | `site/src/pages/index.astro` | Landing page |
+| `/compare/` | `site/src/pages/compare.astro` | Comparison with Jamie, Otter and Granola, from `site/src/data/comparison.ts` |
+| `/managed/` | `site/src/pages/managed.astro` | The managed service |
+| any other path | `site/src/pages/404.astro` | Not found |
 
+Every page uses `site/src/layouts/Base.astro`, with `Header`, `Footer`, `Shot` (a framed
+screenshot) and `Mark` (the logo, inlined from `assets/images/nojoin-mark.svg`) in
+`site/src/components/`.
 
-Both themes follow `prefers-color-scheme` by default, and a toggle in the header lets a
-visitor override that. The choice is stored and applied before the first paint, so there is
-no flash on the way to a dark page, and the screenshots follow the active theme rather than
-the system one.
+Documentation stays on GitHub and the site links to it. `/docs` redirects (301) to
+`docs/README.md` on GitHub and `/docs/<PAGE>` to `docs/<PAGE>.md`, with any trailing `.html` or
+`.md` dropped. Released images link to `www.nojoin.co.uk/docs/TELEMETRY`
+(`frontend/src/components/TelemetryNotice.tsx`), so these redirects must stay.
 
-The toggle exists because the screenshots are most of the page's argument, and without it
-half of them are unreachable to a visitor whose system setting disagrees. There is still no
-framework and no hydration: two small inline scripts, one to stamp the stored choice on the
-root element and one to wire the button, alongside the Cloudflare beacon.
-
-Fonts are self-hosted: a page whose pitch is that nothing leaves your server does not fetch
-fonts from a CDN.
+Both themes follow `prefers-color-scheme`. A header toggle stores an override in `localStorage`
+under `nojoin-theme`, applied before first paint, and the screenshots follow the active theme.
+There is no framework and no hydration: `Base.astro` carries two small inline scripts plus the
+Cloudflare beacon. Fonts (Geist and Geist Mono) are self-hosted in `site/public/fonts/`; a page
+arguing that nothing leaves your server does not fetch fonts from a CDN.
 
 ## Design direction
 
-Locked by decision, rendered and chosen from variants, and not to be re-litigated casually:
+Change these only by the site owner's decision.
 
-- **Centred hero stack**: headline, subhead, two equal CTAs (Get started, Star on GitHub),
-  full-width screenshot below.
-- **Display scale is "Statement"**: 64px hero via `clamp(2.75rem, 6.5vw, 4rem)`, section
-  headings 2.25rem, generous vertical rhythm to match. Geist stays semibold (600) with
-  -0.025em display tracking; no new weight enters the system.
-- **Every screenshot sits in a minimal browser-chrome frame**: three dots, a muted
-  `nojoin.your-server.net` URL pill, an orange edge, 14px radius and `--lift-strong`. The
-  frame signals "a web app you self-host", which is half the pitch.
-- **Feature rows put the copy beside the shot**, alternating sides down the page. This
-  reverses the stacked layout, which itself replaced a side-by-side one, so the reasoning
-  matters more than the arrangement. Side-by-side failed the first time because it gave a
-  1920px full-app capture half of a 72rem wrap and rendered the interface at about 28% —
-  unreadable, which defeats the point of showing it. Stacking fixed that by giving the shot
-  the full width. **What changed is the captures, not the layout.** Each shot is now cropped
-  to the thing its row is about — 540 to 810 logical pixels rather than 1600 — so half a wrap
-  shows it at roughly life size. The stack had started to look like four identical pictures
-  of the same window, each too big for what it was saying. If a future shot goes back to
-  being a whole window, this layout breaks again, and **the fix is the crop, not the grid.**
-- **A feature row earns its place with its screenshot.** The Calendar row was cut: its
-  capture was the dashboard shot scrolled down a little, so the row spent a full section of
-  vertical rhythm showing something the page had already shown. Calendar sync is not
-  demoted — it still leads a tool group in the agent band's showcase and holds a sourced row
-  on the comparison page. What it lost was a screenshot that carried no new information, and
-  a row whose shot duplicates another row's is a finding about the row rather than a reason
-  to keep scrolling. `calendar-light.webp` and `calendar-dark.webp` went with it, because an
-  unreferenced capture in `public/` is a thing the next person re-adds by accident.
-- **No hard bands.** Sections used to alternate a full-bleed card surface against the page
-  with hairlines top and bottom. That read as a stack of documents: every boundary was an
-  edge. The page is now one continuous surface and depth comes from the content floating on
-  it — framed screenshots, the flow card, the tool showcase, the price card — each carrying
-  `--lift`. `.band` keeps only `--band-wash`, a gradient faint enough that two adjacent
-  bands never look like a seam. In dark it lightens rather than casting, because a black
-  shadow on a near-black page is invisible. **`.band` and `.section` must still strictly
-  alternate**, and it is worth checking after any section is added or removed: the wash is
-  faint, so two `.band`s in a row do not look like a seam, they look like nothing at all, and
-  the rhythm quietly disappears. Removing the privacy section left three consecutive bands
-  before anyone noticed.
-- **The quick-start code block is dark in both themes**, and it is the only surface that
-  ignores the theme toggle. A themed block barely separated from the page, and code being
-  dark on a light page is a convention readers expect. See DESIGN.md for the numbers.
-- **Colour is neutral plus one orange closer**: the loud surface is the full-bleed
-  orange-700 band at the foot. No cream tints and no glass.
-- **The closer is the managed offer, and there is no repeat-CTA band.** The foot of the page
-  used to carry "Your meetings, on your own server, tonight" with Get started and Star on
-  GitHub — the same two calls the hero already makes, one screen further down a page that had
-  grown too long. It went. The managed teaser took the orange treatment in its place, so the
-  page still ends on a deliberate surface rather than trailing off, and the last thing a
-  visitor reads is the one offer the hero does not make. A page that has to ask twice is
-  usually too long, which is what the rest of this pass was about.
-- **The landing page carries no three-up strip.** It had one under the hero — no bot, any
-  platform, your hardware — and two of those three were the hero's own claims, restated
-  before the reader had scrolled past them. Its one unique line, that any platform works with
-  nothing to install, moved into the hero. `/managed/` keeps a strip of its own, where the
-  three cards say things that page says nowhere else.
-- **The landing page carries no privacy section.** It had one, and it was cut when the page
-  was shortened: those claims are made better elsewhere. Self-hosting is in the headline,
-  the licence is in the footer, telemetry has a footer link on every page, and `/compare/` argues the whole privacy case in sourced rows rather than assertions.
-  A section repeating them on the apex page was the fourth time a visitor met the same
-  argument.
-- **Three marketing effects, and no more.** The app's flat canon governs the product,
-  where a lifted control is noise in a workspace someone stares at all day. The site is a
-  page whose job is to be looked at once, so it takes three departures, all site-only and
-  all declared in `site-tokens.css` rather than in the shared app tokens:
-  a halo and a 1px inset white top edge under the primary button (`--glow-action`,
-  `--glow-inset`); one soft radial wash off the top right behind the hero and the agent
-  band (`--hero-wash`); and an orange edge on every screenshot frame (`--frame-accent`),
-  because the captures are light interface on a light page and a divider-coloured hairline
-  did nothing at reading distance. All three are decoration over fills that already answer
-  to the contrast gate, so none of them can hide a failing pair. The wash is the only
-  gradient on the site, it carries no information, and it degrades to a plain surface.
-  These match the sibling brand Vorkane's treatment deliberately — the same person sells
-  both — but they use Nojoin's own orange ramp rather than Vorkane's, so the site and the
-  app never disagree about what the brand colour is. The glow derives from orange-600
-  rather than the button's own orange-700, because a halo the same darkness as its fill
-  reads as a smudge.
-- **The nav carries the two destinations a visitor looks for by name**: Home, Quick start,
-  Pricing, Compare, Docs. "Quick start" jumps to the landing page's install section, which
-  had no way to reach it from another page; "Pricing" is what the third page is called
-  everywhere else on the web, and it replaced "Managed" rather than joining it, because two
-  entries pointing at one page is a worse header than a slightly generic label. The link is
-  `/#quick-start` rather than `#quick-start`: the section exists on one page only.
-  There is no menu button and no second script. The nav already wraps — measured, not
-  assumed, it holds 5 links plus the star badge and the toggle inside the content box at
-  320px, with the header growing a row instead of the page scrolling sideways. A hamburger
-  is worth revisiting only if the nav stops fitting.
-- **Every in-page anchor reserves the sticky header's height.** `section[id]` carries
-  `scroll-margin-top`, 8.5rem while the nav is wrapped and 5rem once it fits one line. The
-  browser scrolls a hash target to y=0, which is exactly where a sticky header already is, so
-  without this the quick-start heading lands underneath it. The mobile value is the larger of
-  the two, which is the opposite of the usual direction and the reason it is written out.
-- **The header is sticky**, with a solid fill rather than a blurred scrim. Glass is out by
-  the flat canon, and `backdrop-filter` over text this dense costs a repaint per scroll
-  frame for an effect the design does not want.
-- **The agent band sits directly under the hero**, on the page surface with the hero's
-  wash. It carries three devices rather than prose. A flow card walks one real post-meeting
-  job and tags each step with the actor who performs it, chevrons between the steps so it
-  reads downward as a sequence rather than as a table. A six-card showcase groups the
-  thirty-two tools by what they touch, each led by a glyph and carrying its count. The cards
-  used to name every tool in the group; that is an inventory, not an argument, and the six
-  counts add to thirty-two on their own. The counts and the prose beside them are copied by
-  hand from `docs/MCP.md`, and they sat at thirty for three releases after the two analytics
-  tools took the real figure to thirty-two. Re-count against that file whenever a tool is
-  added. A wider card carries the CRM bridge on its
-  own, because an assistant reconciling your People library with anything it can already
-  reach is the claim with no equivalent in the comparison, and it was a clause in a
-  paragraph. The actor pills say "Agent", never a vendor name: more than one assistant is
-  supported and the claim is about assistants generally. The prose names Claude and ChatGPT,
-  which is what a reader installs; OpenAI renamed the Codex desktop app to ChatGPT on 9 July
-  2026. `docs/MCP.md` still says Codex where it gives commands and paths the rename did not
-  change, and explains why the OpenAI app still appears as `Codex` on the consent screen.
-- **The headline says what Nojoin is**: "Open-Source Meeting Notes on a Server You Own".
-  It replaced "Transcription is easy. Agentic meeting intelligence isn't.", which told a
-  visitor what is hard and left them to work out what the product was. Open source and
-  self-hosted are the two facts a visitor needs first, and the two that no product on the
-  comparison page matches, so they take the headline. The lede then explains the rest in
-  order: how capture works, why that keeps a bot out of the call, the licence, and the
-  assistant connection that the agent band below argues in full. "Agentic" is gone from the
-  site. The earlier headline's reasoning about assistants still holds and the agent band
-  still sits directly under the hero; what changed is that the page now names the product
-  before it argues for it. The headline breaks before "on" above 48rem, and the Open Graph
-  card breaks in the same place.
-- **The agents section carries no screenshot, and this has now been tried both ways.** The
-  original reason still stands: the capability happens in Claude's or ChatGPT's window, not
-  Nojoin's, and the frame chrome reads `nojoin.your-server.net`, so a framed capture of
-  someone else's interface would be a false image on a page that argues from checkable ones.
-  A shot of Nojoin's *own* transcript showing the `AI corrected text` and `AI corrected
-  speaker` labels is honest, so it was added — and then removed, because in place it said the
-  same thing as the transcripts row two sections below it and sat under the bridge card with
-  no copy beside it. Honest is not the same as earning its place. The three devices carry the
-  band instead: the flow card, the tool showcase and the bridge card, each with a claim no
-  capture makes: the actors in a real post-meeting job, thirty-two tools, the CRM
-  reconciliation. **The rest of the surface still has none.** A task list an assistant filed
-  is indistinguishable from a typed one, so the band does not claim it in an image.
-- **Screenshots are cropped to the thing the row is about, and sized for half a wrap.** Every
-  capture used to be the whole app, so four rows showed four near-identical pictures and the
-  detail each row argued from rendered too small to read. Each shot is now framed on its own
-  claim: Meeting Edge on the guidance panel, transcripts on a speaker handover, notes on the
-  generated summary and the Key Decisions table. The hero keeps the full-app view deliberately — it is the one place a
-  visitor should see the whole interface, and it is what the browser-chrome frame is arguing
-  for. Three rules keep this working:
-  - **Crop to roughly 550–800 logical pixels wide.** That is what renders near life size in
-    half a wrap. A crop of 1000+ is a stacked-layout crop and will be too small beside copy.
-  - **Capture at the width the crop wants**, rather than cropping a wide window. The
-    transcripts shot is taken at a 1280px viewport so the utterance bubbles wrap inside the
-    frame; cropping the same column out of a 1600px capture cut every line in half.
-  - **A crop must not duplicate another crop.** The transcripts shot sits on a different
-    passage from anything else for this reason, and it is why the agent band ended up with
-    no shot at all.
+- **Hero.** A centred stack: headline, lede, two CTAs (Get started, Star on GitHub), then the
+  full-app dashboard screenshot.
+- **Headline.** "Open-Source Meeting Notes on a Server You Own". Above 48rem it breaks before
+  "on", and the Open Graph card breaks in the same place. Changing it means regenerating the
+  card (see [The Open Graph card](#the-open-graph-card)).
+- **Type scale.** Hero `clamp(2.75rem, 6.5vw, 4rem)`, section headings 2.25rem, Geist semibold
+  (600) with -0.025em display tracking. No other weight.
+- **Screenshot frame.** Every screenshot sits in `Shot.astro`'s browser-chrome frame: three dots,
+  a `nojoin.your-server.net` URL pill, an orange edge, 14px radius and `--lift-strong`.
+- **Agent band.** Directly under the hero, on the hero's wash, with no screenshot: the assistant
+  works in Claude's or ChatGPT's window, and showing that inside a frame reading
+  `nojoin.your-server.net` would be a false image. Three devices carry it instead:
+  - a flow card walking one post-meeting job, each step tagged with its actor ("Agent",
+    "Nojoin", "You"; never a vendor name);
+  - a six-card tool showcase giving a count per group, never a list of tools;
+  - a wider bridge card for the CRM claim.
 
-  **Which recording each shot comes from.** The notes and Meeting Edge shots come from the
-  Artemis briefing. The transcripts shot comes from **"Welcome to Nojoin", the demo recording
-  the product itself seeds** — four speakers trading one line each, which is what a
-  diarisation shot needs and what a press conference cannot give: Artemis is long monologues,
-  and its whole 12,070px transcript was scanned at 40px steps without ever holding three
-  speakers at once. Any user can re-create that recording from **Settings**, or with
-  `POST /api/v1/system/seed-demo`, so the shot is reproducible rather than a one-off. Note
-  that the other eight seeded business meetings are metadata only and have no transcript at
-  all, so they cannot supply one.
-- **The selective highlight**: at most one line per page carries a flat `--action-tint` mark
-  behind the text. If nothing on a page earns it, that is a finding about the page, not a
-  reason to lower the bar. The highlight and the closer are separate devices; a page never
-  gains a second highlight.
+  The prose names Claude and ChatGPT. The tool counts ("thirty-two tools, nineteen of which
+  write", and the six group counts) are copied by hand from [MCP.md](MCP.md#available-tools)
+  into `index.astro` and into the `agents` rows of `comparison.ts`. Re-count both whenever a
+  tool is added or removed.
+- **Feature rows.** Meeting Edge, Transcripts and Notes put the copy beside the shot, alternating
+  sides. This works only because each shot is cropped to its row's subject; if a shot goes back
+  to being a whole window, fix the crop, not the grid. A row whose screenshot shows nothing new
+  is cut.
+- **One surface, no hard bands.** `.band` carries only `--band-wash`, and depth comes from the
+  frames and cards floating on the page. `.band` and `.section` must strictly alternate down
+  every page, because two adjacent bands are indistinguishable. Check this whenever a section is
+  added or removed.
+- **The quick-start code block** is dark in both themes and ignores the toggle.
+- **Colour.** Neutral, plus one orange-700 closer band (`.closer`) at the foot of the page. No
+  cream tints and no glass.
+- **Closers.** The landing page ends on the managed-service teaser, with no repeat of the hero's
+  CTAs. `/managed/` ends on its email CTA.
+- **No three-up strip and no privacy section on the landing page.** Both restated the hero.
+  `/managed/` keeps its own strip.
+- **Site-only effects.** The site departs from the app's flat canon only in the ways DESIGN.md
+  lists, all declared in `site-tokens.css`: the primary button's glow (`--glow-action`,
+  `--glow-inset`), the hero wash (`--hero-wash`), the band wash (`--band-wash`), card lift
+  (`--lift`, `--lift-strong`) and the frame edge (`--frame-accent`). Add no others.
+- **Nav.** Home, Quick start (`/#quick-start`, absolute because the section exists only on the
+  landing page), Pricing (`/managed/`), Compare, Docs (`docs/README.md` on GitHub), then the
+  star badge and the theme toggle. There is no menu button: the header wraps to a second row
+  down to 320px. Revisit only if the nav stops fitting.
+- **Sticky header** with a solid fill and no `backdrop-filter`. `section[id]` reserves its
+  height with `scroll-margin-top`: 8.5rem below 48rem, where the nav wraps, and 5rem above.
+- **Selective highlight.** At most one `<mark class="hl">` per page, on a flat `--action-tint`.
+  A page with nothing that earns it gets none.
 
-Tokens are shared with the app: `Base.astro` imports `frontend/src/app/tokens.css` by
-relative path alongside `site/src/styles/site-tokens.css`, which holds the families the app
-has no equivalent of (syntax highlighting, frame chrome, the closer-band buttons, the
-marketing scale). Both go through `site/plugins/tokens-theme.mjs`, which is what makes their
-dark values answer to the header toggle as well as to the OS setting. **Both must be imported
-as modules from `Base.astro`.** An `@import` from `site.css` is inlined by Tailwind's pipeline
-before any transform can see it, which is how the site-only tokens came to ignore the toggle
-entirely; the plugin now fails the build if that import comes back. The contrast gate audits
-the site as two extra themes and cannot see this class of bug at all; see DESIGN.md's
-accessibility section.
+### Screenshots
+
+- **Crop to the row's subject**, about 540 to 800 logical pixels wide, so it renders near life
+  size in half the wrap. Only the hero shows the whole app.
+- **Capture at the width the crop needs** instead of cropping a wide window, so lines wrap
+  inside the frame.
+- **No two shots show the same content.**
+- **Pairs.** Each shot is `site/public/images/<name>-light.webp` and `<name>-dark.webp`,
+  captured from one clip in both themes so the pair shares a ratio. Pass the file's dimensions
+  to `Shot` as `width` and `height`; the defaults (1920 by 1080) suit only the 16:9 hero.
+- **Delete unreferenced captures** from `site/public/images/`.
+- **Sources.** The dashboard, Meeting Edge and notes shots come from a seeded demonstration
+  instance of public-domain recordings processed by the real pipeline, with speakers named as
+  the people they are; the Meeting Edge and notes shots use the Artemis briefing. The
+  transcripts shot needs several speakers in a short span, so it uses "Welcome to Nojoin", the
+  sample meeting every install seeds: a scripted transcript with four made-up speakers. Any
+  user can recreate it under **Settings > Help > Demo meeting > Create it again**, or with
+  `POST /api/v1/system/seed-demo`.
+
+### Tokens
+
+`Base.astro` imports `frontend/src/app/tokens.css` and `site/src/styles/site-tokens.css` as
+modules, so `site/plugins/tokens-theme.mjs` can make their dark values answer to the toggle.
+Never `@import` `site-tokens.css` from `site.css`: the plugin fails the build if you do.
+[DESIGN.md](DESIGN.md#the-marketing-site) covers the rest.
 
 ## Voice
 
-The site speaks the product's own register: plain, direct, a little opinionated, second
-person, British English, no emoji. It shares a writing standard with the
-sibling brand Vorkane, adapted rather than copied — Vorkane sells a person and writes in the
-first person singular; Nojoin is a product and never says "I" or "we" in marketing copy.
+Plain, direct, a little opinionated, second person, British English, no emoji. Nojoin is a
+product, so marketing copy never says "I" or "we".
 
-**One page is exempt: `/managed/`.** What it sells is not the product but one named person's
-time, and a service provided personally cannot honestly describe itself as "it". That page
-writes in the first person singular and says so in its own first paragraph. It names nobody:
-the person is identified as the one who built Nojoin, which is checkable against the commit
-history, and no name goes on the site or into the repository by decision.
-The exception is scoped to that page and does not travel: the landing
-band that points at it stays in the product's voice and refers to "Nojoin's developer" in the
-third person, so a visitor meets one narrator per page rather than two per scroll. "Developer"
-rather than "author": he wrote software, not a book, and the word that describes the work is
-also the word that makes the managed offering make sense. "We"
-stays banned everywhere, including there — one person is an "I", never a "we", and the
-corporate plural is exactly the register the rest of these rules exist to avoid.
+**`/managed/` is the exception.** It sells one person's time, so it writes in the first person
+singular and says so in its first paragraph. It names nobody: he is the person who built Nojoin,
+and no name goes on the site or into the repository. The landing page's teaser for it stays in
+the product's voice and says "Nojoin's developer". "We" is banned everywhere, including
+`/managed/`.
 
-The rules:
-
-- **Title case for headings and eyebrow labels, sentence case for everything else.** This
-  reverses an earlier sentence-case-everywhere rule. Headings on this site are labels rather
-  than sentences, and title case is what the rest of the web sets them in. The style is the
-  conventional one, not every-word-capitalised: principal words take a capital and short
-  function words do not unless they open or close the line — "Every Word, Attributed to the
-  Right Person", "£24.99 a Person, a Month", "Four Steps to Running". Body copy, leads,
-  buttons, table cells and alt text stay sentence case. The hero headline follows the same
-  rule now that it is a label and no longer two sentences. It is baked into the Open Graph
-  card, so changing it means regenerating that card as well.
-- **Contract.** "It's", "can't", "won't", "you've". The refusal to contract is one of the
-  strongest tells that a machine wrote it.
-- **Connect the claims.** A sentence carries the reader from one fact to the next with "so",
-  "because" or "when": "transcribes them on your own hardware, so no bot joins the call".
-  Two unrelated facts joined by ", and" for balance read as a slogan, and a run of short
-  declaratives reads as a list being recited. "It was built to be that bridge, and nothing
-  about it is metered" did both, and it is the sentence this rule was written against. This
-  replaces an earlier instruction to put a three-word sentence next to a thirty-word one,
-  which produced a punchline every time it was followed. Sentence length still varies, as a
-  result of what each sentence has to say.
-- **Ration the negatives.** "No bot joins the call" is the product's name and the one
-  negative the site leads with. Other claims are written as what Nojoin does: "how much you
-  record is up to your hardware" in place of "nothing is metered", "each person approves it
-  once from their own account" in place of "no API key, nothing to paste". The landing page
-  once carried 14 negations in about 400 words, and a page that describes itself by what it
-  lacks has a drumbeat that rewording single lines does not remove. The comparison page's
-  opening line keeps its three, because the contrast with funded competitors is that page's
-  argument. Limits on `/managed/` are stated as limits, since a limit is a negative fact.
-- **No punchline closers.** A paragraph ends when its last fact is stated. Cards and
-  paragraphs used to close on an aphorism, such as "A backup nobody has restored is a
-  hypothesis" and "you're buying my time, not access". Once every block did it, the device
-  read as a formula. Say what is done and how it helps the reader. This replaces the earlier
-  "parallel closers" rule.
-- **No em dashes or en dashes in copy.** A comma, a colon or a full stop. Page titles
-  separate with a pipe.
-- **Numbers instead of adjectives**, wherever a true number exists. One compose file, one
-  anonymous ping, one setting, four steps, one click. A technical reader takes numbers as
-  evidence and adjectives as sales.
-- **Name the actor.** Never a bare "it" where two subjects are in play.
-- **Do not guess at the reader.** No "you probably", no assumptions about their setup or
-  their size. Make the claim about the thing, not about them.
-- **Concede facts, not ground.** Where a competitor does something well, say so plainly;
-  where a concession has a counterpoint, make it. Candour about checkable limits is what
-  buys the credibility of everything else.
-- **Sell, and let the facts do it.** This is a marketing site and the register is confident.
-  It earns that with true, checkable statements: thirty-two tools, one compose file, four
-  steps, £24.99 a person. A number survives being checked and a superlative does not. The
-  banned list below still holds, because those words carry no information. Competitor claims
-  still need a source and a date.
-- **Plain labels beat clever ones.** A label may be evocative only if its meaning is still
-  obvious in half a second.
-- **Whole jobs, not first drafts.** Every feature example ends with something genuinely
-  delivered: the transcript attributed, the notes written, the task filed.
-- **Say each idea once, on the page where it lands hardest.** The landing page had drifted
-  into a sequence of self-contained pitches: no-bot appeared three times, "your own server"
-  three times, CRM six times, and one thirteen-word clause about plain primitives ran
-  verbatim in two places a screen apart. Repetition does not reinforce a claim, it tells a
-  reader the page has nothing further to say. The page argues **one** thing, open-source
-  meeting notes on hardware you own that an assistant can edit, and every section below the
-  hero is evidence for it rather than a fresh advert. When a claim appears twice, delete the weaker
-  instance rather than rewording it.
-- **Do not inventory the product.** The tool showcase used to name all thirty MCP tools; the
-  goal is not to have every feature listed, it is to pitch one platform. A count carries the
-  same claim without the reader having to audit a list.
-- **A word budget, and it is a ceiling rather than a range.** No more than about 1,000 words
-  across the three pages, counting every heading, paragraph, list item and definition inside
-  `<main>` and leaving out the comparison tables and the code block. Devices, screenshots
-  and the tables carry the rest. The figure was 876 before the copy was rewritten into
-  connected sentences and 984 after it, because a sentence that gives its reason is longer
-  than a slogan. That 12% was accepted as the price of the change in cadence. The ceiling
-  replaces one of about 400 words for "the skim layer", which nobody could reproduce because
-  the layer was never defined. There is still no floor. Repetition is the defect, and a
-  shorter page is fine.
+- **Title case for headings and eyebrow labels**, in the conventional style: short function
+  words stay lower case unless they open or close the line ("Every Word, Attributed to the
+  Right Person", "£24.99 a Person, a Month"). Body copy, leads, buttons, table cells and alt
+  text use sentence case.
+- **Contract**: "it's", "can't", "won't".
+- **Connect the claims.** Carry the reader from one fact to the next with "so", "because" or
+  "when". Avoid unrelated facts joined by ", and" for balance, and runs of short declaratives.
+- **Ration the negatives.** "No bot joins the call" is the one negative the site leads with.
+  Elsewhere, say what Nojoin does: "how much you record is up to your hardware", not "nothing
+  is metered". The comparison page's opening line and the limits on `/managed/` are exempt.
+- **No punchline closers.** A paragraph ends on its last fact.
+- **No em dashes or en dashes.** Use a comma, a colon or a full stop. Page titles separate with
+  a pipe.
+- **Numbers instead of adjectives**, wherever a true number exists.
+- **Name the actor.** No bare "it" when two subjects are in play.
+- **Don't guess at the reader.** No "you probably", no assumptions about their setup or size.
+- **Concede facts.** Where a competitor does something well, say so.
+- **Sell with checkable facts.** The register is confident, but a number survives being checked
+  and a superlative does not.
+- **Plain labels.** An evocative label is fine only if its meaning is obvious in half a second.
+- **Whole jobs.** Every feature example ends on something delivered: the transcript attributed,
+  the notes written, the task filed.
+- **Say each idea once**, on the page where it lands hardest. When a claim appears twice,
+  delete the weaker instance. The landing page argues one thing, open-source meeting notes on
+  hardware you own that an assistant can edit, and each section below the hero is evidence for
+  it.
+- **Word budget.** About 1,000 words at most across the three pages, counting everything inside
+  `<main>` except the comparison tables and the code block. There is no floor.
 
 **Banned everywhere**: seamless, powerful, robust, enterprise-grade, best-in-class,
 cutting-edge, unlock, empower, leverage, revolutionise, game-changing, AI-powered,
-frictionless, turnkey, peace of mind, bank-grade — and every superlative implying
-exclusivity (only, first, unique, unmatched), because an unverifiable claim costs the
-credibility of every checkable one.
+frictionless, turnkey, peace of mind, bank-grade, and any superlative claiming exclusivity
+(only, first, unique, unmatched).
 
 ## Claims and the comparison page
 
-Every claim on the site is traceable to `README.md` or a file in `docs/`; nothing is
-invented for marketing effect.
+Every Nojoin claim on the site traces to `README.md` or a file in `docs/`. Nothing is invented
+for marketing effect.
 
-**Three competitors, and which three is a decision.** The page compares Nojoin against
-Jamie, Otter and Granola. Fireflies was dropped when Jamie was added rather than running a
-fifth column: the detailed table is already the widest thing on the site, and another column
-either squeezes every cell or pushes one somewhere nobody scrolls to. Fireflies went because
-it is the least like Nojoin on the axes this page argues — bot-by-default capture, a US
-cloud, no self-hosting to concede against — and Jamie is the opposite on all three, which
-makes it the harder comparison and the more useful one. Jamie sits second, directly after
-Nojoin, because column order decides which competitor actually gets read.
+`comparison.ts` holds two tables: `rows`, the detailed comparison (one text cell per product),
+and `summaryRows`, the at-a-glance table (a `yes`, `partial` or `no` verdict and a short note per
+cell). Columns run Nojoin, Jamie, Otter, Granola; Jamie sits second because it is the closest
+rival and column order decides which competitor gets read. Which competitors appear is the site
+owner's call. Their names also appear in the landing page's comparison band and in
+`compare.astro`'s description and heading.
 
-**Which competitors appear is the site owner's call.** What this document records is the
-reasoning to weigh, not a rule: a set worth publishing is one where the table still contains
-rows a competitor wins, because the concessions are what make the structural gaps believable.
-As it stands Jamie takes an outright yes on no-bot capture and on remembering speakers, and a
-partial on assistant write access — the row Nojoin leads with. A table Nojoin swept would be
-worth a second look for that reason alone.
+The page shows no source URLs or read dates. The standard behind each cell still holds:
 
-**What that sweep test actually catches, revised.** The summary table was audited and it was
-swept: ten rows, ten Nojoin yeses. The cause was not generous verdicts. It was row selection.
-Four detailed rows — live guidance, calendar, search, export — never had a summary verdict,
-and those were exactly the axes where Nojoin ties or trails. Every axis Nojoin led got a
-summary row and every axis it did not was left in the prose table. So the test needs
-sharpening: **count the axes you left out, not just the verdicts you put in.** A summary table
-that is a filtered subset of the detailed one will always sweep, whatever the verdicts say.
-
-Two things came out of that audit, and the second reverses a decision this document recorded.
-
-- **Five rows were saying one thing.** Self-hosting, processing, storage, licence and model
-  choice all read Nojoin yes against three crosses. That is one argument — how much of the
-  stack is yours to change — counted five times, which inflated the win count without adding
-  an idea and broke the site's own rule that each idea appears once. They are now two rows:
-  "Runs and stores everything on your hardware" and "Open source, with your choice of model".
-  Merging the first three also resolved Otter's "not stated in docs" self-hosting cell, since
-  where its processing and storage run *is* documented. The detailed table keeps all five rows;
-  it is the place for detail, and nothing was deleted from it.
-- **The rows recovered went to axes that discriminate.** "Voice models you hold and can
-  rebuild" is new, and "Your data comes out whole" replaces the four missing portability
-  verdicts with one. The summary is eight rows rather than ten and covers more ground.
-
-**Nojoin still takes a yes on every summary row, and that is now a decision rather than an
-oversight.** The earlier framing treated a sweep as a defect in itself. It is not: the defect
-is a sweep produced by hiding the axes where you lose. Every concession on the page is a tie
-rather than a loss — Nojoin is a yes on no-bot capture, on speaker memory and on portability,
-alongside a competitor who is also a yes — so conceding costs nothing and buys the wins their
-meaning. What the page must never do is manufacture a Nojoin cross to look even-handed, or
-delete a competitor's tick to look ahead. On this page the concessions carry the argument
-without either.
-
-**The speaker question is two rows, and the first one exists to make the second legible.**
-"Speakers remembered between meetings" concedes Jamie's and Otter's outright yes. "Voice
-models you hold and can rebuild" then asks what happens to the voice model afterwards, which
-is where `USAGE.md` has an answer nobody else documents. Run alone, the second row would read
-to a buyer as *Nojoin remembers speakers and the others do not* — a claim Otter's own
-marketing contradicts, and one that would discredit the rows around it. The concession is what
-makes the sharper row a specific claim rather than a dubious one. Do not collapse the pair.
-
-**The page no longer shows its sources.** It used to carry a numbered footnote under every
-competitor cell with the exact URL and the date it was read, plus a weekly CI job that
-re-checked each link. All of it is gone: the footnotes, the `source` field on `Cell`, and the
-`check-comparison-sources` job. Nobody else in this market footnotes a comparison, the
-apparatus made the page read like a paper rather than a product page, and a reader who
-genuinely doubts a row can check it in a minute. **This was the site owner's call, and it is
-his to reverse.** The cost is stated plainly so the reversal is an informed one: the
-footnotes were the reason the concessions read as candour rather than as marketing, and they
-were the answer if a competitor ever disputed a cell.
-
-What has *not* changed is the standard the claims themselves are held to:
-
-- **Every competitor claim is still checked against that vendor's own current documentation
-  before it goes up.** Not showing the source is not the same as not having one. Write the
-  cell from the vendor's docs, not from memory, a review site, or a competitor's own
-  comparison page.
-- **A claim that cannot be checked does not go on the page.** It appears as an explicit "Not
-  stated in current docs" cell rather than a guess. That wording survives the footnotes
-  deliberately: it says what was looked for and not found.
-- **No competitor pricing, ever.** Prices change without notice, and a stale price is the
-  error people screenshot.
-- **Where a competitor is good, the cell says so.** The concessions are what make the
-  structural gaps (self-hosting, licence, model choice) believable, and they matter more now
-  that nothing else on the page demonstrates rigour.
-- **Nothing watches for staleness any more.** The weekly link check is gone and no date is
-  displayed, so a row that quietly went wrong will stay wrong until someone re-reads it.
-  Treat any vendor feature announcement as a trigger to re-check that row by hand.
-- **Do not demote a competitor on an assumption.** The first attempt at this pass was to
-  downgrade Otter's cross-meeting speaker matching to a name-label lookup. Otter's own help
-  centre describes acoustic enrolment — "learns from just a few tagged paragraphs for each
-  speaker", and it calls them "speaker enrollments" — so the downgrade would have been false.
-  Where Nojoin is genuinely ahead here is depth and ownership: a speaker library you can
-  open, voiceprints you can recalibrate from better samples, automatic rebuilds after an
-  upgrade, and deletion that actually removes the voiceprint — none of which any competitor
-  documents, all of it in `USAGE.md`. Argue from that rather than from a competitor being
-  worse than they are. That argument is now on the page as its own summary row, sitting under
-  the row that concedes the matching. The competitor cells there read "Not stated in docs" —
-  the sanctioned wording — because each vendor's own documentation was searched for voiceprint
-  management and none was found. They do not assert that no such feature exists.
-- **Some vendor documentation cannot be fetched, and that constrains what can be claimed.**
-  `help.otter.ai` returns 403 to an automated fetch and `docs.meetjamie.ai` returned 404 on
-  the speaker page during this pass. Search indexes still surface the text, but a search
-  engine's extract is not the same as having read the page. Where that gap applies, write
-  "Not stated in current docs" and claim nothing sharper. An axis that would need a competitor
-  cross to work, and whose source cannot be opened, does not go on the page at all: that is
-  why an edit-provenance row was drafted and dropped. Nojoin's own edit labelling is a real
-  differentiator, but neither Otter's nor Jamie's editing docs could be read to check it, and
-  three "not stated" cells on a row about editing would imply those products cannot be edited,
-  which is a false impression even when every individual cell is defensible.
+- **Check every competitor claim against that vendor's own current documentation** before it
+  goes up. Not memory, a review site, or a competitor's comparison page.
+- **An unverifiable claim stays off the page.** Write "Not stated in current docs" (detailed
+  table) or "Not stated in docs" (summary): it says what was looked for and not found, never that
+  a feature is missing. This applies when a vendor's page cannot be opened, too. A row whose
+  point rests on such cells does not go up at all.
+- **No competitor pricing.** Plan limits are fine.
+- **Don't demote a competitor on an assumption.** Argue from what Nojoin documents.
+- **Nothing checks for staleness.** Re-check a row by hand when its vendor announces a change.
+- **Choose summary rows fairly.** A summary that lifts only the axes Nojoin wins always sweeps,
+  so count the axes left out as well as the verdicts. One argument gets one row: self-hosting,
+  processing and storage are a single row, as are licence and model choice, while the detailed
+  table keeps them separate. Nojoin currently takes a yes on every summary row. That is
+  acceptable only because each concession is a tie (Jamie and Granola on no-bot capture, Jamie
+  and Otter on speaker memory, Otter on portability). Never add a Nojoin cross to look
+  even-handed or remove a competitor's tick to look ahead.
+- **Keep the speaker rows as a pair.** "Speakers remembered between meetings" concedes Jamie's
+  and Otter's yes, so "Voice models you hold and can rebuild" (argued from
+  [USAGE.md](USAGE.md)) reads as the specific claim it is. Alone, the second row implies the
+  others forget speakers, and Otter's documentation contradicts that.
+- **Live in-meeting guidance stays out of the summary**, because Otter and Granola document a
+  form of it.
 
 ## The managed service
 
-`/managed/` sells one thing: the developer of Nojoin scoping, installing and maintaining a
-private instance for an organisation. **The page names nobody.** It writes in the first
-person, because one person really does answer, but it identifies him as the person who built
-Nojoin rather than by name — the full legal name stays off the site and out of the
-repository by decision. The commercial shape below was settled deliberately and the
-reasoning matters more than the numbers, because the numbers will move.
+`/managed/` sells the developer of Nojoin scoping, installing and maintaining a private instance
+for an organisation, on hardware the organisation owns. Its tagline is "Nojoin on Your Hardware,
+Run by Its Developer". The terms below are what the page commits to; keep the page and this list
+in step.
 
-The tagline is "Nojoin on Your Hardware, Run by Its Developer". It states the two facts the
-page sells: whose machine it is and who looks after it. It replaced "All the Control, None of
-the Admin", a balanced pair that named the trade and neither party to it, and that went when
-the site stopped closing on matched halves. The tagline before that, "Self-hosted, without
-hosting it yourself", assumed the reader already knew what self-hosting was, on the one page
-most likely to be read by someone who does not. The current one still avoids that.
+- **Price.** £24.99 a person a month, minimum five people. The figure appears in `/managed/`'s
+  meta description, hero and price card, and in the landing page's closer. Change all of them
+  together.
+- **Hardware.** The customer buys and owns it and pays the supplier directly; the fee is labour
+  only. The page describes the machine (the 8 GB VRAM practical minimum from
+  [DEPLOYMENT.md](DEPLOYMENT.md), with CPU-only named as slower) and never prices it.
+- **No caps.** No usage meter, no limit on call length, no history that expires. The comparison
+  page's "Limits on how much you process" row carries the competitor side.
+- **Support.** Same day if the instance is down, next working day otherwise, UK working hours. No
+  uptime figure, SLA or capacity claim.
+- **Included.** Monitoring from outside the customer's network; upgrades in one maintenance
+  window a month, with security fixes applied as soon as they're out; backups set up and
+  test-restored.
+- **Feature requests.** Managed customers' requests are read first and always answered.
+  Anything built ships to everyone under AGPLv3, so a customer can stop paying and keep the
+  same software.
+- **Kept off the page.** The data processing agreement and the admin access maintenance needs.
+  Nothing on the page claims the data is unreachable.
+- **Contact.** The only call to action is `hello@nojoin.co.uk`, a Proton alias that can be
+  replaced if it attracts spam. There is no booking page; the comment in `managed.astro` gives
+  the reason.
 
-- **The customer owns the hardware and pays for it directly.** The fee is labour and nothing
-  else. That removes idle spend, cost overruns and supplier risk from the offering in one
-  move, and it keeps "your server, your data" literally true — which the rest of the site
-  spends two pages arguing for.
-- **The page describes the machine, not its price.** 8 GB of VRAM, quoted from
-  DEPLOYMENT.md, with CPU-only named as slower rather than absent. The same reasoning that
-  bans competitor pricing applies to a supplier's: a quoted cloud price goes stale and a
-  stale price is the error people screenshot. It is also honest that a customer with a
-  suitable machine already pays nothing extra.
-- **£24.99 a person a month, minimum five.** This replaced a £250 flat fee covering ten to
-  twenty-five people, and a £950 setup charge waived on a twelve-month commitment. Both are
-  gone from the page: per-seat is what a buyer already understands, and it scales without
-  the cliff the banded version had at the sixth seat. The line "per-seat pricing runs the
-  other way" went with it — the offering is now per-seat, so that argument would have been
-  aimed at itself. **The price is written in two places** — the `/managed/` price card and
-  the landing page's managed teaser — and the teaser was missed when the number changed, so
-  the landing page advertised £250 from ten people for as long as `/managed/` sold £24.99
-  from five. Move both, or the cheaper page wins the argument with the other one.
-- **Nothing is capped, and the page leads on it.** No monthly allowance, no ceiling on call
-  length, no history that expires while the customer is still paying. There is no meter in
-  the software to hit. Every competitor has a tier where something runs out, which the
-  comparison page now shows in a sourced row rather than asserting — Otter meters minutes
-  below its upper plans, Granola limits history on its entry plan, and Jamie charges a
-  credit a meeting and locks the notes you already have when they run out. Where a
-  competitor's upper plans lift a limit, the row says so.
-- **Nothing on the page is a promise that breaks on a bad week.** No uptime figure, no SLA,
-  no capacity claim. Same day if the instance is down, next working day otherwise, UK hours,
-  and the limit named rather than implied. Monitoring is listed as part of the fee because
-  an outage promise is only meetable if something outside the network notices the outage.
-- **Upgrades run monthly, deliberately slower than releases.** Ten releases shipped in the
-  seven weeks before the page was written. Applying each one to a customer's production
-  system means changing it twice a week, and this repository has already met an Alembic
-  back-stamp that crash-loops a newer image.
-- **The AGPL position is stated as a feature, not conceded as a limit.** Prioritised
-  requests get read first and get an answer; whatever gets built ships to everyone under the
-  same licence. The licence forbids a private version, so nobody is locked in, and the thing
-  being sold is time rather than access. That is a strong sentence and a weak omission.
+## Working on the site
 
-Two things that are true and stay off the page by decision: the processing agreement, and
-the admin access that makes maintenance possible. No sentence there claims the data is
-unreachable, so nothing needs retracting on a call.
-
-**The call to action is an address, not a booking page.** A self-hosted scheduler was the
-plan, on the reasoning that a page arguing for self-hosting should book its own calls
-through software it hosts. Cal.com then moved its production codebase into a private
-repository: the public repo became `calcom/cal.diy`, relicensed from AGPL-3.0 to MIT,
-stripped of teams and workflows, and documented by its own maintainers as being for
-personal rather than production use. No Docker image is published for it and its app URL is
-baked in at build time, so running it would mean building and rebuilding a Next.js monorepo
-to keep one booking type alive — under the page's only call to action, with nothing behind
-it if the build broke. `hello@nojoin.co.uk` cannot go down. It is a Proton alias on the
-custom domain rather than the inbox itself, because an address in public markup gets scraped
-and an alias can be replaced without moving the mailbox.
-
-## Working on the site, and previewing it
-
-Everything under `site/` builds on **Node 26 with the npm it bundles**, which is what CI and
-the deploy job use. Check `node --version` first on a host with more than one Node: an older
-npm has rewritten `package-lock.json` before, with no error, stripping `libc` fields and
-downgrading entries CI then rejects.
+Build on Node 26 with the npm it bundles, as CI and the deploy job do. Check `node --version`
+first: an older npm rewrites `package-lock.json` in ways CI rejects.
 
 ```bash
 cd site
-npm ci                   # never `npm install`, for the reason above
+npm ci                   # never `npm install`
 npm run build            # writes site/dist
 npm run serve            # builds, then serves the build on port 4322
 ```
 
-`npm run dev` exists but preview the **built** output before asking anyone to look: the dev
-server resolves imports differently and has shipped differences before.
+`npm run dev` exists, but review the built output: the dev server resolves imports differently.
 
 ### Sharing a preview
 
-A Cloudflare quick tunnel shares a preview with a reviewer who cannot bind local ports over
-SSH, and needs no account, no DNS record and no token:
+A Cloudflare quick tunnel shares a preview with someone who cannot reach your ports, with no
+account, DNS record or token:
 
 ```bash
 cloudflared tunnel --url http://127.0.0.1:4322
 ```
 
-It prints a single-use `https://<random>.trycloudflare.com` URL. `astro.config.mjs` already
-allows `.trycloudflare.com` under `vite.preview.allowedHosts`; without that entry the preview
-server answers every tunnelled request with a host-check error.
+It prints a temporary `https://<random>.trycloudflare.com` URL. `astro.config.mjs` allows
+`.trycloudflare.com` under `vite.preview.allowedHosts`; without it the preview server rejects
+tunnelled requests.
 
 **If the host also runs a `cloudflared` service for live traffic, never stop, restart or
-reconfigure it.** A quick tunnel is a separate process, but `pkill -f cloudflared` kills
-both, and a `pkill` pattern can also match the shell that invoked it. Kill preview tunnels
-by PID, and tidy them up when the review is done rather than leaving a fleet running.
+reconfigure it.** `pkill -f cloudflared` kills both, and the pattern can match the invoking
+shell too. Stop preview tunnels by PID when the review is done.
 
-### Titles: the tab and the share card are different jobs
+### Page titles
 
-`Base.astro` takes `title` and an optional `ogTitle` that defaults to it. They started as one
-prop and were split deliberately. A browser tab wants the shortest thing that identifies the
-site, so the landing page's tab reads `Nojoin` and nothing else. A Slack or LinkedIn card is
-read cold by someone who has never heard of Nojoin and wants the descriptive line, so its
-`og:title` stays "Nojoin: open-source meeting notes on a server you own". Collapsing them
-back into one prop degrades every share link to the bare word, and nothing on the site
-itself shows that it has happened. The card that advertised a superseded tagline for two
-rewrites failed the same way.
-
-Sub-pages take `Subject | Nojoin`: `Compare | Nojoin`, `Managed | Nojoin`. The separator was
-an em dash until the copy stopped using them. That keeps three
-open tabs distinguishable, which flattening every page to `Nojoin` would not, and each keeps
-its own longer `ogTitle`. Only set `ogTitle` on a page where the two genuinely want different
-words; today that is the landing page and `/managed/`.
+`Base.astro` takes `title` for the browser tab and an optional `ogTitle` for the share card,
+defaulting to `title`. The landing page's tab is `Nojoin`; sub-pages use `Subject | Nojoin`
+(`Compare | Nojoin`, `Managed | Nojoin`). Set `ogTitle` only where the card needs more words
+than the tab: today the landing page ("Nojoin: open-source meeting notes on a server you own")
+and `/managed/`. Keep the two props separate, or every share card shows the bare tab title.
 
 ### The Open Graph card
 
-`site/public/images/og-card.png` is the single card every page shares, and it carries the
-hero headline. It was hand-made once and then drifted through two headline rewrites, so
-every share advertised a tagline the site had stopped using — invisible from the site
-itself, because nothing on the page renders it.
+`site/public/images/og-card.png` is the one card every page shares, and it carries the hero
+headline. It is also the image at the top of `README.md` and, uploaded by hand in the repository
+settings, the GitHub social preview. When the headline changes:
 
-`site/scripts/build-og-card.mjs` regenerates it. **Run it whenever the headline changes, and
-update `og:image:alt` in `Base.astro` to match.** The script takes the headline as one array
-entry per line, so the card breaks where the page does. Left to wrap inside a narrow measure,
-the last word of the current headline sat alone on a third line. Playwright is deliberately not a dependency
-of this repository, the same call the screenshot pipeline made for a job that runs about once
-a year, so the script takes a Chromium path from `PLAYWRIGHT_CHROMIUM` and expects
-`playwright-core` to be resolvable from outside the repo.
+1. Edit `HEADLINE` in `site/scripts/build-og-card.mjs`, one array entry per line to match the
+   page's break, and run `node site/scripts/build-og-card.mjs`. Playwright is not a dependency
+   of this repository: `playwright-core` must resolve from a directory outside it, and
+   `PLAYWRIGHT_CHROMIUM` points at a Chromium binary.
+2. Update `og:image:alt` in `Base.astro` and the image's `alt` in `README.md`.
+3. Upload the new card as the social preview.
 
-The card's colours are the app's dark-theme tokens, quoted in the script rather than imported:
-it renders a bitmap, out of the stylesheet's reach. No gate catches a drift between the two.
+The card's colours are the app's dark-theme tokens, copied into the script. Nothing checks them,
+so update the script when those tokens change.
 
-### What a static preview cannot show you
+### What a local preview cannot show
 
-`/docs/*` redirects do not fire. They live in `site/worker/index.js` and only run on a real
-Workers deployment, so a 404 on `/docs/TELEMETRY` in local preview is expected rather than a
-regression. `wrangler dev` is not parity either — redirect rules that worked there have failed
-in production. Verify that contract against `https://www.nojoin.co.uk/docs/TELEMETRY` after a
-deploy; there is no workers.dev copy to test it on first, so a redirect change is
-verified in production or not at all.
+The `/docs` redirects live in `site/worker/index.js`, which runs only on the deployed Worker, so
+`/docs/TELEMETRY` returns 404 under `npm run serve`. There is no staging copy (`workers_dev` is
+off), so after changing the Worker or `wrangler.jsonc`, check
+`https://www.nojoin.co.uk/docs/TELEMETRY` once the deploy finishes.
 
-### Checks worth running before asking for review
+### Checks before review
 
-- `node frontend/scripts/check-contrast.mjs` — audits the site as two of its four themes.
-  It only checks pairings listed in `SITE_PAIRINGS`, so **new colour-on-colour furniture is
-  invisible to it until someone adds the pairing**. Adding one is part of adding the
-  furniture, not a follow-up. It also measures values only, never whether the rule holding
-  them applies to anybody, so a green gate is not evidence that a visitor can reach the
-  colours it just approved.
-- **The four-way theme matrix.** The site has two theme inputs — the OS
-  `prefers-color-scheme`, and the choice the header toggle stores in `localStorage` under
-  `nojoin-theme` — and the bugs live where the two disagree. Checking "light" and "dark" is
-  checking half of it. Force both independently: Playwright's `colorScheme` context option
-  for the OS, and an init script setting `nojoin-theme` for the choice.
+- **CI.** The `Site build` job in `ci.yml` runs `npm ci`, `npm run build` and
+  `node frontend/scripts/check-contrast.mjs` when `site/`, `frontend/src/app/tokens.css`, the
+  contrast script, or the Docker, compose, nginx or CI files change. Run the same locally.
+- **Contrast pairings.** The gate audits the site as two of its four themes, but only the
+  pairings in `SITE_PAIRINGS`. Register any new colour-on-colour element there in the same
+  change. It measures values, not whether a rule applies; DESIGN.md explains the blind spots.
+- **The four-way theme matrix.** The OS setting and the stored choice are independent inputs,
+  and the bugs live where they disagree. Force each one separately (Playwright's `colorScheme`
+  context option for the OS, an init script setting `nojoin-theme` for the choice):
 
   | Stored choice | OS setting | What must render |
   | --- | --- | --- |
@@ -587,71 +300,41 @@ verified in production or not at all.
   | light | dark | light |
   | dark | light | dark |
 
-  The last two are the ones that shipped broken. Read the computed value of a site-only
-  token (`--code-fg` is the clearest) rather than judging by eye: the page chrome comes from
-  the app tokens and looked right in every case while the syntax colours were wrong.
-- Horizontal overflow at 360px and 1920px, in both themes, on every page: compare
-  `document.documentElement.scrollWidth` against `window.innerWidth`. Two overflow bugs have
-  shipped from this repository and both were invisible at desktop width. An element with its
-  own `overflow-x: auto` exceeding its box is fine — a code block and the comparison tables
-  both do, deliberately. The document moving is not.
+  Read the computed value of a site-only token that changes with the theme, such as
+  `--frame-chrome`, rather than judging by eye: the app tokens can look right while the
+  site-only ones are wrong.
+- **Horizontal overflow** at 360px and 1920px, in both themes, on every page: compare
+  `document.documentElement.scrollWidth` with `window.innerWidth`. An element scrolling inside
+  its own `overflow-x: auto` box (the code block, the comparison tables) is fine; the document
+  scrolling is not.
 - `python3 scripts/validate_docs.py` and `git diff --check`.
 
-## How it is served, and what replaced what
+## Deployment
 
-`www.nojoin.co.uk` is a Cloudflare **Worker Route**, declared in `site/wrangler.jsonc` and
-deployed by CI. It is a Route rather than a Custom Domain on purpose: the hostname was
-already a proxied record, a Custom Domain cannot attach to a hostname that has one without
-deleting the record first, and that would put DNS propagation behind any rollback. A Route
-sits in front of the proxied record, so adding it intercepts traffic atomically and removing
-it stops intercepting just as atomically.
+`.github/workflows/site-deploy.yml` builds and deploys whatever `main` holds, on four triggers: a
+push to `main` touching `site/**`, a published release, a weekly schedule (Monday 06:12 UTC) and
+manual dispatch. It runs `wrangler deploy` with the `CLOUDFLARE_API_TOKEN` secret, one deploy at
+a time.
 
-**The site is served on that route alone.** `workers_dev` is `false`, because a second
-indexable copy of a marketing site is a liability. Reviewing an unmerged change is what
-`npm run serve` and a quick tunnel are for.
+`site/wrangler.jsonc` defines the `nojoin-site` Worker:
 
-**Fixing a bad deploy means rolling `site/` forward, not backwards.** There is no revert that
-lands on a working site, and reverting the commit that added the route takes the site down
-rather than restoring it, which is the single easiest thing to get wrong here under pressure. Deleting the route in the Cloudflare
-dashboard is not a rollback either: the weekly scheduled deploy from `main` re-applies
-whatever `wrangler.jsonc` says.
+- **A Route**, `www.nojoin.co.uk/*` on the `nojoin.co.uk` zone, in front of the existing proxied
+  DNS record. A Custom Domain would have meant deleting that record first.
+- **`workers_dev: false`**, so there is no second public copy of the site.
+- **Static assets** from `./dist`, with `404-page` handling. `run_worker_first` sends only
+  `/docs` and `/docs/*` to the Worker script.
 
-`git revert` of an ordinary `site/` commit is fine, and is just another way of rolling
-forward — the deploy publishes whatever `main` holds. What is not survivable is reverting
-the route itself.
+**Roll a bad deploy forward.** Reverting an ordinary `site/` commit is fine, because the next
+deploy publishes whatever `main` holds. Never revert the commit that added the route, and never
+delete the route in the Cloudflare dashboard: nothing else serves the hostname, so the site goes
+down. A deleted route also comes back with the next scheduled deploy.
 
-Reverting the route removes the Worker and leaves the DNS record pointing at nothing. GitHub
-Pages, which served the previous Jekyll site, was disabled and its sources deleted when the
-Astro site went live, so there is no older origin to fall back to, and re-enabling it is a
-repository settings change that no `git revert` can perform. `assets/images/nojoin-mark.svg`
-stayed, because it is the source of truth for the site's `Mark` component.
+**Build-time data.** `site/src/data/github.ts` fetches the star count using CI's `GITHUB_TOKEN`;
+if the API fails, the badge shows no number and the build carries on. The footer version comes
+from `docs/VERSION` in the checkout.
 
-`README.md` opens with `site/public/images/og-card.png`, the same image as the share card and
-the repository's GitHub social preview. Regenerating the card changes all three; the social
-preview is uploaded by hand in the repository settings.
-
-Cloudflare Web Analytics is wired through `PUBLIC_CF_BEACON_TOKEN`, a build-time environment
-variable read in `Base.astro` and supplied by CI as a **repository variable, not a secret**.
-
-The value is the beacon `siteTag`. It is not an API token: it has no scopes, grants nothing,
-and ships in the markup of every page that uses Web Analytics, so anyone can read it from any
-such site. **A Cloudflare API token must never be used here** — an "Analytics Read" token is a
-real credential and putting one in a public repository is a leak that needs rotating.
-
-It comes from the environment rather than from source for cleanliness rather than secrecy. A
-build-time value is inlined into the HTML either way, so an environment variable hides
-nothing from anyone. What it does is keep the beacon out of local builds: a source constant
-would fire real page views from every `npm run build` and every preview tunnel, tagged with a
-throwaway `trycloudflare.com` hostname, straight into the live figures. Unset is a supported
-state and renders no beacon at all, which is what every local build should get.
-
-## Maintenance
-
-- The site deploys from `main` only: a push touching `site/`, a published release, a weekly
-  schedule, and manual dispatch.
-- Build-time data (star count, latest release) degrades gracefully: the release falls back
-  to `docs/VERSION`, the star count to no number. No API outage may fail a build.
-- Screenshots are real captures from a seeded demonstration instance processed through the
-  genuine pipeline, in light and dark pairs swapped by `<picture>`. The source audio is
-  public-domain material, labelled honestly with real titles and speakers; no invented
-  names sit over real people's words.
+**Analytics.** Cloudflare Web Analytics reads `PUBLIC_CF_BEACON_TOKEN` at build time, supplied
+from the repository variable `CF_BEACON_TOKEN` (a variable, not a secret). It is the beacon
+`siteTag`, which grants nothing and is public in every page's markup. **Never put a Cloudflare
+API token there**: that is a real credential. Local builds leave it unset, so they render no
+beacon and neither they nor preview tunnels reach the live figures.

@@ -1,39 +1,34 @@
 # MCP Connector Guide
 
-Nojoin ships a built-in [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server so AI assistants such as Claude can work with your meeting library — recordings, transcripts, meeting notes, attached documents, speakers, tags, and your People library — directly from your own deployment.
+Nojoin has a built-in [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server, so AI assistants such as Claude can work with your meeting library on your own deployment: recordings, transcripts, meeting notes, attached documents, speakers, tags, tasks and your People library.
 
-The connector is a full agentic interface with two access tiers. **Read** tools (`mcp:read`) cover the whole library, including semantic search across every meeting and document and measured speaking-dynamics analytics for any processed meeting. **Write** tools (`mcp:write`) cover recoverable changes: organising recordings (rename, tag, archive, bin, restore), managing tasks, correcting transcripts, regenerating notes, running the AI analysis of a meeting, attaching text documents, appending user notes, and maintaining People records. Two of them, `regenerate_notes` and `analyse_meeting`, spend your AI provider quota, which is the one cost a write tool can impose that undoing the change does not refund. **Permanent deletion is not possible through the connector at all**: the strongest deletion verb is moving a recording to the bin, and emptying the bin exists only in the web app. Because Nojoin exposes clean primitives over its own data, an assistant that is also connected to a CRM (HubSpot, Airtable, or a pasted list) can sync people in either direction without Nojoin needing any CRM-specific integration.
+Read tools (`mcp:read`) cover the whole library, including semantic search and measured speaking analytics. Write tools (`mcp:write`) make recoverable changes only. Nothing in the connector deletes permanently: the strongest deletion is moving a recording to the bin, and only the web app can empty the bin. Because the tools are general primitives, an assistant that is also connected to a CRM (HubSpot, Airtable, or a pasted list) can sync people in either direction without Nojoin needing a CRM integration of its own.
 
 ## Requirements
 
-- A Nojoin deployment reachable over HTTPS at a stable public URL (the same trusted origin used for browser capture and calendar OAuth). Assistants running in the cloud, such as claude.ai and Claude Cowork, must be able to reach the URL from the internet.
-- A normal Nojoin user account. Each connection is scoped to the user who authorises it.
+- A deployment reachable over HTTPS at a stable public URL, the same trusted origin used for browser capture and calendar OAuth ([DEPLOYMENT.md](DEPLOYMENT.md#remote-access-and-trusted-public-origin)). Cloud assistants such as claude.ai and Claude Cowork must reach it from the internet.
+- A normal Nojoin user account. Each connection acts as the user who authorised it.
 
-The connector is enabled by default and needs no additional configuration, environment variables, or API keys. Nojoin acts as its own OAuth 2.1 authorization server: clients discover the endpoints from the server URL, register themselves automatically, and send your browser to Nojoin's own sign-in and consent page.
+The connector is on by default and needs no keys or extra configuration. Nojoin is its own OAuth 2.1 authorisation server: a client discovers the endpoints from the server URL, registers itself, and sends your browser to Nojoin's sign-in and consent page.
 
 ## Disabling the Connector
 
-Operators who do not want the connector surface at all can set `MCP_ENABLED=false` in `.env` and restart the stack. This removes the `/mcp` endpoint, the OAuth discovery documents, and the authorisation endpoints — all of them respond `404` — without affecting any other Nojoin functionality. Existing grants stop working immediately because the token endpoint is gone.
+Set `MCP_ENABLED=false` in `.env` and restart Nojoin. The `/mcp` endpoint, the OAuth discovery documents and the authorisation endpoints then answer `404`, and existing connections stop working. Nothing else in Nojoin changes.
 
 ## Anonymous Discovery
 
-Some MCP clients — Codex Desktop among them — cannot begin OAuth against a server that answers the protocol handshake with `401`. By default Nojoin therefore serves a small anonymous bootstrap surface on `/mcp`: `initialize`, `ping`, and the tool listing succeed without a token, and an unauthenticated tool call returns an in-band authentication challenge naming the scope it needs instead of executing. What this exposes is only the connector's generic tool metadata — names, descriptions, schemas, and scopes, identical on every deployment and mirrored in the tool table below. No tool runs, no user data is reachable, every request outside that fixed allowlist still gets the strict `401`, and the anonymous surface is rate limited per client IP.
+Some clients, Codex Desktop among them, cannot start OAuth when the protocol handshake answers `401`. By default `/mcp` therefore answers `initialize`, `ping` and the tool listing without a token, and an unauthenticated tool call gets an in-band authentication challenge naming the scope it needs. All this exposes is the generic tool metadata listed under [Available Tools](#available-tools). No tool runs, no user data is reachable, every other unauthenticated request still gets `401`, and the anonymous surface is rate limited per client IP.
 
-Operators who prefer the strict pre-authentication behaviour can set `MCP_ANONYMOUS_DISCOVERY=false` in `.env` and restart; MCP clients must then be able to start OAuth from the `401` challenge itself (Claude can, Codex Desktop currently cannot). `MCP_ENABLED=false` removes the whole surface regardless.
+Set `MCP_ANONYMOUS_DISCOVERY=false` and restart to answer `401` to every unauthenticated request. Clients must then start OAuth from the `401` itself, which Claude can do and Codex Desktop cannot.
 
 ## Connect Claude (claude.ai, Claude Desktop, Cowork)
 
 1. In Claude, open **Settings → Connectors → Add custom connector**.
-2. Enter a name (for example `Nojoin`) and the MCP server URL:
+2. Enter a name such as `Nojoin` and the URL `https://your-nojoin-domain/mcp`.
+3. Leave the OAuth Client ID and Client Secret empty. Claude registers itself with Nojoin.
+4. Select **Add**, then **Connect**. On Nojoin's consent page, sign in if asked, review the access (it includes the write tools), and select **Allow**. If your account must change its password first, Nojoin takes you to do that and then back to the consent page. The change signs out every session, so sign in there with the new password.
 
-   ```text
-   https://your-nojoin-domain/mcp
-   ```
-
-3. Leave the OAuth Client ID and Client Secret fields empty — Claude registers itself with your Nojoin instance automatically.
-4. Click **Add**, then **Connect**. Your browser opens Nojoin's authorisation page: sign in with your Nojoin credentials if needed, review the requested access, which includes the write tools listed below, and click **Allow access**. If your account has to change its password first, Nojoin takes you to do that and then back to this page. Changing a password signs out every session, so sign in again there with the new one.
-
-The connector then appears in Claude's tool list. Connectors added to a claude.ai account are also available in Claude Desktop and Cowork on the same account.
+A connector added to a claude.ai account also works in Claude Desktop and Cowork on the same account.
 
 ## Connect Claude Code
 
@@ -41,30 +36,30 @@ The connector then appears in Claude's tool list. Connectors added to a claude.a
 claude mcp add nojoin --transport http https://your-nojoin-domain/mcp
 ```
 
-Claude Code discovers the OAuth flow automatically and opens a browser window for the same sign-in and consent step. No token pasting is required.
+Claude Code finds the OAuth flow itself and opens a browser for the same sign-in and consent.
 
-## Connect Codex (desktop app)
+## Connect ChatGPT or Codex (desktop app)
+
+OpenAI renamed the Codex desktop app to ChatGPT, but its settings, CLI and file paths still say Codex, so the steps below do too.
 
 1. Open **Settings → MCP servers** and select **Add server**.
-2. Enter a name (for example `nojoin`), choose **Streamable HTTP** (not STDIO, which is for MCP servers Codex launches locally as a subprocess), and enter the URL `https://your-nojoin-domain/mcp`. Leave any bearer-token and header fields empty — that is not how Nojoin authenticates.
-3. Save the server, then select **Restart**. The restart matters: Codex probes the server on startup. The handshake and tool listing succeed anonymously (see [Anonymous Discovery](#anonymous-discovery)), every tool advertises the OAuth scope it needs, and the server flags itself as requiring sign-in.
-4. In the server list, select **Authenticate**. A browser window opens for the same Nojoin sign-in and consent step as Claude. Until then, any tool call an assistant attempts returns an authentication challenge rather than data.
+2. Enter a name such as `nojoin`, choose **Streamable HTTP** (STDIO is for servers Codex runs locally), and enter `https://your-nojoin-domain/mcp`. Leave the bearer-token and header fields empty.
+3. Save, then select **Restart**. Codex probes the server at startup through [anonymous discovery](#anonymous-discovery).
+4. Select **Authenticate** in the server list and complete the same sign-in and consent as for Claude. Until then, tool calls return an authentication challenge.
 
-**The name on the consent screen comes from the client, not from Nojoin.** Every MCP client registers itself before the first authorisation and sends a `client_name`; Nojoin stores that string and displays it verbatim, so the heading reads whatever the connecting app calls itself. Nothing in Nojoin picks or overrides it, and no Nojoin release can change what a given client reports. Any client that can speak the protocol can register under any name it likes, which is worth knowing when you read a consent screen: **the name tells you what the app claims to be, and the redirect host underneath it tells you where you are actually being sent.** Check both before approving.
-
-In practice that is why connecting the OpenAI desktop app still reads "Connect Codex to Nojoin" after its rename to ChatGPT — the client continues to register as `Codex`. Existing connections keep the name they registered with, and **Settings → Integrations → Connected apps** lists them under it.
+The consent page heading, "Connect … to Nojoin", shows the `client_name` the app registered with, exactly as the app sent it. The app still registers as `Codex`, so its consent page and its entry in **Settings → Integrations → Connected apps** say Codex. Any client can register under any name, so check the "You will be returned to" host on the consent page before approving.
 
 ### If Authenticate never appears: stale stored credentials
 
-Codex only offers **Authenticate** when it finds no stored OAuth tokens for the server. If it holds tokens from an earlier connection — even dead ones — it reports itself as signed in and silently retries a refresh that can never succeed, and tasks see `MCP server 'nojoin' was not ready for this step`. This happens in particular after Nojoin revokes a grant for refresh-token replay (Codex's desktop app, CLI, and IDE extension share `~/.codex` but can keep divergent credential copies across its keyring and file stores, so one process can replay a token another has already rotated — which Nojoin's OAuth server treats as theft and punishes by revoking the whole grant).
+Codex offers **Authenticate** only when it holds no OAuth tokens for the server. If it holds dead ones, it reports itself as signed in, keeps retrying a refresh that cannot succeed, and tasks fail with `MCP server 'nojoin' was not ready for this step`. This typically follows Nojoin revoking a grant for refresh-token reuse, which Codex can trigger because its desktop app, CLI and IDE extension can each keep their own copy of the credentials.
 
-The fix is to remove the stored credentials so Codex re-evaluates the server from scratch:
+Remove the stored credentials so Codex starts again:
 
-- Where the Codex CLI is installed: `codex mcp logout nojoin`, then restart the desktop app.
-- Desktop-only hosts: quit Codex fully, then delete the server's entry under the **"Codex MCP Credentials"** service in the OS keychain (Windows Credential Manager → Windows Credentials; the secret name starts with `MCP_OAUTH`), or delete the fallback file `~/.codex/.credentials.json` if it exists (this clears stored credentials for every MCP server, though not the ChatGPT sign-in). Restart the app.
-- Quickest workaround, no credential surgery: delete the server entry in Codex and re-add the same URL under a **different name**. Stored credentials are keyed by server name, so the new name starts clean and **Authenticate** appears after a restart.
+- With the Codex CLI installed: run `codex mcp logout nojoin`, then restart the desktop app.
+- Desktop only: quit Codex, then delete the server's entry under the **Codex MCP Credentials** service in the OS keychain (on Windows, Credential Manager → Windows Credentials, secret name starting `MCP_OAUTH`), or delete `~/.codex/.credentials.json` if it exists. That file holds every MCP server's credentials but not the ChatGPT sign-in. Restart the app.
+- Quickest: delete the server in Codex and add the same URL under a different name. Credentials are keyed by name, so **Authenticate** appears after a restart.
 
-If **Authenticate** still never appears from a genuinely clean state, mark the server for OAuth by hand in `~/.codex/config.toml` (shared by the desktop app, CLI, and IDE extension), restart again, or run `codex mcp login nojoin` in a terminal as a fallback:
+If **Authenticate** still never appears from a clean state, mark the server for OAuth in `~/.codex/config.toml` (shared by the desktop app, CLI and IDE extension) and restart, or run `codex mcp login nojoin`:
 
 ```toml
 [mcp_servers.nojoin]
@@ -72,76 +67,72 @@ url = "https://your-nojoin-domain/mcp"
 auth = "oauth"
 ```
 
-Known upstream issue: some Codex Desktop builds (observed on 0.125.0-alpha.3) complete the OAuth sign-in but never import the server's tools into threads, reporting `auth_status` as `unsupported`. That failure is inside Codex — the same Codex-issued token works against the server directly — so if tools stay absent after a successful sign-in, update Codex rather than reconfiguring Nojoin.
+Some Codex Desktop builds (seen on 0.125.0-alpha.3) complete sign-in but never load the server's tools, reporting `auth_status` as `unsupported`. The same token works against the server directly, so update Codex rather than reconfiguring Nojoin.
 
 ## Available Tools
 
-Thirty-two tools. Thirteen read and nineteen write; the table below pairs a few of them onto one
-row where they are opposites of each other, so it has fewer rows than there are tools.
+Thirty-two tools: thirteen read and nineteen write. Opposites share a row, so the table has fewer rows than tools. Every tool acts only on data owned by the account that authorised the connection.
 
-Two write tools, `regenerate_notes` and `analyse_meeting`, spend your AI provider quota.
-`analyse_meeting` is the costlier, and its description tells an assistant to ask before running it.
+Two write tools spend your AI provider quota, which undoing their result does not refund: `regenerate_notes`, and the costlier `analyse_meeting`, whose description tells an assistant to ask before running it.
 
 | Tool | Scope | Description |
 | --- | --- | --- |
-| `list_recordings` | `mcp:read` | List and search recordings with free-text and date filters; covers archived and soft-deleted meetings by default. Each result reports processing state (`status`, `transcript_status`, `notes_status`), `updated_at`, the canonical `transcript_revision` cursor, and, for searches, a best-effort `match_field` hint. |
-| `get_transcript` | `mcp:read` | Full speaker-attributed transcript of a recording, formatted for reading. |
-| `get_transcript_utterances` | `mcp:read` | The canonical transcript as structured utterances: stable ids, millisecond timestamps, per-utterance state and edit provenance, and a revision cursor with tombstones for incremental sync. |
-| `search_context` | `mcp:read` | Semantic search across every transcript and attached document, with recording, timestamp, and page provenance on each hit. |
-| `get_meeting_notes` | `mcp:read` | AI-generated meeting notes plus your own manual notes. |
+| `list_recordings` | `mcp:read` | List and search recordings by text and date, including archived and binned ones. Each result reports processing state (`status`, `transcript_status`, `notes_status`), `updated_at`, the `transcript_revision` cursor and, for searches, a best-effort `match_field` hint. |
+| `get_transcript` | `mcp:read` | The speaker-attributed transcript, formatted for reading. |
+| `get_transcript_utterances` | `mcp:read` | The transcript as structured utterances: stable ids, millisecond timestamps, edit provenance, and a revision cursor with tombstones for incremental sync. |
+| `search_context` | `mcp:read` | Semantic search across every transcript, set of AI notes and attached document, with the recording and a timestamp or page on each hit. |
+| `get_meeting_notes` | `mcp:read` | The AI meeting notes plus your own notes. |
 | `get_documents` | `mcp:read` | The documents attached to a recording, with their extracted text. |
-| `get_meeting_analytics` | `mcp:read` | Speaking dynamics for one meeting: talk-time share, turn counts, median and longest turn, response behaviour at speaker changes (immediate handovers, a coarse reply-time median, lapses), a talk-share timeline, and silence totals, plus measured delivery (pace, pitch and its movement, pausing, and each linked person's usual figures across their other meetings) where that has been generated. Every figure here is measured from the transcript's timings or the audio, never inferred by a model, and matches the app's Analytics tab exactly. Delivery describes how someone spoke and is explicitly not sentiment or mood. There are deliberately no interruption counts; measured overlapping speech is reported instead, as a floor, without naming who overlapped whom. Also returns `ai_analysis` where a meeting has been analysed: topics and who led them, sentiment read from the words, question/answer mapping, and decision ownership, each claim carrying timestamped quotes. Carries `attribution_warnings` when speaker attribution for that recording looks unreliable. |
+| `get_meeting_analytics` | `mcp:read` | Speaking dynamics for a processed meeting, matching its Analytics tab: talk-time share, turns, response behaviour at speaker changes, a talk-share timeline, silence, and measured overlapping speech (there are no interruption counts). Adds measured delivery (pace, pitch, loudness, pausing, and each linked person's usual figures) where it has been generated, and `ai_analysis` (topics, sentiment read from the words, questions and answers, decision ownership, each claim with timestamped quotes) where the meeting has been analysed. Everything except `ai_analysis` is measured, not inferred by a model, and delivery describes how someone spoke, not their mood. `attribution_warnings` flags unreliable speaker attribution. |
 | `get_speakers` | `mcp:read` | The speakers in a recording, with links to their People records. |
-| `list_tags` | `mcp:read` | Your tag list, usable as search terms. |
-| `list_people` | `mcp:read` | Your People library: names, contact details, notes, and tags. |
-| `get_person` | `mcp:read` | One person's profile plus the meetings they appear in. |
+| `list_tags` | `mcp:read` | Your tags, usable as search terms. |
+| `list_people` | `mcp:read` | Your People library: names, contact details, notes and tags. |
+| `get_person` | `mcp:read` | One person, with the meetings they appear in. |
 | `list_calendar_events` | `mcp:read` | Your synced calendar events, for linking recordings to meetings. |
-| `list_tasks` | `mcp:read` | Your tasks from the Task workspace. |
+| `list_tasks` | `mcp:read` | Your tasks. |
 | `rename_recording` | `mcp:write` | Rename a recording. |
-| `tag_recording` / `untag_recording` | `mcp:write` | Add or remove a tag on a recording, creating the tag if needed. |
-| `archive_recording` / `restore_recording` | `mcp:write` | Archive a recording, or bring it back from the archive or bin. |
-| `trash_recording` | `mcp:write` | Move a recording to the bin (soft delete, reversible). |
-| `reprocess_recording` | `mcp:write` | Re-run the processing pipeline for a recording. |
-| `regenerate_notes` | `mcp:write` | Re-run Nojoin's notes pipeline; the assistant never writes note content itself. |
-| `analyse_meeting` | `mcp:write` | Run the AI analysis of a meeting's dynamics for a meeting that has none, then read it with `get_meeting_analytics`. It spends your AI provider quota, and the tool description tells the assistant to ask first rather than run it speculatively. Claims it cannot evidence with a quote from the transcript are discarded rather than returned. |
-| `attach_document` | `mcp:write` | Attach assistant-authored text as a markdown document; binary uploads stay in the web app. |
-| `correct_utterance_text` / `correct_utterance_speaker` | `mcp:write` | Correct a transcript utterance; edits are tracked in the event log with source `mcp` and lock against reprocess overwrite, like web edits. The app labels the result `AI corrected text` or `AI corrected speaker`, so an assistant's correction is visibly distinct from one made in the web app, and stays so across reprocessing. |
-| `unlock_utterance` | `mcp:write` | Release an utterance's manual-edit locks so reprocessing may overwrite it again; the clearing is itself an audited event. |
+| `tag_recording` / `untag_recording` | `mcp:write` | Add a tag to a recording, creating the tag if needed, or remove one. |
+| `archive_recording` / `restore_recording` | `mcp:write` | Archive a recording, or bring it back from the archive or the bin. |
+| `trash_recording` | `mcp:write` | Move a recording to the bin. |
+| `reprocess_recording` | `mcp:write` | Re-run processing. The transcript is rebuilt, so every utterance id changes and earlier corrections are replaced. |
+| `regenerate_notes` | `mcp:write` | Re-run Nojoin's notes pipeline. The assistant never writes the notes itself. |
+| `analyse_meeting` | `mcp:write` | Run the AI analysis of a meeting, then read it with `get_meeting_analytics`. Claims without a verified quote from the transcript are discarded. |
+| `attach_document` | `mcp:write` | Attach text the assistant wrote as a markdown document. Binary files can only be uploaded in the web app. |
+| `correct_utterance_text` / `correct_utterance_speaker` | `mcp:write` | Correct a line's text or speaker. The edit is logged with source `mcp`, locked like a web edit, and labelled `AI corrected text` or `AI corrected speaker` in the app. A speaker correction applies to every line by that speaker unless limited to one. |
+| `unlock_utterance` | `mcp:write` | Release a line's edit locks. The release is logged. |
 | `link_calendar_event` | `mcp:write` | Link a recording to a calendar event, or unlink it. |
-| `create_task` / `update_task` | `mcp:write` | Create, edit, complete, archive, or restore tasks, with links to recordings and tags. Archiving is the strongest removal; task deletion exists only in the web app. |
-| `import_people` | `mcp:write` | Create or update People records, matching existing people by name. |
-| `set_speaker_name` | `mcp:write` | Name a meeting's speaker and link them to a person. The name propagates to the transcript and the AI meeting notes, and the speaker panel labels it `AI named`; because this relabels every line the speaker holds, it is disclosed once against the speaker rather than on each utterance. |
+| `create_task` / `update_task` | `mcp:write` | Create, edit, complete, archive or restore tasks, with links to recordings and tags. Deleting a task is web-app only. |
+| `import_people` | `mcp:write` | Create or update People records, matching existing people by exact name. Never touches voiceprints or removes data. |
+| `set_speaker_name` | `mcp:write` | Name a meeting's speaker, linking them to the person of that exact name if one exists. The name reaches the transcript and the AI notes, and the speaker panel marks it `AI named`. |
 | `append_meeting_notes` | `mcp:write` | Append text to a meeting's user notes. |
 
-All tools operate only on data owned by the account that authorised the connection. Everything is recoverable: archived and binned recordings restore, transcript corrections are attributed in the app as well as tracked in the edit log, notes regeneration re-runs Nojoin's own pipeline rather than accepting assistant-authored notes, and People imports never touch voiceprints or remove existing data. There is deliberately no destructive tool: an assistant can move a recording to the bin, and only you can empty the bin, from the web app, which itself only offers permanent deletion for recordings already binned.
-
-Connections keep the scopes they were granted. Grants that predate `mcp:write` stay read-only: the write tools respond with an instruction to reconnect rather than failing opaquely, and removing and re-adding the connector consents to the wider scope.
+A connection keeps the scopes it was granted. One authorised before `mcp:write` existed stays read-only, and its write tools reply with an instruction to reconnect. Remove and re-add the connector to grant the wider scope.
 
 ### Keeping an External Copy in Sync
 
-`get_transcript_utterances` exists for tools that maintain their own copy of transcript data, such as a read-only sidecar or knowledge base, rather than for conversational assistants, which should prefer `get_transcript`. Poll `list_recordings` and compare each recording's `transcript_revision` (and `notes_status`) with the last value you stored, then call `get_transcript_utterances` with your stored cursor as `after_revision` to receive only changed utterances plus tombstones. A recording is fully processed once `status` is `PROCESSED` and `notes_status` is `completed`. Treat the cursor as opaque and the response fields as an additive contract: new fields may appear over time, and reprocessing a recording can replace most utterance ids while the cursor keeps increasing.
+`get_transcript_utterances` is for tools that keep their own copy of transcripts, such as a sidecar or knowledge base. Conversational assistants should use `get_transcript`.
 
-Responses are paged, because a full snapshot of a long meeting easily exceeds an assistant's tool-output budget: `utterances` carries at most `limit` entries (1-500, default 100) starting at `offset`, `total_utterances` is the full count, and `next_offset` is the next page's offset, or null on the last page. `tombstones` and `speakers` are complete on every page. Pages are only consistent within a single `revision`: if `revision` changes between pages, the transcript moved mid-read, so restart from offset 0. Deltas are usually a single page; the calls that need paging are the first snapshot and the delta after a reprocess.
+1. Poll `list_recordings` and compare each recording's `transcript_revision` and `notes_status` with the values you stored. A recording is fully processed once `status` is `PROCESSED` and `notes_status` is `completed`.
+2. Call `get_transcript_utterances` with your stored cursor as `after_revision` to receive only the changed utterances plus tombstones. Omit it for a full snapshot.
+3. Page with `limit` (1 to 500, default 100) and `offset`. `total_utterances` is the full count, `next_offset` is null on the last page, and `tombstones` and `speakers` are complete on every page. If `revision` changes between pages, the transcript moved mid-read: restart from offset 0.
+
+Treat the cursor as opaque and the response as additive, since new fields may appear. Reprocessing replaces every utterance id, but the cursor keeps increasing.
 
 ## Managing and Revoking Access
 
-- **Settings → Integrations → Connected apps** lists every active connection with its scope, creation time, and last use, and offers per-connection revocation.
-- Changing your password (or an admin resetting it, or `revoke all sessions`) immediately invalidates all connector access tokens, in the same way browser sessions are invalidated.
-- Revoking a connection invalidates its refresh tokens; the current access token expires within an hour.
+- **Settings → Integrations → Connected apps** lists each connection with its scope, creation time and last use, and revokes it. Revoking stops refreshes at once, and the current access token expires within an hour.
+- Changing your password, or an administrator resetting it, invalidates every connector access token at once. Refresh tokens are not revoked, so a client that refreshes on its own carries on without asking you. To cut a connection off, revoke it in **Connected apps**. Deactivating an account also stops its refreshes.
 
 ## How Authorisation Works
 
-For operators who want the detail:
-
-- Discovery documents are served at `/.well-known/oauth-protected-resource` and `/.well-known/oauth-authorization-server` (RFC 9728 / RFC 8414).
-- Clients self-register at `POST /api/v1/oauth/register` (RFC 7591 Dynamic Client Registration). Only public clients with PKCE are accepted; registration is rate limited.
-- The authorisation page at `/oauth/authorize` uses your normal Nojoin session and origin protections. Codes are single-use, PKCE-bound (S256), and expire after 60 seconds.
-- Access tokens are one-hour JWTs signed by the standard Nojoin keyring, valid **only** for the `/mcp` endpoint — they cannot call the general API. Grants carry the `mcp:read` and `mcp:write` scopes; there is no stronger scope, and the retired `mcp:destroy` scope is stripped from any client that still requests it by name. Refresh tokens rotate on every use; reuse of a rotated token revokes the whole grant.
-- The reverse proxy must forward `/mcp` and `/.well-known/oauth-*` to the API service. The bundled Nginx configuration does this out of the box; see [DEPLOYMENT.md](DEPLOYMENT.md) if you front Nojoin with your own edge proxy.
+- **Discovery**: `/.well-known/oauth-protected-resource` and `/.well-known/oauth-authorization-server` (RFC 9728, RFC 8414).
+- **Registration**: `POST /api/v1/oauth/register` (RFC 7591 Dynamic Client Registration). Only public PKCE clients are accepted, redirect URIs must be HTTPS or loopback HTTP, and registration is rate limited.
+- **Consent**: the page at `/oauth/authorize` uses your normal Nojoin session and origin checks.
+- **Tokens**: one-hour access tokens accepted only by `/mcp`, with the scopes `mcp:read` and `mcp:write`. Refresh tokens rotate on every use and expire after 180 days unused. [SECURITY.md](SECURITY.md#mcp-connector-access) covers codes, scopes and revocation in full.
+- **Proxy**: `/mcp` and `/.well-known/oauth-*` must reach the API service. The bundled Nginx does this; see [DEPLOYMENT.md](DEPLOYMENT.md#reverse-proxy-requirements) if you run your own edge proxy.
 
 ## Troubleshooting
 
-- **Claude reports it cannot reach the server**: confirm `https://your-domain/.well-known/oauth-protected-resource/mcp` returns JSON from outside your network. If it returns the Nojoin web app instead, your edge proxy is not routing `/.well-known/oauth-*` and `/mcp` to the API service.
-- **Authorisation page shows "This authorization request is invalid"**: the client's registration may have been removed (for example after a database restore). Remove and re-add the connector so the client re-registers.
-- **Connector stopped working after a password change**: that is intentional containment. Reconnect from the assistant to authorise again.
-- **A tool returned unexpected or empty results**: the API service logs one line per MCP tool call — the tool name, the acting user id, a redacted argument summary, the result shape, and the duration (for example `mcp tool list_recordings ok user=1 limit=20 -> list:12 (18ms)`). Rejected calls log at `WARNING` and unexpected failures at `ERROR` with a traceback. Follow them with `docker compose logs -f api` (or your deployment's log viewer). Argument summaries never include note bodies, search text, or personal contact details — only lengths and counts — so the log stays useful without recording meeting content.
+- **Claude cannot reach the server**: from outside your network, `https://your-domain/.well-known/oauth-protected-resource/mcp` should return JSON. If it returns the Nojoin web app, your edge proxy is not sending `/.well-known/oauth-*` and `/mcp` to the API service.
+- **The consent page says the authorisation request is invalid**: the client's registration is gone, for example after a database restore, since backups do not carry registrations. Remove and re-add the connector.
+- **A tool returned unexpected or empty results**: the API logs one line per tool call with the tool name, the user id, a redacted argument summary, the result shape and the duration, for example `mcp tool list_recordings ok user=1 limit=20 -> list:12 (18ms)`. Rejected calls log at `WARNING` and failures at `ERROR` with a traceback. Follow them with `docker compose logs -f api`. Free text and contact details appear only as lengths and counts, so the log holds no meeting content.

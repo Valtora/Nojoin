@@ -35,7 +35,7 @@ from backend.processing.pipeline_metrics import (
     record_pipeline_metric,
 )
 from backend.processing.processing_tuning import (
-    ASR_WORD_END_PADDING_KEY,
+    ASR_WORD_LENGTH_CAP_KEY,
     VAD_THRESHOLD_KEY,
     normalise_tuning_value,
 )
@@ -50,6 +50,7 @@ from backend.utils.canonical_pipeline import (
 )
 from backend.utils.config_manager import config_manager, is_meeting_edge_enabled
 from backend.utils.recording_storage import recording_upload_temp_dir
+from backend.utils.word_times import exceeds
 
 logger = logging.getLogger(__name__)
 
@@ -764,10 +765,10 @@ def _extract_region_segment_payloads(
         seg_text = (seg.get("text") or "").strip()
         if not seg_text:
             continue
-        if end <= prefix_s + EPS:
+        if not exceeds(end, prefix_s + EPS):
             # Pure context: entirely within the run-up.
             continue
-        if start >= prefix_s - EPS:
+        if exceeds(start, prefix_s - EPS):
             # Entirely within the region.
             kept_segment = {
                 "start": max(0.0, start - prefix_s),
@@ -803,7 +804,7 @@ def _extract_region_segment_payloads(
                     continue
                 word_start = float(word.get("start", 0.0))
                 word_end = float(word.get("end", word_start))
-                if word_end <= prefix_s + EPS:
+                if not exceeds(word_end, prefix_s + EPS):
                     continue
                 kept_words.append(
                     {
@@ -1044,10 +1045,10 @@ def _resolve_live_engine_config(
                         VAD_THRESHOLD_KEY,
                         warn=warn_unusable,
                     ),
-                    "asr_word_end_padding_s": _live_tuning_value(
+                    "asr_word_length_cap_s": _live_tuning_value(
                         recording_id,
                         merged_config,
-                        ASR_WORD_END_PADDING_KEY,
+                        ASR_WORD_LENGTH_CAP_KEY,
                         warn=warn_unusable,
                     ),
                 }

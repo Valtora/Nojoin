@@ -1,108 +1,77 @@
 # Nojoin Getting Started
 
-This guide is the shortest path from a fresh checkout to a working Nojoin installation and your first processed meeting.
-
-For deeper hosting and configuration detail, continue to [DEPLOYMENT.md](DEPLOYMENT.md) after this guide. For capture details and troubleshooting, continue to [CAPTURE.md](CAPTURE.md).
+The shortest path from a fresh checkout to your first processed meeting. [DEPLOYMENT.md](DEPLOYMENT.md) has the reference detail for hosting and configuration.
 
 ## Before You Begin
 
-- Docker must be installed.
-- An NVIDIA GPU is strongly recommended for faster transcription and diarisation, but CPU-only mode is supported. The GPU must be GTX 16 or RTX 20 series or newer, on driver 580 or newer ([GPU requirements](DEPLOYMENT.md#gpu-requirements)).
-- Shared-audio live recording requires Chrome on Windows, Linux, or macOS, or Edge, Brave, Arc, or another Chromium-family browser on Windows or Linux. Other Chromium-family browsers on macOS are best-effort.
-- Chrome on Android and iOS can start microphone-only live recordings.
-- Firefox, Safari, and other mobile browsers can review existing recordings but cannot start live capture.
+- Docker with Compose.
+- An NVIDIA GPU is strongly recommended for transcription and speaker separation: GTX 16 or RTX 20 series or newer, on driver 580 or newer ([GPU requirements](DEPLOYMENT.md#gpu-requirements)). CPU-only works, more slowly.
+- A browser that can record: Chrome on Windows, Linux or macOS, or another Chromium-family browser on Windows or Linux, for shared audio; Chrome on Android or iOS for the microphone only. [CAPTURE.md](CAPTURE.md#supported-environments) has the full list. Other browsers can review recordings but cannot record.
 
 ## 1. Start the Stack
 
-1. Clone the repository.
+1. Clone the repository and create your deployment files from the tracked examples.
 
    ```bash
    git clone https://github.com/Valtora/Nojoin
    cd Nojoin
-   ```
-
-2. Create local deployment files from the tracked examples.
-
-   ```bash
    cp docker-compose.example.yml docker-compose.yml
    cp .env.example .env
    ```
 
-3. Set `FIRST_RUN_PASSWORD` in `.env`.
-4. Set `DATA_ENCRYPTION_KEY` in `.env` if this will be a persistent installation.
-
-5. Start Nojoin.
+2. In `.env`, replace the example values of `FIRST_RUN_PASSWORD`, `POSTGRES_PASSWORD` and `REDIS_PASSWORD`, and set a long random `DATA_ENCRYPTION_KEY`. Set the database password now, because PostgreSQL keeps the one it first started with, and keep the encryption key unchanged from then on: it encrypts stored calendar and AI subscription credentials.
+3. Without a compatible NVIDIA GPU, remove the `deploy` section under `worker-gpu` in `docker-compose.yml` ([CPU-Only Deployment](DEPLOYMENT.md#cpu-only-deployment)).
+4. Start Nojoin.
 
    ```bash
    docker compose up -d
    ```
 
-For source development workflows, use [DEVELOPMENT.md](DEVELOPMENT.md).
-
-If you do not have an NVIDIA GPU, see [DEPLOYMENT.md](DEPLOYMENT.md) for CPU-only instructions.
-
-`DATA_ENCRYPTION_KEY` prevents future decryptability issues if the app data directory and database do not move together during restores, host migrations, or partial replacements.
+To work on Nojoin's source instead, use [DEVELOPMENT.md](DEVELOPMENT.md).
 
 ## 2. Open the Setup Wizard
 
-Open:
+Open `https://localhost:14443/setup`. Nojoin uses a self-signed certificate by default, so the browser shows a certificate warning on first visit.
 
-```text
-https://localhost:14443/setup
-```
-
-Nojoin uses a self-signed certificate by default, so your browser will show a certificate warning on first access.
-
-The sign-in page deliberately does not link to the setup wizard, and the server never reveals to visitors whether it has been initialised. On a fresh deployment, browse to `/setup` directly; the API startup log also prints this address until the system is initialised.
+The sign-in page does not link to the wizard, so browse to `/setup` directly. Until setup is complete, the API startup log also prints this address.
 
 ## 3. Complete the First-Run Wizard
 
-Unlock the wizard with the `FIRST_RUN_PASSWORD` value from your `.env`. Every unlock failure shows the same generic denial — if you are certain the password is correct, confirm `FIRST_RUN_PASSWORD` is set and the stack was restarted after setting it, and check the API logs for the specific reason.
+Enter your `FIRST_RUN_PASSWORD` to open the wizard. Every failed attempt shows the same generic message. If you are sure the password is right, check that `FIRST_RUN_PASSWORD` is set and that you restarted the stack after setting it; the API log gives the specific reason.
 
-The wizard runs in five steps after the unlock gate.
+The wizard then has five steps:
 
-1. **Terms.** The legal disclaimer, plus an **anonymous usage diagnostics** checkbox, ticked by default. Leaving it ticked sends one anonymous ping every six hours with counts and configuration settings, never your recordings, transcripts, notes, names, or keys. Unticking it means no diagnostics are ever sent. Separately, Nojoin sends a daily heartbeat with a random install ID and the version, which only `NOJOIN_TELEMETRY_ENABLED=false` in `.env` stops. You can change the diagnostics later in **Settings > Privacy**; see [TELEMETRY.md](TELEMETRY.md).
-2. **Transcription.** Choose the Whisper model. Turbo (the default) suits a server with an NVIDIA GPU; Small or Base is far faster on a CPU-only deployment, and you can change it later in **Settings > Transcription**. This step also reports whether speaker diarisation can run, by detecting either an `HF_TOKEN` in the environment or Pyannote assets already present on the server.
-3. **Account.** Create the Owner account. Submitting this step creates the account, signs you in, and queues preparation of the transcription and speaker models in the background, so the download runs while you finish the remaining steps. Everything after this point is authenticated, and the wizard cannot be stepped back past it.
-4. **AI.** Choose how AI runs. See below.
-5. **Finish.** A summary of what was configured, a check that this browser and origin can actually record, and the remaining model-preparation progress.
+1. **Terms.** Accept the legal disclaimer. **Share anonymous usage diagnostics** is ticked by default: it sends counts and settings every six hours, never your recordings, transcripts, notes, names or keys. Separately, Nojoin sends a daily heartbeat with a random install ID and the version, which has no switch in the app; `NOJOIN_TELEMETRY_ENABLED=false` in `.env` stops both. You can change diagnostics later in **Settings > Privacy**; [TELEMETRY.md](TELEMETRY.md) has the details.
+2. **Transcription.** Choose the transcription model. Turbo, the default, suits a server with an NVIDIA GPU; Small or Base is far faster on CPU only. You can change it later in **Settings > Transcription**. The step also reports whether speaker separation can run, which needs either an `HF_TOKEN` or Pyannote assets already on the server.
+3. **Account.** Create the Owner account, and choose whether to include a sample meeting. Submitting signs you in and starts downloading the transcription and speaker models in the background. You cannot step back past this point.
+4. **AI.** Choose how AI runs (below).
+5. **Finish.** A summary, a check that this browser and address can record, and the progress of the model downloads.
 
 ### Choosing an AI route
 
-Nojoin supports three routes, and the wizard offers all three rather than assuming a server-side API key:
+- **This server's AI provider** uses the provider credential in the server's `.env` (`LLM_PROVIDER` and its key, or `OLLAMA_API_URL` for Ollama). The wizard validates it and lets you pick the default model. Every account on the server shares it.
+- **My own Claude or ChatGPT subscription** connects your Claude Pro or Max, or ChatGPT Plus or Pro, plan with no API key. This is per user: each account chooses its own. See [Your own subscription (CLI OAuth)](USAGE.md#your-own-subscription-cli-oauth).
+- **Decide later.** Recording, transcription, speaker separation, the speaker library, search, tags, tasks, documents, calendar sync and the sample meeting all work without AI. Generated notes and titles, meeting chat, automatic speaker naming and Meeting Edge wait until you set AI up, and can then run on meetings recorded before that.
 
-- **This server's AI provider.** Uses whatever provider credential is present in the server's `.env` (`LLM_PROVIDER` plus the matching key, or `OLLAMA_API_URL` for a local Ollama). The wizard validates the credential, lists the provider's models, and lets you pick the default. Shared by every account on the server.
-- **Your own Claude or ChatGPT subscription.** Connect a Claude Pro/Max or ChatGPT Plus/Pro plan directly in the wizard and route AI through it, with no API key anywhere. This is a per-user choice: every other account on the server picks its own. See [Your own subscription (CLI OAuth)](USAGE.md#your-own-subscription-cli-oauth).
-- **Decide later.** A supported configuration, not a failure. Recording, transcription, speaker separation and the speaker library, search, tags, tasks, documents, calendar sync, and the sample meeting with its notes all work with no AI provider at all. Generated notes and titles, meeting chat, automatic speaker inference, and Meeting Edge wait until you configure AI, and can then be run against meetings recorded before that.
-
-You can change the route at any time in **Settings > Your AI**. If you add or correct a provider key in `.env` while the wizard is open, restart the stack and use **Check config again**: keep the tab open and the wizard keeps your progress.
-
-You can also pre-fill much of this through environment variables. See [DEPLOYMENT.md](DEPLOYMENT.md#configure-env).
+You can change the route at any time in **Settings > Your AI**. If you add or fix a provider key in `.env` while the wizard is open, restart the stack and select **Check config again**; the wizard keeps your progress. To pre-fill settings through environment variables, see [Configure .env](DEPLOYMENT.md#configure-env).
 
 ## 4. Prepare Browser Capture
 
-Open Nojoin in a supported browser (see [Before You Begin](#before-you-begin)) and, if you need to, choose a microphone in **Settings > Recording**. On desktop, open your meeting in a browser tab where you can: tab sharing is the most reliable way to capture meeting audio. Keep the Nojoin tab open while recording.
-
-[CAPTURE.md](CAPTURE.md) has browser-specific guidance, Linux PipeWire notes, pause and resume behaviour, and troubleshooting.
+Open Nojoin in a browser that can record. To use a microphone other than the system default, choose it in **Settings > Recording**. On desktop, open the meeting in a browser tab if you can: tab sharing is the most reliable way to capture meeting audio. [CAPTURE.md](CAPTURE.md) covers what to share, pause and resume, and capture troubleshooting.
 
 ## 5. Make Your First Recording
 
-1. Open the dashboard.
-2. Use the **Meet Now** card and click **Start Meeting**.
-3. On desktop, select the meeting tab, window, or screen in the browser share picker.
-4. On desktop, enable the browser's audio-sharing or system-audio option in the picker when it is offered, then allow microphone access if prompted. On mobile Chrome, allow microphone access and keep the phone awake.
-5. Speak briefly and confirm the live waveform responds. If AI is configured, Meeting Edge guidance should appear after enough speech accumulates.
-6. Stop the recording when finished.
-7. Open the recording in the `/recordings` workspace.
-8. Wait for transcription and diarisation to complete.
-9. If AI is configured, Nojoin then runs one automatic meeting-intelligence pass that can name unresolved speakers, set a meeting title, and write Markdown meeting notes. Inferred speaker names are applied automatically; you can rename any speaker afterwards.
-10. If AI is not configured, the meeting still completes normally and remains available for transcript review. Set a route up in **Settings > Your AI** — either your own Claude or ChatGPT subscription, or a provider key in the server's `.env` — before using Generate Notes, meeting chat, or Retry Speaker Inference. Meetings recorded beforehand can be enhanced afterwards.
+1. On the dashboard, select **Start Meeting** in the **Meet Now** card.
+2. On desktop, pick the meeting tab, window or screen in the browser's share picker, turn on its audio option if offered, and allow microphone access. On a phone, allow microphone access and keep the phone awake. Nojoin then opens the recording's page.
+3. Speak briefly and check that the live waveform moves.
+4. Stop the recording. The page shows processing progress until transcription and speaker separation finish.
+
+With AI configured, Nojoin then names the speakers it can infer, titles the meeting and writes notes; you can rename any speaker afterwards. Without AI, the meeting still completes and its transcript is ready to review.
 
 ## 6. Recommended Next Steps
 
-- Read [CAPTURE.md](CAPTURE.md) for browser capture setup, resume/discard behaviour, and troubleshooting.
-- Read [USAGE.md](USAGE.md) for the dashboard, recordings workspace, notes, search, and speaker workflows.
-- Read [CALENDAR.md](CALENDAR.md) if you want Google or Outlook calendar integration.
-- Read [ADMIN.md](ADMIN.md) if you will manage users, invitations, or system settings.
-- Read [BACKUP_RESTORE.md](BACKUP_RESTORE.md) before relying on backups in production.
-- Read [Remote Access and Trusted Public Origin](DEPLOYMENT.md#remote-access-and-trusted-public-origin) before reaching Nojoin from another device over a LAN, VPN, tailnet, or public domain. Live capture needs an HTTPS origin, so a remote address requires a reverse proxy rather than only a port change.
+- [USAGE.md](USAGE.md): the dashboard, recordings, notes, search and speakers.
+- [CALENDAR.md](CALENDAR.md): Google or Outlook calendar integration.
+- [ADMIN.md](ADMIN.md): users, invitations and system settings.
+- [BACKUP_RESTORE.md](BACKUP_RESTORE.md): read before relying on backups.
+- [Remote Access and Trusted Public Origin](DEPLOYMENT.md#remote-access-and-trusted-public-origin): read before opening Nojoin from another device. Live capture needs HTTPS, which for a remote address means a reverse proxy.

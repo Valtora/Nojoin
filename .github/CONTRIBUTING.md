@@ -1,187 +1,114 @@
 # Contributing to Nojoin
 
-Thank you for your interest in Nojoin!
-
 Nojoin is free and open-source software licensed under the **GNU Affero General Public License v3.0 (AGPLv3)**.
 
 ## Licensing of Contributions
 
-No additional contributor agreement is required. By submitting a Pull Request, you agree that your contribution will be licensed under the **GNU Affero General Public License v3.0 (AGPLv3)** for inclusion in Nojoin.
+No contributor agreement is required. By opening a pull request you agree that your contribution is licensed under the AGPLv3 for inclusion in Nojoin.
 
 ## How to Contribute
 
-We **actively welcome** code contributions, bug fixes, and feature enhancements from the community.
+1. Fork the repository and create a branch for your change.
+2. Commit using [Conventional Commits](https://www.conventionalcommits.org/).
+3. Open a pull request against `main` and complete the template.
 
-### Getting Started
+Help is especially welcome with:
 
-1. **Fork** the repository on GitHub.
-2. **Clone** your fork locally.
-3. Create a new **branch** for your feature or fix (`git checkout -b feature/amazing-feature`).
-4. Commit your changes following [Conventional Commits](https://www.conventionalcommits.org/).
-5. **Push** to your branch.
-6. Open a **Pull Request** against the `main` branch.
-
-### Ways to Help
-
-- **Code Contributions:** Submit PRs for bug fixes or new features.
-- **Bug Reports:** If you encounter any issues, please [open an issue](https://github.com/Valtora/Nojoin/issues) with detailed reproduction steps.
-- **Platform Testing:** We specifically need help verifying shared-audio capture in Chrome on Windows, Linux and macOS and in other Chromium-family browsers, microphone-only capture in Chrome on Android and iOS, and the unsupported-browser message in Firefox, Safari and other mobile browsers.
-- **Documentation:** Improvements to the docs are always welcome.
+- **Bug reports** with reproduction steps (see [Reporting Issues](#reporting-issues)).
+- **Platform testing:** shared-audio capture in Chrome on Windows, Linux and macOS and in other Chromium-family browsers, microphone-only capture in Chrome on Android and iOS, and the unsupported-browser message in Firefox, Safari and other mobile browsers.
+- **Code and documentation** fixes and improvements.
 
 ## Development Setup
 
-Please refer to [docs/DEVELOPMENT.md](../docs/DEVELOPMENT.md) for local development setup and core source-build commands.
-
-Local contributor prerequisites:
+[docs/DEVELOPMENT.md](../docs/DEVELOPMENT.md) covers setup, dependency sets and checks. Prerequisites:
 
 - Python 3.12
-- Node.js 22 or newer (CI builds on Node 26)
-- npm
-- Docker for the containerised stack and deployment-path verification
+- Node.js 26, with npm, as CI uses ([DEVELOPMENT.md](../docs/DEVELOPMENT.md) gives the minimum for the tests)
+- Docker, for the containerised stack
 
-Typical host setup from a fresh checkout:
+Install only what your change needs:
 
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-# Full GPU host (live processing stack): use local.txt.
-# Tests + linting + type-checking only (CPU, no CUDA): use dev.txt instead.
-python -m pip install -r requirements/local.txt
+- **Documentation:** nothing. `python3 scripts/validate_docs.py` uses only the standard library.
+- **Frontend:** Node and `npm install` in `frontend/`. No Python or GPU.
+- **Backend without a GPU:** a virtual environment with `requirements/dev.txt`, the test stack plus Ruff, mypy and pre-commit. `requirements/local.txt` adds pyannote.audio for running the processing pipeline on a GPU host.
 
-cd frontend
-npm install
-```
+Before opening a pull request, run the checks for every area you touched, as listed in [Verification By Change Scope](../docs/DEVELOPMENT.md#verification-by-change-scope). `python scripts/check.py` runs every Python-side check, pytest included. CI runs the same checks and the aggregate `CI gate` must pass to merge ([Required Pull Request Checks](../docs/DEVELOPMENT.md#required-pull-request-checks)).
 
-Install the git pre-commit hook so linting and formatting run automatically:
+Two rules apply to every pull request:
 
-```bash
-pre-commit install
-```
-
-### Lightweight Contributor Paths
-
-You do not need the full GPU/ML stack for every change. The heavy inference dependencies (CUDA, Whisper, Pyannote) are only required to run the live processing pipeline locally. Match the setup to the surface you are changing.
-
-- **Documentation-only changes:** no Python virtual environment or Node toolchain is required. Edit the Markdown, then validate links with `python3 scripts/validate_docs.py`. That script has no third-party dependencies.
-- **Frontend-only changes:** install Node.js 22 or newer and the frontend dependencies only. You can develop and fully verify frontend work without CUDA or the ML requirements.
-
-  ```bash
-  cd frontend
-  npm install
-  npm run lint && npm run test && npm run build
-  ```
-
-- **Backend lint, test, and type-check without a GPU:** create the virtual environment and install `requirements/dev.txt` (CPU-only) instead of `requirements/local.txt`, then run `python scripts/check.py`. The full `requirements/local.txt` is only needed to exercise live transcription and diarisation on a GPU host.
-
-Minimum pull request verification is:
-
-- Backend/API/worker changes: `source .venv/bin/activate && pytest`
-- Python lint, format, and type checks: `python scripts/check.py` (runs Ruff,
-  the formatter check, the whitespace, file-size, blind-except and held-pin
-  gates, mypy, the doc and Alembic validators, and pytest; pass `--fix` to
-  auto-fix lint and formatting first)
-- Frontend changes: `cd frontend && npm run lint && npm run test && npm run build`
-- Marketing site changes (`site/**`): `cd site && npm ci && npm run build`, on Node 26 with
-  the npm it bundles, matching CI and the deploy job. Use `npm ci`, never `npm install`: an
-  older npm rewrites `package-lock.json` in ways CI rejects. Also run
-  `node frontend/scripts/check-contrast.mjs`, and check for horizontal overflow at 360px in
-  both themes. [docs/SITE.md](../docs/SITE.md) carries the full runbook, including how to share
-  a preview over a Cloudflare quick tunnel.
-- Design token changes (`frontend/src/app/tokens.css`, `site/src/styles/site-tokens.css`):
-  `node frontend/scripts/check-contrast.mjs`. The gate only audits pairings registered in
-  the script, so new colour-on-colour furniture needs its pairing added alongside it.
-- Documentation changes: `python3 scripts/validate_docs.py`
-- Alembic migration changes: `python3 scripts/validate_alembic.py`
-
-The pull request workflow runs these checks, and the aggregate `CI gate` must be green to merge; [docs/DEVELOPMENT.md](../docs/DEVELOPMENT.md#required-pull-request-checks) lists which jobs run for which paths. Run the checks for every area you touched before opening a pull request. Migrations, security, capture and deployment changes carry extra review obligations, listed under [Merge Requirements](#merge-requirements).
-
-Additional scope rules:
-
-- Recording action changes must go through `frontend/src/components/recordings/_hooks/useRecordingActions.ts` rather than being defined locally, so the rail and the live view cannot diverge.
-- API changes must keep backend response schemas (`backend/models/*_public.py` and related Pydantic models) and the corresponding frontend interfaces in `frontend/src/types/index.ts` synchronised in the same pull request.
+- Recording actions go in `frontend/src/components/recordings/_hooks/useRecordingActions.ts`, never in a single surface, so the rail and the live view cannot diverge.
+- An API change updates the backend response schemas (`backend/models/*_public.py` and related Pydantic models) and the frontend interfaces in `frontend/src/types/index.ts` in the same pull request.
 
 ## Documentation Ownership
 
-Documentation is owned alongside the code it describes. Any change to behaviour, setup, deployment, or support must update the relevant guide in the same pull request:
+A change to behaviour, setup, deployment or support updates the guide that owns the topic in the same pull request. [docs/README.md](../docs/README.md) indexes them. The usual ones:
 
-- Product or UI behaviour: `docs/USAGE.md`, and the screenshots in `README.md` if a captured screen changes.
-- Browser capture behaviour: `docs/CAPTURE.md`.
-- Local setup or development workflow: `docs/DEVELOPMENT.md` and this file.
-- Deployment, configuration, or upgrade behaviour: `docs/DEPLOYMENT.md`.
-- Auth, token, or encryption behaviour: `docs/SECURITY.md`.
+- Product or UI behaviour: `docs/USAGE.md`, plus the `README.md` screenshots if a captured screen changes. Admin-only settings and operations: `docs/ADMIN.md`.
+- Browser capture: `docs/CAPTURE.md`.
+- Development workflow: `docs/DEVELOPMENT.md` and this file.
+- Deployment, configuration or upgrades: `docs/DEPLOYMENT.md`.
+- Auth, tokens or encryption: `docs/SECURITY.md`.
 - Architecture or pipeline contracts: `docs/ARCHITECTURE.md`.
-- Support, reporting, or supported-version expectations: `.github/SUPPORT.md` and `docs/SECURITY.md`.
+- Telemetry payloads: `docs/TELEMETRY.md`.
+- Support or supported versions: `.github/SUPPORT.md` and `docs/SECURITY.md`.
 
-Reviewers should treat a behaviour or operational change with no corresponding documentation update as incomplete.
+Reviewers treat a behaviour or operational change with no documentation update as incomplete.
 
 ## Reporting Issues
 
-Use the GitHub issue templates and choose the closest match. Route sensitive reports privately as noted below.
+Use the closest issue template.
 
-- **Bugs:** open a bug report and include your Nojoin version, deployment mode, browser, capture mode, and redacted logs.
-- **Platform or browser-capture failures:** open a platform compatibility report with your operating system, browser, and versions. These are triaged under the `platform-issue` label.
-- **Flaky tests:** open a bug report titled `[flaky]`. Include the test name, the CI job or local command, how often it fails, and a link to a failing run if available. Note whether it reproduces locally or only in CI.
-- **Dependency issues:** open a bug report describing the dependency, the pinned and installed versions, the platform (CPU or CUDA, operating system, Python or Node version), and the exact install or runtime error. State whether it affects `requirements/local.txt`, `requirements/dev.txt`, or the frontend lockfile.
-- **Security vulnerabilities:** do not open a public issue. Use GitHub Private Vulnerability Reporting as described in the [security policy](../docs/SECURITY.md).
+- **Bugs:** a bug report with your Nojoin version, deployment mode, browser, capture mode and redacted logs.
+- **Platform or browser-capture failures:** a platform compatibility report with your operating system, browser and versions. These arrive labelled `platform-issue`.
+- **Flaky tests:** a bug report titled `[flaky]` with the test name, the CI job or local command, how often it fails, whether it reproduces locally or only in CI, and a link to a failing run if you have one.
+- **Dependency problems:** a bug report naming the dependency, its pinned and installed versions, the platform (CPU or CUDA, operating system, Python or Node version), the exact install or runtime error, and whether it affects `requirements/local.txt`, `requirements/dev.txt` or the frontend lockfile.
+- **Security vulnerabilities:** never a public issue. Use GitHub Private Vulnerability Reporting as described in the [security policy](../docs/SECURITY.md).
 
 ## Repository Governance
 
-Nojoin is currently maintained by a single maintainer. The governance below is designed around that reality: code ownership, merge discipline, and the re-audit cadence are self-applied rather than relying on a second human reviewer. The structure is forward-compatible — when a co-maintainer joins, the same rules gain a genuine second-reviewer gate without restructuring.
+Nojoin has one maintainer, so code ownership, merge discipline and re-audits are self-applied. When a co-maintainer joins, the same rules become a second-reviewer gate without restructuring.
 
 ### Code Ownership
 
-Review responsibility is recorded in [.github/CODEOWNERS](CODEOWNERS), which groups paths by subsystem. GitHub auto-requests a review from the listed owner for every pull request that touches a matched path. Every subsystem maps to `@Valtora` while the project has one maintainer.
+[CODEOWNERS](CODEOWNERS) groups paths by subsystem, and GitHub requests a review from the owner of every changed path. Every subsystem maps to `@Valtora` for now.
 
 ### Merge Requirements
 
-Every pull request to `main` must have the required `CI gate` status check green before merge. `CI gate` passes only when every applicable CI job passed; a job whose area did not change is skipped and counts as a pass. [docs/DEVELOPMENT.md](../docs/DEVELOPMENT.md#required-pull-request-checks) lists the jobs and the exact path rules.
+Every pull request to `main` needs the `CI gate` status check green. It passes when every applicable job passed, and a job skipped because its area did not change counts as a pass ([Required Pull Request Checks](../docs/DEVELOPMENT.md#required-pull-request-checks)).
 
-Sensitive scopes carry an additional review obligation that the maintainer (or, in future, a designated CODEOWNER) must satisfy before merging:
+Sensitive scopes carry an extra obligation the maintainer, or later a designated code owner, must meet before merging:
 
-- **Migrations (`backend/alembic/**`):** keep exactly one checked-in Alembic head and never delete or rename a committed revision. Confirm `Alembic validation` is green.
-- **Security (`docs/SECURITY.md`, auth/session/token/encryption code):** preserve the documented auth and token boundaries in [docs/SECURITY.md](../docs/SECURITY.md) and update that guide in the same pull request when behaviour changes.
-- **Capture (`frontend/src/lib/capture/**`):** complete manual browser smoke testing for start, pause/resume, stop/finalize, discard, unsupported-browser messaging, and selected-microphone behaviour ([docs/DEVELOPMENT.md](../docs/DEVELOPMENT.md#verification-by-change-scope)).
-- **Deployment / release (`docker/**`, `docker-compose*.yml`, `.github/workflows/**`, `scripts/release.py`):** keep the pinned action SHAs, pinned base-image digests, and the gated/signed release ordering intact, and run the full backend, frontend, docs, and Alembic validation set together.
+- **Migrations (`backend/alembic/**`):** keep exactly one checked-in Alembic head, never delete or rename a committed revision, and confirm `Alembic validation` and `Migrations (Postgres)` are green.
+- **Security (`docs/SECURITY.md`, auth, session, token and encryption code):** preserve the auth and token boundaries in [docs/SECURITY.md](../docs/SECURITY.md), and update it in the same pull request when behaviour changes.
+- **Capture (`frontend/src/lib/capture/**`):** smoke-test start, pause and resume, stop and finalise, discard, unsupported-browser messaging and the selected microphone in a browser ([Verification By Change Scope](../docs/DEVELOPMENT.md#verification-by-change-scope)).
+- **Deployment and release (`docker/**`, `docker-compose*.yml`, `.github/workflows/**`, `scripts/release.py`):** keep pinned action SHAs, pinned base-image digests and the gated, signed release ordering intact, and run the backend, frontend, docs and Alembic checks together.
 
 ### Branch Protection
 
-`main` requires a pull request, the single `CI gate` status check on an up-to-date branch, linear history, and resolved review threads, enforced for admins too. It requires no approvals while the project has one maintainer, and force pushes and deletions are disallowed. [docs/DEVELOPMENT.md](../docs/DEVELOPMENT.md#branch-protection) records the exact settings, why none of them can lock out a sole maintainer, and why the release jobs are not required checks.
+`main` requires a pull request, the `CI gate` check on an up-to-date branch, linear history and resolved review threads, enforced for admins too. It requires no approvals while there is one maintainer, and force pushes and deletion are blocked. [docs/DEVELOPMENT.md](../docs/DEVELOPMENT.md#branch-protection) has the exact settings and the command that restores them.
 
 ### Recording Significant Decisions
 
-When a change alters one of Nojoin's core contracts, the reasoning belongs in the commit body and the pull request description, alongside the change itself. The contracts that warrant this are:
+When a change alters a core contract, record the reasoning in the commit body and the pull request description. The contracts are:
 
-- **Trust boundaries** — authentication, session or token handling, encryption, or what a given actor is permitted to do.
-- **Persistence** — the database schema's shape or guarantees, backup/restore semantics, or migration strategy.
-- **Capture** — the browser-capture contract: supported browsers, audio sources, segment upload, or live-processing dispatch.
-- **Processing** — the transcription/diarisation pipeline contract, including stage boundaries, engine selection, or canonical-pipeline reconciliation.
-- **Deployment** — the release model, image build/sign/scan pipeline, runtime topology, or operator-facing configuration contracts.
+- **Trust boundaries:** authentication, sessions and tokens, encryption, or what an actor may do.
+- **Persistence:** the database schema's shape or guarantees, backup and restore semantics, or migration strategy.
+- **Capture:** supported browsers, audio sources, segment upload or live-processing dispatch.
+- **Processing:** the transcription and diarisation pipeline, including stage boundaries, engine selection or canonical-pipeline reconciliation.
+- **Deployment:** the release model, the image build, sign and scan pipeline, runtime topology, or operator-facing configuration.
 
-Record the context that forced the decision, the alternatives weighed, and the trade-offs accepted — not just what changed. The test is whether a future maintainer would be surprised by the decision and need to know *why* it was made. A routine bug fix, refactor, dependency bump, or documentation edit needs no such treatment.
-
-Where a decision constrains future work — an invariant that a reasonable-looking change would silently break — say so in the relevant document under [docs/](../docs/) as well, so it is found by someone reading the docs rather than only by someone reading history.
+Record the context that forced the decision, the alternatives weighed and the trade-offs accepted. A routine fix, refactor, dependency bump or documentation edit needs none of this. Where a decision constrains future work, such as an invariant a reasonable-looking change would break, also state it in the relevant guide under [docs/](../docs/).
 
 ### Periodic Re-Audit
 
-The repository-quality bar is maintained, not set once. Three passes keep it current:
-
-- **Quarterly (automated reminder):** `.github/workflows/repo-audit-reminder.yml` runs on the first day of each quarter and opens an `audit`-labelled issue if one is not already open. That issue carries the re-audit checklist; the maintainer works through it, records the measured evidence in the issue, and opens follow-up issues for any regression.
-- **Per release:** before tagging, confirm the release-blocking quality checks still hold and that open `severity:critical`/`severity:high` and `release:*` issues are reflected in the release notes.
-- **On significant change:** when a change alters a core contract (trust boundary, persistence, capture, processing, or deployment), the commit body and pull request description are the record — see [Recording Significant Decisions](#recording-significant-decisions).
-
-The re-audit procedure is to run the required checks from a clean environment, capture the actual numbers (test counts and durations, lint results, link-check output) in the audit issue, and resolve regressions with tracked follow-up issues rather than silently closing the audit.
+[repo-audit-reminder.yml](workflows/repo-audit-reminder.yml) runs at 09:00 UTC on the first day of each quarter and opens an `audit`-labelled issue carrying the re-audit checklist, unless one is already open. Work through it from a clean environment, record the measured numbers (test counts and durations, lint results, link-check output) in the issue, open a follow-up issue for each regression, then close it. The per-release triage pass is in [SUPPORT.md](SUPPORT.md#triage-cadence-and-labels).
 
 ### Other Governance Policies
 
-To avoid duplication, the remaining policies live in their canonical homes:
-
-- **Triage cadence and labels:** [.github/SUPPORT.md](SUPPORT.md) and [.github/labels.yml](labels.yml).
-- **Dependency-update policy:** [docs/DEVELOPMENT.md](../docs/DEVELOPMENT.md#dependency-update-policy).
-- **Test reliability (duration and flakiness):** [docs/DEVELOPMENT.md](../docs/DEVELOPMENT.md#test-reliability) and the flaky-test reporting path under [Reporting Issues](#reporting-issues).
+- **Triage cadence and labels:** [SUPPORT.md](SUPPORT.md) and [labels.yml](labels.yml).
+- **Dependency updates:** [docs/DEVELOPMENT.md](../docs/DEVELOPMENT.md#dependency-update-policy).
+- **Test reliability:** [docs/DEVELOPMENT.md](../docs/DEVELOPMENT.md#test-reliability) and the flaky-test path under [Reporting Issues](#reporting-issues).
 
 ## Code of Conduct
 
-Please note that this project is released with a [Code of Conduct](../docs/CODE_OF_CONDUCT.md). By participating in this project you agree to abide by its terms.
-
-Thank you for helping make Nojoin better!
+This project is released with a [Code of Conduct](../docs/CODE_OF_CONDUCT.md). By participating you agree to abide by its terms.

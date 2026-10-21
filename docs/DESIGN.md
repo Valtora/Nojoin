@@ -1,69 +1,61 @@
 # Design System
 
-The web client's visual language is defined once, as CSS custom properties in
-[frontend/src/app/tokens.css](../frontend/src/app/tokens.css) (imported by `globals.css`, which
-keeps the app-only furniture), and consumed through Tailwind
-utility classes and a small set of primitive components. The marketing site runs the same system on
-its own dark canvas; see [The marketing site](#the-marketing-site) below. This document records the
-tokens, the primitives, and the rules that govern them, so a change to the interface can be checked
-against an intended system rather than against whatever the surrounding component happened to do.
+The web client's tokens are CSS custom properties in
+[frontend/src/app/tokens.css](../frontend/src/app/tokens.css), with optional palettes in
+[palettes.css](../frontend/src/app/palettes.css). `globals.css` imports both, maps them to Tailwind
+utilities in `@theme inline`, and holds the app-only furniture. Components reach the tokens through
+those utilities and the [primitives](#primitives). The marketing site uses the same tokens; see
+[The marketing site](#the-marketing-site).
 
 ## The flat canon
 
 Every resting surface is a solid fill with a 1px hairline border. There are no gradients, no
-translucent glass, and no `backdrop-filter` anywhere in the product. The brand gradient survives
-only inside the logo image assets.
+translucent glass and no `backdrop-filter`. The brand gradient appears only in the logo.
 
-1. **Two surface levels, and no more.** The page, and one card on it. `--surface-inset` exists for
-   composite UI inside a card, such as meters and consoles, and steps in the same direction. No
-   card ever contains another card.
-2. **Light separates by shadow, dark separates by lightness.** Light mode adds a 4%-alpha resting
-   shadow (`--surface-card-shadow`); dark mode resolves that token to `none`, because a shadow
-   against a dark page reads as a smudge rather than as elevation.
-3. **Floats are the one exception.** Anything rendered over other content, meaning modals,
-   dropdowns, popovers, tooltips and toasts, carries `--float-shadow` in *both* themes. It has to:
-   in dark mode a scrim cannot darken a page that is already dark, so the panel rises
-   instead. Floats also get their own surface token, `--surface-float`, which is lighter than a
-   card in dark mode. This is not a third level of the surface stack; an overlay sits on a
-   different axis to the page and card it covers.
-4. **Affordance is colour, not elevation.** A clickable card tints its background and strengthens
-   its border on hover. Nothing lifts. Shadow-on-hover never worked in dark mode anyway, where
-   there is no resting shadow for a hover state to differ from.
-5. **Scrims are a plain dim.** `--scrim`, no blur. Sticky chrome is fully solid.
-6. **Focus rings are orange, 2px, on every interactive element**, from `--focus-ring`.
-7. **Motion stays quick and flat**: 0.15 to 0.3s transitions, no bounce, reduced motion respected.
-   No transition exists whose only job is animating a shadow.
+1. **Two surface levels.** The page, and one card on it. `--surface-inset` is for composite UI
+   inside a card, such as meters and consoles. No card contains another card; see
+   [Surface nesting](#surface-nesting).
+2. **Light separates by shadow, dark by lightness.** `--surface-card-shadow` is a 4% shadow in
+   light mode and `none` in dark.
+3. **Floats are the exception.** Modals, dropdowns, popovers, tooltips and toasts use
+   `--surface-float` and carry `--float-shadow` in both themes. In dark mode the float surface is
+   lighter than a card, since a scrim cannot darken a page that is already dark. A float does not
+   count as a third surface level.
+4. **Affordance is colour.** A clickable card tints its background and strengthens its border on
+   hover. Nothing lifts, and no hover state adds a shadow.
+5. **Scrims are a plain dim** (`--scrim`, no blur). Sticky chrome is fully solid.
+6. **Focus is a 2px `--focus-ring` outline** on every interactive element.
+7. **Motion is quick and flat**: short transitions (0.15 to 0.3s), no bounce, reduced motion
+   respected, and no transition that only animates a shadow.
 
 ## Themes
 
-Light and dark are both first-class. Dark mode is class-based rather than media-query-based, so a
-user can override their operating system preference:
+Light and dark are both first-class. Dark mode is class-based, so a user can override the
+operating system preference:
 
 ```css
 @custom-variant dark (&:where(.dark, .dark *));
 ```
 
-Raw values are declared on `:root` and overridden on `.dark`; `@theme inline` then references them
-through `var()`, so every generated utility is theme-reactive. Custom properties cascade, so `.dark`
-declares only what actually changes.
+Raw values sit on `:root` and are overridden on `.dark`, which declares only what changes.
+`@theme inline` references them through `var()`, so every generated utility follows the theme.
 
-**A component must not branch on the theme.** A `dark:` variant carrying a colour is a bug: it means
-a token is missing. `dark:` remains legitimate for non-colour concerns, such as swapping an image.
+**A component must not branch on the theme.** A `dark:` variant carrying a colour means a token
+is missing. `dark:` stays legitimate for non-colour concerns, such as swapping an image, and for
+`dark:prose-invert` on typography-plugin content.
 
-**`color-scheme` is declared on both themes, and it is not optional.** Native controls are drawn by
-the browser: no selector in this stylesheet reaches inside an open `<select>` popup, a checkbox, a
-radio, a range thumb or a date picker. `color-scheme` is the only lever that tells the browser which
-of its own renderings to use, so without `light` on `:root` and `dark` on `.dark`, every native
-control renders light while the rest of the app is dark. This is the price of `Select` being a
-native select, and it is worth paying for the platform picker on a phone.
+**`color-scheme` is required on both themes** (`light` on `:root`, `dark` on `.dark`). The
+browser draws native controls (a `<select>` popup, checkboxes, radios, range thumbs, date
+pickers) and no selector reaches inside them, so without `color-scheme` they render light in
+dark mode.
 
 ### Appearance preferences
 
-Theme, colour palette, corner style and density are per-browser preferences chosen in
-**Settings > Appearance**. `lib/appearance.ts` owns their allowed values and storage keys;
-`lib/theme-script.ts` reads local storage before first paint and stamps the result on `<html>`, and
-`ThemeProvider` / `ViewportDensityProvider` keep it in sync afterwards. The inline script is shipped
-as an uncompiled string, so it must stay plain JavaScript; `theme-script.test.ts` executes it.
+Theme, colour palette, corner style and density are per-browser preferences in
+**Settings > Appearance**. `lib/appearance.ts` owns their allowed values and local storage keys.
+`lib/theme-script.ts` applies the stored choice to `<html>` before first paint, and
+`ThemeProvider` and `ViewportDensityProvider` keep it in sync afterwards. The script ships as an
+uncompiled string, so it must stay plain JavaScript; `theme-script.test.ts` executes it.
 
 | Preference | On `<html>` | Default |
 | --- | --- | --- |
@@ -72,31 +64,30 @@ as an uncompiled string, so it must stay plain JavaScript; `theme-script.test.ts
 | Corner style | `data-corners` = `subtle` or `square` | no attribute (rounded) |
 | Density | `data-ui-density` = `comfortable`, `compact` or `dense` | resolved from the viewport (never `dense`) |
 
-Every default leaves the product exactly as it looks without the preference, which is the invariant
-to keep when adding one.
+A new preference must keep the same property: its default leaves the product exactly as it looks
+without the preference.
 
 ### Palettes
 
-A palette is a pair of token blocks in `frontend/src/app/palettes.css`:
-`html[data-palette="x"]:not(.dark)` and `html[data-palette="x"].dark`. The `:not(.dark)` is
-load-bearing: `html[data-palette]` alone outranks `.dark`, so an unscoped light block would leak its
-values into dark mode for any token the dark block does not repeat.
+A palette is a pair of blocks in `palettes.css`: `html[data-palette="x"]:not(.dark)` and
+`html[data-palette="x"].dark`. Keep the `:not(.dark)`. `html[data-palette]` alone outranks
+`.dark`, so an unscoped light block leaks into dark mode for any token the dark block does not
+repeat.
 
-A palette may re-tint the neutrals (page, card, inset, float, rails, text greys, hairlines, control
-borders) and replace the action family (fill, label, text, tint, border, focus ring). It must not
-touch status tones, danger, chart series or speaker colours: those encode meaning, and a speaker or
-an error has to look the same whichever palette is chosen.
+A palette may re-tint the neutrals (page, card, inset, float, rails, text greys, hairlines,
+control borders) and replace the action family (fill, label, text, tint, border, focus ring). It
+must not touch status tones, danger, chart series or speaker colours, which carry meaning and
+look the same in every palette. Its page must therefore stay light enough for the shared
+`--danger-text` to clear 4.5:1: Classic keeps its Windows grey (`#d4d0c8`) for the rails and uses
+`#ece9d8` for the page.
 
-`check-contrast.mjs` discovers palettes from that file and audits both blocks against the full app
-pairing list, modelling the cascade above, so a new palette is gated the moment it exists.
+`check-contrast.mjs` discovers palettes in the file and audits both blocks against the full app
+pairing list.
 
-Two consequences of the shared danger and the 3:1 fill rule show up in the palettes as they stand.
-A page as dark as Windows button-face grey (#D4D0C8) cannot carry the shared danger text, so
-Classic's page is #ECE9D8 and the grey is confined to the rails. And a dark-mode fill has to clear
-3:1 against the card while still carrying its label at 4.5:1, which a deep colour (Classic's navy,
-Marigold's gold-on-forest) cannot do with a white label; those palettes invert the dark fill to a
-light colour with a dark label (`--action-on`). Components must therefore always label an action
-fill with `text-action-on`, never with a literal white.
+A dark-mode fill has to clear 3:1 against the card and still carry its label at 4.5:1. Classic and
+Marigold manage that by inverting the dark fill to a light colour with a dark `--action-on`.
+**Always label an action fill with `text-action-on` or `text-action-on-muted`**, never with white
+or another text colour; `actionFillUsage.test.ts` checks this.
 
 ## Colour
 
@@ -108,6 +99,7 @@ fill with `text-action-on`, never with a literal white.
 | `--action-hover` | orange-800 `#9a3412` | orange-800 `#9a3412` | |
 | `--action-active` | orange-900 `#7c2d12` | orange-900 `#7c2d12` | |
 | `--action-on` | `#ffffff` | `#ffffff` | Label on an action fill |
+| `--action-on-muted` | orange-100 `#ffedd5` | orange-100 `#ffedd5` | Secondary text on an action fill |
 | `--action-text` | orange-700 `#c2410c` | orange-400 `#fb923c` | Links, accents, active text |
 | `--action-text-hover` | orange-800 `#9a3412` | orange-300 `#fdba74` | |
 | `--action-tint` | orange-100 `#ffedd5` | orange-500 at 18% | Selected or active row |
@@ -116,26 +108,20 @@ fill with `text-action-on`, never with a literal white.
 | `--action-border` | orange-300 `#fdba74` | orange-400 at 35% | Tint outlines |
 | `--focus-ring` | orange-600 `#ea580c` | orange-400 `#fb923c` | Focus outline only |
 
-Two things here are not obvious.
+**The fill is orange-700.** White on orange-600 is 3.56:1, below the 4.5:1 required of all text,
+button labels included.
 
-**The fill is orange-700, not orange-600.** White on orange-600 is 3.56:1, short of the 4.5:1
-held to for all text including button labels.
+**Use `--action` for something filled and `--action-text` for something written.** They coincide
+in light mode. In dark mode orange-700 carries a white label at 5.18:1 but reads at only 3.49:1 as
+text on the page, so `--action-text` lifts to orange-400.
 
-**`--action` and `--action-text` are separate tokens.** One colour cannot do both jobs, because a
-fill is judged by the label on it while text is judged by the surface under it, and in dark mode
-those pull in opposite directions: the orange-700 that carries a white label at 5.18:1 reads as
-text on the dark page at only 3.49:1. They coincide in light mode and diverge in dark, which is
-the entire reason the split exists. Use `--action` for something filled, `--action-text` for
-something written.
-
-`--focus-ring` is the one member of the family allowed to stay lighter, because it is never a text
-colour. It answers to the 3:1 non-text threshold instead.
+`--focus-ring` may stay lighter because it is never text: it answers to the 3:1 non-text
+threshold.
 
 ### Danger
 
-Shaped like the action family so the two behave the same way. Red-600 is the one step that carries
-a white label at 4.83:1 and still separates from both a white page and a dark one, so unlike
-the brand the fill needs no per-theme value.
+Shaped like the action family. The fill is red-600 in both themes (a white label at 4.83:1); only
+the text form changes.
 
 | Token | Light | Dark |
 | --- | --- | --- |
@@ -148,8 +134,7 @@ the brand the fill needs no per-theme value.
 
 ### Contrast tokens
 
-These keep text and boundaries legible against both backgrounds. Prefer them over raw Tailwind
-grey scales for body-adjacent text and borders.
+Use these instead of raw Tailwind greys for body-adjacent text and borders.
 
 | Token | Light | Dark |
 | --- | --- | --- |
@@ -159,9 +144,6 @@ grey scales for body-adjacent text and borders.
 | `--contrast-icon-muted` | `#52525b` | `#a1a1aa` |
 | `--contrast-border` | `#cbd5e1` | `#4b5563` |
 | `--contrast-border-strong` | `#94a3b8` | `#6b7280` |
-
-The light and dark values are not mirror images. Dark mode lifts muted text well above its
-light-mode equivalent, because grey text loses legibility faster on a dark background.
 
 ### Surfaces
 
@@ -176,28 +158,12 @@ light-mode equivalent, because grey text loses legibility faster on a dark backg
 | `--surface-float` | `#ffffff` | `#2a2a2a` |
 | `--surface-float-border` | `rgba(203, 213, 225, 0.9)` | `rgba(148, 163, 184, 0.22)` |
 
-The dark canvas is a soft charcoal rather than a near-black, and the hairlines sit close to the
-1.15:1 house floor in both themes. Both are deliberate: a border heavy enough to read as a line
-turns a page of cards into a wireframe, and the 4% shadow, not the border, is what lifts a card in
-light mode.
-
-The three surfaces have to move together, because `--action` clears the 3:1 a resting fill owes by
-only 3.15:1 against the dark card. Lightening the card alone would fail the audit.
+The hairlines sit close to the 1.15:1 house floor in both themes on purpose; in light mode the
+shadow, not the border, lifts a card. Against the dark card `--action` clears the 3:1 a resting
+fill owes by only 3.15:1, so the dark page, card and float move together: lightening the card
+alone fails the audit.
 
 ### Controls
-
-`--control-border` is deliberately separate from `--contrast-border`, because the two answer to
-different rules. A control's boundary is the only thing identifying it as a control, so it owes
-3:1. A divider or a card edge is decoration, and a hairline is the point. Reusing one token for
-both would force every hairline in the product to the heavier value.
-
-**A control's fill must be `--control-bg`, never `--surface-inset`.** The inset is translucent, and a
-translucent fill on a `<select>` leaks: Chrome paints the option popup from the select's computed
-background-color, so 3%-alpha white composites to an essentially white popup over a dark page. This
-is not fixable with `color-scheme`, because an explicit background overrides the default rendering
-that `color-scheme` selects. It is the reason the primitives exist: `Select` uses `--control-bg` and
-never had the problem, while hand-rolled selects that reached for the nearest-looking surface token
-all did.
 
 | Token | Light | Dark |
 | --- | --- | --- |
@@ -208,10 +174,20 @@ all did.
 | `--control-disabled-border` | `#cbd5e1` | `#3f4653` |
 | `--control-disabled-fg` | `#64748b` | `#8b93a1` |
 
+`--control-border` owes 3:1 because a control's boundary is what identifies it. Dividers and card
+edges are decoration and stay hairlines, so keep `--control-border` and `--contrast-border`
+separate.
+
+**A control's fill must be `--control-bg`, never `--surface-inset`.** The inset is translucent,
+and Chrome paints a `<select>`'s option popup from its computed background colour, so a
+translucent fill gives a near-white popup over a dark page. `color-scheme` cannot fix this,
+because an explicit background overrides it. `Select` and the settings control classes already
+use `--control-bg`.
+
 ### Rails
 
-Navigation chrome has its own surface: a warm cream in light against the cool page tint, and a
-charcoal one step above the page in dark, so a rail reads as chrome rather than as another card.
+Navigation chrome has its own surface: a warm cream in light, and a charcoal one step above the
+page in dark.
 
 | Token | Light | Dark |
 | --- | --- | --- |
@@ -225,18 +201,21 @@ charcoal one step above the page in dark, so a rail reads as chrome rather than 
 
 ### Status
 
-Five tones, not five states. The recording states collapse onto them: queued, processing and note
-generation are all `info`, distinguished by a spinner and a label rather than by colour; uploading
-and paused are `warning`; processed is `success`; error and cancelled are `danger` and `neutral`.
+Five tones, `neutral`, `info`, `success`, `warning` and `danger`, each with `-bg`, `-fg` and
+`-border` tokens. `StatusBadge` maps recording states onto them: queued, processing and note
+generation are `info`, told apart by a spinner and a label; uploading and paused are `warning`;
+processed is `success`; error is `danger`; recorded and cancelled are `neutral`.
 
-Each tone has `-bg`, `-fg` and `-border`. Light keeps a tint background with dark text; dark
-inverts to a translucent fill with light text. **The fill is not what distinguishes a tone.** A
-50-level tint on a white card is about 1.05:1 by design, and the label and outline carry the
-meaning, which is why the contrast audit does not measure it.
+Light uses a tint with dark text, and dark a translucent fill with light text. The label and
+outline carry the tone, so the fill is not measured (a 50-level tint on a white card is about
+1.05:1). The dark fills only read correctly on an opaque surface: `NotificationToast` paints
+`--surface-float` first and lays the tone's `-bg` over it.
 
-The dark fills are translucent, so they only read correctly on an opaque surface. A toast floats
-over whatever is behind it, so `NotificationToast` paints `--surface-float` first and lays the
-tone's `-bg` over it. Using the tint as the toast's own fill let the page show through.
+### Chart and speaker colours
+
+`--chart-1` to `--chart-8`, `--chart-other` and `--chart-grid` have separate values per theme.
+The seventeen `--speaker-*` tokens, one per speaker palette key, are the same in both themes.
+[DEVELOPMENT.md](DEVELOPMENT.md#charts) has the rules for using them.
 
 ### Overlay and stacking
 
@@ -246,40 +225,31 @@ tone's `-bg` over it. Using the tint as the toast's own fill let the page show t
 | `--float-shadow` | moderate, slate-tinted | moderate, black |
 | `--tooltip-bg` / `--tooltip-fg` | `#1f2937` / `#f9fafb` | `#e5e7eb` / `#111827` |
 
-Tooltips invert against the theme rather than sitting on the float surface, because a white tooltip
-on a white card reads as part of the page.
+Tooltips invert against the theme, so a tooltip never looks like part of a white card.
 
-Stacking order is fixed once, and everything that overlays something else takes its z-index from
-here through a primitive: `--z-sticky` 30, `--z-dropdown` 40, `--z-modal` 50, `--z-toast` 60,
-`--z-tour` 10001. The tour sits highest because driver.js draws its own overlay at 10000. Reach
-these with `z-[var(--z-modal)]`, never with a bare number.
+Anything that overlays other content takes its z-index from a token, through a primitive or as
+`z-[var(--z-modal)]`, never as a bare number:
+
+| Token | Value | For |
+| --- | --- | --- |
+| `--z-sticky` | 30 | sticky chrome |
+| `--z-dropdown` | 40 | dropdowns, menus, tooltips |
+| `--z-modal` | 50 | dialogs |
+| `--z-popover` | 55 | a context menu or popover that can open from inside a dialog |
+| `--z-toast` | 60 | toasts |
+| `--z-tour` | 10001 | the guided tour, above driver.js's own overlay at 10000 |
 
 ## Layout and density
 
-Spacing, radii and control heights are tokens rather than per-component values, which is what makes
-the density setting possible. `ViewportDensityProvider` sets `data-ui-density="compact"` on the
-document element, and a single block in `tokens.css` re-declares the layout tokens at smaller
-values. No component needs to know the density. Density is resolved from the viewport unless the
-user has chosen Comfortable, Compact or Dense in Settings; `resolveDensity()` in
-`lib/viewportDensity.ts` is the one place that decision is made, and the pre-paint script mirrors
-it.
+Spacing, radii, widths and control heights are tokens. `ViewportDensityProvider` sets `data-ui-density` on `<html>`, and blocks in `tokens.css`
+re-declare the layout tokens for each level, so no component needs to know the density.
+`resolveDensity()` in `lib/viewportDensity.ts` makes the decision and the pre-paint script mirrors
+it: the user's explicit choice, or under **Automatic (by window size)**, Compact for a window at
+least 1024px wide and no larger than 1920 × 1080, and Comfortable otherwise.
 
-### Dense
-
-Dense is opt-in only: the viewport heuristic never returns it, and Compact's values do not move
-for it. Its token block lists itself beside compact, so it inherits compact's values and then
-tightens. It is split by input, and the split is the rule to keep when tuning it:
-
-- **Everywhere:** spacing that is never a touch target (workspace gaps and padding, card padding,
-  surface radii) and `--leading-relaxed-step`, which Tailwind's `leading-relaxed` reads through
-  `globals.css` (1.625 by default, 1.45 in Dense).
-- **`@media (pointer: fine)` only:** the root font size (14px) that every rem padding, row height
-  and control height hangs off, and `--control-height-lg`. On a coarse pointer Dense keeps
-  compact's 15px root and 3.25rem controls, so it never makes a touch target smaller than Compact
-  already does.
-
-`useViewportDensity().isCompact` is true for compact and dense alike, so layout code that narrows a
-rail for compact narrows it for dense too.
+A hard-coded padding or radius opts a component out of density. Use or extend the tokens. The
+radius tokens are also utilities: `rounded-surface`, `rounded-surface-subtle` and
+`rounded-surface-panel`.
 
 | Token group | Members |
 | --- | --- |
@@ -288,67 +258,75 @@ rail for compact narrows it for dense too.
 | Workspace width | `--workspace-max-width-dense`, `--workspace-max-width`, `--workspace-max-width-wide`, `--workspace-max-width-feature` |
 | Surfaces | `--surface-radius`, `--surface-radius-subtle`, `--surface-radius-panel`, `--surface-padding`, `--surface-padding-lg` |
 | Controls | `--control-height-lg` |
+| Line height | `--leading-relaxed-step` (Dense only) |
 
-Radii are one step tighter than the previous system: `--surface-radius` is 1.25rem, not 2rem. Cards
-and controls stay at `rounded-lg`. Pills remain only for genuinely pill-shaped elements, meaning
-tags, status badges and avatars.
+`useViewportDensity().isCompact` is true for compact and dense alike, so layout code that narrows
+a rail for compact narrows it for dense too.
 
-Adding a hard-coded padding or radius to a component opts that component out of the density
-setting. Use or extend the tokens instead. The radius tokens are also reachable as utilities:
-`rounded-surface`, `rounded-surface-subtle`, `rounded-surface-panel`.
+### Dense
+
+Dense is opt-in only: Automatic never chooses it. Its block starts from compact's values and
+tightens them, split by input. Keep that split when tuning it.
+
+- **Everywhere:** spacing that is never a touch target (workspace gaps and padding, card padding,
+  surface radii), wider workspace caps to offset the smaller root size, and
+  `--leading-relaxed-step`, which Tailwind's `leading-relaxed` reads (1.625 by default, 1.45 in
+  Dense).
+- **`@media (pointer: fine)` only:** the 14px root font size that every rem padding and height
+  hangs off, and `--control-height-lg` (2.5rem). On a coarse pointer Dense keeps compact's 15px
+  root and 3.25rem controls, so it never makes a touch target smaller than Compact does.
 
 ### Corner radii
 
-Every radius is a multiple of `--radius-scale` (1 by default). `globals.css` re-declares Tailwind's
-`rounded` and `rounded-xs` through `rounded-4xl` at their stock sizes times the scale, so
-`rounded-lg` is still 8px by default and still answers to the Corner style setting.
-`html[data-corners="subtle"]` sets the scale to 0.5 and `html[data-corners="square"]` to 0.
+Every radius is a multiple of `--radius-scale`: 1 by default, 0.5 under
+`html[data-corners="subtle"]` and 0 under `html[data-corners="square"]`. `globals.css`
+re-declares Tailwind's `rounded` and `rounded-xs` through `rounded-4xl` at their stock sizes times
+the scale, so `rounded-lg` is still 8px by default and follows the Corner style setting.
 
-Pills cannot be scaled (a pill is "half the height", not a length), so a text-bearing pill (a tag,
-a status badge, a count) uses `rounded-pill`, backed by `--pill-radius`. `rounded-full` is reserved
-for true circles (avatars, dots, round icon buttons, spinners), which stay circles in every corner
-style. An arbitrary radius must go through the scale, as in
-`rounded-[calc(5px*var(--radius-scale))]`; a bare `rounded-[5px]` ignores the setting.
-`radiusUsage.test.ts` fails on either slip: `rounded-full` with horizontal padding in one class
-string, or an arbitrary radius without the scale.
+- **Text-bearing pills** (a tag, a status badge, a count) use `rounded-pill`, backed by
+  `--pill-radius`. A pill is half its height, not a length, so it cannot be scaled; Subtle sets
+  `--pill-radius` to 0.375rem and Square to 0.
+- **`rounded-full` is for true circles** (avatars, dots, round icon buttons, spinners), which
+  stay circles in every corner style.
+- **An arbitrary radius goes through the scale**, as in `rounded-[calc(5px*var(--radius-scale))]`.
+  A bare `rounded-[5px]` ignores the setting.
 
-Third-party stylesheets are brought under the scale where they draw corners: the typography
-plugin's `<pre>` and `<kbd>` (`globals.css`) and every fixed radius in react-datepicker's stylesheet
-(`datepicker-radius.css`, checked against the library by `datepickerRadius.test.ts`).
+`radiusUsage.test.ts` fails on `rounded-full` with horizontal padding in one class string, and on
+an arbitrary radius without the scale.
+
+Third-party corners follow the scale too: the typography plugin's `<pre>` and `<kbd>` (in
+`globals.css`) and every fixed radius in react-datepicker's stylesheet (`datepicker-radius.css`,
+checked against the library by `datepickerRadius.test.ts`).
 
 **Deliberate exceptions.** These stay round under Subtle and Square, because their shape is what
-they are rather than a corner treatment:
+they are:
 
 - circles: avatars, colour and status dots, round icon buttons (the chat button, calendar month
   arrows), spinners, the selected day in the task deadline calendar, react-datepicker's clear
   button;
-- switches: the `Switch` track and thumb, which read as a switch because they are round;
-- progress and level bars (uploads, document parsing, model downloads, the capture level meters):
-  thin rounded bars whose ends are not corners;
+- the `Switch` track and thumb;
+- progress and level bars (uploads, document parsing, model downloads, the capture level meters);
 - scrollbar thumbs.
 
 ### Width is a property of the surface, not of the app
 
-There is no single content width. A page of prose and a page of modules want opposite things from a
-wide display, so each surface declares which cap it answers to: through a `workspace-shell-*` class
-on `Workspace`, or, where a page predates that component, by reading the token directly, as the
-people page does.
+There is no single content width. Each surface declares its cap through a `workspace-shell-*`
+class on `Workspace` or, as the people page does, by reading the token directly.
 
-| Token | Comfortable | Compact | Used by |
-| --- | --- | --- | --- |
-| `--workspace-max-width-dense` | 120rem | 112rem | dashboard, people, live capture |
-| `--workspace-max-width-wide` | 80rem | 74rem | tasks |
-| `--workspace-max-width` | 72rem | 68rem | the `Workspace` default |
-| `--workspace-max-width-feature` | 64rem | 60rem | the recordings landing panel |
+| Token | Comfortable | Compact | Dense | Used by |
+| --- | --- | --- | --- | --- |
+| `--workspace-max-width-dense` | 120rem | 112rem | 128rem | dashboard, people, live capture |
+| `--workspace-max-width-wide` | 80rem | 74rem | 84rem | tasks |
+| `--workspace-max-width` | 72rem | 68rem | 76rem | the `Workspace` default |
+| `--workspace-max-width-feature` | 64rem | 60rem | 68rem | the recordings landing panel |
 
-A dense surface spends extra width on **more columns, not wider ones**. Nothing in the product grows
-a text column past a comfortable reading measure, which is why widening the dashboard left every
-prose surface beside it exactly where it was.
+A wide surface spends extra width on **more columns, not wider ones**. No text column grows past a
+comfortable reading measure.
 
 ### The column model
 
-Two surfaces use it: the dashboard and the live capture view. Both use three breakpoints, chosen so
-that a column is never narrower than about 340px:
+The dashboard and the live capture view lay modules out in columns. The dashboard uses three
+breakpoints, chosen so a column is never narrower than about 340px:
 
 | Workspace width | Columns | Split |
 | --- | --- | --- |
@@ -356,141 +334,75 @@ that a column is never narrower than about 340px:
 | 54rem to 74rem | 2 | 1.1 / 1 |
 | 74rem and above | 3 | 1.25 / 1 / 0.85 |
 
-Columns are deliberately unequal, and they group by subject rather than by size. The calendar owns
-the first, with the month grid and the agenda under it, because they are two views of one
-subsystem; it is also the widest, since a day cell holds a number and up to four markers. The task
-list has the second to itself, so it runs the full height of the page. Capture owns the third, with
-what it produced under it: Meet Now, anything processing, then Recent Meetings. The list column
-is the narrowest, because a row there is a title and a badge.
+Its columns group by subject. The calendar takes the widest first column, with the month grid
+and the agenda under it. The task list has the second to itself. Capture takes the narrowest
+third, with what it produced under it: Meet Now, anything processing, then Recent Meetings.
 
-Each column pairs modules that keep their natural height with exactly one that absorbs the
-remainder. Meet Now and the month grid stay the size they need; the agenda, the task list and
-Recent Meetings take whatever is left.
+The rules:
 
-The live capture view allocates by how much width a panel's content actually needs. Its capture
-controls are a toolbar across the top rather than a card in a column, because a waveform and four
-buttons do not need a column and the panels beside them do; the toolbar also carries the actions
-that would otherwise be buried, which is why uploading a document lives there. Below it are two
-columns, not three: every panel on this surface is dense prose, and a third column made all three
-too narrow to read. The first carries the transcript with notes under it, and the pipeline's
-progress in the transcript's place once recording stops, so pressing Stop reflows one column rather
-than re-laying out the page. The second, slightly wider, is guidance. This is also why the view
-moved off the 64rem feature cap: it is a console, not a page of prose, and a reading measure is
-what forced five panels into one long scroll.
+- **Query the workspace, not the viewport.** The nav rail is resizable and collapsible, so the
+  viewport does not tell the grid how wide it is. Do not "simplify" these container queries back
+  to `lg`/`xl`/`2xl`.
+- **A panel that subdivides queries itself.** Any `grid-cols` inside a panel that can land in a
+  column belongs behind a container query on that panel. Settings does this throughout:
+  `SettingsCard` and `SettingsBlock` are containers, `SettingsRow` switches layout on its own
+  width, and every grid under `components/settings/` queries its block or card. The meeting
+  view's Analytics tab queries its own scroll region, because it sits in a resizable panel
+  between two collapsible rails.
+- **Never mix a `px` arbitrary breakpoint with the rem-based scale.** Tailwind cannot order
+  `1600px` against `80rem`, so the rule it emits later can win at every width. Keep every
+  breakpoint in one unit.
+- **Columns are `items-stretch`**, so they end level. A module that would overflow takes
+  `flex-1 min-h-0 overflow-auto` and scrolls inside itself instead of pushing the grid taller.
+- **Every column has exactly one module that absorbs the leftover height.** The others keep their
+  natural height: Meet Now and the month grid stay the size they need, while the agenda, the
+  task list and Recent Meetings take what is left.
+- **Do not cap the fill.** A `max-height` on the grid leaves it shorter than its own content once
+  a column is long, and one on a module makes that column's cards end above the others. If a tall
+  display ever makes an empty module look odd, cap that module.
+- **The grid takes the height the window has left**, through `grow` the whole way down from the
+  workspace. A percentage height computes to zero in this chain. Use `grow` and not `flex-1`, so a
+  column taller than the window pushes past instead of being squeezed.
+- **A column that nothing fills does not exist.** The third column appears only when Recent
+  Meetings or a processing card has something to show; otherwise capture folds back into the
+  second column.
+- **Modules are direct children of the grid.** Column wrappers take `display: contents` at one
+  column, so every module joins one flex column and `order-*` can sequence them freely. The phone
+  order is action first: Meet Now, anything processing, the agenda, tasks, Recent Meetings, and
+  the month grid last. The desktop order inside a column is set separately, with a
+  container-query `order` override.
 
-This is the one surface where *which* module absorbs the leftover height changes with the state,
-rather than being fixed as it is on the dashboard. While recording the transcript absorbs, because
-it scrolls and there is always more of it. Once recording stops the transcript is replaced by a
-progress bar and two lines of status, which cannot use height at all, so the notes editor absorbs
-instead and the progress card keeps its own size. Guidance absorbs in its own column in both states,
-scrolling inside its cell from 54rem, and that is what stops however much guidance has accumulated
-from setting the grid row for the whole surface. Below 54rem it is one item in a stack and the page
-scrolls, so it keeps its natural height there.
+**The live capture view** has a toolbar across the top (recording state, meeting name, waveform,
+controls, document upload) and, from 54rem, two columns. The first holds the transcript, replaced
+by a progress card once recording stops, with notes and documents under it. The second, slightly
+wider, holds Meeting Edge guidance, which absorbs height and scrolls inside its cell. In the first
+column the transcript absorbs while recording and the notes editor afterwards.
 
-**This is the one surface whose shell hands down a definite height rather than a floor**, and that
-is what the rest of it rests on. `Workspace` is given `h-full` instead of the dashboard's
-`min-h-full`, with `min-h-0` down the chain to the grid and `grid-template-rows: minmax(0, 1fr)` on
-the row itself, because an `auto` row takes the max-content of its items whatever height the grid
-has. Without all four, whichever column holds the most content sizes the row and drags the other
-with it, and no panel can scroll, because a scroll container needs a height to scroll against.
-Deciding which module absorbs is only meaningful once there is a bounded amount to absorb.
+This view hands down a definite height instead of a floor: `Workspace` gets `h-full` (the
+dashboard has `min-h-full`), with `min-h-0` down the chain and `grid-template-rows: minmax(0, 1fr)`
+on the grid. Without all three the tallest column sizes the row and no panel can scroll. **A
+child of an absorbing module takes the height its card was given**: from 54rem the transcript
+window is `min-h-0` and the card clips what it cannot hold. Its 14rem floor applies only in the
+stacked layout below 54rem, where the page scrolls.
 
-Two things do *not* work here and have both been tried. A `max-height` on the transcript module caps
-it against the viewport, which relocates the surplus row height rather than removing it, first
-inside the transcript card and then below it; see the rule on capping below. Removing that cap
-without bounding the row is the same defect pointing the other way, and the transcript grows without
-limit instead of Meeting Edge.
-
-A `min-height` inside the absorbing module is the same mistake in miniature. The transcript's scroll
-window carried a 14rem floor, and on a short window the notes and documents cards left the module
-less than that: the window overflowed its own card, the frame drawn behind it stayed at the card's
-height, and the overspill painted across the notes card below. **A child of an absorbing module
-takes the height its card was given**, so from 54rem the window is `min-h-0` and the card clips what
-it cannot hold. The floor survives only in the stacked layout below 54rem, where the page scrolls
-and there is no height to refuse.
-
-The meeting view's Analytics tab is the third surface that spends width on columns, and it does so
-entirely through container queries on its own scroll region, because it lives inside a resizable
-panel between two collapsible rails and its width is the window minus two numbers it cannot see. It
-pairs by subject, not by size: talk share beside the same share over time, then how the floor
-changed hands beside how much of it was held by two people at once. The per-speaker tables reflow
-rather than scroll, through `.analytics-table` in `globals.css` — one DOM at every width, with the
-narrow layout's labels coming from `content: attr(data-label)` rather than from a second copy of
-the markup, so nothing is rendered twice and no width has to be measured in JavaScript.
-
-**A panel that subdivides must query itself, not the window.** Meeting Edge splits into two lists
-side by side, and did so at the `xl` *viewport* breakpoint: at a 1280px window it subdivided a
-400px column and wrapped both lists to three words a line. Any `grid-cols` inside a panel that can
-land in a column belongs behind a container query on that panel. Settings complies wholesale:
-`SettingsBlock` and `SettingsCard` are containers, `SettingsRow` switches its label-beside-control
-layout on its own width, and every grid under `components/settings/` queries its block or card.
-The calendar provider credentials card is the cautionary tale: its two-provider grid engaged on
-the `lg` viewport inside a 768px-capped column, leaving the label side of every row about 24px at
-every window width — a layout that was unsatisfiable, not merely tight.
-
-**These are container queries against the workspace, not media queries against the viewport**, and
-that distinction is load-bearing. The nav rail is roughly 340px, resizable and collapsible, so the
-space the grid actually has is the viewport minus a number the grid cannot see. A viewport
-breakpoint gets it wrong in both directions: it withholds a column from someone who collapsed the
-rail, and promises one to someone who widened it. Do not "simplify" these back to `lg`/`xl`/`2xl`.
-
-**Never mix a `px` arbitrary breakpoint with the rem-based scale.** Tailwind orders breakpoint
-variants by their declared value and cannot compare `1600px` against `80rem` without knowing the
-root font size, so it emitted `@media (min-width:1600px)` *before* `@media (min-width:80rem)`. Both
-match on a wide screen, specificity is equal, and the later rule wins, so an `xl:` two-column
-template silently overrode a `min-[1600px]:` three-column one at every width. It compiles, it lints,
-and it produces a layout that simply never appears. Keep every breakpoint in one unit.
-
-Three rules follow from that grid:
-
-- **Columns are `items-stretch`.** With `items-start` each column ended wherever its content did and
-  the shorter one left an empty L-shape down the page. Stretching makes them end level, and a module
-  that would overflow takes `flex-1 min-h-0 overflow-auto` and scrolls inside itself rather than
-  pushing the grid taller. The page keeps its own scrollbar for the normal laptop case.
-- **Every column needs one module that can absorb height.** A fixed-height module alone in a stretched
-  column recreates the dead corner. Either pair it with a flexible one or let it grow, as the month
-  grid does by sharing the leftover height between its week rows up to a cap.
-- **A column that nothing fills does not exist.** The third column appears only when a module occupies
-  it; when it is empty its occupants fold back into the second column, so the result is a two-column
-  layout rather than an empty gutter.
-- **The grid takes the height the window has left**, so the columns reach the bottom of the window
-  instead of leaving a dead band under them. This is `grow` the whole way down from the workspace,
-  *not* a percentage height: a percentage needs the parent's height to be definite, and this chain
-  hands height down through `flex-grow` from a container that is `height: auto` with
-  `min-height: 100%`. A percentage against that computes to zero and the declaration silently does
-  nothing, which is a failure with no symptom other than the layout not happening. `grow` rather
-  than `flex-1`, so a column taller than the window pushes past rather than being squeezed.
-- **The fill is uncapped, deliberately.** Every way of capping it breaks something: a max-height on
-  the grid leaves the box shorter than its own content once a column is genuinely long, and a
-  max-height on the modules makes one column's cards end above the others, which is the dead corner
-  this layout exists to remove. If a tall display ever makes an empty module look silly, cap that
-  module.
-
-Modules are direct children of the grid, not children of per-column wrappers. Wrappers still exist
-for stacking, but they take `display: contents` at one column, which drops them out of the box tree so
-that every module becomes a direct child of one flex column and `order-*` can sequence them freely.
-A wrapper cannot reorder across its own boundary, so without this the phone order is forced to match
-the desktop columns. On a phone the order is action first: capture, then anything processing, then
-the agenda, tasks, Recent Meetings, and the month grid last. The desktop stack inside a column is
-a separate sequence, set with a container-query `order` override where the two disagree, which is
-what keeps a phone opening on the record button while a desktop leads its middle column with the
-task list.
+**Tables in narrow containers** use `.analytics-table` or `.settings-table` from `globals.css`.
+Below 34rem of container width the header row goes and each row becomes a list labelled from its
+cells' `data-label` attributes, with one DOM at every width. A cell without a `data-label`, such
+as the row's actions, spans the row.
 
 ### Collapsible surfaces
 
-Both rails and both meeting side panels collapse, and every collapse state persists in the
-navigation store (`navigation-storage`). The pattern is uniform: the collapse control lives in the
-surface's own header, a slim strip carries the re-open affordance when nothing else is left, and
-nothing auto-collapses — the user decides, the choice survives a reload, and mobile keeps its own
-layouts (drawer, full-width list, tabs) untouched. The meeting view's Speakers and Chat panels
-collapse independently; collapsing one gives the other the full column height, and collapsing both
-reduces the right column to an icon strip. The recordings rail collapses to the same strip width
-as the nav rail so the two align.
+Both rails and both meeting side panels collapse, and each collapse state persists in the
+navigation store (`navigation-storage`). The collapse control sits in the surface's own header, a
+slim strip carries the re-open control, nothing auto-collapses, and mobile keeps its own layouts
+(drawer, full-width list, tabs). The meeting view's Speakers and Chat panels collapse
+independently: collapsing one gives the other the full column height, and collapsing both
+reduces the right column to an icon strip. The recordings rail collapses to the nav rail's strip
+width so the two align.
 
 ### Surface nesting
 
-The flat canon's two-level rule, as a fix pattern. When a surface turns out to be nested, it steps
-down rather than repeating:
+The flat canon's two-level rule, as a fix pattern. A nested surface steps down:
 
 | Depth | Wrong | Right |
 | --- | --- | --- |
@@ -498,39 +410,36 @@ down rather than repeating:
 | Second | `bg-surface-card` + border + `shadow-card` | `bg-surface-inset`, no border, no shadow |
 | Third | `bg-surface-card` + border + `shadow-card` | no surface at all: spacing and a divider |
 
-The test for a surface is a *container* with a solid card fill and a hairline border. A button, a
-pill, an input or a calendar cell that uses the card fill as a control background is not a level in
-the stack, and holding controls to this rule would leave them with nothing to sit on. The judgement
-is whether the element is a region of the page or something you click.
+A surface is a region of the page with a solid card fill and a hairline border. A button, pill,
+input or calendar cell that uses the card fill as a control background does not count as a
+level.
 
 ### Modules
 
-A dashboard module is a presentational component with three properties:
+A dashboard module is a presentational component:
 
-- **It does not render its own empty state.** The parent decides whether there is anything to show
-  and omits the module entirely if there is not, so a quiet account sees a smaller dashboard rather
-  than a wall of empty boxes.
-- **There is a floor.** The calendar, the agenda, capture and the task list always render, so the
-  dashboard is never blank.
-- **Data comes from the parent.** Where two modules are two views of one subsystem, the parent calls
-  the hook once and passes the value to both. A hook that fetches must be called once per subsystem,
-  not once per module, or the request doubles silently.
+- **It does not render its own empty state.** The parent omits it when there is nothing to show.
+- **There is a floor.** The calendar, the agenda, Meet Now and the task list always render, so
+  the dashboard is never blank.
+- **Data comes from the parent.** Where two modules are two views of one subsystem, the parent
+  calls the hook once and passes the result to both, so the request is not made twice.
 
 ## Primitives
 
-Shared components live in [frontend/src/components/ui/](../frontend/src/components/ui/) and consume
-tokens exclusively. Build a surface out of these rather than out of raw elements.
+Shared components in [frontend/src/components/ui/](../frontend/src/components/ui/) consume tokens
+only. Build a surface from these before reaching for raw elements.
 
 | Primitive | Use for |
 | --- | --- |
-| `Button` | Any labelled action. `variant`: primary, secondary, ghost, danger. `size`: sm, md, lg. Handles `loading` by disabling itself and swapping the leading icon for a spinner, keeping the label so the control does not resize. |
-| `IconButton` | An action with no label. `aria-label` is required, because it is the only name the control has. The smallest size renders a 16px glyph inside a 40px box, so the target stays reachable. |
-| `Card` | The canonical resting surface. `interactive` switches on the tint-and-border hover treatment. |
+| `Button` | Any labelled action. `variant`: primary, secondary, ghost, danger. `size`: sm, md, lg. `loading` disables it and swaps the leading icon for a spinner, keeping the label so the control does not resize. |
+| `IconButton` | An action with no label. `aria-label` is required, as the control's only name. The smallest size draws a 16px glyph in a 40px box, so the target stays reachable. |
+| `Card` | The resting surface. `interactive` turns on the tint-and-border hover. |
 | `Badge`, `StatusBadge` | Pills. `StatusBadge` maps a `RecordingStatus` to a tone, a glyph and a label. |
-| `Input`, `Select` | Form fields. Both draw on the shared `fieldChrome` helper, so they cannot drift apart. `Select` is a native select, because the mobile pass wants the platform picker on a phone; see `color-scheme` below for what that costs. |
-| `Modal` | Every dialog. Wraps the Headless UI dialog, so the focus trap, scroll lock, Escape handling and portal come from a maintained implementation. Adds the plain scrim, the float surface and shadow, a token z-index, and the height cap and viewport gutter that stop a tall modal pushing its own actions below the fold on a phone. |
-| `Switch`, `Tooltip`, `ModernDatePicker`, `MultiSelect` | Pre-existing widgets, restyled onto tokens. |
-| `FitText` | A single line that must fit its container, meaning the meeting title. Steps the font from a designed size down to a readability floor, then wraps to two clamped lines. CSS cannot do this: `clamp()` tracks the container's size, never the text's own length. |
+| `Input`, `Select` | Form fields, both built on the shared `fieldChrome` helper. `Select` is a native select, for the platform picker on a phone; it relies on `color-scheme` (see [Themes](#themes)). |
+| `Modal` | Every dialog. Wraps the Headless UI dialog for the focus trap, scroll lock, Escape handling and portal, and adds the plain scrim, the float surface and shadow, `--z-modal`, and a height cap so a tall modal keeps its actions on screen on a phone. |
+| `Switch`, `Tooltip`, `ModernDatePicker`, `MultiSelect` | Widgets on the same tokens. |
+| `useAnchoredPanel` | Positions a dropdown or popover against its trigger with `position: fixed`, flipping above when there is more room and clamping to the viewport, so a panel opened inside a modal is not clipped. |
+| `FitText` | A single line that must fit its container, such as the meeting title. Steps the font down from a designed size to a readability floor, then wraps to two clamped lines. |
 
 ### Settings pages
 
@@ -538,190 +447,145 @@ Settings has its own primitives in
 [frontend/src/components/settings/](../frontend/src/components/settings/), and a settings page is
 built from them alone.
 
-- **`SettingsCard`** is the only container: a title, an optional description and status badge,
-  then rows and blocks separated by hairlines. No card nests inside another.
+- **`SettingsCard`** is the only container: a title with optional description, status badge and
+  header control, then rows and blocks separated by hairlines. No card nests inside another.
 - **`SettingsRow`** puts a label and description on the left and one control on the right, and
   stacks them below 26rem of its own width. Pass `controlId` for a single control: the label
   becomes a real `<label>` for it, and the description takes the id `${controlId}-help` for the
-  control's `aria-describedby`. A group of controls takes `labelId` and `aria-labelledby` instead.
-  Rows carry no leading icon. Repeated down a card, the icons added a column and told no two rows
-  apart. Category icons in the navigation stay.
+  control's `aria-describedby`. A group of controls takes `labelId` and `aria-labelledby`
+  instead. Rows carry no leading icon; category icons stay in the navigation.
 - **`SettingsBlock`** holds what is not a label and a control: tables, meters, consoles, editors.
   With no label, description, aside or inset it renders its children straight into its padded
-  cell, so a layout class passed to it, such as `space-y-4` or `flex`, reaches those children.
-  With a header, the content sits in its own wrapper under it.
-- **Controls** take their classes from `settingsControls.ts` or from the `ui/` primitives:
+  cell, so a layout class passed to it, such as `space-y-4` or `flex`, reaches them. With a
+  header, the content sits in its own wrapper under it.
+- **Controls** take their classes from `settingsControls.ts` or the `ui/` primitives:
   `SETTINGS_INPUT_CLASS`, `SETTINGS_SELECT_CLASS` and `SETTINGS_TEXTAREA_CLASS` for fields, the
-  three button classes, `SETTINGS_VALUE_CLASS` for a read-only value, and `SETTINGS_CONTROL_END`
-  for a switch or lone button held at the card's right edge. `settingsControls.test.ts` fails on a
-  hand-written focus ring, a translucent fill on a field, and a `divide-y` with no colour.
+  three `SETTINGS_BUTTON_*` classes, `SETTINGS_VALUE_CLASS` for a read-only value, and
+  `SETTINGS_CONTROL_END` for a switch or lone button held at the card's right edge.
+  `settingsControls.test.ts` fails on a hand-written focus ring, a translucent fill on a field, and
+  a `divide-y` with no colour token.
 
-**Scope badges.** A setting belongs to the signed-in person unless it is marked. Two badges mark
-the rest: **Everyone** for one value the whole installation shares, and **This browser** for one
-kept in the browser's local storage. Scope is declared once, as `scope` on the setting's entry in
-`settingsRegistry.ts`. The card, row or block that renders the entry's id shows the badge, and so
-do search results. When every setting in a card shares a scope, the card's own entry declares it
-and the badge goes on the title; rows of the same scope inside leave it to the card. A card that
-renders part of an entry under another id names the entry with `scopeId`. Administrator-only
-pages carry no badges, because everything on them applies to the whole installation and their
-description says so. `settingsScope.test.tsx` keeps those pages unmarked, keeps browser settings
-off the `Settings` object, and checks that every scoped entry is rendered.
+**Scope badges.** A setting belongs to the signed-in person unless marked **Everyone** (one value
+for the whole installation) or **This browser** (kept in local storage). Declare scope once, as
+`scope` on the setting's entry in `settingsRegistry.ts`; the card, row or labelled block that
+renders the entry's id shows the badge, and so do search results. When every setting in a card
+shares a scope, the card's own entry declares it and the badge goes on the title, and rows of the
+same scope leave it to the card. A card that renders part of an entry under another id names the
+entry with `scopeId`. Administrator-only pages carry no badges, since everything on them applies
+to the whole installation. `settingsScope.test.tsx` keeps those pages unmarked, keeps browser
+settings off the `Settings` object, and checks that every scoped entry is rendered.
 
 ## Typography
 
-`Geist` and `Geist_Mono` are loaded in
-[frontend/src/app/layout.tsx](../frontend/src/app/layout.tsx) and exposed as `--font-geist-sans` and
-`--font-geist-mono`, which `@theme inline` maps to Tailwind's `--font-sans` and `--font-mono`.
+`Geist` and `Geist_Mono` are loaded in [frontend/src/app/layout.tsx](../frontend/src/app/layout.tsx)
+as `--font-geist-sans` and `--font-geist-mono`, which `@theme inline` maps to Tailwind's
+`--font-sans` and `--font-mono`. Geist Sans is set once on `body` in `globals.css`, so an element
+needs `font-sans` only to override something back to the default. Apply Geist Mono with
+`font-mono`.
 
-Geist Sans is the body font, set once on `body` in `globals.css`, so it is inherited everywhere
-rather than applied per component. Geist Mono is applied where it is wanted, through `font-mono`.
-
-`--font-geist-sans` already resolves to `Geist, Geist Fallback`, where the fallback is Arial
-carrying `size-adjust` and ascent/descent overrides that Next generates to match Geist's metrics.
-That is what covers the window before the webfont resolves, and it is why the swap does not visibly
-reflow the page. The generic families after the variable are a last resort for the case where the
-font class is absent entirely.
-
-There is no need to add a `font-sans` class to reach the body font; an element only needs one when
-it is overriding something else back to the default.
+Lucide is the only icon set.
 
 ### The heading scale
 
-`density-heading-page` and `density-heading-section` carry the fluid heading sizes: a viewport
-clamp below the desktop breakpoint, and a second clamp under compact desktop density. Their
-font-size declarations live *outside* the cascade layers on purpose. Inside `@layer components`
-they lose to the `text-*` utilities on the same elements, because the utilities layer is declared
-after components and layer order beats selector specificity — which is exactly how the compact
-scaling originally shipped inert. Keep them unlayered, and keep each clamp's upper bound at the
-largest `text-*` size the class is paired with, so a clamp only ever steps a heading down.
+`density-heading-page` and `density-heading-section` carry the fluid heading sizes: one clamp
+below the desktop breakpoint and another under compact or dense density. **Keep their font-size
+rules outside the cascade layers.** Inside `@layer components` they lose to the `text-*`
+utilities on the same element, because layer order beats selector specificity. Keep each clamp's
+upper bound at the largest `text-*` size the class is paired with, so a clamp only ever steps a
+heading down.
 
-Where a heading must respond to its own content rather than to its container — the meeting title
-is the case — CSS cannot help, and the `FitText` primitive measures and fits instead.
-
-Lucide is the sole icon system.
+A heading that must fit its own content, such as the meeting title, uses `FitText`.
 
 ## Accessibility
 
-The contrast target is strict WCAG 2.2 AA, and it is enforced rather than reviewed.
-[frontend/scripts/check-contrast.mjs](../frontend/scripts/check-contrast.mjs) parses the token
-blocks out of `tokens.css` and out of the marketing site's `site-tokens.css`, resolves `var()`
-indirection, composites translucent values over their backdrop stack, and measures a declared list
-of pairings across four themes: the app's light and dark, and the site's light and dark, which are
-the app themes overlaid with the site-only families. It runs as `npm run check:contrast` in the
-`Frontend lint` CI job and dependency-free as `node frontend/scripts/check-contrast.mjs` in the
-`Site build` job.
+The contrast target is WCAG 2.2 AA, enforced by
+[frontend/scripts/check-contrast.mjs](../frontend/scripts/check-contrast.mjs). It parses the token
+blocks in `tokens.css`, `palettes.css` and the marketing site's `site-tokens.css`, resolves
+`var()`, composites translucent values over their backdrop stack, and measures a declared list of
+pairings across twelve themes: the app's light and dark, each palette's light and dark, and the
+site's light and dark. It runs as `npm run check:contrast` in the `Frontend lint` CI job and as
+`node frontend/scripts/check-contrast.mjs` in the `Site build` job.
 
-Contrast is a property of a pair, not of a colour, and that relationship lives nowhere in CSS.
-Declaring the pairs in the script is what makes them reviewable. **A pairing that cannot be
-expressed in tokens is a smell in the tokens.** Fix the tokens rather than widening the list with
-literals.
+**A new token used as a foreground or background needs its pairings added to the script.** A
+pairing that cannot be expressed in tokens means a token is missing; fix the tokens instead of
+adding literals to the list.
 
-The thresholds it applies:
+The thresholds:
 
 - **4.5:1** for text, including button labels and placeholder text.
-- **3:1** for large text, and for the visual information required to identify a component or its
-  state. That covers a control's boundary and a focus ring. It does *not* cover a card edge, a
-  divider, or the outline of a pill whose fill and label already carry the meaning; holding those
-  to 3:1 would replace the hairlines this design is built on with wireframe outlines.
-- **1.15:1** for decorative separators. This is a house floor rather than a WCAG requirement: a
-  hairline is exempt from the standard but still has to be visible, so a token that has drifted to
-  invisible fails here rather than passing by exemption.
+- **3:1** for large text and for what identifies a component or its state: a control's boundary,
+  a resting action or danger fill, a focus ring. Disabled control text is also held to 3:1. Card
+  edges, dividers and the outline of a pill whose fill and label already carry the meaning are
+  not held to 3:1.
+- **1.15:1**, a house floor rather than a WCAG requirement, for decorative separators, chart and
+  speaker colours (every series is directly labelled), and a float against the scrimmed content
+  behind it. It stops a hairline drifting to invisible.
 
-Beyond contrast, conformance is a matter of review. The project runs no `axe`, `jsx-a11y` or
-Playwright gate, so keyboard reachability and screen-reader behaviour are verified by hand when
-changing the interface. The primitives carry what can be carried structurally: required labels on
-`IconButton`, `aria-invalid` and `aria-describedby` wiring in `Input` and `Select`, `aria-busy` on
-a loading button, and a real focus trap in `Modal`.
+Beyond contrast, conformance is checked by hand. There is no `axe` or Playwright check, and the
+few `jsx-a11y` rules in Next's ESLint config only warn, so verify keyboard reachability and
+screen-reader behaviour when changing the interface. The primitives carry what they can:
+a required label on `IconButton`, `aria-invalid` and `aria-describedby` on `Input` and `Select`,
+`aria-busy` on a loading `Button`, and the focus trap in `Modal`.
 
 ## The marketing site
 
-`www.nojoin.co.uk` lives in `site/` as an Astro build deployed to Cloudflare Workers static
-assets. It runs this system at marketing scale: `Base.astro` imports
-`frontend/src/app/tokens.css` by relative path, and `site/plugins/tokens-theme.mjs` maps the
-app's class-based dark theme onto the site's own theming, so the site and the app cannot
-disagree about what a token means.
+The site in `site/` imports `frontend/src/app/tokens.css` from `Base.astro`, so it cannot disagree
+with the app about what a token means. [SITE.md](SITE.md) owns the site's composition, voice,
+claims and preview runbook; this section covers its tokens.
 
-**The site has two theme inputs, and a token family is only correct if it answers to both.**
-One is the OS `prefers-color-scheme`; the other is an explicit choice the header toggle
-stores and `Base.astro` stamps as `data-theme` before the first paint. So every dark block
-ships as a pair of rules — `:root:not([data-theme="light"])` inside the media query, and
-`:root[data-theme="dark"]` outside it — both generated by the plugin from one set of
-declarations. The combinations that matter are the two where the inputs **disagree**, and
-checking only "light" and "dark" will not find a bug in either of them.
+**Every site token family must answer to both theme inputs**: the OS `prefers-color-scheme` and
+the explicit choice the header toggle stores and `Base.astro` stamps as `data-theme` before first
+paint. `site/plugins/tokens-theme.mjs` generates both dark rules from one set of declarations:
+`:root:not([data-theme="light"])` inside the media query and `:root[data-theme="dark"]` outside
+it. Test the two combinations where the inputs disagree.
 
 `site/src/styles/site-tokens.css` holds the families the app has no equivalent of: syntax
-highlighting for the quick-start block, the screenshot frame's chrome, the closer band's
-inverse and ghost buttons, the marketing type scale, and the three marketing effects below.
-Those are tokens rather than literals precisely so the contrast audit can measure them.
+highlighting, the screenshot frame's chrome, the closer band's inverse and ghost buttons, the
+marketing type scale, and the effects below. They are tokens so the contrast audit can measure
+them. `Base.astro` must import the file as a module; the plugin fails the build if `site.css`
+`@import`s it, since an inlined import never reaches the plugin.
 
-**The code block is dark in both themes**, on its own `--code-bg` rather than the shared
-`--surface-inset`, and it is the one surface on the site that does not follow the theme. A
-themed block kept its text legible, but composited over the page it came out at 1.04:1 in light
-and 1.07:1 in dark, so it read as a faint rectangle rather than a panel. That
-is a separation problem, not a legibility one, and the contrast gate is silent on it because
-AA has nothing to say about a decorative fill against the page behind it. Following the theme
-could not have fixed dark in any case — the page is already near-black, so the furthest a
-darker fill gets is about 1.1:1. A dark block reaches 16.96:1 against the light page, keeps
-the worst syntax pairing at 6.92:1, and is what a reader expects code to look like. One
-syntax palette serves both themes.
+**The quick-start code block is dark in both themes**, on its own `--code-bg` (`#111827`), with
+one syntax palette. It is the one site surface that ignores the theme. It reaches 16.96:1 against
+the light page and keeps the worst syntax pairing at 6.92:1.
 
-The site takes three deliberate departures from the flat canon, all site-only:
+The site departs from the flat canon in four site-only ways, all decoration over fills the gate
+already checks:
 
-- A halo and a 1px inset white top edge under the primary button.
-- One soft radial wash behind the hero and the agent band — the only gradient in either
-  surface, and the reason the flat canon's "no gradients" line is scoped to the app.
-- An orange edge on every screenshot frame, plus a softer, wider lift on floating cards than
-  the app's resting shadow.
+- a halo and a 1px inset white top edge on the primary button (`--glow-action`, `--glow-inset`);
+- a soft radial wash (`--hero-wash`) behind the hero and the agent band;
+- a faint vertical gradient (`--band-wash`) on each `.band` section;
+- an orange edge on every screenshot frame (`--frame-accent`), and a softer, wider lift on
+  floating cards (`--lift`, `--lift-strong`) than the app's resting shadow.
 
-The app stays flat because a lifted control is noise in a workspace someone stares at all
-day; the site is a page whose job is to be looked at once. All three are decoration over
-fills that already answer to the gate, so none can hide a failing pair.
+The audit covers the site as two extra themes, `site-light` and `site-dark`, through
+`SITE_PAIRINGS` in `check-contrast.mjs`. It has two blind spots:
 
-The contrast audit covers the site as two extra themes, `site-light` and `site-dark`, driven
-by `SITE_PAIRINGS` in `frontend/scripts/check-contrast.mjs`. It has two blind spots, and the
-second is wider than the first:
-
-- **It only checks pairings it has been told about**, so it passes silently on any
-  combination nobody registered. Adding the pairing is part of adding the furniture.
-- **It measures values, never whether the block holding them applies.** It parses each theme
-  into a flat set of tokens and compares the colours; it has no model of selector resolution.
-  `site-tokens.css` once had no `data-theme` handling at all, so a visitor who chose light on
-  a machine set to dark got the dark syntax colours on a light surface — grey on near-white,
-  in the quick-start block. Both site themes passed throughout, because both sets of values
-  were individually correct. A green gate means the colours are legible where they apply; it
-  is not evidence that a visitor can reach them.
-
-Reachability is checked by the build (`tokens-theme.mjs` throws rather than silently skipping
-a file it cannot parse, and fails the build if `site.css` hides `site-tokens.css` behind an
-`@import` again) and in a browser, across the four-way theme matrix described in
-[SITE.md](SITE.md).
-
-[SITE.md](SITE.md) is the authority on the site's composition, voice and claims, and carries
-the preview runbook. This document remains the authority on tokens.
+- **It checks only the pairings it has been given.** New site furniture needs its pairing.
+- **It measures values, never whether the rule holding them applies.** A dark block no visitor
+  can reach still passes. Reachability is checked by the build (`tokens-theme.mjs` throws on a
+  file it cannot parse) and in a browser across the four-way theme matrix in [SITE.md](SITE.md).
 
 ## Exported documents
 
-PDF and Word exports are printed pages, so they take the light theme's values
-whatever theme the reader uses in the app: `--foreground` for text, `--action`
-orange for the letterhead rule, section underlines, table header rules and links,
-and the `--speaker-*` and `--chart-*` values for series, keyed exactly as the
-Analytics tab keys them. The values are copied into
-`backend/services/exports/theme.py`, because the backend cannot read
-`tokens.css`; change both together.
+PDF and Word exports are printed pages, so they take the light theme's values whatever theme the
+reader uses in the app: `--foreground` for text, `--action` orange for the letterhead rule,
+section underlines, table header rules and links, and the `--speaker-*` and `--chart-*` values for
+series, keyed exactly as the Analytics tab keys them. The values are copied into
+`backend/services/exports/theme.py`, because the backend cannot read `tokens.css`; change both
+together.
 
-The flat canon holds on the page: solid fills and hairlines, no gradients, and
-the logo is the only place the brand gradient appears. Type is Geist throughout,
-SemiBold for headings, with Geist Mono for transcript timestamps in the PDF.
+The flat canon holds on the page. Type is Geist, SemiBold for headings, with Geist Mono for
+transcript timestamps in the PDF.
 
-Two rules are specific to print. A speaker's colour is used as is for a dot, a
-bar or a row marker, but a speaker name set in that colour is darkened until it
-reaches 4.5:1 on white, so yellow or lime still reads as the same person without
-failing contrast. And with branding turned off under **Settings > Appearance**,
-the orange becomes slate (`#334155`) and the logo and footer line go, so a plain
-export carries no Nojoin colour either.
+Two rules are specific to print. A speaker's colour is used as is for a dot, a bar or a row
+marker, but a speaker name set in that colour is darkened until it reaches 4.5:1 on white, so
+yellow or lime still reads as the same person. With **Nojoin branding** turned off
+under **Settings > Appearance > Exported files**, the orange becomes slate (`#334155`) and the logo and footer line
+go, so a plain export carries no Nojoin colour.
 
 ## Related documentation
 
 - [ARCHITECTURE.md](ARCHITECTURE.md): where the web client sits in the system.
-- [DEVELOPMENT.md](DEVELOPMENT.md): running and building the frontend.
+- [DEVELOPMENT.md](DEVELOPMENT.md): running and building the frontend, and the chart colour rules.
 - [USAGE.md](USAGE.md): the interface as a user encounters it.
