@@ -48,7 +48,8 @@ export function describeLibraryVoiceprint(
       return (
         `Voiceprint not updated: ${whose} voiceprint is locked. To let this ` +
         `speaker update it, choose Unlock voiceprint in ${whose} details ` +
-        "under People, then link the speaker again."
+        "under People, then link the speaker again. Lock it again afterwards " +
+        "to keep it."
       );
     case "skipped_outdated":
       return (

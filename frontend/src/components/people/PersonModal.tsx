@@ -85,11 +85,19 @@ export function PersonModal({
   // Saved on its own, at once, so it never waits on Save Person.
   const [isVoiceprintLocked, setIsVoiceprintLocked] = useState(false);
   const [isChangingLock, setIsChangingLock] = useState(false);
+  // The person the dialog shows now. A lock answer that arrives after it has
+  // moved on to someone else must not be shown as theirs.
+  const shownPersonId = useRef<number | null>(null);
   const [confirmMerge, setConfirmMerge] = useState<{
     target: GlobalSpeaker;
   } | null>(null);
 
   const [confirmVoiceprintDelete, setConfirmVoiceprintDelete] = useState(false);
+
+  useEffect(() => {
+    shownPersonId.current = person?.id ?? null;
+    setIsChangingLock(false);
+  }, [person?.id]);
 
   // Load available tags
   useEffect(() => {
@@ -287,30 +295,33 @@ interface TagNode extends PeopleTag {
 
   const toggleVoiceprintLock = async () => {
     if (!person) return;
+    const { id, name } = person;
     const lock = !isVoiceprintLocked;
 
     setIsChangingLock(true);
     try {
-      const updated = await updateGlobalSpeaker(person.id, {
+      const updated = await updateGlobalSpeaker(id, {
         is_voiceprint_locked: lock,
       });
       const locked = Boolean(updated.is_voiceprint_locked);
-      setIsVoiceprintLocked(locked);
-      onVoiceprintLockChanged?.(person.id, locked);
+      if (shownPersonId.current === id) setIsVoiceprintLocked(locked);
+      onVoiceprintLockChanged?.(id, locked);
       addNotification({
         type: "success",
-        message: locked ? "Voiceprint locked." : "Voiceprint unlocked.",
+        message: locked
+          ? `${name}'s voiceprint is locked.`
+          : `${name}'s voiceprint is unlocked.`,
       });
     } catch (error: unknown) {
       console.error("Failed to change the voiceprint lock:", error);
       addNotification({
         type: "error",
         message: lock
-          ? "Failed to lock the voiceprint."
-          : "Failed to unlock the voiceprint.",
+          ? `Failed to lock ${name}'s voiceprint.`
+          : `Failed to unlock ${name}'s voiceprint.`,
       });
     } finally {
-      setIsChangingLock(false);
+      if (shownPersonId.current === id) setIsChangingLock(false);
     }
   };
 
@@ -464,8 +475,8 @@ interface TagNode extends PeopleTag {
                         </div>
                         {person.has_voiceprint && isVoiceprintLocked && (
                           <div className="text-xs text-contrast-helper">
-                            Locked: renames and automatic learning leave it as
-                            it is.
+                            Locked: renames, links, merges and automatic
+                            learning leave it as it is.
                           </div>
                         )}
                       </div>
@@ -478,16 +489,18 @@ interface TagNode extends PeopleTag {
                           type="button"
                           onClick={toggleVoiceprintLock}
                           disabled={isChangingLock}
-                          className="flex items-center gap-1.5 text-contrast-helper hover:text-foreground text-sm font-medium px-3 py-1.5 hover:bg-surface-card rounded-md transition-colors"
+                          className="flex items-center gap-1.5 text-contrast-helper hover:text-foreground text-sm font-medium px-3 py-1.5 hover:bg-surface-card rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           {isVoiceprintLocked ? (
                             <LockOpen className="w-4 h-4" />
                           ) : (
                             <Lock className="w-4 h-4" />
                           )}
-                          {isVoiceprintLocked
-                            ? "Unlock voiceprint"
-                            : "Lock voiceprint"}
+                          {isChangingLock
+                            ? "Saving..."
+                            : isVoiceprintLocked
+                              ? "Unlock voiceprint"
+                              : "Lock voiceprint"}
                         </button>
                       )}
                       {person.has_voiceprint && (

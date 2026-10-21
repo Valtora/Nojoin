@@ -676,9 +676,9 @@ async def _lock_and_voiceprint(session_maker, person_id: int) -> tuple[bool, Any
 async def test_the_person_update_locks_and_unlocks_and_keeps_the_voiceprint(
     client, session_maker, write_path
 ) -> None:
-    """Saving Dana's other details leaves her lock as it was. Unlocking keeps
-    her voiceprint and lets a rename fold into it again; locking keeps it too
-    and stops the next one."""
+    """Saving Dana's other details, or sending the lock as null, leaves her
+    lock as it was. Unlocking keeps her voiceprint and lets a rename fold into
+    it again; locking keeps it too and stops the next one."""
     voice = _at_cosine(0.75)
     await _seed(
         session_maker,
@@ -698,6 +698,10 @@ async def test_the_person_update_locks_and_unlocks_and_keeps_the_voiceprint(
 
     saved = await client.put("/api/v1/speakers/7", json={"notes": "Chairs it."})
     assert saved.status_code == 200
+    assert await _lock_and_voiceprint(session_maker, 7) == (True, PERSON)
+    # An explicit null is no value, as for every other field of the update.
+    nulled = await client.put("/api/v1/speakers/7", json={"is_voiceprint_locked": None})
+    assert nulled.status_code == 200
     assert await _lock_and_voiceprint(session_maker, 7) == (True, PERSON)
 
     unlocked = await client.put(

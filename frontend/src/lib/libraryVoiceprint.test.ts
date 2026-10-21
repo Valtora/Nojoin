@@ -43,10 +43,10 @@ describe("describeLibraryVoiceprint", () => {
 
   it("points a locked voiceprint to Unlock, which keeps it, not to deleting it", () => {
     expect(describeLibraryVoiceprint(outcome("skipped_locked"), "Dana")).toBe(
-      "Voiceprint not updated: Dana's voiceprint is locked. To let this speaker update it, choose Unlock voiceprint in Dana's details under People, then link the speaker again.",
+      "Voiceprint not updated: Dana's voiceprint is locked. To let this speaker update it, choose Unlock voiceprint in Dana's details under People, then link the speaker again. Lock it again afterwards to keep it.",
     );
     expect(describeLibraryVoiceprint(outcome("skipped_locked"))).toBe(
-      "Voiceprint not updated: the person's voiceprint is locked. To let this speaker update it, choose Unlock voiceprint in the person's details under People, then link the speaker again.",
+      "Voiceprint not updated: the person's voiceprint is locked. To let this speaker update it, choose Unlock voiceprint in the person's details under People, then link the speaker again. Lock it again afterwards to keep it.",
     );
   });
 

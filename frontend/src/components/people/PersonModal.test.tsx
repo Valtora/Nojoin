@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PersonModal } from "./PersonModal";
@@ -22,29 +22,49 @@ vi.mock("@/lib/api", () => ({
   updateGlobalSpeaker: (...a: unknown[]) => updateGlobalSpeaker(...a),
 }));
 
-const LOCKED_LINE = "Locked: renames and automatic learning leave it as it is.";
+const LOCKED_LINE =
+  "Locked: renames, links, merges and automatic learning leave it as it is.";
 
-const dana = (voiceprint: boolean, locked: boolean): GlobalSpeaker =>
+const person = (
+  id: number,
+  name: string,
+  voiceprint: boolean,
+  locked: boolean,
+): GlobalSpeaker =>
   ({
-    id: 7,
-    name: "Dana",
+    id,
+    name,
     has_voiceprint: voiceprint,
     is_voiceprint_locked: locked,
   }) as GlobalSpeaker;
 
-const renderModal = (
-  person: GlobalSpeaker,
-  onVoiceprintLockChanged = vi.fn(),
-) =>
-  render(
-    <PersonModal
-      person={person}
-      isOpen
-      onClose={vi.fn()}
-      onSave={vi.fn()}
-      onVoiceprintLockChanged={onVoiceprintLockChanged}
-    />,
+const dana = (voiceprint: boolean, locked: boolean) =>
+  person(7, "Dana", voiceprint, locked);
+
+const modal = (
+  shown: GlobalSpeaker,
+  { onSave = vi.fn(), onVoiceprintLockChanged = vi.fn() } = {},
+) => (
+  <PersonModal
+    person={shown}
+    isOpen
+    onClose={vi.fn()}
+    onSave={onSave}
+    onVoiceprintLockChanged={onVoiceprintLockChanged}
+  />
+);
+
+/** The next lock request waits until the test answers it. */
+const answerLater = () => {
+  let answer: (value: GlobalSpeaker) => void = () => undefined;
+  updateGlobalSpeaker.mockImplementationOnce(
+    () =>
+      new Promise<GlobalSpeaker>((resolve) => {
+        answer = resolve;
+      }),
   );
+  return (value: GlobalSpeaker) => act(async () => answer(value));
+};
 
 describe("PersonModal voiceprint lock", () => {
   beforeEach(() => {
@@ -66,54 +86,106 @@ describe("PersonModal voiceprint lock", () => {
     "$button saves only the lock and keeps the voiceprint",
     async ({ locked, button, after }) => {
       const onVoiceprintLockChanged = vi.fn();
-      renderModal(dana(true, locked), onVoiceprintLockChanged);
+      render(modal(dana(true, locked), { onVoiceprintLockChanged }));
 
       fireEvent.click(screen.getByRole("button", { name: button }));
 
-      expect(
-        await screen.findByRole("button", { name: after }),
-      ).toBeTruthy();
+      expect(await screen.findByRole("button", { name: after })).toBeTruthy();
       expect(updateGlobalSpeaker).toHaveBeenCalledWith(7, {
         is_voiceprint_locked: !locked,
       });
       expect(deleteGlobalSpeakerEmbedding).not.toHaveBeenCalled();
       expect(onVoiceprintLockChanged).toHaveBeenCalledWith(7, !locked);
+      expect(addNotification).toHaveBeenCalledWith({
+        type: "success",
+        message: `Dana's voiceprint is ${locked ? "unlocked" : "locked"}.`,
+      });
       expect(screen.getByText("Voiceprint Active")).toBeTruthy();
-      // The line saying renames leave it alone shows exactly while locked.
+      // The line saying what leaves it alone shows exactly while locked.
       expect(Boolean(screen.queryByText(LOCKED_LINE))).toBe(!locked);
     },
   );
 
-  it("says a locked voiceprint is left as it is by renames", () => {
-    renderModal(dana(true, true));
+  it("says a locked voiceprint is left as it is", () => {
+    render(modal(dana(true, true)));
 
     expect(screen.getByText(LOCKED_LINE)).toBeTruthy();
   });
 
   it("offers no lock for a person without a voiceprint", () => {
-    renderModal(dana(false, false));
+    render(modal(dana(false, false)));
 
     expect(screen.getByText("No Voiceprint")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Lock voiceprint" })).toBeNull();
   });
 
   it("still offers Unlock for a locked person whose voiceprint was cleared", () => {
-    renderModal(dana(false, true));
+    render(modal(dana(false, true)));
 
     expect(screen.getByRole("button", { name: "Unlock voiceprint" })).toBeTruthy();
+  });
+
+  it("is disabled and says so while the lock is saving", async () => {
+    const answer = answerLater();
+    render(modal(dana(true, false)));
+
+    fireEvent.click(screen.getByRole("button", { name: "Lock voiceprint" }));
+
+    const saving = screen.getByRole("button", { name: "Saving..." });
+    expect((saving as HTMLButtonElement).disabled).toBe(true);
+    await answer(dana(true, true));
+    expect(screen.getByRole("button", { name: "Unlock voiceprint" })).toBeTruthy();
+  });
+
+  it("keeps a late answer for Dana off Eli's dialog", async () => {
+    const answer = answerLater();
+    const onVoiceprintLockChanged = vi.fn();
+    const view = render(modal(dana(true, false), { onVoiceprintLockChanged }));
+    fireEvent.click(screen.getByRole("button", { name: "Lock voiceprint" }));
+
+    // The dialog moves on to Eli, who is unlocked, before Dana's answer lands.
+    view.rerender(
+      modal(person(8, "Eli", true, false), { onVoiceprintLockChanged }),
+    );
+    await answer(dana(true, true));
+
+    expect(screen.getByRole("button", { name: "Lock voiceprint" })).toBeTruthy();
+    expect(screen.queryByText(LOCKED_LINE)).toBeNull();
+    // The list still learns that Dana is locked.
+    expect(onVoiceprintLockChanged).toHaveBeenCalledWith(7, true);
+  });
+
+  it("keeps unsaved edits and never submits the person form", async () => {
+    const answer = answerLater();
+    const onSave = vi.fn();
+    render(modal(dana(true, false), { onSave }));
+    fireEvent.change(screen.getByDisplayValue("Dana"), {
+      target: { value: "Dana Q" },
+    });
+    fireEvent.change(
+      screen.getByPlaceholderText("Additional notes about this person..."),
+      { target: { value: "Chairs the meeting." } },
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Lock voiceprint" }));
+    await answer(dana(true, true));
+
+    expect(onSave).not.toHaveBeenCalled();
+    expect(screen.getByDisplayValue("Dana Q")).toBeTruthy();
+    expect(screen.getByDisplayValue("Chairs the meeting.")).toBeTruthy();
   });
 
   it("keeps the lock as it was when saving it fails", async () => {
     updateGlobalSpeaker.mockReset().mockRejectedValue(new Error("offline"));
     const onVoiceprintLockChanged = vi.fn();
-    renderModal(dana(true, true), onVoiceprintLockChanged);
+    render(modal(dana(true, true), { onVoiceprintLockChanged }));
 
     fireEvent.click(screen.getByRole("button", { name: "Unlock voiceprint" }));
 
     await waitFor(() =>
       expect(addNotification).toHaveBeenCalledWith({
         type: "error",
-        message: "Failed to unlock the voiceprint.",
+        message: "Failed to unlock Dana's voiceprint.",
       }),
     );
     expect(screen.getByRole("button", { name: "Unlock voiceprint" })).toBeTruthy();
