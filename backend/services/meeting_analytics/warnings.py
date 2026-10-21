@@ -17,7 +17,6 @@ from __future__ import annotations
 from typing import Any
 
 from .constants import (
-    HIGH_OVERLAP_SHARE_THRESHOLD,
     LOW_SHARE_SPEAKER_COUNT_TRIGGER,
     LOW_SHARE_SPEAKER_THRESHOLD,
 )
@@ -55,9 +54,9 @@ def build_attribution_warning(
             }
         )
 
-    overlap_share = metrics.get("overlap", {}).get("overlap_share", 0.0)
-    if overlap_share >= HIGH_OVERLAP_SHARE_THRESHOLD:
-        reasons.append({"code": "high_overlap", "overlap_share": overlap_share})
+    # There is no overlap reason. The transcript holds no overlapping speech
+    # (the merge gives each segment one speaker), and the audio-measured share
+    # sits far below any threshold that would mean something (#481).
 
     # A cap that bound is the case the user themselves suspected: they set an
     # upper bound because they expected over-splitting, and it was reached.

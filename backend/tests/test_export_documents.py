@@ -242,6 +242,20 @@ def test_the_attribution_warning_uses_the_tabs_wording() -> None:
     assert "Not everyone has been named yet: Anna." in text
 
 
+def test_a_retired_reason_code_prints_no_warning() -> None:
+    # `high_overlap` was removed in #481. An export never prints a reason it
+    # has no wording for, nor a warning heading over an empty list.
+    analytics = analytics_payload(
+        attribution_warning={
+            "reasons": [{"code": "high_overlap", "overlap_share": 0.2}]
+        }
+    )
+    text = _txt(meeting_parts(analytics=analytics), ["analytics"])
+
+    assert "These figures depend on who Nojoin thinks was speaking" not in text
+    assert "talked over each other for" not in text
+
+
 def test_charts_render_in_pdf_and_docx() -> None:
     pdf_text = _pdf_text(sections=["analytics"])
     payload = render(build_document(meeting_parts(), ["analytics"]), "docx")
