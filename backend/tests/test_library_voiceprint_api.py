@@ -9,6 +9,7 @@ its own.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import math
@@ -46,6 +47,7 @@ from backend.tests.sqlite_schemas import (
 )
 
 PERSON = [1.0, 0.0]
+ELI = [0.0, 1.0]
 NOW = "2026-10-20 00:00:00"
 REC = "vp-rec"
 
@@ -1945,6 +1947,62 @@ async def test_extracting_a_refused_speakers_voiceprint_again_judges_it(
     assert await _refused_for(session_maker) == {"SPEAKER_00": refused_after}
     dana = PERSON if refused_after else extracted_voiceprint
     assert await _person_voiceprint(session_maker, "Dana") == pytest.approx(dana)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "endpoint",
+    ["speakers/SPEAKER_00/voiceprint/extract", "voiceprints/extract-all"],
+)
+async def test_an_extracted_voiceprint_is_judged_for_the_person_linked_when_it_lands(
+    client, session_maker, monkeypatch, endpoint
+) -> None:
+    """SPEAKER_00 is linked to Dana and has no voiceprint. While its extraction
+    runs, a rename links it to Eli; with no voiceprint it offers him nothing.
+
+    The extraction returns a voice unlike both of them. It is judged against
+    Eli, the person the speaker is linked to when it lands, so Eli's rebuild
+    leaves it out; judged against Dana instead, it would become his voiceprint.
+    """
+    from backend.api.v1.endpoints import speakers as speakers_module
+
+    await _seed(
+        session_maker,
+        speakers=[{"label": "SPEAKER_00", "global_speaker_id": 7, "embedding": None}],
+        people=[
+            {"id": 7, "name": "Dana", "embedding": PERSON},
+            {"id": 8, "name": "Eli", "embedding": ELI},
+        ],
+    )
+    loop = asyncio.get_running_loop()
+
+    async def rename_to_eli() -> None:
+        async with session_maker() as other:
+            await other.execute(
+                text(
+                    "UPDATE recording_speakers SET global_speaker_id = 8, "
+                    "name = 'Eli' WHERE id = 1"
+                )
+            )
+            await other.commit()
+
+    def _send_task(name, args=None, kwargs=None, **options):
+        class _Result:
+            def get(self, timeout=None):
+                # The worker's wait runs in a thread; the rename lands during it.
+                asyncio.run_coroutine_threadsafe(rename_to_eli(), loop).result()
+                return {"embedding": [-0.6, -0.8], "speech_seconds": 30.0}
+
+        return _Result()
+
+    monkeypatch.setattr(speakers_module.celery_app, "send_task", _send_task)
+
+    extracted = await client.post(f"/api/v1/speakers/recordings/{REC}/{endpoint}")
+    await _rebuild_person(session_maker, 8)
+
+    assert extracted.status_code == 200
+    assert await _refused_for(session_maker) == {"SPEAKER_00": (8,)}
+    assert await _person_voiceprint(session_maker, "Eli") == pytest.approx(ELI)
 
 
 @pytest.mark.anyio

@@ -46,8 +46,11 @@ async def _judge_extracted_voiceprint(
     Extracting offers the voiceprint to no one: the dialog may never apply a
     link. So the drift guard judges it against the person the speaker is
     already linked to (``judge_drift``), and a voice it refused stays out of
-    that person's rebuilds until a verdict lets it in.
+    that person's rebuilds until a verdict lets it in. The extraction can
+    take minutes, so the link is read again first: if a rename moved the
+    speaker to someone else meanwhile, the verdict is for them.
     """
+    await db.refresh(rec_speaker, ["global_speaker_id", "drift_refusals"])
     person = (
         await db.get(GlobalSpeaker, rec_speaker.global_speaker_id)
         if rec_speaker.global_speaker_id
