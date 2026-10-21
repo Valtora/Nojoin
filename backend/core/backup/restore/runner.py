@@ -146,7 +146,19 @@ def _record_restored_recording(ctx: _RowContext, instance) -> None:
 
 
 def _restore_row(ctx: _RowContext) -> bool:
-    """Bring one archive row across. Returns whether a row was actually inserted."""
+    """Bring one archive row across. Returns whether a row was actually inserted.
+
+    A row that is not inserted gives up the moves it queued, so its staged files
+    stay in staging, which is removed, rather than land where no row names them.
+    """
+    queued_moves = len(ctx.state.pending_moves)
+    inserted = _resolve_and_insert_row(ctx)
+    if not inserted:
+        ctx.state.release_moves(queued_moves)
+    return inserted
+
+
+def _resolve_and_insert_row(ctx: _RowContext) -> bool:
     state = ctx.state
 
     # Under the safe-merge strategy a conflicting recording is kept as it already exists
@@ -391,8 +403,8 @@ def _restore_backup_sync(request: _RestoreRequest):
                     directory.mkdir(parents=True, exist_ok=True)
 
             # The files of the documents an overwrite replaced, inside the
-            # documents directory only. Before the moves, so that no file a
-            # restored row names can be removed.
+            # documents directory only. Before the moves, as on a case-insensitive
+            # mount a missing replaced name can alias a destination unseen.
             unlink_document_files(
                 state.replaced_document_paths,
                 root=Path(request.documents_dir),

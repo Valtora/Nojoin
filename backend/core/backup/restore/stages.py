@@ -28,6 +28,7 @@ from backend.core.backup.format import (
 from backend.core.backup.paths import _get_recording_match_keys
 from backend.core.backup.restore.state import _RestoreState
 from backend.utils.db_batching import bind_batches
+from backend.utils.document_storage import document_file_identity
 
 logger = logging.getLogger(__name__)
 
@@ -288,15 +289,17 @@ def _keep_document_files_still_named(session: Any, state: "_RestoreState") -> No
 
     A restored document can land on the name its replaced copy had: its staged
     file moves in on top, or, with none in the archive, the old file is all it has.
+    Files are compared as the unlink resolves them, so another spelling of a
+    named file is kept too.
     """
     if not state.replaced_document_paths:
         return
     rows = session.exec(select(runtime.Document.file_path)).all()
-    named = {os.path.realpath(path) for path in rows if path}
+    named = {document_file_identity(path) for path in rows} - {None}
     state.replaced_document_paths = [
         path
         for path in state.replaced_document_paths
-        if os.path.realpath(path) not in named
+        if document_file_identity(path) not in named
     ]
 
 

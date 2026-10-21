@@ -25,7 +25,10 @@ from sqlmodel import col, select
 from backend.models.document import Document
 from backend.utils.db_batching import bind_batches
 from backend.utils.path_manager import PathManager
-from backend.utils.recording_storage import resolve_path_within_root
+from backend.utils.recording_storage import (
+    resolve_path_within_root,
+    resolve_stored_path,
+)
 
 # PostgreSQL's SQLSTATE for a foreign key violation.
 _FOREIGN_KEY_VIOLATION = "23503"
@@ -52,6 +55,25 @@ async def recording_document_paths(
         )
         paths.extend(path for path in result.scalars().all() if path)
     return paths
+
+
+def document_file_identity(raw_path: str | None) -> tuple[object, ...] | None:
+    """What decides whether two stored paths name one file, as the unlink sees it.
+
+    For a file that exists, its device and inode, so two spellings of one file
+    match however they differ: ``~``, a symlink, a hard link, or the case of a
+    name on a case-insensitive mount. For one that does not, the path the unlink
+    resolves it to. None for a path that cannot be resolved, which the unlink
+    leaves alone.
+    """
+    resolved = resolve_stored_path(raw_path)
+    if resolved is None:
+        return None
+    try:
+        status = resolved.stat()
+    except OSError:
+        return ("path", str(resolved))
+    return ("inode", status.st_dev, status.st_ino)
 
 
 def unlink_document_files(

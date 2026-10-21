@@ -91,6 +91,12 @@ class _RestoreState:
         self.pending_moves.append((staged, destination))
         return True
 
+    def release_moves(self, start: int) -> None:
+        """Drop the moves queued from index ``start`` on, freeing their destinations."""
+        for _, destination in self.pending_moves[start:]:
+            self.claimed_destinations.discard(destination)
+        del self.pending_moves[start:]
+
     def record_skip(self, table_name: str, reason: str) -> None:
         """Count one row the restore could not bring across, by table and reason."""
         self.skipped.setdefault(table_name, {})

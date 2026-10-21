@@ -100,22 +100,36 @@ def probe_recordings_storage() -> tuple[bool, str | None]:
     return True, None
 
 
-def resolve_path_within_root(target_path: str | None, root: Path) -> Path | None:
-    """Resolve a stored path, or None unless it lands inside ``root``.
+def resolve_stored_path(target_path: str | None) -> Path | None:
+    """Resolve a stored path as the deletes do, or None if it cannot be.
 
-    Relative paths resolve against the working directory, as the code that opens
-    them does. Symlinks are followed before the check, so a link pointing out of
-    ``root`` is refused rather than followed by a delete.
+    ``~`` is expanded, a relative path is taken against the working directory,
+    as the code that opens it does, and symlinks are followed.
     """
     if not target_path:
         return None
 
-    candidate = Path(target_path).expanduser()
-    if not candidate.is_absolute():
-        candidate = Path.cwd() / candidate
+    try:
+        candidate = Path(target_path).expanduser()
+        if not candidate.is_absolute():
+            candidate = Path.cwd() / candidate
+        return candidate.resolve()
+    except (OSError, RuntimeError):
+        return None
+
+
+def resolve_path_within_root(target_path: str | None, root: Path) -> Path | None:
+    """Resolve a stored path, or None unless it lands inside ``root``.
+
+    Resolved by :func:`resolve_stored_path`. Symlinks are followed before the
+    check, so a link pointing out of ``root`` is refused rather than followed
+    by a delete.
+    """
+    resolved = resolve_stored_path(target_path)
+    if resolved is None:
+        return None
 
     try:
-        resolved = candidate.resolve()
         if not root.is_absolute():
             root = Path.cwd() / root
         resolved.relative_to(root.resolve())
