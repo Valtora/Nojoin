@@ -1803,16 +1803,41 @@ describe("HeadNotePanel", () => {
     expect(box().value).toBe("");
   });
 
-  it("asks before a resent clear deletes a lost create's note edited on another device", async () => {
-    await clearLostCreateOffline();
+  it("keeps another device's edit of a note a resent clear was for, and saves the new text beside it", async () => {
+    const { poll } = await clearLostCreateOffline();
     server.edit(server.notes[0].id, "B's agenda");
 
     type("Fresh");
     await waitForSave();
 
+    // The resent delete's 409: the edit elsewhere wins, with nothing to ask.
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(bodies()).toEqual(["B's agenda", "Fresh"]);
+    expect(box().value).toBe("Fresh");
+    expect(screen.getByText("Saved", SHOWN)).toBeInTheDocument();
+    expect(within(otherNotes()!).getByText("B's agenda")).toBeInTheDocument();
+    const [lost, fresh] = calls.create.mock.calls.map(([, payload]) => payload.id);
+    expect(fresh).not.toBe(lost);
+
+    await poll();
+    expect(box().value).toBe("Fresh");
+    expect(within(otherNotes()!).getAllByRole("listitem")).toHaveLength(1);
+    expect(within(otherNotes()!).getByText("B's agenda")).toBeInTheDocument();
+  });
+
+  it("still asks before its own clear of a lost create's note deletes an edit made on another device", async () => {
+    server.lose.add("create");
+    mount();
+    type("Agenda");
+    await waitForSave();
+    server.edit(server.notes[0].id, "B's agenda");
+
+    type("");
+    await waitForSave();
+
     expect(screen.getByRole("alert")).toHaveTextContent("B's agenda");
+    expect(screen.getByRole("button", { name: "Delete anyway" })).toBeInTheDocument();
     expect(bodies()).toEqual(["B's agenda"]);
-    expect(calls.create).toHaveBeenCalledTimes(1);
   });
 
   /** As above, but a poll showed the create's note before the clear, which then gets no answer. */

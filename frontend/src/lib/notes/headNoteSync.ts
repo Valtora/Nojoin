@@ -55,6 +55,7 @@ import {
  * | pending | delete gets no answer, or 5xx | `pending` ends too: the next text is a new note under a new id, out of the late delete's reach |
  * | `clearing` a note other than `base` (a cleared pending create) | save, or a poll showing that note | that delete is sent again first, under the same token while no answer came between; a failed one fails the save. The note is not listed among the others meanwhile |
  * | `clearing` a note other than `base`, which the last poll showed | its delete gets no answer | sent again from 2 s, doubling to 30 s, while anything listens; a refused one is not |
+ * | `clearing` a note other than `base` | its delete gets a 409 | a write elsewhere outlived the clear and wins: the clear ends, the note is listed among the others as the 409 showed it, and the save goes on |
  * | any | a 200 or 409 showing the note, or a 410 or 404 for it | its `clearing` and `unansweredEdit` end; a conflict ends both |
  * | any | other 4xx (422, recording gone) | save failed; nothing changes |
  * | conflict | save | refused until resolved |
@@ -550,8 +551,10 @@ export class HeadNoteSync {
    * Sends that delete again, before anything else is written. It goes under
    * the current token, which is still the one the delete carried unless an
    * answer refused this resend before: the server then takes it as a retry
-   * of that delete. A 204, 404 or 410 means the note is gone. Any other
-   * failure fails the save that asked for it, and the next one sends it again.
+   * of that delete. A 204, 404 or 410 means the note is gone. A 409 means a
+   * write elsewhere outlived the clear, and that write wins (see `remove`).
+   * Any other failure fails the save that asked for it, and the next one
+   * sends it again.
    */
   private async finishClear() {
     const id = this.outstandingClear();
@@ -716,6 +719,9 @@ export class HeadNoteSync {
       }
       this.answered();
       if (outcome.kind === "conflict") {
+        // A resent clear of a note the box no longer edits: nothing in the
+        // box is based on that note, so there is nothing to ask about.
+        if (id === this.outstandingClear()) return this.dropClear(outcome.note);
         if (!this.mine(outcome.note) && !sameContent(target, outcome.note)) {
           this.raise({ kind: "changed", note: outcome.note });
         }
@@ -732,5 +738,20 @@ export class HeadNoteSync {
     }
     this.answered();
     this.forget(id);
+  }
+
+  /**
+   * A write elsewhere outlived an unanswered clear of a note the box no
+   * longer edits, such as another device's edit of a cleared lost create:
+   * that write wins. The clear ends, and the note is listed among the others
+   * again as the 409 showed it, in the server's order (by creation).
+   */
+  private dropClear(note: TimelineNote) {
+    this.answeredFor(note.id);
+    const others = this.polled.filter((known) => known.id !== note.id);
+    const later = others.findIndex((known) => known.created_at > note.created_at);
+    others.splice(later === -1 ? others.length : later, 0, note);
+    this.polled = others;
+    this.emit();
   }
 }
