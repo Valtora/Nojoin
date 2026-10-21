@@ -2,7 +2,8 @@
 
     docker compose exec --user appuser worker-io python -m backend.storage_hygiene
 
-A dry run by default. ``--delete`` removes the files now instead of at the next
+Lists each unreferenced file past the grace, then a table per category. A dry
+run by default. ``--delete`` removes the files now instead of at the next
 daily run, still only those unmodified for 24 hours and still under every rule of
 the circuit breaker. ``--allow-bulk`` lifts only the rule against removing over
 10% of a directory's files or bytes, for a backlog. Run it from the app
@@ -67,12 +68,38 @@ def _row(cells: Sequence[object]) -> str:
     return line.rstrip()
 
 
+_OUTCOMES = {
+    "deleted": "removed",
+    "failed": "could not be removed",
+    "kept": "kept, changed since the listing",
+}
+
+
+def _flagged_lines(report: HygieneReport) -> list[str]:
+    """Each unreferenced file past the grace, with what a deleting run did to it."""
+    if not report.flagged:
+        return []
+    lines = ["Unreferenced files past the 24-hour grace:"]
+    order = {name: index for index, name in enumerate(report.categories)}
+    for flagged in sorted(
+        report.flagged, key=lambda item: (order[item.category], str(item.path))
+    ):
+        line = (
+            f"  {flagged.category:<{_COLUMNS[0][1]}}"
+            f"{format_bytes(flagged.size):>10}  {flagged.path}"
+        )
+        if flagged.outcome is not None:
+            line += f"  ({_OUTCOMES[flagged.outcome]})"
+        lines.append(line)
+    return [*lines, ""]
+
+
 def format_report(report: HygieneReport) -> str:
     if report.delete_requested:
         title = "Storage hygiene: delete"
     else:
         title = "Storage hygiene: dry run, nothing removed"
-    lines = [title, "", _row([name for name, _ in _COLUMNS])]
+    lines = [title, "", *_flagged_lines(report), _row([name for name, _ in _COLUMNS])]
     for name, entry in report.categories.items():
         lines.append(
             _row(

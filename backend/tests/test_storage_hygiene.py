@@ -137,6 +137,34 @@ def test_delete_mode_removes_exactly_the_orphans(layout: Layout, db: Engine) -> 
     assert (layout.data / "celerybeat-schedule").exists()
 
 
+def test_the_report_names_each_flagged_file_and_each_removal_is_logged(
+    layout: Layout, db: Engine, caplog: pytest.LogCaptureFixture
+) -> None:
+    library = _mixed_library(layout, db)
+    orphans = {
+        path.resolve()
+        for category, paths in library.items()
+        if category != "kept"
+        for path in paths
+    }
+
+    dry_run = run(db, allow_bulk=True)
+
+    assert {flagged.path for flagged in dry_run.flagged} == orphans
+    assert all(flagged.outcome is None for flagged in dry_run.flagged)
+
+    with caplog.at_level(logging.INFO, logger=hygiene.__name__):
+        report = run(db, delete=True, allow_bulk=True)
+
+    assert {flagged.outcome for flagged in report.flagged} == {"deleted"}
+    removed = [
+        record.getMessage().split()[3]
+        for record in caplog.records
+        if record.getMessage().startswith("Storage hygiene removed ")
+    ]
+    assert sorted(removed) == sorted(str(path) for path in orphans)
+
+
 @pytest.mark.skipif(os.geteuid() == 0, reason="root ignores directory permissions")
 def test_a_failed_unlink_is_counted_and_the_rest_still_go(
     layout: Layout, db: Engine, caplog: pytest.LogCaptureFixture
@@ -151,6 +179,7 @@ def test_a_failed_unlink_is_counted_and_the_rest_still_go(
 
     assert report.categories[DOCUMENTS].failed == 1
     assert report.categories[DOCUMENTS].deleted == 0
+    assert [f.outcome for f in report.flagged if f.category == DOCUMENTS] == ["failed"]
     assert library[DOCUMENTS][0].exists()
     assert not library[AUDIO][0].exists()
     assert report.failed == 2  # the document and the .upload-tmp beside it
@@ -356,6 +385,7 @@ def test_a_file_changed_after_the_listing_is_kept(
     assert orphan.exists()
     assert report.categories[AUDIO].deleted == 0
     assert report.categories[AUDIO].failed == 0
+    assert [flagged.outcome for flagged in report.flagged] == ["kept"]
 
 
 @pytest.mark.parametrize("files_on_disk", [True, False], ids=["files", "empty"])

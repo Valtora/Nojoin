@@ -1,7 +1,8 @@
 """What a storage hygiene run found, and how it is written down.
 
 Shared by the routine in :mod:`backend.utils.storage_hygiene`, which logs one
-:func:`summary_line` per run, and the operator CLI, which prints a table.
+:func:`summary_line` per run, and the operator CLI, which prints the flagged
+files and a table.
 """
 
 from __future__ import annotations
@@ -31,6 +32,20 @@ class BreakerTrip:
 
 
 @dataclass
+class FlaggedFile:
+    """An unreferenced file past the grace, and what a deleting run did with it.
+
+    ``outcome`` stays None until a run tries to remove the file, then reads
+    ``deleted``, ``failed``, or ``kept`` for one that changed or went first.
+    """
+
+    category: str
+    path: Path
+    size: int
+    outcome: str | None = None
+
+
+@dataclass
 class CategoryReport:
     scanned: int = 0
     unreferenced: int = 0
@@ -51,6 +66,7 @@ class HygieneReport:
     directories: list[Path] = field(default_factory=list)
     categories: dict[str, CategoryReport] = field(default_factory=_empty_categories)
     breaker: list[BreakerTrip] = field(default_factory=list)
+    flagged: list[FlaggedFile] = field(default_factory=list)
 
     @property
     def tripped(self) -> bool:

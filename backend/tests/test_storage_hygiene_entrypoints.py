@@ -100,6 +100,10 @@ def test_the_cli_is_a_dry_run_by_default(
     assert "dry run, nothing removed" in out
     assert "Total reclaimable: 10 B (10 bytes)" in out
     assert "Circuit breaker: clear" in out
+    listed = [line for line in out.splitlines() if str(orphan.resolve()) in line]
+    assert [line.split() for line in listed] == [
+        ["audio", "10", "B", str(orphan.resolve())]
+    ]
 
 
 @pytest.mark.usefixtures("lock")
@@ -112,6 +116,9 @@ def test_the_cli_deletes_when_asked(
     assert not orphan.exists()
     audio_row = next(line for line in out.splitlines() if line.startswith("audio"))
     assert audio_row.split() == ["audio", "10", "1", "10", "B", "1", "0", "0"]
+    listed = [line for line in out.splitlines() if str(orphan.resolve()) in line]
+    assert len(listed) == 1
+    assert listed[0].endswith(f"{orphan.resolve()}  (removed)")
 
 
 @pytest.mark.usefixtures("lock")
@@ -195,6 +202,8 @@ def test_the_daily_cleanup_runs_storage_hygiene_in_the_configured_mode(
 
     assert orphan.exists() is not removed
     assert lock.reads == (2 if removed else 1)
-    summary = [r.getMessage() for r in caplog.records if r.name == hygiene.__name__]
+    messages = [r.getMessage() for r in caplog.records if r.name == hygiene.__name__]
+    summary = [line for line in messages if line.startswith("Storage hygiene (")]
     assert len(summary) == 1
     assert ("(delete)" if removed else "(report only)") in summary[0]
+    assert len(messages) == (2 if removed else 1)  # and one line per removal

@@ -139,6 +139,8 @@ docker compose exec --user appuser worker-io python -m backend.storage_hygiene -
 
 `exec` skips the entrypoint's drop to `appuser`, so `--user appuser` runs the command with the application's own permissions. Run it from `/app`, as `exec` does, because stored paths are relative to it.
 
+The CLI lists each flagged file with its size above the table, so you can check them before `--delete`. A run that removes files, daily or from the CLI, logs each one it removes.
+
 Every run keeps:
 
 - anything modified in the last 24 hours, and any file that changed between the listing and its unlink;

@@ -12,7 +12,8 @@ after it is not in the listing at all. Files are matched by device and inode, as
 modified in the last 24 hours is a candidate, which covers a file whose row has
 not committed yet, and each file's inode and mtime are checked again right
 before it is unlinked. Any rule of the circuit breaker turns the run into a
-report. Rows whose file is missing are counted, never changed.
+report. Rows whose file is missing are counted, never changed. The report
+names every flagged file, and each one a run removes is logged.
 
 Only regular files directly inside each directory are considered: ``temp/`` and
 ``failed/`` belong to the existing 24 hour sweep, and dotfiles and symlinks are
@@ -50,6 +51,7 @@ from backend.utils.storage_hygiene_report import (
     RULE_MISSING_FILES,
     RULE_RESTORE_LOCK,
     BreakerTrip,
+    FlaggedFile,
     HygieneReport,
     format_bytes,
     summary_line,
@@ -280,6 +282,7 @@ def _tally(
         entry.unreferenced += 1
         entry.unreferenced_bytes += stored.size
         candidates.append(stored)
+        report.flagged.append(FlaggedFile(stored.category, stored.path, stored.size))
     for category, count in references.missing.items():
         report.categories[category].missing_rows = count
     return candidates
@@ -421,10 +424,18 @@ def _unlink_if_unchanged(stored: _StoredFile) -> str:
 
 
 def _delete(candidates: Sequence[_StoredFile], report: HygieneReport) -> None:
-    for stored in candidates:
+    for stored, flagged in zip(candidates, report.flagged, strict=True):
         outcome = _unlink_if_unchanged(stored)
+        flagged.outcome = outcome
         entry = report.categories[stored.category]
         if outcome == _DELETED:
+            # One line per file, so the log says what went as well as how much.
+            logger.info(
+                "Storage hygiene removed %s (%s, %s)",
+                stored.path,
+                stored.category,
+                format_bytes(stored.size),
+            )
             entry.deleted += 1
             entry.deleted_bytes += stored.size
         elif outcome == _FAILED:
