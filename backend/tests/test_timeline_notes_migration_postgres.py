@@ -20,7 +20,7 @@ import pytest
 from sqlalchemy.engine import make_url
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-BEFORE = "3b804f4435a1"
+BEFORE = "7c3e5a91d2f4"
 TIMELINE_NOTES = "63005cac6492"
 NOTED_AT = datetime(2026, 3, 2, 11, 0)
 

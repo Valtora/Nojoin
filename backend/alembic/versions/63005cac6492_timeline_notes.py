@@ -24,7 +24,7 @@ lines, creating the transcript row where none exists. It is lossy: anchors,
 quotes, authors, per-note timestamps, write tokens and tombstones are dropped.
 
 Revision ID: 63005cac6492
-Revises: 3b804f4435a1
+Revises: 7c3e5a91d2f4
 Create Date: 2026-10-17 00:00:00.000000
 
 """
@@ -36,7 +36,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "63005cac6492"
-down_revision = "3b804f4435a1"
+down_revision = "7c3e5a91d2f4"
 branch_labels = None
 depends_on = None
 
