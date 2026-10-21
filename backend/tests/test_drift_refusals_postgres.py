@@ -8,7 +8,9 @@ NOJOIN_TEST_POSTGRES_URL names a server.
 
 from __future__ import annotations
 
+import asyncio
 import importlib
+import threading
 import time
 import warnings
 from collections.abc import Iterator
@@ -17,6 +19,7 @@ from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import create_engine, exc, text
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlmodel import Session, SQLModel, select
 
 from backend.core.db import driver_urls
@@ -220,3 +223,117 @@ def test_deleting_a_link_deletes_all_of_its_refusals(engine, library) -> None:
         )
 
     assert _refusals(engine) == []
+
+
+def _async_engine(postgres_test_url: str):
+    return create_async_engine(
+        driver_urls(postgres_test_url)[0],
+        connect_args={"server_settings": {"search_path": f"{SCHEMA},public"}},
+    )
+
+
+def _give_a_voiceprint(engine, person_id: int) -> None:
+    with Session(engine) as session:
+        person = session.get(GlobalSpeaker, person_id)
+        person.embedding = [1.0, 0.0]
+        person.embedding_version = EMBEDDING_METHOD_VERSION
+        session.add(person)
+        session.commit()
+
+
+async def _load_link(db: AsyncSession, link_id: int) -> RecordingSpeaker:
+    """Load the link as the extract routes do, before the extraction's wait."""
+    statement = select(RecordingSpeaker).where(RecordingSpeaker.id == link_id)
+    return (await db.execute(statement)).scalar_one()
+
+
+def _land_a_strangers_voiceprint(link: RecordingSpeaker) -> None:
+    link.embedding = [0.1, 0.995]
+    link.embedding_version = EMBEDDING_METHOD_VERSION
+    link.embedding_speech_seconds = 30.0
+
+
+@pytest.mark.anyio
+async def test_judging_an_extracted_voiceprint_holds_no_row_lock(
+    engine, library, postgres_test_url
+) -> None:
+    """Extract-all judges each speaker as its voiceprint lands and commits once,
+    after the last. While the next speaker's extraction runs, a rename of one
+    already judged must not wait for that commit."""
+    from backend.api.v1.endpoints.speakers.routes_voiceprint import (
+        _judge_extracted_voiceprint,
+    )
+
+    _give_a_voiceprint(engine, library.dana)
+    outcome: list[str] = []
+
+    def rename_elsewhere() -> None:
+        try:
+            with engine.begin() as connection:
+                connection.execute(text("SET LOCAL lock_timeout = '1s'"))
+                connection.execute(
+                    text("UPDATE recording_speakers SET name = 'Dana' WHERE id = :i"),
+                    {"i": library.link},
+                )
+            outcome.append("committed")
+        except exc.OperationalError as error:
+            outcome.append(type(error.orig).__name__)
+
+    aengine = _async_engine(postgres_test_url)
+    try:
+        async with AsyncSession(aengine, expire_on_commit=False) as db:
+            link = await _load_link(db, library.link)
+            _land_a_strangers_voiceprint(link)
+            await _judge_extracted_voiceprint(db, link)
+            db.add(link)
+            worker = threading.Thread(target=rename_elsewhere)
+            worker.start()
+            await asyncio.to_thread(worker.join)
+            await db.commit()
+    finally:
+        await aengine.dispose()
+
+    assert outcome == ["committed"]
+    assert _refusals(engine) == [
+        (library.link, library.dana),
+        (library.link, library.eli),
+    ]
+
+
+@pytest.mark.anyio
+async def test_a_refusal_lifted_during_an_extraction_is_recorded_again(
+    engine, library, postgres_test_url
+) -> None:
+    """Dana's speaker was refused for her and for Eli when the extract route
+    loaded it. While the extraction runs, a fold elsewhere lifts Dana's
+    refusal. The voice that lands is still a stranger's, so the guard refuses
+    it for Dana again: the refusals are read again with the link, or the
+    verdict would find hers already there and record nothing."""
+    from backend.api.v1.endpoints.speakers.routes_voiceprint import (
+        _judge_extracted_voiceprint,
+    )
+
+    _give_a_voiceprint(engine, library.dana)
+    aengine = _async_engine(postgres_test_url)
+    try:
+        async with AsyncSession(aengine, expire_on_commit=False) as db:
+            link = await _load_link(db, library.link)
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        "DELETE FROM recording_speaker_drift_refusals "
+                        "WHERE recording_speaker_id = :i AND global_speaker_id = :p"
+                    ),
+                    {"i": library.link, "p": library.dana},
+                )
+            _land_a_strangers_voiceprint(link)
+            await _judge_extracted_voiceprint(db, link)
+            db.add(link)
+            await db.commit()
+    finally:
+        await aengine.dispose()
+
+    assert _refusals(engine) == [
+        (library.link, library.dana),
+        (library.link, library.eli),
+    ]

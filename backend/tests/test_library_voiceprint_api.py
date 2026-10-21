@@ -2041,6 +2041,64 @@ async def test_an_extracted_voiceprint_is_judged_for_the_person_linked_when_it_l
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize(
+    "endpoint",
+    ["speakers/SPEAKER_00/voiceprint/extract", "voiceprints/extract-all"],
+)
+async def test_an_extracted_voiceprint_is_judged_against_the_persons_current_voiceprint(
+    client, session_maker, monkeypatch, endpoint
+) -> None:
+    """SPEAKER_00 is Dana's and Eli has no voiceprint. While the extraction runs,
+    Eli's voiceprint is founded (another meeting's link) and SPEAKER_00 is
+    renamed to Eli.
+
+    The voice extracted is unlike both, so it is refused for Eli. Extract-all
+    loads every person before its loop, so it reads the person again as well:
+    the copy it loaded has no voiceprint to judge against.
+    """
+    from backend.api.v1.endpoints import speakers as speakers_module
+
+    await _seed(
+        session_maker,
+        speakers=[{"label": "SPEAKER_00", "global_speaker_id": 7, "embedding": None}],
+        people=[
+            {"id": 7, "name": "Dana", "embedding": PERSON},
+            {"id": 8, "name": "Eli", "embedding": None},
+        ],
+    )
+    loop = asyncio.get_running_loop()
+
+    async def found_eli_then_rename() -> None:
+        async with session_maker() as other:
+            await other.execute(
+                text("UPDATE global_speakers SET embedding = :e WHERE id = 8"),
+                {"e": json.dumps(ELI)},
+            )
+            await other.execute(
+                text(
+                    "UPDATE recording_speakers SET global_speaker_id = 8, "
+                    "name = 'Eli' WHERE id = 1"
+                )
+            )
+            await other.commit()
+
+    def _send_task(name, args=None, kwargs=None, **options):
+        class _Result:
+            def get(self, timeout=None):
+                asyncio.run_coroutine_threadsafe(found_eli_then_rename(), loop).result()
+                return {"embedding": [-0.6, -0.8], "speech_seconds": 30.0}
+
+        return _Result()
+
+    monkeypatch.setattr(speakers_module.celery_app, "send_task", _send_task)
+
+    extracted = await client.post(f"/api/v1/speakers/recordings/{REC}/{endpoint}")
+
+    assert extracted.status_code == 200
+    assert await _refused_for(session_maker) == {"SPEAKER_00": (8,)}
+
+
+@pytest.mark.anyio
 async def test_a_split_into_an_existing_person_records_a_refused_fold_on_the_links(
     client, session_maker, extraction
 ) -> None:
