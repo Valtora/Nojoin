@@ -741,6 +741,10 @@ services:
       # resolves these entries at startup and drops any name it cannot resolve,
       # logging only a count, so every external client shares one rate-limit bucket.
       NOJOIN_TRUSTED_PROXIES: ${NOJOIN_TRUSTED_PROXIES:-127.0.0.1,::1,nginx}
+      NOJOIN_STALL_WATCHDOG_ENABLED: ${NOJOIN_STALL_WATCHDOG_ENABLED:-}
+      NOJOIN_STALL_WATCHDOG_INTERVAL_SECONDS: ${NOJOIN_STALL_WATCHDOG_INTERVAL_SECONDS:-}
+      NOJOIN_STALL_WATCHDOG_LAG_THRESHOLD_SECONDS: ${NOJOIN_STALL_WATCHDOG_LAG_THRESHOLD_SECONDS:-}
+      NOJOIN_STALL_WATCHDOG_PRESSURE_THRESHOLD: ${NOJOIN_STALL_WATCHDOG_PRESSURE_THRESHOLD:-}
     depends_on:
       db:
         condition: service_healthy

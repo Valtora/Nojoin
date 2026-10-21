@@ -51,12 +51,18 @@ async def _judge_extracted_voiceprint(
     take minutes, so the link is read again first: if a rename moved the
     speaker to someone else meanwhile, the verdict is for them.
     """
-    await db.refresh(rec_speaker, ["global_speaker_id", "drift_refusals"])
-    person = (
-        await db.get(GlobalSpeaker, rec_speaker.global_speaker_id)
-        if rec_speaker.global_speaker_id
-        else None
-    )
+    # Read without flushing: extract-all commits once, after every speaker,
+    # and a flush here would hold each judged speaker's row lock until then.
+    # The person is read again too: extract-all loaded everyone first.
+    with db.no_autoflush:
+        await db.refresh(rec_speaker, ["global_speaker_id", "drift_refusals"])
+        person = (
+            await db.get(
+                GlobalSpeaker, rec_speaker.global_speaker_id, populate_existing=True
+            )
+            if rec_speaker.global_speaker_id
+            else None
+        )
     judge_drift(rec_speaker, person)
 
 

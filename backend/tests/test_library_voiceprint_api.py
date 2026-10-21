@@ -343,8 +343,14 @@ async def _speaker_row(session_maker, label: str) -> tuple[Any, Any]:
                 _at_cosine(0.1),
                 [7],
                 [
-                    "Drift guard refused a voiceprint: similarity 0.100 is below 0.70",
-                    "Drift guard verdict on recording speaker 12 for person 7: refused",
+                    (
+                        "WARNING",
+                        "Drift guard refused a voiceprint: similarity 0.100 is below 0.70",
+                    ),
+                    (
+                        "INFO",
+                        "Drift guard verdict on recording speaker 12 for person 7: refused",
+                    ),
                 ],
             ),
             id="refused",
@@ -353,7 +359,12 @@ async def _speaker_row(session_maker, label: str) -> tuple[Any, Any]:
             (
                 _at_cosine(0.9),
                 [],
-                ["Drift guard verdict on recording speaker 12 for person 7: passed"],
+                [
+                    (
+                        "INFO",
+                        "Drift guard verdict on recording speaker 12 for person 7: passed",
+                    )
+                ],
             ),
             id="passed",
         ),
@@ -362,7 +373,8 @@ async def _speaker_row(session_maker, label: str) -> tuple[Any, Any]:
 def test_the_guards_log_gives_its_verdict_and_whose_it_is(caplog, case) -> None:
     """judge_drift records a verdict and folds nothing, so the guard's warning
     gives the score and the threshold, not a merge or a returned embedding,
-    and the verdict names the link and the person it is for."""
+    and the verdict names the link and the person it is for. The verdict is
+    logged at INFO: one is recorded for every voiceprint judged."""
     from backend.processing.embedding import judge_drift
 
     voiceprint, refused_after, messages = case
@@ -377,7 +389,7 @@ def test_the_guards_log_gives_its_verdict_and_whose_it_is(caplog, case) -> None:
     assert [
         refusal.global_speaker_id for refusal in speaker.drift_refusals
     ] == refused_after
-    assert caplog.messages == messages
+    assert [(r.levelname, r.getMessage()) for r in caplog.records] == messages
 
 
 def test_merge_embeddings_refuses_a_fold_below_seventy() -> None:
@@ -2174,6 +2186,7 @@ async def test_a_split_that_removes_what_the_guard_refused_rebuilds_the_person(
         pytest.param((7, None, _at_cosine(0.1), (7,)), id="stranger-gains-refusal"),
         pytest.param((7, (7, 8), _at_cosine(0.9), (8,)), id="eli-refusal-stays"),
         pytest.param((None, 7, _at_cosine(0.1), (7,)), id="unlinked-keeps-refusal"),
+        pytest.param((7, 8, _at_cosine(0.1), (7, 8)), id="refusal-keeps-elis"),
     ],
 )
 async def test_an_extracted_voiceprint_is_judged_against_the_speakers_person(
@@ -2270,6 +2283,64 @@ async def test_an_extracted_voiceprint_is_judged_for_the_person_linked_when_it_l
     assert extracted.status_code == 200
     assert await _refused_for(session_maker) == {"SPEAKER_00": (8,)}
     assert await _person_voiceprint(session_maker, "Eli") == pytest.approx(ELI)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "endpoint",
+    ["speakers/SPEAKER_00/voiceprint/extract", "voiceprints/extract-all"],
+)
+async def test_an_extracted_voiceprint_is_judged_against_the_persons_current_voiceprint(
+    client, session_maker, monkeypatch, endpoint
+) -> None:
+    """SPEAKER_00 is Dana's and Eli has no voiceprint. While the extraction runs,
+    Eli's voiceprint is founded (another meeting's link) and SPEAKER_00 is
+    renamed to Eli.
+
+    The voice extracted is unlike both, so it is refused for Eli. Extract-all
+    loads every person before its loop, so it reads the person again as well:
+    the copy it loaded has no voiceprint to judge against.
+    """
+    from backend.api.v1.endpoints import speakers as speakers_module
+
+    await _seed(
+        session_maker,
+        speakers=[{"label": "SPEAKER_00", "global_speaker_id": 7, "embedding": None}],
+        people=[
+            {"id": 7, "name": "Dana", "embedding": PERSON},
+            {"id": 8, "name": "Eli", "embedding": None},
+        ],
+    )
+    loop = asyncio.get_running_loop()
+
+    async def found_eli_then_rename() -> None:
+        async with session_maker() as other:
+            await other.execute(
+                text("UPDATE global_speakers SET embedding = :e WHERE id = 8"),
+                {"e": json.dumps(ELI)},
+            )
+            await other.execute(
+                text(
+                    "UPDATE recording_speakers SET global_speaker_id = 8, "
+                    "name = 'Eli' WHERE id = 1"
+                )
+            )
+            await other.commit()
+
+    def _send_task(name, args=None, kwargs=None, **options):
+        class _Result:
+            def get(self, timeout=None):
+                asyncio.run_coroutine_threadsafe(found_eli_then_rename(), loop).result()
+                return {"embedding": [-0.6, -0.8], "speech_seconds": 30.0}
+
+        return _Result()
+
+    monkeypatch.setattr(speakers_module.celery_app, "send_task", _send_task)
+
+    extracted = await client.post(f"/api/v1/speakers/recordings/{REC}/{endpoint}")
+
+    assert extracted.status_code == 200
+    assert await _refused_for(session_maker) == {"SPEAKER_00": (8,)}
 
 
 @pytest.mark.anyio
