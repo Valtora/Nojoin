@@ -505,9 +505,10 @@ def judge_drift(speaker: Any, person: Any) -> None:
     """Judge a link's new voiceprint against the person it is linked to.
 
     A segment moved onto the link, a speaker merged into it, the voiceprint
-    dialog's extract and extract-all, and a processing run that finds the
-    speaker already there each give the link a voiceprint that is offered to
-    no one, and the voice the guard refused is usually still in it. So the guard judges it against ``person``, without changing their
+    dialog's extract and the extract-all endpoint, and a processing run that
+    finds the speaker already there each give the link a voiceprint that is
+    offered to no one, and the voice the guard refused is usually still in it.
+    So the guard judges it against ``person``, without changing their
     voiceprint, and the verdict is kept as ``record_drift_verdict`` keeps one:
     a refusal adds ``person`` to the people the link was refused for, and a
     pass lifts only their refusal. With no person, or no voiceprint of theirs
