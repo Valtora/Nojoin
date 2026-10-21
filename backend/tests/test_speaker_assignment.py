@@ -1,6 +1,7 @@
 from backend.utils.speaker_assignment import (
     matches_speaker_name,
     reconcile_segment_assignment,
+    remap_overlapping_speakers,
     segment_references_label,
 )
 
@@ -56,6 +57,18 @@ def test_reconcile_segment_assignment_deduplicates_self_overlap_labels():
 
     assert segments[0]["speaker"] == "SPEAKER_01"
     assert segments[0]["overlapping_speakers"] == []
+
+
+def test_remap_overlapping_speakers_drops_the_lines_own_speaker():
+    # SPEAKER_01 merged into SPEAKER_00, whose line overlapped it.
+    assert remap_overlapping_speakers(
+        ["SPEAKER_01", "SPEAKER_02", "", "SPEAKER_02"],
+        primary="SPEAKER_00",
+        mapping={"SPEAKER_01": "SPEAKER_00"},
+    ) == ["SPEAKER_02"]
+    assert remap_overlapping_speakers([" SPEAKER_01 ", None], primary="SPEAKER_00") == [
+        "SPEAKER_01"
+    ]
 
 
 def test_segment_references_label_checks_primary_and_overlap_labels():

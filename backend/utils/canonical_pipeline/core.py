@@ -1544,6 +1544,7 @@ def serialize_canonical_utterances(
     recording_id: int,
     only_public_ids: set[str] | None = None,
     include_confidence_payload: bool = False,
+    resolve_merged_overlaps: bool = True,
 ) -> list[dict[str, Any]]:
     transcript = _load_transcript(session, recording_id)
     recording_speakers = _load_recording_speakers(session, recording_id)
@@ -1552,6 +1553,11 @@ def serialize_canonical_utterances(
         for speaker in recording_speakers
         if speaker.id is not None
     }
+    active_labels = (
+        _active_speaker_labels(recording_speakers_by_id)
+        if resolve_merged_overlaps
+        else None
+    )
     projection_by_id = (
         {
             str(segment.get("id")): segment
@@ -1609,6 +1615,7 @@ def serialize_canonical_utterances(
                 utterance,
                 projection=projection,
                 recording_speakers_by_id=recording_speakers_by_id,
+                active_labels=active_labels,
             ),
         }
         if include_confidence_payload:
@@ -1707,7 +1714,10 @@ def refresh_transcript_projection_from_canonical(
     if transcript is None:
         return []
 
-    projection_segments = serialize_canonical_utterances(session, recording_id)
+    # Unresolved, so an unmerge finds the overlap labels as diarised.
+    projection_segments = serialize_canonical_utterances(
+        session, recording_id, resolve_merged_overlaps=False
+    )
     transcript.segments = projection_segments
     transcript.text = " ".join(
         str(segment.get("text", "") or "") for segment in projection_segments
@@ -1888,30 +1898,6 @@ def _state_for_segment(
     if status_value == RecordingStatus.PROCESSED.value:
         return TranscriptUtteranceState.FINALIZED
     return TranscriptUtteranceState.STABLE
-
-
-def _projection_overlap_labels(
-    index: int,
-    segments: Sequence[dict[str, Any]],
-    overlap_groups: dict[int, dict[str, Any]],
-    recording_speakers: Iterable[RecordingSpeaker],
-) -> list[str]:
-    source_segment = segments[index]
-    existing = list(source_segment.get("overlapping_speakers") or [])
-    if existing:
-        return existing
-
-    group = overlap_groups.get(index)
-    if not group:
-        return []
-    labels: list[str] = []
-    for other_index in group["members"]:
-        if other_index == index:
-            continue
-        label = str(segments[other_index].get("speaker") or UNKNOWN_SPEAKER)
-        if label not in labels and label != source_segment.get("speaker"):
-            labels.append(label)
-    return labels
 
 
 def _build_projection_segment(

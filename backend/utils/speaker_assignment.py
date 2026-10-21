@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from typing import Any
 
 
@@ -24,6 +25,27 @@ def segments_overlap(first: dict[str, Any], second: dict[str, Any]) -> bool:
     second_start = float(second.get("start", 0.0))
     second_end = float(second.get("end", 0.0))
     return first_start < second_end and second_start < first_end
+
+
+def remap_overlapping_speakers(
+    labels: Iterable[Any],
+    *,
+    primary: str | None,
+    mapping: Mapping[str, str] | None = None,
+) -> list[str]:
+    """A line's overlap labels after ``mapping``, in order.
+
+    Blanks, repeats and the line's own speaker drop out: once two labels are
+    merged, a line can otherwise list its own speaker as overlapping it.
+    """
+    remapped: list[str] = []
+    for label in labels:
+        value = str(label or "").strip()
+        if mapping is not None:
+            value = mapping.get(value, value)
+        if value and value != primary and value not in remapped:
+            remapped.append(value)
+    return remapped
 
 
 def _canonicalise_overlapping_speakers(

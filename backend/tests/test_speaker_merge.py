@@ -91,7 +91,8 @@ def test_merge_speakers_above_threshold(mock_counts: MagicMock) -> None:
     assert merged_id == 2
     assert speakers[1].merged_into_id == 1
     assert segments[0]["speaker"] == "SPEAKER_00"
-    assert segments[1]["overlapping_speakers"] == ["SPEAKER_00"]
+    # The line's own speaker absorbed the one overlapping it, so nothing is left.
+    assert segments[1]["overlapping_speakers"] == []
 
 
 @patch("backend.processing.speaker_merge._count_utterances_per_speaker")

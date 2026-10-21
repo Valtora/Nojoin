@@ -43,6 +43,7 @@ from backend.processing.embedding import (
     embeddings_are_comparable,
 )
 from backend.processing.pipeline_metrics import record_pipeline_metric
+from backend.utils.speaker_assignment import remap_overlapping_speakers
 
 logger = logging.getLogger(__name__)
 
@@ -705,8 +706,8 @@ def merge_duplicate_speakers(
                 seg["speaker"] = label_remap[current_speaker]
             overlapping = seg.get("overlapping_speakers")
             if isinstance(overlapping, list):
-                seg["overlapping_speakers"] = [
-                    label_remap.get(label, label) for label in overlapping
-                ]
+                seg["overlapping_speakers"] = remap_overlapping_speakers(
+                    overlapping, primary=seg.get("speaker"), mapping=label_remap
+                )
 
     return merge_pairs
