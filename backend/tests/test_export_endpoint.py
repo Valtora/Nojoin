@@ -29,6 +29,7 @@ from backend.models.user import User
 from backend.tests.export_fixtures import NOTES_WITH_TABLES, analytics_payload
 from backend.tests.sqlite_schemas import (
     GLOBAL_SPEAKERS_SCHEMA,
+    RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA,
     RECORDING_SPEAKERS_SCHEMA,
     RECORDINGS_SCHEMA,
     TRANSCRIPTS_SCHEMA,
@@ -96,6 +97,7 @@ def api(monkeypatch):
                 TRANSCRIPTS_SCHEMA,
                 GLOBAL_SPEAKERS_SCHEMA,
                 RECORDING_SPEAKERS_SCHEMA,
+                RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA,
             ):
                 await conn.execute(text(schema))
         state.user = User(

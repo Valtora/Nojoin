@@ -56,6 +56,7 @@ export function describeLibraryVoiceprint(
         "counts towards the person's voiceprint after that."
       );
     case "saved":
+    case "saved_from_other_recordings":
     case "folded":
       return null;
   }
@@ -122,12 +123,18 @@ function describeSplitOriginal(
   if (outcome.status === "saved") {
     return `${name}'s voiceprint was rebuilt from the clips that remain.`;
   }
+  if (outcome.status === "saved_from_other_recordings") {
+    return (
+      `${name}'s voiceprint was rebuilt from ${name}'s other recordings: no ` +
+      `recording's remaining clips hold ${needed} s of clear speech.`
+    );
+  }
   return (
     `${name} has no voiceprint now: no recording's remaining clips hold ` +
-    `${needed} s of clear speech${mostSpeech(outcome)}, and an older ` +
-    "voiceprint would still include the moved clips. A later recording " +
-    `linked to ${name} with at least ${needed} s of clear speech will save ` +
-    "a new one."
+    `${needed} s of clear speech${mostSpeech(outcome)}, none of ${name}'s ` +
+    "other recordings can rebuild it, and an older voiceprint would still " +
+    `include the moved clips. A later recording linked to ${name} with at ` +
+    `least ${needed} s of clear speech will save a new one.`
   );
 }
 

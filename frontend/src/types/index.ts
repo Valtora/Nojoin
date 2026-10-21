@@ -113,6 +113,8 @@ export interface RecordingSpeaker extends BaseDBModel {
  */
 export type LibraryVoiceprintStatus =
   | "saved"
+  /** A split only: the original's voiceprint came from their other recordings. */
+  | "saved_from_other_recordings"
   | "folded"
   | "skipped_insufficient_speech"
   | "skipped_drift"

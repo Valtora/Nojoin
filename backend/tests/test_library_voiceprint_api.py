@@ -35,6 +35,7 @@ from backend.tests.sqlite_schemas import (
     PROCESSING_RUNS_SCHEMA,
     RECORDING_AUDIO_WINDOW_MANIFESTS_SCHEMA,
     RECORDING_SPEAKER_ALIASES_SCHEMA,
+    RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA,
     RECORDING_SPEAKERS_SCHEMA,
     RECORDINGS_SCHEMA,
     SPEAKER_CORRECTION_EVENTS_SCHEMA,
@@ -77,6 +78,7 @@ async def session_maker():
             TRANSCRIPTS_SCHEMA,
             GLOBAL_SPEAKERS_SCHEMA,
             RECORDING_SPEAKERS_SCHEMA,
+            RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA,
             PROCESSING_RUNS_SCHEMA,
             RECORDING_AUDIO_WINDOW_MANIFESTS_SCHEMA,
             DIARIZATION_WINDOW_RESULTS_SCHEMA,
@@ -255,7 +257,40 @@ async def _seed(
                     "seconds": speaker.get("seconds"),
                 },
             )
+            await _insert_refusals(session, index, speaker.get("refused_for"))
         await session.commit()
+
+
+async def _insert_refusals(session, speaker_id: int, refused_for: Any) -> None:
+    """Record the people a speaker was refused for: one id, several, or None."""
+    people = () if refused_for is None else refused_for
+    for person_id in (people,) if isinstance(people, int) else people:
+        await session.execute(
+            text(
+                "INSERT INTO recording_speaker_drift_refusals "
+                "(recording_speaker_id, global_speaker_id) VALUES (:id, :person)"
+            ),
+            {"id": speaker_id, "person": person_id},
+        )
+
+
+async def _refusals_by_id(session_maker) -> dict[int, tuple[int, ...]]:
+    """The people each recording speaker was refused for, by speaker id."""
+    async with session_maker() as session:
+        speakers = (
+            await session.execute(text("SELECT id FROM recording_speakers"))
+        ).scalars()
+        refused: dict[int, tuple[int, ...]] = {speaker: () for speaker in speakers}
+        rows = await session.execute(
+            text(
+                "SELECT recording_speaker_id, global_speaker_id "
+                "FROM recording_speaker_drift_refusals "
+                "ORDER BY recording_speaker_id, global_speaker_id"
+            )
+        )
+        for speaker, person in rows.all():
+            refused[speaker] = (*refused.get(speaker, ()), person)
+    return refused
 
 
 async def _person_voiceprint(session_maker, name: str) -> list[float] | None:
@@ -267,6 +302,16 @@ async def _person_voiceprint(session_maker, name: str) -> list[float] | None:
             )
         ).scalar_one()
     return json.loads(value) if value is not None else None
+
+
+async def _refused_for(session_maker) -> dict[str, tuple[int, ...]]:
+    """The people each recording speaker was refused for, by label."""
+    refused = await _refusals_by_id(session_maker)
+    async with session_maker() as session:
+        rows = await session.execute(
+            text("SELECT id, diarization_label FROM recording_speakers")
+        )
+        return {label: refused[speaker] for speaker, label in rows.all()}
 
 
 async def _speaker_row(session_maker, label: str) -> tuple[Any, Any]:
@@ -364,11 +409,14 @@ def test_a_recording_voiceprint_that_replaces_a_stale_one_takes_its_speech() -> 
     )
 
     target = SimpleNamespace(
-        embedding=[0.6, 0.8], embedding_version=None, embedding_speech_seconds=5.0
+        embedding=[0.6, 0.8],
+        embedding_version=None,
+        embedding_speech_seconds=5.0,
+        drift_refusals=[],
     )
 
     fold_recording_voiceprint(
-        target, RecordingVoiceprint(list(PERSON), 25.0), alpha=0.5
+        target, RecordingVoiceprint(list(PERSON), 25.0), alpha=0.5, person=None
     )
 
     assert (
@@ -422,7 +470,14 @@ async def test_rename_folds_into_a_voiceprint_only_past_the_drift_guard(
     voice = _at_cosine(cosine)
     await _seed(
         session_maker,
-        speakers=[{"label": "SPEAKER_00", "embedding": voice, "seconds": 3.0}],
+        speakers=[
+            {
+                "label": "SPEAKER_00",
+                "embedding": voice,
+                "seconds": 3.0,
+                "refused_for": None if status == "skipped_drift" else 7,
+            }
+        ],
         people=[{"id": 7, "name": "Dana", "embedding": PERSON}],
     )
 
@@ -434,6 +489,11 @@ async def test_rename_folds_into_a_voiceprint_only_past_the_drift_guard(
     assert response.json()[0]["library_voiceprint"] == _outcome(status, 3.0)
     expected = _blend(PERSON, voice, 0.3) if status == "folded" else PERSON
     assert await _person_voiceprint(session_maker, "Dana") == pytest.approx(expected)
+    # The refusal stays on the link, so the rebuild and a split leave it out;
+    # a fold lifts an earlier one.
+    assert await _refused_for(session_maker) == {
+        "SPEAKER_00": (7,) if status == "skipped_drift" else ()
+    }
 
 
 @pytest.mark.anyio
@@ -541,6 +601,9 @@ async def test_promote_to_an_existing_person_folds_only_past_the_drift_guard(
     assert response.json()["library_voiceprint"] == _outcome(status, 40.0)
     expected = _blend(PERSON, voice, 0.5) if status == "folded" else PERSON
     assert await _person_voiceprint(session_maker, "Dana") == pytest.approx(expected)
+    assert await _refused_for(session_maker) == {
+        "SPEAKER_00": (7,) if status == "skipped_drift" else ()
+    }
 
 
 @pytest.mark.anyio
@@ -587,7 +650,14 @@ async def test_voiceprint_link_applies_the_floor_and_the_drift_guard(
     voice = _at_cosine(cosine)
     await _seed(
         session_maker,
-        speakers=[{"label": "SPEAKER_00", "embedding": voice, "seconds": seconds}],
+        speakers=[
+            {
+                "label": "SPEAKER_00",
+                "embedding": voice,
+                "seconds": seconds,
+                "refused_for": 7,
+            }
+        ],
         people=[{"id": 7, "name": "Dana", "embedding": person}],
     )
 
@@ -605,6 +675,10 @@ async def test_voiceprint_link_applies_the_floor_and_the_drift_guard(
     }[status]
     stored = await _person_voiceprint(session_maker, "Dana")
     assert stored == (pytest.approx(expected) if expected is not None else None)
+    # A save or a fold lifts an earlier refusal, a refusal keeps it, and too
+    # little speech says nothing about it either way.
+    lifted = status in ("saved", "folded")
+    assert await _refused_for(session_maker) == {"SPEAKER_00": () if lifted else (7,)}
 
 
 @pytest.mark.anyio
@@ -782,6 +856,211 @@ async def test_merging_an_unmeasured_speaker_leaves_the_result_unmeasured(
         None,
     )
     assert promoted.json()["library_voiceprint"] == _outcome("saved", None)
+
+
+async def _links(session_maker) -> dict[str, tuple[Any, tuple[int, ...]]]:
+    """Each recording speaker's person and the people it was refused for."""
+    refused = await _refusals_by_id(session_maker)
+    async with session_maker() as session:
+        rows = await session.execute(
+            text(
+                "SELECT id, diarization_label, global_speaker_id "
+                "FROM recording_speakers"
+            )
+        )
+        return {label: (person, refused[speaker]) for speaker, label, person in rows}
+
+
+@pytest.mark.anyio
+async def test_merging_people_carries_the_sources_refusals_to_the_target(
+    client, session_maker
+) -> None:
+    """Eli is merged into Dana, and Eli's refusals become Dana's.
+
+    They are not nulled with Eli's row: SPEAKER_00, refused for Eli, is
+    Dana's now and still refused. SPEAKER_01, refused for Eli and since moved
+    to Fay, is refused for Dana should it come back to her. Fay's own refusal
+    of SPEAKER_02 is left alone.
+    """
+    await _seed(
+        session_maker,
+        speakers=[
+            {"label": "SPEAKER_00", "global_speaker_id": 8, "refused_for": 8},
+            {"label": "SPEAKER_01", "global_speaker_id": 9, "refused_for": 8},
+            {"label": "SPEAKER_02", "global_speaker_id": 9, "refused_for": 9},
+        ],
+        people=[
+            {"id": 7, "name": "Dana", "embedding": PERSON},
+            {"id": 8, "name": "Eli", "embedding": PERSON},
+            {"id": 9, "name": "Fay", "embedding": PERSON},
+        ],
+    )
+
+    response = await client.post(
+        "/api/v1/speakers/merge", json={"source_speaker_id": 8, "target_speaker_id": 7}
+    )
+
+    assert response.status_code == 200
+    assert await _links(session_maker) == {
+        "SPEAKER_00": (7, (7,)),
+        "SPEAKER_01": (9, (7,)),
+        "SPEAKER_02": (9, (9,)),
+    }
+
+
+@pytest.mark.anyio
+async def test_merging_people_keeps_one_refusal_where_both_refused_a_speaker(
+    client, session_maker
+) -> None:
+    """Eli is merged into Dana, and some speakers were refused for both.
+
+    SPEAKER_00, Eli's and refused for both, keeps one refusal, for Dana.
+    SPEAKER_01, Fay's and refused for Eli and for Fay, is refused for Dana
+    and Fay. No refusal for Eli is left behind.
+    """
+    await _seed(
+        session_maker,
+        speakers=[
+            {"label": "SPEAKER_00", "global_speaker_id": 8, "refused_for": (7, 8)},
+            {"label": "SPEAKER_01", "global_speaker_id": 9, "refused_for": (8, 9)},
+        ],
+        people=[
+            {"id": 7, "name": "Dana", "embedding": PERSON},
+            {"id": 8, "name": "Eli", "embedding": PERSON},
+            {"id": 9, "name": "Fay", "embedding": PERSON},
+        ],
+    )
+
+    response = await client.post(
+        "/api/v1/speakers/merge", json={"source_speaker_id": 8, "target_speaker_id": 7}
+    )
+
+    assert response.status_code == 200
+    assert await _links(session_maker) == {
+        "SPEAKER_00": (7, (7,)),
+        "SPEAKER_01": (9, (7, 9)),
+    }
+
+
+@pytest.mark.anyio
+async def test_merging_people_brings_back_a_refusal_for_the_target(
+    client, session_maker
+) -> None:
+    """A speaker refused for Dana and moved to Eli is Dana's again after the
+    merge, with the voiceprint the guard refused for her, so it stays out."""
+    await _seed(
+        session_maker,
+        speakers=[{"label": "SPEAKER_00", "global_speaker_id": 8, "refused_for": 7}],
+        people=[
+            {"id": 7, "name": "Dana", "embedding": PERSON},
+            {"id": 8, "name": "Eli", "embedding": PERSON},
+        ],
+    )
+
+    response = await client.post(
+        "/api/v1/speakers/merge", json={"source_speaker_id": 8, "target_speaker_id": 7}
+    )
+
+    assert response.status_code == 200
+    assert await _links(session_maker) == {"SPEAKER_00": (7, (7,))}
+
+
+@pytest.mark.anyio
+async def test_linking_a_speaker_back_without_a_verdict_keeps_its_refusal(
+    client, session_maker, monkeypatch
+) -> None:
+    """A refusal for Dana applies again when its speaker is hers again.
+
+    The speaker was refused for Dana and moved to Eli. Renamed back to Dana on
+    the legacy path, whose lock refuses the fold, it gets no new verdict, and
+    its voiceprint is still the one the guard refused for her.
+    """
+    from backend.api.v1.endpoints import speakers as speakers_module
+
+    original_get = speakers_module.config_manager.get
+    monkeypatch.setattr(
+        speakers_module.config_manager,
+        "get",
+        lambda key, default=None: (
+            False
+            if key == "enable_canonical_transcript_writes"
+            else original_get(key, default)
+        ),
+    )
+    await _seed(
+        session_maker,
+        speakers=[
+            {
+                "label": "SPEAKER_00",
+                "global_speaker_id": 8,
+                "embedding": _at_cosine(0.65),
+                "seconds": 30.0,
+                "refused_for": 7,
+            }
+        ],
+        people=[
+            {"id": 7, "name": "Dana", "embedding": PERSON, "locked": True},
+            {"id": 8, "name": "Eli"},
+        ],
+    )
+
+    response = await client.put(
+        f"/api/v1/speakers/recordings/{REC}",
+        json={"diarization_label": "SPEAKER_00", "global_speaker_name": "Dana"},
+    )
+
+    assert response.json()[0]["library_voiceprint"]["status"] == "skipped_locked"
+    assert await _links(session_maker) == {"SPEAKER_00": (7, (7,))}
+
+
+@pytest.mark.anyio
+async def test_a_save_into_someone_else_keeps_the_refusal_for_a_return(
+    client, session_maker, monkeypatch
+) -> None:
+    """Refused for Dana, saved into Eli, renamed back to Dana: still refused.
+
+    Saving the speaker into Eli is Eli's verdict, not Dana's, so the refusal
+    for Dana stays. The legacy rename back to a locked Dana gives no new
+    verdict, and without the refusal the speaker would be pooled into her
+    voiceprint again.
+    """
+    from backend.api.v1.endpoints import speakers as speakers_module
+
+    legacy = {"on": False}
+    original_get = speakers_module.config_manager.get
+    monkeypatch.setattr(
+        speakers_module.config_manager,
+        "get",
+        lambda key, default=None: (
+            not legacy["on"]
+            if key == "enable_canonical_transcript_writes"
+            else original_get(key, default)
+        ),
+    )
+    await _seed(
+        session_maker,
+        speakers=[
+            {"label": "SPEAKER_00", "embedding": _at_cosine(0.65), "seconds": 30.0}
+        ],
+        people=[
+            {"id": 7, "name": "Dana", "embedding": PERSON, "locked": True},
+            {"id": 8, "name": "Eli"},
+        ],
+    )
+
+    async def rename(name: str) -> str:
+        response = await client.put(
+            f"/api/v1/speakers/recordings/{REC}",
+            json={"diarization_label": "SPEAKER_00", "global_speaker_name": name},
+        )
+        return response.json()[0]["library_voiceprint"]["status"]
+
+    assert await rename("Dana") == "skipped_drift"
+    assert await rename("Eli") == "saved"
+    assert await _links(session_maker) == {"SPEAKER_00": (8, (7,))}
+    legacy["on"] = True
+    assert await rename("Dana") == "skipped_locked"
+    assert await _links(session_maker) == {"SPEAKER_00": (7, (7,))}
 
 
 @pytest.mark.anyio
@@ -1199,6 +1478,467 @@ async def test_a_split_into_an_existing_person_folds_and_locks_their_voiceprint(
     assert locked
 
 
+def test_a_refusal_is_for_one_person_and_lifts_when_the_speaker_moves_on() -> None:
+    from backend.processing.embedding import is_drift_refused
+
+    def link(person: int | None, *refused_for: int) -> SimpleNamespace:
+        return SimpleNamespace(
+            global_speaker_id=person,
+            drift_refusals=[
+                SimpleNamespace(global_speaker_id=person_id)
+                for person_id in refused_for
+            ],
+        )
+
+    assert is_drift_refused(link(7, 7))
+    assert is_drift_refused(link(7, 8, 7))
+    assert not is_drift_refused(link(8, 7))
+    assert not is_drift_refused(link(None, 7))
+    assert not is_drift_refused(link(7))
+    assert not is_drift_refused(link(None))
+
+
+async def _add_second_recording(session_maker) -> None:
+    async with session_maker() as session:
+        await session.execute(
+            text(
+                """
+                INSERT INTO recordings (
+                    id, created_at, updated_at, name, public_id, meeting_uid,
+                    audio_path, status, upload_progress, processing_progress,
+                    pipeline_generation, is_archived, is_deleted, user_id
+                ) VALUES (2, :now, :now, 'Second', 'vp-rec-2', 'uid-2',
+                          '/tmp/second.wav', 'PROCESSED', 100, 100, 'unified',
+                          0, 0, 1)
+                """
+            ),
+            {"now": NOW},
+        )
+        await session.execute(
+            text(
+                """
+                INSERT INTO recording_speakers (
+                    id, created_at, updated_at, public_id, recording_id,
+                    global_speaker_id, diarization_label, name, embedding,
+                    embedding_version, speaker_status, speaker_kind,
+                    identity_locked
+                ) VALUES (2, :now, :now, 'rs-2', 2, 7, 'SPEAKER_09', 'Dana',
+                          NULL, NULL, 'active', 'automated', 0)
+                """
+            ),
+            {"now": NOW},
+        )
+        await _insert_refusals(session, 2, 7)
+        await session.commit()
+
+
+@pytest.mark.anyio
+async def test_recalibration_uses_the_samples_chosen_and_lets_their_links_back_in(
+    client, session_maker, extraction, monkeypatch
+) -> None:
+    """Choosing and hearing a recording's samples overrides the guard's refusal.
+
+    Dana's links in both recordings were refused against a poor voiceprint.
+    The recording whose samples hold enough speech is used, and its link
+    counts towards her voiceprint again. The other recording's samples cover
+    her line there too, but held too little speech to be used, so its
+    refusal stands. The used link's refusal for Eli stands too: hearing it
+    as Dana says nothing about Eli.
+    """
+    from backend.api.v1.endpoints.speakers import routes_global
+
+    monkeypatch.setattr(
+        routes_global,
+        "select_recording_audio_for_embedding",
+        lambda recording: recording.audio_path,
+    )
+    await _seed(
+        session_maker,
+        speakers=[
+            {"label": "SPEAKER_00", "global_speaker_id": 7, "refused_for": (7, 8)}
+        ],
+        people=[
+            {"id": 7, "name": "Dana", "embedding": PERSON},
+            {"id": 8, "name": "Eli"},
+        ],
+    )
+    await _add_second_recording(session_maker)
+    second_lines = [
+        {
+            "start": 0.0,
+            "end": 5.0,
+            "speaker": "SPEAKER_09",
+            "text": "line 0",
+            "segment_source": "legacy",
+        }
+    ]
+    async with session_maker() as session:
+        await session.execute(
+            text(
+                """
+                INSERT INTO transcripts (
+                    id, created_at, updated_at, recording_id, text, segments,
+                    meeting_edge_status, notes_status, transcript_status
+                ) VALUES (2, :now, :now, 2, 'text', :segments, 'idle',
+                          'pending', 'completed')
+                """
+            ),
+            {"now": NOW, "segments": json.dumps(second_lines)},
+        )
+        await session.commit()
+    genuine = _at_cosine(0.2)
+    extraction.append({"embedding": genuine, "speech_seconds": 25.0})
+    extraction.append({"embedding": genuine, "speech_seconds": 12.0})
+
+    response = await client.post(
+        "/api/v1/speakers/7/recalibrate",
+        json=[
+            {"recording_id": recording_id, "start": 0.0, "end": 5.0}
+            for recording_id in (REC, "vp-rec-2")
+        ],
+    )
+
+    assert response.status_code == 200
+    assert await _person_voiceprint(session_maker, "Dana") == pytest.approx(genuine)
+    assert await _refused_for(session_maker) == {
+        "SPEAKER_00": (8,),
+        "SPEAKER_09": (7,),
+    }
+
+
+@pytest.mark.anyio
+async def test_recalibration_lifts_only_the_refusals_of_the_speakers_heard(
+    client, session_maker, extraction, monkeypatch
+) -> None:
+    """Dana has two refused speakers in one recording, and one was sampled.
+
+    Choosing and hearing SPEAKER_00's lines says nothing about SPEAKER_01's,
+    so SPEAKER_01 stays out of her voiceprint, and nothing about her speaker
+    of the same label in another recording either. A line of Eli's among the
+    samples lifts nothing: its speaker isn't Dana's, and its refusal for her
+    stands should it come back to her.
+    """
+    from backend.api.v1.endpoints.speakers import routes_global
+
+    monkeypatch.setattr(
+        routes_global,
+        "select_recording_audio_for_embedding",
+        lambda recording: recording.audio_path,
+    )
+    await _seed(
+        session_maker,
+        speakers=[
+            {"label": "SPEAKER_00", "global_speaker_id": 7, "refused_for": 7},
+            {"label": "SPEAKER_01", "global_speaker_id": 7, "refused_for": 7},
+            {"label": "SPEAKER_02", "global_speaker_id": 8, "refused_for": 7},
+        ],
+        people=[
+            {"id": 7, "name": "Dana", "embedding": PERSON},
+            {"id": 8, "name": "Eli"},
+        ],
+    )
+    async with session_maker() as session:
+        await session.execute(
+            text(
+                """
+                INSERT INTO recordings (
+                    id, created_at, updated_at, name, public_id, meeting_uid,
+                    audio_path, status, upload_progress, processing_progress,
+                    pipeline_generation, is_archived, is_deleted, user_id
+                ) VALUES (2, :now, :now, 'Second', 'vp-rec-2', 'uid-2',
+                          '/tmp/second.wav', 'PROCESSED', 100, 100, 'unified',
+                          0, 0, 1)
+                """
+            ),
+            {"now": NOW},
+        )
+        await session.execute(
+            text(
+                """
+                INSERT INTO recording_speakers (
+                    id, created_at, updated_at, public_id, recording_id,
+                    global_speaker_id, diarization_label, name,
+                    speaker_status, speaker_kind, identity_locked
+                ) VALUES (10, :now, :now, 'rs-10', 2, 7, 'SPEAKER_00', 'Dana',
+                          'active', 'automated', 0)
+                """
+            ),
+            {"now": NOW},
+        )
+        await _insert_refusals(session, 10, 7)
+        await session.commit()
+    extraction.append({"embedding": _at_cosine(0.2), "speech_seconds": 25.0})
+
+    response = await client.post(
+        "/api/v1/speakers/7/recalibrate",
+        json=[
+            {"recording_id": REC, "start": 0.0, "end": 5.0},
+            {"recording_id": REC, "start": 10.0, "end": 15.0},
+        ],
+    )
+
+    assert response.status_code == 200
+    assert await _refusals_by_id(session_maker) == {
+        1: (),
+        2: (7,),
+        3: (7,),
+        10: (7,),
+    }
+
+
+@pytest.mark.anyio
+async def test_recalibration_lifts_a_refusal_by_the_speaker_a_line_names(
+    client, session_maker, extraction, monkeypatch
+) -> None:
+    """Both of Dana's speakers carry her display name on their lines.
+
+    A line that names its recording speaker lifts only that speaker's refusal,
+    whatever its label says: matched by name, the sample of SPEAKER_00's line
+    would also let SPEAKER_01 back into her voiceprint unheard.
+    """
+    from backend.api.v1.endpoints.speakers import routes_global
+
+    monkeypatch.setattr(
+        routes_global,
+        "select_recording_audio_for_embedding",
+        lambda recording: recording.audio_path,
+    )
+    await _seed(
+        session_maker,
+        speakers=[
+            {
+                "label": label,
+                "global_speaker_id": 7,
+                "name": "Dana",
+                "refused_for": 7,
+            }
+            for label in ("SPEAKER_00", "SPEAKER_01")
+        ],
+        people=[{"id": 7, "name": "Dana", "embedding": PERSON}],
+    )
+    segments = [
+        {
+            "start": float(index * 5),
+            "end": float(index * 5 + 5),
+            "speaker": "Dana",
+            "recording_speaker_id": index + 1,
+            "text": f"line {index}",
+            "segment_source": "legacy",
+        }
+        for index in range(2)
+    ]
+    async with session_maker() as session:
+        await session.execute(
+            text("UPDATE transcripts SET segments = :segments WHERE id = 1"),
+            {"segments": json.dumps(segments)},
+        )
+        await session.commit()
+    extraction.append({"embedding": _at_cosine(0.2), "speech_seconds": 25.0})
+
+    response = await client.post(
+        "/api/v1/speakers/7/recalibrate",
+        json=[{"recording_id": REC, "start": 0.0, "end": 5.0}],
+    )
+
+    assert response.status_code == 200
+    assert await _refused_for(session_maker) == {"SPEAKER_00": (), "SPEAKER_01": (7,)}
+
+
+@pytest.mark.anyio
+async def test_a_split_drops_the_refusal_of_the_voiceprint_it_replaces(
+    client, session_maker, extraction
+) -> None:
+    """The guard refused Dana's speaker; the split gives it a new voiceprint.
+
+    The refusal described the old voiceprint, moved clips included, so it
+    goes with it, and what remains rebuilds Dana. Kept, it left the remainder
+    out and cleared her.
+    """
+    await _seed(
+        session_maker,
+        speakers=[
+            {
+                "label": "SPEAKER_00",
+                "global_speaker_id": 7,
+                "name": "Dana",
+                "refused_for": 7,
+            }
+        ],
+        people=[{"id": 7, "name": "Dana", "embedding": PERSON}],
+    )
+    async with session_maker() as session:
+        segments = [
+            {"start": 0.0, "end": 5.0, "speaker": "SPEAKER_00", "text": "theirs"},
+            {"start": 5.0, "end": 10.0, "speaker": "SPEAKER_00", "text": "mine"},
+        ]
+        await session.execute(
+            text("UPDATE transcripts SET segments = :segments WHERE id = 1"),
+            {"segments": json.dumps(segments)},
+        )
+        await session.commit()
+    remaining = _at_cosine(0.95)
+    extraction.append({"embedding": _at_cosine(0.2), "speech_seconds": 25.0})
+    extraction.append({"embedding": remaining, "speech_seconds": 25.0})
+
+    response = await client.post(
+        "/api/v1/speakers/7/split",
+        json={
+            "new_speaker_name": "Robin",
+            "segments": [{"recording_id": REC, "start": 0.0, "end": 5.0}],
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["original_library_voiceprint"] == _outcome("saved", 25.0)
+    assert await _person_voiceprint(session_maker, "Dana") == pytest.approx(remaining)
+    assert await _speaker_row(session_maker, "SPEAKER_00") == (
+        pytest.approx(remaining),
+        25.0,
+    )
+    assert (await _refused_for(session_maker))["SPEAKER_00"] == ()
+
+
+@pytest.mark.anyio
+async def test_a_split_leaves_out_a_refused_speaker_whose_voiceprint_it_keeps(
+    client, session_maker, extraction
+) -> None:
+    """Dana has two speakers in the split recording, and one was refused.
+
+    The split rebuilds neither speaker's voiceprint (only a recording's
+    single speaker of hers), so the refusal stands, and the remainder, which
+    holds the refused speaker's speech, stays out of her voiceprint.
+    """
+    await _seed(
+        session_maker,
+        speakers=[
+            {"label": "SPEAKER_00", "global_speaker_id": 7, "name": "Dana"},
+            {
+                "label": "SPEAKER_01",
+                "global_speaker_id": 7,
+                "name": "Dana",
+                "refused_for": 7,
+            },
+        ],
+        people=[{"id": 7, "name": "Dana", "embedding": PERSON}],
+    )
+
+    response = await _split_one_line_off(client, extraction, 25.0)
+
+    assert response.status_code == 200
+    # The left-out remainder is not offered at all, so there is no figure.
+    assert response.json()["original_library_voiceprint"] == _outcome(
+        "skipped_insufficient_speech", None
+    )
+    assert await _person_voiceprint(session_maker, "Dana") is None
+    refused = await _refused_for(session_maker)
+    assert (refused["SPEAKER_00"], refused["SPEAKER_01"]) == ((), (7,))
+
+
+@pytest.mark.anyio
+async def test_a_split_that_removes_what_the_guard_refused_rebuilds_the_person(
+    client, session_maker, extraction
+) -> None:
+    """The review's Dana: one speaker of hers holds Robin's speech too.
+
+    Naming the speaker Dana is refused by the guard, since the mixed
+    voiceprint sounds too unlike hers. Splitting Robin's clips off leaves 25 s
+    of Dana, which rebuilds her voiceprint; the refusal, made against the
+    mixed voiceprint, is gone with it.
+    """
+    mixed = _at_cosine(0.65)
+    await _seed(
+        session_maker,
+        speakers=[{"label": "SPEAKER_00", "embedding": mixed, "seconds": 50.0}],
+        people=[{"id": 7, "name": "Dana", "embedding": PERSON}],
+    )
+    async with session_maker() as session:
+        segments = [
+            {"start": 0.0, "end": 5.0, "speaker": "SPEAKER_00", "text": "Robin"},
+            {"start": 5.0, "end": 10.0, "speaker": "SPEAKER_00", "text": "Dana"},
+        ]
+        await session.execute(
+            text("UPDATE transcripts SET segments = :segments WHERE id = 1"),
+            {"segments": json.dumps(segments)},
+        )
+        await session.commit()
+
+    renamed = await client.put(
+        f"/api/v1/speakers/recordings/{REC}",
+        json={"diarization_label": "SPEAKER_00", "global_speaker_name": "Dana"},
+    )
+    assert renamed.json()[0]["library_voiceprint"]["status"] == "skipped_drift"
+    assert (await _refused_for(session_maker))["SPEAKER_00"] == (7,)
+
+    split = await _split_one_line_off(client, extraction, 25.0)
+
+    assert split.status_code == 200
+    assert split.json()["original_library_voiceprint"] == _outcome("saved", 25.0)
+    assert await _person_voiceprint(session_maker, "Dana") == pytest.approx(
+        _at_cosine(0.95)
+    )
+    assert (await _refused_for(session_maker))["SPEAKER_00"] == ()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "endpoint",
+    ["speakers/SPEAKER_00/voiceprint/extract", "voiceprints/extract-all"],
+)
+async def test_extracting_a_voiceprint_again_drops_the_old_ones_refusal(
+    client, session_maker, extraction, endpoint
+) -> None:
+    """A refusal describes the voiceprint the guard judged, not its successor.
+
+    The judged voiceprint was deleted since, which leaves the refusal in place
+    (and extract-all extracts only speakers who have none).
+    """
+    await _seed(
+        session_maker,
+        speakers=[
+            {
+                "label": "SPEAKER_00",
+                "global_speaker_id": 7,
+                "embedding": None,
+                "refused_for": 7,
+            }
+        ],
+        people=[{"id": 7, "name": "Dana", "embedding": PERSON}],
+    )
+    extraction.append({"embedding": _at_cosine(0.9), "speech_seconds": 30.0})
+
+    extracted = await client.post(f"/api/v1/speakers/recordings/{REC}/{endpoint}")
+
+    assert extracted.status_code == 200
+    assert await _refused_for(session_maker) == {"SPEAKER_00": ()}
+
+
+@pytest.mark.anyio
+async def test_a_split_into_an_existing_person_records_a_refused_fold_on_the_links(
+    client, session_maker, extraction
+) -> None:
+    robin = _at_cosine(0.3)
+    await _seed_split_across_two_recordings(session_maker, robin=robin)
+    unlike_robin = _at_cosine(0.95)
+    for voice in (unlike_robin, unlike_robin, _at_cosine(0.95), _at_cosine(0.95)):
+        extraction.append({"embedding": voice, "speech_seconds": 25.0})
+
+    response = await _split_across_two_recordings(client)
+
+    assert response.status_code == 200
+    assert response.json()["library_voiceprint"] == _outcome("skipped_drift", 25.0)
+    refused = await _refusals_by_id(session_maker)
+    async with session_maker() as session:
+        split_links = (
+            await session.execute(
+                text(
+                    "SELECT id FROM recording_speakers "
+                    "WHERE diarization_label LIKE 'SPLIT_%'"
+                )
+            )
+        ).scalars()
+        assert [refused[link] for link in split_links.all()] == [(8,), (8,)]
+
+
 async def _seed_split_with_other_recordings(
     session_maker, others: list[dict[str, Any]], *, locked: bool
 ) -> None:
@@ -1259,6 +1999,7 @@ async def _seed_split_with_other_recordings(
                     "seconds": other.get("seconds"),
                 },
             )
+            await _insert_refusals(session, offset, other.get("refused_for"))
         await session.commit()
 
 
@@ -1291,15 +2032,88 @@ async def _split_one_line_off(client, extraction, remaining_seconds: float) -> A
 
 
 @pytest.mark.anyio
-async def test_a_split_that_clears_the_original_keeps_the_current_version(
+@pytest.mark.parametrize("locked", [False, True])
+async def test_a_split_rebuilds_the_original_from_their_other_recordings(
+    client, session_maker, extraction, locked
+) -> None:
+    """Too little of Dana remains in the split recording, but not elsewhere.
+
+    Her voiceprint is rebuilt from the other recordings that qualify, pooled
+    as a recalibration pools them, rather than cleared. A refused link, a
+    short one and a stale one don't qualify. The lock stays as it was.
+    """
+    elsewhere = _at_cosine(0.9)
+    await _seed_split_with_other_recordings(
+        session_maker,
+        [
+            {"embedding": elsewhere, "seconds": 30.0},
+            {"embedding": _at_cosine(0.1), "seconds": 30.0, "refused_for": 7},
+            {"embedding": _at_cosine(0.1), "seconds": 12.0},
+            {"embedding": _at_cosine(0.1), "seconds": 30.0, "version": 1},
+        ],
+        locked=locked,
+    )
+
+    response = await _split_one_line_off(client, extraction, 12.0)
+
+    assert response.status_code == 200
+    assert response.json()["original_library_voiceprint"] == _outcome(
+        "saved_from_other_recordings", 30.0
+    )
+    assert await _person_row(session_maker, 7) == (
+        pytest.approx(elsewhere),
+        2,
+        locked,
+    )
+
+
+@pytest.mark.anyio
+async def test_a_split_rebuilds_the_original_from_no_merged_row(
     client, session_maker, extraction
 ) -> None:
-    """Cleared and unlocked, and still of the current version.
+    """A row merged into another keeps its voiceprint and link, not its place.
+
+    A merge made by processing folds nothing and leaves the merged row's own
+    voiceprint on it, so it is the cluster it was before the merge. The
+    rebuild leaves merged rows out, and so does the split's fallback.
+    """
+    elsewhere = _at_cosine(0.9)
+    await _seed_split_with_other_recordings(
+        session_maker, [{"embedding": elsewhere, "seconds": 30.0}], locked=False
+    )
+    async with session_maker() as session:
+        await session.execute(
+            text(
+                """
+                INSERT INTO recording_speakers (
+                    id, created_at, updated_at, public_id, recording_id,
+                    global_speaker_id, diarization_label, name, embedding,
+                    embedding_version, embedding_speech_seconds, merged_into_id,
+                    speaker_status, speaker_kind, identity_locked
+                ) VALUES (10, :now, :now, 'rs-10', 2, 7, 'SPEAKER_01', 'Dana',
+                          :embedding, 2, 30.0, 2, 'active', 'automated', 0)
+                """
+            ),
+            {"now": NOW, "embedding": json.dumps(_at_cosine(0.1))},
+        )
+        await session.commit()
+
+    response = await _split_one_line_off(client, extraction, 12.0)
+
+    assert response.json()["original_library_voiceprint"] == _outcome(
+        "saved_from_other_recordings", 30.0
+    )
+    assert await _person_voiceprint(session_maker, "Dana") == pytest.approx(elsewhere)
+
+
+@pytest.mark.anyio
+async def test_a_split_clears_the_original_only_when_no_link_qualifies(
+    client, session_maker, extraction
+) -> None:
+    """Cleared, and still of the current version, so the rebuild leaves it be.
 
     A voiceprint of no version reads as legacy, and the six-hourly rebuild
     would found a new one from Dana's links, unlocked, undoing the split.
-    Her other recording plays no part: a split rebuilds her only from what
-    remains in the recordings it splits.
     """
     await _seed_split_with_other_recordings(
         session_maker,
@@ -1379,6 +2193,125 @@ async def test_a_split_that_rebuilds_the_original_leaves_their_lock_as_it_was(
         2,
         False,
     )
+
+
+@pytest.mark.anyio
+async def test_a_split_never_rebuilds_the_original_from_the_split_recording_itself(
+    client, session_maker, extraction
+) -> None:
+    """Dana has two speakers in the split recording, with voiceprints from before.
+
+    Neither is rebuilt by the split (only a recording's single speaker is),
+    so both still hold the moved clips and must not stand in for her other
+    recordings.
+    """
+    await _seed(
+        session_maker,
+        speakers=[
+            {
+                "label": label,
+                "global_speaker_id": 7,
+                "name": "Dana",
+                "embedding": _at_cosine(0.2),
+                "seconds": 30.0,
+            }
+            for label in ("SPEAKER_00", "SPEAKER_01")
+        ],
+        people=[{"id": 7, "name": "Dana", "embedding": PERSON}],
+    )
+
+    response = await _split_one_line_off(client, extraction, 12.0)
+
+    assert response.json()["original_library_voiceprint"] == _outcome(
+        "skipped_insufficient_speech", 12.0
+    )
+    assert await _person_voiceprint(session_maker, "Dana") is None
+
+
+async def _rebuild_person(session_maker, person_id: int) -> None:
+    """Rebuild a person's voiceprint from their links, as the rebuild task does."""
+    from sqlmodel import Session as SyncSession
+
+    from backend.models.speaker import GlobalSpeaker
+    from backend.processing.embedding_version import EMBEDDING_METHOD_VERSION
+    from backend.worker.tasks.voiceprint_rebuild import _rebuild_global_speaker
+
+    engine = session_maker.kw["bind"]
+    async with AsyncSession(engine, sync_session_class=SyncSession) as session:
+        await session.run_sync(
+            lambda sync: _rebuild_global_speaker(
+                sync, sync.get(GlobalSpeaker, person_id), EMBEDDING_METHOD_VERSION
+            )
+        )
+        await session.commit()
+
+
+def _unit(vector: list[float]) -> list[float]:
+    norm = math.sqrt(sum(x * x for x in vector))
+    return [x / norm for x in vector]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    # Dana's voiceprint, the refused target's, the source's, and the people
+    # the target is refused for after the merge.
+    "case",
+    [
+        pytest.param(
+            (_at_cosine(0.1), PERSON, _at_cosine(0.95), (7,)), id="refused-again"
+        ),
+        pytest.param(
+            (PERSON, _at_cosine(0.65), _at_cosine(0.986), ()), id="let-back-in"
+        ),
+        # A fold the guard refuses changes nothing, nor does the refusal.
+        pytest.param(
+            (_at_cosine(0.1), PERSON, _at_cosine(0.65), (7,)), id="fold-refused"
+        ),
+        # Dana has no voiceprint to judge the result against.
+        pytest.param((None, PERSON, _at_cosine(0.95), (7,)), id="no-voiceprint"),
+    ],
+)
+async def test_a_merge_into_a_refused_speaker_gets_a_new_verdict(
+    client, session_maker, write_path, case
+) -> None:
+    """SPEAKER_00 was refused for Dana. Merging SPEAKER_01 into it folds more
+    speech into its voiceprint without offering it to anyone, so the guard
+    judges the result against Dana. While it is refused, a rebuild of Dana
+    from her links leaves it out; once let back in, the rebuild uses it."""
+    dana, target, source, refused_after = case
+    await _seed(
+        session_maker,
+        speakers=[
+            {
+                "label": "SPEAKER_00",
+                "global_speaker_id": 7,
+                "embedding": target,
+                "seconds": 25.0,
+                "refused_for": 7,
+            },
+            {"label": "SPEAKER_01", "embedding": source, "seconds": 25.0},
+        ],
+        people=[{"id": 7, "name": "Dana", "embedding": dana}],
+    )
+
+    merged = await client.post(
+        f"/api/v1/speakers/recordings/{REC}/merge",
+        json={
+            "target_speaker_label": "SPEAKER_00",
+            "source_speaker_label": "SPEAKER_01",
+        },
+    )
+    await _rebuild_person(session_maker, 7)
+
+    assert merged.status_code == 200
+    assert (await _refused_for(session_maker))["SPEAKER_00"] == refused_after
+    if refused_after:
+        assert await _person_voiceprint(session_maker, "Dana") == dana
+    else:
+        merged_voiceprint, _ = await _speaker_row(session_maker, "SPEAKER_00")
+        assert await _person_voiceprint(session_maker, "Dana") == pytest.approx(
+            _unit(merged_voiceprint)
+        )
 
 
 @pytest.mark.anyio

@@ -37,16 +37,19 @@ def update_speaker_embedding_task(
         )
 
         if voiceprint:
-            _learn_recording_speaker_voiceprint(target_recording_speaker, voiceprint)
+            gs = (
+                session.get(GlobalSpeaker, target_recording_speaker.global_speaker_id)
+                if target_recording_speaker.global_speaker_id
+                else None
+            )
+            _learn_recording_speaker_voiceprint(
+                target_recording_speaker, voiceprint, gs
+            )
             session.add(target_recording_speaker)
 
-            if target_recording_speaker.global_speaker_id:
-                gs = session.get(
-                    GlobalSpeaker, target_recording_speaker.global_speaker_id
-                )
-                if gs:
-                    _learn_person_voiceprint(gs, voiceprint)
-                    session.add(gs)
+            if gs:
+                _learn_person_voiceprint(gs, voiceprint)
+                session.add(gs)
 
             session.commit()
             logger.info(
@@ -60,7 +63,7 @@ def update_speaker_embedding_task(
         session.rollback()
 
 
-def _learn_recording_speaker_voiceprint(row, voiceprint) -> None:
+def _learn_recording_speaker_voiceprint(row, voiceprint, person) -> None:
     """Blend one segment's voiceprint into a recording speaker's.
 
     The speaker's speech figure is never added to. It describes the extraction
@@ -68,11 +71,20 @@ def _learn_recording_speaker_voiceprint(row, voiceprint) -> None:
     segment moved back and forth four times lift a 2 s speaker to 20 s and
     found a library voiceprint from it. The figure changes only when the
     segment's voiceprint becomes the speaker's outright, because the speaker
-    had none or only a stale one.
+    had none or only a stale one. A voiceprint the segment changes is judged
+    again against ``person``, the person the speaker is linked to, before the
+    segment is offered to their voiceprint (``judge_drift``).
     """
-    from backend.processing.embedding import VoiceprintBlend, blend_voiceprint
+    from backend.processing.embedding import (
+        VoiceprintBlend,
+        blend_voiceprint,
+        judge_drift,
+    )
 
     blend = blend_voiceprint(row, voiceprint.embedding, voiceprint.version, alpha=0.5)
+    if blend in (VoiceprintBlend.REFUSED, VoiceprintBlend.KEPT):
+        return
+    judge_drift(row, person)
     if blend in (VoiceprintBlend.COPIED, VoiceprintBlend.REPLACED):
         row.embedding_speech_seconds = voiceprint.speech_seconds
 

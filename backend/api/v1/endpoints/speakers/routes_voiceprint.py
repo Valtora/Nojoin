@@ -19,6 +19,7 @@ from backend.processing.embedding import (
     UI_STRONG_MATCH_THRESHOLD,
     RecordingVoiceprint,
     cosine_similarity,
+    forget_drift_verdict,
     offer_linked_voiceprint,
 )
 from backend.processing.embedding_version import EMBEDDING_METHOD_VERSION
@@ -120,6 +121,7 @@ async def extract_voiceprint(
     rec_speaker.embedding = embedding
     rec_speaker.embedding_version = EMBEDDING_METHOD_VERSION
     rec_speaker.embedding_speech_seconds = voiceprint.speech_seconds
+    forget_drift_verdict(rec_speaker)
     db.add(rec_speaker)
     await db.commit()
     await db.refresh(rec_speaker)
@@ -420,6 +422,7 @@ async def extract_all_voiceprints(
         rec_speaker.embedding = embedding
         rec_speaker.embedding_version = EMBEDDING_METHOD_VERSION
         rec_speaker.embedding_speech_seconds = voiceprint.speech_seconds
+        forget_drift_verdict(rec_speaker)
         db.add(rec_speaker)
 
         matched_speaker = None

@@ -15,6 +15,7 @@ from backend.models.speaker import RecordingSpeaker
 from backend.models.timeline_note import TimelineNote
 from backend.models.transcript import Transcript
 from backend.services.timeline_note_service import RecordingTimelineNotes
+from backend.tests.sqlite_schemas import RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA
 from backend.utils.context_window import ContextWindowExceededError
 from backend.utils.llm_config import ResolvedLLMConfig
 from backend.utils.meeting_intelligence import AutomaticMeetingIntelligenceResult
@@ -182,6 +183,7 @@ def _create_worker_ai_database(tmp_path: Path) -> Any:
     with engine.begin() as connection:
         for statement in BASE_SCHEMA.strip().split(";\n\n"):
             connection.execute(text(statement))
+        connection.execute(text(RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA))
 
         connection.execute(
             text(

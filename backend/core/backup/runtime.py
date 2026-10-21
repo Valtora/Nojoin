@@ -31,7 +31,11 @@ from backend.models.document_page import DocumentPage  # noqa: F401
 from backend.models.notes_template import NotesTemplate  # noqa: F401
 from backend.models.people_tag import PeopleTag, PeopleTagLink  # noqa: F401
 from backend.models.recording import Recording  # noqa: F401
-from backend.models.speaker import GlobalSpeaker, RecordingSpeaker  # noqa: F401
+from backend.models.speaker import (  # noqa: F401
+    GlobalSpeaker,
+    RecordingSpeaker,
+    RecordingSpeakerDriftRefusal,
+)
 from backend.models.tag import RecordingTag, Tag  # noqa: F401
 from backend.models.task import UserTask, UserTaskRecording, UserTaskTag  # noqa: F401
 from backend.models.timeline_note import TimelineNote, TimelineNoteTombstone
@@ -57,6 +61,7 @@ MODELS: List[Tuple[str, Type[SQLModel]]] = [
     ("recordings", Recording),
     ("user_task_recordings", UserTaskRecording),
     ("recording_speakers", RecordingSpeaker),
+    ("recording_speaker_drift_refusals", RecordingSpeakerDriftRefusal),
     ("recording_tags", RecordingTag),
     ("transcripts", Transcript),
     # After transcripts, so a version 2 archive's transcript, whose user_notes

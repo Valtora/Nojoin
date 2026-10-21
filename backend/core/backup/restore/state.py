@@ -39,6 +39,8 @@ class _RestoreState:
     existing_recordings_loaded: bool = False
     # old_id set for recordings skipped under the safe-merge strategy; their children skip too.
     skipped_recording_ids: Set[int] = field(default_factory=set)
+    # old_id set for the recording speakers of those recordings, whose children skip too.
+    skipped_recording_speaker_ids: Set[int] = field(default_factory=set)
     # Deferred self-referential remaps for recording-speaker merges (new_id, old_target_id).
     pending_recording_speaker_merges: List[Tuple[int, int]] = field(
         default_factory=list

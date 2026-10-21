@@ -30,6 +30,7 @@ from backend.tests.sqlite_schemas import (
     P_TAGS_SCHEMA,
     PEOPLE_TAGS_SCHEMA,
     RECORDING_SPEAKER_ALIASES_SCHEMA,
+    RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA,
     RECORDING_SPEAKERS_SCHEMA,
     RECORDINGS_SCHEMA,
 )
@@ -180,6 +181,7 @@ def _learn_segment(monkeypatch, tmp_path, person, incoming, seconds):
         embedding_version=2,
         embedding_speech_seconds=10.0,
         global_speaker_id=7,
+        drift_refusals=[],
     )
     monkeypatch.setattr(
         embedding_core,
@@ -284,6 +286,81 @@ def test_segment_learning_reports_a_locked_voiceprint_as_skipped(
 
 
 @pytest.mark.parametrize(
+    # The person's voiceprint and version (None: the speaker is linked to no
+    # one), the refused speaker's voiceprint, the segment's, and the people
+    # the speaker is refused for afterwards.
+    "case",
+    [
+        pytest.param(
+            ((PERSON, 2), _at_cosine(0.5), _at_cosine(0.45), [7]), id="refused-again"
+        ),
+        pytest.param(
+            ((PERSON, 2), _at_cosine(0.65), _at_cosine(0.986), []), id="let-back-in"
+        ),
+        # A segment the speaker's own voiceprint refuses changes nothing.
+        pytest.param(((PERSON, 2), _at_cosine(0.5), PERSON, [7]), id="fold-refused"),
+        # No voiceprint of the person's to judge the result against: none at
+        # all, or one of an older extraction method that it can't be scored
+        # against, though it would pass if it were.
+        pytest.param(
+            ((None, None), _at_cosine(0.5), _at_cosine(0.45), [7]), id="no-voiceprint"
+        ),
+        pytest.param(
+            ((PERSON, 1), _at_cosine(0.65), _at_cosine(0.986), [7]),
+            id="stale-voiceprint",
+        ),
+        pytest.param((None, _at_cosine(0.5), _at_cosine(0.45), [7]), id="unlinked"),
+    ],
+)
+def test_a_segment_moved_onto_a_refused_speaker_gets_a_new_verdict(
+    monkeypatch, tmp_path, case
+) -> None:
+    """The speaker was refused for person 7. A segment folded in changes its
+    voiceprint, and the guard judges the result against the person it is
+    linked to: still refused, or let back in. Where there is no one to judge
+    it against, the refusal stays, since the speech the guard refused is
+    still the speaker's."""
+    from backend.processing.embedding import RecordingVoiceprint
+    from backend.worker.tasks.embeddings import update_speaker_embedding_task
+
+    person, speaker_voiceprint, segment, refused_after = case
+    audio = tmp_path / "meeting.wav"
+    audio.write_bytes(b"wav")
+    recording = SimpleNamespace(id=1, audio_path=str(audio), proxy_path=None)
+    linked = person is not None
+    if linked:
+        person_voiceprint, person_version = person
+        person = SimpleNamespace(
+            id=7,
+            embedding=list(person_voiceprint) if person_voiceprint else None,
+            embedding_version=person_version,
+            is_voiceprint_locked=False,
+        )
+    speaker = SimpleNamespace(
+        id=9,
+        diarization_label="SPEAKER_00",
+        embedding=list(speaker_voiceprint),
+        embedding_version=2,
+        embedding_speech_seconds=25.0,
+        global_speaker_id=7 if linked else None,
+        drift_refusals=[SimpleNamespace(global_speaker_id=7)],
+    )
+    monkeypatch.setattr(
+        embedding_core,
+        "extract_embedding_for_segments",
+        lambda *a, **k: RecordingVoiceprint(embedding=segment, speech_seconds=4.5),
+    )
+
+    update_speaker_embedding_task._session = _FakeSession(recording, speaker, person)
+    try:
+        update_speaker_embedding_task.run(1, 0.0, 4.5, 9)
+    finally:
+        update_speaker_embedding_task._session = None
+
+    assert [r.global_speaker_id for r in speaker.drift_refusals] == refused_after
+
+
+@pytest.mark.parametrize(
     ("speaker_voiceprint", "speaker_seconds", "speaker_after"),
     [
         # A fold keeps the speaker's own extraction figure, however often a
@@ -309,6 +386,7 @@ def test_moving_a_segment_onto_a_speaker_never_adds_to_its_speech(
         embedding_version=2 if speaker_voiceprint else None,
         embedding_speech_seconds=speaker_seconds,
         global_speaker_id=None,
+        drift_refusals=[],
     )
     monkeypatch.setattr(
         embedding_core,
@@ -342,6 +420,7 @@ def session():
             RECORDINGS_SCHEMA,
             GLOBAL_SPEAKERS_SCHEMA,
             RECORDING_SPEAKERS_SCHEMA,
+            RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA,
             RECORDING_SPEAKER_ALIASES_SCHEMA,
             PEOPLE_TAGS_SCHEMA,
             P_TAGS_SCHEMA,
@@ -538,3 +617,58 @@ def test_the_pipeline_records_the_speech_behind_each_voiceprint(session) -> None
     )
     assert updated_id == 1
     assert seconds == {"SPEAKER_01": 31.0, "SPEAKER_02": 24.0, "SPEAKER_03": 4.0}
+
+
+def test_reprocessing_drops_the_refusal_of_the_voiceprint_it_replaces(session) -> None:
+    """A run that re-extracts a speaker gives it this run's voiceprint.
+
+    The guard refused the old one for person 7; the new one has not been
+    judged, so its refusal goes. Folding a confident match into the person
+    changes no speaker's voiceprint, so another speaker's refusal for them
+    stays.
+    """
+    from backend.worker.tasks.speaker_assignment import (
+        _LabelWork,
+        _learn_from_confident_match,
+        _persist_speaker,
+        _ResolvedIdentity,
+    )
+
+    _add_person(session, 7, PERSON)
+    _add_speaker(session, 1, PERSON, 30.0)
+    _add_speaker(session, 2, _at_cosine(0.1), 30.0)
+    session.execute(text("UPDATE recording_speakers SET global_speaker_id = 7"))
+    session.execute(
+        text(
+            "INSERT INTO recording_speaker_drift_refusals "
+            "(recording_speaker_id, global_speaker_id) VALUES (1, 7), (2, 7)"
+        )
+    )
+    session.commit()
+    person = session.get(GlobalSpeaker, 7)
+    new_voiceprint = _at_cosine(0.95)
+
+    _learn_from_confident_match(session, person, new_voiceprint, 0.95)
+    _persist_speaker(
+        session,
+        _LabelWork(
+            recording=session.get(Recording, 1),
+            label="SPEAKER_01",
+            identity=_ResolvedIdentity(name="Person 7", global_speaker_id=7),
+            embedding=new_voiceprint,
+            speech_seconds=30.0,
+            existing_speaker=session.get(RecordingSpeaker, 1),
+        ),
+    )
+    session.commit()
+
+    refused = session.execute(
+        text(
+            "SELECT recording_speaker_id, global_speaker_id "
+            "FROM recording_speaker_drift_refusals"
+        )
+    ).all()
+    assert [tuple(row) for row in refused] == [(2, 7)]
+    assert session.get(GlobalSpeaker, 7).embedding == pytest.approx(
+        _blend(PERSON, new_voiceprint, 0.1)
+    )

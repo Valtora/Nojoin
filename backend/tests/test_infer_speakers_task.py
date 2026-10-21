@@ -11,7 +11,10 @@ from sqlmodel import Session
 
 import backend.utils.llm_config as llm_config_module
 import backend.worker.tasks as tasks_module
-from backend.tests.sqlite_schemas import TIMELINE_NOTES_SCHEMA
+from backend.tests.sqlite_schemas import (
+    RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA,
+    TIMELINE_NOTES_SCHEMA,
+)
 from backend.utils.meeting_notes import MeetingEventContext
 from backend.utils.speaker_name_suggestions import (
     SpeakerInferenceResult,
@@ -167,6 +170,7 @@ def _create_infer_speakers_task_database(
     with engine.begin() as connection:
         for statement in BASE_SCHEMA.strip().split(";\n\n"):
             connection.execute(text(statement))
+        connection.execute(text(RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA))
 
         connection.execute(
             text(

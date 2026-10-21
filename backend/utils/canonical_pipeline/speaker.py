@@ -890,8 +890,16 @@ def merge_recording_speakers_by_label(
 
     added_seconds = None
     if source_speaker.embedding:
+        person = (
+            session.get(GlobalSpeaker, target_speaker.global_speaker_id)
+            if target_speaker.global_speaker_id
+            else None
+        )
         added_seconds = fold_recording_voiceprint(
-            target_speaker, RecordingVoiceprint.of_speaker(source_speaker), alpha=0.5
+            target_speaker,
+            RecordingVoiceprint.of_speaker(source_speaker),
+            alpha=0.5,
+            person=person,
         )
         session.add(target_speaker)
 

@@ -69,7 +69,10 @@ from backend.models.speaker import GlobalSpeaker
 from backend.models.timeline_note import TimelineNote
 from backend.models.transcript import Transcript
 from backend.models.user import User
-from backend.tests.sqlite_schemas import TIMELINE_NOTES_SCHEMA
+from backend.tests.sqlite_schemas import (
+    RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA,
+    TIMELINE_NOTES_SCHEMA,
+)
 
 TEST_TIMESTAMP = datetime(2026, 6, 1, 12, 0, 0)
 
@@ -475,6 +478,7 @@ async def session_maker():
     async with engine.begin() as conn:
         for stmt in SCHEMA_STATEMENTS:
             await conn.execute(text(stmt))
+        await conn.execute(text(RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA))
     factory = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     yield factory
     await engine.dispose()
