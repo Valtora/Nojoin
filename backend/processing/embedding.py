@@ -513,8 +513,10 @@ def judge_drift(speaker: Any, person: Any) -> None:
     pass lifts only their refusal. With no person, or no voiceprint of theirs
     of the same version to compare with, there is no verdict, and the
     refusals stay as they were. A lock makes no difference, since it guards
-    the person's voiceprint and this leaves it alone. A verdict is logged
-    with the link's and the person's ids, so a refusal can be traced.
+    the person's voiceprint and this leaves it alone, so a link the lock keeps
+    out of that voiceprint is judged here too (``offer_linked_voiceprint``).
+    A verdict is logged with the link's and the person's ids, so a refusal
+    can be traced.
     """
     if person is None or not person.embedding or not speaker.embedding:
         return
@@ -544,8 +546,9 @@ def record_drift_verdict(
     for anyone else stay: a save into Eli says nothing about Dana's
     voiceprint, and a refusal for Eli does not replace one for Dana, so a link
     refused for Dana is still refused when it comes back to her. Any other
-    outcome (a lock, too little speech, an outdated voiceprint) is no verdict,
-    so the refusals stay as they were.
+    outcome (a lock, too little speech, an outdated voiceprint) is no verdict
+    here, so the refusals stay as they were; ``offer_linked_voiceprint`` judges
+    a link a lock keeps out instead.
     """
     if update.status == VoiceprintStatus.SKIPPED_DRIFT:
         for speaker in speakers:
@@ -555,18 +558,39 @@ def record_drift_verdict(
             lift_drift_refusal(speaker, person.id)
 
 
+def lock_blocks_user_link(person: Any) -> bool:
+    """Whether a person's lock keeps a link the user makes out of their voiceprint.
+
+    A rename and **Add to People** into an existing person take this rule on
+    every write path. The lock blocks any change to a voiceprint the person
+    has, a stale one included, so the link is ``skipped_locked``. A locked
+    person with no voiceprint still gets one from it: the voiceprint rebuild
+    can found one from their links whatever the lock, so refusing it would
+    only delay it. Automated links (auto-applied names, segment learning) are
+    blocked by the lock outright.
+    """
+    return bool(person.is_voiceprint_locked and person.embedding)
+
+
 def offer_linked_voiceprint(
     person: Any, speaker: Any, *, alpha: float, locked: bool = False
 ) -> LibraryVoiceprintUpdate:
     """Offer a recording speaker's voiceprint to the person it is linked to.
 
     ``update_library_voiceprint`` decides the outcome, and the drift guard's
-    verdict is kept on the link (``record_drift_verdict``).
+    verdict is kept on the link (``record_drift_verdict``). A lock leaves the
+    person's voiceprint as it is, but the link is still judged against it
+    (``judge_drift``): after an extraction-method change the voiceprint
+    rebuild pools a locked person's links without the guard, so a refusal
+    the lock hid would let a wrong link into their rebuilt voiceprint.
     """
     update = update_library_voiceprint(
         person, RecordingVoiceprint.of_speaker(speaker), alpha=alpha, locked=locked
     )
-    record_drift_verdict([speaker], person, update)
+    if update.status == VoiceprintStatus.SKIPPED_LOCKED:
+        judge_drift(speaker, person)
+    else:
+        record_drift_verdict([speaker], person, update)
     return update
 
 

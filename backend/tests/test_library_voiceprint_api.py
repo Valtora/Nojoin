@@ -213,7 +213,8 @@ async def _seed(
                     INSERT INTO global_speakers (
                         id, created_at, updated_at, user_id, name, embedding,
                         embedding_version, is_voiceprint_locked
-                    ) VALUES (:id, :now, :now, 1, :name, :embedding, 2, :locked)
+                    ) VALUES (:id, :now, :now, 1, :name, :embedding, :version,
+                              :locked)
                     """
                 ),
                 {
@@ -225,6 +226,8 @@ async def _seed(
                         if person.get("embedding") is not None
                         else None
                     ),
+                    # 1 is a voiceprint from an older extraction method.
+                    "version": person.get("version", 2),
                     "locked": int(person.get("locked", False)),
                 },
             )
@@ -546,21 +549,9 @@ async def test_rename_folds_into_a_voiceprint_only_past_the_drift_guard(
 
 
 @pytest.mark.anyio
-async def test_a_lock_blocks_a_fold_on_the_legacy_path_but_not_a_first_voiceprint(
-    client, session_maker, monkeypatch
+async def test_a_lock_blocks_a_fold_but_not_a_first_voiceprint(
+    client, session_maker, write_path
 ) -> None:
-    from backend.api.v1.endpoints import speakers as speakers_module
-
-    original_get = speakers_module.config_manager.get
-    monkeypatch.setattr(
-        speakers_module.config_manager,
-        "get",
-        lambda key, default=None: (
-            False
-            if key == "enable_canonical_transcript_writes"
-            else original_get(key, default)
-        ),
-    )
     voice = _at_cosine(0.95)
     await _seed(
         session_maker,
@@ -587,6 +578,84 @@ async def test_a_lock_blocks_a_fold_on_the_legacy_path_but_not_a_first_voiceprin
     assert await _person_voiceprint(session_maker, "Dana") == PERSON
     assert eli.json()[0]["library_voiceprint"] == _outcome("saved", 30.0)
     assert await _person_voiceprint(session_maker, "Eli") == pytest.approx(voice)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    # The speaker's cosine to Dana, and the people it is refused for before
+    # the rename and after it.
+    "case",
+    [
+        pytest.param((0.65, None, (7,)), id="unlike-dana-refused"),
+        pytest.param((0.75, 7, ()), id="like-dana-let-back-in"),
+    ],
+)
+async def test_a_rename_to_a_locked_person_still_gets_the_guards_verdict(
+    client, session_maker, write_path, case
+) -> None:
+    """The lock keeps Dana's voiceprint as it is, whether or not the speaker
+    sounds like her, and the guard still judges the link against it. A voice
+    unlike hers is refused, so a rebuild of her voiceprint leaves it out; one
+    like hers lifts an earlier refusal."""
+    cosine, refused_before, refused_after = case
+    await _seed(
+        session_maker,
+        speakers=[
+            {
+                "label": "SPEAKER_00",
+                "embedding": _at_cosine(cosine),
+                "seconds": 30.0,
+                "refused_for": refused_before,
+            }
+        ],
+        people=[{"id": 7, "name": "Dana", "embedding": PERSON, "locked": True}],
+    )
+
+    response = await client.put(
+        f"/api/v1/speakers/recordings/{REC}",
+        json={"diarization_label": "SPEAKER_00", "global_speaker_name": "Dana"},
+    )
+
+    assert response.json()[0]["library_voiceprint"] == _outcome("skipped_locked", 30.0)
+    assert await _person_voiceprint(session_maker, "Dana") == PERSON
+    assert await _refused_for(session_maker) == {"SPEAKER_00": refused_after}
+
+
+@pytest.mark.anyio
+async def test_a_link_refused_under_a_lock_stays_out_of_the_rebuilt_voiceprint(
+    client, session_maker, write_path
+) -> None:
+    """After an extraction-method change Dana's locked voiceprint is stale,
+    and the rebuild pools her links without running the guard again.
+
+    SPEAKER_00, a stranger renamed to Dana while she was locked, was refused
+    then, so the rebuild uses only SPEAKER_01, her own. Without a verdict
+    under the lock, the stranger would be averaged into her voiceprint.
+    """
+    own = _at_cosine(0.9)
+    await _seed(
+        session_maker,
+        speakers=[
+            {"label": "SPEAKER_00", "embedding": _at_cosine(0.1), "seconds": 30.0},
+            {
+                "label": "SPEAKER_01",
+                "global_speaker_id": 7,
+                "embedding": own,
+                "seconds": 30.0,
+            },
+        ],
+        people=[{"id": 7, "name": "Dana", "embedding": PERSON, "locked": True}],
+    )
+
+    renamed = await client.put(
+        f"/api/v1/speakers/recordings/{REC}",
+        json={"diarization_label": "SPEAKER_00", "global_speaker_name": "Dana"},
+    )
+    await _make_voiceprint_stale(session_maker, 7)
+    await _rebuild_stale_people(session_maker)
+
+    assert renamed.json()[0]["library_voiceprint"]["status"] == "skipped_locked"
+    assert await _person_voiceprint(session_maker, "Dana") == pytest.approx(own)
 
 
 @pytest.mark.anyio
@@ -652,6 +721,47 @@ async def test_promote_to_an_existing_person_folds_only_past_the_drift_guard(
     assert await _person_voiceprint(session_maker, "Dana") == pytest.approx(expected)
     assert await _refused_for(session_maker) == {
         "SPEAKER_00": (7,) if status == "skipped_drift" else ()
+    }
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("dana_voiceprint", "status"),
+    [(PERSON, "skipped_locked"), (None, "saved")],
+    ids=["has-one", "has-none"],
+)
+async def test_promoting_into_a_locked_person_leaves_their_voiceprint_alone(
+    client, session_maker, dana_voiceprint, status
+) -> None:
+    """**Add to People** on a speaker named after a locked Dana links it to
+    her. Her voiceprint stays as it is, and the guard still refuses the voice
+    unlike it; a locked person with no voiceprint gets one from the link."""
+    voice = _at_cosine(0.65)
+    await _seed(
+        session_maker,
+        speakers=[
+            {
+                "label": "SPEAKER_00",
+                "embedding": voice,
+                "seconds": 40.0,
+                "local_name": "Dana",
+                "name": None,
+            }
+        ],
+        people=[
+            {"id": 7, "name": "Dana", "embedding": dana_voiceprint, "locked": True}
+        ],
+    )
+
+    response = await client.post(
+        f"/api/v1/speakers/recordings/{REC}/speakers/SPEAKER_00/promote"
+    )
+
+    assert response.json()["library_voiceprint"] == _outcome(status, 40.0)
+    expected = PERSON if dana_voiceprint else pytest.approx(voice)
+    assert await _person_voiceprint(session_maker, "Dana") == expected
+    assert await _refused_for(session_maker) == {
+        "SPEAKER_00": (7,) if dana_voiceprint else ()
     }
 
 
@@ -1016,26 +1126,15 @@ async def test_merging_people_brings_back_a_refusal_for_the_target(
 
 @pytest.mark.anyio
 async def test_linking_a_speaker_back_without_a_verdict_keeps_its_refusal(
-    client, session_maker, monkeypatch
+    client, session_maker, write_path
 ) -> None:
     """A refusal for Dana applies again when its speaker is hers again.
 
-    The speaker was refused for Dana and moved to Eli. Renamed back to Dana on
-    the legacy path, whose lock refuses the fold, it gets no new verdict, and
-    its voiceprint is still the one the guard refused for her.
+    The speaker was refused for Dana and moved to Eli. Renamed back to Dana,
+    whose locked voiceprint is from an older extraction method, it gets no new
+    verdict: the lock keeps it out, and the guard can't compare voiceprints of
+    two methods. Its voiceprint is still the one the guard refused for her.
     """
-    from backend.api.v1.endpoints import speakers as speakers_module
-
-    original_get = speakers_module.config_manager.get
-    monkeypatch.setattr(
-        speakers_module.config_manager,
-        "get",
-        lambda key, default=None: (
-            False
-            if key == "enable_canonical_transcript_writes"
-            else original_get(key, default)
-        ),
-    )
     await _seed(
         session_maker,
         speakers=[
@@ -1048,7 +1147,13 @@ async def test_linking_a_speaker_back_without_a_verdict_keeps_its_refusal(
             }
         ],
         people=[
-            {"id": 7, "name": "Dana", "embedding": PERSON, "locked": True},
+            {
+                "id": 7,
+                "name": "Dana",
+                "embedding": PERSON,
+                "version": 1,
+                "locked": True,
+            },
             {"id": 8, "name": "Eli"},
         ],
     )
@@ -1064,28 +1169,16 @@ async def test_linking_a_speaker_back_without_a_verdict_keeps_its_refusal(
 
 @pytest.mark.anyio
 async def test_a_save_into_someone_else_keeps_the_refusal_for_a_return(
-    client, session_maker, monkeypatch
+    client, session_maker, write_path
 ) -> None:
     """Refused for Dana, saved into Eli, renamed back to Dana: still refused.
 
-    Saving the speaker into Eli is Eli's verdict, not Dana's, so the refusal
-    for Dana stays. The legacy rename back to a locked Dana gives no new
-    verdict, and without the refusal the speaker would be pooled into her
-    voiceprint again.
+    The lock keeps the speaker out of Dana's voiceprint, and the guard refuses
+    it. Saving it into Eli is Eli's verdict, not Dana's, so the refusal for
+    Dana stays. After an extraction-method change her locked voiceprint is
+    stale, so the rename back gives no new verdict, and without the refusal
+    the speaker would be pooled into her rebuilt voiceprint.
     """
-    from backend.api.v1.endpoints import speakers as speakers_module
-
-    legacy = {"on": False}
-    original_get = speakers_module.config_manager.get
-    monkeypatch.setattr(
-        speakers_module.config_manager,
-        "get",
-        lambda key, default=None: (
-            not legacy["on"]
-            if key == "enable_canonical_transcript_writes"
-            else original_get(key, default)
-        ),
-    )
     await _seed(
         session_maker,
         speakers=[
@@ -1104,10 +1197,10 @@ async def test_a_save_into_someone_else_keeps_the_refusal_for_a_return(
         )
         return response.json()[0]["library_voiceprint"]["status"]
 
-    assert await rename("Dana") == "skipped_drift"
+    assert await rename("Dana") == "skipped_locked"
     assert await rename("Eli") == "saved"
     assert await _links(session_maker) == {"SPEAKER_00": (8, (7,))}
-    legacy["on"] = True
+    await _make_voiceprint_stale(session_maker, 7)
     assert await rename("Dana") == "skipped_locked"
     assert await _links(session_maker) == {"SPEAKER_00": (7, (7,))}
 
@@ -2369,6 +2462,36 @@ async def _rebuild_person(session_maker, person_id: int) -> None:
         await session.run_sync(
             lambda sync: _rebuild_global_speaker(
                 sync, sync.get(GlobalSpeaker, person_id), EMBEDDING_METHOD_VERSION
+            )
+        )
+        await session.commit()
+
+
+async def _make_voiceprint_stale(session_maker, person_id: int) -> None:
+    """Leave a person's voiceprint as an extraction-method change leaves it."""
+    async with session_maker() as session:
+        await session.execute(
+            text("UPDATE global_speakers SET embedding_version = 1 WHERE id = :id"),
+            {"id": person_id},
+        )
+        await session.commit()
+
+
+async def _rebuild_stale_people(session_maker) -> None:
+    """Rebuild the people whose voiceprints are stale, as the rebuild task does."""
+    from sqlmodel import Session as SyncSession
+
+    from backend.processing.embedding_version import EMBEDDING_METHOD_VERSION
+    from backend.worker.tasks.voiceprint_rebuild import _rebuild_people
+
+    engine = session_maker.kw["bind"]
+    async with AsyncSession(engine, sync_session_class=SyncSession) as session:
+        await session.run_sync(
+            lambda sync: _rebuild_people(
+                sync,
+                user_id=1,
+                affected_global_ids=set(),
+                method_version=EMBEDDING_METHOD_VERSION,
             )
         )
         await session.commit()

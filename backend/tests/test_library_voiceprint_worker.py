@@ -538,7 +538,7 @@ def test_an_auto_applied_name_suggestion_never_changes_a_locked_voiceprint(
 ) -> None:
     """Pins upstream's lock on auto-applied suggestions; it can't fail first.
 
-    The suggestion path keeps ``respect_voiceprint_lock=True``, so a locked
+    The suggestion path is an automated link, not a ``user_link``, so a locked
     person is neither folded into nor given a first voiceprint, however much
     speech and however close the voice. The floor's helper took over that
     decision, so this keeps it from being lost.
@@ -572,6 +572,46 @@ def test_an_auto_applied_name_suggestion_never_changes_a_locked_voiceprint(
     assert session.get(GlobalSpeaker, 7).embedding == PERSON
     assert session.get(GlobalSpeaker, 8).embedding is None
     assert session.get(RecordingSpeaker, 1).global_speaker_id == 7
+
+
+def test_an_auto_applied_name_into_a_locked_person_is_still_judged(session) -> None:
+    """The lock keeps person 7's voiceprint as it is, and the guard still
+    judges the link against it: speaker 1, unlike them, is refused, so a
+    rebuild of their voiceprint from links leaves it out. Speaker 2, like
+    them, gains no refusal."""
+    from backend.worker.tasks.intelligence import (
+        _auto_apply_persisted_speaker_name_suggestions,
+    )
+
+    _add_person(session, 7, PERSON, locked=True)
+    _add_speaker(session, 1, _at_cosine(0.1), 40.0)
+    _add_speaker(session, 2, _at_cosine(0.95), 40.0)
+    session.commit()
+
+    _auto_apply_persisted_speaker_name_suggestions(
+        session,
+        recording=session.get(Recording, 1),
+        speakers=[session.get(RecordingSpeaker, i) for i in (1, 2)],
+        persisted=[
+            {
+                "suggested_name": "Person 7",
+                "recording_speaker_id": speaker_id,
+                "suggested_global_speaker_id": 7,
+                "confidence": 0.9,
+            }
+            for speaker_id in (1, 2)
+        ],
+    )
+    session.commit()
+
+    refused = session.execute(
+        text(
+            "SELECT recording_speaker_id, global_speaker_id "
+            "FROM recording_speaker_drift_refusals"
+        )
+    ).all()
+    assert [tuple(row) for row in refused] == [(1, 7)]
+    assert session.get(GlobalSpeaker, 7).embedding == PERSON
 
 
 def test_the_pipeline_records_the_speech_behind_each_voiceprint(session) -> None:
