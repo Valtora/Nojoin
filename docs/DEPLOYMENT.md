@@ -126,6 +126,39 @@ Each container keeps a private `/tmp`, discarded when the container is recreated
 
 A finished backup archive, built by a worker and served by the API, is the one file that passes between containers. It goes through `data/backups` on the `./data` mount every service has, and stays until a newer one replaces it ([BACKUP_RESTORE.md](BACKUP_RESTORE.md#the-saved-backup)). Uploaded archives and restore staging use `data/temp_uploads` and `data/restore_staging`. `BACKUP_EXPORT_DIR` moves exports elsewhere. The api and every worker must see the same path, so a directory outside `/app/data` has to be mounted into all of them.
 
+## Storage Hygiene
+
+A file in `data/documents/` or `data/recordings/` can outlive every row that names it: a process killed between a delete's commit and its unlink, a failed unlink, an **Overwrite** restore, or a write whose row never committed. Once a day, `cleanup_temp_recordings` on `worker-io` logs one line counting, for documents, audio, proxies and partial uploads (`.upload-tmp`, `.part`), the files that no row names and their bytes, and the rows whose file is missing. Rows are never changed.
+
+`NOJOIN_STORAGE_HYGIENE=delete` makes the daily run remove those files. To see the report, or to remove the files now instead of at the next daily run:
+
+```sh
+docker compose exec --user appuser worker-io python -m backend.storage_hygiene           # report only
+docker compose exec --user appuser worker-io python -m backend.storage_hygiene --delete  # remove them
+```
+
+`exec` skips the entrypoint's drop to `appuser`, so `--user appuser` runs the command with the application's own permissions. Run it from `/app`, as `exec` does, because stored paths are relative to it.
+
+The CLI lists each flagged file with its size above the table, so you can check them before `--delete`. A run that removes files, daily or from the CLI, logs each one it removes.
+
+Every run keeps:
+
+- anything modified in the last 24 hours, and any file that changed between the listing and its unlink;
+- anything a row names, soft-deleted recordings included, however its path is spelled;
+- `temp/` and `failed/`, which the existing 24-hour sweep owns, and dotfiles and symlinks.
+
+Any other regular file directly inside `data/documents/` or `data/recordings/` counts as unreferenced, so keep nothing of your own there.
+
+The circuit breaker removes nothing when any of these holds:
+
+- the `recordings` table is empty while the directories hold files;
+- a directory is the data directory, contains it, or holds `config.json`;
+- more than half the stored paths name missing files, as when `data/` belongs to another database (recordings still uploading are not counted);
+- the run would remove more than 10% of one directory's files or bytes. `--allow-bulk` lifts this rule alone, for a backlog;
+- a restore is running, or Redis cannot be reached to tell.
+
+The CLI exits 1 when the breaker tripped or a file could not be removed, and 0 otherwise.
+
 ## Worker Container Startup
 
 At startup the API queues model preparation for Pyannote diarisation, voice embeddings and the install's transcription engine (**Settings > Transcription**). Whisper is prepared only when the engine is Whisper. Preparation validates each model, caches it on disk and releases it, so the GPU stays idle until there is work.
@@ -245,6 +278,7 @@ Operations:
 | `DEFAULT_TIMEZONE` | `UTC` | Timezone for users who have not saved their own. |
 | `BACKUP_EXPORT_DIR` | `data/backups` | Where exported backup archives are written ([Temporary Files](#temporary-files-and-the-data-directory)). |
 | `NOJOIN_UMASK` | `0077` | Umask for the application processes. The default gives owner-only files (`0600`) and directories (`0700`). |
+| `NOJOIN_STORAGE_HYGIENE` | `flag` | What the daily cleanup does with document, audio and proxy files that no row names: `flag` logs them, `delete` removes them ([Storage Hygiene](#storage-hygiene)). |
 | `NOJOIN_STALL_WATCHDOG_ENABLED` | `true` | Logs API stalls and host pressure ([Stall Detection](#stall-detection)). |
 | `WHISPER_ENABLE_WORD_TIMESTAMPS` | `true` | Whisper word timestamps, which let the merge assign speakers word by word. |
 | `NVIDIA_VISIBLE_DEVICES`, `NVIDIA_DRIVER_CAPABILITIES` | `all`, `compute,utility` | GPU passthrough for `worker-gpu`. |
@@ -563,6 +597,7 @@ These run on the first start after the upgrade and need no action unless a note 
 - **Drift guard refusals remembered (#499).** Migration `7ff0bbdadad8` adds the table `recording_speaker_drift_refusals`, one row for each person the guard refused a recording speaker for, so a rebuild of a person's voiceprint leaves out a speaker the guard refused for them. It starts empty, since earlier refusals were never recorded. Deleting the speaker or the person deletes its rows, backups carry them, and a downgrade drops the table. As with the note above, a newer worker fails on the missing table until the API has migrated.
 - **`LLM_PROVIDER` reaches the containers empty (#477).** `docker-compose.example.yml` passes `LLM_PROVIDER` as `${LLM_PROVIDER:-}` in place of `${LLM_PROVIDER:-gemini}`, so the setup wizard can report that no AI provider is configured. Nojoin reads an empty value as `gemini`, ahead of any provider in `data/config.json`, as the old default did, so the api and the workers keep the same provider with either line and an existing `docker-compose.yml` needs no change. `.env.example` also moves the comment off its `LLM_PROVIDER=` line, because Compose read `LLM_PROVIDER= #One of: gemini, openai, anthropic, ollama` as the provider's name, and every call to the default provider failed. If your `.env` has that line with nothing before the comment, set the provider or delete the comment, then run `docker compose up -d`.
 - **Stall detection settings reach the API (#476).** `docker-compose.example.yml` now passes the four `NOJOIN_STALL_WATCHDOG_*` variables to `api`. A `docker-compose.yml` copied from an earlier example does not, so a value set in `.env` has no effect until you copy those four lines into its `api` service's `environment:` block ([Stall Detection](#stall-detection)).
+- **Storage hygiene (#516).** The daily cleanup now logs the document, audio and proxy files that no row names, and removes them only when `NOJOIN_STORAGE_HYGIENE` is `delete` ([Storage Hygiene](#storage-hygiene)). A `docker-compose.yml` copied from an earlier example does not pass the variable, so a value set in `.env` has no effect until you add `NOJOIN_STORAGE_HYGIENE: ${NOJOIN_STORAGE_HYGIENE:-}` to its `x-shared-app-environment` block. The CLI needs no change.
 
 #### Upgrading From Before 2.10.0
 

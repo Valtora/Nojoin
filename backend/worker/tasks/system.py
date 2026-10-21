@@ -6,13 +6,20 @@ from .constants import *
 )
 def cleanup_temp_recordings(self):
     """
-    Periodic task to clean up old temporary files and failed uploads.
+    Periodic task to clean up old temporary files and failed uploads, then
+    report or remove the stored files no row names (storage hygiene).
     Runs every 24 hours.
     """
     logger.info("Starting cleanup of temp recordings...")
 
     from backend.processing.audio_preprocessing import (
         cleanup_stale_pipeline_temp_files,
+    )
+    from backend.utils.storage_hygiene import (
+        STORAGE_HYGIENE_DELETE,
+        HygieneOptions,
+        run_storage_hygiene,
+        storage_hygiene_mode,
     )
 
     cleaned_count = cleanup_recording_audio_chunks(self.session, logger=logger)
@@ -23,6 +30,13 @@ def cleanup_temp_recordings(self):
     )
 
     logger.info(f"Cleanup complete. Removed {cleaned_count} items.")
+
+    # Last, so the sweeps above have already run. It reads in a session of its
+    # own, opened after it lists the directories.
+    run_storage_hygiene(
+        get_sync_session,
+        HygieneOptions(delete=storage_hygiene_mode() == STORAGE_HYGIENE_DELETE),
+    )
 
 
 @celery_app.task(name="backend.worker.tasks.download_models_task", bind=True)
