@@ -17,7 +17,7 @@ Some actions also need superuser rights, which only the account created at first
 Registration is by invitation only. **Settings > Users and access** has three parts:
 
 - **Invitations** creates a sign-up link for the User or Admin role, valid for 1 to 365 days (default 7) and 1 to 100 uses (default 1). Revoking a link stops it working and keeps it listed; a revoked link can then be deleted. People who join through a link choose their own password.
-- **Users** creates an account directly with a temporary password. The new user must change it at first sign-in, and until then can only view their profile, change the password and sign out. Resetting someone's password applies the same rule and signs them out everywhere.
+- **Users** creates an account directly with a temporary password. The new user must change it at first sign-in, and until then can only view their profile, change the password and sign out. Resetting someone's password applies the same rule, signs them out everywhere and disconnects their connected apps, such as Claude and Codex. Deactivating an account disconnects them too.
 - **AI analysis** caps the meeting analyses each person can start per day, counted from midnight UTC. Each analysis is one long call against that person's AI provider quota. Leave it blank or 0 for no cap. To give one person a different cap, edit them in the users table: blank uses the installation's cap, 0 means none.
 
 Passwords need at least 8 characters, and one made entirely of whitespace is refused. Passwords set before this rule keep working until they are next changed or reset.
