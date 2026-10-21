@@ -18,6 +18,7 @@ import {
 } from "@/lib/api";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { getErrorMessage } from "@/lib/errors";
+import { libraryVoiceprintNotices } from "@/lib/libraryVoiceprint";
 
 import type { SpeakerPanelEntry } from "./useSpeakerPanelEntries";
 
@@ -146,8 +147,11 @@ export function useSpeakerPanelActions(
       const oldName = renamingSpeaker.displayName;
       const newName = renameValue.trim();
 
+      const renamed = [];
       for (const speaker of renamingSpeaker.members) {
-        await updateSpeaker(recordingId, speaker.diarization_label, newName);
+        renamed.push(
+          ...(await updateSpeaker(recordingId, speaker.diarization_label, newName)),
+        );
       }
 
       if (oldName !== newName && onSpeakerRenamed) {
@@ -156,6 +160,9 @@ export function useSpeakerPanelActions(
 
       setRenamingSpeaker(null);
       onRefresh();
+      for (const message of libraryVoiceprintNotices(renamed)) {
+        addNotification({ type: "info", message });
+      }
     } catch (e: unknown) {
       console.error("Failed to rename speaker", e);
       addNotification({ type: "error", message: "Failed to rename speaker." });
@@ -243,7 +250,7 @@ export function useSpeakerPanelActions(
     setIsSubmitting(true);
 
     try {
-      await promoteToGlobalSpeaker(
+      const promoted = await promoteToGlobalSpeaker(
         recordingId,
         speakerEntry.speaker.diarization_label,
       );
@@ -252,6 +259,9 @@ export function useSpeakerPanelActions(
         type: "success",
         message: "Speaker added to Global Library.",
       });
+      for (const message of libraryVoiceprintNotices([promoted])) {
+        addNotification({ type: "info", message });
+      }
     } catch (e: unknown) {
       console.error("Failed to promote speaker", e);
       addNotification({

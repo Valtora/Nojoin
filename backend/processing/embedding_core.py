@@ -5,6 +5,7 @@ import numpy as np
 import torch
 from pyannote.core import Segment
 
+from backend.processing.embedding import RecordingVoiceprint
 from backend.processing.embedding_version import (
     EMBEDDING_METHOD_VERSION,
     LEGACY_EMBEDDING_METHOD_VERSION,
@@ -257,6 +258,20 @@ def _select_voiceprint_crops(segments, overlap=None) -> list:
     return usable[:EMBEDDING_MAX_CROPS]
 
 
+def _crop_speech_seconds(crops) -> float:
+    """The speech a voiceprint is built from: the time its selected crops cover.
+
+    This is the figure ``LIBRARY_VOICEPRINT_MIN_SPEECH_S`` was measured in.
+    Crops can overlap when the segments asked for do (two selections over the
+    same stretch, or overlapping transcript turns), and the same second of
+    speech is no more evidence for being cropped twice, so the figure is the
+    length of their union.
+    """
+    from pyannote.core import Timeline
+
+    return float(Timeline(segments=crops).support().duration())
+
+
 def _aggregate_crop_embeddings(embeddings: list) -> Optional[List[float]]:
     """Average unit crop embeddings into one unit voiceprint."""
     if not embeddings:
@@ -272,10 +287,11 @@ def _aggregate_crop_embeddings(embeddings: list) -> Optional[List[float]]:
 
 def extract_embeddings(
     audio_path: str, diarization_result, device_str: str = "auto", config: dict = None
-) -> Dict[str, List[float]]:
+) -> Dict[str, RecordingVoiceprint]:
     """
     Extracts embeddings for each speaker in the diarization result.
-    Returns a dictionary mapping speaker label to embedding vector (list of floats).
+    Returns a dictionary mapping speaker label to its voiceprint and the seconds
+    of selected crop speech it was built from.
 
     Every vector returned is unit length and carries method version
     ``EMBEDDING_METHOD_VERSION``; callers persisting these must record that
@@ -336,7 +352,9 @@ def extract_embeddings(
             # mis-diarised turn from another speaker is kept out of the mean.
             voiceprint = _aggregate_crop_embeddings(speaker_embeddings)
             if voiceprint is not None:
-                embeddings[label] = voiceprint
+                embeddings[label] = RecordingVoiceprint(
+                    embedding=voiceprint, speech_seconds=_crop_speech_seconds(crops)
+                )
                 logger.info(
                     "Voiceprint for %s built from %d crop(s) (method v%d).",
                     label,
@@ -356,7 +374,7 @@ def extract_embedding_for_segments(
     segments: List[Tuple[float, float]],
     device_str: str = "auto",
     hf_token: str = None,
-) -> Optional[List[float]]:
+) -> Optional[RecordingVoiceprint]:
     """
     Extract a single aggregated embedding from specific time segments.
 
@@ -370,7 +388,8 @@ def extract_embedding_for_segments(
         hf_token: Hugging Face token.
 
     Returns:
-        Aggregated embedding vector as a list of floats, or None if extraction fails.
+        The aggregated voiceprint and the seconds of selected crop speech it was
+        built from, or None if extraction fails.
     """
     if not segments:
         logger.warning("No segments provided for embedding extraction")
@@ -417,7 +436,12 @@ def extract_embedding_for_segments(
             )
             return None
 
-        return _aggregate_crop_embeddings(speaker_embeddings)
+        voiceprint = _aggregate_crop_embeddings(speaker_embeddings)
+        if voiceprint is None:
+            return None
+        return RecordingVoiceprint(
+            embedding=voiceprint, speech_seconds=_crop_speech_seconds(crops)
+        )
 
     except Exception as e:
         logger.error(f"Embedding extraction for segments failed: {e}", exc_info=True)

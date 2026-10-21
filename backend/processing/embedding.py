@@ -1,5 +1,7 @@
 import logging
 import re
+from dataclasses import dataclass
+from enum import Enum
 from typing import Any, List, Optional
 
 import numpy as np
@@ -18,8 +20,15 @@ IDENTIFICATION_THRESHOLD = 0.75
 AUTO_UPDATE_THRESHOLD = 0.85
 # Minimum margin between best and second-best match to avoid ambiguous assignments
 MARGIN_OF_VICTORY = 0.05
-# Minimum similarity between current and incoming embedding to permit a merge
-DRIFT_GUARD_THRESHOLD = 0.6
+# Minimum similarity between current and incoming embedding to permit a merge.
+# Measured on AMI meetings and a House of Lords sitting, with the rule fixed
+# before the run. One wrong fold at alpha 0.5 left unguarded made up to two
+# thirds of the stranger's clusters identify as the person. Every wrong fold
+# scored below 0.65, while at 0.70 every genuine fold of 20 s or 60 s of the
+# person's speech was still accepted at alpha 0.3, the rename and link weight
+# (at 0.75, AMI accepted 94% of 20 s folds and all 60 s folds). Two held-out
+# AMI meetings confirmed it: the weakest genuine fold scored 0.74.
+DRIFT_GUARD_THRESHOLD = 0.70
 # UI: minimum similarity to display a potential match to the user
 UI_SHOW_MATCH_THRESHOLD = 0.50
 # UI: minimum similarity (with margin check) to flag a match as "strong"
@@ -29,11 +38,25 @@ UI_STRONG_MATCH_THRESHOLD = 0.75
 DUPLICATE_SPEAKER_MERGE_THRESHOLD = 0.70
 # Duplicate merge pass: minimum cosine between a cluster and an identified
 # person's library voiceprint before the cluster may join that person's group.
-# The same floor as DRIFT_GUARD_THRESHOLD, which decides whether an observation
-# is the same person when blending it into a library voiceprint. On this
-# project's own library no two people's recording voiceprints scored above
-# 0.55, while the same person's sat at a median of 0.87 with 5% below 0.73.
+# It was set equal to DRIFT_GUARD_THRESHOLD when the guard was 0.60, and the two
+# are now separate on purpose. The guard decides whether a library voiceprint
+# changes, and a wrong fold there misleads every later meeting, so it is the
+# stricter of the two. This floor only decides whether a cluster joins a group
+# in one recording. On this project's own library no two people's recording
+# voiceprints scored above 0.55, while the same person's sat at a median of
+# 0.87 with 5% below 0.73.
 IDENTIFIED_MERGE_VOICEPRINT_FLOOR = 0.60
+# Least speech a person's library voiceprint may be created from: the time
+# covered by the crops _select_voiceprint_crops picked for the recording
+# voiceprint it is created from. Measured on AMI meetings and a House of Lords
+# sitting with a rule fixed before the run: the shortest enrolment at which, and
+# above which, at most 5% of same-person whole-recording voiceprints scored
+# below IDENTIFIED_MERGE_VOICEPRINT_FLOOR and identification stayed within 90%
+# of a full enrolment's. AMI set it (Lords passed from 5 s). At 2-3 s, 23-28% of AMI
+# speakers were refused and 27-35% identified; at 20 s, none were refused and
+# all were identified. Two held-out AMI meetings confirmed it: 0% refused, 95%
+# identified, no stranger admitted.
+LIBRARY_VOICEPRINT_MIN_SPEECH_S = 20.0
 # Default threshold for the scan-matches endpoint
 SCAN_MATCH_THRESHOLD = 0.75
 
@@ -116,14 +139,8 @@ def merge_embeddings(
         return new_embedding
 
     # Reject merges that would corrupt the embedding with unrelated voice data
-    if drift_guard:
-        similarity = cosine_similarity(current_embedding, new_embedding)
-        if similarity < DRIFT_GUARD_THRESHOLD:
-            logger.warning(
-                f"Drift guard rejected embedding merge (similarity={similarity:.3f}, "
-                f"threshold={DRIFT_GUARD_THRESHOLD}). Returning original embedding."
-            )
-            return current_embedding
+    if drift_guard and drift_guard_refuses(current_embedding, new_embedding):
+        return current_embedding
 
     curr_arr = np.array(current_embedding)
     new_arr = np.array(new_embedding)
@@ -133,13 +150,42 @@ def merge_embeddings(
     return merged.tolist()
 
 
+def drift_guard_refuses(
+    current_embedding: List[float], new_embedding: List[float]
+) -> bool:
+    """True when ``new_embedding`` is too unlike ``current_embedding`` to fold in."""
+    similarity = cosine_similarity(current_embedding, new_embedding)
+    if similarity < DRIFT_GUARD_THRESHOLD:
+        logger.warning(
+            f"Drift guard rejected embedding merge (similarity={similarity:.3f}, "
+            f"threshold={DRIFT_GUARD_THRESHOLD}). Returning original embedding."
+        )
+        return True
+    return False
+
+
+class VoiceprintBlend(str, Enum):
+    """What ``blend_voiceprint`` did to a row's voiceprint."""
+
+    # The row had none and took a copy of the incoming one.
+    COPIED = "copied"
+    # The incoming voiceprint was folded in.
+    FOLDED = "folded"
+    # The drift guard refused the fold; the row is unchanged.
+    REFUSED = "refused"
+    # A current-version voiceprint replaced the row's stale one.
+    REPLACED = "replaced"
+    # A stale voiceprint was offered to a current row, which is unchanged.
+    KEPT = "kept"
+
+
 def blend_voiceprint(
     row: Any,
     embedding: List[float],
     version: Optional[int],
     *,
     alpha: float,
-) -> None:
+) -> VoiceprintBlend:
     """Write a voiceprint into a speaker row and keep its version true.
 
     ``row`` is a ``GlobalSpeaker`` or a ``RecordingSpeaker``, and ``version`` is
@@ -148,13 +194,13 @@ def blend_voiceprint(
     row's voiceprint into a speaker row goes through here, because
     identification only compares voiceprints of one version: a row whose
     version is wrong is ignored, or compared with vectors it can't be compared
-    with. A path that copies a vector outright, such as promoting a speaker to
-    a new person or restoring a backup, copies its version alongside it.
+    with. A path that copies a vector outright, such as restoring a backup,
+    copies its version alongside it.
 
     A row without a voiceprint takes a copy of ``embedding`` and its version.
-    A row of the same version has ``embedding`` folded in at ``alpha`` by
-    ``merge_embeddings``, drift guard included. Two versions are never blended,
-    since the average of two unrelated regions of the space matches neither: a
+    A row of the same version has ``embedding`` folded in at ``alpha``, unless
+    the drift guard refuses it. Two versions are never blended, since the
+    average of two unrelated regions of the space matches neither: a
     current-version ``embedding`` replaces a stale row voiceprint without the
     drift guard (a cosine across versions says nothing), and a stale
     ``embedding`` leaves a current row as it is.
@@ -162,14 +208,279 @@ def blend_voiceprint(
     if not row.embedding:
         row.embedding = list(embedding)
         row.embedding_version = version
-        return
+        return VoiceprintBlend.COPIED
     incoming = _method_version(version)
     if embedding_version_of(row) == incoming:
-        row.embedding = merge_embeddings(row.embedding, embedding, alpha=alpha)
-        return
+        if drift_guard_refuses(row.embedding, embedding):
+            return VoiceprintBlend.REFUSED
+        row.embedding = merge_embeddings(
+            row.embedding, embedding, alpha=alpha, drift_guard=False
+        )
+        return VoiceprintBlend.FOLDED
     if incoming == EMBEDDING_METHOD_VERSION:
         row.embedding = list(embedding)
         row.embedding_version = version
+        return VoiceprintBlend.REPLACED
+    return VoiceprintBlend.KEPT
+
+
+def _blend_would_found(row: Any, version: Optional[int]) -> bool:
+    """True when blending a voiceprint of ``version`` would replace, not fold.
+
+    That is the case for a row without a voiceprint and for a stale one that a
+    current-version voiceprint replaces outright.
+    """
+    if not row.embedding:
+        return True
+    incoming = _method_version(version)
+    return (
+        incoming != embedding_version_of(row) and incoming == EMBEDDING_METHOD_VERSION
+    )
+
+
+@dataclass(frozen=True)
+class RecordingVoiceprint:
+    """A recording voiceprint, the speech behind it and its extraction version.
+
+    ``speech_seconds`` is the time covered by the crops the voiceprint was
+    built from, or ``None`` when it predates speech being measured.
+    """
+
+    embedding: List[float]
+    speech_seconds: Optional[float]
+    version: Optional[int] = EMBEDDING_METHOD_VERSION
+
+    @classmethod
+    def of_speaker(cls, speaker: Any) -> "RecordingVoiceprint":
+        """The voiceprint stored on a ``RecordingSpeaker`` row."""
+        return cls(
+            embedding=list(speaker.embedding),
+            speech_seconds=speaker.embedding_speech_seconds,
+            version=speaker.embedding_version,
+        )
+
+    def to_task_result(self) -> dict:
+        """The JSON shape a Celery task returns this in."""
+        return {"embedding": self.embedding, "speech_seconds": self.speech_seconds}
+
+    @classmethod
+    def from_task_result(cls, value: Any) -> Optional["RecordingVoiceprint"]:
+        """Read ``extract_measured_embedding_task``'s result back.
+
+        ``None`` when extraction produced nothing; otherwise the dict
+        ``to_task_result`` writes. A result without a speech figure, such as
+        the bare vector ``extract_embedding_task`` returns, is refused rather
+        than read as unmeasured: a voiceprint with no figure is grandfathered
+        past the evidence floor, and only voiceprints extracted before the
+        figure existed may be.
+        """
+        if not value:
+            return None
+        seconds = value.get("speech_seconds") if isinstance(value, dict) else None
+        if seconds is None:
+            raise TypeError(
+                f"Voiceprint extraction returned a {type(value).__name__} with no "
+                "speech figure, not a measured voiceprint"
+            )
+        return cls(
+            embedding=[float(x) for x in value["embedding"]],
+            speech_seconds=float(seconds),
+        )
+
+
+class VoiceprintStatus(str, Enum):
+    """What happened to a person's library voiceprint when a recording was linked."""
+
+    # The person had no voiceprint, or a stale one; the recording's became theirs.
+    SAVED = "saved"
+    # The recording's voiceprint was blended into the person's.
+    FOLDED = "folded"
+    # The person has no voiceprint and the recording's was built from less than
+    # LIBRARY_VOICEPRINT_MIN_SPEECH_S of speech.
+    SKIPPED_INSUFFICIENT_SPEECH = "skipped_insufficient_speech"
+    # The drift guard refused to blend the recording's voiceprint in.
+    SKIPPED_DRIFT = "skipped_drift"
+    # The person's voiceprint is locked against this update.
+    SKIPPED_LOCKED = "skipped_locked"
+    # The recording's voiceprint is from an older extraction method than the
+    # person's, so it can't be blended in until it is re-extracted.
+    SKIPPED_OUTDATED = "skipped_outdated"
+
+
+@dataclass(frozen=True)
+class LibraryVoiceprintUpdate:
+    """The outcome of offering one recording voiceprint to a person's library."""
+
+    status: VoiceprintStatus
+    speech_seconds: Optional[float]
+
+    @property
+    def changed(self) -> bool:
+        return self.status in (
+            VoiceprintStatus.SAVED,
+            VoiceprintStatus.FOLDED,
+        )
+
+
+_LIBRARY_STATUS_BY_BLEND = {
+    VoiceprintBlend.COPIED: VoiceprintStatus.SAVED,
+    VoiceprintBlend.REPLACED: VoiceprintStatus.SAVED,
+    VoiceprintBlend.FOLDED: VoiceprintStatus.FOLDED,
+    VoiceprintBlend.REFUSED: VoiceprintStatus.SKIPPED_DRIFT,
+    VoiceprintBlend.KEPT: VoiceprintStatus.SKIPPED_OUTDATED,
+}
+
+
+def meets_library_evidence_floor(speech_seconds: Optional[float]) -> bool:
+    """True when a recording voiceprint may found a library voiceprint.
+
+    That takes ``LIBRARY_VOICEPRINT_MIN_SPEECH_S`` of speech. A voiceprint with
+    no figure predates measurement and is grandfathered: it founds one as it
+    did before the floor existed. It is measured only when something extracts
+    it again anyway (reprocessing, the voiceprint dialog's extract, a split's
+    remainder, or a rebuild after an extraction-method change), never by a
+    sweep of its own. Its speech can't be worked out from what is stored,
+    because the crops it was built from depended on diarisation turns and
+    overlap that are not kept. Every new extraction records a figure.
+    """
+    if speech_seconds is None:
+        return True
+    return speech_seconds >= LIBRARY_VOICEPRINT_MIN_SPEECH_S
+
+
+@dataclass(frozen=True)
+class VoiceprintPool:
+    """One voiceprint per recording, pooled for a recalibration or a split."""
+
+    # The mean of the recordings that meet the floor; None when none does.
+    voiceprint: Optional[RecordingVoiceprint]
+    # The most measured speech any one offered recording held.
+    best_speech_seconds: Optional[float]
+    # How many recordings contributed, of how many were offered.
+    used: int
+    offered: int
+
+
+def pool_recording_voiceprints(
+    voiceprints: List[RecordingVoiceprint],
+) -> VoiceprintPool:
+    """Pool the voiceprints a recalibration or a split extracted, one per recording.
+
+    Only recordings whose own voiceprint meets the evidence floor contribute.
+    The floor was measured on a voiceprint built from that much speech in one
+    recording; short extractions from several recordings add up to seconds
+    but not to such a voiceprint. The pool's figure is the largest of the
+    contributing recordings' figures.
+    """
+    qualifying = [
+        v for v in voiceprints if meets_library_evidence_floor(v.speech_seconds)
+    ]
+    measured = [v.speech_seconds for v in voiceprints if v.speech_seconds is not None]
+    best = max(measured, default=None)
+    if not qualifying:
+        return VoiceprintPool(None, best, 0, len(voiceprints))
+    mean = np.mean(np.array([v.embedding for v in qualifying]), axis=0).tolist()
+    pooled_seconds = max(
+        (v.speech_seconds for v in qualifying if v.speech_seconds is not None),
+        default=None,
+    )
+    return VoiceprintPool(
+        RecordingVoiceprint(mean, pooled_seconds),
+        best,
+        len(qualifying),
+        len(voiceprints),
+    )
+
+
+def too_little_speech_detail(pool: VoiceprintPool) -> str:
+    """Why a pool of selected speech could not found a voiceprint."""
+    most = (
+        f" (the most was {pool.best_speech_seconds:.1f} s)"
+        if pool.best_speech_seconds is not None
+        else ""
+    )
+    return (
+        f"No selected recording holds {LIBRARY_VOICEPRINT_MIN_SPEECH_S:.0f} s of "
+        f"clear speech on its own{most}. Select more of this person's speech "
+        "from one recording."
+    )
+
+
+def update_library_voiceprint(
+    person: Any,
+    voiceprint: RecordingVoiceprint,
+    *,
+    alpha: float,
+    locked: bool = False,
+) -> LibraryVoiceprintUpdate:
+    """Offer a recording voiceprint to a person's library voiceprint.
+
+    Every path that writes a person's voiceprint from a recording goes through
+    here, and ``person`` is changed in place. A person who has a voiceprint of
+    the same version gets the recording's folded in at ``alpha``, unless the
+    drift guard refuses it. A person who has none, or only a stale one, gets
+    the recording's only when it was built from at least
+    ``LIBRARY_VOICEPRINT_MIN_SPEECH_S`` of speech; otherwise they keep what
+    they had until a later recording that meets the floor is linked to them.
+    """
+    speech_seconds = voiceprint.speech_seconds
+    if locked:
+        return LibraryVoiceprintUpdate(VoiceprintStatus.SKIPPED_LOCKED, speech_seconds)
+    if _blend_would_found(person, voiceprint.version) and not (
+        meets_library_evidence_floor(speech_seconds)
+    ):
+        return LibraryVoiceprintUpdate(
+            VoiceprintStatus.SKIPPED_INSUFFICIENT_SPEECH, speech_seconds
+        )
+    blend = blend_voiceprint(
+        person, voiceprint.embedding, voiceprint.version, alpha=alpha
+    )
+    return LibraryVoiceprintUpdate(_LIBRARY_STATUS_BY_BLEND[blend], speech_seconds)
+
+
+def offer_linked_voiceprint(
+    person: Any, speaker: Any, *, alpha: float, locked: bool = False
+) -> LibraryVoiceprintUpdate:
+    """Offer a recording speaker's voiceprint to the person it is linked to.
+
+    ``update_library_voiceprint`` decides the outcome.
+    """
+    return update_library_voiceprint(
+        person, RecordingVoiceprint.of_speaker(speaker), alpha=alpha, locked=locked
+    )
+
+
+def fold_recording_voiceprint(
+    target: Any, voiceprint: RecordingVoiceprint, *, alpha: float
+) -> Optional[float]:
+    """Blend one recording voiceprint into another of the same recording.
+
+    ``target`` is changed in place, its measured speech included. A copy or a
+    replacement takes ``speech_seconds``. A fold adds the two speech figures
+    when both were measured. When either was not, the result is unmeasured:
+    it holds speech from before measurement, which is grandfathered past the
+    floor, so it behaves as that voiceprint did before the floor existed. A
+    fold the drift guard refuses leaves the target as it was.
+
+    Returns the speech added to the target's figure, or None when nothing was
+    added to a measured figure. A merge keeps it on the merged row, so that
+    undoing the merge can take it out again.
+    """
+    target_seconds = target.embedding_speech_seconds
+    speech_seconds = voiceprint.speech_seconds
+    blend = blend_voiceprint(
+        target, voiceprint.embedding, voiceprint.version, alpha=alpha
+    )
+    if blend in (VoiceprintBlend.COPIED, VoiceprintBlend.REPLACED):
+        target.embedding_speech_seconds = speech_seconds
+        return speech_seconds
+    if blend != VoiceprintBlend.FOLDED:
+        return None
+    if target_seconds is None or speech_seconds is None:
+        target.embedding_speech_seconds = None
+        return None
+    target.embedding_speech_seconds = target_seconds + speech_seconds
+    return speech_seconds
 
 
 _PLACEHOLDER_NAME_PATTERN = re.compile(

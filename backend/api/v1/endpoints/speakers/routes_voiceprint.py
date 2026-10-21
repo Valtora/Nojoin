@@ -9,6 +9,7 @@ from sqlmodel import select
 import backend.api.v1.endpoints.speakers as speakers_module
 from backend.api.deps import get_current_user, get_db
 from backend.core.task_dispatch import dispatch_task
+from backend.models.recording_public import LibraryVoiceprintRead
 from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
 from backend.models.transcript import Transcript
 from backend.models.user import User
@@ -16,13 +17,15 @@ from backend.processing.embedding import (
     MARGIN_OF_VICTORY,
     UI_SHOW_MATCH_THRESHOLD,
     UI_STRONG_MATCH_THRESHOLD,
-    blend_voiceprint,
+    RecordingVoiceprint,
     cosine_similarity,
+    offer_linked_voiceprint,
 )
 from backend.processing.embedding_version import EMBEDDING_METHOD_VERSION
 from backend.utils.embedding_audio import select_recording_audio_for_embedding
 
 from .helpers import (
+    MEASURED_EXTRACTION_TASK,
     VoiceprintAction,
     VoiceprintResult,
     _get_owned_recording,
@@ -94,11 +97,13 @@ async def extract_voiceprint(
 
     target_audio = select_recording_audio_for_embedding(recording)
     task = await dispatch_task(
-        "backend.worker.tasks.extract_embedding_task",
+        MEASURED_EXTRACTION_TASK,
         args=[target_audio, speaker_segments, device_str, hf_token],
     )
     try:
-        embedding = await run_in_threadpool(task.get, timeout=120)
+        voiceprint = RecordingVoiceprint.from_task_result(
+            await run_in_threadpool(task.get, timeout=120)
+        )
     except Exception as e:  # noqa: BLE001 -- boundary: task.get re-raises whatever the worker raised; all of it is a 504 here
         logger.error(f"Timeout or error extracting voiceprint: {e}")
         raise HTTPException(
@@ -106,13 +111,15 @@ async def extract_voiceprint(
             detail="Voiceprint extraction timed out or failed. Please try again.",
         )
 
-    if not embedding:
+    if not voiceprint:
         raise HTTPException(
             status_code=500, detail="Failed to extract voiceprint from audio segments"
         )
 
+    embedding = voiceprint.embedding
     rec_speaker.embedding = embedding
     rec_speaker.embedding_version = EMBEDDING_METHOD_VERSION
+    rec_speaker.embedding_speech_seconds = voiceprint.speech_seconds
     db.add(rec_speaker)
     await db.commit()
     await db.refresh(rec_speaker)
@@ -189,8 +196,6 @@ async def apply_voiceprint_action(
             detail="No voiceprint extracted. Call /voiceprint/extract first.",
         )
 
-    embedding = rec_speaker.embedding
-
     if action.action == "create_new":
         if not action.new_speaker_name:
             raise HTTPException(
@@ -216,11 +221,8 @@ async def apply_voiceprint_action(
                 status_code=400, detail="A Global Speaker with this name already exists"
             )
 
-        new_gs = GlobalSpeaker(
-            name=action.new_speaker_name,
-            embedding=embedding,
-            embedding_version=rec_speaker.embedding_version,
-        )
+        new_gs = GlobalSpeaker(name=action.new_speaker_name)
+        library_update = offer_linked_voiceprint(new_gs, rec_speaker, alpha=0.3)
         db.add(new_gs)
         await db.commit()
         await db.refresh(new_gs)
@@ -235,6 +237,7 @@ async def apply_voiceprint_action(
             has_voiceprint=True,
             matched_speaker={"id": new_gs.id, "name": new_gs.name},
             message=f"Created new Global Speaker: {new_gs.name}",
+            library_voiceprint=LibraryVoiceprintRead.from_update(library_update),
         )
 
     elif action.action == "link_existing" or action.action == "force_link":
@@ -246,8 +249,9 @@ async def apply_voiceprint_action(
             raise HTTPException(status_code=404, detail="Global Speaker not found")
 
         alpha = 0.4 if action.action == "force_link" else 0.3
-        blend_voiceprint(gs, embedding, rec_speaker.embedding_version, alpha=alpha)
-        db.add(gs)
+        library_update = offer_linked_voiceprint(gs, rec_speaker, alpha=alpha)
+        if library_update.changed:
+            db.add(gs)
 
         rec_speaker.global_speaker_id = gs.id
         rec_speaker.name = gs.name
@@ -260,6 +264,7 @@ async def apply_voiceprint_action(
             has_voiceprint=True,
             matched_speaker={"id": gs.id, "name": gs.name},
             message=f"{action_verb} to Global Speaker: {gs.name}",
+            library_voiceprint=LibraryVoiceprintRead.from_update(library_update),
         )
 
     elif action.action == "local_only":
@@ -298,6 +303,7 @@ async def delete_voiceprint(
         raise HTTPException(status_code=404, detail="Speaker not found in recording")
 
     rec_speaker.embedding = None
+    rec_speaker.embedding_speech_seconds = None
     db.add(rec_speaker)
     await db.commit()
 
@@ -380,11 +386,13 @@ async def extract_all_voiceprints(
 
         target_audio = select_recording_audio_for_embedding(recording)
         task = await dispatch_task(
-            "backend.worker.tasks.extract_embedding_task",
+            MEASURED_EXTRACTION_TASK,
             args=[target_audio, speaker_segments, device_str, hf_token],
         )
         try:
-            embedding = await run_in_threadpool(task.get, timeout=120)
+            voiceprint = RecordingVoiceprint.from_task_result(
+                await run_in_threadpool(task.get, timeout=120)
+            )
         except Exception as e:  # noqa: BLE001 -- boundary: task.get re-raises whatever the worker raised; the batch records the failure and continues
             logger.error(f"Timeout or error extracting voiceprint in batch: {e}")
             results.append(
@@ -397,7 +405,7 @@ async def extract_all_voiceprints(
             )
             continue
 
-        if not embedding:
+        if not voiceprint:
             results.append(
                 {
                     "diarization_label": rec_speaker.diarization_label,
@@ -408,8 +416,10 @@ async def extract_all_voiceprints(
             )
             continue
 
+        embedding = voiceprint.embedding
         rec_speaker.embedding = embedding
         rec_speaker.embedding_version = EMBEDDING_METHOD_VERSION
+        rec_speaker.embedding_speech_seconds = voiceprint.speech_seconds
         db.add(rec_speaker)
 
         matched_speaker = None

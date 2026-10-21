@@ -130,6 +130,7 @@ CREATE TABLE global_speakers (
 RECORDING_SPEAKERS_SCHEMA = """
 CREATE TABLE recording_speakers (
     embedding_version INTEGER,
+    embedding_speech_seconds FLOAT,
     id INTEGER PRIMARY KEY,
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL,
@@ -4805,6 +4806,60 @@ async def test_unmerge_gives_a_merged_cluster_back_its_lines(
     # Nothing is left to undo, and the listing says so.
     listing = await client.get("/api/v1/speakers/recordings/canon-rec/merged-speakers")
     assert listing.json() == []
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "case",
+    [
+        # A fold left no voiceprint on the merged row and 10 s added to the
+        # survivor's 12 s; undoing it takes the 10 s back out.
+        (None, 10.0, 22.0, 12.0, None),
+        # Processing merges fold nothing: the row keeps its voiceprint and its
+        # own figure, and the survivor's figure was never added to.
+        ("[0.1, 0.2]", 8.0, 22.0, 22.0, 8.0),
+        # An unmeasured survivor stays unmeasured.
+        (None, 10.0, None, None, None),
+    ],
+)
+async def test_unmerge_takes_the_merged_speech_back_out_of_the_survivors_figure(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+    case: tuple[str | None, float, float | None, float | None, float | None],
+) -> None:
+    merged_embedding, added, survivor_before, survivor_after, kept = case
+    await _seed_pipeline_merged_cluster(test_session_maker)
+    async with test_session_maker() as session:
+        await session.execute(
+            text(
+                "UPDATE recording_speakers SET embedding = :embedding, "
+                "embedding_speech_seconds = :added WHERE id = 2"
+            ),
+            {"embedding": merged_embedding, "added": added},
+        )
+        await session.execute(
+            text(
+                "UPDATE recording_speakers SET embedding_speech_seconds = :seconds "
+                "WHERE id = 1"
+            ),
+            {"seconds": survivor_before},
+        )
+        await session.commit()
+
+    response = await client.post(
+        "/api/v1/speakers/recordings/canon-rec/speakers/SPEAKER_01/unmerge"
+    )
+
+    assert response.status_code == 200
+    async with test_session_maker() as session:
+        seconds = dict(
+            (
+                await session.execute(
+                    text("SELECT id, embedding_speech_seconds FROM recording_speakers")
+                )
+            ).all()
+        )
+    assert seconds == {1: survivor_after, 2: kept}
 
 
 @pytest.mark.anyio

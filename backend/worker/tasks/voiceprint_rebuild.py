@@ -117,42 +117,65 @@ def _clear_dead_voiceprint(speaker, session, reason: str) -> None:
     )
     speaker.embedding = None
     speaker.embedding_version = None
+    speaker.embedding_speech_seconds = None
     session.add(speaker)
 
 
+def _unit_vectors(speakers) -> list:
+    """The finite, non-zero voiceprints of ``speakers``, scaled to unit length."""
+    units = []
+    for speaker in speakers:
+        vector = np.asarray(speaker.embedding, dtype=float)
+        if vector.ndim != 1 or not np.all(np.isfinite(vector)):
+            continue
+        norm = np.linalg.norm(vector)
+        if norm:
+            units.append(vector / norm)
+    return units
+
+
+def _unit_mean(units: list):
+    """The unit-length mean of unit vectors, or ``None`` when they cancel out."""
+    mean = np.mean(np.array(units), axis=0)
+    norm = np.linalg.norm(mean)
+    return mean / norm if norm else None
+
+
 def _rebuild_global_speaker(session, global_speaker, method_version: int) -> bool:
-    """Recompute a person's voiceprint as the mean of their current-version ones."""
+    """Recompute a person's voiceprint from their linked current-version ones.
+
+    Only links that could found or join the voiceprint on any other path are
+    averaged. Each recording's own voiceprint must meet
+    ``LIBRARY_VOICEPRINT_MIN_SPEECH_S``, since a mean of short voiceprints is
+    not what that floor measured (an unmeasured one is grandfathered). A
+    person left with nothing to average keeps what they had.
+    """
     linked = session.exec(
         select(RecordingSpeaker)
         .where(RecordingSpeaker.global_speaker_id == global_speaker.id)
         .where(RecordingSpeaker.merged_into_id.is_(None))
     ).all()
 
-    from backend.processing.embedding import embedding_version_of
+    from backend.processing.embedding import (
+        embedding_version_of,
+        meets_library_evidence_floor,
+    )
 
-    vectors = [
-        np.asarray(s.embedding, dtype=float)
+    units = _unit_vectors(
+        s
         for s in linked
-        if s.embedding and embedding_version_of(s) == method_version
-    ]
-    vectors = [v for v in vectors if v.ndim == 1 and np.all(np.isfinite(v))]
-    if not vectors:
-        return False
-
-    units = []
-    for vector in vectors:
-        norm = np.linalg.norm(vector)
-        if norm:
-            units.append(vector / norm)
+        if s.embedding
+        and embedding_version_of(s) == method_version
+        and meets_library_evidence_floor(s.embedding_speech_seconds)
+    )
     if not units:
         return False
 
-    mean = np.mean(np.array(units), axis=0)
-    norm = np.linalg.norm(mean)
-    if not norm:
+    mean = _unit_mean(units)
+    if mean is None:
         return False
 
-    global_speaker.embedding = (mean / norm).tolist()
+    global_speaker.embedding = mean.tolist()
     global_speaker.embedding_version = method_version
     session.add(global_speaker)
     return True
@@ -166,6 +189,11 @@ def _stale_speakers_by_recording(
     Scoping to the requesting user happens here rather than while iterating, so
     that the reported stale count describes that user's library and the run
     limit is spent on their recordings instead of on rows another user owns.
+
+    A current-version voiceprint with no speech figure is not stale and is left
+    alone. It predates the figure and is grandfathered past the evidence floor
+    (see ``meets_library_evidence_floor``) until a path that re-extracts it
+    anyway measures it, so this task never spends audio reads on it.
     """
     from backend.processing.embedding import embedding_version_of
 
@@ -215,7 +243,7 @@ def _rebuild_recording_speakers(
             continue
 
         try:
-            embedding = extract_embedding_for_segments(
+            voiceprint = extract_embedding_for_segments(
                 audio_path, segments, device_str=device
             )
         except Exception as e:  # noqa: BLE001 -- boundary: per-speaker best effort
@@ -230,7 +258,7 @@ def _rebuild_recording_speakers(
             failed += 1
             continue
 
-        if not embedding:
+        if not voiceprint:
             # Extraction ran and produced nothing usable from these segments.
             # That is deterministic for this input, so retrying cannot help.
             _clear_dead_voiceprint(
@@ -239,8 +267,9 @@ def _rebuild_recording_speakers(
             cleared += 1
             continue
 
-        speaker.embedding = embedding
+        speaker.embedding = voiceprint.embedding
         speaker.embedding_version = EMBEDDING_METHOD_VERSION
+        speaker.embedding_speech_seconds = voiceprint.speech_seconds
         session.add(speaker)
         rebuilt += 1
         if speaker.global_speaker_id:

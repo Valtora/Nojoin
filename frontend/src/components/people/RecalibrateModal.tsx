@@ -25,6 +25,7 @@ import {
 import { useNotificationStore } from "@/lib/notificationStore";
 import { getErrorMessage } from "@/lib/errors";
 import SplitPersonModal from "./SplitPersonModal";
+import { REQUIRED_SPEECH_SECONDS, formatSeconds } from "@/lib/libraryVoiceprint";
 
 interface RecalibrateModalProps {
   isOpen: boolean;
@@ -165,6 +166,19 @@ export default function RecalibrateModal({
     (s) => s === "approved",
   ).length;
 
+  // A voiceprint is saved only from recordings whose own samples hold enough
+  // clear speech, so the figure that matters is the best single recording's.
+  const selectedSecondsByRecording = new Map<string, number>();
+  segments.forEach((segment, idx) => {
+    if (segmentStates[idx] !== "approved") return;
+    const key = String(segment.recording_id);
+    selectedSecondsByRecording.set(
+      key,
+      (selectedSecondsByRecording.get(key) ?? 0) + (segment.end - segment.start),
+    );
+  });
+  const bestRecordingSeconds = Math.max(0, ...selectedSecondsByRecording.values());
+
   const handleRecalibrate = async () => {
     if (!speaker || activeCount === 0) return;
 
@@ -178,12 +192,11 @@ export default function RecalibrateModal({
           end: s.end,
         }));
 
-      await recalibrateSpeaker(speaker.id, selectedSegments);
+      const result = await recalibrateSpeaker(speaker.id, selectedSegments);
       setSuccess(true);
       addNotification({
         type: "success",
-        message:
-          "Voiceprint recalibrated successfully! You can now scan for matches.",
+        message: `${result.message} You can now scan for matches.`,
       });
       // Do not auto close, let user decide
 
@@ -217,9 +230,11 @@ export default function RecalibrateModal({
             <span className="mt-1 block text-sm font-normal text-contrast-helper">
               Only approve{" "}
               <span className="font-semibold text-foreground">clear, isolated speech</span>{" "}
-              samples. Aim for{" "}
-              <span className="font-semibold text-status-info-fg">3-5 samples</span>{" "}
-              to create a &quot;Gold Standard&quot; voiceprint.
+              samples. Each recording used needs{" "}
+              <span className="font-semibold text-status-info-fg">
+                {REQUIRED_SPEECH_SECONDS} seconds
+              </span>{" "}
+              of the person&apos;s clear speech among its samples.
             </span>
           </span>
         }
@@ -231,6 +246,13 @@ export default function RecalibrateModal({
                   <span className="font-medium text-foreground">{activeCount}</span>{" "}
                   samples selected
                 </div>
+                {activeCount > 0 && (
+                  <div className="text-xs text-contrast-helper">
+                    Up to {formatSeconds(bestRecordingSeconds)} s from one
+                    recording; {REQUIRED_SPEECH_SECONDS} s of clear speech from
+                    one recording needed.
+                  </div>
+                )}
 
                 {/* Entry point for unmerge (split) */}
                 <button

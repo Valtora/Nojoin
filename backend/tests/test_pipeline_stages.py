@@ -847,8 +847,12 @@ def test_duplicate_resolved_name_auto_merges_and_rewrites_segments(monkeypatch):
         monkeypatch,
         "backend.processing.embedding_core",
         extract_embeddings=lambda *a, **k: {
-            "SPEAKER_00": [0.1, 0.2],
-            "SPEAKER_01": [0.3, 0.4],
+            "SPEAKER_00": types.SimpleNamespace(
+                embedding=[0.1, 0.2], speech_seconds=30.0
+            ),
+            "SPEAKER_01": types.SimpleNamespace(
+                embedding=[0.3, 0.4], speech_seconds=30.0
+            ),
         },
         EMBEDDING_METHOD_VERSION=2,
         release_embedding_model_cache=lambda: None,
@@ -942,8 +946,8 @@ def test_unidentified_speakers_get_sequential_names(monkeypatch):
         monkeypatch,
         "backend.processing.embedding_core",
         extract_embeddings=lambda *a, **k: {
-            "SPEAKER_00": [0.1],
-            "SPEAKER_01": [0.2],
+            "SPEAKER_00": types.SimpleNamespace(embedding=[0.1], speech_seconds=30.0),
+            "SPEAKER_01": types.SimpleNamespace(embedding=[0.2], speech_seconds=30.0),
         },
         EMBEDDING_METHOD_VERSION=2,
         release_embedding_model_cache=lambda: None,

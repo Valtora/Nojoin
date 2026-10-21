@@ -41,6 +41,13 @@ from backend.tests.sqlite_schemas import (
 
 STALE_VECTOR = [1.0, 0.0, 0.0]
 REBUILT_VECTOR = [0.6, 0.8, 0.0]
+REBUILT_SPEECH_SECONDS = 25.0
+
+
+def _rebuilt() -> Any:
+    from backend.processing.embedding import RecordingVoiceprint
+
+    return RecordingVoiceprint(list(REBUILT_VECTOR), REBUILT_SPEECH_SECONDS)
 
 
 def _utc_now_naive() -> datetime:
@@ -118,6 +125,7 @@ class SpeakerRow:
     embedding: Any = field(default_factory=lambda: list(STALE_VECTOR))
     embedding_version: int | None = LEGACY_EMBEDDING_METHOD_VERSION
     global_speaker_id: int | None = None
+    embedding_speech_seconds: float | None = None
 
 
 def _add_speaker(connection, speaker: SpeakerRow) -> None:
@@ -127,12 +135,12 @@ def _add_speaker(connection, speaker: SpeakerRow) -> None:
             INSERT INTO recording_speakers (
                 id, created_at, updated_at, public_id, recording_id,
                 global_speaker_id, diarization_label, embedding,
-                embedding_version, merged_into_id, speaker_status,
-                speaker_kind, identity_locked
+                embedding_version, embedding_speech_seconds, merged_into_id,
+                speaker_status, speaker_kind, identity_locked
             ) VALUES (
                 :id, :now, :now, :public_id, :recording_id,
                 :global_speaker_id, :label, :embedding,
-                :embedding_version, NULL, 'active', 'automated', 0
+                :embedding_version, :seconds, NULL, 'active', 'automated', 0
             )
             """
         ),
@@ -145,6 +153,7 @@ def _add_speaker(connection, speaker: SpeakerRow) -> None:
             "label": speaker.label,
             "embedding": json.dumps(speaker.embedding),
             "embedding_version": speaker.embedding_version,
+            "seconds": speaker.embedding_speech_seconds,
         },
     )
 
@@ -277,9 +286,7 @@ def _extraction_succeeds(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         embedding_core,
         "extract_embedding_for_segments",
-        lambda audio_path, segments, device_str="auto", hf_token=None: list(
-            REBUILT_VECTOR
-        ),
+        lambda audio_path, segments, device_str="auto", hf_token=None: _rebuilt(),
     )
 
 
@@ -371,7 +378,7 @@ def test_utterance_ranges_win_over_transcript_segments(tmp_path: Path) -> None:
 
     def _capture(audio_path, segments, device_str="auto", hf_token=None):
         captured["segments"] = segments
-        return list(REBUILT_VECTOR)
+        return _rebuilt()
 
     embedding_core.extract_embedding_for_segments = _capture
     summary = _run_task(engine, user_id=1)
@@ -393,6 +400,7 @@ def test_missing_audio_clears_stale_voiceprints(tmp_path: Path) -> None:
     summary = _run_task(engine, user_id=1)
 
     assert summary["recordings_skipped_no_audio"] == 1
+    assert summary["recordings_processed"] == 0
     assert summary["speakers_cleared_unrebuildable"] == 1
 
     embedding, version = _speaker_rows(engine)[100]
@@ -617,3 +625,342 @@ def test_a_second_run_has_nothing_left_to_do(tmp_path: Path) -> None:
     assert second["speakers_cleared_unrebuildable"] == 0
 
     engine.dispose()
+
+
+def test_a_rebuilt_speaker_is_measured_and_a_cleared_one_forgets_its_speech(
+    tmp_path: Path,
+) -> None:
+    engine = _make_engine(tmp_path, "measured")
+    with engine.begin() as connection:
+        _add_user(connection, 1)
+        _add_recording(connection, 10, 1)
+        _add_speaker(connection, SpeakerRow(100, 10, "SPEAKER_00"))
+        _add_speaker(
+            connection,
+            SpeakerRow(101, 10, "SPEAKER_01", embedding_speech_seconds=30.0),
+        )
+        _add_utterance(connection, 1, 10, 100, (0, 2000))
+        _add_transcript(connection, 10, [])
+
+    _run_task(engine, user_id=1)
+
+    with engine.begin() as connection:
+        seconds = dict(
+            connection.execute(
+                text("SELECT id, embedding_speech_seconds FROM recording_speakers")
+            ).all()
+        )
+    assert seconds == {100: REBUILT_SPEECH_SECONDS, 101: None}
+
+
+def test_a_person_without_a_voiceprint_gets_one_only_from_enough_speech(
+    tmp_path: Path,
+) -> None:
+    """The rebuild founds a missing voiceprint under the same floor as a rename."""
+    engine = _make_engine(tmp_path, "founding")
+    with engine.begin() as connection:
+        _add_user(connection, 1)
+        _add_person(connection, 5, 1)
+        _add_person(connection, 6, 1)
+        _add_recording(connection, 10, 1)
+        for speaker_id, person_id, seconds in ((100, 5, 12.0), (101, 6, 25.0)):
+            _add_speaker(
+                connection,
+                SpeakerRow(
+                    speaker_id,
+                    10,
+                    f"SPEAKER_{speaker_id}",
+                    embedding=list(REBUILT_VECTOR),
+                    embedding_version=EMBEDDING_METHOD_VERSION,
+                    global_speaker_id=person_id,
+                    embedding_speech_seconds=seconds,
+                ),
+            )
+
+    summary = _run_task(engine, user_id=1)
+
+    with engine.begin() as connection:
+        people = dict(
+            connection.execute(text("SELECT id, embedding FROM global_speakers")).all()
+        )
+    assert summary["people_rebuilt"] == 1
+    assert people[5] is None
+    assert json.loads(people[6]) == pytest.approx(REBUILT_VECTOR)
+
+
+def _person_row(engine: Any, person_id: int) -> tuple[Any, Any]:
+    with engine.begin() as connection:
+        embedding, version = connection.execute(
+            text(
+                "SELECT embedding, embedding_version FROM global_speakers"
+                " WHERE id = :id"
+            ),
+            {"id": person_id},
+        ).one()
+    return (json.loads(embedding) if embedding else None), version
+
+
+def test_a_rebuild_keeps_out_the_speakers_a_link_could_not_fold_in(
+    tmp_path: Path,
+) -> None:
+    """Founded from 25 s, plus 2 s.
+
+    The person's own speaker is re-extracted, which makes the run rebuild the
+    person. The short speaker could never have founded a voiceprint, so it
+    may not enter the rebuilt one.
+    """
+    short = [0.0, 0.0, 1.0]
+    engine = _make_engine(tmp_path, "probe")
+    with engine.begin() as connection:
+        _add_user(connection, 1)
+        _add_person(
+            connection,
+            5,
+            1,
+            embedding=REBUILT_VECTOR,
+            embedding_version=EMBEDDING_METHOD_VERSION,
+        )
+        _add_recording(connection, 10, 1)
+        _add_speaker(connection, SpeakerRow(100, 10, "SPEAKER_00", global_speaker_id=5))
+        _add_utterance(connection, 1, 10, 100, (0, 25000))
+        _add_speaker(
+            connection,
+            SpeakerRow(
+                101,
+                10,
+                "SPEAKER_101",
+                embedding=short,
+                embedding_version=EMBEDDING_METHOD_VERSION,
+                global_speaker_id=5,
+                embedding_speech_seconds=2.0,
+            ),
+        )
+
+    summary = _run_task(engine, user_id=1)
+
+    assert summary["people_rebuilt"] == 1
+    assert _person_row(engine, 5) == (
+        pytest.approx(REBUILT_VECTOR),
+        EMBEDDING_METHOD_VERSION,
+    )
+
+
+def test_a_stale_person_is_not_rebuilt_from_speech_below_the_floor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Replacing a stale voiceprint founds a new one, so it needs the floor."""
+    from backend.processing.embedding import RecordingVoiceprint
+
+    monkeypatch.setattr(
+        embedding_core,
+        "extract_embedding_for_segments",
+        lambda *a, **k: RecordingVoiceprint(list(REBUILT_VECTOR), 12.0),
+    )
+    engine = _make_engine(tmp_path, "stale-short")
+    with engine.begin() as connection:
+        _add_user(connection, 1)
+        _add_person(connection, 5, 1, embedding=STALE_VECTOR, embedding_version=1)
+        _add_recording(connection, 10, 1)
+        _add_speaker(connection, SpeakerRow(100, 10, "SPEAKER_00", global_speaker_id=5))
+        _add_utterance(connection, 1, 10, 100, (0, 12000))
+
+    summary = _run_task(engine, user_id=1)
+
+    assert (summary["people_rebuilt"], summary["people_cleared_unrebuildable"]) == (
+        0,
+        1,
+    )
+    assert _person_row(engine, 5) == (None, None)
+
+
+def _seconds(engine: Any) -> dict[int, Any]:
+    with engine.begin() as connection:
+        return dict(
+            connection.execute(
+                text("SELECT id, embedding_speech_seconds FROM recording_speakers")
+            ).all()
+        )
+
+
+def _current(speaker_id: int, recording_id: int, **fields: Any) -> SpeakerRow:
+    """A current-version voiceprint, unmeasured unless given seconds."""
+    return SpeakerRow(
+        speaker_id,
+        recording_id,
+        f"SPEAKER_{speaker_id}",
+        embedding=list(REBUILT_VECTOR),
+        embedding_version=EMBEDDING_METHOD_VERSION,
+        **fields,
+    )
+
+
+def test_the_rebuild_leaves_unmeasured_current_voiceprints_alone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A voiceprint from before speech was measured is not work for this task.
+
+    It is grandfathered past the floor, so measuring it in a sweep bought
+    nothing and cost audio reads: the review's probes showed that sweep
+    rewriting a locked person and recording a failed extraction as 0 s. Only
+    paths that extract a voiceprint again anyway measure it.
+    """
+
+    def _never(*args: Any, **kwargs: Any) -> Any:
+        raise AssertionError("an unmeasured current voiceprint was re-extracted")
+
+    monkeypatch.setattr(embedding_core, "extract_embedding_for_segments", _never)
+    recalibrated = [0.8, 0.6, 0.0]
+    engine = _make_engine(tmp_path, "unmeasured")
+    with engine.begin() as connection:
+        _add_user(connection, 1)
+        _add_person(
+            connection,
+            5,
+            1,
+            embedding=recalibrated,
+            embedding_version=EMBEDDING_METHOD_VERSION,
+        )
+        connection.execute(
+            text("UPDATE global_speakers SET is_voiceprint_locked = 1 WHERE id = 5")
+        )
+        _add_recording(connection, 10, 1)
+        _add_speaker(connection, _current(100, 10, global_speaker_id=5))
+        _add_speaker(connection, _current(101, 10))
+        _add_utterance(connection, 1, 10, 100, (0, 25000))
+        _add_utterance(connection, 2, 10, 101, (25000, 60000))
+
+    summary = _run_task(engine, user_id=1)
+
+    assert (summary["stale_speakers_found"], summary["speakers_rebuilt"]) == (0, 0)
+    assert "unmeasured_speakers_found" not in summary
+    assert _seconds(engine) == {100: None, 101: None}
+    assert _person_row(engine, 5) == (
+        pytest.approx(recalibrated),
+        EMBEDDING_METHOD_VERSION,
+    )
+
+
+def test_a_run_re_extracts_no_more_recordings_than_its_limit(tmp_path: Path) -> None:
+    engine = _make_engine(tmp_path, "limit")
+    with engine.begin() as connection:
+        _add_user(connection, 1)
+        for recording_id, speaker_id in ((10, 100), (11, 110)):
+            _add_recording(connection, recording_id, 1)
+            _add_speaker(connection, SpeakerRow(speaker_id, recording_id))
+            _add_utterance(connection, speaker_id, recording_id, speaker_id, (0, 2000))
+
+    summary = _run_task(engine, user_id=1, limit=1)
+
+    assert (summary["recordings_processed"], summary["recordings_remaining"]) == (1, 1)
+    versions = sorted(version for _embedding, version in _speaker_rows(engine).values())
+    assert versions == [LEGACY_EMBEDDING_METHOD_VERSION, EMBEDDING_METHOD_VERSION]
+
+
+def test_a_rebuild_averages_only_current_version_voiceprints(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A speaker whose re-extraction failed stays stale and out of the person.
+
+    Unmeasured, it passes the evidence floor, and against the mean of the two
+    voiceprints both score above the drift guard, so only the version check
+    keeps it out.
+    """
+
+    def _extract(audio_path, segments, device_str="auto", hf_token=None):
+        if min(start for start, _end in segments) >= 30.0:
+            raise RuntimeError("device busy")
+        return _rebuilt()
+
+    monkeypatch.setattr(embedding_core, "extract_embedding_for_segments", _extract)
+    engine = _make_engine(tmp_path, "versions")
+    with engine.begin() as connection:
+        _add_user(connection, 1)
+        _add_person(connection, 5, 1, embedding=STALE_VECTOR, embedding_version=1)
+        _add_recording(connection, 10, 1)
+        _add_speaker(connection, SpeakerRow(100, 10, "SPEAKER_00", global_speaker_id=5))
+        _add_speaker(
+            connection,
+            SpeakerRow(
+                101, 10, "SPEAKER_01", embedding=[0.0, 0.0, 1.0], global_speaker_id=5
+            ),
+        )
+        _add_utterance(connection, 1, 10, 100, (0, 25000))
+        _add_utterance(connection, 2, 10, 101, (30000, 55000))
+
+    summary = _run_task(engine, user_id=1)
+
+    assert (summary["speakers_rebuilt"], summary["speakers_failed_retryable"]) == (1, 1)
+    assert _person_row(engine, 5) == (
+        pytest.approx(REBUILT_VECTOR),
+        EMBEDDING_METHOD_VERSION,
+    )
+
+
+def _person_with_a_re_extracted_speaker(
+    engine: Any, person_voiceprint: list[float]
+) -> None:
+    """A current-version person, one stale speaker of theirs and two current ones."""
+    with engine.begin() as connection:
+        _add_user(connection, 1)
+        _add_person(
+            connection,
+            5,
+            1,
+            embedding=person_voiceprint,
+            embedding_version=EMBEDDING_METHOD_VERSION,
+        )
+        _add_recording(connection, 10, 1)
+        _add_speaker(connection, SpeakerRow(100, 10, "SPEAKER_00", global_speaker_id=5))
+        _add_utterance(connection, 1, 10, 100, (0, 25000))
+        for speaker_id in (101, 102):
+            _add_speaker(
+                connection,
+                _current(
+                    speaker_id, 10, global_speaker_id=5, embedding_speech_seconds=60.0
+                ),
+            )
+
+
+def test_a_rebuild_is_not_held_back_by_the_persons_own_voiceprint(
+    tmp_path: Path,
+) -> None:
+    """A poor voiceprint never gets to refuse the person's genuine recordings.
+
+    The review's probe: a guard against the person's voiceprint kept three
+    recordings of 25-60 s out of it for good, because the voiceprint they were
+    measured against was the junk. The rebuild runs no guard, so it averages
+    every link that meets the floor.
+    """
+    engine = _make_engine(tmp_path, "junk-reference")
+    _person_with_a_re_extracted_speaker(engine, STALE_VECTOR)
+
+    summary = _run_task(engine, user_id=1)
+
+    assert summary["people_rebuilt"] == 1
+    assert _person_row(engine, 5) == (
+        pytest.approx(REBUILT_VECTOR),
+        EMBEDDING_METHOD_VERSION,
+    )
+
+
+def test_a_current_person_none_of_whose_speakers_changed_is_left_alone(
+    tmp_path: Path,
+) -> None:
+    """Only a re-extraction gives the rebuild a reason to touch a current person."""
+    own = [0.8, 0.6, 0.0]
+    engine = _make_engine(tmp_path, "unaffected")
+    with engine.begin() as connection:
+        _add_user(connection, 1)
+        _add_person(
+            connection, 5, 1, embedding=own, embedding_version=EMBEDDING_METHOD_VERSION
+        )
+        _add_recording(connection, 10, 1)
+        _add_speaker(
+            connection,
+            _current(100, 10, global_speaker_id=5, embedding_speech_seconds=60.0),
+        )
+
+    summary = _run_task(engine, user_id=1)
+
+    assert summary["people_rebuilt"] == 0
+    assert _person_row(engine, 5) == (pytest.approx(own), EMBEDDING_METHOD_VERSION)

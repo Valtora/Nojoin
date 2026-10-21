@@ -208,6 +208,17 @@ class RecordingSpeaker(BaseDBModel, table=True):
             "the same version may be compared."
         ),
     )
+    embedding_speech_seconds: Optional[float] = Field(
+        default=None,
+        description=(
+            "Seconds of selected crop speech the voiceprint was built from. NULL "
+            "means the voiceprint predates measurement: it is grandfathered "
+            "past the evidence floor, founding a library voiceprint as before, "
+            "until it is extracted again. Every new extraction records it. "
+            "On a row merged into another by a fold, the speech it added to "
+            "that row's figure, so that an unmerge can take it out again."
+        ),
+    )
     color: Optional[str] = None
 
     recording: "Recording" = Relationship(back_populates="speakers")

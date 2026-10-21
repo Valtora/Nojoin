@@ -38,6 +38,7 @@ import {
   TranscriptSpeakerAssignment,
 } from "@/types";
 import { useNotificationStore } from "@/lib/notificationStore";
+import { libraryVoiceprintNotices } from "@/lib/libraryVoiceprint";
 import { useNavigationStore } from "@/lib/store";
 import {
   buildMeetingSpeakerColors,
@@ -715,10 +716,13 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
   const handleRenameSpeaker = async (label: string, newName: string) => {
     if (!recording) return;
     try {
-      await updateSpeaker(recording.id, label, newName);
+      const renamed = await updateSpeaker(recording.id, label, newName);
       const updated = await getRecording(recording.id);
       setRecording(updated);
       await syncTranscriptState("full");
+      for (const message of libraryVoiceprintNotices(renamed)) {
+        addNotification({ type: "info", message });
+      }
 
         } catch (error: unknown) {
       console.error("Failed to rename speaker:", error);

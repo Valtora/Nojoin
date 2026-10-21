@@ -32,6 +32,7 @@ def test_heavy_gpu_tasks_route_to_gpu_lane() -> None:
         "backend.worker.tasks.process_recording_task",
         "backend.processing.live_transcribe.transcribe_segment_live_task",
         "backend.worker.tasks.extract_embedding_task",
+        "backend.worker.tasks.extract_measured_embedding_task",
         "backend.worker.tasks.update_speaker_embedding_task",
     ):
         assert _queue(task) == GPU_QUEUE

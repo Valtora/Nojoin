@@ -25,6 +25,7 @@ const getGlobalSpeakers = vi.fn();
 const getTranscriptUtterances = vi.fn();
 const renameRecording = vi.fn();
 const generateNotes = vi.fn();
+const updateSpeaker = vi.fn();
 
 let activePanel = "transcript";
 
@@ -67,7 +68,7 @@ vi.mock("@/lib/api", () => ({
   getTranscriptUtterances: (...args: unknown[]) => getTranscriptUtterances(...args),
   renameRecording: (...args: unknown[]) => renameRecording(...args),
   updateSettings: vi.fn(),
-  updateSpeaker: vi.fn(),
+  updateSpeaker: (...args: unknown[]) => updateSpeaker(...args),
   updateTranscriptSegmentSpeaker: vi.fn(),
   updateTranscriptUtteranceSpeaker: vi.fn(),
   updateTranscriptSegmentText: vi.fn(),
@@ -97,8 +98,19 @@ vi.mock("@/components/SpeakerPanel", () => ({
   default: () => <div data-testid="speaker-panel" />,
 }));
 vi.mock("@/components/TranscriptView", () => ({
-  default: ({ segments }: { segments: unknown[] }) => (
-    <div data-testid="transcript-view">segments:{segments.length}</div>
+  default: ({
+    segments,
+    onRenameSpeaker,
+  }: {
+    segments: unknown[];
+    onRenameSpeaker: (label: string, newName: string) => void;
+  }) => (
+    <div data-testid="transcript-view">
+      segments:{segments.length}
+      <button type="button" onClick={() => onRenameSpeaker("SPEAKER_00", "Dana")}>
+        Rename speaker
+      </button>
+    </div>
   ),
 }));
 vi.mock("@/components/NotesView", () => ({
@@ -208,6 +220,7 @@ describe("RecordingPage (detail)", () => {
     getTranscriptUtterances.mockReset();
     renameRecording.mockReset();
     generateNotes.mockReset();
+    updateSpeaker.mockReset().mockResolvedValue([]);
 
     getRecording.mockResolvedValue(buildRecording());
     getSettings.mockResolvedValue({
@@ -287,6 +300,32 @@ describe("RecordingPage (detail)", () => {
       expect(renameRecording).toHaveBeenCalledWith("rec-1", "Renamed sync");
     });
     expect(routerRefresh).toHaveBeenCalled();
+  });
+
+  it("says when renaming a speaker in the transcript did not save a voiceprint", async () => {
+    updateSpeaker.mockResolvedValue([
+      {
+        diarization_label: "SPEAKER_00",
+        global_speaker: { id: 7, name: "Dana" },
+        library_voiceprint: {
+          status: "skipped_insufficient_speech",
+          speech_seconds: 12,
+          required_speech_seconds: 20,
+        },
+      },
+    ]);
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Rename speaker" }));
+
+    await waitFor(() =>
+      expect(addNotification).toHaveBeenCalledWith({
+        type: "info",
+        message:
+          "Voiceprint not saved: 12 s of clear speech, 20 s needed. A later recording linked to Dana with at least 20 s of clear speech will save it.",
+      }),
+    );
+    expect(updateSpeaker).toHaveBeenCalledWith("rec-1", "SPEAKER_00", "Dana");
   });
 
   it("redirects to the recordings list when loading the recording fails", async () => {

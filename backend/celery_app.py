@@ -186,6 +186,7 @@ TASK_ROUTES = {
         "queue": GPU_QUEUE
     },
     "backend.worker.tasks.extract_embedding_task": {"queue": GPU_QUEUE},
+    "backend.worker.tasks.extract_measured_embedding_task": {"queue": GPU_QUEUE},
     "backend.worker.tasks.update_speaker_embedding_task": {"queue": GPU_QUEUE},
     # Re-extracts stored voiceprints after an extraction-method bump. Runs the
     # embedding model over archived audio, so it belongs on the GPU lane where

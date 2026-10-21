@@ -98,6 +98,7 @@ SCHEMA_STATEMENTS = [
     """
     CREATE TABLE recording_speakers (
         embedding_version INTEGER,
+        embedding_speech_seconds FLOAT,
         id INTEGER PRIMARY KEY,
         created_at DATETIME NOT NULL,
         updated_at DATETIME NOT NULL,
@@ -454,7 +455,7 @@ async def test_voiceprint_extract_prefers_proxy_for_browser_capture_audio(
 
         class _TaskResult:
             def get(self, timeout=None):
-                return [0.1, 0.2]
+                return {"embedding": [0.1, 0.2], "speech_seconds": 25.0}
 
         return _TaskResult()
 
@@ -509,7 +510,7 @@ async def test_global_recalibrate_prefers_proxy_for_browser_capture_audio(
 
         class _TaskResult:
             def get(self, timeout=None):
-                return [0.1, 0.2]
+                return {"embedding": [0.1, 0.2], "speech_seconds": 25.0}
 
         return _TaskResult()
 

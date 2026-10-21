@@ -249,17 +249,27 @@ Voiceprints are comparable only within one extraction procedure. `EMBEDDING_METH
 Every write must keep a stored voiceprint's version true:
 
 - A freshly extracted vector is stamped `EMBEDDING_METHOD_VERSION`.
-- A copied voiceprint (promoting a speaker to a new person, restoring a backup) keeps its own version.
+- A copied voiceprint (restoring a backup) keeps its own version.
 - A blend goes through `blend_voiceprint`, which never mixes versions. A current voiceprint replaces a stale one without the drift guard, since a cosine across versions says nothing; a stale one leaves a current row unchanged; an empty row takes the incoming vector and its version.
 
 The duplicate-merge pass (`backend/processing/speaker_merge.py`) joins clusters the diariser split from one voice:
 
 - The threshold is `DUPLICATE_SPEAKER_MERGE_THRESHOLD` (0.70). Lowering it causes wrong merges, which are harder to undo than wrong splits.
 - Linkage is complete: two groups join only when every pair across them clears the threshold, so no third cluster can bridge two people.
-- A group carrying a person's identity is held to that person's library voiceprint. If any cluster in the proposed union, other than those already identified as that person, scores below `IDENTIFIED_MERGE_VOICEPRINT_FLOOR` (0.60, the value of `DRIFT_GUARD_THRESHOLD`), the union is refused and that cluster keeps its `Speaker N` name. A library voiceprint from another extraction version is not consulted.
+- A group carrying a person's identity is held to that person's library voiceprint. If any cluster in the proposed union, other than those already identified as that person, scores below `IDENTIFIED_MERGE_VOICEPRINT_FLOOR` (0.60, deliberately not tied to `DRIFT_GUARD_THRESHOLD`), the union is refused and that cluster keeps its `Speaker N` name. A library voiceprint from another extraction version is not consulted.
 - Each finalised utterance keeps its diariser cluster in `transcript_utterances.diarization_label`, so `unmerge_recording_speaker` can restore a merged cluster as an unnamed speaker with all its lines except those a person assigned by hand, recording an `unmerge_speakers` correction event. Lines written before that column existed carry no label; undoing those merges needs a reprocess.
 
-`rebuild_voiceprints_task` repairs stale voiceprints from Celery Beat every six hours, at most 25 recordings a tick (`AUTOMATIC_VOICEPRINT_REBUILD_LIMIT`). A stale voiceprint that cannot be re-extracted (its audio is gone, or its speaker has no transcript segment) is cleared; a transient failure leaves it for the next run.
+Every link of a recording speaker to a person offers its voiceprint through `update_library_voiceprint` in [backend/processing/embedding.py](../backend/processing/embedding.py):
+
+- **Speech floor.** Only a recording voiceprint with at least `LIBRARY_VOICEPRINT_MIN_SPEECH_S` (20 s) of speech founds a library voiceprint; a shorter one links without it. Every extraction records the figure on `recording_speakers.embedding_speech_seconds`. An unmeasured voiceprint founds as before, and nothing re-extracts just to measure. `RecordingVoiceprint.from_task_result` refuses an extraction result with no figure, so a result from an older worker is never grandfathered as unmeasured.
+- **Figures follow extractions.** Speech is never pooled across recordings. A merge within one recording adds the figures when its fold passes the guard, and an unmerge takes them out.
+- **Drift guard.** A fold is refused when `cosine(current, incoming) < DRIFT_GUARD_THRESHOLD` (0.70).
+- **Locks.** `is_voiceprint_locked` blocks the pipeline's fold, auto-applied name suggestions and segment learning. A link the user makes still folds through the guard, except on the legacy rename path (a recording still processing, or `enable_canonical_transcript_writes` off), which refuses the fold (`skipped_locked`) but founds a voiceprint for a locked person who has none.
+- **Versions.** A current voiceprint replacing a stale one is a founding and needs the floor.
+- **Pooling.** Recalibration and a person split extract one voiceprint per selected recording (`pool_recording_voiceprints`) and average only those that meet the floor.
+- **Splits.** The original person is rebuilt from their remaining clips, or cleared if none qualifies, since the old voiceprint holds the moved clips. A cleared row keeps the current `embedding_version`; a NULL one reads as legacy and the rebuild task would found it again. An original with one speaker in a split recording gives that speaker the remainder's voiceprint, so a rebuild can't average the moved clips back in. The receiving person is locked when the split saves or folds their voiceprint; the original keeps their lock unless their voiceprint is cleared.
+
+`rebuild_voiceprints_task` repairs stale voiceprints from Celery Beat every six hours, at most 25 recordings a tick (`AUTOMATIC_VOICEPRINT_REBUILD_LIMIT`). A stale voiceprint that cannot be re-extracted (its audio is gone, or its speaker has no transcript segment) is cleared; a transient failure leaves it for the next run. It averages only links that meet the floor and skips a person with a locked current-version voiceprint. A stale person with no qualifying current-version speaker keeps the stale voiceprint, which matches nothing; only one with no current-version speaker at all is cleared.
 
 A speaker correction (a rename across the recording or from an utterance forward, a merge, a library link or promotion) changes only the utterances its scope selects, or the speaker's identity. It never re-derives other utterances from `diarization_window_results` or `diarization_window_turns`, which hold data only for live captures finalised by v1.0.0 to v1.2.0.
 

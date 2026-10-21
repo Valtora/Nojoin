@@ -21,7 +21,10 @@ from backend.models.recording_public import (
 from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
 from backend.models.transcript import Transcript
 from backend.models.user import User
-from backend.processing.embedding import blend_voiceprint
+from backend.processing.embedding import (
+    LibraryVoiceprintUpdate,
+    offer_linked_voiceprint,
+)
 from backend.utils.canonical_pipeline import (
     list_merged_recording_speakers,
     record_recording_speaker_corrections,
@@ -115,7 +118,7 @@ async def apply_recording_speaker_update(
         and speakers_module.recording_ready_for_canonical_backfill(recording.status)
     ):
         try:
-            await db.run_sync(
+            library_updates = await db.run_sync(
                 lambda sync_session: update_recording_speaker_identity(
                     sync_session,
                     recording_id=recording.id,
@@ -169,6 +172,7 @@ async def apply_recording_speaker_update(
         return _serialize_recording_speakers(
             refreshed_speakers,
             recording_public_id=recording.public_id,
+            library_updates=library_updates,
         )
 
     stmt = select(RecordingSpeaker).where(
@@ -200,6 +204,7 @@ async def apply_recording_speaker_update(
             old_names.add(f"Speaker {int(live_match.group(1))}")
         old_names.add(update.global_speaker_name)
 
+    legacy_library_updates: dict[int, LibraryVoiceprintUpdate] = {}
     for rs in recording_speakers:
         if global_speaker:
             rs.global_speaker_id = global_speaker.id
@@ -207,13 +212,20 @@ async def apply_recording_speaker_update(
             rs.name = None
 
             if rs.embedding:
-                if not (
-                    global_speaker.embedding and global_speaker.is_voiceprint_locked
-                ):
-                    blend_voiceprint(
-                        global_speaker, rs.embedding, rs.embedding_version, alpha=0.3
-                    )
-                db.add(global_speaker)
+                # This path's lock only ever blocked a fold into an existing
+                # voiceprint, never the first one.
+                library_update = offer_linked_voiceprint(
+                    global_speaker,
+                    rs,
+                    alpha=0.3,
+                    locked=bool(
+                        global_speaker.embedding and global_speaker.is_voiceprint_locked
+                    ),
+                )
+                if rs.id is not None:
+                    legacy_library_updates[rs.id] = library_update
+                if library_update.changed:
+                    db.add(global_speaker)
         else:
             rs.local_name = update.global_speaker_name
             rs.global_speaker_id = None
@@ -331,6 +343,7 @@ async def apply_recording_speaker_update(
     return _serialize_recording_speakers(
         recording_speakers,
         recording_public_id=recording.public_id,
+        library_updates=legacy_library_updates,
     )
 
 
@@ -383,15 +396,15 @@ async def promote_speaker_to_global(
     result = await db.execute(statement)
     existing_global = result.scalar_one_or_none()
 
+    created_library_update: LibraryVoiceprintUpdate | None = None
     if existing_global:
         target_global_speaker_id = existing_global.id
     else:
-        global_speaker = GlobalSpeaker(
-            name=speaker_name,
-            embedding=recording_speaker.embedding,
-            embedding_version=recording_speaker.embedding_version,
-            user_id=current_user.id,
-        )
+        global_speaker = GlobalSpeaker(name=speaker_name, user_id=current_user.id)
+        if recording_speaker.embedding:
+            created_library_update = offer_linked_voiceprint(
+                global_speaker, recording_speaker, alpha=0.5
+            )
         db.add(global_speaker)
         await db.flush()
         target_global_speaker_id = global_speaker.id
@@ -401,7 +414,7 @@ async def promote_speaker_to_global(
         and speakers_module.recording_ready_for_canonical_backfill(recording.status)
     ):
         try:
-            await db.run_sync(
+            library_updates = await db.run_sync(
                 lambda sync_session: update_recording_speaker_identity(
                     sync_session,
                     recording_id=recording.id,
@@ -446,6 +459,10 @@ async def promote_speaker_to_global(
         return serialize_recording_speaker(
             refreshed_recording_speaker,
             recording_public_id=recording.public_id,
+            library_update=(
+                created_library_update
+                or library_updates.get(refreshed_recording_speaker.id)
+            ),
         )
 
     recording_speaker.global_speaker_id = target_global_speaker_id
@@ -475,6 +492,7 @@ async def promote_speaker_to_global(
     return serialize_recording_speaker(
         recording_speaker,
         recording_public_id=recording.public_id,
+        library_update=created_library_update,
     )
 
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+from backend.processing.embedding import RecordingVoiceprint
 from backend.utils.embedding_audio import select_recording_audio_for_embedding
 from backend.worker.tasks.embeddings import update_speaker_embedding_task
 
@@ -57,6 +58,7 @@ def test_update_speaker_embedding_task_prefers_proxy_for_browser_capture(
         id=9,
         diarization_label="LIVE_00",
         embedding=None,
+        embedding_speech_seconds=None,
         global_speaker_id=None,
     )
 
@@ -87,7 +89,7 @@ def test_update_speaker_embedding_task_prefers_proxy_for_browser_capture(
     def fake_extract(audio, segments, device_str="cpu"):
         captured["audio"] = audio
         captured["segments"] = list(segments)
-        return [0.1, 0.2]
+        return RecordingVoiceprint(embedding=[0.1, 0.2], speech_seconds=1.0)
 
     monkeypatch.setattr(
         "backend.processing.embedding_core.extract_embedding_for_segments",
