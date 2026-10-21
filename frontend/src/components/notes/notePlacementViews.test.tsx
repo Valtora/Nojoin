@@ -140,22 +140,12 @@ describe("live and finished views place notes alike", () => {
     expect(finishedOrder(golden)).toEqual(["line:0", "note:n1", "line:1"]);
   });
 
-  it("shows a note after a hidden line after the visible line before it", () => {
-    const golden: PlacementCase = {
-      name: "hidden",
-      segments: [
-        { start_ms: 0, end_ms: 4000, text: "Dana opens." },
-        { start_ms: 5000, end_ms: 6000, text: "Unattributed aside." },
-        { start_ms: 9000, end_ms: 12000, text: "Dana closes." },
-      ],
-      notes: [{ id: "n1", kind: "point", anchor_ms: 5500, created_at: "2026-01-01T10:00:00Z" }],
-      expected: [],
-    };
+  // The finished view hides UNKNOWN lines once any line has a speaker.
+  const finishedOrderWithHidden = (golden: PlacementCase, hidden: number) => {
     const segments = toSegments(golden, "SPEAKER_00").map((segment, index) => ({
       ...segment,
       provisional: false,
-      // The finished view hides UNKNOWN lines once any line has a speaker.
-      speaker: index === 1 ? "UNKNOWN" : "SPEAKER_00",
+      speaker: index === hidden ? "UNKNOWN" : "SPEAKER_00",
     }));
     const { container } = render(
       <TranscriptView
@@ -182,7 +172,38 @@ describe("live and finished views place notes alike", () => {
         onExport={vi.fn()}
       />,
     );
+    const order = renderedOrder(container, "data-order-index");
+    cleanup();
+    return order;
+  };
 
-    expect(renderedOrder(container, "data-order-index")).toEqual(["line:0", "note:n1", "line:2"]);
+  it("shows a note after a hidden line after the visible line before it", () => {
+    const golden: PlacementCase = {
+      name: "hidden",
+      segments: [
+        { start_ms: 0, end_ms: 4000, text: "Dana opens." },
+        { start_ms: 5000, end_ms: 6000, text: "Unattributed aside." },
+        { start_ms: 9000, end_ms: 12000, text: "Dana closes." },
+      ],
+      notes: [{ id: "n1", kind: "point", anchor_ms: 5500, created_at: "2026-01-01T10:00:00Z" }],
+      expected: [],
+    };
+
+    expect(finishedOrderWithHidden(golden, 1)).toEqual(["line:0", "note:n1", "line:2"]);
+  });
+
+  it("places a note on every line, so a hidden line before it does not move it", () => {
+    const golden: PlacementCase = {
+      name: "hidden before",
+      segments: [
+        { start_ms: 0, end_ms: 2000, text: "Unattributed aside." },
+        { start_ms: 5000, end_ms: 8000, text: "Dana opens." },
+        { start_ms: 12000, end_ms: 14000, text: "Dana closes." },
+      ],
+      notes: [{ id: "n1", kind: "point", anchor_ms: 9000, created_at: "2026-01-01T10:00:00Z" }],
+      expected: [],
+    };
+
+    expect(finishedOrderWithHidden(golden, 0)).toEqual(["line:1", "note:n1", "line:2"]);
   });
 });

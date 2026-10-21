@@ -1,59 +1,95 @@
 "use client";
 
-import type { OutboxEntry } from "@/lib/notes/noteOutbox";
-import { formatTimelineMs } from "@/lib/notes/placement";
+import { useRef } from "react";
+
+import { notePlace, noteSnippet, type OutboxEntry } from "@/lib/notes/noteOutbox";
 
 interface UnsavedNotesListProps {
   entries: readonly OutboxEntry[];
   onRetry: (key: string) => void;
   onDiscard: (key: string) => void;
+  /** Where focus goes when Discard removes the last note listed. */
+  onEmptied?: () => void;
 }
 
 const BUTTON =
-  "inline-flex h-[44px] items-center rounded-lg border border-control-border px-3 font-semibold text-contrast-muted transition-colors hover:border-action-border hover:text-action-text";
+  "inline-flex min-h-8 items-center rounded-lg border border-control-border bg-surface-card px-3 text-xs font-semibold text-contrast-muted transition-colors hover:border-action-border hover:text-action-text pointer-coarse:min-h-[44px]";
 
-const placeOf = (entry: OutboxEntry) =>
-  entry.kind === "head"
-    ? "Before the transcript"
-    : entry.kind === "tail"
-      ? "After the transcript"
-      : `At ${formatTimelineMs(entry.anchorMs ?? 0)}`;
+const capitalised = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
-/** Notes from the note box still on their way, with Retry and Discard once one fails. */
+/**
+ * Notes from the note box still on their way, each saying where it goes and
+ * what it says, with Retry and Discard once it fails. A button that removes
+ * itself hands focus on: Retry to its own note, Discard to the next one.
+ */
 export default function UnsavedNotesList({
   entries,
   onRetry,
   onDiscard,
+  onEmptied,
 }: UnsavedNotesListProps) {
+  const items = useRef(new Map<string, HTMLLIElement>());
   if (entries.length === 0) return null;
+
+  const discard = (index: number) => {
+    const neighbour = entries[index + 1] ?? entries[index - 1];
+    onDiscard(entries[index].key);
+    const next = neighbour ? items.current.get(neighbour.key) : null;
+    if (next) next.focus();
+    else onEmptied?.();
+  };
+
   return (
-    <ul className="space-y-1" aria-label="Notes not saved yet">
-      {entries.map((entry) => (
-        <li
-          key={entry.key}
-          data-testid="unsaved-note"
-          className="flex flex-wrap items-center gap-2 text-xs text-contrast-helper"
-        >
-          <span className="min-w-0 flex-1 truncate">
-            {placeOf(entry)}: {entry.body}
-          </span>
-          {entry.status === "saving" ? (
-            <span>Saving…</span>
-          ) : (
-            <>
-              <span role="alert" className="text-status-danger-fg">
-                {entry.error ?? "Not saved."}
-              </span>
-              <button type="button" onClick={() => onRetry(entry.key)} className={BUTTON}>
-                Retry
-              </button>
-              <button type="button" onClick={() => onDiscard(entry.key)} className={BUTTON}>
-                Discard
-              </button>
-            </>
-          )}
-        </li>
-      ))}
+    <ul className="space-y-2" aria-label="Notes not saved yet">
+      {entries.map((entry, index) => {
+        const name = `${notePlace(entry)}, “${noteSnippet(entry.body)}”`;
+        return (
+          <li
+            key={entry.key}
+            ref={(element) => {
+              if (element) items.current.set(entry.key, element);
+              else items.current.delete(entry.key);
+            }}
+            tabIndex={-1}
+            data-testid="unsaved-note"
+            data-note-status={entry.status}
+            className="density-surface-panel bg-surface-inset px-3 py-2 outline-none focus-visible:ring-2 focus-visible:ring-action"
+          >
+            <p className="text-xs text-contrast-helper">{capitalised(notePlace(entry))}</p>
+            <p className="line-clamp-2 whitespace-pre-wrap break-words text-sm leading-5 text-foreground">
+              {entry.body}
+            </p>
+            {entry.status === "saving" ? (
+              <p className="mt-1 text-xs text-contrast-helper">Saving…</p>
+            ) : (
+              <>
+                <p className="mt-1 text-xs text-status-danger-fg">{entry.error ?? "Not saved."}</p>
+                <div className="mt-1.5 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    aria-label={`Retry note ${name}`}
+                    onClick={() => {
+                      items.current.get(entry.key)?.focus();
+                      onRetry(entry.key);
+                    }}
+                    className={BUTTON}
+                  >
+                    Retry
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Discard note ${name}`}
+                    onClick={() => discard(index)}
+                    className={BUTTON}
+                  >
+                    Discard
+                  </button>
+                </div>
+              </>
+            )}
+          </li>
+        );
+      })}
     </ul>
   );
 }

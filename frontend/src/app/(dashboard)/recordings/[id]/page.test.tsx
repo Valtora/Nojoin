@@ -26,6 +26,7 @@ const getTranscriptUtterances = vi.fn();
 const renameRecording = vi.fn();
 const generateNotes = vi.fn();
 const updateSpeaker = vi.fn();
+const listTimelineNotes = vi.fn();
 
 let activePanel = "transcript";
 
@@ -80,6 +81,9 @@ vi.mock("@/lib/api", () => ({
   updateMeetingEdgeFocus: vi.fn(),
   exportContent: vi.fn(),
   exportAudio: (...args: unknown[]) => exportAudio(...args),
+  listTimelineNotes: (...args: unknown[]) => listTimelineNotes(...args),
+  createTimelineNote: vi.fn(),
+  deleteTimelineNote: vi.fn(),
 }));
 
 // Heavy child components are stubbed so the tests pin the page's own
@@ -132,7 +136,11 @@ vi.mock("@/components/DocumentsView", () => ({
   default: () => <div data-testid="documents-view" />,
 }));
 vi.mock("@/components/RecordingStatusDisplay", () => ({
-  default: () => <div data-testid="recording-status-display" />,
+  default: ({ timelineNotes }: { timelineNotes?: readonly unknown[] | null }) => (
+    <div data-testid="recording-status-display">
+      notes:{timelineNotes === null ? "loading" : (timelineNotes?.length ?? "none")}
+    </div>
+  ),
 }));
 vi.mock("@/components/ExportModal", () => ({
   default: ({
@@ -220,6 +228,7 @@ describe("RecordingPage (detail)", () => {
     renameRecording.mockReset();
     generateNotes.mockReset();
     updateSpeaker.mockReset().mockResolvedValue([]);
+    listTimelineNotes.mockReset().mockResolvedValue([]);
 
     getRecording.mockResolvedValue(buildRecording());
     getSettings.mockResolvedValue({
@@ -275,6 +284,54 @@ describe("RecordingPage (detail)", () => {
     expect(screen.queryByTestId("transcript-view")).not.toBeInTheDocument();
     // In-flight recordings must not request transcript utterances.
     expect(getTranscriptUtterances).not.toHaveBeenCalled();
+  });
+
+  it("fetches the notes list when the recording opens, and again only when a poll says it changed", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      let signature = "1:aaaa";
+      getRecording.mockImplementation(async () =>
+        buildRecording({
+          status: RecordingStatus.PROCESSING,
+          timeline_notes_list_signature: signature,
+        }),
+      );
+      const note = (id: string) => ({
+        id,
+        recording_id: "rec-1",
+        kind: "point",
+        body: id,
+        anchor_ms: 1_000,
+        revision: 1,
+        created_at: "2026-10-21T10:00:00",
+        updated_at: "2026-10-21T10:00:00",
+      });
+      listTimelineNotes.mockResolvedValue([note("n1")]);
+
+      renderPage();
+
+      const display = await screen.findByTestId("recording-status-display");
+      await waitFor(() => expect(display).toHaveTextContent("notes:1"));
+      expect(listTimelineNotes).toHaveBeenCalledTimes(1);
+
+      // A poll with the same signature brings no notes and fetches none.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3_000);
+      });
+      expect(getRecording.mock.calls.length).toBeGreaterThan(1);
+      expect(listTimelineNotes).toHaveBeenCalledTimes(1);
+
+      // Another device added a note: the next poll's signature differs.
+      signature = "2:bbbb";
+      listTimelineNotes.mockResolvedValue([note("n1"), note("n2")]);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3_000);
+      });
+      await waitFor(() => expect(display).toHaveTextContent("notes:2"));
+      expect(listTimelineNotes).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("loads transcript utterances once the recording is settled", async () => {

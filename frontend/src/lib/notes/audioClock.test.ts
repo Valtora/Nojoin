@@ -32,35 +32,75 @@ describe("AudioClock", () => {
     vi.useRealTimers();
   });
 
-  it("runs on between polls while recording and resyncs on each poll", () => {
+  it("runs on between polls while recording, resyncs on each poll, and never runs backwards", () => {
     const clock = new AudioClock();
     clock.observe(read(10_000));
 
     vi.advanceTimersByTime(400);
     expect(clock.audioNow("rec-1")).toBe(10_400);
 
-    // The next poll, a second on: the server's figure wins over the estimate.
+    // A second on, it has run to 11 000, and the next poll says 10 950.
     vi.advanceTimersByTime(600);
+    expect(clock.audioNow("rec-1")).toBe(11_000);
     clock.observe(read(10_950));
-    expect(clock.audioNow("rec-1")).toBe(10_950);
+    // Held rather than set back, so a note sent now never lands before one
+    // sent a moment ago...
+    expect(clock.audioNow("rec-1")).toBe(11_000);
+    vi.advanceTimersByTime(30);
+    expect(clock.audioNow("rec-1")).toBe(11_000);
+    // ...until the server's figure catches up, and on from there.
+    vi.advanceTimersByTime(70);
+    expect(clock.audioNow("rec-1")).toBe(11_050);
+    // A poll ahead of it wins at once.
+    clock.observe(read(12_000));
+    expect(clock.audioNow("rec-1")).toBe(12_000);
+  });
 
-    vi.advanceTimersByTime(250);
-    expect(clock.audioNow("rec-1")).toBe(11_200);
+  it("never runs backwards across a late segment, where the server stops running on", () => {
+    let now = 0;
+    const clock = new AudioClock(() => now);
+    // The last segment ends at 8 000, received at 0; the next is late and
+    // lands at 3 100. The server runs on at most 2.5 s past a segment.
+    const serverAt = (t: number) =>
+      t < 3_100 ? 8_000 + Math.min(t, 2_500) : 10_000 + Math.min(t - 3_100, 2_500);
+    const seen: number[] = [];
+    for (let t = 0; t <= 5_000; t += 50) {
+      now = t;
+      if (t % 1_000 === 0) clock.observe(read(serverAt(t)), t);
+      seen.push(clock.audioNow("rec-1")!);
+    }
+    const drops = seen.filter((value, index) => index > 0 && value < seen[index - 1]);
+    expect(drops).toEqual([]);
   });
 
   it("stands still while paused, however long, and runs on again after resume", () => {
     const clock = new AudioClock();
     clock.observe(read(30_000));
     vi.advanceTimersByTime(500);
+    expect(clock.audioNow("rec-1")).toBe(30_500);
 
+    // The paused figure is exact: it wins even below what the clock said.
     clock.observe(paused(30_400));
+    expect(clock.audioNow("rec-1")).toBe(30_400);
     vi.advanceTimersByTime(5 * 60_000);
     expect(clock.audioNow("rec-1")).toBe(30_400);
 
-    // Resumed: paused wall time never reaches the audio timeline.
+    // Resumed: paused wall time never reaches the audio timeline, and the
+    // 30_500 the clock ran on to before the pause is not held over it.
     clock.observe(read(30_400));
+    expect(clock.audioNow("rec-1")).toBe(30_400);
     vi.advanceTimersByTime(700);
     expect(clock.audioNow("rec-1")).toBe(31_100);
+  });
+
+  it("starts afresh on another recording", () => {
+    const clock = new AudioClock();
+    clock.observe(read(50_000));
+    vi.advanceTimersByTime(1_000);
+    expect(clock.audioNow("rec-1")).toBe(51_000);
+
+    clock.observe(read(1_000, { id: "rec-2" }));
+    expect(clock.audioNow("rec-2")).toBe(1_000);
   });
 
   it("stands still while the browser finishes uploading after Stop", () => {

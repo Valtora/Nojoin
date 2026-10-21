@@ -218,9 +218,14 @@ export function bodyNotesAmongLines<N extends PlacementNote>(
   return { opening, afterLine };
 }
 
-/** `MM:SS` on the audio timeline, minutes uncapped, as the notes prompts write it. */
+/**
+ * A time on the audio timeline as the live transcript writes its lines:
+ * `MM:SS`, and `H:MM:SS` from an hour.
+ */
 export const formatTimelineMs = (ms: number): string => {
   const seconds = Math.floor(Math.max(Math.trunc(ms), 0) / 1000);
-  const minutes = Math.floor(seconds / 60);
-  return `${String(minutes).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+  const hours = Math.floor(seconds / 3600);
+  const minutes = String(Math.floor((seconds % 3600) / 60)).padStart(2, "0");
+  const rest = String(seconds % 60).padStart(2, "0");
+  return hours > 0 ? `${hours}:${minutes}:${rest}` : `${minutes}:${rest}`;
 };

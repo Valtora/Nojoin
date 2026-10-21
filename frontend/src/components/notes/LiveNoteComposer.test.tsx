@@ -44,7 +44,10 @@ describe("LiveNoteComposer", () => {
       anchorMs: 61_000,
     });
     expect(box.value).toBe("");
-    expect(screen.getByText("Placed where you start typing. Shift+Enter starts a new line.")).toBeInTheDocument();
+    // A screen reader hears it went, from a status line that was already there.
+    expect(screen.getByTestId("live-note-status")).toHaveTextContent("Note added at 01:01.");
+    type(box, "N");
+    expect(screen.getByTestId("live-note-status")).toHaveTextContent("Placed at 01:35, where you started typing.");
   });
 
   it("drops the anchor when the box is emptied, and takes a new one on the next keystroke", () => {
@@ -130,9 +133,58 @@ describe("LiveNoteComposer", () => {
     pressEnter(box);
 
     expect(box.value).toBe("Too long, say");
-    expect(screen.getByRole("alert")).toHaveTextContent("at most 50,000 characters");
+    expect(screen.getByTestId("live-note-status")).toHaveTextContent("at most 50,000 characters");
+    expect(box).toHaveAttribute("aria-invalid", "true");
     audioNowMs = 8_000;
     pressEnter(box);
     expect(onSubmit).toHaveBeenLastCalledWith(expect.objectContaining({ anchorMs: 7_000 }));
+  });
+
+  it("says where a note goes in a live region that is there before anything goes wrong", () => {
+    renderComposer();
+    const status = screen.getByTestId("live-note-status");
+    expect(status).toHaveAttribute("aria-live", "polite");
+    expect(screen.getByRole("textbox", { name: "New note" })).toHaveAttribute(
+      "aria-describedby",
+      status.id,
+    );
+  });
+
+  it("returns focus to the box after sending with the button", () => {
+    const box = renderComposer();
+    type(box, "Via the button");
+    const send = screen.getByRole("button", { name: "Add note" });
+    send.focus();
+
+    fireEvent.click(send);
+
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(document.activeElement).toBe(box);
+  });
+
+  it("writes times past an hour as the live lines do", () => {
+    const box = renderComposer();
+    audioNowMs = 3_723_000;
+    type(box, "Late");
+    expect(screen.getByTestId("live-note-status")).toHaveTextContent("Placed at 1:02:03, where you started typing.");
+  });
+
+  it("says the outbox's news until the next keystroke", () => {
+    const { rerender } = render(
+      <LiveNoteComposer readAudioNow={readAudioNow} onSubmit={onSubmit} notice={null} />,
+    );
+    const box = screen.getByRole("textbox", { name: "New note" }) as HTMLTextAreaElement;
+    rerender(
+      <LiveNoteComposer
+        readAudioNow={readAudioNow}
+        onSubmit={onSubmit}
+        notice={{ seq: 1, text: "Note at 00:05 was deleted on another device, so it was not added again.", tone: "info" }}
+      />,
+    );
+    const status = screen.getByTestId("live-note-status");
+    expect(status).toHaveTextContent("deleted on another device");
+
+    type(box, "Next");
+    expect(status).toHaveTextContent("Placed at 00:00, where you started typing.");
   });
 });

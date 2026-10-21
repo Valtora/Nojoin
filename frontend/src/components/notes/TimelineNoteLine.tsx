@@ -1,6 +1,9 @@
 "use client";
 
+import { useRef } from "react";
 import { StickyNote } from "lucide-react";
+
+import { noteSnippet } from "@/lib/notes/noteOutbox";
 
 interface TimelineNoteLineProps {
   noteId: string;
@@ -10,6 +13,7 @@ interface TimelineNoteLineProps {
   status?: "saved" | "saving" | "failed";
   error?: string | null;
   onRetry?: () => void;
+  /** Removes the line: the caller moves focus somewhere that stays. */
   onDiscard?: () => void;
   /** Width of the time column, matching the transcript it sits in. */
   timeColumnClassName?: string;
@@ -33,9 +37,14 @@ export default function TimelineNoteLine({
   onDiscard,
   timeColumnClassName = "shrink-0 pt-0.5 font-mono text-xs tabular-nums text-contrast-icon-muted",
 }: TimelineNoteLineProps) {
+  const lineRef = useRef<HTMLDivElement>(null);
+  const name = `at ${timeLabel}, “${noteSnippet(body)}”`;
   return (
     <div
-      className="flex gap-3"
+      ref={lineRef}
+      // Focus lands here when Retry, which hides its own button, is pressed.
+      tabIndex={status === "saved" ? undefined : -1}
+      className="flex gap-3 outline-none focus-visible:ring-2 focus-visible:ring-action"
       data-testid="timeline-note"
       data-note-id={noteId}
       data-note-status={status}
@@ -58,19 +67,30 @@ export default function TimelineNoteLine({
           {body}
         </p>
         {status === "failed" ? (
-          <p role="alert" className="mt-1 text-xs text-status-danger-fg">
-            {error ?? "Not saved."}
-          </p>
+          <p className="mt-1 text-xs text-status-danger-fg">{error ?? "Not saved."}</p>
         ) : null}
         {status === "failed" && (onRetry || onDiscard) ? (
           <div className="mt-1.5 flex flex-wrap items-center gap-2">
             {onRetry ? (
-              <button type="button" onClick={onRetry} className={ACTION_BUTTON}>
+              <button
+                type="button"
+                aria-label={`Retry note ${name}`}
+                onClick={() => {
+                  lineRef.current?.focus();
+                  onRetry();
+                }}
+                className={ACTION_BUTTON}
+              >
                 Retry
               </button>
             ) : null}
             {onDiscard ? (
-              <button type="button" onClick={onDiscard} className={ACTION_BUTTON}>
+              <button
+                type="button"
+                aria-label={`Discard note ${name}`}
+                onClick={onDiscard}
+                className={ACTION_BUTTON}
+              >
                 Discard
               </button>
             ) : null}

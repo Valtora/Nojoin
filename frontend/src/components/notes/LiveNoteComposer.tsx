@@ -8,41 +8,84 @@ import {
   type ChangeEvent,
   type FormEvent,
   type KeyboardEvent,
+  type RefObject,
 } from "react";
-import { SendHorizontal } from "lucide-react";
+import {
+  ArrowDownToLine,
+  ArrowUpToLine,
+  ChevronDown,
+  CornerDownLeft,
+  SendHorizontal,
+  TextCursorInput,
+  type LucideIcon,
+} from "lucide-react";
 
 import { stripNote } from "@/lib/notes/headNoteSync";
-import type { OutboxDraft, OutboxEntry } from "@/lib/notes/noteOutbox";
+import {
+  EMPTY_DRAFT,
+  notePlace,
+  noteFromDraft,
+  type ComposerDraft,
+  type NoteInsertMode,
+  type OutboxDraft,
+  type OutboxNotice,
+} from "@/lib/notes/noteOutbox";
 import { formatTimelineMs } from "@/lib/notes/placement";
 import { useKeyboardInset } from "@/lib/useKeyboardInset";
 
-import UnsavedNotesList from "./UnsavedNotesList";
+export type { NoteInsertMode };
 
-/** Where a note goes: the four insert modes of the live note box. */
-export type NoteInsertMode = "typing" | "send" | "head" | "tail";
-
-const MODE_LABELS: Record<NoteInsertMode, string> = {
+export const MODE_LABELS: Record<NoteInsertMode, string> = {
   typing: "At typing start",
   send: "At send",
-  head: "Before the transcript",
+  head: "Before the transcript (the Notes box's text if it has none)",
   tail: "After the transcript",
 };
 
-/** The tallest the box grows before it scrolls, in px. */
-const MAX_BOX_HEIGHT_PX = 160;
+const MODE_ICONS: Record<NoteInsertMode, LucideIcon> = {
+  typing: TextCursorInput,
+  send: CornerDownLeft,
+  head: ArrowUpToLine,
+  tail: ArrowDownToLine,
+};
 
 interface LiveNoteComposerProps {
   /** Where capture is on the audio timeline now, in ms. */
   readAudioNow: () => number;
   /** Queues a note; returns why it was refused, or null once it is on its way. */
-  onSubmit: (draft: OutboxDraft) => string | null;
-  /** Head and tail notes still on their way, which have no line to sit after. */
-  pending?: readonly OutboxEntry[];
-  onRetry?: (key: string) => void;
-  onDiscard?: (key: string) => void;
+  onSubmit: (note: OutboxDraft) => string | null;
+  /** The box's text, mode and anchor, kept by the caller so they outlive the box. */
+  draft?: ComposerDraft;
+  onDraftChange?: (draft: ComposerDraft) => void;
+  /** The latest news from the outbox, said in the box's status line. */
+  notice?: OutboxNotice | null;
+  /** The text box, for a caller that moves focus to it. */
+  boxRef?: RefObject<HTMLTextAreaElement | null>;
+}
+
+interface Message {
+  text: string;
+  tone: "error" | "info";
+  /** The outbox notice current when this was said: a later one replaces it. */
+  noticeSeq: number;
 }
 
 const isBlank = (text: string) => stripNote(text) === "";
+
+const modeHint = (draft: ComposerDraft) => {
+  switch (draft.mode) {
+    case "typing":
+      return draft.typingStartMs !== null && !isBlank(draft.text)
+        ? `Placed at ${formatTimelineMs(draft.typingStartMs)}, where you started typing.`
+        : "Placed where you start typing. Shift+Enter starts a new line.";
+    case "send":
+      return "Placed where the recording is when you press Enter.";
+    case "head":
+      return "For the whole meeting. Becomes the Notes box's text if it has none; otherwise listed under Other notes.";
+    case "tail":
+      return "For the whole meeting, after the transcript, listed under Other notes.";
+  }
+};
 
 /**
  * The chat-style note box under the live transcript.
@@ -56,60 +99,79 @@ const isBlank = (text: string) => stripNote(text) === "";
  * to write as it likes and still lands beside what prompted it. Emptying the
  * box drops that anchor; the next character takes a new one. "At send"
  * anchors it on Enter. "Before" and "After the transcript" make a note on
- * the whole meeting, listed with the Notes box rather than among the lines.
+ * the whole meeting, kept with the Notes box rather than among the lines.
+ *
+ * One row, so it costs the transcript window as little height as it can: the
+ * mode is an icon-sized select (its options say the modes in full), and the
+ * status line under it says where the note will go. That line is a polite
+ * live region, so a refusal, a note added and the outbox's news are read out.
  */
 export default function LiveNoteComposer({
   readAudioNow,
   onSubmit,
-  pending = [],
-  onRetry,
-  onDiscard,
+  draft: controlledDraft,
+  onDraftChange,
+  notice = null,
+  boxRef,
 }: LiveNoteComposerProps) {
-  const [draft, setDraft] = useState("");
-  const [mode, setMode] = useState<NoteInsertMode>("typing");
-  const [typingStartMs, setTypingStartMs] = useState<number | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const boxRef = useRef<HTMLTextAreaElement>(null);
+  const [ownDraft, setOwnDraft] = useState<ComposerDraft>(EMPTY_DRAFT);
+  const draft = controlledDraft ?? ownDraft;
+  const setDraft = onDraftChange ?? setOwnDraft;
+  const [message, setMessage] = useState<Message | null>(null);
+  const [dismissedNoticeSeq, setDismissedNoticeSeq] = useState(notice?.seq ?? 0);
+  const ownBoxRef = useRef<HTMLTextAreaElement>(null);
+  const box = boxRef ?? ownBoxRef;
   const keyboardInset = useKeyboardInset();
   const modeId = useId();
   const hintId = useId();
+  const ModeIcon = MODE_ICONS[draft.mode];
 
-  // Grows with its text, chat-style, up to a cap.
+  // Grows with its text, chat-style, up to the cap its classes set.
   useLayoutEffect(() => {
-    const box = boxRef.current;
-    if (!box) return;
-    box.style.height = "auto";
-    box.style.height = `${Math.min(box.scrollHeight, MAX_BOX_HEIGHT_PX)}px`;
-  }, [draft]);
+    const element = box.current;
+    if (!element) return;
+    element.style.height = "auto";
+    element.style.height = `${element.scrollHeight}px`;
+  }, [box, draft.text]);
+
+  const latestNoticeSeq = notice?.seq ?? 0;
+  const showNotice =
+    notice !== null &&
+    notice.seq > Math.max(dismissedNoticeSeq, message?.noticeSeq ?? 0);
+
+  const say = (text: string, tone: Message["tone"]) =>
+    setMessage({ text, tone, noticeSeq: latestNoticeSeq });
 
   const handleChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
-    const next = event.target.value;
-    if (isBlank(next)) {
-      setTypingStartMs(null);
-    } else if (isBlank(draft) || typingStartMs === null) {
-      setTypingStartMs(readAudioNow());
-    }
-    setDraft(next);
-    if (error) setError(null);
+    const text = event.target.value;
+    const typingStartMs = isBlank(text)
+      ? null
+      : isBlank(draft.text) || draft.typingStartMs === null
+        ? readAudioNow()
+        : draft.typingStartMs;
+    setDraft({ ...draft, text, typingStartMs });
+    setMessage(null);
+    setDismissedNoticeSeq(latestNoticeSeq);
   };
 
   const submit = () => {
-    if (isBlank(draft)) return;
-    const kind = mode === "head" || mode === "tail" ? mode : "point";
-    const anchorMs =
-      mode === "typing"
-        ? (typingStartMs ?? readAudioNow())
-        : mode === "send"
-          ? readAudioNow()
-          : null;
-    const refusal = onSubmit({ kind, body: draft, anchorMs });
+    if (isBlank(draft.text)) return;
+    const note = noteFromDraft(draft, readAudioNow);
+    const refusal = onSubmit(note);
     if (refusal) {
-      setError(refusal);
+      say(refusal, "error");
       return;
     }
-    setDraft("");
-    setTypingStartMs(null);
-    setError(null);
+    setDraft({ text: "", mode: draft.mode, typingStartMs: null });
+    const place = notePlace({ kind: note.kind, anchorMs: note.anchorMs });
+    say(
+      note.kind === "point"
+        ? `Note added ${place}.`
+        : `Note added ${place}, with the Notes box.`,
+      "info",
+    );
+    // A click on Send leaves focus on a button that is now disabled.
+    box.current?.focus();
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -126,17 +188,9 @@ export default function LiveNoteComposer({
     submit();
   };
 
-  const hint =
-    error ??
-    (mode === "typing"
-      ? typingStartMs !== null
-        ? `Placed at ${formatTimelineMs(typingStartMs)}, where you started typing.`
-        : "Placed where you start typing. Shift+Enter starts a new line."
-      : mode === "send"
-        ? "Placed where the recording is when you press Enter."
-        : mode === "head"
-          ? "For the whole meeting, before the transcript."
-          : "For the whole meeting, after the transcript.");
+  const status = showNotice
+    ? { text: notice.text, tone: notice.tone }
+    : (message ?? { text: modeHint(draft), tone: "info" as const });
 
   return (
     <form
@@ -145,64 +199,70 @@ export default function LiveNoteComposer({
       data-testid="live-note-composer"
       // Sticky against the page while the layout is stacked and the page
       // scrolls, offset above an on-screen keyboard that overlays the page.
-      // In the two-column layout the card has a definite height and this
-      // sits at its bottom without moving.
-      className="sticky z-[var(--z-sticky)] mt-3 shrink-0 bg-surface-card pt-1"
+      // In the two-column layout the card clips and has a definite height,
+      // and this sits at its bottom without moving.
+      className="sticky z-[var(--z-sticky)] mt-2 shrink-0 bg-surface-card pt-1"
       style={{ bottom: `calc(${keyboardInset}px + env(safe-area-inset-bottom, 0px))` }}
     >
-      {pending.length > 0 && onRetry && onDiscard ? (
-        <div className="mb-2">
-          <UnsavedNotesList entries={pending} onRetry={onRetry} onDiscard={onDiscard} />
-        </div>
-      ) : null}
-
       <div className="flex items-end gap-1.5">
+        <label htmlFor={modeId} className="sr-only">
+          Place note
+        </label>
+        <div className="relative h-[44px] w-[52px] shrink-0">
+          <select
+            id={modeId}
+            value={draft.mode}
+            title={MODE_LABELS[draft.mode]}
+            onChange={(event) => {
+              setDraft({ ...draft, mode: event.target.value as NoteInsertMode });
+              setMessage(null);
+            }}
+            className="absolute inset-0 h-full w-full cursor-pointer appearance-none rounded-lg border border-control-border bg-control-bg text-transparent outline-none focus:border-action focus:ring-2 focus:ring-action [&>option]:text-foreground"
+          >
+            {(Object.keys(MODE_LABELS) as NoteInsertMode[]).map((value) => (
+              <option key={value} value={value}>
+                {MODE_LABELS[value]}
+              </option>
+            ))}
+          </select>
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 flex items-center justify-center gap-0.5 text-contrast-muted"
+          >
+            <ModeIcon className="h-4 w-4" />
+            <ChevronDown className="h-3 w-3" />
+          </span>
+        </div>
         <textarea
-          ref={boxRef}
+          ref={box}
           rows={1}
-          value={draft}
+          value={draft.text}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
           aria-label="New note"
           aria-describedby={hintId}
-          aria-invalid={error ? true : undefined}
+          aria-invalid={message?.tone === "error" && !showNotice ? true : undefined}
           placeholder="Add a note…"
-          className="density-surface-panel min-h-[44px] w-full flex-1 resize-none border border-control-border bg-control-bg px-3 py-2.5 text-sm leading-5 text-contrast-muted outline-none transition focus:border-action focus:ring-2 focus:ring-action"
+          className="density-surface-panel max-h-[160px] min-h-[44px] w-full min-w-0 flex-1 resize-none overflow-y-auto border border-control-border bg-control-bg px-3 py-2.5 text-sm leading-5 text-contrast-muted outline-none transition focus:border-action focus:ring-2 focus:ring-action @min-[54rem]:max-h-[80px]"
         />
         <button
           type="submit"
           aria-label="Add note"
-          title="Add note"
-          disabled={isBlank(draft)}
+          title="Add note (Enter)"
+          disabled={isBlank(draft.text)}
           className="inline-flex h-[44px] w-[44px] shrink-0 items-center justify-center rounded-lg bg-action text-action-on transition-colors hover:bg-action-hover disabled:cursor-not-allowed disabled:opacity-60"
         >
           <SendHorizontal className="h-5 w-5" aria-hidden="true" />
         </button>
       </div>
-      <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
-        <label htmlFor={modeId} className="sr-only">
-          Place note
-        </label>
-        <select
-          id={modeId}
-          value={mode}
-          onChange={(event) => setMode(event.target.value as NoteInsertMode)}
-          className="h-[44px] shrink-0 rounded-lg border border-control-border bg-control-bg px-1.5 text-sm text-contrast-muted outline-none focus:border-action focus:ring-2 focus:ring-action"
-        >
-          {(Object.keys(MODE_LABELS) as NoteInsertMode[]).map((value) => (
-            <option key={value} value={value}>
-              {MODE_LABELS[value]}
-            </option>
-          ))}
-        </select>
-        <p
-          id={hintId}
-          role={error ? "alert" : undefined}
-          className={`min-w-0 flex-1 basis-40 text-xs ${error ? "text-status-danger-fg" : "text-contrast-helper"}`}
-        >
-          {hint}
-        </p>
-      </div>
+      <p
+        id={hintId}
+        aria-live="polite"
+        data-testid="live-note-status"
+        className={`mt-1 text-xs ${status.tone === "error" ? "text-status-danger-fg" : "text-contrast-helper"}`}
+      >
+        {status.text}
+      </p>
     </form>
   );
 }

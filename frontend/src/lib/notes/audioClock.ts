@@ -17,6 +17,12 @@ import {
  * recording reads the same timeline. Each read sets it afresh, so it never
  * drifts further than one poll from the server.
  *
+ * While capture advances it never runs backwards: a read below what it last
+ * said (the server stops running on 2.5 s past a late segment, where this
+ * clock had kept going) holds it until the read catches up, so two notes sent
+ * in turn are never anchored the other way round. A pause sets it to the
+ * paused read, which is exact, even when that is a step back.
+ *
  * The detail poll feeds it every read, changed or not: the page's recording
  * state ignores `live_audio_ms`, which changes on every poll.
  */
@@ -43,6 +49,8 @@ interface Reading {
 
 export class AudioClock {
   private reading: Reading | null = null;
+  /** What `audioNow` last said while capture advanced, which it never goes below. */
+  private floor: { recordingId: RecordingId; audioMs: number } | null = null;
 
   constructor(private readonly monotonicNow: () => number = () => performance.now()) {}
 
@@ -64,12 +72,15 @@ export class AudioClock {
       this.reading = sameRecording && current
         ? { ...current, advancing: false, sentAt, receivedAt }
         : null;
+      this.floor = null;
       return;
     }
+    const advancing = isCaptureAdvancing(recording.status, recording.client_status);
+    if (!advancing || !sameRecording) this.floor = null;
     this.reading = {
       recordingId: recording.id,
       audioMs: recording.live_audio_ms,
-      advancing: isCaptureAdvancing(recording.status, recording.client_status),
+      advancing,
       sentAt,
       receivedAt,
     };
@@ -81,6 +92,9 @@ export class AudioClock {
     if (!reading || reading.recordingId !== recordingId) return null;
     if (!reading.advancing) return reading.audioMs;
     const elapsed = Math.max(0, this.monotonicNow() - reading.receivedAt);
-    return Math.round(reading.audioMs + elapsed);
+    const floor = this.floor?.recordingId === recordingId ? this.floor.audioMs : 0;
+    const audioMs = Math.max(floor, Math.round(reading.audioMs + elapsed));
+    this.floor = { recordingId, audioMs };
+    return audioMs;
   };
 }

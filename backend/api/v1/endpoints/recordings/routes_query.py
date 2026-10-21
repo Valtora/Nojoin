@@ -36,14 +36,16 @@ from backend.services.calendar_link_service import (
     score_event_match,
 )
 from backend.services.timeline_note_service import (
-    load_recording_timeline_notes_async,
-    serialize_recording_timeline_notes,
+    load_timeline_notes_list_signature_async,
 )
 from backend.utils.canonical_pipeline import (
     build_transcript_segments_for_read,
     build_transcript_text_for_read,
 )
-from backend.utils.live_audio_clock import estimate_live_audio_ms
+from backend.utils.live_audio_clock import (
+    capture_is_advancing,
+    estimate_live_audio_ms,
+)
 from backend.utils.processing_eta import estimate_processing_eta
 from backend.utils.time import utc_now
 from backend.utils.timezones import (
@@ -410,16 +412,16 @@ async def get_recording(
         live_audio_ms = estimate_live_audio_ms(
             last_chunk_end_ms=latest_chunk[0] if latest_chunk else None,
             last_chunk_received_at=latest_chunk[1] if latest_chunk else None,
-            status=recording.status,
-            client_status=recording.client_status,
+            advancing=capture_is_advancing(recording.status, recording.client_status),
             now=utc_now(),
+            resumed_at=recording.last_activity_at,
         )
 
-    # The user's own notes are never hidden with an in-flight transcript: they
-    # are what the processing view edits.
-    timeline_notes = serialize_recording_timeline_notes(
-        await load_recording_timeline_notes_async(db, recording.id),
-        recording_public_id=recording.public_id,
+    # The notes themselves are read from GET .../timeline-notes when this
+    # changes. The page polls this read every second while capture is open, and
+    # a list carried on each poll grows with every note added.
+    timeline_notes_list_signature = await load_timeline_notes_list_signature_async(
+        db, recording.id
     )
 
     transcript_segments_override: list[dict] | None = None
@@ -469,7 +471,7 @@ async def get_recording(
         speakers_override=speakers_override,
         captured_audio_seconds=captured_audio_seconds,
         live_audio_ms=live_audio_ms,
-        timeline_notes=timeline_notes,
+        timeline_notes_list_signature=timeline_notes_list_signature,
     )
 
 

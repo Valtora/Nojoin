@@ -46,6 +46,7 @@ export default function RecordingPage({ params }: PageProps) {
     recording,
     setRecording,
     audioClock,
+    timelineNotes,
     globalSpeakers,
     loading,
     meetingEdgeEnabled,
@@ -134,6 +135,7 @@ export default function RecordingPage({ params }: PageProps) {
   const mainContent = (
     <RecordingMainContent
       recording={recording}
+      timelineNotes={timelineNotes}
       isMobile={isMobile}
       activePanel={activePanel}
       setActivePanel={setActivePanel}
@@ -201,6 +203,7 @@ export default function RecordingPage({ params }: PageProps) {
               onDiscarded={navigateToRecordings}
               showMobileBackButton={isMobile}
               audioClock={audioClock}
+              timelineNotes={timelineNotes}
             />
           </div>
         ) : isMobile ? (

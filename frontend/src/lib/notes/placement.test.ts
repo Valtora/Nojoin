@@ -107,3 +107,42 @@ describe("bodyNotesAmongLines", () => {
     expect(among.afterLine.size).toBe(0);
   });
 });
+
+describe("lines in start order", () => {
+  // The views sort lines by start (then end and id); the prompts keep the
+  // stored order, which the writers emit by start. Which way equal starts are
+  // ordered must not change which lines a note follows, only which side of a
+  // blank line it lands, and a blank line shows nothing.
+  it("puts the same lines before a note whichever way equal starts are ordered", () => {
+    let seed = 7;
+    const random = () => {
+      seed = (seed * 1_103_515_245 + 12_345) % 2 ** 31;
+      return seed / 2 ** 31;
+    };
+    const linesBefore = (rows: { id: string; start_ms: number; text: string }[], atMs: number) => {
+      const [placement] = placeTimelineNotes(rows, [note("n", atMs)]);
+      const after = placement.slot === "body" ? placement.afterIndex : -1;
+      return rows
+        .slice(0, after + 1)
+        .filter((row) => row.text.trim() !== "")
+        .map((row) => row.id)
+        .sort();
+    };
+    for (let trial = 0; trial < 2_000; trial += 1) {
+      const rows = Array.from({ length: 6 }, (_, index) => ({
+        id: `r${index}`,
+        start_ms: Math.floor(random() * 4) * 1_000,
+        end_ms: 0,
+        text: random() < 0.15 ? "  " : `line ${index}`,
+      }));
+      const ascending = [...rows].sort(
+        (a, b) => a.start_ms - b.start_ms || a.id.localeCompare(b.id),
+      );
+      const descending = [...rows].sort(
+        (a, b) => a.start_ms - b.start_ms || b.id.localeCompare(a.id),
+      );
+      const atMs = Math.floor(random() * 5_000);
+      expect(linesBefore(ascending, atMs)).toEqual(linesBefore(descending, atMs));
+    }
+  });
+});

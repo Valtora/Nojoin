@@ -1,36 +1,84 @@
 "use client";
 
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 
-import type { RecordingId, TimelineNote } from "@/types";
+import type { Recording, RecordingId } from "@/types";
 
-import { NoteOutbox } from "./noteOutbox";
+import {
+  EMPTY_DRAFT,
+  noteOutboxFor,
+  type NoteOutbox,
+  type OutboxSnapshot,
+} from "./noteOutbox";
+import { useTimelineNotes } from "./useTimelineNotes";
+
+const EMPTY_SNAPSHOT: OutboxSnapshot = {
+  entries: [],
+  saved: [],
+  discarded: new Set(),
+  draft: EMPTY_DRAFT,
+  notice: null,
+};
+const subscribeToNothing = () => () => undefined;
+const emptySnapshot = () => EMPTY_SNAPSHOT;
 
 /**
- * The live note box's outbox for one recording (see `NoteOutbox`). Mount it
- * once per recording, above anything that unmounts when capture stops, so a
- * note still saving or not saved outlives the live view.
+ * A recording's note outbox and its state (see `NoteOutbox`). Every view of
+ * the recording gets the same one, so a note still on its way and the note
+ * box's text outlive the view that made them.
  */
-export function useNoteOutbox(
-  recordingId: RecordingId,
-  timelineNotes: readonly TimelineNote[] | null | undefined,
+export function useNoteOutbox(recordingId: RecordingId): {
+  outbox: NoteOutbox;
+  snapshot: OutboxSnapshot;
+};
+export function useNoteOutbox(recordingId: RecordingId | null): {
+  outbox: NoteOutbox | null;
+  snapshot: OutboxSnapshot;
+};
+export function useNoteOutbox(recordingId: RecordingId | null) {
+  const outbox = recordingId ? noteOutboxFor(recordingId) : null;
+  const snapshot = useSyncExternalStore(
+    outbox?.subscribe ?? subscribeToNothing,
+    outbox?.getSnapshot ?? emptySnapshot,
+    outbox?.getSnapshot ?? emptySnapshot,
+  );
+  return { outbox, snapshot };
+}
+
+/**
+ * The recording page's notes: the list (`useTimelineNotes`), handed to the
+ * outbox as it arrives, and fetched again after the outbox saves or deletes a
+ * note while nothing polls the recording to say so.
+ */
+export function useRecordingNotes(
+  recording: Pick<Recording, "id" | "timeline_notes_list_signature"> | null,
+  polled: boolean,
 ) {
-  const [outbox] = useState(() => new NoteOutbox(recordingId));
+  const recordingId = recording?.id ?? null;
+  const { notes, refresh } = useTimelineNotes(
+    recordingId,
+    recording?.timeline_notes_list_signature,
+  );
+  const { outbox } = useNoteOutbox(recordingId);
+  const polledRef = useRef(polled);
 
   useEffect(() => {
-    outbox.ingest(timelineNotes);
-  }, [outbox, timelineNotes]);
+    polledRef.current = polled;
+  }, [polled]);
 
-  const snapshot = useSyncExternalStore(
-    outbox.subscribe,
-    outbox.getSnapshot,
-    outbox.getSnapshot,
-  );
+  useEffect(() => {
+    if (outbox && notes) outbox.ingest(notes);
+  }, [outbox, notes]);
 
-  return {
-    ...snapshot,
-    submit: outbox.submit,
-    retry: outbox.retry,
-    discard: outbox.discard,
-  };
+  useEffect(() => {
+    if (!outbox) return;
+    const stop = outbox.subscribeWrites(() => {
+      if (!polledRef.current) refresh();
+    });
+    return () => {
+      stop();
+    };
+  }, [outbox, refresh]);
+
+  return notes;
 }

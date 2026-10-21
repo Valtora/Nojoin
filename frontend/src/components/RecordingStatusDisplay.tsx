@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Loader2, Mic, Pause, Trash2, Upload } from "lucide-react";
 
 import { isLiveCaptureInProgress } from "@/lib/liveCapture";
@@ -8,7 +8,7 @@ import type { AudioClock } from "@/lib/notes/audioClock";
 import { inlineNotes } from "@/lib/notes/noteOutbox";
 import { segmentStartMs } from "@/lib/notes/placement";
 import { useNoteOutbox } from "@/lib/notes/useNoteOutbox";
-import { ClientStatus, Recording, RecordingStatus } from "@/types";
+import { ClientStatus, Recording, RecordingStatus, type TimelineNote } from "@/types";
 
 import Workspace from "./Workspace";
 import DocumentUploadModal from "./DocumentUploadModal";
@@ -19,7 +19,7 @@ import LiveTranscriptPanel from "./LiveTranscriptPanel";
 import MeetingEdgePanel from "./MeetingEdgePanel";
 import HeadNotePanel from "./HeadNotePanel";
 import LiveNoteComposer from "./notes/LiveNoteComposer";
-import UnsavedNotesList from "./notes/UnsavedNotesList";
+import RecordingUnsavedNotes from "./notes/RecordingUnsavedNotes";
 import { useRecordingActions } from "./recordings/_hooks/useRecordingActions";
 import { useLiveDocuments } from "./useLiveDocuments";
 import { useLiveTranscript } from "./transcript/_hooks/useLiveTranscript";
@@ -70,7 +70,16 @@ interface RecordingStatusDisplayProps {
   showMobileBackButton?: boolean;
   /** Where capture is on the audio timeline, for anchoring live notes. */
   audioClock?: AudioClock;
+  /**
+   * The recording's notes as the page last listed them. Null while they load,
+   * which holds the Notes box back: it must not start a head note before it
+   * knows whether there is one.
+   */
+  timelineNotes?: readonly TimelineNote[] | null;
 }
+
+const NO_TIMELINE_NOTES: readonly TimelineNote[] = [];
+const POINT_NOTES = ["point"] as const;
 
 export default function RecordingStatusDisplay({
   recording,
@@ -82,23 +91,26 @@ export default function RecordingStatusDisplay({
   onDiscarded,
   showMobileBackButton = false,
   audioClock,
+  timelineNotes = NO_TIMELINE_NOTES,
 }: RecordingStatusDisplayProps) {
   const actions = useRecordingActions();
   const [isDiscarding, setIsDiscarding] = useState(false);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const liveTranscript = useLiveTranscript(recording);
   const { documents, refresh: refreshDocuments } = useLiveDocuments(recording.id);
-  // Above the live view, so a note still on its way outlives Stop.
-  const outbox = useNoteOutbox(recording.id, recording.timeline_notes);
-  const { entries: outboxEntries, saved: outboxSaved, discarded: outboxDiscarded } = outbox;
+  // The recording's outbox, which the page keeps (`useRecordingNotes`): a
+  // note still on its way, and the box's text, outlive Stop.
+  const { outbox, snapshot: outboxState } = useNoteOutbox(recording.id);
+  const { entries: outboxEntries, saved: outboxSaved, discarded: outboxDiscarded } =
+    outboxState;
   const liveNotes = useMemo(
     () =>
-      inlineNotes(recording.timeline_notes, {
+      inlineNotes(timelineNotes, {
         entries: outboxEntries,
         saved: outboxSaved,
         discarded: outboxDiscarded,
       }),
-    [recording.timeline_notes, outboxEntries, outboxSaved, outboxDiscarded],
+    [timelineNotes, outboxEntries, outboxSaved, outboxDiscarded],
   );
   const pendingMeetingNotes = useMemo(
     () => outboxEntries.filter((entry) => entry.kind !== "point"),
@@ -112,6 +124,26 @@ export default function RecordingStatusDisplay({
       audioClock?.audioNow(recording.id) ??
       liveSegments.reduce((latest, segment) => Math.max(latest, segmentStartMs(segment)), 0),
     [audioClock, recording.id, liveSegments],
+  );
+  // Once capture is over, "now" is its end: where the clock stopped, or the
+  // recording's length when this page never saw it running.
+  const durationSeconds = recording.duration_seconds;
+  const readEndMs = useCallback(
+    () => audioClock?.audioNow(recording.id) ?? Math.round((durationSeconds ?? 0) * 1000),
+    [audioClock, recording.id, durationSeconds],
+  );
+  // Where focus goes when a note's Discard removes the button pressed.
+  const composerBoxRef = useRef<HTMLTextAreaElement>(null);
+  const progressHeadingRef = useRef<HTMLHeadingElement>(null);
+  const focusNoteHome = useCallback(() => {
+    (composerBoxRef.current ?? progressHeadingRef.current)?.focus();
+  }, []);
+  const discardInlineNote = useCallback(
+    (key: string) => {
+      outbox.discard(key);
+      composerBoxRef.current?.focus();
+    },
+    [outbox],
   );
 
   // Discard path for a recording shown on the processing/queued screen. Routed
@@ -338,8 +370,13 @@ export default function RecordingStatusDisplay({
               cards end above the other's. */}
           <div
             className={
+              // The floor keeps the live card's header and a full note box in
+              // view however much the Notes card below holds: the transcript
+              // window gives way first, and past that the column runs on and
+              // the page scrolls, rather than the clipping card cutting the
+              // note box off.
               isActiveRecording
-                ? "order-1 flex min-h-0 flex-1 flex-col"
+                ? "order-1 flex min-h-0 flex-1 flex-col @min-[54rem]:min-h-[18rem]"
                 : "order-1 flex min-w-0 flex-col"
             }
           >
@@ -350,14 +387,15 @@ export default function RecordingStatusDisplay({
                 isPaused={isPaused}
                 notes={liveNotes}
                 onRetryNote={outbox.retry}
-                onDiscardNote={outbox.discard}
+                onDiscardNote={discardInlineNote}
                 footer={
                   <LiveNoteComposer
                     readAudioNow={readAudioNow}
                     onSubmit={outbox.submit}
-                    pending={pendingMeetingNotes}
-                    onRetry={outbox.retry}
-                    onDiscard={outbox.discard}
+                    draft={outboxState.draft}
+                    onDraftChange={outbox.setDraft}
+                    notice={outboxState.notice}
+                    boxRef={composerBoxRef}
                   />
                 }
               />
@@ -367,7 +405,11 @@ export default function RecordingStatusDisplay({
                   <Loader2 className="h-5 w-5 shrink-0 animate-spin text-action-text" />
                   {/* Not "Processing": the console beside this already carries
                       the state word, and repeating it says nothing twice. */}
-                  <h2 className="text-base font-semibold text-foreground">
+                  <h2
+                    ref={progressHeadingRef}
+                    tabIndex={-1}
+                    className="text-base font-semibold text-foreground outline-none"
+                  >
                     Progress
                   </h2>
                   {progressValue !== null ? (
@@ -409,21 +451,17 @@ export default function RecordingStatusDisplay({
                   <p className="mt-4 text-sm text-contrast-helper">{pipelineStep}</p>
                 ) : null}
 
-                {/* The live view and its note box are gone once capture stops;
-                    a note still on its way stays here until it saves or is
-                    discarded. */}
-                {outboxEntries.length > 0 ? (
-                  <div className="mt-4 border-t border-surface-divider pt-3">
-                    <h3 className="text-sm font-semibold text-foreground">Notes not saved yet</h3>
-                    <div className="mt-2">
-                      <UnsavedNotesList
-                        entries={outboxEntries}
-                        onRetry={outbox.retry}
-                        onDiscard={outbox.discard}
-                      />
-                    </div>
-                  </div>
-                ) : null}
+                {/* The live view and its note box are gone once capture stops,
+                    here or on another device: a note still on its way, and
+                    text left in the box, stay here until they are saved or
+                    discarded. Meeting-wide notes are with the Notes box. */}
+                <RecordingUnsavedNotes
+                  recordingId={recording.id}
+                  kinds={POINT_NOTES}
+                  readEndMs={readEndMs}
+                  onEmptied={focusNoteHome}
+                  className="mt-4 border-t border-surface-divider pt-3"
+                />
               </section>
             )}
           </div>
@@ -439,13 +477,22 @@ export default function RecordingStatusDisplay({
                   : "order-2 flex min-h-0 min-w-0 flex-1 flex-col"
               }
             >
-              <HeadNotePanel
-                key={recording.id}
-                recordingId={recording.id}
-                timelineNotes={recording.timeline_notes}
-                disabled={notesAreLocked}
-                disabledMessage="Your manual notes are now being folded into the generated meeting notes. Editing will unlock again once generation finishes."
-              />
+              {timelineNotes !== null ? (
+                <HeadNotePanel
+                  key={recording.id}
+                  recordingId={recording.id}
+                  timelineNotes={timelineNotes}
+                  pendingNotes={pendingMeetingNotes}
+                  onRetryPendingNote={outbox.retry}
+                  onDiscardPendingNote={outbox.discard}
+                  onPendingNotesEmptied={focusNoteHome}
+                  // While recording, the note box takes the meeting's notes
+                  // and the transcript above needs the height.
+                  compact={isActiveRecording}
+                  disabled={notesAreLocked}
+                  disabledMessage="Your manual notes are now being folded into the generated meeting notes. Editing will unlock again once generation finishes."
+                />
+              ) : null}
             </div>
 
             {/* No empty state: with the upload action on the toolbar there is

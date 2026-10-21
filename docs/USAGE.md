@@ -78,15 +78,15 @@ Live lines carry no speaker names, because speakers are identified when the reco
 
 ### Live Notes
 
-The box under the live transcript adds a note at a moment in the meeting. Enter adds it and Shift+Enter starts a new line. **Place note** sets where it goes:
+The box under the live transcript adds a note at a moment in the meeting. Enter adds it and Shift+Enter starts a new line. The menu before the box, **Place note**, sets where it goes, and the line under the box says where the next note will land:
 
 - **At typing start**, the default, places the note where the recording was when you typed its first character, however long you take to finish it. Clearing the box starts again.
 - **At send** places it where the recording is when you press Enter.
-- **Before the transcript** and **After the transcript** make a note on the whole meeting, listed under **Other notes**.
+- **Before the transcript** and **After the transcript** make a note on the whole meeting, kept with the Notes box. While the Notes box is empty, a note before the transcript becomes its text, which you can go on editing there. Otherwise it is listed under **Other notes**, like every note after the transcript.
 
-A placed note shows on its own line, with its time, after the line being spoken when it was placed. A line still being transcribed can arrive after your note and appears above it. Time spent paused does not count, so a note written during a pause follows the last line before it. The processed transcript shows the note after the same line, and the AI reads it there.
+A placed note shows on its own line, with its time, after the line being spoken when it was placed. A line still being transcribed can arrive after your note and appears above it. Time spent paused does not count, so a note written during a pause follows the last line before it. The processed transcript shows the note after the line spoken then, and the AI reads it there.
 
-A note that could not be saved stays where you wrote it, marked with the reason, with **Retry** and **Discard**. Retrying never adds it twice. Notes still unsaved when you stop are listed with the processing progress. On a phone, the box stays above the on-screen keyboard.
+A note that could not be saved stays where you wrote it, marked with the reason, with **Retry** and **Discard**. Retrying never adds it twice, and never brings back a note deleted on another device. When the recording stops, here or on another device, text still in the box is kept, with **Add note** and **Discard**. Unsaved notes and text stay listed, with the processing progress and then above the processed transcript, until you save or discard them, and Nojoin asks before you close the page while any remain. On a phone, the box stays above the on-screen keyboard.
 
 ### Meeting Edge
 

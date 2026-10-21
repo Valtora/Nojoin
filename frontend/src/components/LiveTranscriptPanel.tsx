@@ -11,7 +11,11 @@ import {
 import { ArrowDown, Radio } from "lucide-react";
 
 import type { InlineNote } from "@/lib/notes/noteOutbox";
-import { bodyNotesAmongLines, placeTimelineNotes } from "@/lib/notes/placement";
+import {
+  bodyNotesAmongLines,
+  formatTimelineMs,
+  placeTimelineNotes,
+} from "@/lib/notes/placement";
 import { CaptureSourceChannel, TranscriptSegment } from "@/types";
 
 import TimelineNoteLine from "./notes/TimelineNoteLine";
@@ -71,8 +75,8 @@ interface LiveTranscriptPanelProps {
 
 const NO_NOTES: readonly InlineNote[] = [];
 
-const noteTimeSeconds = (note: InlineNote) =>
-  (note.kind === "selection" ? (note.start_ms ?? 0) : (note.anchor_ms ?? 0)) / 1000;
+const noteTimeMs = (note: InlineNote) =>
+  note.kind === "selection" ? (note.start_ms ?? 0) : (note.anchor_ms ?? 0);
 
 /**
  * Read-only live transcript for the in-flight recording view.
@@ -178,7 +182,7 @@ export default function LiveTranscriptPanel({
       <TimelineNoteLine
         noteId={note.id}
         body={note.body}
-        timeLabel={formatElapsed(noteTimeSeconds(note))}
+        timeLabel={formatTimelineMs(noteTimeMs(note))}
         status={note.status}
         error={note.error}
         onRetry={onRetryNote ? () => onRetryNote(note.key) : undefined}
@@ -188,7 +192,12 @@ export default function LiveTranscriptPanel({
   );
 
   return (
-    <section className="density-surface flex h-full min-h-0 flex-col border border-surface-border bg-surface-card shadow-card">
+    // Clips in the two-column layout, where it has a definite height and the
+    // note box sits at its bottom: nothing in it may paint over the Notes card
+    // below. Not when stacked, where the page scrolls: a clipping card is a
+    // scroll container, and the note box would stick to the card, which never
+    // scrolls, rather than to the page above an on-screen keyboard.
+    <section className="density-surface flex h-full min-h-0 flex-col border border-surface-border bg-surface-card shadow-card @min-[54rem]:overflow-hidden">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="inline-flex items-center gap-2 rounded-pill border border-action-border bg-action-tint px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-action-text">
           <Radio className="h-3.5 w-3.5" />
@@ -206,16 +215,10 @@ export default function LiveTranscriptPanel({
           moves the dead space around. Meeting Edge scrolls inside its own cell,
           so the row height comes from the window rather than from either panel.
 
-          `overflow-hidden` here rather than on the card, because nothing inside
-          the window may paint over the notes card below; the window sizes
-          itself to whatever the card is given, so nothing should reach this,
-          but the failure mode of a future rigid child is then a clipped
-          transcript rather than text sitting loose on top of the next module.
-          Not on the card: a card that clips is a scroll container, and the
-          note box under the window would stick to the card, which never
-          scrolls, rather than to the page, which does when stacked. The box's
-          own wrapper starts at the window, so stuck above a keyboard it rides
-          over transcript lines and never over the header. */}
+          The window clips its own lines in every layout; the card clips only
+          from 54rem (above). The note box's wrapper starts at the window, so
+          stuck above a keyboard it rides over transcript lines and never over
+          the header. */}
       <div className="mt-4 flex min-h-0 flex-1 flex-col">
         <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
           {/* The transcript window is painted by this overlay rather than by the
