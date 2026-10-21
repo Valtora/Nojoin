@@ -1,3 +1,5 @@
+# Follow this file with:
+#   python -m pip install --no-deps -r requirements/worker-no-deps.txt
 -r backend.txt
 -r worker.txt
 aiosqlite==0.22.1
