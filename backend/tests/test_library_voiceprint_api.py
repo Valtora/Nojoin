@@ -1,8 +1,8 @@
 """A person's library voiceprint is founded only on enough speech, and folded
 only with a voiceprint that sounds like it.
 
-Every vector here is built so its cosine to the person's voiceprint is known
-exactly: ``_at_cosine(c)`` is a unit vector at cosine ``c`` to ``PERSON``. The
+Every vector here is built so its cosine to the person's voiceprint is known:
+``_at_cosine(c)`` is a unit vector at cosine ``c`` to ``PERSON``. The
 floor (20 s) and the guard (0.70) are written as literals so each case reads on
 its own.
 """
@@ -290,21 +290,29 @@ def test_merge_embeddings_refuses_a_fold_below_seventy() -> None:
     )
 
 
-def test_a_fold_at_exactly_seventy_is_accepted() -> None:
-    """The guard refuses below 0.70, not at it.
+def test_a_fold_at_exactly_the_threshold_is_accepted(monkeypatch) -> None:
+    """The guard refuses below its threshold, not at it.
 
-    Every product and sum here is an exact small integer (dot 7, norms 1 and
-    10), so the cosine is exactly 0.7 whatever order or FMA the BLAS uses.
-    ``_at_cosine(0.70)`` is not: its norm rounds differently across CPUs.
+    The cosine of ``_at_cosine(0.70)`` lands within an ulp of 0.7, and which
+    side depends on the CPU and BLAS. So the threshold is set to the cosine this
+    platform actually computes: a fold scoring exactly the threshold is
+    accepted, and the next float up refuses it.
     """
-    from backend.processing.embedding import cosine_similarity
+    from backend.processing import embedding
 
-    person = [1.0, 0.0, 0.0, 0.0]
-    at_threshold = [7.0, 7.0, 1.0, 1.0]
-    assert cosine_similarity(person, at_threshold) == 0.7
-    assert merge_embeddings(person, at_threshold, alpha=0.5) == pytest.approx(
-        _blend(person, at_threshold, 0.5)
+    at_threshold = _at_cosine(0.70)
+    similarity = embedding.cosine_similarity(PERSON, at_threshold)
+    assert similarity == pytest.approx(0.7)
+
+    monkeypatch.setattr(embedding, "DRIFT_GUARD_THRESHOLD", similarity)
+    assert merge_embeddings(PERSON, at_threshold, alpha=0.5) == pytest.approx(
+        _blend(PERSON, at_threshold, 0.5)
     )
+
+    monkeypatch.setattr(
+        embedding, "DRIFT_GUARD_THRESHOLD", math.nextafter(similarity, 1.0)
+    )
+    assert merge_embeddings(PERSON, at_threshold, alpha=0.5) == PERSON
 
 
 @pytest.mark.parametrize(
