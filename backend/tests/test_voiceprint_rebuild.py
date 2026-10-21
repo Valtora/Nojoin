@@ -902,7 +902,7 @@ def test_a_rebuild_averages_only_current_version_voiceprints(
 
 
 def _person_with_a_re_extracted_speaker(
-    engine: Any, person_voiceprint: list[float]
+    engine: Any, person_voiceprint: list[float], *, locked: bool
 ) -> None:
     """A current-version person, one stale speaker of theirs and two current ones."""
     with engine.begin() as connection:
@@ -913,6 +913,10 @@ def _person_with_a_re_extracted_speaker(
             1,
             embedding=person_voiceprint,
             embedding_version=EMBEDDING_METHOD_VERSION,
+        )
+        connection.execute(
+            text("UPDATE global_speakers SET is_voiceprint_locked = :locked"),
+            {"locked": int(locked)},
         )
         _add_recording(connection, 10, 1)
         _add_speaker(connection, SpeakerRow(100, 10, "SPEAKER_00", global_speaker_id=5))
@@ -937,13 +941,34 @@ def test_a_rebuild_is_not_held_back_by_the_persons_own_voiceprint(
     every link that meets the floor.
     """
     engine = _make_engine(tmp_path, "junk-reference")
-    _person_with_a_re_extracted_speaker(engine, STALE_VECTOR)
+    _person_with_a_re_extracted_speaker(engine, STALE_VECTOR, locked=False)
 
     summary = _run_task(engine, user_id=1)
 
     assert summary["people_rebuilt"] == 1
     assert _person_row(engine, 5) == (
         pytest.approx(REBUILT_VECTOR),
+        EMBEDDING_METHOD_VERSION,
+    )
+
+
+def test_a_locked_person_with_a_current_voiceprint_is_never_rebuilt(
+    tmp_path: Path,
+) -> None:
+    """A recalibrated voiceprint is the user's own, and a current one needs no repair.
+
+    One of the person's speakers is re-extracted, which made the rebuild
+    recompute the person from their links, overwriting what the user locked.
+    """
+    recalibrated = [0.8, 0.6, 0.0]
+    engine = _make_engine(tmp_path, "locked-current")
+    _person_with_a_re_extracted_speaker(engine, recalibrated, locked=True)
+
+    summary = _run_task(engine, user_id=1)
+
+    assert (summary["speakers_rebuilt"], summary["people_rebuilt"]) == (1, 0)
+    assert _person_row(engine, 5) == (
+        pytest.approx(recalibrated),
         EMBEDDING_METHOD_VERSION,
     )
 

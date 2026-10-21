@@ -297,7 +297,12 @@ def _rebuild_recording_speakers(
 def _rebuild_people(
     session, *, user_id: int | None, affected_global_ids: set[int], method_version: int
 ) -> tuple[int, int]:
-    """Recompute every person whose speakers changed or who is still stale.
+    """Recompute every person who is still stale, or whose speakers changed.
+
+    A person whose voiceprint is already of this version is recomputed only
+    when one of their speakers was just re-extracted, and never when it is
+    locked: a locked voiceprint is the user's own (recalibrating locks it), and
+    a current one has nothing to repair.
 
     A stale voiceprint that can't be rebuilt is cleared when no current-version
     voiceprint is linked to the person at all, and kept when some are but none
@@ -316,11 +321,11 @@ def _rebuild_people(
     rebuilt = 0
     cleared = 0
     for global_speaker in session.exec(query).all():
-        already_current = (
+        is_current = embedding_version_of(global_speaker) == method_version
+        if is_current and (
             global_speaker.id not in affected_global_ids
-            and embedding_version_of(global_speaker) == method_version
-        )
-        if already_current:
+            or global_speaker.is_voiceprint_locked
+        ):
             continue
         outcome = _rebuild_global_speaker(session, global_speaker, method_version)
         if outcome is _PersonRebuild.REBUILT:
