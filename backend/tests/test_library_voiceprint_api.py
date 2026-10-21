@@ -293,15 +293,17 @@ def test_merge_embeddings_refuses_a_fold_below_seventy() -> None:
 def test_a_fold_at_exactly_seventy_is_accepted() -> None:
     """The guard refuses below 0.70, not at it.
 
-    ``_at_cosine(0.70)`` scores exactly 0.7 against ``PERSON`` in floating
-    point, so this pins the comparison itself.
+    Every product and sum here is an exact small integer (dot 7, norms 1 and
+    10), so the cosine is exactly 0.7 whatever order or FMA the BLAS uses.
+    ``_at_cosine(0.70)`` is not: its norm rounds differently across CPUs.
     """
     from backend.processing.embedding import cosine_similarity
 
-    at_threshold = _at_cosine(0.70)
-    assert cosine_similarity(PERSON, at_threshold) == 0.7
-    assert merge_embeddings(PERSON, at_threshold, alpha=0.5) == pytest.approx(
-        _blend(PERSON, at_threshold, 0.5)
+    person = [1.0, 0.0, 0.0, 0.0]
+    at_threshold = [7.0, 7.0, 1.0, 1.0]
+    assert cosine_similarity(person, at_threshold) == 0.7
+    assert merge_embeddings(person, at_threshold, alpha=0.5) == pytest.approx(
+        _blend(person, at_threshold, 0.5)
     )
 
 
