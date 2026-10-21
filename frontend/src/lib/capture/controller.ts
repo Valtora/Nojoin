@@ -15,6 +15,7 @@ import { useConnectivityStore } from "@/lib/connectivity/monitor";
 import { isReachable } from "@/lib/connectivity/reducer";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { dispatchRecordingRemoved } from "@/lib/recordingEvents";
+import { holdSignInInPlace, retryAfterSignIn } from "@/lib/session";
 import type { Recording, RecordingId } from "@/types";
 
 import { detectCaptureSupport } from "./featureDetect";
@@ -498,10 +499,11 @@ export class CaptureController {
       return;
     }
 
+    const recordingId = this.state.recordingId;
     await this.runtime.recorder.pause();
     await this.runtime.uploader.waitForIdle();
     this.stopElapsedTimer();
-    const response = await pauseRecordingCapture(this.state.recordingId);
+    const response = await retryAfterSignIn(() => pauseRecordingCapture(recordingId));
     writePausedCaptureContext({
       recordingId: response.recording_id,
       lastSequence: Math.max(response.last_sequence, this.state.lastSequence),
@@ -533,7 +535,9 @@ export class CaptureController {
       !this.runtime.mediaReleased &&
       this.state.status === "paused"
     ) {
-      const response = await resumeRecordingCapture(targetRecordingId);
+      const response = await retryAfterSignIn(() =>
+        resumeRecordingCapture(targetRecordingId),
+      );
       // A stalled uploader (for example after a network outage) still holds
       // the queued segments; recovering it retries them before new audio.
       this.runtime.uploader.recover();
@@ -685,6 +689,17 @@ export class CaptureController {
           RECORDER_STOP_TIMEOUT_MS,
         );
 
+        this.setStopStage("releasing-media");
+        // Once the recorder has stopped, every recorded segment is in the
+        // uploader's queue, so the microphone and shared tab are no longer
+        // needed. Release them before the upload rather than after it: a long
+        // queue takes minutes to send, and a signed-out tab waits for the user
+        // to sign back in first (issue #502), and the browser's recording
+        // indicator should not stay lit through either. Stopping the elapsed
+        // timer here also keeps that wait out of the elapsed time sent with
+        // finalize.
+        await this.releaseRuntimeMedia();
+
         this.setStopStage("flushing-uploads");
         runtime.uploader.recover();
         try {
@@ -699,12 +714,6 @@ export class CaptureController {
             flushError,
           );
         }
-
-        this.setStopStage("releasing-media");
-        // Every recorded segment is queued server-side at this point, so stop
-        // the microphone/tab capture now instead of keeping the tracks (and
-        // the browser recording indicator) live through the finalize retries.
-        await this.releaseRuntimeMedia();
       } else {
         await this.uploadStoredSegments(targetRecordingId);
       }
@@ -921,7 +930,7 @@ export class CaptureController {
     this.setStopStage("flushing-uploads");
     // Pausing an already paused recording changes nothing and reports the last
     // sequence the server holds.
-    const response = await pauseRecordingCapture(recordingId);
+    const response = await retryAfterSignIn(() => pauseRecordingCapture(recordingId));
     const segments = await this.loadQueuedSegments(recordingId, response.last_sequence);
     if (segments.length === 0) {
       return;
@@ -1090,7 +1099,7 @@ export class CaptureController {
     // further audio is recorded until the user resumes and uploads retry.
     try {
       await this.runtime.recorder.pause();
-      const response = await pauseRecordingCapture(recordingId);
+      const response = await retryAfterSignIn(() => pauseRecordingCapture(recordingId));
       writePausedCaptureContext({
         recordingId,
         lastSequence: Math.max(response.last_sequence, this.state.lastSequence),
@@ -1344,7 +1353,9 @@ export class CaptureController {
     try {
       for (let attempt = 0; ; attempt += 1) {
         try {
-          return await finalizeRecordingCapture(recordingId, { clientElapsedSeconds });
+          return await retryAfterSignIn(() =>
+            finalizeRecordingCapture(recordingId, { clientElapsedSeconds }),
+          );
 
         } catch (error: unknown) {
           const detail = error instanceof AxiosError ? error.response?.data?.detail : null;
@@ -1503,6 +1514,10 @@ export class CaptureController {
 
   private setState(patch: Partial<CaptureState>) {
     this.state = { ...this.state, ...patch };
+    // A live capture, or a stop still sending audio, must outlive the session
+    // ending: a refused request then asks for sign-in in place rather than
+    // reloading to the sign-in page (issue #502).
+    holdSignInInPlace(Boolean(this.runtime) || this.state.status === "finalizing");
     this.listeners.forEach((listener) => listener(this.state));
   }
 }

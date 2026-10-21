@@ -1,3 +1,4 @@
+import { noteSignedIn } from "@/lib/session";
 import type { User } from "@/types";
 import api from "./client";
 
@@ -22,6 +23,7 @@ export const login = async (
       "Content-Type": "multipart/form-data",
     },
   });
+  noteSignedIn(response.data);
   return response.data;
 };
 
@@ -41,5 +43,6 @@ export const logout = async (): Promise<void> => {
 
 export const getCurrentUser = async (): Promise<User> => {
   const response = await api.get<User>("/users/me");
+  noteSignedIn(response.data);
   return response.data;
 };
