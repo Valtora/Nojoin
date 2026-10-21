@@ -51,7 +51,7 @@ The consent page heading, "Connect … to Nojoin", shows the `client_name` the a
 
 ### If Authenticate never appears: stale stored credentials
 
-Codex offers **Authenticate** only when it holds no OAuth tokens for the server. If it holds dead ones, it reports itself as signed in, keeps retrying a refresh that cannot succeed, and tasks fail with `MCP server 'nojoin' was not ready for this step`. This typically follows Nojoin revoking a grant for refresh-token reuse, which Codex can trigger because its desktop app, CLI and IDE extension can each keep their own copy of the credentials.
+Codex offers **Authenticate** only when it holds no OAuth tokens for the server. If it holds dead ones, it reports itself as signed in, keeps retrying a refresh that cannot succeed, and tasks fail with `MCP server 'nojoin' was not ready for this step`. This typically follows Nojoin revoking a grant, after a password change or a session revoke, or for refresh-token reuse, which Codex can trigger because its desktop app, CLI and IDE extension can each keep their own copy of the credentials.
 
 Remove the stored credentials so Codex starts again:
 
@@ -121,7 +121,7 @@ Treat the cursor as opaque and the response as additive, since new fields may ap
 ## Managing and Revoking Access
 
 - **Settings → Integrations → Connected apps** lists each connection with its scope, creation time and last use, and revokes it. Revoking stops refreshes at once, and the current access token expires within an hour.
-- Changing your password, or an administrator resetting it, invalidates every connector access token at once. Refresh tokens are not revoked, so a client that refreshes on its own carries on without asking you. To cut a connection off, revoke it in **Connected apps**. Deactivating an account also stops its refreshes.
+- Changing your password disconnects every app at once. So does an administrator resetting your password, deactivating your account or revoking your sessions, and so does revoking your own through `POST /api/v1/users/me/sessions/revoke-all`. Each app then needs connecting again, with a fresh consent, and Codex may need its old credentials cleared first ([stale stored credentials](#if-authenticate-never-appears-stale-stored-credentials)).
 
 ## How Authorisation Works
 

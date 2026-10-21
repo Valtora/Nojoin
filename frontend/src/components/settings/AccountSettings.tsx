@@ -207,7 +207,7 @@ export default function AccountSettings({
         <SettingsCard
           id="profile-password"
           title="Password"
-          description="Change the password used to sign in to this account."
+          description="Change the password used to sign in to this account. Saving a new one signs you out everywhere and disconnects your connected apps, such as Claude and Codex."
         >
           {forcePasswordChange && (
             <SettingsBlock>

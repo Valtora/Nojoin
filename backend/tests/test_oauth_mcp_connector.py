@@ -6,9 +6,10 @@ from __future__ import annotations
 import hashlib
 import logging
 from base64 import urlsafe_b64encode
+from contextlib import contextmanager
 
 import pytest
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
@@ -607,6 +608,237 @@ async def test_grants_listing_and_revocation(
         },
     )
     assert refused.status_code == 400
+
+
+@contextmanager
+def signed_in_as(app: FastAPI, user: User):
+    """Sign requests in as ``user``, loaded in the request's own session.
+
+    That is how get_current_user returns the user, and an endpoint that
+    refreshes it, such as revoke-all, needs it attached to that session.
+    """
+    previous = app.dependency_overrides[get_current_user]
+
+    async def current_user(db: AsyncSession = Depends(get_db)) -> User:
+        return await db.get(User, user.id)
+
+    app.dependency_overrides[get_current_user] = current_user
+    try:
+        yield
+    finally:
+        app.dependency_overrides[get_current_user] = previous
+
+
+async def connect(client: AsyncClient) -> tuple[str, dict]:
+    """Register a client and run consent and code exchange for the signed-in user."""
+    client_id = await register_claude_client(client)
+    verifier, challenge = make_pkce_pair()
+    code = await obtain_code(client, client_id, challenge)
+    response = await client.post(
+        "/api/v1/oauth/token",
+        data={
+            "grant_type": "authorization_code",
+            "client_id": client_id,
+            "code": code,
+            "redirect_uri": CLAUDE_CALLBACK,
+            "code_verifier": verifier,
+        },
+    )
+    assert response.status_code == 200, response.text
+    return client_id, response.json()
+
+
+async def refresh(client: AsyncClient, client_id: str, refresh_token: str):
+    return await client.post(
+        "/api/v1/oauth/token",
+        data={
+            "grant_type": "refresh_token",
+            "client_id": client_id,
+            "refresh_token": refresh_token,
+        },
+    )
+
+
+@pytest.fixture
+async def admin_and_bob(session_maker) -> tuple[User, User]:
+    async with session_maker() as session:
+        admin = User(
+            username="admin",
+            hashed_password="hashed",
+            role="admin",
+            is_superuser=True,
+            is_active=True,
+        )
+        bob = User(username="bob", hashed_password="hashed", role="user")
+        session.add_all([admin, bob])
+        await session.commit()
+        await session.refresh(admin)
+        await session.refresh(bob)
+        return admin, bob
+
+
+async def _own_password_change(client, app, alice, admin) -> None:
+    alice.hashed_password = security.get_password_hash("old-password-1")
+    response = await client.put(
+        "/api/v1/users/me/password",
+        json={"current_password": "old-password-1", "new_password": "new-password-2"},
+    )
+    assert response.status_code == 200, response.text
+
+
+async def _admin_password_reset(client, app, alice, admin) -> None:
+    with signed_in_as(app, admin):
+        response = await client.patch(
+            f"/api/v1/users/{alice.id}", json={"password": "reset-password-3"}
+        )
+    assert response.status_code == 200, response.text
+
+
+async def _admin_deactivation(client, app, alice, admin) -> None:
+    # Reactivated straight away, so the refusal below cannot come from the
+    # inactive-account check that refresh already had.
+    with signed_in_as(app, admin):
+        for active in (False, True):
+            response = await client.patch(
+                f"/api/v1/users/{alice.id}", json={"is_active": active}
+            )
+            assert response.status_code == 200, response.text
+
+
+async def _own_revoke_all(client, app, alice, admin) -> None:
+    with signed_in_as(app, alice):
+        response = await client.post("/api/v1/users/me/sessions/revoke-all")
+    assert response.status_code == 200, response.text
+
+
+async def _admin_revoke_all(client, app, alice, admin) -> None:
+    with signed_in_as(app, admin):
+        response = await client.post(f"/api/v1/users/{alice.id}/sessions/revoke-all")
+    assert response.status_code == 200, response.text
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "credential_event",
+    [
+        _own_password_change,
+        _admin_password_reset,
+        _admin_deactivation,
+        _own_revoke_all,
+        _admin_revoke_all,
+    ],
+    ids=lambda event: event.__name__.strip("_"),
+)
+async def test_credential_events_revoke_the_users_connector_grants(  # noqa: PLR0913 - one fixture per actor
+    client: AsyncClient,
+    api_app: FastAPI,
+    test_user: User,
+    admin_and_bob: tuple[User, User],
+    fixed_origin,
+    isolated_keyring,
+    anonymous_rate_limit_fallback,
+    caplog,
+    credential_event,
+):
+    admin, bob = admin_and_bob
+    alice_client_id, alice_tokens = await connect(client)
+    with signed_in_as(api_app, bob):
+        bob_client_id, bob_tokens = await connect(client)
+
+    await credential_event(client, api_app, test_user, admin)
+
+    with caplog.at_level(logging.INFO, logger=oauth_service.logger.name):
+        refused = await refresh(client, alice_client_id, alice_tokens["refresh_token"])
+    assert refused.status_code == 400
+    assert refused.json()["error"] == "invalid_grant"
+    # A grant revoked as a whole is not a replayed token.
+    assert "reuse detected" not in caplog.text
+    assert "Refresh refused for revoked grant" in caplog.text
+    assert (await client.get("/api/v1/oauth/grants")).json() == []
+
+    with signed_in_as(api_app, bob):
+        assert len((await client.get("/api/v1/oauth/grants")).json()) == 1
+        kept = await refresh(client, bob_client_id, bob_tokens["refresh_token"])
+    assert kept.status_code == 200, kept.text
+
+
+@pytest.mark.anyio
+async def test_consent_after_a_forced_password_change_completes(  # noqa: PLR0913 - one fixture per actor
+    client: AsyncClient,
+    api_app: FastAPI,
+    test_user: User,
+    admin_and_bob: tuple[User, User],
+    session_maker,
+    fixed_origin,
+    isolated_keyring,
+    anonymous_rate_limit_fallback,
+):
+    admin, _ = admin_and_bob
+    await connect(client)
+    await _admin_password_reset(client, api_app, test_user, admin)
+
+    # From here alice authenticates for real, so the forced-change gate in
+    # get_current_user applies to her consent.
+    del api_app.dependency_overrides[get_current_user]
+
+    async def bearer() -> dict[str, str]:
+        async with session_maker() as session:
+            alice = await session.get(User, test_user.id)
+        token = security.create_access_token(
+            alice.username,
+            token_type=security.API_TOKEN_TYPE,
+            scopes=[security.API_ACCESS_SCOPE],
+            token_version=alice.token_version,
+        )
+        return {"Authorization": f"Bearer {token}"}
+
+    client_id = await register_claude_client(client)
+    verifier, challenge = make_pkce_pair()
+    consent = {
+        "approve": True,
+        "client_id": client_id,
+        "redirect_uri": CLAUDE_CALLBACK,
+        "response_type": "code",
+        "state": "xyz",
+        "code_challenge": challenge,
+        "code_challenge_method": "S256",
+    }
+    blocked = await client.post(
+        "/api/v1/oauth/authorize/decision", json=consent, headers=await bearer()
+    )
+    assert blocked.status_code == 403
+    assert blocked.json()["detail"] == "Password change required"
+
+    changed = await client.put(
+        "/api/v1/users/me/password",
+        json={"current_password": "reset-password-3", "new_password": "new-password-4"},
+        headers=await bearer(),
+    )
+    assert changed.status_code == 200, changed.text
+
+    # The change bumped token_version again, so a fresh sign-in is needed.
+    headers = await bearer()
+    approved = await client.post(
+        "/api/v1/oauth/authorize/decision", json=consent, headers=headers
+    )
+    assert approved.status_code == 200, approved.text
+    query = approved.json()["redirect_to"].split("?", 1)[1]
+    code = dict(pair.split("=", 1) for pair in query.split("&"))["code"]
+    tokens = await client.post(
+        "/api/v1/oauth/token",
+        data={
+            "grant_type": "authorization_code",
+            "client_id": client_id,
+            "code": code,
+            "redirect_uri": CLAUDE_CALLBACK,
+            "code_verifier": verifier,
+        },
+    )
+    assert tokens.status_code == 200, tokens.text
+    refreshed = await refresh(client, client_id, tokens.json()["refresh_token"])
+    assert refreshed.status_code == 200, refreshed.text
+    grants = await client.get("/api/v1/oauth/grants", headers=headers)
+    assert [g["client_name"] for g in grants.json()] == ["Claude"]
 
 
 @pytest.mark.anyio
