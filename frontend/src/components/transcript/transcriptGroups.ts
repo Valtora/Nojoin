@@ -36,9 +36,14 @@ export function indexSegments(
 /**
  * Group consecutive (time-overlapping or same-overlap-event) display segments
  * into render groups, for {@link TranscriptView}.
+ *
+ * A group always ends at a line in `breakAfter` (original indexes): a note
+ * renders on its own line after the line it follows, so it splits the group
+ * that line would otherwise have continued.
  */
 export function buildTranscriptGroups(
   displaySegments: IndexedTranscriptSegment[],
+  breakAfter: ReadonlySet<number> = new Set(),
 ): TranscriptGroup[] {
   const trackGroups: TranscriptGroup[] = [];
   let currentGroup: TranscriptGroup | null = null;
@@ -63,8 +68,9 @@ export function buildTranscriptGroups(
         involvedSet.size > 1 &&
         currentGroup.involved.size > 1 &&
         areSetsEqual(involvedSet, currentGroup.involved);
+      const previous = currentGroup.items[currentGroup.items.length - 1];
 
-      if (isTimeOverlap || isSameOverlapEvent) {
+      if (!breakAfter.has(previous.index) && (isTimeOverlap || isSameOverlapEvent)) {
         currentGroup.items.push(item);
         currentGroup.end = Math.max(currentGroup.end, item.segment.end);
         involvedSet.forEach((spk) => currentGroup!.involved.add(spk));

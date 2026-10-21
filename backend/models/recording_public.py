@@ -16,7 +16,6 @@ from backend.models.document import (
 from backend.models.recording import ClientStatus, Recording, RecordingStatus
 from backend.models.speaker import GlobalSpeakerRead, RecordingSpeaker
 from backend.models.tag import Tag, TagRead
-from backend.models.timeline_note_public import TimelineNoteRead
 from backend.models.transcript import Transcript
 from backend.processing.embedding import (
     LIBRARY_VOICEPRINT_MIN_SPEECH_S,
@@ -211,13 +210,16 @@ class RecordingPublicRead(PublicModel):
     captured_audio_seconds: Optional[float] = None
     # Where on the audio timeline capture is now, in ms: the clock timeline
     # notes are anchored on. The end of the last transcoded segment, plus the
-    # time since it arrived while recording (at most one segment's worth), so
+    # time since it arrived, or since the last resume if later, while recording
+    # (at most one segment's worth), so
     # it trails the truth by the upload and transcode delay. Exact while
     # paused. None unless capture is open, and on the list endpoint.
     live_audio_ms: Optional[int] = None
-    # The user's notes on this recording, in timeline order. Only the detail
-    # endpoint fills it; None elsewhere.
-    timeline_notes: Optional[list[TimelineNoteRead]] = None
+    # Changes whenever the recording's notes list (GET .../timeline-notes)
+    # would: a client holding that list fetches it again when this changes,
+    # rather than receiving every note on every poll. Only the detail endpoint
+    # fills it; None elsewhere.
+    timeline_notes_list_signature: Optional[str] = None
     is_archived: bool = False
     is_deleted: bool = False
     last_activity_at: Optional[datetime] = None
@@ -369,7 +371,7 @@ def serialize_recording(
     speakers_override: Optional[list[RecordingSpeaker]] = None,
     captured_audio_seconds: Optional[float] = None,
     live_audio_ms: Optional[int] = None,
-    timeline_notes: Optional[list[TimelineNoteRead]] = None,
+    timeline_notes_list_signature: Optional[str] = None,
 ) -> RecordingPublicRead:
     transcript = None
     if include_transcript and recording.transcript is not None:
@@ -429,7 +431,7 @@ def serialize_recording(
         max_speakers=getattr(recording, "max_speakers", None),
         captured_audio_seconds=captured_audio_seconds,
         live_audio_ms=live_audio_ms,
-        timeline_notes=timeline_notes,
+        timeline_notes_list_signature=timeline_notes_list_signature,
         is_archived=recording.is_archived,
         is_deleted=recording.is_deleted,
         last_activity_at=recording.last_activity_at,

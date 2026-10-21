@@ -75,31 +75,17 @@ describe("polling a recording with no audio and no proxy", () => {
 });
 
 describe("noticing a change to the notes in a poll", () => {
-  const withNote = (revision: number, body: string) =>
-    recordingWith({
-      timeline_notes: [
-        {
-          id: "n1",
-          recording_id: "rec-1",
-          kind: "head",
-          body,
-          revision,
-          created_at: "2026-10-17T10:00:00Z",
-          updated_at: "2026-10-17T10:00:00Z",
-        },
-      ],
-    });
-
-  it("sees an edit, an addition and a removal, by id and revision", () => {
-    const before = withNote(1, "Agenda");
-    expect(hasPolledRecordingChanged(before, withNote(1, "Agenda"))).toBe(false);
-    expect(hasPolledRecordingChanged(before, withNote(2, "Agenda, budget"))).toBe(
-      true,
-    );
-    expect(hasPolledRecordingChanged(before, recordingWith({ timeline_notes: [] }))).toBe(
-      true,
-    );
-    expect(hasPolledRecordingChanged(recordingWith({}), before)).toBe(true);
+  it("sees a new notes list signature, which the page then fetches the list for", () => {
+    const before = recordingWith({ timeline_notes_list_signature: "1:aaaa" });
+    expect(
+      hasPolledRecordingChanged(before, recordingWith({ timeline_notes_list_signature: "1:aaaa" })),
+    ).toBe(false);
+    expect(
+      hasPolledRecordingChanged(before, recordingWith({ timeline_notes_list_signature: "1:bbbb" })),
+    ).toBe(true);
+    expect(
+      hasPolledRecordingChanged(before, recordingWith({ timeline_notes_list_signature: "0:cccc" })),
+    ).toBe(true);
   });
 
   it("ignores the live audio clock, which moves on every poll", () => {

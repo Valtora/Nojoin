@@ -437,10 +437,8 @@ async def test_a_note_whose_author_is_gone_reads_without_an_author(
     assert listed[0]["body"] == "Orphaned"
 
 
-@pytest.mark.anyio
-async def test_the_recording_detail_carries_notes_and_the_live_audio_clock(
-    client: AsyncClient, session_maker
-) -> None:
+async def _add_detail_tables(session_maker) -> None:
+    """The tables the recording detail read joins, beyond the notes fixture's."""
     async with session_maker() as session:
         for schema in (
             RECORDING_AUDIO_CHUNKS_SCHEMA,
@@ -450,6 +448,15 @@ async def test_the_recording_detail_carries_notes_and_the_live_audio_clock(
             RECORDING_TAGS_SCHEMA,
         ):
             await session.execute(text(schema))
+        await session.commit()
+
+
+@pytest.mark.anyio
+async def test_the_recording_detail_carries_a_notes_signature_and_the_live_audio_clock(
+    client: AsyncClient, session_maker
+) -> None:
+    await _add_detail_tables(session_maker)
+    async with session_maker() as session:
         await session.execute(
             text(
                 "UPDATE recordings SET status = 'UPLOADING', "
@@ -484,11 +491,111 @@ async def test_the_recording_detail_carries_notes_and_the_live_audio_clock(
     detail = (await client.get(f"/api/v1/recordings/{REC}")).json()
     # Paused: the clock reads exactly the end of the audio it has.
     assert detail["live_audio_ms"] == 5_500
-    assert [item["id"] for item in detail["timeline_notes"]] == [note["id"]]
+    # The notes come from their own list, fetched when this signature changes.
+    assert "timeline_notes" not in detail
+    assert detail["timeline_notes_list_signature"].startswith("1:")
+    assert [item["id"] for item in (await client.get(BASE)).json()] == [note["id"]]
 
     finished = (await client.get(f"/api/v1/recordings/{OTHER_REC}")).json()
     assert finished["live_audio_ms"] is None
-    assert finished["timeline_notes"] == []
+    assert finished["timeline_notes_list_signature"].startswith("0:")
+
+
+@pytest.mark.anyio
+async def test_just_after_a_resume_the_live_clock_runs_on_from_the_resume(
+    client: AsyncClient, session_maker
+) -> None:
+    await _add_detail_tables(session_maker)
+    now = utc_now()
+    async with session_maker() as session:
+        # Its audio ends at 5.5 s, the last segment having arrived 30 s ago,
+        # before a pause; capture resumed 300 ms ago, and no segment has landed
+        # since.
+        await session.execute(
+            text(
+                "UPDATE recordings SET status = 'UPLOADING', "
+                "client_status = 'RECORDING', last_activity_at = :resumed "
+                "WHERE id = 10"
+            ),
+            {"resumed": now - timedelta(milliseconds=300)},
+        )
+        for sequence_no, (start_ms, end_ms) in enumerate(((0, 2_000), (2_000, 5_500))):
+            await session.execute(
+                text(
+                    "INSERT INTO recording_audio_chunks (created_at, updated_at, "
+                    "public_id, recording_id, sequence_no, source_kind, "
+                    "absolute_start_ms, absolute_end_ms, duration_ms, sample_rate_hz, "
+                    "channel_count, byte_size, sha256, storage_path, upload_status, "
+                    "received_at) VALUES (:at, :at, :pid, 10, :seq, 'mixed', :start, "
+                    ":end, :duration, 48000, 1, 1, 'x', :path, 'stored', :at)"
+                ),
+                {
+                    "at": now - timedelta(seconds=30),
+                    "pid": str(uuid4()),
+                    "seq": sequence_no,
+                    "start": start_ms,
+                    "end": end_ms,
+                    "duration": end_ms - start_ms,
+                    "path": f"/chunks/{sequence_no}",
+                },
+            )
+        await session.commit()
+
+    detail = (await client.get(f"/api/v1/recordings/{REC}")).json()
+
+    # Not 8 000: run on from the segment before the pause, the clock would sit
+    # at its 2.5 s cap ahead of the audio until the next segment lands.
+    assert 5_800 <= detail["live_audio_ms"] < 7_000
+
+
+@pytest.mark.anyio
+async def test_an_unchanged_poll_carries_no_note_bodies_and_each_write_changes_it(
+    client: AsyncClient, session_maker
+) -> None:
+    await _add_detail_tables(session_maker)
+
+    async def poll() -> tuple[str, str]:
+        response = await client.get(f"/api/v1/recordings/{REC}")
+        assert response.status_code == 200, response.text
+        return response.text, response.json()["timeline_notes_list_signature"]
+
+    _, empty = await poll()
+    note = await _create(
+        client, kind="point", anchor_ms=1_000, body="Dana owns the budget"
+    )
+    first_text, created = await poll()
+    assert created != empty
+    second_text, unchanged = await poll()
+    assert unchanged == created
+    for body in (first_text, second_text):
+        assert "Dana owns the budget" not in body
+        assert note["id"] not in body
+
+    url = f"{BASE}/{note['id']}"
+    fenced = await client.patch(
+        url,
+        json={
+            "expected_revision": 1,
+            "body": "Dana owns the budget",
+            "write_token": str(uuid4()),
+        },
+    )
+    assert fenced.json()["revision"] == 2
+    # The list shows the fence's revision and token, so it must be read again,
+    # unlike the prompts' signature, which ignores it.
+    _, after_fence = await poll()
+    assert after_fence != created
+
+    edited = await client.patch(
+        url, json={"expected_revision": 2, "body": "Sam owns it"}
+    )
+    assert edited.status_code == 200
+    _, after_edit = await poll()
+    assert after_edit not in {created, after_fence}
+
+    assert (await client.delete(url)).status_code == 204
+    _, after_delete = await poll()
+    assert after_delete == empty
 
 
 @pytest.mark.anyio

@@ -217,10 +217,18 @@ describe("LiveTranscriptPanel", () => {
     expect(container.className).toContain("@min-[54rem]:min-h-0");
   });
 
-  it("keeps every line inside the card", () => {
+  it("keeps every line inside the window, and clips the card only beside the other column", () => {
     const { container } = renderPanel([buildLine("a", 0, "first")]);
     const card = container.querySelector("section");
+    const transcriptWindow = screen.getByTestId("live-transcript-scroll").parentElement;
 
-    expect(card?.className).toContain("overflow-hidden");
+    expect(transcriptWindow?.className.split(" ")).toContain("overflow-hidden");
+    const cardClasses = card?.className.split(" ") ?? [];
+    // Two columns: the card has a definite height, and the note box must not
+    // spill over the Notes card below it.
+    expect(cardClasses).toContain("@min-[54rem]:overflow-hidden");
+    // Stacked: a clipping card is a scroll container, which a sticky note box
+    // inside it would stick to instead of the page.
+    expect(cardClasses).not.toContain("overflow-hidden");
   });
 });

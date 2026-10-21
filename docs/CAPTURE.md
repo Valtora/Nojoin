@@ -66,7 +66,7 @@ If the tab was lost before any audio reached the server, Nojoin discards the emp
 
 ### Signing In Again During A Recording
 
-A sign-in lasts 12 hours. If it ends while you record, because it expired or because you signed out in another tab, Nojoin keeps recording and asks for your password in a dialog on the same page. Going to the sign-in page would reload the tab and end the capture. Uploads wait meanwhile and the audio is kept in this browser. Once you sign in, it uploads and the recording carries on with no gap.
+A sign-in lasts 12 hours. If it ends while you record, because it expired or because you signed out in another tab, Nojoin keeps recording and asks for your password in a dialog on the same page. Going to the sign-in page would reload the tab and end the capture. Uploads wait meanwhile and the audio is kept in this browser. Once you sign in, it uploads and the recording carries on with no gap. A note from the [note box](#notes-during-capture) that had not saved waits too, and saves once you sign in.
 
 Sign in as the account that started the recording. Signing in from another tab works as well: the recording tab notices within 15 seconds, or as soon as you return to it. While the browser is signed in as another account, the recording waits for its own account. If an administrator has reset your password, choose a new one in another tab, then sign in with it.
 
@@ -79,6 +79,12 @@ Keep the tab open until you have signed in. A tab closed or reloaded while signe
 If the browser or operating system suspends the Nojoin tab, capture receives no audio until it wakes, and that audio cannot be recovered. The recording does not pause and nothing reports it at the time. Nojoin notices afterwards by comparing the audio the server holds with the elapsed time, and warns you (see [Recorded audio is shorter than the meeting](#recorded-audio-is-shorter-than-the-meeting)).
 
 While recording, Nojoin holds a screen wake lock so the display does not blank and the device does not idle to sleep. It cannot stop the browser suspending a tab, a laptop lid being closed, or the device being put to sleep by hand. Keep the Nojoin tab open and the device awake, and do not rely on a background tab for a long meeting.
+
+## Notes During Capture
+
+Notes typed under the live transcript ([Live Notes](USAGE.md#live-notes)) are placed on the recording's own clock, the audio Nojoin has received, not the wall clock. Paused time is not on it, so a note written while paused follows the last line recorded before the pause. A note usually lands a fraction of a second early, by the time a segment takes to upload, including in the first moments after **Resume**. When the recording device falls behind with its uploads, on a slow connection say, the clock waits near the audio received so far, and notes written meanwhile, on any device, land there.
+
+To take notes on a second device, such as a phone while a laptop records, sign in there and open the recording from the recordings list. That device shows the live transcript and the note box too, places notes on the same clock, and each device shows the other's notes within a couple of seconds. Taking notes never affects what is captured.
 
 ## Paused Recording Lock
 
