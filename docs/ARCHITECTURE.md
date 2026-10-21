@@ -93,6 +93,7 @@ Speaking dynamics (talk-time share, turn structure, response latency, a talk-sha
 
 - Per-speaker talk time counts overlapping speech once for each speaker, so shares are reported against total speech, and both denominators are carried.
 - Anything excluded from a statistic is counted.
+- Finalised `UNKNOWN` lines, which the transcript view hides once any line has a speaker, are left out of every speaker figure, transition and warning, and counted under `metrics.unattributed`. Delivery and AI analysis read the same lines through `split_analysed_utterances`.
 - There are no interruption counts. The merge gives each segment one speaker from a mixed stream, so a transcript holds no overlapping speech. Overlap is measured from the audio and never attributed to a person.
 - Gaps at speaker changes are reported in three counted parts: immediate handovers (under the 250 ms collar, `LATENCY_COLLAR_MS`), a reply-time median over gaps from the collar to 5 s, and lapses of 5 s or more.
 - A structured warning flags doubtful speaker attribution with reason codes (`low_share_clusters`, `high_overlap`, `speaker_cap_bound`, `unnamed_speakers`). The web client owns the wording.
@@ -261,6 +262,7 @@ The duplicate-merge pass (`backend/processing/speaker_merge.py`) joins clusters 
 - Linkage is complete: two groups join only when every pair across them clears the threshold, so no third cluster can bridge two people.
 - A group carrying a person's identity is held to that person's library voiceprint. If any cluster in the proposed union, other than those already identified as that person, scores below `IDENTIFIED_MERGE_VOICEPRINT_FLOOR` (0.60, deliberately not tied to `DRIFT_GUARD_THRESHOLD`), the union is refused and that cluster keeps its `Speaker N` name. A library voiceprint from another extraction version is not consulted.
 - Each finalised utterance keeps its diariser cluster in `transcript_utterances.diarization_label`, so `unmerge_recording_speaker` can restore a merged cluster as an unnamed speaker with all its lines except those a person assigned by hand, recording an `unmerge_speakers` correction event. Lines written before that column existed carry no label; undoing those merges needs a reprocess.
+- Overlap labels are left as diarised in the `Transcript.segments` projection, and `serialize_canonical_utterances` resolves them on read: a merged speaker's label reads as the speaker it was merged into, and a label that resolves to the line's own speaker is dropped. A merge made in the speaker panel therefore leaves no raw label in an overlap lane, and an unmerge brings the label back. Processing's own merges rewrite overlap labels before finalise, so undoing one of those leaves them on the survivor.
 
 Every link of a recording speaker to a person offers its voiceprint through `update_library_voiceprint` in [backend/processing/embedding.py](../backend/processing/embedding.py):
 

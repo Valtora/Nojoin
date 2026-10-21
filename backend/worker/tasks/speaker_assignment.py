@@ -17,6 +17,8 @@ Two load-bearing invariants run through the whole stage:
 
 from dataclasses import dataclass
 
+from backend.utils.speaker_assignment import remap_overlapping_speakers
+
 from .constants import *  # noqa: F403
 
 
@@ -282,9 +284,11 @@ def _rewrite_segment_labels(
         if seg["speaker"] == from_label:
             seg["speaker"] = to_label
         if "overlapping_speakers" in seg:
-            for idx, ov_spk in enumerate(seg["overlapping_speakers"]):
-                if ov_spk == from_label:
-                    seg["overlapping_speakers"][idx] = to_label
+            seg["overlapping_speakers"] = remap_overlapping_speakers(
+                seg["overlapping_speakers"],
+                primary=seg["speaker"],
+                mapping={from_label: to_label},
+            )
 
 
 def _absorb_into_existing_name(

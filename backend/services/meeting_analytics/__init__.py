@@ -11,7 +11,11 @@ from .metrics import (
     build_turns,
     compute_deterministic_metrics,
 )
-from .query import compute_recording_analytics
+from .query import (
+    compute_recording_analytics,
+    speaker_key,
+    split_analysed_utterances,
+)
 from .warnings import build_attribution_warning
 
 __all__ = [
@@ -21,4 +25,6 @@ __all__ = [
     "build_turns",
     "compute_deterministic_metrics",
     "compute_recording_analytics",
+    "speaker_key",
+    "split_analysed_utterances",
 ]

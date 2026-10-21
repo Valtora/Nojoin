@@ -11,9 +11,9 @@ from typing import Any
 
 from sqlmodel import select
 
-from backend.models.pipeline import TranscriptUtterance
+from backend.models.pipeline import TranscriptUtterance, TranscriptUtteranceState
 from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
-from backend.utils.canonical_pipeline import list_active_utterances
+from backend.utils.canonical_pipeline import UNKNOWN_SPEAKER, list_active_utterances
 
 from .metrics import UtteranceRow, compute_deterministic_metrics
 from .warnings import build_attribution_warning
@@ -23,7 +23,29 @@ logger = logging.getLogger(__name__)
 UNKNOWN_SPEAKER_KEY = "unknown"
 
 
-def _speaker_key(utterance: TranscriptUtterance) -> str:
+def _is_hidden_unattributed(utterance: TranscriptUtterance) -> bool:
+    return (
+        utterance.speaker_label or UNKNOWN_SPEAKER
+    ) == UNKNOWN_SPEAKER and utterance.state != TranscriptUtteranceState.PROVISIONAL
+
+
+def split_analysed_utterances(
+    utterances: list[TranscriptUtterance],
+) -> tuple[list[TranscriptUtterance], list[TranscriptUtterance]]:
+    """The lines analytics reads, and the unattributed lines it leaves out.
+
+    The transcript view hides finalised ``UNKNOWN`` lines once any line has a
+    speaker, and the speaker panel has no row for them, so counted they become
+    a speaker nobody can see or name. A transcript with no attributed line at
+    all keeps them, as the view does.
+    """
+    left_out = [u for u in utterances if _is_hidden_unattributed(u)]
+    if len(left_out) == len(utterances):
+        return utterances, []
+    return [u for u in utterances if not _is_hidden_unattributed(u)], left_out
+
+
+def speaker_key(utterance: TranscriptUtterance) -> str:
     """A stable grouping key for one utterance's speaker.
 
     The recording-speaker id is preferred because it survives a rename, and a
@@ -114,10 +136,12 @@ def compute_recording_analytics(session, recording) -> dict[str, Any]:
     what makes it correct on every historical recording without a backfill and
     immune to going stale after a transcript edit.
     """
-    utterances = list_active_utterances(session, recording.id)
+    utterances, left_out = split_analysed_utterances(
+        list_active_utterances(session, recording.id)
+    )
     rows = [
         UtteranceRow(
-            speaker_key=_speaker_key(utterance),
+            speaker_key=speaker_key(utterance),
             start_ms=int(utterance.start_ms or 0),
             end_ms=int(utterance.end_ms or 0),
         )
@@ -126,6 +150,12 @@ def compute_recording_analytics(session, recording) -> dict[str, Any]:
 
     duration_ms = int(round((recording.duration_seconds or 0) * 1000))
     metrics = compute_deterministic_metrics(rows, duration_ms)
+    metrics["unattributed"] = {
+        "utterance_count": len(left_out),
+        "speech_ms": sum(
+            max(0, int(u.end_ms or 0) - int(u.start_ms or 0)) for u in left_out
+        ),
+    }
 
     directory = _build_speaker_directory(session, recording.id)
     speakers = [

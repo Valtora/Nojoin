@@ -422,6 +422,8 @@ async def get_meeting_analytics(recording_id: str) -> dict[str, Any]:
         "name": recording.name,
         "duration_seconds": _ms_to_seconds(metrics["duration_ms"]),
         "utterance_count": metrics["utterance_count"],
+        # UNKNOWN lines the transcript view hides, left out of every figure.
+        "unattributed_utterance_count": metrics["unattributed"]["utterance_count"],
         "speakers": _speaker_rows(analytics),
         "timeline": _timeline_rows(analytics, names),
         "conversation": {

@@ -107,3 +107,19 @@ def test_a_match_is_recorded_with_its_score(monkeypatch, caplog) -> None:
     assert payload["matched_global_speaker_id"] == 22
     assert payload["score"] == pytest.approx(0.84, abs=1e-2)
     assert payload["candidates"][0]["name"] == "Bob Example"
+
+
+def test_a_name_merge_leaves_no_line_overlapping_itself() -> None:
+    segments = [
+        {"speaker": "SPEAKER_00", "overlapping_speakers": ["SPEAKER_01"]},
+        {"speaker": "SPEAKER_01", "overlapping_speakers": ["SPEAKER_02"]},
+        {"speaker": "SPEAKER_02", "overlapping_speakers": ["SPEAKER_01"]},
+    ]
+
+    speaker_assignment._rewrite_segment_labels(segments, "SPEAKER_01", "SPEAKER_00")
+
+    assert segments == [
+        {"speaker": "SPEAKER_00", "overlapping_speakers": []},
+        {"speaker": "SPEAKER_00", "overlapping_speakers": ["SPEAKER_02"]},
+        {"speaker": "SPEAKER_02", "overlapping_speakers": ["SPEAKER_00"]},
+    ]

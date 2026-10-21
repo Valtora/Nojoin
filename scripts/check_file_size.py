@@ -40,7 +40,7 @@ GRANDFATHERED: dict[str, int] = {
     # meeting-intelligence and meeting-edge stages moved to their own modules.
     # What remains is the core final-recording pipeline.
     "backend/worker/tasks/pipeline.py": 1134,
-    "backend/utils/canonical_pipeline/core.py": 2027,
+    "backend/utils/canonical_pipeline/core.py": 2013,
     "backend/processing/live_transcribe.py": 1800,
 }
 

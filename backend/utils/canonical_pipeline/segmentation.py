@@ -2,13 +2,62 @@ from .constants import *
 from .speaker import *
 
 
+def _active_speaker_labels(
+    recording_speakers_by_id: dict[int, RecordingSpeaker],
+) -> dict[str, str]:
+    """Each diarisation label, mapped to the label of the speaker it now is.
+
+    A merged row maps to the end of its merge chain. The stored projection keeps
+    overlap labels as diarised, so an unmerge hands them back unchanged; reads
+    pass them through this map so a merged label never reaches a reader.
+    """
+    active: dict[str, str] = {}
+    for speaker in recording_speakers_by_id.values():
+        if not speaker.diarization_label:
+            continue
+        current = speaker
+        visited: set[int] = set()
+        while current.merged_into_id and current.id not in visited:
+            visited.add(current.id)
+            target = recording_speakers_by_id.get(int(current.merged_into_id))
+            if target is None:
+                break
+            current = target
+        active[speaker.diarization_label] = (
+            current.diarization_label or speaker.diarization_label
+        )
+    return active
+
+
 def _rolling_overlap_labels_for_utterance(
     utterance: TranscriptUtterance,
     *,
     projection: dict[str, Any] | None = None,
     recording_speakers_by_id: dict[int, RecordingSpeaker] | None = None,
+    active_labels: dict[str, str] | None = None,
 ) -> list[str]:
+    """The labels overlapping a line, as stored, or resolved by ``active_labels``."""
     projection = projection or {}
+    labels = _stored_overlap_labels(
+        utterance,
+        projection=projection,
+        recording_speakers_by_id=recording_speakers_by_id,
+    )
+    if active_labels is None:
+        return labels
+    return remap_overlapping_speakers(
+        labels,
+        primary=utterance.speaker_label or projection.get("speaker") or UNKNOWN_SPEAKER,
+        mapping=active_labels,
+    )
+
+
+def _stored_overlap_labels(
+    utterance: TranscriptUtterance,
+    *,
+    projection: dict[str, Any],
+    recording_speakers_by_id: dict[int, RecordingSpeaker] | None,
+) -> list[str]:
     confidence_payload = dict(utterance.confidence_payload or {})
     rolling_payload = dict(confidence_payload.get("rolling_diarization") or {})
 
@@ -51,6 +100,30 @@ def _rolling_overlap_labels_for_utterance(
         return labels
 
     return list(projection.get("overlapping_speakers") or [])
+
+
+def _projection_overlap_labels(
+    index: int,
+    segments: Sequence[dict[str, Any]],
+    overlap_groups: dict[int, dict[str, Any]],
+    recording_speakers: Iterable[RecordingSpeaker],
+) -> list[str]:
+    source_segment = segments[index]
+    existing = list(source_segment.get("overlapping_speakers") or [])
+    if existing:
+        return existing
+
+    group = overlap_groups.get(index)
+    if not group:
+        return []
+    labels: list[str] = []
+    for other_index in group["members"]:
+        if other_index == index:
+            continue
+        label = str(segments[other_index].get("speaker") or UNKNOWN_SPEAKER)
+        if label not in labels and label != source_segment.get("speaker"):
+            labels.append(label)
+    return labels
 
 
 def _speaker_state_for_utterance(
