@@ -4055,6 +4055,58 @@ def test_projection_reads_speaker_evidence_older_rolling_rows_carry() -> None:
     assert _speaker_state_for_utterance(utterance) == "manual_override"
 
 
+def test_overlap_labels_read_as_the_speaker_each_label_was_merged_into() -> None:
+    from backend.models.speaker import RecordingSpeaker
+    from backend.utils.canonical_pipeline import (
+        _active_speaker_labels,
+        _rolling_overlap_labels_for_utterance,
+    )
+
+    def speaker(pk: int, label: str, merged_into: int | None = None):
+        return RecordingSpeaker(
+            id=pk, recording_id=1, diarization_label=label, merged_into_id=merged_into
+        )
+
+    speakers = {
+        1: speaker(1, "SPEAKER_00"),
+        2: speaker(2, "SPEAKER_01", merged_into=3),
+        3: speaker(3, "SPEAKER_02", merged_into=1),
+        # A cycle or a missing target stops the walk instead of looping.
+        4: speaker(4, "SPEAKER_03", merged_into=5),
+        5: speaker(5, "SPEAKER_04", merged_into=4),
+        6: speaker(6, "SPEAKER_05", merged_into=99),
+    }
+    active = _active_speaker_labels(speakers)
+    assert active == {
+        "SPEAKER_00": "SPEAKER_00",
+        "SPEAKER_01": "SPEAKER_00",
+        "SPEAKER_02": "SPEAKER_00",
+        "SPEAKER_03": "SPEAKER_03",
+        "SPEAKER_04": "SPEAKER_04",
+        "SPEAKER_05": "SPEAKER_05",
+    }
+
+    utterance = _make_utterance(start_ms=0, end_ms=1000, text="hello")
+    utterance.speaker_label = "SPEAKER_00"
+    projection = {"overlapping_speakers": ["SPEAKER_02", "SPEAKER_05"]}
+    # Stored as diarised; read as the speaker each label now is, and a label
+    # merged into the line's own speaker drops out.
+    assert _rolling_overlap_labels_for_utterance(utterance, projection=projection) == [
+        "SPEAKER_02",
+        "SPEAKER_05",
+    ]
+    assert _rolling_overlap_labels_for_utterance(
+        utterance, projection=projection, active_labels=active
+    ) == ["SPEAKER_05"]
+
+    utterance.confidence_payload = {
+        "rolling_diarization": {"overlapping_recording_speaker_ids": [2, 6]}
+    }
+    assert _rolling_overlap_labels_for_utterance(
+        utterance, recording_speakers_by_id=speakers, active_labels=active
+    ) == ["SPEAKER_05"]
+
+
 # ---------------------------------------------------------------------------
 # Speaker corrections leave leftover rolling-window rows alone.
 #
@@ -4934,3 +4986,152 @@ async def test_finalize_keeps_the_diarisation_label_on_each_line(
     ]
     assert [u["diarization_label"] for u in utterances] == ["SPEAKER_03", None]
     assert [u["speaker"] for u in utterances] == ["SPEAKER_00", "UNKNOWN"]
+
+
+# --- overlap labels after a merge -------------------------------------------
+
+
+async def _seed_overlaps_on_a_speaker_with_one_line(
+    session_maker: sessionmaker,
+) -> None:
+    """SPEAKER_01 has one line, and two other lines name it as overlapping.
+
+    Neither overlaps that line in time: one starts where it ends, and the other
+    comes from a diarisation turn that produced no words.
+    """
+    from backend.utils.canonical_pipeline import finalize_utterances_from_segments
+
+    await _seed_processed_recording(session_maker)
+    async with session_maker() as session:
+        for pk, label in ((2, "SPEAKER_01"), (3, "SPEAKER_02")):
+            await session.execute(
+                text(
+                    """
+                    INSERT INTO recording_speakers (
+                        id, created_at, updated_at, public_id, recording_id,
+                        global_speaker_id, diarization_label, local_name, name,
+                        embedding, merged_into_id, speaker_status, speaker_kind,
+                        first_seen_ms, last_seen_ms, identity_confidence,
+                        identity_locked
+                    ) VALUES (
+                        :pk, :now, :now, :public_id, 1,
+                        NULL, :label, NULL, :name,
+                        NULL, NULL, 'active', 'automated',
+                        NULL, NULL, NULL, 0
+                    )
+                    """
+                ),
+                {
+                    "pk": pk,
+                    "now": "2026-05-19 00:00:00",
+                    "public_id": f"speaker-public-{pk}",
+                    "label": label,
+                    "name": f"Speaker {pk}",
+                },
+            )
+
+        def line(public_id, start, end, label, overlapping=()):
+            return {
+                "id": public_id,
+                "start": start,
+                "end": end,
+                "speaker": label,
+                "diarization_label": label,
+                "overlapping_speakers": list(overlapping),
+                "text": public_id,
+                "segment_source": "finalize",
+            }
+
+        await session.run_sync(
+            lambda sync_session: finalize_utterances_from_segments(
+                sync_session,
+                recording_id=1,
+                segments=[
+                    line("utt-first", 0.0, 1.0, "SPEAKER_00"),
+                    line("utt-brief", 2.0, 3.0, "SPEAKER_01"),
+                    line("utt-after", 3.0, 4.0, "SPEAKER_00", ["SPEAKER_01"]),
+                    line("utt-far", 10.0, 12.0, "SPEAKER_02", ["SPEAKER_01"]),
+                ],
+                trigger_source="test",
+            )
+        )
+        await session.commit()
+
+
+async def _overlaps_by_line(
+    client: AsyncClient, key: str = "id"
+) -> dict[str, list[str]]:
+    body = (await client.get("/api/v1/transcripts/canon-rec/utterances")).json()
+    return {u[key]: u["overlapping_speakers"] for u in body["utterances"]}
+
+
+async def _stored_overlaps_by_text(session_maker: sessionmaker) -> dict[str, list]:
+    async with session_maker() as session:
+        transcript = (
+            await session.execute(
+                select(Transcript).where(Transcript.recording_id == 1)
+            )
+        ).scalar_one()
+        return {
+            segment["text"]: segment.get("overlapping_speakers")
+            for segment in transcript.segments or []
+        }
+
+
+@pytest.mark.anyio
+async def test_a_merged_speaker_never_shows_as_an_overlapping_speaker(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+) -> None:
+    await _seed_overlaps_on_a_speaker_with_one_line(test_session_maker)
+
+    response = await client.post(
+        "/api/v1/speakers/recordings/canon-rec/merge",
+        json={
+            "source_speaker_label": "SPEAKER_01",
+            "target_speaker_label": "SPEAKER_00",
+        },
+    )
+    assert response.status_code == 200
+
+    # Finalising assigns its own ids, so each line is known by its text.
+    overlaps = await _overlaps_by_line(client, key="text")
+    # utt-after belongs to the speaker SPEAKER_01 joined, so it overlaps nobody.
+    assert overlaps["utt-after"] == []
+    assert overlaps["utt-far"] == ["SPEAKER_00"]
+    # The projection keeps the label as diarised, for an unmerge.
+    assert (await _stored_overlaps_by_text(test_session_maker))["utt-far"] == [
+        "SPEAKER_01"
+    ]
+
+
+@pytest.mark.anyio
+async def test_an_unmerge_brings_a_merged_speakers_overlap_labels_back(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+) -> None:
+    await _seed_pipeline_merged_cluster(test_session_maker)
+    # utt-own still names the merged cluster as overlapping it, as a line does
+    # once a merge has left it out of the time-overlap rewrite.
+    async with test_session_maker() as session:
+        transcript = (
+            await session.execute(
+                select(Transcript).where(Transcript.recording_id == 1)
+            )
+        ).scalar_one()
+        transcript.segments = [
+            {**segment, "overlapping_speakers": ["SPEAKER_01"]}
+            if segment.get("id") == "utt-own"
+            else segment
+            for segment in transcript.segments
+        ]
+        await session.commit()
+
+    assert (await _overlaps_by_line(client))["utt-own"] == []
+
+    response = await client.post(
+        "/api/v1/speakers/recordings/canon-rec/speakers/SPEAKER_01/unmerge"
+    )
+    assert response.status_code == 200
+
+    assert (await _overlaps_by_line(client))["utt-own"] == ["SPEAKER_01"]

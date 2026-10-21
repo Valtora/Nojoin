@@ -43,6 +43,7 @@ from backend.processing.embedding import (
 from backend.utils.speaker_assignment import (
     matches_speaker_name,
     reconcile_segment_assignment,
+    remap_overlapping_speakers,
 )
 from backend.utils.time import utc_now
 
