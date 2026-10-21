@@ -39,7 +39,7 @@ class _FakeSession:
         self.committed = False
         self.rolled_back = False
 
-    async def get(self, _model, pk):
+    async def get(self, _model, pk, with_for_update: bool = False):
         return self._users.get(pk)
 
     async def execute(self, _statement):
@@ -59,7 +59,7 @@ class _FakeSession:
     def add(self, obj):
         self.added.append(obj)
 
-    async def refresh(self, _obj, with_for_update: bool = False):
+    async def refresh(self, _obj):
         return None
 
 

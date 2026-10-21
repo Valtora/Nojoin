@@ -132,6 +132,9 @@ async def batch_permanently_delete_recordings(
         user_id=current_user.id,
     )
 
+    # Locked in id order, so two batches over the same recordings, or a batch
+    # and a user deletion, take the locks in one order and cannot deadlock.
+    recordings = sorted(recordings, key=lambda recording: recording.id)
     for recording in recordings:
         # Locked, as in delete_recording, so keep_imported_audio_task cannot
         # repoint audio_path between this read and the delete.

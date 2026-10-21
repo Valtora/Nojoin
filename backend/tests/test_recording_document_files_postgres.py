@@ -643,3 +643,62 @@ async def test_an_upload_cancelled_at_its_insert_removes_its_file(harness):
 
     assert list(harness.documents_dir.iterdir()) == []
     assert _document_rows(harness) == 0
+
+
+@pytest.mark.anyio
+async def test_a_user_delete_waits_for_a_recording_created_meanwhile(harness):
+    """A recording and its document, inserted while the user is being deleted.
+
+    The insert is held open; the user's recordings are read only once the user
+    is locked, and the recording insert holds a lock that conflicts with it, so
+    the delete waits. Locking only the recordings it can see would miss this
+    one, the cascade would still delete it, and its files would stay.
+    """
+    late = harness.documents_dir / "late.md"
+    late.write_text("# Late upload")
+    audio = harness.recordings_dir / "late.wav"
+    audio.write_bytes(b"RIFF")
+    upload = Session(harness.engine)
+    recording = Recording(
+        name="late", audio_path=str(audio), user_id=harness.users["member"]
+    )
+    upload.add(recording)
+    upload.flush()
+    upload.add(
+        Document(recording_id=recording.id, title=late.name, file_path=str(late))
+    )
+    upload.flush()
+    request = asyncio.create_task(
+        _request(harness, "DELETE", f"/users/{harness.users['member']}")
+    )
+    try:
+        await _wait_until_blocked_by(harness, _backend_pid(upload), request)
+    finally:
+        upload.commit()
+        upload.close()
+    response = await request
+
+    assert response.status_code == 200, response.text
+    assert not late.exists()
+    assert not audio.exists()
+    assert _document_rows(harness) == 0
+
+
+@pytest.mark.anyio
+async def test_deleting_a_user_deleted_meanwhile_is_a_404(harness):
+    """Two deletions of one user: the second waits on the first, then finds no one."""
+    member = harness.users["member"]
+    first = Session(harness.engine)
+    first.connection().execute(text("DELETE FROM users WHERE id = :id"), {"id": member})
+    request = asyncio.create_task(
+        _request(harness, "DELETE", f"/users/{member}", raise_app_exceptions=False)
+    )
+    try:
+        await _wait_until_blocked_by(harness, _backend_pid(first), request)
+    finally:
+        first.commit()
+        first.close()
+    response = await request
+
+    assert response.status_code == 404, response.text
+    assert response.json() == {"detail": "User not found"}

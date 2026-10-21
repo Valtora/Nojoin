@@ -245,7 +245,12 @@ async def delete_user(
     ):
         raise HTTPException(status_code=403, detail="Not authorized")
 
-    user = await db.get(User, user_id)
+    # Locked, as delete_recording locks its recording, before the document
+    # paths are read below. An upload creating a recording for this user waits
+    # on the lock, so no recording, nor any document of one, can be added that
+    # the read misses and the cascade deletes, leaving its file behind. Locked
+    # in the read itself, so a user deleted meanwhile is a 404.
+    user = await db.get(User, user_id, with_for_update=True)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
@@ -265,28 +270,26 @@ async def delete_user(
                 status_code=400, detail="Cannot delete the last admin account"
             )
 
-    # Locked, as in delete_recording, before the document paths are read. An
-    # upload's document insert waits on the recording's lock, so it cannot
-    # commit a row that the read misses and the cascade deletes, leaving its
-    # file behind. The user row is locked first, so no recording can be added
-    # to the set meanwhile.
-    await db.refresh(user, with_for_update=True)
+    # The recordings are locked too, in id order: a document insert waits on
+    # its recording's lock, so none can commit a row the read misses either.
     recordings_result = await db.execute(
-        select(Recording).where(Recording.user_id == user_id).with_for_update()
+        select(Recording)
+        .where(Recording.user_id == user_id)
+        .order_by(Recording.id)
+        .with_for_update()
     )
     recordings = recordings_result.scalars().all()
 
-    # The user's recordings, and their documents, go by FK cascade.
+    # The user's recordings, and their documents, go by FK cascade. Their
+    # files are removed once the delete has committed, so the locks are not
+    # held while files are unlinked, and a failed commit keeps them.
+    artifacts = [
+        (recording.id, recording.audio_path, recording.proxy_path)
+        for recording in recordings
+    ]
     document_paths = await recording_document_paths(
         db, [recording.id for recording in recordings]
     )
-    for recording in recordings:
-        delete_recording_artifacts(
-            recording_id=recording.id,
-            audio_path=recording.audio_path,
-            proxy_path=recording.proxy_path,
-            logger=logger,
-        )
 
     try:
         logger.info(f"User {current_user.id} deleting user {user_id}")
@@ -303,6 +306,13 @@ async def delete_user(
             exc=e,
         )
 
+    for recording_id, audio_path, proxy_path in artifacts:
+        delete_recording_artifacts(
+            recording_id=recording_id,
+            audio_path=audio_path,
+            proxy_path=proxy_path,
+            logger=logger,
+        )
     await delete_document_files(document_paths, logger=logger)
     return user
 
