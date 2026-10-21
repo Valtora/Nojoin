@@ -14,6 +14,7 @@ from sqlalchemy.pool import StaticPool
 from backend.api.deps import get_current_user, get_db
 from backend.api.v1.api import api_router
 from backend.models.user import User
+from backend.tests.sqlite_schemas import RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA
 from backend.worker.tasks import get_text_embedding_task
 
 TEST_TIMESTAMP = datetime(2026, 5, 25, 12, 0, 0)
@@ -225,6 +226,7 @@ async def test_session_maker() -> sessionmaker:
     async with engine.begin() as connection:
         for statement in SCHEMA_STATEMENTS:
             await connection.execute(text(statement))
+        await connection.execute(text(RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA))
 
     try:
         yield session_maker

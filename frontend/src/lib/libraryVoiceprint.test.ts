@@ -55,6 +55,9 @@ describe("describeLibraryVoiceprint", () => {
 
   it("stays quiet when the voiceprint was saved or folded, or nothing was offered", () => {
     expect(describeLibraryVoiceprint(outcome("saved", 25))).toBeNull();
+    expect(
+      describeLibraryVoiceprint(outcome("saved_from_other_recordings", 30)),
+    ).toBeNull();
     expect(describeLibraryVoiceprint(outcome("folded", 5))).toBeNull();
     expect(describeLibraryVoiceprint(null)).toBeNull();
     expect(describeLibraryVoiceprint(undefined)).toBeNull();
@@ -99,8 +102,19 @@ describe("describeSplitVoiceprints", () => {
       ),
     ).toEqual([
       "Robin's voiceprint was saved from the moved clips.",
-      "Dana has no voiceprint now: no recording's remaining clips hold 20 s of clear speech (the most was 12 s), and an older voiceprint would still include the moved clips. A later recording linked to Dana with at least 20 s of clear speech will save a new one.",
+      "Dana has no voiceprint now: no recording's remaining clips hold 20 s of clear speech (the most was 12 s), none of Dana's other recordings can rebuild it, and an older voiceprint would still include the moved clips. A later recording linked to Dana with at least 20 s of clear speech will save a new one.",
     ]);
+  });
+
+  it("says when the original's voiceprint came from their other recordings", () => {
+    expect(
+      describeSplitVoiceprints(
+        split(outcome("saved", 25), outcome("saved_from_other_recordings", 30), true),
+        "Dana",
+      )[1],
+    ).toBe(
+      "Dana's voiceprint was rebuilt from Dana's other recordings: no recording's remaining clips hold 20 s of clear speech.",
+    );
   });
 
   it("says when the moved clips were too short or too unlike the person", () => {

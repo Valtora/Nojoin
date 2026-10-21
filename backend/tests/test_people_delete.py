@@ -25,6 +25,7 @@ from backend.tests.sqlite_schemas import (
     GLOBAL_SPEAKERS_SCHEMA,
     P_TAGS_SCHEMA,
     PEOPLE_TAGS_SCHEMA,
+    RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA,
     RECORDING_SPEAKERS_SCHEMA,
     RECORDINGS_SCHEMA,
 )
@@ -56,6 +57,7 @@ async def test_session_maker() -> sessionmaker:
             RECORDINGS_SCHEMA,
             GLOBAL_SPEAKERS_SCHEMA,
             RECORDING_SPEAKERS_SCHEMA,
+            RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA,
             PEOPLE_TAGS_SCHEMA,
             P_TAGS_SCHEMA,
         ):

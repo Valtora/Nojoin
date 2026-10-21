@@ -149,6 +149,27 @@ def _record_restored_recording(ctx: _RowContext, instance) -> None:
         logger.warning("Could not size restored audio %s", audio_source)
 
 
+def _belongs_to_skipped_recording(ctx: _RowContext) -> bool:
+    """Whether this row hangs off a recording the safe merge kept as it was.
+
+    Under the safe-merge strategy a conflicting recording is kept as it already exists
+    in the target, and its children are not merged in, nor are the drift refusals of
+    its speakers: the existing speakers keep their own. This has to be checked against
+    the backup's own ids, so it runs before the remap rewrites them.
+    """
+    state = ctx.state
+    if ctx.item_data.get("recording_speaker_id") in state.skipped_recording_speaker_ids:
+        return True
+    if (
+        ctx.item_data.get("recording_id") not in state.skipped_recording_ids
+        or ctx.table_name == "recordings"
+    ):
+        return False
+    if ctx.table_name == "recording_speakers" and ctx.old_id is not None:
+        state.skipped_recording_speaker_ids.add(ctx.old_id)
+    return True
+
+
 def _restore_row(ctx: _RowContext) -> bool:
     """Bring one archive row across. Returns whether a row was actually inserted.
 
@@ -165,13 +186,7 @@ def _restore_row(ctx: _RowContext) -> bool:
 def _resolve_and_insert_row(ctx: _RowContext) -> bool:
     state = ctx.state
 
-    # Under the safe-merge strategy a conflicting recording is kept as it already exists
-    # in the target, and its children are not merged in. This has to be checked against
-    # the backup's own recording id, so it runs before the remap below rewrites it.
-    if (
-        ctx.item_data.get("recording_id") in state.skipped_recording_ids
-        and ctx.table_name != "recordings"
-    ):
+    if _belongs_to_skipped_recording(ctx):
         return False
 
     # Rewrite foreign keys up front, before any conflict check, so every resolver

@@ -213,6 +213,18 @@ CREATE TABLE recording_speakers (
 )
 """
 
+# Loaded with every recording speaker (``RecordingSpeaker.drift_refusals``), so
+# a test that loads speakers through the ORM needs it beside the table above.
+RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA = """
+CREATE TABLE recording_speaker_drift_refusals (
+    recording_speaker_id INTEGER NOT NULL
+        REFERENCES recording_speakers (id) ON DELETE CASCADE,
+    global_speaker_id INTEGER NOT NULL
+        REFERENCES global_speakers (id) ON DELETE CASCADE,
+    PRIMARY KEY (recording_speaker_id, global_speaker_id)
+)
+"""
+
 PROCESSING_RUNS_SCHEMA = """
 CREATE TABLE processing_runs (
     id INTEGER PRIMARY KEY,

@@ -284,6 +284,18 @@ class TestRecordingSpeaker(TestBase, table=True):
     )
 
 
+class TestRecordingSpeakerDriftRefusal(SQLModel, table=True):
+    __test__ = False
+    __tablename__ = "backup_test_recording_speaker_drift_refusals"
+
+    recording_speaker_id: int = Field(
+        foreign_key="backup_test_recording_speakers.id", primary_key=True
+    )
+    global_speaker_id: int = Field(
+        foreign_key="backup_test_global_speakers.id", primary_key=True
+    )
+
+
 class TestRecordingTag(TestBase, table=True):
     __tablename__ = "backup_test_recording_tags"
 
@@ -370,6 +382,7 @@ TEST_MODELS = [
     ("recordings", TestRecording),
     ("user_task_recordings", TestUserTaskRecording),
     ("recording_speakers", TestRecordingSpeaker),
+    ("recording_speaker_drift_refusals", TestRecordingSpeakerDriftRefusal),
     ("recording_tags", TestRecordingTag),
     ("transcripts", TestTranscript),
     ("timeline_notes", TestTimelineNote),

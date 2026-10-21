@@ -35,6 +35,8 @@ from backend.processing.embedding import (
     RecordingVoiceprint,
     blend_voiceprint,
     cosine_similarity,
+    is_drift_refused,
+    meets_library_evidence_floor,
     pool_recording_voiceprints,
     too_little_speech_detail,
 )
@@ -54,6 +56,8 @@ from .helpers import (
     SpeakerSplitRead,
     SpeakerSplitRequest,
     _canonical_transcript_writes_enabled,
+    _carry_drift_refusals,
+    _lift_drift_refusals,
     _load_segments_for_speaker_work,
     _merge_local_speakers,
     _persist_segments_for_speaker_work,
@@ -64,6 +68,7 @@ from .split_voiceprints import (
     apply_split_to_new_person,
     apply_split_to_original,
     apply_split_to_original_speaker,
+    other_recording_voiceprints,
     split_extraction_failed,
 )
 
@@ -293,6 +298,7 @@ async def merge_speakers(
         blend_voiceprint(target, source.embedding, source.embedding_version, alpha=0.5)
     db.add(target)
 
+    await _carry_drift_refusals(db, source_id=source.id, target_id=target.id)
     await db.delete(source)
 
     await db.commit()
@@ -518,6 +524,7 @@ async def recalibrate_voiceprint(
     }
 
     voiceprints: list[RecordingVoiceprint] = []
+    used: list[tuple[Recording, list[tuple[float, float]]]] = []
     device_str = speakers_module.config_manager.get("processing_device", "cpu")
 
     for recording_public_id, segs in recording_segments.items():
@@ -547,6 +554,8 @@ async def recalibrate_voiceprint(
             )
             if voiceprint:
                 voiceprints.append(voiceprint)
+                if meets_library_evidence_floor(voiceprint.speech_seconds):
+                    used.append((rec, segs))
         except Exception as e:  # noqa: BLE001 -- boundary: task.get re-raises whatever the worker raised; one recording must not fail recalibration
             logger.error(
                 f"Failed to extract embedding for recalibration (Rec {recording_public_id}): {e}"
@@ -559,10 +568,14 @@ async def recalibrate_voiceprint(
         )
 
     # A recalibration founds the voiceprint afresh, so each recording's sample
-    # needs the same evidence as a first voiceprint.
+    # needs the same evidence as a first voiceprint. It is also the one place a
+    # user overrides the drift guard: samples they chose and heard are used
+    # whatever the guard said about their recording's link, and that link
+    # counts towards the person's voiceprint again from now on.
     pool = pool_recording_voiceprints(voiceprints)
     if pool.voiceprint is None:
         raise HTTPException(status_code=400, detail=too_little_speech_detail(pool))
+    await _lift_drift_refusals(db, person_id=speaker.id, sampled=used)
 
     speaker.embedding = pool.voiceprint.embedding
     speaker.embedding_version = EMBEDDING_METHOD_VERSION
@@ -612,8 +625,9 @@ async def split_speaker(
     Split a global speaker into a new speaker based on selected audio segments.
 
     Rebuilds both people's voiceprints, the new speaker's from the selected
-    segments and the original's from the remaining ones, under the evidence
-    floor (see ``split_voiceprints``), and says what happened to each.
+    segments and the original's from the remaining ones (or, when those are
+    too few, from the original's other recordings), under the evidence floor
+    (see ``split_voiceprints``), and says what happened to each.
     """
     original_speaker = await db.get(GlobalSpeaker, speaker_id)
     if not original_speaker or original_speaker.user_id != current_user.id:
@@ -671,6 +685,7 @@ async def split_speaker(
     )
 
     new_speaker_voiceprints: list[RecordingVoiceprint] = []
+    new_speaker_links: list[RecordingSpeaker] = []
 
     for recording_public_id, segments in recording_segments.items():
         rec = recordings_by_public_id.get(recording_public_id)
@@ -761,8 +776,11 @@ async def split_speaker(
                 ),
             )
             db.add(rs)
+            new_speaker_links.append(rs)
 
-    new_update = apply_split_to_new_person(new_speaker, new_speaker_voiceprints)
+    new_update = apply_split_to_new_person(
+        new_speaker, new_speaker_voiceprints, new_speaker_links
+    )
     db.add(new_speaker)
 
     original_speaker_voiceprints: list[RecordingVoiceprint] = []
@@ -815,14 +833,39 @@ async def split_speaker(
                     f"Failed embedding extract for original (Rec {rec_id}): {e}"
                 )
                 raise split_extraction_failed() from e
-        if voiceprint:
-            original_speaker_voiceprints.append(voiceprint)
         if len(original_rss) == 1:
             apply_split_to_original_speaker(original_rss[0], voiceprint)
             db.add(original_rss[0])
+        # A recording whose link the drift guard refused for the original
+        # stays out of their voiceprint, as it does in the rebuild. A single
+        # speaker's refusal went with its old voiceprint just above.
+        if voiceprint and not any(is_drift_refused(rs) for rs in original_rss):
+            original_speaker_voiceprints.append(voiceprint)
 
+    # The original's links outside the split recordings, in case what remains
+    # of them inside is too little to rebuild their voiceprint from.
+    split_recording_ids = [
+        recordings_by_public_id[public_id].id
+        for public_id in recording_segments
+        if public_id in recordings_by_public_id
+    ]
+    other_links = (
+        (
+            await db.execute(
+                select(RecordingSpeaker).where(
+                    RecordingSpeaker.global_speaker_id == original_speaker.id,
+                    RecordingSpeaker.merged_into_id.is_(None),
+                    RecordingSpeaker.recording_id.notin_(split_recording_ids),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
     original_update = apply_split_to_original(
-        original_speaker, original_speaker_voiceprints
+        original_speaker,
+        original_speaker_voiceprints,
+        other_recording_voiceprints(list(other_links)),
     )
     db.add(original_speaker)
 

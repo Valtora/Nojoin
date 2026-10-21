@@ -19,6 +19,7 @@ from backend.tests.sqlite_schemas import TIMELINE_NOTES_SCHEMA, USERS_SCHEMA
 from backend.tests.test_canonical_transcript_phase1 import (
     GLOBAL_SPEAKERS_SCHEMA,
     PEOPLE_TAGS_SCHEMA,
+    RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA,
     RECORDING_SPEAKERS_SCHEMA,
     RECORDINGS_SCHEMA,
     TRANSCRIPT_UTTERANCES_SCHEMA,
@@ -40,6 +41,7 @@ def engine(tmp_path, monkeypatch):
             GLOBAL_SPEAKERS_SCHEMA,
             PEOPLE_TAGS_SCHEMA,
             RECORDING_SPEAKERS_SCHEMA,
+            RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA,
             TRANSCRIPT_UTTERANCES_SCHEMA,
             USERS_SCHEMA,
             TIMELINE_NOTES_SCHEMA,

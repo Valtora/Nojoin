@@ -22,9 +22,10 @@ leaving them stale makes the rebuild a permanent no-op and the "needs rebuilding
 prompt impossible to clear. An unmatchable voiceprint contributes nothing to
 identification, so dropping it loses no capability and lets the run converge.
 Transient extraction failures are deliberately excluded from that rule: they are
-left stale so a later run can retry them. So is a person whose re-extracted
-speakers all hold too little speech to found a voiceprint: theirs is kept until a
-recording that qualifies is linked to them (see ``_rebuild_people``).
+left stale so a later run can retry them. So is a person none of whose
+re-extracted speakers may found a voiceprint (too little speech, or refused by the
+drift guard): theirs is kept until a recording that qualifies is linked to them
+(see ``_rebuild_people``).
 """
 
 from enum import Enum
@@ -164,9 +165,14 @@ def _rebuild_global_speaker(
     Only links that could found or join the voiceprint on any other path are
     averaged. Each recording's own voiceprint must meet
     ``LIBRARY_VOICEPRINT_MIN_SPEECH_S``, since a mean of short voiceprints is
-    not what that floor measured (an unmeasured one is grandfathered). The
-    person is changed only when they are rebuilt; what becomes of a stale
-    voiceprint that is not is ``_rebuild_people``'s decision.
+    not what that floor measured (an unmeasured one is grandfathered). And a
+    link the drift guard refused when it was offered to this person stays out
+    (``is_drift_refused``). The guard is not run again here: in a rebuild after
+    a method change the person's voiceprint is of the old version, so a cosine
+    against it says nothing, and a poor voiceprint used as the reference would
+    keep the person's genuine recordings out for good. The person is changed
+    only when they are rebuilt; what becomes of a stale voiceprint that is not
+    is ``_rebuild_people``'s decision.
     """
     linked = session.exec(
         select(RecordingSpeaker)
@@ -176,6 +182,7 @@ def _rebuild_global_speaker(
 
     from backend.processing.embedding import (
         embedding_version_of,
+        is_drift_refused,
         meets_library_evidence_floor,
     )
 
@@ -185,7 +192,10 @@ def _rebuild_global_speaker(
     if not _unit_vectors(current):
         return _PersonRebuild.NOTHING_CURRENT
     units = _unit_vectors(
-        s for s in current if meets_library_evidence_floor(s.embedding_speech_seconds)
+        s
+        for s in current
+        if not is_drift_refused(s)
+        and meets_library_evidence_floor(s.embedding_speech_seconds)
     )
     mean = _unit_mean(units) if units else None
     if mean is None:
@@ -306,7 +316,7 @@ def _rebuild_people(
 
     A stale voiceprint that can't be rebuilt is cleared when no current-version
     voiceprint is linked to the person at all, and kept when some are but none
-    holds enough speech to found one. Either way it matches nothing, since it
+    may found one (too little speech, or refused by the drift guard). Either way it matches nothing, since it
     is of another version; kept, it stays visible on the person instead of
     vanishing in a background run, and the first qualifying link replaces it.
 
@@ -338,7 +348,7 @@ def _rebuild_people(
         if is_stale and outcome is _PersonRebuild.HELD_BACK:
             logger.info(
                 "Keeping stale voiceprint for person %s (%s): no current-version "
-                "speaker of theirs holds enough speech to found one",
+                "speaker of theirs may found one (too little speech, or refused)",
                 global_speaker.id,
                 global_speaker.name,
             )

@@ -21,12 +21,18 @@ from backend.models.recording_public import (
     RecordingSpeakerPublicRead,
     serialize_recording_speaker,
 )
-from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
+from backend.models.speaker import (
+    GlobalSpeaker,
+    RecordingSpeaker,
+    RecordingSpeakerDriftRefusal,
+)
 from backend.models.transcript import Transcript
 from backend.processing.embedding import (
     LibraryVoiceprintUpdate,
     RecordingVoiceprint,
     fold_recording_voiceprint,
+    lift_drift_refusal,
+    refuse_drift,
 )
 from backend.services.recording_identity_service import get_recording_by_public_id
 from backend.utils.canonical_pipeline import (
@@ -306,8 +312,16 @@ async def _merge_local_speakers(
 
     added_seconds = None
     if source_speaker.embedding:
+        person = (
+            await db.get(GlobalSpeaker, target_speaker.global_speaker_id)
+            if target_speaker.global_speaker_id
+            else None
+        )
         added_seconds = fold_recording_voiceprint(
-            target_speaker, RecordingVoiceprint.of_speaker(source_speaker), alpha=0.5
+            target_speaker,
+            RecordingVoiceprint.of_speaker(source_speaker),
+            alpha=0.5,
+            person=person,
         )
         db.add(target_speaker)
 
@@ -317,6 +331,95 @@ async def _merge_local_speakers(
     source_speaker.embedding = None
     source_speaker.embedding_speech_seconds = added_seconds
     db.add(source_speaker)
+
+
+async def _carry_drift_refusals(
+    db: AsyncSession, *, source_id: int, target_id: int
+) -> None:
+    """Keep the drift guard's refusals for a person being merged into another.
+
+    Merging two people says they are one, and the refused links' voiceprints
+    are the ones the guard judged, so each refusal for the source becomes one
+    for the target instead of going with the source row (``ON DELETE
+    CASCADE``). A link refused for both keeps one refusal for the target, and
+    a link's refusals for anyone else stay as they are.
+    """
+    result = await db.execute(
+        select(RecordingSpeaker)
+        .join(RecordingSpeakerDriftRefusal)
+        .where(RecordingSpeakerDriftRefusal.global_speaker_id == source_id)
+    )
+    for link in result.scalars().all():
+        lift_drift_refusal(link, source_id)
+        refuse_drift(link, target_id)
+        db.add(link)
+
+
+async def _sampled_speakers(
+    db: AsyncSession, recording: Recording, samples: List[tuple[float, float]]
+) -> tuple[set[int], set[str]]:
+    """The speakers of the transcript lines a recording's samples cover.
+
+    A sample covers a line when it overlaps more than half of it, the rule a
+    split selects lines by. A line that names its recording speaker gives that
+    speaker's id. Only a line that names none gives its speaker label, which
+    on an older transcript can be a display name that several speakers carry.
+    """
+    transcript = (
+        await db.execute(
+            select(Transcript).where(Transcript.recording_id == recording.id)
+        )
+    ).scalar_one_or_none()
+    lines = await _load_segments_for_speaker_work(
+        db, recording=recording, transcript=transcript
+    )
+    ids: set[int] = set()
+    labels: set[str] = set()
+    for line in lines:
+        duration = line["end"] - line["start"]
+        if duration <= 0 or not any(
+            (min(line["end"], end) - max(line["start"], start)) / duration > 0.5
+            for start, end in samples
+        ):
+            continue
+        if line.get("recording_speaker_id") is not None:
+            ids.add(int(line["recording_speaker_id"]))
+        elif line.get("speaker"):
+            labels.add(line["speaker"])
+    return ids, labels
+
+
+async def _lift_drift_refusals(
+    db: AsyncSession,
+    *,
+    person_id: int,
+    sampled: List[tuple[Recording, List[tuple[float, float]]]],
+) -> None:
+    """Let the links the chosen samples came from back into the voiceprint.
+
+    Recalibrating from a link's samples is the user saying, having heard
+    them, that it is this person, which overrides the drift guard's earlier
+    refusal of that link for them (see ``is_drift_refused``); its refusals for
+    anyone else stand. Only the links whose lines the samples cover are lifted
+    (``_sampled_speakers``): another of the person's speakers in the same
+    recording was not heard, so its refusal stands.
+    """
+    for recording, samples in sampled:
+        ids, labels = await _sampled_speakers(db, recording, samples)
+        result = await db.execute(
+            select(RecordingSpeaker)
+            .join(RecordingSpeakerDriftRefusal)
+            .where(
+                RecordingSpeaker.global_speaker_id == person_id,
+                RecordingSpeakerDriftRefusal.global_speaker_id == person_id,
+                RecordingSpeaker.recording_id == recording.id,
+            )
+        )
+        for link in result.scalars().all():
+            names = {link.diarization_label, link.local_name, link.name}
+            if link.id in ids or labels & names:
+                lift_drift_refusal(link, person_id)
+                db.add(link)
 
 
 class SpeakerUpdate(BaseModel):

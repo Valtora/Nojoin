@@ -16,7 +16,10 @@ from backend.api.deps import get_current_user, get_db
 from backend.api.v1.api import api_router
 from backend.models.pipeline import ProcessingRunKind, TranscriptUtteranceState
 from backend.models.transcript import Transcript
-from backend.tests.sqlite_schemas import TIMELINE_NOTES_SCHEMA
+from backend.tests.sqlite_schemas import (
+    RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA,
+    TIMELINE_NOTES_SCHEMA,
+)
 from backend.utils.canonical_pipeline import (
     list_pending_startup_cutover_recording_ids,
     process_startup_cutover_recording,
@@ -378,6 +381,7 @@ async def test_session_maker() -> sessionmaker:
         await connection.execute(text(CONTEXT_CHUNKS_SCHEMA))
         await connection.execute(text(GLOBAL_SPEAKERS_SCHEMA))
         await connection.execute(text(RECORDING_SPEAKERS_SCHEMA))
+        await connection.execute(text(RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA))
         await connection.execute(text(PROCESSING_RUNS_SCHEMA))
         await connection.execute(text(RECORDING_AUDIO_WINDOW_MANIFESTS_SCHEMA))
         await connection.execute(text(DIARIZATION_WINDOW_RESULTS_SCHEMA))

@@ -157,7 +157,12 @@ def _matchable_global_speakers(session, user_id) -> list:
 
 
 def _learn_from_confident_match(session, best_match, embedding, best_score) -> None:
-    """Fold a high-confidence observation back into the person's voiceprint."""
+    """Fold a high-confidence observation back into the person's voiceprint.
+
+    No link's drift refusal changes: their voiceprints are as they were, and
+    the matched speaker's own, new this run, is stored with none
+    (``_persist_speaker``).
+    """
     from backend.processing.embedding import (
         AUTO_UPDATE_THRESHOLD,
         embedding_version_of,
@@ -344,9 +349,13 @@ def _persist_speaker(session, work: _LabelWork) -> int | None:
         return rec_speaker.id
 
     if work.embedding is not None:
+        from backend.processing.embedding import forget_drift_verdict
+
         work.existing_speaker.embedding = work.embedding
         work.existing_speaker.embedding_version = EMBEDDING_METHOD_VERSION
         work.existing_speaker.embedding_speech_seconds = work.speech_seconds
+        # Extracted from this run's diarisation, so not the voiceprint judged.
+        forget_drift_verdict(work.existing_speaker)
     elif work.existing_speaker.embedding:
         logger.info(
             "Preserving existing voiceprint for %s because final diarization "

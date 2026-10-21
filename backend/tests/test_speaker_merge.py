@@ -17,6 +17,7 @@ from backend.tests.sqlite_schemas import (
     GLOBAL_SPEAKERS_SCHEMA,
     P_TAGS_SCHEMA,
     PEOPLE_TAGS_SCHEMA,
+    RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA,
     RECORDING_SPEAKERS_SCHEMA,
     TRANSCRIPT_UTTERANCES_SCHEMA,
 )
@@ -864,6 +865,7 @@ def test_the_guard_reads_the_library_through_an_orm_session(tmp_path) -> None:
         for schema in (
             GLOBAL_SPEAKERS_SCHEMA,
             RECORDING_SPEAKERS_SCHEMA,
+            RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA,
             TRANSCRIPT_UTTERANCES_SCHEMA,
             # GlobalSpeaker loads its tags with the row.
             PEOPLE_TAGS_SCHEMA,

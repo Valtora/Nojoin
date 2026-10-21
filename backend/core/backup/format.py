@@ -132,6 +132,11 @@ RESTORE_FOREIGN_KEYS: Dict[str, Tuple[_ForeignKeySpec, ...]] = {
         _enrich("last_speaker_correction_event_id", "speaker_correction_events"),
         _enrich("last_diarization_window_result_id", "diarization_window_results"),
     ),
+    # A refusal means nothing without its link or its person, so both own it.
+    "recording_speaker_drift_refusals": (
+        _own("recording_speaker_id", "recording_speakers"),
+        _own("global_speaker_id", "global_speakers"),
+    ),
     "recording_tags": (_own("recording_id", "recordings"), _own("tag_id", "tags")),
     # user_id is enrichment rather than ownership despite being the owning column:
     # install-tier templates are owned by the installation and carry a NULL user_id

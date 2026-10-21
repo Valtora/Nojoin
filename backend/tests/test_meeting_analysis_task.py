@@ -23,6 +23,7 @@ import backend.worker.tasks.analytics_ai as analytics_ai
 from backend.processing.llm_backends.factory import SecondaryLLMBackend
 from backend.tests.sqlite_schemas import (
     GLOBAL_SPEAKERS_SCHEMA,
+    RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA,
     RECORDING_SPEAKERS_SCHEMA,
     RECORDINGS_SCHEMA,
     TRANSCRIPT_UTTERANCE_EVENTS_SCHEMA,
@@ -128,6 +129,7 @@ def _make_engine(tmp_path: Path, name: str) -> Any:
             TRANSCRIPT_UTTERANCES_SCHEMA,
             TRANSCRIPT_UTTERANCE_EVENTS_SCHEMA,
             RECORDING_SPEAKERS_SCHEMA,
+            RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA,
             GLOBAL_SPEAKERS_SCHEMA,
         ):
             connection.execute(text(schema))

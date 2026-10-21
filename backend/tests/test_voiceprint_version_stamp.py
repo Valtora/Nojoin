@@ -41,6 +41,7 @@ from backend.tests.sqlite_schemas import (
     PROCESSING_RUNS_SCHEMA,
     RECORDING_AUDIO_WINDOW_MANIFESTS_SCHEMA,
     RECORDING_SPEAKER_ALIASES_SCHEMA,
+    RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA,
     RECORDING_SPEAKERS_SCHEMA,
     RECORDINGS_SCHEMA,
     SPEAKER_CORRECTION_EVENTS_SCHEMA,
@@ -73,6 +74,7 @@ async def session_maker():
             TRANSCRIPTS_SCHEMA,
             GLOBAL_SPEAKERS_SCHEMA,
             RECORDING_SPEAKERS_SCHEMA,
+            RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA,
             PROCESSING_RUNS_SCHEMA,
             RECORDING_AUDIO_WINDOW_MANIFESTS_SCHEMA,
             DIARIZATION_WINDOW_RESULTS_SCHEMA,
@@ -687,6 +689,7 @@ def test_segment_learning_stamps_the_current_version(
         embedding_speech_seconds=None,
         global_speaker_id=7,
         diarization_label="SPEAKER_00",
+        drift_refusals=[],
     )
     person = SimpleNamespace(
         id=7,

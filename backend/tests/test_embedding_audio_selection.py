@@ -60,6 +60,7 @@ def test_update_speaker_embedding_task_prefers_proxy_for_browser_capture(
         embedding=None,
         embedding_speech_seconds=None,
         global_speaker_id=None,
+        drift_refusals=[],
     )
 
     class _FakeSession:

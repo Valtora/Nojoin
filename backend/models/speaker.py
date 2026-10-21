@@ -1,10 +1,14 @@
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING, Any, List, Optional
 from uuid import uuid4
 
 from pydantic import computed_field
-from sqlalchemy import BigInteger, Column, ForeignKey, String
+from sqlalchemy import BigInteger, Column, ForeignKey, String, event
+from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlmodel import Field, Relationship
+from sqlalchemy.ext.compiler import compiles
+from sqlalchemy.sql.compiler import SQLCompiler
+from sqlalchemy.sql.expression import Insert
+from sqlmodel import Field, Relationship, SQLModel
 
 from .base import BaseDBModel
 
@@ -225,6 +229,19 @@ class RecordingSpeaker(BaseDBModel, table=True):
     global_speaker: Optional["GlobalSpeaker"] = Relationship(
         back_populates="recording_speakers"
     )
+    # Every person the drift guard refused this speaker's voiceprint for. While
+    # the speaker is linked to one of them, the link stays out of every rebuild
+    # or pooling of that person's voiceprint (see ``is_drift_refused``). Loaded
+    # with the speaker, so that the rules can read and change it on sync and
+    # async sessions alike, and a new speaker starts with it loaded and empty
+    # (``_start_with_no_drift_refusals``). Only a speaker loaded by a query
+    # gets it, though: after an async session expires a speaker, or refreshes
+    # only some of its attributes, reading it lazy-loads, which raises
+    # MissingGreenlet. Such a caller refreshes it first
+    # (``await db.refresh(speaker, ["drift_refusals"])``).
+    drift_refusals: List["RecordingSpeakerDriftRefusal"] = Relationship(
+        sa_relationship_kwargs={"lazy": "selectin", "cascade": "all, delete-orphan"}
+    )
 
     # Self-referential merge pointer (if merged into another local speaker)
     merged_into_id: Optional[int] = Field(
@@ -242,3 +259,71 @@ class RecordingSpeaker(BaseDBModel, table=True):
     def has_voiceprint(self) -> bool:
         """Returns True if this speaker has a voiceprint (embedding) stored."""
         return self.embedding is not None and len(self.embedding) > 0
+
+
+@event.listens_for(RecordingSpeaker, "init")
+def _start_with_no_drift_refusals(
+    target: RecordingSpeaker, args: Any, kwargs: dict[str, Any]
+) -> None:
+    """A speaker made here has no refusals, and its collection says so.
+
+    Left unloaded, the collection of a speaker created in an async session
+    would lazy-load on its first read after a flush, which raises
+    MissingGreenlet; a split's new speakers are judged at just that point.
+    """
+    kwargs.setdefault("drift_refusals", [])
+
+
+class RecordingSpeakerDriftRefusal(SQLModel, table=True):
+    """One person the drift guard refused a recording speaker's voiceprint for.
+
+    A link keeps one row for each person it was refused for, so a refusal for
+    Eli does not lift an earlier one for Dana: a link that returns to Dana
+    without a new verdict stays out of her voiceprint. A save or fold of the
+    link into a person deletes only that person's row (``record_drift_verdict``).
+    Speech folded into the link's voiceprint (a merge, a moved segment) is
+    judged again against its person (``judge_drift``), while a voiceprint
+    extracted afresh deletes all of them, since none was judged
+    (``forget_drift_verdict``). A person merge moves the source's rows to the
+    target, and deleting the link or the person deletes its rows.
+    """
+
+    __tablename__ = "recording_speaker_drift_refusals"
+
+    recording_speaker_id: int = Field(
+        sa_column=Column(
+            BigInteger,
+            ForeignKey("recording_speakers.id", ondelete="CASCADE"),
+            primary_key=True,
+        )
+    )
+    global_speaker_id: int = Field(
+        sa_column=Column(
+            BigInteger,
+            ForeignKey("global_speakers.id", ondelete="CASCADE"),
+            primary_key=True,
+            index=True,
+        )
+    )
+
+
+# Two sessions can refuse one link for one person at once: a rename and the
+# worker's auto-applied name suggestion each run the drift guard, and neither
+# sees the other's refusal before it commits. The unit of work writes a refusal
+# with a plain INSERT on the table's key, so the second commit would fail on
+# it. A refusal that is already there is the one the second session meant to
+# write, so that INSERT is compiled as the dialect's INSERT ... ON CONFLICT DO
+# NOTHING. It is done here, not where refusals are added (``refuse_drift``),
+# because those rules also run inside async requests, where they cannot issue
+# a statement of their own. Any other insert into the table, such as one that
+# carries its own values, compiles as written.
+@compiles(Insert, "postgresql")
+@compiles(Insert, "sqlite")
+def _insert_drift_refusal_once(insert: Insert, compiler: SQLCompiler, **kw: Any) -> str:
+    table = SQLModel.metadata.tables["recording_speaker_drift_refusals"]
+    if insert.table is table and insert.compare(table.insert()):
+        if compiler.dialect.name == "postgresql":
+            insert = postgresql.insert(table).on_conflict_do_nothing()
+        else:
+            insert = sqlite.insert(table).on_conflict_do_nothing()
+    return compiler.visit_insert(insert, **kw)

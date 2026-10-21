@@ -32,6 +32,7 @@ from backend.tests.sqlite_schemas import (
     GLOBAL_SPEAKERS_SCHEMA,
     P_TAGS_SCHEMA,
     PEOPLE_TAGS_SCHEMA,
+    RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA,
     RECORDING_SPEAKERS_SCHEMA,
     RECORDINGS_SCHEMA,
     TRANSCRIPT_UTTERANCES_SCHEMA,
@@ -63,6 +64,7 @@ def _make_engine(tmp_path: Path, name: str) -> Any:
             TRANSCRIPTS_SCHEMA,
             GLOBAL_SPEAKERS_SCHEMA,
             RECORDING_SPEAKERS_SCHEMA,
+            RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA,
             TRANSCRIPT_UTTERANCES_SCHEMA,
             PEOPLE_TAGS_SCHEMA,
             P_TAGS_SCHEMA,
@@ -126,6 +128,8 @@ class SpeakerRow:
     embedding_version: int | None = LEGACY_EMBEDDING_METHOD_VERSION
     global_speaker_id: int | None = None
     embedding_speech_seconds: float | None = None
+    # The people the drift guard refused this speaker's voiceprint for.
+    refused_for: tuple[int, ...] = ()
 
 
 def _add_speaker(connection, speaker: SpeakerRow) -> None:
@@ -156,6 +160,14 @@ def _add_speaker(connection, speaker: SpeakerRow) -> None:
             "seconds": speaker.embedding_speech_seconds,
         },
     )
+    for person_id in speaker.refused_for:
+        connection.execute(
+            text(
+                "INSERT INTO recording_speaker_drift_refusals "
+                "(recording_speaker_id, global_speaker_id) VALUES (:id, :person)"
+            ),
+            {"id": speaker.id, "person": person_id},
+        )
 
 
 def _add_person(
@@ -703,14 +715,75 @@ def _person_row(engine: Any, person_id: int) -> tuple[Any, Any]:
 def test_a_rebuild_keeps_out_the_speakers_a_link_could_not_fold_in(
     tmp_path: Path,
 ) -> None:
-    """Founded from 25 s, plus 2 s.
+    """Founded from 25 s, plus a refused stranger and 2 s.
 
     The person's own speaker is re-extracted, which makes the run rebuild the
-    person. The short speaker could never have founded a voiceprint, so it
-    may not enter the rebuilt one.
+    person. The stranger's voiceprint is linked to them but the drift guard
+    refused it when it was linked, which the link records, and the short one
+    could never have founded a voiceprint, so neither may enter the rebuilt
+    one. A speaker refused for someone else and since linked to this person
+    is not kept out.
     """
+    stranger = [0.8, -0.6, 0.0]
     short = [0.0, 0.0, 1.0]
+    relinked = [0.0, 0.8, 0.6]
     engine = _make_engine(tmp_path, "probe")
+    with engine.begin() as connection:
+        _add_user(connection, 1)
+        _add_person(
+            connection,
+            5,
+            1,
+            embedding=REBUILT_VECTOR,
+            embedding_version=EMBEDDING_METHOD_VERSION,
+        )
+        _add_recording(connection, 10, 1)
+        _add_speaker(connection, SpeakerRow(100, 10, "SPEAKER_00", global_speaker_id=5))
+        _add_utterance(connection, 1, 10, 100, (0, 25000))
+        for speaker_id, vector, seconds, refused_for in (
+            (101, stranger, 25.0, (5,)),
+            (102, short, 2.0, ()),
+            (103, relinked, 25.0, (6,)),
+        ):
+            _add_speaker(
+                connection,
+                SpeakerRow(
+                    speaker_id,
+                    10,
+                    f"SPEAKER_{speaker_id}",
+                    embedding=vector,
+                    embedding_version=EMBEDDING_METHOD_VERSION,
+                    global_speaker_id=5,
+                    embedding_speech_seconds=seconds,
+                    refused_for=refused_for,
+                ),
+            )
+
+    summary = _run_task(engine, user_id=1)
+
+    assert summary["people_rebuilt"] == 1
+    embedding, version = _person_row(engine, 5)
+    mean = [a + b for a, b in zip(REBUILT_VECTOR, relinked)]
+    norm = sum(x * x for x in mean) ** 0.5
+    assert embedding == pytest.approx([x / norm for x in mean])
+    assert version == EMBEDDING_METHOD_VERSION
+
+
+def test_a_segment_moved_onto_a_refused_speaker_stays_out_of_the_rebuild(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The guard refused SPEAKER_01 for the person when it was linked.
+
+    Moving another of its lines onto it folds more of the same voice into its
+    voiceprint without offering it to anyone, so the guard judges the result
+    against the person again. It is still a stranger, so the person's next
+    rebuild still leaves the speaker out.
+    """
+    import backend.worker.tasks.embeddings as embedding_tasks
+    from backend.processing.embedding import RecordingVoiceprint
+
+    stranger = [0.8, -0.6, 0.0]
+    engine = _make_engine(tmp_path, "moved")
     with engine.begin() as connection:
         _add_user(connection, 1)
         _add_person(
@@ -728,21 +801,104 @@ def test_a_rebuild_keeps_out_the_speakers_a_link_could_not_fold_in(
             SpeakerRow(
                 101,
                 10,
-                "SPEAKER_101",
-                embedding=short,
+                "SPEAKER_01",
+                embedding=stranger,
                 embedding_version=EMBEDDING_METHOD_VERSION,
                 global_speaker_id=5,
-                embedding_speech_seconds=2.0,
+                embedding_speech_seconds=25.0,
+                refused_for=(5,),
             ),
         )
+    monkeypatch.setattr(
+        embedding_tasks,
+        "select_recording_audio_for_embedding",
+        lambda recording: recording.audio_path,
+    )
+    monkeypatch.setattr(
+        embedding_core,
+        "extract_embedding_for_segments",
+        lambda *args, **kwargs: RecordingVoiceprint([0.6, -0.8, 0.0], 4.5),
+    )
+    move = embedding_tasks.update_speaker_embedding_task
+    move._session = Session(engine)
+    try:
+        move.run(10, 0.0, 4.5, 101)
+    finally:
+        move._session.close()
+        move._session = None
+    monkeypatch.setattr(
+        embedding_core,
+        "extract_embedding_for_segments",
+        lambda *args, **kwargs: _rebuilt(),
+    )
 
     summary = _run_task(engine, user_id=1)
 
     assert summary["people_rebuilt"] == 1
-    assert _person_row(engine, 5) == (
-        pytest.approx(REBUILT_VECTOR),
-        EMBEDDING_METHOD_VERSION,
-    )
+    embedding, _ = _person_row(engine, 5)
+    assert embedding == pytest.approx(REBUILT_VECTOR)
+
+
+def test_a_refusal_for_someone_else_keeps_an_earlier_one(tmp_path: Path) -> None:
+    """Refused for Dana, then for Eli, then back to Dana with no new verdict.
+
+    Each refusal is kept for the person it was made for, so the one for Eli
+    does not replace Dana's, and the link stays out of Dana's rebuild. The
+    return to Dana is a save into her while her voiceprint is locked, which
+    gives no verdict.
+    """
+    from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
+    from backend.processing.embedding import VoiceprintStatus, offer_linked_voiceprint
+
+    stranger = [0.8, -0.6, 0.0]
+    engine = _make_engine(tmp_path, "dana-eli")
+    with engine.begin() as connection:
+        _add_user(connection, 1)
+        for person_id, vector in ((5, REBUILT_VECTOR), (6, [0.0, 0.0, 1.0])):
+            _add_person(
+                connection,
+                person_id,
+                1,
+                embedding=vector,
+                embedding_version=EMBEDDING_METHOD_VERSION,
+            )
+        _add_recording(connection, 10, 1)
+        _add_speaker(connection, SpeakerRow(100, 10, "SPEAKER_00", global_speaker_id=5))
+        _add_utterance(connection, 1, 10, 100, (0, 25000))
+        _add_speaker(
+            connection,
+            SpeakerRow(
+                101,
+                10,
+                "SPEAKER_01",
+                embedding=stranger,
+                embedding_version=EMBEDDING_METHOD_VERSION,
+                embedding_speech_seconds=25.0,
+            ),
+        )
+
+    with Session(engine) as session:
+        link = session.get(RecordingSpeaker, 101)
+        dana = session.get(GlobalSpeaker, 5)
+        eli = session.get(GlobalSpeaker, 6)
+        outcomes = []
+        for person, locked in ((dana, False), (eli, False), (dana, True)):
+            link.global_speaker_id = person.id
+            update = offer_linked_voiceprint(person, link, alpha=0.3, locked=locked)
+            outcomes.append(update.status)
+        session.add(link)
+        session.commit()
+
+    assert outcomes == [
+        VoiceprintStatus.SKIPPED_DRIFT,
+        VoiceprintStatus.SKIPPED_DRIFT,
+        VoiceprintStatus.SKIPPED_LOCKED,
+    ]
+    summary = _run_task(engine, user_id=1)
+
+    assert summary["people_rebuilt"] == 1
+    embedding, _ = _person_row(engine, 5)
+    assert embedding == pytest.approx(REBUILT_VECTOR)
 
 
 def test_a_stale_person_is_not_rebuilt_from_speech_below_the_floor(
@@ -937,8 +1093,8 @@ def test_a_rebuild_is_not_held_back_by_the_persons_own_voiceprint(
 
     The review's probe: a guard against the person's voiceprint kept three
     recordings of 25-60 s out of it for good, because the voiceprint they were
-    measured against was the junk. The rebuild runs no guard, so it averages
-    every link that meets the floor.
+    measured against was the junk. Refusals are recorded when a link is made,
+    so the rebuild averages every link that wasn't refused.
     """
     engine = _make_engine(tmp_path, "junk-reference")
     _person_with_a_re_extracted_speaker(engine, STALE_VECTOR, locked=False)

@@ -293,6 +293,10 @@ class VoiceprintStatus(str, Enum):
 
     # The person had no voiceprint, or a stale one; the recording's became theirs.
     SAVED = "saved"
+    # A split only: what remained of the original person in the split
+    # recordings was too little, so their voiceprint was rebuilt from their
+    # other recordings instead.
+    SAVED_FROM_OTHER_RECORDINGS = "saved_from_other_recordings"
     # The recording's voiceprint was blended into the person's.
     FOLDED = "folded"
     # The person has no voiceprint and the recording's was built from less than
@@ -318,6 +322,7 @@ class LibraryVoiceprintUpdate:
     def changed(self) -> bool:
         return self.status in (
             VoiceprintStatus.SAVED,
+            VoiceprintStatus.SAVED_FROM_OTHER_RECORDINGS,
             VoiceprintStatus.FOLDED,
         )
 
@@ -438,20 +443,123 @@ def update_library_voiceprint(
     return LibraryVoiceprintUpdate(_LIBRARY_STATUS_BY_BLEND[blend], speech_seconds)
 
 
+def is_drift_refused(speaker: Any) -> bool:
+    """True when the drift guard refused this link's voiceprint for its person.
+
+    Such a link stays out of that person's library voiceprint wherever it is
+    rebuilt or pooled from links (the voiceprint rebuild, a split), which never
+    run the guard again: after an extraction-method change the person's
+    voiceprint is of the old version, so a cosine against it means nothing.
+    Each refusal names its person (``speaker.drift_refusals``), so one has no
+    effect while the speaker is linked to someone else, and applies again if
+    the speaker comes back.
+    """
+    person_id = speaker.global_speaker_id
+    return person_id is not None and any(
+        refusal.global_speaker_id == person_id for refusal in speaker.drift_refusals
+    )
+
+
+def refuse_drift(speaker: Any, person_id: int) -> None:
+    """Record that the drift guard refused this link for ``person_id``.
+
+    Refusals for other people are kept; a second one for the same person is
+    not added.
+    """
+    if any(r.global_speaker_id == person_id for r in speaker.drift_refusals):
+        return
+    from backend.models.speaker import RecordingSpeakerDriftRefusal
+
+    speaker.drift_refusals.append(
+        RecordingSpeakerDriftRefusal(global_speaker_id=person_id)
+    )
+
+
+def lift_drift_refusal(speaker: Any, person_id: int) -> None:
+    """Drop this link's refusal for ``person_id``, keeping any for others."""
+    for refusal in [
+        r for r in speaker.drift_refusals if r.global_speaker_id == person_id
+    ]:
+        speaker.drift_refusals.remove(refusal)
+
+
+def forget_drift_verdict(speaker: Any) -> None:
+    """Drop all of a link's drift refusals: its voiceprint is not the one judged.
+
+    A refusal describes the voiceprint the guard judged. A voiceprint
+    extracted afresh from other speech (the voiceprint dialog's extract,
+    reprocessing, a split's remainder) has not been judged by anyone, so the
+    refusals for every person go with the old one. Speech folded into the
+    old voiceprint (a merge, a segment moved onto the link) is judged again
+    instead (``judge_drift``). Re-extracting the same speech under a new
+    extraction method (the voiceprint rebuild) keeps them: carrying the
+    verdict across that change is what they are for.
+    """
+    speaker.drift_refusals.clear()
+
+
+def judge_drift(speaker: Any, person: Any) -> None:
+    """Judge a link's voiceprint again once more speech is folded into it.
+
+    A segment moved onto the link, or a speaker merged into it, changes the
+    link's voiceprint without offering it to anyone, and the speech the guard
+    judged is still part of it. So the guard judges the result against
+    ``person``, the person the link is linked to, without changing their
+    voiceprint, and the verdict is kept as ``record_drift_verdict`` keeps one:
+    a refusal adds ``person`` to the people the link was refused for, and a
+    pass lifts only their refusal. With no person, or no voiceprint of theirs
+    of the same version to compare with, there is no verdict, and the
+    refusals stay as they were. A lock makes no difference, since it guards
+    the person's voiceprint and this leaves it alone.
+    """
+    if person is None or not person.embedding or not speaker.embedding:
+        return
+    if not embeddings_are_comparable(person, speaker):
+        return
+    if drift_guard_refuses(person.embedding, speaker.embedding):
+        refuse_drift(speaker, person.id)
+    else:
+        lift_drift_refusal(speaker, person.id)
+
+
+def record_drift_verdict(
+    speakers: List[Any], person: Any, update: LibraryVoiceprintUpdate
+) -> None:
+    """Keep on each link what the drift guard said about its voiceprint.
+
+    A refusal adds ``person`` to the people each link was refused for; a save
+    or a fold into ``person`` lifts only the refusal for ``person``. Refusals
+    for anyone else stay: a save into Eli says nothing about Dana's
+    voiceprint, and a refusal for Eli does not replace one for Dana, so a link
+    refused for Dana is still refused when it comes back to her. Any other
+    outcome (a lock, too little speech, an outdated voiceprint) is no verdict,
+    so the refusals stay as they were.
+    """
+    if update.status == VoiceprintStatus.SKIPPED_DRIFT:
+        for speaker in speakers:
+            refuse_drift(speaker, person.id)
+    elif update.changed:
+        for speaker in speakers:
+            lift_drift_refusal(speaker, person.id)
+
+
 def offer_linked_voiceprint(
     person: Any, speaker: Any, *, alpha: float, locked: bool = False
 ) -> LibraryVoiceprintUpdate:
     """Offer a recording speaker's voiceprint to the person it is linked to.
 
-    ``update_library_voiceprint`` decides the outcome.
+    ``update_library_voiceprint`` decides the outcome, and the drift guard's
+    verdict is kept on the link (``record_drift_verdict``).
     """
-    return update_library_voiceprint(
+    update = update_library_voiceprint(
         person, RecordingVoiceprint.of_speaker(speaker), alpha=alpha, locked=locked
     )
+    record_drift_verdict([speaker], person, update)
+    return update
 
 
 def fold_recording_voiceprint(
-    target: Any, voiceprint: RecordingVoiceprint, *, alpha: float
+    target: Any, voiceprint: RecordingVoiceprint, *, alpha: float, person: Any
 ) -> Optional[float]:
     """Blend one recording voiceprint into another of the same recording.
 
@@ -460,7 +568,9 @@ def fold_recording_voiceprint(
     when both were measured. When either was not, the result is unmeasured:
     it holds speech from before measurement, which is grandfathered past the
     floor, so it behaves as that voiceprint did before the floor existed. A
-    fold the drift guard refuses leaves the target as it was.
+    fold the drift guard refuses leaves the target as it was. A target whose
+    voiceprint changes is judged again against ``person``, the person it is
+    linked to, or None (``judge_drift``).
 
     Returns the speech added to the target's figure, or None when nothing was
     added to a measured figure. A merge keeps it on the merged row, so that
@@ -471,11 +581,12 @@ def fold_recording_voiceprint(
     blend = blend_voiceprint(
         target, voiceprint.embedding, voiceprint.version, alpha=alpha
     )
+    if blend in (VoiceprintBlend.REFUSED, VoiceprintBlend.KEPT):
+        return None
+    judge_drift(target, person)
     if blend in (VoiceprintBlend.COPIED, VoiceprintBlend.REPLACED):
         target.embedding_speech_seconds = speech_seconds
         return speech_seconds
-    if blend != VoiceprintBlend.FOLDED:
-        return None
     if target_seconds is None or speech_seconds is None:
         target.embedding_speech_seconds = None
         return None
