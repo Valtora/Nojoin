@@ -68,7 +68,9 @@ The browser session is a `Secure`, `HttpOnly`, `SameSite=Lax` cookie that lasts 
 
 `SameSite=Lax` keeps top-level redirects such as OAuth callbacks working, so a `GET` request must never change state.
 
-The API also refuses plain HTTP: a safe request is redirected to the HTTPS origin and an unsafe one gets `400`. It rejects a `Host` header naming anything other than the `WEB_APP_URL` host or a loopback address, answers CORS only for that origin and the local development origins, and serves its OpenAPI schema and docs only to signed-in users. The bundled nginx adds `Content-Security-Policy`, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy` and, outside the MCP endpoint, `Permissions-Policy`.
+The API also refuses plain HTTP: a safe request is redirected to the HTTPS origin and an unsafe one gets `400`. It rejects a `Host` header naming anything other than the `WEB_APP_URL` host or a loopback address, answers CORS only for that origin and the local development origins, and serves its OpenAPI schema and docs only to signed-in users.
+
+The bundled nginx sends `Strict-Transport-Security: max-age=31536000` on every HTTPS response. It omits `includeSubDomains`, so the policy covers Nojoin's hostname and not its sibling hosts, and browsers apply it only over a trusted certificate ([DEPLOYMENT.md](DEPLOYMENT.md#hsts-and-other-security-headers)). The web app sends its own `Content-Security-Policy`, with a per-request nonce for scripts and styles, plus `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy` and `Permissions-Policy`. Besides Nojoin's own origin, the policy allows `data:` images, `blob:` media, WebSocket connections and, when the frontend was built with an absolute `NEXT_PUBLIC_API_URL`, the API origin. For `/api/`, `/mcp` and the OAuth discovery documents, nginx adds a `default-src 'none'` policy and the same headers, without `Permissions-Policy` on the MCP routes.
 
 ## Standard JWT Containment
 

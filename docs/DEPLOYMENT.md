@@ -268,7 +268,7 @@ Not in `.env.example` and not passed by the shipped compose file. Set them in th
 
 ### Custom Frontend Build Value
 
-`NEXT_PUBLIC_API_URL` is a frontend build argument. Set it only when building your own frontend image whose API is not at the same-origin `/api` path.
+`NEXT_PUBLIC_API_URL` is a frontend build argument. Set it only when building your own frontend image whose API is not at the same-origin `/api` path. The app's Content-Security-Policy then allows that URL's origin for API requests and recording playback.
 
 ## Stall Detection
 
@@ -372,6 +372,12 @@ Getting this wrong fails in one of two ways:
 - **A redirect loop on page loads, with `400 Plain HTTP requests are not allowed. Use HTTPS.` on saves,** means the host is trusted but another condition fails, most often a rewritten `Host` or a missing `X-Forwarded-Proto`. Reads are redirected to `WEB_APP_URL`, which the proxy rewrites the same way again, and writes are rejected. Check these headers first.
 
 `/health` and `/api/health` are exempt, so health checks work over plain HTTP.
+
+### HSTS and Other Security Headers
+
+The bundled proxy sends `Strict-Transport-Security: max-age=31536000` on every HTTPS response, without `includeSubDomains`, so it covers Nojoin's own hostname only. Browsers ignore it over the self-signed internal certificate and apply it once an edge proxy with a trusted certificate passes it on. Caddy and Nginx pass upstream response headers through, so the examples below need nothing extra, and the same goes for the CSP and other security headers listed in [SECURITY.md](SECURITY.md#browser-session-request-protection).
+
+Do not add a second `Strict-Transport-Security` header at the edge, because a browser reads only the first. To set `includeSubDomains` or preload for your whole domain, set it at the edge and remove the upstream one with `header_down -Strict-Transport-Security` in Caddy or `proxy_hide_header Strict-Transport-Security;` in Nginx.
 
 ### Streaming, WebSocket, and Upload Forwarding
 
@@ -524,9 +530,12 @@ Stop the stack before upgrading, so no worker from the old release runs against 
 
 ```bash
 docker compose down
+git pull
 docker compose pull
 docker compose up -d
 ```
+
+`git pull` updates the bundled proxy's configuration in `nginx/`, which the images do not carry. It leaves your `docker-compose.yml` and `.env` alone, since they are your own untracked copies, so compare them with `docker-compose.example.yml` and `.env.example` when the release notes say a template changed. If you have edited a tracked file such as `nginx/nginx.conf`, `git pull` stops and names it: commit or stash the edit first.
 
 The api runs database migrations when it starts. Check the release notes for breaking changes and [Upgrading and Migration](#upgrading-and-migration) for notes on your version, and make a short test recording afterwards.
 
@@ -547,6 +556,7 @@ These run on the first start after the upgrade and need no action unless a note 
 
 #### Unreleased Changes on Main
 
+- **Bundled proxy sends HSTS.** `nginx/nginx.conf` now sends `Strict-Transport-Security` on every HTTPS response ([HSTS and Other Security Headers](#hsts-and-other-security-headers)). On app pages it no longer adds a CSP and other security headers alongside the web app's own, so each header arrives once. The effective policy is unchanged. The new configuration reaches an existing install only through the `git pull` step in [Updating a Deployment](#updating-a-deployment).
 - **Parakeet word length capped, word end padding retired (#473).** A Parakeet word now ends at the earliest of the next word's start, its window's end and its start plus `asr_word_length_cap_s` (default 0.4 s, range 0.2 to 0.45). The retired `asr_word_end_padding_s` (default 0.2) set how long a word lasted before a long pause. It is not converted, because the same number means something else as a cap. A stored value is ignored, dropped from a user's settings on their next save, and dropped from `config.json` when an administrator next saves an install-wide setting. An older settings page that still sends it is ignored. Anyone who had set it gets the new default until they set the cap. Reprocess a recording to apply the change to it.
 
 #### Upgrading From Before 2.10.0
