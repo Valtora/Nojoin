@@ -39,7 +39,7 @@ class _FakeSession:
         self.committed = False
         self.rolled_back = False
 
-    async def get(self, _model, pk):
+    async def get(self, _model, pk, with_for_update: bool = False):
         return self._users.get(pk)
 
     async def execute(self, _statement):

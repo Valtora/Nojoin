@@ -41,6 +41,7 @@ from backend.api.deps import (
 from backend.api.v1.api import api_router
 from backend.celery_app import celery_app
 from backend.models.recording import Recording, RecordingStatus
+from backend.tests.sqlite_schemas import DOCUMENTS_SCHEMA
 from backend.tests.test_reprocess import (
     RECORDING_AUDIO_CHUNKS_SCHEMA,
     RECORDING_AUDIO_WINDOW_MANIFESTS_SCHEMA,
@@ -92,6 +93,7 @@ def db_path(tmp_path: Path) -> Path:
             TRANSCRIPTS_SCHEMA,
             RECORDING_AUDIO_CHUNKS_SCHEMA,
             RECORDING_AUDIO_WINDOW_MANIFESTS_SCHEMA,
+            DOCUMENTS_SCHEMA,
         ):
             connection.execute(text(schema))
     engine.dispose()

@@ -20,6 +20,7 @@ from backend.core.backup.paths import (
     _normalise_public_id,
 )
 from backend.core.backup.records import _restore_redacted_sensitive_data
+from backend.core.backup.restore import stages
 from backend.core.backup.restore.context import RowOutcome, _RowContext
 
 logger = logging.getLogger(__name__)
@@ -152,6 +153,9 @@ def _resolve_recordings_identity(ctx: "_RowContext") -> "RowOutcome":
                 if v is existing_rec
             ]:
                 ctx.state.existing_recordings_by_identity.pop(stale_key, None)
+            stages._note_replaced_document_paths(
+                ctx.session, ctx.state, [existing_rec.id]
+            )
             ctx.session.delete(existing_rec)
             ctx.session.flush()
         else:

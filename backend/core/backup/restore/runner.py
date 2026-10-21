@@ -34,6 +34,7 @@ from backend.core.backup.restore.conflicts import CONFLICT_RESOLVERS
 from backend.core.backup.restore.context import RowOutcome, _RowContext
 from backend.core.backup.restore.identity import IDENTITY_RESOLVERS
 from backend.core.backup.restore.state import _RestoreState
+from backend.utils.document_storage import unlink_document_files
 
 logger = logging.getLogger(__name__)
 
@@ -145,7 +146,19 @@ def _record_restored_recording(ctx: _RowContext, instance) -> None:
 
 
 def _restore_row(ctx: _RowContext) -> bool:
-    """Bring one archive row across. Returns whether a row was actually inserted."""
+    """Bring one archive row across. Returns whether a row was actually inserted.
+
+    A row that is not inserted gives up the moves it queued, so its staged files
+    stay in staging, which is removed, rather than land where no row names them.
+    """
+    queued_moves = len(ctx.state.pending_moves)
+    inserted = _resolve_and_insert_row(ctx)
+    if not inserted:
+        ctx.state.release_moves(queued_moves)
+    return inserted
+
+
+def _resolve_and_insert_row(ctx: _RowContext) -> bool:
     state = ctx.state
 
     # Under the safe-merge strategy a conflicting recording is kept as it already exists
@@ -372,6 +385,7 @@ def _restore_backup_sync(request: _RestoreRequest):
                 _remap_user_notes_template_settings(session, state)
 
                 stages._normalise_restored_recording_state(session, state)
+                stages._keep_document_files_still_named(session, state)
 
                 session.commit()
 
@@ -388,6 +402,14 @@ def _restore_backup_sync(request: _RestoreRequest):
                         shutil.rmtree(directory)
                     directory.mkdir(parents=True, exist_ok=True)
 
+            # The files of the documents an overwrite replaced, inside the
+            # documents directory only. Before the moves, as on a case-insensitive
+            # mount a missing replaced name can alias a destination unseen.
+            unlink_document_files(
+                state.replaced_document_paths,
+                root=Path(request.documents_dir),
+                logger=logger,
+            )
             stages._restore_apply_pending_moves(state)
             stages._restore_config(zipf, state)
     finally:

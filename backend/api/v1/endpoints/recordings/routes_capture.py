@@ -32,6 +32,10 @@ from backend.utils.browser_capture_audio import (
     BROWSER_FLAC_SEGMENT_SUFFIX,
     BrowserAudioFormatError,
 )
+from backend.utils.document_storage import (
+    delete_document_files,
+    recording_document_paths,
+)
 from backend.utils.rate_limit import enforce_upload_concurrency
 from backend.utils.recording_audio_sync import BROWSER_AUDIO_SEGMENT_SUFFIXES
 from backend.utils.time import utc_now
@@ -692,6 +696,10 @@ async def discard_upload(
         except Exception:  # noqa: BLE001 -- boundary: a revoke that cannot reach the broker must not block the delete
             pass
 
+    # Attached documents go with the row by FK cascade, so read their paths
+    # first. The lock taken above holds back any document insert until the
+    # delete commits, so none can land between this read and the cascade.
+    document_paths = await recording_document_paths(db, [recording.id])
     recordings_module.delete_recording_artifacts(
         recording_id=recording.id,
         audio_path=recording.audio_path,
@@ -712,6 +720,7 @@ async def discard_upload(
     await db.execute(delete(Transcript).where(Transcript.recording_id == recording.id))
     await db.execute(delete(Recording).where(Recording.id == recording.id))
     await db.commit()
+    await delete_document_files(document_paths, logger=logger)
 
     return {"ok": True}
 

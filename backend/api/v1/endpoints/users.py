@@ -22,6 +22,10 @@ from backend.models.user import (
 )
 from backend.seed_demo import seed_demo_data
 from backend.services.jwt_revocation_service import bump_user_token_version
+from backend.utils.document_storage import (
+    delete_document_files,
+    recording_document_paths,
+)
 from backend.utils.invitation_roles import resolve_invitation_role
 from backend.utils.rate_limit import enforce_rate_limit
 from backend.utils.recording_storage import delete_recording_artifacts
@@ -241,7 +245,12 @@ async def delete_user(
     ):
         raise HTTPException(status_code=403, detail="Not authorized")
 
-    user = await db.get(User, user_id)
+    # Locked, as delete_recording locks its recording, before the document
+    # paths are read below. An upload creating a recording for this user waits
+    # on the lock, so no recording, nor any document of one, can be added that
+    # the read misses and the cascade deletes, leaving its file behind. Locked
+    # in the read itself, so a user deleted meanwhile is a 404.
+    user = await db.get(User, user_id, with_for_update=True)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
@@ -261,25 +270,32 @@ async def delete_user(
                 status_code=400, detail="Cannot delete the last admin account"
             )
 
+    # The recordings are locked too, in id order: a document insert waits on
+    # its recording's lock, so none can commit a row the read misses either.
     recordings_result = await db.execute(
-        select(Recording).where(Recording.user_id == user_id)
+        select(Recording)
+        .where(Recording.user_id == user_id)
+        .order_by(Recording.id)
+        .with_for_update()
     )
     recordings = recordings_result.scalars().all()
 
-    for recording in recordings:
-        delete_recording_artifacts(
-            recording_id=recording.id,
-            audio_path=recording.audio_path,
-            proxy_path=recording.proxy_path,
-            logger=logger,
-        )
+    # The user's recordings, and their documents, go by FK cascade. Their
+    # files are removed once the delete has committed, so the locks are not
+    # held while files are unlinked, and a failed commit keeps them.
+    artifacts = [
+        (recording.id, recording.audio_path, recording.proxy_path)
+        for recording in recordings
+    ]
+    document_paths = await recording_document_paths(
+        db, [recording.id for recording in recordings]
+    )
 
     try:
         logger.info(f"User {current_user.id} deleting user {user_id}")
         await db.delete(user)
         await db.commit()
         logger.info(f"Successfully deleted user {user_id}")
-        return user
     except Exception as e:  # noqa: BLE001 -- boundary: the delete is rolled back and becomes one sanitised 500
         await db.rollback()
         raise sanitized_http_exception(
@@ -289,6 +305,24 @@ async def delete_user(
             log_message=f"Failed to delete user {user_id}.",
             exc=e,
         )
+
+    # The delete has committed, so no cleanup failure may turn it into an
+    # error. Each recording's files are removed on their own, and a failure is
+    # logged and skipped; the document files never raise, and still go.
+    for recording_id, audio_path, proxy_path in artifacts:
+        try:
+            delete_recording_artifacts(
+                recording_id=recording_id,
+                audio_path=audio_path,
+                proxy_path=proxy_path,
+                logger=logger,
+            )
+        except Exception:
+            logger.exception(
+                "Failed to remove the files of deleted recording %s", recording_id
+            )
+    await delete_document_files(document_paths, logger=logger)
+    return user
 
 
 @router.patch("/{user_id}/role", response_model=UserRead)

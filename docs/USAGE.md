@@ -46,7 +46,7 @@ The **Tasks** page has **Open**, **Completed** and **Archived** views and a **Cr
 - **Search...** above the list matches meeting titles, tags and speaker names. Its filter button adds a date filter (a range, after or before) and a speaker filter.
 - **Tags** in the navigation hold your tags, which can nest. Select a tag to filter the list by it, drag a tag onto another to nest it, and right-click one to rename, add a sub-tag, promote or delete it. Tag a single meeting from its header.
 - Right-click a recording for **Rename**, **Retry Speaker Inference**, **Retry Processing**, **Show Recording Info**, **Archive** and **Delete**. An unfinished recording offers **Discard Recording** in place of **Retry Processing**.
-- **Archive** moves a recording to **Archived**. **Delete** moves it to **Deleted**, the bin, where **Restore** brings it back and **Delete Permanently** removes it and its audio for good. Recordings stay in the bin until you delete them permanently.
+- **Archive** moves a recording to **Archived**. **Delete** moves it to **Deleted**, the bin, where **Restore** brings it back and **Delete Permanently** removes it, its audio and its attached documents for good. Recordings stay in the bin until you delete them permanently.
 - Ctrl-click (Cmd-click on a Mac) or Shift-click to select several recordings, then use the batch bar to **Add Tag**, **Archive**, **Delete**, **Restore** or **Permanently Delete** them.
 
 ## People Workspace

@@ -19,6 +19,10 @@ import logging
 import os
 from typing import List, Optional
 
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm.exc import ObjectDeletedError, StaleDataError
+from sqlmodel import select
+
 from backend.models.context_chunk import ContextChunk
 from backend.models.document import Document, DocumentParseMode, DocumentStatus
 from backend.models.document_page import DocumentPage, PageParseMode
@@ -51,6 +55,11 @@ PAGE_FLUSH_BATCH = 8
 STAGE_READING = "Reading pages"
 STAGE_ANALYSING = "Analysing pages with AI"
 STAGE_INDEXING = "Indexing for search"
+
+# Shown on the document in place of a database error's own text.
+DATABASE_FAILURE_DETAIL = (
+    "The server failed while storing this document. Parse it again to retry."
+)
 
 # A page whose own text layer is at least this long is left alone by OCR. OCR
 # transcribes glyphs and is strictly worse than a real text layer, so it is only
@@ -273,11 +282,54 @@ def process_document_task(self, document_id: int, force_reparse: bool = False):
 
         _parse_document(session, document)
 
-    except UnsupportedDocumentError as e:
-        _fail(session, document, str(e))
     except Exception as e:  # noqa: BLE001 -- boundary: any parse failure marks the document
-        logger.error("Failed to process document %s: %s", document_id, e, exc_info=True)
-        _fail(session, document, str(e))
+        _record_parse_failure(session, document, document_id, e)
+
+
+def _record_parse_failure(
+    session, document: Document, document_id: int, error: Exception
+) -> None:
+    """Mark the document failed, or stop quietly if it was deleted meanwhile.
+
+    The failure may have aborted the session's transaction, as a failed insert
+    does, so it is rolled back before the session is used again. Whatever the
+    parse wrote and had not committed goes with it; a resumed parse redoes it.
+    """
+    try:
+        session.rollback()
+        still_exists = (
+            session.exec(select(Document.id).where(Document.id == document_id)).first()
+            is not None
+        )
+    except Exception:
+        logger.error(
+            "Failed to process document %s: %s", document_id, error, exc_info=error
+        )
+        logger.exception(
+            "Could not check whether document %s still exists", document_id
+        )
+        return
+
+    if not still_exists:
+        # Deleted mid-parse, with its recording or on its own.
+        logger.info("Document %s was deleted while parsing; stopped.", document_id)
+        return
+    if not isinstance(error, UnsupportedDocumentError):
+        logger.error(
+            "Failed to process document %s: %s", document_id, error, exc_info=error
+        )
+    # The message is shown to the user. A database error's text carries SQL,
+    # parameters and a link, so it stays in the log above.
+    message = (
+        DATABASE_FAILURE_DETAIL if isinstance(error, SQLAlchemyError) else str(error)
+    )
+    try:
+        _fail(session, document, message)
+    except (ObjectDeletedError, StaleDataError):
+        # Deleted between the check above and this write: the reload for the
+        # write finds no row, or the UPDATE matches none.
+        session.rollback()
+        logger.info("Document %s was deleted while parsing; stopped.", document_id)
 
 
 def _fail(session, document: Document, message: str) -> None:

@@ -16,6 +16,10 @@ from backend.processing.speaker_cap import (
     MIN_SPEAKER_CAP,
     normalize_speaker_cap,
 )
+from backend.utils.document_storage import (
+    delete_document_files,
+    recording_document_paths,
+)
 
 from .helpers import (
     _get_owned_calendar_event,
@@ -105,6 +109,7 @@ async def delete_recording(
     # delete (keep_imported_audio_task) and leave its new file behind.
     await db.refresh(recording, with_for_update=True)
 
+    document_paths = await recording_document_paths(db, [recording.id])
     recordings_module.delete_recording_artifacts(
         recording_id=recording.id,
         audio_path=recording.audio_path,
@@ -114,6 +119,7 @@ async def delete_recording(
 
     await db.delete(recording)
     await db.commit()
+    await delete_document_files(document_paths, logger=logger)
 
     return {"ok": True}
 
@@ -296,6 +302,7 @@ async def permanently_delete_recording(
         except Exception:  # noqa: BLE001 -- boundary: a revoke that cannot reach the broker must not block the delete
             pass
 
+    document_paths = await recording_document_paths(db, [recording.id])
     recordings_module.delete_recording_artifacts(
         recording_id=recording.id,
         audio_path=recording.audio_path,
@@ -305,6 +312,7 @@ async def permanently_delete_recording(
 
     await db.delete(recording)
     await db.commit()
+    await delete_document_files(document_paths, logger=logger)
 
     return {"ok": True}
 

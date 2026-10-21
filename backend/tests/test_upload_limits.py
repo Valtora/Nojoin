@@ -1,5 +1,6 @@
 import io
 
+import anyio
 import pytest
 from fastapi import HTTPException, UploadFile
 
@@ -80,6 +81,37 @@ async def test_stream_and_validate_upload_interrupted_body_leaves_no_file(tmp_pa
 
     # A truncated upload must never become visible at the destination path,
     # and the temporary file must be cleaned up.
+    assert not dest.exists()
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.anyio
+async def test_stream_and_validate_upload_cancelled_mid_body_leaves_no_file(tmp_path):
+    # Every upload route (documents, segments, audio import, backup restore)
+    # streams through this helper, so this covers them all. A client that
+    # disconnects mid-body cancels the request task, and a cancellation is a
+    # BaseException, not an Exception.
+    dest = tmp_path / "dest.webm"
+    stalled = anyio.Event()
+
+    class StalledUpload(UploadFile):
+        async def read(self, size: int = -1) -> bytes:
+            if not stalled.is_set():
+                stalled.set()
+                return b"partial-bytes"
+            await anyio.sleep_forever()
+            return b""
+
+    file = StalledUpload(file=io.BytesIO(), filename="dest.webm")
+
+    async with anyio.create_task_group() as tg:
+        tg.start_soon(stream_and_validate_upload, file, str(dest), 1024)
+        await stalled.wait()
+        with anyio.fail_after(5):
+            while not list(tmp_path.iterdir()):
+                await anyio.sleep(0.01)
+        tg.cancel_scope.cancel()
+
     assert not dest.exists()
     assert list(tmp_path.iterdir()) == []
 

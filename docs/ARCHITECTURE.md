@@ -67,6 +67,15 @@ Pages are written as they complete, so a restarted worker resumes at the first m
 
 Pages feed the search index (`context_chunks`, one chunk per page unless a page exceeds the embedding window), the notes prompt and the MCP `get_documents` tool. Document text is untrusted, and a vision model reproduces any instruction printed on a page, so the notes and chat prompts wrap it in `<attached_document>` tags with an instruction to treat it as data.
 
+Each document's original file is stored flat in the documents directory under a name of its own (`<uuid>.<ext>`, or `<stem>__<uuid><ext>` when a restore finds the name taken), so no two rows share a file. The rules live in [backend/utils/document_storage.py](../backend/utils/document_storage.py):
+
+- **Deletion.** Deleting a document removes its file, and so does every path that deletes a recording: delete, permanent and batch permanent delete, discard, deleting a user, and a restore in **Overwrite** mode (**Clear all existing data** empties the directory). Under **Overwrite**, a restored document that takes the name of the copy it replaced keeps that file: the restore unlinks before it moves files in, and skips any file a row still names, compared by device and inode so another spelling of it counts. The staged file of a restored row that fails to insert goes with the staging directory.
+- **After the commit.** Files are unlinked only after the delete commits, so a failed commit never leaves a row without its file. A failed cleanup is logged and never turns the committed delete into an error. A cancelled unlink still runs, on the event loop, because it is the only thing that would remove the file.
+- **Uploads racing a delete.** Deletes lock their recordings `FOR UPDATE` before reading the document paths. A document insert waits on the same lock, so an upload cannot commit a row the delete never read. The API's deletes take the locks in id order, and deleting a user locks the user row first. A restore in **Overwrite** mode does not: it locks the recordings it replaces before the user rows it inserts against, and locks one its pre-delete missed only on reaching it. A user deletion running alongside can then deadlock with it, and PostgreSQL aborts one of the two, which rolls back with no file removed. An upload writes its file before its row and removes it if the insert fails or is cancelled; an insert that lost the race answers 404.
+- **Containment.** Only paths inside the documents directory are unlinked. A legacy row pointing elsewhere keeps its file, and the path is logged.
+- **Parses.** A parse whose document is deleted stops at its next write. One that fails on a write is still marked `ERROR`, with a fixed message; the database's text goes only to the log.
+- **No sweep.** Nothing sweeps the documents directory for files without a row, so a process that dies between a commit and its unlink leaves the file for an operator.
+
 ### Meeting Analytics
 
 Analytics come in four tiers. The evidence behind each design choice is in [ANALYTICS_EVIDENCE.md](ANALYTICS_EVIDENCE.md), and the read that assembles them is `read_recording_analytics` in `routes_analytics.py`.
@@ -156,7 +165,7 @@ A recording moves through `UPLOADING` (capturing) and `PAUSED`, then `QUEUED`, `
 3. The API decodes each FLAC segment to a 16 kHz, two-channel WAV, registers it (see [Chunk Registration](#chunk-registration)) and dispatches the live lane. A segment that is not 16 kHz, two-channel, 16-bit FLAC, or will not decode, is quarantined as a `.corrupt` tombstone and the upload still succeeds, costing a 2 s gap. WebM, Ogg and MP4 segments from tabs on an older build go to the CPU lane for an ffmpeg transcode first.
 4. `POST /recordings/{id}/finalize` accepts an `UPLOADING` or `PAUSED` recording, so a capture whose browser is gone can still be processed. Missing sequences and pending transcodes get a retryable 409. Otherwise it rebuilds chunk offsets and window manifests from the segments on disk, seals the cursor, joins the segment WAVs into a FLAC master with soundfile, takes the duration from the frames written, and queues `process_recording_task` and `generate_proxy_task`. The browser sends its elapsed recording time, which the `capture_coverage` pipeline metric compares with the stored audio.
 
-A recording can be discarded while uploading, paused, queued or processing. Discard revokes the running task with `terminate=True`, deletes the recording's files and removes its row, so a requeued task finds nothing to process. Finished recordings go through the normal delete.
+A recording can be discarded while uploading, paused, queued or processing. Discard revokes the running task with `terminate=True`, deletes the recording's files, including its documents, and removes its row, so a requeued task finds nothing to process. Finished recordings go through the normal delete.
 
 ### Chunk Registration
 

@@ -56,6 +56,8 @@ class _RestoreState:
     # Final paths already claimed by a pending move, so two restored rows cannot both
     # try to land on the same file.
     claimed_destinations: Set[str] = field(default_factory=set)
+    # Files of the documents an overwrite deleted along with their recordings.
+    replaced_document_paths: List[str] = field(default_factory=list)
     # Progress sink, so a Celery-hosted restore can stream status to its result backend.
     progress_callback: Any = None
     # table_name -> reason -> count, surfaced to the operator when the restore finishes.
@@ -88,6 +90,12 @@ class _RestoreState:
         self.claimed_destinations.add(destination)
         self.pending_moves.append((staged, destination))
         return True
+
+    def release_moves(self, start: int) -> None:
+        """Drop the moves queued from index ``start`` on, freeing their destinations."""
+        for _, destination in self.pending_moves[start:]:
+            self.claimed_destinations.discard(destination)
+        del self.pending_moves[start:]
 
     def record_skip(self, table_name: str, reason: str) -> None:
         """Count one row the restore could not bring across, by table and reason."""
