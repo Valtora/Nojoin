@@ -89,7 +89,7 @@ export interface GlobalSpeakerUpdate {
   /**
    * Locks or unlocks the voiceprint without changing it. A locked voiceprint
    * is left as it is by renames, links, merges and automatic learning; only
-   * recalibrating and splitting the person change it.
+   * a force link, recalibrating and splitting the person change it.
    */
   is_voiceprint_locked?: boolean;
   title?: string | null;

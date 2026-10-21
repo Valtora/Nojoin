@@ -22,8 +22,7 @@ vi.mock("@/lib/api", () => ({
   updateGlobalSpeaker: (...a: unknown[]) => updateGlobalSpeaker(...a),
 }));
 
-const LOCKED_LINE =
-  "Locked: renames, links, merges and automatic learning leave it as it is.";
+const LOCKED_LINE = "Locked: only a force link, recalibrating or splitting changes it.";
 
 const person = (
   id: number,
@@ -101,12 +100,12 @@ describe("PersonModal voiceprint lock", () => {
         message: `Dana's voiceprint is ${locked ? "unlocked" : "locked"}.`,
       });
       expect(screen.getByText("Voiceprint Active")).toBeTruthy();
-      // The line saying what leaves it alone shows exactly while locked.
+      // The line saying what still changes it shows exactly while locked.
       expect(Boolean(screen.queryByText(LOCKED_LINE))).toBe(!locked);
     },
   );
 
-  it("says a locked voiceprint is left as it is", () => {
+  it("says what still changes a locked voiceprint", () => {
     render(modal(dana(true, true)));
 
     expect(screen.getByText(LOCKED_LINE)).toBeTruthy();

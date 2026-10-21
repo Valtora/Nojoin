@@ -916,7 +916,6 @@ async def test_voiceprint_link_applies_the_floor_and_the_drift_guard(
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("action", ["link_existing", "force_link"])
 @pytest.mark.parametrize(
     # Dana's voiceprint, the speaker's cosine to it, the people the speaker is
     # refused for before the link, the outcome, and the refusals after it.
@@ -928,9 +927,9 @@ async def test_voiceprint_link_applies_the_floor_and_the_drift_guard(
     ],
 )
 async def test_the_voiceprint_dialogs_link_leaves_a_locked_voiceprint_alone(
-    client, session_maker, action, case
+    client, session_maker, case
 ) -> None:
-    """Link and force-link take the rename's lock rule. Dana's locked
+    """The dialog's link takes the rename's lock rule. Dana's locked
     voiceprint stays as it is, and the guard still judges the link against
     it; a locked person with no voiceprint gets one from the link."""
     dana_voiceprint, cosine, refused_before, status, refused_after = case
@@ -952,12 +951,58 @@ async def test_the_voiceprint_dialogs_link_leaves_a_locked_voiceprint_alone(
 
     response = await client.post(
         f"/api/v1/speakers/recordings/{REC}/speakers/SPEAKER_00/voiceprint/apply",
-        json={"action": action, "global_speaker_id": 7},
+        json={"action": "link_existing", "global_speaker_id": 7},
     )
 
     assert response.json()["library_voiceprint"] == _outcome(status, 25.0)
     expected = PERSON if dana_voiceprint else pytest.approx(voice)
     assert await _person_voiceprint(session_maker, "Dana") == expected
+    assert await _refused_for(session_maker) == {"SPEAKER_00": refused_after}
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    # The speaker's cosine to Dana, the people it is refused for before the
+    # force link, the outcome, and the refusals after it.
+    "case",
+    [
+        pytest.param((0.75, 7, "folded", ()), id="like-dana-folded"),
+        pytest.param((0.65, None, "skipped_drift", (7,)), id="unlike-dana-refused"),
+    ],
+)
+async def test_force_link_overrides_a_lock_but_not_the_drift_guard(
+    client, session_maker, case
+) -> None:
+    """Force link is the user's explicit override of Dana's lock: a voice
+    like hers is folded into her locked voiceprint, and a voice unlike it is
+    still refused, with the verdict kept as for any link. She stays locked,
+    since a force link is a one-off, not an unlock."""
+    cosine, refused_before, status, refused_after = case
+    voice = _at_cosine(cosine)
+    await _seed(
+        session_maker,
+        speakers=[
+            {
+                "label": "SPEAKER_00",
+                "embedding": voice,
+                "seconds": 25.0,
+                "refused_for": refused_before,
+            }
+        ],
+        people=[{"id": 7, "name": "Dana", "embedding": PERSON, "locked": True}],
+    )
+
+    response = await client.post(
+        f"/api/v1/speakers/recordings/{REC}/speakers/SPEAKER_00/voiceprint/apply",
+        json={"action": "force_link", "global_speaker_id": 7},
+    )
+
+    assert response.json()["library_voiceprint"] == _outcome(status, 25.0)
+    expected = _blend(PERSON, voice, 0.4) if status == "folded" else PERSON
+    assert await _lock_and_voiceprint(session_maker, 7) == (
+        True,
+        pytest.approx(expected),
+    )
     assert await _refused_for(session_maker) == {"SPEAKER_00": refused_after}
 
 
