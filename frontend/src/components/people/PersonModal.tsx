@@ -1,7 +1,15 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { X, Plus, Users, Fingerprint, ArrowRight } from "lucide-react";
+import {
+  X,
+  Plus,
+  Users,
+  Fingerprint,
+  ArrowRight,
+  Lock,
+  LockOpen,
+} from "lucide-react";
 import Button from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
 import { GlobalSpeaker, PeopleTag } from "@/types";
@@ -12,6 +20,7 @@ import {
   getGlobalSpeakers,
   mergeSpeakers,
   deleteGlobalSpeakerEmbedding,
+  updateGlobalSpeaker,
 } from "@/lib/api";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import { useAnchoredPanel } from "@/components/ui/useAnchoredPanel";
@@ -26,6 +35,8 @@ interface PersonModalProps {
   ) => Promise<void>;
   onDelete?: (id: number) => void;
   onVoiceprintDeleted?: (id: number) => void;
+  /** The lock was changed and saved; the dialog stays open with its edits. */
+  onVoiceprintLockChanged?: (id: number, locked: boolean) => void;
 }
 
 export function PersonModal({
@@ -35,6 +46,7 @@ export function PersonModal({
   onSave,
   onDelete,
   onVoiceprintDeleted,
+  onVoiceprintLockChanged,
 }: PersonModalProps) {
   const { addNotification } = useNotificationStore();
   const [formData, setFormData] = useState<
@@ -70,6 +82,9 @@ export function PersonModal({
     [],
   );
   const [isDeletingVoiceprint, setIsDeletingVoiceprint] = useState(false);
+  // Saved on its own, at once, so it never waits on Save Person.
+  const [isVoiceprintLocked, setIsVoiceprintLocked] = useState(false);
+  const [isChangingLock, setIsChangingLock] = useState(false);
   const [confirmMerge, setConfirmMerge] = useState<{
     target: GlobalSpeaker;
   } | null>(null);
@@ -115,6 +130,7 @@ export function PersonModal({
           notes: person.notes || "",
           tag_ids: person.tags?.map((t) => t.id) || [],
         });
+        setIsVoiceprintLocked(Boolean(person.is_voiceprint_locked));
 
         // Load speakers for merge (excluding current person)
         getGlobalSpeakers()
@@ -269,6 +285,35 @@ interface TagNode extends PeopleTag {
     }
   };
 
+  const toggleVoiceprintLock = async () => {
+    if (!person) return;
+    const lock = !isVoiceprintLocked;
+
+    setIsChangingLock(true);
+    try {
+      const updated = await updateGlobalSpeaker(person.id, {
+        is_voiceprint_locked: lock,
+      });
+      const locked = Boolean(updated.is_voiceprint_locked);
+      setIsVoiceprintLocked(locked);
+      onVoiceprintLockChanged?.(person.id, locked);
+      addNotification({
+        type: "success",
+        message: locked ? "Voiceprint locked." : "Voiceprint unlocked.",
+      });
+    } catch (error: unknown) {
+      console.error("Failed to change the voiceprint lock:", error);
+      addNotification({
+        type: "error",
+        message: lock
+          ? "Failed to lock the voiceprint."
+          : "Failed to unlock the voiceprint.",
+      });
+    } finally {
+      setIsChangingLock(false);
+    }
+  };
+
   const filteredSpeakers =
     speakerSearch === ""
       ? availableSpeakers
@@ -417,18 +462,45 @@ interface TagNode extends PeopleTag {
                             ? "Speaker identification is enabled for this person."
                             : "This person cannot be automatically identified in recordings."}
                         </div>
+                        {person.has_voiceprint && isVoiceprintLocked && (
+                          <div className="text-xs text-contrast-helper">
+                            Locked: renames and automatic learning leave it as
+                            it is.
+                          </div>
+                        )}
                       </div>
                     </div>
-                    {person.has_voiceprint && (
-                      <button
-                        type="button"
-                        onClick={handleDeleteVoiceprint}
-                        disabled={isDeletingVoiceprint}
-                        className="text-danger-text hover:text-danger-text text-sm font-medium px-3 py-1.5 hover:bg-status-danger-bg rounded-md transition-colors"
-                      >
-                        {isDeletingVoiceprint ? "Deleting..." : "Delete"}
-                      </button>
-                    )}
+                    <div className="flex items-center gap-1">
+                      {/* Lock is offered only for a voiceprint; Unlock
+                          whenever there is a lock to clear. */}
+                      {(person.has_voiceprint || isVoiceprintLocked) && (
+                        <button
+                          type="button"
+                          onClick={toggleVoiceprintLock}
+                          disabled={isChangingLock}
+                          className="flex items-center gap-1.5 text-contrast-helper hover:text-foreground text-sm font-medium px-3 py-1.5 hover:bg-surface-card rounded-md transition-colors"
+                        >
+                          {isVoiceprintLocked ? (
+                            <LockOpen className="w-4 h-4" />
+                          ) : (
+                            <Lock className="w-4 h-4" />
+                          )}
+                          {isVoiceprintLocked
+                            ? "Unlock voiceprint"
+                            : "Lock voiceprint"}
+                        </button>
+                      )}
+                      {person.has_voiceprint && (
+                        <button
+                          type="button"
+                          onClick={handleDeleteVoiceprint}
+                          disabled={isDeletingVoiceprint}
+                          className="text-danger-text hover:text-danger-text text-sm font-medium px-3 py-1.5 hover:bg-status-danger-bg rounded-md transition-colors"
+                        >
+                          {isDeletingVoiceprint ? "Deleting..." : "Delete"}
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   {/* Merge Action */}

@@ -108,6 +108,8 @@ class GlobalSpeakerCreate(BaseDBModel):
 class GlobalSpeakerUpdate(BaseDBModel):
     name: Optional[str] = None
     color: Optional[str] = None
+    # Locks or unlocks the voiceprint; the voiceprint itself is left as it is.
+    is_voiceprint_locked: Optional[bool] = None
     # CRM Fields
     title: Optional[str] = None
     company: Optional[str] = None

@@ -658,6 +658,65 @@ async def test_a_link_refused_under_a_lock_stays_out_of_the_rebuilt_voiceprint(
     assert await _person_voiceprint(session_maker, "Dana") == pytest.approx(own)
 
 
+async def _lock_and_voiceprint(session_maker, person_id: int) -> tuple[bool, Any]:
+    async with session_maker() as session:
+        locked, embedding = (
+            await session.execute(
+                text(
+                    "SELECT is_voiceprint_locked, embedding FROM global_speakers "
+                    "WHERE id = :id"
+                ),
+                {"id": person_id},
+            )
+        ).one()
+    return bool(locked), json.loads(embedding) if embedding is not None else None
+
+
+@pytest.mark.anyio
+async def test_the_person_update_locks_and_unlocks_and_keeps_the_voiceprint(
+    client, session_maker, write_path
+) -> None:
+    """Saving Dana's other details leaves her lock as it was. Unlocking keeps
+    her voiceprint and lets a rename fold into it again; locking keeps it too
+    and stops the next one."""
+    voice = _at_cosine(0.75)
+    await _seed(
+        session_maker,
+        speakers=[
+            {"label": "SPEAKER_00", "embedding": voice, "seconds": 3.0},
+            {"label": "SPEAKER_01", "embedding": voice, "seconds": 3.0},
+        ],
+        people=[{"id": 7, "name": "Dana", "embedding": PERSON, "locked": True}],
+    )
+
+    async def rename(label: str) -> str:
+        response = await client.put(
+            f"/api/v1/speakers/recordings/{REC}",
+            json={"diarization_label": label, "global_speaker_name": "Dana"},
+        )
+        return response.json()[0]["library_voiceprint"]["status"]
+
+    saved = await client.put("/api/v1/speakers/7", json={"notes": "Chairs it."})
+    assert saved.status_code == 200
+    assert await _lock_and_voiceprint(session_maker, 7) == (True, PERSON)
+
+    unlocked = await client.put(
+        "/api/v1/speakers/7", json={"is_voiceprint_locked": False}
+    )
+    assert unlocked.status_code == 200
+    assert unlocked.json()["is_voiceprint_locked"] is False
+    assert await _lock_and_voiceprint(session_maker, 7) == (False, PERSON)
+
+    assert await rename("SPEAKER_00") == "folded"
+    folded = _blend(PERSON, voice, 0.3)
+    locked = await client.put("/api/v1/speakers/7", json={"is_voiceprint_locked": True})
+    assert locked.json()["is_voiceprint_locked"] is True
+    assert await _lock_and_voiceprint(session_maker, 7) == (True, pytest.approx(folded))
+
+    assert await rename("SPEAKER_01") == "skipped_locked"
+    assert await _person_voiceprint(session_maker, "Dana") == pytest.approx(folded)
+
+
 @pytest.mark.anyio
 @pytest.mark.parametrize(
     ("seconds", "status"),

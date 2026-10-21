@@ -42,12 +42,13 @@ export function describeLibraryVoiceprint(
         `Voiceprint not updated: this speaker sounds too unlike ${whose} ` +
         "saved voiceprint. Check that the name is right."
       );
+    // Unlocking keeps the voiceprint; the link is offered to it again only
+    // when the speaker is linked again.
     case "skipped_locked":
       return (
-        `Voiceprint not updated: ${whose} voiceprint is locked. To let it ` +
-        "learn again, delete it in the person's details under People; the " +
-        `next recording linked to ${who} with at least ${needed} s of clear ` +
-        "speech then saves a new one."
+        `Voiceprint not updated: ${whose} voiceprint is locked. To let this ` +
+        `speaker update it, choose Unlock voiceprint in ${whose} details ` +
+        "under People, then link the speaker again."
       );
     case "skipped_outdated":
       return (

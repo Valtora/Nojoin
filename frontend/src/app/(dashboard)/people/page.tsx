@@ -189,6 +189,15 @@ export default function PeoplePage() {
     fetchPeople();
   };
 
+  // Only the list: the open dialog keeps its own lock state and unsaved edits.
+  const handleVoiceprintLockChanged = (id: number, locked: boolean) => {
+    setPeople((prev) =>
+      prev.map((person) =>
+        person.id === id ? { ...person, is_voiceprint_locked: locked } : person,
+      ),
+    );
+  };
+
   // Batch Actions
   const handleBatchDelete = () => {
     setIsBatchDeleteConfirmOpen(true);
@@ -387,6 +396,7 @@ export default function PeoplePage() {
         onSave={handleSave}
         onDelete={handleOptimisticDelete}
         onVoiceprintDeleted={handleVoiceprintDeleted}
+        onVoiceprintLockChanged={handleVoiceprintLockChanged}
       />
 
       {personToRecalibrate && (

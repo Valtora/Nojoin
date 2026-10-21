@@ -350,6 +350,11 @@ async def update_global_speaker(
     if speaker_in.color is not None:
         speaker.color = speaker_in.color
 
+    # Only the lock: unlocking lets renames and automatic learning update the
+    # voiceprint again, and neither way changes it now.
+    if speaker_in.is_voiceprint_locked is not None:
+        speaker.is_voiceprint_locked = speaker_in.is_voiceprint_locked
+
     if speaker_in.title is not None:
         speaker.title = speaker_in.title
     if speaker_in.company is not None:
