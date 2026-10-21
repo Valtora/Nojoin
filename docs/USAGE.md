@@ -1,438 +1,342 @@
 # Nojoin User Guide
 
-This guide covers day-to-day use after Nojoin has been deployed and your account has been created.
-
-For deployment, administration, calendar provider setup, backup operations, and detailed capture troubleshooting, use the dedicated guides in the `docs` folder.
+This guide covers day-to-day use of Nojoin once it is deployed and you have an account. Deployment, administration, calendar setup, backups and capture troubleshooting have their own guides in this folder.
 
 ## First Run
 
 For a first test recording, follow [Make Your First Recording](GETTING_STARTED.md#5-make-your-first-recording). [CAPTURE.md](CAPTURE.md) lists the supported browsers and covers choosing what to share.
 
-## Tours And Onboarding
-
-Nojoin includes guided tours for first-time users.
-
-- The dashboard tour introduces navigation, recording, importing, capture setup, and settings.
-- The transcript tour introduces the recording detail view when a recording is opened for the first time.
-- Tours can be restarted later from the Help settings area.
+Guided tours introduce the dashboard, the recordings list and the transcript view the first time you open each. **Settings > Help > Restart tours** shows them again, and **Create it again** brings back the Welcome to Nojoin demo meeting if you deleted it.
 
 ## Dashboard
 
-The root route is the operational home surface for Nojoin.
+The dashboard holds:
 
-It brings together:
+- **Meet Now**, where **Start Meeting** begins live capture.
+- **Calendar**, a month grid marking the days that have events or recorded meetings.
+- **Agenda**, for the selected day or the viewed month.
+- **Task List**, for quick personal follow-ups.
+- **Processing**, while anything is still being processed.
+- **Recent Meetings**, once you have recordings.
 
-- **Meet Now** card for live browser capture.
-- **Calendar** month grid, showing which days carry events or recorded meetings.
-- **Agenda**, showing what is happening on the selected day or across the viewed month.
-- **Task List** for quick personal follow-up capture.
-- **Processing**, listing whatever the pipeline is still working on. It appears only while
-  something is in flight.
-- **Recent Meetings**, the latest ones with a click through to the detail view. It fills the height
-  of its column and scrolls, and appears only once you have recordings.
-
-The first four always render. The last two appear only when they have something to report.
-
-**Settings > Appearance > Density** controls spacing. Automatic tightens the layout on desktop windows around `1920x1080` and smaller, Comfortable and Compact apply one spacing at every window size, and Dense is a further step for mouse-and-keyboard use. On a touch screen Dense tightens spacing only, so touch targets do not shrink.
+**Settings > Appearance > Density** sets the spacing. **Automatic (by window size)** uses compact spacing on desktop windows up to 1920 by 1080 and comfortable spacing elsewhere, **Comfortable** and **Compact** use one spacing at every size, and **Dense** is tighter still for mouse and keyboard while keeping compact-sized controls on a touch screen.
 
 ### Calendar Surface
 
-- The agenda opens on today. Selecting a day in the month grid scopes the agenda to that day, and **Whole month** returns it to the full month.
-- The agenda shows synced calendar events and unlinked Nojoin recordings together. Nojoin recordings are orange; Google and Microsoft calendars keep their own colours.
-- In the current month the agenda starts at the next upcoming item, and **Show past events** expands earlier ones. Past months show their full history.
-- Clicking a timed event opens its details: time, calendar, location, join link, and linked recordings. A live event with a trusted meeting link shows **Join** directly.
-- Event times use your configured Nojoin timezone.
+- The agenda opens on today. Select a day in the month grid to show only that day, and **Whole month** to return to the month.
+- It lists synced calendar events with your unlinked Nojoin recordings, which are orange. Each calendar keeps its own colour.
+- In the current month the agenda starts at the next item, and **Show _n_ past events** adds the earlier ones. Past months show everything.
+- Click a timed event for its time, calendar, location, join link and linked recordings. A live event with a trusted meeting link shows **Join**.
+- Times use the timezone set in **Settings > Appearance**.
 
-Read [CALENDAR.md](CALENDAR.md) for connection and setup details.
+[CALENDAR.md](CALENDAR.md) covers connecting a calendar.
 
 ### Task List
 
-The Task List is a personal dashboard list for quick follow-up work.
-
-You can create, rename, complete, reopen, archive, delete, and schedule tasks. Active deadlines show a live time-remaining badge. Archived tasks disappear from the dashboard immediately, including tasks that were already completed.
+Create, rename, complete, reopen, archive and delete tasks, and give them deadlines. A task with a deadline shows a live time-remaining badge. Archiving a task removes it from the dashboard, whether or not it was completed.
 
 ## Tasks Workspace
 
-The **Tasks** page manages tasks more fully than the dashboard list:
+The **Tasks** page has **Open**, **Completed** and **Archived** views and a **Create Task** button. A task has a title, a body, a deadline, linked recordings and tags, using the same tags as recordings. **Archive** hides a task and **Restore** brings it back. **Delete** is permanent.
 
-- Select **Create Task** to open the task creation form when you need to add a richer task.
-- **Open** shows active, non-archived tasks.
-- **Completed** shows finished, non-archived tasks that can still be reopened.
-- **Archived** shows hidden tasks and lets you restore them to the active task surfaces.
-- Task cards support a title, body, deadline, permanent delete, direct recording links, and the same recording tag taxonomy used elsewhere in Nojoin.
+## Recordings List
 
-Delete remains permanent. Use archive when you want to hide a task without losing it.
+**Recordings** in the navigation lists your meetings, with **Archived** and **Deleted** views beside it.
+
+- **Search...** above the list matches meeting titles, tags and speaker names. Its filter button adds a date filter (a range, after or before) and a speaker filter.
+- **Tags** in the navigation hold your tags, which can nest. Select a tag to filter the list by it, drag a tag onto another to nest it, and right-click one to rename, add a sub-tag, promote or delete it. Tag a single meeting from its header.
+- Right-click a recording for **Rename**, **Retry Speaker Inference**, **Retry Processing**, **Show Recording Info**, **Archive** and **Delete**. An unfinished recording offers **Discard Recording** in place of **Retry Processing**.
+- **Archive** moves a recording to **Archived**. **Delete** moves it to **Deleted**, the bin, where **Restore** brings it back and **Delete Permanently** removes it and its audio for good. Recordings stay in the bin until you delete them permanently.
+- Ctrl-click (Cmd-click on a Mac) or Shift-click to select several recordings, then use the batch bar to **Add Tag**, **Archive**, **Delete**, **Restore** or **Permanently Delete** them.
 
 ## People Workspace
 
-The **People** page manages your shared speaker library:
+The **People** page is your speaker library: the people Nojoin can recognise across meetings, with their voiceprints and contact details.
 
-- Review people records and stored voiceprints in one place.
-- Search and filter the library when you need to find a known speaker quickly.
-- Organise people with reusable people tags.
-- Open batch editing and cleanup flows for broader speaker-library maintenance.
-- Delete a person to remove them from the library. Deletion demotes rather than erases: the shared record, its voiceprint, and its contact details are removed, while each of their meetings keeps the speaker under the same name as a recording-local speaker.
+- Search by name, email or company, and filter by people tags, which can nest like recording tags.
+- Select several people for **Batch Edit People** or to delete them together.
+- A person's menu has **Edit Details**, **Recalibrate Voiceprint** to rebuild their voiceprint from better samples, **Split / Unmerge Speaker** and **Delete Person**.
+- Deleting a person removes their record, voiceprint and contact details. Each of their meetings keeps the speaker under the same name, as a speaker of that meeting only.
 
 ## Live Recording
 
-Live recording is browser-native: shared tab, window or screen audio plus your microphone on supported desktop Chromium browsers, and the phone microphone only on Chrome for Android and iOS. [CAPTURE.md](CAPTURE.md) covers starting a recording, choosing what to share, and keeping the tab recording.
+**Start Meeting** on the dashboard begins a recording. Desktop Chromium browsers record the shared tab, window or screen audio together with your microphone, and Chrome on Android and iOS records the phone microphone only. [CAPTURE.md](CAPTURE.md) covers supported browsers, choosing what to share, and the **Pause**, **Resume**, **Stop** and **Discard** controls.
 
-While recording, the workspace shows the transport controls, a live waveform, the live transcript, your notes, and Meeting Edge. **Attach Docs** in the toolbar attaches documents while the meeting runs, and they are listed under your notes. When you press **Stop**, the transcript becomes pipeline progress.
+While recording, the page shows the recording controls, a live waveform, the live transcript, your notes and Meeting Edge. **Attach Docs** in the toolbar attaches documents while the meeting runs or is processing. After **Stop**, the page shows processing progress.
 
-A processed meeting has Transcript, Notes, Documents and Analytics tabs. The speaker panel sits beside them on desktop and opens from the meeting header's actions menu on a phone.
-
-### Pause, Resume, Stop, And Discard
-
-**Pause** keeps what has been uploaded, **Resume** reopens the share picker and continues the same recording, **Stop** finalises it and starts processing, and **Discard** deletes an unfinished recording, including one that is queued or processing, after asking you to confirm. To remove a meeting that has finished processing, use **Delete** instead.
-
-If the tab is closed or refreshed during capture, the recording is paused, and Nojoin asks you to resume it, stop and process it, or discard it before you start anything else. [CAPTURE.md](CAPTURE.md#pause-resume-stop-and-discard) describes this in full.
+**Discard** deletes an unfinished recording, including one that is queued or processing, after you confirm. To remove a finished meeting, use **Delete** in the recordings list. If the tab closes or reloads mid-recording, the recording pauses and Nojoin asks you to resume it, stop and process it, or discard it before you start anything else ([Paused Recording Lock](CAPTURE.md#paused-recording-lock)).
 
 ### Live Transcription
 
-While a meeting is being recorded, the recording page shows a **Live Transcript** panel. Sentences appear as they finalize, a few seconds behind the conversation, because transcription works on windows of audio rather than decoding word by word. The panel follows the newest line automatically; scroll up to read back and it stops following until you scroll to the bottom again or use **Jump to latest**.
+The **Live Transcript** panel shows each sentence a few seconds after it is spoken. It follows the newest line until you scroll up to read back; **Jump to latest** resumes following. The panel is read-only, and the full transcript replaces it once processing finishes.
 
-The panel is read-only. Live text is provisional and is corrected by the authoritative processing pass when the recording is finalized, so you cannot edit it during capture.
-
-Live text is not attributed to speakers. Speaker identification runs when the recording is processed, so names, and any merging of speakers who were split during the meeting, appear only in the final transcript. Where Nojoin can tell which audio source a line came from it labels the line **Microphone** or **Shared audio**, and it labels nothing when people were talking over each other or the source was unclear. These labels describe where the audio came from, not who was speaking: if you are recording an in-person meeting without sharing tab audio, everyone in the room arrives on the microphone channel.
-
-The live lane also feeds Meeting Edge and speeds up later processing. The full, corrected transcript appears once the recording has been finalized and the authoritative processing pass has produced review-ready output.
+Live lines carry no speaker names, because speakers are identified when the recording is processed. A line is labelled **Microphone** or **Shared audio** when Nojoin can tell which source carried it. These labels name the audio source, not the person: in a room with no shared tab audio, everyone arrives on the microphone ([CAPTURE.md](CAPTURE.md#what-nojoin-captures)).
 
 ### Meeting Edge
 
-Meeting Edge uses the recent live transcript window, an internally maintained rolling summary of the meeting so far (decisions, open threads, and action items), its own previous suggestions (so guidance stays fresh instead of repeating), your optional focus text, your manual notes, and linked calendar context when available.
+Meeting Edge offers live guidance under **Questions to Ask**, **Points to Raise** and **Technical Context**. It works from the recent transcript, your notes, the linked calendar event and the [glossary](#glossary). Write a goal in **Guide Meeting Edge** to steer it. The **Technical Context** slider, on the recording page or in **Settings > Notes and live assistance**, sets whether it explains fewer or more terms.
 
-It can surface live questions, missed points, and quick concept help during a meeting. In **Settings > Notes and live assistance**, everyone can move their own **Technical context** slider towards fewer or more explained terms. Administrators turn Meeting Edge on or off for the whole installation, and can choose a separate Meeting Edge model, in **Settings > AI providers**; left empty, Nojoin uses the default model.
+An administrator can turn Meeting Edge off for the installation, or give it its own model, in **Settings > AI providers**.
 
 ## Importing Recordings
 
-You can import existing audio files with **Import Audio** at the top of the **Recordings** list. It is unavailable while a paused recording is waiting for you to resume, stop or discard it.
+**Import Audio** at the top of the **Recordings** list imports an existing file, with an optional meeting name, date and **Max Speakers**. It is unavailable while a paused recording is waiting for you to resume, stop or discard it.
 
-Supported formats include WAV, MP3, M4A, AAC, WebM, OGG, FLAC, MP4, WMA, and OPUS, and the video and media containers MKV, MKA, MOV, AVI, M4V, TS, MTS, MPG, MPEG, and 3GP. Nojoin keeps only the audio of an imported file. A file with no audio track is refused: the import shows as failed and nothing of the file is kept.
-
-An import goes through the same final processing as a live recording.
+Nojoin accepts WAV, MP3, M4A, AAC, WebM, OGG, FLAC, MP4, WMA and OPUS, and the media containers MKV, MKA, MOV, AVI, M4V, TS, MTS, MPG, MPEG and 3GP. It keeps only the audio. A file with no audio track is refused: the import shows as failed and nothing of the file is kept. An import is then processed like a live recording.
 
 ### Retry Processing
 
-If a recording fails or you want to rebuild the generated meeting artifacts, use **Retry Processing**.
+**Retry Processing**, in a recording's right-click menu in the recordings list, opens **Reprocess at higher quality**. Choose the transcription engine for this recording (Whisper, Parakeet or Canary), the Whisper model size if you chose Whisper, and optionally a new **Max Speakers**. Reprocessing replaces the transcript, the speaker labels and the AI meeting notes, so manual edits to those are lost. Your own notes, tags and documents are kept.
 
-Retry Processing clears transcript-derived generated state, preserves recording metadata, tags, uploaded documents, and user-authored notes, then records a fresh processing timing sample for future ETA calculations.
-
-If transcription itself fails, the recording is marked **Error** instead of finishing with an empty transcript, a notification says so, and the transcript tab explains what went wrong. Meeting notes cannot be generated for it until it is reprocessed. When the GPU ran out of memory the message says so; Nojoin has already retried once after freeing memory by then, so free GPU memory, or have an administrator choose a smaller transcription model for the installation under **Settings > Transcription**, before using Retry Processing. A meeting in which nobody spoke still finishes normally, and its transcript tab says that no speech was detected.
-
-### Reprocess A Recording
-
-From the recording detail page you can choose **Reprocess at higher quality**. This re-runs the full pipeline after an administrator changes the transcription engine or model, which apply to the whole installation, under **Settings > Transcription**.
-
-Reprocessing clears and rebuilds transcript and generated artifacts while preserving metadata, tags, documents, and user-authored notes.
+If transcription fails, the recording is marked **Error**, a notification says so, and the transcript tab shows the reason. When the GPU or the server ran out of memory, free some memory or retry with a smaller model. Notes cannot be generated until the recording is reprocessed. A meeting in which nobody spoke finishes normally, and its transcript tab says no speech was detected.
 
 ## Transcript And Playback
 
-Within a processed recording you can:
+A processed meeting has **Transcript**, **Notes**, **Documents** and **Analytics** tabs. On desktop the **Speakers** and **Chat** panels share a resizable column beside them; on a phone, **Speakers** is in the header's actions menu. The header also holds the meeting's tags and its linked calendar event. The panels and the recordings list collapse from their headers and stay as you left them.
 
-- Play the aligned web proxy.
-- Follow synced transcript highlighting.
-- Click transcript text to seek playback.
-- Edit transcript text and speaker assignments.
-- Export any combination of the meeting notes, the analytics and the transcript as one PDF, Word or plain-text file. See [Exporting A Meeting](#exporting-a-meeting).
-- Export the recording's audio as MP3. The option is unavailable when the recording has no audio, for example after a restore from a backup taken without it. While the playable copy is still being prepared, the export asks you to try again shortly.
+In the transcript:
+
+- Playback highlights the current line, and the play button beside a line's timestamp plays from there.
+- Click a line's text to edit it. Click a speaker name to reassign that line or the whole transcript, and double-click it to rename the speaker.
+- The toolbar has **Undo**, **Redo**, **Search**, **Find & Replace** and export.
+- **Low confidence** marks a line whose speaker Nojoin is unsure of and nobody has set by hand.
+
+**Export** saves the notes, analytics and transcript as one PDF, Word or text file, or the audio as MP3 ([Exporting A Meeting](#exporting-a-meeting)).
+
+A recording made by a much older version can refuse transcript and speaker edits until it is reprocessed. Playback, the transcript and export still work.
 
 ### Exporting A Meeting
 
-**Export** on a recording opens a dialog with three parts to include, in any combination: the meeting notes, the analytics and the transcript. The file always lists them in that order. Choose PDF, Word (DOCX) or plain text, or export the audio on its own as MP3.
+**Export** opens a dialog. Tick any of **Meeting notes**, **Analytics** and **Transcript**, which the file always lists in that order, and choose **PDF (.pdf)**, **Word (.docx)** or **Text (.txt)**. **Export audio** saves the recording's audio as MP3 instead. It is unavailable when the recording has no audio, for example after a restore from a backup taken without it, and asks you to try again shortly while the playable copy is still being prepared.
 
-- **PDF and Word files open on a Nojoin letterhead**: the logo and name, then the meeting title, its date and length in your own timezone, and who spoke. Later pages carry the meeting title in a running header, and every page has a footer with the page count. Word files embed the Geist typeface, so they look the same on a computer that does not have it installed.
-- **Analytics are laid out as the Analytics tab shows them**, with the same figures, readings and charts. The explanations the tab keeps behind its **How this is measured** links are printed in small type under each section, because a reader of the file cannot click through to them. A part that has not been measured or analysed yet says so and names the button that runs it: exporting never starts a measurement or spends AI quota. Analytics can be exported once the meeting has finished processing.
-- **Speakers keep their colours.** A person who is blue in the app is blue in the export's charts and transcript. A name whose colour is too light to read as text, such as yellow, is printed in a darker shade of the same colour.
-- **Plain-text files keep the notes as the Markdown they are stored in**, with tables padded so their columns line up, and give the figures a chart plots instead of the chart.
+- **PDF and Word files** open on a Nojoin letterhead with the meeting title, its date in your timezone, its length, and who spoke. Later pages carry the title in a running header, and every page has a footer with the page count. Word files embed their typeface, so they look the same on any computer.
+- **Analytics** are laid out as on the Analytics tab, with each section's explanation printed beneath it. A part not yet measured or analysed says so and names the button that runs it: exporting never starts a measurement or uses AI quota. Analytics can be exported once processing has finished.
+- **Speakers keep their colours** in charts and the transcript. A colour too light to read as text, such as yellow, is printed in a darker shade.
+- **Text files** keep the notes as Markdown, with table columns padded to line up, and list a chart's figures in place of the chart.
 
-Exported transcripts carry a `[MM:SS]` timestamp and the resolved speaker name on every line, in all three formats, so an export stays navigable against the audio without a separate subtitle file.
-
-An administrator can turn the Nojoin branding off for the whole installation; see [Exported Files](ADMIN.md#exported-files).
-
-Historical recordings carried forward from before the unified pipeline cutover may open in a read-only compatibility state. Playback, transcript viewing, and export remain available, but transcript or speaker edits require explicit reprocess first.
+Every exported transcript line carries a `[MM:SS]` timestamp and the speaker's name, in all three formats. An administrator can turn the Nojoin branding off ([Exported Files](ADMIN.md#exported-files)).
 
 ### Who Edited A Line
 
-An edited utterance carries a small label. `Edited` means the line was changed by hand in the web app. `AI corrected text` or `AI corrected speaker` means an assistant connected through the MCP connector made that change, so a correction an assistant made is never mistaken for one you made yourself. The labels survive reprocessing, and clearing an utterance's edit lock clears them along with it.
-
-Edits made before this labelling existed show as `Edited`, because there is no record of which surface made them. Recordings in the read-only compatibility state above also show `Edited` only, since the connector cannot edit them at all.
-
-Naming a speaker is disclosed differently, because it relabels every line that speaker holds. A speaker an assistant named carries a single `AI named` label in the speaker panel rather than a label on each utterance.
+A line whose text was changed by hand in the web app is marked `Edited`. `AI corrected text` and `AI corrected speaker` mark changes an assistant made through the [MCP connector](MCP.md), and a speaker an assistant named shows `AI named` in the speaker panel. Edits made before Nojoin recorded where they came from show as `Edited`.
 
 ## Speaker Management
 
-Nojoin maintains a global speaker library across recordings.
+The speaker panel lists the meeting's speakers. Right-click one for **Rename / Assign**, **Merge into...**, **Split / Unmerge Speaker**, **Create Voiceprint**, **Add to People** and **Delete**.
 
-Common workflows include linking an unknown in-recording speaker to an existing global speaker, promoting a recording speaker into the People library, creating or updating voiceprints, recalibrating voiceprints from better samples, and merging duplicate speakers.
+- **Create Voiceprint** saves the speaker's voice and offers to link it to a person in your library, create a new person, or keep it to this meeting.
+- **Add to People** promotes the speaker into your People library.
+- **Delete** marks the speaker's lines as unknown. A person in your library stays there.
 
-Inferred speaker names from final processing and manual retry flows are applied automatically to speakers that do not already have a trusted name. Without an AI provider, a name is inferred only from a self-introduction whose name is capitalised, such as "I'm Priya", so a transcript in lowercase yields no inferred name. A line that opens with the name, such as "Priya here", counts only when the recording is linked to a calendar event that lists that person, because at the start of a line "Click here" looks the same. Manual speaker edits are authoritative: renaming, merging, promoting, or deleting a speaker always overrides inferred names, and speakers you have already named are never renamed by inference.
+When processing finishes, Nojoin names speakers that have no name yet, and **Retry Speaker Inference** in the recordings list runs this again. With an AI provider it reads the meeting; without one, it uses only self-introductions with a capitalised name, such as "I'm Alice", so a lowercase transcript gets no names. Inference never renames a speaker you have named, and a rename, merge, promotion or deletion you make always wins.
 
-Renaming a speaker updates the transcript and the AI meeting notes together, so a meeting does not end up calling the same person two different things. The transcript resolves names at read time and so is always current; the notes are rewritten in place, matching the previous name only where it stands as a whole word. Your own notes are never rewritten. Because the notes are prose, a display name that is also an ordinary phrase will be replaced wherever it appears, so prefer regenerating the notes after renaming a speaker whose old name was not a personal name.
+Renaming a speaker updates the transcript and the AI meeting notes; your own notes are left alone. The notes change wherever the old name appears as a whole word, so if the old name was an ordinary phrase, regenerate the notes after renaming.
 
 ### Undoing An Automatic Merge
 
-Processing sometimes joins two of the clusters speaker detection found into one speaker, because their voiceprints match. When that is wrong, the surviving speaker's card in the speaker panel lists each cluster that was merged in, with how many lines it holds, and an **Undo merge** button beside it. Undoing gives those lines back to a speaker of their own, named `Speaker N` until you rename it, and leaves every line you had already assigned by hand where you put it.
+Processing sometimes merges two detected voices into one speaker because they sound alike. When that is wrong, the surviving speaker's card in the speaker panel lists each voice merged in, with its line count, beside an **Undo merge** button. Undoing gives those lines back to a speaker of their own, named `Speaker N` until you rename it, and leaves every line you assigned by hand where you put it.
 
-Only merges made by processing are listed. A merge you made yourself marks its lines as your edits, so undo one of those with **Split / Unmerge Speaker** or by reassigning lines. Recordings processed by an earlier version did not keep the clusters, so for those **Retry Processing** is the way back.
-
-Processing never merges a cluster into a speaker it recognised from your People library unless the cluster also sounds like that person's saved voiceprint. A cluster that does not is left as its own `Speaker N`. If it was the same person after all, merge the two in the speaker panel.
+Only merges made by processing are listed. To undo a merge you made yourself, use **Split / Unmerge Speaker** or reassign the lines. Recordings processed by versions that did not keep this record need **Retry Processing** instead.
 
 ### Limiting The Number Of Speakers
 
-Speaker detection is automatic, and that is the default. Occasionally a long meeting comes back split into more speakers than there were people in the room, usually when someone's audio changes partway through.
+Speaker detection is automatic. If a long meeting comes back with more speakers than there were people, usually because someone's audio changed partway through, set **Max Speakers** (1 to 50) for that recording. Leave it empty to auto-detect.
 
-The optional **Maximum speakers** field sets an upper bound for a single recording. Leave it empty for auto-detect.
+- **Live recording**: the field sits with the recording controls and stays editable throughout. The value when you press **Stop** is the one used, so raise it before stopping if someone joined unannounced.
+- **Import**: set it in the import dialog.
+- **Reprocess**: **Retry Processing** accepts a new value. It rebuilds the transcript too, which clears names you set by hand on that recording.
 
-- **Live recording.** The field sits with the recording controls and stays editable for the whole meeting. Speaker detection runs when you stop, so the value present at that moment is the one applied. If someone joins unannounced, raise it before stopping.
-- **Import.** Set it in the import dialog alongside the meeting name and date.
-- **Reprocess.** Reprocessing accepts a new value, so an already-processed meeting can be corrected without re-recording it. Note that reprocess rebuilds the transcript too, and clears speaker names you set by hand on that recording.
-
-It is an upper bound, not an exact count. Setting 4 for a meeting with 3 speakers still returns 3. This is deliberate: forcing an exact count would split one person into two whenever the number is too high, which is the problem the field exists to solve. Setting the value **lower** than the real number of participants will merge people together, so when in doubt, guess high or leave it empty.
+It is an upper bound: 4 for a three-person meeting still returns 3. A value below the real number of people merges people together, so when in doubt, guess high or leave it empty.
 
 ### Tuning Speech Detection And Speaker Separation
 
-The defaults suit most meetings. Large meetings are harder: quiet or distant voices can be muted as noise before they are transcribed, and people who say one or two things can be folded into someone else. **Settings > Recording > Advanced > Speech and speaker tuning** lets you adjust the values behind both for your own recordings.
+The defaults suit most meetings. In large ones, quiet or distant voices can be dropped as noise, and people who say only a word or two can be folded into someone else. **Settings > Recording > Advanced > Speech and speaker tuning** adjusts this for your own recordings.
 
-Every field starts empty, which means inherit: your installation's value if an administrator set one, otherwise the default shown in the field. A value saved earlier that is no longer accepted, for example after an upgrade narrowed its range, also shows as empty, but until the page next saves it uses the shipped default rather than your installation's value. **Reset to defaults** empties them all again. Changes apply to recordings processed after the change, and to any recording you reprocess; finished transcripts are not rewritten.
+Every field starts empty, meaning inherit: your installation's value if an administrator set one, otherwise the default shown. A saved value that is no longer accepted, for example after an upgrade narrowed its range, also shows as empty, but until the page next saves it uses the shipped default. **Reset to defaults** empties every field. Changes apply to recordings processed or reprocessed afterwards.
 
-- **Speech detection threshold** (default 0.5, 0.15 to 0.90). How confident voice activity detection must be before audio counts as speech. Lower it if quiet speech goes missing from transcripts; raise it if background noise turns into words. The live transcript uses it too, even when voice activity detection is switched off for processing.
-- **Word end padding** (Parakeet and Canary only, default 0.2 seconds, 0.05 to 0.80). How long a word lasts when a pause follows it. A longer word is more likely to overlap its speaker's turn, which helps a short reply land on the right person. It also keeps a slightly longer pause from starting a new segment. Whisper ignores it.
-- **Phantom speaker filter**. A detected speaker with no more than **Max speech** seconds (default 3) and no more than **Max segments** (default 3) is checked against the others. If it sounds like no one, below the **Non-speech floor** (default 0.35), it is treated as noise and its audio given to the nearest speaker. If it sounds like an existing speaker, at or above the **Merge similarity** (default 0.60), it is merged into them. In between, it is kept as a brief speaker. To keep more brief speakers, lower the two limits or raise the merge similarity. Setting either limit to 0 turns the filter off. The floor must stay below the merge similarity; for a field you leave empty, that means your installation's value, which the error names.
-- **Single-word flip smoothing**. A word no longer than **Max word length** (default 0.45 seconds), within **Max gap** (default 0.25 seconds) of the words either side, is given back to the speaker on both sides of it. This tidies diarization jitter, but it can also erase a one-word interjection. Lower the values to keep more of them; a max word length of 0 turns smoothing off.
+| Setting | Default | Range | Effect |
+| --- | --- | --- | --- |
+| **Speech detection threshold** | 0.5 | 0.15 to 0.90 | How confident voice activity detection must be before audio counts as speech. Lower it if quiet speech goes missing; raise it if background noise turns into words. The live transcript uses it too, even with voice activity detection off. |
+| **Word length cap (Parakeet)** | 0.4 s | 0.2 to 0.45 | The longest a Parakeet word lasts; a word also ends where the next one starts. Raise it if short replies land on the wrong speaker; lower it if the last word of a sentence goes to whoever speaks next. Canary and Whisper ignore it. |
+| **Phantom speaker filter**: **Max speech (seconds)**, **Max segments** | 3, 3 | 0 to 10, 0 to 20 | A speaker under both limits is checked against the others. 0 in either turns the filter off. |
+| **Phantom speaker filter**: **Non-speech floor**, **Merge similarity** | 0.35, 0.60 | 0 to 0.95, 0.05 to 1 | A checked speaker below the floor is treated as noise and its audio given to the nearest speaker; at or above the merge similarity it joins the closest speaker; in between it is kept. The floor must stay below the merge similarity, and the error names your installation's value when it comes from a field you left empty. |
+| **Single-word flip smoothing**: **Max word length (seconds)**, **Max gap (seconds)** | 0.45, 0.25 | 0 to 2, 0 to 1 | A word this short, this close to its neighbours, goes to the speaker on both sides of it. This tidies speaker jitter but can erase a one-word interjection. Lower the values to keep more; a max word length of 0 turns it off. |
+
+To keep more brief speakers, lower the phantom filter's limits or raise its merge similarity. The same **Advanced** block has **Voice activity detection**, which filters silence and noise before transcription and can be turned off if quiet speech is cut off, and **Speaker separation**, which you can turn off for single-speaker recordings to speed up processing.
 
 ### When Voiceprints Need Rebuilding
 
-Voiceprints are only comparable with others made the same way. When an upgrade improves how they are extracted, previously saved ones stop contributing to automatic identification until they are rebuilt from the original audio.
+When an upgrade changes how voiceprints are made, Nojoin rebuilds your saved voiceprints from the original audio in the background, a few meetings at a time. There is nothing to press. Until a voiceprint is rebuilt it is not used for automatic identification, so recognition can be weaker for a while after such an upgrade.
 
-**This happens on its own.** Nojoin checks periodically and rebuilds affected voiceprints from the original audio in the background, a few meetings at a time so the work does not compete with recording or processing. There is nothing to enable and no button to press. A large library repairs itself over several passes rather than all at once, so identification may stay degraded for a while after an upgrade before returning to normal.
-
-Not every voiceprint can be rebuilt. Some belong to meetings whose audio has been removed, and others belong to a speaker who no longer has any speech in the transcript, which can happen after a meeting is reprocessed and that speaker's turns are attributed elsewhere. Neither can ever be re-extracted, so those are cleared rather than retried forever. A cleared voiceprint was already unusable for automatic identification, so nothing that was working is lost. The person and the meeting speaker are kept, so you can still link them by hand or save a new voiceprint from a later meeting.
+A voiceprint that cannot be rebuilt, because its meeting's audio was removed or its speaker no longer has any speech in the transcript, is cleared. The person and the meeting's speaker remain, so you can link them by hand or save a new voiceprint from a later meeting.
 
 ## Notes, Chat, Documents, And Search
 
-Processed recordings can include Markdown notes, AI-generated meeting notes, meeting chat, uploaded documents, and transcript/document search.
-
-- **Analytics** reports the meeting's speaking dynamics, measured from the transcript, plus an optional AI reading of what was discussed and who owned each decision.
-- **Notes** are stored with the recording and can be edited after processing.
-- **Generate Notes** runs a notes-only AI pass when AI is configured.
-- **Meeting Chat** answers questions from the transcript, notes, and linked documents. It reads the transcript with your edits and speaker names, without the unattributed lines (such as a removed speaker's) that the transcript view hides.
-- **Documents** can be uploaded to support meeting context, meeting notes, and later search.
-- **Search** spans recordings, transcript text, notes, tags, and document content where available.
-
-On desktop, the Speakers and Chat panels share a resizable column beside the transcript. Each collapses from its header, the recordings list collapses too, and these choices persist across visits.
+- **Notes** holds the AI meeting notes, which you can edit. **Generate Notes** (or **Regenerate Notes**) writes them again when AI is configured, overwriting your edits. Notes you type during the meeting are fed into the generated notes and kept when you reprocess.
+- **Meeting Chat** answers questions from the transcript, with your edits and speaker names, the notes and the meeting's documents. **Context** in the chat header adds meetings with the tags you choose.
+- **Documents** holds files attached to the meeting, which the notes and Meeting Chat draw on.
+- **Analytics** reports how the conversation went, measured from the transcript and audio, with an optional AI reading of what was discussed.
+- **Search** in the recordings list and **Search** and **Find & Replace** in the transcript are covered under [Recordings List](#recordings-list) and [Transcript And Playback](#transcript-and-playback).
 
 ### Analytics
 
-The **Analytics** tab sits beside Transcript, Notes, and Documents on a processed meeting. It answers how the conversation actually went: who held the floor, how quickly people took it from each other, how much they talked over each other, and how the balance shifted through the meeting. The evidence behind every figure and threshold on the tab is written up in [ANALYTICS_EVIDENCE.md](ANALYTICS_EVIDENCE.md).
+The **Analytics** tab appears once a meeting has finished processing. Everything on it except [What Was Discussed](#what-was-discussed) is measured from the transcript's timings or the audio, with no AI, so it works on every meeting in your library and on an installation with no AI provider. [ANALYTICS_EVIDENCE.md](ANALYTICS_EVIDENCE.md) sets out the evidence behind each figure.
 
-Most of the tab is measured from the transcript's own timings or the audio. Nothing in those parts is generated by AI, so they work on an installation with no AI provider configured at all, and they are available on every meeting already in your library rather than only on meetings recorded from now on. The tab appears once a meeting has finished processing: speakers are separated when a recording is finalised, so a meeting still recording has no speaker attribution to measure.
+The tab shows:
 
-One section at the bottom, [What Was Discussed](#what-was-discussed), is an AI reading rather than a measurement. It is optional, off until you ask for it, and sits on its own panel labelled **Read by AI, not measured** so it is never mistaken for the measured sections above it.
+- **Speaking time**, **Speakers**, **Silence** and **Talked over** totals.
+- **Who spoke**: each person's share of the speaking time.
+- **Who spoke when**: speaking time per speaker across the meeting.
+- **How the conversation moved**: turns, median and longest turn, instant handovers and reply times. Select a longest turn to play the meeting from there.
+- **Talking over each other**: how much of the meeting had overlapping speech, measured from the audio, and where it clustered.
+- **How people spoke** and **What was discussed**, below.
 
-What it shows:
+Each figure has a one-line reading, and a collapsed note under each section explains how it was measured. Speakers keep the colours they have in the transcript and speaker panel.
 
-- **Speaking time, speakers, silence, and how much of the meeting was people talking over each other.**
-- **Who spoke**, as a share of everyone's speaking time.
-- **Who spoke when**, showing the balance across the length of the meeting. A meeting where one person led the first half and another led the second reads very differently here from an evenly split one, though both show the same overall share.
-- **How the conversation moved**: turns taken, median and longest turn, how often each person took the floor the instant it opened, and how long they leave before replying when there is a gap to measure. Selecting a longest turn plays the meeting from that point, so any figure can be checked against the audio.
-- **Talking over each other**, measured from the audio itself once the meeting has been measured: at least how much of the meeting was overlapping speech, and where it clustered. The figure is a floor. The detection model finds roughly 70 to 90% of overlapping speech, and every setting that finds more also counts overlap that was not there, so Nojoin reports the lower bound ([ANALYTICS_EVIDENCE.md](ANALYTICS_EVIDENCE.md)).
+Reading the figures:
 
-Everyone keeps the colour they have everywhere else in the meeting, so the person who is blue in the transcript is blue in every chart here; changing a speaker's colour in the speaker panel changes it here too.
-
-Each figure carries a short line saying what it means, and the longer explanation of how it was arrived at sits under a **How this is measured** link beneath the section it belongs to. Nothing is hidden that changes what a number claims: the caveats that qualify a figure directly, such as overlapping speech being a floor rather than a total, stay in the sentence that reports it.
-
-Three things are worth understanding about the numbers.
-
-**Shares are of speaking time, not of the meeting.** When two people talk at once, that time counts for both of them, so the shares add up to 100% of the speech rather than 100% of the meeting's length. Silence is reported separately.
-
-**Reply times are honest about what timestamps can measure.** An *instant handover* is taking the floor within a quarter of a second of the previous speaker stopping — quicker than transcript timing can resolve, and usually a reply prepared while the other person was still talking, so it is counted rather than timed. The reply-time median covers gaps long enough to measure; a turn taken after more than a few seconds of silence is a fresh start, not a reply, and is left out. Differences under a quarter of a second are noise.
-
-**There are no interruption counts, on purpose.** The transcript writes speech down one line at a time, so it cannot represent two people talking at once; and working out from a single recording *who* cut across *whom* — and whether it was an interruption rather than agreement or encouragement — is not reliable enough to attach to a named colleague. What Nojoin measures instead is overlapping speech itself, from the audio: how much, as a floor (detection can miss overlap but never invents it), and where in the meeting. Nobody is named, and that is the point.
+- **Shares are of speaking time, not of the meeting.** Time when two people talk at once counts for both, and silence is reported separately.
+- **An instant handover** is taking the floor within a quarter of a second of the previous speaker stopping. It is counted, not timed. Reply times cover the longer gaps; a turn taken after more than a few seconds of silence counts as a fresh start and is left out.
+- **Overlapping speech is a floor.** The detector finds most of it but not all, so the figure reads "at least".
+- **There are no interruption counts.** Who cut across whom cannot be told reliably from one recording, so Nojoin reports overlap without naming anyone.
 
 #### How People Spoke
 
-Alongside the measured conversation figures, Nojoin can measure **delivery**: each person's speaking pace in words per minute, how high their voice sat, how much it moved (in semitones, so a low voice and a high voice are compared fairly), and how often they paused inside their own turns.
+Delivery is each person's pace in words per minute, how high their voice sat, how much it moved in semitones, and how often they paused within their own turns. It reads the audio. New meetings are measured when processing finishes; for an older one, **Measure delivery** measures delivery and overlapping speech.
 
-This one reads the meeting's audio, so it is done on request rather than for every meeting. Select **Measure delivery** on the Analytics tab; the same action also listens for overlapping speech. Meetings recorded after these features were added have both measured automatically when processing finishes; older meetings offer the button. A meeting whose transcript you have edited since it was measured is re-measured the next time you open its Analytics tab, so the figures match the text you corrected; turn **Re-measure delivery after edits** off under Settings > Recording to keep the old figures until you press the button yourself. When an upgrade improves how delivery is measured, Nojoin re-measures previously measured meetings by itself in the background, a few at a time — figures from different measurement methods are not comparable, so this is maintenance Nojoin owes its own data, like voiceprint rebuilding.
+After you edit a transcript, its delivery figures are re-measured the next time you open the Analytics tab. Turn off **Re-measure delivery after edits** under **Settings > Recording** to keep the old figures until you choose **Measure again**. When an upgrade changes how delivery is measured, Nojoin re-measures older meetings in the background.
 
-Each figure carries a short reading beside it so you do not have to know what 197 words a minute means. The pace words are anchored on measured recordings of English speech rather than the oft-quoted "conversation runs at 120 to 150 words a minute", which describes a different way of counting: by the measure Nojoin computes, recorded conversation sits around 160 to 200 words a minute, narration and presentations slower, and the band edges are pinned to published corpus figures ([the evidence note](ANALYTICS_EVIDENCE.md) lists them). Treat the words as a rough guide for meetings held in languages other than English — speaking rates in words are not comparable across languages. Pitch movement and pausing have no such yardstick — the same expressive range measures wider on a high voice than on a low one — so those are compared with the other people in the same meeting, and someone who barely spoke gets no comparison at all. Pauses are shown as a rate as well as a count, so a long contribution does not read as a hesitant one. Pitch height is deliberately left undescribed: that is a property of somebody's voice rather than of how they used it.
+- Pace is read as deliberate, measured, conversational, brisk or fast. The bands come from English speech, so treat them as rough for other languages.
+- Pitch movement and pausing are compared with the other people in the same meeting, and someone who barely spoke gets no comparison. Pitch height gets no reading.
+- A speaker linked to a person in your People library, with at least three measured meetings, gets a note when this meeting departs from their usual figures, and the note gives the number of meetings behind it.
+- Loudness is not shown, because it reflects each person's microphone and connection as much as their voice.
+- Someone without enough uninterrupted speech is left out.
 
-**Where Nojoin has measured enough of someone's meetings, it also compares them with themselves.** A speaker linked to a person in your People library, with at least three measured meetings behind them, gets a note when this meeting departs from their own usual figures — "faster than their usual across 5 meetings". The meeting count is always shown, because three meetings of history and thirty are different claims. This is the honest version of "a normally animated speaker was flat today": a comparison of measured delivery with measured delivery, not a guess about how anyone felt.
-
-**Delivery describes how someone spoke, not how they felt.** There is no emotion detection in Nojoin, and these numbers are not sentiment, mood, or engagement scores. Someone speaking quickly and loudly may be enthusiastic, rushed, or annoyed, and nothing here can tell you which. They are useful for noticing that one person consistently speaks twice as fast as everyone else, or that a normally animated speaker was flat in a particular meeting, and for nothing stronger than that.
-
-Two limits worth knowing:
-
-- **Loudness is only compared when it can be.** On a call, someone in your room arrives through your microphone and everyone else arrives through the meeting's audio, having been through a codec and the far end's automatic volume control. Comparing those tells you about equipment, not people, so Nojoin does not compare them and says why.
-- **Quiet participants may be missing.** A speaker needs a reasonable amount of uninterrupted speech before these figures mean anything, so someone who only said a few words is left out rather than described from three seconds of audio.
+Delivery describes how someone spoke, not how they felt. Nojoin has no emotion detection, and these figures are not sentiment, mood or engagement scores.
 
 #### What Was Discussed
 
-The rest of the tab is measured. This last section is different: it is an AI model reading the transcript, so it needs an AI provider and it uses your provider quota. Select **Analyse meeting** to run it. It is not run automatically unless you ask for that, because it answers questions most meetings are never asked and running it for every recording would spend your quota on meetings nobody opens. Your administrator may cap how many analyses you can start per day; the section says how many you have left and when the count resets (midnight UTC). Turn on **Analyse meetings automatically** under **Settings > Notes and live assistance** to have each new meeting analysed when it finishes processing, within that cap.
+This section is an AI model reading the transcript, labelled **Read by AI, not measured**. It needs an AI provider and uses your provider quota. Select **Analyse meeting** to run it, or turn on **Analyse meetings automatically** under **Settings > Notes and live assistance** to analyse each new meeting when it finishes processing. An administrator can cap analyses per person per day; the section then shows how many you have left and when the count resets (midnight UTC). Without an AI provider the section says so and the rest of the tab is unaffected.
 
-If your installation has no AI provider configured, this section says so and nothing else on the tab is affected.
+It reports:
 
-It reports four things:
+- **What the meeting covered**: the topics in order, and who led each, or that they were led jointly.
+- **How people put things**: what each person backed, doubted or objected to, read from their words only.
+- **Questions asked**: who asked what, who answered, and which went unanswered (listed first).
+- **Who owned each decision**: who proposed it, agreed or pushed back, and whether agreement was spoken.
 
-- **What the meeting covered**: the topics it moved through, in order, and who drove each. A topic that two people drove equally says so rather than picking one of them.
-- **How people put things**: a reading of each person's *words* — what they backed, doubted, or objected to — with the quotes it is based on.
-- **Questions asked**: who asked what, who answered, and which questions nobody answered. Unanswered questions are listed first.
-- **Who owned each decision**: who proposed it, who agreed, who pushed back, and whether agreement was actually spoken.
-
-Four things are worth understanding before you rely on any of it.
-
-**Every claim about a person carries a quote, and you can play it back.** If the model could not point at something actually said in the transcript, the item was discarded rather than shown. This is deliberate and it is why the section is sometimes shorter than you might expect: a thin result means thin evidence, not a quiet meeting.
-
-**"How people put things" is not how they sounded.** It reads language only. It is deliberately not combined with the delivery figures above, which measure the voice. Someone can make a positive point flatly, or a critical one warmly, and neither reading can tell you about the other.
-
-**"Unchallenged" is not agreement.** A decision marked that way is one nobody objected to, which is a different thing from one people agreed with. Only people whose own words show it are listed as agreeing or pushing back; someone who said nothing about a decision appears in neither list.
-
-**It complements the Notes tab rather than repeating it.** Notes remain the record of what was decided and what happens next. This section answers who: who drove the discussion, whose question went unanswered, who owned each decision. If the two ever seem to disagree about a decision, the quotes here are the thing to check.
-
-If you edit the transcript afterwards, Nojoin shows a banner offering to analyse again rather than doing it for you, since that would spend your quota. A meeting too long to send in full is analysed as far as it fits, and the section says where it stopped.
+Every claim about a person carries a quote you can play back. An item the model could not support with a quote is dropped, so a short section means thin evidence. A decision marked **Unchallenged** is one nobody objected to, which is not the same as one people agreed with. After you edit the transcript, a banner offers **Analyse again**; nothing reruns on its own. A meeting too long to send whole is analysed as far as it fits, and the section says where it stopped. The Notes tab stays the record of what was decided; this section shows who drove it.
 
 #### When The Figures Depend On Speaker Attribution
 
-Every figure is attached to a speaker, so a figure is only as good as the speaker separation behind it. When one person is split into two, their talk share is split too, and nothing about the number itself looks wrong.
+Every figure belongs to a speaker, so it is only as good as the speaker separation. When one person is split into two, their share is split too, and the number looks normal.
 
-Nojoin therefore shows a warning on the tab when the meeting carries signs of that: several speakers holding a very small share each, a lot of overlapping speech, a meeting that reached its speaker limit, or speakers you have not named yet. The warning links to the speaker panel, where merging or naming speakers corrects the analytics immediately, with no reprocessing.
-
-No warning does not mean the attribution is certainly right, only that nothing obvious suggests otherwise. If a figure looks wrong, check the speakers first.
+The tab warns when a meeting shows signs of this: several speakers with a very small share each, a meeting that reached its **Max Speakers** limit, or unnamed speakers. The warning links to the speaker panel, where merging or naming speakers corrects the analytics immediately, without reprocessing. No warning does not prove the attribution right, so if a figure looks wrong, check the speakers first.
 
 ### Attaching Documents
 
-Upload PDF, PowerPoint, Word, Excel, CSV, text, Markdown, or image files, up to 250 MB each. Documents can be attached at any point: from the Documents tab of a processed meeting, or with **Attach Docs** in the recording toolbar while a meeting is still recording or processing.
+Attach PDF, PowerPoint, Word, Excel, CSV, text, Markdown, PNG or JPEG files, up to 250 MB each, from the **Documents** tab of a processed meeting or with **Attach Docs** while a meeting is recording or processing. Browse to several files or drag them onto the dialog. They upload one after another, and if one fails the rest still go through and the failed ones stay listed to retry.
 
-Several files can be attached at once. Browse to them or drag them onto the dialog, in one go or a few at a time, and each queued file is listed with its own **Analyse visually with AI** switch, so a deck can be read visually while the plain-text agenda beside it is not. Uploads run one after another rather than all at once, and the documents panel fills as they land. If one fails the rest still go through, and the dialog stays open with the failed files listed so they can be retried without re-sending what already uploaded.
-
-Timing matters. Meeting notes are generated once, at the end of processing, and they use every document that has finished parsing by then. A document attached during the meeting is normally ready in time to be included on the first pass. A document attached afterwards cannot be, so the Notes tab shows a banner offering to regenerate. Regenerating is never automatic: it uses your AI provider and overwrites any edits you have made to the notes.
+Meeting notes are generated once, at the end of processing, from every document parsed by then. A document attached during the meeting is normally in time. One attached later is not, so the Notes tab shows a banner offering to regenerate. Regenerating uses your AI provider and overwrites your edits to the notes.
 
 #### Visual Analysis
 
-Text extraction alone misses most of what a slide deck or a scanned report actually carries. **Analyse visually with AI** is therefore on by default: each page is sent to your configured AI model, which transcribes the text, reconstructs tables, and describes charts and diagrams including their values.
+**Analyse visually with AI** is on by default. It sends each page to your AI model, which transcribes the text, rebuilds tables, and describes charts and diagrams with their values.
 
-- Turn it off per file for a document that is genuinely plain text, or to avoid using AI provider quota. The file is still parsed, just without visual analysis. When several files are queued, one control turns it off for all of them.
-- It cannot be turned off for image uploads, which have no text to extract without it.
-- Your model must accept images. Every current hosted model from Anthropic, OpenAI, and Google does. If you use **Ollama**, an administrator must select a vision-capable model (such as a `llava` or `-vision` variant) in **Settings > AI providers**; a text-only model cannot read images and Nojoin will fall back to text extraction.
-- If visual analysis is unavailable, Nojoin falls back to local OCR before giving up. OCR runs on your own server, costs nothing, and sends nothing anywhere, so a scanned page stays searchable even with no AI configured at all. What it cannot do is describe a chart or a diagram, only transcribe the words, and the document card says so when it was used.
-- If neither is available the document still parses from its own text layer, and the card explains what was skipped. Use **Parse again** on the document card once a suitable model is configured.
-
-PowerPoint, Word, and Excel files are read structurally as well as visually. This recovers speaker notes, table cells, and the exact underlying values of native charts, none of which a purely visual read would capture reliably. For a deck built mostly from SmartArt or hand-drawn diagrams, exporting it to PDF before uploading gives better results, because every page is then rendered in full.
-
-There is no page limit. A large document simply takes longer and uses more provider quota, and files above 20 MB say so before you confirm. Parsing runs in the background on its own worker, so it never delays a live meeting, and progress is shown per page on the document card.
+- Turn it off per file, or for every queued file at once, for a plain-text document or to save provider quota. The file is still parsed from its own text. It cannot be turned off for images.
+- Files over 20 MB show a cost warning before upload. There is no page limit, and the document card shows progress per page.
+- Your model must accept images. Current hosted models from Anthropic, OpenAI and Google do. With Ollama, an administrator must choose a vision-capable model (such as a `llava` or `-vision` variant) in **Settings > AI providers**.
+- Without visual analysis, Nojoin uses OCR on your own server, which sends nothing anywhere and keeps scanned pages searchable but cannot describe a chart. Failing that, the document is parsed from its text layer. The document card says what was skipped; once a suitable model is configured, use **Parse again with visual analysis** on the card.
+- PowerPoint, Word and Excel files are also read structurally, which recovers speaker notes, table cells and the values behind native charts. For a deck built mostly from SmartArt or drawn diagrams, export it to PDF first.
 
 ### Choosing How Notes Are Structured
 
-The default notes cover a summary, key decisions, action items, per-topic detail, and a miscellaneous section. That fits a project or status meeting well and fits a user interview or an incident review badly, so the structure is editable in **Settings > Notes and live assistance > Notes structure**.
+**Settings > Notes and live assistance > Notes structure** sets the sections the AI writes notes into. The default has a summary, key decisions, action items, detailed notes and a miscellaneous section. A user interview or an incident review may want a structure of its own.
 
-- A structure is a list of Markdown headings and a short description of what belongs under each. It controls what the notes contain, how they are ordered, what terminology is used, and how much detail is captured.
-- Accuracy rules are not editable. Nojoin always instructs the model never to invent facts, decisions, or attributions, to attribute statements to the participant who made them, to format tables so the editor can render them, and to start at the first section without repeating the meeting title. A custom structure changes what the notes contain, never how faithful they are.
-- **Generate** drafts a structure for you. Describe the meetings you run and what you need out of them, and the AI writes a structure, a name and a description into the editor for you to review and edit. Nothing is saved until you save it.
-- **Preview** shows the exact prompt a structure produces, protected parts included, using a short sample transcript. It makes no AI request.
-- The recording title, date, duration, and participants are always supplied to the model, so a structure can ask for them without any placeholder syntax.
-- Administrators can additionally publish shared structures, which everyone can see and use but only an administrator can change. Anyone can copy one into their own list to vary it. One shared structure can be marked the shared default, which applies to every user who has not chosen their own.
-- Your chosen structure applies to notes generated automatically after processing. On the recording page, the arrow beside **Regenerate Notes** generates with a different structure for that meeting only, without changing your default.
-- When a Nojoin update improves the built-in structure, any copy made from it is marked as out of date and offers a reset. Nothing is changed for you automatically.
+- A structure is a list of Markdown headings, each with a short description of what belongs under it. It controls what the notes contain, their order, terminology and level of detail.
+- Accuracy rules are fixed: the model is always told never to invent facts, decisions or attributions, to attribute statements to the person who made them, to format tables so the editor can render them, and not to repeat the meeting title.
+- **Generate structure** drafts one from a description of the meetings you run. Nothing is saved until you save it.
+- **Preview** shows the full prompt a structure produces, using a sample transcript, without an AI request.
+- The meeting's title, date, duration and participants are always supplied, so a structure can ask for them by name.
+- Administrators publish shared structures that everyone can use; **Copy to my structures** makes your own copy to change. One shared structure can be the shared default for anyone who has not chosen their own.
+- Your chosen structure applies to notes generated after processing. On the recording page, the arrow beside **Regenerate Notes** uses a different structure for that meeting only.
+- When the Nojoin default improves, a copy made from it is marked with **Reset to the current default**. Nothing changes until you choose it.
 
 ### Glossary
 
-**Settings > Transcription > Glossary** holds project names, acronyms, products, and corrections for words the AI commonly mishears, one per line as `Term: meaning`. Administrators maintain a shared glossary for the whole installation, which everyone can read there, and each user can add their own; the two are merged rather than replaced, and a personal entry wins where both define the same term.
+**Settings > Transcription > Glossary** holds project names, acronyms, products and corrections for words the AI commonly mishears, one per line as `Term: meaning`. Administrators keep a **Shared glossary** that everyone can read; your own entries are added to it, and yours wins where both define the same term.
 
-The glossary is used when writing notes and by Meeting Edge when it explains a term during a live meeting. It does not change the transcript, which is produced by the speech model before the glossary is ever read.
+The glossary is used for notes and by Meeting Edge. It does not change the transcript.
 
 ### Tables In Notes
 
-Generated notes present key decisions and action items as tables, since both are naturally tabular. The notes editor renders these as real editable tables rather than raw Markdown.
+Generated notes present decisions and action items as tables, which the notes editor shows as editable tables.
 
-- The toolbar's table button inserts a table at a chosen size, and once the cursor is inside one it also adds and removes rows and columns, toggles the header row, and deletes the table.
-- Drag a column border to resize it. A table wider than the pane scrolls sideways on its own rather than stretching the page.
-- Press Enter inside a cell for a line break. Cells hold a single line of content by design, and merged cells are deliberately not offered: Markdown cannot represent either, and notes are stored as Markdown.
-- Copying notes into Confluence, Word, or another rich-text editor preserves the table structure.
-- PDF and Word exports contain real tables, and a table's header row repeats at the top of each page the table runs onto. Plain-text exports keep the Markdown pipe syntax, padded so the columns line up.
-
-Notes remain Markdown throughout, so a table written by hand in Markdown, generated by the AI, or pasted in from elsewhere is treated identically.
+- The toolbar's table button inserts a table at a chosen size. Inside a table it also adds and deletes rows and columns, toggles the header row and deletes the table.
+- Drag a column border to resize it. A table wider than the pane scrolls sideways.
+- Enter inside a cell adds a line break within the cell. Cells cannot be merged, because notes are stored as Markdown.
+- Copying notes into Confluence, Word or another rich-text editor keeps the tables.
+- PDF and Word exports contain real tables whose header row repeats on each page. Text exports keep the Markdown, padded so the columns line up.
 
 ### Long Meetings And Ollama
 
-A hosted provider (Anthropic, OpenAI or Gemini) reads a whole meeting in one call, however long it is. A local Ollama model reads only as much as its context window holds, and on a consumer GPU that is far less than a long meeting: the default window of 32,768 tokens covers about two hours.
+A hosted provider (Anthropic, OpenAI or Gemini) reads a whole meeting in one call. A local Ollama model reads only what fits its context window, and the default window of 32,768 tokens covers about two hours.
 
-**Recommendation:** do not rely on Ollama alone for long meetings. Use a hosted provider for them, or keep Ollama as the primary provider and configure a hosted [secondary provider](#secondary-llm-provider) with a larger context window. When a meeting does not fit Ollama's window, the secondary provider receives the whole meeting and returns notes in one call.
+For long meetings, use a hosted provider, or keep Ollama as the primary and have an administrator add a hosted [secondary provider](#secondary-llm-provider), which receives any meeting too long for Ollama whole and returns notes in one call.
 
-Without a secondary provider, or when it fails too, Ollama writes the notes in parts. Nojoin splits the transcript between utterances into parts that fit the window, writes notes for each part, then combines them into one set of notes with a title and speaker suggestions, as a normal run would. This takes several calls instead of one, so a long meeting takes several times as long to process, and the notes hold less detail than a single call's: the smaller the window, the more rounds of combining a meeting needs, and the less of the early detail reaches the final notes.
-
-Meeting Chat on such a meeting answers from the notes and the passages of the transcript most relevant to your question, since the whole transcript does not fit. It is told to say so when those do not answer the question, so a question about a detail the passages missed can come back unanswered where a hosted provider would have found it.
+Without one, Ollama writes notes for parts of the meeting and combines them. That takes several times as long and keeps less detail, the more so the smaller the window. Meeting Chat on such a meeting answers from the notes and the passages of the transcript most relevant to your question, so it can miss a detail a hosted provider would find, and it says so when the passages do not answer.
 
 ## AI Assistant Connections (MCP)
 
-Nojoin includes a built-in MCP connector, so AI assistants such as Claude can read your meeting library and make recoverable changes on your behalf. Add `https://your-nojoin-domain/mcp` as a custom connector in the assistant and approve access on Nojoin's authorisation page. [MCP.md](MCP.md) covers setup, the tools, and revoking access.
+Nojoin has a built-in MCP connector, so AI assistants such as Claude can read your meeting library and make recoverable changes for you. Add `https://your-nojoin-domain/mcp` as a custom connector in the assistant and approve access on Nojoin's authorisation page. [MCP.md](MCP.md) covers setup, the tools and revoking access.
 
 ## Settings
 
-Settings are grouped by subject, and each category is its own page. Every user has Profile and security, Appearance, Integrations (calendar connections and connected apps), Recording, Transcription, Notes and live assistance, Your AI, Updates, and Help; [ADMIN.md](ADMIN.md#settings-structure) lists the administrator categories as well. A search box finds an individual setting by name.
+Each settings category is its own page. Every user has **Profile and security**, **Appearance**, **Integrations** (calendars and connected apps), **Recording**, **Transcription**, **Notes and live assistance**, **Your AI**, **Updates** and **Help**; [ADMIN.md](ADMIN.md#settings-structure) lists the administrator categories. **Search settings...** finds a setting by name, including one inside a collapsed **Advanced** block.
 
-Most settings are your own and follow your account. A setting marked **This browser** is kept in the browser you set it in, such as the theme, the microphone and its levels, so each browser can differ. One marked **Everyone** applies to the whole installation, and only an administrator can change it.
+Most settings belong to your account. One marked **This browser** is kept in the browser you set it in, such as the theme and the microphone and its levels. One marked **Everyone** applies to the whole installation, and only an administrator can change it.
 
 ### Language Preferences
 
-Two independent choices, on two pages:
+Two per-user settings:
 
-- **Transcription language**, under **Settings > Transcription**, controls ASR. The default is **Auto-detect**. Whisper supports auto-detection or a forced language, Canary supports the listed forced languages, and Parakeet continues to use multilingual auto-detection without forced-language support.
-- **Notes language**, under **Settings > Notes and live assistance**, controls AI-generated meeting titles, Markdown headings, summaries, detailed notes, and action items. The default is **English**. British English, American English, the transcription language, another listed language, or a custom language/style instruction can be selected.
+- **Transcription language**, under **Settings > Transcription**, is the language spoken in your recordings. The default is **Auto-detect**. Whisper can detect a language or be forced to one, Canary takes the listed forced languages, and Parakeet always detects.
+- **Notes language**, under **Settings > Notes and live assistance**, is the language of generated titles, headings, summaries, notes and action items, and of the AI meeting analysis. The default is English. Choose British or American English, the transcription language, another listed language, or **Custom** with your own instruction for language, conventions, tone and heading style.
 
-The LLM prompt and machine-readable response contract remain stable even when generated content is localized: JSON keys, speaker labels, and application-owned metadata are not translated.
-
-Changing the transcription language affects new transcription work. Use **Reprocess at higher quality** to rebuild an existing recording under a different transcription-language preference. Changing the notes language does not translate saved notes automatically; run **Generate Notes** or reprocess the meeting to generate new notes.
-
-Language preferences are per-user. Per-meeting overrides, full interface translation, Meeting Edge/chat language controls, and speech translation are not part of this setting.
+Changes apply to new work. Reprocess a recording to transcribe it in a new language, and generate its notes again to change their language; saved notes are not translated. Neither setting translates the interface, Meeting Edge or chat.
 
 ### Your own subscription (CLI OAuth)
 
-Instead of using the server's configured provider, you can route your own AI through your own **Claude** (Pro/Max) or **ChatGPT** (Plus/Pro) subscription. It is usually faster, and you can pick a stronger model. In **Settings > Your AI**, connect a subscription under **Your subscriptions**, then choose **My own subscription** under **How AI runs for you**:
+You can run your AI on your own **Claude** (Pro or Max) or **ChatGPT** (Plus or Pro) subscription instead of the server's provider, and choose the model yourself. In **Settings > Your AI**, connect one under **Your subscriptions**, then choose **My own subscription** under **How AI runs for you**.
 
-- **Claude** — open the grant link and paste back the code Anthropic shows you.
-- **ChatGPT** — open the sign-in page, enter the code shown, and approve access; the panel finishes automatically once you approve.
+- **Connect Claude**: open the link and paste back the code Anthropic shows you.
+- **Connect ChatGPT**: open the sign-in page, enter the code shown and approve access; the panel finishes by itself.
 
-Pick a model for notes/chat and, optionally, a faster live model for Meeting Edge. If you connect both, choose which one is active. Once you start using it, the panel shows your recent token usage.
+Only one subscription can be connected at a time, so disconnect one before connecting the other. Choose a **Model** for notes and chat and, optionally, a separate **Meeting Edge model**. The panel shows your recent token usage.
 
-Because this uses your subscription quota, a cheaper model conserves *quota*, not money. If you reach your limit, Nojoin shows a reset time and falls back to the server's default provider chain — its primary provider first, then its secondary if that also fails. Disconnecting removes your stored credential.
-
-### CLI usage and quota (admin)
-
-Administrators can review per-user subscription usage under **Settings > AI providers**, in **Subscription usage** behind the **Advanced** block: a searchable table of each user's token usage over the last 7 days, last 30 days, and lifetime, alongside their rate-limit status. Tokens count what Nojoin sent through each user's own subscription. A subscription exposes no live "remaining quota" figure, so the status column reflects the rate-limit signal (OK, approaching a limit, or limited until a reset time) rather than a balance. Usage is shown in tokens, never money: a subscription is flat-rate, so a per-turn currency figure would be misleading.
+Usage counts against your subscription's limits, so a cheaper model saves quota, not money. When your subscription is unavailable or rate-limited, Nojoin shows when it resets and the server's default provider answers, followed by its fallback if one is set. Disconnecting deletes your stored credential.
 
 ### Secondary LLM Provider
 
-Nojoin supports configuring a secondary LLM provider as a fallback. When the primary provider fails with any error, the system automatically retries the request with the secondary provider. This applies to all AI features: Meeting Edge, meeting intelligence, speaker inference, and meeting chat. A meeting too long for an Ollama primary's context window counts as such a failure, which makes a hosted secondary the recommended setup for long meetings with Ollama ([Long Meetings And Ollama](#long-meetings-and-ollama)).
-
-The secondary provider has its own independent configuration:
-
-- Provider selection (Gemini, OpenAI, Anthropic, or Ollama).
-- Model and live model choices.
-- API key or Ollama URL.
-
-Configure the secondary provider through environment variables prefixed with `SECONDARY_` (e.g., `SECONDARY_LLM_PROVIDER`, `SECONDARY_GEMINI_API_KEY`). Leave `SECONDARY_LLM_PROVIDER` empty to disable fallback. The secondary provider configuration is visible in **Settings > AI providers** for administrators, where its model is chosen. The fallback stays off until it has a model. The card says so, and the collapsed **Advanced** block on that page reads **1 needs attention** until it is fixed.
-
-## Troubleshooting
-
-- If live capture is unavailable, switch to Chrome on desktop for shared-audio recording or Chrome on Android/iOS for microphone-only recording.
-- If remote participants are missing, start again and enable shared audio in the browser picker.
-- If the microphone is missing, grant microphone permission and check **Settings > Recording**.
-- If Nojoin reports a paused recording, resume it, stop and process it, or discard it before starting another capture.
-- If processing fails, use **Retry Processing** or check the administrator logs. A failed transcription shows its reason, such as the GPU running out of memory, on the recording's transcript tab.
-- If calendar sync fails, review provider setup in [CALENDAR.md](CALENDAR.md).
+An administrator can set a fallback provider. When the primary provider fails with any error, including a meeting too long for an Ollama window, Nojoin retries the request on the fallback, for every AI feature. It is configured with the `SECONDARY_` environment variables ([DEPLOYMENT.md](DEPLOYMENT.md#configure-env)) and stays off until a model is chosen for it under **Settings > AI providers** ([ADMIN.md](ADMIN.md#ai-providers)).
 
 ## Notifications
 
-Notifications appear in the bottom-right corner, in two kinds. Transient ones close after five seconds, or sooner from their close button. Persistent ones stay until you dismiss them: they report something that needs attention, such as a server that cannot be reached, and some carry buttons for the choices they ask you to make. **Notifications** in the navigation lists the last 100 shown in this browser.
+Notifications appear at the bottom right. Most close after five seconds, or sooner from their close button. Persistent ones report something that needs attention, such as a server that cannot be reached, and stay until you dismiss them; some carry buttons for the choices they ask you to make. **Notifications** in the navigation lists the last 100 shown in this browser.
 
 ## Updates
 
-**Settings > Updates** shows the installed version, the latest release, and each release's notes. The installed and latest releases are open, and older ones expand when you choose them. Release information comes from GitHub Releases when the server can reach GitHub.
+**Settings > Updates** shows the installed version, the latest release and each release's notes, from GitHub Releases when the server can reach GitHub. The installed and latest releases are open, and older ones expand when you choose them.
 
-When a newer release is out, owners and administrators also get a persistent notification about it whenever they open Nojoin:
+When a newer release is out, owners and administrators get a persistent notification about it each time they open Nojoin:
 
-- **Go to Releases** opens that release on GitHub and leaves the notification up.
-- **Skip Update** hides it for that release. The next release brings it back.
-- **Remind Me**, or the close button, hides it for the rest of this sign-in. Reloading the page does not bring it back; signing in again does.
+- **Go to Releases** opens the release on GitHub and leaves the notification up.
+- **Skip Update** hides it until the next release, on every device.
+- **Remind Me**, or the close button, hides it until you next sign in. Reloading the page does not bring it back.
 
-Skip Update is saved to your account, so a skipped release stays skipped on every device.
+## Troubleshooting
+
+- For capture problems, such as missing remote participants, a missing microphone or an unsupported browser, see [CAPTURE.md](CAPTURE.md#troubleshooting).
+- A paused recording blocks new capture until you resume it, stop and process it, or discard it.
+- A recording that failed shows its reason on its transcript tab. Fix the cause and use **Retry Processing**; an administrator can check the logs in **Settings > System and logs**.
+- For calendar sync problems, see [CALENDAR.md](CALENDAR.md#troubleshooting).

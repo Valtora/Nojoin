@@ -1,6 +1,6 @@
 # Nojoin Development Setup
 
-This guide covers local development prerequisites and the main commands used when working on Nojoin from source.
+Prerequisites, local checks, CI, code conventions and the release workflow for working on Nojoin from source.
 
 ## Core Tooling
 
@@ -16,77 +16,72 @@ This guide covers local development prerequisites and the main commands used whe
 - PostgreSQL development headers
 - Compiler tools
 
-Linux examples:
+On Debian or Ubuntu:
 
 ```bash
 sudo apt install ffmpeg libpq-dev build-essential
 ```
 
-Windows:
-
-- Install FFmpeg and add it to `PATH`.
-- Install the Microsoft Visual C++ Build Tools.
+On Windows, install FFmpeg on `PATH` and the Microsoft Visual C++ Build Tools.
 
 ### Frontend
 
-- Node.js 22 or newer. CI, the release workflow, and `frontend/Dockerfile` all
-  build on Node 26; 22 is the floor because jsdom (the Vitest DOM environment)
-  requires it, so `npm run test` fails on anything older.
+- Node.js 26, as CI and `frontend/Dockerfile` use. `npm run test` needs at least 22.22.2, 24.15 or 26, the versions jsdom (the Vitest DOM environment) supports.
 - npm
 
 ### Browser Capture
 
-- Chrome on Windows, Linux, or macOS, or another supported desktop Chromium browser, for manual shared-audio live-capture validation
-- Chrome on Android or iOS for manual microphone-only mobile capture validation
-- Browser microphone permission for local smoke tests
-- PipeWire screen capture support when validating Linux shared-screen or system audio behaviour
+For manual capture checks:
+
+- Chrome or another supported desktop Chromium browser on Windows, Linux or macOS, for shared-audio capture
+- Chrome on Android or iOS, for microphone-only capture
+- Microphone permission in the browser
+- PipeWire screen capture, for shared-screen or system audio on Linux
 
 ## Fresh Checkout Setup
-
-Host-run validation expects the project virtual environment plus frontend dependencies:
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install -r requirements/local.txt
+python -m pip install -r requirements/dev.txt
+pre-commit install   # optional: Ruff, whitespace and the doc and Alembic validators on commit
 
 cd frontend
 npm install
 ```
 
-If you are working on a narrower area, you can install a smaller Python dependency set:
-
-- backend tests only: `python -m pip install -r requirements/test.txt`
-- API-only or worker-only runtime work: use the matching file under `requirements/`
+`requirements/dev.txt` is the test stack (with PyPI's torch, which runs on the CPU) plus the lint, format and type tooling. On a GPU host that runs the live processing stack, install `requirements/local.txt` instead. `requirements/backend.txt` and `requirements/worker.txt` are the API and worker runtime sets.
 
 ## Required Pull Request Checks
 
-The `CI` workflow runs these checks on pull requests and on pushes to `main`. To avoid wasting minutes on irrelevant work, the expensive jobs only run when their area changed; the cheap validators always run:
+The `CI` workflow in [ci.yml](../.github/workflows/ci.yml) runs on pull requests and on pushes to `main`. A `Detect changes` job classifies the diff with `dorny/paths-filter`, and each heavy job runs only when its paths changed:
 
-| Check | Runs when |
+| Check | Runs when these changed |
 | --- | --- |
-| `Backend tests` | `backend/**`, `requirements/**`, `pyproject.toml`, `frontend/src/lib/processingTuning.json`, or a deployment path changed |
-| `Migrations (Postgres)` | `backend/alembic/**`, `backend/models/**`, `scripts/check_migrations.py`, or a deployment path changed |
-| `Python quality` (Ruff lint, Ruff format check, the file-size and blind-except gates, and mypy on enforced boundaries) | as `Backend tests`, plus `scripts/**` |
-| `Frontend lint` | `frontend/**` or a deployment path changed |
-| `Frontend unit tests` | same as `Frontend lint` |
-| `Frontend build` | same as `Frontend lint` |
-| `Site build` (Astro build and the contrast gate) | `site/**`, `frontend/src/app/tokens.css`, `frontend/scripts/check-contrast.mjs`, or a deployment path changed |
-| `Telemetry worker` (tsc and vitest on the ingest) | `telemetry/**` changed |
-| `Whitespace check` | always (the only trailing-whitespace guard for non-Python files) |
-| `Docs validation` | always |
-| `Alembic validation` | always |
-| `Held pin drift check` | always |
-| `Dependency vulnerability scan` (Trivy, informational) | always; it never fails and is not part of `CI gate` |
+| `Backend tests` | `backend/**`, `requirements/**`, `pyproject.toml`, `frontend/src/lib/processingTuning.json` |
+| `Migrations (Postgres)` | `backend/alembic/**`, `backend/models/**`, `scripts/check_migrations.py` |
+| `Python quality` (Ruff lint and format check, file-size and blind-except gates, mypy) | the `Backend tests` paths, or `scripts/**` |
+| `Frontend lint` (ESLint and the contrast gate) | `frontend/**` |
+| `Frontend unit tests` | `frontend/**` |
+| `Frontend build` | `frontend/**` |
+| `Site build` (Astro build and the contrast gate) | `site/**`, `frontend/src/app/tokens.css`, `frontend/scripts/check-contrast.mjs` |
+| `Telemetry worker` (tsc and Vitest) | `telemetry/**` |
+| `Demo server` (pytest) | `demo/**` |
+| `Docs validation`, `Alembic validation`, `Whitespace check`, `Held pin drift check` | always run |
+| `Dependency vulnerability scan` (Trivy) | always runs, never fails |
 
-A `detect-changes` job (using `dorny/paths-filter`) classifies the diff into `backend`, `frontend`, `site`, `scripts`, `migrations`, `telemetry`, and `deployment`. The deployment filter — `docker/**`, `docker-compose*.yml`, `nginx/**`, and `.github/workflows/ci.yml` — runs **both** the backend and frontend suites, because a Dockerfile, compose, nginx, or CI-workflow change can break the built images or the test pipeline even when no application code changed; this also keeps CI consistent with the deployment/release verification policy in [CONTRIBUTING.md](../.github/CONTRIBUTING.md#merge-requirements). Only `ci.yml` is included from `.github/workflows/`: it defines the suites, so editing it must re-exercise them. Other workflows (such as the tag-driven [release pipeline](#release-workflow-and-version-detection)) cannot be validated by the unit suites and run on their own triggers — the release pipeline re-runs the full validation set on every tag push — so a change to them is not gated here and runs only the always-on validators. The `scripts` filter runs the `Python quality` job (which lints and type-checks scripts and runs the validators) without the full `Backend tests` suite, since the standalone tooling under `scripts/` is not imported by the backend tests. Each heavy job gates on these outputs; a job that does not apply is **skipped**, not run. The single required status check is **`CI gate`**, an aggregate job that depends on every job above except the dependency scan and passes only when none of them failed — treating a skipped job as a pass. Because `CI gate` always reports a status, a documentation-only pull request (which skips the backend and frontend jobs) is never left waiting on a check that never runs. This is why branch protection requires `CI gate` rather than the individual job names.
+A change to a deployment path (`docker/**`, `docker-compose*.yml`, `nginx/**` or `.github/workflows/ci.yml`) also runs the first seven jobs. Other workflow files run only the always-on jobs.
+
+The one required status check is `CI gate`. It depends on every job except the dependency scan, fails if any of them failed or was cancelled, and counts a skipped job as a pass, so it reports on every pull request, documentation-only ones included.
 
 Local equivalents:
 
 ```bash
 source .venv/bin/activate
-pytest
+python scripts/check.py           # Ruff lint and format check, whitespace, file size, blind-except reasons, held pins, mypy, doc and Alembic validators, pytest
+python scripts/check.py --fix     # apply Ruff fixes and formatting first
+python scripts/check.py lint typecheck   # a subset, by name
 
 cd frontend
 npm run lint
@@ -94,21 +89,18 @@ npm run check:contrast
 npm run test
 npm run build
 
-cd ..
-python3 scripts/validate_docs.py
-python3 scripts/validate_alembic.py
-
-# Only when telemetry/ changed. The ingest's decision surface is deliberately
-# free of Worker runtime APIs, so it tests on plain Node without wrangler.
-cd telemetry
+# Only when telemetry/ changed
+cd ../telemetry
 npm ci
 npm run typecheck
 npm test
 ```
 
+The check names are `lint`, `format`, `whitespace`, `filesize`, `blindexcept`, `heldpins`, `typecheck`, `docs`, `alembic` and `tests`. The demo server's tests are in [demo/README.md](../demo/README.md#tests).
+
 ### Branch Protection
 
-Required status checks and required reviewers are enforced through GitHub branch-protection settings, which live outside the repository tree. `main` carries the configuration below; to restore it, apply it with an authenticated `gh`:
+Branch protection lives in GitHub's settings, outside the repository. To restore it on `main`, apply this with an authenticated `gh`:
 
 ```bash
 gh api -X PUT repos/Valtora/Nojoin/branches/main/protection --input - <<'JSON'
@@ -134,110 +126,34 @@ gh api -X PUT repos/Valtora/Nojoin/branches/main/protection --input - <<'JSON'
 JSON
 ```
 
-`required_conversation_resolution` makes unresolved review threads block the merge until they are resolved, so feedback is not lost. It is listed explicitly because `PUT` replaces the whole protection object: omitting it would silently disable it on the next apply.
+`PUT` replaces the whole protection object, so a field left out is switched off.
 
-**This configuration cannot lock out a sole maintainer.** It is deliberately built so that a single person who is also the only code owner can always merge their own green pull request:
+None of these settings can lock out a sole maintainer. GitHub never lets an author approve their own pull request, so `required_approving_review_count` stays `0` and `require_code_owner_reviews` stays `false` while there is one maintainer; [CODEOWNERS](../.github/CODEOWNERS) still requests a review on every pull request. `enforce_admins` holds the owner to `CI gate` too, and the owner can still change protection under **Settings > Branches**. When a second maintainer joins, set `require_code_owner_reviews` to `true` and `required_approving_review_count` to `1`.
 
-- `required_approving_review_count` is `0`: GitHub never allows approving your own pull request, so any value of `1` or more would make every merge impossible for a sole author. With `0`, a green pull request is mergeable by you alone.
-- `require_code_owner_reviews` is `false`: with it `true` and you as the only code owner, the required code-owner approval could never be supplied and your own pull requests would be permanently unmergeable. It stays `false` while the project is single-maintainer. You still get a review auto-requested on every pull request, because that comes from the [CODEOWNERS](../.github/CODEOWNERS) file itself, not from this setting — you keep the review prompt without the merge gate.
-- `enforce_admins` is `true` so the status check applies to you too and nothing merges red. This is not a lockout: the `CI gate` check always reports on every pull request, so a green pull request is always mergeable, and as the repository owner you can edit or remove this protection in **Settings → Branches** at any time (for example to land a fix for a broken CI workflow). Protection is never an irreversible state.
-
-**When a second maintainer joins**, set `require_code_owner_reviews` to `true` and raise `required_approving_review_count` to `1` to turn this into a genuine second-reviewer gate.
-
-**Do not add the release jobs to this required-checks list.** The required context is the single `CI gate` job, which the CI workflow reports on every pull request. The release jobs (`validate-release-ref`/`Validate release ref`, `sign-images`/`Verify & sign images`, `publish-mutable-tags`/`Publish rolling tags`, `publish-release-notes`/`Publish release notes` in [release.yml](../.github/workflows/release.yml)) only run on a tag push or `workflow_dispatch`, never on a pull request. If they were added here, GitHub would leave them permanently "Expected" on every PR commit — they would never report, and **every merge to `main` would be blocked**. Branch protection on `main` also does not govern tag creation, so it cannot gate a release at all. The same reasoning is why the individual CI jobs are not required directly: they are skipped by the path filter when irrelevant, so only the always-reporting `CI gate` aggregate is safe to require.
-
-The release is instead self-gating. [scripts/release.py](../scripts/release.py) refuses to build until every commit since the previous tag has a green `CI gate`, and pushes nothing until the scan, smoke, and advisory gates pass. In the workflow, `sign-images` verifies all four images before signing any, `publish-mutable-tags` depends on `sign-images`, and `publish-release-notes` depends on `publish-mutable-tags`. A failed gate or signing step therefore stops the rolling tags from ever publishing, with no branch-protection setting required or possible. Keep that ordering intact when editing either file.
+Require `CI gate` and nothing else. The individual CI jobs are skipped when their paths are untouched, and the jobs in [release.yml](../.github/workflows/release.yml) run only on a tag push or `workflow_dispatch`, so requiring any of them would leave every pull request waiting on a check that never reports. Branch protection does not govern tags in any case: the release gates itself, as [Gated Tag Publication](#gated-tag-publication) describes.
 
 ## Verification By Change Scope
 
-- Backend or worker code: run `pytest`.
-- Bulk database writes or reads whose size follows the data: see [Bind Parameter Limits](#bind-parameter-limits) below, and run `pytest` with `NOJOIN_TEST_POSTGRES_URL` set.
-- Frontend code: run `npm run lint`, `npm run check:contrast`, `npm run test`, and `npm run build`.
-- Design token changes in `frontend/src/app/tokens.css` or `palettes.css`: `npm run check:contrast` measures the declared pairings in both themes and fails on any that drops below its threshold. Adding a token that participates in a foreground/background relationship means adding that pairing to `frontend/scripts/check-contrast.mjs`; see [DESIGN.md](DESIGN.md#accessibility) for the thresholds and what they apply to.
-- Marketing site changes under `site/`: `cd site && npm ci && npm run build`, on Node 26 with the npm it bundles, matching CI and the deploy job. Use `npm ci`, never `npm install`: an older npm rewrites `site/package-lock.json` in ways CI rejects. Preview the built output with `npm run serve` on port 4322 rather than `npm run dev`, and check horizontal overflow at 360px and 1920px in both themes. [SITE.md](SITE.md) carries the full runbook, including sharing a preview through a Cloudflare quick tunnel and stopping that tunnel safely.
-- Browser capture changes: run the frontend checks and perform manual smoke coverage for share picker behaviour, selected microphone behaviour, waveform/live state, pause/resume, stop/finalize, discard, and unsupported-browser messaging.
-- Documentation-only changes: run `python3 scripts/validate_docs.py`.
-- Alembic migration changes: run `python3 scripts/validate_alembic.py` and keep exactly one checked-in head revision. Also run `python3 scripts/check_migrations.py` against a throwaway Postgres — `validate_alembic.py` only proves the revision graph resolves, and a migration that is well-formed can still abort on real data.
-- Deployment or release workflow changes: run the backend, frontend, docs, and Alembic validation set together before opening the pull request.
-- Security-sensitive changes: rerun the relevant backend and frontend checks for the affected auth/session path and update `docs/SECURITY.md` in the same pull request when behaviour changes.
-- Recording action changes: add them to `frontend/src/components/recordings/_hooks/useRecordingActions.ts` rather than to a surface, then run the full frontend lint, test, and build set.
-
-## Bind Parameter Limits
-
-PostgreSQL accepts at most 65535 bind parameters in one statement, and asyncpg,
-the API's driver, stops lower at 32767. SQLAlchemy enforces neither. A
-multi-row insert or a large `IN` clause builds without complaint and fails at
-execution time once the row or item count is high enough, so the failure lands
-in production on the first large recording, calendar or batch rather than in
-review.
-
-Two things make it easy to miss.
-
-**The ceiling depends on the driver.** The API reaches Postgres through asyncpg
-and its 32767. The Celery workers use psycopg 3, which also sends parameters
-separately from the SQL and fails past 65535. A statement between the two
-therefore passes through a worker and fails through the API. Before psycopg 3
-the workers ran psycopg2, which wrote parameters into the SQL text and had no
-ceiling at all, and that is how the window manifest upsert shipped: the rolling
-sync wrote 1522 rows through the worker without complaint, and the same function
-then failed at finalize through the API. Batch to the lower ceiling;
-`MAX_BIND_PARAMS` sits under both.
-
-**SQLite does not reproduce it.** The suite runs on SQLite, whose builds accept
-far more variables than Postgres will, so a SQLite test passes on the statement
-that fails in production. Tests that need the real ceiling take the
-`postgres_test_url` fixture, which skips unless `NOJOIN_TEST_POSTGRES_URL` names
-a server. CI sets it for the backend job; a plain `pytest` locally skips them.
-To run them by hand, point the variable at a throwaway Postgres:
-
-```bash
-docker run -d --rm --name nojoin-test-pg \
-  -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=nojoin_test \
-  -p 55432:5432 pgvector/pgvector:pg18-trixie
-
-NOJOIN_TEST_POSTGRES_URL=postgresql://postgres:postgres@localhost:55432/nojoin_test pytest
-```
-
-When the number of rows or items comes from the data rather than from a
-fixed-size literal, batch it with `bind_batches` from
-[backend/utils/db_batching.py](../backend/utils/db_batching.py). Pass
-`params_per_item` for multi-row inserts, where each row binds every column; the
-default of 1 is right for an `IN` clause. Deriving the batch size from the
-parameter width rather than hardcoding a row count keeps the bound correct when
-a table gains a column.
-
-A list supplied in a request body counts as data-sized: nothing stops a client
-sending more ids than the statement can bind.
-
-## Compose Files
-
-- `docker-compose.example.yml`: Deployment template using published images.
-- `docker-compose.yml`: Local working copy created from the template.
-
-The repository does not ship a dedicated Docker Compose development override.
-If you need Docker-specific development customisations, make them in your local `docker-compose.yml`.
+- Backend or worker code: `pytest`, or `python scripts/check.py` for every Python gate.
+- Bulk database reads or writes whose size follows the data: also `pytest` with `NOJOIN_TEST_POSTGRES_URL` set. See [Bind Parameter Limits](#bind-parameter-limits).
+- Alembic migrations: `python3 scripts/validate_alembic.py`, which needs exactly one head, and `python3 scripts/check_migrations.py` against a throwaway Postgres. See [Running Migrations Against Postgres](#running-migrations-against-postgres).
+- Frontend code: `npm run lint`, `npm run check:contrast`, `npm run test` and `npm run build`.
+- Design tokens (`frontend/src/app/tokens.css`, `frontend/src/app/palettes.css`, `site/src/styles/site-tokens.css`): `npm run check:contrast`, which fails on any declared pairing below its threshold in any theme or palette. A new token drawn on or behind another needs its pairing added to `frontend/scripts/check-contrast.mjs`. [DESIGN.md](DESIGN.md#accessibility) has the thresholds.
+- Marketing site (`site/`): `cd site && npm ci && npm run build` on Node 26. Use `npm ci`, never `npm install`, because an older npm rewrites `site/package-lock.json` in a way CI rejects. [SITE.md](SITE.md) has the preview and review runbook.
+- Browser capture: the frontend checks plus the manual checks in [Browser Capture Development](#browser-capture-development).
+- Recording actions: change [useRecordingActions.ts](../frontend/src/components/recordings/_hooks/useRecordingActions.ts), not a surface, then run the frontend checks.
+- Security-sensitive changes: rerun the checks for the affected auth or session path, and update [SECURITY.md](SECURITY.md) in the same pull request when behaviour changes.
+- Documentation only: `python3 scripts/validate_docs.py`.
+- Deployment or release workflow: the backend, frontend, docs and Alembic checks together.
 
 ## Containerised Source Stack
 
-The clearest Docker-based development workflow is to run a remote-development-style stack locally from your ignored `docker-compose.yml`.
+The repository ships no development compose override. To run the whole stack from source, put the [Localhost Dev Compose Template](#localhost-dev-compose-template) at the end of this document in your ignored `docker-compose.yml`. It builds the application images locally, names every container `nojoin-dev-*`, keeps PostgreSQL, Redis, Nginx and the socket proxy on their upstream images, and serves `https://localhost:14443` from the `frontend` container through the `nginx-dev` proxy.
 
-In that mode:
-
-- all local service containers use the `nojoin-dev-*` naming convention
-- `https://localhost:14443` is served through Nginx
-- the frontend comes from the `frontend` container
-- `docker compose up -d --build frontend` changes what localhost serves
-
-1. Create your local files from the templates:
-
-   ```bash
-   cp docker-compose.example.yml docker-compose.yml
-   cp .env.example .env
-   ```
-
-2. Update `.env` for local development. Keep `.env.example` unchanged because it remains the copy-paste template for non-development deployments. Set `FIRST_RUN_PASSWORD`. If you want the dedicated local development database name used by the compose template at the end of this document, set `POSTGRES_DB=nojoin_dev` in your local `.env` instead of changing the default `nojoin` value in `.env.example`.
-3. Replace your local ignored `docker-compose.yml` with the `Localhost Dev Compose Template` appended at the end of this document.
-4. Start or rebuild the stack:
+1. Run `cp .env.example .env` and set `FIRST_RUN_PASSWORD` in `.env`. To use the template's `nojoin_dev` database name, also set `POSTGRES_DB=nojoin_dev` there. Leave `.env.example` unchanged.
+2. Copy the template into `docker-compose.yml`. Its `nginx-dev` service also joins an external `proxy_net` network for an edge proxy, so either create that network once with `docker network create proxy_net`, or remove `proxy_net` from `nginx-dev` and from the top-level `networks`.
+3. Without an NVIDIA GPU, remove the `deploy` block from `worker-gpu` ([CPU-Only Deployment](DEPLOYMENT.md#cpu-only-deployment)).
+4. Start the stack:
 
    ```bash
    docker compose up -d --build
@@ -245,11 +161,7 @@ In that mode:
 
 5. Open `https://localhost:14443`.
 
-The appended template builds the Nojoin application services locally, keeps PostgreSQL, Redis, Nginx, and the Docker socket proxy on their normal upstream images.
-
 ### Incremental Rebuild Loop
-
-Use the normal container rebuild loop when you are staying in the containerised localhost mode:
 
 ```bash
 docker compose up -d --build api
@@ -257,29 +169,17 @@ docker compose up -d --build worker-gpu worker-cpu worker-io worker-parse
 docker compose up -d --build frontend
 ```
 
-Practical use:
+- `api`: after API or shared backend changes.
+- The four worker lanes: after worker code, dependency or image changes. Name all four. `worker-gpu` and `worker-cpu` run the shared worker image, `worker-io` layers its own image on top of it, and `worker-parse` runs the `worker-io` image.
+- `frontend`: after frontend changes you want to see through Nginx.
 
-- Run `docker compose up -d --build api` after API changes or shared backend changes.
-- Run `docker compose up -d --build worker-gpu worker-cpu worker-io worker-parse` after worker code, dependency, or worker-image changes. Name all four: they do not all share one image. `worker-gpu` and `worker-cpu` run the shared worker image, `worker-io` layers the subscription-CLI tooling on top of it, and `worker-parse` runs the `worker-io` image without building anything of its own. Compose builds each image once and recreates the four containers.
-- Run `docker compose up -d --build frontend` after frontend changes that you want to verify through Nginx.
-
-The compose files gate `frontend` on a healthy `api`, and gate `nginx` (or `nginx-dev` in development) on healthy `api` plus `frontend`, so the proxy waits for both application tiers before becoming ready.
-
-Docker Compose still does not auto-start an omitted dependent service from a stopped stack. If the Nginx proxy service is not already running and you want `https://localhost:14443` to come back as part of a targeted start, include it explicitly.
-
-For the localhost dev template, whose proxy service is `nginx-dev`:
+`frontend` waits for a healthy `api`, and `nginx-dev` for a healthy `api` and `frontend`. Starting a service does not start the services that depend on it, so to bring `https://localhost:14443` back from a stopped stack, name the proxy as well:
 
 ```bash
 docker compose up -d --build api frontend nginx-dev
 ```
 
-For production/release environments using the template configuration (`docker-compose.example.yml`):
-
-```bash
-docker compose up -d --build api frontend nginx
-```
-
-If you need to discard cached layers or the application services drift out of sync, use a clean rebuild:
+To discard cached layers, or when the application services drift out of step, rebuild from clean:
 
 ```bash
 docker compose down
@@ -287,13 +187,11 @@ docker compose build --no-cache api worker-gpu worker-cpu worker-io frontend
 docker compose up -d --force-recreate
 ```
 
-`worker-parse` is deliberately absent from that build list. It declares no build
-of its own, so it has nothing to rebuild; `--force-recreate` picks up the fresh
-`worker-io` image it shares.
+`worker-parse` is absent from the build list because it has no build of its own; `--force-recreate` gives it the fresh `worker-io` image.
 
 ### Optional Backend Source-Mount Patch
 
-If you want the API and the workers to reflect Python changes without rebuilding those images every time, patch your local ignored `docker-compose.yml` like this. Add `.:/app` to the shared worker runtime anchor once, so every lane picks the source mount up, then wrap each lane's command in `watchmedo`:
+To run Python changes without rebuilding the API and worker images, patch your `docker-compose.yml` as below. The source mount goes once into the shared `x-worker-runtime` anchor, so every lane picks it up, and each lane's command is wrapped in `watchmedo`, which restarts the worker when a `.py` file under `backend/` changes. The API loads a change on `docker compose restart api`.
 
 ```yaml
 x-worker-runtime: &worker-runtime
@@ -324,85 +222,39 @@ services:
     command: watchmedo auto-restart --directory=./backend --pattern=*.py --recursive -- celery -A backend.celery_app.celery_app worker -Q parse --max-tasks-per-child=25 --pool=prefork --concurrency=2 --loglevel=info
 ```
 
-Every lane keeps the `-Q`, `--pool`, `--concurrency`, and `--max-tasks-per-child` values it has in the template. Those flags are load-bearing rather than cosmetic:
+Keep each lane's `-Q`, `--pool`, `--concurrency` and `--max-tasks-per-child` as the template has them, and `-B` on `worker-io` alone. A lane without `-Q` drains the GPU queue, where unrouted tasks land, and a second `-B` fires every periodic job twice. The pool is part of the dispatch model, and the parse lane's recycle limit overrides a global default of 500. See [Worker Concurrency Lanes](DEPLOYMENT.md#worker-concurrency-lanes) and [Worker Child Recycling](DEPLOYMENT.md#worker-child-recycling).
 
-- A lane that drains the wrong queue either starves that queue or duplicates work another lane is already doing. Anything unrouted falls back to the GPU queue, so a missing `-Q` quietly turns a lane into a second GPU worker.
-- `-B` belongs to `worker-io` alone. A second embedded scheduler double-fires every periodic job.
-- `--pool` is part of the dispatch model, not a tuning knob. Worker code queues follow-on Celery work with a blocking call, which is safe only while one task owns one operating-system process; see [Worker Concurrency Lanes](DEPLOYMENT.md#worker-concurrency-lanes).
-- `--max-tasks-per-child` on `worker-parse` overrides the global recycle limit in `backend/celery_app.py`. Drop it and that lane inherits 500, which is far too high for parses whose per-document cost is unbounded; see [Worker Child Recycling](DEPLOYMENT.md#worker-child-recycling).
-
-That patch is optional. It changes the backend feedback loop only. It does not change the frontend contract. If Nginx still proxies the `frontend` container, rebuilding `frontend` remains the way to update `https://localhost:14443`.
+The patch changes nothing for the frontend: rebuilding `frontend` is still how `https://localhost:14443` updates.
 
 ### Optional Host-Run Frontend Workflow
 
-If you want the fastest UI feedback loop, you can instead run Next.js on the host. Treat that as a different local mode, not as a small patch on top of the containerised template above.
-
-In host-run frontend mode:
-
-- rebuilding the `frontend` container does not change what `https://localhost:14443` serves
-- you must keep the host Next.js process running yourself
-- you should patch both your local `docker-compose.yml` and your local `nginx/nginx.conf` together so Nginx proxies to the host frontend instead of the `frontend` container
-
-Run the host frontend like this:
+For the fastest UI loop, run Next.js on the host. This is a separate mode: Nginx must proxy to the host process instead of the `frontend` container, which takes a local patch to your `docker-compose.yml` and to the tracked `nginx/nginx.conf` (do not commit it). Rebuilding the `frontend` container then changes nothing at `https://localhost:14443`, and you keep the host process running yourself.
 
 ```bash
 cd frontend
 npm install
-NEXT_PUBLIC_API_URL=/api npm run dev -- --hostname 0.0.0.0 -p 14141
+NEXT_PUBLIC_API_URL=/api npm run dev -- --hostname 0.0.0.0
 ```
 
-After frontend changes, run production build and lint checks since development mode is more forgiving:
+`npm run dev` serves on port 14141. Development mode is more forgiving than a production build, so run `npm run lint` and `npm run build` before you push.
 
-```bash
-cd frontend
-npm run lint
-npm run build
-```
-
-If you only need supporting services while running code on the host, start the specific services you need. Examples include `db` and `redis`.
-
-If you do not have an NVIDIA GPU, use CPU-only mode as described in [DEPLOYMENT.md](DEPLOYMENT.md) before starting the stack.
+To run other code on the host against containerised services, start only the services you need, such as `db` and `redis`. The template publishes neither PostgreSQL nor Redis, so add `ports` entries for them in your `docker-compose.yml`.
 
 ## Backend Development Notes
 
-- The compose template does not publish PostgreSQL or Redis to the host by default.
-- If you want host-based tooling or host-run services to talk to containerised PostgreSQL or Redis, add the required `ports` entries in your local `docker-compose.yml`.
-- Heavy ML libraries must stay inside worker task functions, not API startup paths.
-
-Useful migration and testing commands:
-
 ```bash
-# Run database migrations
-alembic upgrade head
-
-# Create a new migration revision
-alembic revision --autogenerate -m "message"
-
-# Sweep legacy recordings (manual run)
-python -m backend.startup_canonical_cutover
-
-# Run backend tests (ensure the virtual environment is active first)
-source .venv/bin/activate
-pytest
-
-# Validate docs and Alembic graph before opening a pull request
-python3 scripts/validate_docs.py
-python3 scripts/validate_alembic.py
+alembic upgrade head                            # apply migrations
+alembic revision --autogenerate -m "message"    # create a revision
+python -m backend.startup_canonical_cutover     # run the legacy recording sweep alone
 ```
 
-Development guardrails:
-
-- Do not delete or rename committed Alembic revision files once a database may have applied them.
-- Container startup runs two backend migration stages in order: Alembic first, then the startup canonical cutover sweep for pending legacy recordings.
-- `python -m backend.startup_canonical_cutover` is the backend-only local entry point for the legacy recording sweep. Use it when you need to exercise or debug the container-level cutover without booting the full API service.
-- `NOJOIN_SKIP_STARTUP_CANONICAL_CUTOVER=1` is available for local debugging only when you need to bypass that sweep temporarily.
-- `NOJOIN_STARTUP_CANONICAL_CUTOVER_BATCH_SIZE` controls the batch size used by the startup cutover loop. The default is `100`.
-- The localhost dev compose template at the end of this document sets `NOJOIN_AUTO_REPAIR_MISSING_ALEMBIC_REVISIONS=true` on the API service. If a local dev database is stamped to a revision that no longer exists in your checkout, startup will restamp it to the current checked-in head before running `alembic upgrade head`.
-- Keep that auto-repair flag limited to disposable local databases. For persistent deployments, fix the migration graph or reconcile the database revision manually instead of auto-stamping.
+- Never delete or rename a committed Alembic revision.
+- The API image's entrypoint runs Alembic (`backend.startup_migrations`), then the canonical cutover sweep for pending legacy recordings, then the server. `NOJOIN_SKIP_STARTUP_CANONICAL_CUTOVER=1` skips the sweep for local debugging, and `NOJOIN_STARTUP_CANONICAL_CUTOVER_BATCH_SIZE` sets its batch size (default `100`).
+- The dev template sets `NOJOIN_AUTO_REPAIR_MISSING_ALEMBIC_REVISIONS=true` on `api`. A database stamped with a revision that is missing from your checkout is then restamped to the current head before `alembic upgrade head`. Use it only on disposable databases; on a persistent one, repair the graph or the stamp by hand.
 
 ### Running Migrations Against Postgres
 
-`scripts/validate_alembic.py` checks the revision graph only. `scripts/check_migrations.py` executes the chain against a real Postgres, which is the only way to catch a migration that is valid SQL but fails on real rows:
+`validate_alembic.py` checks only the revision graph. `check_migrations.py` runs the chain on a real Postgres: base to head on an empty database; then it seeds awkward values, downgrades the newest migration and applies it again with that data present; then it asserts the database is at head.
 
 ```bash
 docker run -d --name nojoin-migcheck -e POSTGRES_PASSWORD=test \
@@ -415,337 +267,251 @@ DATABASE_URL=postgresql://postgres:test@localhost:55432/nojoin_migration_check \
 docker rm -f nojoin-migcheck
 ```
 
-It runs three phases: a fresh install from base to head; a seeded round trip that inserts deliberately awkward values, rolls the newest migration back, and re-applies it **with that data present**; and an assertion that the database really is at head. The second phase is the one that catches data-dependent failures, and it keeps working for future migrations without being rewritten.
+The seed puts JSON `null` in `jsonb` columns, which the manual speaker merge writes when it clears a voiceprint. Postgres may evaluate the two sides of `AND` in either order, so `jsonb_typeof(col) = 'array' AND jsonb_array_length(col) > 0` can still abort on those rows. Use a plain comparison such as `col <> '[]'::jsonb`.
 
-The hostile fixture includes columns holding JSON `null` rather than SQL `NULL`, because the manual speaker-merge flow writes exactly that when clearing a voiceprint. A predicate such as `jsonb_typeof(col) = 'array' AND jsonb_array_length(col) > 0` still aborts on those rows: Postgres may evaluate the two conditions in either order, so the type guard does not protect the length call. Use a plain comparison like `col <> '[]'::jsonb` instead.
+### Bind Parameter Limits
+
+PostgreSQL accepts at most 65535 bind parameters in one statement. asyncpg, the API's driver, stops at 32767, and psycopg 3, the workers' driver, at 65535. SQLAlchemy checks neither, so a multi-row insert or a large `IN` clause builds and then fails at execution once the data is large enough, and a statement between the two limits works in a worker and fails in the API.
+
+When the number of rows or items comes from the data, including a list in a request body, batch it with `bind_batches` from [backend/utils/db_batching.py](../backend/utils/db_batching.py), whose `MAX_BIND_PARAMS` (30000) sits under both limits. Pass `params_per_item` for a multi-row insert, where each row binds every column; the default of 1 suits an `IN` clause.
+
+The suite runs on SQLite, which accepts far more parameters, so a SQLite test passes on a statement Postgres rejects. Tests that need the real limit take the `postgres_test_url` fixture, which skips unless `NOJOIN_TEST_POSTGRES_URL` names a server. CI sets it for `Backend tests`. Locally:
+
+```bash
+docker run -d --rm --name nojoin-test-pg \
+  -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=nojoin_test \
+  -p 55432:5432 pgvector/pgvector:pg18-trixie
+
+NOJOIN_TEST_POSTGRES_URL=postgresql://postgres:postgres@localhost:55432/nojoin_test pytest
+```
 
 ### Test Reliability
 
-The suite must stay fast and trustworthy as coverage grows. The mechanism is deliberately lightweight — no flaky-test database or retry plugin, just visible signal and a reporting path.
-
-- **Duration reporting is always on.** `pyproject.toml` sets `addopts = "--durations=15"`, so every local and CI `pytest` run prints the fifteen slowest tests at the end. Skim that list when you add or change tests. If a test you touched appears near the top, prefer trimming fixtures, narrowing scope, or marking it rather than letting the suite drift slower.
-- **Flag slow outliers.** When a genuinely slow test is worth keeping, open a tracking issue and apply the `slow-test` label so it is visible for later optimisation.
-- **Report flaky tests.** A test that passes and fails without a code change is flaky and should never be silently re-run away. Follow the flaky-test reporting path in [CONTRIBUTING.md](../.github/CONTRIBUTING.md#reporting-issues): open a bug report titled `[flaky]` with the test name, the CI job or local command, how often it fails, and whether it reproduces locally or only in CI. Triage applies the `flaky` label.
-- **Fix forward, do not paper over.** Resolve flakiness by removing the nondeterminism (timing, ordering, shared state, network). Skipping or `xfail`-ing a flaky test is a temporary measure that needs a linked tracking issue and a stated condition for removal.
-- **No test may reach Redis.** `backend/tests/conftest.py` fails any test that opens a real Redis connection — the Celery broker, the result backend, or an application client such as download progress or rate limiting — and bounds every Celery retry policy so a leaked dispatch costs milliseconds rather than seconds. A test failing with `Test opened a real Redis connection` reached code that talks to Redis and did not stub it; the reported call site names the line. Take the `stub_celery_dispatch` fixture for a Celery dispatch, or `stub_meeting_edge_dispatch` for transcript mutations. Prefer stubbing an attribute on a shared object (`celery_app.send_task`) or a function at its defining module, so the stub holds however the caller imported it. Do not stub a helper by name on a package that re-exports it: `from .helpers import ...` binds at import time, so patching the package afterwards silently does nothing — that mistake is what made this guard necessary.
-- **Every model is registered before any test runs.** `backend/tests/conftest.py` imports `backend.models.registry`, so a module that creates its own SQLite schema configures its mappers the same way whether it runs alone or inside the full suite. Without it, a module that never imports the registry passes in the suite and fails alone with `NoReferencedTableError` or `failed to locate a name`, depending on which earlier module happened to register the models. `test_api_mapper_configuration.py` checks separately that each real entry point registers the full graph, in subprocesses this import cannot reach.
-
-- **ffmpeg tests skip without ffmpeg.** A test that runs real media through ffmpeg is marked to skip when `shutil.which("ffmpeg")` finds nothing, so a host without it passes while skipping them. Both backend test jobs (in `ci.yml` and `release.yml`) install Ubuntu's ffmpeg, the 6.1 series, so they run there. The images ship 7.1, so a test that depends on how one ffmpeg version behaves should say which. To test a host without ffmpeg, point `PATH` at an empty directory with `monkeypatch.setenv`. `ensure_ffmpeg_in_path()` only reports a missing tool and never edits `PATH`, so nothing brings the host's copy back.
-
-The `flaky` and `slow-test` labels are defined in [.github/labels.yml](../.github/labels.yml); the per-release and quarterly triage passes in [.github/SUPPORT.md](../.github/SUPPORT.md) review open items under both.
+- **Durations.** `pyproject.toml` sets `--durations=15`, so every `pytest` run lists the fifteen slowest tests. If a test you touched is near the top, trim its fixtures or narrow it. A slow test worth keeping gets a tracking issue with the `slow-test` label.
+- **Flaky tests.** Report a test that passes and fails with no code change as described in [CONTRIBUTING.md](../.github/CONTRIBUTING.md#reporting-issues); triage adds the `flaky` label. Fix it by removing the nondeterminism (timing, ordering, shared state, network), not by re-running it. A skip or `xfail` needs a linked issue and a stated condition for removing it.
+- **No Redis.** `backend/tests/conftest.py` fails any test that opens a Redis connection, printing `Test opened a real Redis connection` and the call site. Take the `stub_celery_dispatch` fixture for a Celery dispatch, `stub_meeting_edge_dispatch` for transcript mutations, or stub the client the code uses. Stub an attribute on a shared object (`celery_app.send_task`) or a function in its defining module; a stub on a package that re-exports a helper misses callers that imported the name earlier.
+- **Model registry.** `conftest.py` imports `backend.models.registry`, so a test module behaves the same alone as in the full suite. `test_api_mapper_configuration.py` checks that each real entry point registers every model.
+- **ffmpeg.** Tests that run real media through ffmpeg skip when `shutil.which("ffmpeg")` finds nothing. CI installs Ubuntu's ffmpeg 6.1, the series the worker image ships; the API image ships 7.1. A test that depends on one version's behaviour should say which. To simulate a host without ffmpeg, point `PATH` at an empty directory with `monkeypatch.setenv`.
 
 ## Browser Capture Development
 
-Browser capture code lives under `frontend/src/lib/capture/` and is exercised by the recording page and capture settings surfaces.
+Capture code lives in `frontend/src/lib/capture/`. After a capture change, check whichever of these apply:
 
-When changing capture behaviour, validate the relevant parts of this path:
-
-- Supported-browser gating for desktop Chromium on Windows, Linux, and macOS.
-- Unsupported-browser messaging for Firefox, Safari, and mobile browsers other than Chrome.
-- Mobile Chrome microphone-only start, waveform, pause/resume, stop/finalize, and clear copy that shared app/tab/system audio is not captured.
-- Browser share picker flow for tab, window, and screen sharing.
-- Shared-audio track detection and missing-audio messaging.
-- Microphone permission and selected-device behaviour.
-- Per-source gain controls in **Settings > Recording**.
-- Segment creation, sequential upload, FLAC decode on upload, live transcript dispatch, stop/finalize, pause/resume, and discard.
-- An upload backlog: block segment uploads in the browser's developer tools, close the tab, reopen it, and check that **Stop and process** uploads what the closed tab recorded before finalizing.
-- The paused-recording lock after refresh or close (actual tab unload, not in-app navigation).
-- Focus changes to another tab, window, or application; these should not pause capture.
-
-Useful focused checks:
+- Supported-browser gating for desktop Chromium on Windows, Linux and macOS, and the unsupported-browser message on Firefox, Safari and mobile browsers other than Chrome.
+- Mobile Chrome: microphone-only start, waveform, pause and resume, stop and finalise, and the notice that shared app, tab or system audio is not captured.
+- The share picker for a tab, a window and a screen; shared-audio track detection and the missing-audio message.
+- Microphone permission, the selected device, and the per-source gain controls in **Settings > Recording**.
+- Segment creation, sequential upload, FLAC decode on upload, live transcript dispatch, pause and resume, stop and finalise, and discard.
+- An upload backlog: block segment uploads in the browser's developer tools, close the tab, reopen it, and check that **Stop and process** uploads what the closed tab recorded before finalising.
+- The paused-recording lock after a refresh or a closed tab (a real unload, not in-app navigation).
+- Focus moving to another tab, window or application, which must not pause capture.
 
 ```bash
 cd frontend
-npm run test -- --run src/lib/capture
+npm run test -- src/lib/capture
 npm run build
 ```
 
-If you are validating through the containerised localhost stack, rebuild the frontend container after frontend changes:
-
-```bash
-docker compose up -d --build frontend
-```
-
-Read [CAPTURE.md](CAPTURE.md) before changing support copy, browser compatibility behaviour, or troubleshooting guidance.
+On the containerised stack, rebuild with `docker compose up -d --build frontend`. Read [CAPTURE.md](CAPTURE.md) before changing support copy, browser compatibility or troubleshooting guidance.
 
 ### Spellcheck Dictionaries
 
-Spellcheck dictionaries are stored under `frontend/public/dictionaries/` in gzip-compressed format (`index.aff.gz` and `index.dic.gz`) to optimize repository size and container image build footprint.
-
-If you add a new language or update an existing dictionary:
-1. Obtain the raw `.aff` and `.dic` files.
-2. Compress them using gzip:
-   ```bash
-   gzip -k index.aff
-   gzip -k index.dic
-   ```
-3. Commit only the compressed `.gz` files under `frontend/public/dictionaries/<locale>/`. Do not track the raw uncompressed files.
+Dictionaries live in `frontend/public/dictionaries/<locale>/` as `index.aff.gz` and `index.dic.gz`. To add or update one, compress the raw files with `gzip -k index.aff index.dic` and commit only the `.gz` files.
 
 ## Backend Coding Conventions
 
 ### Language & Formatting
-- **Formatting & Imports**: Code is formatted and import-sorted by Ruff. Run `ruff format .` and `ruff check --fix .`, or let the pre-commit hook do it. Do not hand-format.
-- **Type Hints**: New and changed public/cross-module code should be fully annotated. Type checking is enforced incrementally by mypy on the boundary listed under `[tool.mypy].files` in `pyproject.toml` (configuration, core security/persistence contracts, and API-facing schema/model modules). Add modules to that list as they are annotated; annotate public functions and cross-module interfaces before internal helpers.
-- **Error Handling**: Use `HTTPException` in API endpoints to raise HTTP-level issues. Catch specific exception types where recovery differs; a deliberately broad `except Exception` at a recovery boundary must log actionable context (or re-raise with `raise ... from`) and carry a justification comment in the form `# noqa: BLE001 -- boundary: <reason>`. `scripts/check_blind_excepts.py` enforces that form in `scripts/check.py` and CI: a bare `# noqa: BLE001`, or one with no reason after `boundary:`, fails the check. A handler with no reason worth writing should catch a narrower exception instead.
-- **Logging**: Use lazy `%`-style formatting (`logger.info("processed %s", count)`), not eager f-strings, in frequently executed paths so the interpolation is skipped when the level is disabled.
-- **Prompts are composed, never templated**: build LLM prompts from `(heading, body)` blocks with `backend.utils.prompt_blocks.render_prompt_blocks`. Do not reintroduce `str.format` or `%`-style substitution into a prompt. Interpolated text is frequently user-authored (notes structures, glossaries, focus text) and a substitution step turns a stray brace into a generation-time failure, forces JSON schema examples to be written with doubled braces, and lets a new placeholder ship unfilled until that provider is next used. Composition removes all three, and it is what lets `# Required JSON Schema` blocks read exactly as the model receives them.
+
+- **Formatting and imports**: Ruff formats and sorts imports. Run `ruff format .` and `ruff check --fix .`, or `python scripts/check.py --fix`, or let the pre-commit hook do it.
+- **Type hints**: annotate new and changed public and cross-module code. mypy checks only the modules in `[tool.mypy].files` in `pyproject.toml`; add a module there once it is annotated.
+- **Error handling**: raise `HTTPException` for HTTP-level errors in endpoints, and catch specific exceptions where recovery differs. A deliberate `except Exception` at a recovery boundary must log actionable context or re-raise with `raise ... from`, and carry `# noqa: BLE001 -- boundary: <reason>`. `scripts/check_blind_excepts.py` fails a bare `# noqa: BLE001`, a blanket `# noqa`, and a missing, one-word or placeholder reason. With no reason worth writing, catch a narrower exception.
+- **Logging**: on frequently executed paths, pass `%`-style arguments (`logger.info("processed %s", count)`) instead of an f-string, so a disabled level skips the formatting.
+- **Prompts**: build LLM prompts from `(heading, body)` blocks with `backend.utils.prompt_blocks.render_prompt_blocks`. Never use `str.format` or `%` substitution in a prompt: interpolated text is often user-authored, and a stray brace would fail at generation time.
 
 ### Complexity & Size Thresholds
-New and changed code is gated on function complexity and module size to keep maintainability hotspots from spreading:
 
-- **Function complexity**: Ruff `C901` enforces a McCabe complexity ceiling of 10 (`[tool.ruff.lint.mccabe] max-complexity = 10`).
-- **Function size & arguments**: Ruff `PLR0915` (too-many-statements), `PLR0912` (too-many-branches), and `PLR0913` (too-many-arguments) at Ruff's Pylint-default limits.
-- **File size**: Backend Python source files (excluding `backend/tests/`, `test_*.py`/`*_test.py`, and Alembic migrations under `backend/alembic/versions/`) must be **at most 1000 lines**. This is enforced by `scripts/check_file_size.py`, which runs in `scripts/check.py` and CI.
+- **Complexity**: Ruff `C901` caps McCabe complexity at 10, and `PLR0912`, `PLR0913` and `PLR0915` cap branches, arguments and statements at Ruff's Pylint defaults.
+- **File size**: backend Python source may run to 1000 lines (`scripts/check_file_size.py`). Tests (`backend/tests/`, `test_*.py`, `*_test.py`) and Alembic revisions are exempt.
 
-Existing violators predate the gate and are **grandfathered**: the complexity/size Ruff rules are ignored per-file under the complexity-baseline block in `[tool.ruff.lint.per-file-ignores]`, and over-length files are listed with their current line count in the `GRANDFATHERED` allowlist in `scripts/check_file_size.py`. The policy is **shrink, not grow**: a grandfathered file fails the size check if it grows beyond its recorded count. When a file shrinks, lower its recorded count to match, drop any rule from its ignore list that it no longer trips, and remove its entries once it is back under the limits. **Do not add new grandfather entries** — new files and new code in non-grandfathered files must comply with the thresholds above.
+Code that predates the gates is grandfathered through per-file ignores under the complexity baseline in `[tool.ruff.lint.per-file-ignores]` and recorded line counts in `GRANDFATHERED` in `scripts/check_file_size.py`. A grandfathered file fails if it grows past its count. When one shrinks, lower its count, drop the rules it no longer trips, and remove its entries once it is within the limits. Never add an entry.
 
 ### Comments
-These rules apply to all tracked source (backend, worker, and frontend), not just Python.
 
-- **Explain intent, not syntax**: A comment should document an invariant, constraint, risk, compatibility requirement, or other non-obvious intent. Do not narrate what the code already says line by line.
-- **No indecisive developer-thought comments**: Remove musings such as "we can commit here", "usually", "assume consistency", "maybe skipped?", or questions embedded in authorisation rules. If the code's behaviour is a deliberate rule, state the rule.
-- **Rewrite uncertainty as a contract**: If something is genuinely uncertain or conditional, express it as an explicit invariant, a documented fallback policy, a tracked issue reference, or a testable assumption — not as a hedge. Where the rule is security- or authorisation-sensitive, lock it with a test rather than a comment.
-- **Preserve load-bearing comments**: Keep comments that document live/final pipeline alignment, security and authorisation boundaries, migration and backward-compatibility requirements, browser-capture contracts, and non-obvious build or runtime constraints. When in doubt, make such a comment more precise rather than deleting it.
+These apply to all tracked source, frontend included.
 
-### Local Checks From A Fresh Checkout
-Reproduce the CI Python checks locally with a single command:
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -r requirements/dev.txt   # tests + lint/format/type tooling (CPU)
-pre-commit install                              # optional: run lint/format on commit
-
-python scripts/check.py            # ruff lint, format check, trailing-whitespace, file-size, blind-except reasons, mypy, doc/alembic validators, pytest
-python scripts/check.py --fix      # auto-fix lint + formatting first
-python scripts/check.py lint typecheck  # run a subset
-```
-
-Use `requirements/local.txt` instead of `dev.txt` for a full GPU host with the live processing stack.
+- **Explain intent**: document an invariant, constraint, risk or compatibility requirement. Do not narrate what the code says.
+- **State the rule**: remove musings such as "we can commit here" or "maybe skipped?" and questions inside authorisation rules. Express real uncertainty as an invariant, a fallback policy, an issue reference or a testable assumption, and lock a security or authorisation rule with a test.
+- **Keep contract comments**: comments on live and final pipeline alignment, security and authorisation boundaries, migration and compatibility requirements, browser-capture contracts, and non-obvious build or runtime constraints stay. Make them more precise rather than deleting them.
 
 ### Data Access & Dependency Injection
-- **Data Access**: `SQLModel` is used for ORM. All model files are located in [backend/models/](../backend/models/).
-- **Datetimes**: The schema stores naive UTC. Produce values with `backend.utils.time.utc_now`, and give every `datetime` field on a table model an explicit naive type, `sa_type=DateTime` or `sa_column=Column(DateTime, ...)`. From sqlmodel 0.0.45 a bare `datetime` annotation maps to the timezone-aware `UTCDateTime` type. That type does not match the migrations, and it raises `ValueError` on the first naive value written. [test_model_datetime_columns.py](../backend/tests/test_model_datetime_columns.py) fails on any such column.
-- **Dependency Injection**: Use `backend.api.deps` for DB sessions (`SessionDep`) and retrieving the current user (`CurrentUser`).
+
+- **ORM**: SQLModel, with every model in [backend/models/](../backend/models/).
+- **Datetimes**: the schema stores naive UTC. Produce values with `backend.utils.time.utc_now`, and give every `datetime` field on a table model an explicit naive type, `sa_type=DateTime` or `sa_column=Column(DateTime, ...)`. From sqlmodel 0.0.45 a bare `datetime` maps to the timezone-aware `UTCDateTime`, which disagrees with the migrations and raises `ValueError` on the first naive value. [test_model_datetime_columns.py](../backend/tests/test_model_datetime_columns.py) fails on such a column.
+- **Dependency injection**: take the database session with `Depends(get_db)` and the user with `Depends(get_current_user)` from `backend.api.deps`, or `get_current_admin_user` (owner, admin or superuser) and `get_current_active_superuser` (superuser only) for privileged routes.
 
 ### System Configuration
-- **Configuration Management**: `backend.utils.config_manager` is the central utility handling system and user settings persisted in `data/config.json`. Do not implement parallel ad-hoc configuration storage mechanisms.
-- **Config in workers**: every worker process holds its own copy of `config.json`, and the API writes the file. A `task_prerun` hook in [backend/celery_app.py](../backend/celery_app.py) reloads that copy before every task, at the cost of one `stat` when the file is unchanged, so a task does not call `config_manager.reload()` itself. Saves write a temporary file and rename it over `config.json`, so a reader never sees a partly written file.
+
+- **Configuration store**: `backend.utils.config_manager` handles system and user settings in `data/config.json`. Do not add another store.
+- **Config in workers**: each worker process holds its own copy of `config.json`, which the API writes. A `task_prerun` hook in [backend/celery_app.py](../backend/celery_app.py) reloads it before every task, at the cost of one `stat` when the file is unchanged, so a task never calls `config_manager.reload()` itself. Saves write a temporary file and rename it over `config.json`, so a reader never sees a partial file.
 
 ### Audio Processing & ML Operations
-- **Library Imports**: ML libraries (such as `torch`, `whisper`, `pyannote`) are computationally heavy and must be imported **inside** Celery task functions (under [backend/worker/tasks/](../backend/worker/tasks/)) to ensure quick backend API startup.
-- **Task dispatch from async code**: never call `celery_app.send_task`, `.delay()` or `.apply_async()` inside an `async def`. Publishing is a blocking socket call, so an unreachable Redis stalls the whole event loop and every request the process is serving, not just the one dispatching. Use `dispatch_task` from [backend/core/task_dispatch.py](../backend/core/task_dispatch.py), or `dispatch_task_best_effort` where the caller must not fail on a dispatch failure, so the choice to swallow is visible at the call site. Worker-side code dispatches inline and should keep doing so, because its pools give each task a process to itself, so a blocking publish stalls only the task making it. A test walks the tree and fails on any inline dispatch inside an `async def`, so this is enforced rather than remembered. Know what that test cannot see: a *synchronous* helper that dispatches inline and is only ever called from a coroutine passes it, which is exactly how one such helper escaped the original audit. Check that by reading when adding a dispatching helper, and note that the worker's safety also rests on the `--pool` values in Compose rather than on anything in the code — see [DEPLOYMENT.md](DEPLOYMENT.md#worker-concurrency-lanes).
-- **Pluggable ASR Engines**: The ASR Transcribe step dispatches to a pluggable engine under [backend/processing/engines/](../backend/processing/engines/), determined by the `transcription_backend` configuration key. Pluggable engines (e.g. Whisper, or onnx-asr engines like Parakeet and Canary) share the `OnnxAsrEngine` base class. Note that Parakeet offers faster transcription on compatible NVIDIA systems but trades off accuracy and language coverage compared to Whisper.
-- **Diarisation manifests**: `RecordingAudioWindowManifest.status` is a legacy compatibility projection. Use `asr_status` for live ASR coverage; rows from older releases can also read `catch_up_processed`. `diarization_status`, `diarization_config_hash`, and `diarization_window_result_id` only describe speaker-window work from the removed rolling and catch-up diarisation, and nothing writes them now. Never treat legacy `live_processed` as diarisation-complete.
-- **Phantom Speaker Filter**: The post-diarisation stage [backend/processing/phantom_filter.py](../backend/processing/phantom_filter.py) filters and reassigns speech segments caused by non-speech notification sounds or background noise. It uses heuristic duration/segment count checks followed by embedding-based validation. Its thresholds (`PHANTOM_MAX_DURATION_S`, `PHANTOM_MAX_SEGMENTS`, `PHANTOM_EMBEDDING_FLOOR`, and `PHANTOM_MERGE_THRESHOLD`) are the defaults from [backend/processing/processing_tuning.py](../backend/processing/processing_tuning.py), which a user's settings may override.
-- **Speaker Identification Constants**: All speaker matching thresholds are centralized in [backend/processing/embedding.py](../backend/processing/embedding.py). Do not hardcode threshold values elsewhere; import and reference the named constants (such as `IDENTIFICATION_THRESHOLD`, `AUTO_UPDATE_THRESHOLD`, `MARGIN_OF_VICTORY`, `DRIFT_GUARD_THRESHOLD`, `SCAN_MATCH_THRESHOLD`, `UI_SHOW_MATCH_THRESHOLD`, and `UI_STRONG_MATCH_THRESHOLD`).
-- **PyTorch 2.6+ safe globals**: PyTorch 2.6+ defaults to `weights_only=True` in `torch.load` for security, blocking loading of custom classes (like `pyannote.audio.core.task.Specifications` and `torch.torch_version.TorchVersion`) from model checkpoints. These classes must be explicitly registered prior to loading models via `torch.serialization.add_safe_globals([...])` at the module level in `embedding_core.py` and `diarize.py`.
+
+- **Heavy imports**: import ML libraries such as `torch`, `whisper` and `pyannote` inside Celery task functions under [backend/worker/tasks/](../backend/worker/tasks/), never on API startup paths.
+- **Task dispatch from async code**: never call `celery_app.send_task`, `.delay()` or `.apply_async()` inside an `async def`. Publishing is a blocking socket call, and an unreachable Redis would stall the event loop and every request on it. Use `dispatch_task` from [backend/core/task_dispatch.py](../backend/core/task_dispatch.py), or `dispatch_task_best_effort` where a dispatch failure must not fail the caller. A test fails on inline dispatch inside an `async def`, but it cannot see a synchronous helper that dispatches and is called from a coroutine, so check that case by reading. Worker code dispatches inline, which is safe only under the `solo` and `prefork` pools set in Compose ([Worker Concurrency Lanes](DEPLOYMENT.md#worker-concurrency-lanes)).
+- **ASR engines**: transcription dispatches to an engine under [backend/processing/engines/](../backend/processing/engines/) chosen by the `transcription_backend` setting (`whisper`, `parakeet` or `canary`). Every engine implements `TranscriptionEngine`; Parakeet and Canary share the `OnnxAsrEngine` base class.
+- **Window manifests**: read `RecordingAudioWindowManifest.asr_status` for live ASR coverage, not the legacy `status` projection, and never treat `live_processed` as diarisation-complete. Nothing writes the diarisation fields any more; [ARCHITECTURE.md](ARCHITECTURE.md) describes both lanes.
+- **Phantom speaker filter**: [phantom_filter.py](../backend/processing/phantom_filter.py) drops or reassigns segments caused by notification sounds or background noise. Its thresholds default from [processing_tuning.py](../backend/processing/processing_tuning.py), and a user's settings can override them.
+- **Speaker matching thresholds**: import the named constants from [embedding.py](../backend/processing/embedding.py), such as `IDENTIFICATION_THRESHOLD`, `AUTO_UPDATE_THRESHOLD`, `MARGIN_OF_VICTORY`, `DRIFT_GUARD_THRESHOLD` and `SCAN_MATCH_THRESHOLD`. Never hardcode a threshold elsewhere.
+- **PyTorch safe globals**: `torch.load` defaults to `weights_only=True`, which refuses the pyannote classes in model checkpoints. Register them with `torch.serialization.add_safe_globals` before loading a model, as `embedding_core.py` and `diarize.py` do.
 
 ## Frontend Coding Conventions
 
 ### Architecture & UI Guidelines
-- **State Management**: **Zustand** (defined in [frontend/src/lib/store.ts](../frontend/src/lib/store.ts)) is the global UI state manager (handling navigation, selection, and filters). Avoid prop drilling wherever possible.
-- **API Client Layer**: All API communication must go through the [frontend/src/lib/api/](../frontend/src/lib/api/) layer, a barrel that re-exports the typed per-resource clients.
-- **Security & Tokens**:
-  - Browser auth uses HttpOnly session cookies issued by `/api/v1/login/session`.
-  - Bearer tokens from `/api/v1/login/access-token` are reserved for non-browser API clients.
-  - Never expose bearer tokens in URL query strings or other browser-visible areas.
-- **Routing & Framework**: Use the Next.js App Router ([frontend/src/app/](../frontend/src/app/)) and Tailwind CSS for styling. Prefer functional components inside [frontend/src/components/](../frontend/src/components/).
-- **Strict TypeScript**: Avoid the use of `any` types. Ensure TS interfaces in `frontend/src/types/index.ts` are updated first when adding settings or model fields.
+
+- **State**: Zustand. [frontend/src/lib/store.ts](../frontend/src/lib/store.ts) holds global UI state (navigation, selection, filters), with feature stores beside it in `frontend/src/lib/`. Avoid prop drilling.
+- **API calls**: all go through [frontend/src/lib/api/](../frontend/src/lib/api/), a barrel that re-exports the typed per-resource clients.
+- **Auth**: the browser uses HttpOnly session cookies from `/api/v1/login/session`. Bearer tokens from `/api/v1/login/access-token` are for non-browser clients; never put one in a URL or anywhere else the browser exposes.
+- **Framework**: the Next.js App Router ([frontend/src/app/](../frontend/src/app/)) and Tailwind CSS, with functional components in [frontend/src/components/](../frontend/src/components/).
+- **TypeScript**: avoid `any`. Update the interfaces in `frontend/src/types/index.ts` first when adding settings or model fields.
 
 ### Charts
 
-**A series that is a person takes that person's meeting colour.** A speaker is
-assigned one by `buildMeetingSpeakerColors` in
-[frontend/src/lib/recordingSpeakerUtils.ts](../frontend/src/lib/recordingSpeakerUtils.ts),
-the user can change it, and the transcript, the speaker panel and the assignment
-popover all draw it. Charts resolve it through the `--speaker-*` tokens, which are
-the same seventeen palette keys at the step the panel's dots already use, in a form
-a fill can consume — a chart must never reach for a Tailwind colour class. Resolve
-them once per surface with `buildSpeakerColors`, never per component. The Analytics
-tab keyed its series off each speaker's index in its own list, which is sorted by
-talking time while the speaker panel is sorted alphabetically, so the same person
-was reliably two different colours in one meeting.
+A series that is a person takes that person's meeting colour: the one `buildMeetingSpeakerColors` in [recordingSpeakerUtils.ts](../frontend/src/lib/recordingSpeakerUtils.ts) assigns and the user can change, as drawn in the transcript and the speaker panel. Charts read it through the `--speaker-*` tokens (the seventeen palette keys the panel's dots use), resolved once per surface with `buildSpeakerColors`. Never use a Tailwind colour class in a chart.
 
-`--chart-1` … `--chart-8` remain the fallback for a series with no assigned colour,
-with `--chart-other` for anything past the last slot. Three rules hold for both
-families:
+A series with no assigned colour takes `--chart-1` to `--chart-8`, and anything past the eighth takes `--chart-other`. Three rules hold for both families:
 
-- **Slots are assigned by fixed position and never cycled.** Colour identifies an
-  entity, so a filter that changes how many series are on screen must not repaint
-  the survivors, and a ninth series folds into `--chart-other` rather than wrapping
-  back to slot 1 — a repeated hue reads as the same entity.
-- **The two themes are separate selected sets, not a lightening of one another.**
-  The chart slots were validated together against their own surfaces for
-  colour-vision separation and normal-vision separation; moving either means
-  re-validating both. The `--speaker-*` tokens are deliberately one value in both
-  themes, because they mirror a dot that is also one value in both, and separation
-  between the speakers actually in a meeting is the assigner's job — it picks each
-  new speaker's colour to maximise hue distance from the ones already used.
-- **Several steps in both families sit below 3:1 on the card, which is why the
-  pairings in [check-contrast.mjs](../frontend/scripts/check-contrast.mjs) are held
-  to `HAIRLINE` rather than `AA_NON_TEXT`.** That is only defensible while identity
-  is never carried by colour alone: every series is directly labelled and the same
-  figures appear as text. A chart that drops its labels has to move those pairings
-  up, and several steps then fail.
+- **Fixed slots**: a slot follows the entity and never cycles. A filter that changes how many series are shown must not repaint the rest, and a ninth series folds into `--chart-other` instead of repeating slot 1.
+- **Themes**: each theme's chart slots are a separate set, validated against that theme's surfaces for colour-vision and normal-vision separation, so changing one means re-validating both. The `--speaker-*` tokens have one value in both themes, like the panel's dots.
+- **Labels**: several steps sit below 3:1 on the card, so their pairings in [check-contrast.mjs](../frontend/scripts/check-contrast.mjs) are held to `HAIRLINE`, not `AA_NON_TEXT`. That is acceptable only while every series is labelled directly and its figures also appear as text. A chart without labels must raise those pairings, and several steps would then fail.
 
-Exports draw the same charts and wording on the server, in
-`backend/services/exports/`. Its formatting, delivery readings and attribution
-wording are ports of `formatDuration.ts`, `deliveryInsights.ts` and
-`AttributionWarning.tsx`, and `backend/tests/test_export_documents.py` pins the
-parity. A change to one side needs the same change on the other.
-
-This is also why the talk-share bars are hand-rolled rather than a library's
-horizontal bar chart. A charting bar reserves a category axis and a label gutter,
-which left about 90px of drawable bar once that panel had to share a row; a bar
-whose track is the panel's full width keeps its direct label at any width the tab
-can be.
+PDF and Word exports draw the same charts on the server in `backend/services/exports/`. Their formatting, delivery readings and attribution wording port `formatDuration.ts`, `deliveryInsights.ts` and `AttributionWarning.tsx`, and `backend/tests/test_export_documents.py` pins the parity, so change both sides together.
 
 ### UI Duplication Rules
-- **Recording actions**: rename, reprocess, archive, discard and the rest are defined once, in
-  [frontend/src/components/recordings/_hooks/useRecordingActions.ts](../frontend/src/components/recordings/_hooks/useRecordingActions.ts). Surfaces consume that hook rather than defining their own, and
-  `sharedRecordingActions.test.ts` fails if one stops doing so. The surfaces today are
-  [Sidebar.tsx](../frontend/src/components/Sidebar.tsx) (the recordings rail) and
-  [RecordingStatusDisplay.tsx](../frontend/src/components/RecordingStatusDisplay.tsx) (the live view).
-  The recording page takes its audio export from the same hook.
+
+- **Recording actions**: rename, reprocess, archive, discard and the rest are defined once, in [useRecordingActions.ts](../frontend/src/components/recordings/_hooks/useRecordingActions.ts). The recordings rail ([Sidebar.tsx](../frontend/src/components/Sidebar.tsx)) and the live view ([RecordingStatusDisplay.tsx](../frontend/src/components/RecordingStatusDisplay.tsx)) consume that hook, the recording page takes its audio export from it, and `sharedRecordingActions.test.ts` fails if a surface defines its own.
 
 ## Release Workflow and Version Detection
 
 ### Unified Release Process
 
-Nojoin uses a single Git tag (`vX.Y.Z`) to release the API, Worker, Worker-IO, and Frontend images in lock-step. The images are built on the maintainer's release host by [scripts/release.py](../scripts/release.py), not on GitHub's runners: the build takes about two minutes there, against a release workflow that used to take close to half an hour, most of it spent on cache export, disk clean-up, and pulling the worker back down to build worker-io on top of it. GitHub still signs every image, so the signing identity operators verify against is unchanged.
+One tag, `vX.Y.Z`, releases the API, worker, worker-io and frontend images together. [scripts/release.py](../scripts/release.py) builds, gates and pushes the images on the maintainer's release host; [release.yml](../.github/workflows/release.yml) then verifies and signs them on GitHub.
 
 **Maintainer steps:**
 
-1. **Merge the work** for the release into `main`.
-2. **Bump the version** in a pull request: update [VERSION](VERSION) to the new version string and write the notes in [.github/release-notes-template.md](../.github/release-notes-template.md). Merge it.
-3. **Run the release** on the release host:
+1. Merge the release's work into `main`.
+2. In a pull request, bump [docs/VERSION](VERSION) and write the notes in [.github/release-notes-template.md](../.github/release-notes-template.md). Merge it.
+3. On the release host, run the script with the new version:
+
    ```bash
    python3 scripts/release.py 0.6.0
    ```
-   It finishes by pushing the tag and watching the workflow run, and prints the release URL.
-4. **Refine the release notes** in the GitHub Releases interface if the release needs specific guidance under Migration, Rollback, Known Issues, or Browser-Capture Compatibility.
-5. **Check the public demo refreshed.** Within the hour, `demo/refresh.sh` on the release host upgrades the demo's seed instance to the release, recaptures its fixtures and rebuilds `demo.nojoin.co.uk` from the tag, then sends a notification saying whether it worked. A failed refresh leaves the previous demo running. [demo/README.md](../demo/README.md) has the details.
+
+   It pushes the tag, watches the workflow run and prints the release URL. `--no-wait` pushes the tag without watching.
+4. Refine the notes in the GitHub Releases UI if the release needs specific guidance under Migration, Rollback, Known Issues or Browser-Capture Compatibility.
+5. Check the public demo refreshed. `demo/refresh.sh` runs hourly on the release host, rebuilds `demo.nojoin.co.uk` for a new release and sends a notification either way. A failed refresh leaves the previous demo running. See [demo/README.md](../demo/README.md).
 
 **What the script does**, stopping at the first failure:
 
-1. Checks that `origin/main` carries the new `docs/VERSION`, that the tag does not exist yet, and that every commit since the previous tag has a green `CI gate`, waiting up to 20 minutes for any CI still running. CI on `main` only runs the jobs whose paths a push touched, so the release commit's own run is not enough on its own: a version bump runs the docs checks and nothing else.
-2. Builds all four images from a clean worktree of that commit, with no layer cache, in a dedicated BuildKit builder. [docker/release.hcl](../docker/release.hcl) defines the build, and worker-io layers onto the worker built in the same run.
-3. Runs the gates on those images: the Trivy severity gate, the health and non-root smoke, and an advisory lookup for the two subscription CLIs in worker-io. See [Release Gates](#release-gates).
-4. Builds again from cache with provenance and SBOM attestations, pushes the immutable `version` and commit-`sha` tags, and checks that each pushed image config is the one that was scanned.
+1. Checks that `docs/VERSION` at `origin/main` is the new version and newer than the previous tag, that the tag is not on `origin`, and that every first-parent commit since the previous tag has a green `CI gate`, waiting up to 20 minutes for CI still running. CI on `main` runs only the jobs whose paths a push touched, so a version bump's own run covers little.
+2. Builds the four images from a clean worktree of that commit, with no layer cache, in its `nojoin-release` BuildKit builder, using [docker/release.hcl](../docker/release.hcl). worker-io layers onto the worker built in the same run.
+3. Runs the [Release Gates](#release-gates).
+4. Builds again from cache with provenance and SBOM attestations, pushes the immutable version and `sha-<commit>` tags, and checks that each pushed image config is the one it scanned.
 5. Pushes the tag.
 
 **What [release.yml](../.github/workflows/release.yml) does on the tag push:**
 
-1. Verifies `docs/VERSION` matches the tag.
-2. Checks every image is on GHCR under both immutable tags, carries its provenance and SBOM, and has a revision label naming the tag's commit. All four are checked before any is signed.
+1. Checks the tag is strict `vX.Y.Z` and matches `docs/VERSION`.
+2. Checks every image is on GHCR under both immutable tags, carries provenance and an SBOM, and has a revision label naming the tag's commit. It checks all four before signing any.
 3. Signs each image by digest with cosign.
-4. Publishes the rolling `latest` and `major.minor` tags from the signed digests.
-5. Generates and publishes the GitHub Release notes from the exact previous-tag-to-this-tag range (see [Automated Release Notes](#automated-release-notes)).
+4. Points the rolling `major.minor` and `latest` tags at the signed digests.
+5. Publishes the GitHub Release ([Automated Release Notes](#automated-release-notes)).
 
-A tag pushed by hand, without the script, fails at step 2 because its images are not on the registry.
+A tag pushed by hand, without the script, fails at step 2 because its images are not on the registry. A manual `workflow_dispatch` run re-verifies and re-signs an existing tag's images and republishes its notes, for instance after a transient failure: set `release_ref` to the tag, and `publish_latest=true` if `latest` should move.
 
-**Rehearsing a release.** `python3 scripts/release.py 0.6.0 --dry-run` runs the checks, the build, and every gate, and pushes nothing. In a dry run the version, tag, and CI checks are reported rather than enforced, and `--ref` builds any commit, so a branch can be rehearsed before it merges:
+**Rehearsing a release.** `--dry-run` runs the checks, the build and every gate, and pushes nothing. It reports the version, tag and CI checks instead of stopping on them, and `--ref` builds any commit, so a branch can be rehearsed before it merges:
 
 ```bash
 python3 scripts/release.py 0.6.0 --dry-run --ref HEAD
 ```
 
-Run a dry run before bumping the version when the base images or unpinned SDKs may have moved: the scan gate always uses a fresh vulnerability database, so a release that passed last week can fail today with no code change.
+The scan downloads a fresh vulnerability database on every run, so a release that passed last week can fail today with no code change. Dry-run before bumping the version when the base images or the unpinned SDKs may have moved.
 
-**Release host requirements.** Docker with a current Buildx (the script uses bake's target contexts and filesystem entitlements; it was written against Buildx 0.38), [Trivy](https://trivy.dev) on the `PATH`, `gh` authenticated for this repository, Python 3.12 or later, and about 25 GB free on the disk holding `~/.cache` and Docker's data. The script creates the `nojoin-release` builder itself, on the BuildKit image pinned in [docker/Dockerfile.buildkit](../docker/Dockerfile.buildkit), and replaces it when that pin moves. Pushing needs a `docker login ghcr.io` with a classic personal access token that has the `write:packages` scope and nothing else:
+**Release host requirements.** Docker with a current Buildx (the script uses bake target contexts and the `fs.write` entitlement), [Trivy](https://trivy.dev) on `PATH`, `gh` authenticated for this repository, Python 3.12 or later, and about 25 GB free on the disk holding `~/.cache` and Docker's data. The script creates the `nojoin-release` builder on the BuildKit image pinned in [docker/Dockerfile.buildkit](../docker/Dockerfile.buildkit) and replaces it when the pin moves. To install Trivy into `~/.local/bin` without sudo:
+
+```bash
+curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b "$HOME/.local/bin"
+```
+
+Pushing needs `docker login ghcr.io` with a classic personal access token that has the `write:packages` scope and nothing else. Give it an expiry: it can publish images under the project's name.
 
 ```bash
 docker login ghcr.io -u <github-user> --password-stdin
 ```
 
-Give the token an expiry and keep it to that scope. It can publish images under the project's name, so a broader token on the release host widens what a compromise of that host can do. Logs, the build output, and the worktree live under `~/.cache/nojoin-release/<version>/`; a successful run removes them and a failed one keeps them for inspection.
-
-Manual `workflow_dispatch` runs of release.yml re-verify and re-sign an existing tag's images and republish its notes, for instance after a transient failure. They target an existing release tag through `release_ref`, and only publish `latest` when `publish_latest=true` is set explicitly.
+Logs, build output and the worktree go under `~/.cache/nojoin-release/<version>/`. A successful run removes them; a failed run keeps them for inspection.
 
 ### Runtime Version Detection
-The backend API resolves the running server version from image build metadata (checking `NOJOIN_SERVER_VERSION` environment variable and `/app/.build-version` file), falling back to local `docs/VERSION` in development/testing. User-facing release metadata is resolved from the GitHub Releases API first, with GHCR tags and raw `docs/VERSION` file used as fallbacks.
+
+The API takes its version from `NOJOIN_SERVER_VERSION`, then `/app/.build-version` (written when the image is built), then `docs/VERSION` in a source checkout. The latest published version comes from the GitHub Releases API, with GHCR tags and the raw `docs/VERSION` on `main` as fallbacks.
 
 ## Supply-Chain and Release Hardening
 
-The release pipeline is hardened to make published images reproducible, traceable, and verifiable. Contributors changing CI, the release workflow, or the Dockerfiles must keep the controls below intact.
+Keep these controls intact when changing CI, the release workflow, the release script or a Dockerfile.
 
 ### Pinned Actions and Base Images
 
-- Every third-party GitHub Action in [.github/workflows/](../.github/workflows/) is pinned to a full commit SHA with a trailing `# vX.Y.Z` comment. Do not reintroduce floating tags such as `@v5`; a mutable tag can be repointed at malicious code after review.
-- Every container base image in the Dockerfiles is pinned by `@sha256:` digest with the human-readable tag kept as a comment. The digest is the immutable identity of the image; the tag alone is mutable.
-- The BuildKit image that builds the release is pinned the same way, in [docker/Dockerfile.buildkit](../docker/Dockerfile.buildkit). Nothing builds that file: the release script reads its `FROM` line, and keeping the pin in a Dockerfile puts it under Dependabot's docker updates with the other bases.
-- When you intentionally upgrade an action or base image, update both the SHA/digest and the version comment in the same change.
+- Pin every third-party action in [.github/workflows/](../.github/workflows/) to a full commit SHA with a trailing `# vX.Y.Z` comment. Never use a floating tag such as `@v5`, which can be repointed after review.
+- Pin every Dockerfile base image by `@sha256:` digest, keeping the readable tag beside it. This includes the release BuildKit image in [docker/Dockerfile.buildkit](../docker/Dockerfile.buildkit), a file nothing builds that exists so Dependabot updates the pin.
+- When you upgrade an action or image by hand, change the SHA or digest and its version together.
 
 ### Dependency-Update Policy
 
-This is the canonical dependency-update policy for Nojoin; the supply-chain controls above (pinned actions and base-image digests, provenance, scanning, and signing) are what these updates keep current.
+[.github/dependabot.yml](../.github/dependabot.yml) opens grouped pull requests weekly, with at most five open per ecosystem:
 
-[.github/dependabot.yml](../.github/dependabot.yml) keeps four ecosystems current on a **weekly** cadence:
+| Ecosystem | Directories | Groups |
+| --- | --- | --- |
+| GitHub Actions | `/` | `github-actions` |
+| pip | `/requirements` | `python-dependencies` |
+| npm | `/frontend` | `npm-production`, `npm-development` |
+| Docker | `/docker`, `/frontend` | `docker-base-images` |
 
-- **GitHub Actions** (`/`): grouped into a single `github-actions` pull request. Dependabot rewrites the pinned commit SHA and the trailing `# vX.Y.Z` comment in place, so SHA pinning does not cause drift.
-- **Python** (`/requirements`): grouped into one `python-dependencies` pull request across the split requirement files.
-- **npm** (`/frontend`): split into `npm-production` and `npm-development` groups so a runtime-affecting update is reviewed separately from tooling churn.
-- **Docker base images** (`/docker`, `/frontend`): grouped into `docker-base-images`. Dependabot bumps the `@sha256:` digest and the human-readable tag comment together.
+Dependabot moves a pinned SHA or digest and its version comment in the same pull request. Never replace a pin with a floating tag to simplify an update. Each `ignore:` entry in the file holds a package below a version, with the reason beside it; remove the entry when its blocker clears.
 
-Each ecosystem is capped at five open pull requests so the queue stays reviewable.
-
-**How pins stay current.** Pinning to SHAs and digests is what makes updates auditable, not what makes them stale: Dependabot edits the pin and its version comment in the same pull request, so the immutable identity always advances deliberately and visibly. Never replace a pinned SHA or digest with a floating tag to "simplify" an update.
-
-**Who reviews, and how.** The maintainer (per [CODEOWNERS](../.github/CODEOWNERS)) reviews and merges update pull requests like any other change. They run the full required CI suite; a green run plus a scan of the changelog for behavioural or breaking changes is the bar for a routine update. Group updates that touch a runtime dependency (`npm-production`, `python-dependencies`, base images) warrant a closer look than tooling-only groups.
-
-**Security prioritisation.** Dependabot security alerts and any update that resolves a known CVE take priority over routine version bumps and should be merged promptly once CI is green. Because the release pipeline fails on fixable CRITICAL/HIGH image findings, a security update is often the unblocking fix for a release: merge the relevant base-image or dependency update, then re-cut the tag. For a finding with no upstream fix, record a dated, justified entry in [.github/trivyignore](../.github/trivyignore) rather than blocking indefinitely.
+The maintainer ([CODEOWNERS](../.github/CODEOWNERS)) reviews update pull requests like any other change. A green CI run and a read of the changelog for breaking changes are the bar for a routine update; groups that touch runtime dependencies (`npm-production`, `python-dependencies`, base images) get a closer look. Security updates come first and merge once CI is green, and one is often what clears a release blocked by the image scan. A fixable CRITICAL or HIGH finding that cannot be taken yet can be accepted for a limited time with a dated, justified entry in [.github/trivyignore](../.github/trivyignore); [SECURITY.md](SECURITY.md#vulnerability-scanning-and-severity-policy) sets the policy. Findings with no upstream fix never block the release.
 
 ### Uncapped AI SDKs
 
-`openai`, `anthropic`, and `google-genai` are the three dependencies deliberately declared with an open lower bound (`>=`) rather than pinned. Provider APIs move quickly and the SDKs are the fastest route to a new model or parameter, so these three are meant to track upstream: whatever is current on PyPI is what an image build installs.
-
-That is the opposite trade to every other pin in `requirements/`, and it has a cost worth stating plainly. There is no lockfile, so a **major** release enters the next image build with no pull request, no review, and nothing in the diff to notice. It has already happened once: `anthropic` 1.0.0 removed `temperature`, `top_p`, and `top_k` from `messages.create` and `messages.stream`, every call in the Anthropic backend passed `temperature`, and the provider raised `TypeError` before a request left the process. The unit tests did not catch it because a fake client taking `**kwargs` accepts arguments the real SDK has dropped.
-
-Capping the three at `<N+1` would have caught it, and was considered and rejected: a cap means the newest model is unavailable until someone lifts it, which is the thing these three exist to avoid. The guard is a test per provider instead. `test_anthropic_kwargs_are_accepted_by_the_installed_sdk`, `test_openai_kwargs_are_accepted_by_the_installed_sdk` and `test_gemini_kwargs_are_accepted_by_the_installed_sdk` in [backend/tests/test_llm_services_unified.py](../backend/tests/test_llm_services_unified.py) each capture the keyword arguments the backend actually sends and bind them against `inspect.signature` of the **installed** SDK, so any parameter a future release removes fails in CI rather than in a built image. They assert no list of approved names, which is what makes them survive changes nobody predicted. The Gemini test also builds its request config from the installed `google.genai.types`, which reject unknown fields, so a removed config field fails the same way.
-
-One consequence follows: when one of these three does ship a major, the fix is to update the call sites, never to add a pin that hides the break. The one parameter that survived the removal, `temperature`, now travels in `extra_body`, and only to the models that [anthropic_models.py](../backend/processing/llm_backends/anthropic_models.py) says still accept it; the current models return a 400 for it and run at the provider default.
+`openai`, `anthropic` and `google-genai` are declared with `>=` only, so each image build installs the newest release and a major version arrives with no pull request. Three tests in [backend/tests/test_llm_services_unified.py](../backend/tests/test_llm_services_unified.py) guard the calls: `test_anthropic_kwargs_are_accepted_by_the_installed_sdk`, `test_openai_kwargs_are_accepted_by_the_installed_sdk` and `test_gemini_kwargs_are_accepted_by_the_installed_sdk` bind the keyword arguments the backend sends against the installed SDK's signatures, and the Gemini test builds its request config from the installed `google.genai.types`, which reject unknown fields. A parameter a release removes fails CI. When that happens, update the call sites; do not cap the SDK.
 
 ### Held Pins and Unfixable Advisories
 
-Some versions are declared in several files that have to agree, and now and then a pin has to sit below the latest release because a companion package has not shipped a matching build. [scripts/check_held_pins.py](../scripts/check_held_pins.py) covers both cases. Its `--offline` half runs in CI and in `scripts/check.py`.
+Some versions are declared in several files that must agree, and a pin sometimes has to stay below the latest release because a companion package has not shipped a matching build. [scripts/check_held_pins.py](../scripts/check_held_pins.py) covers both. Its `--offline` half runs in CI and in `scripts/check.py`.
 
 #### The torch stack
 
-`torch` is declared three times: from PyPI in [requirements/test.txt](../requirements/test.txt) for CI, from PyPI again in [requirements/local.txt](../requirements/local.txt) for a GPU host, and through the `pytorch/pytorch` base image tag in [docker/Dockerfile.worker](../docker/Dockerfile.worker) for the worker that ships. `MATCHED_STACKS` records the version, and the drift check fails on any declaration that disagrees with it. The companions have their own version numbers and are moved by hand:
+`torch` is declared in [requirements/test.txt](../requirements/test.txt) for CI, in [requirements/local.txt](../requirements/local.txt) for a GPU host, and through the `pytorch/pytorch` base image in [docker/Dockerfile.worker](../docker/Dockerfile.worker). `MATCHED_STACKS` records the version, and the drift check fails on any declaration that disagrees. The companions move by hand:
 
 - **torchvision** (local.txt only) pins torch exactly, so it moves with every torch bump.
-- **torchaudio** stays at 2.11.0. TorchAudio is in maintenance mode, its C++ and CUDA extensions are built against torch's stable ABI, and upstream supports 2.11 on every later torch. Nothing newer has been published, and none is needed before torch can move.
-- **torchcodec** supports every torch from 2.11 since 0.12. Its PyPI wheels are built against the CUDA of PyPI's torch, and a wheel built for a different CUDA from the worker's base image cannot load there. Dockerfile.worker therefore swaps in the CPU build of the version worker.txt resolved, which links no CUDA library, and the build fails if torchcodec does not import. torchcodec only decodes audio here, on the CPU.
-- **onnxruntime-gpu** is pinned in Dockerfile.worker, not in a requirements file. Its PyPI builds target CUDA 12 up to 1.26.0 and CUDA 13 from 1.27.0, so it has to move with the CUDA major of the base image.
+- **torchaudio** stays at 2.11.0. It is in maintenance mode, builds against torch's stable ABI, and supports every later torch.
+- **torchcodec** wheels on PyPI target PyPI torch's CUDA, which cannot load on a base with another CUDA. Dockerfile.worker installs the CPU build of the version worker.txt resolved (it only decodes audio), and the build fails if it does not import.
+- **onnxruntime-gpu** is pinned in Dockerfile.worker and has to match the base image's CUDA major: its PyPI builds target CUDA 12 up to 1.26.0 and CUDA 13 from 1.27.0.
 
-The base image also fixes the worker's **Python minor**, because the interpreter arrives with the image. The API image, CI, mypy and the documented prerequisite all have to match it, and `EXPECTED_PYTHON` and `PYTHON_DECLARATIONS` make the same `--offline` run fail on any surface that drifts. With no `ignore:` entry for the `python` base image, Dependabot once walked the API image from 3.12 to 3.14 on its own, and for a while the interpreter serving every HTTP request was the only one the test suite never ran on. The tag names the torch version and not the Python one, so run `python -V` in a new base before adopting it. The 2.14.1 image ships 3.12.
+The base image also fixes the worker's Python minor. The API image, CI, mypy and the Python prerequisite in this guide and in CONTRIBUTING.md must match it: `EXPECTED_PYTHON` and `PYTHON_DECLARATIONS` make the `--offline` run fail on drift, and a Dependabot `ignore:` entry keeps the API base on 3.12. The image tag names the torch version, not Python's, so run `python -V` in a new base before adopting it. The 2.14.1 image ships 3.12.
 
-To move torch, change test.txt, local.txt, both `FROM` lines in Dockerfile.worker (tag and digest) and `MATCHED_STACKS` together, and move torchvision to its pair. Keep the base image on the CUDA build that PyPI's torch uses (CUDA 13.0 for 2.14.1), so that local.txt installs the same build as the image without an index URL. pip ignores an `--index-url` written on a requirement line. Then run diarisation, Whisper, an ONNX engine and text embeddings on a GPU in the rebuilt worker image: CI has no GPU and installs torch from PyPI, so it cannot see a CUDA mismatch. Dependabot raises the pip and Docker halves as separate grouped pull requests, and each fails the drift check alone, so consolidate them.
+To move torch, change test.txt, local.txt, both `FROM` lines in Dockerfile.worker (tag and digest) and `MATCHED_STACKS` together, and move torchvision to its pair. Keep the base on the CUDA build PyPI's torch uses (CUDA 13.0 for 2.14.1), so that local.txt installs the same build without an index URL; pip ignores an `--index-url` written on a requirement line. Then run diarisation, Whisper, an ONNX engine and text embeddings on a GPU in the rebuilt worker image, because CI has no GPU and installs torch from PyPI. Dependabot raises the pip and Docker halves as separate pull requests, each of which fails the drift check alone, so combine them.
 
 #### Holding a pin
 
-No pin is held at present, and `HOLDS` is empty. Two properties of Dependabot make a held pin more than a one-line comment:
+`HOLDS` is empty: no pin is held under an open advisory. Dependabot's `ignore:` stops version-update pull requests but not security alerts, and an advisory raises a fresh alert each time its range is revised, once per manifest that resolves the package (three for a package in test.txt and local.txt, which [requirements/dev.txt](../requirements/dev.txt) includes). To hold a pin:
 
-- **`ignore:` does not silence security alerts.** The `ignore:` blocks in [dependabot.yml](../.github/dependabot.yml) suppress *version-update pull requests* only. Security alerts are a separate channel with no YAML equivalent, so a held pin sitting under an open advisory keeps raising alerts that no upgrade can resolve.
-- **The alert recurs, and multiplies.** An advisory's affected range is revised over time, and a fresh alert is raised on every revision, once per manifest that resolves the package. A package pinned in test.txt and local.txt is also reached through `-r` from [requirements/dev.txt](../requirements/dev.txt), so one revision of one advisory produces three alerts. Dismissing them by hand does not scale.
-
-The policy for a hold is therefore:
-
-1. **Record it in code, not just prose.** Add the hold to `HOLDS` with the blocking package and the version that resolves the advisory. The held package also needs a `MATCHED_STACKS` entry, because that is what checks the pin against the files, and the script fails a hold that has none. Add the matching `ignore:` entry to [dependabot.yml](../.github/dependabot.yml) to stop the pointless update pull requests.
-2. **Enforce anything the hold transitively fixes.** A hold can constrain more than its own version string, as a held base image fixes the worker's Python. When it does, encode that constraint as well as the pin.
-3. **Suppress the alerts automatically, not manually.** Add a custom **Dependabot rule** (repository *Settings > Code security > Dependabot rules > New rule*, free on public repositories) matching the held package. Set *Target alerts* to `package:<name>`, `ecosystem:<ecosystem>` and `severity:low` (the filters are ANDed), then tick **Dismiss alerts** and choose **Indefinitely**. The rule re-dismisses on every advisory revision and every new manifest, and that is what makes the suppression durable. There is no REST API for these rules; they are configured in the web UI.
-
-   Three choices on that form are easy to get wrong:
-
-   - **Choose *Indefinitely*, not *Until patch is available*.** Dependabot only checks whether a patched version has been published, not whether this dependency graph can install it. The patched release is usually published and unreachable, which is why the pin is held, so *Until patch is available* declines to dismiss and the alerts keep recurring behind a rule that looks configured.
-   - **Filter on package and severity, not on `ghsa_id`.** A rule naming one advisory suppresses the instance rather than the class. Any other advisory on the package can have its affected range widened to include the held version.
-   - **Do not add a scope filter.** Dependabot reports these manifests as `runtime` scope even though the files are developer-facing, so a `development` filter matches nothing. For the same reason the GitHub preset rule *"Dismiss low impact issues for development-scoped dependencies"* does **not** cover a hold.
-
-   Restricting the rule to `Low` keeps it honest. While the pin is held, no advisory on the package can be fixed by upgrading, so auto-dismissing the low tier costs nothing that could have been acted on, and moderate and above still surface for a human decision. Keep the ecosystem filter: names collide across ecosystems, and npm has a package called `torch`.
-
-   *Open a pull request to resolve alerts* cannot be unticked, which is harmless here: the `ignore:` entry for the same package already stops that pull request being opened.
-4. **Dismiss the alerts that are already open.** Auto-triage rules apply going forward, so clear the backlog once:
+1. **Record it in code.** Add a `HOLDS` entry with the blocking package and the version that resolves the advisory. The held package also needs a `MATCHED_STACKS` entry, since the drift check compares the pin with the files through that entry; the script fails a hold without one. Add the matching `ignore:` entry to [dependabot.yml](../.github/dependabot.yml). If the hold constrains anything else, as a held base image fixes Python, encode that constraint too.
+2. **Add a Dependabot rule** under **Settings > Code security > Dependabot rules > New rule** (web UI only; there is no API). Set *Target alerts* to `package:<name>`, `ecosystem:<ecosystem>` and `severity:low`, tick **Dismiss alerts**, and choose **Indefinitely**. The rule dismisses again on every revision and every new manifest, and moderate and higher alerts still reach a person.
+   - Choose *Indefinitely*, not *Until patch is available*: Dependabot only checks that a patched version exists, not that this graph can install it.
+   - Filter on package and severity, not `ghsa_id`, so the rule covers every advisory on the package.
+   - Add no scope filter. Dependabot reports these manifests as `runtime`, so a `development` filter, or the preset *Dismiss low impact issues for development-scoped dependencies*, matches nothing.
+   - Keep the ecosystem filter: npm has a package called `torch`.
+   - *Open a pull request to resolve alerts* cannot be unticked; the `ignore:` entry stops that pull request anyway.
+3. **Dismiss the alerts already open**:
 
    ```bash
    gh api --method PATCH repos/Valtora/Nojoin/dependabot/alerts/<number> \
@@ -754,52 +520,42 @@ The policy for a hold is therefore:
      -f dismissed_comment="<why the risk is tolerable and what blocks the fix>"
    ```
 
-   Valid reasons are `fix_started`, `inaccurate`, `no_bandwidth`, `not_used`, and `tolerable_risk`; the comment is capped at 280 characters. Prefer `tolerable_risk` over `not_used` unless you have confirmed that no transitive dependency reaches the vulnerable code path.
-5. **Watch for the hold clearing.** With the alerts silenced, nothing else announces the day the pin can move. [held-pin-watch.yml](../.github/workflows/held-pin-watch.yml) runs `scripts/check_held_pins.py` monthly against PyPI and opens a single `held-pin` issue when the blocking package catches up. It sees only the blocker's version number, and a blocker can drop the coupling without a release, as torchaudio did when it moved to torch's stable ABI. Re-read the blocker's compatibility notes whenever an alert on the held package is revised. Lifting a hold means moving the whole stack, deleting the `HOLDS` entry, removing the `ignore:` entry, and **removing the auto-triage rule** so genuine advisories surface again.
+   Valid reasons are `fix_started`, `inaccurate`, `no_bandwidth`, `not_used` and `tolerable_risk`, and the comment is capped at 280 characters. Prefer `tolerable_risk` to `not_used` unless you have confirmed that no dependency reaches the vulnerable code.
+4. **Watch for the hold clearing.** [held-pin-watch.yml](../.github/workflows/held-pin-watch.yml) runs `scripts/check_held_pins.py` against PyPI monthly and opens one `held-pin` issue when the blocker catches up. It sees only the blocker's version number, and a blocker can drop the coupling without a release, so re-read its compatibility notes whenever an alert on the held package is revised.
+5. **Lift it** by moving the whole stack, then deleting the `HOLDS` entry, the `ignore:` entry and the Dependabot rule.
 
-A hold is a deliberate, dated and checked decision. If a held advisory ever rises above the risk this repository is prepared to carry, drop the blocking dependency rather than widen the hold.
+If a held advisory ever rises above the risk the project accepts, drop the blocking dependency rather than widen the hold.
 
 ### Image Provenance, SBOM, and Signing
 
-Every published image carries BuildKit build-provenance and SBOM attestations (`--provenance=mode=max --sbom=true` on the push in [scripts/release.py](../scripts/release.py)) and is signed with cosign keyless (OIDC) signing by the `sign-images` job in [release.yml](../.github/workflows/release.yml), which needs `id-token: write`. The signature is bound to the release workflow's identity, so operators verify every release, including those built before the move to the release host, with the same command. The workflow signs with cosign 3, whose signatures cosign 2 cannot find, and the provenance and SBOM are BuildKit attestations in the image index rather than cosign attestations. Operator verification commands live in [DEPLOYMENT.md](DEPLOYMENT.md#verifying-an-image-before-deploying).
+`release.py` pushes every image with BuildKit provenance and SBOM attestations (`--provenance=mode=max --sbom=true`), stored in the image index rather than as cosign attestations. The `sign-images` job in [release.yml](../.github/workflows/release.yml) signs each image with cosign 3 keyless (OIDC) signing, which needs `id-token: write` and binds the signature to the workflow's identity; cosign 2 cannot find these signatures. Operator verification is in [DEPLOYMENT.md](DEPLOYMENT.md#verifying-an-image-before-deploying).
 
-The images are built on the release host, and the provenance says so: it records the commit, the build arguments, and the pinned bases, with no builder ID from GitHub. The workflow does not take that on trust. Before signing, it checks each image's `org.opencontainers.image.revision` label against the tag's commit and confirms both attestations are present.
-
-Two properties tie the pushed image to the gates. The script builds from a clean `git worktree` of the release commit, so nothing untracked in a working checkout can reach an image. And it sets `SOURCE_DATE_EPOCH` to the commit time, which makes each image config identical from one bake to the next, so the script can require that every pushed config digest equals the one it scanned and smoke tested.
+The provenance carries no GitHub builder ID, so the workflow checks each image's `org.opencontainers.image.revision` label against the tag's commit before signing. The script builds from a clean `git worktree`, so nothing untracked reaches an image, and sets `SOURCE_DATE_EPOCH` to the commit time, so every bake of the commit yields the same image config and each pushed config digest must equal the one scanned and smoke tested.
 
 ### Gated Tag Publication
 
-Nothing reaches the registry until every gate has passed on the host. The script then pushes the immutable `version` and commit-`sha` tags, and only after release.yml has verified and signed all four does the `publish-mutable-tags` job move the rolling `latest` and `major.minor` tags. A run that fails after the push, in signing for instance, leaves the immutable tags exposed with a visibly failed workflow run, but can never advance the `latest` tag that operators pull by default. Keep this ordering intact when editing the script or the workflow.
+Nothing reaches the registry until every gate has passed on the host. In release.yml, `publish-mutable-tags` needs `sign-images` and `publish-release-notes` needs `publish-mutable-tags`, so the rolling `latest` and `major.minor` tags move only after all four images are verified and signed. A failure after the push, in signing for instance, leaves the immutable tags with a failed run but never moves `latest`. Keep this ordering when editing the script or the workflow.
 
 ### Release Gates
 
-[scripts/release.py](../scripts/release.py) runs these against the images it has just built, before it pushes anything. `--dry-run` runs them alone.
+[scripts/release.py](../scripts/release.py) runs these on the images it has just built, before it pushes anything.
 
-**Vulnerability and secret scan.** Trivy scans each image's OCI layout with `--severity CRITICAL,HIGH --ignore-unfixed --exit-code 1`, the exceptions in [.github/trivyignore](../.github/trivyignore), and the secret-scanner allow rules in [.github/trivy-secret.yaml](../.github/trivy-secret.yaml). The vulnerability database is downloaded fresh on every run, so a previously green pinned base image can start failing as new CVEs are disclosed. Scanning the layouts directly rather than images loaded into Docker saves Trivy exporting the 9 GB worker images first.
+- **Vulnerability and secret scan.** Trivy scans each image's OCI layout with `--severity CRITICAL,HIGH --ignore-unfixed --exit-code 1`, the exceptions in [.github/trivyignore](../.github/trivyignore), and the secret-scanner allow rules in [.github/trivy-secret.yaml](../.github/trivy-secret.yaml).
+- **Health and non-root smoke.** The same images, loaded into Docker, boot from [docker-compose.example.yml](../docker-compose.example.yml) with Postgres, Redis and the socket proxy under their own Compose project, `nojoin-release-smoke`. `api` and `frontend` must reach `healthy`, and each long-running process must run as a non-root uid: the api's PID 1, the frontend, and `id -u` through the worker and worker-io entrypoints, which drop from root to `appuser` with `gosu`. The worker needs a GPU to boot, so it gets only the uid check.
+- **Subscription CLI advisories.** Trivy cannot see inside the Codex CLI, a stripped native binary. [docker/Dockerfile.worker-io](../docker/Dockerfile.worker-io) verifies both subscription CLIs with `npm audit signatures` and records their versions in `/usr/local/share/nojoin/cli-versions.json`, and the script looks each version up in the GitHub advisory database. The CLIs are unpinned, so a hit means rebuilding once the fixed release is on npm.
 
-To install Trivy into `~/.local/bin`, which needs no sudo:
+Some findings need an image-level fix rather than a requirements bump:
 
-```bash
-curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b "$HOME/.local/bin"
-```
-
-**Health and non-root smoke.** The same images, loaded into Docker, boot from [docker-compose.example.yml](../docker-compose.example.yml) with their real dependencies (Postgres, Redis, the socket proxy) under a separate Compose project, `nojoin-release-smoke`, so they cannot collide with a stack running on the release host. The api and frontend must reach `healthy`. The script then checks the uid of each long-running process: the api's PID 1, the frontend, and `id -u` through the real entrypoint of the worker and worker-io images, which start as root only to repair `./data` ownership and then drop to `appuser` through `gosu`. The worker needs a GPU and preloaded models to boot, so the smoke stops at that uid check.
-
-**Subscription CLI advisories.** Trivy cannot see inside the Codex CLI, which [docker/Dockerfile.worker-io](../docker/Dockerfile.worker-io) installs as a stripped native binary. The build verifies both subscription CLIs against the npm registry's signatures and provenance attestations (`npm audit signatures`, which fails the build on a package that does not verify) and records the versions it installed in `/usr/local/share/nojoin/cli-versions.json`. The script reads that file and looks each version up in the GitHub advisory database. A hit means rebuilding once the fixed release is on npm, since the CLIs are unpinned and a rebuild installs the latest. The same versions are in the image's SBOM attestation under the `Node.js` packages.
-
-**Remediation patterns the `requirements/` files and lockfiles do not cover.** Trivy scans files present in the built image, so several classes of finding live outside the dependency graph and need an image-level fix:
-
-- **Base-image system Python (worker).** The worker venv is created with `--system-site-packages` to reuse the base's torch, so the PyTorch base's own system interpreter (`/usr/bin/python3`, packages under `/usr/local/lib/pythonX.Y/dist-packages`) keeps its pre-installed copies of packages such as `pillow` and `urllib3` on disk even after those packages are pinned in [requirements/base.txt](../requirements/base.txt). Upgrade them in place, as root before the `USER` switch, with `pip install --break-system-packages --root-user-action=ignore --upgrade <pkg>==<version>`, keeping the versions in step with the requirements pins. See [docker/Dockerfile.worker](../docker/Dockerfile.worker).
-- **Base-image OS packages (api).** The api base is pinned by digest, and `apt-get install` only adds packages, so everything the base ships stays at the version it was built with. Debian publishes security fixes to the archive days or weeks before upstream republishes `python:3.12-slim`, and in that window the newest available digest still fails the gate, so there is no base bump to merge. The runtime stage of [docker/Dockerfile.api](../docker/Dockerfile.api) therefore runs `apt-get upgrade -y` before its install. Still take the Dependabot digest bumps when they arrive: the upgrade covers the gap between them and does not replace them. The builder stage is left alone because only `/opt/venv` is copied out of it.
-- **An advisory whose version range is wrong.** Trivy and Dependabot both read GitHub's advisory ranges, so an error there outlives the real fix. CVE-2026-58659 in `lightning` was the recorded case: fixed in 2.6.6, with a published range of `< 2022.6.15` that no 2.x release could satisfy, until GitHub corrected the range on 2026-09-24 and the entry came out again. Confirm the fix in the package source, not from the release notes alone, pin every package that ships the affected code, then add a dated entry to [.github/trivyignore](../.github/trivyignore) that cites the evidence, and dismiss the Dependabot alert as `inaccurate`. The ignore file matches on CVE id alone, so the entry also masks a real regression if the pin is later lowered, and the entry should say so.
-- **Build tooling in runtime images.** Remove toolchain the runtime never executes: `npm` (the node base bundles a vulnerable `undici`) from the frontend runner, and `uv`/`uvx` (which bundle `rustls-webpki`) from the worker runtime. Each removal eliminates an inherited finding without affecting the running service.
-- **Kernel headers (`linux-libc-dev`).** These flag the in-image kernel *header* package, not the running kernel; a container shares the host kernel, so they are not a runtime exposure. Accept them with dated, justified entries in [.github/trivyignore](../.github/trivyignore) rather than chasing base-kernel versions, and remove the entries when a newer base ships the fix.
-- **Secrets in the build context.** [.dockerignore](../.dockerignore) excludes TLS key and certificate material so locally generated files (for example `nginx/cert.key` from [docker/init-ssl.sh](../docker/init-ssl.sh)) are never copied into an image. `.dockerignore` patterns need a `**/` prefix to match nested paths: a bare `*.key` only matches the context root. The release script builds from a clean worktree, so this material never reaches a release image. A `docker build` from a working checkout can see it, so the secret scanner may flag a local build and not a release.
-- **Secret-scanner false positives in vendored packages.** The secret scanner matches patterns, and an SDK's docstrings can contain one. `anthropic` 1.14.0 has docstrings quoting a JSON object whose `type` is `service_account`, and that pair is the whole of what the `gcp-service-account` rule looks for. Do not quote the matched text itself in the repository: the api and worker images copy the docs and `.github/`, so the scanner would flag the explanation too. Add a narrow path allow rule to [.github/trivy-secret.yaml](../.github/trivy-secret.yaml) with a comment saying why the match is not a credential, rather than listing the rule id in `.github/trivyignore`, which would switch it off for every path.
+- **Worker base Python.** The base's own interpreter keeps older copies of packages such as `pillow` and `urllib3` on disk. [docker/Dockerfile.worker](../docker/Dockerfile.worker) upgrades them with `/usr/bin/python3 -m pip install --break-system-packages`, in step with the requirements pins, then removes that system pip.
+- **Base OS packages.** The distribution often ships a fix before the base image is republished. [docker/Dockerfile.api](../docker/Dockerfile.api) runs `apt-get upgrade -y`, and Dockerfile.worker upgrades named packages (OpenSSL, `linux-libc-dev`) with `--only-upgrade`. Still merge Dependabot's digest bumps. `linux-libc-dev` findings concern kernel headers, not the host kernel, so a dated trivyignore entry is acceptable where no fixed build exists.
+- **A wrong advisory range.** Confirm the fix in the package source, pin every package that ships the affected code, add a dated trivyignore entry citing the evidence, and dismiss the Dependabot alert as `inaccurate`. Entries match on the CVE id alone, so note in the entry that it would also hide a real regression if the pin were lowered.
+- **Build tooling.** Remove tools the runtime never runs, as the frontend runner drops `npm` and the worker drops `uv` and `uvx`.
+- **Secrets in the build context.** [.dockerignore](../.dockerignore) excludes key and certificate files, with a `**/` prefix so nested paths match. Release builds come from a clean worktree; a local build sees every untracked file the ignore list misses, so the secret scanner can flag a local build and not a release.
+- **Secret-scanner false positives.** Add a narrow path allow rule to [.github/trivy-secret.yaml](../.github/trivy-secret.yaml) with a comment saying why the match is not a credential. A rule id in `.github/trivyignore` would switch the rule off everywhere. Never quote the matched text in a file the images copy, which includes everything under `.github/`.
 
 ### Automated Release Notes
 
-After the rolling tags publish, the `publish-release-notes` job creates the GitHub Release. It resolves the exact previous-tag→this-tag commit range with `git describe`, renders the changelog from that range, resolves the published image digests, and fills [.github/release-notes-template.md](../.github/release-notes-template.md). The template carries the required sections — Upgrade, Migration, Rollback, Known Issues, and Browser-Capture Compatibility — with sensible defaults that maintainers refine in the GitHub Releases UI when a release needs specific guidance. `make_latest` follows the same `publish_latest` decision as the image tags.
+After the rolling tags move, `publish-release-notes` finds the previous tag with `git describe`, renders that range with `scripts/render_release_notes.py`, looks up the published digests, and fills [.github/release-notes-template.md](../.github/release-notes-template.md), replacing `{{VERSION}}`, `{{IMAGE_DIGESTS}}` and `{{CHANGELOG}}` where they appear. The current template has no `{{CHANGELOG}}`, so a release carries only the hand-written sections (Highlights, Upgrade, Migration, Rollback, Known Issues and Browser-Capture Compatibility). `make_latest` follows `publish_latest`.
 
 ## Related Docs
 
@@ -809,7 +565,7 @@ After the rolling tags publish, the `publish-release-notes` job creates the GitH
 
 ## Localhost Dev Compose Template
 
-Copy this into your ignored `docker-compose.yml` when you want a containerised localhost development instance that mirrors the remote development deployment naming and rebuild behaviour.
+Copy this into your ignored `docker-compose.yml`. Its worker lanes, shared environment and API environment must match `docker-compose.example.yml`; `backend/tests/test_dev_compose_template.py` fails if they drift.
 
 ```yaml
 name: nojoin-dev
@@ -836,7 +592,7 @@ x-shared-app-environment: &shared-app-environment
   NOJOIN_TELEMETRY_ENDPOINT: ${NOJOIN_TELEMETRY_ENDPOINT:-}
   # Exports have to be readable by whoever serves them: a worker writes the
   # archive and the API streams it back, so both sides must resolve the same
-  # directory. Setting it on one service only silently breaks the download.
+  # directory. Setting it on one service only breaks the download.
   BACKUP_EXPORT_DIR: ${BACKUP_EXPORT_DIR:-}
   NOJOIN_UMASK: ${NOJOIN_UMASK:-}
   LLM_PROVIDER: ${LLM_PROVIDER:-gemini}
@@ -982,8 +738,8 @@ services:
       HF_HOME: /shared_model_cache/huggingface
       # Trust proxies by IP or CIDR, never by container name, whenever the edge
       # proxy runs on a network the API is not itself attached to: the API
-      # resolves these entries at startup and silently drops any name it cannot
-      # resolve, collapsing every external client into one rate-limit bucket.
+      # resolves these entries at startup and drops any name it cannot resolve,
+      # logging only a count, so every external client shares one rate-limit bucket.
       NOJOIN_TRUSTED_PROXIES: ${NOJOIN_TRUSTED_PROXIES:-127.0.0.1,::1,nginx}
     depends_on:
       db:

@@ -23,7 +23,7 @@ Nojoin records your Meet, Teams and Zoom calls from the browser and transcribes 
 
 ## Quick Start
 
-You need Docker with Compose. An NVIDIA GPU is strongly recommended (GTX 16 or RTX 20 series or newer, driver 580 or newer); CPU-only mode works but is much slower.
+You need Docker with Compose. An NVIDIA GPU is strongly recommended (GTX 16 or RTX 20 series or newer, driver 580 or newer); CPU-only mode works but is much slower, and needs [one change](docs/DEPLOYMENT.md#cpu-only-deployment) to the compose file.
 
 1. Clone the repository and create your deployment files from the tracked examples.
 
@@ -34,7 +34,7 @@ You need Docker with Compose. An NVIDIA GPU is strongly recommended (GTX 16 or R
    cp .env.example .env
    ```
 
-2. Set `FIRST_RUN_PASSWORD` and `DATA_ENCRYPTION_KEY` in `.env`. Keep the encryption key stable once set, since it protects stored calendar credentials across restores and host moves. No AI provider key is needed: the setup wizard can route AI through your own Claude or ChatGPT subscription, or leave it for later.
+2. Set `FIRST_RUN_PASSWORD`, `DATA_ENCRYPTION_KEY`, `POSTGRES_PASSWORD` and `REDIS_PASSWORD` in `.env`. Keep the encryption key stable once set, since it encrypts stored calendar and AI subscription credentials. No AI provider key is needed: the setup wizard can route AI through your own Claude or ChatGPT subscription, or leave it for later.
 
 3. Start Nojoin.
 
@@ -60,7 +60,7 @@ Nojoin's developer will set up an instance on a machine you own and look after i
 
 ## Anonymous Usage Data
 
-Nojoin sends a daily heartbeat with a random install ID and the version, plus anonymous usage diagnostics every six hours: user and recording counts, and which features are switched on. Neither contains any of your meeting data, and the data is never sold. Diagnostics can be turned off in **Settings > Privacy**; the heartbeat has no switch in the app, and `NOJOIN_TELEMETRY_ENABLED=false` in `.env` stops both. The receiving service is open source in [telemetry/](telemetry/), and [docs/TELEMETRY.md](docs/TELEMETRY.md) is the full disclosure.
+Nojoin sends a daily heartbeat with a random install ID and the version, plus anonymous usage diagnostics every six hours: user and recording counts, and which features and settings are in use. Neither contains any of your meeting data, and the data is never sold. Diagnostics can be turned off in **Settings > Privacy**; the heartbeat has no switch in the app, and `NOJOIN_TELEMETRY_ENABLED=false` in `.env` stops both. The receiving service is open source in [telemetry/](telemetry/), and [docs/TELEMETRY.md](docs/TELEMETRY.md) is the full disclosure.
 
 ## Licence and Legal
 

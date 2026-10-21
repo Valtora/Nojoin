@@ -1,820 +1,419 @@
 # Nojoin Architecture Overview
 
-This document provides a human-readable overview of how Nojoin fits together.
+How Nojoin's services, processing pipeline and data fit together. Each section names the code that implements it.
 
 ## System at a Glance
 
-Nojoin has three major parts:
+Nojoin runs as one Docker Compose stack ([docker-compose.example.yml](../docker-compose.example.yml)). Running it is covered in [DEPLOYMENT.md](DEPLOYMENT.md).
 
-1. A Dockerised backend that stores data and runs processing workloads.
-2. A Next.js web client for browser capture, review, and administration.
-3. Celery worker services that run the transcription, diarisation, speaker, and AI processing pipeline.
+| Service | Role |
+| --- | --- |
+| `nginx` | TLS proxy. Sends `/api/`, `/mcp` and `/.well-known/oauth-*` to the API and everything else to the frontend. |
+| `frontend` | Next.js web client: capture, review, settings and administration. |
+| `api` | FastAPI app (`backend/main.py`): REST API, the MCP server mounted at `/mcp` (`backend/mcp_server/`), auth, recording lifecycle and task dispatch. |
+| `worker-gpu`, `worker-cpu`, `worker-io`, `worker-parse` | Celery workers, one per lane (below). |
+| `db` | PostgreSQL with pgvector. |
+| `redis` | Celery broker and result backend, plus short-lived guards and markers. |
+| `socket-proxy` | Read-only Docker API, through which the API reads container logs for the admin log viewer. |
 
-## Core Components
+| Path | Contents |
+| --- | --- |
+| `backend/api/v1/endpoints/` | REST routes |
+| `backend/worker/tasks/` | Celery tasks, including the `process_recording_task` orchestrator in `pipeline.py` |
+| `backend/processing/` | ASR engines, VAD, diarisation, voiceprints, audio analytics, LLM backends |
+| `backend/utils/canonical_pipeline/` | Canonical transcript writes, the projection, speaker corrections |
+| `backend/services/` | Analytics derivation, exports, calendar sync, CLI OAuth |
+| `backend/models/` | SQLModel tables |
+| `frontend/src/` | Web client; capture is in `frontend/src/lib/capture/` |
 
-### Backend
+Models: silero VAD; Whisper (default `turbo`), or Parakeet (`parakeet-tdt-0.6b-v3`) or Canary (`nemo-canary-1b-v2`) through onnx-asr; `pyannote/speaker-diarization-community-1` for diarisation; `pyannote/wespeaker-voxceleb-resnet34-LM` for voiceprints; `pyannote/segmentation-3.0` for overlap; `jinaai/jina-embeddings-v2-small-en` for search.
 
-The backend is responsible for:
+### Worker Lanes
 
-- API endpoints.
-- Authentication and authorisation.
-- Recording lifecycle management.
-- Background task dispatch.
-- Calendar sync orchestration.
-- Release metadata and system operations.
+Celery work is split into four queues so a long finalise never blocks light work. Routing is `TASK_ROUTES` in [backend/celery_app.py](../backend/celery_app.py), and an unrouted task falls to the GPU queue. Pool sizes are in [DEPLOYMENT.md](DEPLOYMENT.md).
 
-The processing-heavy work runs in Celery workers rather than inside API endpoints.
+| Lane | Work |
+| --- | --- |
+| `gpu` (one slot) | Final processing, live ASR, voiceprint extraction and rebuilds, overlap analytics, model downloads |
+| `cpu` | Playback proxies, import audio extraction, delivery analytics, backups, the ffmpeg transcode of non-FLAC segments from older capture builds |
+| `io` (also runs Celery Beat) | Meeting Edge, notes and meeting intelligence, speaker inference, chat, AI analysis, transcript indexing, calendar sync, restores, telemetry, cleanup |
+| `parse` | Document parsing and RAG index rebuilds |
 
-Dispatching that work is a blocking socket call to Redis, and the API dispatches from `async def` handlers, so an unreachable broker would otherwise stall the whole event loop rather than one request. Two things prevent that. Every dispatch reachable from a request handler goes through `backend/core/task_dispatch.py`, which runs the publish off the event loop, so a slow or unreachable broker delays only the request that dispatched. And the API gives up quickly: connect attempts are capped at two seconds and the API process caps publish and result-backend retries at one, so a dispatch against a dead broker fails in milliseconds and against an unreachable one in a few seconds instead of being unbounded. Workers keep Celery's generous defaults and dispatch inline, because a worker retrying to write a result has nothing waiting on it and no event loop to protect.
+`worker-parse` runs the `worker-io` image, because visual parsing may go through a subscription CLI that ships only there. It is a separate lane because a document has no page cap and could otherwise hold an IO slot during a live meeting.
 
-Without the bounds, a dispatch against a broker dropping packets could wedge the event loop for minutes; with them it costs 0.03s against a refused connection and about 6s against an unreachable broker, while concurrent requests stay responsive. Two details make this easy to get wrong when editing `backend/celery_app.py`: the broker reads its transport options while the result backend reads top-level `redis_*` keys, and bounding the publish retry alone does nothing, because `send_task` subscribes the result backend to the task's channel before it ever publishes.
+The GPU worker keeps the live ASR model loaded while any recording is `UPLOADING`, and otherwise releases model caches after each task. Every task reloads `config.json` first (`task_prerun` in `celery_app.py`), and a settings change applies from the next task without a restart. The API saves the file with a single rename, which keeps a reader from seeing a partial write.
 
-Per-user AI inference resolves to one of three usage models — install-wide Ollama, install-wide/BYOK API keys, or the per-user **CLI OAuth** mode, which routes through a user's own subscription using that provider's CLI in the `worker-io` lane. Two providers are supported: a Claude Pro/Max subscription driven by the Claude Agent SDK, and a ChatGPT subscription driven by the OpenAI Codex CLI. CLI OAuth degrades cleanly through the server's default provider chain, trying the primary provider first and the secondary after it, and is never load-bearing — the subscription path is unsanctioned by both providers and can be broken or enforced against without notice, so nothing is allowed to depend on it. See [SECURITY.md](SECURITY.md) for the trust boundary and the accepted risk.
+### Dispatching From The API
 
-Celery work is split across four resource lanes so a long recording finalise
-never blocks lightweight tasks: a single-slot GPU lane (finalise, live ASR,
-embeddings), a CPU lane (proxies, backups, and the transcode of segments from
-clients older than the FLAC capture path), an IO/LLM lane
-(Meeting Edge, notes, chat, calendar sync) that also runs Celery Beat, and a
-parse lane (document parsing and RAG index rebuilds). Routing
-lives in `backend/celery_app.py` (`TASK_ROUTES`); see [DEPLOYMENT.md](DEPLOYMENT.md)
-for pool sizing. To avoid reloading the live ASR model between segments, the GPU
-lane keeps it resident while a capture is uploading and releases it when idle.
-During finalise the meeting-intelligence step (notes, title, speaker suggestions)
-is handed to the IO lane for non-local providers, so a network-bound LLM call
-never occupies the GPU worker; local Ollama runs it inline. Every lane reloads
-`config.json` before each task, so a settings change applies from the next task
-without a restart.
+`send_task` blocks on Redis, and the API dispatches from `async def` handlers. Request paths therefore dispatch through [backend/core/task_dispatch.py](../backend/core/task_dispatch.py), which publishes off the event loop: `dispatch_task`, or `dispatch_task_best_effort` where a failed dispatch must not fail the request. The API also gives up quickly: connects are capped at 2 s and `apply_api_dispatch_limits` cuts publish and result-backend retries to one, so an unreachable broker costs a dispatch about 6 s. Workers keep Celery's default retries and call `send_task` directly.
 
-Document parsing has its own lane because it is unbounded: there is no page
-cap, so one large upload can hold a worker slot for a long time. On the IO lane
-that would sit beside Meeting Edge and meeting chat and degrade a live meeting.
-The lane runs the `worker-io` **image** rather than a new one, since visual
-parsing may route through a subscription CLI whose binaries ship only there, so
-it adds a container but no build and no image to scan.
+When editing `celery_app.py`, note that the broker reads its transport options while the result backend reads top-level `redis_*` keys, and that `send_task` subscribes the result backend before it publishes, so bounding the publish retry alone does nothing.
+
+### AI Providers
+
+LLM backends live in `backend/processing/llm_backends/` (Gemini, OpenAI, Anthropic, Ollama). Each user's AI calls resolve to the install-wide provider (an API key or Ollama) or **CLI OAuth**, which runs the user's own Claude subscription through the Claude Agent SDK, or ChatGPT subscription through the OpenAI Codex CLI, on the IO lane. CLI OAuth falls back through the server's provider chain on any failure, and no feature may depend on it; [SECURITY.md](SECURITY.md) covers the trust boundary.
+
+An install-wide secondary provider (`secondary_llm_provider`, or `SECONDARY_LLM_PROVIDER`) wraps the primary in `SecondaryLLMBackend`. Any primary failure is retried on the secondary, which has its own models and key, and if both fail the primary's error is raised. A streamed answer falls back only when the primary failed before its first token.
 
 ### Document Parsing
 
-An uploaded document is parsed into `document_pages`, one row per page, slide,
-sheet, or heading-bounded section. Every format gets a structural pass first:
-PDF text with reading-order sorting and table detection via PyMuPDF, and for
-Office formats the underlying XML, which yields slide titles, table cells,
-speaker notes, and the exact values behind native charts. That last point is why
-no headless-office renderer is needed — a rendered chart would have to be
-estimated from pixels, while the file itself holds the numbers.
+`process_document_task` (parse lane, `backend/processing/documents/`) writes one `document_pages` row per page, slide, sheet or heading-bounded section, and records which tier produced each:
 
-When visual analysis is requested (the default), each page's images are sent to
-the user's configured model: a rendered page for PDFs and images, the embedded
-figures for Office formats. For a rendered page the model's output replaces the
-text layer, having been given it and asked to improve on it; for a figure it
-supplements the structural content, which the model never saw.
+1. **Structural.** PyMuPDF text with reading-order sorting and table detection for PDFs; for Office files, the underlying XML, which yields slide titles, table cells, speaker notes and the values behind native charts.
+2. **Visual analysis** (on by default) sends each page's images to the user's model. For PDFs and images the model sees the rendered page and its output replaces the text layer; for Office files it sees the embedded figures and its output supplements the structural text.
+3. **Local OCR** (Tesseract, in the worker image) supplements pages with little text layer, and needs no AI provider.
 
-Parsing degrades through three tiers rather than two. Visual analysis is the
-richest; below it sits local OCR (tesseract, in the worker image), which
-transcribes glyphs with no provider involved and makes a scanned page searchable
-on an install with no AI configured; below that is the format's own text layer.
-OCR is skipped on any page whose text layer is already substantial, since it is
-strictly worse at text than a real text layer, and it only ever supplements that
-layer rather than replacing it. Each page records which tier produced it.
+Pages are written as they complete, so a restarted worker resumes at the first missing page. A provider that cannot take images raises `VisionUnsupportedError`, which drops the whole document to a structural parse with a warning; for an image upload, which has no text layer, it is an error.
 
-Pages are written as each completes, so a worker restart resumes from the first
-missing page instead of repeating vision calls that were already paid for.
-Vision requests fan out a few at a time. A provider that cannot accept images
-raises `VisionUnsupportedError`, which downgrades the whole document to a
-structural parse once and records a warning, rather than failing every page in
-turn; an image upload has no text layer to fall back on, so that case is a real
-error instead of an empty success.
-
-Parsed pages feed three consumers: the RAG index (one chunk per page, split only
-when a page exceeds the embedding window), the meeting-notes prompt, and the MCP
-`get_documents` tool. Document text is untrusted input, and visual parsing
-widens that — a model transcribing a page reproduces any instruction printed on
-it — so both prompt sinks fence it in `<attached_document>` delimiters with an
-explicit data-not-instructions rule.
+Pages feed the search index (`context_chunks`, one chunk per page unless a page exceeds the embedding window), the notes prompt and the MCP `get_documents` tool. Document text is untrusted, and a vision model reproduces any instruction printed on a page, so the notes and chat prompts wrap it in `<attached_document>` tags with an instruction to treat it as data.
 
 ### Meeting Analytics
 
-Speaking-dynamics analytics for a recording (talk-time share, turn structure,
-turn-taking and response latency, a talk-share timeline, and silence and
-overlap totals) are derived on read from the
-canonical `transcript_utterances` rows rather than computed by the pipeline and
-stored.
+Analytics come in four tiers. The evidence behind each design choice is in [ANALYTICS_EVIDENCE.md](ANALYTICS_EVIDENCE.md), and the read that assembles them is `read_recording_analytics` in `routes_analytics.py`.
 
-That is a deliberate trade. The derivation is arithmetic over a few thousand
-rows, so per-request cost is negligible, and paying it buys two properties a
-cached table would have to earn back with code. Every recording that predates
-the feature has analytics immediately, with no migration, no backfill sweep,
-and no reprocess — which matters because reprocess rebuilds the transcript and
-clears hand-set speaker names, so making it the price of analytics would cost
-users their corrections. And a speaker merge, rename, or transcript edit is
-reflected on the next read, with no invalidation path that can be got wrong.
-Speaker figures are grouped by `recording_speaker_id` precisely so a merge
-redirects utterances onto the surviving row and the numbers follow.
+| Tier | Source | Stored | Code |
+| --- | --- | --- | --- |
+| Speaking dynamics | `transcript_utterances`, derived on every read | No | `backend/services/meeting_analytics/` |
+| Delivery | The audio, CPU lane | `analytics_payload.delivery` | `backend/processing/delivery_descriptors.py` |
+| Overlap | The audio, GPU lane | `analytics_payload.audio_overlap` | `backend/processing/audio_overlap.py`, `backend/worker/tasks/analytics_overlap.py` |
+| AI analysis | A model reading the transcript, IO lane | `analytics_payload.ai` | `backend/utils/meeting_analysis/`, `backend/worker/tasks/analytics_ai.py` |
 
-The derivation lives in `backend/services/meeting_analytics/`, deliberately free
-of ORM and ML imports below its query layer so it can run in the API process and
-be tested as pure functions. Its thresholds, what counts as a turn boundary or a
-measurable response gap, are
-centralised in that package's `constants.py` for the same reason the speaker
-thresholds are centralised in `backend/processing/embedding.py`: they are one
-tuning decision, not several.
+The three stored tiers write one JSONB column from three lanes, so each merges its own top-level key under a row lock through `backend/utils/analytics_payload.py`.
 
-Two definitions are load-bearing anywhere the numbers are consumed. Per-speaker
-talk time counts overlapping speech once for each speaker, so shares are
-reported against total speech rather than against duration and the two
-denominators are carried separately. And anything excluded from a statistic is
-counted rather than dropped, so a median over four samples is distinguishable
-from a median over ninety.
+Speaking dynamics (talk-time share, turn structure, response latency, a talk-share timeline, silence and overlap totals) are derived on read: every recording has them without a backfill, and a speaker merge, rename or transcript edit shows on the next read. Figures group by `recording_speaker_id`, which a merge redirects. The package has no ORM or ML imports below its query layer, and its thresholds are in `constants.py`. Rules every consumer relies on:
 
-A third follows from the same principle and reshaped the surface. Nojoin's
-transcripts hold no overlapping speech at all — the merge assigns each
-transcribed segment one speaker from one mixed stream, so two people talking
-at once is not representable in the transcript whatever happened in the room,
-on live captures and imports alike. Every transcript-derived interruption
-count is therefore zero by construction, and the surface carries **no
-interruption counts at all**: overlapping speech is measured from the audio
-instead (below), reported as overlap rather than interruption, because
-attributing who cut across whom from a single channel is not defensible and
-the interruption category itself is one human annotators barely agree on.
-The evidence for both halves of that decision is in
-[ANALYTICS_EVIDENCE.md](ANALYTICS_EVIDENCE.md).
-
-Response behaviour at speaker changes is reported in three disclosed parts
-rather than one filtered median, because the underlying timestamps carry
-roughly a quarter-second of noise: **immediate handovers** (gaps under the
-250ms measurement collar — real behaviour, the cross-language response mode
-is 0-200ms, but unresolvable timing), a **reply-time median** over gaps the
-timestamps can support (collar to five seconds), and **lapses** (longer
-silences, which are resumptions rather than replies). Each population is
-counted.
-
-Because every figure is attached to a speaker, the surface discloses when that
-attribution is doubtful rather than presenting a confidently wrong number: a
-structured warning is returned when several clusters hold a negligible share,
-overlap is high, the speaker cap bound, or speakers are unnamed. Reasons are
-codes, so the web client owns the wording and the MCP surface stays stable for
-an assistant to branch on.
+- Per-speaker talk time counts overlapping speech once for each speaker, so shares are reported against total speech, and both denominators are carried.
+- Anything excluded from a statistic is counted.
+- There are no interruption counts. The merge gives each segment one speaker from a mixed stream, so a transcript holds no overlapping speech. Overlap is measured from the audio and never attributed to a person.
+- Gaps at speaker changes are reported in three counted parts: immediate handovers (under the 250 ms collar, `LATENCY_COLLAR_MS`), a reply-time median over gaps from the collar to 5 s, and lapses of 5 s or more.
+- A structured warning flags doubtful speaker attribution with reason codes (`low_share_clusters`, `high_overlap`, `speaker_cap_bound`, `unnamed_speakers`). The web client owns the wording.
 
 #### Delivery Descriptors
 
-One analytics tier is measured rather than derived, and is therefore stored:
-vocal delivery (speaking pace, pitch height and movement, loudness, within-turn
-pausing), computed in
-[backend/processing/delivery_descriptors.py](../backend/processing/delivery_descriptors.py)
-and persisted on the transcript's `analytics_payload`.
+Speaking pace, pitch height and movement (YIN, spread in semitones), loudness and within-turn pausing. No emotion model is used, and none should be added. The module uses numpy and soundfile only and never imports torch. A file soundfile cannot open (WebM/Opus or MP4/AAC from captures made before FLAC capture; M4A, AAC, MP4 or WMA imports) is first decoded with ffmpeg to a temporary 16 kHz WAV that keeps its channels.
 
-It measures *how* people spoke and makes no claim about how they felt. No
-emotion model is involved, and none should be added. That decision was
-re-examined against the current literature and stands on stronger grounds
-than when first made: speech-emotion recognition collapses on naturalistic
-conversational speech (22-43% accuracy on every real conversational corpus
-tested, against 90%+ on acted ones), its generalisation across speaker
-populations is unproven, a wrong inference attached to a named colleague is
-the worst output this surface can produce — and since February 2025 the EU AI
-Act prohibits emotion inference from voice in the workplace for products
-placed on the EU market, while explicitly excluding sentiment read from
-transcript text, which is exactly the split Nojoin already makes. The full
-evidence review is in [ANALYTICS_EVIDENCE.md](ANALYTICS_EVIDENCE.md). Every
-figure here is an arithmetic property of the waveform, which is what lets the
-interface present it without hedging and lets a user check it against the
-audio.
+`compute_delivery_analytics_task` runs on the CPU lane as a post-processing follow-up, and from the Analytics tab's **Measure delivery** action for older recordings. In a browser capture, channel 0 is shared audio and channel 1 the microphone, so each utterance's dominant channel, judged with the live lane's thresholds, identifies its source; an imported stereo file is downmixed. Loudness is compared across speakers only when they shared a signal chain.
 
-Deliberately numpy and soundfile only, so it holds no model and never pulls
-torch in. A recording soundfile cannot open is first decoded with ffmpeg to a
-temporary 16 kHz WAV that keeps its channels: a browser capture made before the
-FLAC capture path is stored in the container MediaRecorder produced (WebM/Opus,
-or MP4/AAC on older Safari), and imports such as M4A, AAC, MP4 and WMA keep
-theirs. A browser capture made since is FLAC, which soundfile reads directly. 16 kHz is the rate the
-pitch estimator was validated at, and it keeps the decoded copy of a long
-two-channel capture to about a third of its native size.
-The pitch estimator is YIN's cumulative-mean-normalised difference
-function — closed-form numpy, chosen after the original autocorrelation
-picker measured a 4% gross-error rate against laryngograph ground truth,
-enough to inflate the pitch-movement spread; the replacement halves every
-product-level error and was validated on the same ground truth, clean and
-after MP3 degradation. Pitch spread is reported in semitones rather than
-hertz because hertz is not comparable between voices: the same expressive
-range measures about twice as wide on a high voice as on a low one. The
-plain-language readings beside the figures are calibrated against corpus
-measurements rather than folk numbers — conversational speech runs at
-160-200 words a minute by the measure Nojoin computes, not the oft-quoted
-120-150 — and the pace bands are an English calibration, disclosed as such.
+The payload carries `DELIVERY_METHOD_VERSION` and the transcript event watermark it was measured at. Stale figures are re-measured when the Analytics tab is next read, if the owner's `auto_remeasure_delivery` setting is on (the default), with a five-minute per-recording claim so the tab's polling cannot queue the run twice. A measurement that ended in error is never retried by a read. After a method-version bump, `remeasure_outdated_delivery_task` re-measures up to 25 recordings every six hours.
 
-It runs on the **CPU lane**, dispatched at the end of `process_recording_task`
-rather than inline. It needs no GPU, so holding the single-slot GPU lane to read
-a WAV would delay the next meeting for nothing, and a failure must never reach a
-recording that has otherwise finished. The same task backs the interface's
-per-recording "Measure delivery" action, so a meeting recorded before the
-feature existed takes exactly the path a new one does.
-
-Channel selection is meaning-aware. For a browser capture the capture contract
-fixes channel 0 as shared audio and channel 1 as the microphone, so the
-dominant channel per utterance identifies the capture source, using the same
-dominance thresholds as the live lane. An imported stereo file's channels are
-left and right, so those are downmixed instead — reading them as sources would
-invent provenance. Because a remote voice has been through a codec and the far
-end's gain control and a local microphone has not, loudness is reported as
-comparable across speakers only when they shared a signal chain, and the
-interface withholds the comparison rather than inviting a false one.
-
-`DELIVERY_METHOD_VERSION` versions the extraction procedure exactly as
-`EMBEDDING_METHOD_VERSION` versions a voiceprint, and for the same reason: a
-figure produced by one procedure is not comparable with one produced by
-another. The stored payload also carries the transcript event watermark it was
-measured against, which is what makes staleness detectable without a second
-column. Stale figures are re-measured when the Analytics tab is next read,
-not when the edit lands: rereading a recording's audio is work worth spending
-only on a meeting someone is looking at, and the read that would otherwise show
-stale figures is that moment. The read queues the same CPU-lane task the button
-dispatches, reports the tier as generating so the tab polls for the result, and
-holds a once-per-window claim per recording so the tab's own polling cannot
-queue the run again before the worker marks it generating. A per-user setting
-(`auto_remeasure_delivery`, on by default) turns this off, after which the tab
-shows the figures as stale with the button; a measurement that
-ended in error is never retried by a read either. Editing a transcript nobody
-reopens costs nothing. A **method-version bump** is different: that is Nojoin's
-own maintenance obligation, not user-triggered staleness, so a bounded
-scheduled sweep (`remeasure_outdated_delivery_task`, mirroring the voiceprint
-rebuild) re-measures a few outdated recordings per tick until the library is
-comparable again.
-
-Stored delivery figures also feed **cross-meeting baselines**: for a speaker
-linked to a person, the analytics read derives that person's usual pace,
-pitch movement, and pausing as medians across the user's other measured
-meetings, and the interface says "faster than their usual across N meetings"
-with the count always shown. Derived on read like the deterministic tier, so
-a speaker merge or rename redirects the person link and the baseline follows;
-only same-method-version figures are compared, and a person needs at least
-three measured meetings before "their usual" is claimed. The wording is
-delivery, never affect — a baseline framed as emotional state would be both
-unsupported and, in the EU, prohibited.
+Cross-meeting baselines compare a speaker linked to a person with that person's medians over the user's other measured meetings. They are derived on read, use the same method version only, and need three such meetings (`BASELINE_MIN_MEETINGS`). The wording describes delivery, never emotional state.
 
 #### Measured Overlap
 
-Overlapping speech is measured from the recording's audio by
-[backend/processing/audio_overlap.py](../backend/processing/audio_overlap.py)
-and [backend/worker/tasks/analytics_overlap.py](../backend/worker/tasks/analytics_overlap.py),
-running `pyannote/segmentation-3.0`. The model ships in the bundled models,
-[backend/processing/segmentation_model.py](../backend/processing/segmentation_model.py)
-loads and caches it, and overlap analytics is its only consumer. It runs on
-the **GPU lane** with the other pyannote models, dispatched with the other
-post-processing follow-ups for new recordings and from the same "Measure
-delivery" action for old ones. The result stores under
-the `audio_overlap` key of `analytics_payload` with its own method version
-and its status inside the block — it needs no column and no staleness story,
-because it depends only on the audio, which never changes after processing.
-A recording soundfile cannot open is decoded with ffmpeg to a temporary 16 kHz
-mono WAV first, the rate and layout the model works at.
+`compute_overlap_analytics_task` runs `pyannote/segmentation-3.0` on the GPU lane. `backend/processing/segmentation_model.py` loads the model, and overlap is its only use. It is dispatched with the other follow-ups, and by **Measure delivery** for older recordings. Audio soundfile cannot open is decoded to a temporary 16 kHz mono WAV first. The result has its own method version and status under `audio_overlap` and needs no staleness check, since the audio does not change after processing.
 
-What it reports is deliberately narrow: that people talked over each other,
-for at least how long, and where in the meeting — never who overlapped whom.
-The detection procedure was validated against AMI ground truth (precision
-0.71-0.95, recall 0.62-0.85 with a 250ms collar, stable on far-field audio
-and through 64kbps MP3), and its totals systematically underestimate, which
-is why the interface presents the figure as a floor. Attribution and
-"interruption" framing are withheld on evidence, not caution: speaker
-attribution inside overlap has no published accuracy figure, and human
-annotators agree on what counts as an interruption at kappa ~0.31. See
-[ANALYTICS_EVIDENCE.md](ANALYTICS_EVIDENCE.md).
+It reports that people talked over each other, for at least how long, and where. It never says who overlapped whom, and the interface presents the total as a floor because the detector underestimates.
 
 #### AI Analysis
 
-The third analytics tier is neither derived nor measured: it is a model reading
-the transcript. It reports the topics the meeting moved through and who drove
-each, how each speaker's *words* read, which questions were asked and which went
-unanswered, and who proposed, agreed with, or objected to each decision. It
-lives in [backend/utils/meeting_analysis/](../backend/utils/meeting_analysis/)
-(prompt and contract) and
-[backend/worker/tasks/analytics_ai.py](../backend/worker/tasks/analytics_ai.py)
-(the task), and stores under the `ai` key of the same `analytics_payload`.
+A model reports the topics and who drove each, how each speaker's words read, which questions were asked and which went unanswered, and who proposed, agreed with or objected to each decision. The tier has its own `analytics_ai_status` column, which adds `unavailable` (no AI provider, a normal state) and keeps an AI failure from marking delivery as broken.
 
-The tier is **optional**, which is why it has its own `analytics_ai_status`
-column rather than sharing the delivery tier's. It needs a fifth state the
-measured tier does not have — `unavailable`, meaning no AI provider is
-configured — and that is a normal condition on a healthy install rather than an
-error. Sharing one column would also let an AI failure mark measured delivery as
-broken, when the two are produced by different lanes from different inputs.
+It runs on request, from the Analytics tab or the MCP `analyse_meeting` tool. An administrator may cap runs per user per UTC day (`ai_analysis_daily_limit` in `config.json`, overridable on the user record). Runs are logged in `ai_analysis_runs` when queued, a run past the cap gets 429, and the read reports the remaining budget. A user may opt in to running it after every processed meeting (`auto_analyse_meetings`, off by default), within the same budget.
 
-It runs on request by default, unlike the delivery tier. One run is one long
-call against the user's own AI quota, answering questions most meetings are
-never asked, so it runs from the Analytics tab's button or the MCP
-`analyse_meeting` tool. Two things bound what that can cost. An administrator
-may cap the runs a user starts per UTC day (`ai_analysis_daily_limit` in
-`config.json`, with a per-user override on the user record); every run is
-logged in `ai_analysis_runs` where it is queued, the API refuses a run past
-the cap with 429 and the message the tab shows, and the read reports the
-budget so the tab can say so before anyone clicks. With that cap in place a
-user may also opt in to automatic analysis (`auto_analyse_meetings`, off by
-default), which queues the tier from the post-processing follow-ups within
-the same budget. It is network-bound, so it runs on the **IO lane**,
-matching how finalise already hands meeting intelligence there for non-local
-providers. Both stored tiers therefore write one JSONB column from two lanes,
-which is why each merges under a row lock through
-[backend/utils/analytics_payload.py](../backend/utils/analytics_payload.py)
-rather than assigning the column.
+The parser, not the prompt, enforces three rules:
 
-Three rules make a model's reading safe to attach to a named colleague, and all
-three are enforced in the parser rather than trusted to the prompt. **Speakers
-are an allowlist**: the model is given the meeting's own display names and
-anything attributed to a name it was not given is discarded, because a name it
-was not given is a name it invented. **Citations are verified, not accepted**: a
-quote must appear in the transcript that was actually sent, normalised for case
-and punctuation and checked against the whole corpus so a quote spanning a turn
-boundary still passes, and its timestamp must fall inside the meeting. A
-sentiment or decision item left with no surviving citation is **dropped**, not
-shown — an unfalsifiable claim about a person is the worst output this feature
-can produce, and decision ownership holds to that rule precisely because naming
-who pushed back against a colleague is the most consequential thing here. And
-**everything discarded is counted**, so a thin result is distinguishable from a
-quiet meeting.
+- Speakers are an allowlist of the meeting's display names. Anything attributed to another name is discarded.
+- A citation must appear in the transcript that was sent (normalised for case and punctuation, matched across turn boundaries) and its timestamp must fall inside the meeting. A sentiment or decision item left with no valid citation is dropped.
+- Every discard is counted.
 
-Sentiment is read from the words and nothing else. It is deliberately **not
-fused** with the delivery descriptors above: those measure the sound of a voice,
-these read language, and combining them into one score would manufacture a
-confidence neither source supports. The two are presented as separate,
-differently-sourced things, and no emotion model is involved in either.
-
-The boundary with meeting notes is deliberate and stated to the model in the
-prompt as well as enforced by what the schema can express. Notes remain the
-record of *what* was decided and what happens next; this tier answers *who* —
-who drove a topic, whose question went unanswered, who owned a decision — and
-never authors a decision log. Consensus is reported as `stated`, `assumed`, or
-`none`, and `assumed` means the decision merely went unchallenged, which the
-interface must never render as agreement.
-
-A very long meeting is truncated rather than refused, and the payload records
-that it was along with how far the analysis reached. As with delivery, the
-stored block carries a method version and a transcript event watermark, and
-staleness shows a banner with a regenerate button rather than triggering another
-call the user did not ask for.
+Sentiment is read from the words alone and never combined with delivery. The tier answers who drove topics and decisions; the decision log stays in the notes. Consensus is `stated`, `assumed` (the decision went unchallenged, which the interface must not show as agreement) or `none`. A very long meeting is truncated and the payload records how far the analysis reached. The payload carries a method version and transcript watermark, and when stale the tab offers to regenerate instead of calling the model again unasked.
 
 ### Exports
 
-`GET /api/v1/transcripts/{id}/export` builds one file from any of the meeting
-notes, the analytics and the transcript, as PDF, DOCX or plain text. The work
-lives in `backend/services/exports/` and is split in two.
+`GET /api/v1/transcripts/{id}/export` builds a PDF, DOCX or plain-text file from any of the notes, analytics and transcript (`backend/services/exports/`):
 
-`builder.py` decides what an export says. It turns a meeting into an
-`ExportDocument`, a tree of neutral blocks: headings, paragraphs, lists, tables,
-stat tiles, callouts, charts and transcript lines. Notes are parsed from their
-stored Markdown with `markdown-it-py`. Analytics come from
-`read_recording_analytics`, the function the Analytics tab's own read uses, so a
-file cannot report different figures from the tab, and an export never
-dispatches a measurement. The wording and the plain-language readings are ports
-of the tab's components (`formatDuration.ts`, `deliveryInsights.ts`,
-`AttributionWarning.tsx` and the AI panels), with tests that pin the parity.
-
-One renderer per format decides how each block looks: ReportLab for PDF,
-python-docx for Word, and plain text. Charts are laid out once as shapes in
-`charts.py` and painted twice, as vector graphics in the PDF and as a PNG in
-Word, which cannot take ReportLab's drawings. Rendering runs in a worker thread,
-because laying out a long transcript takes seconds and would otherwise stall
-every request the API process is serving.
-
-Two details are easy to miss. Automatic speaker colours exist only in the
-browser, so the export dialog sends the colour map it is showing and
-`speaker_colors.py` resolves it, falling back to saved colours and then to the
-chart slots for a caller that sends none. And Word substitutes any font it
-lacks, so the DOCX renderer embeds Geist Regular and Bold as obfuscated font
-parts (ECMA-376 Part 1, section 17.8.1). The TTF files and their SIL Open Font
-License live in `backend/services/exports/assets/fonts/`.
-
-PDFs were drawn by markdown-pdf until issue #419. Its HTML layout repainted each
-table header row's background at the same position on every later page, over
-whatever text was there, so a regression test inspects every page after a table.
+- `builder.py` turns a meeting into an `ExportDocument` of neutral blocks. Notes are parsed from Markdown with `markdown-it-py`. Analytics come from `read_recording_analytics`, the Analytics tab's own read, so an export cannot show different figures and never dispatches a measurement. The wording ports the tab's components (`formatDuration.ts`, `deliveryInsights.ts`, `AttributionWarning.tsx` and the AI panels), with tests that pin the parity.
+- One renderer per format draws the blocks: ReportLab for PDF, python-docx for Word, and plain text. `charts.py` lays charts out once, painted as vectors in the PDF and as a PNG in Word. Rendering runs in a threadpool, off the event loop.
+- Automatic speaker colours exist only in the browser, so the export dialog sends the colour map it shows; `speaker_colors.py` falls back to saved colours, then chart slots.
+- The DOCX embeds Geist Regular and Bold as obfuscated font parts so Word does not substitute them. The fonts and their licence are in `backend/services/exports/assets/fonts/`.
 
 ### Web Client
 
-The web client is responsible for:
-
-- Dashboard workflows.
-- Recordings workspace and transcript review.
-- Meeting analytics.
-- Speaker management.
-- Notes, meeting chat, and document upload.
-- User, admin, and system settings.
-- Browser capture orchestration through `getDisplayMedia`, `getUserMedia`, Web Audio mixing, an AudioWorklet tap that segments and FLAC-encodes the mix, sequenced upload with a queue kept in IndexedDB, live waveform state, pause/resume, and finalize controls. Mobile Chrome uses the same lifecycle with a microphone-only `getUserMedia` path.
-
-The web client is the only live capture surface. Unsupported browsers retain review, playback, admin, and settings capabilities, but cannot start live recording.
+The Next.js app in `frontend/` covers the dashboard, recordings and transcript review, analytics, speakers, notes, chat, documents, and user, admin and system settings. It is the only capture surface; a browser that cannot capture keeps everything else.
 
 #### Connectivity Monitor
 
-Backend reachability is a state machine in `frontend/src/lib/connectivity/`, and the thing it exists to avoid is claiming an outage that is not happening. Every observed success is proof of life, whether it came from real API traffic, a health poll or an idle liveness probe, so a page doing steady work never probes at all. Only the dedicated prober can escalate, and only after the last success has gone stale and three of its probes have failed.
-
-Two rules keep that threshold meaning what it says. **Probes are serialised**: a tick will not start one while another is in flight. A tick awaiting its probe holds no timer, so without that rule every failing request would schedule another tick 500ms later and each would start another probe; a tab whose connection stalls fails a burst of requests at once, and would deliver several times the threshold in one go rather than confirm it over fifteen seconds. **A probe that outlasts its own timeout by a wide margin is not counted**, because a frozen tab suspends the abort timer along with the request and thaws them together, cancelling the fetch without ever having raced it against the network. Returning to the foreground clears the failure streak for the same reason: evidence gathered while the page was not being run is not evidence. The `resume` event cannot be used for any of this, since it is advisory and not dispatched on every Chromium build (issue #166), so the elapsed wall clock is the signal.
-
-This matters beyond the toast. A false `unreachable` also mislabels an audio-coverage shortfall as `backend-unreachable`, which promises the queued audio will upload on reconnect, when the real cause was the suspension that lost it.
+`frontend/src/lib/connectivity/` decides when the API is unreachable and is built to avoid false alarms. Any success (API traffic, a health poll or an idle probe) proves the backend is up, so a busy page never probes. Only the prober can declare an outage, once the last success is 30 s old and three probes in a row have failed. Probes are serialised, so a burst of failing requests cannot reach the threshold at once. A probe that overran its timeout by a wide margin is discarded, because a frozen tab suspends the timer and the request together, and returning to the foreground clears the failure streak. The monitor relies on elapsed wall-clock time because the `resume` event is not dispatched on every Chromium build. A false outage would also mislabel a capture shortfall as `backend-unreachable` (below).
 
 ### Browser Capture Stack
 
-The browser capture stack is responsible for:
+Capture lives in `frontend/src/lib/capture/`. Browser support and troubleshooting are in [CAPTURE.md](CAPTURE.md).
 
-- Prompting for shared tab, window, or screen audio.
-- Prompting for microphone access.
-- Mixing shared audio and microphone audio in the browser on desktop, or recording microphone-only audio on mobile Chrome.
-- Taking the two-channel mix from an AudioWorklet tap (`frontend/public/audio-worklets/pcm-tap.js`), resampling it to 16 kHz with a windowed-sinc filter, cutting it into segments of exactly 32,000 frames by counting samples, and encoding each as FLAC (`frontend/src/lib/capture/pcm/`). Nothing restarts between segments, so they join with no gap. The MediaRecorder this replaced was stopped and restarted every 2 s, which dropped about 28 ms at every restart and left WebM segments whose headers understated their own length (issue #417).
-- Uploading segments with session-cookie authentication, one at a time and in order, so the server never holds a later segment without the one before it. Each segment is written to IndexedDB when it is recorded and removed when the server acknowledges it, so a closed tab keeps what it had not sent; the next resume or stop-and-process in the same browser uploads it first.
-- Preserving the browser-live source layout as 16 kHz, two-channel WAV, decoded from each uploaded FLAC segment by the API: channel 0 is shared/system audio when available and channel 1 is microphone audio.
-- Exposing analyser output to the live waveform UI.
-- Moving recordings to `PAUSED` on real tab unload (pagehide/beforeunload) only, then requiring resume, stop-and-process, or discard before another capture starts. In-app page navigation does not pause capture.
-- Bounding every stage of the stop sequence and reporting which stage it is on, so a stalled recorder or uploader degrades to a retryable finalize rather than leaving the recording unfinishable.
-- Holding a screen wake lock for the duration of a capture, re-taking it whenever the page returns to the foreground, since the browser drops the lock on every visibility change. This addresses device sleep only. Nothing in a web page can prevent the browser suspending a tab, or read whether Memory Saver is enabled. Nojoin does not warn about that up front: Chrome exempts tabs actively using the microphone or sharing a screen, which a recording tab is throughout, so the guidance lives in [CAPTURE.md](CAPTURE.md#chrome-memory-saver) as troubleshooting for the case it is actually needed.
-- Comparing the audio the server holds against elapsed recording time and warning when they diverge. A tab suspended by the browser or the operating system stops feeding the recorder without raising an error, so coverage is the only signal that audio is being lost.
-
-The captured figure comes from the backend, on `captured_audio_seconds` in the recording detail payload, summed from the decoded segments and polled every 15 seconds while capture is open. It is exact: every full segment is 2.000 s, and only a segment ended by a pause or a stop is shorter. The server's figure is still the one that counts, because a segment the browser sent but the server set aside as corrupt is not audio the meeting has.
-
-The shortfall is net of the uploader's own queue. Segments recorded but not yet acknowledged are audio the browser is holding, not audio that has been lost, and a server that stops answering for two minutes leaves exactly two minutes of them; counting that as missing told a user their meeting was being lost while it sat in memory waiting to upload. The queue is measured from the durations of the segments in it, and it is named separately in the copy so a queue that never drains is still visible. A queue longer than 30 seconds is also shown on the recording controls while capture runs, and a stop that is still sending it says so instead of looking paused.
-
-The warning also carries a cause, because a shortfall means opposite things depending on why. `backend-unreachable` when the connectivity monitor reports the API down, and the queued audio will upload on reconnect. `tab-suspended` when the page was seen to thaw or the recorder watchdog caught it stalled, and the audio is gone. `unknown` when neither signal is present, with copy that describes the gap without diagnosing it. An outage that has just ended still counts, for five minutes: the check polls every fifteen seconds and the shortfall persists while the queue drains, so classifying on the live status alone answered `unknown` for the very case the classifier exists to name. It ranks below a freeze, which is direct evidence the browser stopped recording where an outage is evidence it did not. It is dismissible, and re-arms only when the shortfall grows materially past the value dismissed.
+- **Sources.** On desktop the browser asks for shared tab, window or screen audio and the microphone and mixes them with Web Audio. Mobile Chrome records the microphone alone, leaving the shared channel silent.
+- **Segments.** An AudioWorklet tap (`frontend/public/audio-worklets/pcm-tap.js`) feeds the two-channel mix to `frontend/src/lib/capture/pcm/`, which resamples it to 16 kHz with a windowed-sinc filter, cuts exactly 32,000 frames (2 s) per segment by counting samples, and encodes each as FLAC. Nothing restarts between segments, so they join with no gap. Channel 0 is shared audio and channel 1 the microphone.
+- **Upload.** Segments upload one at a time, in order, with the session cookie. Each is written to IndexedDB when recorded and removed when the server acknowledges it, so a closed tab keeps what it had not sent, and the next resume or stop in that browser sends it first.
+- **Unload.** A real tab unload (`pagehide` or `beforeunload`) drops the unfinished segment and pauses the recording. In-app navigation and switching tabs do not. A paused recording must be resumed, stopped or discarded before another capture starts; stopping needs no live browser runtime.
+- **Stop.** Every stage of the stop sequence is bounded and reports its stage, so a stalled recorder or uploader ends in a retryable finalise.
+- **Wake lock.** A screen wake lock is held while capturing and re-taken on each return to the foreground. This prevents device sleep only; nothing in a page can stop the browser suspending a tab (see [CAPTURE.md](CAPTURE.md#chrome-memory-saver)).
+- **Coverage.** A suspended tab stops recording without raising an error, so the client compares the server's `captured_audio_seconds` (on the recording detail payload, polled every 15 s) with elapsed recording time. The shortfall excludes audio still queued for upload, which is shown separately, and a queue over 30 s also shows on the recording controls. The warning names a cause: `backend-unreachable` when the monitor reports the API down, or did in the last five minutes (queued audio will upload on reconnect); `tab-suspended` when the page was seen to thaw or the recorder watchdog caught a stall (the audio is lost; this outranks an outage); otherwise `unknown`. Once dismissed, it returns only if the shortfall grows materially.
 
 ## Recording Flow
 
-1. The browser authenticates through a Secure HttpOnly session cookie.
-2. From the **Meet Now** card, the user clicks **Start Meeting** in Chrome on Windows, Linux, or macOS, another supported desktop Chromium browser, or Chrome on Android/iOS for microphone-only recording.
-3. `/recordings/init` creates an `UPLOADING` recording for the current user. The same browser session is used for segment, pause, resume, discard, and finalize operations.
-4. On desktop, the browser asks for shared tab/window/screen audio and microphone access, mixes those streams, and cuts the mix into 2 s FLAC segments at 16 kHz. On mobile Chrome, the browser asks for microphone access only, and the shared channel is silent.
-5. The browser uploads segments to `/recordings/{id}/segment?sequence=N` with monotonically increasing 0-based sequence numbers.
-6. The API decodes each FLAC segment in process into 16 kHz, two-channel WAV, registers it (see [Chunk Registration](#chunk-registration)), and dispatches the live transcription lane. Channel 0 is shared/system audio when available and channel 1 is microphone audio. A segment that will not decode is quarantined as a `.corrupt` tombstone and the upload still succeeds, so one bad segment costs a 2 s gap instead of pausing the meeting. WebM, Ogg and MP4 segments from a tab still running an older build go to the CPU worker for an ffmpeg transcode first, as before.
-7. Finalisation rebuilds every chunk offset and window manifest once from the segments on disk, seals the cursor, joins the segment WAVs in order into a FLAC master with soundfile (4.4 s for a 2 h 17 m meeting, against 28 s for ffmpeg's concat demuxer over the same 4,164 files), takes the duration from the frames written, queues backend processing, and triggers proxy generation. It accepts an `UPLOADING` or a `PAUSED` recording, so a capture whose browser runtime is gone can still be finalised from its uploaded segments without resuming first; missing sequences and pending transcodes are still refused with a retryable 409. The browser sends its own elapsed recording time with the request, and the `capture_coverage` metric judges against it rather than against the span to the last upload, which also counted the time a stop spent uploading.
-8. The web client shows a live capture or processing status workspace while the job runs.
+A recording moves through `UPLOADING` (capturing) and `PAUSED`, then `QUEUED`, `PROCESSING`, and `PROCESSED` or `ERROR`.
 
-If the user refreshes, closes, or navigates away from the Nojoin tab while recording (actual tab unload, not in-app navigation), the browser stops capture, drops the unfinished segment, and asks the backend to mark the recording `PAUSED`. Uploaded segments remain on the server and queued ones in IndexedDB. On the next app load, Nojoin blocks new capture behind a mandatory modal offering resume, stop-and-process, or discard. Stop does not require a live browser runtime, so a recording in this state always has a route to processing.
+1. **Start Meeting** calls `POST /api/v1/recordings/init`, which creates an `UPLOADING` recording owned by the user. Init, segment, pause, resume, discard and finalise all use the browser session.
+2. The browser uploads each segment to `/recordings/{id}/segment?sequence=N`, numbering from 0.
+3. The API decodes each FLAC segment to a 16 kHz, two-channel WAV, registers it (see [Chunk Registration](#chunk-registration)) and dispatches the live lane. A segment that is not 16 kHz, two-channel, 16-bit FLAC, or will not decode, is quarantined as a `.corrupt` tombstone and the upload still succeeds, costing a 2 s gap. WebM, Ogg and MP4 segments from tabs on an older build go to the CPU lane for an ffmpeg transcode first.
+4. `POST /recordings/{id}/finalize` accepts an `UPLOADING` or `PAUSED` recording, so a capture whose browser is gone can still be processed. Missing sequences and pending transcodes get a retryable 409. Otherwise it rebuilds chunk offsets and window manifests from the segments on disk, seals the cursor, joins the segment WAVs into a FLAC master with soundfile, takes the duration from the frames written, and queues `process_recording_task` and `generate_proxy_task`. The browser sends its elapsed recording time, which the `capture_coverage` pipeline metric compares with the stored audio.
 
-Switching focus to another browser tab, window, or application does not pause capture. Navigating between pages within the Nojoin app also does not pause capture. Only a real Nojoin tab unload (pagehide/beforeunload) invokes the guarded pause path.
+A recording can be discarded while uploading, paused, queued or processing. Discard revokes the running task with `terminate=True`, deletes the recording's files and removes its row, so a requeued task finds nothing to process. Finished recordings go through the normal delete.
 
 ### Chunk Registration
 
-Every segment becomes a `recording_audio_chunks` row with an offset on the recording's timeline, and every 20 s window (5 s hop) becomes a `recording_audio_window_manifests` row that the live ASR lane tracks its progress on. Registering a segment used to rebuild all of them: list the upload directory, load every chunk row, recompute every offset, rebuild every window and upsert every manifest, all under `FOR UPDATE` on the `recordings` row. A segment's cost grew with the meeting, and the segment upload, live transcription and finalize all wrote the same row, so they queued behind it. On a 2 h 19 m meeting the task passed the 2 s capture cadence at about segment 3,000 and reached 8 s by segment 4,000; uploads fell 14 minutes behind and a stop spent 13 minutes sending them (issue #417).
+Each segment becomes a `recording_audio_chunks` row with an offset on the recording timeline, and each 20 s window (5 s hop) a `recording_audio_window_manifests` row on which the live lane tracks ASR progress. `backend/utils/recording_audio_registration.py` registers a segment in constant time:
 
-`backend/utils/recording_audio_registration.py` now registers a segment in constant time. A per-recording cursor (`recording_audio_chunk_cursors`) records how far the chunks are placed. A chunk is placed once every sequence before it is placed or has failed for good (a `.transcode_failed` marker or a `.corrupt` tombstone). The full rebuild computes the same timeline: offsets are cumulative over the chunks present, and a missing sequence ends a contiguous group of windows. A segment that lands early waits, unplaced, until the gap fills. Placing chunks can only grow the last group, and a growing group can only change its last few windows, so registration rebuilds only the windows from the first one that was not yet full, and it writes only those that are new or whose geometry changed. A window it does not touch keeps its ASR and diarisation status exactly as they were. Measured on PostgreSQL, a segment costs 6.8 ms at segment 100 and 6.6 ms at segment 4,150, where the old full sync took 3.3 s per segment by segment 4,200; both produced identical windows.
-
-The bookkeeping is serialised per recording by a transaction-scoped advisory lock (`pg_advisory_xact_lock`) rather than a lock on the recording row, so it never blocks a write to `recordings`. The segment upload writes `last_activity_at` at most every 15 seconds rather than on every segment.
-
-Finalize keeps the full rebuild as its reconciliation pass and then seals the cursor. A sealed cursor turns registration into a no-op, which closes a race where a transcode task still queued at stop time ran the full sync afterwards with `seal_tail=False`, unsealing every window finalize had just sealed and resetting its progress. A resume after a failed stop drops a sealed cursor so registration rebuilds it from the chunk rows; the same rebuild serves a recording that was in flight across the upgrade and has no cursor yet.
-
-When a recording is active, a floating recording badge appears at the top-centre of the viewport showing the recording status, elapsed time, and pause, resume, and stop controls. Clicking the badge navigates to the recording detail page. The badge remains visible on every page except the recording detail page so the user never loses visibility of the active recording while navigating the app.
+- A per-recording cursor (`recording_audio_chunk_cursors`) records how far chunks are placed. A chunk is placed once every earlier sequence is placed or has failed for good (a `.transcode_failed` marker or a `.corrupt` tombstone); a segment that arrives early waits until the gap fills.
+- Offsets are cumulative over the chunks present, and a missing sequence ends a contiguous group of windows. Placing chunks can only grow the last group, so registration rebuilds windows from the first one that was not yet full, writes only new or changed ones, and leaves the status of the rest alone. The result matches a full rebuild.
+- Registration is serialised per recording with `pg_advisory_xact_lock`, so it never locks the `recordings` row. The upload writes `last_activity_at` at most every 15 s.
+- Finalise runs the full rebuild as reconciliation and then seals the cursor. A sealed cursor makes registration a no-op, so a transcode task still queued at stop cannot reopen sealed windows. A resume after a failed stop drops the seal and rebuilds the cursor from the chunk rows, as happens for a recording that was in flight across an upgrade.
 
 ## Processing Pipeline
 
-The normal backend processing path is:
+`process_recording_task` ([backend/worker/tasks/pipeline.py](../backend/worker/tasks/pipeline.py)) runs on the GPU lane:
 
-1. Validation.
-2. VAD and audio preprocessing.
-3. Proxy creation for web playback.
-4. Transcription via a pluggable engine under [backend/processing/engines/](../backend/processing/engines/) (Whisper by default, Parakeet or Canary via onnx-asr selectable sharing `OnnxAsrEngine`). Whisper re-decodes a window by sampling when its greedy output fails a quality threshold; that sampling is seeded, so reprocessing a recording on the same image gives the same transcript. Parakeet and Canary transcribe in windows of 15 to 30 seconds that close at a pause, and skip a window with no signal (`_chunk_boundaries` in `onnx_asr_engine.py`). onnx-asr returns no token timings for Canary, so each Canary window is one segment and takes its dominant speaker in the merge.
-5. Pyannote diarisation, optionally bounded by the recording's `max_speakers`.
-6. Phantom speaker filtering.
-7. Merge (see [Word Timestamps In The Merge](#word-timestamps-in-the-merge)), voiceprint extraction, and deterministic speaker resolution.
-8. Canonical finalize, when `enable_canonical_transcript_writes` is on (the default): `finalize_utterances_from_segments` in [backend/utils/canonical_pipeline/core.py](../backend/utils/canonical_pipeline/core.py) writes the merged segments as finalized utterances and supersedes every other active utterance, the live lane's included, then the transcript projection is rebuilt from them. With the setting off, the merged segments stay in the transcript's JSON alone. Speaker boundaries come from the merge alone: it has already given each timestamped word the speaker whose turn contains it, and a segment without word timings keeps its dominant speaker whole. Invariant: finalize's canonical writes and the rebuilt projection are committed before meeting intelligence runs, so a failure in the later stages, which rolls the session back, cannot undo them.
-9. Automatic meeting intelligence when an AI provider and model are configured.
-10. Automatic application of inferred speaker names to unresolved speakers, plus persistence of the meeting title and Markdown meeting notes. Applied suggestions are retained on the transcript as an audit trail.
+1. **Resolve audio.** Validate the source, restoring it from the proxy if needed.
+2. **VAD.** Resample to 16 kHz mono and mute non-speech with silero VAD (`enable_vad`). Under 1 s of speech completes the recording with an empty transcript.
+3. **Transcription** through an engine in [backend/processing/engines/](../backend/processing/engines/) (see [ASR Engines](#asr-engines)).
+4. **Diarisation** with pyannote (`enable_diarization`), bounded by the recording's `max_speakers` when set. Phantom speaker filtering then takes clusters within `phantom_max_duration_s` and `phantom_max_segments`: one below `phantom_embedding_floor` against every main speaker is treated as noise and reassigned, one above `phantom_merge_threshold` merges into the speaker it matches, and one in between is kept.
+5. **Merge and consolidation** (see [Word Timestamps In The Merge](#word-timestamps-in-the-merge)).
+6. **Speaker assignment.** Voiceprint extraction, identification against the People library, and the duplicate-merge pass (see [Speakers And Voiceprints](#speakers-and-voiceprints)).
+7. **Canonical finalise**, when `enable_canonical_transcript_writes` is on (the default). `finalize_utterances_from_segments` in [backend/utils/canonical_pipeline/core.py](../backend/utils/canonical_pipeline/core.py) writes the merged segments as finalised utterances, supersedes every other active utterance (the live lane's included) while keeping the user's locked text and speakers on lines it matches, and rebuilds the transcript projection. This is committed before step 8, so a later failure cannot undo it. With the setting off, the segments stay in the transcript's JSON only.
+8. **Meeting intelligence**, when a provider and model are configured: title, Markdown notes, and speaker names applied to unresolved speakers and kept on the transcript as an audit trail. Local Ollama runs inline; any other provider is handed to the IO lane (`generate_meeting_intelligence_task`). Without AI the recording still completes, and **Generate Notes** and **Retry Speaker Inference** work once AI is configured.
+9. **Completion.** Auto-link to a calendar event, then queue the follow-ups in [backend/worker/tasks/followups.py](../backend/worker/tasks/followups.py): transcript indexing (IO), delivery (CPU), overlap (GPU) and, if the owner opted in, AI analysis (IO).
+
+The playback proxy is built by `generate_proxy_task` on the CPU lane, queued alongside processing. `POST /recordings/{id}/reprocess` deletes the generated transcript, utterances, speakers, chat and index rows (keeping the user's notes) and requeues the pipeline, optionally with a different engine and model (`engine_override`).
+
+### ASR Engines
+
+The engine and its model are install-wide settings.
+
+- **Whisper** re-decodes a window by sampling when its greedy output fails a quality check. The sampling is seeded, so reprocessing on the same image gives the same transcript.
+- **Parakeet and Canary** share `OnnxAsrEngine`. They transcribe in windows of 15 to 30 s that close at a pause, and skip a window with no signal (`_chunk_boundaries` in `onnx_asr_engine.py`).
+- onnx-asr returns no token timings for **Canary**, so each Canary window is one segment and takes its dominant speaker in the merge.
+- For **Parakeet** it returns each token's start only. `map_onnx_asr_recognition` ends each word at the earliest of the next word's start, the window's end, and its start plus `asr_word_length_cap_s` (default 0.4 s), never before the word starts. A word stretched across a pause could otherwise end inside the next speaker's turn and be given to them. The cap cannot exceed flip smoothing's default maximum word length (0.45 s), so a capped word stays short enough to smooth.
+
+Each user's transcription language reaches live, final, import and reprocess ASR and is part of the ASR result hash. Whisper gets a language only when one is selected, Canary gets its source-language parameter, and Parakeet always auto-detects.
 
 ### Word Timestamps In The Merge
 
-Word timestamps are optional per segment (an onnx-asr window without token timings, a Whisper segment with an empty `words` list). `combine_transcription_diarization` in [backend/utils/transcript_utils.py](../backend/utils/transcript_utils.py) chooses the method per run of consecutive segments: a run with words is aligned word by word, a run without gets each segment's dominant speaker over its span. Every segment's text reaches the merge output. A word no longer than pyannote's segment precision takes the speaker of the turn containing its instant (`[start, end)`; a turn's end counts when no turn starts there; a gap stays `UNKNOWN`).
+`combine_transcription_diarization` in [backend/utils/transcript_utils.py](../backend/utils/transcript_utils.py) treats each run of consecutive segments by what it has. A run with word timings is aligned word by word; a run without (Canary, or a Whisper segment with an empty `words` list) gets each segment's dominant speaker. Every segment's text reaches the output. A word no longer than pyannote's segment precision takes the speaker whose turn contains its instant (`[start, end)`; a turn's end counts when no turn starts there; a gap stays `UNKNOWN`). Single-word flip smoothing then gives a word of at most `word_flip_max_duration_s`, within `word_flip_max_gap_s` of neighbours that share a speaker, to that speaker.
 
-Consolidation never drops text. A segment under 0.1 s folds into an adjacent segment at most 1.0 s away that stays within the 10 s maximum, preferring the same speaker, then the nearer one. The receiver keeps its speaker and overlapping speakers; ids and edit flags merge as in any consolidation merge. Each fold bridges at most 1.0 s, but folds into one segment add up. Fragments with no qualifying neighbour stay as separate short segments, and only a fragment without text is dropped. Neighbours whose fragments all folded away merge only if the original pieces tiled (every gap under 0.01 s) with the same speaker and overlapping speakers, within 10 s.
+Consolidation never drops text. A segment under 0.1 s folds into a neighbour at most 1.0 s away if the result stays within 10 s, preferring the same speaker and then the nearer one; the receiver keeps its speakers. A fragment with no qualifying neighbour stays as a short segment, and only a fragment without text is dropped. Neighbours whose fragments all folded away merge only if the original pieces tiled (gaps under 0.01 s) with the same speakers, within 10 s. A segment over 10 s is split in an 8 to 12 s window.
+
+Invariant: float rounding decides no threshold on a word time, or on a gap or duration built from word times. Parakeet times sit on onnx-asr's 80 ms grid (or the cap past it) and Whisper's on hundredths of a second, so a gap can equal a threshold exactly. Every such comparison, in the mapper, the merge, flip smoothing, consolidation, the fold and the live lane's context trim, goes through [backend/utils/word_times.py](../backend/utils/word_times.py), which treats a value within 1 µs of its threshold as equal to it. Speaker-overlap ratios are not word-time thresholds and compare as they are.
 
 ### Processing Tuning
 
-Eight values inside these stages can be overridden: the VAD threshold (stage 2, and the live lane's VAD), onnx-asr word end padding (stage 4, both lanes), the four phantom filter thresholds (stage 6), and single-word flip smoothing (stage 7). Their keys, shipped defaults and bounds live in one place, [backend/processing/processing_tuning.py](../backend/processing/processing_tuning.py), which imports nothing heavy so the API validates against the same table. The processing modules take their default constants from it.
+Eight values in these stages can be overridden. Keys, defaults and bounds live in [backend/processing/processing_tuning.py](../backend/processing/processing_tuning.py), which imports nothing heavy so the API validates against the same table, and the processing modules take their defaults from it. [frontend/src/lib/processingTuning.json](../frontend/src/lib/processingTuning.json) mirrors it.
 
-The values are per-user settings. A stage resolves each one as: an explicit function argument, else the recording owner's merged settings (their own value over the install's flat `config.json` key), else for the VAD threshold the legacy `vad_parameters.threshold`, else the shipped default. Unset is `None` and means inherit. A non-`None` default on the user row would be written onto every row by the settings page's whole-object autosave and would hide both the install value and any later change to a shipped default, so the defaults stay `None`.
+| Key | Stage |
+| --- | --- |
+| `vad_threshold` | VAD, final and live |
+| `asr_word_length_cap_s` | Parakeet word ends, final and live |
+| `phantom_max_duration_s`, `phantom_max_segments`, `phantom_embedding_floor`, `phantom_merge_threshold` | Phantom filter |
+| `word_flip_max_duration_s`, `word_flip_max_gap_s` | Flip smoothing |
 
-The invariant: a tuning value never fails a recording. The API rejects out-of-range values, but a stored or `config.json` value can still be unusable (hand-edited, restored from a backup, which writes `user.settings` as archived, or written before a bound tightened). The worker logs such a value and uses the shipped default instead (for the VAD threshold, `vad_parameters.threshold`) rather than raising, and treats a phantom floor at or above the phantom merge threshold as both defaults. The API checks that rule on the same pair the worker reads, the user's values over the install's flat keys, so a pair it accepts is the pair processing uses, unless the install's values later change. GET returns the install's flat values the settings page needs for that check as a read-only `processing_tuning_install` map, keyed by tuning key. The owner's merged value is a single tier, so an unusable per-user value falls back past the install's flat key. With no value set anywhere, every stage uses the shipped defaults. New code that reads one of these values must go through `resolve_tuning` (or, for VAD, `get_vad_config_from_settings`) rather than reading the settings directly.
+Defaults and ranges are in [DEPLOYMENT.md](DEPLOYMENT.md#processing-tuning-defaults).
+
+Either phantom ceiling at 0 turns the phantom filter off, and a `word_flip_max_duration_s` of 0 turns smoothing off.
+
+Each value is a per-user setting. A stage resolves it as an explicit argument, else the recording owner's merged settings (their value over the install's flat `config.json` key), else for VAD the install's `vad_parameters.threshold`, else the shipped default. User defaults stay `None` (inherit), because the settings page autosaves the whole object and a concrete default would be written onto every row.
+
+A tuning value never fails a recording. The API rejects out-of-range values, but a stored value can still be unusable (hand-edited, restored from a backup, or saved before a bound tightened), so the worker logs it and uses the shipped default (for VAD, `vad_parameters.threshold`). The phantom floor must be below the merge threshold: the API checks the pair the worker will read, and the worker treats a conflicting pair as both defaults. GET returns the install's flat values as a read-only `processing_tuning_install` map so the settings page can run that check. New code must read these values through `resolve_tuning`, or `get_vad_config_from_settings` for VAD.
 
 ### Transcription Failure Versus Silence
 
-A transcription engine's `transcribe()` either returns the canonical result or raises `TranscriptionError` ([backend/processing/engines/errors.py](../backend/processing/engines/errors.py)); it never returns `None`. A result with empty text and no segments is a success: the audio held no speech. The dispatcher `transcribe_audio` wraps anything else an engine lets escape, so `TranscriptionError` is the one exception callers treat as a lost transcription. The error's message is written for the UI and names a GPU out-of-memory failure as CUDA out of memory; `gpu_out_of_memory` flags it for code. Out-of-memory counts as a GPU failure only when the model ran on the GPU: an onnx-asr model none of whose sessions runs on the CUDA provider reports the server running out of memory instead (when its sessions cannot be inspected, a GPU host is assumed). After an out-of-memory error the engines drop every reference to the model, including the locals of the frames the error's traceback keeps alive, and collect it, so the memory is actually freed (onnxruntime's arena never shrinks); the live lane, which never retries, therefore does not reuse an exhausted session for every later region. Celery time limits and termination are not transcription failures: engines, the dispatcher and the final pass re-raise them unchanged.
+Invariant: an empty `completed` transcript means the meeting was silent, never that ASR failed.
 
-Final processing retries a GPU out-of-memory failure once, after releasing every cached model (ASR, diarisation, embeddings) and the CUDA cache; if releasing them fails, the original out-of-memory error is reported. Any failure that remains sets the transcript's `transcript_status` to `error` with the message in `error_message`, marks the recording `ERROR` with the same message as its `processing_step`, and stops before diarisation, speaker assignment, meeting intelligence and post-processing follow-ups, none of which can produce anything from a transcript that does not exist. Provisional live text already on the row is kept. `Retry Speaker Inference` returns such a recording to `ERROR` rather than `PROCESSED`; only reprocessing can repair it.
+An engine's `transcribe()` returns the canonical result or raises `TranscriptionError` ([backend/processing/engines/errors.py](../backend/processing/engines/errors.py)), never `None`; empty text with no segments is a success. The dispatcher `transcribe_audio` wraps anything else an engine raises, so `TranscriptionError` is the one exception callers treat as a lost transcription, and code that calls an engine must not turn it into an empty result. The message is written for the UI. `gpu_out_of_memory` marks a GPU out-of-memory failure, which counts only when the model ran on CUDA (an onnx-asr model on CPU reports the server out of memory). After an out-of-memory error the engines drop every reference to the model, including those held by the traceback's frames, so the memory is freed. Celery time limits and termination are re-raised unchanged.
 
-`error_message` is shared with notes failures, so ownership follows `transcript_status`: while it is `error` the message is the transcription failure. Only the `Transcript` methods `fail_transcription`, `complete_transcription` and `set_notes_error_message` write it, so notes runs never clear or overwrite a transcription failure, and a backup restore that settles an interrupted recording marks its transcription failed the same way. Notes cannot be generated for a failed transcription: the API answers 409 and a notes task queued earlier does nothing. A later run that completes clears a transcription failure. When that run finds no speech at all it leaves `notes_status` alone, since there is nothing to summarise, which matches the success path skipping meeting intelligence for an empty transcript.
+Final processing retries a GPU out-of-memory failure once, after releasing every cached model and the CUDA cache. A failure that remains sets `transcript_status` to `error` with the message in `error_message`, marks the recording `ERROR`, and stops before diarisation and everything after it. Provisional live text is kept. Only reprocessing repairs it; **Retry Speaker Inference** returns it to `ERROR`.
 
-The invariant this protects: an empty `completed` transcript means the meeting was silent, never that ASR crashed. Code that calls an engine must not turn a `TranscriptionError` into an empty result. The live lane still records a failure as a failure but does not stop for one: it is best-effort and the final pass transcribes the whole recording again, so a region whose transcription fails is logged and dropped, and the lane keeps advancing.
+`error_message` is shared with notes failures, and `transcript_status` decides whose it is. Only the `Transcript` methods `fail_transcription`, `complete_transcription` and `set_notes_error_message` write it, which keeps a notes run from clearing a transcription failure; a backup restore that settles an interrupted recording uses the same path. Notes cannot be generated for a failed transcription: the API answers 409 and a notes task already queued does nothing. A later run that completes clears the failure, and if it finds no speech it leaves `notes_status` alone.
 
-### Speaker Cap And Voiceprint Versioning
+### Speakers And Voiceprints
 
-`Recording.max_speakers` is an optional per-recording upper bound. `NULL` means auto-detect and is the default; that path passes no speaker keyword to pyannote at all. A set value is applied as pyannote's `max_speakers` and never as `num_speakers` — an exact count forces a split whenever the user overcounts, which is the over-clustering failure the field exists to prevent. It is settable at import, on the reprocess request, and throughout a live capture, since diarisation runs at stop time.
+`Recording.max_speakers` is an optional upper bound, settable at import, on reprocess and during a live capture. `NULL` (the default) passes no speaker keyword to pyannote. A value is passed as `max_speakers`, never `num_speakers`, because an exact count forces a split whenever the user overcounts.
 
-Voiceprints are only comparable with others produced by the same extraction procedure. `EMBEDDING_METHOD_VERSION` in [backend/processing/embedding_version.py](../backend/processing/embedding_version.py) records which one produced a stored vector, persisted on both `global_speakers.embedding_version` and `recording_speakers.embedding_version`. That module holds nothing but the version and its history, so a request path can reason about versions without importing torch and pyannote. Speaker identification and the duplicate-merge pass both refuse to score across versions; a cross-version cosine value resembles a similarity but is not one. Any change to how embeddings are produced must bump the version, and any new comparison site must check it — `embeddings_are_comparable` exists for that. A stored voiceprint's version must also be true: a write that stores a freshly extracted vector stamps `EMBEDDING_METHOD_VERSION`, a write that copies a voiceprint outright (promoting a speaker to a new person, restoring a backup) copies its version with it, and a write that blends one row's voiceprint into another goes through `blend_voiceprint`. That helper folds only voiceprints of one version and never blends two versions: a current-version voiceprint replaces a stale one, a stale one leaves a current row as it is, and a row with no voiceprint takes the incoming vector and its version. Replacing a stale voiceprint skips the drift guard, since a cosine across versions can't say whether two vectors are the same voice. A person whose version is wrong is skipped by identification until the rebuild task reaches them.
+Voiceprints are comparable only within one extraction procedure. `EMBEDDING_METHOD_VERSION` in [backend/processing/embedding_version.py](../backend/processing/embedding_version.py), which imports no torch, is stored on `global_speakers.embedding_version` and `recording_speakers.embedding_version`. Identification and the duplicate-merge pass refuse to score across versions. Any change to how embeddings are produced must bump the version, and any new comparison must check `embeddings_are_comparable`. Thresholds are in [backend/processing/embedding.py](../backend/processing/embedding.py).
 
-`DUPLICATE_SPEAKER_MERGE_THRESHOLD` stays at 0.70 deliberately. When the first extraction method put 29% of same-person pairs below it, the fault was the input to the comparison, not the threshold: same-person similarity collapsed whenever acoustic conditions changed, the very condition that makes the diariser split one person. Lowering the threshold causes wrong merges, which a user finds harder to undo than wrong splits.
+Every write keeps a stored voiceprint's version true:
 
-The pass links clusters by complete linkage: a cluster, or a group already formed, joins another only when every pair across the two clears the threshold. Single linkage, where one qualifying pair was enough, let a small cluster of short backchannel lines bridge two people: its blended voiceprint scored 0.87 against one cluster and 0.74 against another, the two clusters scored 0.42 against each other, and the union gave 79% of a 75-minute board meeting to the wrong person. The direct score between two clusters is the evidence that they are one voice, and no chain through a third cluster overrules it. Replayed over this project's own library, the rule changed three recordings in a hundred, two of which had been bridged that way. The cost is a near miss that stays split, which one merge in the speaker panel fixes.
+- A freshly extracted vector is stamped `EMBEDDING_METHOD_VERSION`.
+- A copied voiceprint (promoting a speaker to a new person, restoring a backup) keeps its own version.
+- A blend goes through `blend_voiceprint`, which never mixes versions. A current voiceprint replaces a stale one without the drift guard, since a cosine across versions says nothing; a stale one leaves a current row unchanged; an empty row takes the incoming vector and its version.
+- Identification skips a person whose version is stale until the rebuild task reaches them.
 
-A group that carries a person's identity is also held to that person's library voiceprint. Before the linkage check, every cluster in the group a union would form is scored against the person's library voiceprint, except clusters already identified as that person, and the union is refused if any of them scores below `IDENTIFIED_MERGE_VOICEPRINT_FLOOR`. The floor is 0.60, the value `DRIFT_GUARD_THRESHOLD` uses to decide whether an observation may be blended into a library voiceprint. Clusters that score as one voice against each other are kept apart when one of them does not sound like the person, and the refused cluster keeps the `Speaker N` name it was given before the pass. A library voiceprint from another extraction version is not scored; that person's merges rest on the in-recording scores until the rebuild task repairs it. On the same library the guard changed one recording in 107. There a cluster holding the largest share of the meeting scored 0.74 against an identified speaker's cluster and 0.31 against that person's library voiceprint, and complete linkage alone would have merged the two. The weakest genuine second cluster the guard let through scored 0.65.
+The duplicate-merge pass (`backend/processing/speaker_merge.py`) joins clusters the diariser split from one voice:
 
-Stale voiceprints are repaired by `rebuild_voiceprints_task` rather than by comparing them anyway. The repair is automatic scheduled maintenance, running every six hours from Celery Beat and processing at most `AUTOMATIC_VOICEPRINT_REBUILD_LIMIT` (25) recordings per tick. It is bounded rather than operator-triggered because staleness is not a state a user can act on — it is a maintenance obligation Nojoin owes itself after changing its own extraction method — and because an unbounded re-extraction would run the embedding model over an entire library on hardware the user owns. Bounding each tick keeps the GPU lane responsive; a large library converges over several ticks. A stale voiceprint that cannot be re-extracted, because its audio is gone or its speaker owns no transcript segment, is cleared rather than kept: it could never be scored against anything, and leaving it would stall the sweep on a row it can never repair. Transient extraction failures are counted separately and leave the voiceprint in place so a later run can retry.
+- The threshold is `DUPLICATE_SPEAKER_MERGE_THRESHOLD` (0.70). Lowering it causes wrong merges, which are harder to undo than wrong splits.
+- Linkage is complete: two groups join only when every pair across them clears the threshold, so no third cluster can bridge two people.
+- A group carrying a person's identity is held to that person's library voiceprint. If any cluster in the proposed union, other than those already identified as that person, scores below `IDENTIFIED_MERGE_VOICEPRINT_FLOOR` (0.60, the value of `DRIFT_GUARD_THRESHOLD`), the union is refused and that cluster keeps its `Speaker N` name. A library voiceprint from another extraction version is not consulted.
+- Each finalised utterance keeps its diariser cluster in `transcript_utterances.diarization_label`, so `unmerge_recording_speaker` can restore a merged cluster as an unnamed speaker with all its lines except those a person assigned by hand, recording an `unmerge_speakers` correction event. Lines written before that column existed carry no label; undoing those merges needs a reprocess.
 
-Three `pipeline_metric` stages make diarisation quality inspectable from a worker log. `final_diarization_speaker_stats` records per-cluster speech duration, segment count and share, plus overlapped speech and whether a cap bound. `speaker_identification` records, for each cluster, the three closest people in the library with their cosine scores and which one matched, so a miss says who came closest and an ambiguous pair is visible as one. `speaker_merge_pass` is emitted on **every** run of the duplicate-merge pass, including runs that merge nothing and runs that could not score anything (which carry an explicit reason); it lists each pair's cosine score, why a pair that cleared the threshold was still refused, each merged group with its survivor, its weakest and mean score and each absorbed cluster's score against the identified person's library voiceprint, and whether each identified person's library voiceprint could be consulted.
+`rebuild_voiceprints_task` repairs stale voiceprints from Celery Beat every six hours, at most 25 recordings a tick (`AUTOMATIC_VOICEPRINT_REBUILD_LIMIT`). A stale voiceprint that cannot be re-extracted (its audio is gone, or its speaker has no transcript segment) is cleared; a transient failure leaves it for the next run.
 
-A user can discard a recording at any in-flight stage: uploading, paused, queued, or processing. Discard is a single graceful operation that revokes the running Celery task with `terminate=True`, deletes every on-disk artefact, and removes the recording row, so no manual cancel-then-delete sequence is required. Terminating the task stops the worker from continuing the pipeline, and the worker's start-of-task cancellation guard prevents a revoked-but-requeued task from resuming work. Terminal recordings (processed, errored, or already removed) are deleted through the standard delete flow instead.
+A speaker correction (a rename across the recording or from an utterance forward, a merge, a library link or promotion) changes only the utterances its scope selects, or the speaker's identity. It never re-derives other utterances from `diarization_window_results` or `diarization_window_turns`, which hold data only for live captures finalised by v1.0.0 to v1.2.0.
 
-Per-user language preferences are resolved once through the shared backend language registry. The effective transcription language is propagated to live, final, imported, and reprocessed ASR calls and included in ASR result hashes. Whisper receives an explicit language only when one is selected; Canary receives its supported source-language parameter; Parakeet remains multilingual auto-detection and therefore hashes as automatic language.
+Three `pipeline_metric` stages make diarisation quality readable from a worker log:
 
-Generated-content language is independent from source-audio language. Manual notes generation, unified automatic meeting intelligence, standalone title generation, and secondary-provider fallback receive the same resolved output-language instruction. Prompt control text and JSON keys remain stable, while titles and Markdown content can be localized. The automatic intelligence contract accepts any non-empty top-level Markdown heading rather than requiring the English `# Meeting Notes` heading.
+- `final_diarization_speaker_stats`: per-cluster speech duration, segment count and share, overlapped speech, and whether the cap bound.
+- `speaker_identification`: each cluster's three closest people with cosine scores, and which matched.
+- `speaker_merge_pass`, emitted on every run, including runs that merge or score nothing (with a reason): pair scores, why a pair over the threshold was refused, each merged group with its survivor and scores, and each absorbed cluster's score against the person's library voiceprint.
 
-Manual user notes can be captured during recording or processing and are fed into both the automatic meeting-intelligence stage and the manual note-generation flow.
+### AI Calls
 
-If AI configuration is missing, the recording still completes with transcript, diarisation, and deterministic speaker resolution intact. Automatic AI enhancement is skipped rather than failing the meeting. Manual `Generate Notes` and `Retry Speaker Inference` remain available once AI is configured.
+- **Language.** The notes language is separate from the transcription language. Notes, meeting intelligence, title generation and secondary fallback all get the same output-language instruction. Prompt control text and JSON keys stay fixed, and the automatic intelligence contract accepts any non-empty top-level Markdown heading.
+- **User notes** written during recording or processing feed both automatic meeting intelligence and manual notes generation.
+- **Transcript reads.** Notes, Meeting Edge and Meeting Chat read segments through `build_transcript_segments_for_read` (the canonical utterances, else the `Transcript.segments` projection) and name speakers with `build_recording_speaker_map`. The canonical read runs in a savepoint, so a failure leaves the caller's transaction usable. Chat renders through `render_transcript_for_llm` (`backend/utils/llm_transcript.py`) as `[MM:SS]` lines, without the `UNKNOWN` lines the transcript view hides; notes generation still sends them. The pipeline's first-pass intelligence and the MCP `get_transcript` tool format their own lines.
+- **Meeting Chat** sends the notes and full transcript every turn, plus excerpts from the search index (`_chat_retrieval_filters` in `routes_chat.py`): documents attached to this meeting or to meetings its tags bring in, and transcript excerpts from those other meetings only. The index is rebuilt only after processing, so its excerpts can predate an edit. Chat answers 409 while a recording is in `IN_FLIGHT_TRANSCRIPT_STATUSES` (paused, uploading, queued or processing).
+- **Prompt caching.** Chat sends the notes and transcript as the system prompt (Anthropic marks it with `cache_control`; OpenAI-compatible providers reuse it through prefix caching), leaving history and the question in the messages. Meeting Edge and AI analysis split their prompts into a stable instruction prefix, which Anthropic marks, and the per-call context.
 
-A secondary LLM provider can be configured via the `SECONDARY_LLM_PROVIDER` environment variable. When set, all AI features (meeting intelligence, Meeting Edge, speaker inference, chat) automatically fall back to the secondary provider if the primary provider fails with any error, handled by `SecondaryLLMBackend`. The secondary provider has its own model, live model, and API key settings, configured independently. Fallback is transparent: the primary provider is tried first, and on failure the system logs a warning and retries with the secondary provider. If both fail, the primary provider's error is raised.
+#### Ollama Context Window
 
-Notes generation, Meeting Edge and Meeting Chat read segments through `build_transcript_segments_for_read` (the canonical utterances, else the `Transcript.segments` projection) and name speakers with `build_recording_speaker_map`. The canonical read runs in a savepoint and a failure is logged, so the projection fallback leaves the caller's transaction usable. Chat renders through `render_transcript_for_llm` (`backend/utils/llm_transcript.py`): `[MM:SS]` start-time lines, without the unattributed `UNKNOWN` lines (such as a removed speaker's) the transcript view hides; notes generation still sends them. The pipeline's first-pass meeting intelligence and the MCP `get_transcript` tool format their own lines.
+Left at its defaults, Ollama cuts an oversized prompt from the front (current releases keep about half the window) and shifts the context when the answer fills it, both ending in an ordinary stop. Hosted providers reject an oversized request. `OllamaLLMBackend._post_chat` therefore makes Ollama refuse instead:
 
-Meeting Chat sends the meeting's notes and full transcript with every turn, then adds excerpts from the search index (`_chat_retrieval_filters` in `routes_chat.py`). It retrieves attached documents from this meeting and from any meetings the user's tags bring in, and transcript excerpts from those other meetings only. The meeting's own transcript is left out of retrieval because the prompt already holds it, and the index is rebuilt only after processing, so its excerpts can predate an edit or a speaker rename. Chat answers with 409 while a recording is paused, uploading, queued or processing (`IN_FLIGHT_TRANSCRIPT_STATUSES` in `backend/models/recording.py`), the same states in which the recording view blanks the transcript.
+1. `num_ctx` is `ollama_context_window` (the operator's VRAM budget, default 32768), lowered to the model's trained context from `/api/show` when that is smaller and never raised. `/api/show` is cached for five minutes per server and model.
+2. Every `/api/chat` request carries `truncate: false`, which makes Ollama answer an oversized prompt with HTTP 400 before generating (0.34 and later include the token count), and `shift: false`, which ends an answer that fills the window with `done_reason: length`. No `num_predict` is sent, leaving a Modelfile's own limit in place. The 400 becomes a context-window error and a length stop an incomplete-answer error; neither answer is used.
+3. Meeting chat drops the oldest turns itself, estimating 2.6 UTF-8 bytes per token and leaving a quarter of the window (at most 2,048 tokens) for the answer. The last message, which carries the meeting context and the question, is never cut. If Ollama still refuses, chat retries once with fewer turns, then reports the refusal.
+4. Servers before 0.12.6 ignore both flags, so their token counts are checked after the call, and a prompt plus answer past `num_ctx` is refused as truncated.
 
-Left at its defaults, Ollama does not refuse an oversized prompt: past `num_ctx` it drops tokens from the front of the prompt and answers from the rest (current releases keep about half the window), and when the answer fills the window it shifts the context and loses the start of the prompt the same way, each time ending in an ordinary stop. The hosted providers reject an oversized request outright. Every Ollama `/api/chat` request therefore lets Ollama decide whether it fits (`OllamaLLMBackend._post_chat`):
-
-1. `num_ctx` is the configured window (`ollama_context_window`, the operator's VRAM budget), lowered to the model's trained context length from `/api/show` when that is smaller, because Ollama clamps to it at load. It is never raised automatically: a larger KV cache is exactly what fails to load on consumer GPUs. `/api/show` is cached per process for five minutes per server and model.
-2. The request carries `truncate: false`, so Ollama refuses a prompt longer than `num_ctx` with HTTP 400 before generating (0.34.2 and 0.40.2 report the exact token count; 0.12.6 does not), and `shift: false`, so an answer that fills the window ends with `done_reason: length`. No `num_predict` is sent, so a Modelfile's own limit stands. The 400 becomes a context-window error naming the window and the count, and a length stop an "incomplete answer" error; neither answer is used.
-3. Meeting chat drops the oldest turns itself, against an estimate of 2.6 UTF-8 bytes per token (prose and transcripts run 2.6 to 5; numbers and code run denser and go through the retry) with up to a quarter of the window kept for the answer; the last message, which carries the meeting context and the question, is never cut. If Ollama still refuses, chat retries once with fewer turns (by Ollama's count when given, otherwise with none), then reports the refusal.
-4. Servers before Ollama 0.12.6 ignore `truncate` and `shift`. For them the token counts are checked after the call: a prompt plus answer past `num_ctx` (a cut prompt counts the whole window) is refused as truncated. Their answer cap stays Ollama's default of ten windows.
-
-A refusal raises `ContextWindowExceededError` (`backend/utils/context_window.py`) naming the window, and the Ollama backend re-raises it as it is instead of wrapping it, so callers can tell it from every other failure. A configured secondary provider takes over as for any other primary failure; a streamed chat refused by Ollama falls back too, because the refusal arrives before the first token. A length stop at the end of a streamed answer, or a truncation found after the call on a pre-0.12.6 server, arrives after the text has streamed, so the answer is withdrawn (not saved) and there is no fallback. Speaker suggestions and document pages that do not fit report the refusal as their error. Notes and chat go on as [Meetings Longer Than The Context Window](#meetings-longer-than-the-context-window) describes.
-
-To cut token cost on repeated context, Meeting Chat and Meeting Edge lay out their prompts cache-first — the large, stable portion leads and the volatile part is sent last. Meeting Chat sends the meeting notes and full transcript as the system prompt (the Anthropic backend marks it with a `cache_control` breakpoint; OpenAI-compatible providers reuse the leading system message through automatic prefix caching), leaving only the conversation history and the user's question in the messages array. Meeting Edge splits its single prompt into a stable instruction/JSON-schema prefix and the volatile per-refresh context (rolling summary, recent transcript), and the Anthropic backend `cache_control`-marks that prefix. Caching is transparent to the user — it changes only how the request is framed for reuse, not what the model is asked — and simply yields no benefit when a provider or model does not support it.
-
-Playback, transcript viewing, and export all operate on the full recording timeline without applying persisted trim offsets.
+A refusal raises `ContextWindowExceededError` (`backend/utils/context_window.py`), which the Ollama backend re-raises unwrapped. A secondary provider takes over as for any primary failure, including a streamed chat, since the refusal arrives before the first token. A length stop at the end of a streamed answer, or a truncation found after the call on an old server, withdraws the answer with no fallback. Speaker suggestions and document pages report the refusal as their error. Notes and chat continue as below.
 
 #### Meetings Longer Than The Context Window
 
-The recommended setup for long meetings is a hosted provider, or Ollama with a hosted secondary provider: the secondary receives the whole meeting after Ollama refuses it, as for any other primary failure, and answers in one call. Only when there is no secondary provider, or it fails too, does Ollama write the notes in parts. `SecondaryLLMBackend._call_with_secondary` re-raises the primary's refusal when both fail, so the worker sees the same `ContextWindowExceededError` with or without a secondary, and calls `generate_meeting_notes_in_parts` (Regenerate Notes) or `generate_meeting_intelligence_in_parts` (the automatic pipeline) with it. The wrapper sends those to the primary. The steps are in `backend/utils/long_meeting_notes.py`, with the splitter in `backend/utils/transcript_parts.py`:
+For long meetings, use a hosted provider, or Ollama with a hosted secondary that receives the whole meeting after Ollama refuses it. Only when there is no secondary, or it also fails, does Ollama write the notes in parts. `SecondaryLLMBackend` re-raises the primary's refusal, so the worker sees the same `ContextWindowExceededError` either way and calls `generate_meeting_notes_in_parts` (Regenerate Notes) or `generate_meeting_intelligence_in_parts` (the automatic pipeline), which the wrapper sends to the primary. The steps are in `backend/utils/long_meeting_notes.py`, with the splitter in `backend/utils/transcript_parts.py`:
 
-1. The budget comes from the refusal. Ollama 0.34 and later report the prompt's token count, which gives this meeting's tokens per byte, plus a tenth for parts denser than the whole. Without a count, the 2.6 bytes per token estimate that chat trimming uses applies.
-2. The transcript is split between lines, each one utterance, into the fewest parts that fit, and never fewer than two, each about an equal share. An utterance longer than a part is cut between sentences and every piece keeps its timestamp and speaker. Each part's room is the window less a quarter for the draft's answer (at most 8,192 tokens) and less the rest of the prompt. If that leaves under a quarter of the window, the run is refused with a message that names the attached documents, since they are the part of the prompt that grows without limit.
-3. Each part is drafted with the same prompt prefix (instructions, speaker labels, metadata, glossary, user notes, calendar context, attached documents and the notes structure), followed by the part's number, its times and its transcript, so a server that keeps its prompt cache between requests reads the prefix once. A draft Ollama refuses, or whose answer runs out of window, is halved and both halves are drafted.
-4. The drafts are combined in one call that keeps a third of the window (at most 16,384 tokens) for the answer and leaves the attached documents out, because the drafts already drew on them. Combining calls hold notes rather than transcript, so they are priced as prose at 2.5 bytes a token. Every draft, and every combining call short of the last, is given a word count that lets about three share a call, so each round of combining leaves fewer, no longer notes than it started with; the last is given a word count that fits its answer room. Drafts too long for one call are combined in consecutive groups first, and the groups again, until one call can take them all. A combining call Ollama refuses, or whose answer runs out of window, is split in halves. Where the price keeps every pair apart, they are tried in pairs anyway and Ollama decides; two drafts Ollama will not combine end the run with an error. Each call is asked once more after an Ollama server error, so one failed request does not cost the parts already written.
-5. In the automatic pipeline, each draft also names the unresolved speakers its own part gives evidence for, in a `<speaker_names>` block after its notes, and leaves unresolved labels as they are in the notes themselves. Every call in parts answers in Markdown with such tagged lines rather than in JSON: over dozens of calls a 7B model held to `format: json` loops on one token often enough for Ollama to abort the answer ("token repeat limit reached"), and without the constraint it often stops writing JSON at all. A speaker who introduced themselves is named by the introduction, found with the same rules as a run without AI (`detect_rule_based_speaker_suggestions`), whatever the drafts said: on a 133-minute test meeting, qwen2.5:7b drafts of 33-minute parts attached two introduced names to the wrong labels. For the other labels, one every part named alike keeps that name, where one name containing the other counts as alike and the fuller name is kept; placeholders such as "Speaker 2", and the prompt's own example copied back, are ignored. For a label the parts named differently, the final call is given the names they suggested and picks one, preferring a name the meeting gave over a role, or none. Only an answer that is exactly one name on the label's list counts, so the final call cannot invent a name, and copying the list back is no choice: the names are applied to speakers without review, so a wrong one costs more than none. The final call also writes the title on a `<title>` line, and the names are put into the notes afterwards, as `apply_speaker_mapping_to_notes` does for a single call, so two parts that disagree about a speaker cannot leave two names in the notes. An answer that cannot be read is asked for once more.
+1. **Budget.** Ollama 0.34 and later report the refused prompt's token count, which gives this meeting's tokens per byte, plus a tenth for parts denser than the whole. Without a count, parts are priced at 2.2 bytes per token.
+2. **Split.** The transcript is split between utterances into the fewest roughly equal parts that fit, never fewer than two. An utterance longer than a part is cut between sentences, each piece keeping its timestamp and speaker. A part's room is the window less a quarter for the answer (at most 8,192 tokens) and less the rest of the prompt. If that leaves under a quarter of the window, the run is refused with a message naming the attached documents, the part of the prompt that grows without limit.
+3. **Draft.** Each part is drafted with the same prompt prefix (instructions, speaker labels, metadata, glossary, user notes, calendar context, attached documents and the notes structure), followed by the part's number, times and transcript, so a server that keeps its prompt cache reads the prefix once. A draft Ollama refuses, or whose answer runs out of window, is halved and both halves drafted.
+4. **Combine.** Combining calls keep a third of the window (at most 16,384 tokens) for the answer, leave out the attached documents, and are priced as prose at 2.5 bytes per token. Word targets let about three drafts share a call, and drafts too many for one call are combined in groups, then the groups. A refused combining call is halved, and two drafts Ollama will not combine end the run with an error. Each call is retried once after an Ollama server error.
+5. **Speakers and title** (automatic pipeline). Calls in parts answer in Markdown with tagged lines, because a small model held to `format: json` over dozens of calls often loops or abandons JSON. Each draft lists the unresolved speakers its part gives evidence for in a `<speaker_names>` block. A speaker who introduced themselves is named by `detect_rule_based_speaker_suggestions`, as in a run without AI. A name every part agreed on is kept. For a label the parts disagree on, the final call picks one of their suggestions or none, and only an exact match counts, since names are applied without review. The final call also writes a `<title>` line, and names go into the notes afterwards with `apply_speaker_mapping_to_notes`.
 
 A meeting that fits keeps the single call and a byte-identical prompt.
 
-Meeting Chat follows the same order. When every configured provider has refused the whole transcript before any text streamed, the chat endpoint asks once more with the passages of this meeting most relevant to the question. `_transcript_excerpts` in `routes_chat.py` searches this meeting's transcript chunks in the index with the question's embedding and keeps only their times. The backend reads the lines at those times from the canonical transcript (`render_transcript_excerpts_for_llm`), so an edit or a rename made since indexing still shows, takes them most relevant first up to the room the window leaves, and shows them in time order with `[...]` at each gap. On Ollama that room is the window less a quarter for the answer (at most 2,048 tokens), the notes and the question, and up to an eighth of the window for recent turns. The prompt says the notes cover the whole meeting and the excerpts are not the whole transcript. Without a query embedding, or with no index for the meeting yet, chat answers from the notes alone and the prompt says so.
+When every provider has refused the whole transcript before any text streamed, Meeting Chat asks once more with excerpts. `_transcript_excerpts` in `routes_chat.py` finds this meeting's most relevant transcript chunks by the question's embedding, and `render_transcript_excerpts_for_llm` reads the lines at those times from the canonical transcript, which picks up edits made since indexing. Lines are taken most relevant first up to the room left and shown in time order with `[...]` at each gap. On Ollama that room is the window less the answer room, the notes, the question, and up to an eighth of the window for recent turns. The prompt says the excerpts are partial. With no query embedding or no index for the meeting, chat answers from the notes alone and says so.
 
 ### Imported Media Input
 
-Import stores no video.
+Import stores no video. Every import route (`/import`, chunked finalize, `/upload`) stores the upload as it arrived, marks the recording `QUEUED` with the step "Extracting audio..." and queues `keep_imported_audio_task` on the CPU lane ([backend/worker/tasks/imported_audio.py](../backend/worker/tasks/imported_audio.py)) in place of processing. The task runs `keep_imported_audio` ([backend/utils/import_audio.py](../backend/utils/import_audio.py)), points `audio_path` at the result, rebuilds the import's audio window, deletes the upload once that write has committed (a failed deletion is logged), then queues processing and the playback proxy.
 
-- **Worker step.** Every import route (`/import`, chunked finalize, `/upload`) stores the upload as it arrived, marks the recording QUEUED with the step "Extracting audio..." and queues `keep_imported_audio_task` on the cpu lane in place of processing ([backend/worker/tasks/imported_audio.py](../backend/worker/tasks/imported_audio.py)). The task runs `keep_imported_audio`, points `audio_path` at the result, rebuilds the import's audio window from it, deletes the upload once that write has committed (a failed deletion is logged as an error), then queues processing and the playback proxy.
-- **Duplicates.** Each write is conditional on the recording still waiting for the task with the same `audio_path`, and the upload survives until the kept audio is stored, so a duplicate or re-queued copy is harmless: the copy whose write lands keeps its audio, and every other copy removes only what it extracted. A fault before that write leaves the upload and the waiting recording for the next copy. A task is acknowledged on receipt, so one lost with its worker is not redelivered: the cpu worker re-queues every waiting import when it starts (`requeue_imports_waiting_for_audio`); the gpu worker's startup sweep leaves them to it. An ffmpeg whose worker process was killed, by a crash or by the `terminate=True` revoke in discard and permanent delete, runs on to the end, but its file is in the recording's `temp/<id>/`, which deleting the recording removes and the daily sweep clears. Delete, permanent delete, batch permanent delete and discard read the row `FOR UPDATE`, so they never delete a path the task has just replaced; deleting a user does not lock its recordings.
-- **Extraction.** `keep_imported_audio` ([backend/utils/import_audio.py](../backend/utils/import_audio.py)) extracts the audio track ffmpeg selects by default from any media container, or any upload carrying video, into a new file in the recording's `temp/<id>/`. The task moves that file beside the upload only after its write has matched the waiting row, so a delete or discard either removes it with the temp directory or waits for the commit and removes it by its stored path. The upload is left for the task to delete. Other uploads are kept as they arrived. WAV, MP3, AAC and FLAC, whose formats hold no video (cover art aside), are kept without being probed, so they need no ffmpeg.
-- **Format.** AAC, ALAC, MP3, Opus, Vorbis and FLAC are copied, PCM and other lossless codecs become FLAC, and anything else becomes Opus.
-- **Verification.** The new file is kept only if it is one audio stream no more than max(1 s, 0.1%) shorter than the source track, measured from packets.
-- **Failures.** A file at fault (no audio track, or one ffmpeg cannot extract) and a server fault (a tool missing, timed out or stopped by a signal; a full disk) both mark the recording ERROR, with the reason as its step, and remove its files, the upload included; a failed deletion is logged. Neither is retried, and reprocess refuses a failed recording with no audio left, answering with that reason.
+- **Extraction.** For any media container, or any upload carrying video, the audio track ffmpeg selects by default is extracted into the recording's `temp/<id>/`. WAV, MP3, AAC and FLAC uploads are kept as they arrived without probing, so they need no ffmpeg.
+- **Format.** AAC, ALAC, MP3, Opus, Vorbis and FLAC are stream-copied, PCM and other lossless codecs become FLAC, and anything else becomes Opus.
+- **Verification.** The result is kept only if it is one audio stream no more than max(1 s, 0.1%) shorter than the source track, measured from packets.
+- **Concurrency.** Each write is conditional on the recording still waiting with the same `audio_path`, and the upload survives until the kept audio is stored, so a duplicate or re-queued task is harmless. The extracted file moves beside the upload only after its write has matched the waiting row. Tasks are acknowledged on receipt, so the CPU worker re-queues every waiting import when it starts (`requeue_imports_waiting_for_audio`). Delete, permanent delete, batch permanent delete and discard read the row `FOR UPDATE`, so they never delete a path the task has just replaced. An ffmpeg left running by a killed worker writes only into `temp/<id>/`, which deleting the recording removes and the daily sweep clears.
+- **Failures.** A bad file (no audio track, or one ffmpeg cannot extract) and a server fault (a missing tool, a timeout, a signal, a full disk) both mark the recording `ERROR` with the reason as its step and remove its files, upload included. Neither is retried, and reprocess refuses a failed recording with no audio, giving that reason.
 
 ### Live Transcription Lane
 
-While a recording is still uploading, a secondary lane produces provisional
-transcript text so the web client can show progress before the full pipeline
-runs:
+While a recording is `UPLOADING`, `transcribe_segment_live_task` ([backend/processing/live_transcribe.py](../backend/processing/live_transcribe.py)) produces provisional text with the install's transcription engine.
 
-1. Each segment upload endpoint dispatches a live transcription task
-   (`backend/processing/live_transcribe.py`).
-2. The task slices completed speech regions, transcribes them with the same
-   engine selected by `transcription_backend` for final processing, writes
-   canonical provisional utterances first, and refreshes `Transcript.segments`
-   as a compatibility projection. VAD regions
-   are padded and each region clip is prepended with a short rolling audio
-   context window (`live/context.wav`) so the engine has acoustic run-up and
-   word edges are not clipped; the engine output is then sliced back to the
-   region.
-3. The web client shows a single in-flight workspace with a live transcript
-   panel, waveform, Meeting Edge guidance, notes, and processing visibility as
-   soon as the recording is in flight. The panel polls
-   `GET /transcripts/{id}/utterances` every three seconds for provisional
-   utterances and is read-only. The recording detail payload continues to
-   suppress in-flight transcript text and segments, so provisional text never
-   reaches the sidebar or exports; the utterances
-   endpoint is the only in-flight transcript surface.
-4. Live utterances carry no speaker. Every provisional utterance is written
-   with the `UNKNOWN` label, because diarization runs only at finalize; speaker
-   identity for live text is therefore resolved by the final pipeline's
-   diarisation pass rather than during capture. Transcript edits made by the
-   user are treated as authoritative.
-   What the lane does resolve per region is the *capture channel*: it compares
-   per-channel RMS to decide whether the microphone or the shared system audio
-   dominated, and persists that reading in the utterance's
-   `confidence_payload`. Utterance reads expose it as `source_channel`
-   (`microphone`, `system`, or null), which the live panel uses to label audio
-   provenance. It is populated only when the evidence was unambiguous, and it
-   describes the channel rather than a person: browser capture always produces
-   two channels, and a capture with no shared audio leaves channel 0 silent, so
-   a microphone-only capture reads as clear microphone dominance for every
-   region including speech from everyone else in the room.
-5. After new live segments land, the API/worker layer best-effort dispatches a
-   separate `refresh_meeting_edge_task`. Best-effort means the dispatch failing
-   is logged and swallowed rather than failing the request that triggered it:
-   the refresh is derived guidance that the next mutation or live segment
-   recomputes from scratch, whereas failing the request would discard the edit
-   the user actually made. That task builds a bounded recent
-   transcript window, reuses the previous run's dedicated rolling summary (a
-   model-maintained 150-300 word running context of decisions, open threads,
-   and action items, falling back to the short displayed summary for older
-   payloads) as rolling context, passes the previously suggested questions and
-   points back to the model so still-relevant items are retained and stale or
-   duplicate ones are replaced, folds in user-authored notes, optional user
-   focus text, and linked calendar context, then requests a strict JSON
-   response from the configured LLM provider. Provider-native JSON output
-   modes are used where available (Gemini `response_mime_type`, OpenAI
-   `response_format` with a plain retry for incompatible OpenAI-compatible
-   endpoints, Anthropic assistant prefill, Ollama `format: json`), with the
-   tolerant fenced/inline JSON parser retained as a fallback. Changing the
-   Meeting Edge context-level slider or the enable toggle also dispatches a
-   refresh for the user's in-flight recordings, and the context level is part
-   of the refresh source signature so slider changes take effect immediately.
-6. Meeting Edge uses the same configured provider as the rest of Nojoin AI, but
-   resolves a separate provider-specific live model when one is set. If no
-   Meeting Edge model is configured for that provider, the worker falls back to
-   the provider's main model instead of failing the live guidance path.
-7. A Redis single-flight guard keyed on the recording admits one refresh at a
-   time. Refreshes are triggered as the transcript grows, so during a live
-   meeting a trigger arrives every few seconds while a run takes 20-45 seconds,
-   and neither existing brake stops them overlapping: the staleness check reads
-   a timestamp written only when a run finishes, and the signature check only
-   suppresses input identical to a run already in flight, which a growing
-   transcript never is. Surplus triggers are dropped rather than queued, since
-   the next one carries fresher transcript, and each drop is recorded as a
-   `meeting_edge_refresh_skipped` pipeline metric. The guard is a Redis key with
-   a TTL rather than a database column so a worker killed mid-refresh releases
-   it on expiry instead of wedging the feature, and it fails open so an
-   unreachable broker cannot silently switch Meeting Edge off.
+- **Sequence gate.** Tasks for consecutive segments can run out of order. Each reads `next_expected` from the recording's `live/state.json`. A task ahead of it returns at once, leaving its WAV on disk, and the task holding `next_expected` drains the contiguous run present. Audio from an unfinished utterance is carried over in `live/buffer.wav` and joined to the next run, so an utterance split across segments is normally transcribed whole. Continuous speech is force-emitted after `live_forced_max_s` (8 s).
+- **Regions.** VAD regions are padded (`live_speech_pad_ms`) and prefixed with a rolling context clip (`live/context.wav`, `live_context_window_s`) so word edges are not clipped; the output is sliced back to the region.
+- **Writes.** The lane writes provisional canonical utterances, then refreshes `Transcript.segments` as a projection. Every live utterance has speaker `UNKNOWN`, because diarisation runs only at finalise. The lane does record the capture channel: per-channel RMS decides whether the microphone or shared audio dominated, stored in `confidence_payload` and exposed on utterance reads as `source_channel` (`microphone`, `system`, or null when ambiguous). It identifies a channel only: a microphone-only capture reads as microphone for everyone in the room. Live utterance ids are a uuid5 of recording id, span, speaker and text.
+- **Reads.** The live panel polls `GET /transcripts/{id}/utterances` every 3 s. The recording detail payload withholds in-flight transcript text and segments, so provisional text reaches no other surface.
+- **Failures.** The lane is best-effort: a failed run is logged and the lane still advances. A failed run still accounts for the audio it drained. If it had carried audio into `live/buffer.wav`, the buffer is kept and `buffer_abs_start` moves to its start; otherwise `buffer_abs_start` moves past the audio the run read and the buffer and context clip are removed. Advancing `next_expected` alone would replay the stale buffer and stamp every later utterance early. The new state is saved in one write before any audio is removed.
+- **Window manifests.** Each manifest has separate ASR and diarisation fields. The live lane writes ASR status (rows from older releases can also read `catch_up_processed`). Nothing writes diarisation status any more, so new windows stay `pending`. The legacy `status` field is a compatibility projection; new logic should read the lane fields.
 
-Segments are numbered sequentially starting at 0 but uploaded concurrently, so the lane uses
-a **sequence-gated buffer**. Each task reads `next_expected` from a per-recording
-`live/state.json`; a task whose segment is ahead of `next_expected` returns
-immediately (its WAV waits on disk), and only the task holding `next_expected`
-drains the contiguous run of segments present on disk. Audio from the trailing,
-not-yet-complete utterance is **carried over** in `live/buffer.wav` and joined
-to the next run, so an utterance split across a segment boundary is normally
-transcribed once as a whole. If speech continues past the live forced-emission
-window, the lane force-emits continuous speech after about 8 seconds, updating
-the current speech region and starting a new live segment.
+At finalise, `process_recording_task` transcribes the whole recording again and writes over the live utterances, keeping the user's locked text and speakers on lines it matches. Live text is not reused.
 
-Browser-live audio window manifests track two independent processing lanes. The
-ASR lane records whether the live lane consumed the window audio; rows from
-older releases can also read `catch_up_processed`. Nothing writes the
-diarisation lane since rolling and catch-up diarisation were removed: new
-windows start `pending` and stay there, and older rows keep what those passes
-recorded. The legacy window `status` field remains a compatibility projection;
-new logic should inspect the lane-specific ASR and diarisation fields.
+### Meeting Edge
 
-A run that fails outright still accounts for the audio it drained. If it had
-already carried the audio past its cut point into `live/buffer.wav`, that buffer
-is kept and `buffer_abs_start` moves to where it starts, exactly as a successful
-run would leave it. Otherwise the run's audio is spent: `buffer_abs_start` moves
-past the audio the run read, and the buffer and the `live/context.wav` run-up are
-removed. When the run failed while reading, its length comes from the WAV
-headers, falling back to the buffer length saved in `live/state.json` at
-carry-over (`buffer_len_s`) and to the chunk durations recorded at upload.
-Advancing only `next_expected` would replay the stale buffer in the next run and
-stamp every later utterance early by the length of the failed run. The new state
-is saved in one write before any audio is removed, so a failed write leaves the
-buffer consistent with the state on disk, and `next_expected` advances even when
-the timeline cannot be worked out.
+After new live segments land, `refresh_meeting_edge_task` is dispatched best-effort: a failed dispatch is logged and the triggering request still succeeds. The task sends the provider a bounded recent transcript window, the previous run's rolling summary (a model-maintained 150 to 300 word running context), the previous suggestions so still-relevant ones are kept, the user's notes and focus text, and linked calendar context, and asks for strict JSON. Gemini (`response_mime_type`), OpenAI (`response_format`, retried without it for incompatible endpoints) and Ollama (`format: json`) use native JSON modes; Anthropic relies on the prompt. A tolerant parser accepts fenced or inline JSON from any of them. Changing the context-level slider or the enable toggle also refreshes the user's in-flight recordings, and the context level is part of the refresh signature.
 
-The live lane is best-effort: any failure is logged, the lane still advances,
-and nothing is re-raised. When the recording finalises, `process_recording_task`
-transcribes the whole recording, diarises it when diarisation is on, and writes
-the result over the live utterances, keeping the user's text and speaker edits
-on the lines it matches. A different transcription engine is reserved for
-explicit manual reprocessing after an administrator changes the install's
-transcription engine in Settings.
+Meeting Edge uses the configured provider's live model when one is set, else its main model.
 
-Final processing may reuse live transcript text and source-channel speaker
-authority only after a stable utterance id match or a clear one-to-one time
-overlap match. It must not align live and final segments by array index. When a
-merged, split, or low-confidence span is ambiguous, final processing keeps the
-final ASR/diarisation output and records live evidence in alignment metadata
-instead of silently applying it to the wrong time span. Manual text and speaker
-locks remain authoritative.
-
-A speaker correction (a rename across the recording or from an utterance
-forward, a merge, a global-speaker link or promotion) changes only what it
-names: the utterances its scope selects, or the speaker's identity. It never
-re-derives other utterances from stored diarisation window rows
-(`diarization_window_results`, `diarization_window_turns`). Live captures
-finalised by v1.0.0 to v1.2.0 can still hold window turns from the removed
-rolling diarisation, and replaying them moved other speakers' lines onto the
-corrected speaker.
-
-Every finalised utterance also keeps the cluster label the diariser gave its
-span (`transcript_utterances.diarization_label`), stamped on the segments
-before speaker assignment and the merge pass rewrite `speaker`. It is what
-makes an automatic merge reversible: `unmerge_recording_speaker` restores a
-merged row as an unnamed speaker, gives it back every line that carries its
-label except lines a person assigned by hand, and records an
-`unmerge_speakers` correction event. The speaker panel lists such clusters
-under the surviving speaker. Lines written before the column existed carry no
-label, so a merge made before then can only be undone by reprocessing.
+A Redis single-flight guard (`backend/core/single_flight.py`) admits one refresh per recording at a time. Surplus triggers are dropped, since the next carries fresher transcript, and recorded as `meeting_edge_refresh_skipped`. The guard is a key with a TTL, so a worker killed mid-refresh releases it on expiry, and it fails open when Redis is unreachable.
 
 ### Utterance Public Ids
 
-`transcript_utterances.public_id` is unique across every recording. A segment's
-`id` is only a request: it carries live utterance ids into finalize and a
-recording's stored ids into backfill, but openai-whisper numbers its segments
-in the same field. The merge keeps only string ids, so those numbers reach
-finalize only through the fallback that skips the merge (diarisation off or no
-merged segments), and backfill through older stored projections. Finalize and backfill (`replace_utterances_from_segments`) take
-ids from `UtterancePublicIds` in
-[backend/utils/canonical_pipeline/public_ids.py](../backend/utils/canonical_pipeline/public_ids.py).
-An id that no utterance holds is kept (finalize also requires a canonical UUID);
-one this recording holds goes into the new row's
-`confidence_payload.source_public_ids` and is replaced by a fresh uuid4;
-anything else gets a uuid4. The bulk segment edit's full-replace fallback keeps
-the client's ids and answers 409 when one is held or repeated. The live append
-persists the live lane's uuid5 of recording id, span, speaker and text.
+`transcript_utterances.public_id` is unique across all recordings. A segment's `id` is only a request, because openai-whisper numbers its segments in the same field. The merge keeps only string ids, so those numbers reach finalise only through the fallback that skips the merge, and backfill only through older projections. Finalise and backfill (`replace_utterances_from_segments`) take ids from `UtterancePublicIds` in [backend/utils/canonical_pipeline/public_ids.py](../backend/utils/canonical_pipeline/public_ids.py): an id no utterance holds is kept (finalise also requires a canonical UUID); one this recording already holds is replaced by a fresh uuid4 and recorded in the new row's `confidence_payload.source_public_ids`; anything else gets a uuid4. The bulk segment edit's full-replace fallback keeps the client's ids and answers 409 when one is held or repeated.
 
 ### Startup Canonical Cutover
 
-Older meetings are brought into the unified pipeline by a container-level
-startup cutover.
+`backend/entrypoint.sh` runs Alembic (`backend.startup_migrations`) and then `backend.startup_canonical_cutover` before the API starts. The cutover takes a database advisory lock and classifies every recording whose `pipeline_generation` is unset:
 
-1. `backend/entrypoint.sh` runs Alembic through `backend.startup_migrations`.
-2. The same entrypoint then runs `backend.startup_canonical_cutover` before the
-   API process starts.
-3. That cutover acquires a database advisory lock, sweeps any recordings whose
-   `pipeline_generation` marker is still unset, and classifies each one into a
-   backend-only compatibility state.
-4. Successfully canonicalised historical meetings are marked `legacy_backfilled`
-   and remain viewable through the compatibility projection.
-5. Historical meetings that were still in flight during upgrade or that cannot
-   be canonicalised safely are marked `legacy_reprocess_required` and normalized
-   for explicit reprocess instead of continuing to rely on legacy mutation
-   paths.
-6. Only meetings created or explicitly rebuilt through the unified pipeline are
-   marked `unified` and treated as fully supported for transcript and speaker
-   mutation flows.
+- `legacy_backfilled`: canonicalised, and viewable through the compatibility projection.
+- `legacy_reprocess_required`: in flight during the upgrade, or not safely convertible. It must be reprocessed before transcript or speaker edits.
+
+Recordings created or rebuilt by the current pipeline are `unified`, the only state with full edit support. Operator switches for the cutover are in [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ## Stall Detection
 
-A live recording is the one workload where a stall is unrecoverable. The browser keeps counting wall-clock time while nothing reaches the server, and audio for that stretch is lost.
+A stall during live capture loses audio: the browser keeps counting time while nothing reaches the server. The API runs a watchdog on its event loop (`backend/utils/stall_watchdog.py`) that reports two things:
 
-The API therefore runs a watchdog (`backend/utils/stall_watchdog.py`) on its event loop, reporting two things:
+- **Event-loop lag**, the overshoot on a fixed sleep, as an `event_loop_stalled` pipeline metric when it exceeds the threshold. A blocked event loop, a throttled cgroup and a host paging the process out all show here.
+- **Pressure Stall Information**, read from `/proc/pressure` when lag is detected, names the cause, since PSI's `avg10` window still reflects a stall that has just ended. It is absent on non-Linux hosts and kernels without PSI, where lag is reported without a cause. Sustained high pressure without a stall is reported as `host_pressure_high`, rate-limited.
 
-- **Event-loop lag**, measured as the overshoot on a fixed sleep. Whatever froze the process shows up here, because the sleep cannot return on time: a blocked event loop, a throttled cgroup, and a host paging the process out are indistinguishable from inside and all detected. Reported as an `event_loop_stalled` pipeline metric when the overshoot exceeds the threshold.
-- **Pressure Stall Information**, read from `/proc/pressure` at the moment lag is detected. This is what names the cause, since PSI's `avg10` window still reflects a stall that has just ended. Absent on non-Linux hosts and PSI-less kernels, where the lag signal survives without attribution. Sustained high pressure without a stall is reported separately as `host_pressure_high`, rate-limited so a persistently degraded machine does not bury the moment it started.
-
-Nothing is sampled into the log on a schedule; a quiet system stays quiet. Tuning and switches are listed in [DEPLOYMENT.md](DEPLOYMENT.md#stall-detection).
+Nothing is logged on a schedule. Settings are in [DEPLOYMENT.md](DEPLOYMENT.md#stall-detection).
 
 ## Anonymous Telemetry
 
-Two Celery Beat tasks on the IO lane report to the collector, both identified only by a random install id held in `data/.install_id`, and neither carrying meeting content, names, or addresses.
+Two Celery Beat tasks on the IO lane report to the collector under a random install id held in `data/.install_id`, with no meeting content, names or addresses. What is sent and how to turn it off are in [TELEMETRY.md](TELEMETRY.md).
 
-- **The install heartbeat** carries the install id and the version. A task checks every fifteen minutes and sends when the install has never sent one, has started on a new version, or has not sent one this UTC day. It needs no consent; `NOJOIN_TELEMETRY_ENABLED=false` and an opt-out recorded before the heartbeat existed are its only exemptions.
-- **The usage diagnostics** describe deployment scale, configuration shape, and feature adoption, every six hours once the install consents. The receiving service upserts on install id and UTC day, so the cadence buys resilience against a restart re-anchoring the beat interval rather than extra rows.
+- `send_telemetry_heartbeat_task` checks every 15 minutes and sends the install id and version when the install has never sent one, has started on a new version, or has not sent one this UTC day.
+- `send_telemetry_ping_task` sends the usage diagnostics every six hours once the install consents. The collector upserts on install id and UTC day.
 
-State ownership is split deliberately so no two processes write the same value: the API is the only writer of the `telemetry_*` keys in `config.json`, the worker is the only writer of the Redis send markers, and the install id file is write-once. The worker reloads configuration before every consent check, so an operator's opt-out takes effect on the next cycle rather than on the next container restart. Sending is best-effort: the diagnostics never retry, and a failed heartbeat waits an hour, so a network fault can never escalate into repeated calls. The collector keeps every row indefinitely.
-
-The receiving Cloudflare Worker and its D1 schema live in [telemetry/](../telemetry/). See [TELEMETRY.md](TELEMETRY.md).
+Each value has one writer: the API writes the `telemetry_*` keys in `config.json`, the worker writes the Redis send markers, and the install id file is write-once. Sending is best-effort: the diagnostics never retry and a failed heartbeat waits an hour. The collector, a Cloudflare Worker with a D1 database, is in [telemetry/](../telemetry/).
 
 ## Calendar Flow
 
-1. An admin configures Google and/or Microsoft OAuth credentials for the installation.
-2. End users connect their own accounts from **Settings > Integrations**.
-3. Nojoin syncs selected calendars into stored dashboard-facing event data, including each event's description and attendee list.
-4. The dashboard renders month markers, agenda items, next-event summaries, and colour-coded sources, combining synced calendar events with unlinked Nojoin recordings.
-5. Recordings carry a nullable `calendar_event_id`; a recording is auto-linked to a confidently overlapping calendar event during processing (or linked manually), and the linked event enriches notes and speaker prompts while suppressing the recording's standalone dashboard calendar item.
-6. Sync runs incrementally on the worker's embedded Celery Beat scheduler: every connected account with a selected calendar refreshes on a 15-minute cadence using each provider's change cursor (Google `syncToken`, Microsoft Graph `delta`). When an admin enables live sync and the instance is publicly reachable over HTTPS, Nojoin also registers Google `events.watch` channels and Microsoft Graph subscriptions, so changes arrive by webhook and enqueue an immediate incremental sync; the 15-minute schedule remains the always-on fallback.
-7. A sync that cannot go incremental (the monthly shift of the 25-month sync window, a missing or reset cursor, or the Microsoft partial-occurrence repair) fetches the whole window and reconciles it by `provider_event_id`, updating stored events in place so `recordings.calendar_event_id`, which is `ON DELETE SET NULL`, keeps pointing at them. Events the listing omits are deleted, except those that ended before the window and that a recording links to.
+Setup and sync behaviour are in [CALENDAR.md](CALENDAR.md).
+
+- Synced events, with descriptions and attendees, are stored in `calendar_events` under `calendar_connections` and `calendar_sources`. The dashboard combines them with recordings not linked to an event.
+- `sync_calendar_connections_task` runs on the IO lane every 15 minutes, incremental through each provider's change cursor (Google `syncToken`, Microsoft Graph `delta`). With live sync on and a public HTTPS origin, Google `events.watch` channels and Graph subscriptions (`calendar_push_channels`) trigger an immediate incremental sync by webhook.
+- A sync that cannot be incremental (the monthly shift of the 25-month window, a missing or reset cursor, or the Microsoft partial-occurrence repair) fetches the whole window and reconciles it by `provider_event_id`, updating events in place. Events the listing omits are deleted, except those that ended before the window and are linked to a recording.
+- `recordings.calendar_event_id` is nullable and `ON DELETE SET NULL`. Processing links a recording to a confidently overlapping event, or the user links one by hand. A linked event feeds the notes and speaker prompts and replaces the recording's own item on the dashboard calendar.
 
 ## Authentication Model
 
-Nojoin uses different auth shapes for different clients:
+Token handling is in [backend/api/deps.py](../backend/api/deps.py) and [backend/core/security.py](../backend/core/security.py). Containment, revocation and policy are in [SECURITY.md](SECURITY.md).
 
-- **Browser traffic**: Secure HttpOnly session cookies. State-changing browser requests authenticated by that session must originate from the trusted Nojoin web origin, using standard `Origin` or `Referer` validation rather than relying only on `SameSite` and CORS.
-- **Non-browser API clients**: Explicit bearer tokens.
-- **MCP connector clients**: OAuth 2.1 bearer tokens (token type `mcp`) minted by Nojoin's built-in authorization server. These tokens authenticate only the `/mcp` endpoint, never the general API, and are contained by the same `token_version` and denylist machinery as sessions. Read tools need the `mcp:read` scope; write tools need `mcp:write` and make only recoverable changes. See [MCP.md](MCP.md).
-- **Browser recording operations**: Session-authenticated init, segment, pause, resume, discard, and finalize calls owned by the current user.
-- **Legacy native-helper routes**: Retired routes return structured `410 Gone` responses that point operators to [CAPTURE.md](CAPTURE.md).
+| Client | Credential |
+| --- | --- |
+| Browser | Secure HttpOnly session cookie (token type `session`). Cookie-authenticated unsafe requests must come from the trusted web origin, checked by `Origin`, else `Referer`. |
+| API clients | Bearer token (type `api`). |
+| MCP connectors | OAuth 2.1 bearer token (type `mcp`) from Nojoin's own authorisation server, accepted only at `/mcp`. Read tools need `mcp:read` and write tools `mcp:write`; see [MCP.md](MCP.md). |
 
-Forced password rotation is enforced server-side. Flagged users can only reach their self-profile, password update flow, and logout until the rotation is complete.
+All three carry the user's `token_version` and are checked against the `revoked_jwts` denylist. Browser capture uses the normal session, and the retired native-helper routes answer `410 Gone` pointing to [CAPTURE.md](CAPTURE.md). A user flagged for a forced password change can reach only their own profile, the password update and logout until they change it.
 
 ## Storage and Persistence
 
-- **PostgreSQL** stores metadata, transcripts, speakers, tasks, calendar state, and user settings.
-- **Redis** supports Celery and related queue or cache operations.
-- **Recordings storage** holds source audio, derived proxy assets, and related files on disk.
-- **Config files** store system-wide configuration, while sensitive material is encrypted or otherwise handled separately where appropriate.
+- **PostgreSQL** with pgvector holds metadata, transcripts, speakers, embeddings and settings. Migrations are Alembic, in `backend/alembic/`.
+- **Redis** is the Celery broker and result backend and holds short-lived guards and send markers.
+- **`./data`**, mounted at `/app/data`, holds `config.json` (install-wide settings), `recordings/`, `documents/`, logs and the install id.
+- **Secrets.** Calendar OAuth client secrets and tokens, push-channel secrets and CLI OAuth credentials are encrypted with `DATA_ENCRYPTION_KEY` (`backend/core/encryption.py`).
+- **Backups** are built by `create_backup_task` on the CPU lane and restored by `restore_backup_task` on the IO lane (`backend/core/backup/`); see [BACKUP_RESTORE.md](BACKUP_RESTORE.md).
+
+### Data Model
+
+Tables are SQLModel classes in [backend/models/](../backend/models/). The canonical utterances are the source of truth for a transcript; `Transcript.segments` is a projection rebuilt from them.
+
+| Area | Tables |
+| --- | --- |
+| Recordings | `recordings` (status, `audio_path`, `proxy_path`, `max_speakers`, `pipeline_generation`, `calendar_event_id`), `transcripts` (one per recording: the segment projection, notes, statuses, `analytics_payload`) |
+| Canonical transcript | `transcript_utterances` (state, revision, manual locks, `diarization_label`, `recording_speaker_id`), `transcript_utterance_events`, `processing_runs`, `speaker_correction_events`, `recording_speaker_aliases` |
+| Speakers | `recording_speakers` (per recording, optionally linked to a person), `global_speakers` (the People library and its voiceprints), `p_tags` and `people_tags` |
+| Live capture | `recording_audio_chunks`, `recording_audio_chunk_cursors`, `recording_audio_window_manifests`; `diarization_window_results` and `diarization_window_turns` hold legacy data only |
+| Documents and search | `documents`, `document_pages`, `context_chunks` (text embeddings for search and chat), `chat_messages` |
+| Organisation | `tags`, `recording_tags`, `user_tasks`, `user_task_tags`, `user_task_recordings`, `notes_templates` |
+| Users and access | `users`, `invitations`, `revoked_jwts`, `oauth_clients`, `oauth_authorization_codes`, `oauth_refresh_tokens`, `cli_oauth_credentials`, `cli_usage_daily`, `ai_analysis_runs`, `async_task_ownerships` (which user may poll a Celery task) |
+| Calendar | `calendar_provider_configs`, `calendar_connections`, `calendar_sources`, `calendar_events`, `calendar_push_channels` |
 
 ## Release Model
 
-Nojoin follows a unified release model:
-
-- Git tags in the form `vX.Y.Z` drive published releases.
-- Docker images are published to GHCR.
-- The application surfaces release metadata primarily from GitHub Releases.
-
-The pipeline is gated rather than direct, and the ordering is the point. The images are built on the maintainer's release host by `scripts/release.py`, from a clean worktree of a commit whose CI is green since the previous release. Before anything is pushed, Trivy scans each image and fails the release on fixable CRITICAL or HIGH findings, with accepted exceptions recorded in `.github/trivyignore`, and a health-and-non-root smoke boots the API and frontend. Only then are the immutable `version` and commit-`sha` tags pushed, each carrying a build-provenance attestation and an SBOM, and the release tag after them. The release workflow checks each image was built from the tag's commit, cosign-signs it by digest, and only then advances the rolling `major.minor` and `latest` tags.
-
-The consequence operators depend on is that a failing build can never advance the tag they pull by default. A briefly-exposed `vX.Y.Z` tag can exist when signing fails after the push, but it is visibly attached to a failed workflow run and is never reachable through `latest`. Building off GitHub did not move the trust anchor: signing is still keyless via GitHub OIDC, which binds each signature to the release workflow's identity and keeps a long-lived private key out of the threat model entirely. The release host does hold a registry token that can push images, and the workflow's revision check is what stops an image pushed for one commit being signed for another. Third-party actions are pinned to commit SHAs and base images, the release builder included, to `@sha256:` digests, so a mutable upstream tag cannot be repointed at unreviewed code after review. Anyone editing CI, the release workflow, the release script, or the Dockerfiles must preserve that pinning, the gate ordering, and the signing identity.
+A `vX.Y.Z` tag releases the API, worker, worker-io and frontend images to GHCR together, and the app reads release metadata from GitHub Releases. [scripts/release.py](../scripts/release.py) builds, scans and smoke-tests the images on the maintainer's release host and pushes them before the git tag. [release.yml](../.github/workflows/release.yml) then verifies and signs each image and only after that moves the rolling `major.minor` and `latest` tags, so a failed release never reaches `latest`. Anyone editing CI, the release workflow, the script or the Dockerfiles must keep that ordering, the SHA and digest pinning, and the signing identity. The full process is in [DEVELOPMENT.md](DEVELOPMENT.md#release-workflow-and-version-detection), and image verification for operators in [DEPLOYMENT.md](DEPLOYMENT.md#verifying-an-image-before-deploying).
 
 ## Related Docs
 
 - [CAPTURE.md](CAPTURE.md)
-- [GETTING_STARTED.md](GETTING_STARTED.md)
 - [DEPLOYMENT.md](DEPLOYMENT.md)
+- [DEVELOPMENT.md](DEVELOPMENT.md)
+- [SECURITY.md](SECURITY.md)
+- [ANALYTICS_EVIDENCE.md](ANALYTICS_EVIDENCE.md)
 - [USAGE.md](USAGE.md)
 - [CALENDAR.md](CALENDAR.md)
+- [MCP.md](MCP.md)
+- [BACKUP_RESTORE.md](BACKUP_RESTORE.md)
 - [TELEMETRY.md](TELEMETRY.md)
 - [DESIGN.md](DESIGN.md)

@@ -10,10 +10,11 @@ from typing import NamedTuple, Protocol
 
 from ...utils.languages import resolve_transcription_language_code
 from ...utils.onnx_asr_cache import onnx_asr_model
+from ...utils.word_times import exceeds
 from ..onnx_providers import gpu_is_present, sessions_use_cuda, verify_gpu_providers
 from ..onnx_threads import onnx_session_options
 from ..processing_tuning import (
-    ASR_WORD_END_PADDING_KEY,
+    ASR_WORD_LENGTH_CAP_KEY,
     TUNING_SPECS,
     resolve_tuning,
 )
@@ -29,13 +30,15 @@ logger = logging.getLogger(__name__)
 
 os.environ.setdefault("ORT_LOG_SEVERITY_LEVEL", "1")
 
-# Gap (seconds) between consecutive words that starts a new segment.
+# Gap (seconds) between consecutive words that starts a new segment. A gap
+# equal to it, as two starts the cap plus 0.8 s apart leave, does not.
 SEGMENT_PAUSE_THRESHOLD_S = 0.8
 
-# How long (seconds) a word lasts when the next word starts more than
-# SEGMENT_PAUSE_THRESHOLD_S later, or when it is the last word and the audio
-# duration is unknown. A user's settings may override it (processing_tuning.py).
-WORD_END_PAD_S = TUNING_SPECS[ASR_WORD_END_PADDING_KEY].default
+# The longest (seconds) a word lasts. onnx-asr returns only token start times,
+# so a word ends at the earliest of the next word's start, the end of the
+# window, and its start plus this. A user's settings may override it
+# (processing_tuning.py).
+WORD_LENGTH_CAP_S = TUNING_SPECS[ASR_WORD_LENGTH_CAP_KEY].default
 
 # Longest audio (seconds) fed to onnx-asr in a single recognize() call, on any
 # device. onnx-asr has no long-form support, and both models lose speech long
@@ -78,7 +81,7 @@ def map_onnx_asr_result(
     audio_duration: float | None = None,
     language: str | None = None,
 ) -> dict:
-    """Map an onnx-asr timestamped result with the default word end padding.
+    """Map an onnx-asr timestamped result with the default word length cap.
 
     Args:
         text: The recognized transcript text (already space-reconstructed).
@@ -98,16 +101,21 @@ def map_onnx_asr_recognition(
     recognized: Recognition,
     audio_duration: float | None = None,
     language: str | None = None,
-    word_end_pad_s: float = WORD_END_PAD_S,
+    word_length_cap_s: float = WORD_LENGTH_CAP_S,
 ) -> dict:
     """Map an onnx-asr timestamped result into the canonical transcription schema.
+
+    onnx-asr gives each token a start time only, so a word ends at the earliest
+    of the next word's start, audio_duration and its start plus
+    word_length_cap_s, but never before it starts. Without token timings
+    (Canary) the text becomes one segment spanning the audio.
 
     Args:
         recognized: The recognize() result: text, plus parallel subword tokens
             and per-token start times in seconds (either may be None).
         audio_duration: Total audio duration in seconds, optional.
         language: The forced language code, if any.
-        word_end_pad_s: How long a word lasts when a pause follows it.
+        word_length_cap_s: The longest a word lasts.
 
     Returns:
         A dict with the canonical schema: text, language, segments.
@@ -138,21 +146,16 @@ def map_onnx_asr_recognition(
         else:
             words[-1]["word"] += token
 
-    # Assign word end times: next word's start, or audio end for the last word.
-    # When the gap to the next word exceeds the pause threshold, the word ends
-    # word_end_pad_s after its start so the silent gap is not absorbed into the
-    # word (this keeps the segment-split logic below functional).
+    # A word stretched over the pause after it can reach into the next
+    # speaker's turn and be matched to them.
     for index, word in enumerate(words):
+        start = word["start"]
+        bounds = [start + word_length_cap_s]
         if index + 1 < len(words):
-            next_start = words[index + 1]["start"]
-            if next_start - word["start"] > SEGMENT_PAUSE_THRESHOLD_S:
-                word["end"] = word["start"] + word_end_pad_s
-            else:
-                word["end"] = next_start
-        elif audio_duration is not None and audio_duration > word["start"]:
-            word["end"] = audio_duration
-        else:
-            word["end"] = word["start"] + word_end_pad_s
+            bounds.append(words[index + 1]["start"])
+        if audio_duration is not None:
+            bounds.append(audio_duration)
+        word["end"] = max(start, min(bounds))
 
     # Ensure every word string carries a single leading space for downstream
     # text reconstruction.
@@ -176,7 +179,7 @@ def map_onnx_asr_recognition(
     segments: list[dict] = []
     current: list[dict] = [words[0]]
     for word in words[1:]:
-        if word["start"] - current[-1]["end"] > SEGMENT_PAUSE_THRESHOLD_S:
+        if exceeds(word["start"] - current[-1]["end"], SEGMENT_PAUSE_THRESHOLD_S):
             segments.append(current)
             current = [word]
         else:
@@ -402,20 +405,20 @@ class OnnxAsrEngine(TranscriptionEngine):
                 logger.warning(f"Could not read audio duration for {audio_path}: {e}")
 
             logger.info(f"Starting {self.name} transcription for {audio_path}")
-            word_end_pad_s = resolve_tuning(config, ASR_WORD_END_PADDING_KEY)
+            word_length_cap_s = resolve_tuning(config, ASR_WORD_LENGTH_CAP_KEY)
 
             if audio_duration is not None and audio_duration > MAX_CHUNK_DURATION_S:
                 result = self._transcribe_chunked(
                     recognizer,
                     audio_path,
                     language_code=language_code,
-                    word_end_pad_s=word_end_pad_s,
+                    word_length_cap_s=word_length_cap_s,
                 )
             else:
                 recognize_kwargs = {"language": language_code} if language_code else {}
                 recognized = recognizer.recognize(audio_path, **recognize_kwargs)
                 result = map_onnx_asr_recognition(
-                    recognized, audio_duration, language_code, word_end_pad_s
+                    recognized, audio_duration, language_code, word_length_cap_s
                 )
 
             logger.info(f"{self.name} transcription completed for {audio_path}")
@@ -450,7 +453,7 @@ class OnnxAsrEngine(TranscriptionEngine):
         audio_path: str,
         *,
         language_code: str | None = None,
-        word_end_pad_s: float = WORD_END_PAD_S,
+        word_length_cap_s: float = WORD_LENGTH_CAP_S,
     ) -> dict:
         """Transcribe long audio as a sequence of windows, then merge.
 
@@ -504,7 +507,7 @@ class OnnxAsrEngine(TranscriptionEngine):
                     pass
 
             chunk_result = map_onnx_asr_recognition(
-                recognized, chunk_duration, language_code, word_end_pad_s
+                recognized, chunk_duration, language_code, word_length_cap_s
             )
             if chunk_result["text"]:
                 texts.append(chunk_result["text"])

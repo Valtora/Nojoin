@@ -8,44 +8,37 @@ assignees: ''
 ---
 
 **Operating system / device**
- - Platform: [e.g. Windows 11, Ubuntu 22.04, macOS Sequoia, Android 14, iOS 17]
- - Version: [e.g. 23H2, 22.04.3 LTS, 15.0]
- - Desktop environment (Linux only): [e.g. GNOME, KDE, X11 or Wayland]
+ - Platform and version: [e.g. Windows 11 23H2, Ubuntu 24.04, macOS 15, Android 14, iOS 17]
+ - Desktop environment (Linux only): [e.g. GNOME on Wayland, KDE on X11]
 
 **Browser**
- - Browser: [e.g. Chrome, Edge, Brave, Chromium]
- - Version: [e.g. 137.0.0.0]
+ - Browser and version: [e.g. Chrome 137.0.0.0, Edge, Brave]
 
 **Capture mode**
- - [ ] Desktop shared-audio (tab / window / entire screen)
+ - [ ] Desktop shared-audio (tab, window or entire screen)
  - [ ] Mobile microphone-only (Chrome on Android or iOS)
 
-Supported targets for reference (see [docs/CAPTURE.md](../../docs/CAPTURE.md)):
-- Chrome on Windows, Linux, and macOS — shared-audio recording.
-- Other Chromium-family browsers on Windows and Linux — shared-audio recording.
-- Chromium-family browsers on macOS — best-effort shared-audio recording.
-- Chrome on Android and iOS — microphone-only recording.
+Supported: Chrome on Windows, Linux and macOS, and other Chromium-family browsers on Windows and Linux, for shared-audio recording; other Chromium-family browsers on macOS as best-effort; Chrome on Android and iOS for microphone-only recording. See [CAPTURE.md](https://github.com/Valtora/Nojoin/blob/main/docs/CAPTURE.md).
 
 **Nojoin version**
- - Version: [e.g. 2.7.0, shown under Settings > Updates]
+e.g. 2.10.0, shown under **Settings > Updates**.
 
 **Describe the issue**
-A clear and concise description of what happened.
+What happened.
 
 **To reproduce**
-Steps to reproduce the behaviour:
-1. Open Nojoin in the browser above
-2. Click Start Meeting on the Meet Now card, or open Settings > Recording
-3. Share a tab/window/screen with audio (desktop) or grant microphone access (mobile)
-4. See the issue
+1. Open Nojoin in the browser above.
+2. Click **Start Meeting** on the **Meet Now** card, or run the microphone test under **Settings > Recording**.
+3. Share a tab, window or screen with audio (desktop), or grant microphone access (mobile).
+4. See the issue.
 
 **Expected behaviour**
-A clear and concise description of what you expected to happen.
+What you expected to happen.
 
 **Logs**
-Please attach any relevant logs, with personal data redacted.
-- Browser: open DevTools and copy any relevant console or network errors.
-- Server: collect `docker compose logs api worker-gpu worker-cpu worker-io worker-parse frontend`.
+Redact personal data first.
+- Browser: copy relevant console or network errors from DevTools.
+- Server: `docker compose logs api worker-gpu worker-cpu worker-io worker-parse frontend`.
 
 **Additional context**
-Add any other context about the problem here, including whether the browser share picker exposed an audio toggle and whether a shared-audio track was granted.
+Anything else, including whether the share picker offered an audio toggle and whether a shared-audio track was granted.

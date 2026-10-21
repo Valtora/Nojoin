@@ -1,49 +1,26 @@
-# Pipeline Fixture Harness
+# Pipeline Test Fixtures
 
-This directory defines the Phase 0 baseline fixture harness for the unified transcription and diarization pipeline refactor.
-
-The repository intentionally does not commit generated audio files. Use the synthetic manifest and generator for local smoke fixtures, and create a private local manifest for realistic meeting recordings when measuring diarization quality.
+Synthetic WAV fixtures for ingest, chunking, timing, fallback and degraded-mode smoke tests. Generated audio is not committed: `generated/` is git-ignored.
 
 ## Synthetic Fixtures
 
-Generate timing-oriented WAV fixtures with:
-
 ```bash
-python backend/tests/pipeline_fixtures/generate_synthetic_fixtures.py \
-  --manifest backend/tests/pipeline_fixtures/manifest.synthetic.json \
-  --output-dir backend/tests/pipeline_fixtures/generated
+python backend/tests/pipeline_fixtures/generate_synthetic_fixtures.py
 ```
 
-The generated tones are not useful for transcription accuracy, but they are useful for ingest, chunking, timing, fallback, and degraded-mode smoke tests.
+This renders every fixture in `manifest.synthetic.json` into `generated/` as 16 kHz mono WAV; `--manifest` and `--output-dir` override both. Each speaker is a pure tone, so the files are no use for transcription accuracy.
 
-## Realistic Local Fixtures
-
-For speaker quality baselines, create a local manifest that points at private audio files outside git. The manifest shape matches `manifest.example.json`. A realistic baseline should include:
-
-- Single-speaker clean speech.
-- Two-speaker alternating turns.
-- Three-or-more-speaker meetings.
-- Overlap and interruptions.
-- Long monologues.
-- Quiet speakers and noisy rooms.
-- Late-joining speakers.
-- Live user rename and segment-assignment scenarios.
-- Imported recordings.
-- Missing or invalid Hugging Face token paths.
-
-Run local baselines with:
-
-```bash
-NOJOIN_PIPELINE_FIXTURE_MANIFEST=/path/to/local-manifest.json pytest backend/tests/test_pipeline_baseline_metrics.py
-```
+`backend/tests/test_pipeline_baseline_metrics.py` (marker `pipeline_baseline`) checks that the synthetic manifest covers the baseline scenarios and that the generator writes valid WAVs.
 
 ## Manifest Fields
 
-- `id`: Stable fixture identifier.
-- `path`: WAV path relative to the manifest file, or an absolute local path.
+- `id`: stable fixture identifier.
+- `path`: where the WAV lives. The generator keeps only the file name and writes it into the output directory.
 - `kind`: `live_recording` or `imported_recording`.
-- `expected_speakers`: Expected speaker count when known.
-- `expected_language`: Language hint when known.
-- `scenarios`: Tags used to select fixture categories.
-- `known_turns`: Optional time-aligned speaker spans for diarization scoring.
-- `notes`: Human-readable fixture context.
+- `expected_speakers`: expected speaker count, when known.
+- `expected_language`: language hint, when known.
+- `scenarios`: tags naming what the fixture covers. The generator reads two: `quiet_speaker` lowers `speaker_b`, and `noise` adds a low hum.
+- `known_turns`: time-aligned speaker spans (`start`, `end`, `speaker`). The generator renders `speaker_a`, `speaker_b` and `speaker_c` as different tones.
+- `notes`: human-readable context.
+
+`manifest.example.json` shows the same shape for a private manifest that points at real recordings outside git. Nothing in the repository reads such a manifest; never commit the audio it points at.

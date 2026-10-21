@@ -8,14 +8,14 @@ assignees: ''
 ---
 
 **Describe the bug**
-A clear and concise description of what the bug is. For an intermittent test failure, prefix the title with `[flaky]` and include the test name and how often it fails.
+What happened. For an intermittent test failure, prefix the title with `[flaky]` and give the test name and how often it fails.
 
 **Nojoin version**
-e.g. 2.7.0, shown under **Settings > Updates**.
+e.g. 2.10.0, shown under **Settings > Updates**.
 
 **Deployment mode**
- - [ ] Docker Compose (recommended deployment)
- - [ ] Local source / development checkout
+ - [ ] Docker Compose
+ - [ ] Local source checkout
  - GPU or CPU: [e.g. NVIDIA GPU, CPU-only]
 
 **Browser and capture mode** (if the issue involves recording)
@@ -23,24 +23,23 @@ e.g. 2.7.0, shown under **Settings > Updates**.
  - Capture mode: [e.g. desktop shared-audio, mobile microphone-only]
 
 **To reproduce**
-Steps to reproduce the behaviour:
 1. Go to '...'
 2. Click on '...'
 3. See the error
 
 **Expected behaviour**
-A clear and concise description of what you expected to happen.
+What you expected to happen.
 
 **Reproduction data**
-If the issue depends on specific input (an audio file, a recording length, a calendar event, an imported file), describe it. Do not upload confidential recordings or transcripts; provide a minimal, non-sensitive sample where possible.
+If the issue depends on specific input (an audio file, a recording length, a calendar event, an imported file), describe it. Do not upload confidential recordings or transcripts; share a small non-sensitive sample if you can.
 
 **Logs**
-Attach relevant logs. **Redact secrets and personal data first** — remove `FIRST_RUN_PASSWORD`, `DATA_ENCRYPTION_KEY`, API keys, tokens, `Authorization` headers, cookies, and meeting content you do not want public.
-- Browser: open DevTools and copy any relevant console or network errors.
-- Server: collect `docker compose logs api worker-gpu worker-cpu worker-io worker-parse frontend`.
+**Redact secrets and personal data first:** `FIRST_RUN_PASSWORD`, `DATA_ENCRYPTION_KEY`, API keys, tokens, `Authorization` headers, cookies, and any meeting content you do not want public.
+- Browser: copy relevant console or network errors from DevTools.
+- Server: `docker compose logs api worker-gpu worker-cpu worker-io worker-parse frontend`. An admin can also download each service's log under **Settings > System and logs**.
 
 **Screenshots**
-If applicable, add screenshots to help explain the problem (with sensitive content redacted).
+If they help, with sensitive content redacted.
 
 **Additional context**
-Add any other context about the problem here.
+Anything else about the problem.

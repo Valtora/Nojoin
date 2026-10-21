@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 from pyannote.core import Segment
 
+from backend.processing.processing_tuning import TUNING_SPECS
 from backend.utils.transcript_utils import (
     combine_transcription_diarization,
     consolidate_diarized_transcript,
@@ -366,6 +367,141 @@ def test_word_flip_unusable_limit_keeps_the_default():
     )
 
     assert [seg["speaker"] for seg in result] == ["SPEAKER_00"]
+
+
+@pytest.mark.parametrize("spacing_s", [0.5, 0.55, 0.6])
+def test_a_parakeet_one_word_reply_with_no_pause_around_it_is_smoothed(spacing_s):
+    """The trade-off the Parakeet word length cap admits.
+
+    A one-word reply spacing_s after the word before it and before the next
+    one is capped at 0.4 s, below smoothing's 0.45 s limit, its gaps are under
+    0.25 s, and it goes to the speaker on both sides. The rule before the cap
+    ended it at the next word's start, which made it too long to smooth.
+    """
+    from backend.processing.engines.onnx_asr_engine import (
+        _Recognition,
+        map_onnx_asr_recognition,
+    )
+
+    reply, after = 1.0 + spacing_s, 1.0 + 2 * spacing_s
+    turns = [(0.0, reply, "A"), (reply, after, "B"), (after, 3.0, "A")]
+    transcription = map_onnx_asr_recognition(
+        _Recognition(" so yes and", [" so", " yes", " and"], [1.0, reply, after]),
+        audio_duration=3.0,
+    )
+
+    result = combine_transcription_diarization(transcription, FakeDiarization(turns))
+
+    assert [seg["speaker"] for seg in result] == ["A"]
+    assert result[0]["text"] == "so yes and"
+
+    # The same words ending where the rule before the cap ended them.
+    uncapped = {
+        "segments": [
+            {
+                "start": 1.0,
+                "end": 3.0,
+                "text": " so yes and",
+                "words": [
+                    {"start": 1.0, "end": reply, "word": " so"},
+                    {"start": reply, "end": after, "word": " yes"},
+                    {"start": after, "end": 3.0, "word": " and"},
+                ],
+            }
+        ]
+    }
+
+    kept = combine_transcription_diarization(uncapped, FakeDiarization(turns))
+
+    assert [seg["speaker"] for seg in kept] == ["A", "B", "A"]
+
+
+def _unsmoothed_parakeet_replies(
+    cap_s: float, frames_apart: int, offset_s: float, **limits: float
+) -> list[float]:
+    """Starts of one-word replies that flip smoothing leaves with their speaker.
+
+    Three words frames_apart 80 ms frames apart (onnx-asr's token times), at
+    every position in a 30 s window, mapped with cap_s and shifted by offset_s
+    as the window that far into a recording is. The middle word has another
+    speaker than the two around it.
+    """
+    from backend.processing.engines.onnx_asr_engine import (
+        _Recognition,
+        _shift_segment,
+        map_onnx_asr_recognition,
+    )
+    from backend.utils.transcript_utils import _smooth_isolated_word_speaker_flips
+
+    unsmoothed = []
+    for frame in range(375 - 2 * frames_apart - 6):
+        starts = [(frame + step * frames_apart) * 0.08 for step in range(3)]
+        mapped = map_onnx_asr_recognition(
+            _Recognition(" a b c", [" a", " b", " c"], starts),
+            audio_duration=30.0,
+            word_length_cap_s=cap_s,
+        )
+        (segment,) = mapped["segments"]
+        words = _shift_segment(segment, offset_s)["words"]
+        assignments = [
+            {"word": word, "speaker": speaker} for word, speaker in zip(words, "ABA")
+        ]
+        _smooth_isolated_word_speaker_flips(assignments, **limits)
+        if assignments[1]["speaker"] == "B":
+            unsmoothed.append(words[1]["start"])
+    return unsmoothed
+
+
+@pytest.mark.parametrize("offset_s", [0.0, 7000.0])
+def test_a_word_at_the_longest_cap_is_short_enough_to_smooth(offset_s):
+    """A capped word must stay within smoothing's default length limit wherever
+    its window falls, or a one-word diarisation flip escapes smoothing. Word
+    ends are float sums, so at the cap's maximum, which equals that limit, a
+    word can measure a few 1e-12 s over it."""
+    cap = TUNING_SPECS["asr_word_length_cap_s"].maximum
+    flip = TUNING_SPECS["word_flip_max_duration_s"].default
+
+    # 0.64 s apart: gaps of 0.19 s or less, within the 0.25 s gap limit.
+    unsmoothed = _unsmoothed_parakeet_replies(cap, 8, offset_s, max_duration_s=flip)
+
+    assert unsmoothed == []
+
+
+@pytest.mark.parametrize("offset_s", [0.0, 7000.0])
+def test_a_gap_equal_to_the_flip_gap_limit_is_within_it(offset_s):
+    # 0.8 s apart with the default 0.4 s cap: both gaps are exactly 0.4 s.
+    unsmoothed = _unsmoothed_parakeet_replies(0.4, 10, offset_s, max_gap_s=0.4)
+
+    assert unsmoothed == []
+
+
+@pytest.mark.parametrize("offset_s", [0.0, 60.0])
+def test_a_gap_of_exactly_one_second_does_not_split_a_speakers_words(offset_s):
+    """Starts 15 frames (1.2 s) apart at the shortest cap, 0.2 s, leave a 1.0 s
+    gap: the merge's own threshold, which a new segment must exceed."""
+    from backend.processing.engines.onnx_asr_engine import (
+        _Recognition,
+        _shift_segment,
+        map_onnx_asr_recognition,
+    )
+
+    cap = TUNING_SPECS["asr_word_length_cap_s"].minimum
+    turns = FakeDiarization([(offset_s, offset_s + 30.0, "A")])
+    split = []
+    for frame in range(375 - 15 - 3):
+        starts = [frame * 0.08, (frame + 15) * 0.08]
+        mapped = map_onnx_asr_recognition(
+            _Recognition(" a b", [" a", " b"], starts),
+            audio_duration=30.0,
+            word_length_cap_s=cap,
+        )
+        transcription = {
+            "segments": [_shift_segment(s, offset_s) for s in mapped["segments"]]
+        }
+        if len(combine_transcription_diarization(transcription, turns)) != 1:
+            split.append(frame)
+
+    assert split == []
 
 
 @pytest.mark.parametrize(("max_duration_s", "expected"), [(0.45, "A"), (0, "B")])
