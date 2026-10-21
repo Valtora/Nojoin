@@ -45,13 +45,14 @@ python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -r requirements/dev.txt
+python -m pip install --no-deps -r requirements/worker-no-deps.txt
 pre-commit install   # optional: Ruff, whitespace and the doc and Alembic validators on commit
 
 cd frontend
 npm install
 ```
 
-`requirements/dev.txt` is the test stack (with PyPI's torch, which runs on the CPU) plus the lint, format and type tooling. On a GPU host that runs the live processing stack, install `requirements/local.txt` instead. `requirements/backend.txt` and `requirements/worker.txt` are the API and worker runtime sets.
+`requirements/dev.txt` is the test stack (with PyPI's torch, which runs on the CPU) plus the lint, format and type tooling. On a GPU host that runs the live processing stack, install `requirements/local.txt` instead. `requirements/backend.txt` and `requirements/worker.txt` are the API and worker runtime sets. Whichever of these includes `worker.txt`, follow it with the `--no-deps` line, which installs fastembed without the dependencies it declares ([fastembed's Pillow cap](#fastembeds-pillow-cap)).
 
 ## Required Pull Request Checks
 
@@ -499,6 +500,12 @@ Some versions are declared in several files that must agree, and a pin sometimes
 The base image also fixes the worker's Python minor. The API image, CI, mypy and the Python prerequisite in this guide and in CONTRIBUTING.md must match it: `EXPECTED_PYTHON` and `PYTHON_DECLARATIONS` make the `--offline` run fail on drift, and a Dependabot `ignore:` entry keeps the API base on 3.12. The image tag names the torch version, not Python's, so run `python -V` in a new base before adopting it. The 2.14.1 image ships 3.12.
 
 To move torch, change test.txt, local.txt, both `FROM` lines in Dockerfile.worker (tag and digest) and `MATCHED_STACKS` together, and move torchvision to its pair. Keep the base on the CUDA build PyPI's torch uses (CUDA 13.0 for 2.14.1), so that local.txt installs the same build without an index URL; pip ignores an `--index-url` written on a requirement line. Then run diarisation, Whisper, an ONNX engine and text embeddings on a GPU in the rebuilt worker image, because CI has no GPU and installs torch from PyPI. Dependabot raises the pip and Docker halves as separate pull requests, each of which fails the drift check alone, so combine them.
+
+#### fastembed's Pillow cap
+
+fastembed 0.9.0, the newest release, declares `pillow<13.0`. Pillow 13.0.0 is the first release with the fixes for 20 advisories, two of them critical (#526), and the cap serves fastembed's image models, which Nojoin never loads: it uses fastembed only for `TextEmbedding`. So fastembed is the one package in [requirements/worker-no-deps.txt](../requirements/worker-no-deps.txt), and every surface installs that file with `pip install --no-deps` after `worker.txt`: Dockerfile.worker, CI's `Backend tests` job and the [Fresh Checkout Setup](#fresh-checkout-setup). `worker.txt` pins everything else fastembed declares, the CPU `onnxruntime` included, which Dockerfile.worker then swaps for `onnxruntime-gpu`.
+
+pip no longer checks fastembed's requirements, so [backend/tests/test_no_deps_requirements.py](../backend/tests/test_no_deps_requirements.py) does. It fails when a requirement is not pinned in `worker.txt` or `base.txt`, or is pinned outside the range fastembed accepts. The `huggingface-hub` hold in [dependabot.yml](../.github/dependabot.yml) now rests on that check. The test also fails once fastembed accepts the pinned Pillow, normally on Dependabot's fastembed bump. Then move fastembed back into `worker.txt`, delete `worker-no-deps.txt` and its install lines (this guide, CONTRIBUTING.md, CI, Dockerfile.worker and the comments in the requirements files), and delete the test. The worker image build also imports fastembed, and the import loads every dependency it declares.
 
 #### Holding a pin
 
