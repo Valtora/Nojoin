@@ -5,7 +5,11 @@ import {
   screen,
   waitFor,
 } from "@/test/renderWithProviders";
-import type { AnalyticsAi, RecordingAnalytics } from "@/types";
+import type {
+  AnalyticsAi,
+  AnalyticsWarningReason,
+  RecordingAnalytics,
+} from "@/types";
 
 const getRecordingAnalytics = vi.fn();
 
@@ -191,6 +195,25 @@ describe("AnalyticsView", () => {
       ).toBeInTheDocument(),
     );
     expect(screen.getByText(/3 speakers hold under 3%/)).toBeInTheDocument();
+  });
+
+  it("shows no warning for a reason code it has no wording for", async () => {
+    // `high_overlap` was retired in #481; an older API could still send it.
+    const retired = {
+      code: "high_overlap",
+      overlap_share: 0.2,
+    } as unknown as AnalyticsWarningReason;
+    getRecordingAnalytics.mockResolvedValue(
+      analytics({ attribution_warning: { reasons: [retired] } }),
+    );
+
+    renderWithProviders(<AnalyticsView recordingId="rec-1" />);
+
+    await waitFor(() => expect(screen.getByText("Dana")).toBeInTheDocument());
+    expect(
+      screen.queryByText(/depend on who Nojoin thinks was speaking/),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/talked over each other for/)).not.toBeInTheDocument();
   });
 
   it("names the unnamed speakers rather than referring to internal keys", async () => {

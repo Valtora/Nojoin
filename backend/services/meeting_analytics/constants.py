@@ -63,13 +63,6 @@ LOW_SHARE_SPEAKER_THRESHOLD = 0.03
 # than a genuinely quiet room. One is common and unremarkable.
 LOW_SHARE_SPEAKER_COUNT_TRIGGER = 2
 
-# Overlapped speech above this share of total speech means the diariser was
-# working in conditions where attribution is least reliable. Total
-# simultaneous speech in conversation runs under ~5% of the speech stream
-# (3.8% in Switchboard -- Levinson & Torreira 2015), so three times that is
-# deep in the tail.
-HIGH_OVERLAP_SHARE_THRESHOLD = 0.15
-
 # Utterances shorter than this contribute to talk time but are excluded from
 # turn-length statistics. 250ms is about one conversational syllable
 # (Greenberg 2003): below it lies a fragment, not a turn. This is a fragment

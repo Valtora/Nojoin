@@ -87,12 +87,6 @@ def _describe_reason(
             f"{reason.get('speaker_count')} speakers hold under 3% of the talking each. "
             "If one person was split into several, these shares are wrong."
         )
-    if code == "high_overlap":
-        share = round((reason.get("overlap_share") or 0) * 100)
-        return (
-            f"People talked over each other for {share}% of the speech. "
-            "Attribution is least reliable where voices overlap."
-        )
     if code == "speaker_cap_bound":
         return (
             f"This meeting reached its speaker limit of {reason.get('max_speakers')}. "

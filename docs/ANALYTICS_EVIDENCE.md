@@ -77,15 +77,20 @@ present it as a per-person trait.
 conversational syllable (Greenberg 2003), above the ~90-120ms noise and
 perception floors. Backchannels average ~560ms, so they stay in turn counts.
 
-**Attribution-warning triggers**: measured, except where marked. Across 171
-AMI meetings with 4-5 real speakers, the smallest genuine speaker's share had
-median 15% and 5th percentile 5%, and no meeting had two speakers under 3%
+**Attribution-warning triggers**: measured. Across 171 AMI meetings with 4-5
+real speakers, the smallest genuine speaker's share had median 15% and 5th
+percentile 5%, and no meeting had two speakers under 3%
 (`LOW_SHARE_SPEAKER_THRESHOLD = 0.03`). Two sub-3% clusters
 (`LOW_SHARE_SPEAKER_COUNT_TRIGGER = 2`) therefore signal a split speaker, not
-a quiet room. `HIGH_OVERLAP_SHARE_THRESHOLD = 0.15` is published: three times
-the ~5% of speech that is simultaneous in normal conversation (3.8% in
-Switchboard; Levinson & Torreira 2015). It reads the transcript's overlap, so
-it fires only on a transcript that holds overlapping utterances.
+a quiet room.
+
+There is no overlap trigger. One was set at 15% of speech, three times the ~5%
+that is simultaneous in normal conversation (3.8% in Switchboard; Levinson &
+Torreira 2015). It read the transcript's overlap, which is zero by
+construction (see above), so it never fired, and it was removed in October
+2026 (#481). Moving it to the audio measure would not have helped: in the
+maintainer's library that measure covered 8 of 113 meetings, with a median of
+1.0% and a maximum of 4.8%.
 
 **Talk-time share**: published. The best-grounded figure on the tab: total
 speaking time alone identifies the participant others perceive as most

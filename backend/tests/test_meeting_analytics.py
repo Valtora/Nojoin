@@ -333,6 +333,22 @@ class TestAttributionWarning:
 
         assert warning is None
 
+    def test_overlapping_speech_alone_raises_no_warning(self):
+        # A third of the speech overlaps here, far past the retired 15%
+        # trigger (#481). Overlap is measured from the audio and never
+        # attributed, so it is no reason to doubt who was speaking.
+        metrics = compute_deterministic_metrics(
+            [row("rs:0", 0, 30_000), row("rs:1", 10_000, 40_000)],
+            duration_ms=40_000,
+        )
+        assert metrics["overlap"]["overlap_share"] > 0.15
+
+        warning = build_attribution_warning(
+            metrics=metrics, speakers=self._speakers(2), max_speakers=None
+        )
+
+        assert warning is None
+
     def test_a_bound_speaker_cap_is_disclosed(self):
         metrics = compute_deterministic_metrics(
             [row("rs:0", 0, 30_000), row("rs:1", 30_000, 60_000)],
