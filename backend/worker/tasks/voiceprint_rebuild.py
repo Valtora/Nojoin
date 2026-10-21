@@ -22,8 +22,12 @@ leaving them stale makes the rebuild a permanent no-op and the "needs rebuilding
 prompt impossible to clear. An unmatchable voiceprint contributes nothing to
 identification, so dropping it loses no capability and lets the run converge.
 Transient extraction failures are deliberately excluded from that rule: they are
-left stale so a later run can retry them.
+left stale so a later run can retry them. So is a person whose re-extracted
+speakers all hold too little speech to found a voiceprint: theirs is kept until a
+recording that qualifies is linked to them (see ``_rebuild_people``).
 """
+
+from enum import Enum
 
 import numpy as np
 
@@ -141,14 +145,28 @@ def _unit_mean(units: list):
     return mean / norm if norm else None
 
 
-def _rebuild_global_speaker(session, global_speaker, method_version: int) -> bool:
+class _PersonRebuild(Enum):
+    """What ``_rebuild_global_speaker`` did with one person."""
+
+    REBUILT = "rebuilt"
+    # Current-version voiceprints are linked to the person, but none of them
+    # may found theirs.
+    HELD_BACK = "held_back"
+    # No usable current-version voiceprint is linked to the person.
+    NOTHING_CURRENT = "nothing_current"
+
+
+def _rebuild_global_speaker(
+    session, global_speaker, method_version: int
+) -> _PersonRebuild:
     """Recompute a person's voiceprint from their linked current-version ones.
 
     Only links that could found or join the voiceprint on any other path are
     averaged. Each recording's own voiceprint must meet
     ``LIBRARY_VOICEPRINT_MIN_SPEECH_S``, since a mean of short voiceprints is
-    not what that floor measured (an unmeasured one is grandfathered). A
-    person left with nothing to average keeps what they had.
+    not what that floor measured (an unmeasured one is grandfathered). The
+    person is changed only when they are rebuilt; what becomes of a stale
+    voiceprint that is not is ``_rebuild_people``'s decision.
     """
     linked = session.exec(
         select(RecordingSpeaker)
@@ -161,24 +179,22 @@ def _rebuild_global_speaker(session, global_speaker, method_version: int) -> boo
         meets_library_evidence_floor,
     )
 
+    current = [
+        s for s in linked if s.embedding and embedding_version_of(s) == method_version
+    ]
+    if not _unit_vectors(current):
+        return _PersonRebuild.NOTHING_CURRENT
     units = _unit_vectors(
-        s
-        for s in linked
-        if s.embedding
-        and embedding_version_of(s) == method_version
-        and meets_library_evidence_floor(s.embedding_speech_seconds)
+        s for s in current if meets_library_evidence_floor(s.embedding_speech_seconds)
     )
-    if not units:
-        return False
-
-    mean = _unit_mean(units)
+    mean = _unit_mean(units) if units else None
     if mean is None:
-        return False
+        return _PersonRebuild.HELD_BACK
 
     global_speaker.embedding = mean.tolist()
     global_speaker.embedding_version = method_version
     session.add(global_speaker)
-    return True
+    return _PersonRebuild.REBUILT
 
 
 def _stale_speakers_by_recording(
@@ -283,6 +299,12 @@ def _rebuild_people(
 ) -> tuple[int, int]:
     """Recompute every person whose speakers changed or who is still stale.
 
+    A stale voiceprint that can't be rebuilt is cleared when no current-version
+    voiceprint is linked to the person at all, and kept when some are but none
+    holds enough speech to found one. Either way it matches nothing, since it
+    is of another version; kept, it stays visible on the person instead of
+    vanishing in a background run, and the first qualifying link replaces it.
+
     Returns ``(rebuilt, cleared)``.
     """
     from backend.processing.embedding import embedding_version_of
@@ -300,14 +322,22 @@ def _rebuild_people(
         )
         if already_current:
             continue
-        if _rebuild_global_speaker(session, global_speaker, method_version):
+        outcome = _rebuild_global_speaker(session, global_speaker, method_version)
+        if outcome is _PersonRebuild.REBUILT:
             rebuilt += 1
             continue
         is_stale = (
             global_speaker.embedding
             and embedding_version_of(global_speaker) != method_version
         )
-        if is_stale:
+        if is_stale and outcome is _PersonRebuild.HELD_BACK:
+            logger.info(
+                "Keeping stale voiceprint for person %s (%s): no current-version "
+                "speaker of theirs holds enough speech to found one",
+                global_speaker.id,
+                global_speaker.name,
+            )
+        elif is_stale:
             # No current-version speaker remains to average, so this person's
             # voiceprint can never be recomputed. The person is kept; only the
             # unmatchable vector goes.

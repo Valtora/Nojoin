@@ -748,7 +748,12 @@ def test_a_rebuild_keeps_out_the_speakers_a_link_could_not_fold_in(
 def test_a_stale_person_is_not_rebuilt_from_speech_below_the_floor(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Replacing a stale voiceprint founds a new one, so it needs the floor."""
+    """Replacing a stale voiceprint founds a new one, so it needs the floor.
+
+    The stale voiceprint is kept rather than cleared: it matches nothing
+    either way, and the next recording linked with enough speech replaces it.
+    Only a person with no current-version speaker at all is cleared.
+    """
     from backend.processing.embedding import RecordingVoiceprint
 
     monkeypatch.setattr(
@@ -768,9 +773,9 @@ def test_a_stale_person_is_not_rebuilt_from_speech_below_the_floor(
 
     assert (summary["people_rebuilt"], summary["people_cleared_unrebuildable"]) == (
         0,
-        1,
+        0,
     )
-    assert _person_row(engine, 5) == (None, None)
+    assert _person_row(engine, 5) == (pytest.approx(STALE_VECTOR), 1)
 
 
 def _seconds(engine: Any) -> dict[int, Any]:
