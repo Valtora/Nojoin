@@ -70,6 +70,12 @@ If the browser or operating system suspends the Nojoin tab, capture receives no 
 
 While recording, Nojoin holds a screen wake lock so the display does not blank and the device does not idle to sleep. It cannot stop the browser suspending a tab, a laptop lid being closed, or the device being put to sleep by hand. Keep the Nojoin tab open and the device awake, and do not rely on a background tab for a long meeting.
 
+## Notes During Capture
+
+Notes typed under the live transcript ([Live Notes](USAGE.md#live-notes)) are placed on the recording's own clock, the audio Nojoin has received, not the wall clock. Paused time is not on it, so a note written while paused follows the last line recorded before the pause. A note usually lands a fraction of a second early, by the time a segment takes to upload, and up to two and a half seconds late in the first moments after **Resume**.
+
+To take notes on a second device, such as a phone while a laptop records, sign in there and open the recording from the recordings list. That device shows the live transcript and the note box too, places notes on the same clock, and each device shows the other's notes within a couple of seconds. Taking notes never affects what is captured.
+
 ## Paused Recording Lock
 
 Each user can run one browser capture at a time. While a paused recording exists, the **Start Meeting** button reads **Paused recording needs attention** and imports are blocked until you choose in the dialog:

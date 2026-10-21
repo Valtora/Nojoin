@@ -125,6 +125,7 @@ export default function TranscriptSection({
             onExport={onExport}
             onActiveEditUtteranceChange={onActiveEditUtteranceChange}
             pendingRemoteUtteranceIds={deferredTranscriptUtteranceIds}
+            timelineNotes={recording.timeline_notes}
           />
         </div>
       ) : (

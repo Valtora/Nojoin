@@ -5,9 +5,10 @@ import {
   RecordingSpeaker,
   GlobalSpeaker,
   RecordingId,
+  TimelineNote,
   TranscriptSpeakerAssignment,
 } from "@/types";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import {
   Play,
   Pause,
@@ -32,6 +33,8 @@ import {
   buildTranscriptGroups,
   indexSegments,
 } from "./transcript/transcriptGroups";
+import { bodyNotesAmongLines, placeTimelineNotes } from "@/lib/notes/placement";
+import TimelineNoteLine from "./notes/TimelineNoteLine";
 
 interface TranscriptViewProps {
   recordingId: RecordingId;
@@ -71,7 +74,12 @@ interface TranscriptViewProps {
   emptyStateDescription?: string;
   onActiveEditUtteranceChange?: (utteranceId: string | null) => void;
   pendingRemoteUtteranceIds?: string[];
+  /** The recording's notes; point and selection notes show among the lines. */
+  timelineNotes?: readonly TimelineNote[] | null;
 }
+
+const NOTE_TIME_COLUMN =
+  "min-w-16 md:min-w-[60px] shrink-0 pt-1 text-right font-mono text-sm text-contrast-icon-muted";
 
 const formatTime = (seconds: number) => {
   const minutes = Math.floor(seconds / 60);
@@ -106,6 +114,7 @@ export default function TranscriptView({
   emptyStateDescription,
   onActiveEditUtteranceChange,
   pendingRemoteUtteranceIds = [],
+  timelineNotes,
 }: TranscriptViewProps) {
   const { addNotification } = useNotificationStore();
 
@@ -373,8 +382,36 @@ export default function TranscriptView({
     return order;
   }, [displaySegments]);
 
+  // Notes are placed on every line, hidden ones included, and each shows after
+  // the visible line at or before the one it follows, so hiding a line never
+  // hides a note. A note ends the group of the line it follows. Placed once
+  // per change of lines or notes, not on every playback tick.
+  const notePlacements = useMemo(
+    () => placeTimelineNotes(segments, timelineNotes ?? []),
+    [segments, timelineNotes],
+  );
+  const notesAmongLines = bodyNotesAmongLines(
+    notePlacements,
+    displaySegments.map((item) => item.index),
+  );
+  const renderNote = (note: TimelineNote) => (
+    <div key={note.id} className="px-2">
+      <TimelineNoteLine
+        noteId={note.id}
+        body={note.body}
+        timeLabel={formatTime(
+          (note.kind === "selection" ? (note.start_ms ?? 0) : (note.anchor_ms ?? 0)) / 1000,
+        )}
+        timeColumnClassName={NOTE_TIME_COLUMN}
+      />
+    </div>
+  );
+
   // --- Grouping Logic ---
-  const trackGroups = buildTranscriptGroups(displaySegments);
+  const trackGroups = buildTranscriptGroups(
+    displaySegments,
+    new Set(notesAmongLines.afterLine.keys()),
+  );
 
   const renderSegmentContent = (item: typeof displaySegments[0]) => {
     const { segment, segmentId } = item;
@@ -811,7 +848,9 @@ export default function TranscriptView({
               )}
             </div>
           </div>
-        ) : trackGroups.map((group, groupIndex) => {
+        ) : [
+          ...notesAmongLines.opening.map(renderNote),
+          ...trackGroups.map((group, groupIndex) => {
           const isGroupActive =
             currentTime >= group.start && currentTime < group.end;
           const groupKey = group.items.map((item) => item.segmentId).join("|");
@@ -830,9 +869,12 @@ export default function TranscriptView({
             return (speakerMap[left] || left).localeCompare(speakerMap[right] || right);
           });
 
+          const notesAfterGroup =
+            notesAmongLines.afterLine.get(group.items[group.items.length - 1].index) ?? [];
+
           return (
+            <Fragment key={groupKey || groupIndex}>
             <div
-              key={groupKey || groupIndex}
               className={`flex gap-3 px-2 group ${isGroupActive ? "opacity-100" : "opacity-90"} transition-opacity`}
             >
               {/* Timestamp & Play Control */}
@@ -915,8 +957,11 @@ export default function TranscriptView({
                 )}
               </div>
             </div>
+            {notesAfterGroup.map(renderNote)}
+            </Fragment>
           );
-        })}
+          }),
+        ]}
       </div>
     </div>
   );

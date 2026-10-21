@@ -45,6 +45,7 @@ export default function RecordingPage({ params }: PageProps) {
   const {
     recording,
     setRecording,
+    audioClock,
     globalSpeakers,
     loading,
     meetingEdgeEnabled,
@@ -199,6 +200,7 @@ export default function RecordingPage({ params }: PageProps) {
               onBack={navigateToRecordings}
               onDiscarded={navigateToRecordings}
               showMobileBackButton={isMobile}
+              audioClock={audioClock}
             />
           </div>
         ) : isMobile ? (
