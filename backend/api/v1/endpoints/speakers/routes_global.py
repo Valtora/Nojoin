@@ -779,9 +779,11 @@ async def split_speaker(
         if not transcript:
             continue
 
+        # A row merged into another keeps its link but is not a speaker any more.
         stmt = select(RecordingSpeaker).where(
             RecordingSpeaker.recording_id == rec_id,
             RecordingSpeaker.global_speaker_id == original_speaker.id,
+            RecordingSpeaker.merged_into_id.is_(None),
         )
         result = await db.execute(stmt)
         original_rss = result.scalars().all()

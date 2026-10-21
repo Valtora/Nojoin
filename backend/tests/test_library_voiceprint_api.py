@@ -1306,6 +1306,56 @@ async def test_a_split_that_clears_the_original_keeps_the_current_version(
 
 
 @pytest.mark.anyio
+async def test_a_split_gives_the_remainder_to_the_original_beside_a_merged_row(
+    client, session_maker, extraction
+) -> None:
+    """A speaker merged into Dana's is still linked to her, but it isn't one.
+
+    Counted as a second speaker of hers, it stopped her one speaker taking the
+    remainder's voiceprint, which kept the moved clips in it for the rebuild
+    to average back into her.
+    """
+    await _seed(
+        session_maker,
+        speakers=[
+            {
+                "label": "SPEAKER_00",
+                "global_speaker_id": 7,
+                "name": "Dana",
+                "embedding": _at_cosine(0.2),
+                "seconds": 30.0,
+            },
+            {"label": "SPEAKER_01", "global_speaker_id": 7, "name": "Dana"},
+        ],
+        people=[{"id": 7, "name": "Dana", "embedding": PERSON}],
+    )
+    segments = [
+        {"start": 0.0, "end": 5.0, "speaker": "SPEAKER_00", "text": "theirs"},
+        {"start": 5.0, "end": 10.0, "speaker": "SPEAKER_00", "text": "mine"},
+    ]
+    async with session_maker() as session:
+        await session.execute(
+            text(
+                "UPDATE recording_speakers SET merged_into_id = 1 "
+                "WHERE diarization_label = 'SPEAKER_01'"
+            )
+        )
+        await session.execute(
+            text("UPDATE transcripts SET segments = :segments WHERE id = 1"),
+            {"segments": json.dumps(segments)},
+        )
+        await session.commit()
+
+    response = await _split_one_line_off(client, extraction, 25.0)
+
+    assert response.status_code == 200
+    assert await _speaker_row(session_maker, "SPEAKER_00") == (
+        pytest.approx(_at_cosine(0.95)),
+        25.0,
+    )
+
+
+@pytest.mark.anyio
 async def test_a_split_that_rebuilds_the_original_leaves_their_lock_as_it_was(
     client, session_maker, extraction
 ) -> None:
