@@ -237,6 +237,12 @@ Final processing retries a GPU out-of-memory failure once, after releasing every
 
 Voiceprints are comparable only within one extraction procedure. `EMBEDDING_METHOD_VERSION` in [backend/processing/embedding_version.py](../backend/processing/embedding_version.py), which imports no torch, is stored on `global_speakers.embedding_version` and `recording_speakers.embedding_version`. Identification and the duplicate-merge pass refuse to score across versions. Any change to how embeddings are produced must bump the version, and any new comparison must check `embeddings_are_comparable`. Thresholds are in [backend/processing/embedding.py](../backend/processing/embedding.py).
 
+Every write must keep a stored voiceprint's version true:
+
+- A freshly extracted vector is stamped `EMBEDDING_METHOD_VERSION`.
+- A copied voiceprint (promoting a speaker to a new person, restoring a backup) keeps its own version.
+- A blend goes through `blend_voiceprint`, which never mixes versions. A current voiceprint replaces a stale one without the drift guard, since a cosine across versions says nothing; a stale one leaves a current row unchanged; an empty row takes the incoming vector and its version.
+
 The duplicate-merge pass (`backend/processing/speaker_merge.py`) joins clusters the diariser split from one voice:
 
 - The threshold is `DUPLICATE_SPEAKER_MERGE_THRESHOLD` (0.70). Lowering it causes wrong merges, which are harder to undo than wrong splits.

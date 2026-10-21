@@ -16,9 +16,10 @@ from backend.processing.embedding import (
     MARGIN_OF_VICTORY,
     UI_SHOW_MATCH_THRESHOLD,
     UI_STRONG_MATCH_THRESHOLD,
+    blend_voiceprint,
     cosine_similarity,
-    merge_embeddings,
 )
+from backend.processing.embedding_version import EMBEDDING_METHOD_VERSION
 from backend.utils.embedding_audio import select_recording_audio_for_embedding
 
 from .helpers import (
@@ -111,6 +112,7 @@ async def extract_voiceprint(
         )
 
     rec_speaker.embedding = embedding
+    rec_speaker.embedding_version = EMBEDDING_METHOD_VERSION
     db.add(rec_speaker)
     await db.commit()
     await db.refresh(rec_speaker)
@@ -214,7 +216,11 @@ async def apply_voiceprint_action(
                 status_code=400, detail="A Global Speaker with this name already exists"
             )
 
-        new_gs = GlobalSpeaker(name=action.new_speaker_name, embedding=embedding)
+        new_gs = GlobalSpeaker(
+            name=action.new_speaker_name,
+            embedding=embedding,
+            embedding_version=rec_speaker.embedding_version,
+        )
         db.add(new_gs)
         await db.commit()
         await db.refresh(new_gs)
@@ -240,10 +246,7 @@ async def apply_voiceprint_action(
             raise HTTPException(status_code=404, detail="Global Speaker not found")
 
         alpha = 0.4 if action.action == "force_link" else 0.3
-        if gs.embedding:
-            gs.embedding = merge_embeddings(gs.embedding, embedding, alpha=alpha)
-        else:
-            gs.embedding = embedding
+        blend_voiceprint(gs, embedding, rec_speaker.embedding_version, alpha=alpha)
         db.add(gs)
 
         rec_speaker.global_speaker_id = gs.id
@@ -406,6 +409,7 @@ async def extract_all_voiceprints(
             continue
 
         rec_speaker.embedding = embedding
+        rec_speaker.embedding_version = EMBEDDING_METHOD_VERSION
         db.add(rec_speaker)
 
         matched_speaker = None

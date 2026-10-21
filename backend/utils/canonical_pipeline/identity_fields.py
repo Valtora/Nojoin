@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
-from backend.processing.embedding import merge_embeddings
+from backend.processing.embedding import blend_voiceprint
 
 if TYPE_CHECKING:
     from sqlmodel import Session
@@ -56,14 +56,12 @@ def apply_recording_speaker_identity_fields(
             and recording_speaker.embedding
             and not embedding_locked
         ):
-            if target_global_speaker.embedding:
-                target_global_speaker.embedding = merge_embeddings(
-                    target_global_speaker.embedding,
-                    recording_speaker.embedding,
-                    alpha=merge_global_embedding_alpha,
-                )
-            else:
-                target_global_speaker.embedding = list(recording_speaker.embedding)
+            blend_voiceprint(
+                target_global_speaker,
+                recording_speaker.embedding,
+                recording_speaker.embedding_version,
+                alpha=merge_global_embedding_alpha,
+            )
             session.add(target_global_speaker)
     else:
         recording_speaker.global_speaker_id = None
