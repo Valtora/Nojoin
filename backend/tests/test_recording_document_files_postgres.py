@@ -24,6 +24,7 @@ import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import create_engine, event, func, text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 from sqlmodel import Session, SQLModel, select
@@ -702,3 +703,92 @@ async def test_deleting_a_user_deleted_meanwhile_is_a_404(harness):
 
     assert response.status_code == 404, response.text
     assert response.json() == {"detail": "User not found"}
+
+
+@pytest.mark.anyio
+async def test_a_user_delete_whose_commit_fails_keeps_every_file(harness):
+    """The files go only once the delete has committed.
+
+    A deferred trigger refuses the user's delete at commit time, so the delete
+    itself runs and only the commit fails. The rows are rolled back, and the
+    recording's audio and its document's file must still be there for them.
+    """
+    harness.act_as("member")
+    public_id = _add_recording(harness, "theirs", owner="member")
+    document = await _attach(harness, public_id)
+    harness.act_as("admin")
+    audio = harness.recordings_dir / "theirs.wav"
+    with harness.engine.begin() as connection:
+        connection.execute(
+            text(
+                "CREATE FUNCTION refuse_user_delete() RETURNS trigger"
+                " LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'refused'; END $$"
+            )
+        )
+        connection.execute(
+            text(
+                "CREATE CONSTRAINT TRIGGER refuse_user_delete AFTER DELETE ON users"
+                " DEFERRABLE INITIALLY DEFERRED FOR EACH ROW"
+                " EXECUTE FUNCTION refuse_user_delete()"
+            )
+        )
+
+    response = await _request(harness, "DELETE", f"/users/{harness.users['member']}")
+
+    assert response.status_code == 500, response.text
+    assert audio.is_file()
+    assert document.is_file()
+    assert _document_rows(harness) == 1
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("path", ["delete_user", "batch_permanent"])
+async def test_a_delete_locks_its_recordings_in_id_order(harness, path):
+    """Deletes over the same recordings take their locks in one order.
+
+    The lower-id recording is rewritten, so a scan meets it after the other
+    one, and given the later public id, so the batch lists it second too. The
+    higher-id recording is held locked. A delete that locks in id order holds
+    the lower one while it waits; one that locks in scan order waits first,
+    with the lower one still free.
+    """
+    owner = "member" if path == "delete_user" else "admin"
+    is_deleted = path == "batch_permanent"
+    lower = _recording_id(
+        harness, _add_recording(harness, "lower", owner=owner, is_deleted=is_deleted)
+    )
+    higher = _recording_id(
+        harness, _add_recording(harness, "higher", owner=owner, is_deleted=is_deleted)
+    )
+    with harness.engine.begin() as connection:
+        for recording_id, public_id in ((higher, "a" * 32), (lower, "z" * 32)):
+            connection.execute(
+                text("UPDATE recordings SET public_id = :public_id WHERE id = :id"),
+                {"public_id": public_id, "id": recording_id},
+            )
+    if path == "delete_user":
+        method, url, body = "DELETE", f"/users/{harness.users['member']}", None
+    else:
+        method, url = "POST", "/recordings/batch/permanent"
+        body = {"recording_ids": ["z" * 32, "a" * 32]}
+
+    holder = Session(harness.engine)
+    holder.connection().execute(
+        text("SELECT id FROM recordings WHERE id = :id FOR UPDATE"), {"id": higher}
+    )
+    request = asyncio.create_task(_request(harness, method, url, json=body))
+    try:
+        await _wait_until_blocked_by(harness, _backend_pid(holder), request)
+        with harness.engine.connect() as probe:
+            with pytest.raises(OperationalError) as locked:
+                probe.execute(
+                    text("SELECT id FROM recordings WHERE id = :id FOR UPDATE NOWAIT"),
+                    {"id": lower},
+                )
+        assert locked.value.orig.sqlstate == "55P03"
+    finally:
+        holder.rollback()
+        holder.close()
+    response = await request
+
+    assert response.status_code == 200, response.text
