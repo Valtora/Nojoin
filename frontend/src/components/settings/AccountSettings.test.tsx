@@ -54,6 +54,17 @@ afterEach(() => {
   window.history.pushState({}, "", "/");
 });
 
+describe("AccountSettings password card", () => {
+  it("warns that a new password disconnects connected apps", () => {
+    const { container } = renderForcedChange("");
+
+    // The server revokes every connector grant when the password changes.
+    expect(container.querySelector("#profile-password")?.textContent).toContain(
+      "disconnects your connected apps",
+    );
+  });
+});
+
 describe("AccountSettings after a forced password change", () => {
   it("returns to the OAuth consent page it was sent from", async () => {
     const { container } = renderForcedChange(

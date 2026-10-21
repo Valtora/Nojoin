@@ -479,6 +479,7 @@ export default function UsersTab() {
             placeholder="Enter new password"
             autoComplete="new-password"
             minLength={8}
+            hint="Saving one signs them out everywhere and disconnects their connected apps, such as Claude and Codex."
           />
 
           <Select

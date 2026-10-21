@@ -6,10 +6,11 @@ custom connectors, Claude Code) to connect with only the server URL:
 - Dynamic Client Registration (RFC 7591) for public clients.
 - PKCE-bound (S256) single-use authorization codes.
 - Access-token issuance as short-lived ``mcp``-type JWTs on the existing
-  signing keyring, so ``token_version`` bumps and the ``jti`` denylist
-  revoke connector access exactly like sessions.
+  signing keyring, so a ``token_version`` bump ends them like sessions.
 - Rotating opaque refresh tokens grouped into grants. Reuse of a rotated
-  refresh token revokes the whole grant family (RFC 9700 guidance).
+  refresh token revokes the whole grant family (RFC 9700 guidance). A
+  refresh token carries no ``token_version``, so ``bump_user_token_version``
+  revokes the user's grants itself.
 
 Plaintext codes and refresh tokens are never stored; only SHA-256 hashes.
 """
@@ -342,8 +343,13 @@ async def _issue_refresh_token(db: AsyncSession, grant: RefreshGrant) -> str:
     return refresh_token
 
 
-async def _load_user(db: AsyncSession, user_id: int) -> User:
-    result = await db.execute(select(User).where(User.id == user_id))
+async def _load_user(db: AsyncSession, user_id: int, *, lock: bool = False) -> User:
+    query = select(User).where(User.id == user_id)
+    if lock:
+        # FOR SHARE: waits for, and holds off, a token_version bump, which
+        # updates this row, while concurrent refreshes still share it.
+        query = query.with_for_update(read=True)
+    result = await db.execute(query)
     user = result.scalar_one_or_none()
     if user is None or not user.is_active:
         raise OAuthError("invalid_grant", "The user account is not available.", 400)
@@ -414,6 +420,22 @@ async def exchange_authorization_code(
     }
 
 
+async def _grant_has_live_token(db: AsyncSession, grant_id: str) -> bool:
+    """Whether a grant still has an unrevoked token.
+
+    A revoked token presented while its grant lives on was rotated and then
+    replayed. One presented after the whole grant was revoked, by the user or
+    by a token_version bump, is a client that has not caught up yet.
+    """
+    result = await db.execute(
+        select(OAuthRefreshToken.token_hash)
+        .where(OAuthRefreshToken.grant_id == grant_id)
+        .where(OAuthRefreshToken.revoked_at.is_(None))  # type: ignore[union-attr]
+        .limit(1)
+    )
+    return result.first() is not None
+
+
 async def refresh_access_token(
     db: AsyncSession,
     *,
@@ -433,20 +455,33 @@ async def refresh_access_token(
     if record is None or record.client_id != client_id:
         raise OAuthError("invalid_grant", "Unknown refresh token.")
 
+    # Lock the user, then re-read the token under its own lock, in the order
+    # bump_user_token_version takes them. A bump that committed while this
+    # waited has revoked the token, and one that starts later waits for this
+    # rotation and revokes the token it issues.
+    user = await _load_user(db, record.user_id, lock=True)
+    await db.refresh(record, with_for_update=True)
+
     now_naive = utc_now().replace(tzinfo=None)
     if record.revoked_at is not None:
-        # Rotated-token reuse: revoke the entire grant family (RFC 9700).
-        await revoke_grant(db, grant_id=record.grant_id)
-        logger.warning(
-            "Refresh token reuse detected for grant %s (client %s); grant revoked.",
-            record.grant_id,
-            client_id,
-        )
+        if await _grant_has_live_token(db, record.grant_id):
+            # Rotated-token reuse: revoke the entire grant family (RFC 9700).
+            await revoke_grant(db, grant_id=record.grant_id)
+            logger.warning(
+                "Refresh token reuse detected for grant %s (client %s); grant revoked.",
+                record.grant_id,
+                client_id,
+            )
+        else:
+            logger.info(
+                "Refresh refused for revoked grant %s (client %s).",
+                record.grant_id,
+                client_id,
+            )
         raise OAuthError("invalid_grant", "Refresh token has been revoked.")
     if record.expires_at <= now_naive:
         raise OAuthError("invalid_grant", "Refresh token has expired.")
 
-    user = await _load_user(db, record.user_id)
     # Mint before rotating: if signing fails, the presented refresh token
     # stays valid, so a retry is not mistaken for reuse of a rotated token.
     access_token, expires_in = _build_access_token(
