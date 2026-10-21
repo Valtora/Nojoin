@@ -21,7 +21,8 @@ const namesFor = (
 
 // The wording lives here rather than in the API so the backend can add a
 // reason code without shipping user-facing copy, and so the same codes can be
-// phrased differently for an assistant than for a person.
+// phrased differently for an assistant than for a person. A code this client
+// has no wording for, such as the retired `high_overlap`, shows nothing.
 const describe = (
   reason: AnalyticsAttributionWarning["reasons"][number],
   speakers: AnalyticsSpeaker[],
@@ -29,8 +30,6 @@ const describe = (
   switch (reason.code) {
     case "low_share_clusters":
       return `${reason.speaker_count} speakers hold under 3% of the talking each. If one person was split into several, these shares are wrong.`;
-    case "high_overlap":
-      return `People talked over each other for ${Math.round((reason.overlap_share ?? 0) * 100)}% of the speech. Attribution is least reliable where voices overlap.`;
     case "speaker_cap_bound":
       return `This meeting reached its speaker limit of ${reason.max_speakers}. Speakers beyond the limit were merged into the ones shown.`;
     case "unnamed_speakers":
