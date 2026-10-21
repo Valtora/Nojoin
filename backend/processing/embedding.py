@@ -45,7 +45,11 @@ def embedding_version_of(obj) -> int:
     definition, so the absent value maps to version 1 rather than to the
     current version.
     """
-    value = getattr(obj, "embedding_version", None)
+    return _method_version(getattr(obj, "embedding_version", None))
+
+
+def _method_version(value) -> int:
+    """A stored ``embedding_version`` value as a method version."""
     if value is None:
         return LEGACY_EMBEDDING_METHOD_VERSION
     try:
@@ -127,6 +131,45 @@ def merge_embeddings(
     merged = (1 - alpha) * curr_arr + alpha * new_arr
 
     return merged.tolist()
+
+
+def blend_voiceprint(
+    row: Any,
+    embedding: List[float],
+    version: Optional[int],
+    *,
+    alpha: float,
+) -> None:
+    """Write a voiceprint into a speaker row and keep its version true.
+
+    ``row`` is a ``GlobalSpeaker`` or a ``RecordingSpeaker``, and ``version`` is
+    the extraction method version ``embedding`` was produced with (``None`` for
+    a voiceprint that predates versioning). Every path that blends another
+    row's voiceprint into a speaker row goes through here, because
+    identification only compares voiceprints of one version: a row whose
+    version is wrong is ignored, or compared with vectors it can't be compared
+    with. A path that copies a vector outright, such as promoting a speaker to
+    a new person or restoring a backup, copies its version alongside it.
+
+    A row without a voiceprint takes a copy of ``embedding`` and its version.
+    A row of the same version has ``embedding`` folded in at ``alpha`` by
+    ``merge_embeddings``, drift guard included. Two versions are never blended,
+    since the average of two unrelated regions of the space matches neither: a
+    current-version ``embedding`` replaces a stale row voiceprint without the
+    drift guard (a cosine across versions says nothing), and a stale
+    ``embedding`` leaves a current row as it is.
+    """
+    if not row.embedding:
+        row.embedding = list(embedding)
+        row.embedding_version = version
+        return
+    incoming = _method_version(version)
+    if embedding_version_of(row) == incoming:
+        row.embedding = merge_embeddings(row.embedding, embedding, alpha=alpha)
+        return
+    if incoming == EMBEDDING_METHOD_VERSION:
+        row.embedding = list(embedding)
+        row.embedding_version = version
 
 
 _PLACEHOLDER_NAME_PATTERN = re.compile(

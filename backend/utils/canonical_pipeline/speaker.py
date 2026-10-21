@@ -881,14 +881,12 @@ def merge_recording_speakers_by_label(
         raise ValueError("Cannot merge speaker into itself")
 
     if source_speaker.embedding:
-        if target_speaker.embedding:
-            target_speaker.embedding = merge_embeddings(
-                target_speaker.embedding,
-                source_speaker.embedding,
-                alpha=0.5,
-            )
-        else:
-            target_speaker.embedding = list(source_speaker.embedding)
+        blend_voiceprint(
+            target_speaker,
+            source_speaker.embedding,
+            source_speaker.embedding_version,
+            alpha=0.5,
+        )
         session.add(target_speaker)
 
     source_utterances = [

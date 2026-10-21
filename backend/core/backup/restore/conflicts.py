@@ -305,6 +305,9 @@ def _resolve_global_speakers(ctx: "_RowContext") -> "RowOutcome":
             existing_speaker.color = ctx.item_data.get("color")
             if ctx.item_data.get("embedding"):
                 existing_speaker.embedding = ctx.item_data.get("embedding")
+                existing_speaker.embedding_version = ctx.item_data.get(
+                    "embedding_version"
+                )
 
             ctx.session.add(existing_speaker)
         else:
@@ -333,6 +336,9 @@ def _resolve_global_speakers(ctx: "_RowContext") -> "RowOutcome":
                 not existing_speaker.embedding or len(existing_speaker.embedding) == 0
             ) and ctx.item_data.get("embedding"):
                 existing_speaker.embedding = ctx.item_data.get("embedding")
+                existing_speaker.embedding_version = ctx.item_data.get(
+                    "embedding_version"
+                )
                 updated = True
 
             if updated:

@@ -21,7 +21,7 @@ from backend.models.recording_public import (
 from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
 from backend.models.transcript import Transcript
 from backend.models.user import User
-from backend.processing.embedding import merge_embeddings
+from backend.processing.embedding import blend_voiceprint
 from backend.utils.canonical_pipeline import (
     list_merged_recording_speakers,
     record_recording_speaker_corrections,
@@ -207,13 +207,12 @@ async def apply_recording_speaker_update(
             rs.name = None
 
             if rs.embedding:
-                if global_speaker.embedding:
-                    if not global_speaker.is_voiceprint_locked:
-                        global_speaker.embedding = merge_embeddings(
-                            global_speaker.embedding, rs.embedding, alpha=0.3
-                        )
-                else:
-                    global_speaker.embedding = rs.embedding
+                if not (
+                    global_speaker.embedding and global_speaker.is_voiceprint_locked
+                ):
+                    blend_voiceprint(
+                        global_speaker, rs.embedding, rs.embedding_version, alpha=0.3
+                    )
                 db.add(global_speaker)
         else:
             rs.local_name = update.global_speaker_name
@@ -390,6 +389,7 @@ async def promote_speaker_to_global(
         global_speaker = GlobalSpeaker(
             name=speaker_name,
             embedding=recording_speaker.embedding,
+            embedding_version=recording_speaker.embedding_version,
             user_id=current_user.id,
         )
         db.add(global_speaker)
