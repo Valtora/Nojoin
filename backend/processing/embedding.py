@@ -156,9 +156,12 @@ def drift_guard_refuses(
     """True when ``new_embedding`` is too unlike ``current_embedding`` to fold in."""
     similarity = cosine_similarity(current_embedding, new_embedding)
     if similarity < DRIFT_GUARD_THRESHOLD:
+        # Only the verdict: a fold leaves the voiceprint as it was, and a
+        # judgement records a refusal (``judge_drift``).
         logger.warning(
-            f"Drift guard rejected embedding merge (similarity={similarity:.3f}, "
-            f"threshold={DRIFT_GUARD_THRESHOLD}). Returning original embedding."
+            "Drift guard refused a voiceprint: similarity %.3f is below %.2f",
+            similarity,
+            DRIFT_GUARD_THRESHOLD,
         )
         return True
     return False

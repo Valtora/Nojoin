@@ -10,6 +10,7 @@ its own.
 from __future__ import annotations
 
 import json
+import logging
 import math
 from collections import deque
 from types import SimpleNamespace
@@ -326,6 +327,25 @@ async def _speaker_row(session_maker, label: str) -> tuple[Any, Any]:
             )
         ).one()
     return (json.loads(embedding) if embedding is not None else None), seconds
+
+
+def test_the_guards_warning_states_its_verdict_and_no_callers_action(caplog) -> None:
+    """judge_drift records a refusal and folds nothing, so the guard's warning
+    gives the score and the threshold, not a merge or a returned embedding."""
+    from backend.processing.embedding import judge_drift
+
+    speaker = SimpleNamespace(
+        embedding=_at_cosine(0.1), embedding_version=2, drift_refusals=[]
+    )
+    person = SimpleNamespace(id=7, embedding=list(PERSON), embedding_version=2)
+
+    with caplog.at_level(logging.WARNING, logger="backend.processing.embedding"):
+        judge_drift(speaker, person)
+
+    assert [refusal.global_speaker_id for refusal in speaker.drift_refusals] == [7]
+    assert caplog.messages == [
+        "Drift guard refused a voiceprint: similarity 0.100 is below 0.70"
+    ]
 
 
 def test_merge_embeddings_refuses_a_fold_below_seventy() -> None:
