@@ -35,6 +35,12 @@ interface ProcessingNotesPanelProps {
   disabledMessage?: string;
   /** The recording's other meeting-wide notes, shown read-only under the box. */
   otherNotes?: readonly TimelineNote[];
+  /**
+   * Changes when what failed an earlier save has since cleared up on its own,
+   * such as a clear's delete resent in the background: the box then saves
+   * again, if its last save failed.
+   */
+  retrySaves?: number;
 }
 
 const NO_OTHER_NOTES: readonly TimelineNote[] = [];
@@ -147,6 +153,7 @@ function ProcessingNotesPanel({
   disabled = false,
   disabledMessage,
   otherNotes = NO_OTHER_NOTES,
+  retrySaves = 0,
 }: ProcessingNotesPanelProps) {
   const normalisedValue = value ?? "";
   const headingId = useId();
@@ -325,6 +332,18 @@ function ProcessingNotesPanel({
 
     void flushSave(draftRef.current);
   }, [disabled, flushSave]);
+
+  // Not on mount: only a change says a failure has cleared up.
+  const retrySavesRef = useRef(retrySaves);
+  useEffect(() => {
+    if (retrySaves === retrySavesRef.current) {
+      return;
+    }
+    retrySavesRef.current = retrySaves;
+    if (lastSaveFailedRef.current && !disabledRef.current) {
+      void flushSave(draftRef.current);
+    }
+  }, [retrySaves, flushSave]);
 
   // Disabling the box drops the caret to the page, and so does removing the
   // lock while it holds focus: hand focus to the lock, then back to the box.

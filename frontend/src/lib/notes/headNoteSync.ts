@@ -32,8 +32,9 @@ import {
  *
  * State: `base` (the note the box's text is based on), `pending` (a create's
  * id while its answer is unknown), `clearing` (a note whose delete's answer is
- * unknown), `unansweredEdit` (a note whose edit's answer is unknown),
- * `conflict`, and `dirty` (the box holds unsaved text).
+ * unknown, and whether a resend of that delete was refused), `unansweredEdit`
+ * (a note whose edit's answer is unknown), `conflict`, and `dirty` (the box
+ * holds unsaved text).
  *
  * | Situation | Event | Outcome |
  * | --- | --- | --- |
@@ -53,9 +54,11 @@ import {
  * | any | delete 204, 410 or 404 | gone; a delete of an id no note has held leaves a tombstone too, so a create still on its way is refused |
  * | any | no answer, or 5xx | nothing changes but `clearing` (for a delete) or `unansweredEdit` (for an edit); the next save retries under the same token |
  * | pending | delete gets no answer, or 5xx | `pending` ends too: the next text is a new note under a new id, out of the late delete's reach |
- * | `clearing` a note other than `base` (a cleared pending create) | save, or a poll showing that note | that delete is sent again first, under the same token while no answer came between; a failed one fails the save. The note is not listed among the others meanwhile |
- * | `clearing` a note other than `base`, which the last poll showed | its delete gets no answer | sent again from 2 s, doubling to 30 s, while anything listens; a refused one is not |
+ * | `clearing` a note other than `base` (a cleared pending create) | save, or a poll showing that note | that delete is sent again first, under the same token while no answer came between; a failed one fails the save. The note is not listed among the others meanwhile, unless a resend was refused |
+ * | `clearing` a note other than `base`, which the last poll showed | its delete gets no answer | sent again from 2 s, doubling to 30 s, while anything listens |
+ * | `clearing` a note other than `base` | its delete refused (other 4xx) | not sent again, by poll or timer, until the next save; the note is listed among the others again |
  * | `clearing` a note other than `base` | its delete gets a 409 | a write elsewhere outlived the clear and wins: the clear ends, the note is listed among the others as the 409 showed it, and the save goes on |
+ * | `clearing` a note other than `base` | a resend no save asked for ends it | `clearsEnded` counts up, so a save that failed on it can be sent again |
  * | any | a 200 or 409 showing the note, or a 410 or 404 for it | its `clearing` and `unansweredEdit` end; a conflict ends both |
  * | any | other 4xx (422, recording gone) | save failed; nothing changes |
  * | conflict | save | refused until resolved |
@@ -114,6 +117,11 @@ export interface HeadNoteSnapshot {
   /** Every other head and tail note, read-only here. */
   otherNotes: readonly TimelineNote[];
   conflict: HeadNoteConflict | null;
+  /**
+   * Counts the unanswered clears that a resend no save asked for has ended
+   * (see `retryClear`): a save that failed on one can be sent again.
+   */
+  clearsEnded: number;
 }
 
 /**
@@ -247,6 +255,9 @@ export class HeadNoteSync {
   private clearingRevision = 1;
   /** That delete is to be sent again, and waits in the queue. */
   private clearQueued = false;
+  /** A resend of it was refused: none is sent until the next save. */
+  private clearRefused = false;
+  private clearsEnded = 0;
   /** Waiting to send it again after a resend got no answer. */
   private clearTimer: ReturnType<typeof setTimeout> | null = null;
   private clearDelayMs = CONFIRM_RETRY_MS;
@@ -266,6 +277,7 @@ export class HeadNoteSync {
     body: "",
     otherNotes: [],
     conflict: null,
+    clearsEnded: 0,
   };
 
   constructor(
@@ -319,9 +331,12 @@ export class HeadNoteSync {
   /** Saves the box's text; saves run one at a time, in the order asked. */
   save = (text: string): Promise<void> => this.enqueue(() => this.write(text));
 
-  private enqueue(task: () => Promise<void>): Promise<void> {
+  private enqueue<T>(task: () => Promise<T>): Promise<T> {
     const run = this.queue.then(task);
-    this.queue = run.catch(() => undefined);
+    this.queue = run.then(
+      () => undefined,
+      () => undefined,
+    );
     return run;
   }
 
@@ -374,11 +389,12 @@ export class HeadNoteSync {
     const conflictNoteId =
       this.conflict?.kind === "changed" ? this.conflict.note.id : null;
     // The box's note, a create still unanswered and the note in a conflict
-    // notice are each shown already; a note being cleared is on its way out.
+    // notice are each shown already; a note being cleared is on its way out,
+    // unless its delete was refused.
     const shown = new Set([
       this.base?.id,
       this.pendingId,
-      this.clearingId,
+      this.clearRefused ? null : this.clearingId,
       conflictNoteId,
     ]);
     const otherNotes = this.polled.filter(
@@ -391,7 +407,8 @@ export class HeadNoteSync {
     if (
       sameOthers &&
       body === previous.body &&
-      this.conflict === previous.conflict
+      this.conflict === previous.conflict &&
+      this.clearsEnded === previous.clearsEnded
     ) {
       return;
     }
@@ -399,6 +416,7 @@ export class HeadNoteSync {
       body,
       otherNotes: sameOthers ? previous.otherNotes : otherNotes,
       conflict: this.conflict,
+      clearsEnded: this.clearsEnded,
     };
     for (const listener of this.listeners) listener();
   }
@@ -519,6 +537,11 @@ export class HeadNoteSync {
     if (this.conflict) throw new Error(UNRESOLVED_CONFLICT_ERROR);
     const body = stripNote(text);
     if (noteLength(body) > NOTE_BODY_MAX_CHARS) throw new Error(TOO_LONG_ERROR);
+    if (this.clearRefused) {
+      // A save sends a refused clear's delete again, as the user asked anew.
+      this.clearRefused = false;
+      this.emit();
+    }
     await this.finishClear();
     const base = this.base;
     if (!body) {
@@ -548,17 +571,28 @@ export class HeadNoteSync {
   }
 
   /**
-   * Sends that delete again, before anything else is written. It goes under
-   * the current token, which is still the one the delete carried unless an
-   * answer refused this resend before: the server then takes it as a retry
-   * of that delete. A 204, 404 or 410 means the note is gone. A 409 means a
-   * write elsewhere outlived the clear, and that write wins (see `remove`).
-   * Any other failure fails the save that asked for it, and the next one
-   * sends it again.
+   * Sends that delete again, before anything else is written, and says
+   * whether there was one. It goes under the current token, which is still
+   * the one the delete carried unless an answer refused this resend before:
+   * the server then takes it as a retry of that delete. A 204, 404 or 410
+   * means the note is gone. A 409 means a write elsewhere outlived the clear,
+   * and that write wins (see `remove`). Any other failure fails the save that
+   * asked for it; a refusal holds the resends back until the next save.
    */
-  private async finishClear() {
+  private async finishClear(): Promise<boolean> {
     const id = this.outstandingClear();
-    if (id !== null) await this.remove(id, this.clearingRevision, null);
+    if (id === null) return false;
+    try {
+      await this.remove(id, this.clearingRevision, null);
+    } catch (error) {
+      if (!outcomeUnknown(error) && this.clearingId === id) {
+        // Sent again it would be refused again; the note is still there.
+        this.clearRefused = true;
+        this.emit();
+      }
+      throw error;
+    }
+    return true;
   }
 
   /** Whether the last poll showed the note of an outstanding clear. */
@@ -572,10 +606,16 @@ export class HeadNoteSync {
    * delete it, so the delete is sent again now. The page passes on only polls
    * that changed, so the poll showing it may be one already held: a resend
    * that gets no answer is sent again from 2 s, doubling to 30 s, while
-   * anything listens, without waiting for a new poll. A refused one is not.
+   * anything listens, without waiting for a new poll. A refused one is not
+   * sent again, by a poll or the timer, until the next save. A resend that
+   * ends the clear counts up `clearsEnded`, since a save may have failed on it.
    */
   private retryClear() {
-    if (!this.clearShown() || this.listeners.size === 0) {
+    if (
+      !this.clearShown() ||
+      this.clearRefused ||
+      this.listeners.size === 0
+    ) {
       this.stopClearRetry();
       return;
     }
@@ -585,8 +625,11 @@ export class HeadNoteSync {
       this.clearQueued = false;
       return this.finishClear();
     }).then(
-      () => {
+      (ended) => {
         this.clearDelayMs = CONFIRM_RETRY_MS;
+        if (!ended) return;
+        this.clearsEnded += 1;
+        this.emit();
       },
       (error: unknown) => {
         if (outcomeUnknown(error)) this.scheduleClear();

@@ -1893,8 +1893,8 @@ describe("HeadNotePanel", () => {
     expect(bodies()).toEqual(["Agenda"]);
   });
 
-  it("does not send a cleared create's delete again after a refusal", async () => {
-    await clearPolledLostCreateOffline([
+  it("sends a refused resend of a cleared create's delete again only with the next save", async () => {
+    const { poll } = await clearPolledLostCreateOffline([
       offline(),
       coded(404, "recording_not_found"),
     ]);
@@ -1902,8 +1902,69 @@ describe("HeadNotePanel", () => {
     await after(2_000);
     expect(calls.remove).toHaveBeenCalledTimes(2);
     await after(120_000);
+    // Polls that changed send nothing either.
+    server.add("t1", "tail", "Appended");
+    await poll();
+    server.add("t2", "tail", "Appended again");
+    await poll();
+    expect(calls.remove).toHaveBeenCalledTimes(2);
+
+    // The next save sends it, and holds the resends back no longer: this one
+    // gets no answer, so the timer sends it again.
+    server.refuse.push({ write: "remove", error: offline() });
+    type("Fresh");
+    await waitForSave();
+    expect(calls.remove).toHaveBeenCalledTimes(3);
+    expect(otherNotes()).not.toHaveTextContent("Agenda");
+    await after(2_000);
+
+    expect(calls.remove).toHaveBeenCalledTimes(4);
+    expect(bodies()).toEqual(["Appended", "Appended again", "Fresh"]);
+    expect(screen.getByText("Saved", SHOWN)).toBeInTheDocument();
+  });
+
+  it("lists a cleared create's note again when the resend of its delete is refused", async () => {
+    const { poll } = await clearLostCreateOffline();
+    server.refuse.push({ write: "remove", error: coded(404, "recording_not_found") });
+
+    await poll();
 
     expect(calls.remove).toHaveBeenCalledTimes(2);
+    expect(bodies()).toEqual(["Agenda"]);
+    expect(within(otherNotes()!).getByText("Agenda")).toBeInTheDocument();
+    expect(box().value).toBe("");
+    expect(screen.getByText("Save failed", SHOWN)).toBeInTheDocument();
+  });
+
+  it("takes a failed clear as saved once its delete, resent in the background, lands", async () => {
+    await clearPolledLostCreateOffline([offline()]);
+    expect(screen.getByText("Save failed", SHOWN)).toBeInTheDocument();
+
+    await after(2_000);
+
+    expect(calls.remove).toHaveBeenCalledTimes(2);
+    expect(bodies()).toEqual([]);
+    expect(screen.queryByText("Save failed", SHOWN)).not.toBeInTheDocument();
+    expect(screen.getByText("Saved", SHOWN)).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Saved");
+    expect(calls.create).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps another device's edit of a note whose clear is resent in the background, without asking", async () => {
+    const { poll } = await clearPolledLostCreateOffline([offline()]);
+    server.edit(server.notes[0].id, "B's agenda");
+    await poll();
+    expect(otherNotes()).not.toBeInTheDocument();
+
+    await after(2_000);
+
+    expect(calls.remove).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(bodies()).toEqual(["B's agenda"]);
+    // The empty box saved nothing, so it takes the head note, as with any.
+    expect(screen.queryByText("Save failed", SHOWN)).not.toBeInTheDocument();
+    expect(box().value).toBe("B's agenda");
+    expect(calls.create).toHaveBeenCalledTimes(1);
   });
 
   /** Another tab resends the note's own text under its token: a new revision of the same note. */

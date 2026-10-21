@@ -19,8 +19,15 @@ export default function HeadNotePanel({
   disabled,
   disabledMessage,
 }: HeadNotePanelProps) {
-  const { body, otherNotes, conflict, saveHeadNote, setDirty, resolveConflict } =
-    useHeadNote(recordingId, timelineNotes);
+  const {
+    body,
+    otherNotes,
+    conflict,
+    clearsEnded,
+    saveHeadNote,
+    setDirty,
+    resolveConflict,
+  } = useHeadNote(recordingId, timelineNotes);
 
   return (
     <ProcessingNotesPanel
@@ -30,6 +37,7 @@ export default function HeadNotePanel({
       conflict={conflict}
       onResolveConflict={resolveConflict}
       otherNotes={otherNotes}
+      retrySaves={clearsEnded}
       disabled={disabled}
       disabledMessage={disabledMessage}
     />
