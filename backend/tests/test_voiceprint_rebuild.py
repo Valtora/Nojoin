@@ -948,6 +948,32 @@ def test_a_rebuild_is_not_held_back_by_the_persons_own_voiceprint(
     )
 
 
+def test_a_locked_stale_person_is_still_rebuilt(tmp_path: Path) -> None:
+    """A lock keeps a current voiceprint as the user made it, not a stale one.
+
+    A voiceprint of another extraction version matches nothing, so leaving a
+    locked one in place would take the person out of identification for good.
+    """
+    engine = _make_engine(tmp_path, "locked-stale")
+    with engine.begin() as connection:
+        _add_user(connection, 1)
+        _add_person(connection, 5, 1, embedding=STALE_VECTOR, embedding_version=1)
+        connection.execute(
+            text("UPDATE global_speakers SET is_voiceprint_locked = 1 WHERE id = 5")
+        )
+        _add_recording(connection, 10, 1)
+        _add_speaker(connection, SpeakerRow(100, 10, "SPEAKER_00", global_speaker_id=5))
+        _add_utterance(connection, 1, 10, 100, (0, 25000))
+
+    summary = _run_task(engine, user_id=1)
+
+    assert summary["people_rebuilt"] == 1
+    assert _person_row(engine, 5) == (
+        pytest.approx(REBUILT_VECTOR),
+        EMBEDDING_METHOD_VERSION,
+    )
+
+
 def test_a_current_person_none_of_whose_speakers_changed_is_left_alone(
     tmp_path: Path,
 ) -> None:
