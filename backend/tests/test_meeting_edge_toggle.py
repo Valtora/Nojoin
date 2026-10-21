@@ -3,6 +3,8 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import backend.worker.tasks as tasks_module
+from backend.models.timeline_note import TimelineNote
+from backend.services.timeline_note_service import RecordingTimelineNotes
 
 
 class _ExecResult:
@@ -63,7 +65,6 @@ def test_refresh_meeting_edge_task_returns_idle_without_llm_when_disabled(
         meeting_edge_source_signature="abc123",
         segments=[{"text": "This would normally be enough signal."}],
         meeting_edge_focus=None,
-        user_notes=None,
     )
     user = SimpleNamespace(id=7, settings={"enable_meeting_edge": False})
     session = _FakeSession(recording, transcript, user)
@@ -114,7 +115,6 @@ def test_refresh_meeting_edge_task_passes_rolling_summary_and_previous_suggestio
         meeting_edge_source_signature="old-signature",
         segments=[],
         meeting_edge_focus=None,
-        user_notes=None,
     )
     user = SimpleNamespace(id=7, settings={"enable_meeting_edge": True})
     session = _FakeSession(recording, transcript, user)
@@ -196,7 +196,7 @@ def test_should_refresh_meeting_edge_on_context_level_change():
             "source_segment_count": 10,
             "source_word_count": 200,
             "focus_hash": tasks_module._hash_meeting_edge_text(None),
-            "user_notes_hash": tasks_module._hash_meeting_edge_text(None),
+            "notes_hash": tasks_module._hash_meeting_edge_text("n1:1"),
             "context_level": 2,
         },
     )
@@ -208,7 +208,7 @@ def test_should_refresh_meeting_edge_on_context_level_change():
         current_segment_count=10,
         current_word_count=200,
         focus_text=None,
-        user_notes=None,
+        notes_signature="n1:1",
         context_level=2,
     )
 
@@ -219,9 +219,70 @@ def test_should_refresh_meeting_edge_on_context_level_change():
         current_segment_count=10,
         current_word_count=200,
         focus_text=None,
-        user_notes=None,
+        notes_signature="n1:1",
         context_level=4,
     )
+
+    # So does an edited note, wherever it sits in the meeting.
+    assert tasks_module._should_refresh_meeting_edge_impl(
+        transcript=transcript,
+        source_signature="new-signature",
+        current_segment_count=10,
+        current_word_count=200,
+        focus_text=None,
+        notes_signature="n1:2",
+        context_level=2,
+    )
+
+
+def _edge_note(public_id: str, kind: str, body: str, **anchor: int) -> TimelineNote:
+    return TimelineNote(
+        public_id=public_id, recording_id=1, kind=kind, body=body, **anchor
+    )
+
+
+def test_meeting_edge_window_carries_notes_with_their_lines():
+    # Two lines more than the window holds, so lines 0 and 1 fall outside it.
+    count = tasks_module.MEETING_EDGE_RECENT_SEGMENTS + 2
+    segments = [
+        {"start": float(i), "end": i + 0.5, "speaker": "SPEAKER_00", "text": f"L{i}"}
+        for i in range(count)
+    ]
+    notes = RecordingTimelineNotes(
+        notes=[
+            _edge_note("a", "point", "before the window", anchor_ms=1_200),
+            _edge_note("b", "point", "inside it", anchor_ms=2_200),
+            _edge_note("c", "head", "meeting-wide"),
+        ]
+    )
+
+    window = tasks_module._build_recent_meeting_edge_transcript(segments, {}, notes)
+
+    # The note after line 1 leaves with it, and the head note is the prompt
+    # section's, not the window's.
+    lines = window.splitlines()
+    assert lines[:3] == [
+        "[00:02 - 00:02] SPEAKER_00: L2",
+        "[Note — User]: inside it",
+        "[00:03 - 00:03] SPEAKER_00: L3",
+    ]
+    assert "before the window" not in window
+    assert "meeting-wide" not in window
+    assert len(lines) == tasks_module.MEETING_EDGE_RECENT_SEGMENTS + 1
+
+
+def test_meeting_edge_window_opens_with_early_notes_only_from_the_start():
+    segments = [{"start": 5.0, "end": 6.0, "speaker": "SPEAKER_00", "text": "Hi"}]
+    notes = RecordingTimelineNotes(
+        notes=[_edge_note("a", "point", "before anyone spoke", anchor_ms=1_000)]
+    )
+
+    window = tasks_module._build_recent_meeting_edge_transcript(segments, {}, notes)
+
+    assert window.splitlines() == [
+        "[Note — User]: before anyone spoke",
+        "[00:05 - 00:06] SPEAKER_00: Hi",
+    ]
 
 
 def test_meeting_edge_source_signature_includes_context_level():
@@ -256,7 +317,6 @@ def test_refresh_meeting_edge_task_uses_canonical_segments_when_projection_is_em
         meeting_edge_source_signature=None,
         segments=[],
         meeting_edge_focus=None,
-        user_notes=None,
     )
     user = SimpleNamespace(id=7, settings={"enable_meeting_edge": True})
     session = _FakeSession(recording, transcript, user)
@@ -350,7 +410,6 @@ def test_refresh_is_skipped_while_another_run_holds_the_guard(
         meeting_edge_source_signature="abc123",
         segments=[{"text": "Plenty of signal here to justify a refresh."}],
         meeting_edge_focus=None,
-        user_notes=None,
     )
     user = SimpleNamespace(id=7, settings={"enable_meeting_edge": True})
     session = _FakeSession(recording, transcript, user)
@@ -399,7 +458,6 @@ def test_the_guard_is_released_so_the_next_trigger_can_run(
         meeting_edge_source_signature="abc123",
         segments=[{"text": "Short."}],
         meeting_edge_focus=None,
-        user_notes=None,
     )
     user = SimpleNamespace(id=7, settings={"enable_meeting_edge": False})
     session = _FakeSession(recording, transcript, user)

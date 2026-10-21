@@ -332,22 +332,6 @@ def test_build_automatic_meeting_intelligence_request_uses_eligible_speakers() -
     assert request.user_notes == "Confirm the rollout date"
 
 
-def test_finalise_automatic_meeting_intelligence_result_appends_user_notes() -> None:
-    result = AutomaticMeetingIntelligenceResult(
-        speaker_mapping={"SPEAKER_00": "Alex"},
-        title="Launch Readiness Review",
-        notes_markdown="# Meeting Notes\n\n## Summary\nAll teams are ready.",
-    )
-
-    finalised = finalise_automatic_meeting_intelligence_result(
-        result,
-        "Confirm the rollout date",
-    )
-
-    assert "## User Notes" in finalised.notes_markdown
-    assert "- [User] Confirm the rollout date" in finalised.notes_markdown
-
-
 def test_finalise_substitutes_residual_labels_left_in_notes_by_the_model() -> None:
     # The model returned a correct mapping but (as weaker models do) left the raw
     # SPEAKER_XX labels in the prose. finalise must repair the notes body.
@@ -361,7 +345,7 @@ def test_finalise_substitutes_residual_labels_left_in_notes_by_the_model() -> No
         ),
     )
 
-    finalised = finalise_automatic_meeting_intelligence_result(result, None)
+    finalised = finalise_automatic_meeting_intelligence_result(result)
 
     assert "SPEAKER_00" not in finalised.notes_markdown
     assert "SPEAKER_01" not in finalised.notes_markdown
@@ -383,7 +367,7 @@ def test_finalise_leaves_unmapped_labels_untouched() -> None:
         ),
     )
 
-    finalised = finalise_automatic_meeting_intelligence_result(result, None)
+    finalised = finalise_automatic_meeting_intelligence_result(result)
 
     assert "Gary spoke first" in finalised.notes_markdown
     assert "SPEAKER_01 remained unidentified" in finalised.notes_markdown
@@ -397,7 +381,7 @@ def test_finalise_label_substitution_avoids_partial_prefix_collisions() -> None:
         notes_markdown="# Collision Guard\n\n## Notes\nSPEAKER_10 and SPEAKER_1 spoke.",
     )
 
-    finalised = finalise_automatic_meeting_intelligence_result(result, None)
+    finalised = finalise_automatic_meeting_intelligence_result(result)
 
     assert "Bruno and Ana spoke." in finalised.notes_markdown
 

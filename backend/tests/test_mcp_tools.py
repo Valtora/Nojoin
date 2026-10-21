@@ -28,6 +28,7 @@ from backend.mcp_server.auth import current_mcp_scopes, current_mcp_user
 from backend.mcp_server.server import (
     append_meeting_notes,
     get_documents,
+    get_meeting_notes,
     get_transcript_utterances,
     list_recordings,
     list_tags,
@@ -65,8 +66,10 @@ from backend.models.pipeline import (
     TranscriptUtteranceState,
 )
 from backend.models.speaker import GlobalSpeaker
+from backend.models.timeline_note import TimelineNote
 from backend.models.transcript import Transcript
 from backend.models.user import User
+from backend.tests.sqlite_schemas import TIMELINE_NOTES_SCHEMA
 
 TEST_TIMESTAMP = datetime(2026, 6, 1, 12, 0, 0)
 
@@ -199,7 +202,6 @@ SCHEMA_STATEMENTS = [
         text TEXT,
         segments JSON,
         notes TEXT,
-        user_notes TEXT,
         meeting_edge_focus TEXT,
         meeting_edge_payload JSON,
         meeting_edge_status VARCHAR DEFAULT 'idle',
@@ -219,6 +221,7 @@ SCHEMA_STATEMENTS = [
         analytics_error_message TEXT
     )
     """,
+    TIMELINE_NOTES_SCHEMA,
     """
     CREATE TABLE documents (
         id INTEGER PRIMARY KEY,
@@ -1433,10 +1436,25 @@ async def test_set_speaker_name_requires_write_scope(
 # --- append_meeting_notes --------------------------------------------------
 
 
-async def seed_transcript(session_maker, *, recording_id: int, user_notes: str) -> None:
+async def seed_head_note(session_maker, *, recording_id: int, body: str) -> None:
     async with session_maker() as session:
-        session.add(Transcript(recording_id=recording_id, user_notes=user_notes))
+        session.add(
+            TimelineNote(
+                recording_id=recording_id,
+                created_by_user_id=1,
+                kind="head",
+                body=body,
+            )
+        )
         await session.commit()
+
+
+async def stored_notes(session_maker) -> list[tuple[str, str]]:
+    async with session_maker() as session:
+        notes = (
+            await session.execute(select(TimelineNote).order_by(TimelineNote.id))
+        ).scalars()
+        return [(note.kind, note.body) for note in notes]
 
 
 @pytest.fixture
@@ -1455,26 +1473,72 @@ async def test_append_meeting_notes_preserves_existing(
 ):
     bind_mcp_identity(test_user)
     public_id = await seed_recording_with_speakers(session_maker, user_id=test_user.id)
-    await seed_transcript(session_maker, recording_id=1, user_notes="First line.")
+    await seed_head_note(session_maker, recording_id=1, body="First line.")
 
-    result = await append_meeting_notes(public_id, "Second line.")
+    first = await append_meeting_notes(public_id, "  Second line.  ")
+    second = await append_meeting_notes(public_id, "Third line.")
 
-    assert result["user_notes"] == "First line.\n\nSecond line."
-    async with session_maker() as session:
-        transcript = (await session.execute(select(Transcript))).scalar_one()
-        assert transcript.user_notes == "First line.\n\nSecond line."
+    # Each call is a tail note of its own; the user's head note is untouched.
+    assert first["note"]["kind"] == "tail"
+    assert first["note"]["body"] == "Second line."
+    assert first["note"]["id"] != second["note"]["id"]
+    assert await stored_notes(session_maker) == [
+        ("head", "First line."),
+        ("tail", "Second line."),
+        ("tail", "Third line."),
+    ]
 
 
 @pytest.mark.anyio
-async def test_append_meeting_notes_creates_notes_when_absent(
+async def test_get_meeting_notes_lists_the_notes_in_timeline_order(
     session_maker, test_user: User, mcp_context, no_meeting_edge_dispatch
 ):
     bind_mcp_identity(test_user)
     public_id = await seed_recording_with_speakers(session_maker, user_id=test_user.id)
+    await append_meeting_notes(public_id, "Appended.")
+    async with session_maker() as session:
+        session.add(
+            TimelineNote(
+                recording_id=1,
+                created_by_user_id=test_user.id,
+                kind="point",
+                body="At the demo.",
+                anchor_ms=754_000,
+            )
+        )
+        await session.commit()
+    await seed_head_note(session_maker, recording_id=1, body="Agenda.")
 
-    result = await append_meeting_notes(public_id, "Fresh note.")
+    result = await get_meeting_notes(public_id)
 
-    assert result["user_notes"] == "Fresh note."
+    assert [
+        (note["kind"], note["body"], note["at"]) for note in result["timeline_notes"]
+    ] == [
+        ("head", "Agenda.", None),
+        ("point", "At the demo.", "12:34"),
+        ("tail", "Appended.", None),
+    ]
+    assert result["timeline_notes"][1]["at_ms"] == 754_000
+    assert result["timeline_notes"][1]["author"] == test_user.username
+    assert "user_notes" not in result
+
+
+@pytest.mark.anyio
+async def test_append_meeting_notes_is_refused_on_another_users_recording(
+    session_maker, test_user: User, mcp_context, no_meeting_edge_dispatch
+):
+    public_id = await seed_recording_with_speakers(session_maker, user_id=test_user.id)
+    stranger = User(
+        id=test_user.id + 1, username="stranger", hashed_password="x", settings={}
+    )
+    bind_mcp_identity(stranger)
+
+    # The route's refusal reaches the assistant as its message alone.
+    with pytest.raises(ToolError) as exc_info:
+        await append_meeting_notes(public_id, "Not yours.")
+
+    assert str(exc_info.value) == "Recording not found"
+    assert await stored_notes(session_maker) == []
 
 
 @pytest.mark.anyio

@@ -33,6 +33,10 @@ from backend.core.backup.restore import jobs, stages
 from backend.core.backup.restore.conflicts import CONFLICT_RESOLVERS
 from backend.core.backup.restore.context import RowOutcome, _RowContext
 from backend.core.backup.restore.identity import IDENTITY_RESOLVERS
+from backend.core.backup.restore.legacy_notes import (
+    legacy_user_notes,
+    restore_legacy_head_note,
+)
 from backend.core.backup.restore.state import _RestoreState
 from backend.utils.document_storage import unlink_document_files
 
@@ -231,6 +235,8 @@ def _restore_table(
 
     count = 0
     for raw_row in data:
+        # Read before _prepare_row drops the field this schema no longer has.
+        archived_user_notes = legacy_user_notes(table_name, raw_row)
         item_data = _prepare_row(table_name, model_cls, raw_row)
         ctx = _RowContext(
             session=session,
@@ -242,6 +248,8 @@ def _restore_table(
         )
         if _restore_row(ctx):
             count += 1
+            if archived_user_notes:
+                restore_legacy_head_note(ctx, archived_user_notes)
 
     logger.info(f"Restored {count} records for {table_name}")
     return count

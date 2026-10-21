@@ -11,6 +11,7 @@ from sqlmodel import Session
 
 import backend.utils.llm_config as llm_config_module
 import backend.worker.tasks as tasks_module
+from backend.tests.sqlite_schemas import TIMELINE_NOTES_SCHEMA
 from backend.utils.meeting_notes import MeetingEventContext
 from backend.utils.speaker_name_suggestions import (
     SpeakerInferenceResult,
@@ -74,7 +75,6 @@ CREATE TABLE transcripts (
     text TEXT,
     segments JSON NOT NULL,
     notes TEXT,
-    user_notes TEXT,
     meeting_edge_focus TEXT,
     meeting_edge_payload JSON,
     meeting_edge_status VARCHAR NOT NULL DEFAULT 'idle',
@@ -137,7 +137,8 @@ CREATE TABLE recording_speaker_aliases (
     valid_to_ms INTEGER,
     confidence FLOAT
 );
-"""
+
+""" + TIMELINE_NOTES_SCHEMA.strip().rstrip(";")
 
 
 def _utc_now_naive() -> datetime:
@@ -207,16 +208,35 @@ def _create_infer_speakers_task_database(
                 """
                 INSERT INTO transcripts (
                     id, created_at, updated_at, recording_id, text, segments,
-                    notes, user_notes, notes_status, transcript_status,
-                    error_message
+                    notes, notes_status, transcript_status, error_message
                 ) VALUES (
                     1, :now, :now, 1, 'Transcript text', :segments,
-                    NULL, 'Remember the launch date', 'completed', 'completed', NULL
+                    NULL, 'completed', 'completed', NULL
                 )
                 """
             ),
             {"now": now, "segments": json.dumps(segments)},
         )
+        for note_id, kind, body, anchor_ms in (
+            (1, "head", "Remember the launch date", None),
+            (2, "point", "That was Alex", 1_000),
+        ):
+            connection.execute(
+                text(
+                    "INSERT INTO timeline_notes (id, created_at, updated_at, "
+                    "public_id, recording_id, created_by_user_id, kind, body, "
+                    "anchor_ms, revision) VALUES (:id, :now, :now, :public_id, 1, "
+                    "1, :kind, :body, :anchor_ms, 1)"
+                ),
+                {
+                    "id": note_id,
+                    "now": now,
+                    "public_id": f"note-{note_id}",
+                    "kind": kind,
+                    "body": body,
+                    "anchor_ms": anchor_ms,
+                },
+            )
         connection.execute(
             text(
                 """
@@ -507,7 +527,10 @@ def test_infer_speakers_task_updates_speakers_and_restores_recording_state(
         assert suggestions[0]["resolution_reason"] == "auto_applied"
         assert "SPEAKER_00 - Hello team." in captured["transcript"]
         assert "SPEAKER_01 - The rollout is on Friday." in captured["transcript"]
-        assert captured["user_notes"] == "Remember the launch date"
+        # This transcript carries no notes, so the section lists them all.
+        assert captured["user_notes"].endswith(
+            "\n\nRemember the launch date\n00:01 That was Alex"
+        )
         assert captured["timeout"] == 60
         assert captured["eligible_labels"] == ("SPEAKER_00",)
     finally:

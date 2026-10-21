@@ -15,7 +15,7 @@ import os
 from pathlib import Path
 from typing import Any, List, Tuple, Type
 
-from sqlmodel import SQLModel
+from sqlmodel import Session, SQLModel, select
 
 from backend.core.db import async_session_maker, sync_engine  # noqa: F401
 from backend.models.calendar import (  # noqa: F401
@@ -34,6 +34,7 @@ from backend.models.recording import Recording  # noqa: F401
 from backend.models.speaker import GlobalSpeaker, RecordingSpeaker  # noqa: F401
 from backend.models.tag import RecordingTag, Tag  # noqa: F401
 from backend.models.task import UserTask, UserTaskRecording, UserTaskTag  # noqa: F401
+from backend.models.timeline_note import TimelineNote, TimelineNoteTombstone
 from backend.models.transcript import Transcript  # noqa: F401
 from backend.models.user import User  # noqa: F401
 from backend.utils.path_manager import PathManager  # noqa: F401
@@ -58,6 +59,9 @@ MODELS: List[Tuple[str, Type[SQLModel]]] = [
     ("recording_speakers", RecordingSpeaker),
     ("recording_tags", RecordingTag),
     ("transcripts", Transcript),
+    # After transcripts, so a version 2 archive's transcript, whose user_notes
+    # become a head note on restore, is in before any note is.
+    ("timeline_notes", TimelineNote),
     ("chat_messages", ChatMessage),
     ("documents", Document),
     # Archived rather than rebuilt, unlike context_chunks. Re-embedding a page
@@ -66,6 +70,20 @@ MODELS: List[Tuple[str, Type[SQLModel]]] = [
     # provider quota to reproduce text the archive was already holding.
     ("document_pages", DocumentPage),
 ]
+
+
+def note_id_tombstoned(session: Session, public_id: str) -> bool:
+    """Whether a deleted timeline note's tombstone holds this id.
+
+    Tombstones are not archived, but a restore must not give their ids to
+    restored notes (``restore/conflicts.py``).
+    """
+    held = session.exec(
+        select(TimelineNoteTombstone.id).where(
+            TimelineNoteTombstone.public_id == public_id
+        )
+    )
+    return held.first() is not None
 
 
 def get_app_version() -> str:

@@ -64,6 +64,10 @@ The **People** page is your speaker library: the people Nojoin can recognise acr
 
 While recording, the page shows the recording controls, a live waveform, the live transcript, your notes and Meeting Edge. **Attach Docs** in the toolbar attaches documents while the meeting runs or is processing. After **Stop**, the page shows processing progress.
 
+Your notes save as you type and can be edited until notes generation starts. The AI reads them with the transcript, and the generated notes end with them under **User Notes**. A note holds up to 50,000 characters: a count appears near the limit, and longer text is not saved until you shorten it. Notes added on another device or by a connected assistant ([MCP.md](MCP.md)) are listed read-only under **Other notes**.
+
+If the notes change on another device while you are editing them, nothing is saved over the other version until you choose **Keep mine** or **Use theirs** (**Discard mine** if they were deleted there). A change made offline is lost if you leave the recording before reconnecting.
+
 **Discard** deletes an unfinished recording, including one that is queued or processing, after you confirm. To remove a finished meeting, use **Delete** in the recordings list. If the tab closes or reloads mid-recording, the recording pauses and Nojoin asks you to resume it, stop and process it, or discard it before you start anything else ([Paused Recording Lock](CAPTURE.md#paused-recording-lock)).
 
 ### Live Transcription

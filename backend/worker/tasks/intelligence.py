@@ -87,7 +87,15 @@ def generate_notes_task(self, recording_id: int, notes_template_id: int | None =
             )
         ).all()
         speaker_map = build_recording_speaker_map(speakers)
-        transcript_text = format_segments_for_llm(segments, speaker_map)
+        timeline_notes = load_recording_timeline_notes(session, recording_id)
+        transcript_text = render_timeline_for_llm(
+            segments,
+            timeline_notes.place(segments),
+            format_segment=lambda segment: format_segments_for_llm(
+                [segment], speaker_map
+            ),
+            author_names=timeline_notes.author_names,
+        )
 
         llm = _llm_backend_from_config(llm_config)
         language_preferences = resolve_language_preferences(
@@ -103,7 +111,7 @@ def generate_notes_task(self, recording_id: int, notes_template_id: int | None =
             explicit_template_id=notes_template_id,
         )
         notes_arguments = {
-            "user_notes": transcript.user_notes,
+            "user_notes": timeline_notes.user_notes_context(),
             "meeting_context": _resolve_meeting_event_context(session, recording),
             "output_language_instruction": language_preferences.notes_language_instruction,
             "notes_context": notes_context,
@@ -129,7 +137,9 @@ def generate_notes_task(self, recording_id: int, notes_template_id: int | None =
                 **notes_arguments,
             )
 
-        transcript.notes = notes
+        transcript.notes = append_user_notes_section(
+            notes, timeline_notes.appendix_lines()
+        )
         transcript.notes_status = "completed"
         # Freshly generated notes reflect every READY document by definition.
         transcript.notes_stale_documents = False
@@ -313,7 +323,9 @@ def infer_speakers_task(self, recording_id: int):
             backend = _llm_backend_from_config(llm_config)
             llm_result = backend.infer_speaker_suggestions(
                 transcript_for_llm,
-                user_notes=transcript.user_notes,
+                user_notes=load_recording_timeline_notes(
+                    session, recording_id
+                ).user_notes_list(),
                 meeting_context=meeting_context,
                 eligible_labels=eligible_labels,
             )
@@ -824,10 +836,9 @@ def generate_meeting_intelligence_task(self, recording_id: int):
             recording_id,
             transcript=transcript,
         )
+        timeline_notes = load_recording_timeline_notes(session, recording_id)
         transcript_text = _build_automatic_meeting_intelligence_transcript(
-            segments,
-            speaker_map,
-            unresolved_speakers,
+            segments, speaker_map, unresolved_speakers, timeline_notes
         )
 
         _run_automatic_meeting_intelligence_stage(
@@ -843,6 +854,7 @@ def generate_meeting_intelligence_task(self, recording_id: int):
                 "prefer_short_titles", True
             ),
             device_suffix="",
+            timeline_notes=timeline_notes,
             detected_transcription_language=None,
             update_processing_status=False,
         )

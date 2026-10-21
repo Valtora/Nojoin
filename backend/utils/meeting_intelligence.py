@@ -11,7 +11,6 @@ from backend.utils.meeting_notes import (
     AttachedDocument,
     MeetingEventContext,
     MeetingMetadata,
-    append_user_notes_section,
     build_documents_prompt_section,
     build_glossary_prompt_section,
     build_meeting_context_prompt_section,
@@ -351,15 +350,14 @@ def apply_speaker_mapping_to_notes(
 
 def finalise_automatic_meeting_intelligence_result(
     result: AutomaticMeetingIntelligenceResult,
-    user_notes: str | None,
 ) -> AutomaticMeetingIntelligenceResult:
-    notes_markdown = apply_speaker_mapping_to_notes(
-        result.notes_markdown, result.speaker_mapping
-    )
+    # The user's own notes are appended by the worker, which holds them.
     return AutomaticMeetingIntelligenceResult(
         speaker_mapping=result.speaker_mapping,
         title=result.title,
-        notes_markdown=append_user_notes_section(notes_markdown, user_notes),
+        notes_markdown=apply_speaker_mapping_to_notes(
+            result.notes_markdown, result.speaker_mapping
+        ),
         require_section_heading=result.require_section_heading,
     )
 

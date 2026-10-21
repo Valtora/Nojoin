@@ -20,7 +20,6 @@ from backend.utils.notes_templates import resolve_notes_template_async
 from .helpers import (
     MeetingEdgeFocusUpdate,
     NotesUpdate,
-    UserNotesUpdate,
     _dispatch_meeting_edge_refresh,
     _get_owned_recording,
 )
@@ -60,55 +59,6 @@ async def get_notes(
         "notes_template_id": transcript.notes_template_id,
         "notes_template_sections": transcript.notes_template_sections,
     }
-
-
-@router.get("/{recording_id}/user-notes")
-async def get_user_notes(
-    recording_id: str,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """
-    Get the user-authored processing notes for a recording.
-    """
-    recording = await _get_owned_recording(db, recording_id, current_user.id)
-
-    stmt = select(Transcript).where(Transcript.recording_id == recording.id)
-    result = await db.execute(stmt)
-    transcript = result.scalar_one_or_none()
-
-    return {"user_notes": transcript.user_notes if transcript else None}
-
-
-@router.put("/{recording_id}/user-notes")
-async def update_user_notes(
-    recording_id: str,
-    update: UserNotesUpdate,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """
-    Update the user-authored processing notes for a recording.
-    """
-    recording = await _get_owned_recording(db, recording_id, current_user.id)
-
-    stmt = select(Transcript).where(Transcript.recording_id == recording.id)
-    result = await db.execute(stmt)
-    transcript = result.scalar_one_or_none()
-
-    if not transcript:
-        transcript = Transcript(recording_id=recording.id)
-
-    transcript.user_notes = update.user_notes.strip() or None
-    db.add(transcript)
-    await db.commit()
-    await db.refresh(transcript)
-    await _dispatch_meeting_edge_refresh(
-        recording.id,
-        enabled=is_meeting_edge_enabled(getattr(current_user, "settings", None)),
-    )
-
-    return {"user_notes": transcript.user_notes, "status": "success"}
 
 
 @router.put("/{recording_id}/meeting-edge-focus")

@@ -9,7 +9,9 @@ from typing import Dict, Tuple
 
 from backend.models.calendar import CalendarProvider
 
-BACKUP_FORMAT_VERSION = 2
+# 3: timeline_notes archived; transcripts no longer carry user_notes. A version 2
+# archive's user_notes are restored as a head note (restore/legacy_notes.py).
+BACKUP_FORMAT_VERSION = 3
 
 
 LEGACY_BACKUP_FORMAT_VERSION = 1
@@ -141,6 +143,11 @@ RESTORE_FOREIGN_KEYS: Dict[str, Tuple[_ForeignKeySpec, ...]] = {
         # text itself, so losing the link costs a label, never the notes.
         _enrich("notes_template_id", "notes_templates"),
     ),
+    # The author is attribution only; reads are scoped by the recording's owner.
+    "timeline_notes": (
+        _own("recording_id", "recordings"),
+        _enrich("created_by_user_id", "users"),
+    ),
     "chat_messages": (_own("recording_id", "recordings"), _own("user_id", "users")),
     "documents": (_own("recording_id", "recordings"),),
     "document_pages": (_own("document_id", "documents"),),
@@ -184,6 +191,10 @@ UNARCHIVED_TABLES: Dict[str, str] = {
     "diarization_window_turns": "Canonical pipeline state; rebuilt.",
     "transcript_utterances": "Canonical pipeline state; rebuilt from transcript.segments.",
     "transcript_utterance_events": "Canonical pipeline audit history; not rebuilt.",
+    "timeline_note_tombstones": (
+        "Ids of deleted timeline notes, which only a write still in flight from a "
+        "browser consults; a restored instance has none of those."
+    ),
 }
 
 

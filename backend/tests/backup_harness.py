@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Optional
+from uuid import uuid4
 
 import pytest
 from sqlalchemy import (
@@ -297,6 +298,39 @@ class TestTranscript(TestBase, table=True):
     text: Optional[str] = None
 
 
+class TestTimelineNote(TestBase, table=True):
+    __tablename__ = "backup_test_timeline_notes"
+
+    public_id: str = Field(
+        default_factory=lambda: str(uuid4()),
+        sa_column=Column(Text, unique=True, nullable=False),
+    )
+    recording_id: int = Field(foreign_key="backup_test_recordings.id")
+    created_by_user_id: Optional[int] = Field(
+        default=None, foreign_key="backup_test_users.id"
+    )
+    kind: str
+    body: str
+    anchor_ms: Optional[int] = None
+    start_ms: Optional[int] = None
+    end_ms: Optional[int] = None
+    quoted_text: Optional[str] = None
+    revision: int = 1
+    last_write_token: Optional[str] = None
+
+
+class TestTimelineNoteTombstone(SQLModel, table=True):
+    """Not archived; a restore consults it so no restored note takes a deleted id."""
+
+    __tablename__ = "backup_test_timeline_note_tombstones"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    public_id: str = Field(sa_column=Column(Text, unique=True, nullable=False))
+    recording_id: int = Field(foreign_key="backup_test_recordings.id")
+    deleted_write_token: Optional[str] = None
+    deleted_at: datetime = Field(sa_column=Column(DateTime, nullable=False))
+
+
 class TestChatMessage(TestBase, table=True):
     __tablename__ = "backup_test_chat_messages"
 
@@ -338,6 +372,7 @@ TEST_MODELS = [
     ("recording_speakers", TestRecordingSpeaker),
     ("recording_tags", TestRecordingTag),
     ("transcripts", TestTranscript),
+    ("timeline_notes", TestTimelineNote),
     ("chat_messages", TestChatMessage),
     ("documents", TestDocument),
 ]
@@ -421,6 +456,7 @@ def build_test_context(root: Path) -> TestContext:
     TestInvitation.__table__.create(sync_engine)
     for _, model_cls in TEST_MODELS:
         model_cls.__table__.create(sync_engine)
+    TestTimelineNoteTombstone.__table__.create(sync_engine)
 
     return TestContext(
         path_manager=StubPathManager(root),
@@ -456,6 +492,10 @@ def patch_backup_manager(monkeypatch: pytest.MonkeyPatch, context: TestContext) 
     monkeypatch.setattr(backup_runtime, "RecordingSpeaker", TestRecordingSpeaker)
     monkeypatch.setattr(backup_runtime, "RecordingTag", TestRecordingTag)
     monkeypatch.setattr(backup_runtime, "Transcript", TestTranscript)
+    monkeypatch.setattr(backup_runtime, "TimelineNote", TestTimelineNote)
+    monkeypatch.setattr(
+        backup_runtime, "TimelineNoteTombstone", TestTimelineNoteTombstone
+    )
     monkeypatch.setattr(backup_runtime, "ChatMessage", TestChatMessage)
     monkeypatch.setattr(backup_runtime, "Document", TestDocument)
     monkeypatch.setattr(

@@ -186,10 +186,6 @@ class NotesUpdate(BaseModel):
     notes: str
 
 
-class UserNotesUpdate(BaseModel):
-    user_notes: str
-
-
 class MeetingEdgeFocusUpdate(BaseModel):
     meeting_edge_focus: str
 

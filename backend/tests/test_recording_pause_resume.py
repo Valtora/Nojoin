@@ -17,7 +17,10 @@ from sqlalchemy.pool import StaticPool
 from backend.api import deps
 from backend.api.deps import get_db
 from backend.api.v1.api import api_router
-from backend.tests.sqlite_schemas import RECORDING_AUDIO_CHUNK_CURSORS_SCHEMA
+from backend.tests.sqlite_schemas import (
+    RECORDING_AUDIO_CHUNK_CURSORS_SCHEMA,
+    TIMELINE_NOTES_SCHEMA,
+)
 
 TRUSTED_ORIGIN = "https://nojoin.example.com"
 BASE_URL = TRUSTED_ORIGIN
@@ -61,7 +64,6 @@ CREATE TABLE transcripts (
     text TEXT,
     segments JSON,
     notes TEXT,
-    user_notes TEXT,
     meeting_edge_focus TEXT,
     meeting_edge_payload JSON,
     meeting_edge_status VARCHAR(32) NOT NULL DEFAULT 'idle',
@@ -315,13 +317,13 @@ async def insert_recording(
                 """
                 INSERT INTO transcripts (
                     id, created_at, updated_at, recording_id, text, segments, notes,
-                    user_notes, meeting_edge_focus, meeting_edge_payload,
+                    meeting_edge_focus, meeting_edge_payload,
                     meeting_edge_status, meeting_edge_error_message,
                     meeting_edge_source_signature, speaker_name_suggestions,
                     notes_status, transcript_status, error_message
                 ) VALUES (
                     :id, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, :recording_id,
-                    NULL, NULL, NULL, NULL, NULL, NULL, 'idle', NULL, NULL,
+                    NULL, NULL, NULL, NULL, NULL, 'idle', NULL, NULL,
                     NULL, 'pending', 'processing', NULL
                 )
                 """
@@ -352,6 +354,7 @@ async def test_session_maker() -> sessionmaker:
         await connection.execute(text(CHAT_MESSAGES_SCHEMA))
         await connection.execute(text(DOCUMENTS_SCHEMA))
         await connection.execute(text(CONTEXT_CHUNKS_SCHEMA))
+        await connection.execute(text(TIMELINE_NOTES_SCHEMA))
 
     try:
         yield session_maker

@@ -183,7 +183,7 @@ class OpenAILLMBackend(LLMBackend):
                 finish_reason = chunk.choices[0].finish_reason or finish_reason
             raise_if_output_truncated("OpenAI", finish_reason)
             text = "".join(text_chunks)
-            notes = self.finalise_meeting_notes(self.parse_notes(text), user_notes)
+            notes = self.finalise_meeting_notes(self.parse_notes(text))
             return notes
         except TruncatedNotesError:
             raise

@@ -123,9 +123,10 @@ def test_ollama_writes_the_notes_in_parts_within_its_window():
     )
 
     assert notes.startswith("## Summary\nAll of it.")
-    assert "Bring the budget" in notes
     drafts = fake.drafts()
     assert len(drafts) >= 2
+    # The user's notes section reaches every part, not only the first.
+    assert all("Bring the budget" in d["messages"][-1]["content"] for d in drafts)
     # Every part fitted first time: the measured cost left room for answers.
     assert len(fake.chat_payloads) == 1 + len(drafts) + 1
     for payload in fake.chat_payloads[1:]:

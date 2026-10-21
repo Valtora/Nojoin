@@ -77,7 +77,6 @@ vi.mock("@/lib/api", () => ({
   updateSpeakerColor: vi.fn(),
   generateNotes: (...args: unknown[]) => generateNotes(...args),
   updateNotes: vi.fn(),
-  updateUserNotes: vi.fn(),
   updateMeetingEdgeFocus: vi.fn(),
   exportContent: vi.fn(),
   exportAudio: (...args: unknown[]) => exportAudio(...args),

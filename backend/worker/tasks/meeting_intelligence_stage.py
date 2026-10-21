@@ -6,9 +6,13 @@ so the constants.py shim wrappers keep resolving the ``*_impl`` functions here v
 the ``backend.worker.tasks`` package namespace with no call-site changes.
 """
 
+import dataclasses
 import logging
 
+from backend.services.timeline_note_service import RecordingTimelineNotes
 from backend.utils.context_window import ContextWindowExceededError
+from backend.utils.meeting_notes import append_user_notes_section
+from backend.utils.timeline_notes import render_timeline_for_llm
 from backend.worker.tasks.constants import *  # noqa: F401,F403 -- shared task surface
 
 logger = logging.getLogger(__name__)
@@ -22,11 +26,12 @@ def _build_automatic_meeting_intelligence_transcript_impl(
     segments: Sequence[dict],
     speaker_map: dict[str, str],
     unresolved_speakers: Sequence[str],
+    timeline_notes: RecordingTimelineNotes,
 ) -> str:
+    """The transcript for the unified prompt, with the body notes on their own lines."""
     unresolved_labels = set(unresolved_speakers)
-    lines: list[str] = []
 
-    for seg in segments:
+    def format_line(seg: dict) -> str:
         speaker_label = str(seg.get("speaker", "Unknown"))
         display_name = (
             speaker_label
@@ -48,13 +53,24 @@ def _build_automatic_meeting_intelligence_transcript_impl(
             f" (with {', '.join(overlapping_names)})" if overlapping_names else ""
         )
         text = str(seg.get("text", "")).strip()
-        lines.append(
+        return (
             f"[{_format_recording_timestamp(seg.get('start', 0))} - "
             f"{_format_recording_timestamp(seg.get('end', seg.get('start', 0)))}] "
             f"{display_name}{overlapping_suffix}: {text}"
         )
 
-    return "\n".join(lines)
+    segment_list = list(segments)
+    if not segment_list:
+        # No transcript: notes alone are no meeting to summarise, so the stage
+        # still sees an empty transcript and skips the model.
+        return ""
+    return render_timeline_for_llm(
+        segment_list,
+        timeline_notes.place(segment_list),
+        format_segment=format_line,
+        author_names=timeline_notes.author_names,
+        format_time=lambda ms: _format_recording_timestamp(ms / 1000),
+    )
 
 
 def _apply_automatic_meeting_intelligence_result(
@@ -159,6 +175,7 @@ def _run_automatic_meeting_intelligence_stage_impl(
     llm_config: ResolvedLLMConfig,
     prefer_short_titles: bool,
     device_suffix: str,
+    timeline_notes: RecordingTimelineNotes,
     detected_transcription_language: str | None = None,
     update_processing_status: bool = True,
 ) -> AutomaticMeetingIntelligenceResult | None:
@@ -253,7 +270,7 @@ def _run_automatic_meeting_intelligence_stage_impl(
     request = AutomaticMeetingIntelligenceRequest(
         resolved_transcript=cleaned_transcript,
         unresolved_speakers=tuple(unresolved_speakers),
-        user_notes=transcript.user_notes,
+        user_notes=timeline_notes.user_notes_context(),
         prefer_short_titles=prefer_short_titles,
         meeting_context=meeting_context,
         output_language_instruction=language_preferences.notes_language_instruction,
@@ -305,6 +322,12 @@ def _run_automatic_meeting_intelligence_stage_impl(
                 overflow=overflow,
                 timeout=AUTOMATIC_MEETING_INTELLIGENCE_TIMEOUT_SECONDS,
             )
+        result = dataclasses.replace(
+            result,
+            notes_markdown=append_user_notes_section(
+                result.notes_markdown, timeline_notes.appendix_lines()
+            ),
+        )
         _apply_automatic_meeting_intelligence_result(
             session,
             recording,

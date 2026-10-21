@@ -36,6 +36,7 @@ from backend.models import (
     speaker,
     tag,
     task,
+    timeline_note,
     transcript,
     user,
 )
@@ -59,6 +60,7 @@ __all__ = [
     "speaker",
     "tag",
     "task",
+    "timeline_note",
     "transcript",
     "user",
 ]

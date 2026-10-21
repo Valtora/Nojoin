@@ -327,12 +327,93 @@ export interface MeetingEdgePayload {
   source_last_end?: number;
 }
 
+/**
+ * A note's kind fixes its shape: a `point` note has `anchor_ms`; a `selection`
+ * note quotes `quoted_text` over `start_ms`..`end_ms`; `head` and `tail` notes
+ * sit before and after the whole transcript and carry no time.
+ */
+export type TimelineNoteKind = "point" | "selection" | "head" | "tail";
+
+export interface TimelineNoteAuthor {
+  id: number;
+  username: string;
+}
+
+/** A user's note on a recording, anchored in ms on its audio timeline. */
+export interface TimelineNote {
+  id: string;
+  recording_id: RecordingId;
+  kind: TimelineNoteKind;
+  body: string;
+  anchor_ms?: number | null;
+  start_ms?: number | null;
+  end_ms?: number | null;
+  quoted_text?: string | null;
+  /** null once the author's account is gone. */
+  created_by?: TimelineNoteAuthor | null;
+  /** Bumped on every edit; an edit names the revision it was made against. */
+  revision: number;
+  /** The `write_token` of the write that made this revision, if it named one. */
+  last_write_token?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TimelineNoteCreate {
+  /** Chosen by the client, so a retried create returns the first note. */
+  id?: string;
+  /** Chosen by the client; kept on the note, and on its tombstone once deleted. */
+  write_token?: string;
+  kind: TimelineNoteKind;
+  body: string;
+  anchor_ms?: number;
+  start_ms?: number;
+  end_ms?: number;
+  quoted_text?: string;
+}
+
+export interface TimelineNoteUpdate {
+  expected_revision: number;
+  write_token?: string;
+  body?: string;
+  /** Point notes only. */
+  anchor_ms?: number;
+}
+
+/**
+ * The `code`s of a refused note write, `TimelineNoteErrorCode` in
+ * `timeline_note_public.py`; both are pinned by
+ * `backend/tests/fixtures/timeline_note_error_codes.json`.
+ */
+export const TIMELINE_NOTE_ERROR_CODES = [
+  "recording_not_found",
+  "note_not_found",
+  "note_deleted_by_you",
+  "note_deleted_elsewhere",
+  "revision_conflict",
+  "note_id_in_use",
+  "note_not_movable",
+] as const;
+
+export type TimelineNoteErrorCode = (typeof TIMELINE_NOTE_ERROR_CODES)[number];
+
+/** The detail of a refused note write. */
+export interface TimelineNoteErrorDetail {
+  code: TimelineNoteErrorCode;
+  message: string;
+}
+
+/** The 409 detail of a write made against a stale revision. */
+export interface TimelineNoteConflictDetail extends TimelineNoteErrorDetail {
+  code: "revision_conflict";
+  note: TimelineNote;
+}
+
 export interface Transcript extends BaseDBModel {
   recording_id: RecordingId;
   text?: string;
   segments: TranscriptSegment[];
   notes?: string;
-  user_notes?: string | null;
   meeting_edge_focus?: string | null;
   meeting_edge_payload?: MeetingEdgePayload | null;
   meeting_edge_status?: string;
@@ -416,6 +497,14 @@ export interface Recording extends Omit<BaseDBModel, "id"> {
    * understated rather than invented.
    */
   captured_audio_seconds?: number | null;
+  /**
+   * Where capture is now on the audio timeline, in ms: the end of the last
+   * transcoded segment, run on by the time since it arrived (at most 2.5 s)
+   * while recording. Present only while capture is open.
+   */
+  live_audio_ms?: number | null;
+  /** Every note on the recording, in timeline order. Detail endpoint only. */
+  timeline_notes?: TimelineNote[] | null;
   is_archived: boolean;
   is_deleted: boolean;
   transcript?: Transcript;

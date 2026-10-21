@@ -10,6 +10,7 @@ from sqlalchemy import create_engine, text
 from sqlmodel import Session
 
 import backend.worker.tasks as tasks_module
+from backend.tests.sqlite_schemas import TIMELINE_NOTES_SCHEMA
 from backend.utils.context_window import ContextWindowExceededError
 
 BASE_SCHEMA = """
@@ -79,7 +80,6 @@ CREATE TABLE transcripts (
     text TEXT,
     segments JSON NOT NULL,
     notes TEXT,
-    user_notes TEXT,
     meeting_edge_focus TEXT,
     meeting_edge_payload JSON,
     meeting_edge_status VARCHAR NOT NULL DEFAULT 'idle',
@@ -141,7 +141,8 @@ CREATE TABLE context_chunks (
     meta JSON,
     embedding_version INTEGER
 );
-"""
+
+""" + TIMELINE_NOTES_SCHEMA.strip().rstrip(";")
 
 
 def _utc_now_naive() -> datetime:
@@ -205,17 +206,36 @@ def _create_notes_task_database(
                 """
                 INSERT INTO transcripts (
                     id, created_at, updated_at, recording_id, text, segments,
-                    notes, user_notes, notes_status, transcript_status,
-                    error_message
+                    notes, notes_status, transcript_status, error_message
                 ) VALUES (
                     1, :now, :now, 1, 'SPEAKER_00: Hello team.',
-                    :segments, 'Existing notes', 'Remember the launch date',
-                    'pending', 'completed', 'Previous failure'
+                    :segments, 'Existing notes', 'pending', 'completed',
+                    'Previous failure'
                 )
                 """
             ),
             {"now": now, "segments": json.dumps(segments)},
         )
+        for note_id, kind, body, anchor_ms in (
+            (1, "head", "Remember the launch date", None),
+            (2, "point", "Ask about QA", 1_000),
+        ):
+            connection.execute(
+                text(
+                    "INSERT INTO timeline_notes (id, created_at, updated_at, "
+                    "public_id, recording_id, created_by_user_id, kind, body, "
+                    "anchor_ms, revision) VALUES (:id, :now, :now, :public_id, 1, "
+                    "1, :kind, :body, :anchor_ms, 1)"
+                ),
+                {
+                    "id": note_id,
+                    "now": now,
+                    "public_id": f"note-{note_id}",
+                    "kind": kind,
+                    "body": body,
+                    "anchor_ms": anchor_ms,
+                },
+            )
 
     return engine
 
@@ -297,7 +317,12 @@ def test_generate_notes_task_completes_with_saved_provider_config(
                 )
             ).one()
 
-        assert row[0] == "# Meeting Notes\n\n## Summary\nGenerated notes."
+        # The user's own notes follow the generated ones, in timeline order.
+        assert row[0] == (
+            "# Meeting Notes\n\n## Summary\nGenerated notes.\n\n## User Notes\n"
+            "- [User] Remember the launch date\n"
+            "- [User] 00:01 Ask about QA"
+        )
         assert row[1] == "completed"
         assert row[2] is None
         assert row[3] == "Completed"
@@ -307,7 +332,14 @@ def test_generate_notes_task_completes_with_saved_provider_config(
         assert primary_call["api_key"] == "sk-ant-valid"
         assert primary_call["model"] == "claude-test"
         assert captured["timeout"] == 300
-        assert captured["user_notes"] == "Remember the launch date"
+        # The point note sits in the transcript after the line in progress;
+        # the head note is in the notes section beside it.
+        assert captured["transcript"].splitlines() == [
+            "[00:00 - 00:01] SPEAKER_00: Hello team.",
+            "[Note — owner]: Ask about QA",
+        ]
+        assert "Remember the launch date" in captured["user_notes"]
+        assert "Ask about QA" not in captured["user_notes"]
         assert "English" in captured["output_language_instruction"]
     finally:
         verification_engine.dispose()
@@ -421,10 +453,11 @@ def test_generate_notes_task_writes_a_meeting_too_long_for_one_call_in_parts(
                 )
             ).one()
 
-        assert row == ("## Summary\nCombined notes.", "completed")
+        assert row[0].startswith("## Summary\nCombined notes.\n\n## User Notes\n")
+        assert row[1] == "completed"
         assert captured["overflow"] is refusal
         assert captured["timeout"] == 300
-        assert captured["user_notes"] == "Remember the launch date"
+        assert "Remember the launch date" in captured["user_notes"]
     finally:
         verification_engine.dispose()
 
@@ -531,7 +564,7 @@ def test_generate_notes_task_uses_canonical_segments_when_projection_is_empty(
                 text("SELECT notes, notes_status FROM transcripts WHERE id = 1")
             ).one()
 
-        assert row[0] == "# Canonical Notes"
+        assert row[0].startswith("# Canonical Notes\n\n## User Notes\n")
         assert row[1] == "completed"
         assert "Canonical hello." in captured["transcript"]
         assert "Canonical follow up." in captured["transcript"]

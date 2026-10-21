@@ -233,7 +233,7 @@ def _claim_unique_public_id(ctx: "_RowContext") -> None:
 
     new_pid = str(uuid4())
     logger.warning(
-        f"public_id collision for restored recording "
+        f"public_id collision for restored {ctx.table_name} row "
         f"(value={ctx.item_data['public_id']!r}); regenerating to {new_pid}."
     )
     ctx.item_data["public_id"] = new_pid

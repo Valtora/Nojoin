@@ -898,4 +898,4 @@ def generate_meeting_intelligence_in_parts(
         require_section_heading=not request.uses_custom_notes_sections,
     )
     result.validate_for_request(request)
-    return finalise_automatic_meeting_intelligence_result(result, request.user_notes)
+    return finalise_automatic_meeting_intelligence_result(result)

@@ -534,12 +534,23 @@ async def get_transcript_utterances(
 async def get_meeting_notes(recording_id: str) -> dict[str, Any]:
     """Get the AI-generated meeting notes and the user's own notes.
 
+    ``timeline_notes`` are the user's notes in timeline order. ``kind`` is
+    "head" (about the whole meeting, before the transcript), "point" (written
+    at one moment), "selection" (about the words in ``quoted_text``) or "tail"
+    (added after the transcript, as append_meeting_notes does). ``at_ms`` and
+    ``at`` (MM:SS) give the moment in the recording for point and selection
+    notes, and are null for the others.
+
     Args:
         recording_id: The recording's string id from list_recordings.
     """
     from backend.api.v1.endpoints.transcripts.helpers import _get_owned_recording
     from backend.core.db import async_session_maker
     from backend.models.transcript import Transcript
+    from backend.services.timeline_note_service import (
+        load_recording_timeline_notes_async,
+    )
+    from backend.utils.timeline_notes import format_timeline_ms, note_author_name
 
     user = get_current_mcp_user()
     async with async_session_maker() as db:
@@ -548,12 +559,28 @@ async def get_meeting_notes(recording_id: str) -> dict[str, Any]:
             select(Transcript).where(Transcript.recording_id == recording.id)
         )
         transcript = result.scalar_one_or_none()
+        timeline_notes = await load_recording_timeline_notes_async(db, recording.id)
 
     return {
         "recording_id": recording_id,
         "name": recording.name,
         "notes": transcript.notes if transcript else None,
-        "user_notes": transcript.user_notes if transcript else None,
+        "timeline_notes": [
+            {
+                "id": placement.note.public_id,
+                "kind": placement.note.kind,
+                "at_ms": placement.at_ms,
+                "at": (
+                    format_timeline_ms(placement.at_ms)
+                    if placement.at_ms is not None
+                    else None
+                ),
+                "body": placement.note.body,
+                "quoted_text": placement.note.quoted_text,
+                "author": note_author_name(placement.note, timeline_notes.author_names),
+            }
+            for placement in timeline_notes.in_timeline_order()
+        ],
     }
 
 
@@ -658,40 +685,59 @@ async def get_documents(recording_id: str) -> list[dict[str, Any]]:
 
 @mcp_tool(scope=MCP_WRITE_SCOPE)
 async def append_meeting_notes(recording_id: str, text: str) -> dict[str, Any]:
-    """Append text to a recording's user notes.
+    """Append a note to a recording's user notes.
 
-    Adds to the user-authored notes only; the AI-generated meeting notes are
-    never modified. The text is appended after the existing user notes, so
-    earlier content is preserved. Requires the mcp:write scope.
+    Adds a "tail" note after the transcript, one per call, so earlier notes
+    are never changed; the AI-generated meeting notes are never modified.
+    Requires the mcp:write scope.
 
     Args:
         recording_id: The recording's string id from list_recordings.
         text: The note text to append.
     """
-    from backend.api.v1.endpoints.transcripts.helpers import UserNotesUpdate
-    from backend.api.v1.endpoints.transcripts.routes_notes import (
-        get_user_notes,
-        update_user_notes,
+    from fastapi import HTTPException, Response
+
+    from backend.api.v1.endpoints.transcripts.routes_timeline_notes import (
+        create_timeline_note,
     )
     from backend.core.db import async_session_maker
+    from backend.models.timeline_note import TimelineNoteKind
+    from backend.models.timeline_note_public import (
+        TIMELINE_NOTE_BODY_MAX_CHARS,
+        TimelineNoteCreate,
+    )
 
     user = get_current_mcp_user()
     _require_write_scope("note editing")
     addition = text.strip()
     if not addition:
         raise ToolError("text must not be empty.")
+    if len(addition) > TIMELINE_NOTE_BODY_MAX_CHARS:
+        raise ToolError(
+            f"text must be at most {TIMELINE_NOTE_BODY_MAX_CHARS} characters."
+        )
 
     async with async_session_maker() as db:
-        current = await get_user_notes(recording_id, db=db, current_user=user)
-        existing = (current.get("user_notes") or "").rstrip()
-        combined = f"{existing}\n\n{addition}" if existing else addition
-        saved = await update_user_notes(
-            recording_id,
-            UserNotesUpdate(user_notes=combined),
-            db=db,
-            current_user=user,
-        )
-    return {"recording_id": recording_id, "user_notes": saved.get("user_notes")}
+        try:
+            note = await create_timeline_note(
+                recording_id,
+                TimelineNoteCreate(kind=TimelineNoteKind.TAIL, body=addition),
+                Response(),
+                db=db,
+                current_user=user,
+            )
+        except HTTPException as error:
+            # The route refuses with {code, message}; the assistant gets the
+            # message, not the status and the dict.
+            detail = error.detail
+            message = detail.get("message") if isinstance(detail, dict) else None
+            raise ToolError(
+                message if isinstance(message, str) else str(detail)
+            ) from error
+    return {
+        "recording_id": recording_id,
+        "note": {"id": note.id, "kind": note.kind.value, "body": note.body},
+    }
 
 
 class NormaliseMcpMountPathMiddleware:

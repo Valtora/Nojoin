@@ -1,0 +1,9 @@
+[
+  "recording_not_found",
+  "note_not_found",
+  "note_deleted_by_you",
+  "note_deleted_elsewhere",
+  "revision_conflict",
+  "note_id_in_use",
+  "note_not_movable"
+]

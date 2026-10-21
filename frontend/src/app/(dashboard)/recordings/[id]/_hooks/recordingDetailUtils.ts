@@ -81,6 +81,13 @@ const meetingEdgeSignature = (recording: Recording) =>
     payload: recording.transcript?.meeting_edge_payload ?? null,
   });
 
+// A note's revision is bumped on every edit, so id and revision say whether
+// anything about the notes changed.
+const timelineNotesSignature = (recording: Recording) =>
+  (recording.timeline_notes ?? [])
+    .map((note) => `${note.id}:${note.revision}`)
+    .join(",");
+
 /** Whether a polled copy of the recording differs in anything the page shows. */
 export const hasPolledRecordingChanged = (current: Recording, polled: Recording) =>
   polled.status !== current.status ||
@@ -95,7 +102,7 @@ export const hasPolledRecordingChanged = (current: Recording, polled: Recording)
   polled.has_audio !== current.has_audio ||
   polled.transcript?.notes_status !== current.transcript?.notes_status ||
   polled.transcript?.notes !== current.transcript?.notes ||
-  polled.transcript?.user_notes !== current.transcript?.user_notes ||
+  timelineNotesSignature(polled) !== timelineNotesSignature(current) ||
   meetingEdgeSignature(polled) !== meetingEdgeSignature(current) ||
   JSON.stringify(polled.speakers) !== JSON.stringify(current.speakers);
 

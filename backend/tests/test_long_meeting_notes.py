@@ -117,6 +117,20 @@ def test_each_part_knows_the_time_it_starts_and_ends():
     assert (second.start, second.end) == ("65:30", "66:10")
 
 
+def test_a_note_stays_in_the_part_of_the_utterance_it_follows():
+    lines = _transcript(10).splitlines()
+    note = ("[Note — mira]: " + "This is the figure we argued about. " * 10).strip()
+    # After the sixth utterance, where a cut by size alone would fall before it.
+    lines.insert(6, note)
+    parts = split_transcript("\n".join(lines), 1_000_000)
+
+    assert len(parts) == 2
+    assert parts[0].text.splitlines()[-2:] == [lines[5], note]
+    assert parts[1].text.splitlines()[0] == lines[7]
+    # The note carries no time, so the part still ends where its last line does.
+    assert parts[0].end == "05:59"
+
+
 def test_an_utterance_too_long_for_a_part_is_cut_between_sentences():
     sentences = " ".join(f"Sentence {n} has a few more words in it." for n in range(60))
     parts = split_transcript(f"[00:00 - 09:00] Ana: {sentences}", 600)
@@ -351,8 +365,9 @@ def test_the_automatic_pipeline_gets_agreed_names_a_title_and_notes():
         "## Summary\nAna Lima and SPEAKER_02 agreed."
     )
     assert "<speaker_names>" not in result.notes_markdown
-    assert "Bring the budget" in result.notes_markdown
     drafts = model.drafts()
+    # The user's notes section reaches every part, not only the first.
+    assert all("Bring the budget" in p for p in drafts)
     assert all("exactly as the transcript does" in p for p in drafts)
     assert all("<speaker_names>" in p for p in drafts)
     # The drafts' name blocks do not reach the combining calls.

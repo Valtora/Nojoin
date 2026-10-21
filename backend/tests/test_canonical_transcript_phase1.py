@@ -16,6 +16,7 @@ from backend.api.deps import get_current_user, get_db
 from backend.api.v1.api import api_router
 from backend.models.pipeline import ProcessingRunKind, TranscriptUtteranceState
 from backend.models.transcript import Transcript
+from backend.tests.sqlite_schemas import TIMELINE_NOTES_SCHEMA
 from backend.utils.canonical_pipeline import (
     list_pending_startup_cutover_recording_ids,
     process_startup_cutover_recording,
@@ -60,7 +61,6 @@ CREATE TABLE transcripts (
     text TEXT,
     segments JSON,
     notes TEXT,
-    user_notes TEXT,
     meeting_edge_focus TEXT,
     meeting_edge_payload JSON,
     meeting_edge_status VARCHAR(32) NOT NULL DEFAULT 'idle',
@@ -387,6 +387,7 @@ async def test_session_maker() -> sessionmaker:
         await connection.execute(text(RECORDING_SPEAKER_ALIASES_SCHEMA))
         await connection.execute(text(SPEAKER_CORRECTION_EVENTS_SCHEMA))
         await connection.execute(text(PEOPLE_TAGS_SCHEMA))
+        await connection.execute(text(TIMELINE_NOTES_SCHEMA))
 
     try:
         yield session_maker
@@ -456,11 +457,10 @@ async def _seed_processed_recording(
                 """
                 INSERT INTO transcripts (
                     id, created_at, updated_at, recording_id, text, segments,
-                    notes, user_notes, meeting_edge_status, notes_status,
-                    transcript_status
+                    notes, meeting_edge_status, notes_status, transcript_status
                 ) VALUES (
                     :recording_id, :now, :now, :recording_id, 'hello there', :segments,
-                    NULL, NULL, 'idle', 'pending', 'completed'
+                    NULL, 'idle', 'pending', 'completed'
                 )
                 """
             ),
@@ -526,11 +526,10 @@ async def _seed_uploading_recording(
                 """
                 INSERT INTO transcripts (
                     id, created_at, updated_at, recording_id, text, segments,
-                    notes, user_notes, meeting_edge_status, notes_status,
-                    transcript_status
+                    notes, meeting_edge_status, notes_status, transcript_status
                 ) VALUES (
                     1, :now, :now, 1, '', '[]',
-                    NULL, NULL, 'idle', 'pending', 'processing'
+                    NULL, 'idle', 'pending', 'processing'
                 )
                 """
             ),
@@ -4123,11 +4122,10 @@ async def _seed_recording_with_stale_windows(session_maker: sessionmaker) -> Non
                 """
                 INSERT INTO transcripts (
                     id, created_at, updated_at, recording_id, text, segments,
-                    notes, user_notes, meeting_edge_status, notes_status,
-                    transcript_status
+                    notes, meeting_edge_status, notes_status, transcript_status
                 ) VALUES (
                     1, :now, :now, 1, '', :segments,
-                    NULL, NULL, 'idle', 'pending', 'completed'
+                    NULL, 'idle', 'pending', 'completed'
                 )
                 """
             ),
@@ -4588,8 +4586,9 @@ async def test_speaker_rename_leaves_user_notes_alone(
 ) -> None:
     """Only the generated notes are rewritten.
 
-    user_notes is the user's own writing; editing that without being asked is
-    a different act from updating text a model produced.
+    The timeline notes, and the ``## User Notes`` section that quotes them at
+    the end of the generated notes, are the user's own writing; editing those
+    without being asked is a different act from updating text a model produced.
     """
     from backend.utils.canonical_pipeline.notes_propagation import (
         propagate_speaker_rename_to_notes,
@@ -4599,14 +4598,21 @@ async def test_speaker_rename_leaves_user_notes_alone(
 
     async with test_session_maker() as session:
         await session.execute(
-            text(
-                "UPDATE transcripts SET notes = :notes, user_notes = :user_notes "
-                "WHERE recording_id = 1"
-            ),
+            text("UPDATE transcripts SET notes = :notes WHERE recording_id = 1"),
             {
-                "notes": "SPEAKER_00 presented.",
-                "user_notes": "Ask SPEAKER_00 about the timeline.",
+                "notes": (
+                    "SPEAKER_00 presented.\n\n## User Notes\n"
+                    "- [User] Ask SPEAKER_00 about the timeline."
+                ),
             },
+        )
+        await session.execute(
+            text(
+                "INSERT INTO timeline_notes (id, created_at, updated_at, public_id, "
+                "recording_id, kind, body, revision) VALUES (1, :now, :now, 'n-1', "
+                "1, 'head', 'Ask SPEAKER_00 about the timeline.', 1)"
+            ),
+            {"now": "2026-05-19 00:00:00"},
         )
         await session.commit()
 
@@ -4622,14 +4628,19 @@ async def test_speaker_rename_leaves_user_notes_alone(
         await session.commit()
 
     async with test_session_maker() as session:
-        row = (
+        notes = (
             await session.execute(
-                text("SELECT notes, user_notes FROM transcripts WHERE recording_id = 1")
+                text("SELECT notes FROM transcripts WHERE recording_id = 1")
             )
-        ).one()
+        ).scalar_one()
+        note_body = (
+            await session.execute(text("SELECT body FROM timeline_notes WHERE id = 1"))
+        ).scalar_one()
 
-    assert row[0] == "Dana presented."
-    assert row[1] == "Ask SPEAKER_00 about the timeline."
+    assert notes == (
+        "Dana presented.\n\n## User Notes\n- [User] Ask SPEAKER_00 about the timeline."
+    )
+    assert note_body == "Ask SPEAKER_00 about the timeline."
 
 
 # --- undoing an automatic merge ---------------------------------------------

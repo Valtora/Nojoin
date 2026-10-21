@@ -67,7 +67,6 @@ class _FakeTranscript:
         self.text = None
         self.segments = None
         self.notes = None
-        self.user_notes = None
         self.transcript_status = "pending"
         self.notes_status = "pending"
         self.error_message = None
