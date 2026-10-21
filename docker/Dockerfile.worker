@@ -105,10 +105,6 @@ RUN apt-get update && \
     tesseract-ocr \
     tesseract-ocr-eng \
     && \
-    # The worker runs Celery and never invokes uv; remove the base image's uv
-    # binaries so their bundled rustls-webpki (GHSA-82j2-j2ch-gfr8) is absent
-    # from the published runtime image.
-    rm -f /usr/local/bin/uv /usr/local/bin/uvx && \
     rm -rf /var/lib/apt/lists/*
 
 # The PyTorch base ships a system Python with vulnerable pillow/urllib3 in
@@ -121,13 +117,24 @@ RUN apt-get update && \
 # urllib3==2.8.0 closes CVE-2026-44431/44432 and CVE-2026-97687/97689;
 # fsspec==2026.9.0 keeps the CVE-2026-104851 fix.
 #
-# Then remove that system pip. The worker never runs it (the venv has its own),
-# and from 26.2 it ships an SBOM of its vendored urllib3, msgpack and setuptools,
-# whose fixable HIGH CVEs the image scan reports like installed packages.
+# certifi is the exception: no requirements file pins it, and the venv has no
+# copy of its own, so this system copy is the CA bundle the worker verifies TLS
+# with. It takes the newest release at build time, as the api image's venv
+# does; the floor keeps the GHSA-6q48-6c7w-9gw2 fix (#531).
+#
+# Then uninstall uv and remove that system pip. The worker runs Celery and never
+# invokes uv: uninstalling it with pip removes the uv and uvx binaries, whose
+# bundled rustls-webpki (GHSA-82j2-j2ch-gfr8) the scan flags, together with the
+# package metadata the scan reports for GHSA-hq85-5cpj-mr62 (#531). The worker
+# never runs the system pip either (the venv has its own), and from 26.2 it ships
+# an SBOM of its vendored urllib3, msgpack and setuptools, whose fixable HIGH
+# CVEs the image scan reports like installed packages.
 RUN /usr/bin/python3 -m pip install --no-cache-dir --break-system-packages \
-    --root-user-action=ignore --upgrade pillow==13.0.0 urllib3==2.8.0 fsspec==2026.9.0 && \
+    --root-user-action=ignore --upgrade pillow==13.0.0 urllib3==2.8.0 fsspec==2026.9.0 \
+    "certifi>=2026.10.19" && \
     /usr/bin/python3 -m pip uninstall -y --break-system-packages \
-    --root-user-action=ignore pip
+    --root-user-action=ignore uv pip && \
+    ! test -e /usr/local/bin/uv && ! test -e /usr/local/bin/uvx
 
 # Put the CUDA wheel libraries on the dynamic loader path. Despite the `cudnn9` tag,
 # this base ships CUDA and cuDNN only as nvidia-* wheels under dist-packages,
