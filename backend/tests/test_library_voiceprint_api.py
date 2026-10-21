@@ -1907,46 +1907,54 @@ async def test_a_split_that_removes_what_the_guard_refused_rebuilds_the_person(
     ["speakers/SPEAKER_00/voiceprint/extract", "voiceprints/extract-all"],
 )
 @pytest.mark.parametrize(
-    # The voiceprint extracted, and the people SPEAKER_00 is refused for after.
+    # Linked to, refused for before, the voiceprint extracted, refused for after.
     "case",
     [
-        pytest.param((_at_cosine(0.1), (7,)), id="stranger"),
-        pytest.param((_at_cosine(0.9), ()), id="like-dana"),
+        pytest.param((7, 7, _at_cosine(0.1), (7,)), id="stranger-stays-refused"),
+        pytest.param((7, 7, _at_cosine(0.9), ()), id="like-dana-let-back-in"),
+        pytest.param((7, None, _at_cosine(0.1), (7,)), id="stranger-gains-refusal"),
+        pytest.param((7, (7, 8), _at_cosine(0.9), (8,)), id="eli-refusal-stays"),
+        pytest.param((None, 7, _at_cosine(0.1), (7,)), id="unlinked-keeps-refusal"),
     ],
 )
-async def test_extracting_a_refused_speakers_voiceprint_again_judges_it(
+async def test_an_extracted_voiceprint_is_judged_against_the_speakers_person(
     client, session_maker, extraction, endpoint, case
 ) -> None:
-    """SPEAKER_00 was refused for Dana, and its voiceprint has been deleted
-    since (extract-all extracts only speakers who have none).
+    """SPEAKER_00 has no voiceprint (extract-all extracts only speakers who
+    have none), perhaps deleted since the guard refused it.
 
-    Extracting one again, with no link applied after it, gives the speaker a
-    voiceprint no one offered to Dana, so the guard judges it against her. A
-    stranger's stays refused, and a rebuild of Dana from her links leaves it
-    out; her own voice is let back in, and the rebuild uses it.
+    Extracting one, with no link applied after it, gives the speaker a
+    voiceprint no one offered to its person, so the guard judges it against
+    them. A stranger's is refused, and a rebuild of Dana from her links leaves
+    it out; her own voice is let back in, and the rebuild uses it. A refusal
+    for anyone else stays, and with no person there is no verdict.
     """
-    extracted_voiceprint, refused_after = case
+    linked, refused_before, extracted_voiceprint, refused_after = case
     await _seed(
         session_maker,
         speakers=[
             {
                 "label": "SPEAKER_00",
-                "global_speaker_id": 7,
+                "global_speaker_id": linked,
                 "embedding": None,
-                "refused_for": 7,
+                "refused_for": refused_before,
             }
         ],
-        people=[{"id": 7, "name": "Dana", "embedding": PERSON}],
+        people=[
+            {"id": 7, "name": "Dana", "embedding": PERSON},
+            {"id": 8, "name": "Eli", "embedding": ELI},
+        ],
     )
     extraction.append({"embedding": extracted_voiceprint, "speech_seconds": 30.0})
 
     extracted = await client.post(f"/api/v1/speakers/recordings/{REC}/{endpoint}")
-    await _rebuild_person(session_maker, 7)
 
     assert extracted.status_code == 200
     assert await _refused_for(session_maker) == {"SPEAKER_00": refused_after}
-    dana = PERSON if refused_after else extracted_voiceprint
-    assert await _person_voiceprint(session_maker, "Dana") == pytest.approx(dana)
+    if linked == 7:
+        await _rebuild_person(session_maker, 7)
+        dana = PERSON if 7 in refused_after else extracted_voiceprint
+        assert await _person_voiceprint(session_maker, "Dana") == pytest.approx(dana)
 
 
 @pytest.mark.anyio
