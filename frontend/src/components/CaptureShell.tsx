@@ -9,6 +9,7 @@ import { getErrorMessage } from "@/lib/errors";
 import { useNotificationStore } from "@/lib/notificationStore";
 
 import ResumeRecordingModal from "./ResumeRecordingModal";
+import SessionSignInDialog from "./SessionSignInDialog";
 
 interface CaptureShellProps {
   children: React.ReactNode;
@@ -111,6 +112,7 @@ export default function CaptureShell({ children }: CaptureShellProps) {
         onCancel={handleCancel}
         onStop={handleStop}
       />
+      <SessionSignInDialog />
     </>
   );
 }

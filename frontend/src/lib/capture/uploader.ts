@@ -1,5 +1,6 @@
 import type { RecordingId } from "@/types";
 import { uploadRecordingSegment } from "@/lib/api";
+import { waitForSignInAfter } from "@/lib/session";
 
 import type { SegmentStore, StoredSegment } from "./segmentStore";
 import type { UploadQueueSize } from "./shared";
@@ -40,6 +41,12 @@ export interface SegmentUploaderOptions {
   onQueueChange?: (size: UploadQueueSize) => void;
   /** Where queued segments survive a closed tab. Omitted, the queue is memory only. */
   store?: SegmentStore;
+  /**
+   * Resolves true once a failed upload can be sent again because the user has
+   * signed back in, or false when the failure is an ordinary one. Defaults to
+   * the browser session's.
+   */
+  waitForSignIn?: (error: unknown) => Promise<boolean>;
   retryDelaysMs?: number[];
   wait?: (ms: number) => Promise<void>;
   now?: () => number;
@@ -68,6 +75,8 @@ export class SegmentUploader {
 
   private readonly retryDelaysMs: number[];
 
+  private readonly waitForSignIn: (error: unknown) => Promise<boolean>;
+
   private readonly wait: (ms: number) => Promise<void>;
 
   private readonly now: () => number;
@@ -92,6 +101,7 @@ export class SegmentUploader {
     this.onQueueChange = options.onQueueChange;
     this.store = options.store;
     this.retryDelaysMs = options.retryDelaysMs ?? DEFAULT_RETRY_DELAYS_MS;
+    this.waitForSignIn = options.waitForSignIn ?? waitForSignInAfter;
     this.wait = options.wait ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
     this.now = options.now ?? (() => Date.now());
     this.nextExpectedSequence = options.initialSequence ?? 0;
@@ -314,15 +324,25 @@ export class SegmentUploader {
   }
 
   private async uploadWithRetry(sequence: number, segment: QueuedSegment) {
-    let lastError: Error | null = null;
+    let attempt = 0;
 
-    for (let attempt = 0; attempt <= this.retryDelaysMs.length; attempt += 1) {
+    for (;;) {
       try {
         await this.uploadSegmentFn(this.recordingId, sequence, segment.blob);
         return;
 
-            } catch (error: unknown) {
-        lastError =
+      } catch (error: unknown) {
+        // A failure while the session is unusable is not a failed attempt. The
+        // segment, and every one recorded after it, waits for the user to sign
+        // back in, however long that takes, rather than stalling the capture.
+        if (await this.waitForSignIn(error)) {
+          if (this.closed) {
+            throw new Error("The browser uploader was closed while waiting for sign-in.");
+          }
+          continue;
+        }
+
+        const lastError =
           error instanceof Error
             ? error
             : new Error("The browser uploader failed to send a recording segment.");
@@ -336,6 +356,7 @@ export class SegmentUploader {
         }
 
         await this.wait(this.retryDelaysMs[attempt]);
+        attempt += 1;
       }
     }
   }

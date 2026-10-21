@@ -89,6 +89,15 @@ const timelineNotesSignature = (recording: Recording) =>
     .join(",");
 
 /** Whether a polled copy of the recording differs in anything the page shows. */
+/**
+ * Whether a failed poll means the recording is gone. A 404 does, except while
+ * this tab's session cannot be used: tabs share the session cookie, so after a
+ * sign-in as another account in another tab, a recording that still exists is
+ * refused as a 404 until its owner signs back in (issue #502).
+ */
+export const pollFailureMeansRemoved = (status: number | null, sessionUsable: boolean) =>
+  sessionUsable && status === 404;
+
 export const hasPolledRecordingChanged = (current: Recording, polled: Recording) =>
   polled.status !== current.status ||
   polled.client_status !== current.client_status ||

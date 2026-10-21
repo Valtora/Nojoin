@@ -1,4 +1,12 @@
-import { describe, expect, it, vi } from "vitest";
+import { AxiosError } from "axios";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import {
+  holdSignInInPlace,
+  noteSessionRefusal,
+  noteSignedIn,
+  resetSessionForTests,
+} from "@/lib/session";
 
 import { MemorySegmentStore, type StoredSegment } from "./segmentStore";
 import { createSegmentUploader } from "./uploader";
@@ -304,5 +312,114 @@ describe("capture uploader with a segment store", () => {
     await uploader.waitForIdle();
     expect(sizes.at(-1)).toEqual({ segments: 0, seconds: 0 });
     expect(sizes).toContainEqual({ segments: 2, seconds: 2.75 });
+  });
+});
+
+describe("capture uploader when the session ends", () => {
+  beforeEach(() => {
+    resetSessionForTests();
+  });
+
+  afterEach(() => {
+    resetSessionForTests();
+  });
+
+  const sessionEnded = () => {
+    const error = new AxiosError("Request failed with status code 401");
+    Object.assign(error, { response: { status: 401, data: { detail: "Not authenticated" } } });
+    return error;
+  };
+
+  it("holds every segment until the user signs back in, without stalling", async () => {
+    noteSignedIn({ username: "alice", force_password_change: false });
+    holdSignInInPlace(true);
+
+    let signedIn = true;
+    const uploaded: number[] = [];
+    const onStalled = vi.fn(async () => {});
+    const wait = vi.fn(async () => {});
+    const uploadSegment = vi.fn(async (_id: string, sequence: number) => {
+      if (!signedIn) {
+        // What the API client's interceptor does with the refusal.
+        const error = sessionEnded();
+        noteSessionRefusal(error);
+        throw error;
+      }
+      uploaded.push(sequence);
+      return accepted(sequence);
+    });
+    const uploader = createSegmentUploader({
+      recordingId: "rec-1",
+      uploadSegment: uploadSegment as never,
+      wait,
+      retryDelaysMs: [10, 20],
+      onStalled,
+    });
+
+    uploader.enqueue(0, new Blob(["a"]), 2);
+    await uploader.waitForIdle();
+    signedIn = false;
+
+    // Recording carries on while the session is gone; the audio queues.
+    uploader.enqueue(1, new Blob(["b"]), 2);
+    uploader.enqueue(2, new Blob(["c"]), 2);
+    uploader.enqueue(3, new Blob(["d"]), 2);
+    await vi.waitFor(() => expect(uploadSegment).toHaveBeenCalledTimes(2));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(uploadSegment).toHaveBeenCalledTimes(2);
+    expect(uploader.pendingAudioSeconds()).toBe(6);
+    expect(onStalled).not.toHaveBeenCalled();
+    expect(wait).not.toHaveBeenCalled();
+
+    signedIn = true;
+    noteSignedIn({ username: "alice", force_password_change: false });
+    await uploader.waitForIdle();
+
+    expect(uploaded).toEqual([0, 1, 2, 3]);
+    expect(onStalled).not.toHaveBeenCalled();
+  });
+
+  it("treats a refusal as an ordinary failure when nothing holds sign-in in place", async () => {
+    const onStalled = vi.fn(async () => {});
+    const uploader = createSegmentUploader({
+      recordingId: "rec-1",
+      uploadSegment: vi.fn(async () => {
+        throw sessionEnded();
+      }) as never,
+      wait: vi.fn(async () => {}),
+      retryDelaysMs: [10],
+      onStalled,
+    });
+
+    uploader.enqueue(0, new Blob(["a"]), 2);
+
+    await expect(uploader.waitForIdle()).rejects.toMatchObject({
+      response: { status: 401 },
+    });
+    expect(onStalled).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops waiting once disposed", async () => {
+    let release = () => {};
+    const uploadSegment = vi.fn(async () => {
+      throw sessionEnded();
+    });
+    const uploader = createSegmentUploader({
+      recordingId: "rec-1",
+      uploadSegment: uploadSegment as never,
+      waitForSignIn: () =>
+        new Promise<boolean>((resolve) => {
+          release = () => resolve(true);
+        }),
+    });
+
+    uploader.enqueue(0, new Blob(["a"]), 2);
+    await vi.waitFor(() => expect(uploadSegment).toHaveBeenCalledTimes(1));
+    uploader.dispose();
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(uploadSegment).toHaveBeenCalledTimes(1);
   });
 });
