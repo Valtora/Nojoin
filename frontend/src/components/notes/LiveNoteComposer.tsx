@@ -33,6 +33,8 @@ import {
 import { formatTimelineMs } from "@/lib/notes/placement";
 import { useKeyboardInset } from "@/lib/useKeyboardInset";
 
+import IconButton from "../ui/IconButton";
+
 export type { NoteInsertMode };
 
 export const MODE_LABELS: Record<NoteInsertMode, string> = {
@@ -245,15 +247,16 @@ export default function LiveNoteComposer({
           placeholder="Add a note…"
           className="density-surface-panel max-h-[160px] min-h-[44px] w-full min-w-0 flex-1 resize-none overflow-y-auto border border-control-border bg-control-bg px-3 py-2.5 text-sm leading-5 text-contrast-muted outline-none transition focus:border-action focus:ring-2 focus:ring-action @min-[54rem]:max-h-[80px]"
         />
-        <button
+        <IconButton
           type="submit"
+          variant="primary"
           aria-label="Add note"
           title="Add note (Enter)"
           disabled={isBlank(draft.text)}
-          className="inline-flex h-[44px] w-[44px] shrink-0 items-center justify-center rounded-lg bg-action text-action-on transition-colors hover:bg-action-hover disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          <SendHorizontal className="h-5 w-5" aria-hidden="true" />
-        </button>
+          icon={<SendHorizontal aria-hidden="true" />}
+          // 44 px in every density, level with the box beside it.
+          className="h-[44px] w-[44px]"
+        />
       </div>
       <p
         id={hintId}

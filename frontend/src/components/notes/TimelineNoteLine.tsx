@@ -5,6 +5,10 @@ import { StickyNote } from "lucide-react";
 
 import { noteSnippet } from "@/lib/notes/noteOutbox";
 
+import Button from "../ui/Button";
+
+import { NOTE_BUTTON_TOUCH } from "./noteButtons";
+
 interface TimelineNoteLineProps {
   noteId: string;
   body: string;
@@ -18,9 +22,6 @@ interface TimelineNoteLineProps {
   /** Width of the time column, matching the transcript it sits in. */
   timeColumnClassName?: string;
 }
-
-const ACTION_BUTTON =
-  "inline-flex min-h-8 items-center rounded-lg border border-control-border bg-surface-card px-3 text-xs font-semibold text-contrast-muted transition-colors hover:border-action-border hover:text-action-text pointer-coarse:min-h-[44px]";
 
 /**
  * A note in the transcript, on its own line after the line it follows. The
@@ -72,27 +73,27 @@ export default function TimelineNoteLine({
         {status === "failed" && (onRetry || onDiscard) ? (
           <div className="mt-1.5 flex flex-wrap items-center gap-2">
             {onRetry ? (
-              <button
-                type="button"
+              <Button
+                size="sm"
                 aria-label={`Retry note ${name}`}
                 onClick={() => {
                   lineRef.current?.focus();
                   onRetry();
                 }}
-                className={ACTION_BUTTON}
+                className={NOTE_BUTTON_TOUCH}
               >
                 Retry
-              </button>
+              </Button>
             ) : null}
             {onDiscard ? (
-              <button
-                type="button"
+              <Button
+                size="sm"
                 aria-label={`Discard note ${name}`}
                 onClick={onDiscard}
-                className={ACTION_BUTTON}
+                className={NOTE_BUTTON_TOUCH}
               >
                 Discard
-              </button>
+              </Button>
             ) : null}
           </div>
         ) : null}

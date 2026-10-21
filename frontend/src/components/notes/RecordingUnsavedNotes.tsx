@@ -14,6 +14,9 @@ import { formatTimelineMs } from "@/lib/notes/placement";
 import { useNoteOutbox } from "@/lib/notes/useNoteOutbox";
 import type { RecordingId } from "@/types";
 
+import Button from "../ui/Button";
+
+import { NOTE_BUTTON_TOUCH } from "./noteButtons";
 import UnsavedNotesList from "./UnsavedNotesList";
 
 interface RecordingUnsavedNotesProps {
@@ -26,9 +29,6 @@ interface RecordingUnsavedNotesProps {
   onEmptied?: () => void;
   className?: string;
 }
-
-const BUTTON =
-  "inline-flex min-h-8 items-center rounded-lg border border-control-border bg-surface-card px-3 text-xs font-semibold text-contrast-muted transition-colors hover:border-action-border hover:text-action-text pointer-coarse:min-h-[44px]";
 
 const draftPlace = (draft: ComposerDraft) => {
   switch (draft.mode) {
@@ -122,26 +122,26 @@ export default function RecordingUnsavedNotes({
                   <p className="mt-1 text-xs text-status-danger-fg">{draftError}</p>
                 ) : null}
                 <div className="mt-1.5 flex flex-wrap gap-2">
-                  <button
-                    type="button"
+                  <Button
+                    size="sm"
                     aria-label={`Add note “${noteSnippet(draft.text)}”`}
                     onClick={sendDraft}
-                    className={BUTTON}
+                    className={NOTE_BUTTON_TOUCH}
                   >
                     Add note
-                  </button>
-                  <button
-                    type="button"
+                  </Button>
+                  <Button
+                    size="sm"
                     aria-label={`Discard unsent note “${noteSnippet(draft.text)}”`}
                     onClick={() => {
                       clearDraft();
                       setDraftError(null);
                       focusAfterDraft();
                     }}
-                    className={BUTTON}
+                    className={NOTE_BUTTON_TOUCH}
                   >
                     Discard
-                  </button>
+                  </Button>
                 </div>
               </div>
             ) : null}

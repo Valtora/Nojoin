@@ -4,6 +4,10 @@ import { useRef } from "react";
 
 import { notePlace, noteSnippet, type OutboxEntry } from "@/lib/notes/noteOutbox";
 
+import Button from "../ui/Button";
+
+import { NOTE_BUTTON_TOUCH } from "./noteButtons";
+
 interface UnsavedNotesListProps {
   entries: readonly OutboxEntry[];
   onRetry: (key: string) => void;
@@ -11,9 +15,6 @@ interface UnsavedNotesListProps {
   /** Where focus goes when Discard removes the last note listed. */
   onEmptied?: () => void;
 }
-
-const BUTTON =
-  "inline-flex min-h-8 items-center rounded-lg border border-control-border bg-surface-card px-3 text-xs font-semibold text-contrast-muted transition-colors hover:border-action-border hover:text-action-text pointer-coarse:min-h-[44px]";
 
 const capitalised = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
@@ -65,25 +66,25 @@ export default function UnsavedNotesList({
               <>
                 <p className="mt-1 text-xs text-status-danger-fg">{entry.error ?? "Not saved."}</p>
                 <div className="mt-1.5 flex flex-wrap gap-2">
-                  <button
-                    type="button"
+                  <Button
+                    size="sm"
                     aria-label={`Retry note ${name}`}
                     onClick={() => {
                       items.current.get(entry.key)?.focus();
                       onRetry(entry.key);
                     }}
-                    className={BUTTON}
+                    className={NOTE_BUTTON_TOUCH}
                   >
                     Retry
-                  </button>
-                  <button
-                    type="button"
+                  </Button>
+                  <Button
+                    size="sm"
                     aria-label={`Discard note ${name}`}
                     onClick={() => discard(index)}
-                    className={BUTTON}
+                    className={NOTE_BUTTON_TOUCH}
                   >
                     Discard
-                  </button>
+                  </Button>
                 </div>
               </>
             )}
