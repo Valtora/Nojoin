@@ -602,6 +602,7 @@ x-shared-app-environment: &shared-app-environment
   # directory. Setting it on one service only breaks the download.
   BACKUP_EXPORT_DIR: ${BACKUP_EXPORT_DIR:-}
   NOJOIN_UMASK: ${NOJOIN_UMASK:-}
+  NOJOIN_STORAGE_HYGIENE: ${NOJOIN_STORAGE_HYGIENE:-}
   # Left empty: config_manager reads an empty value as gemini, and the setup
   # wizard can only report that no provider was chosen if the variable reaches
   # it empty.

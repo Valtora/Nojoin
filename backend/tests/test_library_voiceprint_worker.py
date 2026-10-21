@@ -36,6 +36,7 @@ from backend.tests.sqlite_schemas import (
 )
 
 PERSON = [1.0, 0.0]
+ELI = [0.0, 1.0]
 
 
 def _at_cosine(cosine: float) -> list[float]:
@@ -619,13 +620,13 @@ def test_the_pipeline_records_the_speech_behind_each_voiceprint(session) -> None
     assert seconds == {"SPEAKER_01": 31.0, "SPEAKER_02": 24.0, "SPEAKER_03": 4.0}
 
 
-def test_reprocessing_drops_the_refusal_of_the_voiceprint_it_replaces(session) -> None:
+def test_a_run_lifts_the_refusal_of_a_speaker_that_now_matches(session) -> None:
     """A run that re-extracts a speaker gives it this run's voiceprint.
 
-    The guard refused the old one for person 7; the new one has not been
-    judged, so its refusal goes. Folding a confident match into the person
-    changes no speaker's voiceprint, so another speaker's refusal for them
-    stays.
+    The guard refused the old one for person 7; the new one matches them, so
+    judged against them it passes and the refusal goes. Folding a confident
+    match into the person changes no other speaker's voiceprint, so another
+    speaker's refusal for them stays.
     """
     from backend.worker.tasks.speaker_assignment import (
         _LabelWork,
@@ -672,3 +673,94 @@ def test_reprocessing_drops_the_refusal_of_the_voiceprint_it_replaces(session) -
     assert session.get(GlobalSpeaker, 7).embedding == pytest.approx(
         _blend(PERSON, new_voiceprint, 0.1)
     )
+
+
+@pytest.mark.parametrize(
+    # Speaker 2 linked to, refused for before, the run's person, its voiceprint,
+    # refused for after, linked to after.
+    "case",
+    [
+        pytest.param(
+            (7, (7,), None, _at_cosine(0.15), [7], 7), id="stranger-stays-refused"
+        ),
+        pytest.param(
+            (7, (), None, _at_cosine(0.1), [7], 7), id="stranger-gains-refusal"
+        ),
+        pytest.param(
+            (7, (7, 8), None, _at_cosine(0.95), [8], 7), id="eli-refusal-stays"
+        ),
+        pytest.param(
+            (None, (7,), None, _at_cosine(0.1), [7], None), id="unlinked-keeps-refusal"
+        ),
+        pytest.param((7, (8,), 8, ELI, [], 8), id="moved-to-eli-judged-for-eli"),
+        pytest.param(
+            (7, (8,), None, _at_cosine(0.1), [7, 8], 7), id="refusal-keeps-elis"
+        ),
+        pytest.param((7, (7,), None, None, [7], 7), id="no-new-voiceprint-no-verdict"),
+    ],
+)
+def test_a_run_judges_the_new_voiceprint_of_a_speaker_already_there(
+    session, case
+) -> None:
+    """Speaker 2 already exists when the run's assign stage stores it, as one
+    named during capture does, and gets this run's voiceprint.
+
+    The guard judges it against the person the speaker ends up linked to: a
+    stranger's is refused, so person 7's rebuild from links leaves it out. A
+    refusal for anyone else stays, an unlinked speaker gets no verdict, and a
+    speaker the run moves to person 8 is judged for them, not person 7. Its
+    old voiceprint now sounds like person 7, but a run that extracts no new
+    one keeps it unjudged, so its refusal stays.
+    """
+    from backend.worker.tasks.speaker_assignment import (
+        _LabelWork,
+        _persist_speaker,
+        _ResolvedIdentity,
+    )
+    from backend.worker.tasks.voiceprint_rebuild import _rebuild_global_speaker
+
+    linked, refused_before, run_person, voiceprint, refused_after, linked_after = case
+    _add_person(session, 7, PERSON)
+    _add_person(session, 8, ELI)
+    _add_speaker(session, 1, PERSON, 30.0)
+    _add_speaker(session, 2, _at_cosine(0.95), 30.0)
+    session.execute(text("UPDATE recording_speakers SET global_speaker_id = 7"))
+    session.execute(
+        text("UPDATE recording_speakers SET global_speaker_id = :p WHERE id = 2"),
+        {"p": linked},
+    )
+    for person_id in refused_before:
+        session.execute(
+            text(
+                "INSERT INTO recording_speaker_drift_refusals "
+                "(recording_speaker_id, global_speaker_id) VALUES (2, :p)"
+            ),
+            {"p": person_id},
+        )
+    session.commit()
+
+    _persist_speaker(
+        session,
+        _LabelWork(
+            recording=session.get(Recording, 1),
+            label="SPEAKER_02",
+            identity=_ResolvedIdentity(name="Speaker 2", global_speaker_id=run_person),
+            embedding=voiceprint,
+            speech_seconds=30.0,
+            existing_speaker=session.get(RecordingSpeaker, 2),
+        ),
+    )
+    session.commit()
+
+    refused = session.execute(
+        text(
+            "SELECT global_speaker_id FROM recording_speaker_drift_refusals "
+            "WHERE recording_speaker_id = 2 ORDER BY global_speaker_id"
+        )
+    ).scalars()
+    assert list(refused) == refused_after
+    assert session.get(RecordingSpeaker, 2).global_speaker_id == linked_after
+    if linked_after == 7 and 7 in refused_after:
+        _rebuild_global_speaker(session, session.get(GlobalSpeaker, 7), 2)
+        session.commit()
+        assert session.get(GlobalSpeaker, 7).embedding == pytest.approx(PERSON)

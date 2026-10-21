@@ -248,7 +248,8 @@ def _restore_cleanup_staging(state: "_RestoreState") -> None:
     """Delete the staging directory.
 
     Whatever is left in it belongs to rows the restore did not insert, so this is the
-    whole of orphan cleanup: there is no sweep over live directories to get wrong.
+    restore's whole orphan cleanup. Storage hygiene is the guarded backstop for live
+    directories (backend/utils/storage_hygiene.py).
     """
     state.report("Cleaning up...")
     staging_dir = state.staging_dir
