@@ -50,6 +50,10 @@ updates:
       # 2.x pin cannot resolve in the worker. Remove when fastembed allows 2.x.
       - dependency-name: "huggingface-hub"
         versions: [">=2.0.0"]
+      # fastembed 0.9.0 also declares pillow<13.0, so a 13.x pin cannot resolve
+      # in the worker. Remove when fastembed allows 13.x.
+      - dependency-name: "pillow"
+        versions: [">=13.0.0"]
 
   # --- Frontend npm dependencies ---
   - package-ecosystem: npm

@@ -5,6 +5,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { getCurrentUser } from '@/lib/api';
 import { getErrorMessage, getErrorStatus } from '@/lib/errors';
 import { passwordChangePath } from '@/lib/passwordChangeReturn';
+import { isSessionEndedError, useSessionStore } from '@/lib/session';
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -27,6 +28,12 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
 
             } catch (e: unknown) {
         currentUser = null;
+        // A running capture keeps the page through a refused session, and the
+        // capture's sign-in dialog asks for the password instead. Sending the
+        // router to /login would unmount the capture with the dashboard.
+        if (isSessionEndedError(e) && useSessionStore.getState().heldInPlace) {
+          return;
+        }
         if (
           !publicPaths.some(p => pathname?.startsWith(p)) &&
           !isNeutralPath &&

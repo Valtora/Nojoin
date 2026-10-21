@@ -20,6 +20,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import pytest
+
 from backend.utils.config_manager import ENV_OVERRIDES
 from backend.utils.stall_watchdog import (
     ENABLED_ENV,
@@ -31,6 +33,8 @@ from backend.utils.stall_watchdog import (
 REPO_ROOT = Path(__file__).resolve().parents[2]
 COMPOSE_PATH = REPO_ROOT / "docker-compose.example.yml"
 ENV_EXAMPLE_PATH = REPO_ROOT / ".env.example"
+# The source-build stack in DEVELOPMENT.md, which copies the shared anchor.
+DEVELOPMENT_DOC_PATH = REPO_ROOT / "docs" / "DEVELOPMENT.md"
 
 # The anchor every service running application code merges in. It is the only
 # placement that guarantees the API and all four worker lanes agree, which these
@@ -125,6 +129,23 @@ def _env_example_keys(text: str) -> set[str]:
     return keys
 
 
+def _compose_dotenv_values(text: str) -> dict[str, str]:
+    """Read unquoted ``.env`` values the way Docker Compose does.
+
+    Compose trims the space after the equals sign before it looks for an
+    inline comment, and it strips a comment only where `` #`` follows a value.
+    ``KEY= # note`` therefore reaches the containers as ``# note``.
+    """
+    values: dict[str, str] = {}
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, raw = stripped.split("=", 1)
+        values[key.strip()] = raw.lstrip().split(" #", 1)[0].rstrip()
+    return values
+
+
 def test_shared_anchor_is_parsed_at_all() -> None:
     """Guard the parser itself: a silent miss would pass every other test."""
     keys = _shared_anchor_env_keys(COMPOSE_PATH.read_text(encoding="utf-8"))
@@ -178,6 +199,43 @@ def test_every_env_example_setting_reaches_compose() -> None:
         f"{missing} are offered in .env.example but docker-compose.example.yml "
         "never references them, so setting them changes nothing."
     )
+
+
+@pytest.mark.parametrize(
+    "template", [COMPOSE_PATH, DEVELOPMENT_DOC_PATH], ids=lambda path: path.name
+)
+def test_llm_provider_reaches_the_containers_empty(template: Path) -> None:
+    """The setup wizard reads LLM_PROVIDER itself to tell an operator who chose
+    gemini from one who chose nothing. A compose default of gemini made every
+    install look like the first, so with no key the wizard said the server's
+    .env selected Gemini instead of saying no provider was configured (#477).
+    config_manager supplies gemini for the empty value."""
+    declarations = re.findall(
+        r"^\s+LLM_PROVIDER:\s*(.+?)\s*$",
+        template.read_text(encoding="utf-8"),
+        re.MULTILINE,
+    )
+    assert declarations, f"{template.name} does not declare LLM_PROVIDER"
+    assert set(declarations) == {"${LLM_PROVIDER:-}"}
+
+
+def test_compose_dotenv_reader_keeps_a_comment_after_an_empty_value() -> None:
+    """Guard the reader. Docker Compose 2.40 renders these three lines the
+    same way: the comment is the value when nothing precedes it."""
+    assert _compose_dotenv_values("A= # note\nB=x # note\nC=\n") == {
+        "A": "# note",
+        "B": "x",
+        "C": "",
+    }
+
+
+def test_env_example_leaves_llm_provider_empty() -> None:
+    """.env.example is what an operator copies, so its LLM_PROVIDER line is
+    what setting no provider means in practice. Compose read the inline comment
+    that used to follow it as the value, so the wizard reported that .env
+    selected "#One of: gemini, openai, anthropic, ollama"."""
+    values = _compose_dotenv_values(ENV_EXAMPLE_PATH.read_text(encoding="utf-8"))
+    assert values["LLM_PROVIDER"] == ""
 
 
 def test_blank_defaults_are_parsed_at_all() -> None:

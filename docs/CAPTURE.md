@@ -51,7 +51,7 @@ Brave may need its shields or site settings relaxed before it shows capture prom
 
 - **Pause** stops capturing and keeps everything recorded so far.
 - **Resume** continues the same recording. After a pause in the live controls it carries on with the same shared tab and microphone. After the tab was closed or reloaded, the browser asks you to share again.
-- **Stop** uploads any audio still queued, releases the microphone and shared tab, and queues the recording for processing. While queued audio uploads, the controls read **Uploading** and show how much is left, and the meeting button names the current stage. Stop also works on a paused recording, including one whose tab was closed.
+- **Stop** releases the microphone and shared tab, uploads any audio still queued, and queues the recording for processing. While queued audio uploads, the controls read **Uploading** and show how much is left, and the meeting button names the current stage. Stop also works on a paused recording, including one whose tab was closed.
 - **Discard** permanently deletes an unfinished recording, whether it is recording, paused, queued or processing: its audio, any attached documents, any processing under way and the meeting itself. Nojoin asks you to confirm first. Discard is in the live controls, the floating recording badge, the resume-or-discard dialog and the recordings list's context menu (**Discard Recording**).
 
 Selecting the browser's own **Stop sharing** button, or closing its sharing indicator, stops and saves the recording with everything captured so far, and Nojoin tells you it did.
@@ -63,6 +63,16 @@ Switching tabs or windows, using another application or moving between Nojoin pa
 Closing or reloading the Nojoin tab pauses the recording. Audio the server already has stays there, and audio recorded but not yet uploaded is kept in this browser's storage for the Nojoin site. Only the unfinished last segment, under two seconds, is lost. Next time you open Nojoin, it asks you to resume, stop and process, or discard; resuming or stopping in the same browser uploads the kept audio first.
 
 If the tab was lost before any audio reached the server, Nojoin discards the empty recording and tells you to start again. The usual cause is a server upgrade while the tab was open: the first page change after **Start Meeting** reloads the app. Select **Start Meeting** again.
+
+### Signing In Again During A Recording
+
+A sign-in lasts 12 hours. If it ends while you record, because it expired or because you signed out in another tab, Nojoin keeps recording and asks for your password in a dialog on the same page. Going to the sign-in page would reload the tab and end the capture. Uploads wait meanwhile and the audio is kept in this browser. Once you sign in, it uploads and the recording carries on with no gap.
+
+Sign in as the account that started the recording. Signing in from another tab works as well: the recording tab notices within 15 seconds, or as soon as you return to it. While the browser is signed in as another account, the recording waits for its own account. If an administrator has reset your password, choose a new one in another tab, then sign in with it.
+
+**Stop recording** in the dialog, or the browser's **Stop sharing** button, stops capturing and releases the microphone and shared tab at once. The rest of the audio uploads, and the recording is processed, after you sign in. Pause and discard need you to sign in first.
+
+Keep the tab open until you have signed in. A tab closed or reloaded while signed out cannot pause the recording, so it stays in progress, and the audio it had not uploaded stays in this browser. After you sign in again in the same browser, **Start Meeting** reports that a recording is still in progress. Open that recording and select **Stop** to upload the kept audio and process it.
 
 ### Background Tabs And Sleep
 
@@ -166,7 +176,7 @@ No browser API lets a page opt out of Memory Saver or read whether it is on, so 
 
 When more than 30 seconds of audio is waiting to upload, the controls say how far behind uploads are. The audio is kept in this browser and sent as the connection allows. Keep the tab open, though nothing is lost if it closes and you return in the same browser.
 
-If a segment keeps failing to upload for about 15 seconds, Nojoin pauses the recording and shows the error. The queued audio is kept, and resuming or stopping uploads it first.
+If a segment keeps failing to upload for about 15 seconds, Nojoin pauses the recording and shows the error. The queued audio is kept, and resuming or stopping uploads it first. An ended sign-in is the exception: recording carries on and uploads wait for you to sign in again ([Signing In Again During A Recording](#signing-in-again-during-a-recording)).
 
 ### Stop did not finish
 

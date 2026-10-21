@@ -37,6 +37,7 @@ import {
   TranscriptSpeakerAssignment,
 } from "@/types";
 import { useNotificationStore } from "@/lib/notificationStore";
+import { useSessionStore } from "@/lib/session";
 import { libraryVoiceprintNotices } from "@/lib/libraryVoiceprint";
 import { useNavigationStore } from "@/lib/store";
 import {
@@ -71,6 +72,7 @@ import {
   hasPolledRecordingChanged,
   isAudioUnavailable,
   isRecordingInFlight,
+  pollFailureMeansRemoved,
   recordingPollIntervalMs,
   shouldPollRecordingUpdates,
   type TranscriptHistoryItem,
@@ -444,7 +446,12 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
 
             } catch (e: unknown) {
         console.error("Polling failed", e);
-        if (getErrorStatus(e) === 404) {
+        if (
+          pollFailureMeansRemoved(
+            getErrorStatus(e),
+            !useSessionStore.getState().signInRequired,
+          )
+        ) {
           addNotification({
             type: "info",
             message: "Recording was discarded or deleted.",

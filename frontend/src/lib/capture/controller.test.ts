@@ -1,6 +1,13 @@
 import { AxiosError } from "axios";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import {
+  noteSessionRefusal,
+  noteSignedIn,
+  resetSessionForTests,
+  useSessionStore,
+} from "@/lib/session";
+
 import { CaptureController } from "./controller";
 import { PickSourceError } from "./pickSource";
 import { createBrowserRecorder } from "./recorder";
@@ -777,10 +784,11 @@ describe("capture controller", () => {
 
     await controller.stop();
 
+    // The media goes before the upload, which can take minutes.
     expect(stages).toEqual([
       "stopping-recorder",
-      "flushing-uploads",
       "releasing-media",
+      "flushing-uploads",
       "finalizing",
     ]);
     expect(controller.getState().stopStage).toBeNull();
@@ -1283,5 +1291,142 @@ describe("audio a closed tab recorded but never uploaded", () => {
     await controller.cancel("rec-1");
 
     expect(await storedSequences(controller)).toEqual([]);
+  });
+});
+
+describe("a capture whose session ends", () => {
+  const microphoneSources = () => ({
+    mode: "microphone_only",
+    displayStream: null,
+    microphoneStream: {} as MediaStream,
+    captureReport: {
+      mode: "microphone_only",
+      requested_microphone_device_id: null,
+      requested_microphone_label: null,
+      available_microphones: [],
+      browser_microphone_track: null,
+      browser_display_audio_track: null,
+      browser_display_video_track: null,
+      shared_audio_available: false,
+      notes: [],
+    },
+    release: vi.fn(),
+  });
+
+  /** A 401 as the API client hands it on, after its interceptor has seen it. */
+  const sessionEnded = () => {
+    const error = new AxiosError("Request failed with status code 401");
+    Object.assign(error, { response: { status: 401, data: { detail: "Not authenticated" } } });
+    noteSessionRefusal(error);
+    return error;
+  };
+
+  const signBackIn = () => noteSignedIn({ username: "alice", force_password_change: false });
+
+  let sources = microphoneSources();
+
+  const startCapture = async () => {
+    sources = microphoneSources();
+    pickSourceMocks.pickCaptureSource.mockResolvedValue(sources);
+    apiMocks.initRecording.mockResolvedValue({ id: "rec-1", name: "Test meeting" });
+    const controller = new CaptureController();
+    await controller.start("Test meeting");
+    return controller;
+  };
+
+  beforeEach(() => {
+    resetSessionForTests();
+    signBackIn();
+    apiMocks.initRecording.mockReset();
+    apiMocks.finalizeRecordingCapture.mockReset();
+    apiMocks.pauseRecordingCapture.mockReset();
+    apiMocks.getPausedRecordings.mockResolvedValue([]);
+    apiMocks.reportRecordingCaptureSources.mockResolvedValue(undefined);
+    pickSourceMocks.pickCaptureSource.mockReset();
+  });
+
+  afterEach(() => {
+    resetSessionForTests();
+  });
+
+  it("holds sign-in in place from start until the recording is finalized", async () => {
+    apiMocks.finalizeRecordingCapture.mockResolvedValue({ id: "rec-1", status: "QUEUED" });
+    expect(useSessionStore.getState().heldInPlace).toBe(false);
+
+    const controller = await startCapture();
+    expect(useSessionStore.getState().heldInPlace).toBe(true);
+
+    await controller.stop();
+    expect(useSessionStore.getState().heldInPlace).toBe(false);
+  });
+
+  it("finishes a stop once the user signs back in", async () => {
+    apiMocks.finalizeRecordingCapture
+      .mockImplementationOnce(async () => {
+        throw sessionEnded();
+      })
+      .mockResolvedValue({ id: "rec-1", status: "QUEUED" });
+    const controller = await startCapture();
+
+    const stopped = controller.stop();
+    await vi.waitFor(() => expect(apiMocks.finalizeRecordingCapture).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    // Still stopping, and still held, rather than failed back to paused.
+    expect(controller.getState().status).toBe("finalizing");
+    expect(useSessionStore.getState().heldInPlace).toBe(true);
+
+    signBackIn();
+
+    await expect(stopped).resolves.toEqual({ id: "rec-1", status: "QUEUED" });
+    expect(apiMocks.finalizeRecordingCapture).toHaveBeenCalledTimes(2);
+    expect(controller.getState().status).toBe("idle");
+  });
+
+  it("lets go of the microphone and shared tab before the upload waits for sign-in", async () => {
+    apiMocks.finalizeRecordingCapture.mockResolvedValue({ id: "rec-1", status: "QUEUED" });
+    vi.mocked(createSegmentUploader).mockClear();
+    const controller = await startCapture();
+    const uploader = vi.mocked(createSegmentUploader).mock.results[0].value;
+    let uploadsDone = () => {};
+    // The queue waits for the user to sign back in, however long that takes.
+    vi.mocked(uploader.waitForIdle).mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          uploadsDone = resolve;
+        }),
+    );
+
+    const stopped = controller.stop();
+    await vi.waitFor(() => expect(controller.getState().stopStage).toBe("flushing-uploads"));
+
+    expect(sources.release).toHaveBeenCalledTimes(1);
+    expect(controller.getState().status).toBe("finalizing");
+    expect(apiMocks.finalizeRecordingCapture).not.toHaveBeenCalled();
+
+    uploadsDone();
+
+    await expect(stopped).resolves.toEqual({ id: "rec-1", status: "QUEUED" });
+  });
+
+  it("pauses on the server once the user signs back in", async () => {
+    apiMocks.pauseRecordingCapture
+      .mockImplementationOnce(async () => {
+        throw sessionEnded();
+      })
+      .mockResolvedValue({ recording_id: "rec-1", status: "PAUSED", last_sequence: 3 });
+    const controller = await startCapture();
+
+    const paused = controller.pause();
+    await vi.waitFor(() => expect(apiMocks.pauseRecordingCapture).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(controller.getState().status).toBe("recording");
+
+    signBackIn();
+    await paused;
+
+    expect(apiMocks.pauseRecordingCapture).toHaveBeenCalledTimes(2);
+    expect(controller.getState().status).toBe("paused");
+    expect(controller.getState().error).toBeNull();
   });
 });
