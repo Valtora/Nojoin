@@ -1,7 +1,8 @@
 """Helpers for managing JWT revocation state.
 
 Provides utilities to:
-- bump a user's ``token_version`` (kill-switch for all that user's revocable JWTs),
+- bump a user's ``token_version`` (kill-switch for all that user's revocable JWTs
+  and MCP connector grants),
 - record a single ``jti`` in the revoked JWT denylist (surgical revocation),
 - prune expired revoked JWT rows opportunistically.
 """
@@ -16,6 +17,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
+from backend.models.oauth import OAuthRefreshToken
 from backend.models.revoked_jwt import RevokedJwt
 from backend.models.user import User
 from backend.utils.time import utc_now
@@ -32,11 +34,24 @@ async def bump_user_token_version(
     """Increment ``user.token_version`` and return the new value.
 
     All previously issued revocable JWTs for this user become invalid because
-    their ``tv`` claim no longer matches.
+    their ``tv`` claim no longer matches. Every MCP connector grant of the
+    user is revoked as well: a refresh token is opaque and carries no ``tv``,
+    so without this a connector would refresh straight past the bump.
     """
     new_value = (user.token_version or 0) + 1
     await db.execute(
         update(User).where(User.id == user.id).values(token_version=new_value)
+    )
+    # After the users row, as refresh_access_token locks it before the token,
+    # so a refresh in flight either finishes first and has its new token
+    # revoked here, or waits and then finds its token revoked.
+    await db.execute(
+        update(OAuthRefreshToken)
+        .where(
+            OAuthRefreshToken.user_id == user.id,
+            OAuthRefreshToken.revoked_at.is_(None),  # type: ignore[union-attr]
+        )
+        .values(revoked_at=utc_now())
     )
     user.token_version = new_value
     if commit:

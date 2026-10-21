@@ -490,7 +490,8 @@ async def revoke_my_sessions(
     current_user: User = Depends(get_current_user),
 ) -> Any:
     """
-    Invalidate every existing session and API token for the current user.
+    Invalidate every existing session, API token and MCP connector grant for
+    the current user.
 
     The next request from any other browser, device, or API client will be
     rejected with 401 and the user will need to sign in again. The current
@@ -512,8 +513,9 @@ async def revoke_user_sessions(
     current_user: User = Depends(get_current_user),
 ) -> Any:
     """
-    Admin/Owner action to invalidate every session and API token for a target
-    user. Useful when an account is suspected of being compromised.
+    Admin/Owner action to invalidate every session, API token and MCP connector
+    grant for a target user. Useful when an account is suspected of being
+    compromised.
     """
     if (
         current_user.role not in [UserRole.ADMIN, UserRole.OWNER]
