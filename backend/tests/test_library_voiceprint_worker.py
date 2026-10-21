@@ -693,6 +693,10 @@ def test_a_run_lifts_the_refusal_of_a_speaker_that_now_matches(session) -> None:
             (None, (7,), None, _at_cosine(0.1), [7], None), id="unlinked-keeps-refusal"
         ),
         pytest.param((7, (8,), 8, ELI, [], 8), id="moved-to-eli-judged-for-eli"),
+        pytest.param(
+            (7, (8,), None, _at_cosine(0.1), [7, 8], 7), id="refusal-keeps-elis"
+        ),
+        pytest.param((7, (7,), None, None, [7], 7), id="no-new-voiceprint-no-verdict"),
     ],
 )
 def test_a_run_judges_the_new_voiceprint_of_a_speaker_already_there(
@@ -704,7 +708,9 @@ def test_a_run_judges_the_new_voiceprint_of_a_speaker_already_there(
     The guard judges it against the person the speaker ends up linked to: a
     stranger's is refused, so person 7's rebuild from links leaves it out. A
     refusal for anyone else stays, an unlinked speaker gets no verdict, and a
-    speaker the run moves to person 8 is judged for them, not person 7.
+    speaker the run moves to person 8 is judged for them, not person 7. Its
+    old voiceprint now sounds like person 7, but a run that extracts no new
+    one keeps it unjudged, so its refusal stays.
     """
     from backend.worker.tasks.speaker_assignment import (
         _LabelWork,
@@ -717,7 +723,7 @@ def test_a_run_judges_the_new_voiceprint_of_a_speaker_already_there(
     _add_person(session, 7, PERSON)
     _add_person(session, 8, ELI)
     _add_speaker(session, 1, PERSON, 30.0)
-    _add_speaker(session, 2, _at_cosine(0.1), 30.0)
+    _add_speaker(session, 2, _at_cosine(0.95), 30.0)
     session.execute(text("UPDATE recording_speakers SET global_speaker_id = 7"))
     session.execute(
         text("UPDATE recording_speakers SET global_speaker_id = :p WHERE id = 2"),
