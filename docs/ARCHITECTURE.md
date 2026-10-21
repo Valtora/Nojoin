@@ -74,7 +74,7 @@ Each document's original file is stored flat in the documents directory under a 
 - **Uploads racing a delete.** Deletes lock their recordings `FOR UPDATE` before reading the document paths. A document insert waits on the same lock, so an upload cannot commit a row the delete never read. The API's deletes take the locks in id order, and deleting a user locks the user row first. A restore in **Overwrite** mode does not: it locks the recordings it replaces before the user rows it inserts against, and locks one its pre-delete missed only on reaching it. A user deletion running alongside can then deadlock with it, and PostgreSQL aborts one of the two, which rolls back with no file removed. An upload writes its file before its row and removes it if the insert fails or is cancelled; an insert that lost the race answers 404.
 - **Containment.** Only paths inside the documents directory are unlinked. A legacy row pointing elsewhere keeps its file, and the path is logged.
 - **Parses.** A parse whose document is deleted stops at its next write. One that fails on a write is still marked `ERROR`, with a fixed message; the database's text goes only to the log.
-- **No sweep.** Nothing sweeps the documents directory for files without a row, so a process that dies between a commit and its unlink leaves the file for an operator.
+- **Sweep.** A file left without a row, as by a process that dies between a commit and its unlink, is reported daily and removed only when configured ([Storage Hygiene](#storage-hygiene)).
 
 ### Meeting Analytics
 
@@ -426,6 +426,17 @@ All three carry the user's `token_version` and are checked against the `revoked_
 - **`./data`**, mounted at `/app/data`, holds `config.json` (install-wide settings), `recordings/`, `documents/`, logs and the install id.
 - **Secrets.** Calendar OAuth client secrets and tokens, push-channel secrets and CLI OAuth credentials are encrypted with `DATA_ENCRYPTION_KEY` (`backend/core/encryption.py`).
 - **Backups** are built by `create_backup_task` on the CPU lane and restored by `restore_backup_task` on the IO lane (`backend/core/backup/`); see [BACKUP_RESTORE.md](BACKUP_RESTORE.md).
+
+### Storage Hygiene
+
+`backend/utils/storage_hygiene.py` finds the document, audio, proxy and partial-upload files that no row names. The daily `cleanup_temp_recordings` runs it last, and `python -m backend.storage_hygiene` runs it on demand ([DEPLOYMENT.md](DEPLOYMENT.md#storage-hygiene)).
+
+- **Flag by default.** The daily run removes nothing unless `NOJOIN_STORAGE_HYGIENE` is `delete`, and the CLI nothing without `--delete`. Rows whose file is missing are reported and never changed.
+- **Listing, then rows.** A run lists the documents directory and both recordings roots, `recordings_root_dir()` and `PathManager().recordings_directory`, before it reads `audio_path`, `proxy_path` and `documents.file_path` in one statement, soft-deleted rows included. A file written after the listing is never a candidate, and a row committed before the read keeps its file.
+- **Identity.** A file is referenced when a stored path resolves to its device and inode, as `document_file_identity` decides, so every spelling of a path counts, and one reference set serves every directory.
+- **Grace.** Nothing modified in the last 24 hours is removed, which covers a file whose row has not committed yet. Each file's inode and mtime are checked again right before its unlink.
+- **Scope.** Only regular files directly inside each directory. `temp/` and `failed/` belong to the existing 24-hour sweep, and dotfiles and symlinks are left alone.
+- **Circuit breaker.** Any of these makes a run report only: an empty `recordings` table while files exist; a directory that is the data directory, contains it, or holds `config.json`; more than half the stored paths naming missing files, recordings still uploading aside; removing more than 10% of a directory's files or bytes, which only the CLI's `--allow-bulk` lifts; and the restore lock held or unreadable. The lock is read before the listing and again before the first unlink, and fails closed, because a restore proceeds without it when Redis is down.
 
 ### Data Model
 
