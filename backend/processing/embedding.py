@@ -513,7 +513,8 @@ def judge_drift(speaker: Any, person: Any) -> None:
     pass lifts only their refusal. With no person, or no voiceprint of theirs
     of the same version to compare with, there is no verdict, and the
     refusals stay as they were. A lock makes no difference, since it guards
-    the person's voiceprint and this leaves it alone.
+    the person's voiceprint and this leaves it alone. A verdict is logged
+    with the link's and the person's ids, so a refusal can be traced.
     """
     if person is None or not person.embedding or not speaker.embedding:
         return
@@ -521,8 +522,16 @@ def judge_drift(speaker: Any, person: Any) -> None:
         return
     if drift_guard_refuses(person.embedding, speaker.embedding):
         refuse_drift(speaker, person.id)
+        verdict = "refused"
     else:
         lift_drift_refusal(speaker, person.id)
+        verdict = "passed"
+    logger.info(
+        "Drift guard verdict on recording speaker %s for person %s: %s",
+        speaker.id,
+        person.id,
+        verdict,
+    )
 
 
 def record_drift_verdict(

@@ -331,23 +331,50 @@ async def _speaker_row(session_maker, label: str) -> tuple[Any, Any]:
     return (json.loads(embedding) if embedding is not None else None), seconds
 
 
-def test_the_guards_warning_states_its_verdict_and_no_callers_action(caplog) -> None:
-    """judge_drift records a refusal and folds nothing, so the guard's warning
-    gives the score and the threshold, not a merge or a returned embedding."""
+@pytest.mark.parametrize(
+    # The voiceprint judged, the people refused for after, and the log.
+    "case",
+    [
+        pytest.param(
+            (
+                _at_cosine(0.1),
+                [7],
+                [
+                    "Drift guard refused a voiceprint: similarity 0.100 is below 0.70",
+                    "Drift guard verdict on recording speaker 12 for person 7: refused",
+                ],
+            ),
+            id="refused",
+        ),
+        pytest.param(
+            (
+                _at_cosine(0.9),
+                [],
+                ["Drift guard verdict on recording speaker 12 for person 7: passed"],
+            ),
+            id="passed",
+        ),
+    ],
+)
+def test_the_guards_log_gives_its_verdict_and_whose_it_is(caplog, case) -> None:
+    """judge_drift records a verdict and folds nothing, so the guard's warning
+    gives the score and the threshold, not a merge or a returned embedding,
+    and the verdict names the link and the person it is for."""
     from backend.processing.embedding import judge_drift
 
+    voiceprint, refused_after, messages = case
     speaker = SimpleNamespace(
-        embedding=_at_cosine(0.1), embedding_version=2, drift_refusals=[]
+        id=12, embedding=voiceprint, embedding_version=2, drift_refusals=[]
     )
     person = SimpleNamespace(id=7, embedding=list(PERSON), embedding_version=2)
 
-    with caplog.at_level(logging.WARNING, logger="backend.processing.embedding"):
+    with caplog.at_level(logging.INFO, logger="backend.processing.embedding"):
         judge_drift(speaker, person)
 
-    assert [refusal.global_speaker_id for refusal in speaker.drift_refusals] == [7]
-    assert caplog.messages == [
-        "Drift guard refused a voiceprint: similarity 0.100 is below 0.70"
-    ]
+    assert [
+        refusal.global_speaker_id for refusal in speaker.drift_refusals
+    ] == refused_after
+    assert caplog.messages == messages
 
 
 def test_merge_embeddings_refuses_a_fold_below_seventy() -> None:
