@@ -1,89 +1,51 @@
 # Nojoin Deployment & Configuration Guide
 
-This guide is for operators deploying and running Nojoin.
-
-If you just want the fastest path to a working instance, start with [GETTING_STARTED.md](GETTING_STARTED.md) and return here when you need deeper hosting, networking, or upgrade guidance.
+This is the operator reference for running Nojoin. For a first install, follow [GETTING_STARTED.md](GETTING_STARTED.md) and come back here for detail.
 
 ## Recommended Hardware
 
-- **Recommended:** Linux or Windows with an NVIDIA GPU from the Turing generation or later (GTX 16 or RTX 20 series and newer) and NVIDIA driver 580 or newer. See [GPU requirements](#gpu-requirements).
-- **Practical minimum:** 8 GB VRAM for Whisper Turbo and Pyannote.
-- **macOS hosting:** Not recommended for the backend because Docker on macOS cannot expose Apple Silicon GPU acceleration to the containers.
-- **Capture browser:** Chrome on Windows, Linux, or macOS for shared-audio live recording; Edge, Brave, Arc, or another Chromium-family browser on Windows or Linux; or Chrome on Android/iOS for microphone-only live recording. Other Chromium-family browsers on macOS are best-effort.
+- **Recommended:** Linux or Windows with an NVIDIA GPU from the Turing generation or later (GTX 16 or RTX 20 series and newer) and NVIDIA driver 580 or newer. See [GPU Requirements](#gpu-requirements).
+- **Practical minimum:** 8 GB VRAM for Whisper Turbo and Pyannote. Without a GPU, Nojoin runs on the CPU, more slowly ([CPU-Only Deployment](#cpu-only-deployment)).
+- **macOS hosting:** Not recommended, because Docker on macOS cannot give containers Apple Silicon GPU acceleration.
+- **Capture browsers:** See [CAPTURE.md](CAPTURE.md#supported-environments).
 
 ## Core Requirements
 
-- Docker Desktop or Docker Engine.
-- Enough local storage for recordings, derived assets, and models.
-- If using a GPU on Linux, NVIDIA drivers and the NVIDIA Container Toolkit.
-
-## Compose Files
-
-- `docker-compose.example.yml`: Deployment template using the published GHCR images.
-- `docker-compose.yml`: Local working copy created from the template.
-
-The repository does not ship a separate Docker Compose development override.
+- Docker Desktop or Docker Engine with Compose.
+- Disk space for recordings, derived files and models.
+- For a GPU on Linux, the NVIDIA driver and the NVIDIA Container Toolkit.
 
 ## Quick Deployment
 
-1. Clone the repository.
-2. Create your local deployment files:
+`docker-compose.example.yml` is the deployment template and pulls the published GHCR images. `.env.example` is the configuration template. Copy them to `docker-compose.yml` and `.env` as [GETTING_STARTED.md](GETTING_STARTED.md) describes, then before the first start:
 
-    ```bash
-    cp docker-compose.example.yml docker-compose.yml
-    cp .env.example .env
-    ```
+1. Set `FIRST_RUN_PASSWORD`, `DATA_ENCRYPTION_KEY`, `POSTGRES_PASSWORD` and `REDIS_PASSWORD` in `.env` ([Always Set](#always-set)).
+2. Set `WEB_APP_URL` if anyone will reach Nojoin from another machine ([Remote Access](#remote-access-and-trusted-public-origin)).
+3. Keep private or machine-specific changes in `docker-compose.yml`. The repository ships no other compose override.
+4. Run `docker compose up -d` and open `https://localhost:14443/setup`.
 
-3. Set `FIRST_RUN_PASSWORD` in `.env`.
-4. Set `DATA_ENCRYPTION_KEY` in `.env` before first production use.
-5. Adjust `WEB_APP_URL` if the deployment is not local-only.
-6. Review `docker-compose.yml` and apply any private or machine-specific changes.
-7. Start the stack:
+Compose stops with `Set FIRST_RUN_PASSWORD in .env` while that variable is unset or empty. After changing it, run `docker compose up -d` again so the `api` container receives it. [SECURITY.md](SECURITY.md#first-run-bootstrap-protection) describes how setup reports a denial.
 
-   ```bash
-   docker compose up -d
-   ```
+If `FIRST_RUN_PASSWORD`, `DATA_ENCRYPTION_KEY`, `POSTGRES_PASSWORD` or `REDIS_PASSWORD` still holds its example value, the api and workers log a warning at startup and the web app shows one to signed-in users. Nothing is blocked.
 
-8. Open `https://localhost:14443/setup` and unlock the first-run wizard with your `FIRST_RUN_PASSWORD`.
-9. Use Chrome on Windows, Linux, or macOS for shared-audio live recording, another Chromium-family browser on Windows or Linux, or Chrome on Android/iOS for microphone-only live recording. Other Chromium-family browsers on macOS are best-effort. Other browsers can still review and administer Nojoin.
-
-Nojoin refuses first initialisation if `FIRST_RUN_PASSWORD` is missing.
-If you add or change it, redeploy the stack before using the setup wizard.
-The sign-in page does not link to the setup wizard, and every anonymous setup
-denial returns the same generic response regardless of cause, so the service
-never discloses whether it has been initialised. The specific denial reason
-(wrong password, unset `FIRST_RUN_PASSWORD`, or already-initialised system)
-appears in the API logs, and the API startup log prints the `/setup` address
-while the system is uninitialised. Setup requests are rate limited per client
-address.
-If `FIRST_RUN_PASSWORD`, `DATA_ENCRYPTION_KEY`, `REDIS_PASSWORD`, or the
-tracked PostgreSQL password placeholder are left at their example values,
-Nojoin emits startup log warnings and an authenticated frontend warning
-toast. Those warnings are advisory only; operators are still responsible for
-replacing the placeholder secrets in `.env`.
-
-The compose template is already configured for GPU inference.
-
-The compose files health-gate the web stack so `frontend` waits for a healthy `api`, and `nginx` waits for healthy `api` plus `frontend` before it is considered ready.
-
-When doing targeted starts from a fully stopped stack, remember that Docker Compose does not auto-start an omitted dependent service. If you want the proxy back as part of a partial startup, include `nginx` explicitly:
+`frontend` waits for a healthy `api`, and `nginx` waits for both. Compose does not start a dependent service you leave out, so name `nginx` in a partial start:
 
 ```bash
 docker compose up -d api frontend nginx
 ```
 
-`DATA_ENCRYPTION_KEY` is strongly recommended for every non-ephemeral deployment. Earlier releases relied on the auto-generated `data/.data_encryption_key` fallback alone, which meant encrypted calendar secrets and tokens could become unreadable if the app data directory was replaced while the database volume was preserved. Setting a stable `DATA_ENCRYPTION_KEY` avoids that class of failure.
-
-If you are developing from local source instead of operating a deployment, read [DEVELOPMENT.md](DEVELOPMENT.md).
+To work from source instead, see [DEVELOPMENT.md](DEVELOPMENT.md).
 
 ## GPU Support
 
+The compose template is set up for GPU inference.
+
 ### GPU Requirements
 
-The worker image is built on CUDA 13.0, which sets two requirements:
+The worker image is built on CUDA 13.0, which needs:
 
 - **NVIDIA driver 580 or newer** on the host, Linux or Windows.
-- **A Turing-generation GPU or later** (compute capability 7.5 or higher), which is GTX 16 and RTX 20 series and newer, including RTX 50 series. Maxwell, Pascal and Volta cards (GTX 900 and 10 series, TITAN V, Tesla P4, P40 and P100, V100) are not supported.
+- **A Turing-generation GPU or later** (compute capability 7.5 or higher): GTX 16 and RTX 20 series and newer, including RTX 50 series. Maxwell, Pascal and Volta cards (GTX 900 and 10 series, TITAN V, Tesla P4, P40, P100 and V100) are not supported.
 
 Check both with:
 
@@ -91,446 +53,252 @@ Check both with:
 nvidia-smi --query-gpu=name,compute_cap,driver_version --format=csv
 ```
 
-On Linux, the GPU worker checks this when it starts. If the driver is too old or the card predates Turing, it logs a `[gpu-preflight]` line saying which, hides that GPU and processes on the CPU rather than failing each recording.
+On Linux, `worker-gpu` checks both when it starts. If the driver is too old or the card predates Turing, it logs a `[gpu-preflight]` line saying which, hides that GPU and processes on the CPU.
 
 ### Linux
 
-1. Install the proprietary NVIDIA drivers.
-2. Verify GPU visibility with:
-
-   ```bash
-   nvidia-smi
-   ```
-
-3. Install the NVIDIA Container Toolkit.
-4. Configure Docker for NVIDIA runtime support:
+1. Install the proprietary NVIDIA driver and check that `nvidia-smi` lists the GPU.
+2. Install the NVIDIA Container Toolkit.
+3. Configure Docker for the NVIDIA runtime:
 
    ```bash
    sudo nvidia-ctk runtime configure --runtime=docker && sudo systemctl restart docker
    ```
 
-The default `.env.example` enables `NVIDIA_VISIBLE_DEVICES=all` and `NVIDIA_DRIVER_CAPABILITIES=compute,utility`.
+`.env.example` sets `NVIDIA_VISIBLE_DEVICES=all` and `NVIDIA_DRIVER_CAPABILITIES=compute,utility` for `worker-gpu`.
 
 ### Windows
 
-- Use Docker Desktop with the WSL 2 backend.
-- Install NVIDIA Windows drivers 580 or newer.
-
-## Data Directory Ownership
-
-The `api` and `worker-*` containers run their long-lived process as UID 1000
-(`appuser`), but their entrypoints enter as root first for one purpose: Docker
-creates a missing bind-mount source on the host as `root:root`, which an
-unprivileged process cannot then write into. The entrypoint corrects ownership
-and immediately drops to `appuser` via `gosu`. The release smoke test asserts
-that the running process is non-root.
-
-Ownership is checked per directory, not just on the data root. Every
-write-critical path (`recordings`, `recordings/temp`, `recordings/failed`,
-`logs`, `documents`, `temp_uploads`, `temp_restores`, `restore_staging`,
-`cli-oauth`) is created if missing and repaired independently, so a child
-directory that was recreated as root under an already-correct parent is fixed
-rather than skipped. When the data root itself is mis-owned, which is the first
-boot on a fresh `data/`, a single recursive pass covers the whole tree; on later
-restarts a large recordings library is never walked.
-
-Ownership repair is best-effort by design. Some bind-mount backends, notably a
-Windows-drive mount under Docker Desktop, either reject `chown` or ignore it. In
-that case the container still starts and reports the problem rather than
-crash-looping:
-
-- The API logs an explicit error at startup naming the unwritable path.
-- **Settings > System and logs** shows the **Storage** check as an error, and the
-  pipeline summary is reported as blocked.
-- Uploads and imports fail with an actionable 503 rather than a bare 500.
-
-If you see that state, correct the ownership of the host directory bound to
-`/app/data` so it is owned by UID 1000, then restart the API and worker
-services.
-
-Only `./data` is bound into the API container. Earlier versions also declared a
-second bind of `./data/recordings` at `/app/recordings`; nothing read it, and
-because Docker materialises each declared bind source independently as root, it
-could recreate the recordings directory root-owned under an appuser-owned
-parent. If you carry a Compose override derived from an older example file,
-remove that line.
-
-## Temporary Files and the Data Directory
-
-No service mounts a shared volume over `/tmp`. Each container keeps a private
-`/tmp` that is discarded when the container is recreated, which is what stops
-scratch files accumulating for the life of a deployment.
-
-Only one file has to pass between containers: a finished backup archive, built by
-a worker and served by the API. It travels through `data/backups` on the `./data`
-bind mount that every service already has, so the sharing uses the mount that
-already exists rather than a second one. The most recent archive stays there until
-a newer one replaces it; see [BACKUP_RESTORE.md](BACKUP_RESTORE.md#the-saved-backup). Uploaded archives and restore staging
-work the same way, through `data/temp_uploads` and `data/restore_staging`.
-`BACKUP_EXPORT_DIR` moves exports elsewhere if you want them on a separate disk;
-the API and the workers must agree on the value.
-
-Everything else a container writes to `/tmp` is genuinely local to that
-container: ffmpeg intermediates, Python temporary files, and the scratch the
-finalise pipeline removes when it completes. The pipeline clears its own
-intermediates, and the daily cleanup task reclaims any left by a worker that was
-killed before it could.
-
-### Reclaiming the Old Shared /tmp Volume
-
-Deployments created before 2.0.0 mounted a `backup_temp` named volume at
-`/tmp` in the `api` and all three `worker-*` services. That made `/tmp` both
-permanent and shared, so every temporary file any of those four services leaked
-accumulated there indefinitely, and only the export subdirectory was ever swept.
-
-After updating your Compose file, the volume is no longer referenced. Nothing
-durable is stored in it, so remove it to reclaim the space:
-
-```bash
-docker compose down
-docker volume rm nojoin_backup_temp
-docker compose up -d
-```
-
-Check what you are about to reclaim first if you want to see the scale of it:
-
-```bash
-docker run --rm -v nojoin_backup_temp:/old alpine du -sh /old
-```
-
-An export that was in flight when you upgrade is lost, so take the backup again
-if you needed it.
-
-## Worker Container Startup
-
-The worker container starts Celery without preloading inference models. Nojoin
-keeps GPU memory idle at startup, then queues worker-side model preparation for
-Pyannote diarisation, voice embeddings, and the install's transcription engine
-(`transcription_backend` in `config.json`, chosen by an administrator under
-**Settings > Transcription**). Whisper is prepared only when that
-engine is Whisper, at the configured `whisper_model_size`: Parakeet and Canary
-never load it, so an install running either does not download Whisper at every
-start. The worker validates those assets on CPU where possible, caches them on
-disk, and releases model objects and CUDA memory before returning to idle.
-
-Downloaded models live in the `model_cache` volume (`XDG_CACHE_HOME` and
-`HF_HOME` on the worker lanes), so they survive container recreation. The text
-embedding model behind search and meeting chat is cached there too, in
-`$XDG_CACHE_HOME/fastembed`; set `FASTEMBED_CACHE_PATH` on the worker lanes to
-keep it somewhere else.
-
-One worker lane (`worker-io`) runs the embedded Celery Beat scheduler (`celery
-worker -B`) that drives Nojoin's periodic jobs: calendar sync every 15 minutes,
-calendar push-channel renewal every 30 minutes, and temporary-recording cleanup
-daily. Beat runs on that single lane only, so it cannot double-schedule, and the
-beat schedule state lives on the persistent data volume so the cadence survives
-restarts. Optional calendar live sync (push notifications) additionally requires
-the instance to be reachable from the public internet over HTTPS at
-`WEB_APP_URL`; see [CALENDAR.md](CALENDAR.md).
-
-Changing the transcription model later does not download anything on its own.
-Preparation runs on the GPU lane, so an unannounced download would queue in
-front of live work; instead **Settings > Transcription** asks whether to fetch a
-newly selected model now, and **Model dependencies** under **Settings > AI
-providers** offers a `Download` action plus
-live progress for anything still missing. A model that is never prepared is
-fetched on first use, which delays live transcription and Meeting Edge until it
-is ready. Only one preparation runs at a time; a second request is refused with
-409 while one is in flight. Deleting a cached model also runs on a worker, not
-in the API: the API mounts the model volume read-only (`model_cache:ro`), so it
-has no write access to that cache by design. Both actions therefore need a
-running worker. Live and final processing still load inference models only for
-active work. After each
-worker task, Nojoin releases model caches and clears CUDA memory when
-`keep_models_loaded` is unset or false — except while a recording is actively
-uploading (live capture), where the live ASR model is kept resident so
-consecutive segments are not forced to reload it (a reload costs several seconds
-per segment). When capture goes idle the caches are released as normal, and a
-recording finalise clears cached models before loading its heavier diarisation
-stack so the two never exceed VRAM. Set `keep_models_loaded=true` only if you
-deliberately prefer warmer repeated processing over idle VRAM across the board.
-
-### Worker Concurrency Lanes
-
-To stop a long recording finalise from blocking every other user's live
-transcription, notes, chat, and calendar sync, worker tasks are split across
-four Celery queues, each drained by its own container:
-
-- `worker-gpu` — GPU-bound inference (recording finalise, live ASR, speaker
-  embeddings). Single-slot (`--pool=solo --concurrency=1`): with one GPU, heavy
-  work is deliberately serialised to protect VRAM. This is the only worker
-  granted GPU access.
-- `worker-cpu` — proxy generation, backups, and the ffmpeg transcode of
-  segments from browser tabs older than FLAC capture
-  (`--pool=prefork --concurrency=3`). No GPU.
-- `worker-io` — network-bound work: Meeting Edge, notes, chat embeddings,
-  calendar sync, and cleanup (`--pool=prefork --concurrency=4`). No GPU. Also
-  runs Celery Beat.
-- `worker-parse` — document parsing and RAG index rebuilds
-  (`--pool=prefork --concurrency=2 --max-tasks-per-child=25`). No GPU. Runs
-  the **`worker-io` image**, not a separate one: visual parsing may route through a subscription CLI whose
-  binaries ship only there, so this lane adds a container but no extra build and
-  no extra image to scan. Separate from `worker-io` because a parse has no page
-  cap and one large upload can hold a slot for a long time; sharing the IO lane
-  would let that degrade Meeting Edge during a live meeting.
-
-Task-to-queue routing is defined in `backend/celery_app.py` (`TASK_ROUTES`);
-anything unrouted falls back to the GPU lane. Tune the `--concurrency` values in
-`docker-compose.yml` to your host: the CPU and IO lanes are cheap (no model
-memory), while the GPU lane should stay at `--concurrency=1` unless you have
-multiple GPUs, or a single card large enough to hold two concurrent pipelines.
-
-With four worker containers plus the API, several worker processes each keep a
-small database connection pool. The default PostgreSQL `max_connections` (100)
-comfortably covers the reference `3` / `4` / `2` lane sizing; if you scale the lanes
-much wider, raise `max_connections` to match.
-
-Change `--concurrency` freely, but treat `--pool` as load-bearing. `solo` and
-`prefork` both give a task an operating-system process to itself, which is what
-makes it safe for worker code to queue follow-on Celery work with a blocking
-call: it can stall only the task making it. A pool that shares one process
-between concurrent tasks, such as `gevent`, `eventlet` or `threads`, breaks that
-and reintroduces head-of-line blocking.
-
-This is worth stating plainly because the assumption lives here, in Compose,
-rather than in the code that depends on it. Worker code queues follow-on Celery
-work with a blocking call, and that is safe only while one task owns one
-operating-system process. The API was deliberately changed to stop doing this,
-because it dispatches from an event loop shared by every concurrent request;
-the worker was deliberately left alone, because a prefork child has nothing else
-to stall. Switch a lane to a pool that multiplexes tasks within a process and
-that reasoning silently stops holding, with no test to catch it — the guard test
-in the backend only detects inline dispatch inside an `async def`, which is a
-different mistake. Treat a pool change as a change to the dispatch model.
-
-#### Worker Child Recycling
-
-Prefork pool children are retired after a fixed number of tasks and replaced by
-a fresh one. The default is 500 tasks, set once in `backend/celery_app.py`
-(`worker_max_tasks_per_child`) so it applies to every deployment without a
-Compose edit. `worker-parse` overrides it to 25 on its `command:`, because a
-parse has no page cap and one document can leave a child far heavier than any
-other lane's task does; a `--max-tasks-per-child` flag on a lane always wins
-over the global default.
-
-Two things this does not do. It has no effect on `worker-gpu`, which runs
-`--pool=solo` and has no children to recycle: Celery accepts the setting on a
-solo pool and silently ignores it. And it does not disturb Celery Beat, which
-runs as its own process forked by `worker-io`'s main process rather than as a
-pool child, so the periodic schedule is untouched by a recycle.
-
-Recycling is safe at any value. A child delivers its task's result before it
-exits, so a recycle never interrupts a running task or loses one. The cost is
-that the replacement re-imports whatever the next task needs, measured at
-roughly half a second for the IO lane's embedding stack.
-
-Treat this as a backstop rather than a memory optimisation. It bounds how far
-an undetected leak could run before the child holding it is discarded; it is
-not expected to lower steady-state memory, because most of what a recycle
-reclaims is the import working set of the task path, which the replacement
-child re-pays on its first task. Raise the limit if a lane's work is expensive
-to warm up, and lower it if a lane's tasks are unusually memory-hungry.
+Use Docker Desktop with the WSL 2 backend and NVIDIA Windows driver 580 or newer.
 
 ### GPU Acceleration
 
-The worker image installs Triton in its virtual environment so Whisper word-level timestamps use GPU-accelerated kernels. Without Triton, `whisper/timing.py` falls back to slower CPU-based implementations for word alignment.
+`worker-gpu` is the only container with GPU access. Whisper and Pyannote run on PyTorch, and the image includes Triton so Whisper's word timestamps run on the GPU. Parakeet and Canary run on ONNX Runtime's CUDA provider. The text embedding model behind search and meeting chat runs on `worker-io` and `worker-parse`, which have no GPU.
 
-Text embedding (used during AI-generated meeting intelligence) uses the ONNX Runtime CUDA execution provider when available, with an automatic CPU fallback.
+| Engine | Weights on a GPU | Weights on a CPU | Download |
+| --- | --- | --- | --- |
+| Parakeet | fp32 | fp32 | About 2.5 GB |
+| Canary | fp32, about 5.4 GB of VRAM | int8 | About 4 GB for fp32, 1 GB for int8 |
 
-The Parakeet and Canary ASR engines also use ONNX Runtime CUDA. On a GPU both load fp32 weights. int8 is a CPU optimisation, and ONNX Runtime has no CUDA kernels for most quantized operations, so an int8 graph is handed back to the CPU node by node even when the CUDA provider loads cleanly. On Canary 1B that difference is 1046 memcpy nodes and roughly real-time transcription against 66 nodes and a GPU-bound run. The fp32 weights need more VRAM, about 5.4 GB for Canary 1B. On a CPU, Canary loads int8 and Parakeet loads fp32. Parakeet's int8 encoder blanks out whole stretches of clear speech, and which stretches depends on where a window starts: on a 20-minute House of Lords clip it dropped about six times as many words as the fp32 weights (#445). On eight CPUs fp32 took Parakeet 1.2 times as long and 1.6 GB more memory.
+A GPU never loads int8: ONNX Runtime has no CUDA kernels for most quantised operations, so an int8 graph runs mostly on the CPU even with the CUDA provider loaded. Parakeet's int8 weights drop stretches of clear speech, so Parakeet loads fp32 on a CPU as well. Preparation fetches the precision the lane will load and validates the model on the CPU, so it briefly needs that much host memory but no VRAM.
 
-A small number of memcpy nodes is normal, since some graph operations are inherently CPU-pinned. A count in the hundreds or thousands is not, and means the graph is not really running on the GPU.
+Both engines transcribe in windows of 15 to 30 seconds that close at a pause, on every host, because longer windows lost speech. A window with no signal, such as a stretch VAD muted, is skipped. A GPU out-of-memory failure in final processing is retried once with GPU memory freed. The ASR models are released before diarisation starts: ONNX Runtime's memory arena never shrinks, and without the release diarisation fails with CUDA out of memory.
 
-Preparation fetches the precision the lane loads. For Parakeet that is fp32 everywhere, about 2.5 GB (the 2.4 GB encoder weights plus 0.1 GB of graphs). For Canary it is fp32 on a GPU host, about 4 GB (3.3 GB of encoder weights plus a 0.7 GB decoder), and int8 otherwise, about 1 GB. Preparation validates the model on the CPU, so it briefly holds that much host memory, but it reserves no VRAM. In exchange, the first transcription does not wait on that download.
+#### Diagnosing a CPU Fallback
 
-Both engines transcribe in windows of at most 30 seconds, on a GPU and on a CPU alike. Longer windows lose speech: on House of Lords recordings Canary lost nearly half its words at the 120 second window GPU hosts used to run, and fell into a loop at the old 240 second CPU window (#445). A window closes at the first pause after its midpoint, so every window lasts from 15 to 30 seconds unless the whole recording is shorter, and a window with no signal in it, such as a stretch VAD muted, is not transcribed at all. Attention scores grow with the square of the window, so those of a 30 second window need a sixteenth of the memory that a 120 second window's did, and the **GPU transcription window** setting that sized the window for the card is retired. Since #317 a GPU out-of-memory failure is retried once with the GPU memory freed.
+If ONNX Runtime cannot load its CUDA provider, it builds the session on the CPU and reports success. The symptom is slow transcription, with `worker-gpu` using several cores while `nvidia-smi` shows 0% GPU utilisation. PyTorch loads CUDA separately, so `torch.cuda.is_available()`, VAD logging `Model loaded successfully on cuda` and a working `nvidia-smi` in the container say nothing about ONNX Runtime. Nor does `onnxruntime.get_available_providers()`, which lists the providers the build includes even on a host with no GPU.
 
-ONNX Runtime's memory arena grows to fit the largest window and never shrinks, so the ASR models are released after transcription and before diarization rather than at the end of the task. Without that release, a finished ASR session leaves diarization with no VRAM to allocate and it fails with a CUDA out-of-memory error while the transcript itself succeeds.
-
-#### Diagnosing a silent CPU fallback
-
-ONNX Runtime treats its provider list as a preference, not a contract. If the CUDA execution provider cannot be loaded, the session is built on CPU and reported as successful, so the only symptom is that transcription runs far slower while the host CPU saturates. `worker-gpu` pegging several cores with `nvidia-smi` showing 0% GPU utilisation is the signature.
-
-Note that PyTorch and ONNX Runtime resolve their CUDA libraries independently, so they can disagree. `torch.cuda.is_available()` returning `True`, VAD logging `Model loaded successfully on cuda`, and `nvidia-smi` working inside the container all confirm the container's GPU passthrough is intact. None of them say anything about ONNX Runtime.
-
-To check the real state:
+Check what each model got:
 
 ```bash
-docker compose logs worker-gpu | grep -i "execution provider"
+docker compose logs worker-gpu | grep -iE "execution provider|are on CPU"
 ```
 
-The worker logs which provider each ONNX model actually got after loading. A warning naming `fell back to CPU` means the CUDA provider was dropped. The underlying cause is usually a missing shared library, logged nearby as:
+`is using the ONNX Runtime CUDA execution provider` means the model is on the GPU. A warning ending `despite a GPU being present` means its sessions fell back to the CPU, usually because a shared library failed to load, logged nearby as:
 
 ```
 Failed to load library libonnxruntime_providers_cuda.so with error: libcudnn_*.so.9: cannot open shared object file
 ```
 
-`onnxruntime.get_available_providers()` is not a valid check here. It lists the providers the build was compiled with, so it reports `CUDAExecutionProvider` even on a host with no GPU.
-
-If a library is missing, confirm the loader can see cuDNN inside the container. The worker image registers the cuDNN wheel's directory with `ldconfig` at build time for exactly this reason:
+The image registers cuDNN with `ldconfig` at build time. Confirm the loader sees it:
 
 ```bash
 docker compose exec worker-gpu ldconfig -p | grep libcudnn_adv
 ```
 
-An empty result means the base image moved cuDNN and the image needs rebuilding against the corrected path.
+An empty result means the base image moved cuDNN and the image needs rebuilding against the new path. A handful of memcpy nodes in ONNX Runtime's log is normal. Hundreds or thousands mean the graph is running on the CPU.
+
+## Data Directory Ownership
+
+The `api` and `worker-*` containers run as UID 1000 (`appuser`). Their entrypoints start as root only to fix ownership of the `./data` bind mount, because Docker creates a missing bind-mount source as `root:root`, then drop to `appuser` through `gosu`. Each directory Nojoin writes to under `data/` is created and checked on its own. A mis-owned data root, as on the first boot of a fresh `data/`, gets one recursive pass.
+
+Some bind-mount backends, such as a Windows drive under Docker Desktop, reject or ignore `chown`. The containers still start and report the problem:
+
+- The API logs an error naming the unwritable path.
+- **Settings > System and logs** shows the **Storage** check as **Not writable**.
+- Uploads and imports fail with a 503.
+
+Make the host directory bound to `/app/data` owned by UID 1000, then restart the api and worker services.
+
+## Temporary Files and the Data Directory
+
+Each container keeps a private `/tmp`, discarded when the container is recreated. The pipeline removes its own scratch files and periodic cleanup tasks remove any a killed worker left behind.
+
+A finished backup archive, built by a worker and served by the API, is the one file that passes between containers. It goes through `data/backups` on the `./data` mount every service has, and stays until a newer one replaces it ([BACKUP_RESTORE.md](BACKUP_RESTORE.md#the-saved-backup)). Uploaded archives and restore staging use `data/temp_uploads` and `data/restore_staging`. `BACKUP_EXPORT_DIR` moves exports elsewhere. The api and every worker must see the same path, so a directory outside `/app/data` has to be mounted into all of them.
+
+## Worker Container Startup
+
+At startup the API queues model preparation for Pyannote diarisation, voice embeddings and the install's transcription engine (**Settings > Transcription**). Whisper is prepared only when the engine is Whisper. Preparation validates each model, caches it on disk and releases it, so the GPU stays idle until there is work.
+
+Models live in the `model_cache` volume (`XDG_CACHE_HOME` and `HF_HOME` on the workers), so they survive container recreation. The text embedding model is cached in `$XDG_CACHE_HOME/fastembed`. Set `FASTEMBED_CACHE_PATH` on the workers to keep it elsewhere.
+
+Changing the transcription model downloads nothing by itself. **Settings > Transcription** offers to fetch the new model, and **Model downloads** under **Settings > AI providers** has a **Download** action with progress. A model that was never prepared is fetched on first use, which holds up live transcription and Meeting Edge. One preparation runs at a time, and a second request gets a 409. Deleting a cached model runs on a worker too, because the API mounts `model_cache` read-only, so both actions need running workers.
+
+After each task, workers release cached models and CUDA memory. The exception is while a recording is uploading live, when the live ASR model stays loaded between segments. Final processing releases any live model before it loads diarisation.
+
+`worker-io` runs Celery Beat (`-B`) for the periodic jobs, among them calendar sync, cleanup, search index backfill and telemetry. Its schedule file is `data/celerybeat-schedule`, so the cadence survives restarts. Give `-B` to one lane only, or every periodic job runs twice. Calendar live sync also needs the instance reachable from the internet over HTTPS at `WEB_APP_URL` ([CALENDAR.md](CALENDAR.md)).
+
+### Worker Concurrency Lanes
+
+Worker tasks are split across four Celery queues, each drained by its own container, so a long recording finalise cannot block live transcription, notes, chat or calendar sync:
+
+| Service | Queue | Shipped pool | Work |
+| --- | --- | --- | --- |
+| `worker-gpu` | `gpu` | `--pool=solo --concurrency=1` | Final processing, live ASR, speaker embeddings, overlap analytics, model preparation. The only lane with GPU access. |
+| `worker-cpu` | `cpu` | `--pool=prefork --concurrency=3` | ffmpeg transcodes, playback proxies, imported audio, delivery analytics, backups. |
+| `worker-io` | `io` | `--pool=prefork --concurrency=4`, plus Celery Beat | Meeting Edge, notes, chat, transcript indexing, calendar sync, restores, cleanup, model deletion, telemetry. |
+| `worker-parse` | `parse` | `--pool=prefork --concurrency=2 --max-tasks-per-child=25` | Document parsing and search index rebuilds. |
+
+`worker-parse` runs the `worker-io` image, because visual parsing can use a subscription CLI that ships only there. It is a separate lane because a parse has no page cap, and one large upload on the IO lane could slow Meeting Edge during a live meeting. Routing is `TASK_ROUTES` in `backend/celery_app.py`, and an unrouted task goes to the GPU lane.
+
+Tune `--concurrency` in `docker-compose.yml` to your host. Keep the GPU lane at 1 unless you have several GPUs or one card that can hold two pipelines. PostgreSQL's default `max_connections` (100) covers the shipped sizing, so raise it if you widen the lanes a lot.
+
+Keep `--pool` at `solo` or `prefork`. Worker code queues follow-on tasks with a blocking call, which is safe only while each task has an operating-system process to itself. A pool that runs several tasks in one process, such as `gevent`, `eventlet` or `threads`, lets one blocked dispatch stall the others, and no test catches the change.
+
+#### Worker Child Recycling
+
+Prefork children are replaced after 500 tasks (`worker_max_tasks_per_child` in `backend/celery_app.py`). A lane's `--max-tasks-per-child` flag overrides that, as `worker-parse` does with 25, because one document can leave a child far heavier than any other task. The setting has no effect on `worker-gpu`, whose solo pool has no children, and does not touch Celery Beat.
+
+A recycle never interrupts or loses a task, and the new child re-imports what its first task needs. Recycling bounds how far an undetected leak can grow. It does not lower steady-state memory. Raise the limit for a lane whose tasks are slow to warm up, and lower it for one whose tasks are memory-hungry.
 
 ## CPU-Only Deployment
 
-If you do not have a compatible NVIDIA GPU:
+1. Remove the `deploy` block under `worker-gpu` in `docker-compose.yml`.
+2. Start the stack with `docker compose up -d`.
 
-1. Open `docker-compose.yml`.
-2. Remove the `deploy` section under the `worker-gpu` service.
-3. Start the stack normally with `docker compose up -d`.
-
-Processing will be slower, but the application remains usable. All four worker
-lanes then run on CPU.
+All four lanes then run on the CPU. Processing is slower but everything works.
 
 ### Limiting the Workers' CPUs
 
-Two kinds of model run through ONNX Runtime. On a CPU install the Parakeet and
-Canary engines transcribe on `worker-gpu`. On every install, GPU or not, the text
-embedding model indexes transcripts, notes and documents on `worker-io` and
-`worker-parse`. Left at its default, ONNX Runtime gives every model session one
-thread per core of the host and pins each thread to its core. It cannot see a
-container's CPU limit, so a worker capped with `cpus:` or `cpuset:` would run more
-threads than it has CPUs, and with a cpuset the log fills with
-`pthread_setaffinity_np failed` errors. In a 6-CPU container on a 16-core host that
-made Parakeet 2.3 times slower, Canary 3.6 times slower (#429) and text embedding
-1.5 times slower (#446).
+ONNX Runtime runs Parakeet and Canary (on `worker-gpu`, in a CPU install) and the text embedding model (on `worker-io` and `worker-parse`, in every install). By default it starts one thread per host core, pinned to that core, and it cannot see a container's CPU limit. A worker capped with `cpus:` or `cpuset:` would then run more threads than it has CPUs, which made transcription and embedding 1.5 to 3.6 times slower in testing, and with a cpuset the log fills with `pthread_setaffinity_np failed`.
 
-Both size the pool to the limit instead: the CPUs in the worker's affinity mask
-(`cpuset:`), capped by any cgroup v2 CPU quota (`cpus:`) on the worker or a parent
-group, rounded up to whole CPUs, so `cpus: 1.5` gives two threads. The worker logs
-`Sizing ONNX Runtime thread pools to N CPU(s)` when it loads a model under a limit.
-A worker with no limit keeps ONNX Runtime's default. A cgroup v1 host exposes no
-quota to read, so limit the worker there with `cpuset:`.
+Nojoin sizes the pool to the limit instead: the CPUs in the worker's affinity mask (`cpuset:`), capped by any cgroup v2 quota (`cpus:`) on the worker or a parent group, rounded up, so `cpus: 1.5` gives two threads. The worker logs `Sizing ONNX Runtime thread pools to N CPU(s)` when it does this. A worker with no limit keeps ONNX Runtime's default. A cgroup v1 host has no quota to read, so limit the worker with `cpuset:` there. Each prefork child on `worker-io` and `worker-parse` loads its own copy of the embedding model and takes the full count.
 
-`worker-io` and `worker-parse` run several prefork children, each with its own copy
-of the embedding model, and each child takes the full count. Splitting the CPUs
-between the children made a lone embedding about twice as slow, while with four
-children embedding at once the full count cost 8 to 14% more than a split.
+To set the count yourself, set `ORT_INTRA_OP_NUM_THREADS` in the service's `environment:` in `docker-compose.yml`. `0` restores ONNX Runtime's default. `worker-io` and `worker-parse` use the shared `*worker-environment` block unchanged, so give the one you change its own block that merges it, as `worker-gpu` does. `OMP_NUM_THREADS` has no effect on ONNX Runtime, which is built without OpenMP.
 
-To choose the count yourself, set `ORT_INTRA_OP_NUM_THREADS` in the limited
-service's `environment:` in `docker-compose.yml`. Nojoin then leaves the pool size
-to ONNX Runtime, which reads the variable, and `0` restores ONNX Runtime's default.
-The shipped file gives `worker-io` and `worker-parse` the shared
-`*worker-environment` block as it stands, so give either one its own block that
-merges it, as `worker-gpu` does. The `OMP_NUM_THREADS` the compose file sets has no
-effect here, because ONNX Runtime is built without OpenMP.
-
-PyTorch reads `OMP_NUM_THREADS` instead. On a CPU install it runs diarisation and
-voice embeddings on `worker-gpu`, where the shipped file sets the variable to 2.
-Diarisation scales with the count: on a 5-minute clip in an 8-CPU container it took
-198 seconds with 8 threads and 725 with one. To use a larger CPU allowance, set
-`OMP_NUM_THREADS` to match it in `worker-gpu`'s own `environment:` block. Up to
-2.9.0, loading the speech detector pinned PyTorch to one thread, so the variable
-made no difference to diarisation (#435).
+PyTorch does read `OMP_NUM_THREADS`. On a CPU install it runs diarisation and voice embeddings on `worker-gpu`, and the shipped file sets the variable to 2 on every worker. Diarisation speed scales with it, so to use a larger CPU allowance, set `OMP_NUM_THREADS` to match in `worker-gpu`'s own `environment:` block.
 
 ## Configure .env
 
-Create `.env` from `.env.example` and treat it as the canonical operator configuration file.
-The compose stack derives internal service URLs for PostgreSQL, Redis, and Celery automatically, so those values are intentionally not part of `.env.example`.
-Keep any secrets, private mounts, or machine-specific overrides in your local `docker-compose.yml`, not in the tracked template.
-Every variable below is only read by a container if that container's compose service passes it in, which the shipped `docker-compose.example.yml` does for all of them.
-If you maintain your own compose file, a variable you set in `.env` but never declare in a service's `environment:` block is silently discarded: the stack starts and the application default applies with no warning.
-Nojoin auto-generates and persists its JWT signing keyring under `data/.secret_keys.json` in the default deployment, migrating any legacy `data/.secret_key` file on startup, so no `.env` setting is required for that. If that key file is empty or unreadable, the api still starts but nobody can sign in, and the api log names the file to fix; see [JWT Signing Key Rotation](SECURITY.md#jwt-signing-key-rotation).
-Nojoin can also auto-generate `data/.data_encryption_key`, but operators should treat that as a fallback rather than the primary persistence strategy.
+`.env`, copied from `.env.example`, is the operator configuration. Compose derives the internal PostgreSQL, Redis and Celery URLs itself. A variable reaches a container only if that container's compose service declares it under `environment:`. The shipped template declares every variable in this section unless a table says otherwise. If you maintain your own compose file, a variable set in `.env` but not declared is discarded without a warning and the application default applies.
+
+Nojoin generates its JWT signing keyring at `data/.secret_keys.json` ([JWT Signing Key Rotation](SECURITY.md#jwt-signing-key-rotation)). If that file is empty or unreadable, the api still starts but nobody can sign in, and the api log names the file. Nojoin can also generate `data/.data_encryption_key`, but treat that as a fallback and set `DATA_ENCRYPTION_KEY`.
+
+Restart after changing `.env` (`docker compose up -d`). The LLM provider, Ollama URL and Ollama context window variables take precedence over the same settings in `data/config.json`.
 
 ### Always Set
 
-- `FIRST_RUN_PASSWORD`: Required bootstrap password for the first successful Nojoin initialisation. It unlocks the setup wizard at `/setup` on an uninitialised system and is not used after initialisation.
-- `DATA_ENCRYPTION_KEY`: Stable installation-wide encryption seed used for calendar OAuth client secrets and user calendar tokens. Set this once and keep it unchanged for the lifetime of the deployment.
-- `POSTGRES_PASSWORD`: Replace the tracked example value before any deployment that persists data or is reachable by other users or hosts.
-- `REDIS_PASSWORD`: Replace the tracked example value before any deployment that persists data or is reachable by other users or hosts.
+| Variable | Purpose |
+| --- | --- |
+| `FIRST_RUN_PASSWORD` | Password for the setup wizard at `/setup` on an uninitialised system. Unused once setup is done. |
+| `DATA_ENCRYPTION_KEY` | Encrypts calendar OAuth client secrets, users' calendar tokens and subscription (CLI OAuth) credentials. See [DATA_ENCRYPTION_KEY Guidance](#data_encryption_key-guidance). |
+| `POSTGRES_PASSWORD` | Database password. Set it before the first start: PostgreSQL keeps the password its data directory was initialised with. |
+| `REDIS_PASSWORD` | Redis password. |
+
+`POSTGRES_USER` and `POSTGRES_DB` (`postgres` and `nojoin`) can also be changed before the first start.
 
 ### Change for Remote or Reverse-Proxy Deployments
 
-- `WEB_APP_URL`: Exact public browser origin used for invitation links, calendar OAuth callbacks, other public URLs, and the backend CORS allowlist.
-- `NOJOIN_TRUSTED_PROXIES`: Comma-separated list of trusted proxy IP addresses, CIDR blocks, or hostnames. Defaults to `127.0.0.1,::1,nginx` to cover local loopback access and the default Docker Nginx proxy container name. If deploying behind an external load balancer or edge proxy (e.g. Cloudflare, AWS ALB), add its IP/CIDR to ensure that rate-limiting resolves client IPs correctly and safely. A hostname entry only works if the API container can resolve it: a Docker container name resolves only on networks the API is itself attached to, so an edge proxy running on a **separate** Docker network must be trusted by its **IP or subnet CIDR, not its container name**. See [Trusted Proxy IPs for Rate Limiting](#trusted-proxy-ips-for-rate-limiting).
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `WEB_APP_URL` | `https://localhost:14443` | The exact public browser origin. Used for invitation links, calendar OAuth callbacks and webhooks, the CORS allowlist and the trusted host list. |
+| `NOJOIN_TRUSTED_PROXIES` | `127.0.0.1,::1,nginx` | IPs, CIDR blocks or hostnames of proxies whose `X-Forwarded-For` is trusted when identifying clients for rate limiting. Add your edge proxy ([Trusted Proxy IPs](#trusted-proxy-ips-for-rate-limiting)). |
+| `NOJOIN_BIND_ADDRESS` | `127.0.0.1` | Host address the bundled proxy publishes ports `14141` and `14443` on ([Loopback Port Binding](#loopback-port-binding)). |
 
 ### Common Optional Values
 
-- `HF_TOKEN`: Optional Hugging Face token used only when you want to refresh the bundled Pyannote diarisation assets from upstream.
-- `DEFAULT_TIMEZONE`: Default installation timezone before a user saves their own timezone.
-- `MCP_ENABLED`: Master switch for the built-in MCP connector ([MCP.md](MCP.md)). Defaults to `true`; set to `false` to remove the `/mcp` endpoint, the OAuth discovery documents, and the connector authorisation endpoints entirely. Requires an API container restart to change.
-- `MCP_ANONYMOUS_DISCOVERY`: Serves the MCP protocol handshake and tool listing on `/mcp` without authentication, so clients that cannot start OAuth from a `401` (Codex Desktop) can connect ([MCP.md](MCP.md)). Exposes only generic tool metadata; no tool executes without an authenticated user. Defaults to `true`; set to `false` to require authentication for every request. Requires an API container restart to change.
-- `NOJOIN_TELEMETRY_ENABLED`: Hard switch for anonymous usage data ([TELEMETRY.md](TELEMETRY.md)). Leave unset to send the daily install heartbeat and manage the usage diagnostics from **Settings > Privacy**. Either explicit value overrides the in-app setting and makes the Settings toggle read-only: `false` stops the heartbeat and the diagnostics permanently, and `true` is an explicit opt-in to both that also stands in for the one-time admin notice, which is suppressed while the environment pins the setting. Set it to `false` before first start if telemetry must never be sent from this deployment, since the heartbeat goes out within fifteen minutes of starting.
-- `NOJOIN_TELEMETRY_ENDPOINT`: Overrides the ingest URL for the diagnostics ping; the heartbeat goes to `heartbeat` beside it on the same host. Intended for testing; there is no reason to change it in a normal deployment.
-- `LLM_PROVIDER`: Default LLM provider such as `gemini`, `openai`, `anthropic`, or `ollama`.
-- `GEMINI_API_KEY`: Gemini API key.
-- `OPENAI_API_KEY`: OpenAI API key.
-- `ANTHROPIC_API_KEY`: Anthropic API key.
-- `OLLAMA_API_URL`: Local or remote Ollama endpoint.
-- `OLLAMA_CONTEXT_WINDOW`: Ollama `num_ctx` value used for full-context meeting prompts. Defaults to `32768`, which covers a two-hour meeting (roughly 25,000 to 30,000 tokens). Size it against VRAM, not against the model's advertised maximum: the KV cache costs roughly 190 KiB per token on a 14B model, so `32768` is about 6 GB on top of the weights and `131072` would be about 24 GB, which no consumer card can hold. Ollama fails the load outright rather than degrading if the cache does not fit. Nojoin treats this value as a ceiling, and lowers it to the model's trained context length when that is smaller. The window holds prompt and answer together, and a truncated result is never saved; [Long Meetings And Ollama](USAGE.md#long-meetings-and-ollama) describes what happens to a meeting longer than the window. This needs **Ollama 0.12.6 or later**; on older servers truncation is detected only after the call, so a streamed chat answer is withdrawn after it was shown.
-- `SECONDARY_LLM_PROVIDER`: Secondary LLM provider used when the primary fails. Same values as `LLM_PROVIDER`. Leave empty to disable fallback. With Ollama as the primary, a hosted secondary is the recommended way to handle long meetings: it receives a meeting that does not fit the Ollama window whole and answers in one call.
-- `SECONDARY_GEMINI_API_KEY`: Gemini API key for the secondary provider.
-- `SECONDARY_OPENAI_API_KEY`: OpenAI API key for the secondary provider.
-- `SECONDARY_ANTHROPIC_API_KEY`: Anthropic API key for the secondary provider.
-- `SECONDARY_OLLAMA_API_URL`: Ollama endpoint for the secondary provider.
-- `SECONDARY_OLLAMA_CONTEXT_WINDOW`: Ollama `num_ctx` value for the secondary Ollama provider. Defaults to `32768`; the same VRAM sizing applies.
-- `GOOGLE_OAUTH_CLIENT_ID`: Google calendar OAuth client ID.
-- `GOOGLE_OAUTH_CLIENT_SECRET`: Google calendar OAuth client secret.
-- `MICROSOFT_OAUTH_CLIENT_ID`: Microsoft calendar OAuth client ID.
-- `MICROSOFT_OAUTH_CLIENT_SECRET`: Microsoft calendar OAuth client secret.
-- `MICROSOFT_OAUTH_TENANT_ID`: Microsoft tenant ID. Use `common` only when the app registration supports the intended sign-in model.
-- `NOJOIN_UMASK`: Custom umask for the application processes. Defaults to `0077` (owner-only access: `0600`/`0700` permissions on files/directories).
-- `NOJOIN_STALL_WATCHDOG_ENABLED`: Master switch for stall detection (see [Stall Detection](#stall-detection)). Defaults to `true`.
-- `NOJOIN_STALL_WATCHDOG_INTERVAL_SECONDS`: How often the watchdog measures event-loop lag. Defaults to `5`.
-- `NOJOIN_STALL_WATCHDOG_LAG_THRESHOLD_SECONDS`: Overshoot above which a stall is reported. Defaults to `1`. Lowering it below a second produces noise from ordinary event-loop scheduling.
-- `NOJOIN_STALL_WATCHDOG_PRESSURE_THRESHOLD`: Percentage of the last ten seconds spent blocked, above which host pressure is reported on its own. Defaults to `20`.
+AI providers:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `LLM_PROVIDER` | `gemini` | The install's default provider: `gemini`, `openai`, `anthropic` or `ollama`. Shown read-only in **Settings > AI providers**. |
+| `GEMINI_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` | | Keys for the hosted providers. |
+| `OLLAMA_API_URL` | `http://host.docker.internal:11434` | Ollama endpoint. |
+| `OLLAMA_CONTEXT_WINDOW` | `32768` | Ollama `num_ctx` for full-meeting prompts. See below. |
+| `SECONDARY_LLM_PROVIDER` | Empty | Fallback provider used when the primary fails. Same values as `LLM_PROVIDER`. Empty turns the fallback off. |
+| `SECONDARY_GEMINI_API_KEY`, `SECONDARY_OPENAI_API_KEY`, `SECONDARY_ANTHROPIC_API_KEY`, `SECONDARY_OLLAMA_API_URL`, `SECONDARY_OLLAMA_CONTEXT_WINDOW` | As the primary | The same settings for the fallback provider. |
+| `HF_TOKEN` | Empty | Only needed to refresh the bundled Pyannote assets from Hugging Face. |
+
+`OLLAMA_CONTEXT_WINDOW` covers about a two-hour meeting (25,000 to 30,000 tokens) at its default. Size it against VRAM, not the model's advertised maximum: the KV cache costs roughly 190 KiB per token on a 14B model, so `32768` needs about 6 GB on top of the weights and `131072` about 24 GB. Ollama refuses to load a model whose cache does not fit. Nojoin treats the value as a ceiling and lowers it to the model's trained context length when that is smaller. The window holds prompt and answer together, and a truncated result is never saved. [Long Meetings And Ollama](USAGE.md#long-meetings-and-ollama) describes what happens to a longer meeting; with Ollama as the primary, a hosted fallback provider receives such a meeting whole. This needs Ollama 0.12.6 or later. On older servers truncation is detected only after the call, so a streamed chat answer is withdrawn after it was shown.
+
+Calendar ([CALENDAR.md](CALENDAR.md)):
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` | | Google calendar OAuth client. |
+| `MICROSOFT_OAUTH_CLIENT_ID`, `MICROSOFT_OAUTH_CLIENT_SECRET` | | Microsoft calendar OAuth client. |
+| `MICROSOFT_OAUTH_TENANT_ID` | `common` | Microsoft tenant. Use `common` only when the app registration supports that sign-in model. |
+
+MCP and telemetry:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `MCP_ENABLED` | `true` | `false` turns off the built-in [MCP connector](MCP.md): `/mcp`, its OAuth discovery documents and the connector authorisation endpoints all return 404. |
+| `MCP_ANONYMOUS_DISCOVERY` | `true` | Answers the MCP handshake and tool listing without authentication, so clients that cannot start OAuth from a `401` (Codex Desktop) can connect. Only generic tool metadata is exposed, and no tool runs without a signed-in user. `false` requires authentication for every request. |
+| `NOJOIN_TELEMETRY_ENABLED` | Empty | Empty sends the daily install heartbeat and leaves usage diagnostics to **Settings > Privacy**. `false` stops both, and `true` opts in to both. Either value makes the Settings toggle read-only and suppresses the one-time admin notice. The heartbeat goes out within fifteen minutes of starting, so set `false` before the first start if nothing may ever be sent. See [TELEMETRY.md](TELEMETRY.md). |
+| `NOJOIN_TELEMETRY_ENDPOINT` | Empty | Test override for the diagnostics ingest URL. The heartbeat goes to `heartbeat` beside it. Not in `.env.example`. |
+
+Operations:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `DEFAULT_TIMEZONE` | `UTC` | Timezone for users who have not saved their own. |
+| `BACKUP_EXPORT_DIR` | `data/backups` | Where exported backup archives are written ([Temporary Files](#temporary-files-and-the-data-directory)). |
+| `NOJOIN_UMASK` | `0077` | Umask for the application processes. The default gives owner-only files (`0600`) and directories (`0700`). |
+| `NOJOIN_STALL_WATCHDOG_ENABLED` | `true` | Stall detection. Not passed by the shipped compose file ([Stall Detection](#stall-detection)). |
+| `WHISPER_ENABLE_WORD_TIMESTAMPS` | `true` | Whisper word timestamps, which let the merge assign speakers word by word. |
+| `NVIDIA_VISIBLE_DEVICES`, `NVIDIA_DRIVER_CAPABILITIES` | `all`, `compute,utility` | GPU passthrough for `worker-gpu`. |
+| `NOJOIN_CODEX_PATH` | `/usr/local/bin/codex` | Codex CLI path on the workers ([CLI OAuth](#cli-oauth-worker-io-image)). Not in `.env.example`. |
+
+Not in `.env.example` and not passed by the shipped compose file. Set them in the service's `environment:` block:
+
+| Variable | Service | Purpose |
+| --- | --- | --- |
+| `SECRET_KEY` | `api` | Replaces the JWT keyring with one static key ([SECURITY.md](SECURITY.md#jwt-signing-key-rotation)). |
+| `ORT_INTRA_OP_NUM_THREADS` | Workers | ONNX Runtime thread count ([Limiting the Workers' CPUs](#limiting-the-workers-cpus)). |
+| `FASTEMBED_CACHE_PATH` | `worker-io`, `worker-parse` | Text embedding model cache. |
+| `NOJOIN_SKIP_STARTUP_CANONICAL_CUTOVER`, `NOJOIN_STARTUP_CANONICAL_CUTOVER_BATCH_SIZE` | `api` | Debugging only ([DEVELOPMENT.md](DEVELOPMENT.md)). |
 
 ### DATA_ENCRYPTION_KEY Guidance
 
-- Set `DATA_ENCRYPTION_KEY` before users connect calendar accounts or an admin stores calendar provider secrets.
-- On an existing deployment that already has `data/.data_encryption_key`, copy that current value into `DATA_ENCRYPTION_KEY` before restarting the stack.
-- Keep the value stable across restarts, upgrades, image changes, and host migrations.
-- Store it in your secret manager, password vault, or deployment automation alongside other installation secrets.
-- Do not rotate it casually. Changing it without first re-encrypting stored secrets will make previously stored calendar credentials unreadable.
+- Set it before anyone connects a calendar or a subscription, or an admin stores calendar provider secrets.
+- On a deployment that already has `data/.data_encryption_key`, copy that file's value into `DATA_ENCRYPTION_KEY` before restarting.
+- Keep it unchanged across restarts, upgrades, image changes and host migrations, and store it with your other secrets.
+- Changing it makes stored calendar credentials and subscription tokens unreadable.
 
 ### Custom Frontend Build Value
 
-- `NEXT_PUBLIC_API_URL`: Only set this when building a custom frontend image and the frontend is not using the default same-origin `/api` path.
-
-For calendar-specific registration detail, read [CALENDAR.md](CALENDAR.md).
+`NEXT_PUBLIC_API_URL` is a frontend build argument. Set it only when building your own frontend image whose API is not at the same-origin `/api` path.
 
 ## Stall Detection
 
-The API watches for stalls in its own process and reports them as pipeline metrics in the container log. A live recording is the workload that cannot survive one: the browser keeps counting wall-clock time while nothing reaches the server, and the audio for that stretch is lost. See [ARCHITECTURE.md](ARCHITECTURE.md#stall-detection) for how it works.
+The API watches its own process for stalls and logs them as pipeline metrics. A stall during a live recording loses that stretch of audio, because the browser keeps counting time while nothing reaches the server. [ARCHITECTURE.md](ARCHITECTURE.md#stall-detection) explains how it works.
 
 Two events appear in `docker compose logs api`:
 
-- `event_loop_stalled` carries `lag_s`, the number of seconds by which a fixed sleep overshot, and `pressure_avg10` where the kernel exposes it. Any lag over a second or two means requests were queueing behind something. If `memory_some` or `io_some` is high alongside it, the host was the cause rather than the API.
-- `host_pressure_high` means the machine spent a meaningful share of the last ten seconds with tasks blocked, without the API stalling outright. Treat it as an early warning that the host is under-resourced. Rate-limited to once a minute while the condition persists.
+- **`event_loop_stalled`** carries `lag_s`, the seconds by which a fixed sleep overshot, and `pressure_avg10` where the kernel provides it. More than a second or two means requests were queueing behind something. A high `memory_some` or `io_some` alongside it means the host was the cause, not the API.
+- **`host_pressure_high`** means the host spent a large share of the last ten seconds with tasks blocked, without the API stalling. Treat it as an early warning that the host is under-resourced. It is logged at most once a minute.
 
-Both are quiet on a healthy deployment. If either appears during meetings, check host memory and swap first: the outage this was built for came from a machine running with almost all of its swap in use.
+Both are quiet on a healthy deployment. If either appears during meetings, check host memory and swap first. Pressure figures need `/proc/pressure`, which only Linux kernels built with PSI provide. Without it, lag is still detected but not attributed.
 
-Pressure figures need `/proc/pressure`, which is Linux-only and absent from kernels built without PSI. Lag detection works everywhere; only the attribution is lost.
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `NOJOIN_STALL_WATCHDOG_ENABLED` | `true` | `false` turns stall detection off. |
+| `NOJOIN_STALL_WATCHDOG_INTERVAL_SECONDS` | `5` | How often event-loop lag is measured. |
+| `NOJOIN_STALL_WATCHDOG_LAG_THRESHOLD_SECONDS` | `1` | Overshoot above which a stall is reported. Below a second, ordinary scheduling produces noise. |
+| `NOJOIN_STALL_WATCHDOG_PRESSURE_THRESHOLD` | `20` | Percentage of the last ten seconds spent blocked above which host pressure is reported on its own. |
 
-Tuning and the off switch are under [Common Optional Values](#common-optional-values).
+The shipped compose file does not pass these variables to the `api` container, so a value in `.env` has no effect. Set them in the `api` service's `environment:` block in `docker-compose.yml`.
 
 ## Configuration Model
 
-Nojoin splits configuration between:
+User settings live in the database. Install-wide settings an administrator changes in the UI, such as AI models, the transcription engine and model, the install glossary, the default notes structure and export branding, are written to `data/config.json`, so `data/` must be writable by UID 1000. If it is not, saving them fails with an error. Workers re-read `config.json` before every task, so a hand edit reaches the next task. Restart the api to be sure it sees the edit too.
 
-- **System configuration**: installation-wide infrastructure and service settings.
-- **User settings**: per-user preferences stored in the database.
+First-run setup can pre-fill values from environment variables, and that prefill is also locked behind `FIRST_RUN_PASSWORD`. Setup writes the wizard's Whisper model size to `config.json`, except that the wizard default (`turbo`) does not replace a different size already in a pre-seeded file.
 
-The first-run setup wizard can pre-fill many values from environment variables to speed up deployment.
-On uninitialised systems, that prefill flow is itself locked behind `FIRST_RUN_PASSWORD`.
+### Processing Tuning Defaults
 
-Install-wide settings that an administrator changes in the UI (the AI provider and models, the
-transcription engine and model, the install glossary, the install default notes structure) are written
-to `data/config.json` rather than to the database, so the mounted `data/` directory must be writable by
-the API container's user. If it is not, saving any of those settings now fails with an explicit error
-instead of appearing to succeed and then reverting on the next restart. If you see that error, check the
-ownership of the host directory bound to `/app/data`. First-run setup writes the wizard's Whisper model
-size there as well, except that the wizard's default (`turbo`) does not replace a different size already
-in a pre-seeded `config.json`.
-
-Speech and speaker tuning is per user (**Settings > Recording > Advanced**), and every value defaults to
-inherit. An operator can set an installation default for any of these keys as a flat entry in
-`data/config.json`. It applies to every user who has not set their own value:
+Speech and speaker tuning is per user (**Settings > Recording > Advanced**, **Speech and speaker tuning**), and each value inherits by default. Set an installation default for any key as a flat entry in `data/config.json`. It applies to every user who has not set their own:
 
 | Key | Shipped default | Accepted range |
 | --- | --- | --- |
@@ -543,148 +311,77 @@ inherit. An operator can set an installation default for any of these keys as a 
 | `word_flip_max_duration_s` | 0.45 | 0 to 2.0 |
 | `word_flip_max_gap_s` | 0.25 | 0 to 1.0 |
 
-`asr_word_length_cap_s` is the longest any Parakeet word lasts. Its maximum is the default
-`word_flip_max_duration_s`, so with default smoothing no capped word is too long to be smoothed. It
-replaces the retired `asr_word_end_padding_s` (see [Upgrading and Migration](#upgrading-and-migration)).
+`asr_word_length_cap_s` is the longest a Parakeet word can last. Its maximum is the default `word_flip_max_duration_s`, so at default smoothing every capped word is short enough to smooth. It replaces the retired `asr_word_end_padding_s` ([Version Notes](#version-notes)).
 
-The legacy `vad_parameters.threshold` in `config.json` is still honoured, used as given, below both a
-user's `vad_threshold` and a flat `vad_threshold`. The worker logs and ignores a value outside its range,
-or a phantom floor that is not below the phantom merge threshold, and uses the shipped default instead
-(for the VAD threshold, `vad_parameters.threshold`), so a typo never fails a recording. A user's own
-value, when set, replaces the flat key entirely, so an unusable per-user value (edited by hand, restored from a
-backup taken by a version with different ranges, or stored before a range narrowed) falls back to the shipped default
-rather than to the installation's. The settings page shows such a value as empty, and the user's next save clears it, after
-which the installation's value applies. The settings page shows a user's own value only: where the installation sets
-a default, the field still reads "Default" with the shipped value as its placeholder. When a user saves either phantom
-similarity, the floor-below-merge rule is checked against the pair processing will use, so a half the user left empty
-counts as the installation's flat value, and the error names it. A pair whose conflict lies in the installation's two
-values alone does not block anyone's save; processing ignores it as above.
+The legacy `vad_parameters.threshold` in `config.json` still applies, below both a user's `vad_threshold` and a flat one. The worker logs and ignores a value outside its range, or a phantom floor that is not below the phantom merge threshold, and uses the shipped default instead (for the VAD threshold, `vad_parameters.threshold`), so a typo never fails a recording.
+
+A user's own value replaces the flat key entirely, so an unusable per-user value (edited by hand, restored from an older backup, or stored before a range narrowed) falls back to the shipped default, not the installation's. The settings page shows it as empty and the user's next save clears it. The page shows only a user's own values, with the shipped default as the placeholder. A user's save of either phantom similarity is checked against the pair processing will use, counting an empty half as the installation's value. A conflict between the installation's own two values blocks no one's save.
 
 ## CLI OAuth (worker-io image)
 
-The per-user CLI OAuth AI mode (routing inference through a user's own Claude or ChatGPT subscription) needs Node.js plus the Claude Code CLI and the OpenAI Codex CLI, which ship **only** in the `worker-io` image (`docker/Dockerfile.worker-io`, layered on the shared worker image). `docker-compose.example.yml` already points the `worker-io` service at that image through its `image:`/`build:` override, so a deployment made from the tracked template can offer this route out of the box, including from the first-run wizard's AI step; `worker-gpu` and `worker-cpu` stay on the base image. A deployment whose compose file has been changed to run `worker-io` on the base image can still complete the Claude connect flow, which Nojoin drives itself, but inference through the subscription will then fail and fall back to the server's provider chain. No new `.env` is required — the encrypted credential reuses `DATA_ENCRYPTION_KEY`. Note the Codex CLI adds a large (~336 MB) native binary to this image only; `NOJOIN_CODEX_PATH` overrides the codex binary path if needed (default `/usr/local/bin/codex`).
+The per-user CLI OAuth AI mode routes a user's inference through their own Claude or ChatGPT subscription. It needs Node.js, the Claude Code CLI and the OpenAI Codex CLI, which ship only in the `worker-io` image (`docker/Dockerfile.worker-io`, built on the shared worker image). The shipped compose file runs `worker-io` and `worker-parse` on that image, including for the first-run wizard's AI step, and `worker-gpu` and `worker-cpu` on the base image. If your compose file runs `worker-io` on the base image, users can still connect a Claude subscription, but inference through it fails and falls back to the server's providers. The stored credential is encrypted with `DATA_ENCRYPTION_KEY`, and no other variable is needed.
 
-The two CLIs carry different supply-chain weight, and the difference matters when reading a scan result. The Claude CLI is JavaScript running on a digest-pinned Node, with npm dropped after install, so `worker-io` shows no vulnerability delta over the shared worker base. The Codex payload is a stripped static-musl binary that Trivy cannot introspect at all. The image still passes the release gate, but for that image it passes because there is nothing to scan rather than because the contents were examined. Operators who need an audited image should leave the ChatGPT provider unused and run `worker-io` for the Claude path only, or skip the lane entirely.
+The Codex CLI is a stripped native binary the image scanner cannot inspect, so its version is checked against the GitHub advisory database instead ([SECURITY.md](SECURITY.md#cli-oauth-subscription-access)). If you need an image whose contents were all scanned, leave the ChatGPT route unused, or run `worker-io` on the base image and do without subscription inference.
 
 ## Remote Access and Trusted Public Origin
 
-This is the section to read if you want to reach Nojoin from a device other than
-the machine it runs on: another computer on the LAN, a laptop over a VPN or
-tailnet, or a phone. The mechanics of the proxy itself are in
-[Reverse Proxy Requirements](#reverse-proxy-requirements); this section covers
-what the application expects from the resulting origin.
+Read this to reach Nojoin from another device: a computer on the LAN, a laptop over a VPN or tailnet, or a phone. [Reverse Proxy Requirements](#reverse-proxy-requirements) covers the proxy itself.
 
-If you expose Nojoin beyond localhost:
-
-- Set `WEB_APP_URL` to the exact browser origin users will visit.
-- Keep the browser origin, reverse proxy origin, and OAuth callback origin aligned.
-- The backend automatically includes `WEB_APP_URL` in its browser CORS allowlist.
-- Serve the remote origin over HTTPS. This is a hard requirement, not a
-  recommendation; see below.
+- Set `WEB_APP_URL` to the exact origin users will visit and restart the stack. The API adds that origin to its CORS allowlist.
+- Keep the browser origin, the proxy's public origin and the OAuth callback origin the same.
+- Serve the remote origin over HTTPS, which live capture requires.
+- Prefer a VPN or tailnet to exposing Nojoin on the internet. If you do expose it, treat `FIRST_RUN_PASSWORD` as a secret and do not log request headers during setup.
 
 ### HTTPS Is Required for Live Capture
 
-Browsers only expose the microphone and screen-sharing APIs to a **secure
-context**: an HTTPS origin, or `localhost`. A remote origin served over plain
-HTTP is not a secure context, so `navigator.mediaDevices` is absent and Nojoin's
-capture feature detection reports the browser as unsupported. Reviewing
-recordings, playback, transcript editing, search, and administration all still
-work over plain HTTP; **starting a live recording does not**.
+Browsers expose the microphone and screen-sharing APIs only to a secure context: an HTTPS origin or `localhost`. On a plain HTTP origin anywhere else, `navigator.mediaDevices` is absent and Nojoin reports the browser as unsupported for capture. Reviewing recordings, playback, transcript editing, search and administration still work. Starting a live recording does not.
 
-Practically, this means any remote-access arrangement must terminate TLS in
-front of Nojoin. Reaching the bundled proxy's plain HTTP port (`14141`) from
-another device is enough to sign in and browse, and will then fail confusingly
-at the point a user tries to record.
-
-The API enforces the same expectation independently: non-HTTPS requests that it
-cannot recognise as proxied HTTPS are redirected to `WEB_APP_URL` when safe, and
-rejected with `400 Plain HTTP requests are not allowed. Use HTTPS.` otherwise.
-
-For publicly reachable deployments, use a VPN or a secure reverse proxy rather than exposing the service casually.
-For internet-exposed deployments, treat `FIRST_RUN_PASSWORD` as a deployment secret and avoid logging request headers that could capture it during the setup flow.
+Any remote arrangement must therefore terminate TLS in front of Nojoin. The bundled proxy's HTTP port, `14141`, only redirects to HTTPS on the standard port 443. The API enforces HTTPS as well: a GET, HEAD or OPTIONS request it cannot recognise as proxied HTTPS is redirected to `WEB_APP_URL`, and any other method is rejected with `400 Plain HTTP requests are not allowed. Use HTTPS.`
 
 ## Reverse Proxy Requirements
 
-When fronting Nojoin with Nginx, Caddy, Traefik, Tailscale Serve, or another
-reverse proxy:
+These apply to Nginx, Caddy, Traefik, Tailscale Serve or any other proxy in front of Nojoin.
 
 ### Loopback Port Binding
 
-By default, the bundled Nginx proxy publishes ports `14141` and `14443` bound to the loopback interface (`127.0.0.1`) rather than all host interfaces (`0.0.0.0`). This ensures that if you place Nojoin behind an edge reverse proxy (such as Caddy, Traefik, or a tunnel) on the same host, the bundled proxy is not exposed directly to the public internet, preventing bypass of the edge proxy's authentication, rate limiting, or filtering.
-
-* **NOJOIN_BIND_ADDRESS**: Controls the host IP interface the bundled proxy binds to. Defaults to `127.0.0.1`.
-* **Direct-Access Deployments**: If you do not use an edge proxy and want the bundled Nginx proxy to be reachable directly from other hosts or the public internet, set `NOJOIN_BIND_ADDRESS=0.0.0.0` in your `.env` file and restart the stack.
-* **Firewall Expectations**: If exposing ports directly by setting `NOJOIN_BIND_ADDRESS=0.0.0.0` or a public IP, ensure you have configured appropriate host firewall rules (e.g., `ufw` or `iptables`) to restrict access to authorized IP ranges.
+The bundled proxy publishes ports `14141` and `14443` on `127.0.0.1` by default (`NOJOIN_BIND_ADDRESS`). An edge proxy on the same host can reach it, and nothing on the network can bypass that edge proxy's authentication, rate limiting or filtering. Without an edge proxy, set `NOJOIN_BIND_ADDRESS=0.0.0.0` (or one host address) in `.env` and restart to let other hosts reach the bundled proxy directly, and restrict the ports with host firewall rules such as `ufw` or `iptables`.
 
 ### Forwarding Checklist
 
-1. Proxy to the HTTPS endpoint, not the plain HTTP port.
-2. By default that means the host-facing port `14443`.
-3. Disable upstream certificate verification because Nojoin uses a self-signed internal certificate by default.
-4. Keep `WEB_APP_URL` aligned with the public origin.
-5. Preserve the public browser host when forwarding requests. The upstream `Host` and `X-Forwarded-Host` values should match the hostname in `WEB_APP_URL`.
-6. Forward `X-Forwarded-Proto: https` so Nojoin can recognise secure browser requests through the proxy chain.
-7. Keep the public HTTPS origin stable so browser capture, session cookies, invitation links, and OAuth callbacks all target the same Nojoin site.
-8. Forward the whole site through one origin, including `/mcp` and `/.well-known/oauth-*`. Those paths serve the built-in MCP connector and its OAuth discovery documents (see [MCP.md](MCP.md)); the bundled Nginx proxy already routes them to the API service, so an edge proxy that forwards everything to port `14443` needs no extra rules.
-9. Stream responses rather than buffering them, forward WebSocket upgrades, allow long-lived connections, and allow large request bodies. See [Streaming, WebSocket, and Upload Forwarding](#streaming-websocket-and-upload-forwarding).
-10. Add the edge proxy to `NOJOIN_TRUSTED_PROXIES` so per-client rate limiting resolves real client addresses. See [Trusted Proxy IPs for Rate Limiting](#trusted-proxy-ips-for-rate-limiting).
+1. Proxy to the bundled proxy's HTTPS port, `14443` by default, not the HTTP port.
+2. Skip upstream certificate verification, because the internal certificate is self-signed.
+3. Set `WEB_APP_URL` to the public origin.
+4. Forward the public hostname: the upstream `Host` and `X-Forwarded-Host` must match the hostname in `WEB_APP_URL`.
+5. Send `X-Forwarded-Proto: https`.
+6. Serve the whole site through that one origin, including `/mcp` and `/.well-known/oauth-*` for the [MCP connector](MCP.md). The bundled proxy already routes those paths to the API.
+7. Stream responses without buffering, forward WebSocket upgrades, and allow long-lived connections and large request bodies ([below](#streaming-websocket-and-upload-forwarding)).
+8. Add the edge proxy to `NOJOIN_TRUSTED_PROXIES` ([below](#trusted-proxy-ips-for-rate-limiting)).
 
-### Why the Host and Proto Headers Are Load-Bearing
+### Why the Host and Proto Headers Matter
 
-Items 4, 5, and 6 are not stylistic. The API process is reached over plain HTTP
-inside the Docker network, so it cannot observe TLS directly and instead treats a
-request as secure only when **all** of the following hold:
+The API is reached over plain HTTP inside the Docker network, so it treats a request as HTTPS only when all of these hold:
 
-- The immediate peer is a private, loopback, or link-local address, which the
-  bundled proxy satisfies.
-- `X-Forwarded-Proto` resolves to `https`.
-- The `Host` header's hostname matches the hostname in `WEB_APP_URL`.
-- The `X-Forwarded-Host` header's hostname matches the hostname in `WEB_APP_URL`.
+- The immediate peer is a private, loopback or link-local address, as the bundled proxy is.
+- `X-Forwarded-Proto` is `https`.
+- The `Host` hostname matches the hostname in `WEB_APP_URL`.
+- The `X-Forwarded-Host` hostname matches the hostname in `WEB_APP_URL`.
 
-Two distinct failures follow from getting this wrong, and they look nothing
-alike:
+Getting this wrong fails in one of two ways:
 
-- **`400 Invalid host header`** means the `Host` hostname is not in the trusted
-  host list at all. Besides the loopback names (`localhost`, `127.0.0.1`, `::1`),
-  the only hostname Nojoin trusts is the one in `WEB_APP_URL`. The usual cause is
-  an edge proxy forwarding an internal upstream host such as `nojoin-nginx:443`,
-  or `WEB_APP_URL` not having been updated to the public hostname and the stack
-  restarted.
-- **A redirect loop on page loads, plus `400 Plain HTTP requests are not
-  allowed. Use HTTPS.` on saves**, means the host is trusted but one of the four
-  conditions above fails, most often a rewritten `Host` or a missing
-  `X-Forwarded-Proto`. Safe methods are redirected to `WEB_APP_URL`, which the
-  proxy then rewrites the same way again; unsafe methods are rejected outright.
-  If browsing appears to loop but the API is plainly up, check these headers
-  before anything else.
+- **`400 Invalid host header`** means the `Host` hostname is not trusted. Only `localhost`, `127.0.0.1`, `::1` and the hostname in `WEB_APP_URL` are. The usual cause is an edge proxy forwarding an internal host such as `nojoin-nginx:443`, or `WEB_APP_URL` not updated to the public hostname and the stack not restarted.
+- **A redirect loop on page loads, with `400 Plain HTTP requests are not allowed. Use HTTPS.` on saves,** means the host is trusted but another condition fails, most often a rewritten `Host` or a missing `X-Forwarded-Proto`. Reads are redirected to `WEB_APP_URL`, which the proxy rewrites the same way again, and writes are rejected. Check these headers first.
 
-`/health` and `/api/health` are deliberately exempt so container and uptime
-checks can reach them over plain HTTP.
+`/health` and `/api/health` are exempt, so health checks work over plain HTTP.
 
 ### Streaming, WebSocket, and Upload Forwarding
 
-Most of Nojoin is ordinary request/response HTTP, including browser capture:
-recording segments are uploaded as individual HTTP requests, not over a socket.
-Three behaviours still need explicit proxy support.
+Browser capture uploads its segments as ordinary HTTP requests. Three things need proxy support:
 
-- **Server-sent events.** Meeting chat responses stream as `text/event-stream`.
-  A proxy that buffers responses will hold the entire answer until the stream
-  closes, so replies appear all at once after a long pause or time out. Disable
-  response buffering and allow read timeouts of several minutes. The bundled
-  proxy uses `proxy_buffering off` with 300 second timeouts.
-- **WebSocket upgrades.** Nojoin uses exactly one WebSocket endpoint,
-  `/api/v1/system/logs/live`, which backs the live container log viewer in
-  **Settings > System and logs** for administrators. Nothing else in the product uses
-  WebSockets. If upgrades are not forwarded, that one panel fails to connect and
-  the rest of Nojoin is unaffected.
-- **Request body size.** The bundled proxy allows request bodies up to 500 MB.
-  An edge proxy with a smaller limit will reject uploads with `413`. Nginx in
-  particular defaults to 1 MB, which is below the live capture segment limit and
-  far below document and backup uploads.
+- **Server-sent events.** Meeting chat answers stream as `text/event-stream`. A buffering proxy holds the whole answer until it ends, so replies arrive all at once or time out. Turn off response buffering and allow read timeouts of several minutes. The bundled proxy uses `proxy_buffering off` and 300 second timeouts.
+- **WebSocket upgrades.** Only `/api/v1/system/logs/live`, the live log viewer in **Settings > System and logs**, uses a WebSocket. Without upgrades, that panel fails to connect and nothing else is affected.
+- **Request body size.** The bundled proxy accepts bodies up to 500 MB. A smaller limit at the edge rejects uploads with `413`. Nginx defaults to 1 MB, below the 15 MB live capture segment limit and far below document and backup uploads.
 
-Caddy needs none of this stated explicitly: it streams responses, forwards
-upgrades, and does not cap request bodies by default. Nginx needs all three
-configured, which is why the example below is longer than the Caddy one.
+Caddy streams responses, forwards upgrades and has no body limit by default. Nginx needs all three configured.
 
 ### Caddy Example
 
@@ -704,9 +401,7 @@ nojoin.yourdomain.com {
 
 ### Nginx Example
 
-The `map` block belongs in the `http` context, not inside `server`. It is the
-standard Nginx idiom for conditional WebSocket upgrades, and avoids sending
-`Connection: upgrade` on ordinary requests.
+Put the `map` block in the `http` context, outside `server`. It sends `Connection: upgrade` only on WebSocket requests.
 
 ```nginx
 map $http_upgrade $connection_upgrade {
@@ -744,127 +439,69 @@ location / {
 
 ### Tailscale Serve
 
-Tailscale Serve publishes Nojoin to your tailnet over HTTPS using a
-Tailscale-issued certificate for the node's MagicDNS name. It suits the common
-case of a GPU workstation at home that you want to reach from a laptop
-elsewhere, without opening any router ports. Nojoin does not bundle or manage
-Tailscale; Serve runs on the host, in front of the stack, like any other edge
-proxy.
+Tailscale Serve publishes Nojoin to your tailnet over HTTPS with a Tailscale-issued certificate for the node's MagicDNS name, without opening router ports. It suits a GPU workstation at home that you reach from a laptop elsewhere. Serve runs on the host in front of the stack like any edge proxy, and Nojoin does not manage it.
 
-Two constraints decide whether this arrangement is appropriate at all:
+- **Same tailnet only.** The accessing device must be signed in to your tailnet. A device that cannot run Tailscale cannot reach Serve. Funnel, which publishes to the whole internet, is not recommended: for public access, follow [Remote Access and Trusted Public Origin](#remote-access-and-trusted-public-origin) as for any internet-exposed deployment.
+- **Leave `NOJOIN_BIND_ADDRESS` at `127.0.0.1`.** Serve runs on the host, so it reaches the loopback port and the bundled proxy stays off the LAN.
+- **Target `https+insecure://` on port `14443`.** That form accepts the self-signed internal certificate (checklist items 1 and 2).
+- **Set `WEB_APP_URL` to `https://<node>.<tailnet>.ts.net`** and restart the stack. Until then the API answers `400 Invalid host header`.
+- **No header changes.** Serve preserves `Host` and sets `X-Forwarded-Host`, `X-Forwarded-Proto: https` and `X-Forwarded-For`, and the bundled proxy passes `Host` through and handles streaming, upgrades and body size.
+- **Trust the Docker bridge gateway** for rate limiting ([Host-Run Edge Proxies](#host-run-edge-proxies-tailscale-serve-and-similar)).
+- **Tailnet identity is not sign-on.** Nojoin ignores Serve's `Tailscale-User-*` headers and supports no proxy-header authentication, so users sign in to Nojoin as usual.
 
-- **The accessing device must be signed in to the same tailnet.** Serve does not
-  publish anything to the public internet. A borrowed or locked-down device that
-  cannot run Tailscale cannot reach a Serve endpoint.
-- **Funnel is out of scope and is not recommended.** Funnel exposes the endpoint
-  to the whole internet, which removes the network boundary that makes this
-  arrangement worth choosing. If you need public access, treat it as a normal
-  internet-exposed deployment and apply the guidance in
-  [Remote Access and Trusted Public Origin](#remote-access-and-trusted-public-origin).
-
-Against the contract above, a Serve deployment resolves as follows.
-
-- **Leave `NOJOIN_BIND_ADDRESS` at its `127.0.0.1` default.** Serve runs on the
-  host, so the loopback binding is already the correct target and the bundled
-  proxy stays unreachable from the LAN. This is the one edge-proxy arrangement
-  that needs no change to the loopback port binding.
-- **Target the bundled proxy's HTTPS port, `14443`, on loopback.** Serve accepts
-  an insecure-HTTPS target form (`https+insecure://`) for exactly this case, so
-  it will not reject Nojoin's self-signed internal certificate. This satisfies
-  checklist items 1 to 3.
-- **Set `WEB_APP_URL` to the full tailnet origin**, `https://<node>.<tailnet>.ts.net`,
-  and restart the stack. Until you do, the tailnet hostname is not in the trusted
-  host list and the API answers `400 Invalid host header`.
-- **Headers need no special handling.** Serve preserves the inbound `Host` and
-  sets `X-Forwarded-Host`, `X-Forwarded-Proto: https`, and `X-Forwarded-For`.
-  Because Serve connects to the bundled proxy over TLS, that proxy independently
-  derives `X-Forwarded-Proto: https` from its own listener and passes the client
-  `Host` through unchanged. Checklist items 5 and 6 are therefore met without
-  extra configuration, and streaming, WebSocket upgrades, and body size are
-  already handled by the bundled proxy.
-- **Rate limiting needs one addition.** Because Serve connects from the host
-  rather than from a container, the bundled proxy records the Docker bridge
-  gateway as the immediate peer. Without trusting it, every tailnet device shares
-  one rate-limit bucket. See
-  [Host-Run Edge Proxies](#host-run-edge-proxies-tailscale-serve-and-similar).
-- **Tailnet identity is not sign-on.** Serve adds `Tailscale-User-*` headers
-  describing the tailnet user. Nojoin ignores them and does not support
-  proxy-header authentication. Users still sign in to Nojoin normally, and
-  tailnet membership is a network boundary rather than an authentication one.
-
-The practical payoff beyond reachability is that the tailnet certificate is a
-real, browser-trusted certificate. The origin is a secure context with no
-certificate warning, so browser live capture works from the remote device, which
-is not true of reaching the stack over plain HTTP.
-
-Serve requires HTTPS certificates to be enabled for your tailnet in the
-Tailscale admin console.
+The tailnet certificate is browser-trusted, so the origin is a secure context and live capture works from the remote device. Serve needs HTTPS certificates enabled for the tailnet in the Tailscale admin console.
 
 ### Trusted Proxy IPs for Rate Limiting
 
-Nojoin derives each client's IP from the `X-Forwarded-For` chain by walking back through the proxies listed in `NOJOIN_TRUSTED_PROXIES` (see [Change for Remote or Reverse-Proxy Deployments](#change-for-remote-or-reverse-proxy-deployments)). Only the bundled Nginx proxy is trusted by default (`127.0.0.1,::1,nginx`).
+Nojoin finds each client's address by walking the `X-Forwarded-For` chain back through the proxies in `NOJOIN_TRUSTED_PROXIES` ([Change for Remote or Reverse-Proxy Deployments](#change-for-remote-or-reverse-proxy-deployments)). By default only the bundled proxy is trusted.
 
-When your edge proxy runs as a **container on a different Docker network** than `nojoin-api`, the API cannot resolve it by container name - Docker DNS only resolves names on networks the API container is itself attached to. Trust such a proxy by its **IP or subnet CIDR** instead. For example, if Caddy sits on a shared `proxy_net` in the `172.18.0.0/16` range:
+A hostname entry works only if the API container can resolve it, and Docker resolves container names only on networks the API is attached to. Trust an edge proxy on a different Docker network by its IP or subnet. For example, for Caddy on a shared `proxy_net` in `172.18.0.0/16`:
 
 ```dotenv
 NOJOIN_TRUSTED_PROXIES=127.0.0.1,::1,nginx,172.18.0.0/16
 ```
 
-Using the bare container name (`...,nginx,caddy`) instead silently collapses every remote client into a single shared rate-limit bucket: `caddy` does not resolve from the API's network, so that hop is treated as untrusted and the walk stops on the proxy's own IP. Per-IP throttles (login, invitation, `/setup`, MCP registration) then key on one address for all external users. Nojoin logs a warning at API startup naming any configured trusted-proxy hostname it cannot resolve.
+An entry that does not resolve, such as a bare `caddy` from another network, is dropped. The walk then stops at the proxy's own address, and every remote client shares one bucket for the per-IP limits on sign-in, invitations, `/setup` and MCP registration. The API logs a warning at startup with the number of `NOJOIN_TRUSTED_PROXIES` entries it could not resolve.
 
 #### Host-Run Edge Proxies (Tailscale Serve and Similar)
 
-An edge proxy that runs directly on the host rather than in a container -
-Tailscale Serve, a system Nginx or Caddy service, or an SSH tunnel - reaches the
-stack through the published loopback port. Docker's port publishing rewrites the
-source address of that connection, so the bundled proxy typically records the
-**Docker bridge gateway** of Nojoin's own network as the peer, not the real
-client. The result is the same shared rate-limit bucket described above, reached
-by a different route.
+A proxy running on the host rather than in a container, such as Tailscale Serve, a system Nginx or Caddy, or an SSH tunnel, reaches the stack through the published loopback port. Docker's port publishing rewrites the source address, so the bundled proxy usually records the **Docker bridge gateway** of Nojoin's network as the peer, and every remote client again shares one rate-limit bucket.
 
-Read the actual gateway address rather than assuming one; the subnet depends on
-what else the Docker daemon has allocated:
+Look up the gateway address:
 
 ```bash
 docker inspect nojoin-nginx \
   --format '{{ range $name, $net := .NetworkSettings.Networks }}{{ $name }} {{ $net.Gateway }}{{ printf "\n" }}{{ end }}'
 ```
 
-On a stock deployment that prints one line, for the Compose-created
-`nojoin_net`. Trust that address, or the subnet containing it:
+On a stock deployment that prints one line, for Nojoin's network. Trust that address, or its subnet:
 
 ```dotenv
 NOJOIN_TRUSTED_PROXIES=127.0.0.1,::1,nginx,172.19.0.1
 ```
 
-The subnet form (`172.19.0.0/16`) survives a gateway address change if the
-network is recreated, at the cost of trusting any address in that range. Both
-are acceptable; the range contains only Nojoin's own containers and the gateway.
-
-The definitive check is the bundled proxy's own access log, which records the
-address it actually sees for a remote request:
+The subnet form (`172.19.0.0/16`) survives a new gateway address if the network is recreated, and the range holds only Nojoin's containers and the gateway. The bundled proxy's access log shows the address it records for a remote request:
 
 ```bash
 docker compose logs --tail 20 nginx
 ```
 
-Leaving this unset is not a security problem. It only means per-IP throttles
-count every remote user as one client, which on a small private tailnet may be an
-acceptable trade for one less moving part.
+Leaving this unset is not a security problem. Per-IP limits then count every remote user as one client, which a small private tailnet may accept.
 
 ## Image Trust and Supply Chain
 
-Published Nojoin images are built by a hardened, gated release pipeline. The maintainer builds them on a dedicated release host, and GitHub Actions verifies and signs them. Operators with stricter assurance requirements can rely on the following properties.
+Nojoin publishes `ghcr.io/valtora/nojoin-api`, `nojoin-worker`, `nojoin-worker-io` and `nojoin-frontend`. Each release is tagged with its version (`2.10.0`) and commit (`sha-<7 characters>`), and the rolling `major.minor` (`2.10`) and `latest` tags then move to it.
 
-- **Reproducible bases:** Every image is built from base images pinned by immutable `@sha256:` digest, not mutable tags. The exact GitHub Actions used by the release workflow are pinned to commit SHAs, and the BuildKit image that builds the release is pinned by digest.
-- **Update policy:** Pinned actions and base images are kept current automatically by Dependabot on a weekly cadence. Each update passes the full CI gate before it can merge, and a new release must be cut to publish updated images.
-- **Signed images:** Every published image is signed with [cosign](https://github.com/sigstore/cosign) using keyless (OIDC) signing. The signature is bound to the release workflow's identity rather than a stored key, and the workflow signs an image only after checking that its revision label names the release tag's commit.
-- **Provenance and SBOM:** Every image carries a build-provenance attestation and a Software Bill of Materials (SBOM) attestation describing how it was built and what it contains. The provenance records the source commit, build arguments, and pinned bases of a build on the release host, so it carries no GitHub runner identity.
-- **Pre-publication verification:** Before any image is pushed to the registry, every image passes the vulnerability scan, the api and frontend images are booted with their real dependencies and must pass their production healthchecks, and all images are asserted to run as a non-root user at runtime. The api and worker entrypoints enter as root only to repair ownership of the `./data` bind mount (Docker creates a missing bind source as root), then drop to an unprivileged user (uid 1000) via `gosu` before the long-running process starts; the smoke test verifies that dropped runtime uid rather than the image's declared `USER`.
+- **Pinned inputs:** Base images, including the BuildKit image that builds the release, are pinned by `@sha256:` digest, and the release workflow's actions by commit SHA. Dependabot proposes updates weekly. Each passes CI before merging, and reaches published images only in a new release.
+- **Checks before publishing:** Every image passes a Trivy vulnerability scan, the api and frontend images boot and pass their healthchecks, and every image's long-running process is checked to run as a non-root user, before anything is pushed.
+- **Signed images:** Every image is signed with keyless [cosign](https://github.com/sigstore/cosign), bound to the release workflow's GitHub identity. The workflow signs an image only after checking that its revision label names the release tag's commit.
+- **Provenance and SBOM:** Every image carries BuildKit provenance and SBOM attestations. Images are built on the maintainer's release host, so the provenance records the source commit, build arguments and pinned bases, with no GitHub runner identity.
+
+[ARCHITECTURE.md](ARCHITECTURE.md#release-model) describes the release pipeline.
 
 ### Verifying an Image Before Deploying
 
-Verify the cosign signature (replace the tag as needed). Use cosign 3.0 or later: the images are signed with cosign 3, and cosign 2 reports `no signatures found` for them.
+Verify the cosign signature, replacing the tag as needed. Use cosign 3.0 or later: cosign 2 reports `no signatures found` for these images.
 
 ```bash
 cosign verify ghcr.io/valtora/nojoin-api:latest \
@@ -872,85 +509,18 @@ cosign verify ghcr.io/valtora/nojoin-api:latest \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
-The provenance and SBOM are BuildKit attestations stored in the image index, not cosign attestations, so read them with `docker buildx imagetools` rather than `cosign verify-attestation`:
+The provenance and SBOM are BuildKit attestations in the image index, not cosign attestations, so read them with `docker buildx imagetools` rather than `cosign verify-attestation`:
 
 ```bash
 docker buildx imagetools inspect ghcr.io/valtora/nojoin-api:latest --format '{{ json .Provenance }}'
 docker buildx imagetools inspect ghcr.io/valtora/nojoin-api:latest --format '{{ json .SBOM }}'
 ```
 
-Pinning a deployment to an exact image digest (`ghcr.io/valtora/nojoin-api@sha256:...`) rather than a rolling tag guarantees you run the precise image you verified.
-
-## Upgrading and Migration
-
-- When performing major upgrades, check release notes for breaking changes.
-- **TLS Private Key Permissions:** The TLS private key (`cert.key`) generated in `nginx/` is created with mode `600` (owner-readable only). A key generated by an older release may still be `644` (world-readable); restrict it on the host:
-  ```bash
-  chmod 600 nginx/cert.key
-  ```
-- **Confidential Data File Permissions:** All confidential application data files (audio recordings, JWT keys, logs, documents, configuration files) default to owner-only permissions. A recursive startup repair pass automatically secures existing data inside the container-mounted directory. The pass skips symbolic links, so a link stored under the data directory never has its target re-permissioned elsewhere on the filesystem. If you are using host-mounted directories and want to align host-level permissions, you can manually restrict them:
-  ```bash
-  chmod -R 700 ./data
-  ```
-  If you have special host-integration requirements that require group or world read access, you can configure a custom umask using the `NOJOIN_UMASK` environment variable (e.g. `NOJOIN_UMASK=0022` or `NOJOIN_UMASK=0002`).
-
-### One-Time Migrations
-
-The notes below describe one-time migrations that run automatically when you first upgrade across the relevant cutover. They apply only if your database or installation predates that cutover. On a clean install, or on any installation already past these cutovers, they require no action.
-
-- Browser-capture cutover: the Windows desktop helper has been retired. Users start live recordings directly from the Nojoin web app in a supported browser. Existing recordings remain viewable and process through the same backend pipeline; any remaining native-helper installs are obsolete and should be removed from user machines.
-- Canonical-pipeline cutover (first upgrade only): if the database still contains pre-cutover recordings, the first upgrade across this cutover runs a blocking backend-only canonical transcript migration during container startup after Alembic completes. Expect the API container to take longer to become ready on that first boot. During the sweep, existing recordings are classified entirely on the backend: successfully migrated legacy meetings remain viewable, while legacy meetings that cannot be canonicalised safely are marked for explicit reprocess instead of being edited in place. The supported rollback model for this cutover is code rollback only; canonical rows created during the migration are additive and are not converted back into legacy-only transcript state.
-- Live-pipeline lane-state migration: this adds ASR and diarisation fields to `recording_audio_window_manifests` and backfills them from legacy window status plus completed diarisation window results. No operator action is required beyond allowing Alembic to run during normal container startup, but take a database backup before upgrade and avoid downgrading after the migration unless you are prepared to restore from backup.
-- **RAG embedding cutover (2.3.0, destructive).** The search and meeting-chat embedding model changed from `all-MiniLM-L6-v2` to `jina-embeddings-v2-small-en`. The old model truncated its input at roughly 256 tokens, so the tail of any real document page was never searchable; the new one has an 8192-token window, which lets a whole page be a single retrieval unit.
-
-  Vectors produced by two different models are not comparable at any width, so there is no migration path: the Alembic revision widens `context_chunks.embedding` from 384 to 512 dimensions and **deletes every existing row**. Semantic search and meeting chat return no results until the index is rebuilt.
-
-  Rebuilding is dispatched by `backend.worker.tasks.rebuild_text_embeddings_task`, which runs on the parse lane and re-indexes up to 50 recordings per call, skipping any already at the current version. It is idempotent, so it can be run repeatedly until it reports zero:
-
-  ```bash
-  docker compose exec worker-parse \
-    celery -A backend.celery_app.celery_app call \
-    backend.worker.tasks.rebuild_text_embeddings_task
-  ```
-
-  Re-indexing is local inference and costs nothing. Documents parsed before 2.3.0 have no stored pages, so they are re-parsed structurally as part of the rebuild — never visually, so no AI provider quota is spent without being asked. Use **Parse again** on a document card to run visual analysis on one deliberately. Take a database backup before upgrading; the downgrade path is equally destructive, for the same reason.
-
-  The new model (roughly 120 MB) downloads to the model cache the first time a worker embeds anything, so the first rebuild call on an air-gapped host will fail until the cache is populated.
-
-- **Transcription engine made install-wide (2.6.0).** The engine (`transcription_backend`) and its model (`whisper_model_size`, `parakeet_model`, `canary_model`) are kept in `data/config.json` and apply to every user; earlier releases stored them on the account of whoever saved the settings page. On the first start after the upgrade, the API copies the owner's choice into `config.json` and removes it from the owner's account. An owner value equal to the shipped default does not replace a different value already in `config.json`, because the settings page saved defaults that nobody chose. Choices stored on other accounts are ignored. The api log names every value carried, kept or rejected; if `config.json` cannot be written, the next start tries again.
-- **ASR window result ledger removed.** Alembic revision `3b804f4435a1` drops the `recording_asr_window_results` table. Its rows were an advisory log of transcription attempts that nothing read; no transcript, utterance or speaker refers to them, and backups never included them. A downgrade recreates the table empty. The `enable_asr_window_result_ledger` setting is retired with it: a stored value is ignored and dropped from `config.json` on the next save, and the `ENABLE_ASR_WINDOW_RESULT_LEDGER` environment variable is ignored. Upgrade with the containers stopped (`docker compose down`, then up), as in [Updating a Deployment](#updating-a-deployment): a worker from an earlier release that is still running after the migration fails every final pass when it tries to write the dropped table.
-- **fp32 ASR weights fetched again (#448).** huggingface_hub 1.32 and later keep Xet downloads in a store shared across the hub cache and sharded by hash, so the fp32 Parakeet and Canary encoders and their external weights landed in different directories, and ONNX Runtime 1.31 (Nojoin 2.8.0 and later) refuses to load them. The worker now sets `HF_HUB_DISABLE_SHARED_BLOBS=1`, which keeps every file of a repo in the repo's own `blobs/`. A copy already downloaded into the shared store is reported as not downloaded, and the model preparation queued at startup deletes it and downloads it again, about 2.5 GB for Parakeet and 4 GB for Canary. A repo directory that is a link to somewhere else is not deleted; the worker log says so, and it has to be removed by hand.
-- **Parakeet word length capped, word end padding retired (#473).** A Parakeet word now ends at the earliest of the next word's start, its window's end and its start plus the new `asr_word_length_cap_s` (default 0.4 s, 0.2 to 0.45). The `asr_word_end_padding_s` setting it replaces was how long a word lasted before a long pause, with a default of 0.2. It is retired, not converted, because the same number means something else as a cap: a stored value is ignored, and dropped from a user's settings on their next save and from `config.json` when an administrator next saves an install-wide setting, which rewrites the file. An older settings page that still sends it is ignored. A user or operator who had set it gets the new default until they set the cap. Reprocess a recording to apply the change to it.
-- **Parakeet and Canary windows shortened, GPU transcription window retired (#445).** Both engines now transcribe in windows of at most 30 seconds on every host, because longer windows lost speech, and Parakeet loads its fp32 weights on a CPU as well, because its int8 weights did too. A CPU host running Parakeet therefore downloads the fp32 weights, about 2.5 GB, in the model preparation queued at the first start after the upgrade. The int8 files, about 0.7 GB, stay beside them in the same cache entry; deleting Parakeet in **Model dependencies** under **Settings > AI providers** removes both, and preparing it again fetches only fp32. The `gpu_asr_window_s` setting is retired: a stored value is ignored and dropped from `config.json` on the next save, and an older settings page that still sends it is ignored. Reprocess a recording to transcribe it again with the shorter windows.
-
-### Live Pipeline Readiness Notes
-
-- Browser live capture depends on the canonical 16 kHz, two-channel browser segment WAVs produced by the worker. Channel 0 is shared/system audio when available and channel 1 is microphone audio.
-- Segment sequences start at `0`. Operators investigating upload or finalization failures should check for missing sequence numbers before assuming ASR or diarisation failure.
-- Recording detail pages expose only high-level progress, waveform state, and Meeting Edge guidance during live capture.
-- Final processing reuses live transcript and source-channel speaker evidence only after stable-id or clear overlap alignment. Ambiguous live/final spans are intentionally left to final ASR and diarisation output.
-- A practical smoke after upgrade is: start a browser recording in supported desktop Chromium, share a meeting tab with audio, speak through the microphone, observe waveform and Meeting Edge or processing-state updates, pause, resume, finalize, then verify final transcript and speaker continuity. For mobile capture changes, also smoke Chrome on Android or iOS microphone-only recording with the tab open and the phone awake.
-
-### Canonical Cutover Notes
-
-- The container entrypoint runs Alembic first and then runs a second backend-only startup cutover pass before the API process starts serving traffic.
-- The startup cutover acquires a database-level lock so only one upgraded instance performs the legacy-recording sweep at a time.
-- Historical meetings from before the unified pipeline are supported for viewing and explicit reprocess. They are not guaranteed to preserve transcript-edit or speaker-edit parity without reprocessing.
-- For local recovery or debugging only, `NOJOIN_SKIP_STARTUP_CANONICAL_CUTOVER=1` skips the second startup cutover pass. Do not rely on that flag as a normal production rollout strategy.
-- `NOJOIN_STARTUP_CANONICAL_CUTOVER_BATCH_SIZE` can reduce or increase the number of pending legacy recordings processed per sweep iteration during startup. The default is `100`.
-
-## Database Migrations
-
-Useful Alembic commands:
-
-```bash
-alembic upgrade head
-alembic revision --autogenerate -m "message"
-```
+Pin a deployment to the digest you verified (`ghcr.io/valtora/nojoin-api@sha256:...`) to run exactly that image.
 
 ## Updating a Deployment
 
-### Pull-First Installations
+Stop the stack before upgrading, so no worker from the old release runs against the migrated database:
 
 ```bash
 docker compose down
@@ -958,41 +528,69 @@ docker compose pull
 docker compose up -d
 ```
 
-### Local Custom Builds
+The api runs database migrations when it starts. Check the release notes for breaking changes and [Upgrading and Migration](#upgrading-and-migration) for notes on your version, and make a short test recording afterwards.
 
-```bash
-docker compose down
-docker compose build
-docker compose up -d
-```
+If your `docker-compose.yml` has its own `build:` directives, run `docker compose build` in place of `pull`. `worker-io` is built `FROM` the shared worker image through a named build context, `worker_base`, so Compose builds the base first and rebuilds `worker-io` when it changes. The example file points that context at the published `nojoin-worker:latest`. A full source build points it at `service:worker-gpu` and gives the worker services `build:` stanzas.
 
-Use this only if your local `docker-compose.yml` includes custom build directives.
+**Settings > Updates** shows the installed and latest published versions ([ADMIN.md](ADMIN.md#updates)). The installed version comes from build metadata in the API image, and a local source build falls back to `docs/VERSION`.
 
-`worker-io` is built `FROM` the shared worker image, so the base must be built
-before `worker-io`; otherwise Compose builds them in parallel and `worker-io` can
-ship stale code layered on the previous base. The compose files wire this ordering
-explicitly: `worker-io`'s build declares the base as a named `additional_contexts`
-entry (`worker_base`), so Compose builds the base first and rebuilds `worker-io`
-whenever it changes. `docker-compose.example.yml` pins that context to the published
-image (`docker-image://…/nojoin-worker:latest`); a full source build points it at the
-base service instead (`service:worker-gpu`, which also needs a `build:` stanza on the
-worker services). No manual build ordering is required.
+## Upgrading and Migration
 
-Nojoin also exposes installed and latest published version information in **Settings > Updates**. The installed version is read from build metadata embedded into the API image, with local source builds falling back to `docs/VERSION`.
+### File Permissions
 
-## Release Model
+- **TLS key:** `nginx/cert.key` is created with mode `600`. A key generated by an older release may be `644`. Restrict it with `chmod 600 nginx/cert.key`.
+- **Data files:** Recordings, keys, logs, documents and configuration default to owner-only permissions, and a startup pass secures existing files under the data directory, skipping symbolic links. To match on the host, run `chmod -R 700 ./data`. If a host integration needs group or world read access, set `NOJOIN_UMASK`, for example `0022` or `0002`.
 
-Nojoin uses a unified lock-step release model:
+### Version Notes
 
-- A `vX.Y.Z` tag drives the published release.
-- Docker images are published to GHCR.
-- The API image embeds the resolved server version during the build, so the installed version shown in Settings does not depend on Docker daemon inspection at runtime.
-- The application surfaces release metadata primarily from GitHub Releases.
+These run on the first start after the upgrade and need no action unless a note says so.
+
+#### Unreleased Changes on Main
+
+- **Parakeet word length capped, word end padding retired (#473).** A Parakeet word now ends at the earliest of the next word's start, its window's end and its start plus `asr_word_length_cap_s` (default 0.4 s, range 0.2 to 0.45). The retired `asr_word_end_padding_s` (default 0.2) set how long a word lasted before a long pause. It is not converted, because the same number means something else as a cap. A stored value is ignored, dropped from a user's settings on their next save, and dropped from `config.json` when an administrator next saves an install-wide setting. An older settings page that still sends it is ignored. Anyone who had set it gets the new default until they set the cap. Reprocess a recording to apply the change to it.
+
+#### Upgrading From Before 2.10.0
+
+- **ASR window result ledger removed.** Alembic revision `3b804f4435a1` drops the `recording_asr_window_results` table, an unread log of transcription attempts that no transcript, utterance, speaker or backup refers to. A downgrade recreates it empty. The `enable_asr_window_result_ledger` setting and the `ENABLE_ASR_WINDOW_RESULT_LEDGER` variable are ignored. Stop the stack before upgrading, as in [Updating a Deployment](#updating-a-deployment): a worker from an earlier release still running after the migration fails every final pass.
+- **Parakeet and Canary windows shortened, GPU transcription window retired (#445).** Both engines transcribe in windows of at most 30 seconds on every host, and Parakeet loads fp32 on a CPU too ([GPU Acceleration](#gpu-acceleration)). A CPU host running Parakeet downloads the fp32 weights, about 2.5 GB, on the first start. The int8 files, about 0.7 GB, stay beside them; deleting Parakeet in **Model downloads** under **Settings > AI providers** removes both, and preparing it again fetches only fp32. The `gpu_asr_window_s` setting is retired: a stored value is ignored and dropped from `config.json` on the next save. Reprocess a recording to transcribe it with the shorter windows.
+- **fp32 ASR weights downloaded again (#448).** huggingface_hub 1.32 and later can store a model's fp32 graph and its external weights in different directories, which ONNX Runtime 1.31 (Nojoin 2.8.0 and later) refuses to load. The worker now sets `HF_HUB_DISABLE_SHARED_BLOBS=1`. A copy already in the shared store shows as not downloaded, and startup preparation deletes it and downloads it again: about 2.5 GB for Parakeet and 4 GB for Canary. A repo directory that is a link elsewhere is not deleted. The worker log says so, and you remove it by hand.
+
+#### Upgrading From Before 2.6.0
+
+- **Transcription engine made install-wide.** The engine (`transcription_backend`) and its model (`whisper_model_size`, `parakeet_model`, `canary_model`) live in `data/config.json` and apply to every user. On the first start, the API copies the owner's choice into `config.json` and removes it from the owner's account. An owner value equal to the shipped default does not replace a different value already in `config.json`, and choices stored on other accounts are ignored. The api log names every value carried, kept or rejected. If `config.json` cannot be written, the next start tries again.
+
+#### Upgrading From Before 2.3.0
+
+- **Search index rebuilt (destructive).** The search and meeting chat embedding model changed from `all-MiniLM-L6-v2` to `jina-embeddings-v2-small-en`. The migration widens `context_chunks.embedding` from 384 to 512 dimensions and deletes every row, so search and meeting chat return nothing until the index is rebuilt. Take a database backup first. Downgrading is equally destructive.
+
+  A periodic task re-indexes transcripts a few at a time. To rebuild transcripts and documents sooner, run this until it reports zero. Each call queues up to 50 recordings and skips any already current:
+
+  ```bash
+  docker compose exec worker-parse \
+    celery -A backend.celery_app.celery_app call \
+    backend.worker.tasks.rebuild_text_embeddings_task
+  ```
+
+  Re-indexing runs locally and costs nothing. Documents parsed before 2.3.0 have no stored pages, so they are re-parsed structurally, never visually, and spend no AI provider quota. Use **Parse again** on a document to run visual analysis on it. The new model, about 120 MB, downloads the first time a worker embeds anything, so on an air-gapped host the rebuild fails until the model cache holds it.
+
+#### Upgrading From 1.x
+
+- **Shared /tmp volume.** Deployments created before 2.0.0 mounted a `backup_temp` volume at `/tmp` in the api and workers. Nothing uses it now and it holds nothing durable, so remove it. An export in flight during the upgrade is lost.
+
+  ```bash
+  docker compose down
+  docker volume rm nojoin_backup_temp
+  docker compose up -d
+  ```
+
+- **Recordings bind mount.** Remove any `./data/recordings:/app/recordings` bind left in a compose file derived from an older example. Nothing reads it, and Docker can recreate the recordings directory owned by root through it.
 
 ## Related Docs
 
 - [GETTING_STARTED.md](GETTING_STARTED.md)
+- [CAPTURE.md](CAPTURE.md)
 - [CALENDAR.md](CALENDAR.md)
 - [ADMIN.md](ADMIN.md)
+- [SECURITY.md](SECURITY.md)
 - [BACKUP_RESTORE.md](BACKUP_RESTORE.md)
 - [DEVELOPMENT.md](DEVELOPMENT.md)

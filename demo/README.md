@@ -2,12 +2,12 @@
 
 `demo.nojoin.co.uk` lets a visitor sign in with one click and look around a Nojoin library: the dashboard, transcripts with named speakers, meeting notes, analytics, people, tasks and the calendar. It is read-only. Nothing a visitor does is saved, recording and import are switched off, and nothing calls an AI provider.
 
-It runs no Nojoin backend. The frontend is the normal one built in demo mode, and the API behind it replays responses captured from a seeded instance.
+No Nojoin backend runs behind it. The normal frontend, built in demo mode, talks to an API that replays responses captured from a seeded instance.
 
 ## How It Fits Together
 
 - **Frontend in demo mode.** `NEXT_PUBLIC_DEMO_MODE=true` at build time (see `frontend/src/lib/demo.ts`) adds a read-only banner, replaces the sign-in form with an "Enter the demo" button, disables Start Meeting and Import Audio, and switches off account changes. The flag is inlined at build time, so a normal build compiles the demo branches away and no server response can turn a real install into a demo.
-- **Fixture API** (`server/app.py`). Serves captured GET responses, matched on path and query, with the path alone as a fallback. Every write gets a 403 with a read-only message, except sign-in and sign-out, which set and clear a cookie so the frontend's session handling works as it does on a real install. A search the capture never ran is narrowed to the list items that mention the term. Dates in responses move forward by the whole weeks since the capture, so tasks, meetings and calendar events stay near the visitor's today and keep their weekdays. The process holds no database, credential or model.
+- **Fixture API** (`server/app.py`). Serves captured GET responses, matched on path and query, then on the path alone. Every write gets a 403 with a read-only message, except sign-in and sign-out, which set and clear a cookie so the frontend's session handling works unchanged. A search the capture never ran is narrowed to the list items that mention the term. Dates in responses move forward by the whole weeks since the capture, so tasks, meetings and calendar events stay near the visitor's today and keep their weekdays. The process holds no database, credential or model.
 - **nginx** (`nginx.conf`) sends `/api/` to the fixture API and everything else to the frontend, with a per-visitor rate limit. It is the only container on the tunnel's network.
 
 ## The Seeded Library
@@ -16,14 +16,16 @@ The fixtures come from a throwaway instance built from the "Localhost Dev Compos
 
 - six NASA recordings from the NASA Image and Video Library, processed by the real pipeline on a GPU;
 - speakers named as the people they are, and no invented names over real people's words;
-- notes and the AI reading of each meeting generated once, at seed time, by the same model a production install would use;
+- notes and the AI reading of each meeting, generated once at seed time by the model a production install would use;
 - tags, tasks and calendar events written around those meetings.
+
+The calendar comes from [seed/seed_calendar.py](seed/seed_calendar.py), run in the seed instance's API container once the recordings have processed. Its docstring has the commands, and each run replaces only its own calendar connection.
 
 Keep it that way. Nothing from a real meeting library goes into the demo.
 
 ## Capturing Fixtures
 
-With the seed instance running, from this directory:
+With the seed instance running, from this directory, capture into `$FIXTURES`:
 
 ```bash
 docker run --rm --network host --user "$(id -u):$(id -g)" -e HOME=/tmp \
@@ -33,37 +35,37 @@ docker run --rm --network host --user "$(id -u):$(id -g)" -e HOME=/tmp \
   sh -c 'cd /tmp && npm i -s playwright@1.62.1 && cp /capture/capture.mjs . && node capture.mjs'
 ```
 
-`capture/capture.mjs` signs in, visits every page and every tab of each recording, requests the archived, deleted and per-tag recording lists directly, fetches each recording's audio whole, and writes `index.json` plus one file per distinct response body. It marks the captured account as a non-administrator, because the demo account is one, and records the instance as healthy, because a refresh captures with the seed's workers stopped and the demo has no background work for a warning to describe.
+`capture/capture.mjs` signs in as `SEED_USERNAME` (default `demo`), visits every page and every tab of each recording, requests the archived, deleted and per-tag recording lists directly, fetches each recording's audio whole, and writes `index.json` plus one file per distinct response body. It marks the captured account as a non-administrator, as the demo account is, and records the instance as healthy, because a refresh captures with the seed's workers stopped.
 
-The fixtures are a snapshot of the API at capture time. A release that changes a response the frontend reads breaks the matching panel until the capture is rerun. `refresh.sh` reruns it for every release.
+The fixtures are a snapshot of the API at capture time. A release that changes a response the frontend reads breaks the matching panel until the capture is rerun, which `refresh.sh` does for every release.
 
 ## Refreshing on Each Release
 
-`refresh.sh` keeps the demo on the latest release. It runs hourly from cron and does nothing unless GitHub reports a release newer than the one it last built. When one appears it:
+`refresh.sh` runs hourly from cron and does nothing unless GitHub reports a release newer than the one it last built. When one appears it:
 
 1. pulls that release's API and frontend images and points the seed instance at them;
 2. checks out the release tag in the demo's clone;
-3. starts the seed instance without its workers, so a refresh never touches the GPU, and captures into a fresh directory;
+3. starts the seed instance without its workers, so a refresh never touches the GPU, captures into a fresh directory, and stops the seed instance;
 4. swaps the new fixtures in only if the capture is complete, then rebuilds and recreates the demo from the tag;
 5. checks the public demo answers, and if it does not, puts the previous fixtures back;
-6. stops the seed instance, records the release and sends a notification either way.
+6. records the release, and sends a notification whether the refresh worked or not.
 
 ```bash
 41 * * * * DEMO_REFRESH_ENV=$HOME/nojoin-demo/refresh.env $HOME/nojoin-demo/repo/demo/refresh.sh >> $HOME/nojoin-demo/refresh.log 2>&1
 ```
 
-The configuration file is the host's and holds the seed password, so it is not in this repository. `refresh.sh` lists the variables it needs at the top; `NOTIFY_URL` and `NOTIFY_TAG` point it at an Apprise endpoint. The seed instance's compose file takes its API and frontend images from `SEED_API_IMAGE` and `SEED_FRONTEND_IMAGE`, which the script sets in the seed's `.env`.
+The configuration file belongs to the host and holds the seed password, so it is not in this repository. `refresh.sh` lists the variables it needs at the top; `NOTIFY_URL` and `NOTIFY_TAG` point it at an Apprise endpoint. The seed instance's compose file takes its API and frontend images from `SEED_API_IMAGE` and `SEED_FRONTEND_IMAGE`, which the script sets in the seed's `.env`.
 
-`refresh.sh --recapture` recaptures and rebuilds at the current checkout without upgrading anything, for after the seeded library itself changes. `--force` reruns the latest release.
+`refresh.sh --recapture` recaptures and rebuilds at the current checkout without upgrading anything, for after the seeded library changes. `--force` reruns the latest release.
 
 ## Running It
 
 ```bash
-cp .env.example .env   # set DEMO_FIXTURES_DIR to the captured fixtures
+cp .env.example .env   # set DEMO_FIXTURES_DIR and DEMO_TUNNEL_NETWORK
 docker compose up -d --build
 ```
 
-The frontend image builds from `../frontend`, so run it from a clean checkout of `main`, not a working copy that changes branch.
+`DEMO_TUNNEL_NETWORK` is the existing Docker network the Cloudflare tunnel container is on. The frontend image builds from `../frontend`, so run the demo from a clone that nothing else switches between branches; `refresh.sh` keeps it on the latest release tag.
 
 ## Tests
 
