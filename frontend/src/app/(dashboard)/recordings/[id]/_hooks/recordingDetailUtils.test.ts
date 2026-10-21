@@ -6,6 +6,7 @@ import {
   AUDIO_RECHECK_INTERVAL_MS,
   AUDIO_RECHECK_WINDOW_MS,
   hasPolledRecordingChanged,
+  pollFailureMeansRemoved,
   recordingPollIntervalMs,
   shouldPollRecordingUpdates,
 } from "./recordingDetailUtils";
@@ -106,5 +107,21 @@ describe("noticing a change to the notes in a poll", () => {
     expect(
       hasPolledRecordingChanged(before, { ...before, live_audio_ms: 2_000 }),
     ).toBe(false);
+  });
+});
+
+describe("pollFailureMeansRemoved", () => {
+  it("reads a 404 as a removed recording while the session works", () => {
+    expect(pollFailureMeansRemoved(404, true)).toBe(true);
+  });
+
+  it("ignores a 404 while the session belongs to someone else", () => {
+    // Another tab signed in as a different account: the recording still exists.
+    expect(pollFailureMeansRemoved(404, false)).toBe(false);
+  });
+
+  it("ignores other failures", () => {
+    expect(pollFailureMeansRemoved(401, true)).toBe(false);
+    expect(pollFailureMeansRemoved(null, true)).toBe(false);
   });
 });

@@ -1,6 +1,7 @@
 import axios from "axios";
 
 import { recordRequestOutcome } from "@/lib/connectivity/monitor";
+import { isSessionEndedError, noteSessionRefusal, stampSessionRequest } from "@/lib/session";
 
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL
   ? `${process.env.NEXT_PUBLIC_API_URL}/v1`
@@ -68,9 +69,7 @@ const api = axios.create({
   },
 });
 
-api.interceptors.request.use((config) => {
-  return config;
-});
+api.interceptors.request.use((config) => stampSessionRequest(config));
 
 api.interceptors.response.use(
   (response) => {
@@ -100,7 +99,11 @@ api.interceptors.response.use(
       );
     }
 
-    if (error.response && error.response.status === 401) {
+    // While a capture runs, a refused session stays on the page and a sign-in
+    // dialog asks for the password: a reload would tear the capture down.
+    const stayOnPage = isSessionEndedError(error) && noteSessionRefusal(error);
+
+    if (error.response && error.response.status === 401 && !stayOnPage) {
       if (
         typeof window !== "undefined" &&
         !window.location.pathname.includes("/login") &&
@@ -118,7 +121,8 @@ api.interceptors.response.use(
     if (
       error.response &&
       error.response.status === 403 &&
-      error.response.data?.detail === "Password change required"
+      error.response.data?.detail === "Password change required" &&
+      !stayOnPage
     ) {
       if (
         typeof window !== "undefined" &&

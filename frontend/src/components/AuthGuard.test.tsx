@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { holdSignInInPlace, resetSessionForTests } from "@/lib/session";
 import { renderWithProviders, waitFor } from "@/test/renderWithProviders";
 
 import AuthGuard from "./AuthGuard";
@@ -58,5 +59,40 @@ describe("AuthGuard with a pending password change", () => {
     await waitFor(() =>
       expect(routerPush).toHaveBeenCalledWith("/settings/profile"),
     );
+  });
+});
+
+describe("AuthGuard once the session has ended", () => {
+  const refused = () =>
+    Object.assign(new Error("Request failed with status code 401"), {
+      response: { status: 401, data: { detail: "Not authenticated" } },
+    });
+
+  beforeEach(() => {
+    resetSessionForTests();
+    getCurrentUser.mockRejectedValue(refused());
+  });
+
+  afterEach(() => {
+    resetSessionForTests();
+  });
+
+  it("sends the page to sign in", async () => {
+    visit("/recordings/rec-1");
+
+    renderWithProviders(<AuthGuard>content</AuthGuard>);
+
+    await waitFor(() => expect(routerPush).toHaveBeenCalledWith("/login"));
+  });
+
+  it("leaves a running capture's page where it is", async () => {
+    visit("/recordings/rec-1");
+    holdSignInInPlace(true);
+
+    renderWithProviders(<AuthGuard>content</AuthGuard>);
+
+    await waitFor(() => expect(getCurrentUser).toHaveBeenCalled());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(routerPush).not.toHaveBeenCalled();
   });
 });
