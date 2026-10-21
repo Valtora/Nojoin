@@ -4,6 +4,7 @@
 import gc
 import logging
 import os
+import re
 import traceback
 from collections.abc import Sequence
 from typing import NamedTuple, Protocol
@@ -18,7 +19,8 @@ from ..processing_tuning import (
     TUNING_SPECS,
     resolve_tuning,
 )
-from .base import TranscriptionEngine
+from . import onnx_asr_backstop as backstop
+from .base import VAD_MUTED_INPUT, TranscriptionEngine
 from .errors import (
     TranscriptionError,
     is_out_of_memory,
@@ -54,6 +56,14 @@ MAX_CHUNK_DURATION_S = 30.0
 # ("San Francisco has developed a large tourist infrastructure...").
 SILENT_WINDOW_PEAK = 1e-4
 
+# Longest call (seconds) that decodes a window's skipped speech again
+# (onnx_asr_backstop). A longer hole is split like a window, so the retry
+# cannot itself run long enough to skip speech.
+HOLE_REDECODE_WINDOW_S = 20.0
+
+# The spacing rule onnx-asr applies to the text it decodes from its tokens.
+_DECODE_SPACE_PATTERN = re.compile(r"\A\s|\s\B|(\s)\b")
+
 
 class Recognition(Protocol):
     """The parts of an onnx-asr timestamped result the mapper reads."""
@@ -72,6 +82,12 @@ class _Recognition(NamedTuple):
     text: str
     tokens: Sequence[str] | None
     timestamps: Sequence[float] | None
+
+
+class _Recognizer(Protocol):
+    """An onnx-asr model with timestamps: what with_timestamps() returns."""
+
+    def recognize(self, path: str, **kwargs: str) -> Recognition: ...
 
 
 def map_onnx_asr_result(
@@ -222,18 +238,238 @@ def _shift_segment(segment: dict, offset_s: float) -> dict:
     return shifted
 
 
-def _chunk_boundaries(audio, sample_rate: int) -> list[tuple[int, int]]:
-    """Split [0, len(audio)) into windows of MAX_CHUNK_DURATION_S at most.
+def _join_tokens(tokens: Sequence[str]) -> str:
+    """The text of decoded tokens, spaced exactly as onnx-asr spaces its own."""
+    return _DECODE_SPACE_PATTERN.sub(
+        lambda match: " " if match.group(1) else "", "".join(tokens)
+    )
 
-    Every window but a lone one lasts at least half that, and closes at the
+
+def _words_of(result: dict) -> list[dict]:
+    """Every timed word of a canonical result, in segment order."""
+    return [word for segment in result["segments"] for word in segment.get("words", [])]
+
+
+class _Decoder(NamedTuple):
+    """How one transcription decodes a stretch of audio into a canonical result."""
+
+    recognizer: _Recognizer
+    sample_rate: int
+    language_code: str | None
+    word_length_cap_s: float
+
+    def recognize(self, samples) -> Recognition:
+        """recognize() the samples, written to a temporary WAV for the call."""
+        import tempfile
+
+        import soundfile
+
+        handle = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+        path = handle.name
+        handle.close()
+        try:
+            soundfile.write(path, samples, self.sample_rate)
+            kwargs = {"language": self.language_code} if self.language_code else {}
+            return self.recognizer.recognize(path, **kwargs)
+        finally:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+
+    def to_result(self, recognized: Recognition, frames: int) -> dict:
+        """Map a result for ``frames`` samples of audio into the canonical schema."""
+        return map_onnx_asr_recognition(
+            recognized,
+            frames / self.sample_rate,
+            self.language_code,
+            self.word_length_cap_s,
+        )
+
+
+class _Redecoded(NamedTuple):
+    """A window after its holes were decoded again."""
+
+    result: dict
+    # Calls of the first retry.
+    calls: int
+    second: backstop.SecondTry
+    # Holes (frames) that still hold no word once every retry's words are in.
+    wordless: list[tuple[int, int]]
+
+
+class _Heard(NamedTuple):
+    """One retry call's result, and where its piece starts in the window."""
+
+    offset_s: float
+    frames: int
+    recognized: Recognition
+
+
+def _decode_again(
+    decoder: _Decoder, chunk, first: int, end: int
+) -> tuple[int, list[_Heard]]:
+    """Decode ``chunk[first:end]`` in fresh calls of HOLE_REDECODE_WINDOW_S at most.
+
+    A longer stretch is split like a window. A call that fails adds nothing,
+    unless it ran out of memory or the task was stopped.
+
+    Returns:
+        How many calls it took, and what each call that did not fail heard.
+    """
+    calls = 0
+    heard: list[_Heard] = []
+    for begin, stop in _chunk_boundaries(
+        chunk[first:end], decoder.sample_rate, HOLE_REDECODE_WINDOW_S
+    ):
+        piece = chunk[first + begin : first + stop]
+        calls += 1
+        offset_s = (first + begin) / decoder.sample_rate
+        try:
+            recognized = decoder.recognize(piece)
+        except Exception as error:
+            # Running out of memory keeps transcribe()'s handling, and a
+            # task interruption must reach Celery.
+            if is_out_of_memory(error) or is_task_interruption(error):
+                raise
+            logger.warning(
+                f"A retry of {len(piece) / decoder.sample_rate:.1f}s at "
+                f"{offset_s:.1f}s into a window failed; the window keeps "
+                f"the words found there so far: {error}",
+                exc_info=True,
+            )
+            continue
+        heard.append(_Heard(offset_s, len(piece), recognized))
+    return calls, heard
+
+
+def _try_again_from_word_before(
+    decoder: _Decoder,
+    chunk,
+    timings: Sequence[backstop.WordTiming],
+    wordless: list[tuple[int, int]],
+) -> tuple[list[backstop.WordTiming], list[dict], backstop.SecondTry]:
+    """The second and last try at the holes the first retry left wordless.
+
+    Each hole is decoded once more from backstop.second_try_start(), found
+    from ``timings`` (the window's and its first retry's), so the call opens
+    on the word before the hole. Words starting before the hole's first kept
+    sample are that word decoded again, and are dropped. A hole with no word
+    before it is not tried. This is never called on its own output: a hole
+    gets two retries at most (onnx_asr_backstop).
+
+    Returns:
+        The kept words' timings and words, in window time, and the counts.
+    """
+    rate = decoder.sample_rate
+    kept_timings: list[backstop.WordTiming] = []
+    kept: list[dict] = []
+    tried: list[tuple[int, int]] = []
+    no_previous_word: list[tuple[int, int]] = []
+    calls = found_in = 0
+    for begin, end in wordless:
+        start = backstop.second_try_start(timings, begin, rate)
+        if start is None:
+            no_previous_word.append((begin, end))
+            continue
+        tried.append((begin, end))
+        hole_calls, heard = _decode_again(decoder, chunk, start, end)
+        calls += hole_calls
+        found = len(kept)
+        for offset_s, frames, recognized in heard:
+            kept_timings.extend(
+                backstop.WordTiming(word.start + offset_s, word.last_token + offset_s)
+                for word in backstop.word_timings(recognized)
+                if round((word.start + offset_s) * rate) >= begin
+            )
+            kept.extend(
+                {"start": word["start"] + offset_s, "word": word["word"]}
+                for word in _words_of(decoder.to_result(recognized, frames))
+                if round((word["start"] + offset_s) * rate) >= begin
+            )
+        if len(kept) > found:
+            found_in += 1
+    second = backstop.SecondTry(tried, calls, found_in, len(kept), no_previous_word)
+    return kept_timings, kept, second
+
+
+def _redecode_holes(
+    decoder: _Decoder,
+    chunk,
+    chunk_result: dict,
+    timings: Sequence[backstop.WordTiming],
+    holes: list[tuple[int, int]],
+) -> _Redecoded:
+    """Decode a window's holes again, each in fresh calls, and merge their words.
+
+    A fresh recognize() call restarts the decoder, which recovers speech the
+    window's own call skipped. A window is too short to hold a hole that
+    splits in more than two, and a hole starts and ends on kept audio, so no
+    piece is silent. A hole still wordless after it gets one second try
+    (_try_again_from_word_before). The merged words are mapped again over the
+    window, so word ends and segments follow the mapper's usual rules. A retry
+    result without token timings adds nothing.
+
+    ``timings`` are the window's own word timings; with the retries' added,
+    they find the holes that are still wordless. Those the second try leaves
+    are only counted.
+
+    Returns:
+        The window's merged result, the calls of its first retry, what its
+        second tries did, and the holes still wordless after both.
+    """
+    words = [
+        {"start": word["start"], "word": word["word"]}
+        for word in _words_of(chunk_result)
+    ]
+    timings = list(timings)
+    calls = 0
+    for first, end in holes:
+        hole_calls, heard = _decode_again(decoder, chunk, first, end)
+        calls += hole_calls
+        for offset_s, frames, recognized in heard:
+            timings.extend(
+                backstop.WordTiming(word.start + offset_s, word.last_token + offset_s)
+                for word in backstop.word_timings(recognized)
+            )
+            words.extend(
+                {"start": word["start"] + offset_s, "word": word["word"]}
+                for word in _words_of(decoder.to_result(recognized, frames))
+            )
+    wordless = backstop.survey(chunk, decoder.sample_rate, sorted(timings)).holes
+    kept_timings, kept, second = _try_again_from_word_before(
+        decoder, chunk, timings, wordless
+    )
+    if second.tried:
+        timings.extend(kept_timings)
+        words.extend(kept)
+        wordless = backstop.survey(chunk, decoder.sample_rate, sorted(timings)).holes
+    words.sort(key=lambda word: word["start"])
+    merged = _Recognition(
+        _join_tokens([word["word"] for word in words]),
+        [word["word"] for word in words],
+        [word["start"] for word in words],
+    )
+    return _Redecoded(decoder.to_result(merged, len(chunk)), calls, second, wordless)
+
+
+def _chunk_boundaries(
+    audio, sample_rate: int, longest_s: float | None = None
+) -> list[tuple[int, int]]:
+    """Split [0, len(audio)) into windows of ``longest_s`` at most.
+
+    ``longest_s`` defaults to MAX_CHUNK_DURATION_S. Every window but a lone
+    one lasts at least half of it, and closes at the
     first of the quietest 0.2 s spans after its midpoint, so a cut never
     falls inside a word and the next window opens on the pause. A long pause
     is never cut into slivers of silence, and the last cut leaves the final
-    window at least half as well. Returns (start_frame, end_frame) pairs
-    covering the whole signal.
+    window at least half as well. When less than ``longest`` plus 0.2 s is
+    left, two windows of half cannot both fit, and the last cut is the first
+    of the quietest spans that keep both within ``longest``. Returns
+    (start_frame, end_frame) pairs covering the whole signal.
     """
     total_frames = len(audio)
-    longest = int(MAX_CHUNK_DURATION_S * sample_rate)
+    longest = int((longest_s or MAX_CHUNK_DURATION_S) * sample_rate)
     shortest = longest // 2
     probe = max(1, int(0.2 * sample_rate))
 
@@ -242,14 +478,15 @@ def _chunk_boundaries(audio, sample_rate: int) -> list[tuple[int, int]]:
     while total_frames - start > longest:
         low = start + shortest
         high = min(start + longest, total_frames - shortest) - probe
+        if high <= low:
+            low, high = total_frames - longest, start + longest - probe
         cut = start + longest
-        if high > low:
-            quietest = None
-            for pos in range(low, high + 1, max(1, probe // 2)):
-                energy = float(abs(audio[pos : pos + probe]).mean())
-                if quietest is None or energy < quietest:
-                    quietest = energy
-                    cut = pos
+        quietest = None
+        for pos in range(low, high + 1, max(1, probe // 2)):
+            energy = float(abs(audio[pos : pos + probe]).mean())
+            if quietest is None or energy < quietest:
+                quietest = energy
+                cut = pos
         boundaries.append((start, cut))
         start = cut
     boundaries.append((start, total_frames))
@@ -290,6 +527,10 @@ class OnnxAsrEngine(TranscriptionEngine):
     # Optional Nojoin-id -> onnx-asr-id map. Empty when ids already match.
     onnx_id_map: dict[str, str] = {}
     supports_forced_language: bool = False
+    # Whether a window's skipped speech is decoded again on VAD-muted input
+    # (onnx_asr_backstop). Finding it takes token timings, which onnx-asr
+    # returns for Parakeet and never for Canary.
+    recovers_skipped_speech: bool = False
 
     def __init__(self) -> None:
         # Cache for loaded models, keyed by onnx-asr model id.
@@ -363,11 +604,15 @@ class OnnxAsrEngine(TranscriptionEngine):
 
         Audio longer than MAX_CHUNK_DURATION_S is transcribed window by window
         (onnx-asr has no long-form support); shorter audio goes through a single
-        recognize() call.
+        recognize() call. When the engine recovers skipped speech and the
+        config marks the audio VAD-muted (VAD_MUTED_INPUT), every input goes
+        through the window loop, a short one as a single window, and each
+        window's skipped speech is decoded once more (_redecode_holes).
 
         Args:
             audio_path: Path to a 16kHz mono WAV file.
-            config: Configuration dictionary (reads the engine's config_key).
+            config: Configuration dictionary (reads the engine's config_key and
+                VAD_MUTED_INPUT).
 
         Returns:
             The canonical transcription dict; empty text means no speech.
@@ -407,12 +652,18 @@ class OnnxAsrEngine(TranscriptionEngine):
             logger.info(f"Starting {self.name} transcription for {audio_path}")
             word_length_cap_s = resolve_tuning(config, ASR_WORD_LENGTH_CAP_KEY)
 
-            if audio_duration is not None and audio_duration > MAX_CHUNK_DURATION_S:
+            recover_skipped = self.recovers_skipped_speech and bool(
+                (config or {}).get(VAD_MUTED_INPUT)
+            )
+            if audio_duration is not None and (
+                audio_duration > MAX_CHUNK_DURATION_S or recover_skipped
+            ):
                 result = self._transcribe_chunked(
                     recognizer,
                     audio_path,
                     language_code=language_code,
                     word_length_cap_s=word_length_cap_s,
+                    recover_skipped=recover_skipped,
                 )
             else:
                 recognize_kwargs = {"language": language_code} if language_code else {}
@@ -454,16 +705,16 @@ class OnnxAsrEngine(TranscriptionEngine):
         *,
         language_code: str | None = None,
         word_length_cap_s: float = WORD_LENGTH_CAP_S,
+        recover_skipped: bool = False,
     ) -> dict:
         """Transcribe long audio as a sequence of windows, then merge.
 
         Windows follow _chunk_boundaries, and one with no signal in it is not
         transcribed. Per-window segments are shifted into absolute time and
-        concatenated.
+        concatenated. With ``recover_skipped``, which the caller sets only for
+        VAD-muted audio, each window's holes (onnx_asr_backstop.survey) are
+        decoded once more and their words merged in; a retry is never retried.
         """
-        import os
-        import tempfile
-
         import soundfile
 
         audio, sample_rate = soundfile.read(
@@ -473,13 +724,14 @@ class OnnxAsrEngine(TranscriptionEngine):
             audio = audio.mean(axis=1)
 
         boundaries = _chunk_boundaries(audio, sample_rate)
+        decoder = _Decoder(recognizer, sample_rate, language_code, word_length_cap_s)
         audio_duration = len(audio) / sample_rate
         logger.info(
-            f"{self.name}: {audio_duration:.0f}s audio exceeds the "
-            f"{MAX_CHUNK_DURATION_S:.0f}s single-pass limit; transcribing in "
-            f"{len(boundaries)} windows."
+            f"{self.name}: transcribing {audio_duration:.0f}s audio in "
+            f"{len(boundaries)} windows of at most {MAX_CHUNK_DURATION_S:.0f}s."
         )
 
+        tally = backstop.Tally()
         texts: list[str] = []
         segments: list[dict] = []
         for index, (start_frame, end_frame) in enumerate(boundaries):
@@ -493,22 +745,30 @@ class OnnxAsrEngine(TranscriptionEngine):
                 )
                 continue
 
-            handle = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
-            chunk_path = handle.name
-            handle.close()
-            try:
-                soundfile.write(chunk_path, chunk, sample_rate)
-                recognize_kwargs = {"language": language_code} if language_code else {}
-                recognized = recognizer.recognize(chunk_path, **recognize_kwargs)
-            finally:
-                try:
-                    os.remove(chunk_path)
-                except OSError:
-                    pass
-
-            chunk_result = map_onnx_asr_recognition(
-                recognized, chunk_duration, language_code, word_length_cap_s
-            )
+            recognized = decoder.recognize(chunk)
+            chunk_result = decoder.to_result(recognized, len(chunk))
+            # A result whose words cannot be placed keeps its text: missing
+            # timing is not missing speech.
+            placed = bool(_words_of(chunk_result)) or not chunk_result["text"]
+            if recover_skipped and placed:
+                timings = backstop.word_timings(recognized)
+                found = backstop.survey(chunk, sample_rate, timings)
+                tally.add_survey(found)
+                if found.holes:
+                    redone = _redecode_holes(
+                        decoder, chunk, chunk_result, timings, found.holes
+                    )
+                    chunk_result = redone.result
+                    tally.add_retry(
+                        chunk, found.holes, redone.calls, redone.second, redone.wordless
+                    )
+                    logger.debug(
+                        f"{self.name}: window {index + 1}/{len(boundaries)}: "
+                        f"{len(found.holes)} holes decoded again in {redone.calls} "
+                        f"calls, {len(redone.second.tried)} once more in "
+                        f"{redone.second.calls}, {len(redone.wordless)} still "
+                        f"wordless."
+                    )
             if chunk_result["text"]:
                 texts.append(chunk_result["text"])
             segments.extend(
@@ -519,6 +779,12 @@ class OnnxAsrEngine(TranscriptionEngine):
                 f"({offset_s:.0f}s +{chunk_duration:.0f}s)."
             )
 
+        if recover_skipped:
+            # One line per recording; the counts ride on the record as well.
+            logger.info(
+                f"{self.name}: {tally.summary(sample_rate)}.",
+                extra={"backstop_tally": tally, "sample_rate": sample_rate},
+            )
         return {
             "text": " ".join(texts),
             "language": language_code,

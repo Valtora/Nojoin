@@ -577,6 +577,20 @@ def test_the_last_window_keeps_half_the_cap():
     assert boundaries == [(0, 15 * sr), (15 * sr, 31 * sr)]
 
 
+@pytest.mark.parametrize("seconds", [30.1, 30.2])
+def test_audio_just_over_the_cap_is_cut_at_its_pause(seconds):
+    """Too short for two windows of half the cap, it used to be cut at the cap,
+    wherever that fell."""
+    from backend.processing.engines import onnx_asr_engine as e
+
+    sr = 100
+    audio = _signal_with_pauses(seconds, [(10, 11)], sr)
+
+    boundaries = e._chunk_boundaries(audio, sr)
+
+    assert boundaries == [(0, 10 * sr), (10 * sr, len(audio))]
+
+
 def test_windows_tile_the_signal_within_their_bounds():
     import numpy as np
 

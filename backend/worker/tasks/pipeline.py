@@ -1,3 +1,4 @@
+from backend.processing.engines.base import VAD_MUTED_INPUT
 from backend.processing.engines.errors import (
     TranscriptionError,
     is_task_interruption,
@@ -183,6 +184,7 @@ def _run_vad_stage(
     recording_id = ctx.recording_id
 
     enable_vad = ctx.merged_config.get("enable_vad", True)
+    ctx.merged_config[VAD_MUTED_INPUT] = bool(enable_vad)
 
     if enable_vad:
         ctx.task.update_state(state="PROCESSING", meta={"progress": 30, "stage": "VAD"})
