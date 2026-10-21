@@ -19,10 +19,12 @@ httpx==0.28.1
 # Security pins: force patched transitive dependencies across both images.
 # urllib3 (via requests/httpx): CVE-2026-44431 (sensitive header leak on
 #   cross-origin redirect), CVE-2026-44432 (DoS via response decompression).
-# pillow (export chart images and reportlab in the api image; matplotlib/fastembed
-#   in the worker):
-#   CVE-2026-40192 (FITS decompression-bomb DoS), CVE-2026-42311.
+# pillow (export chart images and reportlab in the api image; matplotlib,
+#   python-pptx, pytesseract and fastembed in the worker): 13.0.0 is the first
+#   release with the fixes for 20 advisories, two of them critical (#526).
+#   fastembed caps pillow below 13, so it is installed without its declared
+#   dependencies: see requirements/worker-no-deps.txt.
 urllib3==2.8.0
-pillow==12.3.0
+pillow==13.0.0
 alembic==1.20.0
 pgvector==0.5.1

@@ -32,6 +32,11 @@ RUN python -c "import torch; print(f'torch=={torch.__version__}')" > constraints
 # Install dependencies using the constraints to force usage of system torch
 RUN pip install --no-cache-dir -r requirements/worker.txt -c constraints.txt
 
+# fastembed caps pillow below the release that fixes its advisories, so it goes
+# in without its declared dependencies; worker.txt pins the ones it needs.
+# requirements/worker-no-deps.txt explains.
+RUN pip install --no-cache-dir --no-deps -r requirements/worker-no-deps.txt
+
 # Install pyannote.audio without dependencies to use system torch. The pin is
 # read from local.txt so the image and a GPU host install cannot drift apart.
 RUN pip install --no-cache-dir --no-deps \
@@ -46,8 +51,8 @@ RUN torchcodec_version="$(python -c 'import importlib.metadata as m; print(m.ver
     pip install --no-cache-dir --no-deps --force-reinstall \
         --index-url https://download.pytorch.org/whl/cpu "torchcodec==${torchcodec_version}+cpu"
 
-# Parakeet ASR (onnx-asr) requires the CUDA build of ONNX Runtime. fastembed
-# pulls the CPU-only onnxruntime; replace it with onnxruntime-gpu. Its PyPI
+# Parakeet ASR (onnx-asr) requires the CUDA build of ONNX Runtime. worker.txt
+# pins the CPU-only onnxruntime; replace it with onnxruntime-gpu. Its PyPI
 # builds target CUDA 13 from 1.27.0 and CUDA 12 before that, so this pin must
 # move with the CUDA major of the base image above.
 RUN pip uninstall -y onnxruntime onnxruntime-gpu && \
@@ -112,8 +117,7 @@ RUN apt-get update && \
 # remain on disk and are flagged by the image scan. Upgrade the system copies in
 # place (as root, before the USER switch) to the same patched versions. Keep these
 # pins in step with requirements/base.txt and requirements/worker.txt:
-# pillow==12.3.0 closes the batch of HIGH pillow CVEs disclosed after v1.5.0
-# (CVE-2026-54058/54059/54060, 55379/55380, 59197/59199/59200/59204/59205);
+# pillow==13.0.0 closes the 20 advisories fixed only in that release (#526);
 # urllib3==2.8.0 closes CVE-2026-44431/44432 and CVE-2026-97687/97689;
 # fsspec==2026.9.0 keeps the CVE-2026-104851 fix.
 #
@@ -121,7 +125,7 @@ RUN apt-get update && \
 # and from 26.2 it ships an SBOM of its vendored urllib3, msgpack and setuptools,
 # whose fixable HIGH CVEs the image scan reports like installed packages.
 RUN /usr/bin/python3 -m pip install --no-cache-dir --break-system-packages \
-    --root-user-action=ignore --upgrade pillow==12.3.0 urllib3==2.8.0 fsspec==2026.9.0 && \
+    --root-user-action=ignore --upgrade pillow==13.0.0 urllib3==2.8.0 fsspec==2026.9.0 && \
     /usr/bin/python3 -m pip uninstall -y --break-system-packages \
     --root-user-action=ignore pip
 
@@ -156,6 +160,11 @@ COPY --from=builder /opt/venv /opt/venv
 # Fail the build, not the first diarisation, if torchcodec cannot load against
 # this image's torch, CUDA runtime and FFmpeg.
 RUN python -c "from torchcodec.decoders import AudioDecoder"
+
+# Likewise for fastembed, installed without its declared dependencies: its
+# import loads every one of them, so a dependency worker.txt stopped pinning
+# fails the build here.
+RUN python -c "from fastembed import TextEmbedding"
 
 WORKDIR /app
 
