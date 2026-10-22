@@ -51,9 +51,15 @@ class LiveLabelModel:
         self._config = config
         self._segmentation = load_segmentation_model(device).eval()
         specifications = self._segmentation.specifications
-        self._powerset = Powerset(
-            len(specifications.classes), specifications.powerset_max_classes
-        ).to(self._device)
+        if isinstance(specifications, tuple):
+            raise ValueError(
+                "Live speaker labels need a single-task segmentation model"
+            )
+        classes = specifications.classes
+        max_classes = specifications.powerset_max_classes
+        if classes is None or max_classes is None:
+            raise ValueError("Live speaker labels need a powerset segmentation model")
+        self._powerset = Powerset(len(classes), max_classes).to(self._device)
         self._embedding = _embedding_model(device).eval()
 
     def __call__(self, windows: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
