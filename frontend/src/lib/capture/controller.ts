@@ -75,6 +75,21 @@ interface ActiveRuntime {
   mediaReleased?: boolean;
   /** Tells other tabs of this browser that this capture is live. */
   releaseCaptureLock: () => void;
+  /** When the server last answered a request for this capture. */
+  heardFromServerAt: number;
+}
+
+/**
+ * A pause this tab has made that the server has not received.
+ *
+ * The recorder pauses at once. Until the server is told, it holds the capture
+ * as uploading, and it refuses to resume a capture it holds as uploading, so
+ * the pause is sent when the API next answers and before any resume.
+ */
+interface UnconfirmedPause {
+  recordingId: RecordingId;
+  /** When the last attempt failed. Only a later answer from the API retries it. */
+  failedAt: number;
 }
 
 /**
@@ -173,6 +188,36 @@ const COVERAGE_RECENT_OUTAGE_MS = 5 * 60_000;
  * without a reload (issue #519).
  */
 const CAPTURE_RECHECK_INTERVAL_MS = 30_000;
+
+/**
+ * How long after the server last heard from this tab's capture no other tab or
+ * device can have taken it over.
+ *
+ * The server offers a capture it holds as uploading to others once it has been
+ * quiet for two minutes, judged from activity it records at most every 15
+ * seconds (`STALLED_CAPTURE_AFTER` and `LAST_ACTIVITY_WRITE_INTERVAL` on the
+ * backend), so 105 seconds after this tab's last answered request at the
+ * earliest (issue #519). A pause the server never received is sent late only
+ * inside this window. Outside it the capture may have been resumed elsewhere,
+ * and a late pause would mark that capture paused under the device running it.
+ */
+const UNCONFIRMED_PAUSE_WINDOW_MS = 90_000;
+
+const canSendPauseLate = (runtime: ActiveRuntime) =>
+  Date.now() - runtime.heardFromServerAt < UNCONFIRMED_PAUSE_WINDOW_MS;
+
+/**
+ * Whether the API itself answered a failed request, as opposed to the request
+ * being lost or a gateway answering for an API that is down. The same split
+ * the API client reports to the connectivity monitor.
+ */
+const answeredByServer = (error: unknown) => {
+  if (!(error instanceof AxiosError) || !error.response) {
+    return false;
+  }
+  const status = error.response.status;
+  return status !== 502 && status !== 503 && status !== 504;
+};
 
 const withStageTimeout = async <T>(
   stage: CaptureStopStage,
@@ -288,6 +333,13 @@ export class CaptureController {
    * flight cannot put back a recording the action has just resolved.
    */
   private captureActionTicket = 0;
+
+  private unconfirmedPause: UnconfirmedPause | null = null;
+
+  /** The attempt to send the unconfirmed pause under way, so only one runs. */
+  private serverPauseAttempt: Promise<unknown> | null = null;
+
+  private stopWatchingForServer: (() => void) | null = null;
 
   constructor() {
     const pausedContext = readPausedCaptureContext();
@@ -624,9 +676,11 @@ export class CaptureController {
       !this.runtime.mediaReleased &&
       this.state.status === "paused"
     ) {
+      await this.confirmUnconfirmedPause();
       const response = await retryAfterSignIn(() =>
         resumeRecordingCapture(targetRecordingId),
       );
+      this.runtime.heardFromServerAt = Date.now();
       // A stalled uploader (for example after a network outage) still holds
       // the queued segments; recovering it retries them before new audio.
       this.runtime.uploader.recover();
@@ -770,6 +824,9 @@ export class CaptureController {
     this.captureActionTicket += 1;
 
     const hadRuntime = Boolean(this.runtime);
+    // Finalize accepts an uploading recording, and a stop that fails owes the
+    // pause again.
+    this.forgetUnconfirmedPause();
     this.setState({ status: "finalizing", error: null, finalizeRetry: null });
 
     try {
@@ -856,6 +913,11 @@ export class CaptureController {
    * The media tracks are released either way: the recorded audio is already
    * server-side, and holding the microphone open through a failure just leaves
    * the browser recording indicator lit with no way to clear it.
+   *
+   * A stop never pauses on the server, so after a failed one the server can
+   * still hold this tab's capture as uploading. It is told the capture is
+   * paused, as after an upload stall, so the recording is offered for resume,
+   * stop or discard rather than read as still in progress.
    */
   private settleAfterFailedStop = async (
     recordingId: RecordingId,
@@ -874,6 +936,7 @@ export class CaptureController {
         lastSequence: this.state.lastSequence,
         persistedAt: Date.now(),
       });
+      this.unconfirmedPause = { recordingId, failedAt: Number.NEGATIVE_INFINITY };
     }
 
     // The runtime object is kept even though its media is gone, so a retried
@@ -888,6 +951,7 @@ export class CaptureController {
       runtimeActive: false,
       levels: DEFAULT_CAPTURE_LEVELS,
     });
+    void this.sendServerPause({ drainFirst: false });
     await this.refreshPausedRecording().catch(() => {});
   };
 
@@ -1076,6 +1140,9 @@ export class CaptureController {
         this.setState({ uploadQueue });
       },
       onUploaded: (sequence) => {
+        if (this.runtime?.recordingId === options.recordingId) {
+          this.runtime.heardFromServerAt = Date.now();
+        }
         this.setState({
           lastSequence: sequence,
           elapsedSeconds: Math.max(
@@ -1169,6 +1236,8 @@ export class CaptureController {
       waveform,
       displayTracksCleanup,
       releaseCaptureLock: holdCaptureLock(options.recordingId),
+      // Every caller has just had the start or resume accepted.
+      heardFromServerAt: Date.now(),
     };
     this.stopCaptureRecheck();
     this.setState({ runtimeActive: true });
@@ -1181,9 +1250,17 @@ export class CaptureController {
     recordingId: RecordingId,
     error: Error,
   ) => {
+    const runtime = this.runtime;
+    const ownCapture = Boolean(runtime) && this.state.recordingId === recordingId;
+    if (ownCapture && this.state.status === "paused") {
+      // A retry that sends the kept audio before the pause stalled again. The
+      // user was told when capture paused, and the retry carries on by itself.
+      return;
+    }
+
     this.setState({ error: error.message || formatCaptureError(error) });
 
-    if (!this.runtime || this.state.recordingId !== recordingId) {
+    if (!runtime || !ownCapture) {
       return;
     }
 
@@ -1195,32 +1272,162 @@ export class CaptureController {
 
     // The stalled uploader keeps its queued segments; pause capture so no
     // further audio is recorded until the user resumes and uploads retry.
+    // This tab is paused from here on whether or not the server can be told,
+    // and keeps the capture, its media and its queue (issue #568).
+    await runtime.recorder.pause();
+    // A stop may have begun while the recorder paused.
+    if (this.runtime !== runtime || this.getState().status === "finalizing") {
+      return;
+    }
+    this.stopElapsedTimer();
+    writePausedCaptureContext({
+      recordingId,
+      lastSequence: this.state.lastSequence,
+      persistedAt: Date.now(),
+    });
+    this.setState({ status: "paused" });
+    this.unconfirmedPause = { recordingId, failedAt: Number.NEGATIVE_INFINITY };
+    // Straight to the pause: the queue has only just failed to send. Not
+    // awaited, so the uploader's failed send ends here whatever the request
+    // does.
+    void this.sendServerPause({ drainFirst: false });
+  };
+
+  /** Runs one attempt to send the unconfirmed pause, or joins the one under way. */
+  private sendServerPause = (options: { drainFirst: boolean }): Promise<unknown> => {
+    if (!this.serverPauseAttempt) {
+      this.serverPauseAttempt = this.attemptServerPause(options.drainFirst).finally(() => {
+        this.serverPauseAttempt = null;
+        // A pause owed while this attempt served an earlier one, which a
+        // failed stop can do, has not been sent yet.
+        if (this.unconfirmedPause && !this.stopWatchingForServer) {
+          void this.sendServerPause({ drainFirst: false });
+        }
+      });
+    }
+    return this.serverPauseAttempt;
+  };
+
+  /**
+   * Tells the server about the pause this tab has already made.
+   *
+   * Resolves with the error when the server still has not received it, and with
+   * null once it has or once no pause is owed. Never rejects.
+   */
+  private attemptServerPause = async (drainFirst: boolean): Promise<unknown> => {
+    const pause = this.unconfirmedPause;
+    const runtime = this.runtime;
+    if (!pause) {
+      return null;
+    }
+    if (!runtime || runtime.recordingId !== pause.recordingId) {
+      this.forgetUnconfirmedPause();
+      return null;
+    }
+
+    if (!canSendPauseLate(runtime)) {
+      // The capture may have been taken over elsewhere by now. The server
+      // offers it as interrupted once it judges it stalled, and a resume here
+      // asks the server rather than pausing first.
+      console.warn(
+        "[capture] the server never received this pause, and it is too late to send it",
+        pause.recordingId,
+      );
+      this.forgetUnconfirmedPause();
+      return null;
+    }
+
+    if (drainFirst) {
+      // As with a pause from the controls, the audio this tab kept goes before
+      // the pause, so a stop or resume from anywhere afterwards has all of it.
+      runtime.uploader.recover();
+      try {
+        await runtime.uploader.waitForIdle();
+      } catch {
+        // Sending failed again. The pause below says whether the API answers.
+      }
+      if (this.unconfirmedPause !== pause) {
+        return null;
+      }
+    }
+
     try {
-      await this.runtime.recorder.pause();
-      const response = await retryAfterSignIn(() => pauseRecordingCapture(recordingId));
+      const response = await retryAfterSignIn(() => pauseRecordingCapture(pause.recordingId));
+      if (this.unconfirmedPause !== pause) {
+        return null;
+      }
+      this.forgetUnconfirmedPause();
+      runtime.heardFromServerAt = Date.now();
+      const lastSequence = Math.max(response.last_sequence, this.state.lastSequence);
       writePausedCaptureContext({
-        recordingId,
-        lastSequence: Math.max(response.last_sequence, this.state.lastSequence),
+        recordingId: response.recording_id,
+        lastSequence,
         persistedAt: Date.now(),
       });
       this.setState({
-        status: "paused",
-        lastSequence: Math.max(response.last_sequence, this.state.lastSequence),
+        lastSequence,
         elapsedSeconds: Math.max(
           this.state.elapsedSeconds,
           sequenceToElapsedSeconds(response.last_sequence),
         ),
       });
-      this.stopElapsedTimer();
       await this.refreshPausedRecording().catch(() => {});
+      return null;
 
     } catch (pauseError: unknown) {
-      this.setState({
-        status: "error",
-        error: formatCaptureError(pauseError),
-      });
+      if (this.unconfirmedPause !== pause) {
+        return null;
+      }
+      if (answeredByServer(pauseError)) {
+        // A refusal is the server's answer, and asking again gets the same one.
+        console.warn("[capture] the server refused the pause", pause.recordingId, pauseError);
+        this.forgetUnconfirmedPause();
+      } else {
+        pause.failedAt = Date.now();
+        this.watchForServer();
+      }
+      return pauseError || new Error("The pause did not reach the server.");
     }
   };
+
+  /** Retries the unconfirmed pause each time the API is seen to answer again. */
+  private watchForServer() {
+    if (this.stopWatchingForServer) {
+      return;
+    }
+    this.stopWatchingForServer = useConnectivityStore.subscribe((connectivity) => {
+      const pause = this.unconfirmedPause;
+      if (
+        pause &&
+        connectivity.lastReachableAt !== null &&
+        connectivity.lastReachableAt > pause.failedAt
+      ) {
+        void this.sendServerPause({ drainFirst: true });
+      }
+    });
+  }
+
+  private forgetUnconfirmedPause() {
+    this.unconfirmedPause = null;
+    this.stopWatchingForServer?.();
+    this.stopWatchingForServer = null;
+  }
+
+  /** Sends a pause the server has not received, before a resume. */
+  private confirmUnconfirmedPause = async () => {
+    await this.serverPauseAttempt;
+    // Each attempt either settles the pause or reports why it could not.
+    while (this.unconfirmedPause) {
+      const error = await this.sendServerPause({ drainFirst: false });
+      if (error) {
+        throw error;
+      }
+    }
+  };
+
+  /** Whether closing the tab still has to tell the server about a pause. */
+  private owesServerPause = () =>
+    Boolean(this.unconfirmedPause && this.runtime && canSendPauseLate(this.runtime));
 
   /**
    * Asks the backend how much audio it holds, and re-judges coverage.
@@ -1488,7 +1695,9 @@ export class CaptureController {
 
     const recordingId = this.state.recordingId;
     const lastSequence = this.state.lastSequence;
-    const wasAlreadyPaused = this.state.status === "paused";
+    // A pause made after an upload stall or a failed stop may not have
+    // reached the server yet.
+    const serverHoldsPause = this.state.status === "paused" && !this.owesServerPause();
 
     // Written before anything is awaited. This runs during an unload, so the
     // document can be torn down at the first yield and everything after it may
@@ -1504,7 +1713,7 @@ export class CaptureController {
     try {
       await this.runtime.recorder.stop({ emitTail: false });
 
-      if (!wasAlreadyPaused) {
+      if (!serverHoldsPause) {
         const paused = request.useBeacon ? sendPauseBeacon(recordingId) : false;
         if (!paused) {
           const response = await pauseRecordingCapture(recordingId);
@@ -1550,6 +1759,7 @@ export class CaptureController {
     }
 
     const runtime = this.runtime;
+    this.forgetUnconfirmedPause();
     this.stopElapsedTimer();
     await this.releaseRuntimeMedia();
     this.runtime = null;
