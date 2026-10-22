@@ -14,6 +14,7 @@ import os
 from datetime import timedelta
 from pathlib import Path
 
+from fastapi import HTTPException
 from sqlalchemy import or_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -34,8 +35,11 @@ from backend.utils.recording_audio_registration import (
 from backend.utils.recording_audio_sync import (
     SEGMENT_CORRUPT_SUFFIX,
     build_recording_audio_chunk_fields,
+    lock_recording_audio,
 )
 from backend.utils.time import utc_now
+
+from .constants import CAPTURE_SUPERSEDED_CODE, CAPTURE_SUPERSEDED_MESSAGE
 
 logger = logging.getLogger(__name__)
 
@@ -102,6 +106,35 @@ async def _reopen_recording_audio_cursor(
             source_kind=BROWSER_CHUNK_SOURCE_KIND,
         )
     )
+
+
+async def _lock_capture(db: AsyncSession, recording: Recording) -> None:
+    """Hold the capture still while its epoch is checked or changed.
+
+    Takes the recording's audio lock until the transaction ends and reads the
+    row again, so the epoch checked is the one any resume has committed. A
+    segment lands on disk under this lock, and resume issues an epoch under it,
+    so a segment from the old epoch either lands before the resume reads the
+    last sequence or is refused (issue #570).
+    """
+    await db.run_sync(lambda session: lock_recording_audio(session, recording.id))
+    await db.refresh(recording)
+
+
+def _ensure_capture_epoch(recording: Recording, epoch: int | None) -> None:
+    """Refuse a request from a tab whose capture was resumed elsewhere.
+
+    A request without an epoch is accepted: tabs on a build from before epochs
+    send none, and stop or discard from a dialog acts for no tab.
+    """
+    if epoch is not None and epoch != recording.capture_epoch:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": CAPTURE_SUPERSEDED_CODE,
+                "message": CAPTURE_SUPERSEDED_MESSAGE,
+            },
+        )
 
 
 async def _touch_recording_last_activity(db: AsyncSession, recording_id: int) -> None:

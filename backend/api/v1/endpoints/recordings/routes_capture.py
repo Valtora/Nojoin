@@ -3,6 +3,7 @@ import logging
 import os
 from pathlib import Path
 from typing import Optional
+from uuid import uuid4
 
 from fastapi import Depends, File, HTTPException, Query, Request, UploadFile
 from sqlalchemy import delete
@@ -131,6 +132,18 @@ def _record_finalize_capture_metrics(
         )
 
 
+def _capture_epoch_query(action: str):
+    return Query(
+        None,
+        ge=0,
+        description=(
+            f"The capture epoch of the tab sending the {action}, from init or "
+            "resume. One from before a resume elsewhere is refused with 409 "
+            "capture_superseded. Omitted, the request is not checked."
+        ),
+    )
+
+
 def _serialize_capture_track(track_payload):
     if track_payload is None:
         return None
@@ -147,6 +160,7 @@ def _serialize_capture_track(track_payload):
 @router.post("/{recording_id}/pause", response_model=RecordingCaptureLifecycleResponse)
 async def pause_upload(
     recording_id: str,
+    epoch: Optional[int] = _capture_epoch_query("pause"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_recording_client_user),
 ):
@@ -156,6 +170,10 @@ async def pause_upload(
     recording = await recordings_module._get_owned_recording(
         db, recording_id, current_user.id
     )
+    # A late pause from a tab whose capture was resumed elsewhere would mark
+    # the capture paused under the tab now running it.
+    await recordings_module._lock_capture(db, recording)
+    recordings_module._ensure_capture_epoch(recording, epoch)
 
     if recording.status not in {RecordingStatus.UPLOADING, RecordingStatus.PAUSED}:
         raise HTTPException(
@@ -188,12 +206,23 @@ async def pause_upload(
         recording_id=recording.public_id,
         status=recording.status,
         last_sequence=recordings_module._get_last_uploaded_sequence(recording.id),
+        capture_epoch=recording.capture_epoch,
     )
 
 
 @router.post("/{recording_id}/resume", response_model=RecordingCaptureLifecycleResponse)
 async def resume_upload(
     recording_id: str,
+    epoch: Optional[int] = Query(
+        None,
+        ge=0,
+        description=(
+            "The capture epoch of the tab that holds the capture, when that tab "
+            "carries on with it. Refused with 409 capture_superseded once a "
+            "resume elsewhere has issued a later one. Omitted, the caller takes "
+            "the capture over and is issued the next epoch."
+        ),
+    ),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_recording_client_user),
 ):
@@ -204,25 +233,26 @@ async def resume_upload(
     while signed out or offline) is resumed as if paused, once it has been quiet
     for ``STALLED_CAPTURE_AFTER``. A capture still uploading is refused, so no
     other tab or device can take it over (issue #519).
+
+    Taking a capture over issues the next capture epoch, and from then on the
+    segments, pauses and finalize of every earlier epoch are refused, so the tab
+    that held it cannot overwrite what the new one records (issue #570). The
+    tab holding the current epoch resumes without taking over, whether the
+    server holds its capture paused or still uploading.
     """
     recording = await recordings_module._get_owned_recording(
         db, recording_id, current_user.id
     )
+    # Two takeovers at once must not both be issued the same epoch.
+    await recordings_module._lock_capture(db, recording)
 
-    resumed_after_stall = capture_looks_stalled(recording)
-    if recording.status != RecordingStatus.PAUSED and not resumed_after_stall:
-        still_capturing = (
-            recording.status == RecordingStatus.UPLOADING
-            and recording.client_status == ClientStatus.RECORDING
-        )
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                recordings_module.CAPTURE_STILL_UPLOADING_DETAIL
-                if still_capturing
-                else "Recording is not paused"
-            ),
-        )
+    if epoch is not None:
+        recordings_module._ensure_capture_epoch(recording, epoch)
+        _ensure_holder_can_resume(recording)
+        resumed_after_stall = False
+    else:
+        resumed_after_stall = _ensure_capture_can_be_taken_over(recording)
+        recording.capture_epoch += 1
 
     if resumed_after_stall:
         try:
@@ -261,7 +291,48 @@ async def resume_upload(
         recording_id=recording.public_id,
         status=recording.status,
         last_sequence=recordings_module._get_last_uploaded_sequence(recording.id),
+        capture_epoch=recording.capture_epoch,
     )
+
+
+def _ensure_capture_can_be_taken_over(recording: Recording) -> bool:
+    """Refuse to take over a capture that is still uploading.
+
+    Returns whether the capture is taken over because it stalled rather than
+    because it was paused.
+    """
+    resumed_after_stall = capture_looks_stalled(recording)
+    if recording.status != RecordingStatus.PAUSED and not resumed_after_stall:
+        still_capturing = (
+            recording.status == RecordingStatus.UPLOADING
+            and recording.client_status == ClientStatus.RECORDING
+        )
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                recordings_module.CAPTURE_STILL_UPLOADING_DETAIL
+                if still_capturing
+                else "Recording is not paused"
+            ),
+        )
+    return resumed_after_stall
+
+
+def _ensure_holder_can_resume(recording: Recording) -> None:
+    """Let the tab holding the current epoch carry on with its own capture.
+
+    No other tab or device can be running it, so a capture the server still
+    holds as uploading is resumed too: its pause may never have arrived.
+    """
+    if recording.status not in {RecordingStatus.UPLOADING, RecordingStatus.PAUSED}:
+        raise HTTPException(
+            status_code=409, detail=recordings_module.UPLOAD_CLOSED_DETAIL
+        )
+    if (
+        recording.status == RecordingStatus.UPLOADING
+        and recording.client_status != ClientStatus.RECORDING
+    ):
+        raise HTTPException(status_code=409, detail="Recording is not paused")
 
 
 async def _store_uploaded_segment(
@@ -338,6 +409,7 @@ async def upload_segment(
     request: Request,
     recording_id: str,
     sequence: int = Query(..., description="Sequence number of the segment", ge=0),
+    epoch: Optional[int] = _capture_epoch_query("segment"),
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_recording_client_user),
@@ -361,13 +433,21 @@ async def upload_segment(
 
         filename = os.path.basename(f"{int(sequence)}{segment_suffix}")
         segment_path = recording_temp_dir / filename
+        # Streamed under a name no directory scan reads, and given its sequence
+        # only once the epoch check has passed: a refused segment must never be
+        # counted as the last sequence a resume elsewhere numbers after.
+        staging_path = recording_temp_dir / f"{filename}.{uuid4().hex}.upload-tmp"
 
         try:
             await stream_and_validate_upload(
                 file=file,
-                dest_path=str(segment_path),
+                dest_path=str(staging_path),
                 max_size=UPLOAD_LIMIT_SEGMENT,
             )
+            await recordings_module._lock_capture(db, recording)
+            recordings_module._ensure_capture_epoch(recording, epoch)
+            recordings_module._ensure_recording_accepts_uploads(recording)
+            os.replace(staging_path, segment_path)
             file_size = segment_path.stat().st_size
             live_ready = await _store_uploaded_segment(
                 db,
@@ -394,6 +474,8 @@ async def upload_segment(
                 log_message=f"Failed to save uploaded segment {sequence} for recording {recording_id}.",
                 exc=e,
             )
+        finally:
+            staging_path.unlink(missing_ok=True)
 
     try:
         recordings_module.record_pipeline_metric(
@@ -516,6 +598,7 @@ async def finalize_upload(
             "the capture coverage metric."
         ),
     ),
+    epoch: Optional[int] = _capture_epoch_query("stop"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_recording_client_user),
 ):
@@ -525,6 +608,10 @@ async def finalize_upload(
     recording = await recordings_module._get_owned_recording(
         db, recording_id, current_user.id
     )
+    # Held to the commit below, so no resume can take the capture over while
+    # its master is built.
+    await recordings_module._lock_capture(db, recording)
+    recordings_module._ensure_capture_epoch(recording, epoch)
 
     recordings_module._ensure_recording_can_finalize_upload(recording)
 
@@ -687,6 +774,7 @@ async def discard_upload(
     reason: Optional[str] = Query(
         None, description="Optional client-provided discard reason"
     ),
+    epoch: Optional[int] = _capture_epoch_query("discard"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_recording_client_user),
 ):
@@ -706,6 +794,9 @@ async def discard_upload(
     # Locked, so a worker cannot repoint audio_path between this read and the
     # delete (keep_imported_audio_task) and leave its new file behind.
     await db.refresh(recording, with_for_update=True)
+    # A tab whose capture continued elsewhere must not delete it from under the
+    # tab running it. The list and the dialogs discard without an epoch.
+    recordings_module._ensure_capture_epoch(recording, epoch)
 
     discardable_states = {
         RecordingStatus.UPLOADING,

@@ -14,12 +14,16 @@ from backend.models.people_tag_schemas import (
 from backend.models.user import User
 from backend.services.tag_ownership import (
     TAG_NOT_FOUND,
+    commit_tag_name,
     require_own_parent,
     require_parent_outside_subtree,
     require_unused_name,
 )
 
 router = APIRouter()
+
+# A create with a taken name answers this, a rename TAG_NAME_TAKEN.
+PEOPLE_TAG_EXISTS = "Tag already exists"
 
 
 async def _get_own_tag(db: AsyncSession, tag_id: int, user_id: int) -> PeopleTag:
@@ -57,7 +61,7 @@ async def create_people_tag(
     """
     await require_own_parent(db, PeopleTag, tag_in.parent_id, current_user.id)
     await require_unused_name(
-        db, PeopleTag, tag_in.name, current_user.id, detail="Tag already exists"
+        db, PeopleTag, tag_in.name, current_user.id, detail=PEOPLE_TAG_EXISTS
     )
 
     tag = PeopleTag(
@@ -67,7 +71,7 @@ async def create_people_tag(
         parent_id=tag_in.parent_id,
     )
     db.add(tag)
-    await db.commit()
+    await commit_tag_name(db, tag, detail=PEOPLE_TAG_EXISTS)
     await db.refresh(tag)
     return tag
 
@@ -102,7 +106,7 @@ async def update_people_tag(
         setattr(tag, field, value)
 
     db.add(tag)
-    await db.commit()
+    await commit_tag_name(db, tag)
     await db.refresh(tag)
     return tag
 

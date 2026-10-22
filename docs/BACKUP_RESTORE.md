@@ -87,6 +87,7 @@ A meeting counts as already here when its `meeting_uid` or `public_id` matches, 
 ### What Else to Expect
 
 - A user whose username already exists here keeps their current account and password, and the archive's records for that username are given to them. Other users are created with their archived password hashes.
+- A tag or people tag whose owner already has one of that exact name, here or earlier in the archive, is not added again. Its sub-tags, meetings, tasks and people go to the tag already there, which keeps its colour and place. An archive made by 2.10.0 or earlier can hold a name twice for one user, and the copy nearest the top of the tag tree is the one kept.
 - Recordings that were still processing when the backup was taken are restored as processed if their transcript came across, and as errored otherwise. Reprocess an errored one to finish it.
 - A restore can finish while skipping some records, most often because their owner or parent could not be matched. The notification then says how many could not be restored, and the page lists which kinds of record were skipped and why under **Some records could not be restored**.
 

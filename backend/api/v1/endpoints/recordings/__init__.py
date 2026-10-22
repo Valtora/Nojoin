@@ -62,6 +62,8 @@ from . import (
 from .capture_audio import (
     _accept_browser_flac_segment,
     _advance_recording_audio_cursor,
+    _ensure_capture_epoch,
+    _lock_capture,
     _register_recording_audio_chunk,
     _reopen_recording_audio_cursor,
     _seal_recording_audio_cursor,
@@ -69,6 +71,8 @@ from .capture_audio import (
 )
 from .constants import (
     CAPTURE_STILL_UPLOADING_DETAIL,
+    CAPTURE_SUPERSEDED_CODE,
+    CAPTURE_SUPERSEDED_MESSAGE,
     LOSSY_AUDIO_SUFFIXES,
     SEGMENT_CONTENT_TYPE_SUFFIXES,
     STATUS_UPDATES_CLOSED_DETAIL,

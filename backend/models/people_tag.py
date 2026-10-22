@@ -1,6 +1,6 @@
 from typing import TYPE_CHECKING, List, Optional
 
-from sqlalchemy import BigInteger, Column, ForeignKey, UniqueConstraint
+from sqlalchemy import BigInteger, Column, ForeignKey, Index, UniqueConstraint
 from sqlmodel import Field, Relationship
 
 from .base import BaseDBModel
@@ -30,6 +30,8 @@ class PeopleTagLink(BaseDBModel, table=True):
 
 class PeopleTag(BaseDBModel, table=True):
     __tablename__ = "p_tags"
+    # As on Tag: each user holds a name once, compared exactly.
+    __table_args__ = (Index("uq_p_tags_user_name", "user_id", "name", unique=True),)
 
     name: str = Field(index=True)
     color: Optional[str] = Field(default=None, description="Color key for UI display")
