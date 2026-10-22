@@ -128,6 +128,28 @@ describe("a finished line's ⋯ menu", () => {
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
 
+  it("hands focus back to its button on Tab, for the browser's Tab to carry on from there", () => {
+    renderView();
+    openMenu();
+    fireEvent.keyDown(items()[2], { key: "Tab" });
+
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(trigger()).toHaveFocus();
+  });
+
+  it("leaves focus where the user put it when an editor it opened closes", () => {
+    renderView();
+    openMenu();
+    choose("Edit text");
+    expect(screen.getByRole("textbox")).toHaveValue("  forty thousand  ");
+
+    // On to the next line to edit: the first editor closes, the new one has focus.
+    fireEvent.click(screen.getByText("alpha and beta"));
+    const next = screen.getByRole("textbox");
+    expect(next).toHaveValue("alpha and beta");
+    expect(next).toHaveFocus();
+  });
+
   it("plays on from the line's start, not to the end of its group", () => {
     const props = renderView();
     openMenu();
@@ -228,6 +250,48 @@ describe("a note on a finished line", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
+  it("keeps Tab inside while it holds a note, and leaves by the ⋯ button while it is empty", () => {
+    renderView();
+    openMenu();
+    choose("Note on this line");
+    // The ⋯ button stays shown while the popover hangs from it.
+    expect(trigger()).toHaveClass("opacity-100");
+    const box = screen.getByRole("textbox", { name: "Note" });
+    const save = screen.getByRole("button", { name: "Save note" });
+
+    fireEvent.change(box, { target: { value: "Check the figure" } });
+    save.focus();
+    fireEvent.keyDown(save, { key: "Tab" });
+    expect(box).toHaveFocus();
+    fireEvent.keyDown(box, { key: "Tab", shiftKey: true });
+    expect(save).toHaveFocus();
+
+    // Escape works from the buttons too, not only from the box.
+    fireEvent.keyDown(save, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(trigger()).toHaveFocus();
+
+    openMenu();
+    choose("Note on this line");
+    const cancel = screen.getByRole("button", { name: "Cancel" });
+    cancel.focus();
+    fireEvent.keyDown(cancel, { key: "Tab" });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(trigger()).toHaveFocus();
+  });
+
+  it("doesn't save on the Enter that ends an input method's composition", () => {
+    const props = renderView();
+    openMenu();
+    choose("Note on this line");
+    const box = screen.getByRole("textbox", { name: "Note" });
+    fireEvent.change(box, { target: { value: "会議" } });
+    fireEvent.keyDown(box, { key: "Enter", isComposing: true });
+
+    expect(props.onAddNote).not.toHaveBeenCalled();
+    expect(box).toBeInTheDocument();
+  });
+
   it("closes on Escape with focus back on the ⋯ button, sending nothing", () => {
     const props = renderView();
     openMenu();
@@ -286,6 +350,21 @@ describe("a long press on a line", () => {
     expect(menu()).toBeInTheDocument();
     // The click didn't also open the speaker popover.
     expect(screen.queryByPlaceholderText("Search or add...")).not.toBeInTheDocument();
+  });
+
+  it("keeps the phone's own long-press menu shut while it opens its own", () => {
+    vi.useFakeTimers();
+    renderView();
+    const speaker = screen.getByRole("button", { name: "Blair" });
+
+    press(speaker);
+    // Android sends contextmenu during the hold, before or after the menu opens.
+    expect(fireEvent.contextMenu(speaker)).toBe(false);
+    act(() => {
+      vi.advanceTimersByTime(LONG_PRESS_MS);
+    });
+    expect(fireEvent.contextMenu(speaker)).toBe(false);
+    expect(menu()).toBeInTheDocument();
   });
 
   it("leaves a press on the text to the browser, which selects words", () => {
