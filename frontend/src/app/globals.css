@@ -538,23 +538,71 @@ html:is([data-ui-density="compact"], [data-ui-density="dense"]) .density-body-co
   color: var(--action-on);
 }
 
+/* The time column and the popover's arrow repeat the library's own selectors:
+   at the same specificity and loaded later, they win without !important. A
+   shorter selector loses to the library's, which is how the column stayed
+   white in dark mode (#503). datepickerTheme.test.ts fails if the library
+   colours a part of either that is not repeated here. The order matters: each
+   item state comes after the plain hover, which also matches it. */
 .react-datepicker__time-container {
   border-left-color: var(--surface-divider);
   background-color: var(--surface-float);
 }
 
-.react-datepicker__time {
+.react-datepicker__time-container .react-datepicker__time {
   background-color: var(--surface-float);
   color: var(--foreground);
 }
 
-.react-datepicker__time-list-item:hover {
-  background-color: var(--action-tint) !important;
+.react-datepicker__time-container
+  .react-datepicker__time
+  .react-datepicker__time-box
+  ul.react-datepicker__time-list
+  li.react-datepicker__time-list-item:hover {
+  background-color: var(--action-tint);
 }
 
-.react-datepicker__time-list-item--selected {
-  background-color: var(--action) !important;
-  color: var(--action-on) !important;
+.react-datepicker__time-container
+  .react-datepicker__time
+  .react-datepicker__time-box
+  ul.react-datepicker__time-list
+  li.react-datepicker__time-list-item--selected,
+.react-datepicker__time-container
+  .react-datepicker__time
+  .react-datepicker__time-box
+  ul.react-datepicker__time-list
+  li.react-datepicker__time-list-item--selected:hover {
+  background-color: var(--action);
+  color: var(--action-on);
+}
+
+.react-datepicker__time-container
+  .react-datepicker__time
+  .react-datepicker__time-box
+  ul.react-datepicker__time-list
+  li.react-datepicker__time-list-item--disabled {
+  color: var(--control-disabled-fg);
+}
+
+.react-datepicker__time-container
+  .react-datepicker__time
+  .react-datepicker__time-box
+  ul.react-datepicker__time-list
+  li.react-datepicker__time-list-item--disabled:hover {
+  background-color: transparent;
+}
+
+.react-datepicker-popper .react-datepicker__triangle {
+  stroke: var(--surface-float-border);
+}
+
+.react-datepicker-popper[data-placement^=bottom] .react-datepicker__triangle,
+.react-datepicker-popper[data-placement^=top] .react-datepicker__triangle,
+.react-datepicker-popper--header-middle[data-placement^=bottom] .react-datepicker__triangle,
+.react-datepicker-popper--header-bottom[data-placement^=bottom] .react-datepicker__triangle,
+.react-datepicker-popper--header-bottom[data-placement^=top] .react-datepicker__triangle {
+  fill: var(--surface-float);
+  color: var(--surface-float);
 }
 
 .react-datepicker__navigation-icon::before {

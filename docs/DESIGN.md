@@ -49,6 +49,12 @@ browser draws native controls (a `<select>` popup, checkboxes, radios, range thu
 pickers) and no selector reaches inside them, so without `color-scheme` they render light in
 dark mode.
 
+**A vendor's colours are overridden through the vendor's own selectors.** react-datepicker
+colours its time column and popover arrow through long selectors, and a shorter override loses
+to them, which left the time list white in dark mode. `globals.css` repeats the library's
+selectors for those parts with tokens, so they win on order without `!important`, and
+`datepickerTheme.test.ts` fails if the library colours a part that is not repeated.
+
 ### Appearance preferences
 
 Theme, colour palette, corner style and density are per-browser preferences in
