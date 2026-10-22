@@ -38,6 +38,7 @@ check_untyped_defs = true
 files = [
     # Configuration and core security/persistence contracts.
     "backend/utils/config_manager.py",
+    "backend/utils/env_comments.py",
     "backend/utils/time.py",
     "backend/core/exceptions.py",
     "backend/core/security.py",
@@ -175,7 +176,6 @@ max-complexity = 10
 "backend/utils/canonical_pipeline/speaker_matching.py" = ["C901", "PLR0912", "PLR0913"]
 "backend/utils/config_manager.py" = ["C901", "PLR0912"]
 "backend/utils/download_progress.py" = ["PLR0913"]
-"backend/utils/live_transcript.py" = ["C901", "PLR0912", "PLR0915"]
 "backend/utils/meeting_intelligence.py" = ["PLR0913"]
 "backend/utils/ollama_url_policy.py" = ["C901"]
 "backend/utils/path_manager.py" = ["C901"]

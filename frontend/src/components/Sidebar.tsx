@@ -97,7 +97,7 @@ const StatusIcon = ({ status }: { status: RecordingStatus }) => {
       return (
         <span
           className="cursor-help"
-          title="Processing: transcription, diarization, voiceprints. Tip: Disable 'Auto-create Voiceprints' in Settings for faster processing."
+          title="Processing: transcription, diarization, voiceprints."
         >
           <Loader2 className="w-3 h-3 text-status-info-fg animate-spin" />
         </span>

@@ -54,10 +54,11 @@ MAX_F0_HZ = 500.0
 # A frame counts as voiced when its cumulative-mean-normalised difference
 # dips below this aperiodicity ceiling. YIN's published default is 0.10;
 # 0.15 was chosen by measurement on PTDB-TUG laryngograph ground truth,
-# where it kept the harmful direction rare (false-voiced 1.1% of frames)
+# where it kept the harmful direction rare (false-voiced 0.97% of frames)
 # while recovering enough marginally-periodic speech (creak, breathy
 # endings) to halve the median bias the stricter value showed on creaky
-# speakers. The full sweep is recorded in docs/ANALYTICS_EVIDENCE.md.
+# speakers. docs/ANALYTICS_EVIDENCE.md records the validation and the
+# sweep's outcome.
 YIN_APERIODICITY_THRESHOLD = 0.15
 
 # Frames quieter than this contribute no pitch or loudness reading. -50 dBFS
