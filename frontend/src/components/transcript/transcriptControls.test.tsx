@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
@@ -106,6 +106,8 @@ describe("transcript toolbar", () => {
       const control = button(name);
       expect(control.className).toContain(FOCUS_RING);
       expect(control.className).toContain(TOUCH_HEIGHT);
+      // "All" is narrower than 44 px on a phone without it.
+      expect(control.className).toContain("pointer-coarse:min-w-[44px]");
     }
   });
 
@@ -211,6 +213,59 @@ describe("transcript toolbar", () => {
     await waitFor(() => expect(screen.queryByPlaceholderText("Find...")).not.toBeInTheDocument());
     expect(onFindAndReplace).toHaveBeenCalledTimes(1);
     expect(document.activeElement).toBe(button("Find & Replace"));
+  });
+
+  /** Starts Replace All from the keyboard, as Chrome runs it: the button blurs as it disables. */
+  const startReplaceAll = () => {
+    let finish = () => {};
+    const onFindAndReplace = vi.fn(() => new Promise<void>((resolve) => (finish = resolve)));
+    renderView({ onFindAndReplace });
+    fireEvent.click(button("Find & Replace"));
+    fireEvent.change(findField(), { target: { value: "alpha" } });
+    const replaceAll = button(/Replace All/);
+    replaceAll.focus();
+    fireEvent.click(replaceAll);
+    expect(replaceAll).toBeDisabled();
+    fireEvent.focusOut(replaceAll);
+    return () => act(async () => finish());
+  };
+
+  it("sends focus to Find & Replace when Replace All finishes with focus still in the row", async () => {
+    const finish = startReplaceAll();
+    expect(document.activeElement).toBe(findField());
+
+    await finish();
+
+    expect(screen.queryByPlaceholderText("Find...")).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(button("Find & Replace"));
+  });
+
+  it("sends focus to Find & Replace when Replace All was reached from outside the row", async () => {
+    let finish = () => {};
+    renderView({ onFindAndReplace: () => new Promise<void>((resolve) => (finish = resolve)) });
+    fireEvent.click(button("Find & Replace"));
+    fireEvent.change(findField(), { target: { value: "alpha" } });
+    // Focus leaves the row, then comes straight back to Replace All.
+    findField().blur();
+    const replaceAll = button(/Replace All/);
+    replaceAll.focus();
+    fireEvent.click(replaceAll);
+
+    await act(async () => finish());
+
+    expect(document.activeElement).toBe(button("Find & Replace"));
+  });
+
+  it("leaves focus alone when the user left the row while Replace All saved", async () => {
+    const finish = startReplaceAll();
+    // A click on blank page takes focus from the find field to the page.
+    findField().blur();
+    expect(document.activeElement).toBe(document.body);
+
+    await finish();
+
+    expect(screen.queryByPlaceholderText("Find...")).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(document.body);
   });
 
   it("says whether Search and Find & Replace are on", () => {

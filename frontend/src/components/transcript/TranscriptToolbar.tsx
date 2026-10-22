@@ -80,13 +80,19 @@ export default function TranscriptToolbar({
   const findRef = useRef<HTMLInputElement>(null);
   const findReplaceToggleRef = useRef<HTMLButtonElement>(null);
   const replaceWasOpenRef = useRef(showReplace);
+  // Whether focus is in the find/replace row, as its focus events last said.
+  const rowHasFocusRef = useRef(false);
 
-  // When Find & Replace closes with focus inside it, as Replace All does when
-  // it finishes, focus lands on the page. Send it to the toggle instead.
+  // When Find & Replace closes while it holds focus, as Replace All does when
+  // it finishes, focus lands on the page. Send it to the toggle instead. If
+  // the user had moved on, by clicking the page say, focus stays put.
   useLayoutEffect(() => {
     const closed = replaceWasOpenRef.current && !showReplace;
     replaceWasOpenRef.current = showReplace;
-    if (closed && document.activeElement === document.body) {
+    if (!closed) return;
+    const rowHadFocus = rowHasFocusRef.current;
+    rowHasFocusRef.current = false;
+    if (rowHadFocus && document.activeElement === document.body) {
       findReplaceToggleRef.current?.focus();
     }
   }, [showReplace]);
@@ -100,11 +106,20 @@ export default function TranscriptToolbar({
   useEffect(() => {
     const row = searchRowRef.current;
     if (!row) return;
-    const onFocusOut = (event: FocusEvent) => {
-      if (event.relatedTarget === null) focusIfDisabled(event.target, findRef.current);
+    const onFocusIn = () => {
+      rowHasFocusRef.current = true;
     };
+    const onFocusOut = (event: FocusEvent) => {
+      const next = event.relatedTarget;
+      rowHasFocusRef.current = next instanceof Node && row.contains(next);
+      if (next === null) focusIfDisabled(event.target, findRef.current);
+    };
+    row.addEventListener("focusin", onFocusIn);
     row.addEventListener("focusout", onFocusOut);
-    return () => row.removeEventListener("focusout", onFocusOut);
+    return () => {
+      row.removeEventListener("focusin", onFocusIn);
+      row.removeEventListener("focusout", onFocusOut);
+    };
   }, [rowShown]);
   // A browser that keeps focus on the disabled button is caught after the
   // render, once the matches have run out.
