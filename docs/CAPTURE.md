@@ -98,7 +98,7 @@ Each user can run one browser capture at a time. While a paused recording exists
 
 Nojoin keeps a paused or interrupted recording until you choose. It never pauses, cleans up or finalizes one for you. If the tab recording an interrupted capture was only cut off and starts uploading again, the dialog closes by itself within 30 seconds, and Nojoin refuses to resume that recording anywhere else while it is receiving audio.
 
-Resuming a recording in another tab or on another device takes it over. If the tab that was recording it is still open and reaches the server again, it stops recording, releases the microphone and shared tab, and says the recording continued elsewhere. Pause, stop and discard in that tab are refused the same way, so it cannot end or delete the recording under the tab now running it. Audio it recorded but had not uploaded is left out rather than mixed into the audio recorded since, and Nojoin says how much. Audio a closed tab kept in its browser is treated the same way: it is uploaded when you resume or stop the recording in that browser only if nobody resumed it elsewhere after that tab, and otherwise left out.
+Resuming a recording in another tab or on another device takes it over. If the tab that was recording it is still open and reaches the server again, it stops recording, releases the microphone and shared tab, and says the recording continued elsewhere. Pause, stop and discard in that tab are refused the same way, so it cannot end or delete the recording under the tab now running it. Audio it recorded but had not uploaded is left out rather than mixed into the audio recorded since, and Nojoin says how much. Audio a closed tab kept in its browser is treated the same way: it is uploaded when you resume or stop the recording in that browser only if nobody resumed it elsewhere after that tab, and otherwise left out. Once the recording has been stopped, discarded or finished somewhere else, audio a browser kept for it can never join it, so Nojoin removes it from that browser the next time it checks for unfinished recordings there.
 
 **Stop and process** in another tab or on another device ends the recording for the tab that was recording it in the same way. Once that tab reaches the server again, it stops recording, releases the microphone and shared tab, and says the recording was already stopped and sent for processing. **Discard** in that tab is refused too, so it cannot delete the meeting being processed. To delete it, use **Discard Recording** in the recordings list.
 
@@ -186,11 +186,11 @@ If a segment keeps failing to upload for about 15 seconds, Nojoin pauses the rec
 
 ### This recording continued elsewhere
 
-The recording was resumed in another tab or on another device, so this tab stopped recording it and released the microphone and shared tab. Carry on, pause or stop from the tab or device that resumed it. If this tab had audio it had not uploaded, the message says how much: it is not in the recording, because adding it after the audio recorded meanwhile would put the meeting out of order.
+The recording was resumed in another tab or on another device, so this tab stopped recording it and released the microphone and shared tab. Carry on, pause or stop from the tab or device that resumed it. If this tab had audio it had not uploaded, the message says how much: it is not in the recording, because adding it after the audio recorded meanwhile would put the meeting out of order. Nojoin removes it from this browser once the recording is finished.
 
 ### This recording has already been stopped
 
-The recording was stopped in another tab or on another device and sent for processing, so this tab stopped recording it and released the microphone and shared tab. The meeting appears in the recordings list as usual. If this tab had audio it had not uploaded, the message says how much: it is not in the recording, which was finished without it.
+The recording was stopped in another tab or on another device and sent for processing, so this tab stopped recording it and released the microphone and shared tab. The meeting appears in the recordings list as usual. If this tab had audio it had not uploaded, the message says how much: it is not in the recording, which was finished without it, and Nojoin removes it from this browser.
 
 ### Stop did not finish
 

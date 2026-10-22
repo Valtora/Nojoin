@@ -38,6 +38,8 @@ export interface SegmentUploaderOptions {
    * refuses them once the capture is resumed elsewhere (issue #570).
    */
   epoch: number;
+  /** The account the capture belongs to, kept with each stored segment. */
+  ownerId?: number;
   initialSequence?: number;
   uploadSegment?: typeof uploadRecordingSegment;
   onUploaded?: (sequence: number) => void;
@@ -72,6 +74,8 @@ export class SegmentUploader {
   private readonly recordingId: RecordingId;
 
   private readonly epoch: number;
+
+  private readonly ownerId?: number;
 
   private readonly uploadSegmentFn: typeof uploadRecordingSegment;
 
@@ -114,6 +118,7 @@ export class SegmentUploader {
   constructor(options: SegmentUploaderOptions) {
     this.recordingId = options.recordingId;
     this.epoch = options.epoch;
+    this.ownerId = options.ownerId;
     this.uploadSegmentFn = options.uploadSegment ?? uploadRecordingSegment;
     this.onUploaded = options.onUploaded;
     this.onStalled = options.onStalled;
@@ -166,9 +171,9 @@ export class SegmentUploader {
    * Queues segments a previous page left in the store, ahead of new audio.
    *
    * Each is removed from the store once the server acknowledges it. One kept
-   * under an earlier epoch is stored again under this uploader's, so a later
-   * page still finds it belongs to the capture if this one closes before it
-   * is sent.
+   * under an earlier epoch, or without its owner, is stored again under this
+   * uploader's, so a later page still finds it belongs to the capture if this
+   * one closes before it is sent.
    */
   restore(segments: StoredSegment[]) {
     if (this.closed) {
@@ -182,7 +187,10 @@ export class SegmentUploader {
         blob: segment.blob,
         durationSeconds: segment.durationSeconds,
       });
-      if (storedSegmentEpoch(segment) !== this.epoch) {
+      if (
+        storedSegmentEpoch(segment) !== this.epoch ||
+        (segment.ownerId === undefined && this.ownerId !== undefined)
+      ) {
         this.persist(segment.sequence, segment.blob, segment.durationSeconds);
       }
     }
@@ -341,7 +349,14 @@ export class SegmentUploader {
     this.persisting.set(
       sequence,
       this.store
-        .put({ recordingId: this.recordingId, sequence, blob, durationSeconds, epoch: this.epoch })
+        .put({
+          recordingId: this.recordingId,
+          sequence,
+          blob,
+          durationSeconds,
+          epoch: this.epoch,
+          ...(this.ownerId === undefined ? {} : { ownerId: this.ownerId }),
+        })
         .catch((error: unknown) => {
           console.warn("[capture] could not keep a queued segment in the browser", error);
         }),

@@ -554,6 +554,39 @@ describe("capture uploader once the capture is taken over or stopped elsewhere",
     );
   });
 
+  it("keeps the owning account with each segment, and adds it to restored audio (issue #589)", async () => {
+    const store = new MemorySegmentStore();
+    const restored: StoredSegment = {
+      recordingId: "rec-1",
+      sequence: 5,
+      blob: new Blob(["5"]),
+      durationSeconds: 2,
+      epoch: 2,
+    };
+    await store.put(restored);
+    const uploader = createSegmentUploader({
+      recordingId: "rec-1",
+      epoch: 2,
+      ownerId: 7,
+      initialSequence: 5,
+      uploadSegment: vi.fn(() => new Promise(() => {})) as never,
+      store,
+    });
+
+    uploader.restore([restored]);
+    uploader.enqueue(6, new Blob(["6"]), 2);
+
+    await vi.waitFor(async () =>
+      expect(
+        (await store.list("rec-1")).map((segment) => [segment.sequence, segment.ownerId]),
+      ).toEqual([
+        [5, 7],
+        [6, 7],
+      ]),
+    );
+    uploader.dispose();
+  });
+
   it("keeps each segment under its epoch, and stores restored audio again under its own", async () => {
     const store = new MemorySegmentStore();
     const restored: StoredSegment[] = [

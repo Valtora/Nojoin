@@ -5,6 +5,7 @@ import {
   finalizeRecordingCapture,
   getRecording,
   getUnfinishedCaptures,
+  getUserMe,
   initRecording,
   isActiveRecordingConflictDetail,
   isCaptureClosedError,
@@ -18,7 +19,7 @@ import { isReachable } from "@/lib/connectivity/reducer";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { isLiveCaptureInProgress } from "@/lib/liveCapture";
 import { dispatchRecordingRemoved } from "@/lib/recordingEvents";
-import { holdSignInInPlace, retryAfterSignIn } from "@/lib/session";
+import { holdSignInInPlace, retryAfterSignIn, useSessionStore } from "@/lib/session";
 import { RecordingStatus, type Recording, type RecordingId } from "@/types";
 
 import { holdCaptureLock, isCaptureHeldInThisBrowser } from "./captureLock";
@@ -244,6 +245,19 @@ const answeredByServer = (error: unknown) => {
   return status !== 502 && status !== 503 && status !== 504;
 };
 
+/** The account this page is signed in as, once the server has said. */
+const signedInAccountId = () => useSessionStore.getState().userId ?? undefined;
+
+/**
+ * Whether the server's copy of a recording takes no more capture audio. An
+ * unknown status counts as unfinished, so kept audio is never cleared on a
+ * guess.
+ */
+const isFinishedCapture = (recording: Pick<Recording, "status">) =>
+  recording.status !== undefined &&
+  recording.status !== RecordingStatus.UPLOADING &&
+  recording.status !== RecordingStatus.PAUSED;
+
 const withStageTimeout = async <T>(
   stage: CaptureStopStage,
   operation: Promise<T>,
@@ -353,6 +367,16 @@ export class CaptureController {
 
   private captureRecheckTimerId: ReturnType<typeof setInterval> | null = null;
 
+  /** Whether kept audio is being checked against the server, so one check runs. */
+  private checkingKeptAudio = false;
+
+  /**
+   * Recordings this page has already asked the server about without a clear
+   * answer: a 404 for audio kept without its owner, or while signed in as
+   * another account. Asked again on the next page load, not every 30 seconds.
+   */
+  private readonly keptAudioUndecided = new Set<RecordingId>();
+
   /**
    * Bumped by every user action on a capture, so a check that was already in
    * flight cannot put back a recording the action has just resolved.
@@ -428,14 +452,14 @@ export class CaptureController {
    */
   refreshPausedRecording = async () => {
     const ticket = this.captureActionTicket;
-    const captures = (await getUnfinishedCaptures()).filter(
-      isLiveCaptureInProgress,
-    );
+    const unfinished = await getUnfinishedCaptures();
+    const captures = unfinished.filter(isLiveCaptureInProgress);
     const decision = await this.selectCaptureNeedingDecision(captures);
     if (ticket !== this.captureActionTicket) {
       // An action began meanwhile and will look again itself when it ends.
       return decision;
     }
+    void this.clearAudioKeptForFinishedCaptures(unfinished);
     this.setState({ pausedRecording: decision });
     if (this.runtime || captures.length === 0) {
       this.stopCaptureRecheck();
@@ -1174,6 +1198,75 @@ export class CaptureController {
     return usable;
   };
 
+  /**
+   * Removes the audio this browser kept for captures that have finished
+   * elsewhere (issue #589).
+   *
+   * Kept audio is sent only when this browser resumes or stops its capture, so
+   * audio kept for one stopped, discarded or taken over and finished on another
+   * device would otherwise stay for good, and none of it can join the
+   * recording. A capture the server still lists as unfinished keeps its audio,
+   * whoever holds it. Any other is looked up first, and its audio removed only
+   * when the server says the recording is finished, or says it does not exist
+   * while this page is signed in as the account that kept the audio: another
+   * account gets the same 404 for a recording it does not own.
+   */
+  private clearAudioKeptForFinishedCaptures = async (unfinished: Recording[]) => {
+    if (this.checkingKeptAudio) {
+      return;
+    }
+    this.checkingKeptAudio = true;
+    try {
+      const listed = new Set(unfinished.map((recording) => recording.id));
+      for (const recordingId of await this.segmentStore.recordingIds()) {
+        if (
+          listed.has(recordingId) ||
+          this.runtime?.recordingId === recordingId ||
+          this.keptAudioUndecided.has(recordingId)
+        ) {
+          continue;
+        }
+        const finished = await this.isKeptAudioFinished(recordingId);
+        if (finished) {
+          console.info("[capture] cleared audio kept for a recording finished elsewhere", recordingId);
+          await this.segmentStore.clear(recordingId);
+        } else if (finished === null) {
+          this.keptAudioUndecided.add(recordingId);
+        }
+      }
+    } catch (error: unknown) {
+      console.warn("[capture] could not check the audio this browser kept", error);
+    } finally {
+      this.checkingKeptAudio = false;
+    }
+  };
+
+  /**
+   * True when the recording kept audio belongs to is finished or gone, false
+   * when it may still take it or the server could not be asked, and null when
+   * the server's answer cannot say.
+   */
+  private isKeptAudioFinished = async (recordingId: RecordingId): Promise<boolean | null> => {
+    try {
+      return isFinishedCapture(await getRecording(recordingId));
+    } catch (error: unknown) {
+      if (!(error instanceof AxiosError) || error.response?.status !== 404) {
+        return false;
+      }
+      const [kept] = await this.segmentStore.list(recordingId);
+      if (kept?.ownerId === undefined) {
+        return null;
+      }
+      // Asked rather than read from the session, which a page that has only
+      // just loaded may not have filled in yet.
+      const signedInAs = await getUserMe().catch(() => null);
+      if (!signedInAs) {
+        return false;
+      }
+      return signedInAs.id === kept.ownerId ? true : null;
+    }
+  };
+
   private reportLeftOutAudio(leftOut: StoredSegment[]) {
     if (leftOut.length === 0) {
       return;
@@ -1220,6 +1313,7 @@ export class CaptureController {
     const uploader = createSegmentUploader({
       recordingId,
       epoch: response.capture_epoch,
+      ownerId: signedInAccountId(),
       initialSequence: response.last_sequence + 1,
       store: this.segmentStore,
       onQueueChange: (uploadQueue) => {
@@ -1259,6 +1353,7 @@ export class CaptureController {
     const uploader = createSegmentUploader({
       recordingId: options.recordingId,
       epoch: options.epoch,
+      ownerId: signedInAccountId(),
       initialSequence: options.uploadFromSequence ?? options.startSequence,
       store: this.segmentStore,
       onQueueChange: (uploadQueue) => {

@@ -38,6 +38,7 @@ const apiMocks = vi.hoisted(() => ({
   finalizeRecordingCapture: vi.fn(),
   pauseRecordingCapture: vi.fn(),
   getUnfinishedCaptures: vi.fn(),
+  getUserMe: vi.fn(),
   initRecording: vi.fn(),
   reportRecordingCaptureSources: vi.fn(),
   resumeRecordingCapture: vi.fn(),
@@ -76,6 +77,7 @@ vi.mock("@/lib/api", () => ({
   finalizeRecordingCapture: apiMocks.finalizeRecordingCapture,
   getUnfinishedCaptures: apiMocks.getUnfinishedCaptures,
   getRecording: apiMocks.getRecording,
+  getUserMe: apiMocks.getUserMe,
   initRecording: apiMocks.initRecording,
   isActiveRecordingConflictDetail: vi.fn(() => false),
   isCaptureClosedError: apiMocks.isCaptureClosedError,
@@ -2352,18 +2354,29 @@ describe("a capture taken over or stopped elsewhere (issues #570, #590)", () => 
   });
 
   describe("once the recording was stopped elsewhere (issue #590)", () => {
-    it("stops capturing at the first refused segment, keeping the unsent audio", async () => {
+    it("stops capturing at the first refused segment", async () => {
       const started = await startCapture();
       vi.mocked(started.uploader.pendingAudioSeconds).mockReturnValue(4);
-      const clearStore = vi.spyOn(storeOf(started.controller), "clear");
 
       await started.uploaderOptions.onCaptureEnded?.(closed());
 
       expectStoodDown(started, STOPPED);
       expect(started.controller.getState().error).toMatch(/About 4 seconds of audio/);
-      expect(clearStore).not.toHaveBeenCalled();
       expect(apiMocks.pauseRecordingCapture).not.toHaveBeenCalled();
       expect(apiMocks.finalizeRecordingCapture).not.toHaveBeenCalled();
+    });
+
+    it("then removes the audio it kept, which can no longer join the recording (issue #589)", async () => {
+      const started = await startCapture();
+      await storeOf(started.controller).put(stored(5, 3));
+      apiMocks.getRecording.mockResolvedValue({ id: "rec-1", status: "QUEUED" });
+
+      await started.uploaderOptions.onCaptureEnded?.(closed());
+
+      expectStoodDown(started, STOPPED);
+      await vi.waitFor(async () =>
+        expect(await storeOf(started.controller).list("rec-1")).toEqual([]),
+      );
     });
 
     it("stands down when the pause it owed is refused once the API answers", async () => {
@@ -2662,5 +2675,206 @@ describe("a pause from the controls that the server does not take (issue #582)",
 
     expect(controller.getState().status).toBe("idle");
     expect(controller.getState().recordingId).toBeNull();
+  });
+});
+
+describe("audio kept for a capture finished elsewhere (issue #589)", () => {
+  /** The account the page is signed in as in these tests. */
+  const ALICE = 7;
+
+  const kept = (recordingId: string, sequence: number, ownerId?: number) => ({
+    recordingId,
+    sequence,
+    blob: new Blob([String(sequence)], { type: "audio/flac" }),
+    durationSeconds: 2,
+    epoch: 0,
+    ...(ownerId === undefined ? {} : { ownerId }),
+  });
+
+  const notFound = () => {
+    const error = new AxiosError("Request failed with status code 404");
+    Object.assign(error, { response: { status: 404, data: { detail: "Recording not found" } } });
+    return error;
+  };
+
+  const controllers: CaptureController[] = [];
+
+  const storeOf = (controller: CaptureController) =>
+    (controller as unknown as { segmentStore: SegmentStore }).segmentStore;
+
+  /** A controller whose browser kept two segments of `recordingId`. */
+  const keeping = async (recordingId: string, ownerId?: number) => {
+    const controller = new CaptureController();
+    controllers.push(controller);
+    await storeOf(controller).put(kept(recordingId, 4, ownerId));
+    await storeOf(controller).put(kept(recordingId, 5, ownerId));
+    return controller;
+  };
+
+  const keptSequences = async (controller: CaptureController, recordingId: string) =>
+    (await storeOf(controller).list(recordingId)).map((segment) => segment.sequence);
+
+  /** Lets the check a refresh starts run to the end. */
+  const settle = async (controller: CaptureController) => {
+    await vi.waitFor(() =>
+      expect((controller as unknown as { checkingKeptAudio: boolean }).checkingKeptAudio).toBe(
+        false,
+      ),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  };
+
+  beforeEach(() => {
+    resetSessionForTests();
+    noteSignedIn({ username: "alice", force_password_change: false, id: ALICE });
+    apiMocks.getUnfinishedCaptures.mockReset();
+    apiMocks.getUnfinishedCaptures.mockResolvedValue([]);
+    apiMocks.getRecording.mockReset();
+    apiMocks.getUserMe.mockReset();
+    apiMocks.getUserMe.mockResolvedValue({ id: ALICE, username: "alice" });
+    sharedMocks.readPausedCaptureContext.mockReset();
+    sharedMocks.readPausedCaptureContext.mockReturnValue(null);
+  });
+
+  afterEach(async () => {
+    await Promise.all(controllers.splice(0).map((controller) => controller.destroy()));
+    resetSessionForTests();
+  });
+
+  it("removes it once the server reports the recording stopped", async () => {
+    const controller = await keeping("rec-9", ALICE);
+    apiMocks.getRecording.mockResolvedValue({ id: "rec-9", status: "PROCESSED" });
+
+    await controller.refreshPausedRecording();
+    await settle(controller);
+
+    expect(apiMocks.getRecording).toHaveBeenCalledWith("rec-9");
+    expect(await keptSequences(controller, "rec-9")).toEqual([]);
+  });
+
+  it("keeps it, without asking, for a capture the server lists as unfinished", async () => {
+    // Paused here, or taken over and still running on another device.
+    const controller = await keeping("rec-9", ALICE);
+    apiMocks.getUnfinishedCaptures.mockResolvedValue([
+      { id: "rec-9", status: "UPLOADING", client_status: "RECORDING" },
+    ]);
+
+    await controller.refreshPausedRecording();
+    await settle(controller);
+
+    expect(apiMocks.getRecording).not.toHaveBeenCalled();
+    expect(await keptSequences(controller, "rec-9")).toEqual([4, 5]);
+  });
+
+  it("keeps it while the server still holds the recording as a capture", async () => {
+    // Started after the list was read, so only the lookup sees it.
+    const controller = await keeping("rec-9", ALICE);
+    apiMocks.getRecording.mockResolvedValue({ id: "rec-9", status: "UPLOADING" });
+
+    await controller.refreshPausedRecording();
+    await settle(controller);
+
+    expect(await keptSequences(controller, "rec-9")).toEqual([4, 5]);
+  });
+
+  it("removes it for a recording that is gone, signed in as the account that kept it", async () => {
+    // Discarded on another device.
+    const controller = await keeping("rec-9", ALICE);
+    apiMocks.getRecording.mockRejectedValue(notFound());
+
+    await controller.refreshPausedRecording();
+    await settle(controller);
+
+    expect(await keptSequences(controller, "rec-9")).toEqual([]);
+  });
+
+  it("keeps it for a 404 while signed in as another account, and asks only once a page", async () => {
+    // The server hides another account's recordings behind the same 404.
+    const controller = await keeping("rec-9", ALICE);
+    apiMocks.getUserMe.mockResolvedValue({ id: 8, username: "bob" });
+    apiMocks.getRecording.mockRejectedValue(notFound());
+
+    await controller.refreshPausedRecording();
+    await settle(controller);
+    await controller.refreshPausedRecording();
+    await settle(controller);
+
+    expect(await keptSequences(controller, "rec-9")).toEqual([4, 5]);
+    expect(apiMocks.getRecording).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps it for a 404 when it was kept without its owner", async () => {
+    const controller = await keeping("rec-9");
+    apiMocks.getRecording.mockRejectedValue(notFound());
+
+    await controller.refreshPausedRecording();
+    await settle(controller);
+
+    expect(await keptSequences(controller, "rec-9")).toEqual([4, 5]);
+  });
+
+  it("asks the server who is signed in rather than trusting a page still loading", async () => {
+    // The page has not heard from `/users/me` yet.
+    resetSessionForTests();
+    const controller = await keeping("rec-9", ALICE);
+    apiMocks.getRecording.mockRejectedValue(notFound());
+
+    await controller.refreshPausedRecording();
+    await settle(controller);
+
+    expect(apiMocks.getUserMe).toHaveBeenCalledTimes(1);
+    expect(await keptSequences(controller, "rec-9")).toEqual([]);
+  });
+
+  it("keeps it when the server cannot be asked, and asks again next time", async () => {
+    const controller = await keeping("rec-9", ALICE);
+    apiMocks.getRecording.mockRejectedValueOnce(new AxiosError("Network Error", "ERR_NETWORK"));
+    apiMocks.getRecording.mockResolvedValueOnce({ id: "rec-9", status: "QUEUED" });
+
+    await controller.refreshPausedRecording();
+    await settle(controller);
+    expect(await keptSequences(controller, "rec-9")).toEqual([4, 5]);
+
+    await controller.refreshPausedRecording();
+    await settle(controller);
+    expect(await keptSequences(controller, "rec-9")).toEqual([]);
+  });
+
+  it("leaves other recordings' audio alone", async () => {
+    const controller = await keeping("rec-9", ALICE);
+    await storeOf(controller).put(kept("rec-2", 0, ALICE));
+    apiMocks.getRecording.mockImplementation(async (recordingId: string) => ({
+      id: recordingId,
+      status: recordingId === "rec-9" ? "QUEUED" : "PAUSED",
+    }));
+
+    await controller.refreshPausedRecording();
+    await settle(controller);
+
+    expect(await keptSequences(controller, "rec-9")).toEqual([]);
+    expect(await keptSequences(controller, "rec-2")).toEqual([0]);
+  });
+
+  it("keeps the signed-in account with the audio a capture keeps", async () => {
+    pickSourceMocks.pickCaptureSource.mockResolvedValue({
+      mode: "microphone_only",
+      displayStream: null,
+      microphoneStream: {} as MediaStream,
+      captureReport: { mode: "microphone_only", notes: [] },
+      release: vi.fn(),
+    });
+    apiMocks.initRecording.mockResolvedValue({ id: "rec-1", name: "Weekly sync", capture_epoch: 0 });
+    apiMocks.reportRecordingCaptureSources.mockResolvedValue(undefined);
+    featureDetectMocks.detectCaptureSupport.mockReturnValue({
+      supported: true,
+      mode: "microphone_only",
+    });
+    vi.mocked(createSegmentUploader).mockClear();
+    const controller = new CaptureController();
+    controllers.push(controller);
+
+    await controller.start("Weekly sync");
+
+    expect(vi.mocked(createSegmentUploader).mock.calls[0][0].ownerId).toBe(ALICE);
   });
 });
