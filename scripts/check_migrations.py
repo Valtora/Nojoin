@@ -42,6 +42,8 @@ DELETE FROM recording_speakers WHERE recording_id IN (900001, 900002);
 DELETE FROM global_speakers
   WHERE user_id IN (900001, 900002) OR name LIKE 'mc-owner-%';
 DELETE FROM recordings WHERE id IN (900001, 900002);
+DELETE FROM p_tags WHERE name LIKE 'mc-%';
+DELETE FROM tags WHERE name LIKE 'mc-%';
 
 INSERT INTO users (id, created_at, updated_at, username, hashed_password,
                    is_active, is_superuser, role, force_password_change)
@@ -110,6 +112,35 @@ FROM (VALUES ('mc-rs6', 900001, 'SPEAKER_05', 'mc-owner-one'),
              ('mc-rs9', 900001, 'SPEAKER_07', 'mc-owner-theirs'))
      AS seed (public_id, recording_id, label, person)
 JOIN global_speakers gs ON gs.name = seed.person;
+
+-- A people tag with no owner linked from two users' people, one used by
+-- nobody, a link to another user's tag, and a people tag and a recording tag
+-- nested under another user's.
+INSERT INTO p_tags (created_at, updated_at, name, color, user_id)
+VALUES
+  (now(), now(), 'mc-ptag-both',   'teal', NULL),
+  (now(), now(), 'mc-ptag-unused', NULL,   NULL),
+  (now(), now(), 'mc-ptag-theirs', 'teal', 900002);
+
+INSERT INTO p_tags (created_at, updated_at, name, user_id, parent_id)
+SELECT now(), now(), 'mc-ptag-nested', 900001, id
+FROM p_tags WHERE name = 'mc-ptag-theirs';
+
+INSERT INTO people_tags (created_at, updated_at, global_speaker_id, tag_id)
+SELECT now(), now(), gs.id, t.id
+FROM (VALUES ('mc-array', 'mc-ptag-both'),
+             ('mc-owner-theirs', 'mc-ptag-both'),
+             ('mc-array', 'mc-ptag-theirs'))
+     AS seed (person, tag)
+JOIN global_speakers gs ON gs.name = seed.person
+JOIN p_tags t ON t.name = seed.tag;
+
+INSERT INTO tags (created_at, updated_at, name, user_id)
+VALUES (now(), now(), 'mc-tag-theirs', 900002);
+
+INSERT INTO tags (created_at, updated_at, name, user_id, parent_id)
+SELECT now(), now(), 'mc-tag-nested', 900001, id
+FROM tags WHERE name = 'mc-tag-theirs';
 
 -- Notes on a recording with no transcript row (rolling the timeline notes
 -- migration back has to create one), with text that breaks naive quoting and
