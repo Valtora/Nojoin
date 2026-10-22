@@ -29,9 +29,9 @@ def _render_page(page) -> VisionImage:
     longest = max(rect.width, rect.height) or 1
     zoom = max(RENDER_MIN_ZOOM, RENDER_MAX_EDGE_PX / longest)
 
-    import fitz
+    import pymupdf
 
-    pixmap = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom), alpha=False)
+    pixmap = page.get_pixmap(matrix=pymupdf.Matrix(zoom, zoom), alpha=False)
     return VisionImage(data=pixmap.tobytes("png"), media_type="image/png")
 
 
@@ -63,9 +63,9 @@ def _extract_tables(page) -> List[str]:
 
 
 def open_pdf(path: str, *, want_images: bool) -> DocumentSource:
-    import fitz
+    import pymupdf
 
-    document = fitz.open(path)
+    document = pymupdf.open(path)
     page_count = document.page_count
 
     def pages() -> Iterator[PageSource]:

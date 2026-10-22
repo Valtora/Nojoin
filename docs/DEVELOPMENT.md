@@ -306,6 +306,7 @@ Capture code lives in `frontend/src/lib/capture/`. After a capture change, check
 - An upload backlog: block segment uploads in the browser's developer tools, close the tab, reopen it, and check that **Stop and process** uploads what the closed tab recorded before finalising.
 - The paused-recording lock after a refresh or a closed tab (a real unload, not in-app navigation).
 - A tab closed while signed out, or with the pause request blocked: the recording is offered as interrupted two minutes after its last upload, in a fresh tab and without a reload, and a capture still running in another tab is never offered.
+- An outage longer than the upload retries: take the capturing tab offline for about 30 seconds. It settles in paused with **Start Meeting** unavailable, the pause reaches the server once the tab is back online, and **Resume** carries on with the same capture and no gap or repeat in the segment numbers.
 - Focus moving to another tab, window or application, which must not pause capture.
 
 ```bash
