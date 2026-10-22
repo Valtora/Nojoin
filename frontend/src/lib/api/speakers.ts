@@ -1,5 +1,6 @@
 import type {
   GlobalSpeaker,
+  GlobalSpeakerUpdate,
   MergedRecordingSpeaker,
   RecalibrateResult,
   Recording,
@@ -41,7 +42,7 @@ export const createGlobalSpeaker = async (
 
 export const updateGlobalSpeaker = async (
   id: number,
-  data: Partial<GlobalSpeaker> & { tag_ids?: number[] },
+  data: GlobalSpeakerUpdate,
 ): Promise<GlobalSpeaker> => {
   const response = await api.put<GlobalSpeaker>(`/speakers/${id}`, data);
   return response.data;

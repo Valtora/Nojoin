@@ -1,7 +1,15 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { X, Plus, Users, Fingerprint, ArrowRight } from "lucide-react";
+import {
+  X,
+  Plus,
+  Users,
+  Fingerprint,
+  ArrowRight,
+  Lock,
+  LockOpen,
+} from "lucide-react";
 import Button from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
 import { GlobalSpeaker, PeopleTag } from "@/types";
@@ -12,6 +20,7 @@ import {
   getGlobalSpeakers,
   mergeSpeakers,
   deleteGlobalSpeakerEmbedding,
+  updateGlobalSpeaker,
 } from "@/lib/api";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import { useAnchoredPanel } from "@/components/ui/useAnchoredPanel";
@@ -26,6 +35,8 @@ interface PersonModalProps {
   ) => Promise<void>;
   onDelete?: (id: number) => void;
   onVoiceprintDeleted?: (id: number) => void;
+  /** The lock was changed and saved; the dialog stays open with its edits. */
+  onVoiceprintLockChanged?: (id: number, locked: boolean) => void;
 }
 
 export function PersonModal({
@@ -35,6 +46,7 @@ export function PersonModal({
   onSave,
   onDelete,
   onVoiceprintDeleted,
+  onVoiceprintLockChanged,
 }: PersonModalProps) {
   const { addNotification } = useNotificationStore();
   const [formData, setFormData] = useState<
@@ -70,11 +82,34 @@ export function PersonModal({
     [],
   );
   const [isDeletingVoiceprint, setIsDeletingVoiceprint] = useState(false);
+  // Saved on its own, at once, so it never waits on Save Person.
+  const [isVoiceprintLocked, setIsVoiceprintLocked] = useState(false);
+  const [isChangingLock, setIsChangingLock] = useState(false);
+  // The person the dialog shows now. A lock answer that arrives after it has
+  // moved on to someone else must not be shown as theirs.
+  const shownPersonId = useRef<number | null>(null);
+  // Saving disables the toggle, and a browser drops the focus of a disabled
+  // button, so a keyboard user is given it back once the answer arrives.
+  const lockButtonRef = useRef<HTMLButtonElement>(null);
+  const refocusLock = useRef(false);
   const [confirmMerge, setConfirmMerge] = useState<{
     target: GlobalSpeaker;
   } | null>(null);
 
   const [confirmVoiceprintDelete, setConfirmVoiceprintDelete] = useState(false);
+
+  useEffect(() => {
+    shownPersonId.current = person?.id ?? null;
+    refocusLock.current = false;
+    setIsChangingLock(false);
+  }, [person?.id]);
+
+  useEffect(() => {
+    if (!isChangingLock && refocusLock.current) {
+      refocusLock.current = false;
+      lockButtonRef.current?.focus();
+    }
+  }, [isChangingLock]);
 
   // Load available tags
   useEffect(() => {
@@ -115,6 +150,7 @@ export function PersonModal({
           notes: person.notes || "",
           tag_ids: person.tags?.map((t) => t.id) || [],
         });
+        setIsVoiceprintLocked(Boolean(person.is_voiceprint_locked));
 
         // Load speakers for merge (excluding current person)
         getGlobalSpeakers()
@@ -269,6 +305,39 @@ interface TagNode extends PeopleTag {
     }
   };
 
+  const toggleVoiceprintLock = async () => {
+    if (!person) return;
+    const { id, name } = person;
+    const lock = !isVoiceprintLocked;
+
+    refocusLock.current = document.activeElement === lockButtonRef.current;
+    setIsChangingLock(true);
+    try {
+      const updated = await updateGlobalSpeaker(id, {
+        is_voiceprint_locked: lock,
+      });
+      const locked = Boolean(updated.is_voiceprint_locked);
+      if (shownPersonId.current === id) setIsVoiceprintLocked(locked);
+      onVoiceprintLockChanged?.(id, locked);
+      addNotification({
+        type: "success",
+        message: locked
+          ? `${name}'s voiceprint is locked.`
+          : `${name}'s voiceprint is unlocked.`,
+      });
+    } catch (error: unknown) {
+      console.error("Failed to change the voiceprint lock:", error);
+      addNotification({
+        type: "error",
+        message: lock
+          ? `Failed to lock ${name}'s voiceprint.`
+          : `Failed to unlock ${name}'s voiceprint.`,
+      });
+    } finally {
+      if (shownPersonId.current === id) setIsChangingLock(false);
+    }
+  };
+
   const filteredSpeakers =
     speakerSearch === ""
       ? availableSpeakers
@@ -398,9 +467,13 @@ interface TagNode extends PeopleTag {
                 </h3>
 
                 <div className="flex flex-col gap-4">
-                  {/* Voiceprint Status */}
-                  <div className="flex items-center justify-between p-3 bg-surface-inset rounded-lg border border-surface-border">
-                    <div className="flex items-center gap-3">
+                  {/* Voiceprint Status. Wraps, so that on a phone the
+                      lock and Delete move under the status instead of
+                      pushing Delete out of the dialog. The status claims
+                      12rem before the buttons wrap, so on a wider dialog
+                      its text wraps beside them instead. */}
+                  <div className="flex flex-wrap items-center justify-between gap-3 p-3 bg-surface-inset rounded-lg border border-surface-border">
+                    <div className="flex min-w-0 grow basis-48 items-center gap-3">
                       <div
                         className={`p-2 rounded-full ${person.has_voiceprint ? "bg-status-success-bg text-status-success-fg" : "bg-surface-inset text-contrast-icon-muted text-contrast-helper"}`}
                       >
@@ -417,18 +490,53 @@ interface TagNode extends PeopleTag {
                             ? "Speaker identification is enabled for this person."
                             : "This person cannot be automatically identified in recordings."}
                         </div>
+                        {person.has_voiceprint && isVoiceprintLocked && (
+                          <div className="text-xs text-contrast-helper">
+                            Locked: only Link to different speaker,
+                            recalibrating or splitting changes it.
+                          </div>
+                        )}
                       </div>
                     </div>
-                    {person.has_voiceprint && (
-                      <button
-                        type="button"
-                        onClick={handleDeleteVoiceprint}
-                        disabled={isDeletingVoiceprint}
-                        className="text-danger-text hover:text-danger-text text-sm font-medium px-3 py-1.5 hover:bg-status-danger-bg rounded-md transition-colors"
-                      >
-                        {isDeletingVoiceprint ? "Deleting..." : "Delete"}
-                      </button>
-                    )}
+                    <div className="ml-auto flex items-center gap-1">
+                      {/* Lock is offered only for a voiceprint; Unlock
+                          whenever there is a lock to clear. */}
+                      {(person.has_voiceprint || isVoiceprintLocked) && (
+                        // The inset row already has the ghost hover's fill,
+                        // so the hover steps up to the card instead.
+                        <Button
+                          ref={lockButtonRef}
+                          variant="ghost"
+                          size="sm"
+                          onClick={toggleVoiceprintLock}
+                          loading={isChangingLock}
+                          iconLeft={
+                            isVoiceprintLocked ? (
+                              <LockOpen aria-hidden="true" className="w-4 h-4" />
+                            ) : (
+                              <Lock aria-hidden="true" className="w-4 h-4" />
+                            )
+                          }
+                          className="text-sm font-medium hover:bg-surface-card"
+                        >
+                          {isChangingLock
+                            ? "Saving..."
+                            : isVoiceprintLocked
+                              ? "Unlock voiceprint"
+                              : "Lock voiceprint"}
+                        </Button>
+                      )}
+                      {person.has_voiceprint && (
+                        <button
+                          type="button"
+                          onClick={handleDeleteVoiceprint}
+                          disabled={isDeletingVoiceprint}
+                          className="text-danger-text hover:text-danger-text text-sm font-medium px-3 py-1.5 hover:bg-status-danger-bg rounded-md transition-colors"
+                        >
+                          {isDeletingVoiceprint ? "Deleting..." : "Delete"}
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   {/* Merge Action */}

@@ -35,15 +35,18 @@ describe("describeLibraryVoiceprint", () => {
     ).toContain("19.9 s of clear speech, 20 s needed");
   });
 
-  it("names the person when the guard or a lock kept their voiceprint", () => {
+  it("names the person when the guard kept their voiceprint", () => {
     expect(describeLibraryVoiceprint(outcome("skipped_drift"), "Dana")).toBe(
       "Voiceprint not updated: this speaker sounds too unlike Dana's saved voiceprint. Check that the name is right.",
     );
+  });
+
+  it("points a locked voiceprint to Unlock, which keeps it, not to deleting it", () => {
     expect(describeLibraryVoiceprint(outcome("skipped_locked"), "Dana")).toBe(
-      "Voiceprint not updated: Dana's voiceprint is locked. To let it learn again, delete it in the person's details under People; the next recording linked to Dana with at least 20 s of clear speech then saves a new one.",
+      "Voiceprint not updated: Dana's voiceprint is locked. To let this speaker update it, choose Unlock voiceprint in Dana's details under People, then link the speaker again. Lock it again afterwards to keep it.",
     );
     expect(describeLibraryVoiceprint(outcome("skipped_locked"))).toBe(
-      "Voiceprint not updated: the person's voiceprint is locked. To let it learn again, delete it in the person's details under People; the next recording linked to this person with at least 20 s of clear speech then saves a new one.",
+      "Voiceprint not updated: the person's voiceprint is locked. To let this speaker update it, choose Unlock voiceprint in the person's details under People, then link the speaker again. Lock it again afterwards to keep it.",
     );
   });
 
