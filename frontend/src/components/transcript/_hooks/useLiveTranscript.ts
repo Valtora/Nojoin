@@ -22,6 +22,16 @@ import { Recording, TranscriptSegment } from "@/types";
  */
 export const LIVE_TRANSCRIPT_POLL_INTERVAL_MS = 3000;
 
+/**
+ * Every this many polls the feed reads the whole transcript, not the delta.
+ *
+ * The delta cursor is the highest event id seen. An edit that commits after a
+ * later-numbered one, such as a live speaker label written while a person edits
+ * another line, falls behind the cursor and no delta returns it. The full read
+ * picks it up within half a minute.
+ */
+export const LIVE_TRANSCRIPT_FULL_READ_EVERY_POLLS = 10;
+
 export interface LiveTranscript {
   segments: TranscriptSegment[];
   /** False until the first fetch resolves, so callers can tell empty from unknown. */
@@ -104,10 +114,11 @@ export function useLiveTranscript(
     };
 
     poll("full");
-    const interval = setInterval(
-      () => poll("delta"),
-      LIVE_TRANSCRIPT_POLL_INTERVAL_MS,
-    );
+    let polls = 0;
+    const interval = setInterval(() => {
+      polls += 1;
+      poll(polls % LIVE_TRANSCRIPT_FULL_READ_EVERY_POLLS === 0 ? "full" : "delta");
+    }, LIVE_TRANSCRIPT_POLL_INTERVAL_MS);
 
     return () => {
       cancelled = true;

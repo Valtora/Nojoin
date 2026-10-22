@@ -2,6 +2,7 @@ import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  LIVE_TRANSCRIPT_FULL_READ_EVERY_POLLS,
   LIVE_TRANSCRIPT_POLL_INTERVAL_MS,
   useLiveTranscript,
 } from "./useLiveTranscript";
@@ -159,6 +160,45 @@ describe("useLiveTranscript", () => {
     expect(result.current.segments.map((segment) => segment.text)).toEqual([
       "survives",
       "recovered",
+    ]);
+  });
+
+  it("reads the whole transcript now and then, so a change the cursor skipped shows", async () => {
+    // A label committed after a later-numbered edit: no delta returns it.
+    getTranscriptUtterances
+      .mockResolvedValueOnce(
+        buildDelta(4, [
+          buildUtterance("a", 0, "first line", 3),
+          buildUtterance("b", 5, "second line", 4),
+        ]),
+      )
+      .mockResolvedValueOnce(buildDelta(8, []));
+
+    const { result } = renderHook(() => useLiveTranscript(buildRecording()));
+    await flushPendingRequests();
+    await advanceOnePoll();
+
+    getTranscriptUtterances.mockImplementation(
+      async (_recordingId: string, afterRevision?: number) =>
+        afterRevision === undefined
+          ? buildDelta(8, [
+              { ...buildUtterance("a", 0, "first line", 5), speaker: "LIVE_PROVISIONAL_1" },
+              buildUtterance("b", 5, "second line", 4),
+            ])
+          : buildDelta(8, []),
+    );
+    for (let poll = 2; poll < LIVE_TRANSCRIPT_FULL_READ_EVERY_POLLS; poll += 1) {
+      await advanceOnePoll();
+      expect(getTranscriptUtterances).toHaveBeenLastCalledWith("rec-1", 8);
+    }
+    expect(result.current.segments[0].speaker).toBe("UNKNOWN");
+
+    await advanceOnePoll();
+
+    expect(getTranscriptUtterances).toHaveBeenLastCalledWith("rec-1", undefined);
+    expect(result.current.segments.map((segment) => segment.speaker)).toEqual([
+      "LIVE_PROVISIONAL_1",
+      "UNKNOWN",
     ]);
   });
 
