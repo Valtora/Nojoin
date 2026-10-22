@@ -7,8 +7,9 @@ run by default. ``--delete`` removes the files now instead of at the next daily
 run, still only those unmodified for 24 hours, under names Nojoin writes, and
 under every rule of the circuit breaker. Where a run would remove over 10% of a
 directory's files or bytes, ``--allow-bulk <directory> --expect <count>`` lets
-it, with the count the dry run printed for that directory. Nothing lifts the
-rule against removing over half of a directory's old files. Run it from the app
+it, with the count the dry run printed for that directory. Repeat the pair for
+each directory over the limit, since one that trips stops the whole run. Nothing
+lifts the rule against removing over half of a directory's old files. Run it from the app
 directory, as ``exec`` does: stored paths are relative to it, and the breaker
 refuses a run from which most of them are missing.
 
@@ -74,12 +75,17 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--allow-bulk",
         metavar="DIRECTORY",
-        help="let the run remove over 10%% of this one directory; needs --expect",
+        action="append",
+        help=(
+            "let the run remove over 10%% of this directory; needs its own "
+            "--expect, and may be repeated for another directory"
+        ),
     )
     parser.add_argument(
         "--expect",
         metavar="COUNT",
         type=int,
+        action="append",
         help="the number of files the dry run would remove from that directory",
     )
     parser.add_argument(
@@ -190,20 +196,28 @@ def format_report(report: HygieneReport, show: int = 100) -> str:
 def _allowances(
     parser: argparse.ArgumentParser, args: argparse.Namespace
 ) -> dict[Path, int]:
-    """The bulk allowance the arguments name, refused as a usage error unless it
-    is for a directory this run scans and comes with its count."""
-    if (args.allow_bulk is None) != (args.expect is None):
-        parser.error("--allow-bulk and --expect go together")
-    if args.allow_bulk is None:
+    """The bulk allowances the arguments name, paired in order, refused as a
+    usage error unless each is for a directory this run scans, named once, and
+    comes with its count."""
+    named = args.allow_bulk or []
+    counts = args.expect or []
+    if len(named) != len(counts):
+        parser.error("--allow-bulk and --expect go together, one --expect for each")
+    if not named:
         return {}
-    directory = Path(args.allow_bulk).expanduser().resolve()
     scanned = [scan.path for scan in hygiene_directories()]
-    if directory not in scanned:
-        parser.error(
-            f"--allow-bulk {args.allow_bulk}: {directory} is not a directory this "
-            f"run scans ({', '.join(str(path) for path in scanned)})"
-        )
-    return {directory: args.expect}
+    allowances: dict[Path, int] = {}
+    for raw, count in zip(named, counts, strict=True):
+        directory = Path(raw).expanduser().resolve()
+        if directory not in scanned:
+            parser.error(
+                f"--allow-bulk {raw}: {directory} is not a directory this "
+                f"run scans ({', '.join(str(path) for path in scanned)})"
+            )
+        if directory in allowances:
+            parser.error(f"--allow-bulk {raw}: {directory} is named twice")
+        allowances[directory] = count
+    return allowances
 
 
 def main(argv: Sequence[str] | None = None) -> int:

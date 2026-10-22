@@ -26,6 +26,7 @@ from backend.tests.storage_hygiene_harness import (
     Layout,
     add_recording,
     add_referenced_audio,
+    add_referenced_documents,
     make_layout,
     sqlite_engine,
     uuid_name,
@@ -176,10 +177,53 @@ def test_the_cli_needs_the_directory_and_the_count_to_allow_a_bulk_removal(
     assert not any(path.exists() for path in orphans)
 
 
+@pytest.mark.usefixtures("lock")
+def test_the_cli_takes_a_pair_for_each_directory_over_the_limit(
+    layout: Layout, db: Engine, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    """One directory over the limit stops the whole run, so a backlog in both
+    directories needs both allowances in the same run."""
+    add_referenced_documents(db, layout, 4)
+    add_referenced_audio(db, layout, 9)
+    orphans = [
+        *(write_file(layout.recordings / uuid_name(".wav")) for _ in range(2)),
+        write_file(layout.documents / uuid_name(".pdf")),
+    ]
+    recordings = ["--allow-bulk", "data/recordings", "--expect", "2"]
+    documents = ["--allow-bulk", "data/documents", "--expect", "1"]
+
+    for pair in (recordings, documents):
+        code, out = _cli(db, monkeypatch, capsys, "--delete", *pair)
+        assert code == 1, pair
+        assert "bulk:" in out
+        assert all(path.exists() for path in orphans)
+
+    code, _ = _cli(db, monkeypatch, capsys, "--delete", *recordings, *documents)
+
+    assert code == 0
+    assert not any(path.exists() for path in orphans)
+
+
+_PAIR = ["--allow-bulk", "data/recordings", "--expect", "3"]
+
+
+@pytest.mark.usefixtures("layout")
 @pytest.mark.parametrize(
     "argv",
-    [["--allow-bulk", "data/recordings"], ["--expect", "3"], ["--show", "many"]],
-    ids=["allow_bulk_alone", "expect_alone", "not_a_count"],
+    [
+        ["--allow-bulk", "data/recordings"],
+        ["--expect", "3"],
+        ["--show", "many"],
+        [*_PAIR, "--allow-bulk", "data/documents"],
+        [*_PAIR, *_PAIR],
+    ],
+    ids=[
+        "allow_bulk_alone",
+        "expect_alone",
+        "not_a_count",
+        "a_pair_and_an_unpaired_directory",
+        "a_directory_named_twice",
+    ],
 )
 def test_the_cli_exits_2_on_a_usage_error(
     db: Engine, monkeypatch: pytest.MonkeyPatch, capsys, argv: list[str]
