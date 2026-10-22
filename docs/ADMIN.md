@@ -8,7 +8,7 @@ This guide is for Owners and Admins of a self-hosted Nojoin installation. [USAGE
 | --- | --- |
 | Owner | Everything an Admin has, plus creating, promoting, changing and deleting Owners. |
 | Admin | Users, invitations, and the administrator settings. |
-| User | Their own recordings, settings and connected services. |
+| User | Their own recordings, People library, settings and connected services. |
 
 Some actions also need superuser rights, which only the account created at first-run setup has: editing an existing user (username, role, password reset, deactivation, AI analysis limit), backup and restore, and viewing or downloading logs. Other Owners and Admins can open those pages, but the server refuses the action.
 

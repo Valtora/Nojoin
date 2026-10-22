@@ -38,9 +38,10 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # still aborts on them because Postgres may evaluate the AND in either order.
 HOSTILE_SEED = """
 -- Idempotent: the check may be re-run against a database that is already seeded.
-DELETE FROM recording_speakers WHERE recording_id = 900001;
-DELETE FROM global_speakers WHERE user_id = 900001;
-DELETE FROM recordings WHERE id = 900001;
+DELETE FROM recording_speakers WHERE recording_id IN (900001, 900002);
+DELETE FROM global_speakers
+  WHERE user_id IN (900001, 900002) OR name LIKE 'mc-owner-%';
+DELETE FROM recordings WHERE id IN (900001, 900002);
 
 INSERT INTO users (id, created_at, updated_at, username, hashed_password,
                    is_active, is_superuser, role, force_password_change)
@@ -75,6 +76,40 @@ VALUES
   (now(), now(), 'mc-rs3', 900001, 'SPEAKER_02', NULL,               'active', 'automated', false),
   (now(), now(), 'mc-rs4', 900001, 'SPEAKER_03', '[]'::jsonb,        'active', 'automated', false),
   (now(), now(), 'mc-rs5', 900001, 'SPEAKER_04', '{"b":2}'::jsonb,   'active', 'automated', false);
+
+-- People with no owner, and a link to another user's person: one linked from
+-- one user's recording, one from two users', one from none.
+INSERT INTO users (id, created_at, updated_at, username, hashed_password,
+                   is_active, is_superuser, role, force_password_change)
+VALUES (900002, now(), now(), 'migration-check-2', 'x', true, false, 'user', false)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO recordings (id, created_at, updated_at, name, public_id, meeting_uid,
+                        audio_path, status, upload_progress, processing_progress,
+                        is_archived, is_deleted, user_id)
+VALUES (900002, now(), now(), 'migration-check-2', 'mc-public-2', 'mc-uid-2',
+        '/migration-check-2.wav', 'PROCESSED', 0, 0, false, false, 900002)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO global_speakers (created_at, updated_at, name, embedding,
+                             is_voiceprint_locked, user_id)
+VALUES
+  (now(), now(), 'mc-owner-one',    '[0.1,0.2]'::jsonb, false, NULL),
+  (now(), now(), 'mc-owner-both',   'null'::jsonb,      false, NULL),
+  (now(), now(), 'mc-owner-none',   NULL,               false, NULL),
+  (now(), now(), 'mc-owner-theirs', '[0.3,0.4]'::jsonb, false, 900002);
+
+INSERT INTO recording_speakers (created_at, updated_at, public_id, recording_id,
+                                diarization_label, global_speaker_id,
+                                speaker_status, speaker_kind, identity_locked)
+SELECT now(), now(), seed.public_id, seed.recording_id, seed.label, gs.id,
+       'active', 'automated', false
+FROM (VALUES ('mc-rs6', 900001, 'SPEAKER_05', 'mc-owner-one'),
+             ('mc-rs7', 900001, 'SPEAKER_06', 'mc-owner-both'),
+             ('mc-rs8', 900002, 'SPEAKER_00', 'mc-owner-both'),
+             ('mc-rs9', 900001, 'SPEAKER_07', 'mc-owner-theirs'))
+     AS seed (public_id, recording_id, label, person)
+JOIN global_speakers gs ON gs.name = seed.person;
 
 -- Notes on a recording with no transcript row (rolling the timeline notes
 -- migration back has to create one), with text that breaks naive quoting and
