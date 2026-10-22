@@ -54,11 +54,9 @@ SPEAKER_SUGGESTIONS_MAX_TOKENS = 4096
 MEETING_EDGE_MAX_TOKENS = 8192
 MEETING_TITLE_MAX_TOKENS = 2048
 
-# Sampling for the models that still take a temperature. 0.2 matches what the
-# OpenAI and Gemini backends send, so notes and titles vary between runs about
-# as much there as here; the image call reads text off a picture and takes 0.
-DEFAULT_TEMPERATURE = 0.2
-IMAGE_TEMPERATURE = 0.0
+# No request carries ``temperature``, ``top_p`` or ``top_k``. API version
+# 2026-10-21, which ``anthropic`` 2.x sends, answers 400 to any of them on every
+# model, even at the default, so every model samples at the provider default.
 
 
 def _response_text(response) -> str:
@@ -173,25 +171,11 @@ class AnthropicLLMBackend(LLMBackend):
             return {"output_config": {"effort": "low"}}
         return {}
 
-    def _sampling_kwargs(self, temperature: float = DEFAULT_TEMPERATURE) -> dict:
-        """A ``temperature`` for the models that accept one, else nothing.
-
-        ``anthropic`` 1.x dropped ``temperature`` from the typed request, so it
-        goes through ``extra_body``, which the SDK merges into the request JSON
-        as-is. It is sent only where the model id says the API will take it: a
-        current model answers 400 to the parameter, so the provider default is
-        the only option there.
-        """
-        if anthropic_model_capabilities(self.model).accepts_temperature:
-            return {"extra_body": {"temperature": temperature}}
-        return {}
-
     def _create_notes_message(self, prompt: str):
         return self._create_with_ceiling(
             NOTES_MAX_OUTPUT_TOKEN_LADDER,
             model=self.model,
             messages=[{"role": "user", "content": prompt}],
-            **self._sampling_kwargs(),
         )
 
     def _open_chat_stream(self, **kwargs):
@@ -251,7 +235,6 @@ class AnthropicLLMBackend(LLMBackend):
                 max_tokens=SPEAKER_SUGGESTIONS_MAX_TOKENS,
                 messages=[{"role": "user", "content": prompt}],
                 **self._brief_reply_kwargs(),
-                **self._sampling_kwargs(),
             )
             text = _response_text_or_raise(response, "the speaker suggestions")
             return self.parse_speaker_inference_result(text, eligible_labels)
@@ -358,7 +341,6 @@ class AnthropicLLMBackend(LLMBackend):
                 (max_tokens,),
                 model=self.model,
                 messages=[{"role": "user", "content": prompt}],
-                **self._sampling_kwargs(),
             )
             return _response_text(response)
         except TruncatedNotesError:
@@ -397,7 +379,6 @@ class AnthropicLLMBackend(LLMBackend):
                 (max_tokens,),
                 model=self.model,
                 messages=[{"role": "user", "content": content}],
-                **self._sampling_kwargs(IMAGE_TEMPERATURE),
             )
             return _response_text(response)
         except TruncatedNotesError:
@@ -448,7 +429,6 @@ class AnthropicLLMBackend(LLMBackend):
                 ],
                 timeout=timeout,
                 **self._brief_reply_kwargs(),
-                **self._sampling_kwargs(),
             )
             text = _response_text_or_raise(response, "the Meeting Edge update")
             return self.parse_meeting_edge_result(text, request)
@@ -499,7 +479,6 @@ class AnthropicLLMBackend(LLMBackend):
                 max_tokens=self.MEETING_ANALYSIS_MAX_OUTPUT_TOKENS,
                 messages=[{"role": "user", "content": user_content}],
                 timeout=timeout,
-                **self._sampling_kwargs(),
             )
             if str(getattr(response, "stop_reason", "") or "").lower() == "max_tokens":
                 raise RuntimeError(
@@ -540,7 +519,6 @@ class AnthropicLLMBackend(LLMBackend):
                 model=self.model,
                 system=anthropic_cached_system(context),
                 messages=messages,
-                **self._sampling_kwargs(),
             )
             return _response_text(response)
         except TruncatedNotesError:
@@ -589,7 +567,6 @@ class AnthropicLLMBackend(LLMBackend):
                 system=anthropic_cached_system(context),
                 messages=messages,
                 tools=[tool_definition],
-                **self._sampling_kwargs(),
             )
             try:
                 current_tool_name = None
@@ -663,7 +640,6 @@ class AnthropicLLMBackend(LLMBackend):
                 max_tokens=MEETING_TITLE_MAX_TOKENS,
                 messages=[{"role": "user", "content": prompt}],
                 **self._brief_reply_kwargs(),
-                **self._sampling_kwargs(),
             )
             title = self.parse_title(_response_text_or_raise(response, "the title"))
             return title

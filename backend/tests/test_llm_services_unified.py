@@ -1117,26 +1117,30 @@ def _text_reply(text: str = "Launch Readiness Review"):
     )
 
 
-def test_anthropic_sends_a_low_temperature_to_a_model_that_takes_one() -> None:
-    """Sonnet 4.6 still accepts temperature. The SDK no longer types it, so it
-    travels in extra_body, at the 0.2 the OpenAI and Gemini backends use."""
+@pytest.mark.parametrize(
+    "model",
+    ["claude-sonnet-4-6", "claude-opus-4-6", "claude-haiku-4-5", "claude-opus-5-5"],
+)
+def test_anthropic_sends_no_sampling_parameters(model: str) -> None:
+    """API version 2026-10-21, which ``anthropic`` 2.x sends, answers 400 to
+    ``temperature``, ``top_p`` or ``top_k`` on every model, even at the default.
+    The older models here once got a low temperature through ``extra_body``, so
+    the whole provider failed on them once the SDK moved to that version."""
     import contextlib
 
-    capture: list[dict] = []
-    backend = _anthropic_backend_capturing_creates(
-        "claude-sonnet-4-6", _text_reply(), capture
-    )
-    stream_capture: list[dict] = []
+    sent: list[dict] = []
 
     class FakeMessages:
         def create(self, **kwargs):
-            capture.append(kwargs)
+            sent.append(kwargs)
             return _text_reply()
 
         def stream(self, **kwargs):
-            stream_capture.append(kwargs)
+            sent.append(kwargs)
             return _FakeAnthropicStream(_text_reply(_sample_payload()))
 
+    backend = object.__new__(AnthropicLLMBackend)
+    backend.model = model
     backend.client = SimpleNamespace(messages=FakeMessages())
 
     backend.infer_meeting_title("[00:00 - 00:05] SPEAKER_00: Hi.")
@@ -1146,40 +1150,12 @@ def test_anthropic_sends_a_low_temperature_to_a_model_that_takes_one() -> None:
     backend.ask_question_about_meeting(
         "What was decided?", meeting_notes="Notes", diarized_transcript="Hi."
     )
-
-    assert len(capture) == 2 and len(stream_capture) == 2
-    for kwargs in capture + stream_capture:
-        assert kwargs["extra_body"] == {"temperature": 0.2}
-
-
-def test_anthropic_image_reading_runs_at_temperature_zero() -> None:
-    stream_capture: list[dict] = []
-
-    class FakeMessages:
-        def stream(self, **kwargs):
-            stream_capture.append(kwargs)
-            return _FakeAnthropicStream(_text_reply("Slide text"))
-
-    backend = object.__new__(AnthropicLLMBackend)
-    backend.model = "claude-sonnet-4-6"
-    backend.client = SimpleNamespace(messages=FakeMessages())
-
     backend.generate_text_from_images(
         "Transcribe the slide.",
         [VisionImage(media_type="image/png", data=b"\x89PNG")],
     )
 
-    assert stream_capture[0]["extra_body"] == {"temperature": 0.0}
-
-
-def test_anthropic_sends_no_temperature_to_a_model_that_rejects_it() -> None:
-    """Opus 4.7 and later answer 400 to any temperature, so nothing is sent and
-    the request carries no extra_body at all."""
-    capture: list[dict] = []
-    backend = _anthropic_backend_capturing_creates(
-        "claude-opus-5-5", _text_reply(), capture
-    )
-
-    backend.infer_meeting_title("[00:00 - 00:05] SPEAKER_00: Hi.")
-
-    assert "extra_body" not in capture[0]
+    assert len(sent) == 5
+    for kwargs in sent:
+        assert "extra_body" not in kwargs
+        assert not {"temperature", "top_p", "top_k"} & kwargs.keys()
