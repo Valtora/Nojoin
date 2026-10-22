@@ -412,6 +412,17 @@ CREATE TABLE tags (
 )
 """
 
+RECORDING_TAGS_SCHEMA = """
+CREATE TABLE recording_tags (
+    id INTEGER PRIMARY KEY,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    recording_id INTEGER,
+    tag_id INTEGER,
+    UNIQUE (recording_id, tag_id)
+)
+"""
+
 RECORDING_AUDIO_WINDOW_MANIFESTS_SCHEMA = """
 CREATE TABLE recording_audio_window_manifests (
     id INTEGER PRIMARY KEY,

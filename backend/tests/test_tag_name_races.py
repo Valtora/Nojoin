@@ -32,6 +32,7 @@ from backend.tests.sqlite_schemas import (
     GLOBAL_SPEAKERS_SCHEMA,
     P_TAGS_SCHEMA,
     PEOPLE_TAGS_SCHEMA,
+    RECORDING_TAGS_SCHEMA,
     RECORDINGS_SCHEMA,
     TAGS_SCHEMA,
 )
@@ -41,16 +42,6 @@ RECORDING = "11111111-2222-3333-4444-555555555555"
 BOARD = 1  # Alice's recording tag, and her people tag Client
 CLIENT = 1
 THEIRS = 500  # the tag the other request saves
-
-RECORDING_TAGS_SCHEMA = """
-CREATE TABLE recording_tags (
-    id INTEGER PRIMARY KEY,
-    created_at DATETIME NOT NULL,
-    updated_at DATETIME NOT NULL,
-    recording_id INTEGER,
-    tag_id INTEGER
-)
-"""
 
 
 @pytest.fixture
