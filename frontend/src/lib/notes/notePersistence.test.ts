@@ -12,7 +12,7 @@ import {
 } from "@/test/fakeNotesServer";
 
 import { NoteOutbox, shownNotes, type ComposerDraft } from "./noteOutbox";
-import { persistNoteOutbox, readStoredOutbox } from "./notePersistence";
+import { NEW_ID_WAIT_MS, persistNoteOutbox, readStoredOutbox } from "./notePersistence";
 import {
   clearStoredNotes,
   IndexedDbNoteStore,
@@ -937,6 +937,32 @@ describe("storing beside other tabs and sign-outs", () => {
 
     await vi.waitFor(() => expect(server.notes.size).toBe(1));
     expect(outbox.getSnapshot().entries).toEqual([]);
+  });
+
+  it("sends a note under its new id once a write under way goes unanswered, and writes the outbox once it answers", async () => {
+    const put = store.put.bind(store);
+    let answer!: () => void;
+    const unanswered = new Promise<void>((resolve) => {
+      answer = resolve;
+    });
+    vi.spyOn(store, "put").mockImplementation(async (record) => {
+      await unanswered;
+      await put(record);
+    });
+    const remove = vi.spyOn(store, "remove");
+    const outbox = openStoringPage();
+    await settle();
+    idInUseOnce();
+    // The write of the note under its first id never answers.
+    outbox.submit({ kind: "tail", body: "Wrap-up", anchorMs: null });
+
+    await vi.waitFor(() => expect(server.notes.size).toBe(1), { timeout: NEW_ID_WAIT_MS + 1_000 });
+    expect(outbox.getSnapshot().entries).toEqual([]);
+
+    // It answers at last; the outbox as it is by then, with nothing unsaved, follows it.
+    answer();
+    await vi.waitFor(() => expect(remove).toHaveBeenCalledTimes(1));
+    expect(await stored(store)).toBeUndefined();
   });
 
   it("sends a note under its new id at once where the browser keeps nothing", async () => {

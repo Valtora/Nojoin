@@ -473,17 +473,8 @@ export class NoteOutbox {
     this.attempts.set(key, attempt);
     const isLatest = () => this.attempts.get(key) === attempt && !!this.entry(key);
     this.patch(key, { status: "saving", error: null });
-    if (this.unkeptIds.has(key)) {
-      // A kept copy still has the refused id: a reload would send it again
-      // as well, making the note twice.
-      const safe = (await this.writeBarrier?.()) ?? true;
-      if (!isLatest()) return;
-      if (!safe) {
-        this.fail(key, NOT_KEPT_ERROR);
-        return;
-      }
-      this.unkeptIds.delete(key);
-    }
+    // Started before any wait on the kept copy, so a note held up there
+    // offers Retry and Discard as one held up on the network does.
     const slow = setTimeout(() => {
       if (isLatest() && this.entry(key)?.status === "saving") {
         this.fail(key, NO_ANSWER_YET_ERROR);
@@ -491,6 +482,17 @@ export class NoteOutbox {
     }, SLOW_SAVE_MS);
 
     try {
+      if (this.unkeptIds.has(key)) {
+        // A kept copy still has the refused id: a reload would send it again
+        // as well, making the note twice.
+        const safe = (await this.writeBarrier?.()) ?? true;
+        if (!isLatest()) return;
+        if (!safe) {
+          this.fail(key, NOT_KEPT_ERROR);
+          return;
+        }
+        this.unkeptIds.delete(key);
+      }
       const note = await createTimelineNote(this.recordingId, createOf(entry));
       this.settle(key, note);
     } catch (error) {

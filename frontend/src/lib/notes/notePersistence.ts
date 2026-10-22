@@ -127,6 +127,15 @@ export const readStoredOutbox = (
 };
 
 /**
+ * How long a note given a new id waits on a write under way before it goes
+ * out anyway. A healthy write takes milliseconds; as for signing out
+ * (`CLEAR_ON_SIGN_OUT_MS`), a store that hasn't answered in 2 s is treated as
+ * not answering. It is well under `SLOW_SAVE_MS`, so a stalled store alone
+ * doesn't make the note look unsaved.
+ */
+export const NEW_ID_WAIT_MS = 2_000;
+
+/**
  * Persists `outbox` for as long as the page has it, and returns a function
  * that stops. Where notes can only be kept in memory it never reads or writes.
  *
@@ -241,9 +250,24 @@ export const persistNoteOutbox = (
    * done, no stored copy can still hold its old one. That is so when the
    * record has the outbox as it is, and when this page never wrote one, was
    * stopped, or lost its record to a sign-out or another account's cleanup.
+   *
+   * A write that goes unanswered for `NEW_ID_WAIT_MS` leaves the page in
+   * memory only until it answers, and the note goes out regardless: the
+   * stored copy is a stopgap, and must never hold a note back for good. Once
+   * that write answers, the outbox as it is by then is written after it.
    */
   const newIdSafe = async () => {
-    while (flushing) await flushing;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const gaveUp = new Promise<"gave up">((resolve) => {
+      timer = setTimeout(() => resolve("gave up"), NEW_ID_WAIT_MS);
+    });
+    const drained = (async () => {
+      while (flushing) await flushing;
+      return "drained" as const;
+    })();
+    const outcome = await Promise.race([drained, gaveUp]);
+    clearTimeout(timer);
+    if (outcome === "gave up") return true;
     if (!ready || stopped || evicted || storingStopped()) return true;
     return written === textOf(account as number);
   };

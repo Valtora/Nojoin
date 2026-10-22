@@ -415,6 +415,25 @@ describe("NoteOutbox: notes that can't be made again", () => {
     expect(server.notes.size).toBe(1);
   });
 
+  it("offers Retry for a note held up on the kept copy, as for one held up on the network", async () => {
+    vi.useFakeTimers();
+    const outbox = new NoteOutbox(RECORDING);
+    let barrier = () => new Promise<boolean>(() => undefined);
+    outbox.setWriteBarrier(() => barrier());
+    server.failures.push(coded(409, "note_id_in_use"));
+    outbox.submit({ kind: "tail", body: "Wrap-up", anchorMs: null });
+
+    await vi.advanceTimersByTimeAsync(SLOW_SAVE_MS);
+    const [held] = outbox.getSnapshot().entries;
+    expect(held).toMatchObject({ status: "failed", error: "No answer from Nojoin yet." });
+
+    barrier = async () => true;
+    outbox.retry(held.key);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(outbox.getSnapshot().entries).toEqual([]);
+    expect(server.notes.size).toBe(1);
+  });
+
   it("names the note a failure is about, for the note box to say", async () => {
     const outbox = new NoteOutbox(RECORDING);
     server.failures.push(NO_ANSWER);
