@@ -12,9 +12,17 @@ import { CaptureController } from "./controller";
 import { sendPauseBeacon } from "./lifecycle";
 import { PickSourceError } from "./pickSource";
 import { createBrowserRecorder } from "./recorder";
+import type { SegmentStore } from "./segmentStore";
 import { createSegmentUploader } from "./uploader";
 
 const apiMocks = vi.hoisted(() => ({
+  /** As in @/lib/api: a 409 whose detail says the capture continued elsewhere. */
+  isCaptureSupersededError: (error: unknown) => {
+    const response = (
+      error as { response?: { status?: number; data?: { detail?: { code?: string } } } } | null
+    )?.response;
+    return response?.status === 409 && response.data?.detail?.code === "capture_superseded";
+  },
   discardRecordingCapture: vi.fn(),
   getRecording: vi.fn(),
   finalizeRecordingCapture: vi.fn(),
@@ -60,6 +68,7 @@ vi.mock("@/lib/api", () => ({
   getRecording: apiMocks.getRecording,
   initRecording: apiMocks.initRecording,
   isActiveRecordingConflictDetail: vi.fn(() => false),
+  isCaptureSupersededError: apiMocks.isCaptureSupersededError,
   pauseRecordingCapture: apiMocks.pauseRecordingCapture,
   reportRecordingCaptureSources: apiMocks.reportRecordingCaptureSources,
   resumeRecordingCapture: apiMocks.resumeRecordingCapture,
@@ -171,7 +180,8 @@ vi.mock("./recorder", () => ({
   CAPTURE_SEGMENT_SECONDS: 2,
   createBrowserRecorder: vi.fn(() => ({
     start: vi.fn(),
-    stop: vi.fn(),
+    // Resolves, as the recorder's own stop does.
+    stop: vi.fn(async () => {}),
     pause: vi.fn(),
     resume: vi.fn(),
   })),
@@ -390,12 +400,15 @@ describe("capture controller", () => {
       lastSequence: -1,
     };
     controller.runtime = {
+      recordingId: "rec-1",
+      epoch: 0,
       recorder: {
         pause: async () => {
           calls.push("recorder");
         },
       },
       uploader: {
+        recover: () => true,
         waitForIdle: async () => {
           calls.push("uploader");
         },
@@ -1131,7 +1144,9 @@ describe("recovering an interrupted capture", () => {
     await expect(controller.discardEmptyInterruptedRecording()).resolves.toBe(
       true,
     );
-    expect(apiMocks.discardRecordingCapture).toHaveBeenCalledWith("rec-1");
+    expect(apiMocks.discardRecordingCapture).toHaveBeenCalledWith("rec-1", undefined, {
+      epoch: undefined,
+    });
     expect(controller.getState().pausedRecording).toBeNull();
     expect(notificationMocks.addNotification).toHaveBeenCalledWith(
       expect.objectContaining({ type: "warning" }),
@@ -1245,12 +1260,15 @@ describe("audio a closed tab recorded but never uploaded", () => {
       recording_id: "rec-1",
       status: "PAUSED",
       last_sequence: 4,
+      capture_epoch: 0,
     });
     apiMocks.resumeRecordingCapture.mockReset();
+    // Taken over from the closed tab, which held epoch 0.
     apiMocks.resumeRecordingCapture.mockResolvedValue({
       recording_id: "rec-1",
       status: "UPLOADING",
       last_sequence: 4,
+      capture_epoch: 1,
     });
     apiMocks.discardRecordingCapture.mockReset();
     apiMocks.discardRecordingCapture.mockResolvedValue(undefined);
@@ -1470,7 +1488,9 @@ describe("a capture whose session ends", () => {
     const paused = controller.pause();
     await vi.waitFor(() => expect(apiMocks.pauseRecordingCapture).toHaveBeenCalledTimes(1));
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(controller.getState().status).toBe("recording");
+    // The tab reads paused at once; the server is told once the user is back.
+    expect(controller.getState().status).toBe("paused");
+    expect(apiMocks.pauseRecordingCapture).toHaveBeenCalledTimes(1);
 
     signBackIn();
     await paused;
@@ -1658,7 +1678,9 @@ describe("a capture whose tab closed without pausing it (issue #519)", () => {
     answerSlowCheck([stalled]);
     await slowCheck;
 
-    expect(apiMocks.discardRecordingCapture).toHaveBeenCalledWith("rec-1");
+    expect(apiMocks.discardRecordingCapture).toHaveBeenCalledWith("rec-1", undefined, {
+      epoch: undefined,
+    });
     expect(controller.getState().pausedRecording).toBeNull();
   });
 
@@ -1715,6 +1737,7 @@ describe("an outage that outlasts the upload retries (issue #568)", () => {
     recording_id: "rec-1",
     status: "PAUSED",
     last_sequence: lastSequence,
+    capture_epoch: 0,
   });
 
   const controllers: CaptureController[] = [];
@@ -1722,7 +1745,11 @@ describe("an outage that outlasts the upload retries (issue #568)", () => {
   const startCapture = async () => {
     const sources = microphoneSources();
     pickSourceMocks.pickCaptureSource.mockResolvedValue(sources);
-    apiMocks.initRecording.mockResolvedValue({ id: "rec-1", name: "Weekly sync" });
+    apiMocks.initRecording.mockResolvedValue({
+      id: "rec-1",
+      name: "Weekly sync",
+      capture_epoch: 0,
+    });
     const controller = new CaptureController();
     controllers.push(controller);
     await controller.start("Weekly sync");
@@ -1758,6 +1785,7 @@ describe("an outage that outlasts the upload retries (issue #568)", () => {
       recording_id: "rec-1",
       status: "UPLOADING",
       last_sequence: 7,
+      capture_epoch: 0,
     });
     apiMocks.finalizeRecordingCapture.mockReset();
     apiMocks.discardRecordingCapture.mockReset();
@@ -1896,23 +1924,20 @@ describe("an outage that outlasts the upload retries (issue #568)", () => {
     await vi.waitFor(() => expect(apiMocks.pauseRecordingCapture).toHaveBeenCalledTimes(3));
   });
 
-  it("leaves a capture quiet for 90 seconds to the server, which may have offered it elsewhere", async () => {
+  it("still sends the pause after a long outage, carrying its epoch (issue #570)", async () => {
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
     const { controller, uploaderOptions } = await startCapture();
     await stallWithServerUnreachable(uploaderOptions);
 
-    await vi.advanceTimersByTimeAsync(91_000);
+    // Long enough for the server to have offered the capture elsewhere. The
+    // epoch has the server refuse the pause if it was resumed there.
+    await vi.advanceTimersByTimeAsync(5 * 60_000);
     connectivityMocks.apiAnswered();
-    await new Promise((resolve) => setTimeout(resolve, 0));
 
-    // Another device may be running it by now, so no late pause.
-    expect(apiMocks.pauseRecordingCapture).toHaveBeenCalledTimes(1);
-
-    // Resume asks the server, which accepts a capture it judges stalled and
-    // refuses one another device is uploading.
+    await vi.waitFor(() => expect(apiMocks.pauseRecordingCapture).toHaveBeenCalledTimes(2));
+    expect(apiMocks.pauseRecordingCapture).toHaveBeenLastCalledWith("rec-1", { epoch: 0 });
     await controller.resume();
-    expect(apiMocks.pauseRecordingCapture).toHaveBeenCalledTimes(1);
-    expect(apiMocks.resumeRecordingCapture).toHaveBeenCalledWith("rec-1");
+    expect(apiMocks.resumeRecordingCapture).toHaveBeenCalledWith("rec-1", { epoch: 0 });
     expect(pickSourceMocks.pickCaptureSource).toHaveBeenCalledTimes(1);
     expect(controller.getState().status).toBe("recording");
   });
@@ -1943,7 +1968,9 @@ describe("an outage that outlasts the upload retries (issue #568)", () => {
     connectivityMocks.apiAnswered();
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(apiMocks.discardRecordingCapture).toHaveBeenCalledWith("rec-1");
+    expect(apiMocks.discardRecordingCapture).toHaveBeenCalledWith("rec-1", undefined, {
+      epoch: 0,
+    });
     expect(apiMocks.pauseRecordingCapture).toHaveBeenCalledTimes(1);
   });
 
@@ -1956,7 +1983,7 @@ describe("an outage that outlasts the upload retries (issue #568)", () => {
       handleGuardedExit: (request: { reason: string; useBeacon: boolean }) => Promise<void>;
     }).handleGuardedExit({ reason: "pagehide", useBeacon: true });
 
-    expect(sendPauseBeacon).toHaveBeenCalledWith("rec-1");
+    expect(sendPauseBeacon).toHaveBeenCalledWith("rec-1", 0);
   });
 
   it("a stop that fails pauses the capture on the server, so it is offered rather than read as live", async () => {
@@ -1968,11 +1995,556 @@ describe("an outage that outlasts the upload retries (issue #568)", () => {
 
     await expect(controller.stop()).rejects.toThrow("Network Error");
 
-    await vi.waitFor(() => expect(apiMocks.pauseRecordingCapture).toHaveBeenCalledWith("rec-1"));
+    await vi.waitFor(() =>
+      expect(apiMocks.pauseRecordingCapture).toHaveBeenCalledWith("rec-1", { epoch: 0 }),
+    );
     await vi.waitFor(() =>
       expect(controller.getState().pausedRecording).toMatchObject({ id: "rec-1" }),
     );
     expect(controller.getState().status).toBe("paused");
     expect(controller.getState().runtimeActive).toBe(false);
+  });
+});
+
+describe("a capture resumed in another tab or on another device (issue #570)", () => {
+  const microphoneSources = () => ({
+    mode: "microphone_only",
+    displayStream: null,
+    microphoneStream: {} as MediaStream,
+    captureReport: {
+      mode: "microphone_only",
+      requested_microphone_device_id: null,
+      requested_microphone_label: null,
+      available_microphones: [],
+      browser_microphone_track: null,
+      browser_display_audio_track: null,
+      browser_display_video_track: null,
+      shared_audio_available: false,
+      notes: [],
+    },
+    release: vi.fn(),
+  });
+
+  /** The server's answer to a request from a tab whose capture moved on. */
+  const superseded = () => {
+    const error = new AxiosError("Request failed with status code 409");
+    Object.assign(error, {
+      response: {
+        status: 409,
+        data: {
+          detail: {
+            code: "capture_superseded",
+            message: "This recording continued elsewhere: another tab or device resumed it.",
+          },
+        },
+      },
+    });
+    return error;
+  };
+
+  const unreachable = () => new AxiosError("Network Error", "ERR_NETWORK");
+
+  const stored = (sequence: number, epoch?: number) => ({
+    recordingId: "rec-1",
+    sequence,
+    blob: new Blob([String(sequence)], { type: "audio/flac" }),
+    durationSeconds: 2,
+    ...(epoch === undefined ? {} : { epoch }),
+  });
+
+  const lifecycle = (status: string, lastSequence: number, epoch: number) => ({
+    recording_id: "rec-1",
+    status,
+    last_sequence: lastSequence,
+    capture_epoch: epoch,
+  });
+
+  const controllers: CaptureController[] = [];
+
+  const track = (controller: CaptureController) => {
+    controllers.push(controller);
+    return controller;
+  };
+
+  /** The controller's own store, which a test fills as an earlier tab would have. */
+  const storeOf = (controller: CaptureController) =>
+    (controller as unknown as { segmentStore: SegmentStore }).segmentStore;
+
+  const startCapture = async (epoch = 3) => {
+    const sources = microphoneSources();
+    pickSourceMocks.pickCaptureSource.mockResolvedValue(sources);
+    apiMocks.initRecording.mockResolvedValue({
+      id: "rec-1",
+      name: "Weekly sync",
+      capture_epoch: epoch,
+    });
+    const controller = track(new CaptureController());
+    await controller.start("Weekly sync");
+    return {
+      controller,
+      sources,
+      uploaderOptions: vi.mocked(createSegmentUploader).mock.calls[0][0],
+      uploader: vi.mocked(createSegmentUploader).mock.results[0].value,
+      recorder: vi.mocked(createBrowserRecorder).mock.results[0].value,
+    };
+  };
+
+  type Started = Awaited<ReturnType<typeof startCapture>>;
+
+  /** The tab has stopped capturing and holds nothing of the recording any more. */
+  const expectStoodDown = ({ controller, sources, uploader, recorder }: Started) => {
+    const state = controller.getState();
+    expect(state.status).toBe("idle");
+    expect(state.recordingId).toBeNull();
+    expect(state.runtimeActive).toBe(false);
+    expect(state.error).toMatch(/continued in another tab or on another device/);
+    expect(recorder.stop).toHaveBeenCalledWith({ emitTail: false });
+    expect(sources.release).toHaveBeenCalled();
+    expect(uploader.dispose).toHaveBeenCalled();
+    expect(captureLockMocks.release).toHaveBeenCalled();
+  };
+
+  beforeEach(() => {
+    resetSessionForTests();
+    vi.mocked(createSegmentUploader).mockClear();
+    vi.mocked(createBrowserRecorder).mockClear();
+    apiMocks.initRecording.mockReset();
+    apiMocks.pauseRecordingCapture.mockReset();
+    apiMocks.pauseRecordingCapture.mockResolvedValue(lifecycle("PAUSED", 4, 3));
+    apiMocks.resumeRecordingCapture.mockReset();
+    apiMocks.resumeRecordingCapture.mockResolvedValue(lifecycle("UPLOADING", 4, 3));
+    apiMocks.finalizeRecordingCapture.mockReset();
+    apiMocks.finalizeRecordingCapture.mockResolvedValue({ id: "rec-1", status: "QUEUED" });
+    apiMocks.discardRecordingCapture.mockReset();
+    apiMocks.discardRecordingCapture.mockResolvedValue(undefined);
+    apiMocks.getUnfinishedCaptures.mockReset();
+    apiMocks.getUnfinishedCaptures.mockResolvedValue([]);
+    apiMocks.reportRecordingCaptureSources.mockResolvedValue(undefined);
+    pickSourceMocks.pickCaptureSource.mockReset();
+    notificationMocks.addNotification.mockReset();
+    featureDetectMocks.detectCaptureSupport.mockReturnValue({
+      supported: true,
+      mode: "microphone_only",
+    });
+    sharedMocks.readPausedCaptureContext.mockReset();
+    sharedMocks.readPausedCaptureContext.mockReturnValue(null);
+    connectivityMocks.status = "online";
+    connectivityMocks.lastReachableAt = null;
+    connectivityMocks.listeners.clear();
+    captureLockMocks.release.mockClear();
+  });
+
+  afterEach(async () => {
+    await Promise.all(controllers.splice(0).map((controller) => controller.destroy()));
+    resetSessionForTests();
+  });
+
+  it("sends the epoch it was issued with every request for its capture", async () => {
+    const { controller, uploaderOptions } = await startCapture(3);
+    expect(uploaderOptions.epoch).toBe(3);
+
+    await controller.pause();
+    await controller.resume();
+    await controller.stop();
+
+    expect(apiMocks.pauseRecordingCapture).toHaveBeenCalledWith("rec-1", { epoch: 3 });
+    expect(apiMocks.resumeRecordingCapture).toHaveBeenCalledWith("rec-1", { epoch: 3 });
+    expect(apiMocks.finalizeRecordingCapture).toHaveBeenCalledWith(
+      "rec-1",
+      expect.objectContaining({ epoch: 3 }),
+    );
+  });
+
+  it("stops capturing once a segment is refused, keeping the unsent audio in the browser", async () => {
+    const started = await startCapture();
+    vi.mocked(started.uploader.pendingAudioSeconds).mockReturnValue(6);
+    const clearStore = vi.spyOn(storeOf(started.controller), "clear");
+
+    await started.uploaderOptions.onSuperseded?.(superseded());
+
+    expectStoodDown(started);
+    expect(started.controller.getState().error).toMatch(/About 6 seconds of audio/);
+    // Nothing more is asked of the server for a capture that is not this tab's.
+    expect(clearStore).not.toHaveBeenCalled();
+    expect(apiMocks.pauseRecordingCapture).not.toHaveBeenCalled();
+    expect(apiMocks.finalizeRecordingCapture).not.toHaveBeenCalled();
+    expect(apiMocks.discardRecordingCapture).not.toHaveBeenCalled();
+  });
+
+  it("stands down when its pause is refused, rather than reading paused", async () => {
+    const started = await startCapture();
+    apiMocks.pauseRecordingCapture.mockRejectedValueOnce(superseded());
+
+    await expect(started.controller.pause()).rejects.toThrow(/continued in another tab/);
+
+    expectStoodDown(started);
+  });
+
+  it("stands down when its resume is refused", async () => {
+    const started = await startCapture();
+    await started.controller.pause();
+    apiMocks.resumeRecordingCapture.mockRejectedValueOnce(superseded());
+
+    await expect(started.controller.resume()).rejects.toThrow(/continued in another tab/);
+
+    expectStoodDown(started);
+    expect(started.recorder.resume).not.toHaveBeenCalled();
+  });
+
+  it("neither finalizes nor owes a pause when its stop is refused", async () => {
+    const started = await startCapture();
+    apiMocks.finalizeRecordingCapture.mockRejectedValueOnce(superseded());
+
+    await expect(started.controller.stop()).rejects.toThrow(/continued in another tab/);
+
+    expectStoodDown(started);
+    connectivityMocks.apiAnswered();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(apiMocks.pauseRecordingCapture).not.toHaveBeenCalled();
+    expect(apiMocks.finalizeRecordingCapture).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not finalize when the queue it flushes on stop is refused", async () => {
+    const started = await startCapture();
+    vi.mocked(started.uploader.waitForIdle).mockRejectedValueOnce(superseded());
+
+    await expect(started.controller.stop()).rejects.toThrow(/continued in another tab/);
+
+    expect(apiMocks.finalizeRecordingCapture).not.toHaveBeenCalled();
+    expectStoodDown(started);
+  });
+
+  it("stands down when the pause it owed is refused once the API answers", async () => {
+    const started = await startCapture();
+    apiMocks.pauseRecordingCapture.mockRejectedValueOnce(unreachable());
+    await started.uploaderOptions.onStalled?.(unreachable());
+    await vi.waitFor(() => expect(apiMocks.pauseRecordingCapture).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(started.controller.getState().status).toBe("paused");
+
+    apiMocks.pauseRecordingCapture.mockRejectedValueOnce(superseded());
+    connectivityMocks.apiAnswered();
+
+    await vi.waitFor(() => expect(started.controller.getState().status).toBe("idle"));
+    expectStoodDown(started);
+    expect(apiMocks.pauseRecordingCapture).toHaveBeenLastCalledWith("rec-1", { epoch: 3 });
+  });
+
+  it("leaves the recording to the tab running it when its discard is refused", async () => {
+    const started = await startCapture();
+    apiMocks.discardRecordingCapture.mockRejectedValueOnce(superseded());
+    const clearStore = vi.spyOn(storeOf(started.controller), "clear");
+
+    await expect(started.controller.cancel()).rejects.toThrow(/continued in another tab/);
+
+    expect(apiMocks.discardRecordingCapture).toHaveBeenCalledWith("rec-1", undefined, {
+      epoch: 3,
+    });
+    expect(clearStore).not.toHaveBeenCalled();
+    expect(started.controller.getState().status).toBe("idle");
+  });
+
+  it("leaves out audio it kept from before another device carried the capture on", async () => {
+    const controller = track(new CaptureController());
+    // Kept under epoch 1. Another device took over at 2 and recorded 5 and 6,
+    // so this browser's takeover is issued 3, after sequence 6.
+    for (const sequence of [5, 6, 7, 8]) {
+      await storeOf(controller).put(stored(sequence, 1));
+    }
+    pickSourceMocks.pickCaptureSource.mockResolvedValue(microphoneSources());
+    apiMocks.resumeRecordingCapture.mockResolvedValue(lifecycle("UPLOADING", 6, 3));
+
+    await controller.resume("rec-1");
+
+    expect(apiMocks.resumeRecordingCapture).toHaveBeenCalledWith("rec-1", { epoch: undefined });
+    expect(vi.mocked(createSegmentUploader).mock.calls[0][0].epoch).toBe(3);
+    const uploader = vi.mocked(createSegmentUploader).mock.results[0].value;
+    // 7 and 8 would otherwise follow the other device's audio out of order.
+    expect(uploader.restore).not.toHaveBeenCalled();
+    expect(vi.mocked(createBrowserRecorder).mock.calls[0][0].startSequence).toBe(7);
+    await vi.waitFor(async () => expect(await storeOf(controller).list("rec-1")).toEqual([]));
+    expect(notificationMocks.addNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "warning",
+        message: expect.stringMatching(/^About 8 seconds of audio this browser kept/),
+      }),
+    );
+  });
+
+  it("still sends audio kept under the epoch just before its takeover", async () => {
+    const controller = track(new CaptureController());
+    for (const sequence of [5, 6]) {
+      await storeOf(controller).put(stored(sequence, 2));
+    }
+    pickSourceMocks.pickCaptureSource.mockResolvedValue(microphoneSources());
+    apiMocks.resumeRecordingCapture.mockResolvedValue(lifecycle("UPLOADING", 4, 3));
+
+    await controller.resume("rec-1");
+
+    const uploader = vi.mocked(createSegmentUploader).mock.results[0].value;
+    expect(
+      uploader.restore.mock.calls[0][0].map((segment: { sequence: number }) => segment.sequence),
+    ).toEqual([5, 6]);
+    expect(vi.mocked(createBrowserRecorder).mock.calls[0][0].startSequence).toBe(7);
+    expect(notificationMocks.addNotification).not.toHaveBeenCalled();
+  });
+
+  it("sends on stop only the audio kept under the epoch the server holds", async () => {
+    const controller = track(new CaptureController());
+    for (const sequence of [5, 6]) {
+      await storeOf(controller).put(stored(sequence, 1));
+    }
+    apiMocks.pauseRecordingCapture.mockResolvedValue(lifecycle("PAUSED", 4, 2));
+
+    await controller.stop("rec-1");
+
+    expect(createSegmentUploader).not.toHaveBeenCalled();
+    expect(apiMocks.finalizeRecordingCapture).toHaveBeenCalledTimes(1);
+    expect(notificationMocks.addNotification).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "warning" }),
+    );
+  });
+
+  it("resumes as the tab holding the capture after a stop that failed", async () => {
+    const started = await startCapture(3);
+    apiMocks.finalizeRecordingCapture.mockRejectedValueOnce(unreachable());
+    await expect(started.controller.stop()).rejects.toThrow("Network Error");
+    await storeOf(started.controller).put(stored(5, 3));
+    pickSourceMocks.pickCaptureSource.mockResolvedValue(microphoneSources());
+
+    await started.controller.resume();
+
+    expect(apiMocks.resumeRecordingCapture).toHaveBeenCalledWith("rec-1", { epoch: 3 });
+    expect(vi.mocked(createSegmentUploader).mock.calls[1][0].epoch).toBe(3);
+    const second = vi.mocked(createSegmentUploader).mock.results[1].value;
+    expect(
+      second.restore.mock.calls[0][0].map((segment: { sequence: number }) => segment.sequence),
+    ).toEqual([5]);
+    expect(started.controller.getState().status).toBe("recording");
+  });
+});
+
+describe("a pause from the controls that the server does not take (issue #582)", () => {
+  const microphoneSources = () => ({
+    mode: "microphone_only",
+    displayStream: null,
+    microphoneStream: {} as MediaStream,
+    captureReport: {
+      mode: "microphone_only",
+      requested_microphone_device_id: null,
+      requested_microphone_label: null,
+      available_microphones: [],
+      browser_microphone_track: null,
+      browser_display_audio_track: null,
+      browser_display_video_track: null,
+      shared_audio_available: false,
+      notes: [],
+    },
+    release: vi.fn(),
+  });
+
+  const unreachable = () => new AxiosError("Network Error", "ERR_NETWORK");
+
+  /** An answer from the API itself, which asking again would only repeat. */
+  const serverError = () => {
+    const error = new AxiosError("Request failed with status code 500");
+    Object.assign(error, {
+      response: { status: 500, data: { detail: "The pause could not be saved." } },
+    });
+    return error;
+  };
+
+  const paused = (lastSequence: number) => ({
+    recording_id: "rec-1",
+    status: "PAUSED",
+    last_sequence: lastSequence,
+    capture_epoch: 2,
+  });
+
+  const controllers: CaptureController[] = [];
+
+  const startCapture = async () => {
+    const sources = microphoneSources();
+    pickSourceMocks.pickCaptureSource.mockResolvedValue(sources);
+    apiMocks.initRecording.mockResolvedValue({
+      id: "rec-1",
+      name: "Weekly sync",
+      capture_epoch: 2,
+    });
+    const controller = new CaptureController();
+    controllers.push(controller);
+    await controller.start("Weekly sync");
+    return {
+      controller,
+      sources,
+      uploader: vi.mocked(createSegmentUploader).mock.results[0].value,
+      recorder: vi.mocked(createBrowserRecorder).mock.results[0].value,
+    };
+  };
+
+  beforeEach(() => {
+    resetSessionForTests();
+    vi.mocked(createSegmentUploader).mockClear();
+    vi.mocked(createBrowserRecorder).mockClear();
+    apiMocks.initRecording.mockReset();
+    apiMocks.pauseRecordingCapture.mockReset();
+    apiMocks.pauseRecordingCapture.mockResolvedValue(paused(7));
+    apiMocks.resumeRecordingCapture.mockReset();
+    apiMocks.resumeRecordingCapture.mockResolvedValue({
+      recording_id: "rec-1",
+      status: "UPLOADING",
+      last_sequence: 7,
+      capture_epoch: 2,
+    });
+    apiMocks.finalizeRecordingCapture.mockReset();
+    apiMocks.finalizeRecordingCapture.mockResolvedValue({ id: "rec-1", status: "QUEUED" });
+    apiMocks.getUnfinishedCaptures.mockReset();
+    apiMocks.getUnfinishedCaptures.mockResolvedValue([]);
+    apiMocks.reportRecordingCaptureSources.mockResolvedValue(undefined);
+    pickSourceMocks.pickCaptureSource.mockReset();
+    notificationMocks.addNotification.mockReset();
+    featureDetectMocks.detectCaptureSupport.mockReturnValue({
+      supported: true,
+      mode: "microphone_only",
+    });
+    sharedMocks.readPausedCaptureContext.mockReset();
+    sharedMocks.readPausedCaptureContext.mockReturnValue(null);
+    connectivityMocks.status = "online";
+    connectivityMocks.lastReachableAt = null;
+    connectivityMocks.listeners.clear();
+    captureLockMocks.release.mockClear();
+  });
+
+  afterEach(async () => {
+    await Promise.all(controllers.splice(0).map((controller) => controller.destroy()));
+    vi.useRealTimers();
+    resetSessionForTests();
+  });
+
+  it("reads paused, and owes the server the pause, when the request does not arrive", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+    const { controller, sources, uploader, recorder } = await startCapture();
+    await vi.advanceTimersByTimeAsync(20_000);
+    apiMocks.pauseRecordingCapture.mockRejectedValueOnce(unreachable());
+
+    await controller.pause();
+
+    const state = controller.getState();
+    expect(recorder.pause).toHaveBeenCalledTimes(1);
+    // Never "recording" while the recorder takes no audio.
+    expect(state.status).toBe("paused");
+    expect(state.runtimeActive).toBe(true);
+    expect(sources.release).not.toHaveBeenCalled();
+    expect(uploader.dispose).not.toHaveBeenCalled();
+    expect(captureLockMocks.release).not.toHaveBeenCalled();
+    expect(notificationMocks.addNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "warning",
+        message: expect.stringMatching(/^Recording paused\. Nojoin could not reach the server/),
+      }),
+    );
+    const elapsed = state.elapsedSeconds;
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(controller.getState().elapsedSeconds).toBe(elapsed);
+
+    connectivityMocks.apiAnswered();
+
+    await vi.waitFor(() => expect(apiMocks.pauseRecordingCapture).toHaveBeenCalledTimes(2));
+    expect(apiMocks.pauseRecordingCapture).toHaveBeenLastCalledWith("rec-1", { epoch: 2 });
+    await vi.waitFor(() => expect(controller.getState().lastSequence).toBe(7));
+    expect(controller.getState().status).toBe("paused");
+  });
+
+  it("sends the pause it owes before resuming the same capture", async () => {
+    const { controller, recorder } = await startCapture();
+    apiMocks.pauseRecordingCapture.mockRejectedValueOnce(unreachable());
+    await controller.pause();
+    const order: string[] = [];
+    apiMocks.pauseRecordingCapture.mockImplementation(async () => {
+      order.push("pause");
+      return paused(7);
+    });
+    apiMocks.resumeRecordingCapture.mockImplementation(async () => {
+      order.push("resume");
+      return { recording_id: "rec-1", status: "UPLOADING", last_sequence: 7, capture_epoch: 2 };
+    });
+
+    await expect(controller.resume()).resolves.toEqual({ recordingId: "rec-1", resumed: true });
+
+    expect(order).toEqual(["pause", "resume"]);
+    expect(recorder.resume).toHaveBeenCalledTimes(1);
+    expect(pickSourceMocks.pickCaptureSource).toHaveBeenCalledTimes(1);
+    expect(controller.getState().status).toBe("recording");
+  });
+
+  it("stays paused with the server's reason when the server refuses the pause", async () => {
+    const { controller } = await startCapture();
+    apiMocks.pauseRecordingCapture.mockRejectedValueOnce(serverError());
+
+    await expect(controller.pause()).rejects.toThrow("The pause could not be saved.");
+
+    expect(controller.getState().status).toBe("paused");
+    expect(controller.getState().runtimeActive).toBe(true);
+    // A refusal is the server's answer, so it is not asked again.
+    connectivityMocks.apiAnswered();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(apiMocks.pauseRecordingCapture).toHaveBeenCalledTimes(1);
+  });
+
+  it("stays paused when the queued audio cannot be sent before the pause", async () => {
+    const { controller, uploader } = await startCapture();
+    vi.mocked(uploader.waitForIdle).mockRejectedValueOnce(
+      new Error("Timed out waiting for recording segment 4 to upload."),
+    );
+
+    await controller.pause();
+
+    // The pause still goes, and the queue stays for resume or stop to send.
+    expect(apiMocks.pauseRecordingCapture).toHaveBeenCalledWith("rec-1", { epoch: 2 });
+    expect(uploader.dispose).not.toHaveBeenCalled();
+    expect(controller.getState().status).toBe("paused");
+  });
+
+  it("reads paused while the queued audio uploads, before the server is told", async () => {
+    const { controller, uploader } = await startCapture();
+    let uploadsDone = () => {};
+    vi.mocked(uploader.waitForIdle).mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          uploadsDone = resolve;
+        }),
+    );
+
+    const pausing = controller.pause();
+    await vi.waitFor(() => expect(controller.getState().status).toBe("paused"));
+    expect(apiMocks.pauseRecordingCapture).not.toHaveBeenCalled();
+
+    uploadsDone();
+    await pausing;
+
+    expect(apiMocks.pauseRecordingCapture).toHaveBeenCalledTimes(1);
+    expect(controller.getState().status).toBe("paused");
+  });
+
+  it("a stop pressed while the pause is on its way is not undone by its answer", async () => {
+    const { controller } = await startCapture();
+    let answerPause = () => {};
+    apiMocks.pauseRecordingCapture.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          answerPause = () => resolve(paused(7));
+        }),
+    );
+
+    const pausing = controller.pause();
+    await vi.waitFor(() => expect(apiMocks.pauseRecordingCapture).toHaveBeenCalledTimes(1));
+    await controller.stop();
+    expect(controller.getState().status).toBe("idle");
+
+    answerPause();
+    await pausing;
+
+    expect(controller.getState().status).toBe("idle");
+    expect(controller.getState().recordingId).toBeNull();
   });
 });

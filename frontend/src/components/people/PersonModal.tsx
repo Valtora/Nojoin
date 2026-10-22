@@ -25,6 +25,7 @@ import {
 import ConfirmationModal from "@/components/ConfirmationModal";
 import { useAnchoredPanel } from "@/components/ui/useAnchoredPanel";
 import { useNotificationStore } from "@/lib/notificationStore";
+import { notifyRequestError } from "@/lib/notifyRequestError";
 
 interface PersonModalProps {
   person: GlobalSpeaker | null; // If null, creating new
@@ -131,9 +132,8 @@ export function PersonModal({
       }));
       setNewTagName("");
       setShowTagInput(false);
-
-        } catch (error: unknown) {
-      console.error("Failed to create tag:", error);
+    } catch (error: unknown) {
+      notifyRequestError(error, "Failed to create tag.");
     }
   };
 

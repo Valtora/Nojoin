@@ -16,6 +16,9 @@ from backend.services.recording_identity_service import (
     get_recordings_by_public_ids,
 )
 from backend.services.tag_ownership import (
+    commit_tag_name,
+    find_tag_by_name,
+    get_or_create_tag,
     require_own_parent,
     require_parent_outside_subtree,
     require_unused_name,
@@ -84,27 +87,21 @@ async def create_tag(
     current_user: User = Depends(get_current_user),
 ):
     """
-    Create a new tag.
+    Create a new tag, or return the user's tag of that name.
     """
     await require_own_parent(db, Tag, tag_in.parent_id, current_user.id)
 
-    statement = select(Tag).where(
-        Tag.name == tag_in.name, Tag.user_id == current_user.id
-    )
-    result = await db.execute(statement)
-    existing = result.scalar_one_or_none()
-    if existing:
-        return existing
-
-    tag = Tag(
-        name=tag_in.name,
+    tag, created = await get_or_create_tag(
+        db,
+        Tag,
+        tag_in.name,
+        current_user.id,
         color=tag_in.color,
-        user_id=current_user.id,
         parent_id=tag_in.parent_id,
     )
-    db.add(tag)
-    await db.commit()
-    await db.refresh(tag)
+    if created:
+        await db.commit()
+        await db.refresh(tag)
     return tag
 
 
@@ -141,7 +138,7 @@ async def update_tag(
     if parent_set:
         tag.parent_id = tag_update.parent_id
 
-    await db.commit()
+    await commit_tag_name(db, tag)
     await db.refresh(tag)
     return tag
 
@@ -158,15 +155,10 @@ async def add_tag_to_recording(
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
 
-    statement = select(Tag).where(
-        Tag.name == tag_in.name, Tag.user_id == current_user.id
+    tag, created = await get_or_create_tag(
+        db, Tag, tag_in.name, current_user.id, color=tag_in.color
     )
-    result = await db.execute(statement)
-    tag = result.scalar_one_or_none()
-
-    if not tag:
-        tag = Tag(name=tag_in.name, color=tag_in.color, user_id=current_user.id)
-        db.add(tag)
+    if created:
         await db.commit()
         await db.refresh(tag)
 
@@ -203,10 +195,7 @@ async def remove_tag_from_recording(
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
 
-    statement = select(Tag).where(Tag.name == tag_name, Tag.user_id == current_user.id)
-    result = await db.execute(statement)
-    tag = result.scalar_one_or_none()
-
+    tag = await find_tag_by_name(db, Tag, tag_name, current_user.id)
     if not tag:
         raise HTTPException(status_code=404, detail="Tag not found")
 
@@ -253,15 +242,8 @@ async def batch_add_tag(
     """
     Add a tag to multiple recordings. Creates the tag if it doesn't exist.
     """
-    statement = select(Tag).where(
-        Tag.name == batch.tag_name, Tag.user_id == current_user.id
-    )
-    result = await db.execute(statement)
-    tag = result.scalar_one_or_none()
-
-    if not tag:
-        tag = Tag(name=batch.tag_name, user_id=current_user.id)
-        db.add(tag)
+    tag, created = await get_or_create_tag(db, Tag, batch.tag_name, current_user.id)
+    if created:
         await db.commit()
         await db.refresh(tag)
 
@@ -310,12 +292,7 @@ async def batch_remove_tag(
     """
     Remove a tag from multiple recordings.
     """
-    statement = select(Tag).where(
-        Tag.name == batch.tag_name, Tag.user_id == current_user.id
-    )
-    result = await db.execute(statement)
-    tag = result.scalar_one_or_none()
-
+    tag = await find_tag_by_name(db, Tag, batch.tag_name, current_user.id)
     if not tag:
         return {"ok": True, "count": 0}
 

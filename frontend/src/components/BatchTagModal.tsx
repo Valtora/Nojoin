@@ -6,6 +6,7 @@ import { Plus, Check } from 'lucide-react';
 import { getTags, createTag } from '@/lib/api';
 import { Tag } from '@/types';
 import { getColorByKey, DEFAULT_TAG_COLORS } from '@/lib/constants';
+import { notifyRequestError } from '@/lib/notifyRequestError';
 
 import Button from './ui/Button';
 import Input from './ui/Input';
@@ -55,9 +56,8 @@ export default function BatchTagModal({ isOpen, onClose, onApply, count, mode }:
       await createTag(inputValue.trim(), randomColor);
       await loadTags();
       setSelectedTag(inputValue.trim());
-
-        } catch (error: unknown) {
-      console.error('Failed to create tag:', error);
+    } catch (error: unknown) {
+      notifyRequestError(error, 'Failed to create tag.');
     }
   };
 
