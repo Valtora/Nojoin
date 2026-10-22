@@ -6,7 +6,8 @@ explicit orchestration stages:
 * input-audio resolution (proxy restore / repair / duration backfill),
 * the VAD stage and its "no speech" short-circuit,
 * the ASR stage telling an engine failure (ERROR, nothing downstream runs, one
-  retry on GPU out-of-memory) apart from ASR that ran and heard nothing,
+  retry on GPU out-of-memory) apart from ASR that ran and heard nothing, and
+  dropping the words its engine placed in the muted audio's silence,
 * combine + consolidate of ASR and diarization into final segments
   (including the raw-transcription fallback that pins every segment to the
   ``UNKNOWN`` speaker while preserving ``id``/``words``),
@@ -27,7 +28,9 @@ import inspect
 import sys
 import types
 
+import numpy as np
 import pytest
+import soundfile
 
 from backend.models.recording import ClientStatus, RecordingStatus
 from backend.models.transcript import Transcript
@@ -1147,3 +1150,66 @@ def test_asr_stage_is_told_whether_vad_muted_its_audio(monkeypatch, enable_vad):
     _run_task(monkeypatch, session, recording_id=722, llm_config=llm_config)
 
     assert seen["config"][VAD_MUTED_INPUT] is enable_vad
+
+
+def test_nothing_downstream_sees_a_word_placed_in_the_muted_silence(
+    monkeypatch, tmp_path
+):
+    """#508: a word the engine placed in exact zeros of the audio it read is
+    dropped before the merge, and before the transcript text is written."""
+    recording = _FakeRecording(723)
+    transcript = _FakeTranscript(723)
+    session = _FakeSession(recording, transcript)
+    _install_happy_path_modules(monkeypatch)
+    vad_input = str(tmp_path / "recording_vad.wav")
+    _install(
+        monkeypatch,
+        "backend.processing.audio_preprocessing",
+        cleanup_temp_file=lambda *a, **k: None,
+        convert_wav_to_mp3=lambda *a, **k: None,
+        preprocess_audio_for_vad=lambda path: vad_input,
+        repair_audio_file=lambda *a, **k: None,
+        validate_audio_file=lambda *a, **k: None,
+    )
+
+    def _mute(input_path, output_path, **kwargs):
+        audio = np.zeros(20 * 16000, dtype=np.float32)
+        audio[16000 : 3 * 16000] = 0.25  # the only speech VAD kept: 1 s to 3 s
+        soundfile.write(output_path, audio, 16000, subtype="PCM_16")
+        return True, 2.0
+
+    _install(monkeypatch, "backend.processing.vad", mute_non_speech_segments=_mute)
+    heard = {"start": 1.2, "end": 1.9, "text": " Morning."}
+    heard["words"] = [{"start": 1.2, "end": 1.9, "word": " Morning."}]
+    invented = {"start": 10.0, "end": 10.8, "text": " Thank you."}
+    invented["words"] = [
+        {"start": 10.0, "end": 10.4, "word": " Thank"},
+        {"start": 10.4, "end": 10.8, "word": " you."},
+    ]
+    _install(
+        monkeypatch,
+        "backend.processing.transcribe",
+        transcribe_audio=lambda *a, **k: {
+            "text": " Morning. Thank you.",
+            "language": "en",
+            "segments": [heard, invented],
+        },
+        release_model_cache=lambda: None,
+    )
+    seen: dict = {}
+
+    def _capture_consolidate(segments, *a, **k):
+        seen["texts"] = [segment["text"] for segment in segments]
+        return list(segments)
+
+    _install(
+        monkeypatch,
+        "backend.utils.transcript_utils",
+        combine_transcription_diarization=lambda *a, **k: [],
+        consolidate_diarized_transcript=_capture_consolidate,
+    )
+
+    _run_task(monkeypatch, session, recording_id=723)
+
+    assert seen["texts"] == ["Morning."]
+    assert transcript.text == "Morning."

@@ -40,6 +40,64 @@ export const createLocalTranscriptState = (
   };
 };
 
+/**
+ * Whether two values of segment-shaped plain data (primitives, arrays and
+ * plain objects) hold the same data. Key order doesn't matter; a key that is
+ * absent differs from one that holds undefined.
+ */
+const sameJsonValue = (left: unknown, right: unknown): boolean => {
+  if (Object.is(left, right)) return true;
+  if (
+    typeof left !== "object" ||
+    typeof right !== "object" ||
+    left === null ||
+    right === null ||
+    Array.isArray(left) !== Array.isArray(right)
+  ) {
+    return false;
+  }
+  const leftRecord = left as Record<string, unknown>;
+  const rightRecord = right as Record<string, unknown>;
+  const keys = Object.keys(leftRecord);
+  return (
+    keys.length === Object.keys(rightRecord).length &&
+    keys.every(
+      (key) => Object.hasOwn(rightRecord, key) && sameJsonValue(leftRecord[key], rightRecord[key]),
+    )
+  );
+};
+
+/**
+ * `next`, with each segment swapped for the one `previous` holds under the
+ * same id when the two hold the same data, and `previous` itself when nothing
+ * changed. A full sync builds every segment anew from the server's
+ * utterances; the transcript redraws a line whose segment object changes, and
+ * the views recompute when the list does. Keeping what is unchanged redraws
+ * only the lines that changed, as a delta does.
+ *
+ * Every field is compared, not only the revision: some changes reach a line
+ * without bumping it, such as the overlap labels a speaker reassign rewrites
+ * on the lines around it. A segment without an id is never kept; ids are
+ * unique, and were one repeated, only the last segment under it is a candidate.
+ */
+const keepUnchangedSegments = (
+  previous: TranscriptSegment[],
+  next: TranscriptSegment[],
+): TranscriptSegment[] => {
+  const previousById = new Map<string, TranscriptSegment>();
+  previous.forEach((segment) => {
+    if (segment.id) previousById.set(segment.id, segment);
+  });
+  const result = next.map((segment) => {
+    const kept = segment.id ? previousById.get(segment.id) : undefined;
+    return kept && sameJsonValue(kept, segment) ? kept : segment;
+  });
+  return result.length === previous.length &&
+    result.every((segment, at) => segment === previous[at])
+    ? previous
+    : result;
+};
+
 export const applyTranscriptDelta = ({
   currentState,
   recordingId,
@@ -84,8 +142,9 @@ export const applyTranscriptDelta = ({
   const nextSegments =
     mode === "full"
       ? utterancesToApply.length > 0
-        ? sortTranscriptSegments(
-            utterancesToApply.map(transcriptSegmentFromUtterance),
+        ? keepUnchangedSegments(
+            baseState.segments,
+            sortTranscriptSegments(utterancesToApply.map(transcriptSegmentFromUtterance)),
           )
         : sortTranscriptSegments(fallbackSegments)
       : mergeTranscriptUtteranceDelta(

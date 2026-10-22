@@ -26,11 +26,54 @@ describe("Button", () => {
     expect(screen.getByRole("button", { name: "Save" })).toHaveAttribute("type", "button");
   });
 
-  it("disables itself and reports busy while loading", () => {
+  // Chrome moves focus from a button to the page body once it is disabled,
+  // so a loading button is only marked disabled (#539).
+  it("stays focusable while loading, and reports itself disabled and busy", () => {
     render(<Button loading>Save</Button>);
     const button = screen.getByRole("button", { name: "Save" });
-    expect(button).toBeDisabled();
+    expect(button).toBeEnabled();
+    expect(button).toHaveAttribute("aria-disabled", "true");
     expect(button).toHaveAttribute("aria-busy", "true");
+    button.focus();
+    expect(button).toHaveFocus();
+  });
+
+  it("keeps focus when its click starts loading", () => {
+    const { rerender } = render(<Button>Save</Button>);
+    const button = screen.getByRole("button", { name: "Save" });
+    button.focus();
+
+    rerender(<Button loading>Save</Button>);
+
+    expect(button).toBeEnabled();
+    expect(button).toHaveFocus();
+  });
+
+  // Callers often disable the button for the same wait it shows.
+  it("stays focusable while loading even when disabled", () => {
+    render(
+      <Button loading disabled>
+        Save
+      </Button>,
+    );
+    const button = screen.getByRole("button", { name: "Save" });
+    expect(button).toBeEnabled();
+    expect(button).toHaveAttribute("aria-disabled", "true");
+  });
+
+  it("disables itself when disabled and not loading", () => {
+    render(<Button disabled>Save</Button>);
+    const button = screen.getByRole("button", { name: "Save" });
+    expect(button).toBeDisabled();
+    expect(button).not.toHaveAttribute("aria-disabled");
+    expect(button).not.toHaveAttribute("aria-busy");
+  });
+
+  it("looks disabled while loading", () => {
+    render(<Button loading>Save</Button>);
+    expect(screen.getByRole("button", { name: "Save" }).className).toContain(
+      "aria-disabled:opacity-60",
+    );
   });
 
   it("keeps its label while loading so the control does not resize", () => {
@@ -58,6 +101,49 @@ describe("Button", () => {
     expect(onClick).not.toHaveBeenCalled();
   });
 
+  // Enter in a field sends a click to the form's submit button, so this
+  // covers implicit submission too.
+  it.each([
+    { loading: false, sent: 1 },
+    { loading: true, sent: 0 },
+  ])("sends its form $sent time(s) when loading is $loading", ({ loading, sent }) => {
+    const onSubmit = vi.fn((event: { preventDefault: () => void }) => event.preventDefault());
+    render(
+      <form onSubmit={onSubmit}>
+        <Button type="submit" loading={loading}>
+          Save
+        </Button>
+      </form>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(onSubmit).toHaveBeenCalledTimes(sent);
+  });
+
+  // A dialog footer's submit button sits outside the form it names.
+  it.each([
+    { loading: false, sent: 1 },
+    { loading: true, sent: 0 },
+  ])(
+    "sends a form it names by id $sent time(s) when loading is $loading",
+    ({ loading, sent }) => {
+      const onSubmit = vi.fn((event: { preventDefault: () => void }) => event.preventDefault());
+      render(
+        <>
+          <form id="person-form" onSubmit={onSubmit} />
+          <Button type="submit" form="person-form" loading={loading}>
+            Save
+          </Button>
+        </>,
+      );
+
+      fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+      expect(onSubmit).toHaveBeenCalledTimes(sent);
+    },
+  );
+
   it.each(["primary", "secondary", "ghost", "danger"] as const)(
     "renders the %s variant without a raw palette utility",
     (variant) => {
@@ -79,6 +165,19 @@ describe("IconButton", () => {
   it("names itself from the required aria-label", () => {
     render(<IconButton aria-label="Delete recording" icon={<span />} />);
     expect(screen.getByRole("button", { name: "Delete recording" })).toBeInTheDocument();
+  });
+
+  it("stays focusable and ignores clicks while loading", () => {
+    const onClick = vi.fn();
+    render(<IconButton aria-label="Refresh" icon={<span />} loading disabled onClick={onClick} />);
+    const button = screen.getByRole("button", { name: "Refresh" });
+
+    fireEvent.click(button);
+
+    expect(onClick).not.toHaveBeenCalled();
+    expect(button).toBeEnabled();
+    expect(button).toHaveAttribute("aria-disabled", "true");
+    expect(button).toHaveAttribute("aria-busy", "true");
   });
 
   it("keeps a 40px target at the smallest size", () => {

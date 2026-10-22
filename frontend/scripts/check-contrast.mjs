@@ -143,6 +143,9 @@ const PAIRINGS = [
   { label: "control border vs float", fg: "control-border", bg: ["surface-float"], min: AA_NON_TEXT },
   { label: "focus ring vs float", fg: "focus-ring", bg: ["surface-float"], min: AA_NON_TEXT },
   { label: "float border vs float", fg: "surface-float-border", bg: ["surface-float"], min: HAIRLINE },
+  // The date picker's time list, a float: a hovered time and a disabled one.
+  { label: "body text on tint (on float)", fg: "foreground", bg: ["surface-float", "action-tint"], min: AA_TEXT },
+  { label: "disabled text on float", fg: "control-disabled-fg", bg: ["surface-float"], min: AA_LARGE },
   { label: "tooltip text on tooltip", fg: "tooltip-fg", bg: ["tooltip-bg"], min: AA_TEXT },
   { label: "tooltip vs card", fg: "tooltip-bg", bg: ["surface-page", "surface-card"], min: AA_NON_TEXT },
 
