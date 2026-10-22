@@ -1525,3 +1525,80 @@ async def test_finalize_removes_the_live_speaker_label_state(
         (failed_root,) = (tmp_path / "failed").iterdir()
         kept = failed_root / "live"
     assert sorted(path.name for path in kept.iterdir()) == ["state.json"]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("move", ["succeeds", "fails"])
+async def test_a_master_that_cannot_be_built_keeps_the_segments(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+    monkeypatch,
+    tmp_path,
+    move: str,
+) -> None:
+    """Finalize removes the partial master and keeps the segments its failed
+    chunk rows name: in ``failed/`` after the move, or in ``temp/<id>/`` when
+    the move raised. Passing the id to the cleanup removed ``temp/<id>/`` too,
+    so a failed move lost the only copy of the meeting (#574).
+    """
+    from backend.api.v1.endpoints import recordings as recordings_module
+    from backend.processing.browser_live_audio import BROWSER_LIVE_CHANNEL_COUNT
+
+    set_session_cookie(client)
+    init_response = await client.post(
+        "/api/v1/recordings/init",
+        params={"name": "Unbuildable master"},
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+    recording_public_id = init_response.json()["id"]
+    recording_id = await _lookup_internal_recording_id(
+        test_session_maker, public_id=recording_public_id
+    )
+    segment = make_wav_bytes(channels=BROWSER_LIVE_CHANNEL_COUNT)
+    upload_response = await client.post(
+        f"/api/v1/recordings/{recording_public_id}/segment",
+        params={"sequence": 0},
+        headers={"Origin": TRUSTED_ORIGIN},
+        files={"file": ("0.wav", segment, "audio/wav")},
+    )
+    assert upload_response.status_code == 200
+
+    masters: list[Path] = []
+
+    def _partial_master(paths, destination):
+        masters.append(Path(destination))
+        Path(destination).write_bytes(b"partial master")
+        raise RuntimeError("the master could not be written")
+
+    monkeypatch.setattr(
+        recordings_module, "write_browser_master_audio", _partial_master
+    )
+    if move == "fails":
+
+        def _unwritable_failed_dir(recording_id, *, logger):
+            raise OSError("failed/ is not writable")
+
+        monkeypatch.setattr(
+            recordings_module,
+            "move_recording_upload_to_failed",
+            _unwritable_failed_dir,
+        )
+
+    finalize_response = await client.post(
+        f"/api/v1/recordings/{recording_public_id}/finalize",
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+
+    assert finalize_response.status_code == 500
+    assert len(masters) == 1 and not masters[0].exists()
+    temp_dir = _recording_temp_dir(tmp_path, recording_id, create=False)
+    if move == "succeeds":
+        assert not temp_dir.exists()
+        (kept_dir,) = (tmp_path / "failed").iterdir()
+    else:
+        kept_dir = temp_dir
+    assert (kept_dir / "0.wav").read_bytes() == segment
+    chunk_rows = await _chunk_rows_for_recording(
+        test_session_maker, recording_id=recording_id
+    )
+    assert chunk_rows == [(0, str(kept_dir / "0.wav"))]

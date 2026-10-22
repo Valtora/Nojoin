@@ -560,6 +560,55 @@ async def test_a_finalize_refused_in_assembly_removes_the_upload_only_once_faile
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("move", ["succeeds", "fails"])
+async def test_a_finalize_that_fails_keeps_the_parts_its_failed_rows_name(
+    env: _Env, monkeypatch: pytest.MonkeyPatch, move: str
+) -> None:
+    """The assembled file goes and the parts stay for the daily sweep: in
+    ``failed/`` after the move, or in ``temp/<id>/`` when the move raised.
+    Passing the id to the cleanup removed ``temp/<id>/`` too, so a failed move
+    took the parts the failed chunk rows still name (#574)."""
+    from backend.api.v1.endpoints import recordings as recordings_module
+    from backend.api.v1.endpoints.recordings import routes_import_upload
+
+    async def _fail(db, *, recording_id: int, audio_path: str):
+        raise RuntimeError("the import window could not be built")
+
+    monkeypatch.setattr(routes_import_upload, "_bootstrap_import_audio_windows", _fail)
+    if move == "fails":
+
+        def _unwritable_failed_dir(recording_id, *, logger):
+            raise OSError("failed/ is not writable")
+
+        monkeypatch.setattr(
+            recordings_module, "move_recording_upload_to_failed", _unwritable_failed_dir
+        )
+    source = env.tmp / "screen.mkv"
+    source.write_bytes(b"an upload whose finalize fails")
+
+    response = await _post(env, "chunked", source)
+
+    assert response.status_code == 500
+    row = _recording(env)
+    assert row["status"] == "ERROR"
+    assert not Path(row["audio_path"]).exists()
+    temp_dir = recording_upload_temp_dir(row["id"], create=False)
+    if move == "succeeds":
+        assert not temp_dir.exists()
+        (kept_dir,) = (env.recordings / "failed").iterdir()
+    else:
+        kept_dir = temp_dir
+    assert (kept_dir / "0.part").read_bytes() == source.read_bytes()
+    with env.engine.connect() as connection:
+        chunk_rows = connection.execute(
+            text("SELECT storage_path, upload_status FROM recording_audio_chunks")
+        ).all()
+    assert [tuple(chunk) for chunk in chunk_rows] == [
+        (str(kept_dir / "0.part"), "failed")
+    ]
+
+
+@pytest.mark.anyio
 @needs_ffmpeg
 @pytest.mark.parametrize("route", ROUTES)
 async def test_the_kept_audio_replaces_the_upload_before_processing(
