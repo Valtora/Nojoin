@@ -102,6 +102,8 @@ Resuming a recording in another tab or on another device takes it over. If the t
 
 **Stop and process** in another tab or on another device ends the recording for the tab that was recording it in the same way. Once that tab reaches the server again, it stops recording, releases the microphone and shared tab, and says the recording was already stopped and sent for processing. **Discard** in that tab is refused too, so it cannot delete the meeting being processed. To delete it, use **Discard Recording** in the recordings list.
 
+**Discard recording** in another tab or on another device ends it for that tab too, which then says the recording was discarded. A request sent while the browser is signed in as another account, from another tab, also finds the recording missing, so the tab first checks which account the browser is signed in as. If it is someone else, the tab keeps the recording and asks its owner to sign in again ([Signing In Again During A Recording](#signing-in-again-during-a-recording)).
+
 ## Capture Settings
 
 **Settings > Recording** holds the capture settings for this browser:
@@ -187,6 +189,10 @@ If a segment keeps failing to upload for about 15 seconds, Nojoin pauses the rec
 ### This recording continued elsewhere
 
 The recording was resumed in another tab or on another device, so this tab stopped recording it and released the microphone and shared tab. Carry on, pause or stop from the tab or device that resumed it. If this tab had audio it had not uploaded, the message says how much: it is not in the recording, because adding it after the audio recorded meanwhile would put the meeting out of order. Nojoin removes it from this browser once the recording is finished.
+
+### This recording was discarded elsewhere
+
+The recording was discarded in another tab or on another device, so this tab stopped recording it and released the microphone and shared tab. Nothing of it is kept on the server. Audio this tab had not uploaded is not in any recording, and Nojoin removes it from this browser.
 
 ### This recording has already been stopped
 

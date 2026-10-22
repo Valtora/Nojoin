@@ -554,6 +554,61 @@ describe("capture uploader once the capture is taken over or stopped elsewhere",
     );
   });
 
+  it("stops at a failure the capture's check finds to be an ending (issue #602)", async () => {
+    const notFound = new AxiosError("Request failed with status code 404");
+    Object.assign(notFound, { response: { status: 404, data: { detail: "Recording not found" } } });
+    const discarded = new Error("This recording was discarded in another tab or on another device.");
+    const checkCaptureGone = vi.fn(async () => discarded);
+    const onCaptureEnded = vi.fn(async () => {});
+    const wait = vi.fn(async () => {});
+    const uploadSegment = vi.fn(async () => {
+      throw notFound;
+    });
+    const uploader = createSegmentUploader({
+      recordingId: "rec-1",
+      epoch: 0,
+      uploadSegment: uploadSegment as never,
+      wait,
+      checkCaptureGone,
+      onCaptureEnded,
+    });
+
+    uploader.enqueue(0, new Blob(["a"]), 2);
+
+    await expect(uploader.waitForIdle()).rejects.toBe(discarded);
+    expect(checkCaptureGone).toHaveBeenCalledWith(notFound);
+    expect(onCaptureEnded).toHaveBeenCalledWith(discarded);
+    expect(uploadSegment).toHaveBeenCalledTimes(1);
+    expect(wait).not.toHaveBeenCalled();
+    expect(uploader.recover()).toBe(false);
+  });
+
+  it("retries as usual when the capture's check finds nothing", async () => {
+    const checkCaptureGone = vi.fn(async () => null);
+    const wait = vi.fn(async () => {});
+    let attempts = 0;
+    const uploadSegment = vi.fn(async (_id: string, sequence: number) => {
+      attempts += 1;
+      if (attempts === 1) {
+        throw new AxiosError("Request failed with status code 404");
+      }
+      return accepted(sequence);
+    });
+    const uploader = createSegmentUploader({
+      recordingId: "rec-1",
+      epoch: 0,
+      uploadSegment: uploadSegment as never,
+      wait,
+      checkCaptureGone,
+    });
+
+    uploader.enqueue(0, new Blob(["a"]), 2);
+    await uploader.waitForIdle();
+
+    expect(checkCaptureGone).toHaveBeenCalledTimes(1);
+    expect(uploadSegment).toHaveBeenCalledTimes(2);
+  });
+
   it("keeps the owning account with each segment, and adds it to restored audio (issue #589)", async () => {
     const store = new MemorySegmentStore();
     const restored: StoredSegment = {

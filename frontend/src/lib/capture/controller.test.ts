@@ -2428,6 +2428,137 @@ describe("a capture taken over or stopped elsewhere (issues #570, #590)", () => 
     expect(started.controller.getState().status).toBe("recording");
   });
 
+  describe("once the recording was discarded elsewhere (issue #602)", () => {
+    const ALICE = 7;
+    const DISCARDED = /discarded in another tab or on another device/;
+
+    const notFound = () => {
+      const error = new AxiosError("Request failed with status code 404");
+      Object.assign(error, { response: { status: 404, data: { detail: "Recording not found" } } });
+      return error;
+    };
+
+    const signedInAs = (id: number, username: string) => ({
+      id,
+      username,
+      force_password_change: false,
+    });
+
+    beforeEach(() => {
+      // The capture belongs to Alice, the account the page was signed in as.
+      noteSignedIn(signedInAs(ALICE, "alice"));
+      apiMocks.getUserMe.mockReset();
+      apiMocks.getUserMe.mockResolvedValue(signedInAs(ALICE, "alice"));
+      apiMocks.getRecording.mockReset();
+      apiMocks.getRecording.mockRejectedValue(notFound());
+    });
+
+    it("stands down at the first 404 for a segment, once /users/me names its owner", async () => {
+      const started = await startCapture();
+
+      const gone = await started.uploaderOptions.checkCaptureGone?.(notFound());
+      expect(gone).toBeInstanceOf(Error);
+      await started.uploaderOptions.onCaptureEnded?.(gone as Error);
+
+      expectStoodDown(started, DISCARDED);
+      // The 404 and /users/me went out apart, so the recording was asked again.
+      expect(apiMocks.getRecording).toHaveBeenCalledWith("rec-1");
+    });
+
+    it("waits for the owner when the 404 came under another account's sign-in", async () => {
+      const started = await startCapture();
+      apiMocks.getUserMe.mockResolvedValue(signedInAs(8, "bob"));
+
+      await expect(started.uploaderOptions.checkCaptureGone?.(notFound())).resolves.toBeNull();
+
+      // The held sign-in dialog opens for Alice, and uploads wait for her.
+      expect(useSessionStore.getState()).toMatchObject({
+        signInRequired: true,
+        otherUsername: "bob",
+      });
+      expect(started.controller.getState().status).toBe("recording");
+      expect(apiMocks.getRecording).not.toHaveBeenCalled();
+    });
+
+    it("carries on when the recording answers again once the owner is confirmed", async () => {
+      const started = await startCapture();
+      apiMocks.getRecording.mockResolvedValue({ id: "rec-1", status: "UPLOADING" });
+
+      await expect(started.uploaderOptions.checkCaptureGone?.(notFound())).resolves.toBeNull();
+      expect(started.controller.getState().status).toBe("recording");
+    });
+
+    it("carries on when it cannot tell who is signed in", async () => {
+      const started = await startCapture();
+      apiMocks.getUserMe.mockRejectedValue(new AxiosError("Network Error", "ERR_NETWORK"));
+
+      await expect(started.uploaderOptions.checkCaptureGone?.(notFound())).resolves.toBeNull();
+      expect(started.controller.getState().status).toBe("recording");
+    });
+
+    it("stands down when its pause answers 404", async () => {
+      const started = await startCapture();
+      apiMocks.pauseRecordingCapture.mockRejectedValueOnce(notFound());
+
+      await expect(started.controller.pause()).rejects.toThrow(DISCARDED);
+
+      expectStoodDown(started, DISCARDED);
+    });
+
+    it("stands down when its resume answers 404", async () => {
+      const started = await startCapture();
+      await started.controller.pause();
+      apiMocks.resumeRecordingCapture.mockRejectedValueOnce(notFound());
+
+      await expect(started.controller.resume()).rejects.toThrow(DISCARDED);
+
+      expectStoodDown(started, DISCARDED);
+      expect(started.recorder.resume).not.toHaveBeenCalled();
+    });
+
+    it("stands down rather than reading paused when its stop answers 404", async () => {
+      const started = await startCapture();
+      apiMocks.finalizeRecordingCapture.mockRejectedValueOnce(notFound());
+
+      await expect(started.controller.stop()).rejects.toThrow(DISCARDED);
+
+      expectStoodDown(started, DISCARDED);
+      connectivityMocks.apiAnswered();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(apiMocks.pauseRecordingCapture).not.toHaveBeenCalled();
+    });
+
+    it("reads idle with no error when its discard finds it already discarded", async () => {
+      const started = await startCapture();
+      apiMocks.discardRecordingCapture.mockRejectedValueOnce(notFound());
+
+      await expect(started.controller.cancel()).resolves.toBeUndefined();
+
+      const state = started.controller.getState();
+      expect(state.status).toBe("idle");
+      expect(state.recordingId).toBeNull();
+      expect(state.error).toBeNull();
+    });
+
+    it("pauses once the owner signs back in, when its pause answered 404 under another account", async () => {
+      const started = await startCapture();
+      apiMocks.getUserMe.mockResolvedValue(signedInAs(8, "bob"));
+      apiMocks.pauseRecordingCapture.mockRejectedValueOnce(notFound());
+
+      const pausing = started.controller.pause();
+      await vi.waitFor(() => expect(useSessionStore.getState().signInRequired).toBe(true));
+      expect(started.controller.getState().status).toBe("paused");
+
+      noteSignedIn(signedInAs(ALICE, "alice"));
+      await pausing;
+
+      expect(apiMocks.pauseRecordingCapture).toHaveBeenCalledTimes(2);
+      expect(started.controller.getState().status).toBe("paused");
+      expect(started.controller.getState().error).toBeNull();
+      expect(started.uploader.dispose).not.toHaveBeenCalled();
+    });
+  });
+
   describe("once the recording was stopped elsewhere (issue #590)", () => {
     it("stops capturing at the first refused segment", async () => {
       const started = await startCapture();
