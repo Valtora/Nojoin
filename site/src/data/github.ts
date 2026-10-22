@@ -1,9 +1,7 @@
-// Build-time GitHub data. Both values have fallbacks because a scheduled
-// rebuild must never fail on a rate-limited or unreachable API: the release
-// falls back to docs/VERSION from the checkout, and a missing star count
-// renders the button without a number, which is a legitimate state rather
-// than a placeholder.
-import versionRaw from "../../../docs/VERSION?raw";
+// Build-time GitHub data. The star count has a fallback because a scheduled
+// rebuild must never fail on a rate-limited or unreachable API: a missing
+// count renders the button without a number, which is a legitimate state
+// rather than a placeholder.
 
 const API = "https://api.github.com/repos/Valtora/Nojoin";
 
@@ -33,11 +31,4 @@ export async function getStarCount(): Promise<number | null> {
 export function formatStarCount(stars: number): string {
   if (stars < 1000) return String(stars);
   return `${(stars / 1000).toFixed(stars < 10000 ? 1 : 0)}k`;
-}
-
-export async function getLatestVersion(): Promise<string> {
-  const release = await getJson("/releases/latest");
-  const tag = release?.tag_name;
-  if (typeof tag === "string" && tag.length > 0) return tag.replace(/^v/, "");
-  return versionRaw.trim();
 }
