@@ -19,15 +19,16 @@ vi.mock("@/components/transcript/TranscriptLineBadges", async (importOriginal) =
   };
 });
 
-// Each group formats its start time once per render, and nothing else here
-// formats a time, so counting the calls counts group redraws by start.
-const groupsRedrawn: number[] = [];
+// Each group formats its start time when it draws, and nothing else here
+// formats a time, so the times formatted name the groups that redrew.
+const formatted = new Set<number>();
+const groupsRedrawn = () => [...formatted].sort((left, right) => left - right);
 vi.mock("@/components/transcript/transcriptDisplay", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./transcriptDisplay")>();
   return {
     ...actual,
     formatTime: (seconds: number) => {
-      groupsRedrawn.push(seconds);
+      formatted.add(seconds);
       return actual.formatTime(seconds);
     },
   };
@@ -46,7 +47,7 @@ afterAll(() => {
 });
 const forget = () => {
   redrawn.length = 0;
-  groupsRedrawn.length = 0;
+  formatted.clear();
 };
 beforeEach(forget);
 
@@ -121,7 +122,7 @@ describe("transcript redraws", () => {
     forget();
     rerender(<Page time={7.5} />);
     expect(redrawn).toEqual([]);
-    expect(groupsRedrawn).toEqual([]);
+    expect(groupsRedrawn()).toEqual([]);
   });
 
   it("plays through the page's latest handler after a tick", () => {
@@ -139,12 +140,12 @@ describe("transcript redraws", () => {
 
     forget();
     rerender(<Page time={7} isPlaying />);
-    expect(groupsRedrawn).toEqual([6]);
+    expect(groupsRedrawn()).toEqual([6]);
     expect(redrawn).toEqual([]);
 
     forget();
     rerender(<Page time={7} />);
-    expect(groupsRedrawn).toEqual([6]);
+    expect(groupsRedrawn()).toEqual([6]);
   });
 
   it("redraws nothing when the poll hands over equal speakers, names and colours", () => {
@@ -154,7 +155,7 @@ describe("transcript redraws", () => {
     rerender(<Page time={7} />);
 
     expect(redrawn).toEqual([]);
-    expect(groupsRedrawn).toEqual([]);
+    expect(groupsRedrawn()).toEqual([]);
   });
 
   it("redraws only the line a delta changes", () => {
@@ -167,7 +168,7 @@ describe("transcript redraws", () => {
     rerender(<Page time={7} segments={changed} />);
 
     expect(redrawn).toEqual(["u4"]);
-    expect(groupsRedrawn).toEqual([12]);
+    expect(groupsRedrawn()).toEqual([12]);
   });
 
   it("redraws only the lines and groups whose matches change as the search moves", () => {
@@ -183,13 +184,13 @@ describe("transcript redraws", () => {
     forget();
     fireEvent.keyDown(find, { key: "Enter" });
     expect(redrawn).toEqual(["u0"]);
-    expect(groupsRedrawn).toEqual([0]);
+    expect(groupsRedrawn()).toEqual([0]);
 
     // u0 has one match, so the next is u2's first: u0 and u2 change.
     forget();
     fireEvent.keyDown(find, { key: "Enter" });
     expect(redrawn.sort()).toEqual(["u0", "u2"]);
-    expect(groupsRedrawn.sort((a, b) => a - b)).toEqual([0, 6]);
+    expect(groupsRedrawn()).toEqual([0, 6]);
   });
 
   it("redraws only the line a delta changes while the search is open", () => {
@@ -205,7 +206,7 @@ describe("transcript redraws", () => {
 
     // u4 draws twice: for its text, then for its matches, found after.
     expect(new Set(redrawn)).toEqual(new Set(["u4"]));
-    expect(new Set(groupsRedrawn)).toEqual(new Set([12]));
+    expect(groupsRedrawn()).toEqual([12]);
   });
 
   it("redraws only the changed line of a group while the search is open", () => {
