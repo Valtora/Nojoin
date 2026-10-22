@@ -200,7 +200,7 @@ Each segment becomes a `recording_audio_chunks` row with an offset on the record
 
 1. **Resolve audio.** Validate the source, restoring it from the proxy if needed.
 2. **VAD.** Resample to 16 kHz mono and mute non-speech with silero VAD (`enable_vad`). Under 1 s of speech completes the recording with an empty transcript.
-3. **Transcription** through an engine in [backend/processing/engines/](../backend/processing/engines/) (see [ASR Engines](#asr-engines)).
+3. **Transcription** through an engine in [backend/processing/engines/](../backend/processing/engines/) (see [ASR Engines](#asr-engines)), less the words it placed in digital silence (see [Words In Digital Silence](#words-in-digital-silence)).
 4. **Diarisation** with pyannote (`enable_diarization`), bounded by the recording's `max_speakers` when set. Phantom speaker filtering then takes clusters within `phantom_max_duration_s` and `phantom_max_segments`: one below `phantom_embedding_floor` against every main speaker is treated as noise and reassigned, one above `phantom_merge_threshold` merges into the speaker it matches, and one in between is kept.
 5. **Merge and consolidation** (see [Word Timestamps In The Merge](#word-timestamps-in-the-merge)).
 6. **Speaker assignment.** Voiceprint extraction, identification against the People library, and the duplicate-merge pass (see [Speakers And Voiceprints](#speakers-and-voiceprints)).
@@ -224,9 +224,18 @@ The engine and its model are install-wide settings.
 
 Each user's transcription language reaches live, final, import and reprocess ASR and is part of the ASR result hash. Whisper gets a language only when one is selected, Canary gets its source-language parameter, and Parakeet always auto-detects.
 
+### Words In Digital Silence
+
+Whisper can emit a word or two, most often "Thank you.", in the silence the VAD stage muted to exact zeros. After transcription, `drop_unheard_words` ([backend/worker/tasks/final_segments.py](../backend/worker/tasks/final_segments.py)) reads the exact-zero runs of the audio the engine read and drops each word lying inside one run with `UNHEARD_WORD_GUARD_S` (0.5 s) of zeros to spare on each side ([backend/processing/unheard_words.py](../backend/processing/unheard_words.py)). A segment that loses every word goes too, a segment without word times is judged on its own span, and the result's text is rebuilt. A word that straddles the edge of kept audio, or sits nearer it than the guard, is kept, since word times stray a little from the sound they mark.
+
+- It reads the zeros rather than the VAD's speech regions, so it only touches audio the engine heard as silence: the gaps between regions, the regions under the 250 ms minimum that the mute step zeroes, and the muted first and last second. On unmuted input, with VAD off, the only runs are true digital silence.
+- Every engine is treated alike. Canary's windows have no word times and skip audio without signal, so they are seldom touched.
+- It is best effort: audio that cannot be read keeps every word. The `final_asr_unheard_words` pipeline metric counts what went.
+- The live lane does not run it. Finalise transcribes the recording again, so no live line reaches the final transcript.
+
 ### Word Timestamps In The Merge
 
-`combine_transcription_diarization` in [backend/utils/transcript_utils.py](../backend/utils/transcript_utils.py) treats each run of consecutive segments by what it has. A run with word timings is aligned word by word; a run without (Canary, or a Whisper segment with an empty `words` list) gets each segment's dominant speaker. Every segment's text reaches the output. A word no longer than pyannote's segment precision takes the speaker whose turn contains its instant (`[start, end)`; a turn's end counts when no turn starts there; a gap stays `UNKNOWN`). Single-word flip smoothing then gives a word of at most `word_flip_max_duration_s`, within `word_flip_max_gap_s` of neighbours that share a speaker, to that speaker.
+`combine_transcription_diarization` in [backend/utils/transcript_utils.py](../backend/utils/transcript_utils.py) treats each run of consecutive segments by what it has. A run with word timings is aligned word by word; a run without (Canary, or a Whisper segment with an empty `words` list) gets each segment's dominant speaker. Every segment's text reaches the output. A word no longer than pyannote's segment precision takes the speaker whose turn contains its instant (`[start, end)`; a turn's end counts when no turn starts there). A word that overlaps no turn takes the speaker of the nearest turn within `GAP_WORD_TURN_TOLERANCE_S` (0.5 s), the earlier turn on a tie, unless the attributed words either side share a speaker with a turn that near, whose speaker it takes. Neighbours are read as diarised, before any gap word is given a speaker. A word further than that from every turn stays `UNKNOWN`. Single-word flip smoothing then gives a word of at most `word_flip_max_duration_s`, within `word_flip_max_gap_s` of neighbours that share a speaker, to that speaker.
 
 Consolidation never drops text. A segment under 0.1 s folds into a neighbour at most 1.0 s away if the result stays within 10 s, preferring the same speaker and then the nearer one; the receiver keeps its speakers. A fragment with no qualifying neighbour stays as a short segment, and only a fragment without text is dropped. Neighbours whose fragments all folded away merge only if the original pieces tiled (gaps under 0.01 s) with the same speakers, within 10 s. A segment over 10 s is split in an 8 to 12 s window.
 

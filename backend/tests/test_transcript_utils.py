@@ -8,6 +8,7 @@ from pyannote.core import Segment
 
 from backend.processing.processing_tuning import TUNING_SPECS
 from backend.utils.transcript_utils import (
+    GAP_WORD_TURN_TOLERANCE_S,
     combine_transcription_diarization,
     consolidate_diarized_transcript,
 )
@@ -730,8 +731,8 @@ ZERO_LENGTH_TURNS = [(0.0, 1.0, "S0"), (1.0, 2.0, "S1"), (3.0, 4.0, "S2")]
         (0.5, ZERO_LENGTH_TURNS, "S0"),  # inside a turn
         (1.0, ZERO_LENGTH_TURNS, "S1"),  # shared edge: the turn starting there
         (2.0, ZERO_LENGTH_TURNS, "S1"),  # a turn's end, no turn starting there
-        (2.5, ZERO_LENGTH_TURNS, "UNKNOWN"),  # gap between turns
-        (5.0, ZERO_LENGTH_TURNS, "UNKNOWN"),  # outside every turn
+        (2.3, ZERO_LENGTH_TURNS, "S1"),  # gap between turns: the nearer one
+        (5.0, ZERO_LENGTH_TURNS, "UNKNOWN"),  # too far from every turn
         (1.5, [(0.0, 2.0, "S0"), (1.0, 3.0, "S1")], "S0"),  # overlap: first turn
     ],
 )
@@ -771,6 +772,146 @@ def test_zero_length_word_mid_sentence_survives_consolidation():
     )
 
     assert _spans(result) == [(0.0, 3.0, "SPEAKER_00", "we will ship it today")]
+
+
+# --- a word in a gap between diarisation turns (#508) ----------------------
+
+
+def _words(*words):
+    """One segment holding ``words``, each a (start, end, token)."""
+    return {
+        "segments": [
+            {
+                "start": words[0][0],
+                "end": words[-1][1],
+                "text": "".join(token for _, _, token in words),
+                "words": [{"start": s, "end": e, "word": w} for s, e, w in words],
+            }
+        ]
+    }
+
+
+def _speaker_of_each_word(result):
+    return [
+        (word["word"].strip(), segment["speaker"])
+        for segment in result
+        for word in segment["words"]
+    ]
+
+
+def test_a_word_between_two_turns_of_one_speaker_takes_that_speaker():
+    transcription = _words((0.2, 0.6, " we"), (1.1, 1.4, " can"), (1.8, 2.2, " go"))
+    diarization = FakeDiarization([(0.0, 1.0, "A"), (1.6, 3.0, "A")])
+
+    result = combine_transcription_diarization(transcription, diarization)
+
+    assert [(seg["speaker"], seg["text"]) for seg in result] == [("A", "we can go")]
+
+
+def test_a_word_at_a_speaker_change_takes_the_nearer_turn():
+    transcription = _words(
+        (0.2, 0.8, " right"),
+        (1.05, 1.3, " so"),
+        (1.4, 1.55, " well"),
+        (1.7, 2.0, " then"),
+    )
+    diarization = FakeDiarization([(0.0, 1.0, "A"), (1.6, 3.0, "B")])
+
+    result = combine_transcription_diarization(transcription, diarization)
+
+    assert _speaker_of_each_word(result) == [
+        ("right", "A"),
+        ("so", "A"),
+        ("well", "B"),
+        ("then", "B"),
+    ]
+
+
+def test_a_word_as_near_both_turns_takes_the_earlier_whatever_the_float_error():
+    # 0.7 - (0.1 + 0.2) and 1.2 - 0.8 differ only by float error.
+    transcription = _words((0.0, 0.2, " fine"), (0.7, 0.8, " and"), (1.3, 1.5, " so"))
+    diarization = FakeDiarization([(0.0, 0.1 + 0.2, "A"), (1.2, 2.0, "B")])
+
+    result = combine_transcription_diarization(transcription, diarization)
+
+    assert _speaker_of_each_word(result) == [("fine", "A"), ("and", "A"), ("so", "B")]
+
+
+@pytest.mark.parametrize("offset_s", [0.0, 7000.0])
+@pytest.mark.parametrize(
+    ("distance_s", "speaker"),
+    [(GAP_WORD_TURN_TOLERANCE_S, "A"), (GAP_WORD_TURN_TOLERANCE_S + 0.01, "UNKNOWN")],
+)
+def test_a_word_takes_a_turn_only_within_the_tolerance(offset_s, distance_s, speaker):
+    start = offset_s + 1.0 + distance_s
+    transcription = _words((start, start + 0.3, " Thank you."))
+    diarization = FakeDiarization([(offset_s, offset_s + 1.0, "A")])
+
+    result = combine_transcription_diarization(transcription, diarization)
+
+    assert _speaker_of_each_word(result) == [("Thank you.", speaker)]
+
+
+def test_a_word_far_from_every_turn_stays_unknown():
+    transcription = _words(
+        (0.2, 0.8, " bye"), (5.0, 5.4, " Thank you."), (10.2, 10.6, " hello")
+    )
+    diarization = FakeDiarization([(0.0, 1.0, "A"), (10.0, 11.0, "A")])
+
+    result = combine_transcription_diarization(transcription, diarization)
+
+    assert _speaker_of_each_word(result) == [
+        ("bye", "A"),
+        ("Thank you.", "UNKNOWN"),
+        ("hello", "A"),
+    ]
+
+
+def test_a_word_takes_its_neighbours_speaker_over_a_nearer_turn():
+    # The B turn is nearer, but the words either side are A's, and an A turn
+    # is within the tolerance too. The pause after is too long to smooth.
+    transcription = _words(
+        (0.2, 0.8, " we"), (1.05, 1.15, " should"), (1.6, 2.0, " go")
+    )
+    diarization = FakeDiarization([(0.0, 1.0, "A"), (1.16, 1.3, "B"), (1.5, 3.0, "A")])
+
+    result = combine_transcription_diarization(transcription, diarization)
+
+    assert [(seg["speaker"], seg["text"]) for seg in result] == [("A", "we should go")]
+
+
+def test_neighbours_without_a_turn_near_the_word_leave_it_the_nearest_turn():
+    transcription = _words((0.2, 0.8, " a"), (1.6, 1.8, " b"), (3.2, 3.6, " c"))
+    diarization = FakeDiarization([(0.0, 1.0, "A"), (1.9, 2.1, "B"), (3.0, 4.0, "A")])
+
+    result = combine_transcription_diarization(transcription, diarization)
+
+    assert _speaker_of_each_word(result) == [("a", "A"), ("b", "B"), ("c", "A")]
+
+
+def test_gap_words_read_their_neighbours_before_any_is_given_a_speaker():
+    # "this" takes B, its nearest turn. Had that answer been read as the
+    # neighbour of "is", B on both sides would have given "is" B as well;
+    # read as diarised, its neighbours are A and B, so it takes its nearest
+    # turn, A's.
+    transcription = _words(
+        (0.2, 0.8, " so"),
+        (1.26, 1.3, " this"),
+        (1.5, 1.6, " is"),
+        (2.2, 2.8, " it"),
+    )
+    diarization = FakeDiarization(
+        [(0.0, 1.0, "A"), (1.2, 1.25, "B"), (1.62, 1.7, "A"), (2.0, 3.0, "B")]
+    )
+
+    result = combine_transcription_diarization(transcription, diarization)
+
+    assert _speaker_of_each_word(result) == [
+        ("so", "A"),
+        ("this", "B"),
+        ("is", "A"),
+        ("it", "B"),
+    ]
 
 
 def _segment(start, end, speaker, text):
