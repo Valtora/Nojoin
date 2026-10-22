@@ -96,6 +96,16 @@ Archives carry a format version. A server restores any archive at or below the f
 
 An archive older than format 3 holds each meeting's notes as one text, which restores as a single note at the top of the meeting. The note is added only when the restore inserts the transcript, so Skip mode or a second restore adds no duplicate.
 
+An archive made by 2.10.0 or earlier can hold people and people tags with no owner, and links into another user's People library. Before writing anything, the restore settles them as upgrading that installation does:
+
+- A person with no owner goes to the user whose meetings link them most, the earliest account on a tie. A people tag with no owner goes to the user whose people use it most, and a tag nobody uses goes to the first Owner account.
+- A link from one user's meeting to another user's person moves to the linking user's own person of that name. When they have none, one is created with the name and colour only. A person's link to another user's people tag moves the same way.
+- A people tag nested under another user's tag moves to the top level, or under the user's own copy when the parent had no owner. A recording tag nested under another user's tag moves to the top level.
+- A person or tag given to a user who already has that name is renamed "Name (2)", or the next free number.
+- A person no owned meeting links keeps no owner and is not restored, as before.
+
+Archives made since hold nothing to settle.
+
 ## Housekeeping
 
 The saved backup lives in `data/backups`, and uploads and restore staging under `data/`; [DEPLOYMENT.md](DEPLOYMENT.md) describes the layout. Uploaded archives, abandoned uploads, restore staging and archives from failed backups are deleted once they are 24 hours old. The saved backup is not.

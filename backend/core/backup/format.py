@@ -82,7 +82,9 @@ class _ForeignKeySpec:
     # cannot be resolved the row is skipped. Nullability is deliberately NOT the test
     # here. Several ownership columns (Recording.user_id, Tag.user_id, PeopleTag.user_id,
     # GlobalSpeaker.user_id) are nullable in the database, yet every read path is scoped
-    # by user_id, so a null owner produces a row that no user can ever see.
+    # by user_id, so a null owner produces a row that no user can ever see. An older
+    # archive's people and people tags are given owners before this test applies
+    # (restore/legacy_owners.py).
     #
     # Enrichment links only decorate the row: if the target cannot be resolved the
     # column is nulled and the row is still restored, because losing an optional link is

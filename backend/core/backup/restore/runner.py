@@ -37,6 +37,7 @@ from backend.core.backup.restore.legacy_notes import (
     legacy_user_notes,
     restore_legacy_head_note,
 )
+from backend.core.backup.restore.legacy_owners import plan_owner_repairs
 from backend.core.backup.restore.state import _RestoreState
 from backend.utils.document_storage import unlink_document_files
 
@@ -244,6 +245,8 @@ def _restore_table(
         logger.error(f"Failed to read/parse {member}: {e}")
         return 0
 
+    data = state.owner_repairs.apply(table_name, data)
+
     # Tag hierarchies must list a parent before any child that references it.
     if table_name in ("tags", "p_tags"):
         data = _topological_sort(data)
@@ -391,6 +394,7 @@ def _restore_backup_sync(request: _RestoreRequest):
     try:
         with zipfile.ZipFile(request.zip_path, "r") as zipf:
             stages._restore_preflight_validate(zipf, state)
+            state.owner_repairs = plan_owner_repairs(zipf)
             stages._restore_extract_files(zipf, state)
 
             # Restore Database
