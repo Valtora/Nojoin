@@ -7,7 +7,7 @@ import {
   AUDIO_RECHECK_WINDOW_MS,
   hasPolledRecordingChanged,
   pollFailureMeansRemoved,
-  pollNotFoundMeans,
+  notFoundMeans,
   recordingPollIntervalMs,
   shouldPollRecordingUpdates,
 } from "./recordingDetailUtils";
@@ -97,10 +97,48 @@ describe("noticing a change to the notes in a poll", () => {
   });
 });
 
-describe("pollNotFoundMeans", () => {
-  it("reads a 404 as a removal when the page never learnt which account it was loaded as", async () => {
-    // Nothing to compare with: as before #583, the recording is taken to be gone.
-    await expect(pollNotFoundMeans(null, async () => ({ id: 2 }))).resolves.toBe("removed");
+describe("notFoundMeans", () => {
+  const ALICE = { id: 1, username: "alice" };
+  const BOB = { id: 2, username: "bob" };
+  const notHeld = () => false;
+
+  it("reads a 404 as a removal when the account that loaded the recording is still signed in", async () => {
+    await expect(notFoundMeans(1, async () => ALICE, notHeld)).resolves.toEqual({ kind: "removed" });
+  });
+
+  it("names the account the server answered with when it is another", async () => {
+    await expect(notFoundMeans(1, async () => BOB, notHeld)).resolves.toEqual({
+      kind: "signed-in-elsewhere",
+      username: "bob",
+    });
+  });
+
+  it("says nothing more while sign-in is held, as its dialog has opened", async () => {
+    await expect(notFoundMeans(1, async () => BOB, () => true)).resolves.toBeNull();
+  });
+
+  it("reads whether sign-in is held only once the server has answered", async () => {
+    let held = false;
+    const answer = notFoundMeans(
+      1,
+      async () => {
+        // The answer is what holds it: a held page's `/users/me` opens the dialog.
+        held = true;
+        return BOB;
+      },
+      () => held,
+    );
+    await expect(answer).resolves.toBeNull();
+  });
+
+  it("does nothing when it can't tell who is signed in", async () => {
+    await expect(
+      notFoundMeans(1, async () => Promise.reject(new Error("Network Error")), notHeld),
+    ).resolves.toBeNull();
+  });
+
+  it("claims no removal when the page never learnt which account loaded it", async () => {
+    await expect(notFoundMeans(null, async () => BOB, notHeld)).resolves.toBeNull();
   });
 });
 

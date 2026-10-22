@@ -2,7 +2,6 @@ import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 
 import {
-  getCurrentUser,
   getRecording,
   getSettings,
   getTranscriptUtterances,
@@ -75,11 +74,11 @@ import {
   isAudioUnavailable,
   isRecordingInFlight,
   pollFailureMeansRemoved,
-  pollNotFoundMeans,
   recordingPollIntervalMs,
   shouldPollRecordingUpdates,
   type TranscriptHistoryItem,
 } from "./recordingDetailUtils";
+import { useRecordingNotFound } from "./useRecordingNotFound";
 
 interface UseRecordingDetailParams {
   params: Promise<{ id: string }>;
@@ -163,10 +162,6 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
   // When the page first saw the audio as unavailable. It bounds how long the
   // page keeps re-checking for it.
   const audioUnavailableSinceRef = useRef<number | null>(null);
-  // The account the recording was last loaded as, and the one the browser
-  // was found signed in as instead, until a poll succeeds again.
-  const pageAccountRef = useRef<number | null>(null);
-  const signedInElsewhereRef = useRef<string | null>(null);
   const isInFlightRecording = isRecordingInFlight(recording);
   const compactChatPanelHeight = isCompact
     ? Math.min(chatPanelHeight, 42)
@@ -174,6 +169,7 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
   const navigateToRecordings = useCallback(() => {
     router.push("/recordings");
   }, [router]);
+  const recordingNotFound = useRecordingNotFound(addNotification, navigateToRecordings);
 
   const transcriptSegments = useMemo(
     () => transcriptState?.segments || recording?.transcript?.segments || [],
@@ -339,8 +335,9 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
   }, [activeTranscriptEditId]);
 
   const fetchRecording = useCallback(async () => {
+    let id: string | null = null;
     try {
-      const { id } = await params;
+      ({ id } = await params);
       const sentAt = audioClock.stamp();
       const [recData, gsData, settingsData] = await Promise.all([
         getRecording(id),
@@ -348,7 +345,8 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
         getSettings().catch(() => null),
       ]);
       audioClock.observe(recData, sentAt);
-      pageAccountRef.current = useSessionStore.getState().userId;
+      recordingNotFound.loaded(id);
+      recordingNotFound.found();
       setRecording(recData);
       setGlobalSpeakers(gsData);
       if (settingsData) {
@@ -365,6 +363,12 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
 
         } catch (e: unknown) {
       console.error("Failed to fetch recording:", e);
+      // A refresh of the recording on screen answered 404: checked as a
+      // poll's is, so another account's sign-in doesn't send the page away.
+      if (id !== null && recordingNotFound.isLoaded(id) && getErrorStatus(e) === 404) {
+        if (!useSessionStore.getState().signInRequired) await recordingNotFound.notFound(id);
+        return null;
+      }
       addNotification({
         type: "error",
         message: "Failed to load recording.",
@@ -374,7 +378,7 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
     } finally {
       setLoading(false);
     }
-  }, [addNotification, audioClock, params, isEditingTitle, router]);
+  }, [addNotification, audioClock, params, isEditingTitle, router, recordingNotFound]);
 
   const refreshRecordingView = useCallback(async () => {
     const refreshedRecording = await fetchRecording();
@@ -452,7 +456,7 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
         const sentAt = audioClock.stamp();
         const data = await getRecording(id);
         audioClock.observe(data, sentAt);
-        signedInElsewhereRef.current = null;
+        recordingNotFound.found();
 
         if (hasPolledRecordingChanged(recording, data)) {
           setRecording(data);
@@ -469,29 +473,13 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
         ) {
           return;
         }
-        // Already found signed in as another account: asked again only once a
-        // poll succeeds, which means the owner is back.
-        if (signedInElsewhereRef.current !== null) return;
-        const meaning = await pollNotFoundMeans(pageAccountRef.current, getCurrentUser);
-        if (meaning === "removed") {
-          addNotification({
-            type: "info",
-            message: "Recording was discarded or deleted.",
-          });
-          router.push("/recordings");
-        } else if (meaning === "signed-in-elsewhere") {
-          const { username } = useSessionStore.getState();
-          signedInElsewhereRef.current = username ?? "";
-          addNotification({
-            type: "info",
-            message: `This browser is now signed in as ${username ?? "another account"}, so this recording can't be updated. Sign in again as its owner to carry on.`,
-          });
-        }
+        const { id } = await params;
+        await recordingNotFound.notFound(id);
       }
     }, pollIntervalMs);
 
     return () => clearInterval(interval);
-  }, [params, recording, isEditingTitle, addNotification, router, audioClock]);
+  }, [params, recording, isEditingTitle, audioClock, recordingNotFound]);
 
   useEffect(() => {
     if (!recording || isInFlightRecording || !shouldPollRecordingUpdates(recording)) {

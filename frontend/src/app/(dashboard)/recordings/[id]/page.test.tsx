@@ -51,6 +51,9 @@ vi.mock("@/lib/capture/CaptureProvider", () => ({
     recordingId: null,
     pausedRecording: null,
     runtimeActive: false,
+    status: "idle",
+    stop: vi.fn(),
+    uploadQueue: { seconds: 0 },
   }),
 }));
 
@@ -166,6 +169,14 @@ vi.mock("@/components/LinkedEventPanel", () => ({
   default: () => <div data-testid="linked-event-panel" />,
 }));
 
+import SessionSignInDialog from "@/components/SessionSignInDialog";
+import { EMPTY_DRAFT } from "@/lib/notes/noteOutbox";
+import { forgetNoteOutboxes, noteOutboxFor } from "@/lib/notes/noteOutboxes";
+import {
+  MemoryNoteStore,
+  setNoteStoreForTests,
+  storedNotesSignedIn,
+} from "@/lib/notes/noteStore";
 import {
   holdSignInInPlace,
   noteSignedIn,
@@ -562,53 +573,92 @@ function clearanceAncestors(element: HTMLElement): HTMLElement[] {
   return found;
 }
 
-describe("RecordingPage (detail): a poll answered 404", () => {
+describe("RecordingPage (detail): the recording answers 404", () => {
   const ALICE = { id: 1, username: "alice", force_password_change: false };
   const BOB = { id: 2, username: "bob", force_password_change: false };
   const notFound = () => Object.assign(new Error("Not Found"), { response: { status: 404 } });
   const DISCARDED = { type: "info", message: "Recording was discarded or deleted." };
+  const ELSEWHERE = /now signed in as (\w+), so this recording can't be updated/;
 
-  /** Opens a recording that polls, then makes every poll answer 404. */
-  const openThenNotFound = async () => {
-    let found = true;
-    getRecording.mockImplementation(async () => {
-      if (!found) throw notFound();
-      return buildRecording({ status: RecordingStatus.PROCESSING });
-    });
+  // The server: alice's recording, found only under alice's cookie while it
+  // exists. Tabs share the cookie, so a sign-in in another tab changes it.
+  let cookie: typeof ALICE = ALICE;
+  let exists = true;
+  // `/users/me` as the real one is: it tells the session and the notes store.
+  const whoIsSignedIn = async () => {
+    noteSignedIn(cookie);
+    void storedNotesSignedIn(cookie.id);
+    return cookie;
+  };
+  let store: MemoryNoteStore;
+  let channels: BroadcastChannel[] = [];
+
+  /** Another tab of this browser, on the channel the tabs share. */
+  const otherTab = () => {
+    const channel = new BroadcastChannel("nojoin-notes");
+    channels.push(channel);
+    return channel;
+  };
+  const elsewhereMessages = () =>
+    addNotification.mock.calls
+      .map(([notification]) => notification.message as string)
+      .filter((message) => ELSEWHERE.test(message));
+
+  /** A recording still processing, which the page polls every 3 s. */
+  const open = async () => {
     renderPage();
     await screen.findByTestId("recording-status-display");
-    found = false;
   };
-  const poll = () =>
-    act(async () => {
-      await vi.advanceTimersByTimeAsync(3_000);
+  /** A processed recording waiting for its proxy: polled every second, with its title on screen. */
+  const openWithTitle = async () => {
+    getRecording.mockImplementation(async () => {
+      if (!exists || cookie.id !== ALICE.id) throw notFound();
+      return buildRecording({ has_proxy: false });
     });
+    renderPage();
+    return screen.findByRole("heading", { name: /Quarterly sync/ });
+  };
+  const advance = (ms: number) =>
+    act(async () => {
+      await vi.advanceTimersByTimeAsync(ms);
+    });
+  const poll = () => advance(3_000);
 
   beforeEach(() => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     resetSessionForTests();
     noteSignedIn(ALICE);
+    forgetNoteOutboxes();
+    store = new MemoryNoteStore();
+    setNoteStoreForTests(store);
+    cookie = ALICE;
+    exists = true;
     routerPush.mockReset();
     addNotification.mockReset();
-    getRecording.mockReset();
-    getCurrentUser.mockReset();
+    getRecording.mockReset().mockImplementation(async () => {
+      if (!exists || cookie.id !== ALICE.id) throw notFound();
+      return buildRecording({ status: RecordingStatus.PROCESSING });
+    });
+    getCurrentUser.mockReset().mockImplementation(whoIsSignedIn);
     getSettings.mockResolvedValue({ enable_meeting_edge: true, meeting_edge_context_level: 2 });
     getGlobalSpeakers.mockResolvedValue([]);
+    getTranscriptUtterances.mockReset().mockResolvedValue(buildUtteranceList());
     listTimelineNotes.mockReset().mockResolvedValue([]);
   });
 
   afterEach(() => {
     vi.useRealTimers();
+    for (const channel of channels) channel.close();
+    channels = [];
+    forgetNoteOutboxes();
+    setNoteStoreForTests(null);
     holdSignInInPlace(false, "notes");
     resetSessionForTests();
   });
 
   it("stays on the recording when another account signed in from another tab, and says so once", async () => {
-    getCurrentUser.mockImplementation(async () => {
-      noteSignedIn(BOB);
-      return BOB;
-    });
-    await openThenNotFound();
+    await open();
+    cookie = BOB;
 
     await poll();
     await poll();
@@ -616,17 +666,25 @@ describe("RecordingPage (detail): a poll answered 404", () => {
     expect(routerPush).not.toHaveBeenCalled();
     expect(addNotification).not.toHaveBeenCalledWith(DISCARDED);
     expect(addNotification).toHaveBeenCalledTimes(1);
-    expect(addNotification.mock.calls[0][0].message).toMatch(/now signed in as bob/);
+    expect(elsewhereMessages()).toEqual([expect.stringMatching(/now signed in as bob/)]);
     expect(getCurrentUser).toHaveBeenCalledTimes(1);
+  });
+
+  it("names the account the server answered with, even one the session doesn't take", async () => {
+    await open();
+    // bob must change his password first: the session ignores that answer.
+    cookie = { ...BOB, force_password_change: true };
+
+    await poll();
+
+    expect(useSessionStore.getState().username).toBe("alice");
+    expect(elsewhereMessages()).toEqual([expect.stringMatching(/now signed in as bob/)]);
   });
 
   it("asks for the owner's sign-in in place when the page holds it, rather than leaving", async () => {
     holdSignInInPlace(true, "notes");
-    getCurrentUser.mockImplementation(async () => {
-      noteSignedIn(BOB);
-      return BOB;
-    });
-    await openThenNotFound();
+    await open();
+    cookie = BOB;
 
     await poll();
 
@@ -635,12 +693,20 @@ describe("RecordingPage (detail): a poll answered 404", () => {
     expect(useSessionStore.getState()).toMatchObject({ signInRequired: true, otherUsername: "bob" });
   });
 
+  it("asks nothing more while that sign-in dialog is open", async () => {
+    holdSignInInPlace(true, "notes");
+    await open();
+    cookie = BOB;
+
+    await advance(5 * 60_000);
+
+    expect(getCurrentUser).toHaveBeenCalledTimes(1);
+    expect(useSessionStore.getState().signInRequired).toBe(true);
+  });
+
   it("leaves a recording that is gone for the account that opened it", async () => {
-    getCurrentUser.mockImplementation(async () => {
-      noteSignedIn(ALICE);
-      return ALICE;
-    });
-    await openThenNotFound();
+    await open();
+    exists = false;
 
     await poll();
 
@@ -648,49 +714,225 @@ describe("RecordingPage (detail): a poll answered 404", () => {
     expect(routerPush).toHaveBeenCalledWith("/recordings");
   });
 
-  it("reads a 404 as a removal again once the owner is back", async () => {
-    let signedIn = BOB;
-    getCurrentUser.mockImplementation(async () => {
-      noteSignedIn(signedIn);
-      return signedIn;
+  it("stays when the recording is found again by the time the account is known", async () => {
+    await open();
+    exists = false;
+    getCurrentUser.mockImplementationOnce(async () => {
+      // The owner signs back in from another tab while this is asked.
+      exists = true;
+      return whoIsSignedIn();
     });
-    let answer: "found" | "not found" = "found";
-    getRecording.mockImplementation(async () => {
-      if (answer === "not found") throw notFound();
-      return buildRecording({ status: RecordingStatus.PROCESSING });
-    });
-    renderPage();
+
+    await poll();
+
+    expect(routerPush).not.toHaveBeenCalled();
+    expect(addNotification).not.toHaveBeenCalled();
+  });
+
+  it("says so again when another account signs in after the owner was back", async () => {
+    await open();
+    cookie = BOB;
+    await poll();
+    cookie = ALICE;
+    await poll();
+
+    cookie = BOB;
+    await poll();
+
+    expect(elsewhereMessages()).toHaveLength(2);
+    expect(routerPush).not.toHaveBeenCalled();
+  });
+
+  it("puts the session back once a poll finds the owner back, and stores her notes again", async () => {
+    renderWithProviders(
+      <>
+        <RecordingPage params={Promise.resolve({ id: "rec-1" })} />
+        <SessionSignInDialog />
+      </>,
+    );
     await screen.findByTestId("recording-status-display");
-    answer = "not found";
+    cookie = BOB;
+    await poll();
+    expect(useSessionStore.getState()).toMatchObject({ username: "bob", userId: 2 });
+
+    // alice signs back in from a tab whose ping this browser never delivers.
+    cookie = ALICE;
+    await poll();
+
+    expect(useSessionStore.getState()).toMatchObject({ username: "alice", userId: 1 });
+    // Her notes are kept in the browser again.
+    act(() => noteOutboxFor("rec-1").setDraft({ ...EMPTY_DRAFT, text: "typed after alice is back" }));
+    await waitFor(async () =>
+      expect(await store.get(ALICE.id, "rec-1")).toMatchObject({
+        draft: { text: "typed after alice is back" },
+      }),
+    );
+    // The text holds sign-in; when her session ends, the dialog asks for hers.
+    act(() => useSessionStore.setState({ signInRequired: true }));
+    expect(await screen.findByDisplayValue("alice")).toBeInTheDocument();
+  });
+
+  it("puts the session back when another tab says the owner signed in", async () => {
+    await open();
+    cookie = BOB;
+    await poll();
+    getCurrentUser.mockClear();
+
+    cookie = ALICE;
+    otherTab().postMessage({ kind: "kept", accounts: [ALICE.id] });
+
+    await waitFor(() => expect(useSessionStore.getState()).toMatchObject({ userId: 1 }));
+    expect(getCurrentUser).toHaveBeenCalledTimes(1);
+  });
+
+  it("reads a 404 as a removal again once the owner is back", async () => {
+    await open();
+    cookie = BOB;
     await poll();
     expect(routerPush).not.toHaveBeenCalled();
 
-    // The owner signs back in from another tab, and the next poll succeeds.
-    signedIn = ALICE;
-    noteSignedIn(ALICE);
-    answer = "found";
+    cookie = ALICE;
     await poll();
-    // Then the recording is deleted.
-    answer = "not found";
+    exists = false;
     await poll();
 
     expect(routerPush).toHaveBeenCalledWith("/recordings");
     expect(addNotification).toHaveBeenLastCalledWith(DISCARDED);
   });
 
-  it("stays on the recording when a poll fails for any other reason", async () => {
-    getCurrentUser.mockImplementation(async () => {
-      noteSignedIn(ALICE);
-      return ALICE;
-    });
-    let found = true;
-    getRecording.mockImplementation(async () => {
-      if (!found) throw Object.assign(new Error("Bad Gateway"), { response: { status: 502 } });
-      return buildRecording({ status: RecordingStatus.PROCESSING });
-    });
-    renderPage();
+  it("still notices a removal made before any poll found the owner back, within a minute", async () => {
+    await open();
+    cookie = BOB;
+    await poll();
+    // alice signs back in from another tab and deletes the recording there.
+    cookie = ALICE;
+    exists = false;
+
+    await advance(30_000);
+    expect(routerPush).not.toHaveBeenCalled();
+    await advance(33_000);
+
+    expect(routerPush).toHaveBeenCalledWith("/recordings");
+    expect(addNotification).toHaveBeenLastCalledWith(DISCARDED);
+  });
+
+  it("asks who is signed in at most once a minute while the other account stays", async () => {
+    await open();
+    cookie = BOB;
+
+    await advance(5 * 60_000);
+
+    // The first 404, then one a minute.
+    expect(getCurrentUser.mock.calls.length).toBeLessThanOrEqual(6);
+    expect(elsewhereMessages()).toHaveLength(1);
+  });
+
+  it("checks one 404 at a time when the server is slow to say who is signed in", async () => {
+    getCurrentUser.mockImplementation(
+      () => new Promise((resolve) => setTimeout(() => resolve(whoIsSignedIn()), 4_000)),
+    );
+    await open();
+    cookie = BOB;
+
+    for (let i = 0; i < 4; i += 1) await poll();
+
+    expect(getCurrentUser).toHaveBeenCalledTimes(1);
+    expect(addNotification).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves once when a removal is checked slowly", async () => {
+    getCurrentUser.mockImplementation(
+      () => new Promise((resolve) => setTimeout(() => resolve(whoIsSignedIn()), 4_000)),
+    );
+    await open();
+    exists = false;
+
+    for (let i = 0; i < 4; i += 1) await poll();
+
+    expect(routerPush).toHaveBeenCalledTimes(1);
+    expect(addNotification).toHaveBeenCalledTimes(1);
+  });
+
+  it("does nothing once the page has gone while a check was on its way", async () => {
+    getCurrentUser.mockImplementation(
+      () => new Promise((resolve) => setTimeout(() => resolve(whoIsSignedIn()), 4_000)),
+    );
+    const view = renderPage();
     await screen.findByTestId("recording-status-display");
-    found = false;
+    exists = false;
+    await poll();
+    expect(getCurrentUser).toHaveBeenCalledTimes(1);
+
+    view.unmount();
+    await advance(5_000);
+
+    expect(routerPush).not.toHaveBeenCalled();
+    expect(addNotification).not.toHaveBeenCalled();
+  });
+
+  it("keeps the account that first loaded the recording through a refresh while the session says bob", async () => {
+    await open();
+    cookie = BOB;
+    await poll();
+    // alice is back, and a poll finds the recording, but the session can't
+    // be put back yet: it still says bob when the view is refreshed.
+    cookie = ALICE;
+    getCurrentUser.mockImplementation(async () => Promise.reject(new Error("Network Error")));
+    await poll();
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent("recording-updated", { detail: { id: "rec-1" } }));
+      await vi.advanceTimersByTimeAsync(10);
+    });
+    expect(useSessionStore.getState().username).toBe("bob");
+    getCurrentUser.mockImplementation(whoIsSignedIn);
+
+    // bob signs in again from the other tab.
+    cookie = BOB;
+    await poll();
+
+    expect(routerPush).not.toHaveBeenCalled();
+    expect(addNotification).not.toHaveBeenCalledWith(DISCARDED);
+  });
+
+  it("keeps it through a title edit too, so alice's own removal is told as one", async () => {
+    const heading = await openWithTitle();
+    cookie = BOB;
+    await advance(1_000);
+    cookie = ALICE;
+    getCurrentUser.mockImplementation(async () => Promise.reject(new Error("Network Error")));
+    // Editing the title loads the recording again.
+    fireEvent.click(heading);
+    await advance(10);
+    expect(useSessionStore.getState().username).toBe("bob");
+    getCurrentUser.mockImplementation(whoIsSignedIn);
+
+    exists = false;
+    await advance(61_000);
+
+    expect(addNotification).toHaveBeenCalledWith(DISCARDED);
+    expect(routerPush).toHaveBeenCalledWith("/recordings");
+    expect(elsewhereMessages()).toEqual([expect.stringMatching(/now signed in as bob/)]);
+  });
+
+  it("stays when a refresh of the view answers 404 under another account", async () => {
+    await open();
+    cookie = BOB;
+
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent("recording-updated", { detail: { id: "rec-1" } }));
+      await vi.advanceTimersByTimeAsync(10);
+    });
+
+    expect(routerPush).not.toHaveBeenCalled();
+    expect(addNotification).not.toHaveBeenCalledWith({ type: "error", message: "Failed to load recording." });
+    expect(elsewhereMessages()).toEqual([expect.stringMatching(/now signed in as bob/)]);
+  });
+
+  it("stays on the recording when a poll fails for any other reason", async () => {
+    await open();
+    getRecording.mockImplementation(async () => {
+      throw Object.assign(new Error("Bad Gateway"), { response: { status: 502 } });
+    });
 
     await poll();
 
@@ -698,19 +940,18 @@ describe("RecordingPage (detail): a poll answered 404", () => {
     expect(getCurrentUser).not.toHaveBeenCalled();
   });
 
-  it("does nothing while it can't tell who is signed in, and asks again at the next poll", async () => {
+  it("does nothing while it can't tell who is signed in, and asks again a minute later", async () => {
     getCurrentUser.mockRejectedValueOnce(new Error("Network Error"));
-    getCurrentUser.mockImplementation(async () => {
-      noteSignedIn(ALICE);
-      return ALICE;
-    });
-    await openThenNotFound();
+    await open();
+    exists = false;
 
     await poll();
     expect(routerPush).not.toHaveBeenCalled();
     expect(addNotification).not.toHaveBeenCalled();
 
-    await poll();
+    await advance(30_000);
+    expect(getCurrentUser).toHaveBeenCalledTimes(1);
+    await advance(30_000);
     expect(getCurrentUser).toHaveBeenCalledTimes(2);
     expect(routerPush).toHaveBeenCalledWith("/recordings");
   });
