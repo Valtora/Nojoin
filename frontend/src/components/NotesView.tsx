@@ -32,6 +32,7 @@ import { spellCheckService } from "@/lib/spellCheckService";
 import { getSpellCheckErrorAtPos } from "@/lib/SpellCheckExtension";
 import { getSettings } from "@/lib/api";
 import type { RecordingId } from "@/types";
+import { loadingButtonProps } from "@/components/ui/loadingButton";
 
 interface NotesViewProps {
   recordingId: RecordingId;
@@ -473,9 +474,8 @@ export default function NotesView({
                 so equal padding alone leaves the two a few pixels apart. */}
             <div className="flex items-stretch">
               <button
-                onClick={() => onGenerateNotes()}
-                disabled={isGenerating}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-action text-action-on text-sm rounded-l-md hover:bg-action-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                {...loadingButtonProps(isGenerating, undefined, () => onGenerateNotes())}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-action text-action-on text-sm rounded-l-md hover:bg-action-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors aria-disabled:opacity-50 aria-disabled:cursor-not-allowed"
                 title="Generate Notes with AI"
               >
                 {isGenerating ? (
@@ -672,16 +672,14 @@ export default function NotesView({
                   Find Next
                 </button>
                 <button
-                  onClick={handleReplaceCurrent}
-                  disabled={matches.length === 0 || isSubmitting}
-                  className="px-3 py-1.5 bg-surface-inset text-contrast-muted text-sm rounded-md hover:bg-surface-inset disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap shadow-card border border-surface-border"
+                  {...loadingButtonProps(isSubmitting, matches.length === 0, handleReplaceCurrent)}
+                  className="px-3 py-1.5 bg-surface-inset text-contrast-muted text-sm rounded-md hover:bg-surface-inset disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap shadow-card border border-surface-border aria-disabled:opacity-50 aria-disabled:cursor-not-allowed"
                 >
                   Replace
                 </button>
                 <button
-                  onClick={handleFindReplaceSubmit}
-                  disabled={!findText || isSubmitting}
-                  className="px-3 py-1.5 bg-action text-action-on text-sm rounded-md hover:bg-action-hover disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap shadow-card"
+                  {...loadingButtonProps(isSubmitting, !findText, handleFindReplaceSubmit)}
+                  className="px-3 py-1.5 bg-action text-action-on text-sm rounded-md hover:bg-action-hover disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap shadow-card aria-disabled:opacity-50 aria-disabled:cursor-not-allowed"
                 >
                   Replace All
                 </button>
@@ -712,9 +710,8 @@ export default function NotesView({
               notes from the transcript.
             </p>
             <button
-              onClick={() => onGenerateNotes()}
-              disabled={isGenerating}
-              className="flex items-center gap-2 px-4 py-2 bg-action text-action-on rounded-md hover:bg-action-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              {...loadingButtonProps(isGenerating, undefined, () => onGenerateNotes())}
+              className="flex items-center gap-2 px-4 py-2 bg-action text-action-on rounded-md hover:bg-action-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors aria-disabled:opacity-50 aria-disabled:cursor-not-allowed"
             >
               {isGenerating ? (
                 <Loader2 className="w-4 h-4 animate-spin" />

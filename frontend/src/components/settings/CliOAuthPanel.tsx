@@ -27,6 +27,7 @@ import {
   SETTINGS_CONTROL_END,
   SETTINGS_INPUT_CLASS,
 } from "./settingsControls";
+import { loadingButtonProps } from "@/components/ui/loadingButton";
 
 // Backend datetimes are naive UTC (no offset); ensure Date parses them as UTC.
 function parseUtcDate(value?: string | null): Date | null {
@@ -357,8 +358,7 @@ function ProviderConnectRow({
       {connected ? (
         <button
           type="button"
-          onClick={handleDisconnect}
-          disabled={busy}
+          {...loadingButtonProps(busy, undefined, handleDisconnect)}
           className={SETTINGS_BUTTON_DANGER}
         >
           {busy ? (
@@ -371,8 +371,7 @@ function ProviderConnectRow({
       ) : blockedBy ? null : (
         <button
           type="button"
-          onClick={beginFlow}
-          disabled={busy}
+          {...loadingButtonProps(busy, undefined, beginFlow)}
           className={SETTINGS_BUTTON_PRIMARY}
         >
           {busy ? (
@@ -481,9 +480,8 @@ function ProviderConnectRow({
                   </div>
                   <button
                     type="button"
-                    onClick={beginFlow}
-                    disabled={busy}
-                    className="inline-flex items-center gap-1 text-xs text-contrast-helper hover:text-foreground disabled:opacity-50"
+                    {...loadingButtonProps(busy, undefined, beginFlow)}
+                    className="inline-flex items-center gap-1 text-xs text-contrast-helper hover:text-foreground disabled:opacity-50 aria-disabled:opacity-50"
                   >
                     <ExternalLink className="w-3 h-3" />
                     Need a fresh code? Restart sign-in

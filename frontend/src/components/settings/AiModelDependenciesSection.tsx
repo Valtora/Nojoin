@@ -13,6 +13,7 @@ import SettingsCard from "./SettingsCard";
 import SettingsRow from "./SettingsRow";
 import SettingsStatusBadge from "./SettingsStatusBadge";
 import { SETTINGS_BUTTON_SECONDARY } from "./settingsControls";
+import { loadingButtonProps } from "@/components/ui/loadingButton";
 
 interface AiModelDependenciesSectionProps {
   modelStatus: SystemModelStatus | null;
@@ -174,8 +175,7 @@ export default function AiModelDependenciesSection({
                 reason === undefined && (
                   <button
                     type="button"
-                    onClick={() => handleDeleteModel(model.id)}
-                    disabled={busy || !isAdmin}
+                    {...loadingButtonProps(busy, !isAdmin, () => handleDeleteModel(model.id))}
                     title="Delete this model"
                     aria-label={`Delete ${model.label}`}
                     className={ICON_BUTTON}
@@ -192,8 +192,7 @@ export default function AiModelDependenciesSection({
                   {status?.partial && (
                     <button
                       type="button"
-                      onClick={() => handleDeleteModel(model.id)}
-                      disabled={busy || !isAdmin || preparationRunning}
+                      {...loadingButtonProps(busy, !isAdmin || preparationRunning, () => handleDeleteModel(model.id))}
                       title={
                         preparationRunning
                           ? "A model preparation is running and may still be writing this download"

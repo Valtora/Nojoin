@@ -26,6 +26,7 @@ import { useNotificationStore } from "@/lib/notificationStore";
 import { getErrorMessage } from "@/lib/errors";
 import SplitPersonModal from "./SplitPersonModal";
 import { REQUIRED_SPEECH_SECONDS, formatSeconds } from "@/lib/libraryVoiceprint";
+import { loadingButtonProps } from "@/components/ui/loadingButton";
 
 interface RecalibrateModalProps {
   isOpen: boolean;
@@ -300,7 +301,7 @@ export default function RecalibrateModal({
 
                 <div className="flex flex-col gap-3 w-full max-w-xs">
                   <button
-                    onClick={async () => {
+                    {...loadingButtonProps(isSubmitting, undefined, async () => {
                       setIsSubmitting(true);
                       try {
                         const res = await scanMatches(speaker.id);
@@ -319,8 +320,7 @@ export default function RecalibrateModal({
                         });
                         setIsSubmitting(false);
                       }
-                    }}
-                    disabled={isSubmitting}
+                    })}
                     className="w-full px-4 py-3 bg-action hover:bg-action-hover text-action-on rounded-lg flex items-center justify-center gap-2 transition-all hover:scale-[1.02]"
                   >
                     {isSubmitting ? (
