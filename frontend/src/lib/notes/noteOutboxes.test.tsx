@@ -14,7 +14,7 @@ import { renderWithProviders } from "@/test/renderWithProviders";
 
 import { EMPTY_DRAFT } from "./noteOutbox";
 import { forgetNoteOutboxes, noteOutboxFor } from "./noteOutboxes";
-import { MemoryNoteStore, setNoteStoreForTests } from "./noteStore";
+import { clearStoredNotes, MemoryNoteStore, setNoteStoreForTests } from "./noteStore";
 
 const login = vi.hoisted(() => vi.fn());
 
@@ -199,22 +199,76 @@ describe("an ended session on a page holding notes not saved yet", () => {
     expect(navigations).toEqual(["/login"]);
   });
 
-  it("leaves for the sign-in page when asked, and holds sign-in no more", async () => {
-    renderWithProviders(<SessionSignInDialog />);
-    act(() => {
-      noteOutboxFor("rec-a").setDraft({ ...EMPTY_DRAFT, text: "Half a thought" });
-    });
-    await expect(api.get("/recordings/rec-a")).rejects.toMatchObject({
-      response: { status: 401 },
+  describe("leaving for the sign-in page", () => {
+    let store: MemoryNoteStore;
+
+    beforeEach(() => {
+      store = new MemoryNoteStore();
+      setNoteStoreForTests(store);
+      noteSignedIn({ username: "alice", force_password_change: false, id: 1 });
     });
 
-    // Renamed meanwhile, say: the dialog can only sign in as the old name.
-    fireEvent.click(await screen.findByRole("button", { name: "Go to the sign-in page" }));
+    afterEach(() => {
+      setNoteStoreForTests(null);
+    });
 
-    expect(navigations).toEqual(["/login"]);
-    expect(useSessionStore.getState().heldBy).toEqual([]);
-    // What was typed is still on the page, and kept in the browser, for the next sign-in.
-    expect(noteOutboxFor("rec-a").getSnapshot().draft.text).toBe("Half a thought");
+    const typeAndEndSession = async (text: string) => {
+      act(() => {
+        noteOutboxFor("rec-a").setDraft({ ...EMPTY_DRAFT, text });
+      });
+      await expect(api.get("/recordings/rec-a")).rejects.toMatchObject({
+        response: { status: 401 },
+      });
+      await screen.findByText("Sign in to save your notes");
+    };
+
+    it("is offered once the browser holds every unsaved note, and leaves without the leave prompt", async () => {
+      renderWithProviders(<SessionSignInDialog />);
+      await typeAndEndSession("Half a thought");
+
+      // Renamed meanwhile, say: the dialog can only sign in as the old name.
+      fireEvent.click(await screen.findByRole("button", { name: "Go to the sign-in page" }));
+
+      await waitFor(() => expect(navigations).toEqual(["/login"]));
+      expect(useSessionStore.getState().heldBy).toEqual([]);
+      expect(leave()).toBe(false);
+      expect(await store.get(1, "rec-a")).toMatchObject({ draft: { text: "Half a thought" } });
+    });
+
+    it("is not offered while the browser doesn't hold the notes, as after a sign-out cancelled at the leave prompt", async () => {
+      renderWithProviders(<SessionSignInDialog />);
+      act(() => {
+        noteOutboxFor("rec-a").setDraft({ ...EMPTY_DRAFT, text: "Half a thought" });
+      });
+      await vi.waitFor(async () => expect(await store.get(1, "rec-a")).toBeDefined());
+      await act(async () => {
+        await clearStoredNotes();
+      });
+
+      await typeAndEndSession("Half a thought, and more");
+
+      expect(screen.queryByRole("button", { name: "Go to the sign-in page" })).toBeNull();
+      expect(leave()).toBe(true);
+      expect(await store.get(1, "rec-a")).toBeUndefined();
+    });
+
+    it("does not leave when a note stops being kept after the dialog offered it", async () => {
+      renderWithProviders(<SessionSignInDialog />);
+      await typeAndEndSession("Half a thought");
+      const button = await screen.findByRole("button", { name: "Go to the sign-in page" });
+      vi.spyOn(store, "put").mockRejectedValue(new DOMException("full", "QuotaExceededError"));
+
+      act(() => {
+        noteOutboxFor("rec-a").setDraft({ ...EMPTY_DRAFT, text: "Half a thought, then more" });
+        fireEvent.click(button);
+      });
+
+      await waitFor(() =>
+        expect(screen.queryByRole("button", { name: "Go to the sign-in page" })).toBeNull(),
+      );
+      expect(navigations).toEqual([]);
+      expect(useSessionStore.getState().heldBy).toEqual(["notes"]);
+    });
   });
 
   it("saves a note refused for the ended session once its owner signs back in through the dialog", async () => {

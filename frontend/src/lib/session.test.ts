@@ -199,6 +199,39 @@ describe("browser session", () => {
     expect(useSessionStore.getState()).toMatchObject({ username: "carol", userId: null });
   });
 
+  it("takes a held page's sign-in back only once the server names the account by id", async () => {
+    noteSignedIn({ ...alice, id: 1 });
+    holdSignInInPlace(true);
+    const error = refused(401);
+    noteSessionRefusal(error);
+    let done = false;
+    void waitForSignInAfter(error).then(() => {
+      done = true;
+    });
+
+    // alice was renamed, and a new account took the name: the sign-in
+    // endpoint answers "alice" without an id, which proves nothing yet.
+    noteSignedIn(alice);
+    await settle();
+    expect(done).toBe(false);
+    expect(useSessionStore.getState()).toMatchObject({ signInRequired: true, userId: 1 });
+
+    // `/users/me` names account 3: another account under the owner's old name.
+    noteSignedIn({ ...alice, id: 3 });
+    await settle();
+    expect(done).toBe(false);
+    expect(useSessionStore.getState()).toMatchObject({
+      signInRequired: true,
+      userId: 1,
+      otherUsername: "alice",
+    });
+
+    noteSignedIn({ ...alice, id: 1 });
+    await settle();
+    expect(done).toBe(true);
+    expect(useSessionStore.getState()).toMatchObject({ signInRequired: false, userId: 1 });
+  });
+
   it("takes another account's sign-in when nothing is waiting", () => {
     noteSessionRefusal(refused(401));
 

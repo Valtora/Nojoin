@@ -1,12 +1,7 @@
 import { IDBFactory } from "fake-indexeddb";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import {
-  holdSignInInPlace,
-  noteSignedIn,
-  resetSessionForTests,
-  useSessionStore,
-} from "@/lib/session";
+import { resetSessionForTests } from "@/lib/session";
 
 import {
   CLEAR_ON_SIGN_OUT_MS,
@@ -17,9 +12,10 @@ import {
   setNoteStoreForTests,
   sharedNoteStore,
   storedNotesSignedIn,
-  subscribeStoringResumed,
+  subscribeStoreEvents,
   type NoteStore,
   type StoredOutbox,
+  type StoreEvent,
 } from "./noteStore";
 
 const ALICE = 1;
@@ -105,10 +101,28 @@ describe("the page's note store", () => {
     resetSessionForTests();
   });
 
-  it("removes other accounts' notes once the server names the account, and again whenever it changes", async () => {
+  /** Another tab's end of the channel the page's tabs share. */
+  const otherTab = () => {
+    const channel = new BroadcastChannel("nojoin-notes");
+    const heard: unknown[] = [];
+    channel.onmessage = (event: MessageEvent) => heard.push(event.data);
+    tabs.push(channel);
+    return { channel, heard };
+  };
+  let tabs: BroadcastChannel[] = [];
+
+  afterEach(() => {
+    for (const tab of tabs) tab.close();
+    tabs = [];
+  });
+
+  it("removes other accounts' notes each time the server names the account, and tells the other tabs", async () => {
     const store = new MemoryNoteStore();
     const keepOnly = vi.spyOn(store, "keepOnly");
     setNoteStoreForTests(store);
+    const events: StoreEvent[] = [];
+    const stop = subscribeStoreEvents((event) => events.push(event));
+    const { heard } = otherTab();
     await store.put(record(ALICE, "rec-1"));
     await store.put(record(BOB, "rec-2"));
 
@@ -117,68 +131,84 @@ describe("the page's note store", () => {
     expect(keepOnly).not.toHaveBeenCalled();
 
     await storedNotesSignedIn(BOB);
-    await storedNotesSignedIn(BOB);
-    expect(keepOnly).toHaveBeenCalledTimes(1);
     expect(await store.get(ALICE, "rec-1")).toBeUndefined();
     expect(await store.get(BOB, "rec-2")).toEqual(record(BOB, "rec-2"));
-
-    await storedNotesSignedIn(ALICE);
-    expect(keepOnly).toHaveBeenCalledTimes(2);
-    expect(await store.get(BOB, "rec-2")).toBeUndefined();
-
-    await store.put(record(BOB, "rec-3"));
+    // Again on the next /users/me: another tab may have written meanwhile.
+    await store.put(record(ALICE, "rec-3"));
     await storedNotesSignedIn(BOB);
-    expect(keepOnly).toHaveBeenCalledTimes(3);
+    expect(await store.get(ALICE, "rec-3")).toBeUndefined();
+    expect(keepOnly).toHaveBeenCalledTimes(2);
+
+    expect(events).toEqual([
+      { kind: "kept", accounts: [BOB] },
+      { kind: "kept", accounts: [BOB] },
+    ]);
+    await vi.waitFor(() =>
+      expect(heard).toEqual([
+        { kind: "kept", accounts: [BOB] },
+        { kind: "kept", accounts: [BOB] },
+      ]),
+    );
+    stop();
   });
 
-  it("keeps the owner's notes in a page holding sign-in for them while another account signs in", async () => {
+  it("hears another tab's cleanup and sign-out, and nothing else", async () => {
     const store = new MemoryNoteStore();
     setNoteStoreForTests(store);
-    noteSignedIn({ username: "alice", force_password_change: false, id: ALICE });
-    holdSignInInPlace(true, "notes");
-    await store.put(record(ALICE, "rec-1"));
-    await store.put(record(3, "rec-2"));
+    const events: StoreEvent[] = [];
+    const stop = subscribeStoreEvents((event) => events.push(event));
+    const { channel } = otherTab();
 
-    // The browser turns out to be signed in as bob: the page stays alice's.
-    noteSignedIn({ username: "bob", force_password_change: false, id: BOB });
-    expect(useSessionStore.getState().userId).toBe(ALICE);
-    await storedNotesSignedIn(BOB);
+    channel.postMessage({ kind: "kept", accounts: "everyone" });
+    channel.postMessage({ kind: "cleared" });
+    channel.postMessage({ kind: "kept", accounts: [BOB] });
+    await vi.waitFor(() => expect(events).toEqual([{ kind: "kept", accounts: [BOB] }]));
+    expect(sharedNoteStore()).toBe(store);
 
-    expect(await store.get(ALICE, "rec-1")).toEqual(record(ALICE, "rec-1"));
-    expect(await store.get(3, "rec-2")).toBeUndefined();
+    channel.postMessage({ kind: "signed-out" });
+    await vi.waitFor(() => expect(sharedNoteStore()).toBeNull());
+    expect(events.at(-1)).toEqual({ kind: "stopped" });
+
+    // Storing resumes only when the server accepts a sign-in in this tab.
+    await storedNotesSignedIn();
+    expect(sharedNoteStore()).toBe(store);
+    expect(events.at(-1)).toEqual({ kind: "resumed" });
+    stop();
   });
 
   it("tries again on the next sign-in when removing other accounts' notes fails", async () => {
     const store = new MemoryNoteStore();
     const keepOnly = vi.spyOn(store, "keepOnly").mockRejectedValueOnce(new Error("quota"));
     setNoteStoreForTests(store);
+    const events: StoreEvent[] = [];
+    const stop = subscribeStoreEvents((event) => events.push(event));
 
     await expect(storedNotesSignedIn(BOB)).resolves.toBeUndefined();
+    expect(events).toEqual([]);
     await storedNotesSignedIn(BOB);
     expect(keepOnly).toHaveBeenCalledTimes(2);
+    expect(events).toEqual([{ kind: "kept", accounts: [BOB] }]);
+    stop();
   });
 
-  it("removes every note on sign-out, and stores nothing until the server accepts a sign-in again", async () => {
+  it("removes every note on sign-out, tells the other tabs, and stores nothing until the server accepts a sign-in again", async () => {
     const store = new MemoryNoteStore();
     setNoteStoreForTests(store);
-    const resumed = vi.fn();
-    const stop = subscribeStoringResumed(resumed);
+    const events: StoreEvent[] = [];
+    const stop = subscribeStoreEvents((event) => events.push(event));
+    const { heard } = otherTab();
     await store.put(record(ALICE, "rec-1"));
-    await storedNotesSignedIn(ALICE);
 
     await clearStoredNotes();
     expect(await store.get(ALICE, "rec-1")).toBeUndefined();
     expect(sharedNoteStore()).toBeNull();
+    expect(events).toEqual([{ kind: "stopped" }]);
+    await vi.waitFor(() => expect(heard).toEqual([{ kind: "signed-out" }]));
 
     // The leave prompt was cancelled, and the user signs in again on the page.
     await storedNotesSignedIn();
     expect(sharedNoteStore()).toBe(store);
-    expect(resumed).toHaveBeenCalledTimes(1);
-
-    // The same account's cleanup runs again: the sign-out forgot it was done.
-    const keepOnly = vi.spyOn(store, "keepOnly");
-    await storedNotesSignedIn(ALICE);
-    expect(keepOnly).toHaveBeenCalledTimes(1);
+    expect(events).toEqual([{ kind: "stopped" }, { kind: "resumed" }]);
     stop();
   });
 

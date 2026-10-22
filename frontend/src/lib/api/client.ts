@@ -14,7 +14,7 @@ const FORCE_PASSWORD_CHANGE_REDIRECT = "/settings/profile";
  * session's in-memory client state.
  */
 export const reloadToSignIn = () => {
-  // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- a full reload is required: the interceptor runs outside React (no router), and the reload clears the signed-in session's in-memory client state
+  // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- a full reload is required: it clears the signed-in session's in-memory client state
   window.location.href = "/login";
 };
 

@@ -121,8 +121,10 @@ export const noteSessionRefusal = (error: unknown): boolean => {
  * must change its password first does not count either.
  *
  * `user.id` comes with `/users/me` only; a sign-in that does not say keeps the
- * id it had for the same username, and forgets it for another. The id is how
- * a held page knows its own account after a rename.
+ * id it had for the same username, and forgets it for another. Once the id is
+ * known it decides which account this is: the same account renamed is still
+ * the owner, and another account given the owner's old name is not. So a held
+ * page takes a sign-in back only once `/users/me` names the account.
  */
 export const noteSignedIn = (user: {
   username: string;
@@ -133,14 +135,9 @@ export const noteSignedIn = (user: {
     return;
   }
   const state = useSessionStore.getState();
-  // The same account under a new name (renamed meanwhile) is still the owner.
-  const renamed = user.id !== undefined && user.id === state.userId;
-  if (
-    state.heldInPlace &&
-    state.username !== null &&
-    state.username !== user.username &&
-    !renamed
-  ) {
+  const idKnown = user.id !== undefined && state.userId !== null;
+  const sameAccount = idKnown ? user.id === state.userId : state.username === user.username;
+  if (state.heldInPlace && state.username !== null && !sameAccount) {
     if (!state.signInRequired || state.otherUsername !== user.username) {
       useSessionStore.setState({ signInRequired: true, otherUsername: user.username });
     }
@@ -151,6 +148,10 @@ export const noteSignedIn = (user: {
     if (state.username !== user.username || state.userId !== userId) {
       useSessionStore.setState({ username: user.username, userId });
     }
+    return;
+  }
+  // The sign-in endpoint doesn't name the account: wait for `/users/me`.
+  if (state.heldInPlace && user.id === undefined && state.userId !== null) {
     return;
   }
 

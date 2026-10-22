@@ -1,13 +1,17 @@
 "use client";
 
 import { LogIn, Square } from "lucide-react";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, useSyncExternalStore, type FormEvent } from "react";
 
 import { getCurrentUser, login } from "@/lib/api";
 import { reloadToSignIn } from "@/lib/api/client";
 import { useCapture } from "@/lib/capture/CaptureProvider";
 import { getErrorMessage } from "@/lib/errors";
-import { releaseSignInForNotes } from "@/lib/notes/noteOutboxes";
+import {
+  allUnsavedKept,
+  releaseSignInForNotes,
+  subscribeUnsavedKept,
+} from "@/lib/notes/noteOutboxes";
 import { useSessionStore } from "@/lib/session";
 import { useOnDepsChange } from "@/lib/useOnDepsChange";
 
@@ -82,6 +86,10 @@ export default function SessionSignInDialog() {
   const otherUsername = useSessionStore((state) => state.otherUsername);
   const heldBy = useSessionStore((state) => state.heldBy);
   const forCapture = heldBy.includes("capture");
+  // Leaving reloads the tab: offered only while the browser holds every
+  // unsaved note to bring back, and never during a capture, which it would end.
+  const notesKept = useSyncExternalStore(subscribeUnsavedKept, allUnsavedKept, () => false);
+  const canLeave = !forCapture && notesKept;
   const wording = forCapture ? CAPTURE_WORDING : NOTES_WORDING;
   const { runtimeActive, status, stop, uploadQueue } = useCapture();
   const [typedUsername, setTypedUsername] = useState("");
@@ -132,9 +140,8 @@ export default function SessionSignInDialog() {
     stop().catch(() => {});
   };
 
-  const handleLeave = () => {
-    releaseSignInForNotes();
-    reloadToSignIn();
+  const handleLeave = async () => {
+    if (await releaseSignInForNotes()) reloadToSignIn();
   };
 
   const handleSubmit = async (event: FormEvent) => {
@@ -143,13 +150,18 @@ export default function SessionSignInDialog() {
     setSigningIn(true);
     try {
       const response = await login(username, password);
-      // A good sign-in marks the session back, which closes this dialog and
-      // lets every waiting upload go. A reset password does not: uploads stay
-      // refused until a new one is chosen.
+      // A reset password does not count: uploads stay refused until a new one
+      // is chosen.
       if (response.force_password_change) {
         setPasswordReset(true);
         setPassword("");
+        return;
       }
+      // The sign-in counts once the server names the account by id, so a new
+      // account under the old one's name never takes its place. That marks
+      // the session back, which closes this dialog and lets everything
+      // waiting go.
+      await getCurrentUser();
     } catch (signInError: unknown) {
       setError(getErrorMessage(signInError, "Sign-in failed. Please try again."));
     } finally {
@@ -162,18 +174,18 @@ export default function SessionSignInDialog() {
       open={open}
       // Everything waiting on the session waits on this dialog, so it can't be
       // dismissed. Notes alone may leave for the sign-in page (an account
-      // renamed meanwhile can't sign in here): they are kept in the browser.
+      // renamed meanwhile can't sign in here) once the browser holds them.
       onClose={() => {}}
       dismissible={false}
       hideCloseButton
       title={wording.title}
       footer={
         <>
-          {forCapture ? null : (
+          {canLeave ? (
             <Button variant="secondary" onClick={handleLeave} disabled={signingIn}>
               Go to the sign-in page
             </Button>
-          )}
+          ) : null}
           {canStop ? (
             <Button
               variant="secondary"

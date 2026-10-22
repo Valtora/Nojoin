@@ -1,4 +1,4 @@
-import { useSessionStore } from "@/lib/session";
+import { isRecord } from "@/lib/errors";
 import type { RecordingId } from "@/types";
 
 /**
@@ -9,9 +9,9 @@ import type { RecordingId } from "@/types";
  * nothing.
  *
  * Records are keyed by the account's id, which a rename does not change. Only
- * the signed-in account's records are kept: the first `/users/me` after a
- * sign-in as another account removes every other account's (except, in a page
- * holding sign-in for its owner, the owner's), and signing out removes them all.
+ * the signed-in account's records are kept: each `/users/me` removes every
+ * other account's, and signing out removes them all, telling the other tabs
+ * where the browser can (`StoreEvent`).
  *
  * Persistence is best-effort, as for capture's segments (`segmentStore`). A
  * browser without IndexedDB, or one that refuses a read or a write, keeps the
@@ -184,9 +184,78 @@ const browserIndexedDb = (): IDBFactory | null => {
 };
 
 let shared: NoteStore | null | undefined;
-/** Set by signing out, until the server accepts a sign-in again: nothing is stored meanwhile. */
+/**
+ * Set by signing out, in this tab or another, until the server accepts a
+ * sign-in in this tab again: nothing is stored meanwhile.
+ */
 let signedOut = false;
-const signedBackIn = new Set<() => void>();
+
+/** A change to the page's store, made in this tab or told by another. */
+export type StoreEvent =
+  /** Signing out stopped storing. */
+  | { kind: "stopped" }
+  /** The next accepted sign-in resumed it. */
+  | { kind: "resumed" }
+  /** Every record of an account not in `accounts` was removed. */
+  | { kind: "kept"; accounts: number[] };
+
+const storeListeners = new Set<(event: StoreEvent) => void>();
+
+const emit = (event: StoreEvent) => {
+  for (const listener of storeListeners) listener(event);
+};
+
+/**
+ * Tabs share the store, so each tells the others what it removed: a sign-out
+ * stops every tab storing, and the cleanup after a sign-in stops a tab storing
+ * for an account it removed. Where the browser has no BroadcastChannel, a tab
+ * finds out only from its own session.
+ */
+const CHANNEL_NAME = "nojoin-notes";
+
+type Ping = { kind: "signed-out" } | { kind: "kept"; accounts: number[] };
+
+let channel: BroadcastChannel | null | undefined;
+
+const isPing = (data: unknown): data is Ping =>
+  isRecord(data) &&
+  (data.kind === "signed-out" ||
+    (data.kind === "kept" &&
+      Array.isArray(data.accounts) &&
+      data.accounts.every((account) => Number.isInteger(account))));
+
+const stopStoring = () => {
+  if (signedOut) return;
+  signedOut = true;
+  emit({ kind: "stopped" });
+};
+
+const heard = (data: unknown) => {
+  if (!isPing(data)) return;
+  if (data.kind === "signed-out") stopStoring();
+  else emit({ kind: "kept", accounts: data.accounts });
+};
+
+const tabsChannel = (): BroadcastChannel | null => {
+  if (channel === undefined) {
+    try {
+      channel = typeof BroadcastChannel === "function" ? new BroadcastChannel(CHANNEL_NAME) : null;
+    } catch {
+      // Refused where site data is blocked: this tab goes by its own session.
+      channel = null;
+    }
+    if (channel) channel.onmessage = (event: MessageEvent) => heard(event.data);
+  }
+  return channel;
+};
+
+const tell = (ping: Ping) => {
+  try {
+    tabsChannel()?.postMessage(ping);
+  } catch {
+    // A closed channel: the other tabs go by their own sessions.
+  }
+};
 
 /** The page's store, or null when notes can only be kept in memory, or not at all just now. */
 export const sharedNoteStore = (): NoteStore | null => {
@@ -198,58 +267,54 @@ export const sharedNoteStore = (): NoteStore | null => {
   return shared;
 };
 
-/** Calls `listener` when storing resumes after a sign-out that did not leave the page. */
-export const subscribeStoringResumed = (listener: () => void): (() => void) => {
-  signedBackIn.add(listener);
-  return () => signedBackIn.delete(listener);
-};
+/** Whether a sign-out, in this tab or another, has stopped storing until the next accepted sign-in. */
+export const storingStopped = (): boolean => signedOut;
 
-let keptAccounts: string | null = null;
-
-/** Removes every record of an account not in `accounts`, unless that was the last thing done. */
-const keepOnlyNotesOf = async (accounts: readonly number[]): Promise<void> => {
-  const store = sharedNoteStore();
-  const key = [...accounts].sort((left, right) => left - right).join(",");
-  if (!store || keptAccounts === key) return;
-  keptAccounts = key;
-  try {
-    await store.keepOnly(accounts);
-  } catch {
-    // Tried again on the next sign-in.
-    keptAccounts = null;
-  }
+/** Calls `listener` on each change to the store, made in this tab or another. */
+export const subscribeStoreEvents = (listener: (event: StoreEvent) => void): (() => void) => {
+  tabsChannel();
+  storeListeners.add(listener);
+  return () => storeListeners.delete(listener);
 };
 
 /**
- * Called whenever the server accepts this browser's session: storing resumes
- * if a sign-out had stopped it, and once the account's id is known (from
+ * Called whenever the server accepts this tab's session: storing resumes if a
+ * sign-out had stopped it, and once the account's id is known (from
  * `/users/me`), every other account's notes are removed, so they are never
- * shown or sent as this one. A page holding sign-in for its owner keeps the
- * owner's until the owner signs back in.
+ * shown or sent as this one. Other tabs are told, so a page writing for a
+ * removed account stops until that account signs back in on it.
  */
 export const storedNotesSignedIn = async (accountId?: number): Promise<void> => {
   if (signedOut) {
     signedOut = false;
-    for (const listener of signedBackIn) listener();
+    emit({ kind: "resumed" });
   }
   if (accountId === undefined) return;
-  const { heldInPlace, userId } = useSessionStore.getState();
-  const owner = heldInPlace && userId !== null && userId !== accountId ? [userId] : [];
-  await keepOnlyNotesOf([accountId, ...owner]);
+  const store = sharedNoteStore();
+  if (!store) return;
+  const accounts = [accountId];
+  try {
+    await store.keepOnly(accounts);
+  } catch {
+    // Tried again on the next sign-in.
+    return;
+  }
+  emit({ kind: "kept", accounts });
+  tell({ kind: "kept", accounts });
 };
 
 /** How long signing out waits for the stored notes to be removed. */
 export const CLEAR_ON_SIGN_OUT_MS = 2_000;
 
 /**
- * Signing out: removes every stored note, and stores none until the server
- * accepts a sign-in again (which, should the user stay on the page by
- * cancelling the leave prompt, can happen here).
+ * Signing out: removes every stored note, and stops this tab and every other
+ * storing any until the server accepts a sign-in in it again (which, should
+ * the user stay on the page by cancelling the leave prompt, can happen there).
  */
 export const clearStoredNotes = async (): Promise<void> => {
   const store = sharedNoteStore();
-  signedOut = true;
-  keptAccounts = null;
+  stopStoring();
+  tell({ kind: "signed-out" });
   if (!store) return;
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
@@ -269,10 +334,11 @@ export const clearStoredNotes = async (): Promise<void> => {
 
 /**
  * Tests: use `store` as the page's store (with none, look for the browser's
- * again), and forget any sign-out.
+ * again), forget any sign-out, and close the channel to other tabs.
  */
 export const setNoteStoreForTests = (store?: NoteStore | null): void => {
   shared = store;
   signedOut = false;
-  keptAccounts = null;
+  channel?.close();
+  channel = undefined;
 };

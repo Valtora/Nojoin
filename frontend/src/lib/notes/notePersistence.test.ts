@@ -19,6 +19,7 @@ import {
   MemoryNoteStore,
   NOTE_RECORD_VERSION,
   setNoteStoreForTests,
+  sharedNoteStore,
   storedNotesSignedIn,
   type NoteStore,
   type StoredOutbox,
@@ -47,7 +48,7 @@ let pages: Array<() => void> = [];
 /** Opens the recording on a page whose outbox is kept in `store`. */
 const openPage = (store: NoteStore | null) => {
   const outbox = new NoteOutbox(RECORDING);
-  pages.push(persistNoteOutbox(outbox, RECORDING, () => store));
+  pages.push(persistNoteOutbox(outbox, RECORDING, () => store).stop);
   return outbox;
 };
 
@@ -289,7 +290,7 @@ describe("a note outbox kept in the browser", () => {
   it("stores nothing after signing out, and writes again once the page signs back in", async () => {
     setNoteStoreForTests(store);
     const outbox = new NoteOutbox(RECORDING);
-    pages.push(persistNoteOutbox(outbox, RECORDING));
+    pages.push(persistNoteOutbox(outbox, RECORDING).stop);
     outbox.setDraft(DRAFT);
     await vi.waitFor(async () => expect(await stored(store)).toBeDefined());
 
@@ -453,7 +454,7 @@ describe("a note outbox kept in the browser", () => {
     const outbox = new NoteOutbox(RECORDING);
     outbox.ingest([...server.notes.values()]);
     outbox.setDraft({ ...DRAFT, text: "Typed first" });
-    pages.push(persistNoteOutbox(outbox, RECORDING, () => store));
+    pages.push(persistNoteOutbox(outbox, RECORDING, () => store).stop);
 
     await vi.waitFor(() => expect(server.notes.size).toBe(2));
     expect(outbox.getSnapshot().entries).toEqual([]);
@@ -715,5 +716,167 @@ describe("records of another version", () => {
       expect(deleteTimelineNote).toHaveBeenCalledWith(RECORDING, "d-1", { writeToken: "d-token" }),
     );
     expect(createTimelineNote).not.toHaveBeenCalled();
+  });
+});
+
+describe("whether the browser holds the outbox", () => {
+  let store: NoteStore;
+  let tabs: BroadcastChannel[] = [];
+
+  /** Another tab of this browser, on the channel the tabs share. */
+  const otherTab = () => {
+    const channel = new BroadcastChannel("nojoin-notes");
+    tabs.push(channel);
+    return channel;
+  };
+
+  /** Opens the recording, and returns the outbox and how it is kept. */
+  const openKeptPage = (storeOf: () => NoteStore | null = () => store) => {
+    const outbox = new NoteOutbox(RECORDING);
+    const persisted = persistNoteOutbox(outbox, RECORDING, storeOf);
+    pages.push(persisted.stop);
+    return { outbox, persisted };
+  };
+
+  beforeEach(() => {
+    resetNotesServer();
+    resetSessionForTests();
+    signedIn("alice", ALICE);
+    store = new MemoryNoteStore();
+    setNoteStoreForTests(store);
+  });
+
+  afterEach(() => {
+    closePages();
+    for (const tab of tabs) tab.close();
+    tabs = [];
+    setNoteStoreForTests(null);
+    resetSessionForTests();
+  });
+
+  it("is kept once the record has the outbox as it is now, and not while a change is on its way", async () => {
+    const { outbox, persisted } = openKeptPage(sharedNoteStore);
+    outbox.setDraft(DRAFT);
+    expect(persisted.kept()).toBe(false);
+    await expect(persisted.whenWritten()).resolves.toBe(true);
+    expect(persisted.kept()).toBe(true);
+
+    vi.spyOn(store, "put").mockRejectedValueOnce(new DOMException("full", "QuotaExceededError"));
+    outbox.setDraft({ ...DRAFT, text: "more" });
+    await expect(persisted.whenWritten()).resolves.toBe(false);
+    expect((await stored(store))?.draft).toEqual(DRAFT);
+  });
+
+  it("is not kept where there is no store, or after a sign-out cancelled at the leave prompt", async () => {
+    const memoryOnly = openKeptPage(() => null);
+    memoryOnly.outbox.setDraft(DRAFT);
+    await expect(memoryOnly.persisted.whenWritten()).resolves.toBe(false);
+
+    const { outbox, persisted } = openKeptPage(sharedNoteStore);
+    outbox.setDraft(DRAFT);
+    await expect(persisted.whenWritten()).resolves.toBe(true);
+    const changes = vi.fn();
+    persisted.subscribeKept(changes);
+    await clearStoredNotes();
+    expect(changes).toHaveBeenCalled();
+    expect(persisted.kept()).toBe(false);
+    outbox.setDraft({ ...DRAFT, text: "after the cancelled sign-out" });
+    await expect(persisted.whenWritten()).resolves.toBe(false);
+    expect(await stored(store)).toBeUndefined();
+  });
+
+  it.each([
+    ["a later version's", NOTE_RECORD_VERSION + 1],
+    ["an earlier version's", NOTE_RECORD_VERSION - 1],
+  ])("is not kept beside %s record, which it leaves alone", async (_name, version) => {
+    await store.put({ version, account: ALICE, recordingId: RECORDING } as unknown as StoredOutbox);
+    const { outbox, persisted } = openKeptPage();
+    await settle();
+    outbox.setDraft(DRAFT);
+    await expect(persisted.whenWritten()).resolves.toBe(false);
+  });
+
+  it("is not kept while the browser is signed in as another account", async () => {
+    const { outbox, persisted } = openKeptPage();
+    outbox.setDraft(DRAFT);
+    await expect(persisted.whenWritten()).resolves.toBe(true);
+
+    signedIn("bob", BOB);
+    expect(persisted.kept()).toBe(false);
+  });
+
+  it("stops storing when another tab signs out, until a sign-in is accepted here", async () => {
+    // Whichever store the page was handed, not only the page's shared one.
+    const { outbox, persisted } = openKeptPage();
+    outbox.setDraft(DRAFT);
+    await expect(persisted.whenWritten()).resolves.toBe(true);
+
+    // The other tab removed every record, and says so.
+    await store.clear();
+    otherTab().postMessage({ kind: "signed-out" });
+    await vi.waitFor(() => expect(persisted.kept()).toBe(false));
+    outbox.setDraft({ ...DRAFT, text: "typed after the other tab signed out" });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(await stored(store)).toBeUndefined();
+
+    await storedNotesSignedIn(ALICE);
+    await vi.waitFor(async () =>
+      expect((await stored(store))?.draft).toMatchObject({ text: "typed after the other tab signed out" }),
+    );
+    expect(persisted.kept()).toBe(true);
+  });
+
+  it("stops storing an account another tab's cleanup removed, until that account is back", async () => {
+    const { outbox, persisted } = openKeptPage(sharedNoteStore);
+    outbox.setDraft(DRAFT);
+    await expect(persisted.whenWritten()).resolves.toBe(true);
+
+    // bob signed in in another tab, and its cleanup removed alice's record.
+    await store.keepOnly([BOB]);
+    otherTab().postMessage({ kind: "kept", accounts: [BOB] });
+    await vi.waitFor(() => expect(persisted.kept()).toBe(false));
+    outbox.setDraft({ ...DRAFT, text: "alice's, typed while bob is signed in" });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(await stored(store)).toBeUndefined();
+
+    // A cleanup that keeps alice: the browser is hers again.
+    otherTab().postMessage({ kind: "kept", accounts: [ALICE] });
+    await vi.waitFor(async () =>
+      expect((await stored(store))?.draft).toMatchObject({ text: "alice's, typed while bob is signed in" }),
+    );
+  });
+
+  it("does not send a note under its new id while the browser refuses to keep that id", async () => {
+    const { outbox } = openKeptPage(sharedNoteStore);
+    await settle();
+    const put = store.put.bind(store);
+    let refusing = false;
+    vi.spyOn(store, "put").mockImplementation(async (record) => {
+      if (refusing) throw new DOMException("full", "QuotaExceededError");
+      await put(record);
+    });
+    createTimelineNote.mockImplementationOnce(async (_recording, payload) => {
+      server.creates.push(payload);
+      // The record has the note under its first id; from now on the browser refuses.
+      await vi.waitFor(async () => expect(await storedNoteIds(store)).toHaveLength(1));
+      refusing = true;
+      throw coded(409, "note_id_in_use");
+    });
+    outbox.submit({ kind: "tail", body: "Wrap-up", anchorMs: null });
+
+    await vi.waitFor(() =>
+      expect(outbox.getSnapshot().entries[0]?.error).toBe(
+        "Not saved: this browser couldn't keep a copy to send it safely.",
+      ),
+    );
+    expect(server.creates).toHaveLength(1);
+    const [entry] = outbox.getSnapshot().entries;
+    expect(entry.id).not.toBe(server.creates[0].id);
+
+    // Once the browser keeps it, Retry sends it under the new id.
+    refusing = false;
+    outbox.retry(entry.key);
+    await vi.waitFor(() => expect(server.notes.size).toBe(1));
+    expect(server.creates.map((create) => create.id)).toEqual([server.creates[0].id, entry.id]);
   });
 });

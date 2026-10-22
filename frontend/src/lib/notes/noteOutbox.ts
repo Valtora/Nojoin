@@ -25,7 +25,7 @@ import { formatTimelineMs } from "./placement";
  * | `saving` | 201, or 200 (an earlier attempt landed) | entry gone; the note is shown from here until a listing has it |
  * | `saving` | no answer for `SLOW_SAVE_MS` | `failed` ("no answer yet"), the request still running; a late 2xx still saves it |
  * | `saving` | no answer, or 5xx | `failed`; Retry sends the same create again |
- * | `saving` | 409 `note_id_in_use` | the id is another note's: once more under a new id and token, once a kept copy has them, then `failed` |
+ * | `saving` | 409 `note_id_in_use` | the id is another note's: once more under a new id and token once a kept copy has them, then `failed`; `failed` ("couldn't keep") where the browser refuses the copy, and Retry tries again |
  * | `saving` | 410 `note_deleted_by_you` | discarded here while on its way: entry gone |
  * | `saving` | 410 `note_deleted_elsewhere` | a lost create landed and another device deleted it: entry gone, with a notice; never made again |
  * | `saving` | refused while sign-in is held in place (`@/lib/session`) | `failed` ("sign in again"); sent again once the owner signs back in |
@@ -136,6 +136,7 @@ const NO_ANSWER_YET_ERROR = "No answer from Nojoin yet.";
 const RECORDING_GONE_ERROR = "Not saved: this recording no longer exists.";
 const REFUSED_ERROR = "Not saved: Nojoin refused this note.";
 const SIGN_IN_ERROR = "Not saved yet: it saves once you sign in again.";
+const NOT_KEPT_ERROR = "Not saved: this browser couldn't keep a copy to send it safely.";
 
 /**
  * Whether a failed request waits for sign-in (`waitForSignInAfter`) rather
@@ -296,7 +297,9 @@ export class NoteOutbox {
   };
   private readonly listeners = new Set<() => void>();
   private readonly writeListeners = new Set<() => void>();
-  private writeBarrier: (() => Promise<void>) | null = null;
+  private writeBarrier: (() => Promise<boolean>) | null = null;
+  /** Entries given a new id that a kept copy of the outbox may not have yet. */
+  private readonly unkeptIds = new Set<string>();
 
   constructor(private readonly recordingId: RecordingId) {}
 
@@ -324,9 +327,10 @@ export class NoteOutbox {
   /**
    * Waits, before a note goes out under a new id, until a kept copy of the
    * outbox has that id (`persistNoteOutbox`), so a reload can't send the note
-   * a second time under the old one.
+   * a second time under the old one. Resolves false where the copy could not
+   * be written, and the note is not sent.
    */
-  setWriteBarrier = (barrier: (() => Promise<void>) | null): void => {
+  setWriteBarrier = (barrier: (() => Promise<boolean>) | null): void => {
     this.writeBarrier = barrier;
   };
 
@@ -376,6 +380,7 @@ export class NoteOutbox {
     if (!entry || entry.status !== "failed") return;
     this.entries = this.entries.filter((candidate) => candidate.key !== key);
     this.attempts.delete(key);
+    this.unkeptIds.delete(key);
     this.discards.set(entry.id, { token: entry.writeToken, inFlight: false });
     this.discardedIds = new Set(this.discards.keys());
     this.publish();
@@ -456,6 +461,7 @@ export class NoteOutbox {
   private drop(key: string, notice: string | null): void {
     this.entries = this.entries.filter((entry) => entry.key !== key);
     this.attempts.delete(key);
+    this.unkeptIds.delete(key);
     if (notice) this.notice = { seq: (this.notice?.seq ?? 0) + 1, text: notice, tone: "info" };
     this.publish();
   }
@@ -467,6 +473,17 @@ export class NoteOutbox {
     this.attempts.set(key, attempt);
     const isLatest = () => this.attempts.get(key) === attempt && !!this.entry(key);
     this.patch(key, { status: "saving", error: null });
+    if (this.unkeptIds.has(key)) {
+      // A kept copy still has the refused id: a reload would send it again
+      // as well, making the note twice.
+      const safe = (await this.writeBarrier?.()) ?? true;
+      if (!isLatest()) return;
+      if (!safe) {
+        this.fail(key, NOT_KEPT_ERROR);
+        return;
+      }
+      this.unkeptIds.delete(key);
+    }
     const slow = setTimeout(() => {
       if (isLatest() && this.entry(key)?.status === "saving") {
         this.fail(key, NO_ANSWER_YET_ERROR);
@@ -493,7 +510,7 @@ export class NoteOutbox {
       const failure = failureOf(error);
       if (failure === "idInUse" && freshIdsLeft > 0) {
         this.patch(key, { id: newNoteId(), writeToken: newNoteId() });
-        await this.writeBarrier?.();
+        this.unkeptIds.add(key);
         await this.send(key, freshIdsLeft - 1);
         return;
       }
@@ -521,6 +538,7 @@ export class NoteOutbox {
     if (!this.entry(key)) return;
     this.entries = this.entries.filter((entry) => entry.key !== key);
     this.attempts.delete(key);
+    this.unkeptIds.delete(key);
     const known = this.listed.has(note.id) || this.saved.some((saved) => saved.id === note.id);
     if (!known) this.saved = [...this.saved, note];
     this.publish();

@@ -48,6 +48,31 @@ describe("NoteOutbox", () => {
     vi.useRealTimers();
   });
 
+  it("keys a restored note's line by its id before and after it saves, so the line is not remounted", async () => {
+    const outbox = new NoteOutbox(RECORDING);
+    outbox.restore({
+      notes: [
+        {
+          id: "n-1",
+          writeToken: "t-1",
+          kind: "point",
+          body: "Restored",
+          anchorMs: 10,
+          createdAt: "2026-10-22T10:00:00Z",
+        },
+      ],
+      draft: null,
+      discards: [],
+    });
+    const before = inlineNotes([], outbox.getSnapshot()).map((note) => note.key);
+    await vi.waitFor(() => expect(outbox.getSnapshot().entries).toHaveLength(0));
+    const after = inlineNotes([], outbox.getSnapshot()).map((note) => note.key);
+
+    // A changed key would remount the line, and focus on its Retry or Discard would be lost.
+    expect(before).toEqual(["n-1"]);
+    expect(after).toEqual(["n-1"]);
+  });
+
   it("keeps a note whose create failed, with its anchor, and retries the very same create", async () => {
     const outbox = new NoteOutbox(RECORDING);
     server.failures.push(NO_ANSWER);
