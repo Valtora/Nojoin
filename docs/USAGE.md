@@ -53,7 +53,7 @@ The **Tasks** page has **Open**, **Completed** and **Archived** views and a **Cr
 
 The **People** page is your speaker library: the people Nojoin can recognise across meetings, with their voiceprints and contact details. Each user has their own library, and a meeting's speakers are matched and linked only to people in its owner's library.
 
-- Search by name, email or company, and filter by people tags, which can nest like recording tags. Each user has their own people tags and recording tags.
+- Search by name, email or company, and filter by people tags, which can nest like recording tags. Each user has their own people tags and recording tags, and no two tags in either set share a name.
 - Select several people for **Batch Edit People** or to delete them together.
 - A person's menu has **Edit Details**, **Recalibrate Voiceprint** to rebuild their voiceprint from better samples, **Split / Unmerge Speaker** and **Delete Person**.
 - In a person's details, **Lock voiceprint** keeps their voiceprint as it is: renames, links, merges and automatic learning leave it alone, and only **Link to different speaker** in **Create Voiceprint**, recalibrating or splitting the person changes it. **Unlock voiceprint** lets them update it again. Neither changes the voiceprint itself, and a locked person is still recognised in later meetings.
@@ -115,7 +115,7 @@ In the transcript:
 
 - Playback highlights the current line, and the play button beside a line's timestamp plays from there.
 - Click a line's text to edit it. Click a speaker name to reassign that line or the whole transcript, and double-click it to rename the speaker.
-- The toolbar has **Undo**, **Redo**, **Search**, **Find & Replace** and export.
+- The toolbar has **Undo**, **Redo**, **Search**, **Find & Replace** and export. In the find field, Enter and Shift+Enter, or the arrows beside it, move between matches. Escape closes the Search Options menu.
 - **Low confidence** marks a line whose speaker Nojoin is unsure of and nobody has set by hand.
 - Notes you placed during the meeting ([Live Notes](#live-notes)) show on their own line after the line they follow.
 
