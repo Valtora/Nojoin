@@ -492,8 +492,8 @@ interface TagNode extends PeopleTag {
                         </div>
                         {person.has_voiceprint && isVoiceprintLocked && (
                           <div className="text-xs text-contrast-helper">
-                            Locked: only a force link, recalibrating or
-                            splitting changes it.
+                            Locked: only Link to different speaker,
+                            recalibrating or splitting changes it.
                           </div>
                         )}
                       </div>

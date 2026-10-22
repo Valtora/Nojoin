@@ -22,7 +22,9 @@ vi.mock("@/lib/api", () => ({
   updateGlobalSpeaker: (...a: unknown[]) => updateGlobalSpeaker(...a),
 }));
 
-const LOCKED_LINE = "Locked: only a force link, recalibrating or splitting changes it.";
+// "Link to different speaker" is what Create Voiceprint calls a force link.
+const LOCKED_LINE =
+  "Locked: only Link to different speaker, recalibrating or splitting changes it.";
 
 const person = (
   id: number,
