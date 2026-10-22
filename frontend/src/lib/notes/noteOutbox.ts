@@ -25,7 +25,7 @@ import { formatTimelineMs } from "./placement";
  * | `saving` | 201, or 200 (an earlier attempt landed) | entry gone; the note is shown from here until a listing has it |
  * | `saving` | no answer for `SLOW_SAVE_MS` | `failed` ("no answer yet"), the request still running; a late 2xx still saves it |
  * | `saving` | no answer, or 5xx | `failed`; Retry sends the same create again |
- * | `saving` | 409 `note_id_in_use` | the id is another note's: once more under a new id and token once a kept copy has them, then `failed`; `failed` ("couldn't keep") where the browser refuses the copy, and Retry tries again |
+ * | `saving` | 409 `note_id_in_use` | the id is another note's: once more under a new id and token once a kept copy has them, or once a write has gone unanswered for `NEW_ID_WAIT_MS`, then `failed`; `failed` ("couldn't keep") where the browser refuses the copy, and Retry tries again |
  * | `saving` | 410 `note_deleted_by_you` | discarded here while on its way: entry gone |
  * | `saving` | 410 `note_deleted_elsewhere` | a lost create landed and another device deleted it: entry gone, with a notice; never made again |
  * | `saving` | refused while sign-in is held in place (`@/lib/session`) | `failed` ("sign in again"); sent again once the owner signs back in |
@@ -327,8 +327,9 @@ export class NoteOutbox {
   /**
    * Waits, before a note goes out under a new id, until a kept copy of the
    * outbox has that id (`persistNoteOutbox`), so a reload can't send the note
-   * a second time under the old one. Resolves false where the copy could not
-   * be written, and the note is not sent.
+   * a second time under the old one. A write unanswered for `NEW_ID_WAIT_MS`
+   * ends the wait, and the note goes out. Resolves false where the copy could
+   * not be written, and the note is not sent.
    */
   setWriteBarrier = (barrier: (() => Promise<boolean>) | null): void => {
     this.writeBarrier = barrier;
