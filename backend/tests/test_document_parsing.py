@@ -103,9 +103,9 @@ def xlsx_path(tmp_path):
 
 @pytest.fixture
 def pdf_path(tmp_path):
-    fitz = pytest.importorskip("fitz")
+    pymupdf = pytest.importorskip("pymupdf")
 
-    document = fitz.open()
+    document = pymupdf.open()
     first = document.new_page()
     first.insert_text((72, 100), "Quarterly Review", fontsize=18)
     first.insert_text((72, 140), "Revenue grew 12% in EMEA.", fontsize=11)
@@ -250,9 +250,9 @@ def test_text_and_markdown_are_single_pages(tmp_path):
 def test_image_upload_has_no_text_but_always_carries_its_image(tmp_path):
     """`want_images=False` is ignored for images on purpose: without the image
     there is nothing at all, and the orchestrator needs to see that."""
-    fitz = pytest.importorskip("fitz")
+    pymupdf = pytest.importorskip("pymupdf")
     path = tmp_path / "shot.png"
-    pixmap = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 8, 8))
+    pixmap = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 8, 8))
     pixmap.clear_with(200)
     pixmap.save(str(path))
 
