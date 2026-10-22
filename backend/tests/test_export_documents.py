@@ -12,7 +12,7 @@ from datetime import datetime
 from io import BytesIO
 from zipfile import ZipFile
 
-import fitz
+import pymupdf
 from docx import Document
 
 from backend.services.exports import build_document, render, theme
@@ -55,14 +55,14 @@ def _pdf_text(parts=None, sections=ALL_SECTIONS, *, branded=True) -> str:
     payload = render(
         build_document(parts or meeting_parts(), sections, branded=branded), "pdf"
     )
-    with fitz.open(stream=payload, filetype="pdf") as document:
+    with pymupdf.open(stream=payload, filetype="pdf") as document:
         return "\n".join(page.get_text() for page in document)
 
 
 def _pdf_link_targets(*, branded: bool) -> set[str]:
     """Every link annotation's URI across the PDF's pages."""
     payload = render(build_document(meeting_parts(), ["notes"], branded=branded), "pdf")
-    with fitz.open(stream=payload, filetype="pdf") as document:
+    with pymupdf.open(stream=payload, filetype="pdf") as document:
         return {
             link["uri"]
             for page in document
