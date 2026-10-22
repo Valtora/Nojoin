@@ -27,6 +27,7 @@ const renameRecording = vi.fn();
 const generateNotes = vi.fn();
 const updateSpeaker = vi.fn();
 const listTimelineNotes = vi.fn();
+const getCurrentUser = vi.fn();
 
 let activePanel = "transcript";
 
@@ -63,6 +64,7 @@ vi.mock("@/lib/store", () => ({
 }));
 
 vi.mock("@/lib/api", () => ({
+  getCurrentUser: (...args: unknown[]) => getCurrentUser(...args),
   getRecording: (...args: unknown[]) => getRecording(...args),
   getSettings: (...args: unknown[]) => getSettings(...args),
   getGlobalSpeakers: (...args: unknown[]) => getGlobalSpeakers(...args),
@@ -163,6 +165,13 @@ vi.mock("@/components/RecordingTagEditor", () => ({
 vi.mock("@/components/LinkedEventPanel", () => ({
   default: () => <div data-testid="linked-event-panel" />,
 }));
+
+import {
+  holdSignInInPlace,
+  noteSignedIn,
+  resetSessionForTests,
+  useSessionStore,
+} from "@/lib/session";
 
 import RecordingPage from "./page";
 import {
@@ -552,3 +561,157 @@ function clearanceAncestors(element: HTMLElement): HTMLElement[] {
   }
   return found;
 }
+
+describe("RecordingPage (detail): a poll answered 404", () => {
+  const ALICE = { id: 1, username: "alice", force_password_change: false };
+  const BOB = { id: 2, username: "bob", force_password_change: false };
+  const notFound = () => Object.assign(new Error("Not Found"), { response: { status: 404 } });
+  const DISCARDED = { type: "info", message: "Recording was discarded or deleted." };
+
+  /** Opens a recording that polls, then makes every poll answer 404. */
+  const openThenNotFound = async () => {
+    let found = true;
+    getRecording.mockImplementation(async () => {
+      if (!found) throw notFound();
+      return buildRecording({ status: RecordingStatus.PROCESSING });
+    });
+    renderPage();
+    await screen.findByTestId("recording-status-display");
+    found = false;
+  };
+  const poll = () =>
+    act(async () => {
+      await vi.advanceTimersByTimeAsync(3_000);
+    });
+
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    resetSessionForTests();
+    noteSignedIn(ALICE);
+    routerPush.mockReset();
+    addNotification.mockReset();
+    getRecording.mockReset();
+    getCurrentUser.mockReset();
+    getSettings.mockResolvedValue({ enable_meeting_edge: true, meeting_edge_context_level: 2 });
+    getGlobalSpeakers.mockResolvedValue([]);
+    listTimelineNotes.mockReset().mockResolvedValue([]);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    holdSignInInPlace(false, "notes");
+    resetSessionForTests();
+  });
+
+  it("stays on the recording when another account signed in from another tab, and says so once", async () => {
+    getCurrentUser.mockImplementation(async () => {
+      noteSignedIn(BOB);
+      return BOB;
+    });
+    await openThenNotFound();
+
+    await poll();
+    await poll();
+
+    expect(routerPush).not.toHaveBeenCalled();
+    expect(addNotification).not.toHaveBeenCalledWith(DISCARDED);
+    expect(addNotification).toHaveBeenCalledTimes(1);
+    expect(addNotification.mock.calls[0][0].message).toMatch(/now signed in as bob/);
+    expect(getCurrentUser).toHaveBeenCalledTimes(1);
+  });
+
+  it("asks for the owner's sign-in in place when the page holds it, rather than leaving", async () => {
+    holdSignInInPlace(true, "notes");
+    getCurrentUser.mockImplementation(async () => {
+      noteSignedIn(BOB);
+      return BOB;
+    });
+    await openThenNotFound();
+
+    await poll();
+
+    expect(routerPush).not.toHaveBeenCalled();
+    expect(addNotification).not.toHaveBeenCalled();
+    expect(useSessionStore.getState()).toMatchObject({ signInRequired: true, otherUsername: "bob" });
+  });
+
+  it("leaves a recording that is gone for the account that opened it", async () => {
+    getCurrentUser.mockImplementation(async () => {
+      noteSignedIn(ALICE);
+      return ALICE;
+    });
+    await openThenNotFound();
+
+    await poll();
+
+    expect(addNotification).toHaveBeenCalledWith(DISCARDED);
+    expect(routerPush).toHaveBeenCalledWith("/recordings");
+  });
+
+  it("reads a 404 as a removal again once the owner is back", async () => {
+    let signedIn = BOB;
+    getCurrentUser.mockImplementation(async () => {
+      noteSignedIn(signedIn);
+      return signedIn;
+    });
+    let answer: "found" | "not found" = "found";
+    getRecording.mockImplementation(async () => {
+      if (answer === "not found") throw notFound();
+      return buildRecording({ status: RecordingStatus.PROCESSING });
+    });
+    renderPage();
+    await screen.findByTestId("recording-status-display");
+    answer = "not found";
+    await poll();
+    expect(routerPush).not.toHaveBeenCalled();
+
+    // The owner signs back in from another tab, and the next poll succeeds.
+    signedIn = ALICE;
+    noteSignedIn(ALICE);
+    answer = "found";
+    await poll();
+    // Then the recording is deleted.
+    answer = "not found";
+    await poll();
+
+    expect(routerPush).toHaveBeenCalledWith("/recordings");
+    expect(addNotification).toHaveBeenLastCalledWith(DISCARDED);
+  });
+
+  it("stays on the recording when a poll fails for any other reason", async () => {
+    getCurrentUser.mockImplementation(async () => {
+      noteSignedIn(ALICE);
+      return ALICE;
+    });
+    let found = true;
+    getRecording.mockImplementation(async () => {
+      if (!found) throw Object.assign(new Error("Bad Gateway"), { response: { status: 502 } });
+      return buildRecording({ status: RecordingStatus.PROCESSING });
+    });
+    renderPage();
+    await screen.findByTestId("recording-status-display");
+    found = false;
+
+    await poll();
+
+    expect(routerPush).not.toHaveBeenCalled();
+    expect(getCurrentUser).not.toHaveBeenCalled();
+  });
+
+  it("does nothing while it can't tell who is signed in, and asks again at the next poll", async () => {
+    getCurrentUser.mockRejectedValueOnce(new Error("Network Error"));
+    getCurrentUser.mockImplementation(async () => {
+      noteSignedIn(ALICE);
+      return ALICE;
+    });
+    await openThenNotFound();
+
+    await poll();
+    expect(routerPush).not.toHaveBeenCalled();
+    expect(addNotification).not.toHaveBeenCalled();
+
+    await poll();
+    expect(getCurrentUser).toHaveBeenCalledTimes(2);
+    expect(routerPush).toHaveBeenCalledWith("/recordings");
+  });
+});

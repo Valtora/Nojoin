@@ -7,6 +7,7 @@ import {
   AUDIO_RECHECK_WINDOW_MS,
   hasPolledRecordingChanged,
   pollFailureMeansRemoved,
+  pollNotFoundMeans,
   recordingPollIntervalMs,
   shouldPollRecordingUpdates,
 } from "./recordingDetailUtils";
@@ -93,6 +94,13 @@ describe("noticing a change to the notes in a poll", () => {
     expect(
       hasPolledRecordingChanged(before, { ...before, live_audio_ms: 2_000 }),
     ).toBe(false);
+  });
+});
+
+describe("pollNotFoundMeans", () => {
+  it("reads a 404 as a removal when the page never learnt which account it was loaded as", async () => {
+    // Nothing to compare with: as before #583, the recording is taken to be gone.
+    await expect(pollNotFoundMeans(null, async () => ({ id: 2 }))).resolves.toBe("removed");
   });
 });
 

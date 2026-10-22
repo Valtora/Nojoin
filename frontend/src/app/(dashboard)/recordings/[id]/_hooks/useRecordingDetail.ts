@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 
 import {
+  getCurrentUser,
   getRecording,
   getSettings,
   getTranscriptUtterances,
@@ -74,6 +75,7 @@ import {
   isAudioUnavailable,
   isRecordingInFlight,
   pollFailureMeansRemoved,
+  pollNotFoundMeans,
   recordingPollIntervalMs,
   shouldPollRecordingUpdates,
   type TranscriptHistoryItem,
@@ -161,6 +163,10 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
   // When the page first saw the audio as unavailable. It bounds how long the
   // page keeps re-checking for it.
   const audioUnavailableSinceRef = useRef<number | null>(null);
+  // The account the recording was last loaded as, and the one the browser
+  // was found signed in as instead, until a poll succeeds again.
+  const pageAccountRef = useRef<number | null>(null);
+  const signedInElsewhereRef = useRef<string | null>(null);
   const isInFlightRecording = isRecordingInFlight(recording);
   const compactChatPanelHeight = isCompact
     ? Math.min(chatPanelHeight, 42)
@@ -342,6 +348,7 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
         getSettings().catch(() => null),
       ]);
       audioClock.observe(recData, sentAt);
+      pageAccountRef.current = useSessionStore.getState().userId;
       setRecording(recData);
       setGlobalSpeakers(gsData);
       if (settingsData) {
@@ -445,6 +452,7 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
         const sentAt = audioClock.stamp();
         const data = await getRecording(id);
         audioClock.observe(data, sentAt);
+        signedInElsewhereRef.current = null;
 
         if (hasPolledRecordingChanged(recording, data)) {
           setRecording(data);
@@ -454,16 +462,30 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
             } catch (e: unknown) {
         console.error("Polling failed", e);
         if (
-          pollFailureMeansRemoved(
+          !pollFailureMeansRemoved(
             getErrorStatus(e),
             !useSessionStore.getState().signInRequired,
           )
         ) {
+          return;
+        }
+        // Already found signed in as another account: asked again only once a
+        // poll succeeds, which means the owner is back.
+        if (signedInElsewhereRef.current !== null) return;
+        const meaning = await pollNotFoundMeans(pageAccountRef.current, getCurrentUser);
+        if (meaning === "removed") {
           addNotification({
             type: "info",
             message: "Recording was discarded or deleted.",
           });
           router.push("/recordings");
+        } else if (meaning === "signed-in-elsewhere") {
+          const { username } = useSessionStore.getState();
+          signedInElsewhereRef.current = username ?? "";
+          addNotification({
+            type: "info",
+            message: `This browser is now signed in as ${username ?? "another account"}, so this recording can't be updated. Sign in again as its owner to carry on.`,
+          });
         }
       }
     }, pollIntervalMs);

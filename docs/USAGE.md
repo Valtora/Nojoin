@@ -71,6 +71,8 @@ If the notes change on another device while you are editing them, nothing is sav
 
 **Discard** deletes an unfinished recording, including one that is queued or processing, after you confirm. To remove a finished meeting, use **Delete** in the recordings list. If the tab closes or reloads mid-recording, the recording pauses and Nojoin asks you to resume it, stop and process it, or discard it before you start anything else ([Paused Recording Lock](CAPTURE.md#paused-recording-lock)). If the pause could not reach Nojoin, because the tab was signed out or offline as it closed, the same dialog appears two minutes after the last audio arrived ([Closing Or Reloading The Tab](CAPTURE.md#closing-or-reloading-the-tab)).
 
+An open recording that is deleted or discarded elsewhere says so and returns you to the list. If another tab has signed this browser in as someone else instead, the page stays and says which account the browser is now signed in as; where it holds a recording or unsaved notes, it asks you to sign in again as their owner.
+
 ### Live Transcription
 
 The **Live Transcript** panel shows each sentence a few seconds after it is spoken. It follows the newest line until you scroll up to read back; **Jump to latest** resumes following. Its lines are read-only, and the full transcript replaces them once processing finishes.

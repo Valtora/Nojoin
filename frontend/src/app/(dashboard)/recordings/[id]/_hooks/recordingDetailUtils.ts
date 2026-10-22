@@ -1,3 +1,4 @@
+import { useSessionStore } from "@/lib/session";
 import { Recording, RecordingStatus, TranscriptSegment } from "@/types";
 import type {
   RollingSpeakerCorrectionHistory,
@@ -90,6 +91,32 @@ const meetingEdgeSignature = (recording: Recording) =>
  */
 export const pollFailureMeansRemoved = (status: number | null, sessionUsable: boolean) =>
   sessionUsable && status === 404;
+
+/**
+ * What a polled 404 says once the server has named the account the browser is
+ * signed in as (`whoIsSignedIn`, which tells the session too). Until this
+ * tab's next `/users/me`, a sign-in as another account in another tab looks
+ * like a removal: the poll goes out under the other account's cookie (issue
+ * #583). Only the account the page was loaded as can see the recording gone.
+ *
+ * - "removed": the recording is gone.
+ * - "signed-in-elsewhere": the browser is another account's now. A page that
+ *   holds sign-in in place has opened the sign-in dialog instead.
+ * - null: nothing to act on, or `/users/me` failed and the next poll asks again.
+ */
+export const pollNotFoundMeans = async (
+  pageAccount: number | null,
+  whoIsSignedIn: () => Promise<{ id: number }>,
+): Promise<"removed" | "signed-in-elsewhere" | null> => {
+  let signedIn: { id: number };
+  try {
+    signedIn = await whoIsSignedIn();
+  } catch {
+    return null;
+  }
+  if (pageAccount === null || signedIn.id === pageAccount) return "removed";
+  return useSessionStore.getState().signInRequired ? null : "signed-in-elsewhere";
+};
 
 export const hasPolledRecordingChanged = (current: Recording, polled: Recording) =>
   polled.status !== current.status ||
