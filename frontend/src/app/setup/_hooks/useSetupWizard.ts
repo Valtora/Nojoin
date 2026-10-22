@@ -494,7 +494,7 @@ export function useSetupWizard() {
         if (progress.status === "error") {
           finish(
             progress.message ||
-              "Model preparation reported a problem. Settings > AI can retry it.",
+              "Model preparation reported a problem. Settings > AI providers can retry it.",
           );
           return;
         }
@@ -515,7 +515,7 @@ export function useSetupWizard() {
         if (consecutiveErrors >= PROGRESS_MAX_CONSECUTIVE_ERRORS) {
           console.error("Model preparation progress unavailable:", err);
           finish(
-            "Lost contact with the progress endpoint. Preparation continues on the server; Settings > AI shows the current state.",
+            "Lost contact with the progress endpoint. Preparation continues on the server; Settings > AI providers shows the current state.",
           );
           return;
         }
@@ -523,7 +523,7 @@ export function useSetupWizard() {
 
       if (Date.now() - startedAt > PROGRESS_TIMEOUT_MS) {
         finish(
-          "Model preparation is taking longer than expected. It continues in the background on the server, and Settings > AI shows the current state.",
+          "Model preparation is taking longer than expected. It continues in the background on the server, and Settings > AI providers shows the current state.",
         );
         return;
       }
