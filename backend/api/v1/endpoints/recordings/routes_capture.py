@@ -493,8 +493,11 @@ async def _abandon_failed_master(
     )
     await db.commit()
 
+    # The segments (or, if the move failed, temp/<id>/) must stay for the
+    # 24-hour chunk sweep the rows above rely on, so remove only the partial
+    # master: passing an id here would also rmtree temp/<id>/.
     recordings_module.delete_recording_artifacts(
-        recording_id=recording.id,
+        recording_id=None,
         audio_path=final_audio_path,
         proxy_path=None,
         logger=logger,
