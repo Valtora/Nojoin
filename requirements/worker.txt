@@ -53,6 +53,9 @@ pyannote-database==6.1.1
 pyannote-metrics==4.1
 pyannote-pipeline==4.0.0
 pytorch-metric-learning==2.9.0
+# Imported directly by the live speaker labels (assignment and clustering);
+# pyannote-metrics also pulls it in.
+scipy==1.18.1
 rich==15.0.0
 safetensors==0.8.0
 torch-audiomentations==0.12.0

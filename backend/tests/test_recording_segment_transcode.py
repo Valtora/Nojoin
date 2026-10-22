@@ -1450,3 +1450,78 @@ async def test_finalize_runs_concatenation_off_the_event_loop(
         "concatenation ran on the event loop thread"
     )
     assert ticks > 0, "the event loop did not run while concatenating"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("master_builds", [True, False])
+async def test_finalize_removes_the_live_speaker_label_state(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+    transcode_dispatches,
+    monkeypatch,
+    tmp_path,
+    master_builds: bool,
+) -> None:
+    """The label state holds speaker centroids and turn embeddings, and nothing
+    reads it once the capture ends. A master that cannot be built sets the
+    segments aside in ``failed/`` for recovery; the label state does not go too.
+    """
+    from backend.api.v1.endpoints import recordings as recordings_module
+    from backend.processing.browser_live_audio import BROWSER_LIVE_CHANNEL_COUNT
+    from backend.processing.live_diarization.files import LIVE_LABEL_FILENAMES
+    from backend.utils.browser_capture_audio import BrowserAudioFormatError
+
+    set_session_cookie(client)
+    init_response = await client.post(
+        "/api/v1/recordings/init",
+        params={"name": "Labelled live meeting"},
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+    recording_public_id = init_response.json()["id"]
+    recording_id = await _lookup_internal_recording_id(
+        test_session_maker, public_id=recording_public_id
+    )
+    upload_response = await client.post(
+        f"/api/v1/recordings/{recording_public_id}/segment",
+        params={"sequence": 0},
+        headers={"Origin": TRUSTED_ORIGIN},
+        files={"file": ("0.webm", b"webm-opus-segment", "audio/webm")},
+    )
+    assert upload_response.status_code == 200
+
+    from backend.processing import segment_transcode as segment_transcode_module
+
+    monkeypatch.setattr(
+        segment_transcode_module,
+        "_run_ffmpeg_transcode",
+        lambda input_path, output_path: output_path.write_bytes(
+            make_wav_bytes(channels=BROWSER_LIVE_CHANNEL_COUNT)
+        ),
+    )
+    if not master_builds:
+
+        def _unreadable_master(paths, destination):
+            raise BrowserAudioFormatError("Segment 0 is not 16 kHz")
+
+        monkeypatch.setattr(
+            recordings_module, "write_browser_master_audio", _unreadable_master
+        )
+
+    live_dir = _recording_temp_dir(tmp_path, recording_id, create=True) / "live"
+    live_dir.mkdir()
+    (live_dir / "state.json").write_text("{}")
+    for name in LIVE_LABEL_FILENAMES:
+        (live_dir / name).write_bytes(b"label state")
+
+    finalize_response = await client.post(
+        f"/api/v1/recordings/{recording_public_id}/finalize",
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+
+    assert finalize_response.status_code == (200 if master_builds else 400)
+    if master_builds:
+        kept = live_dir
+    else:
+        (failed_root,) = (tmp_path / "failed").iterdir()
+        kept = failed_root / "live"
+    assert sorted(path.name for path in kept.iterdir()) == ["state.json"]
