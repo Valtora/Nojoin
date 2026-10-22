@@ -31,8 +31,8 @@ const SEGMENTS: TranscriptSegment[] = [
   { id: "u1", speaker: "SPEAKER_1", start: 65, end: 67, text: "beta alpha" },
 ];
 
-function renderView(overrides: Partial<ComponentProps<typeof TranscriptView>> = {}) {
-  return render(
+function transcriptView(overrides: Partial<ComponentProps<typeof TranscriptView>> = {}) {
+  return (
     <TranscriptView
       recordingId="rec-1"
       segments={SEGMENTS}
@@ -55,9 +55,12 @@ function renderView(overrides: Partial<ComponentProps<typeof TranscriptView>> = 
       canRedo
       onExport={vi.fn()}
       {...overrides}
-    />,
+    />
   );
 }
+
+const renderView = (overrides: Partial<ComponentProps<typeof TranscriptView>> = {}) =>
+  render(transcriptView(overrides));
 
 const button = (name: string | RegExp) => screen.getByRole("button", { name });
 const findField = () => screen.getByPlaceholderText("Find...");
@@ -171,6 +174,33 @@ describe("transcript toolbar", () => {
     fireEvent.change(findField(), { target: { value: "" } });
     fireEvent.change(findField(), { target: { value: "beta" } });
     expect(screen.getByText("1 of 2")).toBeInTheDocument();
+  });
+
+  it("starts at the first match when unticking an option gives the query matches", () => {
+    renderView();
+    fireEvent.click(button("Find & Replace"));
+    fireEvent.click(button("Advanced Search Settings"));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Case Sensitive" }));
+    fireEvent.change(findField(), { target: { value: "ALPHA" } });
+    expect(screen.queryByText(/ of 2/)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Case Sensitive" }));
+
+    expect(screen.getByText("1 of 2")).toBeInTheDocument();
+  });
+
+  it("starts at the first match when a line that matches arrives", () => {
+    const view = renderView();
+    fireEvent.click(button("Search"));
+    fireEvent.change(findField(), { target: { value: "budget" } });
+
+    view.rerender(
+      transcriptView({
+        segments: [...SEGMENTS, { id: "u2", speaker: "SPEAKER_0", start: 90, end: 92, text: "the budget" }],
+      }),
+    );
+
+    expect(screen.getByText("1 of 1")).toBeInTheDocument();
   });
 
   it("announces the match count from one polite live region", () => {

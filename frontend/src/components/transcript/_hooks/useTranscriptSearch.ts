@@ -192,8 +192,9 @@ export function useTranscriptSearch(
     // the ref has moved on to this query.
     const queryChanged = findText !== prevFindTextRef.current;
     setCurrentMatchIndex((prevIndex) => {
-      // A new query starts at its first match.
-      if (queryChanged) {
+      // A new query starts at its first match, as does one that had none
+      // until an option or the transcript changed.
+      if (queryChanged || prevIndex < 0) {
         return newMatches.length > 0 ? 0 : -1;
       }
 
