@@ -1,7 +1,8 @@
 import { render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { EMPTY_DRAFT, forgetNoteOutboxes, noteOutboxFor, type OutboxEntry } from "@/lib/notes/noteOutbox";
+import { EMPTY_DRAFT, type OutboxEntry } from "@/lib/notes/noteOutbox";
+import { forgetNoteOutboxes, noteOutboxFor } from "@/lib/notes/noteOutboxes";
 
 import LiveNoteComposer from "./LiveNoteComposer";
 import RecordingUnsavedNotes from "./RecordingUnsavedNotes";

@@ -99,8 +99,9 @@ api.interceptors.response.use(
       );
     }
 
-    // While a capture runs, a refused session stays on the page and a sign-in
-    // dialog asks for the password: a reload would tear the capture down.
+    // While a capture runs, or notes wait to be saved, a refused session stays
+    // on the page and a sign-in dialog asks for the password: a reload would
+    // tear the capture down.
     const stayOnPage = isSessionEndedError(error) && noteSessionRefusal(error);
 
     if (error.response && error.response.status === 401 && !stayOnPage) {

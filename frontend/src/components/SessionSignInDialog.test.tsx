@@ -191,6 +191,45 @@ describe("session sign-in dialog", () => {
     expect(screen.getByText("Sign in to keep uploading")).toBeInTheDocument();
   });
 
+  it("asks for sign-in to save the notes when only notes not saved yet hold it", async () => {
+    holdSignInInPlace(false);
+    holdSignInInPlace(true, "notes");
+    captureState.status = "idle";
+    captureState.runtimeActive = false;
+    apiMocks.login.mockResolvedValue({
+      username: "alice",
+      force_password_change: true,
+      is_superuser: false,
+    });
+    renderWithProviders(<SessionSignInDialog />);
+    act(() => {
+      noteSignedIn({ username: "bob", force_password_change: false });
+    });
+
+    expect(await screen.findByText("Sign in to save your notes")).toBeInTheDocument();
+    expect(screen.getByText(/with notes on this page not saved yet/)).toBeInTheDocument();
+    expect(screen.queryByText(/recording/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Stop recording" })).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/The notes belong to alice, so they save only once alice signs in again/),
+    ).toBeInTheDocument();
+    expect(screen.getByText("The notes belong to this account, so sign in as it.")).toBeInTheDocument();
+
+    fireEvent.change(passwordField(), { target: { value: "temporary" } });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    expect(await screen.findByText(/so your notes cannot save until/)).toBeInTheDocument();
+  });
+
+  it("says notes wait too when a capture and notes both hold sign-in", async () => {
+    holdSignInInPlace(true, "notes");
+    renderWithProviders(<SessionSignInDialog />);
+    endSession();
+
+    expect(await screen.findByText("Sign in to keep uploading")).toBeInTheDocument();
+    expect(screen.getByText(/Nojoin is still recording/)).toBeInTheDocument();
+    expect(screen.getByText("Notes not saved yet wait too, and save once you sign in.")).toBeInTheDocument();
+  });
+
   it("describes a stop that is waiting to finish", async () => {
     captureState.status = "finalizing";
     renderWithProviders(<SessionSignInDialog />);

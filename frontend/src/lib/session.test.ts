@@ -50,6 +50,26 @@ describe("browser session", () => {
     expect(useSessionStore.getState().signInRequired).toBe(true);
   });
 
+  it("holds sign-in in place while anything holds it, and says what does", () => {
+    const held = () => {
+      const { heldInPlace, heldBy } = useSessionStore.getState();
+      return { heldInPlace, heldBy };
+    };
+
+    holdSignInInPlace(true, "notes");
+    holdSignInInPlace(true, "notes");
+    holdSignInInPlace(true);
+    expect(held()).toEqual({ heldInPlace: true, heldBy: ["notes", "capture"] });
+
+    holdSignInInPlace(false);
+    expect(held()).toEqual({ heldInPlace: true, heldBy: ["notes"] });
+    expect(noteSessionRefusal(refused(401))).toBe(true);
+
+    holdSignInInPlace(false, "notes");
+    holdSignInInPlace(false, "notes");
+    expect(held()).toEqual({ heldInPlace: false, heldBy: [] });
+  });
+
   it("ignores a refusal for a request sent before the latest sign-in", () => {
     holdSignInInPlace(true);
     const config = stampSessionRequest({});

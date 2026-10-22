@@ -9,7 +9,8 @@ import { formatTimelineMs } from "./placement";
 /**
  * The notes typed into the note box on their way to the server, and the text
  * still in the box: one per recording (`noteOutboxFor`), so both outlive the
- * live view, the end of processing and a move to another page.
+ * live view, the end of processing and a move to another page, and kept in
+ * the browser (`notePersistence`) so they outlive a reload too.
  *
  * A note leaves the box as soon as it is sent, and waits here until the
  * server's answer, or a listing, shows it saved. Each is created under an id
@@ -27,22 +28,25 @@ import { formatTimelineMs } from "./placement";
  * | `saving` | 409 `note_id_in_use` | the id is another note's: once more under a new id and token, then `failed` |
  * | `saving` | 410 `note_deleted_by_you` | discarded here while on its way: entry gone |
  * | `saving` | 410 `note_deleted_elsewhere` | a lost create landed and another device deleted it: entry gone, with a notice; never made again |
- * | `saving` | refused while a capture holds sign-in (`@/lib/session`) | `failed` ("sign in again"); sent again once the owner signs back in |
+ * | `saving` | refused while sign-in is held in place (`@/lib/session`) | `failed` ("sign in again"); sent again once the owner signs back in |
  * | `saving` | other refusal | `failed`, saying why |
  * | `failed` | Retry | `saving`; the same create again |
  * | `failed` | Discard | entry gone; a delete under its token removes the note if the lost create landed, or leaves a tombstone so it can't land later |
  * | discarded | the create's 2xx arrives after all | ignored: the delete removes or fences that note |
  * | discarded | delete gets no answer | sent again whenever a listing still has the note, which stays hidden meanwhile |
  * | any | a listing has the entry's id | its create landed: entry gone |
+ * | stored (`noteStore`) | the page reloads and the recording opens | `saving`; the same create again |
  */
 
 /** How long a create may go unanswered before the note offers Retry and Discard. */
 export const SLOW_SAVE_MS = 8_000;
 
-export type OutboxKind = "point" | "head" | "tail";
+export const OUTBOX_KINDS = ["point", "head", "tail"] as const;
+export type OutboxKind = (typeof OUTBOX_KINDS)[number];
 
+export const NOTE_INSERT_MODES = ["typing", "send", "head", "tail"] as const;
 /** Where the note box puts a note. */
-export type NoteInsertMode = "typing" | "send" | "head" | "tail";
+export type NoteInsertMode = (typeof NOTE_INSERT_MODES)[number];
 
 /** What the box hands over: the text as typed, and a point note's anchor. */
 export interface OutboxDraft {
@@ -92,6 +96,19 @@ export interface OutboxEntry {
   createdAt: string;
   status: "saving" | "failed";
   error: string | null;
+}
+
+/** A note not saved yet, as a stored copy of the outbox keeps it (`noteStore`). */
+export type RestoredNote = Pick<
+  OutboxEntry,
+  "id" | "writeToken" | "kind" | "body" | "anchorMs" | "createdAt"
+>;
+
+/** What a stored copy of an outbox hands back after a reload. */
+export interface RestoredOutbox {
+  notes: readonly RestoredNote[];
+  draft: ComposerDraft | null;
+  discards: readonly { id: string; writeToken: string }[];
 }
 
 /** Something to tell the user that happened away from what they did last. */
@@ -367,6 +384,38 @@ export class NoteOutbox {
     if (changed) this.publish();
   };
 
+  /**
+   * Takes back what this page kept of the outbox before a reload. Each note is
+   * sent again under its own id and token, so one whose create landed is not
+   * made twice, and each discard's delete is sent again. A note this outbox
+   * already knows of is left alone, as is the text in the box unless it is empty.
+   */
+  restore = (stored: RestoredOutbox): void => {
+    const known = new Set([
+      ...this.entries.flatMap((entry) => [entry.key, entry.id]),
+      ...this.saved.map((note) => note.id),
+      ...this.listed,
+      ...this.discards.keys(),
+    ]);
+    const restored = stored.notes
+      .filter((note) => !known.has(note.id))
+      .map((note): OutboxEntry => ({ ...note, key: note.id, status: "saving", error: null }));
+    const discards = stored.discards.filter(({ id }) => !this.discards.has(id));
+    for (const { id, writeToken } of discards) {
+      this.discards.set(id, { token: writeToken, inFlight: false });
+    }
+    if (discards.length > 0) this.discardedIds = new Set(this.discards.keys());
+    this.entries = [...this.entries, ...restored];
+    if (stored.draft && isBlankDraft(this.draft)) this.draft = stored.draft;
+    this.publish();
+    for (const entry of restored) void this.send(entry.key);
+    for (const { id } of discards) void this.sendDiscard(id);
+  };
+
+  /** The discards whose delete the server has not confirmed yet. */
+  pendingDiscards = (): { id: string; writeToken: string }[] =>
+    [...this.discards].map(([id, discard]) => ({ id, writeToken: discard.token }));
+
   private entry(key: string): OutboxEntry | undefined {
     return this.entries.find((entry) => entry.key === key);
   }
@@ -509,46 +558,3 @@ export class NoteOutbox {
     for (const listener of this.listeners) listener();
   }
 }
-
-// One outbox per recording for the life of the page, so a note on its way
-// and the box's text outlive every view of the recording.
-const outboxes = new Map<RecordingId, NoteOutbox>();
-
-const anyUnsaved = () => [...outboxes.values()].some((outbox) => outbox.hasUnsaved());
-
-const warnBeforeUnload = (event: BeforeUnloadEvent) => {
-  if (!anyUnsaved()) return;
-  event.preventDefault();
-  // Older browsers show the prompt only when this is set.
-  event.returnValue = "";
-};
-
-let unloadGuarded = false;
-
-// Listening only while something is unsaved: a page with a beforeunload
-// listener can be kept out of the back/forward cache.
-const guardUnload = () => {
-  if (typeof window === "undefined") return;
-  const needed = anyUnsaved();
-  if (needed === unloadGuarded) return;
-  unloadGuarded = needed;
-  if (needed) window.addEventListener("beforeunload", warnBeforeUnload);
-  else window.removeEventListener("beforeunload", warnBeforeUnload);
-};
-
-/** The outbox of a recording, made on first use. */
-export const noteOutboxFor = (recordingId: RecordingId): NoteOutbox => {
-  let outbox = outboxes.get(recordingId);
-  if (!outbox) {
-    outbox = new NoteOutbox(recordingId);
-    outbox.subscribe(guardUnload);
-    outboxes.set(recordingId, outbox);
-  }
-  return outbox;
-};
-
-/** Tests: forget every recording's outbox. */
-export const forgetNoteOutboxes = (): void => {
-  outboxes.clear();
-  guardUnload();
-};

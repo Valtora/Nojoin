@@ -3,7 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import { AudioClock } from "@/lib/notes/audioClock";
-import { forgetNoteOutboxes, type OutboxEntry } from "@/lib/notes/noteOutbox";
+import { type OutboxEntry } from "@/lib/notes/noteOutbox";
+import { forgetNoteOutboxes } from "@/lib/notes/noteOutboxes";
 import {
   ClientStatus,
   RecordingStatus,
