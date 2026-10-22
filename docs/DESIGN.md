@@ -431,8 +431,8 @@ only. Build a surface from these before reaching for raw elements.
 
 | Primitive | Use for |
 | --- | --- |
-| `Button` | Any labelled action. `variant`: primary, secondary, ghost, danger. `size`: sm, md, lg. `loading` disables it and swaps the leading icon for a spinner, keeping the label so the control does not resize. |
-| `IconButton` | An action with no label. `aria-label` is required, as the control's only name. The smallest size draws a 16px glyph in a 40px box, so the target stays reachable. |
+| `Button` | Any labelled action. `variant`: primary, secondary, ghost, danger. `size`: sm, md, lg. `loading` swaps the leading icon for a spinner, keeping the label so the control does not resize, and ignores clicks, a submit button's included. The button stays enabled and marked `aria-disabled`, even when `disabled` is also set, because Chrome moves focus from a disabled button to the page body. |
+| `IconButton` | An action with no label. `aria-label` is required, as the control's only name. The smallest size draws a 16px glyph in a 40px box, so the target stays reachable. `loading` works as on `Button`. |
 | `touchTarget.ts` | Gives a control at `sm` the full 44 × 44px target on a touch screen: `TOUCH_TARGET_SQUARE` for an `IconButton`, `TOUCH_TARGET_HEIGHT` for a `Button`. The sizes are px, so the smaller root of compact and dense cannot shrink them. |
 | `Card` | The resting surface. `interactive` turns on the tint-and-border hover. |
 | `Badge`, `StatusBadge` | Pills. `StatusBadge` maps a `RecordingStatus` to a tone, a glyph and a label. |
@@ -526,7 +526,7 @@ Beyond contrast, conformance is checked by hand. There is no `axe` or Playwright
 few `jsx-a11y` rules in Next's ESLint config only warn, so verify keyboard reachability and
 screen-reader behaviour when changing the interface. The primitives carry what they can:
 a required label on `IconButton`, `aria-invalid` and `aria-describedby` on `Input` and `Select`,
-`aria-busy` on a loading `Button`, and the focus trap in `Modal`.
+`aria-busy` and `aria-disabled` on a loading `Button`, and the focus trap in `Modal`.
 
 ## The marketing site
 
