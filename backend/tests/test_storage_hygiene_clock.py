@@ -196,6 +196,22 @@ def test_a_worker_clock_stepped_back_since_the_cutoff_still_trips(
     assert fresh.exists()
 
 
+@pytest.mark.usefixtures("library")
+def test_a_long_run_measures_the_lag_from_the_probe_not_the_start(
+    layout: Layout, db: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The grace was measured an hour before the probe, as on a slow listing:
+    a filesystem 90 minutes behind must still read as 90 minutes, not 30."""
+    orphan = write_file(layout.recordings / uuid_name(".wav"))
+    _lagging(monkeypatch, 1.5 * HOUR)
+
+    report = run(db, delete=True, now=time.time() - HOUR)
+
+    assert rules(report) == [RULE_CLOCK]
+    assert "1.5 hours behind" in report.breaker[0].detail
+    assert orphan.exists()
+
+
 def test_only_the_directory_whose_clock_trails_trips(
     layout: Layout, db: Engine, orphans: list[Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
