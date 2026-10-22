@@ -740,7 +740,7 @@ def test_two_corrections_to_every_line_of_a_speaker_take_turns(
                         )
                         person.commit()
                         outcome["done"] = True
-                except Exception as exc:  # noqa: BLE001 -- the deadlock, reported
+                except OperationalError as exc:  # a deadlock, reported below
                     outcome["error"] = exc
 
             thread = threading.Thread(target=work)
