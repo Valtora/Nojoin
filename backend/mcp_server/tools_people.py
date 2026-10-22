@@ -212,6 +212,7 @@ async def _resolve_tag_ids(
 ) -> list[int]:
     """Map tag names to PeopleTag ids for the user, creating missing tags."""
     from backend.models.people_tag import PeopleTag
+    from backend.services.tag_ownership import get_or_create_tag
 
     tag_ids: list[int] = []
     for raw_name in tag_names:
@@ -219,16 +220,7 @@ async def _resolve_tag_ids(
         if not name:
             continue
         if name not in cache:
-            result = await db.execute(
-                select(PeopleTag).where(
-                    PeopleTag.name == name, PeopleTag.user_id == user_id
-                )
-            )
-            tag = result.scalars().first()
-            if tag is None:
-                tag = PeopleTag(name=name, user_id=user_id)
-                db.add(tag)
-                await db.flush()
+            tag, _ = await get_or_create_tag(db, PeopleTag, name, user_id)
             cache[name] = tag.id
         if cache[name] not in tag_ids:
             tag_ids.append(cache[name])

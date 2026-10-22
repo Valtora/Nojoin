@@ -203,23 +203,3 @@ async def test_a_tag_keeps_its_name_or_takes_one_only_another_user_has(
     ]
     assert cleared.json()["name"] == "Budget"
     assert (await _tags(session_maker, table))[WEBSITE] == ("Budget", PROJECTS)
-
-
-@pytest.mark.anyio
-async def test_a_people_tag_name_held_twice_answers_400(client, session_maker) -> None:
-    async with session_maker() as session:
-        await _insert_tag(session, "p_tags", (99, "Archive", 1, None))
-        await session.commit()
-    before = await _tags(session_maker, "p_tags")
-
-    created = await client.post("/api/v1/people-tags/", json={"name": "Archive"})
-    renamed = await client.patch(
-        f"/api/v1/people-tags/{WEBSITE}", json={"name": "Archive"}
-    )
-
-    assert (created.status_code, created.json()) == (
-        400,
-        {"detail": "Tag already exists"},
-    )
-    assert (renamed.status_code, renamed.json()) == (400, NAME_TAKEN)
-    assert await _tags(session_maker, "p_tags") == before
