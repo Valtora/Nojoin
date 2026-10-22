@@ -388,7 +388,8 @@ def test_the_daily_cleanup_runs_storage_hygiene_in_the_configured_mode(
         system_tasks.cleanup_temp_recordings.run()
 
     assert orphan.exists() is not removed
-    assert lock.reads == (2 if removed else 1)
+    # A deleting run reads it again before the clock probe and the first unlink.
+    assert lock.reads == (3 if removed else 1)
     summary = _summaries(caplog)
     assert len(summary) == 1
     assert ("(delete)" if removed else "(report only)") in summary[0]

@@ -4,15 +4,15 @@ Every rule only ever refuses. Only the bulk rule can be lifted, for one named
 directory and an expected count of files, so no single flag removes most of a
 directory: the split-brain rule refuses that whatever is passed. The clock rule
 is the only one that writes: when a deleting run passes every other rule, a
-probe in each directory, which it removes again.
+probe in each directory it would remove files from, which it removes again.
 """
 
 from __future__ import annotations
 
+import errno
 import logging
 import os
 import time
-import uuid
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -52,7 +52,11 @@ MAX_REMOVED_PERCENT = 10
 # the grace would let go of files written within it.
 MAX_CLOCK_LAG_SECONDS = 60 * 60
 # A dotfile, so no listing, this run's or a concurrent one's, ever includes it.
-CLOCK_PROBE_PREFIX = ".nojoin-hygiene-clock-"
+# One fixed name per directory: a probe left behind is found, never piled up.
+CLOCK_PROBE_NAME = ".nojoin-hygiene-clock"
+# A write that fails for want of space leaves the probe's creation stamp, which
+# the same filesystem set, to measure by.
+_VOLUME_FULL = (errno.ENOSPC, errno.EDQUOT)
 
 
 def _data_root_trips(directories: Sequence[ScanDirectory]) -> list[BreakerTrip]:
@@ -181,39 +185,75 @@ def breaker_trips(
     return trips
 
 
-def _write_probe(path: Path) -> None:
-    """Create the probe and push a write through, so the filesystem sets its
-    mtime as it does for every stored file."""
-    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    try:
-        os.write(descriptor, b"Nojoin storage hygiene clock probe\n")
-        os.fsync(descriptor)
-    finally:
-        os.close(descriptor)
+def _write_probe(descriptor: int) -> None:
+    """Push a write through the new probe, so the filesystem stamps its mtime as
+    it stamps the files Nojoin writes."""
+    os.write(descriptor, b"Nojoin storage hygiene clock probe\n")
+    os.fsync(descriptor)
 
 
-def _remove_probe(path: Path) -> None:
+def _stamp_probe(descriptor: int) -> None:
+    """Write the probe and close it.
+
+    On a full volume or quota the empty probe keeps the stamp its creation got
+    from the filesystem. That can only show as much lag as a write would or
+    more: an NFS server stamps both, and an SMB client that stamps on close
+    stamps with the worker's own clock.
+    """
     try:
-        # A probe that was never created leaves nothing to remove, and on a
-        # read-only filesystem unlinking it would fail for that reason too.
-        if os.path.lexists(path):
-            os.unlink(path)
+        try:
+            _write_probe(descriptor)
+        finally:
+            os.close(descriptor)
     except OSError as error:
-        logger.warning("Storage hygiene could not remove its probe %s: %s", path, error)
+        if error.errno not in _VOLUME_FULL:
+            raise
 
 
-def _clock_trip(directory: Path) -> BreakerTrip | None:
-    probe = directory / f"{CLOCK_PROBE_PREFIX}{uuid.uuid4().hex}"
+def _probe_mtime_ns(probe: Path) -> int:
+    return os.stat(probe).st_mtime_ns
+
+
+def _remove_probe(probe: Path) -> None:
     try:
-        _write_probe(probe)
-        # The mtime the filesystem gives the probe, read back after the write.
-        lag = time.time() - os.stat(probe).st_mtime_ns / 1_000_000_000
+        os.unlink(probe)
     except OSError as error:
+        # The next deleting run finds it and refuses until it is gone.
+        logger.warning(
+            "Storage hygiene could not remove its probe %s: %s", probe, error
+        )
+
+
+def _probe_failed(directory: Path, error: OSError) -> BreakerTrip:
+    if isinstance(error, FileExistsError):
         return BreakerTrip(
             RULE_CLOCK,
-            f"{directory}: could not write and read back a probe to check its "
-            f"clock: {str(error).rstrip('.')}",
+            f"{directory}: {CLOCK_PROBE_NAME} is already there, so another deleting "
+            "run is under way or an earlier one could not remove it; remove it "
+            "once no run is going",
         )
+    return BreakerTrip(
+        RULE_CLOCK,
+        f"{directory}: could not write and read back a probe to check its clock: "
+        f"{str(error).rstrip('.')}",
+    )
+
+
+def _clock_trip(directory: Path, now: float) -> BreakerTrip | None:
+    probe = directory / CLOCK_PROBE_NAME
+    try:
+        # Exclusive, so a file this run did not create is never written or removed.
+        descriptor = os.open(probe, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except OSError as error:
+        return _probe_failed(directory, error)
+    try:
+        _stamp_probe(descriptor)
+        # The mtime the filesystem gave the probe, read back after the write,
+        # against the later of the grace's start and now: a worker clock stepped
+        # back since the cutoff was taken must not hide that cutoff's error.
+        lag = max(now, time.time()) - _probe_mtime_ns(probe) / 1_000_000_000
+    except OSError as error:
+        return _probe_failed(directory, error)
     finally:
         _remove_probe(probe)
     if lag > MAX_CLOCK_LAG_SECONDS:
@@ -225,22 +265,25 @@ def _clock_trip(directory: Path) -> BreakerTrip | None:
     return None
 
 
-def clock_trips(directories: Sequence[ScanDirectory]) -> list[BreakerTrip]:
-    """Why each directory's clock cannot be trusted for the grace, from a probe
-    written there. Only for a run about to remove files: one that reports, or
-    that another rule stops, writes nothing.
+def clock_trips(
+    directories: Sequence[DirectoryReport], now: float
+) -> list[BreakerTrip]:
+    """Why the clock of each directory the run would remove files from cannot be
+    trusted for the grace, from a probe written there. ``now`` is the time the
+    grace was measured from.
 
     The grace compares each file's mtime with this worker's clock, but on an NFS
-    or SMB mount the server sets the mtime. A clock running ahead only keeps more
-    files. A directory that is not there holds nothing to remove.
+    or SMB mount the filesystem may stamp it with another. A lagging clock only
+    makes files look older, so a directory with no candidates loses nothing to
+    it and is not probed; one that had candidates and is gone trips. A clock
+    running ahead only keeps more files.
     """
     trips: list[BreakerTrip] = []
     for directory in directories:
-        if not directory.path.is_dir():
-            continue
-        trip = _clock_trip(directory.path)
-        if trip is not None:
-            trips.append(trip)
+        if directory.candidates:
+            trip = _clock_trip(directory.path, now)
+            if trip is not None:
+                trips.append(trip)
     return trips
 
 

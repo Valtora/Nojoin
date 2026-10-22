@@ -11,9 +11,9 @@ commits after the listing can only add references, and a file written after it
 is not in the listing at all. Only unreferenced files older than the grace,
 under names Nojoin writes, are candidates. The grace is measured with this
 worker's clock, so a run about to remove files first checks, with a probe
-file, that no directory's clock trails it. Before unlinking, the rows are read
-again, the restore lock is read every few files, and each file's inode and
-mtime are checked once more. The circuit breaker
+file, that no directory it would remove from has a clock trailing it. Before
+unlinking, the rows are read again, the restore lock is read every few files,
+and each file's inode and mtime are checked once more. The circuit breaker
 (:mod:`backend.utils.storage_hygiene_breaker`) turns a run that looks wrong into
 a report. Rows are never changed, and every removed file is logged.
 """
@@ -260,6 +260,17 @@ def _delete(
             entry.failed += 1
 
 
+def _clock_or_lock_trips(
+    report: HygieneReport, options: HygieneOptions, now: float
+) -> list[BreakerTrip]:
+    """The clock rule's trips, after the restore lock is read again, so a
+    restore that began during the listing never meets a probe."""
+    lock_trip = _lock_trip(options)
+    if lock_trip is not None:
+        return [lock_trip]
+    return clock_trips(report.directories, now)
+
+
 def _log_run(report: HygieneReport) -> None:
     if report.tripped:
         # A split brain or a lagging clock that would have cost files is an
@@ -317,10 +328,9 @@ def run_storage_hygiene(
     if lock_trip is not None:
         report.breaker.append(lock_trip)
     # Only a run that would go on to remove files writes its probes, so a run
-    # that reports, or that another rule stops, during a restore included,
-    # writes nothing.
+    # that reports, or that another rule stops, writes nothing.
     if options.delete and not report.breaker:
-        report.breaker = clock_trips(scanned)
+        report.breaker = _clock_or_lock_trips(report, options, now)
 
     if options.delete and not report.breaker:
         _delete(candidates, report, session_factory, options)

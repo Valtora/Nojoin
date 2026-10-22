@@ -33,8 +33,7 @@ from backend.utils.storage_hygiene import (
     HygieneReport,
     run_storage_hygiene,
 )
-from backend.utils.storage_hygiene_report import BreakerTrip
-from backend.utils.storage_hygiene_scan import ScanDirectory
+from backend.utils.storage_hygiene_report import BreakerTrip, DirectoryReport
 
 POSTGRES_SCHEMA = "storage_hygiene_test"
 HOUR = 60 * 60
@@ -100,8 +99,10 @@ def read_only_after_the_clock_check(
     there, so its unlinks fail. One read-only from the start trips that rule."""
     check = storage_hygiene.clock_trips
 
-    def check_then_lock(directories: Sequence[ScanDirectory]) -> list[BreakerTrip]:
-        trips = check(directories)
+    def check_then_lock(
+        directories: Sequence[DirectoryReport], now: float
+    ) -> list[BreakerTrip]:
+        trips = check(directories, now)
         directory.chmod(0o500)
         return trips
 
