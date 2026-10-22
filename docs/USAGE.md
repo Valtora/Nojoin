@@ -115,7 +115,7 @@ In the transcript:
 
 - Playback highlights the current line, and the play button beside a line's timestamp plays from there.
 - Click a line's text to edit it. Click a speaker name to reassign that line or the whole transcript, and double-click it to rename the speaker.
-- The toolbar has **Undo**, **Redo**, **Search**, **Find & Replace** and export. In the find field, Enter and Shift+Enter, or the arrows beside it, move between matches. Escape closes the search options.
+- The toolbar has **Undo**, **Redo**, **Search**, **Find & Replace** and export. In the find field, Enter and Shift+Enter, or the arrows beside it, move between matches. Escape closes the Search Options menu.
 - **Low confidence** marks a line whose speaker Nojoin is unsure of and nobody has set by hand.
 - Notes you placed during the meeting ([Live Notes](#live-notes)) show on their own line after the line they follow.
 

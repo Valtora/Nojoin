@@ -6,12 +6,16 @@ import { Pause, Play } from "lucide-react";
 import { getColorByKey } from "@/lib/constants";
 
 import IconButton from "../ui/IconButton";
+import { TOUCH_TARGET_SQUARE } from "../ui/touchTarget";
 
 import { formatTime, isRecentlyUpdatedSegment } from "./transcriptDisplay";
 import type {
   IndexedTranscriptSegment,
   TranscriptGroup as TranscriptGroupData,
 } from "./transcriptGroups";
+
+/** "Alex", "Alex and Blair", "Alex, Blair, and Sam". */
+const SPEAKER_LIST = new Intl.ListFormat("en", { type: "conjunction" });
 
 interface TranscriptGroupProps {
   group: TranscriptGroupData;
@@ -76,7 +80,10 @@ export default function TranscriptGroup({
         {!disableSegmentPlayback && (
           <IconButton
             size="sm"
-            aria-label={`${pauses ? "Pause" : "Play"} segment at ${formatTime(group.start)}`}
+            // Who and when, so two groups in the same second differ.
+            aria-label={`${pauses ? "Pause" : "Play"} ${SPEAKER_LIST.format(
+              involvedSpeakers.map((speaker) => speakerMap[speaker] || speaker),
+            )} at ${formatTime(group.start)}`}
             title={pauses ? "Pause segment" : "Play segment"}
             onClick={() => {
               if (isGroupActive) {
@@ -86,7 +93,7 @@ export default function TranscriptGroup({
                 onPlaySegment(group.start, group.end);
               }
             }}
-            className={`rounded-full shadow-card ${
+            className={`rounded-full ${TOUCH_TARGET_SQUARE} ${
               isGroupActive
                 ? "bg-status-success-bg text-foreground hover:bg-status-success-bg hover:text-foreground"
                 : "bg-surface-inset text-contrast-helper hover:bg-action hover:text-action-on"

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
@@ -20,10 +20,11 @@ afterAll(() => {
 // The design system's focus ring, which the Button and IconButton primitives
 // carry (docs/DESIGN.md, "The flat canon").
 const FOCUS_RING = "focus-visible:outline-focus-ring";
-// IconButton at sm: a 40 px box. jsdom has no layout, so the classes stand in.
+// IconButton at sm: a 2.5rem box. jsdom has no layout, so the classes stand in.
 const ICON_TARGET = ["h-10", "w-10"];
-// The text buttons' 44 px on a touch screen.
-const TEXT_TOUCH = "pointer-coarse:h-[44px]";
+// 44 px on a touch screen in every density: px, so a 15 px root can't shrink it.
+const TOUCH_HEIGHT = "pointer-coarse:h-[44px]";
+const TOUCH_WIDTH = "pointer-coarse:w-[44px]";
 
 const SEGMENTS: TranscriptSegment[] = [
   { id: "u0", speaker: "SPEAKER_0", start: 0, end: 2, text: "alpha and beta" },
@@ -59,16 +60,25 @@ function renderView(overrides: Partial<ComponentProps<typeof TranscriptView>> = 
 }
 
 const button = (name: string | RegExp) => screen.getByRole("button", { name });
+const findField = () => screen.getByPlaceholderText("Find...");
+const settingsOpen = () => screen.queryByRole("checkbox", { name: "Case Sensitive" }) !== null;
 
 /** Opens Find & Replace with a term that matches, and the settings menu. */
 function openEverything() {
   fireEvent.click(button("Find & Replace"));
-  fireEvent.change(screen.getByPlaceholderText("Find..."), { target: { value: "alpha" } });
+  fireEvent.change(findField(), { target: { value: "alpha" } });
   fireEvent.click(button("Advanced Search Settings"));
 }
 
+const expectIconTarget = (control: HTMLElement, name: string) => {
+  const classes = control.className.split(" ");
+  for (const size of [...ICON_TARGET, TOUCH_HEIGHT, TOUCH_WIDTH]) {
+    expect(classes, `${name}: ${size}`).toContain(size);
+  }
+};
+
 describe("transcript toolbar", () => {
-  it("names every icon button, rings it, and gives it a 40 px target", () => {
+  it("names every icon button, rings it, and gives it a full target", () => {
     renderView();
     openEverything();
 
@@ -84,7 +94,7 @@ describe("transcript toolbar", () => {
     ]) {
       const control = button(name);
       expect(control.className, name).toContain(FOCUS_RING);
-      for (const size of ICON_TARGET) expect(control.className.split(" "), name).toContain(size);
+      expectIconTarget(control, name);
     }
   });
 
@@ -95,7 +105,23 @@ describe("transcript toolbar", () => {
     for (const name of [/Find Next/, /^Replace$/, /Replace All/]) {
       const control = button(name);
       expect(control.className).toContain(FOCUS_RING);
-      expect(control.className).toContain(TEXT_TOUCH);
+      expect(control.className).toContain(TOUCH_HEIGHT);
+    }
+  });
+
+  it("rings the fields and the search options with the focus ring", () => {
+    renderView();
+    openEverything();
+
+    const controls = [
+      findField(),
+      screen.getByPlaceholderText("Replace..."),
+      ...screen.getAllByRole("checkbox"),
+    ];
+    expect(controls).toHaveLength(5);
+    for (const control of controls) {
+      expect(control.className).toContain(FOCUS_RING);
+      expect(control.className).not.toContain("focus:ring");
     }
   });
 
@@ -105,7 +131,7 @@ describe("transcript toolbar", () => {
     expect(button("Previous match")).toBeDisabled();
     expect(button("Next match")).toBeDisabled();
 
-    fireEvent.change(screen.getByPlaceholderText("Find..."), { target: { value: "alpha" } });
+    fireEvent.change(findField(), { target: { value: "alpha" } });
     expect(button("Next match")).toBeEnabled();
 
     fireEvent.click(button("Next match"));
@@ -114,6 +140,77 @@ describe("transcript toolbar", () => {
     expect(screen.getByText("2 of 2")).toBeInTheDocument();
     fireEvent.click(button("Previous match"));
     expect(screen.getByText("1 of 2")).toBeInTheDocument();
+  });
+
+  it("announces the match count from one polite live region", () => {
+    renderView();
+    fireEvent.click(button("Search"));
+    const region = document.querySelector('[aria-live="polite"]');
+    expect(region).toHaveAttribute("aria-atomic", "true");
+    expect(region).toHaveTextContent(/^$/);
+
+    fireEvent.change(findField(), { target: { value: "alpha" } });
+    fireEvent.keyDown(findField(), { key: "Enter" });
+    expect(document.querySelector('[aria-live="polite"]')).toBe(region);
+    expect(region).toHaveTextContent("1 of 2");
+
+    fireEvent.keyDown(findField(), { key: "Enter" });
+    expect(region).toHaveTextContent("2 of 2");
+  });
+
+  it("moves focus from a match arrow to the find field when the matches run out", () => {
+    renderView();
+    fireEvent.click(button("Search"));
+    fireEvent.change(findField(), { target: { value: "alpha" } });
+    button("Next match").focus();
+
+    fireEvent.change(findField(), { target: { value: "no such words" } });
+
+    expect(button("Next match")).toBeDisabled();
+    expect(document.activeElement).toBe(findField());
+  });
+
+  it("moves focus from Replace to the find field when it replaced the last match", () => {
+    renderView();
+    fireEvent.click(button("Find & Replace"));
+    fireEvent.change(findField(), { target: { value: "alpha" } });
+    button(/^Replace$/).focus();
+
+    fireEvent.change(findField(), { target: { value: "no such words" } });
+
+    expect(document.activeElement).toBe(findField());
+  });
+
+  it("moves focus to the find field when a saving Replace is disabled and blurred", () => {
+    // Chrome blurs a focused button as it is disabled, firing focusout; jsdom
+    // doesn't, so the focusout is dispatched by hand.
+    renderView({ onUpdateSegmentText: vi.fn(() => new Promise<void>(() => {})) });
+    fireEvent.click(button("Find & Replace"));
+    fireEvent.change(findField(), { target: { value: "alpha" } });
+    fireEvent.keyDown(findField(), { key: "Enter" });
+    const replace = button(/^Replace$/);
+    replace.focus();
+
+    fireEvent.click(replace);
+    expect(replace).toBeDisabled();
+    fireEvent.focusOut(replace);
+
+    expect(document.activeElement).toBe(findField());
+  });
+
+  it("sends focus to Find & Replace when Replace All finishes", async () => {
+    const onFindAndReplace = vi.fn(() => Promise.resolve());
+    renderView({ onFindAndReplace });
+    fireEvent.click(button("Find & Replace"));
+    fireEvent.change(findField(), { target: { value: "alpha" } });
+    const replaceAll = button(/Replace All/);
+    replaceAll.focus();
+
+    fireEvent.click(replaceAll);
+
+    await waitFor(() => expect(screen.queryByPlaceholderText("Find...")).not.toBeInTheDocument());
+    expect(onFindAndReplace).toHaveBeenCalledTimes(1);
+    expect(document.activeElement).toBe(button("Find & Replace"));
   });
 
   it("says whether Search and Find & Replace are on", () => {
@@ -147,7 +244,7 @@ describe("transcript toolbar", () => {
     caseSensitive.focus();
     fireEvent.keyDown(caseSensitive, { key: "Escape" });
 
-    expect(screen.queryByRole("checkbox", { name: "Case Sensitive" })).not.toBeInTheDocument();
+    expect(settingsOpen()).toBe(false);
     expect(toggle).toHaveAttribute("aria-expanded", "false");
     expect(toggle).toHaveFocus();
   });
@@ -155,34 +252,75 @@ describe("transcript toolbar", () => {
   it("closes the settings menu on Escape without taking focus from the find field", () => {
     renderView();
     openEverything();
-    const find = screen.getByPlaceholderText("Find...");
-    find.focus();
+    findField().focus();
 
-    fireEvent.keyDown(find, { key: "Escape" });
+    fireEvent.keyDown(findField(), { key: "Escape" });
 
-    expect(screen.queryByRole("checkbox", { name: "Case Sensitive" })).not.toBeInTheDocument();
-    expect(find).toHaveFocus();
+    expect(settingsOpen()).toBe(false);
+    expect(findField()).toHaveFocus();
+  });
+
+  it("keeps the settings menu open for an Escape that ends a composition or was handled", () => {
+    renderView();
+    openEverything();
+    const caseSensitive = screen.getByRole("checkbox", { name: "Case Sensitive" });
+
+    fireEvent.keyDown(caseSensitive, { key: "Escape", isComposing: true });
+    expect(settingsOpen()).toBe(true);
+
+    caseSensitive.addEventListener("keydown", (event) => event.preventDefault());
+    fireEvent.keyDown(caseSensitive, { key: "Escape" });
+    expect(settingsOpen()).toBe(true);
+  });
+
+  it("opens Find & Replace again with the settings menu closed", () => {
+    renderView();
+    openEverything();
+    expect(settingsOpen()).toBe(true);
+
+    fireEvent.click(button("Find & Replace"));
+    fireEvent.click(button("Find & Replace"));
+
+    expect(settingsOpen()).toBe(false);
+    expect(button("Advanced Search Settings")).toHaveAttribute("aria-expanded", "false");
   });
 });
 
 describe("transcript play buttons", () => {
-  it("name each group's button by its time, ring it and give it a 40 px target", () => {
+  it("name each group's button by speaker and time, ring it and give it a full target", () => {
     renderView();
 
-    for (const name of ["Play segment at 00:00", "Play segment at 01:05"]) {
+    for (const name of ["Play Alex at 00:00", "Play Blair at 01:05"]) {
       const control = button(name);
       expect(control.className).toContain(FOCUS_RING);
-      for (const size of ICON_TARGET) expect(control.className.split(" ")).toContain(size);
+      expectIconTarget(control, name);
     }
+  });
+
+  it("tell apart two groups that start in the same second", () => {
+    renderView({
+      segments: [
+        { id: "u0", speaker: "SPEAKER_0", start: 65.1, end: 65.5, text: "Yes." },
+        { id: "u1", speaker: "SPEAKER_1", start: 65.7, end: 68, text: "Then we agree." },
+        { id: "u2", speaker: "SPEAKER_0", start: 70, end: 74, text: "Both of us" },
+        { id: "u3", speaker: "SPEAKER_1", start: 71, end: 73, text: "at once." },
+      ],
+    });
+
+    const names = screen
+      .getAllByRole("button")
+      .map((control) => control.getAttribute("aria-label") ?? "")
+      .filter((name) => name.startsWith("Play "));
+    expect(names).toEqual(["Play Alex at 01:05", "Play Blair at 01:05", "Play Alex and Blair at 01:10"]);
   });
 
   it("names the playing group's button Pause and pauses it", () => {
     const onPause = vi.fn();
     renderView({ currentTime: 1, isPlaying: true, onPause });
 
-    fireEvent.click(button("Pause segment at 00:00"));
+    fireEvent.click(button("Pause Alex at 00:00"));
 
     expect(onPause).toHaveBeenCalledTimes(1);
-    expect(button("Play segment at 01:05")).toBeInTheDocument();
+    expect(button("Play Blair at 01:05")).toBeInTheDocument();
   });
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import {
   ArrowRightLeft,
   ChevronDown,
@@ -8,23 +8,27 @@ import {
   Download,
   Redo2,
   Search,
-  Settings,
   Undo2,
 } from "lucide-react";
 
 import Button from "../ui/Button";
 import IconButton from "../ui/IconButton";
+import { TOUCH_TARGET_HEIGHT, TOUCH_TARGET_SQUARE } from "../ui/touchTarget";
 
 import type { TranscriptSearch } from "./_hooks/useTranscriptSearch";
+import SearchSettingsMenu from "./SearchSettingsMenu";
 
 /** A toggle that is on keeps the action tint, hovered or not. */
 const PRESSED = "bg-action-tint text-action-text hover:bg-action-tint hover:text-action-text";
 
-/**
- * Find Next, Replace and Replace All are `Button` at `sm`, 32 px. On a touch
- * screen they take the full 44 px target.
- */
-const TOOLBAR_BUTTON_TOUCH = "pointer-coarse:h-[44px]";
+/** The find and replace fields, with the Input primitive's focus ring. */
+const FIELD =
+  "w-full min-w-0 py-1.5 pl-8 text-sm rounded-md border border-control-border bg-surface-inset focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-focus-ring";
+
+/** Moves focus to `field` when `target` is a button that has been disabled. */
+const focusIfDisabled = (target: EventTarget | null, field: HTMLInputElement | null) => {
+  if (target instanceof HTMLButtonElement && target.disabled) field?.focus();
+};
 
 interface TranscriptToolbarProps {
   onUndo: () => void;
@@ -61,42 +65,55 @@ export default function TranscriptToolbar({
   onReplaceCurrent,
   onReplaceAll,
 }: TranscriptToolbarProps) {
-  const [showSettings, setShowSettings] = useState(false);
-  const settingsRef = useRef<HTMLDivElement>(null);
-  const settingsToggleRef = useRef<HTMLButtonElement>(null);
-  const settingsPanelId = useId();
-
-  // Escape closes the settings menu. Focus inside it goes back to the toggle,
-  // so it isn't lost with the menu.
-  useEffect(() => {
-    if (!showSettings) return;
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      if (settingsRef.current?.contains(document.activeElement)) {
-        settingsToggleRef.current?.focus();
-      }
-      setShowSettings(false);
-    };
-    document.addEventListener("keydown", closeOnEscape);
-    return () => document.removeEventListener("keydown", closeOnEscape);
-  }, [showSettings]);
-
   const {
     findText,
     setFindText,
     replaceText,
     setReplaceText,
-    caseSensitive,
-    setCaseSensitive,
-    isFuzzy,
-    setIsFuzzy,
-    useRegex,
-    setUseRegex,
     matches,
     currentMatchIndex,
     nextMatch,
     prevMatch,
   } = search;
+  const hasMatches = matches.length > 0;
+  const searchRowRef = useRef<HTMLDivElement>(null);
+  const findRef = useRef<HTMLInputElement>(null);
+  const findReplaceToggleRef = useRef<HTMLButtonElement>(null);
+  const replaceWasOpenRef = useRef(showReplace);
+
+  // When Find & Replace closes with focus inside it, as Replace All does when
+  // it finishes, focus lands on the page. Send it to the toggle instead.
+  useLayoutEffect(() => {
+    const closed = replaceWasOpenRef.current && !showReplace;
+    replaceWasOpenRef.current = showReplace;
+    if (closed && document.activeElement === document.body) {
+      findReplaceToggleRef.current?.focus();
+    }
+  }, [showReplace]);
+
+  // A button that is disabled while it has focus would leave focus on the
+  // page: the arrows, Find Next and Replace once no match is left, Replace
+  // and Replace All while they save. Focus goes to the find field instead.
+  // Chrome blurs the button as it is disabled, during React's commit, when
+  // React's own onBlur is switched off; a native listener still hears it.
+  const rowShown = showSearch || showReplace;
+  useEffect(() => {
+    const row = searchRowRef.current;
+    if (!row) return;
+    const onFocusOut = (event: FocusEvent) => {
+      if (event.relatedTarget === null) focusIfDisabled(event.target, findRef.current);
+    };
+    row.addEventListener("focusout", onFocusOut);
+    return () => row.removeEventListener("focusout", onFocusOut);
+  }, [rowShown]);
+  // A browser that keeps focus on the disabled button is caught after the
+  // render, once the matches have run out.
+  useLayoutEffect(() => {
+    if (hasMatches) return;
+    const active = document.activeElement;
+    if (searchRowRef.current?.contains(active)) focusIfDisabled(active, findRef.current);
+  });
+
   const exportTitle = exportDisabled
     ? "Finish the current transcript edit before exporting"
     : "Export";
@@ -114,6 +131,7 @@ export default function TranscriptToolbar({
             title="Undo"
             onClick={onUndo}
             disabled={!canUndo}
+            className={TOUCH_TARGET_SQUARE}
             icon={<Undo2 aria-hidden="true" />}
           />
           <IconButton
@@ -122,6 +140,7 @@ export default function TranscriptToolbar({
             title="Redo"
             onClick={onRedo}
             disabled={!canRedo}
+            className={TOUCH_TARGET_SQUARE}
             icon={<Redo2 aria-hidden="true" />}
           />
           <div className="mx-0.5 h-4 w-px bg-surface-card sm:mx-1" />
@@ -131,6 +150,7 @@ export default function TranscriptToolbar({
             title={exportTitle}
             onClick={onExport}
             disabled={exportDisabled}
+            className={TOUCH_TARGET_SQUARE}
             icon={<Download aria-hidden="true" />}
           />
           <IconButton
@@ -143,10 +163,11 @@ export default function TranscriptToolbar({
               setShowSearch(newState);
               if (!newState) setShowReplace(false);
             }}
-            className={showSearch ? PRESSED : undefined}
+            className={`${TOUCH_TARGET_SQUARE} ${showSearch ? PRESSED : ""}`}
             icon={<Search aria-hidden="true" />}
           />
           <IconButton
+            ref={findReplaceToggleRef}
             size="sm"
             aria-label="Find & Replace"
             title="Find & Replace"
@@ -160,7 +181,7 @@ export default function TranscriptToolbar({
                 setShowSearch(true);
               }
             }}
-            className={showReplace ? PRESSED : undefined}
+            className={`${TOUCH_TARGET_SQUARE} ${showReplace ? PRESSED : ""}`}
             icon={<ArrowRightLeft aria-hidden="true" />}
           />
         </div>
@@ -168,11 +189,17 @@ export default function TranscriptToolbar({
 
       {/* Row 2: Search & Replace Controls */}
       {(showSearch || showReplace) && (
-        <div className="animate-in slide-in-from-top-2 flex flex-wrap items-center gap-1.5 border-t border-control-border px-2 pb-2 pt-2 duration-200 sm:gap-2 sm:px-4 sm:pb-3 sm:pt-3 md:px-5">
-          <div className="flex min-w-40 flex-[1_1_11rem] items-center gap-0.5 sm:min-w-48 sm:flex-[1_1_14rem]">
+        <div
+          ref={searchRowRef}
+          className="animate-in slide-in-from-top-2 flex flex-wrap items-center gap-1.5 border-t border-control-border px-2 pb-2 pt-2 duration-200 sm:gap-2 sm:px-4 sm:pb-3 sm:pt-3 md:px-5"
+        >
+          {/* 16rem keeps room for the query beside the arrows: on a phone
+              the replace field wraps under it rather than squeezing it. */}
+          <div className="flex min-w-64 flex-[1_1_11rem] items-center gap-0.5 sm:flex-[1_1_14rem]">
             <div className="relative min-w-0 flex-1">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-contrast-icon-muted" />
               <input
+                ref={findRef}
                 placeholder="Find..."
                 value={findText}
                 onChange={(e) => setFindText(e.target.value)}
@@ -182,16 +209,23 @@ export default function TranscriptToolbar({
                     else nextMatch();
                   }
                 }}
-                className="w-full pl-8 pr-20 py-1.5 text-sm rounded-md border border-control-border bg-surface-inset focus:ring-2 focus:ring-action outline-none min-w-0"
+                className={`${FIELD} pr-20`}
                 autoFocus
               />
-              {matches.length > 0 && (
-                <span className="absolute right-1 top-1/2 -translate-y-1/2 text-xs text-contrast-helper whitespace-nowrap bg-surface-card rounded px-1">
-                  {currentMatchIndex + 1} of {matches.length}
-                </span>
-              )}
+              {/* Always mounted, so a screen reader hears the count change. */}
+              <span
+                aria-live="polite"
+                aria-atomic="true"
+                className={
+                  hasMatches
+                    ? "absolute right-1 top-1/2 -translate-y-1/2 text-xs text-contrast-helper whitespace-nowrap bg-surface-card rounded px-1"
+                    : "sr-only"
+                }
+              >
+                {hasMatches ? `${currentMatchIndex + 1} of ${matches.length}` : ""}
+              </span>
             </div>
-            {/* Beside the field rather than inside it, so each is a 40 px
+            {/* Beside the field rather than inside it, so each is a full
                 target. They stay while there are no matches, so the row
                 doesn't shift as the matches come and go. */}
             <IconButton
@@ -199,7 +233,8 @@ export default function TranscriptToolbar({
               aria-label="Previous match"
               title="Previous match (Shift+Enter)"
               onClick={prevMatch}
-              disabled={matches.length === 0}
+              disabled={!hasMatches}
+              className={TOUCH_TARGET_SQUARE}
               icon={<ChevronUp aria-hidden="true" />}
             />
             <IconButton
@@ -207,7 +242,8 @@ export default function TranscriptToolbar({
               aria-label="Next match"
               title="Next match (Enter)"
               onClick={nextMatch}
-              disabled={matches.length === 0}
+              disabled={!hasMatches}
+              className={TOUCH_TARGET_SQUARE}
               icon={<ChevronDown aria-hidden="true" />}
             />
           </div>
@@ -218,91 +254,29 @@ export default function TranscriptToolbar({
                 placeholder="Replace..."
                 value={replaceText}
                 onChange={(e) => setReplaceText(e.target.value)}
-                className="w-full pl-8 pr-2 py-1.5 text-sm rounded-md border border-control-border bg-surface-inset focus:ring-2 focus:ring-action outline-none min-w-0"
+                className={`${FIELD} pr-2`}
               />
             </div>
           )}
           {showReplace && (
             <div className="flex min-w-0 flex-[1_0_auto] flex-wrap items-center justify-end gap-1.5 sm:gap-2">
-              {/* Settings Toggle */}
-              <div ref={settingsRef} className="relative">
-                <IconButton
-                  ref={settingsToggleRef}
-                  size="sm"
-                  aria-label="Advanced Search Settings"
-                  title="Advanced Search Settings"
-                  aria-expanded={showSettings}
-                  aria-controls={showSettings ? settingsPanelId : undefined}
-                  onClick={() => setShowSettings(!showSettings)}
-                  className={showSettings ? PRESSED : undefined}
-                  icon={<Settings aria-hidden="true" />}
-                />
-
-                {/* Settings Dropdown */}
-                {showSettings && (
-                  <>
-                    <div
-                      className="fixed inset-0 z-[var(--z-dropdown)]"
-                      onClick={() => setShowSettings(false)}
-                    />
-                    <div
-                      id={settingsPanelId}
-                      className="absolute right-0 top-full mt-2 w-48 bg-surface-card rounded-lg shadow-float border border-surface-border p-2 z-[var(--z-dropdown)] flex flex-col gap-1"
-                    >
-                      <div className="text-xs font-semibold text-contrast-icon-muted px-2 py-1 mb-1 border-b border-surface-border">
-                        Search Options
-                      </div>
-                      <label className="flex items-center gap-2 px-2 py-1.5 hover:bg-surface-inset rounded cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={caseSensitive}
-                          onChange={(e) => setCaseSensitive(e.target.checked)}
-                          className="rounded border-control-border text-action-text focus:ring-action w-4 h-4"
-                        />
-                        <span className="text-sm text-contrast-muted">
-                          Case Sensitive
-                        </span>
-                      </label>
-                      <label className="flex items-center gap-2 px-2 py-1.5 hover:bg-surface-inset rounded cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={isFuzzy}
-                          onChange={(e) => {
-                            setIsFuzzy(e.target.checked);
-                            if (e.target.checked) setUseRegex(false);
-                          }}
-                          className="rounded border-control-border text-action-text focus:ring-action w-4 h-4"
-                        />
-                        <span className="text-sm text-contrast-muted">
-                          Fuzzy Match
-                        </span>
-                      </label>
-                      <label className="flex items-center gap-2 px-2 py-1.5 hover:bg-surface-inset rounded cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={useRegex}
-                          onChange={(e) => {
-                            setUseRegex(e.target.checked);
-                            if (e.target.checked) setIsFuzzy(false);
-                          }}
-                          className="rounded border-control-border text-action-text focus:ring-action w-4 h-4"
-                        />
-                        <span className="text-sm text-contrast-muted">
-                          Regex
-                        </span>
-                      </label>
-                    </div>
-                  </>
-                )}
-              </div>
+              <SearchSettingsMenu
+                caseSensitive={search.caseSensitive}
+                setCaseSensitive={search.setCaseSensitive}
+                isFuzzy={search.isFuzzy}
+                setIsFuzzy={search.setIsFuzzy}
+                useRegex={search.useRegex}
+                setUseRegex={search.setUseRegex}
+                pressedClassName={PRESSED}
+              />
 
               <div className="mx-0.5 h-4 w-px bg-surface-card sm:mx-1" />
 
               <Button
                 size="sm"
                 onClick={nextMatch}
-                disabled={matches.length === 0}
-                className={`sm:text-sm ${TOOLBAR_BUTTON_TOUCH}`}
+                disabled={!hasMatches}
+                className={`sm:text-sm ${TOUCH_TARGET_HEIGHT}`}
               >
                 <span className="sm:hidden">Next</span>
                 <span className="hidden sm:inline">Find Next</span>
@@ -310,8 +284,8 @@ export default function TranscriptToolbar({
               <Button
                 size="sm"
                 onClick={onReplaceCurrent}
-                disabled={matches.length === 0 || isSubmitting}
-                className={`sm:text-sm ${TOOLBAR_BUTTON_TOUCH}`}
+                disabled={!hasMatches || isSubmitting}
+                className={`sm:text-sm ${TOUCH_TARGET_HEIGHT}`}
               >
                 Replace
               </Button>
@@ -320,7 +294,7 @@ export default function TranscriptToolbar({
                 variant="primary"
                 onClick={onReplaceAll}
                 disabled={!findText || isSubmitting}
-                className={`sm:text-sm ${TOOLBAR_BUTTON_TOUCH}`}
+                className={`sm:text-sm ${TOUCH_TARGET_HEIGHT}`}
               >
                 <span className="sm:hidden">All</span>
                 <span className="hidden sm:inline">Replace All</span>
