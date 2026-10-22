@@ -6,7 +6,7 @@ notes reach a format is caught as well.
 
 from io import BytesIO
 
-import fitz
+import pymupdf
 from docx import Document
 
 from backend.services.exports import build_document, render, theme
@@ -15,7 +15,7 @@ from backend.tests.export_fixtures import meeting_parts
 
 def _pdf(parts, sections=("notes",), *, branded=True):
     payload = render(build_document(parts, sections, branded=branded), "pdf")
-    return fitz.open(stream=payload, filetype="pdf")
+    return pymupdf.open(stream=payload, filetype="pdf")
 
 
 def _header_fills(page) -> list:

@@ -12,22 +12,36 @@ import { getErrorDetail, getErrorStatus, isRecord } from "@/lib/errors";
  * start is lost (issue #502). While a capture runs, the capture controller
  * therefore holds sign-in in place: a refusal marks the session ended instead
  * of reloading, a dialog asks for the password, and each request waiting on it
- * runs again once the user has signed back in.
+ * runs again once the user has signed back in. A page holding notes not saved
+ * yet holds it the same way (issue #537), so a device that only takes notes
+ * keeps them through an ended session too.
  *
  * Signing back in is the ordinary session login. Nothing here extends a
  * session or changes how long one lasts.
  */
+
+/** What can hold sign-in in place: a capture, or notes not saved yet. */
+export type SignInHolder = "capture" | "notes";
 
 export interface SessionState {
   /** The session cannot serve this tab until the user signs in again. */
   signInRequired: boolean;
   /** Whether a refusal is held in place rather than sent to the sign-in page. */
   heldInPlace: boolean;
+  /** What holds it, so the sign-in dialog can say what is waiting. */
+  heldBy: readonly SignInHolder[];
   /**
    * Who this tab is signed in as. Fixed while sign-in is held in place: the
-   * capture belongs to this account, and only its sign-in lets it carry on.
+   * capture or the notes belong to this account, and only its sign-in lets
+   * them carry on.
    */
   username: string | null;
+  /**
+   * The id of the account `username` names, once the server has said
+   * (`/users/me`), and null until then. Unlike the username it survives a
+   * rename, so what this browser keeps for an account is keyed by it.
+   */
+  userId: number | null;
   /** Another account the browser was found signed in as while sign-in was held. */
   otherUsername: string | null;
 }
@@ -35,7 +49,9 @@ export interface SessionState {
 export const useSessionStore = create<SessionState>(() => ({
   signInRequired: false,
   heldInPlace: false,
+  heldBy: [],
   username: null,
+  userId: null,
   otherUsername: null,
 }));
 
@@ -83,7 +99,7 @@ const requireSignIn = () => {
 
 /**
  * Records a refused request. Returns true when the page should stay where it
- * is: either a capture is holding sign-in in place, or the request was sent
+ * is: either sign-in is held in place, or the request was sent
  * before the latest sign-in and says nothing about the session now.
  */
 export const noteSessionRefusal = (error: unknown): boolean => {
@@ -97,31 +113,45 @@ export const noteSessionRefusal = (error: unknown): boolean => {
 /**
  * Records that the server accepted this tab's session as `user`.
  *
- * While a capture holds sign-in in place, only the account that started it
- * counts. Tabs share the session cookie, so a sign-in as somebody else in
- * another tab replaces this tab's session too, and the server refuses that
- * account's uploads to this recording. Finding the browser signed in as
- * another account therefore ends the session for this tab, as an expiry
- * would. A session that must change its password first does not count either.
+ * While sign-in is held in place, only the account that held it counts. Tabs
+ * share the session cookie, so a sign-in as somebody else in another tab
+ * replaces this tab's session too, and the server refuses that account's
+ * uploads to this recording. Finding the browser signed in as another account
+ * therefore ends the session for this tab, as an expiry would. A session that
+ * must change its password first does not count either.
+ *
+ * `user.id` comes with `/users/me` only; a sign-in that does not say keeps the
+ * id it had for the same username, and forgets it for another. Once the id is
+ * known it decides which account this is: the same account renamed is still
+ * the owner, and another account given the owner's old name is not. So a held
+ * page takes a sign-in back only once `/users/me` names the account.
  */
 export const noteSignedIn = (user: {
   username: string;
   force_password_change: boolean;
+  id?: number;
 }) => {
   if (user.force_password_change) {
     return;
   }
   const state = useSessionStore.getState();
-  if (state.heldInPlace && state.username !== null && state.username !== user.username) {
+  const idKnown = user.id !== undefined && state.userId !== null;
+  const sameAccount = idKnown ? user.id === state.userId : state.username === user.username;
+  if (state.heldInPlace && state.username !== null && !sameAccount) {
     if (!state.signInRequired || state.otherUsername !== user.username) {
       useSessionStore.setState({ signInRequired: true, otherUsername: user.username });
     }
     return;
   }
+  const userId = user.id ?? (state.username === user.username ? state.userId : null);
   if (!state.signInRequired) {
-    if (state.username !== user.username) {
-      useSessionStore.setState({ username: user.username });
+    if (state.username !== user.username || state.userId !== userId) {
+      useSessionStore.setState({ username: user.username, userId });
     }
+    return;
+  }
+  // The sign-in endpoint doesn't name the account: wait for `/users/me`.
+  if (state.heldInPlace && user.id === undefined && state.userId !== null) {
     return;
   }
 
@@ -129,6 +159,7 @@ export const noteSignedIn = (user: {
   useSessionStore.setState({
     signInRequired: false,
     username: user.username,
+    userId,
     otherUsername: null,
   });
   const resolved = waiters;
@@ -137,20 +168,24 @@ export const noteSignedIn = (user: {
 };
 
 /**
- * Marks whether a capture needs this tab to stay put through a refusal.
+ * Marks whether `holder` needs this tab to stay put through a refusal. Sign-in
+ * is held in place while anything holds it.
  *
  * Releasing the hold while signed out does not redirect on its own: the next
  * refused request does, as it would have without the hold. Redirecting here
  * could run during a page unload and replace the navigation in progress.
  */
-export const holdSignInInPlace = (held: boolean) => {
-  if (useSessionStore.getState().heldInPlace !== held) {
-    useSessionStore.setState({ heldInPlace: held });
+export const holdSignInInPlace = (held: boolean, holder: SignInHolder = "capture") => {
+  const { heldBy } = useSessionStore.getState();
+  if (heldBy.includes(holder) === held) {
+    return;
   }
+  const next = held ? [...heldBy, holder] : heldBy.filter((other) => other !== holder);
+  useSessionStore.setState({ heldBy: next, heldInPlace: next.length > 0 });
 };
 
 /**
- * Decides what a failed request does while a capture holds sign-in in place.
+ * Decides what a failed request does while sign-in is held in place.
  * Resolves true once the request can be sent again, or false straight away
  * when the caller should treat the failure as an ordinary one.
  *
@@ -204,7 +239,9 @@ export const resetSessionForTests = () => {
   useSessionStore.setState({
     signInRequired: false,
     heldInPlace: false,
+    heldBy: [],
     username: null,
+    userId: null,
     otherUsername: null,
   });
 };

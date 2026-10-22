@@ -424,8 +424,11 @@ async def finalize_chunked_import(
         )
         await db.commit()
 
+        # Remove only the partial master; the segments stay behind (in
+        # failed/ after a successful move, or in temp/<id>/ if the move
+        # failed) for the 24-hour chunk sweep the rows above rely on.
         recordings_module.delete_recording_artifacts(
-            recording_id=recording_pk,
+            recording_id=None,
             audio_path=assembled_path,
             proxy_path=None,
             logger=logger,

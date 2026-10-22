@@ -1,13 +1,38 @@
 import axios from "axios";
 
 import { recordRequestOutcome } from "@/lib/connectivity/monitor";
-import { isSessionEndedError, noteSessionRefusal, stampSessionRequest } from "@/lib/session";
+import {
+  isSessionEndedError,
+  noteSessionRefusal,
+  stampSessionRequest,
+  useSessionStore,
+} from "@/lib/session";
 
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL
   ? `${process.env.NEXT_PUBLIC_API_URL}/v1`
   : "https://localhost:14443/api/v1";
 const FIRST_RUN_PASSWORD_AUTH_SCHEME = "Bootstrap";
 const FORCE_PASSWORD_CHANGE_REDIRECT = "/settings/profile";
+
+/**
+ * Leaves for the sign-in page with a full reload, which clears the signed-in
+ * session's in-memory client state.
+ */
+export const reloadToSignIn = () => {
+  // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- a full reload is required: it clears the signed-in session's in-memory client state
+  window.location.href = "/login";
+};
+
+/**
+ * Leaves a page whose sign-in is held in place for the sign-in page, unless a
+ * sign-in has come back meanwhile, in this tab or another. The page's leave
+ * warning still applies. Returns whether it left.
+ */
+export const leaveForSignIn = (): boolean => {
+  if (!useSessionStore.getState().signInRequired) return false;
+  reloadToSignIn();
+  return true;
+};
 
 type ValidationErrorItem = {
   loc?: unknown;
@@ -99,8 +124,9 @@ api.interceptors.response.use(
       );
     }
 
-    // While a capture runs, a refused session stays on the page and a sign-in
-    // dialog asks for the password: a reload would tear the capture down.
+    // While a capture runs, or notes wait to be saved, a refused session stays
+    // on the page and a sign-in dialog asks for the password: a reload would
+    // tear the capture down.
     const stayOnPage = isSessionEndedError(error) && noteSessionRefusal(error);
 
     if (error.response && error.response.status === 401 && !stayOnPage) {
@@ -113,8 +139,7 @@ api.interceptors.response.use(
         // here would discard the client's authorization parameters.
         !window.location.pathname.startsWith("/oauth/authorize")
       ) {
-        // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- a full reload is required: this runs outside React (no router), and the reload clears the signed-in session's in-memory client state
-        window.location.href = "/login";
+        reloadToSignIn();
       }
     }
 

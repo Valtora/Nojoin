@@ -50,6 +50,26 @@ describe("browser session", () => {
     expect(useSessionStore.getState().signInRequired).toBe(true);
   });
 
+  it("holds sign-in in place while anything holds it, and says what does", () => {
+    const held = () => {
+      const { heldInPlace, heldBy } = useSessionStore.getState();
+      return { heldInPlace, heldBy };
+    };
+
+    holdSignInInPlace(true, "notes");
+    holdSignInInPlace(true, "notes");
+    holdSignInInPlace(true);
+    expect(held()).toEqual({ heldInPlace: true, heldBy: ["notes", "capture"] });
+
+    holdSignInInPlace(false);
+    expect(held()).toEqual({ heldInPlace: true, heldBy: ["notes"] });
+    expect(noteSessionRefusal(refused(401))).toBe(true);
+
+    holdSignInInPlace(false, "notes");
+    holdSignInInPlace(false, "notes");
+    expect(held()).toEqual({ heldInPlace: false, heldBy: [] });
+  });
+
   it("ignores a refusal for a request sent before the latest sign-in", () => {
     holdSignInInPlace(true);
     const config = stampSessionRequest({});
@@ -145,6 +165,71 @@ describe("browser session", () => {
     void waitForSignInAfter(refused(401));
 
     expect(useSessionStore.getState().signInRequired).toBe(true);
+  });
+
+  it("knows the account by id once the server says, through a rename", async () => {
+    noteSignedIn({ ...alice, id: 1 });
+    // The sign-in endpoint doesn't name the id: the same name keeps it.
+    noteSignedIn(alice);
+    expect(useSessionStore.getState()).toMatchObject({ username: "alice", userId: 1 });
+    holdSignInInPlace(true);
+    const error = refused(401);
+    noteSessionRefusal(error);
+
+    let done = false;
+    void waitForSignInAfter(error).then(() => {
+      done = true;
+    });
+    // Renamed meanwhile, alice signs in under her new name in another tab.
+    noteSignedIn({ username: "alice2", force_password_change: false, id: 1 });
+    await settle();
+
+    expect(done).toBe(true);
+    expect(useSessionStore.getState()).toMatchObject({
+      signInRequired: false,
+      username: "alice2",
+      userId: 1,
+    });
+
+    // Another account's id is another account, and a new name without one is unknown.
+    noteSignedIn({ username: "bob", force_password_change: false, id: 2 });
+    expect(useSessionStore.getState()).toMatchObject({ signInRequired: true, userId: 1 });
+    holdSignInInPlace(false);
+    noteSignedIn({ username: "carol", force_password_change: false });
+    expect(useSessionStore.getState()).toMatchObject({ username: "carol", userId: null });
+  });
+
+  it("takes a held page's sign-in back only once the server names the account by id", async () => {
+    noteSignedIn({ ...alice, id: 1 });
+    holdSignInInPlace(true);
+    const error = refused(401);
+    noteSessionRefusal(error);
+    let done = false;
+    void waitForSignInAfter(error).then(() => {
+      done = true;
+    });
+
+    // alice was renamed, and a new account took the name: the sign-in
+    // endpoint answers "alice" without an id, which proves nothing yet.
+    noteSignedIn(alice);
+    await settle();
+    expect(done).toBe(false);
+    expect(useSessionStore.getState()).toMatchObject({ signInRequired: true, userId: 1 });
+
+    // `/users/me` names account 3: another account under the owner's old name.
+    noteSignedIn({ ...alice, id: 3 });
+    await settle();
+    expect(done).toBe(false);
+    expect(useSessionStore.getState()).toMatchObject({
+      signInRequired: true,
+      userId: 1,
+      otherUsername: "alice",
+    });
+
+    noteSignedIn({ ...alice, id: 1 });
+    await settle();
+    expect(done).toBe(true);
+    expect(useSessionStore.getState()).toMatchObject({ signInRequired: false, userId: 1 });
   });
 
   it("takes another account's sign-in when nothing is waiting", () => {
