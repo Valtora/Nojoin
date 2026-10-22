@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 
+import type { TranscriptUtterance } from "@/types";
+
 import {
   applyTranscriptDelta,
   createLocalTranscriptState,
   flushDeferredTranscriptState,
+  type LocalTranscriptState,
 } from "./transcriptState";
 
 describe("transcriptState", () => {
@@ -234,5 +237,86 @@ describe("transcriptState", () => {
         revision: 3,
       },
     ]);
+  });
+
+  describe("a full sync", () => {
+    const utterances: TranscriptUtterance[] = [
+      { id: "utt-1", start: 1, end: 2, text: "one", speaker: "SPEAKER_00", revision: 1, overlapping_speakers: ["SPEAKER_00"] },
+      { id: "utt-2", start: 3, end: 4, text: "two", speaker: "SPEAKER_01", revision: 1 },
+      { id: "utt-3", start: 5, end: 6, text: "three", speaker: "SPEAKER_00", revision: 4 },
+    ];
+    const fullSync = (
+      currentState: LocalTranscriptState | null,
+      next: TranscriptUtterance[],
+    ): LocalTranscriptState =>
+      applyTranscriptDelta({
+        currentState,
+        recordingId: "rec-1",
+        fallbackSegments: [],
+        delta: { recording_id: "rec-1", revision: 9, utterances: next, tombstones: [], speakers: [] },
+        mode: "full",
+      });
+    // As the API hands them over: new objects, nested arrays included.
+    const copied = (list: TranscriptUtterance[]) =>
+      list.map((utterance) => structuredClone(utterance));
+
+    it("keeps the segments of utterances that are unchanged", () => {
+      const first = fullSync(null, utterances);
+      const second = fullSync(first, copied(utterances));
+
+      expect(second.segments).toHaveLength(3);
+      second.segments.forEach((segment, at) => expect(segment).toBe(first.segments[at]));
+    });
+
+    it("takes a changed utterance's new segment and keeps the rest", () => {
+      const first = fullSync(null, utterances);
+      const next = copied(utterances);
+      next[1].text = "two, edited";
+      next[1].revision = 2;
+      const second = fullSync(first, next);
+
+      expect(second.segments[0]).toBe(first.segments[0]);
+      expect(second.segments[1]).not.toBe(first.segments[1]);
+      expect(second.segments[1].text).toBe("two, edited");
+      expect(second.segments[2]).toBe(first.segments[2]);
+    });
+
+    it("takes a change that leaves the revision as it was", () => {
+      const first = fullSync(null, utterances);
+      const next = copied(utterances);
+      next[0].overlapping_speakers = ["SPEAKER_00", "SPEAKER_01"];
+      next[2].speaker = "SPEAKER_01";
+      const second = fullSync(first, next);
+
+      expect(second.segments[0]).not.toBe(first.segments[0]);
+      expect(second.segments[0].overlapping_speakers).toEqual(["SPEAKER_00", "SPEAKER_01"]);
+      expect(second.segments[1]).toBe(first.segments[1]);
+      expect(second.segments[2]).not.toBe(first.segments[2]);
+      expect(second.segments[2].speaker).toBe("SPEAKER_01");
+    });
+
+    it("tells an empty list from an empty object inside a field", () => {
+      const withAlignment = (spans: unknown) =>
+        utterances.slice(0, 1).map((utterance) => ({ ...utterance, live_reuse_alignment: { spans } }));
+      const first = fullSync(null, withAlignment({}));
+      const second = fullSync(first, withAlignment([]));
+
+      expect(second.segments[0]).not.toBe(first.segments[0]);
+      expect(second.segments[0].live_reuse_alignment).toEqual({ spans: [] });
+    });
+
+    it("takes a segment with a field the kept one lacked", () => {
+      // A state built from the recording's own segments can hold fields the
+      // utterances don't, and lack ones they have.
+      const kept = { ...fullSync(null, utterances).segments[1], diarization_label: undefined };
+      delete kept.source_public_ids;
+      const first = createLocalTranscriptState("rec-1", [kept]);
+      const next = copied(utterances.slice(1, 2));
+      next[0].source_public_ids = ["public-2"];
+      const second = fullSync(first, next);
+
+      expect(second.segments[0]).not.toBe(first.segments[0]);
+      expect(second.segments[0].source_public_ids).toEqual(["public-2"]);
+    });
   });
 });
