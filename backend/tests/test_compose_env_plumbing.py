@@ -220,12 +220,16 @@ def test_llm_provider_reaches_the_containers_empty(template: Path) -> None:
 
 
 def test_compose_dotenv_reader_keeps_a_comment_after_an_empty_value() -> None:
-    """Guard the reader. Docker Compose 2.40 renders these three lines the
+    """Guard the reader. Docker Compose 2.40 renders these five lines the
     same way: the comment is the value when nothing precedes it."""
-    assert _compose_dotenv_values("A= # note\nB=x # note\nC=\n") == {
+    assert _compose_dotenv_values(
+        "A= # note\nB=x # note\nC=\nD=#note\nE=  # note\n"
+    ) == {
         "A": "# note",
         "B": "x",
         "C": "",
+        "D": "#note",
+        "E": "# note",
     }
 
 
@@ -236,6 +240,21 @@ def test_env_example_leaves_llm_provider_empty() -> None:
     selected "#One of: gemini, openai, anthropic, ollama"."""
     values = _compose_dotenv_values(ENV_EXAMPLE_PATH.read_text(encoding="utf-8"))
     assert values["LLM_PROVIDER"] == ""
+
+
+def test_compose_reads_no_env_example_value_as_a_comment() -> None:
+    """.env.example is what an operator copies, so a line Compose misreads
+    there is misread on every install made from it. Eight lines kept the
+    ``KEY= # note`` shape after #521 fixed LLM_PROVIDER: BACKUP_EXPORT_DIR named a
+    directory inside each container, HF_TOKEN reported a token as set, and
+    SECONDARY_LLM_PROVIDER named a provider that does not exist (#520)."""
+    values = _compose_dotenv_values(ENV_EXAMPLE_PATH.read_text(encoding="utf-8"))
+    assert values, "the .env.example reader found no values"
+    commented = sorted(key for key, value in values.items() if value.startswith("#"))
+    assert not commented, (
+        f"Compose reads the inline comment on {commented} in .env.example as "
+        "the value. Move each comment to its own line above the variable."
+    )
 
 
 def test_blank_defaults_are_parsed_at_all() -> None:

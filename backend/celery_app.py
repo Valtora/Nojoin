@@ -68,16 +68,10 @@ def _has_active_live_capture() -> bool:
 def _should_release_model_caches() -> bool:
     """Whether the per-task model-cache release should run.
 
-    Skipped when the operator pinned models (``keep_models_loaded``) or while a
-    live capture is in flight (keep the live ASR model warm across segments).
+    Skipped while a live capture is in flight, to keep the live ASR model warm
+    across segments.
     """
-    from backend.utils.config_manager import config_manager
-
-    if config_manager.get("keep_models_loaded", False):
-        return False
-    if _has_active_live_capture():
-        return False
-    return True
+    return not _has_active_live_capture()
 
 
 def release_worker_model_caches() -> None:

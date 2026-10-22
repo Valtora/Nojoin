@@ -39,7 +39,7 @@ GRANDFATHERED: dict[str, int] = {
     # Being decomposed per-stage (mirroring the llm_services split): the
     # meeting-intelligence and meeting-edge stages moved to their own modules.
     # What remains is the core final-recording pipeline.
-    "backend/worker/tasks/pipeline.py": 1134,
+    "backend/worker/tasks/pipeline.py": 1126,
     "backend/utils/canonical_pipeline/core.py": 2013,
     "backend/processing/live_transcribe.py": 1799,
 }

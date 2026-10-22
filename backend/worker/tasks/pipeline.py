@@ -589,10 +589,7 @@ def _release_pipeline_vram() -> None:
     import torch
 
     try:
-        logger.info(
-            "Releasing VRAM (keep_models_loaded=%s)...",
-            config_manager.get("keep_models_loaded", False),
-        )
+        logger.info("Releasing VRAM...")
 
         from backend.processing.transcribe import release_model_cache
 
@@ -668,8 +665,7 @@ def process_recording_task(
 
     # Clear any live ASR model left warm by another capture before this finalise
     # loads its diarisation stack, so the two are never resident together.
-    if not config_manager.get("keep_models_loaded", False):
-        _release_pipeline_vram()
+    _release_pipeline_vram()
 
     user_settings = {}
     if recording.user_id:
@@ -878,11 +874,7 @@ def process_recording_task(
             cleanup_temp_file(temp_file)
 
         # --- VRAM Management ---
-        # Explicitly release models if configured to do so (default behavior for shared hosts)
-        keep_loaded = config_manager.get("keep_models_loaded", False)
-
-        if not keep_loaded:
-            _release_pipeline_vram()
+        _release_pipeline_vram()
 
 
 def _live_task_ids() -> set[str] | None:

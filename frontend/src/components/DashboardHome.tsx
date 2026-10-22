@@ -45,13 +45,13 @@ export default function DashboardHome() {
       {/* One column, then two from 54rem, then three from 74rem, measured
           against the workspace rather than the viewport.
 
-          It has to be the workspace. The nav rail is ~340px, resizable and
-          collapsible, so the space this grid actually has is the viewport minus
-          a number the grid cannot see. Viewport breakpoints get that wrong in
-          both directions: they withhold a column from someone who collapsed the
-          rail, and they promise one to someone who widened it. A container
-          query asks the only question that matters, which is how wide this
-          content area is right now.
+          It has to be the workspace. The nav rail defaults to 224px and is
+          resizable and collapsible, so the space this grid actually has is
+          the viewport minus a number the grid cannot see. Viewport
+          breakpoints get that wrong in both directions: they withhold a
+          column from someone who collapsed the rail, and they promise one to
+          someone who widened it. A container query asks the only question
+          that matters, which is how wide this content area is right now.
 
           The thresholds are where a column would otherwise fall below about
           340px: at 54rem two columns are ~420px each, and at 74rem three are
