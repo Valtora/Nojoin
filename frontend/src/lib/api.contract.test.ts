@@ -41,7 +41,6 @@ describe("api public surface", () => {
         "addTagToRecording",
         "applyVoiceprintAction",
         "archiveRecording",
-        "askWhoIsSignedIn",
         "batchAddTagToRecordings",
         "batchArchiveRecordings",
         "batchPermanentlyDeleteRecordings",
