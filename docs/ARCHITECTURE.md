@@ -434,17 +434,17 @@ All three carry the user's `token_version` and are checked against the `revoked_
 - **Flag by default.** The daily run removes nothing unless `NOJOIN_STORAGE_HYGIENE` is `delete`, and the CLI nothing without `--delete`. Rows whose file is missing are reported and never changed. An exception in a run is logged and never fails the daily cleanup.
 - **Listing, then rows.** A run lists the documents directory and both recordings roots, `recordings_root_dir()` and `PathManager().recordings_directory`, resolved and each once, before it reads `audio_path`, `proxy_path` and `documents.file_path` in one statement, soft-deleted rows and documents without a recording included. A file written after the listing is never a candidate. The rows are read again before the first unlink, so a row committed before then keeps its file.
 - **Keys.** A listed file is referenced when any of its keys matches a row's: its device and inode, as `document_file_identity` gives them; its file name, compared without case, so a stored path that resolves elsewhere still keeps the file; and, for a recording that is `UPLOADING` or `PAUSED`, its name up to the first dot, which keeps the `.flac` master and its `.part` that finalize writes beside the `.wav` the row names. Keys only ever keep more files.
-- **Names.** Only names Nojoin writes are candidates: `<uuid4>[.restored][.ext]`, `<name>__<uuid4>[.ext]`, `demo_welcome_<id>[.ext]`, and the `.part` or `.<32 hex>.upload-tmp` of one of those. Any other file is reported as unrecognised and never removed. An unreferenced `.mp3` is a proxy when a file of its base name sits beside it, and audio otherwise.
+- **Names.** Only names Nojoin writes are candidates: `<uuid4>[.restored][.ext]`, `<name>__<uuid4>[.ext]`, `demo_welcome_<id>[.ext]`, and the `.part`, `.<32 hex>.upload-tmp` or `.<8 hex>.tmp` of one of those. Any other file is reported as unrecognised and never removed. An unreferenced `.mp3` is a proxy when a file of its base name sits beside it, and audio otherwise.
 - **Grace.** Nothing modified in the last 24 hours is removed, which covers a file whose row has not committed yet. Each file's inode and mtime are checked again right before its unlink.
 - **Scope.** Only regular files directly inside each directory. `temp/` and `failed/` belong to the existing 24-hour sweep, and dotfiles and symlinks are left alone.
 - **Circuit breaker.** Any rule makes a run report only:
   - an empty `recordings` table while the directories hold files;
   - a directory that is the data directory, contains it, or holds `config.json`;
-  - more than half of one column's stored paths naming missing files, pending recordings aside;
+  - more than half of one column's stored paths naming missing files, leaving out recordings that are pending, in error or cancelled, which can lack their file by design;
   - more than half of the stored paths relative to the working directory naming missing files;
-  - more than half of a directory's recognised files past the grace unreferenced, which no option lifts and which logs at ERROR;
+  - more than half of a directory's recognised files past the grace unreferenced, which no option lifts, logged at ERROR when the run would remove files and at WARNING otherwise;
   - removing more than 10% of a directory's files or bytes, which `--allow-bulk <directory> --expect <count>` lifts for that directory when the count is the dry run's;
-  - the restore lock held or unreadable. It is read before the listing, before the first unlink and again every 25 files, and fails closed, because a restore proceeds without it when Redis is down. Its 6-hour expiry bounds what it covers.
+  - the restore lock held or unreadable. It is read before the listing, before the first unlink and again every 25 flagged files, and fails closed, because a restore proceeds without it when Redis is down. Its 6-hour expiry bounds what it covers.
 - **Audit.** Every removed file is logged at INFO with its size, mtime and category, and a trip at WARNING with its rules. A run that removes nothing lists its candidates, the daily run up to 50.
 
 ### Data Model

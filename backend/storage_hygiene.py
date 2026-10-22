@@ -37,6 +37,7 @@ from backend.utils.storage_hygiene_report import (
     HygieneReport,
     format_bytes,
 )
+from backend.utils.storage_hygiene_scan import hygiene_directories
 
 logger = logging.getLogger(__name__)
 
@@ -186,13 +187,31 @@ def format_report(report: HygieneReport, show: int = 100) -> str:
     return "\n".join(lines)
 
 
+def _allowances(
+    parser: argparse.ArgumentParser, args: argparse.Namespace
+) -> dict[Path, int]:
+    """The bulk allowance the arguments name, refused as a usage error unless it
+    is for a directory this run scans and comes with its count."""
+    if (args.allow_bulk is None) != (args.expect is None):
+        parser.error("--allow-bulk and --expect go together")
+    if args.allow_bulk is None:
+        return {}
+    directory = Path(args.allow_bulk).expanduser().resolve()
+    scanned = [scan.path for scan in hygiene_directories()]
+    if directory not in scanned:
+        parser.error(
+            f"--allow-bulk {args.allow_bulk}: {directory} is not a directory this "
+            f"run scans ({', '.join(str(path) for path in scanned)})"
+        )
+    return {directory: args.expect}
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = _parser()
     args = parser.parse_args(argv)
-    if (args.allow_bulk is None) != (args.expect is None):
-        parser.error("--allow-bulk and --expect go together")
-    allowances = {Path(args.allow_bulk): args.expect} if args.allow_bulk else {}
     try:
+        # A usage error raises SystemExit, which this does not catch.
+        allowances = _allowances(parser, args)
         report = run_storage_hygiene(
             get_sync_session,
             HygieneOptions(delete=args.delete, bulk_allowances=allowances),

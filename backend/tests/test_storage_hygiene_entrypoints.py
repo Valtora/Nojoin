@@ -191,6 +191,32 @@ def test_the_cli_exits_2_on_a_usage_error(
 
 
 @pytest.mark.usefixtures("lock")
+def test_the_cli_refuses_an_allowance_for_a_directory_it_does_not_scan(
+    layout: Layout, db: Engine, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    add_referenced_audio(db, layout, 6)
+    orphans = [write_file(layout.recordings / uuid_name(".wav")) for _ in range(2)]
+
+    with pytest.raises(SystemExit) as exit_info:
+        _cli(
+            db,
+            monkeypatch,
+            capsys,
+            "--delete",
+            "--allow-bulk",
+            "data/recording",
+            "--expect",
+            "2",
+        )
+
+    assert exit_info.value.code == 2
+    error = capsys.readouterr().err
+    assert f"{layout.data / 'recording'} is not a directory this run scans" in error
+    assert str(layout.recordings.resolve()) in error
+    assert all(path.exists() for path in orphans)
+
+
+@pytest.mark.usefixtures("lock")
 def test_allow_bulk_lifts_no_other_rule(
     layout: Layout, db: Engine, monkeypatch: pytest.MonkeyPatch, capsys
 ) -> None:

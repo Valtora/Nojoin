@@ -128,7 +128,7 @@ A finished backup archive, built by a worker and served by the API, is the one f
 
 ## Storage Hygiene
 
-A file in `data/documents/` or `data/recordings/` can outlive every row that names it: a process killed between a delete's commit and its unlink, a failed unlink, an **Overwrite** restore, or a write whose row never committed. Once a day, `cleanup_temp_recordings` on `worker-io` logs a line counting, for documents, audio, proxies, partial uploads (`.upload-tmp`, `.part`) and unrecognised files, the files that no row names and their bytes, and the rows whose file is missing. It also lists up to 50 of the files a removal would take. Rows are never changed, and a failure here is logged without failing the rest of the cleanup.
+A file in `data/documents/` or `data/recordings/` can outlive every row that names it: a process killed between a delete's commit and its unlink, a failed unlink, an **Overwrite** restore, or a write whose row never committed. Once a day, `cleanup_temp_recordings` on `worker-io` logs a line counting, for documents, audio, proxies, partial uploads (`.upload-tmp`, `.part`, and a proxy conversion's `.tmp`) and unrecognised files, the files that no row names and their bytes, and the rows whose file is missing. It also lists up to 50 of the files a removal would take. Rows are never changed, and a failure here is logged without failing the rest of the cleanup.
 
 `NOJOIN_STORAGE_HYGIENE=delete` makes the daily run remove those files, logging each one with its size, modification time and category. To see the report and the files, or to remove them now:
 
@@ -141,7 +141,7 @@ docker compose exec --user appuser worker-io python -m backend.storage_hygiene -
 
 The CLI lists each flagged file with its size above the table, so you can check them before `--delete`: up to 100, or all of them with `--show 0`. A run that removes files, daily or from the CLI, logs each one it removes.
 
-Only names Nojoin writes are ever removed: a lowercase uuid4 with or without an extension, `<name>__<uuid4>` from a restore, `demo_welcome_<id>`, `.restored` audio, and the `.part` or `.upload-tmp` of one of those. Any other file in these directories is counted as unrecognised and left alone; even so, keep nothing of your own in `data/documents/` or `data/recordings/`. Every run also keeps:
+Only names Nojoin writes are ever removed: a lowercase uuid4 with or without an extension, `<name>__<uuid4>` from a restore, `demo_welcome_<id>`, `.restored` audio, and the `.part`, `.upload-tmp` or `.<8 hex>.tmp` a killed write leaves beside one of those. Any other file in these directories is counted as unrecognised and left alone; even so, keep nothing of your own in `data/documents/` or `data/recordings/`. Every run also keeps:
 
 - anything modified in the last 24 hours, and any file that changed between the listing and its unlink;
 - any file a row names, soft-deleted recordings included: by its device and inode, or by its file name in any case, wherever the stored path points;
@@ -152,11 +152,13 @@ The rows are read once more just before the first file is removed. The circuit b
 
 - the `recordings` table is empty while the directories hold files;
 - a directory is the data directory, contains it, or holds `config.json`;
-- more than half of one column's stored paths (audio, proxies or documents) name missing files, as when `data/` belongs to another database. Recordings still uploading or paused are not counted;
+- more than half of one column's stored paths (audio, proxies or documents) name missing files, as when `data/` belongs to another database. Recordings still uploading or paused, or in error or cancelled, are not counted, because those can lack their file by design;
 - more than half of the paths stored relative to the working directory name missing files, because the run is not where the app runs;
-- more than half of a directory's recognised files older than 24 hours are named by no row. The database may not belong to this data directory, so this is logged as an error, and no option lifts it;
-- the run would remove more than 10% of one directory's files, or of its bytes. On a small install one large orphan can trip the bytes share alone. `--allow-bulk <directory> --expect <count>` lifts this rule for that directory only, and only when `<count>` is the number of files the dry run listed for it;
-- the restore lock is set, or Redis cannot be reached to read it. The lock is read before the listing, before the first removal and again every 25 files. It expires after 6 hours, so a restore still running after that is not seen.
+- more than half of a directory's recognised files older than 24 hours are named by no row. The database may not belong to this data directory, and no option lifts this. It is logged as an error when the run would remove files, and as a warning otherwise;
+- the run would remove more than 10% of one directory's files, or of its bytes. On a small install one large orphan can trip the bytes share alone. `--allow-bulk <directory> --expect <count>` lifts this rule for that directory only, and only when `<count>` is the "files to remove" count the dry run printed for that directory;
+- the restore lock is set, or Redis cannot be reached to read it. The lock is read before the listing, before the first removal and again every 25 flagged files. It expires after 6 hours, so a restore still running after that is not seen.
+
+Storage hygiene can only compare the files with the rows of the database it reads, and files that database doesn't know about are removed while they stay under these limits. Keep `NOJOIN_STORAGE_HYGIENE` at `flag` after restoring the database from an older dump, and never share a data directory between installs.
 
 A trip is logged as a warning naming its rules. The CLI exits 0 when the run finished and nothing was refused, 1 when the breaker tripped, 2 on a usage error, 3 when a file could not be removed, and 4 when the run failed with an error.
 

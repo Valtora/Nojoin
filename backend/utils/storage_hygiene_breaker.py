@@ -135,6 +135,12 @@ def _bulk_trips(
                     f"of {format_bytes(directory.file_bytes)}), over {MAX_REMOVED_PERCENT}%",
                 )
             )
+    scanned = {directory.path for directory in directories}
+    trips.extend(
+        BreakerTrip(RULE_BULK, f"{path}: allowed, but this run does not scan it")
+        for path in allowances
+        if path not in scanned
+    )
     return trips
 
 

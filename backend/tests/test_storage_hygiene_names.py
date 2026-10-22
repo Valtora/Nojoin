@@ -36,7 +36,12 @@ from backend.utils.storage_hygiene import (
     PROXIES,
     UNRECOGNISED,
 )
-from backend.utils.storage_hygiene_scan import RECORDINGS_ROLE, References, StoredFile
+from backend.utils.storage_hygiene_scan import (
+    COUNTED,
+    RECORDINGS_ROLE,
+    References,
+    StoredFile,
+)
 
 
 @pytest.fixture
@@ -173,13 +178,13 @@ def test_an_mp3_is_audio_unless_it_sits_beside_its_audio(
 
     report = run(any_db, bulk=True)
 
+    assert report.categories[AUDIO].scanned == 23
+    assert report.categories[PROXIES].scanned == 1
+    assert report.categories[PROXIES].missing_rows == 0
     by_path = {flagged.path: flagged.category for flagged in report.flagged}
     assert by_path[imported] == AUDIO
     assert by_path[proxy] == PROXIES
     assert own_proxy not in by_path
-    assert report.categories[AUDIO].scanned == 23
-    assert report.categories[PROXIES].scanned == 1
-    assert report.categories[PROXIES].missing_rows == 0
 
 
 def test_a_file_two_columns_name_is_reported_as_audio(tmp_path: Path) -> None:
@@ -193,6 +198,30 @@ def test_a_file_two_columns_name_is_reported_as_audio(tmp_path: Path) -> None:
     for order in ((PROXIES, AUDIO), (AUDIO, PROXIES)):
         references = References()
         for category in order:
-            references.add(category, str(path), pending=False)
+            references.add(category, str(path), COUNTED)
 
         assert references.category_of(listed) == AUDIO, order
+
+
+def test_a_proxy_conversion_leftover_is_a_partial_write(
+    layout: Layout, db: Engine
+) -> None:
+    """An in-place proxy conversion writes ``<proxy>.<8 hex>.tmp`` and renames it;
+    a killed ffmpeg leaves it behind."""
+    add_referenced_audio(db, layout, 20)
+    leftover = write_file(
+        layout.recordings / f"{uuid_name('.mp3')}.{uuid.uuid4().hex[:8]}.tmp"
+    )
+    converting = write_file(
+        layout.recordings / f"{uuid_name('.mp3')}.{uuid.uuid4().hex[:8]}.tmp",
+        age_hours=1,
+    )
+    theirs = write_file(layout.recordings / f"notes.{uuid.uuid4().hex[:8]}.tmp")
+
+    report = run(db, delete=True)
+
+    assert rules(report) == []
+    assert not leftover.exists()
+    assert converting.exists() and theirs.exists()
+    assert report.categories[PARTIAL_UPLOADS].deleted == 1
+    assert report.categories[UNRECOGNISED].unreferenced == 1

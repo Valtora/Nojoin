@@ -234,13 +234,17 @@ def test_breaker_most_of_one_categorys_paths_name_missing_files(
 def test_what_counts_as_a_row_missing_its_file(layout: Layout, any_db: Engine) -> None:
     add_referenced_audio(any_db, layout, 6)
     add_referenced_documents(any_db, layout, 2)
-    # Missing: an absolute path, one that cannot be resolved, a recording still
-    # processing, and an MP3 that is its own proxy, counted once, as audio.
+    # Missing: an absolute path, one that cannot be resolved, recordings still
+    # to be processed or processing, and an MP3 that is its own proxy, counted
+    # once, as audio.
     add_recording(any_db, layout.recordings / uuid_name(".wav"))
     add_recording(any_db, f"~nosuchuser{uuid.uuid4().hex}/{uuid_name('.wav')}")
-    add_recording(
-        any_db, layout.recordings / uuid_name(".wav"), status=RecordingStatus.PROCESSING
-    )
+    for status in (
+        RecordingStatus.RECORDED,
+        RecordingStatus.QUEUED,
+        RecordingStatus.PROCESSING,
+    ):
+        add_recording(any_db, layout.recordings / uuid_name(".wav"), status=status)
     mp3 = layout.recordings / uuid_name(".mp3")
     add_recording(any_db, mp3, mp3)
     add_document(any_db, None, layout.documents / uuid_name(".pdf"))
@@ -260,8 +264,37 @@ def test_what_counts_as_a_row_missing_its_file(layout: Layout, any_db: Engine) -
         name: report.categories[name].missing_rows
         for name in (AUDIO, PROXIES, DOCUMENTS)
     }
-    assert missing == {AUDIO: 4, PROXIES: 0, DOCUMENTS: 1}
+    assert missing == {AUDIO: 6, PROXIES: 0, DOCUMENTS: 1}
     assert rules(report) == []
+
+
+def test_recordings_that_settled_without_their_file_do_not_count_as_missing(
+    layout: Layout, any_db: Engine
+) -> None:
+    """An import that fails removes its audio and keeps the row in ERROR, and a
+    capture whose master could not be built stays in ERROR naming the ``.wav``
+    it never got. Neither says the database is another data directory's."""
+    add_referenced_audio(any_db, layout, 2)
+    for _ in range(3):
+        add_recording(
+            any_db, f"data/recordings/{uuid_name('.wav')}", status=RecordingStatus.ERROR
+        )
+    add_recording(
+        any_db, f"data/recordings/{uuid_name('.wav')}", status=RecordingStatus.CANCELLED
+    )
+    # Still a reference: a failed recording whose file is there keeps it.
+    failed = write_file(layout.recordings / uuid_name(".wav"))
+    add_recording(
+        any_db, f"data/recordings/{failed.name}", status=RecordingStatus.ERROR
+    )
+    orphan = write_file(layout.recordings / uuid_name(".wav"))
+
+    report = run(any_db, delete=True, bulk=True)
+
+    assert rules(report) == []
+    assert report.categories[AUDIO].missing_rows == 0
+    assert failed.exists()
+    assert not orphan.exists()
 
 
 @pytest.mark.parametrize("missing", [2, 3], ids=["half", "over_half"])
@@ -351,6 +384,27 @@ def test_breaker_a_wiped_database_with_the_demo_seed_even_with_allow_bulk(
         if r.name == hygiene.__name__ and r.levelno == logging.ERROR
     ]
     assert errors and "the database may not belong to this data directory" in errors[0]
+
+
+@pytest.mark.parametrize("delete", [False, True], ids=["flag", "delete"])
+def test_split_brain_is_an_error_only_when_files_would_go(
+    layout: Layout, db: Engine, caplog: pytest.LogCaptureFixture, delete: bool
+) -> None:
+    """One stray old document and no others: a report-only run warns, every day,
+    rather than raising an error."""
+    add_referenced_audio(db, layout, 30)
+    write_file(layout.documents / uuid_name(".pdf"))
+
+    with caplog.at_level(logging.INFO, logger=hygiene.__name__):
+        report = run(db, delete=delete)
+
+    assert rules(report) == [RULE_SPLIT_BRAIN, RULE_BULK]
+    trips = [
+        r
+        for r in caplog.records
+        if r.name == hygiene.__name__ and "may not belong" in r.getMessage()
+    ]
+    assert [r.levelno for r in trips] == [logging.ERROR if delete else logging.WARNING]
 
 
 @pytest.mark.parametrize("orphans", [2, 3], ids=["half", "over_half"])
@@ -444,6 +498,23 @@ def test_an_allowance_lifts_the_bulk_rule_for_its_directory_and_count_only(
     assert not any(path.exists() for path in [*audio, document])
 
 
+def test_an_allowance_for_a_directory_the_run_does_not_scan_trips(
+    layout: Layout, db: Engine, tmp_path: Path
+) -> None:
+    add_referenced_audio(db, layout, 20)
+    orphan = write_file(layout.recordings / uuid_name(".wav"))
+    elsewhere = tmp_path / "elsewhere"
+
+    report = run(db, delete=True, bulk={elsewhere: 1})
+
+    assert rules(report) == [RULE_BULK]
+    assert (
+        report.breaker[0].detail
+        == f"{elsewhere}: allowed, but this run does not scan it"
+    )
+    assert orphan.exists()
+
+
 # --- the restore lock ---------------------------------------------------------
 
 
@@ -486,7 +557,7 @@ def test_a_restore_that_starts_before_the_first_unlink_stops_the_deletion(
     assert orphan.exists()
 
 
-def test_the_lock_is_read_again_every_25_unlinks(layout: Layout, db: Engine) -> None:
+def test_the_lock_is_read_again_every_25_flagged_files(layout: Layout, db: Engine) -> None:
     add_referenced_audio(db, layout, 30)
     orphans = [write_file(layout.recordings / uuid_name(".wav")) for _ in range(30)]
     # Free at the start, at the first unlink, then held by the 26th.

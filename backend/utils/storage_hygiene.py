@@ -92,7 +92,7 @@ logger = logging.getLogger(__name__)
 
 # The same floor as the other 24 hour sweeps and RECORDING_UPLOAD_RETENTION_HOURS.
 GRACE_SECONDS = 24 * 60 * 60
-# The restore lock is read again after this many unlinks.
+# The restore lock is read again every this many flagged files, kept ones included.
 LOCK_RECHECK_EVERY = 25
 # Flagged files a run that removes nothing lists in the log.
 LOGGED_FLAGGED = 50
@@ -257,9 +257,11 @@ def _delete(
 
 def _log_run(report: HygieneReport) -> None:
     if report.tripped:
-        split_brain = RULE_SPLIT_BRAIN in report.rules
+        # A split brain that would have cost files is an error; in a run that
+        # only reports, as the daily flag mode does, a warning is enough.
+        severe = report.delete_requested and RULE_SPLIT_BRAIN in report.rules
         logger.log(
-            logging.ERROR if split_brain else logging.WARNING,
+            logging.ERROR if severe else logging.WARNING,
             "Storage hygiene circuit breaker tripped (%s): %s",
             ", ".join(report.rules),
             "; ".join(trip.detail for trip in report.breaker),

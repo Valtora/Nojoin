@@ -25,7 +25,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from sqlalchemy import CompoundSelect, String, false, literal, select, union_all
+from sqlalchemy import CompoundSelect, String, case, literal, select, union_all
 from sqlmodel import Session, col
 
 from backend.models.document import Document
@@ -45,10 +45,21 @@ logger = logging.getLogger("backend.utils.storage_hygiene")
 
 RECORDINGS_ROLE = "recordings"
 
+# What a stored path counts toward, by the state of its row.
+COUNTED = "counted"
+PENDING = "pending"
+SETTLED = "settled"
 # A recording in these states has no audio file of its own yet, by design:
 # capture init names a ``.wav`` that finalize replaces with the ``.flac`` master,
 # and an upload's bytes are still arriving.
 PENDING_STATUSES = (RecordingStatus.UPLOADING, RecordingStatus.PAUSED)
+# A recording in these states may have settled without its file, by design: an
+# import that fails removes its audio and keeps the row, and a capture whose
+# master could not be built keeps naming the ``.wav`` it never got. Their paths
+# still keep the files they name, but a missing one says nothing about whether
+# the database belongs to this data directory. Every other status names a file
+# that should be there.
+SETTLED_STATUSES = (RecordingStatus.ERROR, RecordingStatus.CANCELLED)
 
 _UUID = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
 _EXTENSION = r"(?:\.[A-Za-z0-9]{1,16})?"
@@ -61,24 +72,33 @@ _EXTENSION = r"(?:\.[A-Za-z0-9]{1,16})?"
 _STORED_NAME = re.compile(
     rf"^(?:{_UUID}|.+__{_UUID}|demo_welcome_[0-9]+)(?:\.restored)?{_EXTENSION}$"
 )
-# What a killed write leaves: upload_limit.py's ``<dest>.<32 hex>.upload-tmp``
-# and browser_capture_audio.py's ``<name>.part``.
-_UPLOAD_TMP = re.compile(r"^(?P<dest>.+)\.[0-9a-f]{32}\.upload-tmp$")
-_PART_SUFFIX = ".part"
+# What a killed write leaves: upload_limit.py's ``<dest>.<32 hex>.upload-tmp``,
+# audio.py's in-place proxy conversion ``<dest>.<8 hex>.tmp``, and
+# browser_capture_audio.py's ``<dest>.part``.
+_PARTIAL_WRITES = (
+    re.compile(r"^(?P<dest>.+)\.[0-9a-f]{32}\.upload-tmp$"),
+    re.compile(r"^(?P<dest>.+)\.[0-9a-f]{8}\.tmp$"),
+    re.compile(r"^(?P<dest>.+)\.part$"),
+)
+
+
+def _partial_destination(name: str) -> str | None:
+    """The name a partial write was headed for, or None for any other file."""
+    for pattern in _PARTIAL_WRITES:
+        match = pattern.match(name)
+        if match is not None:
+            return match.group("dest")
+    return None
 
 
 def is_partial_upload(name: str) -> bool:
-    return bool(_UPLOAD_TMP.match(name)) or name.endswith(_PART_SUFFIX)
+    return _partial_destination(name) is not None
 
 
 def is_nojoin_name(name: str) -> bool:
     """Whether Nojoin could have written a file of this name."""
-    upload = _UPLOAD_TMP.match(name)
-    if upload is not None:
-        name = upload.group("dest")
-    elif name.endswith(_PART_SUFFIX):
-        name = name[: -len(_PART_SUFFIX)]
-    return bool(_STORED_NAME.match(name))
+    destination = _partial_destination(name)
+    return bool(_STORED_NAME.match(name if destination is None else destination))
 
 
 def _base_name(name: str) -> str:
@@ -146,16 +166,18 @@ class References:
             self.relative_stored += 1
             self.relative_missing += int(missing)
 
-    def add(self, category: str, raw_path: str, pending: bool) -> None:
+    def add(self, category: str, raw_path: str, state: str) -> None:
+        """Add a stored path's keys, and count it unless its row is pending or
+        settled without its file."""
         name = _stored_name(raw_path)
         self._name(("name", name.casefold()), category)
         identity = document_file_identity(raw_path)
         if identity is not None and identity[0] == "inode":
             self._name(identity, category)
-        if pending:
+        if state == PENDING:
             self._name(("pending", _base_name(name)), category)
-            return
-        self._count(category, raw_path, identity is None or identity[0] == "path")
+        if state == COUNTED:
+            self._count(category, raw_path, identity is None or identity[0] == "path")
 
 
 def hygiene_directories() -> list[ScanDirectory]:
@@ -256,14 +278,23 @@ def reference_statement() -> CompoundSelect:
     A proxy that is its recording's audio is read once, as the audio. Documents
     are read whether or not their recording exists.
     """
-    pending = col(Recording.status).in_(PENDING_STATUSES)
+    status = col(Recording.status)
+    state = case(
+        (status.in_(PENDING_STATUSES), literal(PENDING, String)),
+        (status.in_(SETTLED_STATUSES), literal(SETTLED, String)),
+        else_=literal(COUNTED, String),
+    )
     return union_all(
-        select(literal(AUDIO, String), col(Recording.audio_path), pending),
-        select(literal(PROXIES, String), col(Recording.proxy_path), pending).where(
+        select(literal(AUDIO, String), col(Recording.audio_path), state),
+        select(literal(PROXIES, String), col(Recording.proxy_path), state).where(
             col(Recording.proxy_path).is_not(None),
             col(Recording.proxy_path) != col(Recording.audio_path),
         ),
-        select(literal(DOCUMENTS, String), col(Document.file_path), false()),
+        select(
+            literal(DOCUMENTS, String),
+            col(Document.file_path),
+            literal(COUNTED, String),
+        ),
     )
 
 
@@ -272,9 +303,9 @@ def read_references(session_factory: Callable[[], Session]) -> References:
         rows = session.connection().execute(reference_statement()).all()
 
     references = References()
-    for category, raw_path, pending in rows:
+    for category, raw_path, state in rows:
         if category == AUDIO:
             references.recordings += 1
         if raw_path:
-            references.add(category, raw_path, bool(pending))
+            references.add(category, raw_path, state)
     return references
