@@ -50,15 +50,22 @@ export default function BatchTagModal({ isOpen, onClose, onApply, count, mode }:
   }, [isOpen, loadTags]);
 
   const handleCreateTag = async () => {
-    if (!inputValue.trim()) return;
+    const name = inputValue.trim();
+    if (!name) return;
+    const randomColor = DEFAULT_TAG_COLORS[Math.floor(Math.random() * DEFAULT_TAG_COLORS.length)];
     try {
-      const randomColor = DEFAULT_TAG_COLORS[Math.floor(Math.random() * DEFAULT_TAG_COLORS.length)];
-      await createTag(inputValue.trim(), randomColor);
-      await loadTags();
-      setSelectedTag(inputValue.trim());
+      await createTag(name, randomColor);
     } catch (error: unknown) {
-      notifyRequestError(error, 'Failed to create tag.');
+      // A name taken since the list loaded is refused, and that tag is the
+      // one to apply, as the batch add would use it.
+      const latest = await getTags().catch((): Tag[] => []);
+      if (!latest.some((tag) => tag.name === name)) {
+        notifyRequestError(error, 'Failed to create tag.');
+        return;
+      }
     }
+    await loadTags();
+    setSelectedTag(name);
   };
 
   const filteredTags = tags.filter(tag =>

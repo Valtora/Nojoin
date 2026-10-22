@@ -140,6 +140,39 @@ describe("useMainNavTags", () => {
     expect(messages()).toEqual(["error: Parent tag not found"]);
   });
 
+  it("refuses a sub-tag with a name in use and says why", async () => {
+    createTag.mockRejectedValue(httpError(400, "Tag already exists"));
+    const { result } = await renderTags();
+    act(() => result.current.handleAddSubTag(1));
+
+    let created: boolean | undefined;
+    await act(async () => {
+      created = await result.current.handleCreateTagConfirm("Suppliers");
+    });
+
+    expect(createTag).toHaveBeenCalledWith("Suppliers", expect.any(String), 1);
+    expect(created).toBe(false);
+    expect(result.current.tags).toHaveLength(3);
+    expect(messages()).toEqual(["error: Tag already exists"]);
+  });
+
+  it("adds a new sub-tag under its parent", async () => {
+    const partners = { id: 4, name: "Partners", color: "red", parent_id: 1 };
+    createTag.mockResolvedValue(partners);
+    const { result } = await renderTags();
+    getTags.mockResolvedValue([...TAGS, partners]);
+    act(() => result.current.handleAddSubTag(1));
+
+    let created: boolean | undefined;
+    await act(async () => {
+      created = await result.current.handleCreateTagConfirm("Partners");
+    });
+
+    expect(created).toBe(true);
+    expect(result.current.tags.map((tag) => tag.id)).toEqual([1, 2, 3, 4]);
+    expect(messages()).toEqual([]);
+  });
+
   it("names the failed action when the response gives no reason", async () => {
     updateTag.mockRejectedValue(httpError(500));
     deleteTag.mockRejectedValue(httpError(500));
