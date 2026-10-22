@@ -178,7 +178,7 @@ export const pickCaptureSource = async (
   ) {
     throw new PickSourceError(
       "selected_microphone_unavailable",
-      "The selected microphone is not available to the browser. Choose another microphone in Settings > Capture before starting the recording.",
+      "The selected microphone is not available to the browser. Choose another microphone in Settings > Recording before starting the recording.",
       buildCaptureReportSnapshot({
         mode,
         requestedMicrophoneDeviceId: options.microphoneDeviceId,
@@ -261,7 +261,7 @@ export const pickCaptureSource = async (
         ? "selected_microphone_unavailable"
         : "microphone_denied",
       selectedDeviceUnavailable
-        ? "The selected microphone is not available to the browser. Choose another microphone in Settings > Capture before starting the recording."
+        ? "The selected microphone is not available to the browser. Choose another microphone in Settings > Recording before starting the recording."
         : error instanceof Error
           ? error.message
           : "Microphone capture was cancelled before the recording started.",
