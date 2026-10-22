@@ -557,7 +557,9 @@ def test_a_restore_that_starts_before_the_first_unlink_stops_the_deletion(
     assert orphan.exists()
 
 
-def test_the_lock_is_read_again_every_25_flagged_files(layout: Layout, db: Engine) -> None:
+def test_the_lock_is_read_again_every_25_flagged_files(
+    layout: Layout, db: Engine
+) -> None:
     add_referenced_audio(db, layout, 30)
     orphans = [write_file(layout.recordings / uuid_name(".wav")) for _ in range(30)]
     # Free at the start, at the first unlink, then held by the 26th.
