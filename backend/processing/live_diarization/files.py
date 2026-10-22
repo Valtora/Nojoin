@@ -19,7 +19,9 @@ logger = logging.getLogger(__name__)
 STATE_FILENAME = "speaker_labels.npz"
 BANK_FILENAME = "speaker_labels.bank"
 DISABLED_FILENAME = "speaker_labels.off"
-LIVE_LABEL_FILENAMES = (STATE_FILENAME, BANK_FILENAME, DISABLED_FILENAME)
+# flock target that keeps two label steps of one recording from overlapping.
+LOCK_FILENAME = "speaker_labels.lock"
+LIVE_LABEL_FILENAMES = (STATE_FILENAME, BANK_FILENAME, DISABLED_FILENAME, LOCK_FILENAME)
 
 
 def remove_live_label_state(live_dir: Path) -> None:

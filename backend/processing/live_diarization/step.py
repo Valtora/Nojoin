@@ -12,8 +12,11 @@ other value is off. Off returns before any model or state is touched.
 
 from __future__ import annotations
 
+import fcntl
 import logging
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -29,7 +32,7 @@ from backend.utils.canonical_pipeline.live_labels import (
 from backend.utils.config_manager import config_manager
 
 from .engine import FeedResult, LiveLabelConfig, LiveLabelEngine, ModelFn
-from .files import DISABLED_FILENAME, remove_live_label_state
+from .files import DISABLED_FILENAME, LOCK_FILENAME, remove_live_label_state
 from .lines import LabelTimeline
 from .setting import live_speaker_labels_requested
 from .state import LiveLabelStateError, load_engine, new_engine, save_engine
@@ -39,6 +42,11 @@ logger = logging.getLogger(__name__)
 # Pieces this far before the earliest line that can still change are kept.
 PRUNE_MARGIN_S = 1.0
 CONFIG = LiveLabelConfig()
+# How long a run waits for the recording's previous label step. The step runs
+# after the lane state is saved, so with two GPU lanes the next run's step can
+# start before this one ends; both would load, feed and save the same state.
+LOCK_WAIT_S = 10.0
+LOCK_POLL_S = 0.05
 
 
 def live_speaker_labels_device() -> str | None:
@@ -196,11 +204,46 @@ def _record(
     )
 
 
+@contextmanager
+def _recording_lock(live_dir: Path) -> Iterator[bool]:
+    """Hold the recording's label lock; yields False if it stays taken too long."""
+    with open(live_dir / LOCK_FILENAME, "a") as handle:
+        deadline = time.monotonic() + LOCK_WAIT_S
+        while True:
+            try:
+                fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    yield False
+                    return
+                time.sleep(LOCK_POLL_S)
+        try:
+            yield True
+        finally:
+            fcntl.flock(handle, fcntl.LOCK_UN)
+
+
 def run_live_speaker_labels(run: LiveLabelRun) -> None:
     """Label the run's lines. Raises on failure; the live task catches it."""
     device = live_speaker_labels_device()
     if device is None or (run.live_dir / DISABLED_FILENAME).exists():
         return
+    with _recording_lock(run.live_dir) as held:
+        if held:
+            _label_run(run, device)
+            return
+    # This run's audio is not labelled; the next run bridges the gap.
+    record_pipeline_metric(
+        stage="live_speaker_labels",
+        recording_id=run.recording_id,
+        payload={"sequence": run.sequence, "reason": "busy"},
+        status="skipped",
+        log=logger,
+    )
+
+
+def _label_run(run: LiveLabelRun, device: str) -> None:
     started = time.perf_counter()
     engine = _load_or_disable(run)
     if engine is None:

@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import fcntl
 import json
+import threading
+import time
 
 import pytest
 from sqlalchemy import create_engine, text
@@ -18,6 +21,7 @@ from backend.models.recording import Recording, RecordingStatus
 from backend.processing.live_diarization import step
 from backend.processing.live_diarization.files import (
     BANK_FILENAME,
+    LOCK_FILENAME,
     STATE_FILENAME,
     remove_live_label_state,
 )
@@ -396,6 +400,46 @@ def test_the_label_step_writes_nothing_and_removes_its_state_once_capture_ends(
     assert labels() == before
     assert not (tmp_path / STATE_FILENAME).exists()
     assert not (tmp_path / BANK_FILENAME).exists()
+
+
+def _hold_label_lock(live_dir):
+    """The lock as another lane's label step for the recording holds it."""
+    handle = open(live_dir / LOCK_FILENAME, "a")
+    fcntl.flock(handle, fcntl.LOCK_EX)
+    return handle
+
+
+def test_a_label_step_waits_for_the_recordings_previous_one(monkeypatch, tmp_path):
+    # Two GPU lanes can run consecutive live tasks at once, and the label step
+    # runs after the lane state is saved, so two steps could load, feed and save
+    # the same state together.
+    engine = _database()
+    model = SpeakerTrackModel()
+    _patch_step(monkeypatch, engine, model)
+    held = _hold_label_lock(tmp_path)
+    threading.Timer(0.3, held.close).start()
+
+    started = time.monotonic()
+    _run(tmp_path, speaker_audio([(0, 4, 1)], 4), 0.0, 4.0)
+
+    assert time.monotonic() - started >= 0.3
+    assert model.calls == 1
+    assert (tmp_path / STATE_FILENAME).exists()
+
+
+def test_a_label_step_gives_up_on_a_lock_that_stays_taken(monkeypatch, tmp_path):
+    engine = _database()
+    model = SpeakerTrackModel()
+    _patch_step(monkeypatch, engine, model)
+    monkeypatch.setattr(step, "LOCK_WAIT_S", 0.2)
+    held = _hold_label_lock(tmp_path)
+    try:
+        _run(tmp_path, speaker_audio([(0, 4, 1)], 4), 0.0, 4.0)
+    finally:
+        held.close()
+
+    assert model.calls == 0
+    assert not (tmp_path / STATE_FILENAME).exists()
 
 
 def test_an_unreadable_state_stops_labels_for_the_recording(monkeypatch, tmp_path):
