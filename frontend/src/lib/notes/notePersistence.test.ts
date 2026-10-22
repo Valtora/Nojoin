@@ -241,6 +241,25 @@ describe("a note outbox kept in the browser", () => {
     );
   });
 
+  it("stores nothing for the owner while another account is signed in, though that sign-in's cleanup failed", async () => {
+    setNoteStoreForTests(store);
+    await storedNotesSignedIn(ALICE);
+    const tab = await openPageAndRead(store);
+    vi.spyOn(store, "keepOnly").mockRejectedValue(new Error("refused"));
+
+    signedIn("bob", BOB);
+    await storedNotesSignedIn(BOB);
+    tab.setDraft({ ...DRAFT, text: "typed while bob is signed in" });
+    await settle();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(await stored(store, ALICE)).toBeUndefined();
+
+    signedIn("alice", ALICE);
+    await vi.waitFor(async () =>
+      expect((await stored(store, ALICE))?.draft).toEqual({ ...DRAFT, text: "typed while bob is signed in" }),
+    );
+  });
+
   it("reads nothing until the session says which account is signed in", async () => {
     await leaveUnsavedNotes(store);
     closePages();
@@ -846,6 +865,78 @@ describe("storing beside other tabs and sign-outs", () => {
     await vi.waitFor(async () =>
       expect(await storedDraft()).toMatchObject({ text: "alice's, typed while bob is signed in" }),
     );
+  });
+
+  it("leaves the record alone when another tab's sign-in keeps this account", async () => {
+    const outbox = openStoringPage();
+    outbox.setDraft(DRAFT);
+    await vi.waitFor(async () => expect(await storedDraft()).toEqual(DRAFT));
+    // Another tab on the recording wrote last.
+    const theirs = { ...DRAFT, text: "the other tab's text" };
+    await store.put({
+      version: NOTE_RECORD_VERSION,
+      account: ALICE,
+      recordingId: RECORDING,
+      notes: [],
+      draft: theirs,
+      discards: [],
+    });
+
+    otherTab().postMessage({ kind: "kept", accounts: [ALICE] });
+    await noWrite();
+    await noWrite();
+
+    expect(await storedDraft()).toEqual(theirs);
+  });
+
+  it("writes nothing once the page is stopped, though a write was under way", async () => {
+    const put = store.put.bind(store);
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const putSpy = vi.spyOn(store, "put").mockImplementation(async (record) => {
+      await held;
+      await put(record);
+    });
+    const outbox = openStoringPage();
+    await settle();
+    outbox.setDraft(DRAFT);
+    await vi.waitFor(() => expect(putSpy).toHaveBeenCalledTimes(1));
+    outbox.setDraft({ ...DRAFT, text: "typed as the page went away" });
+
+    pages.pop()?.();
+    release();
+    await noWrite();
+
+    expect(putSpy).toHaveBeenCalledTimes(1);
+    expect(await storedDraft()).toEqual(DRAFT);
+  });
+
+  it("no longer holds back a note's new id once the page is stopped", async () => {
+    const put = store.put.bind(store);
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    vi.spyOn(store, "put").mockImplementation(async (record) => {
+      await held;
+      await put(record);
+    });
+    const outbox = openStoringPage();
+    await settle();
+    idInUseOnce();
+    // The first write, of the note under its first id, is under way when the
+    // create is refused; the note takes a new id, which waits on that write.
+    outbox.submit({ kind: "tail", body: "Wrap-up", anchorMs: null });
+    await vi.waitFor(() => expect(server.creates).toHaveLength(1));
+    await settle();
+
+    pages.pop()?.();
+    release();
+
+    await vi.waitFor(() => expect(server.notes.size).toBe(1));
+    expect(outbox.getSnapshot().entries).toEqual([]);
   });
 
   it("sends a note under its new id at once where the browser keeps nothing", async () => {

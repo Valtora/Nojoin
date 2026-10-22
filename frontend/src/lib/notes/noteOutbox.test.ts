@@ -365,6 +365,56 @@ describe("NoteOutbox: notes that can't be made again", () => {
     expect(inlineNotes([...server.notes.values()], outbox.getSnapshot())).toEqual([]);
   });
 
+  it("sends nothing under a new id once an earlier send saved the note while the kept copy was checked", async () => {
+    vi.useFakeTimers();
+    let answer!: () => void;
+    // The first create commits, but its answer is held back.
+    createTimelineNote.mockImplementationOnce(async (_recording, payload) => {
+      server.creates.push(payload);
+      const note: TimelineNote = {
+        id: payload.id!,
+        recording_id: RECORDING,
+        kind: payload.kind,
+        body: payload.body,
+        anchor_ms: payload.anchor_ms ?? null,
+        revision: 1,
+        created_at: "2026-10-22T10:00:00",
+        updated_at: "2026-10-22T10:00:00",
+      };
+      server.notes.set(note.id, note);
+      await new Promise<void>((resolve) => {
+        answer = resolve;
+      });
+      return note;
+    });
+    const outbox = new NoteOutbox(RECORDING);
+    let checked!: (safe: boolean) => void;
+    outbox.setWriteBarrier(
+      () =>
+        new Promise<boolean>((resolve) => {
+          checked = resolve;
+        }),
+    );
+    outbox.submit({ kind: "point", body: "Once", anchorMs: 3_000 });
+    await vi.advanceTimersByTimeAsync(SLOW_SAVE_MS);
+    const [waiting] = outbox.getSnapshot().entries;
+    expect(waiting.status).toBe("failed");
+
+    // Retry is refused for its id: the note takes a new one, and waits on the kept copy.
+    server.failures.push(coded(409, "note_id_in_use"));
+    outbox.retry(waiting.key);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(outbox.getSnapshot().entries[0].id).not.toBe(waiting.id);
+
+    answer(); // The first create's 201 arrives: the note is saved.
+    await vi.advanceTimersByTimeAsync(0);
+    checked(true);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(outbox.getSnapshot().entries).toEqual([]);
+    expect(server.notes.size).toBe(1);
+  });
+
   it("names the note a failure is about, for the note box to say", async () => {
     const outbox = new NoteOutbox(RECORDING);
     server.failures.push(NO_ANSWER);
