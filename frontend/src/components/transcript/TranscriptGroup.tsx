@@ -4,6 +4,7 @@ import { memo, type RefObject } from "react";
 import { Pause, Play } from "lucide-react";
 
 import { getColorByKey } from "@/lib/constants";
+import type { OutboxDraft } from "@/lib/notes/noteOutbox";
 import {
   GlobalSpeaker,
   RecordingSpeaker,
@@ -44,6 +45,10 @@ export interface TranscriptLineShared {
   ) => void | Promise<void>;
   pendingRemoteUtteranceIds: ReadonlySet<string>;
   actions: TranscriptLineActions;
+  /** Queues a note on a line; null where notes can't be added. */
+  onAddNote: ((note: OutboxDraft) => string | null) | null;
+  /** Plays on from a line's start, in seconds; null where playback is off. */
+  onPlayFrom: ((startSeconds: number) => void) | null;
 }
 
 /** "Alex", "Alex and Blair", "Alex, Blair, and Sam". */
@@ -135,6 +140,8 @@ function TranscriptGroup({
         isEditingText={isEditingText}
         popoverAnchor={activePopover?.segmentId === segmentId ? activePopover.anchor : null}
         actions={lineShared.actions}
+        onAddNote={lineShared.onAddNote}
+        onPlayFrom={lineShared.onPlayFrom}
         editor={isEditingSpeaker || isEditingText ? editor : null}
       />
     );

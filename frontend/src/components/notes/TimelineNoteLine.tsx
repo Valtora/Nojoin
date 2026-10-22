@@ -12,6 +12,8 @@ import { NOTE_BUTTON_TOUCH } from "./noteButtons";
 interface TimelineNoteLineProps {
   noteId: string;
   body: string;
+  /** The words a selection note is on, as they read when it was written. */
+  quote?: string | null;
   /** The note's time, written the way the surrounding lines write theirs. */
   timeLabel: string;
   status?: "saved" | "saving" | "failed";
@@ -31,6 +33,7 @@ interface TimelineNoteLineProps {
 export default function TimelineNoteLine({
   noteId,
   body,
+  quote = null,
   timeLabel,
   status = "saved",
   error = null,
@@ -64,6 +67,14 @@ export default function TimelineNoteLine({
             </span>
           ) : null}
         </div>
+        {quote ? (
+          <blockquote
+            data-testid="timeline-note-quote"
+            className="mt-0.5 line-clamp-2 break-words text-sm italic leading-6 text-contrast-helper"
+          >
+            <span className="sr-only">On the words: </span>“{quote}”
+          </blockquote>
+        ) : null}
         <p className="mt-0.5 whitespace-pre-wrap break-words text-sm leading-6 text-foreground">
           {body}
         </p>

@@ -26,13 +26,15 @@ import { formatTime, isRecentlyUpdatedSegment } from "./transcript/transcriptDis
 import TranscriptGroup, { type TranscriptLineShared } from "./transcript/TranscriptGroup";
 import TranscriptToolbar from "./transcript/TranscriptToolbar";
 import { bodyNotesAmongLines, placeTimelineNotes } from "@/lib/notes/placement";
+import type { InlineNote, OutboxDraft } from "@/lib/notes/noteOutbox";
 import TimelineNoteLine from "./notes/TimelineNoteLine";
 
 interface TranscriptViewProps {
   recordingId: RecordingId;
   segments: TranscriptSegment[];
   currentTime: number;
-  onPlaySegment: (start: number, end: number) => void;
+  /** Plays from `start` to `end` in seconds, or on from `start` without one. */
+  onPlaySegment: (start: number, end?: number) => void;
   isPlaying: boolean;
   onPause: () => void;
   onResume: () => void;
@@ -66,8 +68,16 @@ interface TranscriptViewProps {
   emptyStateDescription?: string;
   onActiveEditUtteranceChange?: (utteranceId: string | null) => void;
   pendingRemoteUtteranceIds?: readonly string[];
-  /** The recording's notes; point and selection notes show among the lines. */
-  timelineNotes?: readonly TimelineNote[] | null;
+  /**
+   * The recording's notes; point and selection notes show among the lines,
+   * with their state while one is still on its way.
+   */
+  timelineNotes?: readonly (TimelineNote | InlineNote)[] | null;
+  /** Queues a note from a line's menu; without it the menu offers none. */
+  onAddNote?: (note: OutboxDraft) => string | null;
+  onRetryNote?: (key: string) => void;
+  /** Removes a failed note's line: the caller moves focus somewhere that stays. */
+  onDiscardNote?: (key: string) => void;
 }
 
 // One empty list for every render, so the memoised lines it reaches hold.
@@ -110,6 +120,9 @@ export default function TranscriptView({
   onActiveEditUtteranceChange,
   pendingRemoteUtteranceIds: pendingRemoteUtteranceIdsProp = NO_PENDING_UPDATES,
   timelineNotes,
+  onAddNote,
+  onRetryNote,
+  onDiscardNote,
 }: TranscriptViewProps) {
   // Find & Replace toolbar visibility (search match state lives in the hook)
   const [showSearch, setShowSearch] = useState(false);
@@ -210,18 +223,26 @@ export default function TranscriptView({
       ),
     [notePlacements, displaySegments],
   );
-  const renderNote = (note: TimelineNote) => (
-    <div key={note.id} className="px-2">
-      <TimelineNoteLine
-        noteId={note.id}
-        body={note.body}
-        timeLabel={formatTime(
-          (note.kind === "selection" ? (note.start_ms ?? 0) : (note.anchor_ms ?? 0)) / 1000,
-        )}
-        timeColumnClassName={NOTE_TIME_COLUMN}
-      />
-    </div>
-  );
+  const renderNote = (note: TimelineNote | InlineNote) => {
+    const key = "key" in note ? note.key : note.id;
+    return (
+      <div key={key} className="px-2">
+        <TimelineNoteLine
+          noteId={note.id}
+          body={note.body}
+          quote={note.kind === "selection" ? note.quoted_text : null}
+          timeLabel={formatTime(
+            (note.kind === "selection" ? (note.start_ms ?? 0) : (note.anchor_ms ?? 0)) / 1000,
+          )}
+          timeColumnClassName={NOTE_TIME_COLUMN}
+          status={"status" in note ? note.status : "saved"}
+          error={"error" in note ? note.error : null}
+          onRetry={onRetryNote ? () => onRetryNote(key) : undefined}
+          onDiscard={onDiscardNote ? () => onDiscardNote(key) : undefined}
+        />
+      </div>
+    );
+  };
 
   // --- Grouping Logic ---
   const trackGroups = useMemo(
@@ -241,6 +262,10 @@ export default function TranscriptView({
   const pause = useStableCallback(onPause);
   const resume = useStableCallback(onResume);
   const updateSegmentSpeaker = useStableCallback(onUpdateSegmentSpeaker);
+  // "Play from here" on a line plays on, rather than to the group's end.
+  const playFrom = useStableCallback((startSeconds: number) => onPlaySegment(startSeconds));
+  const canAddNote = onAddNote !== undefined;
+  const addNote = useStableCallback((note: OutboxDraft) => onAddNote?.(note) ?? null);
   const lineShared = useMemo<TranscriptLineShared>(
     () => ({
       activeSegmentRef,
@@ -253,6 +278,8 @@ export default function TranscriptView({
       onUpdateSegmentSpeaker: updateSegmentSpeaker,
       pendingRemoteUtteranceIds: pendingRemoteUtteranceIdSet,
       actions: editing.lineActions,
+      onAddNote: canAddNote ? addNote : null,
+      onPlayFrom: disableSegmentPlayback ? null : playFrom,
     }),
     [
       activeSegmentRef,
@@ -265,6 +292,10 @@ export default function TranscriptView({
       updateSegmentSpeaker,
       pendingRemoteUtteranceIdSet,
       editing.lineActions,
+      canAddNote,
+      addNote,
+      disableSegmentPlayback,
+      playFrom,
     ],
   );
   const lineKeys = (

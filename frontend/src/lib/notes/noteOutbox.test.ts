@@ -16,7 +16,14 @@ import {
 import type { TimelineNote } from "@/types";
 
 import { NOTE_BODY_MAX_CHARS } from "./headNoteSync";
-import { inlineNotes, noteFromDraft, NoteOutbox, SLOW_SAVE_MS } from "./noteOutbox";
+import {
+  inlineNotes,
+  NOTE_QUOTE_MAX_CHARS,
+  noteFromDraft,
+  NoteOutbox,
+  notePlace,
+  SLOW_SAVE_MS,
+} from "./noteOutbox";
 import { forgetNoteOutboxes } from "./noteOutboxes";
 
 const RECORDING = "rec-1";
@@ -632,5 +639,118 @@ describe("inlineNotes", () => {
       ["point", "saved"],
       ["pending", "saving"],
     ]);
+  });
+
+  it("places a selection note on its way with its span and quote, unless only other kinds are asked for", () => {
+    const outbox = {
+      entries: [
+        {
+          key: "k1",
+          id: "on-line",
+          writeToken: "t1",
+          kind: "selection" as const,
+          body: "Check this",
+          anchorMs: null,
+          selection: { startMs: 12_000, endMs: 15_500, quotedText: "forty thousand" },
+          createdAt: "2026-10-21T10:00:01Z",
+          status: "failed" as const,
+          error: "Not saved.",
+        },
+        {
+          key: "k2",
+          id: "point",
+          writeToken: "t2",
+          kind: "point" as const,
+          body: "Listed above the transcript",
+          anchorMs: 3_000,
+          createdAt: "2026-10-21T10:00:01Z",
+          status: "saving" as const,
+          error: null,
+        },
+      ],
+      saved: [],
+      discarded: new Set<string>(),
+    };
+
+    expect(inlineNotes([], outbox, ["selection"])).toEqual([
+      {
+        key: "k1",
+        id: "on-line",
+        kind: "selection",
+        body: "Check this",
+        anchor_ms: null,
+        start_ms: 12_000,
+        end_ms: 15_500,
+        quoted_text: "forty thousand",
+        created_at: "2026-10-21T10:00:01Z",
+        status: "failed",
+        error: "Not saved.",
+      },
+    ]);
+    expect(inlineNotes([], outbox, ["point"]).map((note) => note.id)).toEqual(["point"]);
+  });
+});
+
+describe("NoteOutbox: notes on chosen text", () => {
+  const ON_LINE = { startMs: 12_000, endMs: 15_500, quotedText: "  forty thousand \n" };
+
+  beforeEach(() => {
+    server.notes.clear();
+    server.tombstones.clear();
+    server.creates = [];
+    server.loseNextAnswer = false;
+    server.failures = [];
+    createTimelineNote.mockClear();
+  });
+
+  it("sends a selection note with its span and its quote trimmed, as the API keeps it", async () => {
+    const outbox = new NoteOutbox(RECORDING);
+
+    expect(
+      outbox.submit({ kind: "selection", body: "Check this", anchorMs: null, selection: ON_LINE }),
+    ).toBeNull();
+    await vi.waitFor(() => expect(outbox.getSnapshot().saved).toHaveLength(1));
+
+    expect(server.creates).toEqual([
+      expect.objectContaining({
+        kind: "selection",
+        body: "Check this",
+        start_ms: 12_000,
+        end_ms: 15_500,
+        quoted_text: "forty thousand",
+      }),
+    ]);
+    expect(server.creates[0]).not.toHaveProperty("anchor_ms");
+  });
+
+  it.each([
+    ["no text chosen", null],
+    ["a span that ends where it starts", { ...ON_LINE, endMs: 12_000 }],
+    ["a span before the recording", { ...ON_LINE, startMs: -1 }],
+    ["a blank quote", { ...ON_LINE, quotedText: " \n " }],
+    ["a quote over the limit", { ...ON_LINE, quotedText: "x".repeat(NOTE_QUOTE_MAX_CHARS + 1) }],
+  ])("refuses a selection note with %s before sending it", (_name, selection) => {
+    const outbox = new NoteOutbox(RECORDING);
+
+    expect(
+      outbox.submit({ kind: "selection", body: "Check this", anchorMs: null, selection }),
+    ).not.toBeNull();
+    expect(createTimelineNote).not.toHaveBeenCalled();
+    expect(outbox.getSnapshot().entries).toEqual([]);
+  });
+
+  it("makes a selection note from a draft on chosen text, whatever its mode", () => {
+    const selection = { startMs: 1_000, endMs: 2_000, quotedText: "Hello" };
+    for (const mode of ["typing", "send", "head", "tail"] as const) {
+      expect(
+        noteFromDraft({ text: "A", mode, typingStartMs: 500, selection }, () => 9_000),
+      ).toEqual({ kind: "selection", body: "A", anchorMs: null, selection });
+    }
+  });
+
+  it("names a selection note's place by where its text starts", () => {
+    expect(
+      notePlace({ kind: "selection", anchorMs: null, selection: { ...ON_LINE, startMs: 75_000 } }),
+    ).toBe("at 01:15");
   });
 });

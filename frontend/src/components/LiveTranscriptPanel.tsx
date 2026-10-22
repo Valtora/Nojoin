@@ -10,7 +10,7 @@ import {
 } from "react";
 import { ArrowDown, Radio } from "lucide-react";
 
-import type { InlineNote } from "@/lib/notes/noteOutbox";
+import type { InlineNote, NoteSelection } from "@/lib/notes/noteOutbox";
 import {
   bodyNotesAmongLines,
   formatTimelineMs,
@@ -22,6 +22,7 @@ import { getTranscriptSegmentKey } from "@/lib/transcriptSegments";
 import { CaptureSourceChannel, TranscriptSegment } from "@/types";
 
 import TimelineNoteLine from "./notes/TimelineNoteLine";
+import LiveLineMenu from "./transcript/LiveLineMenu";
 import TranscriptLineText from "./transcript/TranscriptLineText";
 
 /**
@@ -89,6 +90,8 @@ interface LiveTranscriptPanelProps {
   onDiscardNote?: (key: string) => void;
   /** Rendered under the transcript window: the note box. */
   footer?: ReactNode;
+  /** Puts the note box's next note on a line; without it lines have no menu. */
+  onNoteOnLine?: (selection: NoteSelection) => void;
 }
 
 const NO_NOTES: readonly InlineNote[] = [];
@@ -102,9 +105,9 @@ const noteTimeMs = (note: InlineNote) =>
  * Renders provisional utterances as they finalize during capture, and the
  * user's notes among them, each on its own line after the line it follows
  * (`placeTimelineNotes`, the rule every view and prompt shares). Not a second
- * transcript editor: there is nothing to click, nothing to edit, and no
- * playback, because none of that is meaningful before the recording exists as a
- * file. Names are deliberately absent: identity is decided at finalize. When
+ * transcript editor: there is nothing to edit and no playback, because neither
+ * is meaningful before the recording exists as a file. A line's ⋯ menu only
+ * puts the note box's next note on that line. Names are deliberately absent: identity is decided at finalize. When
  * live speaker labels are on, a line may carry a provisional label ("Speaker
  * 3") from the live lane's clustering. It is italic and muted until the label
  * locks, so the cue does not rest on colour alone. Which capture channel
@@ -118,6 +121,7 @@ export default function LiveTranscriptPanel({
   onRetryNote,
   onDiscardNote,
   footer,
+  onNoteOnLine,
 }: LiveTranscriptPanelProps) {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [isPinnedToBottom, setIsPinnedToBottom] = useState(true);
@@ -209,6 +213,7 @@ export default function LiveTranscriptPanel({
       <TimelineNoteLine
         noteId={note.id}
         body={note.body}
+        quote={note.kind === "selection" ? note.quoted_text : null}
         timeLabel={formatTimelineMs(noteTimeMs(note))}
         status={note.status}
         error={note.error}
@@ -287,7 +292,13 @@ export default function LiveTranscriptPanel({
                 <ol className="space-y-3">
                   {notesAmongLines.opening.map(renderNote)}
                   {lines.map(({ segment, key, sourceChannel, showSourceLabel, speaker, speakerLocked }, index) => [
-                    <li key={key} data-testid="live-transcript-line" data-line-index={index}>
+                    <li
+                      key={key}
+                      data-testid="live-transcript-line"
+                      data-line-index={index}
+                      data-line-actions
+                      className="group/line"
+                    >
                       {speaker ? (
                         <div
                           data-testid="live-transcript-speaker"
@@ -317,6 +328,12 @@ export default function LiveTranscriptPanel({
                           endMs={segmentEndMs(segment)}
                           className="min-w-0 flex-1 text-sm italic leading-6 text-contrast-helper"
                         />
+                        {onNoteOnLine ? (
+                          <LiveLineMenu
+                            segment={segment}
+                            onNoteOnLine={onNoteOnLine}
+                          />
+                        ) : null}
                       </div>
                     </li>,
                     ...(notesAmongLines.afterLine.get(index) ?? []).map(renderNote),

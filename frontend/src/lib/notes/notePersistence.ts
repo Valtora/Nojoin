@@ -6,8 +6,10 @@ import { stripNote } from "./headNoteSync";
 import {
   NOTE_INSERT_MODES,
   OUTBOX_KINDS,
+  selectionOf,
   type ComposerDraft,
   type NoteOutbox,
+  type NoteSelection,
   type RestoredNote,
   type RestoredOutbox,
 } from "./noteOutbox";
@@ -43,6 +45,14 @@ const isKnownKind = (kind: unknown): kind is RestoredNote["kind"] =>
 const isKnownMode = (mode: unknown): mode is ComposerDraft["mode"] =>
   (NOTE_INSERT_MODES as readonly unknown[]).includes(mode);
 
+/** A stored selection, as the outbox would send it; null if it isn't one. */
+const readSelection = (value: unknown): NoteSelection | null => {
+  if (!isRecord(value)) return null;
+  const { startMs, endMs, quotedText } = value;
+  if (!isTime(startMs) || !isTime(endMs) || !isText(quotedText)) return null;
+  return selectionOf({ startMs, endMs, quotedText });
+};
+
 const readNote = (value: Record<string, unknown>): RestoredNote | null => {
   const { id, writeToken, kind, body, anchorMs, createdAt } = value;
   if (!isId(id) || !isId(writeToken) || !isKnownKind(kind) || !isText(body) || !isText(createdAt)) {
@@ -51,15 +61,23 @@ const readNote = (value: Record<string, unknown>): RestoredNote | null => {
   if (kind === "point") {
     return isTime(anchorMs) ? { id, writeToken, kind, body, anchorMs, createdAt } : null;
   }
+  if (kind === "selection") {
+    const selection = readSelection(value);
+    return selection
+      ? { id, writeToken, kind, body, anchorMs: null, selection, createdAt }
+      : null;
+  }
   return { id, writeToken, kind, body, anchorMs: null, createdAt };
 };
 
 const readDraft = (value: unknown): ComposerDraft | null => {
   if (!isRecord(value) || !isText(value.text)) return null;
+  const selection = readSelection(value.selection);
   return {
     text: value.text,
     mode: isKnownMode(value.mode) ? value.mode : "typing",
     typingStartMs: isTime(value.typingStartMs) ? value.typingStartMs : null,
+    ...(selection ? { selection } : {}),
   };
 };
 
@@ -83,8 +101,14 @@ export type RecordMigration = (record: Record<string, unknown>) => Record<string
 
 /**
  * The upgrade from each earlier layout version to the one after it. Version 1
- * is the first, so there are none yet; a change to the layout (B3's selection
- * notes, say) bumps `NOTE_RECORD_VERSION` and adds the step from the old one.
+ * is the first, so there are none yet; a change to the layout bumps
+ * `NOTE_RECORD_VERSION` and adds the step from the old one.
+ *
+ * A new kind of note is not a change to the layout: it adds fields to its own
+ * notes only, and a version that doesn't know the kind keeps those notes as
+ * they were (`foreign`) and still restores the rest. Selection notes came
+ * this way: their span and quote are `startMs`, `endMs` and `quotedText`, and
+ * the text a draft is on is its `selection`, in the same fields.
  */
 export const RECORD_MIGRATIONS: Readonly<Record<number, RecordMigration>> = {};
 
@@ -167,12 +191,13 @@ export const persistNoteOutbox = (
   const record = (owner: number): StoredOutbox | null => {
     const { entries, draft } = outbox.getSnapshot();
     const notes: unknown[] = [
-      ...entries.map(({ id, writeToken, kind, body, anchorMs, createdAt }) => ({
+      ...entries.map(({ id, writeToken, kind, body, anchorMs, selection, createdAt }) => ({
         id,
         writeToken,
         kind,
         body,
         anchorMs,
+        ...(selection ?? {}),
         createdAt,
       })),
       ...foreign,

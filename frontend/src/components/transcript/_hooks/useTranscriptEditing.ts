@@ -52,6 +52,8 @@ export interface TranscriptLineActions {
   startTextEdit: (segment: TranscriptSegment, segmentId: string) => void;
   /** Opens the line's speaker popover against `anchor`, or closes it if open. */
   toggleSpeakerPopover: (segmentId: string, anchor: HTMLElement) => void;
+  /** Opens the line's speaker popover against `anchor`, even if it is open already. */
+  openSpeakerPopover: (segmentId: string, anchor: HTMLElement) => void;
   closeSpeakerPopover: () => void;
   startSpeakerRename: (speakerLabel: string, speakerName: string) => void;
 }
@@ -231,6 +233,7 @@ export function useTranscriptEditing(
         setActivePopover((open) =>
           open?.segmentId === segmentId ? null : { segmentId, anchor },
         ),
+      openSpeakerPopover: (segmentId, anchor) => setActivePopover({ segmentId, anchor }),
       closeSpeakerPopover: () => setActivePopover(null),
       startSpeakerRename: (speakerLabel, speakerName) => {
         setEditingSpeaker(speakerLabel);
