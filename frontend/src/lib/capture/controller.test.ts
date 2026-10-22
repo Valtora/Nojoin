@@ -1933,8 +1933,83 @@ describe("an outage that outlasts the upload retries (issue #568)", () => {
     expect(controller.getState().status).toBe("paused");
     expect(controller.getState().runtimeActive).toBe(true);
 
+    // A second failure in a row holds the next attempt back 2 s (issue #599).
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
     connectivityMocks.apiAnswered();
-    await vi.waitFor(() => expect(apiMocks.pauseRecordingCapture).toHaveBeenCalledTimes(3));
+    await vi.advanceTimersByTimeAsync(1_500);
+    expect(apiMocks.pauseRecordingCapture).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(600);
+    expect(apiMocks.pauseRecordingCapture).toHaveBeenCalledTimes(3);
+  });
+
+  describe("while only the pause fails (issue #599)", () => {
+    /** Every pause fails at the network, and records when it was sent. */
+    const failEveryPause = () => {
+      const sentAt: number[] = [];
+      apiMocks.pauseRecordingCapture.mockImplementation(async () => {
+        sentAt.push(Date.now());
+        throw unreachable();
+      });
+      return sentAt;
+    };
+
+    it("backs off from 2 s to 30 s, however often the API answers", async () => {
+      const { uploaderOptions } = await startCapture();
+      await stallWithServerUnreachable(uploaderOptions);
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+      const sentAt = failEveryPause();
+
+      // Each failure brings a probe forward, and it answers: twice a second.
+      for (let tick = 0; tick < 600; tick += 1) {
+        connectivityMocks.apiAnswered();
+        await vi.advanceTimersByTimeAsync(500);
+      }
+
+      const gaps = sentAt.slice(1).map((at, index) => Math.round((at - sentAt[index]) / 1_000));
+      // The first retry goes on the first answer, then 2, 4, 8 and 16 s, then
+      // every 30 s: about 14 attempts in five minutes rather than about 600.
+      expect(gaps.slice(0, 5)).toEqual([2, 4, 8, 16, 30]);
+      expect(new Set(gaps.slice(5))).toEqual(new Set([30]));
+      expect(sentAt.length).toBeLessThanOrEqual(15);
+    });
+
+    it("retries on the first answer after a silence longer than the backoff", async () => {
+      const { uploaderOptions } = await startCapture();
+      await stallWithServerUnreachable(uploaderOptions);
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+      const sentAt = failEveryPause();
+      for (let tick = 0; tick < 60; tick += 1) {
+        connectivityMocks.apiAnswered();
+        await vi.advanceTimersByTimeAsync(500);
+      }
+      const attempts = sentAt.length;
+
+      // An outage: nothing answers for a minute, then the API is back.
+      await vi.advanceTimersByTimeAsync(60_000);
+      apiMocks.pauseRecordingCapture.mockResolvedValue(paused(7));
+      connectivityMocks.apiAnswered();
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(apiMocks.pauseRecordingCapture).toHaveBeenCalledTimes(attempts + 2);
+    });
+
+    it("sends it at once for a resume, whatever the backoff", async () => {
+      const { controller, uploaderOptions } = await startCapture();
+      await stallWithServerUnreachable(uploaderOptions);
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+      failEveryPause();
+      for (let tick = 0; tick < 20; tick += 1) {
+        connectivityMocks.apiAnswered();
+        await vi.advanceTimersByTimeAsync(500);
+      }
+      const attempts = apiMocks.pauseRecordingCapture.mock.calls.length;
+      apiMocks.pauseRecordingCapture.mockResolvedValue(paused(7));
+
+      await expect(controller.resume()).resolves.toEqual({ recordingId: "rec-1", resumed: true });
+
+      expect(apiMocks.pauseRecordingCapture).toHaveBeenCalledTimes(attempts + 1);
+      expect(controller.getState().status).toBe("recording");
+    });
   });
 
   it("still sends the pause after a long outage, carrying its epoch (issue #570)", async () => {

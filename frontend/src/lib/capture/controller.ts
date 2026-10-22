@@ -100,7 +100,37 @@ interface UnconfirmedPause {
   recordingId: RecordingId;
   /** When the last attempt failed. Only a later answer from the API retries it. */
   failedAt: number;
+  /** Attempts that have failed in a row, which set how long the next one waits. */
+  failures: number;
 }
+
+const owePause = (recordingId: RecordingId): UnconfirmedPause => ({
+  recordingId,
+  failedAt: Number.NEGATIVE_INFINITY,
+  failures: 0,
+});
+
+/**
+ * How long after a failed attempt the owed pause waits before it is sent again,
+ * once the API has answered since.
+ *
+ * The first retry goes on the first answer, which after an outage is the moment
+ * the API is back. Later ones back off, doubling from 2 s to 30 s: when only the
+ * pause fails while everything else gets through, a blocked path or a broken
+ * proxy say, each failure brings a connectivity probe forward and its answer
+ * would otherwise send the pause again about twice a second (issue #599).
+ */
+const OWED_PAUSE_RETRY_FIRST_BACKOFF_MS = 2_000;
+
+const OWED_PAUSE_RETRY_MAX_BACKOFF_MS = 30_000;
+
+const owedPauseRetryDelayMs = (failures: number) =>
+  failures <= 1
+    ? 0
+    : Math.min(
+        OWED_PAUSE_RETRY_MAX_BACKOFF_MS,
+        OWED_PAUSE_RETRY_FIRST_BACKOFF_MS * 2 ** (failures - 2),
+      );
 
 /**
  * Length of one recorded segment. Exact rather than nominal: the recorder cuts
@@ -389,6 +419,9 @@ export class CaptureController {
   private serverPauseAttempt: Promise<unknown> | null = null;
 
   private stopWatchingForServer: (() => void) | null = null;
+
+  /** The owed pause's next attempt, held back until its delay has passed. */
+  private owedPauseRetryTimerId: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
     const pausedContext = readPausedCaptureContext();
@@ -714,7 +747,7 @@ export class CaptureController {
       persistedAt: Date.now(),
     });
     this.setState({ status: "paused" });
-    this.unconfirmedPause = { recordingId, failedAt: Number.NEGATIVE_INFINITY };
+    this.unconfirmedPause = owePause(recordingId);
 
     const error = await this.sendServerPause({ drainFirst: true });
     if (!error) {
@@ -1041,7 +1074,7 @@ export class CaptureController {
         lastSequence: this.state.lastSequence,
         persistedAt: Date.now(),
       });
-      this.unconfirmedPause = { recordingId, failedAt: Number.NEGATIVE_INFINITY };
+      this.unconfirmedPause = owePause(recordingId);
     }
 
     // The runtime object is kept even though its media is gone, so a retried
@@ -1510,7 +1543,7 @@ export class CaptureController {
       persistedAt: Date.now(),
     });
     this.setState({ status: "paused" });
-    this.unconfirmedPause = { recordingId, failedAt: Number.NEGATIVE_INFINITY };
+    this.unconfirmedPause = owePause(recordingId);
     // Straight to the pause: the queue has only just failed to send. Not
     // awaited, so the uploader's failed send ends here whatever the request
     // does.
@@ -1602,27 +1635,62 @@ export class CaptureController {
         this.forgetUnconfirmedPause();
       } else {
         pause.failedAt = Date.now();
+        pause.failures += 1;
+        // A retry held back for the attempt before this one would go early.
+        this.cancelOwedPauseRetry();
         this.watchForServer();
       }
       return pauseError || new Error("The pause did not reach the server.");
     }
   };
 
-  /** Retries the unconfirmed pause each time the API is seen to answer again. */
+  /**
+   * Retries the unconfirmed pause once the API is seen to answer after the last
+   * failed attempt, and once that attempt's delay has passed.
+   */
   private watchForServer() {
     if (this.stopWatchingForServer) {
       return;
     }
-    this.stopWatchingForServer = useConnectivityStore.subscribe((connectivity) => {
+    const unsubscribe = useConnectivityStore.subscribe((connectivity) => {
       const pause = this.unconfirmedPause;
       if (
         pause &&
         connectivity.lastReachableAt !== null &&
         connectivity.lastReachableAt > pause.failedAt
       ) {
-        void this.sendServerPause({ drainFirst: true });
+        this.retryOwedPauseWhenDue(pause);
       }
     });
+    this.stopWatchingForServer = () => {
+      unsubscribe();
+      this.cancelOwedPauseRetry();
+    };
+  }
+
+  private retryOwedPauseWhenDue(pause: UnconfirmedPause) {
+    const waitMs = pause.failedAt + owedPauseRetryDelayMs(pause.failures) - Date.now();
+    if (waitMs <= 0) {
+      this.cancelOwedPauseRetry();
+      void this.sendServerPause({ drainFirst: true });
+      return;
+    }
+    if (this.owedPauseRetryTimerId) {
+      return;
+    }
+    this.owedPauseRetryTimerId = setTimeout(() => {
+      this.owedPauseRetryTimerId = null;
+      if (this.unconfirmedPause === pause) {
+        void this.sendServerPause({ drainFirst: true });
+      }
+    }, waitMs);
+  }
+
+  private cancelOwedPauseRetry() {
+    if (this.owedPauseRetryTimerId) {
+      clearTimeout(this.owedPauseRetryTimerId);
+      this.owedPauseRetryTimerId = null;
+    }
   }
 
   private forgetUnconfirmedPause() {
