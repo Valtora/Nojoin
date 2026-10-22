@@ -11,6 +11,9 @@ import {
   TranscriptSpeakerAssignment,
 } from "@/types";
 
+import IconButton from "../ui/IconButton";
+import { TOUCH_TARGET_SQUARE } from "../ui/touchTarget";
+
 import type {
   SpeakerPopover,
   TranscriptLineActions,
@@ -42,6 +45,9 @@ export interface TranscriptLineShared {
   pendingRemoteUtteranceIds: ReadonlySet<string>;
   actions: TranscriptLineActions;
 }
+
+/** "Alex", "Alex and Blair", "Alex, Blair, and Sam". */
+const SPEAKER_LIST = new Intl.ListFormat("en", { type: "conjunction" });
 
 interface TranscriptGroupProps {
   group: TranscriptGroupData;
@@ -93,6 +99,8 @@ function TranscriptGroup({
   activePopover,
   editor,
 }: TranscriptGroupProps) {
+  /** The play button pauses this group's playback rather than starting it. */
+  const pauses = isGroupActive && isPlaying;
   const { speakerMap, speakerColors } = lineShared;
   const activeKeys = activeLineKeys.split(LINE_KEY_SEPARATOR);
   const recentKeys = recentLineKeys.split(LINE_KEY_SEPARATOR);
@@ -153,7 +161,13 @@ function TranscriptGroup({
           {formatTime(group.start)}
         </span>
         {!disableSegmentPlayback && (
-          <button
+          <IconButton
+            size="sm"
+            // Who and when, so two groups in the same second differ.
+            aria-label={`${pauses ? "Pause" : "Play"} ${SPEAKER_LIST.format(
+              involvedSpeakers.map((speaker) => speakerMap[speaker] || speaker),
+            )} at ${formatTime(group.start)}`}
+            title={pauses ? "Pause segment" : "Play segment"}
             onClick={() => {
               if (isGroupActive) {
                 if (isPlaying) onPause();
@@ -162,21 +176,19 @@ function TranscriptGroup({
                 onPlaySegment(group.start, group.end);
               }
             }}
-            className={`p-2 md:p-1.5 rounded-full transition-colors shadow-card ${
+            className={`rounded-full ${TOUCH_TARGET_SQUARE} ${
               isGroupActive
-                ? "bg-status-success-bg text-foreground hover:bg-status-success-bg"
+                ? "bg-status-success-bg text-foreground hover:bg-status-success-bg hover:text-foreground"
                 : "bg-surface-inset text-contrast-helper hover:bg-action hover:text-action-on"
             }`}
-            title={
-              isGroupActive && isPlaying ? "Pause segment" : "Play segment"
+            icon={
+              pauses ? (
+                <Pause aria-hidden="true" className="fill-current" />
+              ) : (
+                <Play aria-hidden="true" className="fill-current" />
+              )
             }
-          >
-            {isGroupActive && isPlaying ? (
-              <Pause className="w-5 h-5 md:w-3 md:h-3 fill-current" />
-            ) : (
-              <Play className="w-5 h-5 md:w-3 md:h-3 fill-current" />
-            )}
-          </button>
+          />
         )}
       </div>
 

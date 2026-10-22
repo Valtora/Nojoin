@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import {
   ArrowRightLeft,
   ChevronDown,
@@ -8,11 +8,27 @@ import {
   Download,
   Redo2,
   Search,
-  Settings,
   Undo2,
 } from "lucide-react";
 
+import Button from "../ui/Button";
+import IconButton from "../ui/IconButton";
+import { TOUCH_TARGET_HEIGHT, TOUCH_TARGET_SQUARE } from "../ui/touchTarget";
+
 import type { TranscriptSearch } from "./_hooks/useTranscriptSearch";
+import SearchSettingsMenu from "./SearchSettingsMenu";
+
+/** A toggle that is on keeps the action tint, hovered or not. */
+const PRESSED = "bg-action-tint text-action-text hover:bg-action-tint hover:text-action-text";
+
+/** The find and replace fields, with the Input primitive's focus ring. */
+const FIELD =
+  "w-full min-w-0 py-1.5 pl-8 text-sm rounded-md border border-control-border bg-surface-inset focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-focus-ring";
+
+/** Moves focus to `field` when `target` is a button that has been disabled. */
+const focusIfDisabled = (target: EventTarget | null, field: HTMLInputElement | null) => {
+  if (target instanceof HTMLButtonElement && target.disabled) field?.focus();
+};
 
 interface TranscriptToolbarProps {
   onUndo: () => void;
@@ -49,23 +65,79 @@ export default function TranscriptToolbar({
   onReplaceCurrent,
   onReplaceAll,
 }: TranscriptToolbarProps) {
-  const [showSettings, setShowSettings] = useState(false);
   const {
     findText,
     setFindText,
     replaceText,
     setReplaceText,
-    caseSensitive,
-    setCaseSensitive,
-    isFuzzy,
-    setIsFuzzy,
-    useRegex,
-    setUseRegex,
     matches,
     currentMatchIndex,
     nextMatch,
     prevMatch,
   } = search;
+  const hasMatches = matches.length > 0;
+  const searchRowRef = useRef<HTMLDivElement>(null);
+  const findRef = useRef<HTMLInputElement>(null);
+  const findReplaceToggleRef = useRef<HTMLButtonElement>(null);
+  const replaceWasOpenRef = useRef(showReplace);
+  // Whether focus is in the find/replace row, as its focus events last said.
+  const rowHasFocusRef = useRef(false);
+
+  // When Find & Replace closes while it holds focus, as Replace All does when
+  // it finishes, focus lands on the page. Send it to the toggle instead. If
+  // the user had moved on, by clicking the page say, focus stays put.
+  useLayoutEffect(() => {
+    const closed = replaceWasOpenRef.current && !showReplace;
+    replaceWasOpenRef.current = showReplace;
+    if (!closed) return;
+    const rowHadFocus = rowHasFocusRef.current;
+    rowHasFocusRef.current = false;
+    if (rowHadFocus && document.activeElement === document.body) {
+      findReplaceToggleRef.current?.focus();
+    }
+  }, [showReplace]);
+
+  // A button that is disabled while it has focus would leave focus on the
+  // page: the arrows, Find Next and Replace once no match is left, Replace
+  // and Replace All while they save. Focus goes to the find field instead.
+  // Chrome blurs the button as it is disabled, during React's commit, when
+  // React's own onBlur is switched off; a native listener still hears it.
+  const rowShown = showSearch || showReplace;
+  useEffect(() => {
+    const row = searchRowRef.current;
+    if (!row) return;
+    const onFocusIn = () => {
+      rowHasFocusRef.current = true;
+    };
+    const onFocusOut = (event: FocusEvent) => {
+      const next = event.relatedTarget;
+      if (next instanceof Node) {
+        rowHasFocusRef.current = row.contains(next);
+        return;
+      }
+      focusIfDisabled(event.target, findRef.current);
+      // Focus went to the page, or the row is being removed: Chrome blurs a
+      // focused element just before removing it. Settle it after the render,
+      // when a removed row has already handed focus to the toggle.
+      queueMicrotask(() => {
+        if (row.isConnected) rowHasFocusRef.current = row.contains(document.activeElement);
+      });
+    };
+    row.addEventListener("focusin", onFocusIn);
+    row.addEventListener("focusout", onFocusOut);
+    return () => {
+      row.removeEventListener("focusin", onFocusIn);
+      row.removeEventListener("focusout", onFocusOut);
+    };
+  }, [rowShown]);
+  // A browser that keeps focus on the disabled button is caught after the
+  // render, once the matches have run out.
+  useLayoutEffect(() => {
+    if (hasMatches) return;
+    const active = document.activeElement;
+    if (searchRowRef.current?.contains(active)) focusIfDisabled(active, findRef.current);
+  });
+
   const exportTitle = exportDisabled
     ? "Finish the current transcript edit before exporting"
     : "Export";
@@ -73,46 +145,57 @@ export default function TranscriptToolbar({
   return (
     <div className="z-10 flex flex-col border-b-2 border-surface-border bg-surface-inset shadow-card">
       {/* Row 1: Header & Global Actions */}
-      <div className="flex items-center justify-end overflow-x-auto px-2 py-2 sm:px-4 sm:py-2.5 md:px-5 md:py-3">
+      {/* The 40 px buttons sit in less padding, so the row keeps its height
+          from sm up. */}
+      <div className="flex items-center justify-end overflow-x-auto px-2 py-1 sm:px-4 sm:py-1.5 md:px-5 md:py-2">
         <div className="flex items-center gap-0.5 sm:gap-1">
-          <button
+          <IconButton
+            size="sm"
+            aria-label="Undo"
+            title="Undo"
             onClick={onUndo}
             disabled={!canUndo}
-            className="rounded-lg p-1.5 text-contrast-helper transition-colors hover:bg-surface-inset hover:text-contrast-muted disabled:cursor-not-allowed disabled:opacity-30 sm:p-2"
-            title="Undo"
-          >
-            <Undo2 className="w-4 h-4" />
-          </button>
-          <button
+            className={TOUCH_TARGET_SQUARE}
+            icon={<Undo2 aria-hidden="true" />}
+          />
+          <IconButton
+            size="sm"
+            aria-label="Redo"
+            title="Redo"
             onClick={onRedo}
             disabled={!canRedo}
-            className="rounded-lg p-1.5 text-contrast-helper transition-colors hover:bg-surface-inset hover:text-contrast-muted disabled:cursor-not-allowed disabled:opacity-30 sm:p-2"
-            title="Redo"
-          >
-            <Redo2 className="w-4 h-4" />
-          </button>
+            className={TOUCH_TARGET_SQUARE}
+            icon={<Redo2 aria-hidden="true" />}
+          />
           <div className="mx-0.5 h-4 w-px bg-surface-card sm:mx-1" />
-          <button
+          <IconButton
+            size="sm"
+            aria-label={exportDisabled ? "Export transcript disabled" : "Export transcript"}
+            title={exportTitle}
             onClick={onExport}
             disabled={exportDisabled}
-            aria-label={exportDisabled ? "Export transcript disabled" : "Export transcript"}
-            className="rounded-lg p-1.5 text-contrast-helper transition-colors hover:bg-surface-inset hover:text-contrast-muted sm:p-2"
-            title={exportTitle}
-          >
-            <Download className="w-4 h-4" />
-          </button>
-          <button
+            className={TOUCH_TARGET_SQUARE}
+            icon={<Download aria-hidden="true" />}
+          />
+          <IconButton
+            size="sm"
+            aria-label="Search"
+            title="Search"
+            aria-pressed={showSearch}
             onClick={() => {
               const newState = !showSearch;
               setShowSearch(newState);
               if (!newState) setShowReplace(false);
             }}
-            className={`rounded-lg p-1.5 transition-colors sm:p-2 ${showSearch && !showReplace ? "bg-action-tint text-action-text" : "text-contrast-helper hover:bg-surface-inset hover:text-action-text"}`}
-            title="Search"
-          >
-            <Search className="w-4 h-4" />
-          </button>
-          <button
+            className={`${TOUCH_TARGET_SQUARE} ${showSearch ? PRESSED : ""}`}
+            icon={<Search aria-hidden="true" />}
+          />
+          <IconButton
+            ref={findReplaceToggleRef}
+            size="sm"
+            aria-label="Find & Replace"
+            title="Find & Replace"
+            aria-pressed={showReplace}
             onClick={() => {
               if (showReplace) {
                 setShowReplace(false);
@@ -122,51 +205,71 @@ export default function TranscriptToolbar({
                 setShowSearch(true);
               }
             }}
-            className={`rounded-lg p-1.5 transition-colors sm:p-2 ${showReplace ? "bg-action-tint text-action-text" : "text-contrast-helper hover:bg-surface-inset hover:text-action-text"}`}
-            title="Find & Replace"
-          >
-            <ArrowRightLeft className="w-4 h-4" />
-          </button>
+            className={`${TOUCH_TARGET_SQUARE} ${showReplace ? PRESSED : ""}`}
+            icon={<ArrowRightLeft aria-hidden="true" />}
+          />
         </div>
       </div>
 
       {/* Row 2: Search & Replace Controls */}
       {(showSearch || showReplace) && (
-        <div className="animate-in slide-in-from-top-2 flex flex-wrap items-center gap-1.5 border-t border-control-border px-2 pb-2 pt-2 duration-200 sm:gap-2 sm:px-4 sm:pb-3 sm:pt-3 md:px-5">
-          <div className="relative min-w-40 flex-[1_1_11rem] sm:min-w-48 sm:flex-[1_1_14rem]">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-contrast-icon-muted" />
-            <input
-              placeholder="Find..."
-              value={findText}
-              onChange={(e) => setFindText(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  if (e.shiftKey) prevMatch();
-                  else nextMatch();
+        <div
+          ref={searchRowRef}
+          className="animate-in slide-in-from-top-2 flex flex-wrap items-center gap-1.5 border-t border-control-border px-2 pb-2 pt-2 duration-200 sm:gap-2 sm:px-4 sm:pb-3 sm:pt-3 md:px-5"
+        >
+          {/* 16rem keeps room for the query beside the arrows: on a phone
+              the replace field wraps under it rather than squeezing it. */}
+          <div className="flex min-w-64 flex-[1_1_11rem] items-center gap-0.5 sm:flex-[1_1_14rem]">
+            <div className="relative min-w-0 flex-1">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-contrast-icon-muted" />
+              <input
+                ref={findRef}
+                placeholder="Find..."
+                value={findText}
+                onChange={(e) => setFindText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    if (e.shiftKey) prevMatch();
+                    else nextMatch();
+                  }
+                }}
+                className={`${FIELD} pr-20`}
+                autoFocus
+              />
+              {/* Always mounted, so a screen reader hears the count change. */}
+              <span
+                aria-live="polite"
+                aria-atomic="true"
+                className={
+                  hasMatches
+                    ? "absolute right-1 top-1/2 -translate-y-1/2 text-xs text-contrast-helper whitespace-nowrap bg-surface-card rounded px-1"
+                    : "sr-only"
                 }
-              }}
-              className="w-full pl-8 pr-28 py-1.5 text-sm rounded-md border border-control-border bg-surface-inset focus:ring-2 focus:ring-action outline-none min-w-0"
-              autoFocus
+              >
+                {hasMatches ? `${currentMatchIndex + 1} of ${matches.length}` : ""}
+              </span>
+            </div>
+            {/* Beside the field rather than inside it, so each is a full
+                target. They stay while there are no matches, so the row
+                doesn't shift as the matches come and go. */}
+            <IconButton
+              size="sm"
+              aria-label="Previous match"
+              title="Previous match (Shift+Enter)"
+              onClick={prevMatch}
+              disabled={!hasMatches}
+              className={TOUCH_TARGET_SQUARE}
+              icon={<ChevronUp aria-hidden="true" />}
             />
-            {matches.length > 0 && (
-              <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-1 text-xs text-contrast-helper whitespace-nowrap bg-surface-card rounded px-1">
-                <span>
-                  {currentMatchIndex + 1} of {matches.length}
-                </span>
-                <button
-                  onClick={prevMatch}
-                  className="p-1 hover:bg-surface-inset rounded"
-                >
-                  <ChevronUp className="w-3 h-3" />
-                </button>
-                <button
-                  onClick={nextMatch}
-                  className="p-1 hover:bg-surface-inset rounded"
-                >
-                  <ChevronDown className="w-3 h-3" />
-                </button>
-              </div>
-            )}
+            <IconButton
+              size="sm"
+              aria-label="Next match"
+              title="Next match (Enter)"
+              onClick={nextMatch}
+              disabled={!hasMatches}
+              className={TOUCH_TARGET_SQUARE}
+              icon={<ChevronDown aria-hidden="true" />}
+            />
           </div>
           {showReplace && (
             <div className="relative min-w-40 flex-[1_1_11rem] sm:min-w-48 sm:flex-[1_1_14rem]">
@@ -175,102 +278,51 @@ export default function TranscriptToolbar({
                 placeholder="Replace..."
                 value={replaceText}
                 onChange={(e) => setReplaceText(e.target.value)}
-                className="w-full pl-8 pr-2 py-1.5 text-sm rounded-md border border-control-border bg-surface-inset focus:ring-2 focus:ring-action outline-none min-w-0"
+                className={`${FIELD} pr-2`}
               />
             </div>
           )}
           {showReplace && (
             <div className="flex min-w-0 flex-[1_0_auto] flex-wrap items-center justify-end gap-1.5 sm:gap-2">
-              {/* Settings Toggle */}
-              <div className="relative">
-                <button
-                  onClick={() => setShowSettings(!showSettings)}
-                  className={`rounded-md p-1.5 transition-colors ${showSettings ? "bg-action-tint text-action-text" : "text-contrast-helper hover:bg-surface-inset hover:text-contrast-muted"}`}
-                  title="Advanced Search Settings"
-                >
-                  <Settings className="w-4 h-4" />
-                </button>
-
-                {/* Settings Dropdown */}
-                {showSettings && (
-                  <>
-                    <div
-                      className="fixed inset-0 z-[var(--z-dropdown)]"
-                      onClick={() => setShowSettings(false)}
-                    />
-                    <div className="absolute right-0 top-full mt-2 w-48 bg-surface-card rounded-lg shadow-float border border-surface-border p-2 z-[var(--z-dropdown)] flex flex-col gap-1">
-                      <div className="text-xs font-semibold text-contrast-icon-muted px-2 py-1 mb-1 border-b border-surface-border">
-                        Search Options
-                      </div>
-                      <label className="flex items-center gap-2 px-2 py-1.5 hover:bg-surface-inset rounded cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={caseSensitive}
-                          onChange={(e) => setCaseSensitive(e.target.checked)}
-                          className="rounded border-control-border text-action-text focus:ring-action w-4 h-4"
-                        />
-                        <span className="text-sm text-contrast-muted">
-                          Case Sensitive
-                        </span>
-                      </label>
-                      <label className="flex items-center gap-2 px-2 py-1.5 hover:bg-surface-inset rounded cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={isFuzzy}
-                          onChange={(e) => {
-                            setIsFuzzy(e.target.checked);
-                            if (e.target.checked) setUseRegex(false);
-                          }}
-                          className="rounded border-control-border text-action-text focus:ring-action w-4 h-4"
-                        />
-                        <span className="text-sm text-contrast-muted">
-                          Fuzzy Match
-                        </span>
-                      </label>
-                      <label className="flex items-center gap-2 px-2 py-1.5 hover:bg-surface-inset rounded cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={useRegex}
-                          onChange={(e) => {
-                            setUseRegex(e.target.checked);
-                            if (e.target.checked) setIsFuzzy(false);
-                          }}
-                          className="rounded border-control-border text-action-text focus:ring-action w-4 h-4"
-                        />
-                        <span className="text-sm text-contrast-muted">
-                          Regex
-                        </span>
-                      </label>
-                    </div>
-                  </>
-                )}
-              </div>
+              <SearchSettingsMenu
+                caseSensitive={search.caseSensitive}
+                setCaseSensitive={search.setCaseSensitive}
+                isFuzzy={search.isFuzzy}
+                setIsFuzzy={search.setIsFuzzy}
+                useRegex={search.useRegex}
+                setUseRegex={search.setUseRegex}
+                pressedClassName={PRESSED}
+              />
 
               <div className="mx-0.5 h-4 w-px bg-surface-card sm:mx-1" />
 
-              <button
+              <Button
+                size="sm"
                 onClick={nextMatch}
-                disabled={matches.length === 0}
-                className="whitespace-nowrap rounded-md border border-surface-border bg-surface-inset px-2.5 py-1.5 text-xs text-contrast-muted shadow-card hover:bg-surface-inset disabled:cursor-not-allowed disabled:opacity-50 sm:px-3 sm:text-sm"
+                disabled={!hasMatches}
+                className={`sm:text-sm ${TOUCH_TARGET_HEIGHT}`}
               >
                 <span className="sm:hidden">Next</span>
                 <span className="hidden sm:inline">Find Next</span>
-              </button>
-              <button
+              </Button>
+              <Button
+                size="sm"
                 onClick={onReplaceCurrent}
-                disabled={matches.length === 0 || isSubmitting}
-                className="whitespace-nowrap rounded-md border border-surface-border bg-surface-inset px-2.5 py-1.5 text-xs text-contrast-muted shadow-card hover:bg-surface-inset disabled:cursor-not-allowed disabled:opacity-50 sm:px-3 sm:text-sm"
+                disabled={!hasMatches || isSubmitting}
+                className={`sm:text-sm ${TOUCH_TARGET_HEIGHT}`}
               >
                 Replace
-              </button>
-              <button
+              </Button>
+              <Button
+                size="sm"
+                variant="primary"
                 onClick={onReplaceAll}
                 disabled={!findText || isSubmitting}
-                className="whitespace-nowrap rounded-md bg-action px-2.5 py-1.5 text-xs text-action-on shadow-card hover:bg-action-hover disabled:cursor-not-allowed disabled:opacity-50 sm:px-3 sm:text-sm"
+                className={`sm:text-sm ${TOUCH_TARGET_HEIGHT}`}
               >
                 <span className="sm:hidden">All</span>
                 <span className="hidden sm:inline">Replace All</span>
-              </button>
+              </Button>
             </div>
           )}
         </div>

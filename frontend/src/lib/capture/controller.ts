@@ -3,8 +3,8 @@ import { AxiosError } from "axios";
 import {
   discardRecordingCapture,
   finalizeRecordingCapture,
-  getPausedRecordings,
   getRecording,
+  getUnfinishedCaptures,
   initRecording,
   isActiveRecordingConflictDetail,
   pauseRecordingCapture,
@@ -14,10 +14,12 @@ import {
 import { useConnectivityStore } from "@/lib/connectivity/monitor";
 import { isReachable } from "@/lib/connectivity/reducer";
 import { useNotificationStore } from "@/lib/notificationStore";
+import { isLiveCaptureInProgress } from "@/lib/liveCapture";
 import { dispatchRecordingRemoved } from "@/lib/recordingEvents";
 import { holdSignInInPlace, retryAfterSignIn } from "@/lib/session";
-import type { Recording, RecordingId } from "@/types";
+import { RecordingStatus, type Recording, type RecordingId } from "@/types";
 
+import { holdCaptureLock, isCaptureHeldInThisBrowser } from "./captureLock";
 import { detectCaptureSupport } from "./featureDetect";
 import { CaptureLifecycle, sendPauseBeacon } from "./lifecycle";
 import { createCaptureMixer, type CaptureMixer } from "./mixer";
@@ -71,6 +73,8 @@ interface ActiveRuntime {
   waveform: WaveformMonitor;
   displayTracksCleanup?: () => void;
   mediaReleased?: boolean;
+  /** Tells other tabs of this browser that this capture is live. */
+  releaseCaptureLock: () => void;
 }
 
 /**
@@ -157,6 +161,18 @@ const COVERAGE_POLL_INTERVAL_MS = 15_000;
  * stall on the server.
  */
 const COVERAGE_RECENT_OUTAGE_MS = 5 * 60_000;
+
+/**
+ * How often a tab with no capture of its own looks again at the user's
+ * unfinished captures while one exists.
+ *
+ * A capture whose tab closed without pausing it becomes something to offer
+ * only once the server judges it stalled, two minutes after its last upload,
+ * and a decision offered here goes stale when another tab or device acts on
+ * it. Looking again keeps the resume-or-discard dialog in step with both,
+ * without a reload (issue #519).
+ */
+const CAPTURE_RECHECK_INTERVAL_MS = 30_000;
 
 const withStageTimeout = async <T>(
   stage: CaptureStopStage,
@@ -265,6 +281,14 @@ export class CaptureController {
 
   private readonly segmentStore: SegmentStore = createSegmentStore();
 
+  private captureRecheckTimerId: ReturnType<typeof setInterval> | null = null;
+
+  /**
+   * Bumped by every user action on a capture, so a check that was already in
+   * flight cannot put back a recording the action has just resolved.
+   */
+  private captureActionTicket = 0;
+
   constructor() {
     const pausedContext = readPausedCaptureContext();
     this.state = {
@@ -312,16 +336,79 @@ export class CaptureController {
 
   destroy = async () => {
     this.lifecycle.detach();
+    this.stopCaptureRecheck();
     await this.disposeRuntime();
   };
 
+  /**
+   * Finds the capture the user must decide about before starting anything new.
+   *
+   * A paused capture always counts. A capture still marked as uploading counts
+   * once the server judges it stalled: its tab closed without the pause
+   * arriving, because it was signed out or offline at the time (issue #519).
+   * One this tab runs, or any tab of this browser holds, is live however quiet
+   * it looks, since that tab may only be waiting for a sign-in or a connection.
+   */
   refreshPausedRecording = async () => {
-    const pausedRecordings = await getPausedRecordings();
-    this.setState({
-      pausedRecording: pausedRecordings[0] ?? null,
-    });
-    return pausedRecordings[0] ?? null;
+    const ticket = this.captureActionTicket;
+    const captures = (await getUnfinishedCaptures()).filter(
+      isLiveCaptureInProgress,
+    );
+    const decision = await this.selectCaptureNeedingDecision(captures);
+    if (ticket !== this.captureActionTicket) {
+      // An action began meanwhile and will look again itself when it ends.
+      return decision;
+    }
+    this.setState({ pausedRecording: decision });
+    if (this.runtime || captures.length === 0) {
+      this.stopCaptureRecheck();
+    } else {
+      this.startCaptureRecheck();
+    }
+    return decision;
   };
+
+  private selectCaptureNeedingDecision = async (
+    captures: Recording[],
+  ): Promise<Recording | null> => {
+    const paused = captures.find(
+      (recording) => recording.status === RecordingStatus.PAUSED,
+    );
+    if (paused) {
+      return paused;
+    }
+
+    for (const recording of captures) {
+      if (!recording.capture_stalled || this.runtime?.recordingId === recording.id) {
+        continue;
+      }
+      if (await isCaptureHeldInThisBrowser(recording.id)) {
+        continue;
+      }
+      return recording;
+    }
+    return null;
+  };
+
+  private startCaptureRecheck() {
+    if (this.captureRecheckTimerId) {
+      return;
+    }
+    this.captureRecheckTimerId = setInterval(() => {
+      // A start, resume or stop under way looks again itself when it ends.
+      if (this.state.status === "starting" || this.state.status === "finalizing") {
+        return;
+      }
+      void this.refreshPausedRecording().catch(() => {});
+    }, CAPTURE_RECHECK_INTERVAL_MS);
+  }
+
+  private stopCaptureRecheck() {
+    if (this.captureRecheckTimerId) {
+      clearInterval(this.captureRecheckTimerId);
+      this.captureRecheckTimerId = null;
+    }
+  }
 
   updateSettings = (patch: Partial<CaptureSettings>) => {
     const nextSettings = {
@@ -362,6 +449,7 @@ export class CaptureController {
   };
 
   start = async (name?: string): Promise<StartCaptureResponse> => {
+    this.captureActionTicket += 1;
     const support = detectCaptureSupport();
     this.setState({ support });
     if (!support.supported) {
@@ -526,6 +614,7 @@ export class CaptureController {
     if (!targetRecordingId) {
       throw new Error("No paused recording is available to resume.");
     }
+    this.captureActionTicket += 1;
 
     // Reusing the existing tracks is only valid while they are still live. After
     // a failed stop the runtime survives with its media released, and resuming
@@ -650,6 +739,9 @@ export class CaptureController {
         status: "error",
         error: formatCaptureError(error),
       });
+      // A stalled capture whose own tab came back is refused, and is no longer
+      // the user's to decide about here.
+      await this.refreshPausedRecording().catch(() => {});
       throw error;
     }
   };
@@ -675,6 +767,7 @@ export class CaptureController {
     if (!targetRecordingId) {
       throw new Error("No active recording is available to finalize.");
     }
+    this.captureActionTicket += 1;
 
     const hadRuntime = Boolean(this.runtime);
     this.setState({ status: "finalizing", error: null, finalizeRetry: null });
@@ -809,6 +902,7 @@ export class CaptureController {
     if (!targetRecordingId) {
       return;
     }
+    this.captureActionTicket += 1;
 
     if (this.runtime) {
       await this.runtime.recorder.stop({ emitTail: false }).catch(() => {});
@@ -816,6 +910,8 @@ export class CaptureController {
     }
 
     await discardRecordingCapture(targetRecordingId);
+    // A check that began while the discard was in flight may still list it.
+    this.captureActionTicket += 1;
     await this.segmentStore.clear(targetRecordingId).catch(() => {});
     clearPausedCaptureContext();
     this.resetCoverageTracking();
@@ -1072,7 +1168,9 @@ export class CaptureController {
       uploader,
       waveform,
       displayTracksCleanup,
+      releaseCaptureLock: holdCaptureLock(options.recordingId),
     };
+    this.stopCaptureRecheck();
     this.setState({ runtimeActive: true });
     this.startElapsedTimer(options.elapsedSeconds ?? this.state.elapsedSeconds);
     this.lifecycle.updateRecordingId(options.recordingId);
@@ -1456,6 +1554,7 @@ export class CaptureController {
     await this.releaseRuntimeMedia();
     this.runtime = null;
     runtime.uploader.dispose();
+    runtime.releaseCaptureLock();
     this.setState({
       levels: DEFAULT_CAPTURE_LEVELS,
       runtimeActive: false,
