@@ -80,7 +80,9 @@ export const noteOutboxFor = (recordingId: RecordingId): NoteOutbox => {
   const outbox = new NoteOutbox(recordingId);
   outbox.subscribe(changed);
   outboxes.set(recordingId, { outbox, stop: persistNoteOutbox(outbox, recordingId) });
-  changed();
+  // `useNoteOutbox` makes it during a render, and React refuses to update
+  // another component (the recordings rail) in the middle of one.
+  queueMicrotask(changed);
   return outbox;
 };
 

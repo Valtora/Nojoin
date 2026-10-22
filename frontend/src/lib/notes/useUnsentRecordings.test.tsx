@@ -1,4 +1,4 @@
-import { act, renderHook, waitFor } from "@testing-library/react";
+import { act, render, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { noteSignedIn, resetSessionForTests } from "@/lib/session";
@@ -18,7 +18,7 @@ import {
   setNoteStoreForTests,
   type StoredOutbox,
 } from "./noteStore";
-import { useUnsentRecordings } from "./useNoteOutbox";
+import { useNoteOutbox, useUnsentRecordings } from "./useNoteOutbox";
 
 vi.mock("@/lib/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api")>()),
@@ -184,6 +184,34 @@ describe("recordings with unsent notes kept in this browser", () => {
     });
 
     await waitFor(() => expect(result.current).toEqual([]));
+  });
+
+  it("takes a recording a page opens while rendering without updating the list mid-render", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    await keep("rec-a", { bodies: ["Budget agreed"] });
+    const List = () => <output>{useUnsentRecordings().join(",")}</output>;
+    const RecordingView = () => {
+      useNoteOutbox("rec-a");
+      return null;
+    };
+    const view = render(<List />);
+    await waitFor(() => expect(view.container).toHaveTextContent("rec-a"));
+    // Another tab sent it meanwhile.
+    await store.remove(ALICE.id, "rec-a");
+
+    view.rerender(
+      <>
+        <List />
+        <RecordingView />
+      </>,
+    );
+
+    await waitFor(() => expect(view.container).toHaveTextContent(/^$/));
+    const renderPhaseUpdates = errors.mock.calls.filter(([message]) =>
+      String(message).includes("Cannot update a component"),
+    );
+    errors.mockRestore();
+    expect(renderPhaseUpdates).toEqual([]);
   });
 
   it("shows no mark from the previous account while the new one's records are read", async () => {
