@@ -15,10 +15,14 @@ import {
   bodyNotesAmongLines,
   formatTimelineMs,
   placeTimelineNotes,
+  segmentEndMs,
+  segmentStartMs,
 } from "@/lib/notes/placement";
+import { getTranscriptSegmentKey } from "@/lib/transcriptSegments";
 import { CaptureSourceChannel, TranscriptSegment } from "@/types";
 
 import TimelineNoteLine from "./notes/TimelineNoteLine";
+import TranscriptLineText from "./transcript/TranscriptLineText";
 
 /**
  * How close to the bottom counts as "following the conversation".
@@ -270,9 +274,13 @@ export default function LiveTranscriptPanel({
                         <span className="shrink-0 pt-0.5 font-mono text-xs tabular-nums text-contrast-icon-muted">
                           {formatElapsed(segment.start)}
                         </span>
-                        <p className="min-w-0 flex-1 text-sm italic leading-6 text-contrast-helper">
-                          {segment.text}
-                        </p>
+                        <TranscriptLineText
+                          text={segment.text}
+                          segmentKey={getTranscriptSegmentKey(segment, index)}
+                          startMs={segmentStartMs(segment)}
+                          endMs={segmentEndMs(segment)}
+                          className="min-w-0 flex-1 text-sm italic leading-6 text-contrast-helper"
+                        />
                       </div>
                     </li>,
                     ...(notesAmongLines.afterLine.get(index) ?? []).map(renderNote),

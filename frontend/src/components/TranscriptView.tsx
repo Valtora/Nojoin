@@ -33,8 +33,14 @@ import {
   buildTranscriptGroups,
   indexSegments,
 } from "./transcript/transcriptGroups";
-import { bodyNotesAmongLines, placeTimelineNotes } from "@/lib/notes/placement";
+import {
+  bodyNotesAmongLines,
+  placeTimelineNotes,
+  segmentEndMs,
+  segmentStartMs,
+} from "@/lib/notes/placement";
 import TimelineNoteLine from "./notes/TimelineNoteLine";
+import TranscriptLineText from "./transcript/TranscriptLineText";
 
 interface TranscriptViewProps {
   recordingId: RecordingId;
@@ -180,7 +186,7 @@ export default function TranscriptView({
     currentMatchIndex,
     nextMatch,
     prevMatch,
-    renderHighlightedText,
+    searchDecorations,
     resetFindReplace,
   } = useTranscriptSearch({ segments, showSearch, scrollSegmentIntoView });
 
@@ -600,7 +606,12 @@ export default function TranscriptView({
               rows={Math.max(2, Math.ceil(editValue.length / 80))}
             />
           ) : (
-            <p
+            <TranscriptLineText
+              text={segment.text}
+              segmentKey={segmentId}
+              startMs={segmentStartMs(segment)}
+              endMs={segmentEndMs(segment)}
+              decorations={searchDecorations(segmentId)}
               className={`leading-relaxed whitespace-pre-wrap text-contrast-muted ${
                 isSegmentReadOnly
                   ? ""
@@ -608,9 +619,7 @@ export default function TranscriptView({
               }`}
               onClick={(e) => handleTextClick(segment, segmentId, e)}
               title={isSegmentReadOnly ? undefined : "Click to edit text"}
-            >
-              {renderHighlightedText(segment.text, segmentId)}
-            </p>
+            />
           )}
         </div>
       </div>

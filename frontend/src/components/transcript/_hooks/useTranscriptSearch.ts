@@ -1,10 +1,12 @@
 "use client";
 
-import { ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Fuse from "fuse.js";
 
 import { TranscriptSegment } from "@/types";
 import { getTranscriptSegmentKey } from "@/lib/transcriptSegments";
+
+import type { SearchDecoration } from "../textDecorations";
 
 export interface TranscriptSearchMatch {
   segmentId: string;
@@ -38,7 +40,8 @@ export interface TranscriptSearch {
   setCurrentMatchIndex: React.Dispatch<React.SetStateAction<number>>;
   nextMatch: () => void;
   prevMatch: () => void;
-  renderHighlightedText: (text: string, segmentId: string) => ReactNode;
+  /** The line's matches, as decorations for its text. */
+  searchDecorations: (segmentId: string) => SearchDecoration[];
   /** Reset find/replace inputs (used after a Replace All completes). */
   resetFindReplace: () => void;
 }
@@ -190,44 +193,17 @@ export function useTranscriptSearch(
     setCurrentMatchIndex((prev) => (prev - 1 + matches.length) % matches.length);
   };
 
-  const renderHighlightedText = (
-    text: string,
-    segmentId: string,
-  ): ReactNode => {
-    if (!findText || !showSearch || matches.length === 0) return text;
+  const searchDecorations = (segmentId: string): SearchDecoration[] => {
+    if (!findText || !showSearch || matches.length === 0) return [];
 
-    const segmentMatches = matches.filter((m) => m.segmentId === segmentId);
-    if (segmentMatches.length === 0) return text;
-
-    let lastIndex = 0;
-    const parts: ReactNode[] = [];
-
-    segmentMatches.forEach((match) => {
-      // Text before match
-      if (match.startIndex > lastIndex) {
-        parts.push(text.substring(lastIndex, match.startIndex));
-      }
-
-      // The match itself
-      const isCurrent = matches[currentMatchIndex] === match;
-      parts.push(
-        <mark
-          key={`${segmentId}-${match.startIndex}`}
-          className={`${isCurrent ? "bg-action text-action-on" : "bg-status-warning-bg text-status-warning-fg"} rounded-sm px-0.5`}
-        >
-          {text.substring(match.startIndex, match.startIndex + match.length)}
-        </mark>,
-      );
-
-      lastIndex = match.startIndex + match.length;
-    });
-
-    // Remaining text
-    if (lastIndex < text.length) {
-      parts.push(text.substring(lastIndex));
-    }
-
-    return parts;
+    return matches
+      .filter((match) => match.segmentId === segmentId)
+      .map((match) => ({
+        kind: "search",
+        from: match.startIndex,
+        to: match.startIndex + match.length,
+        current: matches[currentMatchIndex] === match,
+      }));
   };
 
   const resetFindReplace = () => {
@@ -252,10 +228,10 @@ export function useTranscriptSearch(
       setCurrentMatchIndex,
       nextMatch,
       prevMatch,
-      renderHighlightedText,
+      searchDecorations,
       resetFindReplace,
     }),
-    // renderHighlightedText/nextMatch/prevMatch close over the latest state on
+    // searchDecorations/nextMatch/prevMatch close over the latest state on
     // each render; the object is rebuilt every render intentionally so the JSX
     // always reads current values.
     // eslint-disable-next-line react-hooks/exhaustive-deps
