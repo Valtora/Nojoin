@@ -71,6 +71,9 @@ GENERIC_SPEAKER_DISPLAY_PATTERN = re.compile(r"^Speaker\s+\d+$", re.IGNORECASE)
 ROLLING_DIARIZATION_SPEAKER_STATE_PROVISIONAL = "provisional"
 ROLLING_DIARIZATION_SPEAKER_STATE_STABLE = "stable"
 ROLLING_DIARIZATION_SPEAKER_STATE_MANUAL_OVERRIDE = "manual_override"
+# confidence_payload key of a live speaker label: {"locked": bool, "share": float}.
+# Read only while the utterance is provisional, so finalize never sees it.
+LIVE_SPEAKER_LABEL_PAYLOAD_KEY = "live_speaker_label"
 
 SPEAKER_ASSIGNMENT_SOURCE_LEGACY = "legacy"
 SPEAKER_ASSIGNMENT_SOURCE_LIVE = "live"

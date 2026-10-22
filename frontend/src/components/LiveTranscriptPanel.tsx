@@ -65,6 +65,20 @@ const sourceChannelOf = (
   return channel === "microphone" || channel === "system" ? channel : null;
 };
 
+/** A live speaker label, `LIVE_<n>`, written by the live lane's clustering. */
+const LIVE_SPEAKER_LABEL = /^LIVE_(\d+)$/;
+
+/**
+ * "Speaker 3" for a line the live lane labelled `LIVE_3`, else null.
+ *
+ * Live labels number voices in the order they were first heard. They are not
+ * the final pass's speakers, which are named when the recording is processed.
+ */
+const liveSpeakerOf = (segment: TranscriptSegment): string | null => {
+  const match = LIVE_SPEAKER_LABEL.exec(segment.speaker ?? "");
+  return match ? `Speaker ${Number(match[1])}` : null;
+};
+
 interface LiveTranscriptPanelProps {
   segments: TranscriptSegment[];
   hasLoaded: boolean;
@@ -90,9 +104,11 @@ const noteTimeMs = (note: InlineNote) =>
  * (`placeTimelineNotes`, the rule every view and prompt shares). Not a second
  * transcript editor: there is nothing to click, nothing to edit, and no
  * playback, because none of that is meaningful before the recording exists as a
- * file. Speaker names are deliberately absent -- diarization only runs at
- * finalize, so every live utterance carries UNKNOWN and there is no identity to
- * show. What can be shown honestly is which capture channel carried the audio.
+ * file. Names are deliberately absent: identity is decided at finalize. When
+ * live speaker labels are on, a line may carry a provisional label ("Speaker
+ * 3") from the live lane's clustering. It is italic and muted until the label
+ * locks, so the cue does not rest on colour alone. Which capture channel
+ * carried the audio is shown as well.
  */
 export default function LiveTranscriptPanel({
   segments,
@@ -106,15 +122,16 @@ export default function LiveTranscriptPanel({
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [isPinnedToBottom, setIsPinnedToBottom] = useState(true);
 
-  // Show the source label only where it changes, so a run of consecutive lines
-  // from one channel reads as one block and a switch becomes a visible event
-  // rather than repetition on every line.
+  // Show the source and speaker labels only where they change, so a run of
+  // consecutive lines from one channel or voice reads as one block and a
+  // switch becomes a visible event rather than repetition on every line.
   const lines = useMemo(
     () =>
       segments.map((segment, index) => {
         const sourceChannel = sourceChannelOf(segment);
-        const previousChannel =
-          index > 0 ? sourceChannelOf(segments[index - 1]) : undefined;
+        const previous = index > 0 ? segments[index - 1] : undefined;
+        const previousChannel = previous ? sourceChannelOf(previous) : undefined;
+        const speaker = liveSpeakerOf(segment);
 
         return {
           segment,
@@ -122,6 +139,12 @@ export default function LiveTranscriptPanel({
           sourceChannel,
           showSourceLabel:
             sourceChannel !== null && sourceChannel !== previousChannel,
+          speaker:
+            speaker !== null &&
+            (previous === undefined || speaker !== liveSpeakerOf(previous))
+              ? speaker
+              : null,
+          speakerLocked: segment.speaker_state === "stable",
         };
       }),
     [segments],
@@ -263,8 +286,21 @@ export default function LiveTranscriptPanel({
               ) : (
                 <ol className="space-y-3">
                   {notesAmongLines.opening.map(renderNote)}
-                  {lines.map(({ segment, key, sourceChannel, showSourceLabel }, index) => [
+                  {lines.map(({ segment, key, sourceChannel, showSourceLabel, speaker, speakerLocked }, index) => [
                     <li key={key} data-testid="live-transcript-line" data-line-index={index}>
+                      {speaker ? (
+                        <div
+                          data-testid="live-transcript-speaker"
+                          data-locked={speakerLocked ? "true" : "false"}
+                          className={
+                            speakerLocked
+                              ? "mb-1 text-xs font-semibold text-contrast-muted"
+                              : "mb-1 text-xs italic text-contrast-helper"
+                          }
+                        >
+                          {speaker}
+                        </div>
+                      ) : null}
                       {showSourceLabel && sourceChannel ? (
                         <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-action-text">
                           {SOURCE_CHANNEL_LABELS[sourceChannel]}

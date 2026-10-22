@@ -113,6 +113,56 @@ describe("LiveTranscriptPanel", () => {
     expect(screen.getAllByTestId("live-transcript-line")).toHaveLength(3);
   });
 
+  it("names a live speaker label only where the speaker changes", () => {
+    renderPanel([
+      buildSegment({ id: "a", start: 0, text: "opening", speaker: "LIVE_1" }),
+      buildSegment({ id: "b", start: 2, text: "still me", speaker: "LIVE_1" }),
+      buildSegment({ id: "c", start: 4, text: "a reply", speaker: "LIVE_12" }),
+      buildSegment({ id: "d", start: 6, text: "who said that", speaker: "UNKNOWN" }),
+      buildSegment({ id: "e", start: 8, text: "me again", speaker: "LIVE_1" }),
+    ]);
+
+    // An unlabelled line in between shows no label and breaks the run, so the
+    // returning speaker is named again.
+    expect(
+      screen.getAllByTestId("live-transcript-speaker").map((node) => node.textContent),
+    ).toEqual(["Speaker 1", "Speaker 12", "Speaker 1"]);
+  });
+
+  it("styles a provisional label apart from a locked one without relying on colour", () => {
+    renderPanel([
+      buildSegment({
+        id: "a",
+        start: 0,
+        text: "settled",
+        speaker: "LIVE_2",
+        speaker_state: "stable",
+      }),
+      buildSegment({
+        id: "b",
+        start: 2,
+        text: "still settling",
+        speaker: "LIVE_3",
+        speaker_state: "provisional",
+      }),
+    ]);
+
+    const [locked, provisional] = screen.getAllByTestId("live-transcript-speaker");
+    expect(locked).toHaveAttribute("data-locked", "true");
+    expect(locked.className).not.toContain("italic");
+    expect(provisional).toHaveAttribute("data-locked", "false");
+    expect(provisional.className).toContain("italic");
+  });
+
+  it("shows no speaker for lines the live lane left unlabelled", () => {
+    renderPanel([
+      buildLine("a", 0, "no label yet", "microphone"),
+      buildSegment({ id: "b", start: 2, text: "final-pass label", speaker: "SPEAKER_00" }),
+    ]);
+
+    expect(screen.queryByTestId("live-transcript-speaker")).not.toBeInTheDocument();
+  });
+
   it("never presents the microphone channel as the viewer", () => {
     // A capture with no shared tab audio puts the whole room on the microphone
     // channel, so identity wording here would misattribute every other speaker.
