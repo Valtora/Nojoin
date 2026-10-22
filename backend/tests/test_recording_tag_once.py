@@ -191,6 +191,18 @@ async def test_tagging_a_meeting_another_request_tagged_keeps_one_link(
 
 
 @pytest.mark.anyio
+async def test_tagging_a_meeting_by_a_name_in_use_links_that_tag(database) -> None:
+    async with _client(database.session_maker) as client:
+        response = await client.post(
+            f"/api/v1/tags/recordings/{FIRST}", json={"name": "Board", "color": "red"}
+        )
+
+    assert response.status_code == 200
+    assert (response.json()["id"], response.json()["color"]) == (BOARD, None)
+    assert await _links(database.session_maker) == [(1, BOARD)]
+
+
+@pytest.mark.anyio
 async def test_batch_tagging_counts_only_the_links_it_added(database) -> None:
     _other_request_links_first(database, 1)
 

@@ -6,7 +6,10 @@ answers 404 with the same body, the rule the People routes apply to people.
 
 Among one user's tags, a tag never sits under itself or one of its own
 sub-tags, and no two share a name. A change that would break either answers
-400. Names compare exactly, so "Alpha" and "alpha" are two names.
+400. Names compare exactly, so "Alpha" and "alpha" are two names. Creating a
+tag refuses a taken name. Adding a tag by name, to meetings through the routes
+and the MCP ``tag_recording`` tool or to people through ``import_people``,
+uses the user's tag of that name instead.
 
 The routes check a name before they write it, and a unique index on
 ``(user_id, name)`` in each table settles a race between two requests that
@@ -34,6 +37,8 @@ PARENT_TAG_NOT_FOUND = "Parent tag not found"
 TAG_OWN_PARENT = "Tag cannot be its own parent"
 TAG_UNDER_OWN_SUB_TAG = "Tag cannot be nested under one of its own sub-tags"
 TAG_NAME_TAKEN = "Tag with this name already exists"
+# A create with a taken name answers this, a rename TAG_NAME_TAKEN.
+TAG_EXISTS = "Tag already exists"
 
 
 async def require_own_tag_ids(

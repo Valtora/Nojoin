@@ -182,7 +182,8 @@ export function useMainNavTags() {
     setCreateTagModal({ isOpen: true, parentId });
   };
 
-  const handleCreateTagConfirm = async (name: string) => {
+  /** Resolves to whether the tag was created, so a refused name stays typed. */
+  const handleCreateTagConfirm = async (name: string): Promise<boolean> => {
     try {
       const parentId = createTagModal.parentId;
       const randomColor =
@@ -198,8 +199,10 @@ export function useMainNavTags() {
       }
 
       window.dispatchEvent(new CustomEvent("tags-updated"));
+      return true;
     } catch (error: unknown) {
       notifyRequestError(error, "Failed to create tag.");
+      return false;
     }
   };
 

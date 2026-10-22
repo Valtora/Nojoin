@@ -4,8 +4,9 @@ Every route that creates or renames a tag by name checks the name first, and
 the unique index on ``(user_id, name)`` refuses the write when another request
 saved the name in between. Each test makes the first name lookup miss and
 commits that name from a second connection, as the other request would, then
-expects the answer the check gives: the existing tag where a route reuses a
-name, and 400 where it refuses one. Alice (user 1) is signed in.
+expects the answer the check gives: the existing tag where a route adds a tag
+to meetings or people by name, and 400 where it creates or renames one. Alice
+(user 1) is signed in.
 """
 
 from __future__ import annotations
@@ -156,19 +157,6 @@ async def _links(session_maker) -> list[tuple]:
 
 
 @pytest.mark.anyio
-async def test_creating_a_tag_returns_the_one_saved_first(
-    client, session_maker, monkeypatch
-) -> None:
-    _race(monkeypatch, session_maker, "tags", "Agenda")
-
-    response = await client.post("/api/v1/tags/", json={"name": "Agenda"})
-
-    assert response.status_code == 200
-    assert (response.json()["id"], response.json()["name"]) == (THEIRS, "Agenda")
-    assert await _names(session_maker, "tags") == [(BOARD, "Board"), (THEIRS, "Agenda")]
-
-
-@pytest.mark.anyio
 async def test_tagging_a_meeting_uses_the_tag_saved_first(
     client, session_maker, monkeypatch
 ) -> None:
@@ -213,21 +201,26 @@ async def test_the_mcp_tag_recording_tool_uses_the_tag_saved_first(
 
 
 @pytest.mark.anyio
-async def test_creating_a_people_tag_answers_400(
-    client, session_maker, monkeypatch
+@pytest.mark.parametrize(
+    ("table", "route", "tag_id", "name"),
+    [
+        ("tags", "/api/v1/tags/", BOARD, "Board"),
+        ("p_tags", "/api/v1/people-tags/", CLIENT, "Client"),
+    ],
+    ids=["recording-tags", "people-tags"],
+)
+async def test_creating_a_tag_answers_400(  # noqa: PLR0913 - three fixtures, four parameters
+    client, session_maker, monkeypatch, table, route, tag_id, name
 ) -> None:
-    _race(monkeypatch, session_maker, "p_tags", "Vendor")
+    _race(monkeypatch, session_maker, table, "Vendor")
 
-    response = await client.post("/api/v1/people-tags/", json={"name": "Vendor"})
+    response = await client.post(route, json={"name": "Vendor"})
 
     assert (response.status_code, response.json()) == (
         400,
         {"detail": "Tag already exists"},
     )
-    assert await _names(session_maker, "p_tags") == [
-        (CLIENT, "Client"),
-        (THEIRS, "Vendor"),
-    ]
+    assert await _names(session_maker, table) == [(tag_id, name), (THEIRS, "Vendor")]
 
 
 @pytest.mark.anyio
