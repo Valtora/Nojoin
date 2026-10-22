@@ -694,11 +694,7 @@ def test_process_recording_task_applies_engine_override(monkeypatch):
         def close(self):
             pass
 
-    monkeypatch.setattr(
-        tasks_module.config_manager,
-        "get",
-        lambda key, default=None: True if key == "keep_models_loaded" else default,
-    )
+    monkeypatch.setattr(tasks_module.pipeline, "_release_pipeline_vram", lambda: None)
 
     fake_session = _FakeSession()
 
@@ -858,11 +854,10 @@ def test_process_recording_task_rolls_back_before_persisting_error_state(monkeyp
         tasks_module.config_manager,
         "get",
         lambda key, default=None: (
-            True
-            if key in {"keep_models_loaded", "enable_canonical_transcript_writes"}
-            else default
+            True if key == "enable_canonical_transcript_writes" else default
         ),
     )
+    monkeypatch.setattr(tasks_module.pipeline, "_release_pipeline_vram", lambda: None)
 
     fake_session = _FakeSession()
 

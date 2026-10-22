@@ -25,9 +25,8 @@ def transcribe_with_gpu_oom_retry(
 
     An OOM can come from memory this process still holds rather than from the
     work itself: onnxruntime's arena grows with the largest window and never
-    shrinks, torch's caching allocator keeps freed blocks, and with
-    ``keep_models_loaded`` the diarisation and embedding models stay resident.
-    ``free_gpu`` releases all of that before one more attempt. A second OOM
+    shrinks, and torch's caching allocator keeps freed blocks. ``free_gpu``
+    releases both before one more attempt. A second OOM
     means the card is too small for the job and is raised. If freeing the memory
     itself fails, the first OOM is raised: it is what the user needs to see.
 
