@@ -143,6 +143,8 @@ describe("api public surface", () => {
         "inferSpeakers",
         "initRecording",
         "isActiveRecordingConflictDetail",
+        "isCaptureClosedError",
+        "isCaptureEndedError",
         "isCaptureSupersededDetail",
         "isCaptureSupersededError",
         "linkRecordingCalendarEvent",

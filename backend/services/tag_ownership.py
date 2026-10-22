@@ -6,12 +6,16 @@ answers 404 with the same body, the rule the People routes apply to people.
 
 Among one user's tags, a tag never sits under itself or one of its own
 sub-tags, and no two share a name. A change that would break either answers
-400. Names compare exactly, so "Alpha" and "alpha" are two names.
+400. Names compare exactly, so "Alpha" and "alpha" are two names. Creating a
+tag refuses a taken name. Adding a tag by name, to meetings through the routes
+and the MCP ``tag_recording`` tool or to people through ``import_people``,
+uses the user's tag of that name instead.
 
 The routes check a name before they write it, and a unique index on
 ``(user_id, name)`` in each table settles a race between two requests that
 both passed the check: the second write fails there, and the helpers below
-answer it as the check would have.
+answer it as the check would have. A meeting holds each recording tag once in
+the same way, through the unique constraint on ``recording_tags``.
 """
 
 from collections.abc import Iterable
@@ -23,7 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col, select
 
 from backend.models.people_tag import PeopleTag
-from backend.models.tag import Tag
+from backend.models.tag import RecordingTag, Tag
 
 TagModel = Union[type[Tag], type[PeopleTag]]
 TagRow = TypeVar("TagRow", Tag, PeopleTag)
@@ -33,6 +37,8 @@ PARENT_TAG_NOT_FOUND = "Parent tag not found"
 TAG_OWN_PARENT = "Tag cannot be its own parent"
 TAG_UNDER_OWN_SUB_TAG = "Tag cannot be nested under one of its own sub-tags"
 TAG_NAME_TAKEN = "Tag with this name already exists"
+# A create with a taken name answers this, a rename TAG_NAME_TAKEN.
+TAG_EXISTS = "Tag already exists"
 
 
 async def require_own_tag_ids(
@@ -156,6 +162,40 @@ async def get_or_create_tag(
             raise
         return existing, False
     return tag, True
+
+
+async def find_recording_tag(
+    db: AsyncSession, recording_id: int, tag_id: int
+) -> Optional[int]:
+    """The id of the link holding ``tag_id`` on the meeting, if there is one."""
+    result = await db.execute(
+        select(RecordingTag.id)
+        .where(
+            col(RecordingTag.recording_id) == recording_id,
+            col(RecordingTag.tag_id) == tag_id,
+        )
+        .limit(1)
+    )
+    return result.scalars().first()
+
+
+async def link_recording_tag(db: AsyncSession, recording_id: int, tag_id: int) -> bool:
+    """Put the tag on the meeting unless it holds it already.
+
+    Returns whether a link was added. The insert is flushed in a savepoint, so
+    when another request linked the pair first, only the insert is undone and
+    the caller's other changes stay pending. The caller commits.
+    """
+    if await find_recording_tag(db, recording_id, tag_id) is not None:
+        return False
+    try:
+        async with db.begin_nested():
+            db.add(RecordingTag(recording_id=recording_id, tag_id=tag_id))
+    except IntegrityError:
+        if await find_recording_tag(db, recording_id, tag_id) is None:
+            raise
+        return False
+    return True
 
 
 async def commit_tag_name(

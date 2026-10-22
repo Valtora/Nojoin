@@ -1,6 +1,6 @@
 from typing import TYPE_CHECKING, List, Optional
 
-from sqlalchemy import BigInteger, Column, ForeignKey, Index
+from sqlalchemy import BigInteger, Column, ForeignKey, Index, UniqueConstraint
 from sqlmodel import Field, Relationship, SQLModel
 
 from .base import BaseDBModel
@@ -11,6 +11,11 @@ if TYPE_CHECKING:
 
 class RecordingTag(BaseDBModel, table=True):
     __tablename__ = "recording_tags"
+    # A meeting holds each tag once, as a task and a person do.
+    __table_args__ = (
+        UniqueConstraint("recording_id", "tag_id", name="unique_recording_tag"),
+    )
+
     recording_id: int = Field(
         sa_column=Column(BigInteger, ForeignKey("recordings.id", ondelete="CASCADE"))
     )

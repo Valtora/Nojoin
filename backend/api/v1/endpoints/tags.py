@@ -3,7 +3,6 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import delete
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
@@ -16,9 +15,11 @@ from backend.services.recording_identity_service import (
     get_recordings_by_public_ids,
 )
 from backend.services.tag_ownership import (
+    TAG_EXISTS,
     commit_tag_name,
     find_tag_by_name,
     get_or_create_tag,
+    link_recording_tag,
     require_own_parent,
     require_parent_outside_subtree,
     require_unused_name,
@@ -87,21 +88,21 @@ async def create_tag(
     current_user: User = Depends(get_current_user),
 ):
     """
-    Create a new tag, or return the user's tag of that name.
+    Create a tag. A name the user already has answers 400, as for people tags.
+    The routes that add a tag to meetings by name use the existing tag instead.
     """
     await require_own_parent(db, Tag, tag_in.parent_id, current_user.id)
+    await require_unused_name(db, Tag, tag_in.name, current_user.id, detail=TAG_EXISTS)
 
-    tag, created = await get_or_create_tag(
-        db,
-        Tag,
-        tag_in.name,
-        current_user.id,
+    tag = Tag(
+        name=tag_in.name,
         color=tag_in.color,
+        user_id=current_user.id,
         parent_id=tag_in.parent_id,
     )
-    if created:
-        await db.commit()
-        await db.refresh(tag)
+    db.add(tag)
+    await commit_tag_name(db, tag, detail=TAG_EXISTS)
+    await db.refresh(tag)
     return tag
 
 
@@ -158,28 +159,11 @@ async def add_tag_to_recording(
     tag, created = await get_or_create_tag(
         db, Tag, tag_in.name, current_user.id, color=tag_in.color
     )
-    if created:
+    linked = await link_recording_tag(db, recording.id, tag.id)
+    if created or linked:
         await db.commit()
+    if created:
         await db.refresh(tag)
-
-    # Use first() instead of scalar_one_or_none() to be robust against existing duplicates
-    stmt = select(RecordingTag).where(
-        RecordingTag.recording_id == recording.id, RecordingTag.tag_id == tag.id
-    )
-    result = await db.execute(stmt)
-    existing_link = result.scalars().first()
-
-    if not existing_link:
-        link = RecordingTag(recording_id=recording.id, tag_id=tag.id)
-        db.add(link)
-        try:
-            await db.commit()
-        except IntegrityError:
-            await db.rollback()
-            # Race condition: tag was added by another request concurrently
-            # Return the tag as if we added it (idempotency)
-            pass
-
     return tag
 
 
@@ -199,15 +183,13 @@ async def remove_tag_from_recording(
     if not tag:
         raise HTTPException(status_code=404, detail="Tag not found")
 
-    stmt = select(RecordingTag).where(
-        RecordingTag.recording_id == recording.id, RecordingTag.tag_id == tag.id
+    # Every matching link, though the unique constraint leaves at most one.
+    await db.execute(
+        delete(RecordingTag).where(
+            RecordingTag.recording_id == recording.id, RecordingTag.tag_id == tag.id
+        )
     )
-    result = await db.execute(stmt)
-    link = result.scalar_one_or_none()
-
-    if link:
-        await db.delete(link)
-        await db.commit()
+    await db.commit()
 
     return {"ok": True}
 
@@ -243,9 +225,6 @@ async def batch_add_tag(
     Add a tag to multiple recordings. Creates the tag if it doesn't exist.
     """
     tag, created = await get_or_create_tag(db, Tag, batch.tag_name, current_user.id)
-    if created:
-        await db.commit()
-        await db.refresh(tag)
 
     # Iterated rather than expressed as a single set-difference query: batches
     # are capped at MAX_BATCH_RECORDING_IDS, so the clearer loop is worth more
@@ -265,21 +244,12 @@ async def batch_add_tag(
         if recording is None:
             continue
 
-        link_stmt = select(RecordingTag).where(
-            RecordingTag.recording_id == recording.id, RecordingTag.tag_id == tag.id
-        )
-        link_result = await db.execute(link_stmt)
-        if not link_result.scalars().first():
-            link = RecordingTag(recording_id=recording.id, tag_id=tag.id)
-            db.add(link)
+        if await link_recording_tag(db, recording.id, tag.id):
             count += 1
 
-    try:
-        await db.commit()
-    except IntegrityError:
-        await db.rollback()
-        # Exact count after fallback may be approximate if concurrent modifications occurred.
-        pass
+    await db.commit()
+    if created:
+        await db.refresh(tag)
     return {"ok": True, "count": count, "tag": tag}
 
 
