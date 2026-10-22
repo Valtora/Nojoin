@@ -1472,6 +1472,43 @@ async def test_the_holding_tab_cannot_resume_a_closed_recording(
 
 
 @pytest.mark.anyio
+async def test_a_tab_cannot_discard_its_capture_once_it_was_stopped_elsewhere(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A stop from a dialog issues no epoch, so only the status fences the old tab."""
+    from backend.api.v1.endpoints import recordings as recordings_module
+
+    monkeypatch.setattr(
+        recordings_module.celery_app.control, "revoke", lambda *args, **kwargs: None
+    )
+    set_session_cookie(client)
+    init = await _post(client, "init", params={"name": "Weekly sync"})
+    recording_id = init.json()["id"]
+    assert (
+        await _upload(client, recording_id, 0, make_wav_bytes(), epoch=0)
+    ).status_code == 200
+    assert (
+        await _post(client, f"{recording_id}/pause", params={"epoch": 0})
+    ).status_code == 200
+    assert (await _post(client, f"{recording_id}/finalize")).status_code == 200
+
+    stale_discard = await _post(client, f"{recording_id}/discard", params={"epoch": 0})
+    stale_segment = await _upload(client, recording_id, 1, make_wav_bytes(), epoch=0)
+
+    closed = "Recording is no longer accepting capture uploads"
+    assert stale_discard.status_code == 409
+    assert stale_discard.json()["detail"] == closed
+    assert stale_segment.status_code == 409
+    assert stale_segment.json()["detail"] == closed
+    row = await _recording_row(test_session_maker, recording_id)
+    assert (row.status, row.capture_epoch) == ("QUEUED", 0)
+    # The list and the dialogs discard without an epoch, and still can.
+    assert (await _post(client, f"{recording_id}/discard")).status_code == 200
+
+
+@pytest.mark.anyio
 async def test_a_tab_on_an_older_build_sends_no_epoch_and_is_not_checked(
     client: AsyncClient,
 ) -> None:

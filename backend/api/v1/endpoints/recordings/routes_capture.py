@@ -797,6 +797,16 @@ async def discard_upload(
     # A tab whose capture continued elsewhere must not delete it from under the
     # tab running it. The list and the dialogs discard without an epoch.
     recordings_module._ensure_capture_epoch(recording, epoch)
+    # Nor may a tab delete its capture once it has been stopped, which a stop
+    # from a dialog does without issuing an epoch: the meeting is being
+    # processed, and the tab's own capture is over (issue #590).
+    if epoch is not None and recording.status not in {
+        RecordingStatus.UPLOADING,
+        RecordingStatus.PAUSED,
+    }:
+        raise HTTPException(
+            status_code=409, detail=recordings_module.UPLOAD_CLOSED_DETAIL
+        )
 
     discardable_states = {
         RecordingStatus.UPLOADING,

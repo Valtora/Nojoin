@@ -7,7 +7,8 @@ import {
   getUnfinishedCaptures,
   initRecording,
   isActiveRecordingConflictDetail,
-  isCaptureSupersededError,
+  isCaptureClosedError,
+  isCaptureEndedError,
   pauseRecordingCapture,
   reportRecordingCaptureSources,
   resumeRecordingCapture,
@@ -202,10 +203,16 @@ const describeAudioLength = (seconds: number) =>
     ? `${Math.round(seconds / 60)} minutes`
     : `${Math.max(1, Math.round(seconds))} seconds`;
 
-/** What a tab says once the server refuses it because its capture moved on. */
-const continuedElsewhereMessage = (queuedSeconds: number) =>
-  "This recording continued in another tab or on another device, so this tab " +
-  "has stopped recording it." +
+/**
+ * What a tab says once the server refuses it because its capture ended for it:
+ * resumed elsewhere, or stopped.
+ */
+const endedElsewhereMessage = (error: unknown, queuedSeconds: number) =>
+  (isCaptureClosedError(error)
+    ? "This recording has already been stopped and sent for processing, so " +
+      "this tab is no longer recording it."
+    : "This recording continued in another tab or on another device, so this " +
+      "tab has stopped recording it.") +
   (queuedSeconds > 0
     ? ` About ${describeAudioLength(queuedSeconds)} of audio this tab recorded ` +
       "had not uploaded and is not in the recording."
@@ -661,7 +668,7 @@ export class CaptureController {
    *
    * Resolves once the server has the pause, or owes it with a warning when the
    * server could not be reached. Rejects when the server refused it, with the
-   * tab still paused, or when the capture continued elsewhere.
+   * tab still paused, or when the capture ended elsewhere.
    */
   pause = async () => {
     const runtime = this.runtime;
@@ -689,8 +696,8 @@ export class CaptureController {
     if (!error) {
       return;
     }
-    if (isCaptureSupersededError(error)) {
-      throw await this.ifContinuedElsewhere(error, runtime);
+    if (isCaptureEndedError(error)) {
+      throw await this.ifEndedElsewhere(error, runtime);
     }
     if (this.unconfirmedPause?.recordingId === recordingId) {
       useNotificationStore.getState().addNotification({
@@ -732,7 +739,7 @@ export class CaptureController {
           resumeRecordingCapture(targetRecordingId, { epoch: runtime.epoch }),
         );
       } catch (error: unknown) {
-        throw await this.ifContinuedElsewhere(error, runtime);
+        throw await this.ifEndedElsewhere(error, runtime);
       }
       // A stalled uploader (for example after a network outage) still holds
       // the queued segments; recovering it retries them before new audio.
@@ -847,8 +854,8 @@ export class CaptureController {
         );
       }
       sources?.release();
-      if (isCaptureSupersededError(error)) {
-        throw await this.ifContinuedElsewhere(error, heldRuntime);
+      if (isCaptureEndedError(error)) {
+        throw await this.ifEndedElsewhere(error, heldRuntime);
       }
       if (resumeResponse) {
         const epoch = resumeResponse.capture_epoch;
@@ -922,8 +929,9 @@ export class CaptureController {
             timeoutMs: UPLOAD_FLUSH_TIMEOUT_MS,
           });
         } catch (flushError: unknown) {
-          // Nothing of this tab's can finish a capture carried on elsewhere.
-          if (isCaptureSupersededError(flushError)) {
+          // Nothing of this tab's can finish a capture carried on or stopped
+          // elsewhere.
+          if (isCaptureEndedError(flushError)) {
             throw flushError;
           }
           // Keep going: finalize refuses an incomplete upload with a retryable
@@ -964,8 +972,8 @@ export class CaptureController {
       return recording;
 
     } catch (error: unknown) {
-      if (isCaptureSupersededError(error)) {
-        throw await this.ifContinuedElsewhere(error, runtime);
+      if (isCaptureEndedError(error)) {
+        throw await this.ifEndedElsewhere(error, runtime);
       }
       const message = formatCaptureError(error);
       console.error(
@@ -1042,7 +1050,8 @@ export class CaptureController {
     this.captureActionTicket += 1;
 
     // A tab whose capture continued elsewhere must not delete it from under
-    // the tab now running it. A discard from a dialog or the list sends none.
+    // the tab now running it, nor delete one stopped elsewhere and now being
+    // processed. A discard from a dialog or the list sends none.
     const epoch =
       this.runtime?.recordingId === targetRecordingId ? this.runtime.epoch : undefined;
     if (this.runtime) {
@@ -1053,7 +1062,7 @@ export class CaptureController {
     try {
       await discardRecordingCapture(targetRecordingId, undefined, { epoch });
     } catch (error: unknown) {
-      throw await this.ifContinuedElsewhere(error, null);
+      throw await this.ifEndedElsewhere(error, null);
     }
     // A check that began while the discard was in flight may still list it.
     this.captureActionTicket += 1;
@@ -1268,11 +1277,11 @@ export class CaptureController {
       onStalled: async (error) => {
         await this.handleUploaderStalled(options.recordingId, error);
       },
-      onSuperseded: async () => {
+      onCaptureEnded: async (error) => {
         const runtime = this.runtime;
         // A stop under way reports it itself, once its flush fails.
         if (runtime?.uploader === uploader && this.state.status !== "finalizing") {
-          await this.captureContinuedElsewhere(runtime);
+          await this.captureEndedElsewhere(runtime, error);
         }
       },
     });
@@ -1487,9 +1496,9 @@ export class CaptureController {
       if (this.unconfirmedPause !== pause) {
         return null;
       }
-      if (isCaptureSupersededError(pauseError)) {
+      if (isCaptureEndedError(pauseError)) {
         this.forgetUnconfirmedPause();
-        await this.captureContinuedElsewhere(runtime);
+        await this.captureEndedElsewhere(runtime, pauseError);
         return pauseError;
       }
       if (answeredByServer(pauseError)) {
@@ -1544,21 +1553,26 @@ export class CaptureController {
 
   /**
    * Stops this tab capturing once the server says the capture was resumed in
-   * another tab or on another device (issue #570).
+   * another tab or on another device (issue #570), or stopped (issue #590).
    *
    * Nothing this tab holds can join the recording any more, so its media, Web
    * Lock and uploader go, and it reads idle. The audio it had not uploaded
    * stays in this browser's store, under its old epoch, until this browser
    * next resumes or stops the recording and finds it left behind.
    */
-  private captureContinuedElsewhere = async (runtime: ActiveRuntime | null) => {
+  private captureEndedElsewhere = async (runtime: ActiveRuntime | null, error: unknown) => {
     if (runtime && this.runtime !== runtime) {
       return;
     }
     const queuedSeconds = runtime?.uploader.pendingAudioSeconds() ?? 0;
     this.captureActionTicket += 1;
     if (runtime) {
-      console.warn("[capture] the recording continued elsewhere", runtime.recordingId);
+      console.warn(
+        isCaptureClosedError(error)
+          ? "[capture] the recording was stopped elsewhere"
+          : "[capture] the recording continued elsewhere",
+        runtime.recordingId,
+      );
       await runtime.recorder.stop({ emitTail: false }).catch(() => {});
       if (this.runtime !== runtime) {
         return;
@@ -1569,7 +1583,7 @@ export class CaptureController {
     this.resetCoverageTracking();
     this.setState({
       status: "idle",
-      error: continuedElsewhereMessage(queuedSeconds),
+      error: endedElsewhereMessage(error, queuedSeconds),
       lastSequence: -1,
       elapsedSeconds: 0,
       recordingId: null,
@@ -1588,17 +1602,17 @@ export class CaptureController {
 
   /**
    * The error a user action rejects with. When the server refused it because
-   * the capture continued elsewhere, this tab stands down first.
+   * the capture ended for this tab elsewhere, this tab stands down first.
    */
-  private ifContinuedElsewhere = async (
+  private ifEndedElsewhere = async (
     error: unknown,
     runtime: ActiveRuntime | null,
   ): Promise<unknown> => {
-    if (!isCaptureSupersededError(error)) {
+    if (!isCaptureEndedError(error)) {
       return error;
     }
-    const message = continuedElsewhereMessage(runtime?.uploader.pendingAudioSeconds() ?? 0);
-    await this.captureContinuedElsewhere(runtime);
+    const message = endedElsewhereMessage(error, runtime?.uploader.pendingAudioSeconds() ?? 0);
+    await this.captureEndedElsewhere(runtime, error);
     return new Error(this.state.error ?? message);
   };
 
