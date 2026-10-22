@@ -4,7 +4,8 @@
  *
  * `from` and `to` are offsets into the line's text, half-open. A decoration
  * with `from === to` marks a point: it renders as an empty element there, which
- * is what a zero-width regex match shows.
+ * is what a zero-width regex match shows. A range that runs past either end is
+ * cut to the text; one with `to < from`, or none of it on the text, is dropped.
  */
 export interface SearchDecoration {
   kind: "search";
@@ -43,11 +44,15 @@ export function buildTextRuns(
   decorations: readonly TextDecoration[],
 ): TextRun[] {
   const length = text.length;
-  const ranges: ClampedRange[] = decorations.map((decoration) => ({
-    decoration,
-    from: clamp(decoration.from, length),
-    to: clamp(Math.max(decoration.from, decoration.to), length),
-  }));
+  const ranges: ClampedRange[] = decorations
+    .filter(({ from, to }) => from <= to && from <= length && to >= 0)
+    .map((decoration) => ({
+      decoration,
+      from: clamp(decoration.from, length),
+      to: clamp(decoration.to, length),
+    }))
+    // A range that only touches an end of the text is not a point.
+    .filter(({ decoration, from, to }) => from < to || decoration.from === decoration.to);
   const spans = ranges
     .filter(({ from, to }) => from < to)
     .sort((left, right) => left.from - right.from);

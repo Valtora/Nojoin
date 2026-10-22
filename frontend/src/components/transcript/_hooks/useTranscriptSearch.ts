@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Fuse from "fuse.js";
 
 import { TranscriptSegment } from "@/types";
 import { getTranscriptSegmentKey } from "@/lib/transcriptSegments";
 
 import type { SearchDecoration } from "../textDecorations";
+
+const NO_DECORATIONS: readonly SearchDecoration[] = [];
 
 export interface TranscriptSearchMatch {
   segmentId: string;
@@ -41,7 +43,7 @@ export interface TranscriptSearch {
   nextMatch: () => void;
   prevMatch: () => void;
   /** The line's matches, as decorations for its text. */
-  searchDecorations: (segmentId: string) => SearchDecoration[];
+  searchDecorations: (segmentId: string) => readonly SearchDecoration[];
   /** Reset find/replace inputs (used after a Replace All completes). */
   resetFindReplace: () => void;
 }
@@ -193,18 +195,61 @@ export function useTranscriptSearch(
     setCurrentMatchIndex((prev) => (prev - 1 + matches.length) % matches.length);
   };
 
-  const searchDecorations = (segmentId: string): SearchDecoration[] => {
-    if (!findText || !showSearch || matches.length === 0) return [];
+  // Each line's matches, as decorations. A line keeps the same array until its
+  // own matches change, and moving the current match swaps the arrays of the
+  // two lines it leaves and enters only, so the other lines need not redraw.
+  const matchesByLine = useMemo(() => {
+    const byLine = new Map<string, TranscriptSearchMatch[]>();
+    if (!findText || !showSearch) return byLine;
+    matches.forEach((match) => {
+      byLine.set(match.segmentId, [...(byLine.get(match.segmentId) ?? []), match]);
+    });
+    return byLine;
+  }, [findText, showSearch, matches]);
 
-    return matches
-      .filter((match) => match.segmentId === segmentId)
-      .map((match) => ({
-        kind: "search",
-        from: match.startIndex,
-        to: match.startIndex + match.length,
-        current: matches[currentMatchIndex] === match,
-      }));
-  };
+  // A case-insensitive match is found in the lower-cased text, which can be
+  // longer than the line ("İ" lower-cases to two characters), so a match can
+  // reach past the line's end. Its part on the line is marked, and a match
+  // wholly past the end marks the end, as search always drew it.
+  const plainDecorations = useMemo(() => {
+    const byLine = new Map<string, SearchDecoration[]>();
+    matchesByLine.forEach((lineMatches, segmentId) => {
+      byLine.set(
+        segmentId,
+        lineMatches.map((match) => {
+          const length = segments[match.orderIndex]?.text.length ?? 0;
+          return {
+            kind: "search",
+            from: Math.min(match.startIndex, length),
+            to: Math.min(match.startIndex + match.length, length),
+            current: false,
+          };
+        }),
+      );
+    });
+    return byLine;
+  }, [matchesByLine, segments]);
+
+  const currentMatch = matches[currentMatchIndex];
+  const decorationsByLine = useMemo(() => {
+    const lineMatches = currentMatch && matchesByLine.get(currentMatch.segmentId);
+    const plain = currentMatch && plainDecorations.get(currentMatch.segmentId);
+    if (!currentMatch || !lineMatches || !plain) return plainDecorations;
+    const byLine = new Map(plainDecorations);
+    byLine.set(
+      currentMatch.segmentId,
+      plain.map((decoration, index) =>
+        lineMatches[index] === currentMatch ? { ...decoration, current: true } : decoration,
+      ),
+    );
+    return byLine;
+  }, [currentMatch, matchesByLine, plainDecorations]);
+
+  const searchDecorations = useCallback(
+    (segmentId: string): readonly SearchDecoration[] =>
+      decorationsByLine.get(segmentId) ?? NO_DECORATIONS,
+    [decorationsByLine],
+  );
 
   const resetFindReplace = () => {
     setFindText("");
@@ -231,9 +276,9 @@ export function useTranscriptSearch(
       searchDecorations,
       resetFindReplace,
     }),
-    // searchDecorations/nextMatch/prevMatch close over the latest state on
-    // each render; the object is rebuilt every render intentionally so the JSX
-    // always reads current values.
+    // Rebuilt when this state changes. nextMatch, prevMatch and
+    // resetFindReplace are new functions each render, but they read only
+    // `matches` and state setters, so the copy kept here is never stale.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
       findText,
@@ -243,6 +288,7 @@ export function useTranscriptSearch(
       useRegex,
       matches,
       currentMatchIndex,
+      searchDecorations,
     ],
   );
 }

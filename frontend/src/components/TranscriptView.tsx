@@ -14,14 +14,17 @@ import { getTranscriptSegmentKey } from "@/lib/transcriptSegments";
 import { useTranscriptSearch } from "./transcript/_hooks/useTranscriptSearch";
 import { useTranscriptScroll } from "./transcript/_hooks/useTranscriptScroll";
 import { useTranscriptEditing } from "./transcript/_hooks/useTranscriptEditing";
+import { useStableCallback } from "./transcript/_hooks/useStableCallback";
 import {
   buildTranscriptGroups,
   indexSegments,
   type IndexedTranscriptSegment,
 } from "./transcript/transcriptGroups";
-import { formatTime } from "./transcript/transcriptDisplay";
-import TranscriptGroup from "./transcript/TranscriptGroup";
-import TranscriptLine from "./transcript/TranscriptLine";
+import { formatTime, isRecentlyUpdatedSegment } from "./transcript/transcriptDisplay";
+import TranscriptGroup, {
+  LINE_KEY_SEPARATOR,
+  type TranscriptLineShared,
+} from "./transcript/TranscriptGroup";
 import TranscriptToolbar from "./transcript/TranscriptToolbar";
 import { bodyNotesAmongLines, placeTimelineNotes } from "@/lib/notes/placement";
 import TimelineNoteLine from "./notes/TimelineNoteLine";
@@ -68,6 +71,9 @@ interface TranscriptViewProps {
   timelineNotes?: readonly TimelineNote[] | null;
 }
 
+// One empty list for every render, so the memoised lines it reaches hold.
+const NO_PENDING_UPDATES: string[] = [];
+
 const NOTE_TIME_COLUMN =
   "min-w-16 md:min-w-[60px] shrink-0 pt-1 text-right font-mono text-sm text-contrast-icon-muted";
 
@@ -103,7 +109,7 @@ export default function TranscriptView({
   emptyStateTitle = "No transcript segments",
   emptyStateDescription,
   onActiveEditUtteranceChange,
-  pendingRemoteUtteranceIds = [],
+  pendingRemoteUtteranceIds = NO_PENDING_UPDATES,
   timelineNotes,
 }: TranscriptViewProps) {
   // Find & Replace toolbar visibility (search match state lives in the hook)
@@ -137,7 +143,6 @@ export default function TranscriptView({
     readOnly,
     allowProvisionalEdits,
     onRenameSpeaker,
-    onUpdateSegmentSpeaker,
     onUpdateSegmentText,
     onFindAndReplace,
     onActiveEditUtteranceChange,
@@ -148,18 +153,21 @@ export default function TranscriptView({
     },
   });
 
-  const hasKnownSpeakers = segments.some((s) => s.speaker !== "UNKNOWN");
+  // Memoised on the lines, so a playback tick hands every line the same item
+  // and the same group, and an unchanged line does not redraw.
+  const displaySegments = useMemo(() => {
+    const hasKnownSpeakers = segments.some((s) => s.speaker !== "UNKNOWN");
 
-  // Map to preserve original indices before filtering
-  const indexedSegments = indexSegments(segments);
+    // Map to preserve original indices before filtering
+    const indexedSegments = indexSegments(segments);
 
-  const speakerFilteredSegments = hasKnownSpeakers
-    ? indexedSegments.filter(
-        ({ segment }) =>
-          segment.speaker !== "UNKNOWN" || segment.provisional === true,
-      )
-    : indexedSegments;
-  const displaySegments = speakerFilteredSegments;
+    return hasKnownSpeakers
+      ? indexedSegments.filter(
+          ({ segment }) =>
+            segment.speaker !== "UNKNOWN" || segment.provisional === true,
+        )
+      : indexedSegments;
+  }, [segments]);
 
   const speakerDisplayOrder = useMemo(() => {
     const order = new Map<string, number>();
@@ -187,9 +195,13 @@ export default function TranscriptView({
     () => placeTimelineNotes(segments, timelineNotes ?? []),
     [segments, timelineNotes],
   );
-  const notesAmongLines = bodyNotesAmongLines(
-    notePlacements,
-    displaySegments.map((item) => item.index),
+  const notesAmongLines = useMemo(
+    () =>
+      bodyNotesAmongLines(
+        notePlacements,
+        displaySegments.map((item) => item.index),
+      ),
+    [notePlacements, displaySegments],
   );
   const renderNote = (note: TimelineNote) => (
     <div key={note.id} className="px-2">
@@ -205,32 +217,62 @@ export default function TranscriptView({
   );
 
   // --- Grouping Logic ---
-  const trackGroups = buildTranscriptGroups(
-    displaySegments,
-    new Set(notesAmongLines.afterLine.keys()),
+  const trackGroups = useMemo(
+    () =>
+      buildTranscriptGroups(
+        displaySegments,
+        new Set(notesAmongLines.afterLine.keys()),
+      ),
+    [displaySegments, notesAmongLines],
   );
 
-  const renderLine = (item: IndexedTranscriptSegment) => (
-    <TranscriptLine
-      key={item.segmentId}
-      item={item}
-      currentTime={currentTime}
-      activeSegmentRef={activeSegmentRef}
-      readOnly={readOnly}
-      allowProvisionalEdits={allowProvisionalEdits}
-      speakerMap={speakerMap}
-      speakers={speakers}
-      globalSpeakers={globalSpeakers}
-      speakerColors={speakerColors}
-      onUpdateSegmentSpeaker={onUpdateSegmentSpeaker}
-      hasPendingRemoteUpdate={
-        typeof item.segment.id === "string" &&
-        pendingRemoteUtteranceIdSet.has(item.segment.id)
-      }
-      decorations={search.searchDecorations(item.segmentId)}
-      editing={editing}
-    />
+  // Groups and lines are memoised: everything handed to them is a value, or
+  // keeps its identity until it means something new, so a playback tick
+  // redraws only the groups and lines it enters or leaves. The recording page
+  // builds these four handlers anew on every tick; the lines get stable ones.
+  const playSegment = useStableCallback(onPlaySegment);
+  const pause = useStableCallback(onPause);
+  const resume = useStableCallback(onResume);
+  const updateSegmentSpeaker = useStableCallback(onUpdateSegmentSpeaker);
+  const lineShared = useMemo<TranscriptLineShared>(
+    () => ({
+      activeSegmentRef,
+      readOnly,
+      allowProvisionalEdits,
+      speakerMap,
+      speakers,
+      globalSpeakers,
+      speakerColors,
+      onUpdateSegmentSpeaker: updateSegmentSpeaker,
+      pendingRemoteUtteranceIds: pendingRemoteUtteranceIdSet,
+      actions: editing.lineActions,
+    }),
+    [
+      activeSegmentRef,
+      readOnly,
+      allowProvisionalEdits,
+      speakerMap,
+      speakers,
+      globalSpeakers,
+      speakerColors,
+      updateSegmentSpeaker,
+      pendingRemoteUtteranceIdSet,
+      editing.lineActions,
+    ],
   );
+  const lineKeys = (
+    items: readonly IndexedTranscriptSegment[],
+    keep: (segment: TranscriptSegment) => boolean,
+  ) =>
+    items
+      .filter(({ segment }) => keep(segment))
+      .map(({ segmentId }) => segmentId)
+      .join(LINE_KEY_SEPARATOR);
+  const holdsTheEditor = (items: readonly IndexedTranscriptSegment[]) =>
+    items.some(
+      ({ segment, segmentId }) =>
+        segment.speaker === editing.editingSpeaker || segmentId === editing.editingTextId,
+    );
 
   return (
     <div id="transcript-view" className="flex flex-col h-full relative min-h-0">
@@ -284,16 +326,24 @@ export default function TranscriptView({
               <Fragment key={groupKey || groupIndex}>
                 <TranscriptGroup
                   group={group}
-                  currentTime={currentTime}
+                  isGroupActive={currentTime >= group.start && currentTime < group.end}
                   isPlaying={isPlaying}
-                  onPlaySegment={onPlaySegment}
-                  onPause={onPause}
-                  onResume={onResume}
+                  onPlaySegment={playSegment}
+                  onPause={pause}
+                  onResume={resume}
                   disableSegmentPlayback={disableSegmentPlayback}
                   speakerDisplayOrder={speakerDisplayOrder}
-                  speakerMap={speakerMap}
-                  speakerColors={speakerColors}
-                  renderLine={renderLine}
+                  lineShared={lineShared}
+                  activeLineKeys={lineKeys(
+                    group.items,
+                    (segment) => currentTime >= segment.start && currentTime < segment.end,
+                  )}
+                  recentLineKeys={lineKeys(group.items, isRecentlyUpdatedSegment)}
+                  searchDecorations={search.searchDecorations}
+                  editingSpeaker={editing.editingSpeaker}
+                  editingTextId={editing.editingTextId}
+                  activePopover={editing.activePopover}
+                  editor={holdsTheEditor(group.items) ? editing.editor : null}
                 />
                 {notesAfterGroup.map(renderNote)}
               </Fragment>
