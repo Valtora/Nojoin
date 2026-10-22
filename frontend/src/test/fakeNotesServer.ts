@@ -23,6 +23,8 @@ export const server = {
   creates: [] as TimelineNoteCreate[],
   loseNextAnswer: false,
   failures: [] as unknown[],
+  /** Recordings deleted for good: every notes request on them answers 404 `recording_not_found`. */
+  goneRecordings: new Set<string>(),
   /** Another device deletes a note it can see. */
   deleteElsewhere(id: string) {
     this.notes.delete(id);
@@ -44,6 +46,7 @@ export const createTimelineNote = vi.fn(
     server.creates.push(payload);
     const failure = takeFailure();
     if (failure) throw failure;
+    if (server.goneRecordings.has(recording)) throw coded(404, "recording_not_found");
     const id = payload.id!;
     if (server.tombstones.has(id)) {
       const yours = server.tombstones.get(id) === payload.write_token;
@@ -93,6 +96,7 @@ export const resetNotesServer = (): void => {
   server.creates = [];
   server.loseNextAnswer = false;
   server.failures = [];
+  server.goneRecordings.clear();
   createTimelineNote.mockClear();
   deleteTimelineNote.mockClear();
 };

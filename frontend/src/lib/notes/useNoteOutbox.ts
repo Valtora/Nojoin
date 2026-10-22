@@ -5,7 +5,13 @@ import { useEffect, useRef, useSyncExternalStore } from "react";
 import type { Recording, RecordingId } from "@/types";
 
 import { EMPTY_DRAFT, type NoteOutbox, type OutboxSnapshot } from "./noteOutbox";
-import { noteOutboxFor } from "./noteOutboxes";
+import {
+  goneNotes,
+  noteOutboxFor,
+  subscribeNoteOutboxes,
+  unsentRecordings,
+  type GoneNotes,
+} from "./noteOutboxes";
 import { useTimelineNotes } from "./useTimelineNotes";
 
 const EMPTY_SNAPSHOT: OutboxSnapshot = {
@@ -77,4 +83,14 @@ export function useRecordingNotes(
   }, [outbox, refresh]);
 
   return notes;
+}
+
+/** The recordings whose notes, discards or box text this page has not saved yet. */
+export function useUnsentRecordings(): readonly RecordingId[] {
+  return useSyncExternalStore(subscribeNoteOutboxes, unsentRecordings, unsentRecordings);
+}
+
+/** The notes of recordings found gone, waiting to be copied or dismissed. */
+export function useGoneNotes(): readonly GoneNotes[] {
+  return useSyncExternalStore(subscribeNoteOutboxes, goneNotes, goneNotes);
 }

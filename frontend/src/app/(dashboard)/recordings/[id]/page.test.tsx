@@ -171,7 +171,7 @@ vi.mock("@/components/LinkedEventPanel", () => ({
 
 import SessionSignInDialog from "@/components/SessionSignInDialog";
 import { EMPTY_DRAFT } from "@/lib/notes/noteOutbox";
-import { forgetNoteOutboxes, noteOutboxFor } from "@/lib/notes/noteOutboxes";
+import { forgetNoteOutboxes, goneNotes, noteOutboxFor } from "@/lib/notes/noteOutboxes";
 import {
   MemoryNoteStore,
   setNoteStoreForTests,
@@ -718,6 +718,17 @@ describe("RecordingPage (detail): the recording answers 404", () => {
 
     expect(addNotification).toHaveBeenCalledWith(DISCARDED);
     expect(routerPush).toHaveBeenCalledWith("/recordings");
+  });
+
+  it("offers the notes of a recording found gone to copy, rather than dropping them", async () => {
+    await open();
+    act(() => noteOutboxFor("rec-1").setDraft({ ...EMPTY_DRAFT, text: "typed as it was deleted" }));
+    exists = false;
+
+    await poll();
+
+    expect(routerPush).toHaveBeenCalledWith("/recordings");
+    expect(goneNotes()).toEqual([{ recordingId: "rec-1", texts: ["typed as it was deleted"] }]);
   });
 
   it("stays when the recording is found again by the time the account is known", async () => {

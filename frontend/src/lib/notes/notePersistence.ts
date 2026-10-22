@@ -153,6 +153,8 @@ export const persistNoteOutbox = (
   outbox: NoteOutbox,
   recordingId: RecordingId,
   storeOf: () => NoteStore | null = sharedNoteStore,
+  /** Told once the record has been read and restored, or could not be, with the account it was read for. */
+  onRead?: (account: number | null) => void,
 ): (() => void) => {
   let account: number | null = null;
   let ready = false;
@@ -276,7 +278,7 @@ export const persistNoteOutbox = (
     return written === textOf(account as number);
   };
 
-  const bind = async (owner: number) => {
+  const readRecord = async (owner: number) => {
     const store = storeOf();
     if (!store || account !== null) return;
     account = owner;
@@ -298,6 +300,14 @@ export const persistNoteOutbox = (
     written = raw === undefined ? "" : null;
     ready = true;
     changed();
+  };
+
+  const bind = async (owner: number) => {
+    try {
+      await readRecord(owner);
+    } finally {
+      onRead?.(account);
+    }
   };
 
   const isOwner = (state: SessionState | undefined) =>

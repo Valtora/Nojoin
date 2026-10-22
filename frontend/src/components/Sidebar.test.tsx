@@ -23,6 +23,8 @@ const getRecordingsCalendar = vi.fn();
 
 let currentView: ViewType = "recordings";
 let pausedRecording: { id: string } | null = null;
+let pathname = "/recordings";
+let unsentRecordings: string[] = [];
 
 vi.mock("next/link", () => ({
   default: ({ children, href, ...props }: React.ComponentPropsWithoutRef<"a">) => (
@@ -33,7 +35,7 @@ vi.mock("next/link", () => ({
 }));
 
 vi.mock("next/navigation", () => ({
-  usePathname: () => "/recordings",
+  usePathname: () => pathname,
   useRouter: () => ({
     push: routerPush,
     replace: routerReplace,
@@ -53,6 +55,10 @@ vi.mock("@/lib/api", () => ({
   getTags: (...args: unknown[]) => getTags(...args),
   discardRecordingCapture: vi.fn(),
   getRecordingsCalendar: (...args: unknown[]) => getRecordingsCalendar(...args),
+}));
+
+vi.mock("@/lib/notes/useNoteOutbox", () => ({
+  useUnsentRecordings: () => unsentRecordings,
 }));
 
 vi.mock("@/lib/capture/CaptureProvider", () => ({
@@ -155,6 +161,8 @@ describe("Sidebar", () => {
     addNotification.mockReset();
     currentView = "recordings";
     pausedRecording = null;
+    pathname = "/recordings";
+    unsentRecordings = [];
     useImportAudioStore.setState({ isImportAudioOpen: false });
 
     getRecordings.mockResolvedValue([recording]);
@@ -206,6 +214,36 @@ describe("Sidebar", () => {
 
     await waitFor(() => {
       expect(getRecordings.mock.calls.length).toBeGreaterThan(callsAfterMount);
+    });
+  });
+
+  describe("notes not saved yet", () => {
+    it("marks a recording in the list whose notes this page has not saved", async () => {
+      unsentRecordings = ["rec-1"];
+      renderWithProviders(<Sidebar />);
+
+      const heading = await screen.findByRole("heading", { name: "Latest meeting" });
+      const item = heading.closest("a") ?? heading.parentElement!;
+
+      expect(within(item).getByText("Notes not saved yet")).toBeInTheDocument();
+    });
+
+    it("leaves the mark off the recording on screen, which shows its notes itself", async () => {
+      unsentRecordings = ["rec-1"];
+      pathname = "/recordings/rec-1";
+      renderWithProviders(<Sidebar />);
+
+      await screen.findByRole("heading", { name: "Latest meeting" });
+
+      expect(screen.queryByText("Notes not saved yet")).not.toBeInTheDocument();
+    });
+
+    it("shows no mark when every note is saved", async () => {
+      renderWithProviders(<Sidebar />);
+
+      await screen.findByRole("heading", { name: "Latest meeting" });
+
+      expect(screen.queryByText("Notes not saved yet")).not.toBeInTheDocument();
     });
   });
 

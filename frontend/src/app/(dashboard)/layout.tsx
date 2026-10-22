@@ -13,6 +13,7 @@ import CaptureShell from "@/components/CaptureShell";
 import DemoBanner, { DEMO_BANNER_STYLE } from "@/components/DemoBanner";
 import RecordingFloatingBadge from "@/components/RecordingFloatingBadge";
 import ImportAudioHost from "@/components/importAudio/ImportAudioHost";
+import StoredNotesSender from "@/components/notes/StoredNotesSender";
 import { CaptureProvider } from "@/lib/capture/CaptureProvider";
 
 export default function DashboardLayout({
@@ -66,6 +67,7 @@ export default function DashboardLayout({
         </div>
         <RecordingFloatingBadge />
         <ImportAudioHost />
+        <StoredNotesSender />
       </CaptureShell>
     </CaptureProvider>
   );

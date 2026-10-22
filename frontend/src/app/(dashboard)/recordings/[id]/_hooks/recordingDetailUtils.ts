@@ -91,42 +91,6 @@ const meetingEdgeSignature = (recording: Recording) =>
 export const pollFailureMeansRemoved = (status: number | null, sessionUsable: boolean) =>
   sessionUsable && status === 404;
 
-/** What a 404 for the page's recording turned out to mean. */
-export type NotFoundMeaning =
-  | { kind: "removed" }
-  | { kind: "signed-in-elsewhere"; username: string };
-
-/**
- * What a 404 for the page's recording says, once the server has named the
- * account the browser is signed in as (`whoIsSignedIn`, which tells the
- * session too). Tabs share the session cookie, so after a sign-in as another
- * account in another tab, this tab's requests go out as that account, and a
- * recording that still exists answers 404 (issue #583). Only for `account`,
- * the account that first loaded the recording, does a 404 mean it is gone.
- *
- * - "removed": the recording is gone.
- * - "signed-in-elsewhere": the browser is `username`'s now.
- * - null: nothing to act on. `/users/me` failed; or sign-in is held in place
- *   (`signInHeld`, read once the answer is in), and its dialog has opened
- *   instead; or the page never learnt its account, so it can't tell, and
- *   stays rather than claim a removal.
- */
-export const notFoundMeans = async (
-  account: number | null,
-  whoIsSignedIn: () => Promise<{ id: number; username: string }>,
-  signInHeld: () => boolean,
-): Promise<NotFoundMeaning | null> => {
-  let signedIn: { id: number; username: string };
-  try {
-    signedIn = await whoIsSignedIn();
-  } catch {
-    return null;
-  }
-  if (account === null) return null;
-  if (signedIn.id === account) return { kind: "removed" };
-  return signInHeld() ? null : { kind: "signed-in-elsewhere", username: signedIn.username };
-};
-
 export const hasPolledRecordingChanged = (current: Recording, polled: Recording) =>
   polled.status !== current.status ||
   polled.client_status !== current.client_status ||

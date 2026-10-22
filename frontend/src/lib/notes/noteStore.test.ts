@@ -53,6 +53,17 @@ describe.each([
     expect(await store.get(ALICE, "rec-2")).toEqual(record(ALICE, "rec-2"));
   });
 
+  it("lists the recordings one account has a record for", async () => {
+    const store = createStore();
+    await store.put(record(ALICE, "rec-1"));
+    await store.put(record(ALICE, "rec-2"));
+    await store.put(record(BOB, "rec-3"));
+
+    expect((await store.recordingsOf(ALICE)).sort()).toEqual(["rec-1", "rec-2"]);
+    expect(await store.recordingsOf(BOB)).toEqual(["rec-3"]);
+    expect(await store.recordingsOf(3)).toEqual([]);
+  });
+
   it("removes the records of every account not kept, and everything on clear", async () => {
     const store = createStore();
     await store.put(record(ALICE, "rec-1"));

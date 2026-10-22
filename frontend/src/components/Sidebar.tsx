@@ -20,6 +20,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Trash2,
+  NotebookPen,
 } from "lucide-react";
 import IconButton from "./ui/IconButton";
 import ImportAudioButton from "./importAudio/ImportAudioButton";
@@ -49,6 +50,8 @@ import { useNotificationStore } from "@/lib/notificationStore";
 import { createFuse } from "@/lib/searchUtils";
 import { getColorByKey } from "@/lib/constants";
 import { useViewportDensity } from "./ViewportDensityProvider";
+import { Badge } from "./ui/Badge";
+import { useUnsentRecordings } from "@/lib/notes/useNoteOutbox";
 import { useRecordingStatusNotifications } from "./recordings/_hooks/useRecordingStatusNotifications";
 import { useSidebarResize } from "./recordings/_hooks/useSidebarResize";
 
@@ -118,6 +121,7 @@ export default function Sidebar() {
   const router = useRouter();
   const { addNotification } = useNotificationStore();
   const actions = useRecordingActions();
+  const unsentRecordings = useUnsentRecordings();
   const { isCompact, isDesktop: isDesktopLayout } = useViewportDensity();
   const {
     currentView,
@@ -1050,6 +1054,17 @@ export default function Sidebar() {
                         {formatDurationString(recording.duration_seconds)}
                       </span>
                     </div>
+                    {/* The open recording lists its own notes not saved yet. */}
+                    {!isActive && unsentRecordings.includes(recording.id) && (
+                      <Badge
+                        tone="warning"
+                        size="sm"
+                        icon={<NotebookPen aria-hidden="true" />}
+                        className={`mt-2 ${selectionMode || isSelected ? "ml-6" : ""}`}
+                      >
+                        Notes not saved yet
+                      </Badge>
+                    )}
                   </Link>
                 </div>
               )}
