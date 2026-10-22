@@ -10,7 +10,8 @@ the registry until every gate has passed:
    cache, into OCI layouts under ~/.cache/nojoin-release.
 3. Gates: Trivy on each layout with the release severity policy, the health and
    non-root smoke on the same images loaded into Docker, and an advisory lookup
-   for the two subscription CLIs in worker-io.
+   for the two subscription CLIs in worker-io, since Trivy cannot see into the
+   Codex CLI's native binary.
 4. Push: the same build again, from cache, with provenance and SBOM
    attestations. Each pushed image config must match the one that was scanned.
 5. Tag: push vX.Y.Z. release.yml then checks the images came from the tag's
@@ -583,7 +584,12 @@ def load_and_smoke(release: Release) -> None:
 
 
 def check_cli_advisories(release: Release) -> None:
-    """Look up the worker-io subscription CLIs, which Trivy cannot see into."""
+    """Look up the worker-io subscription CLIs by their installed versions.
+
+    Trivy cannot see into the Codex CLI's native binary, so its advisories come
+    from here. The Claude Code CLI is looked up the same way for one record of
+    both.
+    """
     raw = run(
         [
             "docker", "run", "--rm", "--entrypoint", "cat", release.image("worker-io"),

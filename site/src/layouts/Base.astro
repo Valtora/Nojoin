@@ -21,7 +21,8 @@ interface Props {
 // A browser tab wants the shortest thing that identifies the site; a Slack or
 // LinkedIn card is read cold by someone who has never heard of it and wants
 // the descriptive line. `ogTitle` defaults to `title`, so a page only sets it
-// where the two genuinely want different words -- currently the landing page.
+// where the two genuinely want different words: currently the landing page
+// and /managed/.
 const { title, description, ogTitle = title } = Astro.props;
 const canonical = new URL(Astro.url.pathname, Astro.site);
 

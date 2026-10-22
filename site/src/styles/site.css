@@ -820,7 +820,7 @@ section[id] {
 }
 
 /* ---- The agent band ----
-   The MCP surface at hero scale, sitting directly under the three-up strip. It
+   The MCP surface at hero scale, sitting directly under the hero. It
    keeps the page surface and takes the hero's wash, with hairlines closing the
    shape, so the alternating band rhythm below it is untouched. Two infographics
    carry it because there is no honest screenshot: see SITE.md. */

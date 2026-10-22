@@ -163,7 +163,7 @@ describe("capture source picker", () => {
     ).rejects.toMatchObject({
       code: "selected_microphone_unavailable",
       message:
-        "The selected microphone is not available to the browser. Choose another microphone in Settings > Capture before starting the recording.",
+        "The selected microphone is not available to the browser. Choose another microphone in Settings > Recording before starting the recording.",
     } satisfies Partial<PickSourceError>);
 
     expect(mediaDevices.getUserMedia).not.toHaveBeenCalled();
