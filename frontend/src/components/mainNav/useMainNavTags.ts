@@ -3,6 +3,8 @@ import { DragEndEvent, useDroppable } from "@dnd-kit/core";
 
 import { createTag, deleteTag, getTags, updateTag } from "@/lib/api";
 import { DEFAULT_TAG_COLORS } from "@/lib/constants";
+import { useNotificationStore } from "@/lib/notificationStore";
+import { notifyRequestError } from "@/lib/notifyRequestError";
 import { useNavigationStore } from "@/lib/store";
 import { Tag } from "@/types";
 
@@ -113,13 +115,16 @@ export function useMainNavTags() {
         prev.map((t: Tag) => (t.id === tagId ? { ...t, color: colorKey } : t)),
       );
       window.dispatchEvent(new CustomEvent("tags-updated"));
-
-        } catch (error: unknown) {
-      console.error("Failed to update tag color:", error);
+    } catch (error: unknown) {
+      notifyRequestError(error, "Failed to change tag colour.");
     }
   };
 
-  const handleRenameTag = async (tagId: number, newName: string) => {
+  /** Resolves to whether the rename was saved; a refused one leaves the field open. */
+  const handleRenameTag = async (
+    tagId: number,
+    newName: string,
+  ): Promise<boolean> => {
     try {
       await updateTag(tagId, { name: newName });
       setTags((prev: Tag[]) =>
@@ -127,9 +132,10 @@ export function useMainNavTags() {
       );
       setEditingTagId(null);
       window.dispatchEvent(new CustomEvent("tags-updated"));
-
-        } catch (error: unknown) {
-      console.error("Failed to rename tag:", error);
+      return true;
+    } catch (error: unknown) {
+      notifyRequestError(error, "Failed to rename tag.");
+      return false;
     }
   };
 
@@ -147,9 +153,8 @@ export function useMainNavTags() {
           await deleteTag(tag.id);
           setTags((prev: Tag[]) => prev.filter((t: Tag) => t.id !== tag.id));
           window.dispatchEvent(new CustomEvent("tags-updated"));
-
-                } catch (error: unknown) {
-          console.error("Failed to delete tag:", error);
+        } catch (error: unknown) {
+          notifyRequestError(error, "Failed to delete tag.");
         }
       },
     });
@@ -168,9 +173,8 @@ export function useMainNavTags() {
       setNewTagName("");
       setIsAddingTag(false);
       window.dispatchEvent(new CustomEvent("tags-updated"));
-
-        } catch (error: unknown) {
-      console.error("Failed to create tag:", error);
+    } catch (error: unknown) {
+      notifyRequestError(error, "Failed to create tag.");
     }
   };
 
@@ -194,9 +198,8 @@ export function useMainNavTags() {
       }
 
       window.dispatchEvent(new CustomEvent("tags-updated"));
-
-        } catch (error: unknown) {
-      console.error("Failed to create tag:", error);
+    } catch (error: unknown) {
+      notifyRequestError(error, "Failed to create tag.");
     }
   };
 
@@ -236,7 +239,11 @@ export function useMainNavTags() {
       };
 
       if (isDescendant(activeTagId, overTagId)) {
-        console.warn("Cannot move parent into child - cycle detected");
+        // The API refuses this move with the same message.
+        useNotificationStore.getState().addNotification({
+          type: "error",
+          message: "Tag cannot be nested under one of its own sub-tags",
+        });
         return;
       }
 
@@ -267,9 +274,8 @@ export function useMainNavTags() {
       if (newParentId && !expandedTagIds.has(newParentId)) {
         toggleExpandedTag(newParentId);
       }
-
-        } catch (e: unknown) {
-      console.error("Failed to move tag", e);
+    } catch (e: unknown) {
+      notifyRequestError(e, "Failed to move tag.");
       // Revert optimistic update
       setTags((prev) =>
         prev.map((t) =>
@@ -293,9 +299,8 @@ export function useMainNavTags() {
         ),
       );
       window.dispatchEvent(new CustomEvent("tags-updated"));
-
-        } catch (e: unknown) {
-      console.error(e);
+    } catch (e: unknown) {
+      notifyRequestError(e, "Failed to move tag.");
     }
     setContextMenu(null);
   };
@@ -321,9 +326,8 @@ export function useMainNavTags() {
             ),
           );
           window.dispatchEvent(new CustomEvent("tags-updated"));
-
-                } catch (e: unknown) {
-          console.error(e);
+        } catch (e: unknown) {
+          notifyRequestError(e, "Failed to move tag.");
         }
       }
     }

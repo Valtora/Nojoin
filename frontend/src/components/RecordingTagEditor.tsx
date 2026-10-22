@@ -5,6 +5,7 @@ import { RecordingId, Tag } from '@/types';
 import { X, Plus } from 'lucide-react';
 import { removeTagFromRecording } from '@/lib/api';
 import { getColorByKey } from '@/lib/constants';
+import { notifyRequestError } from '@/lib/notifyRequestError';
 import AddTagModal from './AddTagModal';
 
 interface RecordingTagEditorProps {
@@ -22,9 +23,8 @@ export default function RecordingTagEditor({ recordingId, tags, onTagsUpdated, c
       await removeTagFromRecording(recordingId, tagName);
       window.dispatchEvent(new CustomEvent('tags-updated'));
       if (onTagsUpdated) onTagsUpdated();
-
-        } catch (error: unknown) {
-      console.error('Failed to remove tag:', error);
+    } catch (error: unknown) {
+      notifyRequestError(error, 'Failed to remove tag.');
     }
   };
 

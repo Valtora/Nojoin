@@ -14,6 +14,7 @@ import {
   batchRemoveTagFromRecordings,
 } from "@/lib/api";
 import { useNotificationStore } from "@/lib/notificationStore";
+import { notifyRequestError } from "@/lib/notifyRequestError";
 
 interface BatchActionBarProps {
   onActionComplete: () => void;
@@ -151,10 +152,8 @@ export default function BatchActionBar({
       window.dispatchEvent(new CustomEvent("tags-updated"));
       onActionComplete();
       clearSelection();
-
-        } catch (error: unknown) {
-      console.error("Batch tag action failed:", error);
-      addNotification({ type: "error", message: "Failed to update tags" });
+    } catch (error: unknown) {
+      notifyRequestError(error, "Failed to update tags.");
     }
   };
 
