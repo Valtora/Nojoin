@@ -4,6 +4,7 @@ import { LogIn, Square } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 
 import { getCurrentUser, login } from "@/lib/api";
+import { leaveForSignIn } from "@/lib/api/client";
 import { useCapture } from "@/lib/capture/CaptureProvider";
 import { getErrorMessage } from "@/lib/errors";
 import { useSessionStore } from "@/lib/session";
@@ -42,13 +43,33 @@ function situation(status: string) {
   return "Your sign-in ended while this meeting was recording. Nojoin is still recording, and the audio waits in this browser until you sign in.";
 }
 
+/** The dialog's words for what is waiting: a capture's audio, or notes alone. */
+const CAPTURE_WORDING = {
+  title: "Sign in to keep uploading",
+  owned: "The recording belongs to",
+  carriesOn: "it carries on",
+  blocked: "uploads cannot continue",
+};
+const NOTES_WORDING = {
+  title: "Sign in to save your notes",
+  owned: "The notes belong to",
+  carriesOn: "they save",
+  blocked: "your notes cannot save",
+};
+const NOTES_SITUATION =
+  "Your sign-in ended with notes on this page not saved yet. They stay on this page and save once you sign in.";
+const NOTES_LEAVING =
+  "Going to the sign-in page leaves this page, and your browser asks first where it supports that. Signing in there as a different account removes the notes kept in this browser.";
+
 /**
- * Asks for the password in place when the session ends during a capture.
+ * Asks for the password in place when the session ends during a capture, or
+ * while the page holds notes not saved yet.
  *
  * Going to the sign-in page would reload the tab and end the capture, so the
- * capture holds sign-in in place and this dialog stands in for that page. It
- * signs in through the same session endpoint, and only as the account that
- * started the recording, since the recording's uploads belong to it.
+ * capture holds sign-in in place and this dialog stands in for that page, and
+ * notes not saved yet hold it the same way. It signs in through the same
+ * session endpoint, and only as the account that held it, since the
+ * recording's uploads and the notes belong to it.
  *
  * The dialog covers the page's own capture controls, so it offers Stop itself.
  * Stopping needs no session until the upload: the recorder stops and the
@@ -60,6 +81,9 @@ export default function SessionSignInDialog() {
   const open = useSessionStore((state) => state.signInRequired && state.heldInPlace);
   const knownUsername = useSessionStore((state) => state.username);
   const otherUsername = useSessionStore((state) => state.otherUsername);
+  const heldBy = useSessionStore((state) => state.heldBy);
+  const forCapture = heldBy.includes("capture");
+  const wording = forCapture ? CAPTURE_WORDING : NOTES_WORDING;
   const { runtimeActive, status, stop, uploadQueue } = useCapture();
   const [typedUsername, setTypedUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -109,19 +133,30 @@ export default function SessionSignInDialog() {
     stop().catch(() => {});
   };
 
+  // The reload goes through the leave warning, which the notes not saved yet
+  // keep armed; cancelled, the page and this dialog stay as they are.
+  const handleLeave = () => {
+    leaveForSignIn();
+  };
+
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
     setError(null);
     setSigningIn(true);
     try {
       const response = await login(username, password);
-      // A good sign-in marks the session back, which closes this dialog and
-      // lets every waiting upload go. A reset password does not: uploads stay
-      // refused until a new one is chosen.
+      // A reset password does not count: uploads stay refused until a new one
+      // is chosen.
       if (response.force_password_change) {
         setPasswordReset(true);
         setPassword("");
+        return;
       }
+      // The sign-in counts once the server names the account by id, so a new
+      // account under the old one's name never takes its place. That marks
+      // the session back, which closes this dialog and lets everything
+      // waiting go.
+      await getCurrentUser();
     } catch (signInError: unknown) {
       setError(getErrorMessage(signInError, "Sign-in failed. Please try again."));
     } finally {
@@ -132,14 +167,21 @@ export default function SessionSignInDialog() {
   return (
     <Modal
       open={open}
-      // Everything waiting on the session waits on this dialog, so it has no
-      // way out other than signing in.
+      // Everything waiting on the session waits on this dialog, so it can't be
+      // dismissed. Notes alone may leave for the sign-in page (an account
+      // renamed meanwhile can't sign in here); a capture can't, as the reload
+      // would end it.
       onClose={() => {}}
       dismissible={false}
       hideCloseButton
-      title="Sign in to keep uploading"
+      title={wording.title}
       footer={
         <>
+          {forCapture ? null : (
+            <Button variant="secondary" onClick={handleLeave} disabled={signingIn}>
+              Go to the sign-in page
+            </Button>
+          )}
           {canStop ? (
             <Button
               variant="secondary"
@@ -164,7 +206,19 @@ export default function SessionSignInDialog() {
       }
     >
       <form id={FORM_ID} className="space-y-4" onSubmit={handleSubmit}>
-        <p className="text-sm leading-6 text-contrast-helper">{situation(status)}</p>
+        <p className="text-sm leading-6 text-contrast-helper">
+          {forCapture ? situation(status) : NOTES_SITUATION}
+        </p>
+
+        {forCapture ? null : (
+          <p className="text-sm leading-6 text-contrast-helper">{NOTES_LEAVING}</p>
+        )}
+
+        {forCapture && heldBy.includes("notes") ? (
+          <p className="text-sm leading-6 text-contrast-helper">
+            Notes not saved yet wait too, and save once you sign in.
+          </p>
+        ) : null}
 
         {uploadQueue.seconds >= 1 ? (
           <p className="text-sm font-medium text-foreground" role="status">
@@ -174,16 +228,16 @@ export default function SessionSignInDialog() {
 
         {otherUsername && knownUsername ? (
           <p className="rounded-lg border border-status-warning-border bg-status-warning-bg px-3 py-2 text-sm text-status-warning-fg">
-            This browser is now signed in as {otherUsername}. The recording belongs to{" "}
-            {knownUsername}, so it carries on only once {knownUsername} signs in again.
+            This browser is now signed in as {otherUsername}. {wording.owned}{" "}
+            {knownUsername}, so {wording.carriesOn} only once {knownUsername} signs in again.
           </p>
         ) : null}
 
         {passwordReset ? (
           <p className="rounded-lg border border-status-warning-border bg-status-warning-bg px-3 py-2 text-sm text-status-warning-fg">
-            Your password was reset, so uploads cannot continue until you choose a new
-            one. Open Nojoin in another tab and choose a new password there, then sign
-            in again with it. This tab carries on meanwhile.
+            Your password was reset, so {wording.blocked} until you choose a new one.
+            Open Nojoin in another tab and choose a new password there, then sign in
+            again with it. This tab carries on meanwhile.
           </p>
         ) : null}
 
@@ -198,7 +252,7 @@ export default function SessionSignInDialog() {
           onChange={(event) => setTypedUsername(event.target.value)}
           hint={
             knownUsername !== null
-              ? "The recording belongs to this account, so sign in as it."
+              ? `${wording.owned} this account, so sign in as it.`
               : undefined
           }
         />

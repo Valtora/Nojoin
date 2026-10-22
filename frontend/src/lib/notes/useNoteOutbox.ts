@@ -4,12 +4,8 @@ import { useEffect, useRef, useSyncExternalStore } from "react";
 
 import type { Recording, RecordingId } from "@/types";
 
-import {
-  EMPTY_DRAFT,
-  noteOutboxFor,
-  type NoteOutbox,
-  type OutboxSnapshot,
-} from "./noteOutbox";
+import { EMPTY_DRAFT, type NoteOutbox, type OutboxSnapshot } from "./noteOutbox";
+import { noteOutboxFor } from "./noteOutboxes";
 import { useTimelineNotes } from "./useTimelineNotes";
 
 const EMPTY_SNAPSHOT: OutboxSnapshot = {

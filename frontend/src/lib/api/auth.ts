@@ -1,6 +1,17 @@
+import { clearStoredNotes, storedNotesSignedIn } from "@/lib/notes/noteStore";
 import { noteSignedIn } from "@/lib/session";
 import type { User } from "@/types";
 import api from "./client";
+
+/**
+ * Records who the browser is signed in as. Once the account's id is known,
+ * notes kept in this browser for any other account are removed, so they are
+ * never shown or sent as this one (`storedNotesSignedIn`).
+ */
+const signedInAs = (user: { username: string; force_password_change: boolean; id?: number }) => {
+  noteSignedIn(user);
+  void storedNotesSignedIn(user.id);
+};
 
 export const login = async (
   username: string,
@@ -23,7 +34,7 @@ export const login = async (
       "Content-Type": "multipart/form-data",
     },
   });
-  noteSignedIn(response.data);
+  signedInAs(response.data);
   return response.data;
 };
 
@@ -34,6 +45,8 @@ export const logout = async (): Promise<void> => {
     } catch (error: unknown) {
     console.error("Logout failed:", error);
   } finally {
+    // Notes not saved yet leave the browser with the session.
+    await clearStoredNotes();
     if (typeof window !== "undefined") {
       // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- a full reload is required: this runs outside React (no router), and the reload clears the signed-in session's in-memory client state
       window.location.href = "/login";
@@ -43,6 +56,6 @@ export const logout = async (): Promise<void> => {
 
 export const getCurrentUser = async (): Promise<User> => {
   const response = await api.get<User>("/users/me");
-  noteSignedIn(response.data);
+  signedInAs(response.data);
   return response.data;
 };

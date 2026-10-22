@@ -28,9 +28,10 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
 
             } catch (e: unknown) {
         currentUser = null;
-        // A running capture keeps the page through a refused session, and the
-        // capture's sign-in dialog asks for the password instead. Sending the
-        // router to /login would unmount the capture with the dashboard.
+        // A running capture, or notes not saved yet, keep the page through a
+        // refused session, and the sign-in dialog asks for the password
+        // instead. Sending the router to /login would unmount the capture
+        // with the dashboard.
         if (isSessionEndedError(e) && useSessionStore.getState().heldInPlace) {
           return;
         }

@@ -391,7 +391,7 @@ export default function RecordingStatusDisplay({
                 footer={
                   <LiveNoteComposer
                     readAudioNow={readAudioNow}
-                    onSubmit={outbox.submit}
+                    onSubmit={(note) => outbox.submit(note, { clearDraft: true })}
                     draft={outboxState.draft}
                     onDraftChange={outbox.setDraft}
                     notice={outboxState.notice}

@@ -6,94 +6,24 @@ import {
   resetSessionForTests,
   useSessionStore,
 } from "@/lib/session";
-import type { TimelineNote, TimelineNoteCreate } from "@/types";
+import {
+  coded,
+  createTimelineNote,
+  deleteTimelineNote,
+  NO_ANSWER,
+  server,
+} from "@/test/fakeNotesServer";
+import type { TimelineNote } from "@/types";
 
 import { NOTE_BODY_MAX_CHARS } from "./headNoteSync";
-import {
-  EMPTY_DRAFT,
-  forgetNoteOutboxes,
-  inlineNotes,
-  noteFromDraft,
-  NoteOutbox,
-  noteOutboxFor,
-  SLOW_SAVE_MS,
-} from "./noteOutbox";
+import { inlineNotes, noteFromDraft, NoteOutbox, SLOW_SAVE_MS } from "./noteOutbox";
+import { forgetNoteOutboxes } from "./noteOutboxes";
 
 const RECORDING = "rec-1";
 
-/**
- * A fake of the notes routes as the outbox meets them: a create under a known
- * id returns the note it made (200) rather than a second one; a delete leaves
- * a tombstone holding its token, and a later create of that id is refused by
- * it (410), saying whether the delete was this writer's. `loseNextAnswer`
- * commits a write and then throws as a dropped connection does; each of
- * `failures` refuses one request before it runs.
- */
-const server = {
-  notes: new Map<string, TimelineNote>(),
-  tombstones: new Map<string, string | undefined>(),
-  creates: [] as TimelineNoteCreate[],
-  loseNextAnswer: false,
-  failures: [] as unknown[],
-  /** Another device deletes a note it can see. */
-  deleteElsewhere(id: string) {
-    this.notes.delete(id);
-    this.tombstones.set(id, "another-device");
-  },
-};
-
-const NO_ANSWER = { isAxiosError: true, message: "Network Error" };
-const coded = (status: number, code: string) => ({
-  isAxiosError: true,
-  response: { status, data: { detail: { code, message: code } } },
-});
-
-const takeFailure = () => server.failures.shift() ?? null;
-
-const createTimelineNote = vi.fn(async (_recording: string, payload: TimelineNoteCreate) => {
-  server.creates.push(payload);
-  const failure = takeFailure();
-  if (failure) throw failure;
-  const id = payload.id!;
-  if (server.tombstones.has(id)) {
-    const yours = server.tombstones.get(id) === payload.write_token;
-    throw coded(410, yours ? "note_deleted_by_you" : "note_deleted_elsewhere");
-  }
-  const existing = server.notes.get(id);
-  const note: TimelineNote = existing ?? {
-    id,
-    recording_id: RECORDING,
-    kind: payload.kind,
-    body: payload.body,
-    anchor_ms: payload.anchor_ms ?? null,
-    revision: 1,
-    last_write_token: payload.write_token ?? null,
-    created_at: "2026-10-21T10:00:00",
-    updated_at: "2026-10-21T10:00:00",
-  };
-  server.notes.set(id, note);
-  if (server.loseNextAnswer) {
-    server.loseNextAnswer = false;
-    throw NO_ANSWER;
-  }
-  return note;
-});
-
-const deleteTimelineNote = vi.fn<
-  (recording: string, id: string, conditions?: { writeToken?: string }) => Promise<void>
->(async (_recording, id, conditions) => {
-  const failure = takeFailure();
-  if (failure) throw failure;
-  server.notes.delete(id);
-  server.tombstones.set(id, conditions?.writeToken);
-});
-
 vi.mock("@/lib/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api")>()),
-  createTimelineNote: (recording: string, payload: TimelineNoteCreate) =>
-    createTimelineNote(recording, payload),
-  deleteTimelineNote: (recording: string, id: string, conditions?: { writeToken?: string }) =>
-    deleteTimelineNote(recording, id, conditions),
+  ...(await import("@/test/fakeNotesServer")).fakeNotesApi,
 }));
 
 const flush = () => vi.waitFor(() => Promise.resolve());
@@ -116,6 +46,31 @@ describe("NoteOutbox", () => {
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it("keys a restored note's line by its id before and after it saves, so the line is not remounted", async () => {
+    const outbox = new NoteOutbox(RECORDING);
+    outbox.restore({
+      notes: [
+        {
+          id: "n-1",
+          writeToken: "t-1",
+          kind: "point",
+          body: "Restored",
+          anchorMs: 10,
+          createdAt: "2026-10-22T10:00:00Z",
+        },
+      ],
+      draft: null,
+      discards: [],
+    });
+    const before = inlineNotes([], outbox.getSnapshot()).map((note) => note.key);
+    await vi.waitFor(() => expect(outbox.getSnapshot().entries).toHaveLength(0));
+    const after = inlineNotes([], outbox.getSnapshot()).map((note) => note.key);
+
+    // A changed key would remount the line, and focus on its Retry or Discard would be lost.
+    expect(before).toEqual(["n-1"]);
+    expect(after).toEqual(["n-1"]);
   });
 
   it("keeps a note whose create failed, with its anchor, and retries the very same create", async () => {
@@ -410,6 +365,75 @@ describe("NoteOutbox: notes that can't be made again", () => {
     expect(inlineNotes([...server.notes.values()], outbox.getSnapshot())).toEqual([]);
   });
 
+  it("sends nothing under a new id once an earlier send saved the note while the kept copy was checked", async () => {
+    vi.useFakeTimers();
+    let answer!: () => void;
+    // The first create commits, but its answer is held back.
+    createTimelineNote.mockImplementationOnce(async (_recording, payload) => {
+      server.creates.push(payload);
+      const note: TimelineNote = {
+        id: payload.id!,
+        recording_id: RECORDING,
+        kind: payload.kind,
+        body: payload.body,
+        anchor_ms: payload.anchor_ms ?? null,
+        revision: 1,
+        created_at: "2026-10-22T10:00:00",
+        updated_at: "2026-10-22T10:00:00",
+      };
+      server.notes.set(note.id, note);
+      await new Promise<void>((resolve) => {
+        answer = resolve;
+      });
+      return note;
+    });
+    const outbox = new NoteOutbox(RECORDING);
+    let checked!: (safe: boolean) => void;
+    outbox.setWriteBarrier(
+      () =>
+        new Promise<boolean>((resolve) => {
+          checked = resolve;
+        }),
+    );
+    outbox.submit({ kind: "point", body: "Once", anchorMs: 3_000 });
+    await vi.advanceTimersByTimeAsync(SLOW_SAVE_MS);
+    const [waiting] = outbox.getSnapshot().entries;
+    expect(waiting.status).toBe("failed");
+
+    // Retry is refused for its id: the note takes a new one, and waits on the kept copy.
+    server.failures.push(coded(409, "note_id_in_use"));
+    outbox.retry(waiting.key);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(outbox.getSnapshot().entries[0].id).not.toBe(waiting.id);
+
+    answer(); // The first create's 201 arrives: the note is saved.
+    await vi.advanceTimersByTimeAsync(0);
+    checked(true);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(outbox.getSnapshot().entries).toEqual([]);
+    expect(server.notes.size).toBe(1);
+  });
+
+  it("offers Retry for a note held up on the kept copy, as for one held up on the network", async () => {
+    vi.useFakeTimers();
+    const outbox = new NoteOutbox(RECORDING);
+    let barrier = () => new Promise<boolean>(() => undefined);
+    outbox.setWriteBarrier(() => barrier());
+    server.failures.push(coded(409, "note_id_in_use"));
+    outbox.submit({ kind: "tail", body: "Wrap-up", anchorMs: null });
+
+    await vi.advanceTimersByTimeAsync(SLOW_SAVE_MS);
+    const [held] = outbox.getSnapshot().entries;
+    expect(held).toMatchObject({ status: "failed", error: "No answer from Nojoin yet." });
+
+    barrier = async () => true;
+    outbox.retry(held.key);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(outbox.getSnapshot().entries).toEqual([]);
+    expect(server.notes.size).toBe(1);
+  });
+
   it("names the note a failure is about, for the note box to say", async () => {
     const outbox = new NoteOutbox(RECORDING);
     server.failures.push(NO_ANSWER);
@@ -529,42 +553,6 @@ describe("NoteOutbox: a sign-in that ends during a capture", () => {
       status: "failed",
       error: "Not saved: Nojoin refused this note.",
     });
-  });
-});
-
-describe("one outbox per recording", () => {
-  beforeEach(() => {
-    forgetNoteOutboxes();
-    server.failures = [];
-  });
-
-  it("hands every view of a recording the same outbox, and another recording its own", () => {
-    expect(noteOutboxFor("rec-a")).toBe(noteOutboxFor("rec-a"));
-    expect(noteOutboxFor("rec-b")).not.toBe(noteOutboxFor("rec-a"));
-  });
-
-  it("asks before the page closes while a note or the box's text is unsaved", async () => {
-    const leave = () => {
-      const event = new Event("beforeunload", { cancelable: true });
-      window.dispatchEvent(event);
-      return event.defaultPrevented;
-    };
-    const outbox = noteOutboxFor("rec-a");
-    expect(leave()).toBe(false);
-
-    outbox.setDraft({ ...EMPTY_DRAFT, text: "Half a thought" });
-    expect(outbox.hasUnsaved()).toBe(true);
-    expect(leave()).toBe(true);
-    outbox.setDraft(EMPTY_DRAFT);
-    expect(leave()).toBe(false);
-
-    server.failures.push(NO_ANSWER);
-    outbox.submit({ kind: "point", body: "Unsaved", anchorMs: 1 });
-    await settle();
-    expect(leave()).toBe(true);
-    outbox.retry(outbox.getSnapshot().entries[0].key);
-    await settle();
-    expect(leave()).toBe(false);
   });
 });
 
