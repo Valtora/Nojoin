@@ -75,7 +75,7 @@ If the notes change on another device while you are editing them, nothing is sav
 
 The **Live Transcript** panel shows each sentence a few seconds after it is spoken. It follows the newest line until you scroll up to read back; **Jump to latest** resumes following. Its lines are read-only, and the full transcript replaces them once processing finishes.
 
-Live lines carry no speaker names, because speakers are identified when the recording is processed. A line is labelled **Microphone** or **Shared audio** when Nojoin can tell which source carried it. These labels name the audio source, not the person: in a room with no shared tab audio, everyone arrives on the microphone ([CAPTURE.md](CAPTURE.md#what-nojoin-captures)).
+Live lines carry no speaker names, because speakers are identified when the recording is processed. If your administrator has turned on live speaker labels, lines show **Speaker 1**, **Speaker 2** and so on where the speaker changes. A label in italics can still change as Nojoin hears more of the meeting; once it is upright, it stays. A line with no clear speaker shows none. These numbers are only for following the conversation: the processed transcript identifies speakers afresh and may number them differently. A line is labelled **Microphone** or **Shared audio** when Nojoin can tell which source carried it. These labels name the audio source, not the person: in a room with no shared tab audio, everyone arrives on the microphone ([CAPTURE.md](CAPTURE.md#what-nojoin-captures)).
 
 ### Live Notes
 
