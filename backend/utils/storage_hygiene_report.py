@@ -28,6 +28,7 @@ RULE_WORKING_DIRECTORY = "working_directory"
 RULE_SPLIT_BRAIN = "split_brain"
 RULE_BULK = "bulk"
 RULE_RESTORE_LOCK = "restore_lock"
+RULE_CLOCK = "clock"
 
 # What a deleting run did with a flagged file.
 DELETED = "deleted"

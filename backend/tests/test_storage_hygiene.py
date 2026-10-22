@@ -28,6 +28,7 @@ from backend.tests.storage_hygiene_harness import (
     add_referenced_documents,
     make_layout,
     postgres_engine,
+    read_only_after_the_clock_check,
     rules,
     run,
     set_age,
@@ -180,10 +181,13 @@ def test_the_report_names_each_flagged_file_and_each_removal_is_logged(
 
 @pytest.mark.skipif(os.geteuid() == 0, reason="root ignores directory permissions")
 def test_a_failed_unlink_is_counted_and_the_rest_still_go(
-    layout: Layout, db: Engine, caplog: pytest.LogCaptureFixture
+    layout: Layout,
+    db: Engine,
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     library = _mixed_library(layout, db)
-    layout.documents.chmod(0o500)
+    read_only_after_the_clock_check(monkeypatch, layout.documents)
     try:
         with caplog.at_level(logging.WARNING, logger=hygiene.__name__):
             report = run(db, delete=True, bulk=True)

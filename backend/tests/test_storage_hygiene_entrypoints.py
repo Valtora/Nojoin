@@ -28,6 +28,7 @@ from backend.tests.storage_hygiene_harness import (
     add_referenced_audio,
     add_referenced_documents,
     make_layout,
+    read_only_after_the_clock_check,
     sqlite_engine,
     uuid_name,
     write_file,
@@ -319,7 +320,7 @@ def test_no_flag_removes_most_of_a_directory(
 def test_the_cli_exits_3_when_a_file_cannot_be_removed(
     layout: Layout, db: Engine, orphan: Path, monkeypatch: pytest.MonkeyPatch, capsys
 ) -> None:
-    layout.recordings.chmod(0o500)
+    read_only_after_the_clock_check(monkeypatch, layout.recordings)
     try:
         code, out = _cli(db, monkeypatch, capsys, "--delete")
     finally:
@@ -387,7 +388,8 @@ def test_the_daily_cleanup_runs_storage_hygiene_in_the_configured_mode(
         system_tasks.cleanup_temp_recordings.run()
 
     assert orphan.exists() is not removed
-    assert lock.reads == (2 if removed else 1)
+    # A deleting run reads it again before the clock probe and the first unlink.
+    assert lock.reads == (3 if removed else 1)
     summary = _summaries(caplog)
     assert len(summary) == 1
     assert ("(delete)" if removed else "(report only)") in summary[0]
