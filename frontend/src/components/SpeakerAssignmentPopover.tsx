@@ -27,7 +27,7 @@ interface RecordingSpeakerOption {
 }
 
 interface SpeakerAssignmentPopoverProps {
-  availableSpeakers: RecordingSpeaker[];
+  availableSpeakers: readonly RecordingSpeaker[];
   globalSpeakers: GlobalSpeaker[];
   currentSpeakerLabel: string;
   onSelect: (assignment: TranscriptSpeakerAssignment) => void;

@@ -16,8 +16,36 @@ export interface TranscriptGroup {
   items: IndexedTranscriptSegment[];
 }
 
+/**
+ * Separates the line keys the view joins into one string per group (the
+ * lines playback is in, the lines revised lately), so a group compares them
+ * by value. A key never holds it.
+ */
+export const LINE_KEY_SEPARATOR = "\n";
+
 const areSetsEqual = (a: Set<string>, b: Set<string>): boolean =>
   a.size === b.size && [...a].every((value) => b.has(value));
+
+/**
+ * Whether two groups hold the same lines, as the same segment objects in the
+ * same places. A group's span and speakers come from its lines, so they match
+ * too. Grouping runs again whenever any line changes; a group this leaves
+ * alone need not redraw.
+ */
+export function sameGroup(left: TranscriptGroup, right: TranscriptGroup): boolean {
+  return (
+    left === right ||
+    (left.items.length === right.items.length &&
+      left.items.every((item, at) => {
+        const other = right.items[at];
+        return (
+          item.segment === other.segment &&
+          item.index === other.index &&
+          item.segmentId === other.segmentId
+        );
+      }))
+  );
+}
 
 /**
  * Annotate segments with their original index and stable key, for

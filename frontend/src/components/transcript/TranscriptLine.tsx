@@ -1,6 +1,6 @@
 "use client";
 
-import type { RefObject } from "react";
+import { memo, type RefObject } from "react";
 
 import { getColorByKey } from "@/lib/constants";
 import { segmentEndMs, segmentStartMs } from "@/lib/notes/placement";
@@ -13,21 +13,28 @@ import {
 
 import SpeakerAssignmentPopover from "../SpeakerAssignmentPopover";
 
-import type { TranscriptEditing } from "./_hooks/useTranscriptEditing";
+import type {
+  TranscriptLineActions,
+  TranscriptOpenEditor,
+} from "./_hooks/useTranscriptEditing";
 import type { TextDecoration } from "./textDecorations";
-import { isRecentlyUpdatedSegment } from "./transcriptDisplay";
 import type { IndexedTranscriptSegment } from "./transcriptGroups";
 import TranscriptLineBadges from "./TranscriptLineBadges";
 import TranscriptLineText from "./TranscriptLineText";
 
-interface TranscriptLineProps {
-  item: IndexedTranscriptSegment;
-  currentTime: number;
+/**
+ * The line, its place among all the lines and its key, as separate props:
+ * grouping wraps them anew whenever any line changes, and a line whose own
+ * segment object is unchanged need not redraw.
+ */
+type TranscriptLineProps = Pick<IndexedTranscriptSegment, "segment" | "index" | "segmentId"> & {
+  /** Playback is inside this line. */
+  isActive: boolean;
   activeSegmentRef: RefObject<HTMLDivElement | null>;
   readOnly: boolean;
   allowProvisionalEdits: boolean;
   speakerMap: Record<string, string>;
-  speakers: RecordingSpeaker[];
+  speakers: readonly RecordingSpeaker[];
   globalSpeakers: GlobalSpeaker[];
   speakerColors: Record<string, string>;
   onUpdateSegmentSpeaker: (
@@ -35,18 +42,34 @@ interface TranscriptLineProps {
     assignment: TranscriptSpeakerAssignment,
   ) => void | Promise<void>;
   hasPendingRemoteUpdate: boolean;
+  /** Revised in the last 15 s, as of the view's last render. */
+  isRecentlyUpdated: boolean;
   decorations: readonly TextDecoration[];
-  editing: TranscriptEditing;
-}
+  /** This line's speaker is being renamed. */
+  isEditingSpeaker: boolean;
+  /** This line's text is open in the editor. */
+  isEditingText: boolean;
+  /** Where this line's speaker popover sits, while it is open. */
+  popoverAnchor: HTMLElement | null;
+  actions: TranscriptLineActions;
+  /** The open editor, for a line that shows it; null on every other line. */
+  editor: TranscriptOpenEditor | null;
+};
 
 /**
  * One line of the finished transcript: its speaker (click to reassign,
  * double-click to rename), its pills, and its text in a bubble that turns into
  * an editor on click.
+ *
+ * Memoised: a playback tick or a keystroke in the find bar redraws only the
+ * lines whose own props changed, so every prop is either a value or keeps its
+ * identity until it means something new.
  */
-export default function TranscriptLine({
-  item,
-  currentTime,
+function TranscriptLine({
+  segment,
+  index,
+  segmentId,
+  isActive,
   activeSegmentRef,
   readOnly,
   allowProvisionalEdits,
@@ -56,26 +79,17 @@ export default function TranscriptLine({
   speakerColors,
   onUpdateSegmentSpeaker,
   hasPendingRemoteUpdate,
+  isRecentlyUpdated,
   decorations,
-  editing,
+  isEditingSpeaker,
+  isEditingText,
+  popoverAnchor,
+  actions,
+  editor,
 }: TranscriptLineProps) {
-  const { segment, segmentId } = item;
-  const {
-    editingSpeaker,
-    editingSegmentSpeakerId,
-    editingTextId,
-    activePopover,
-    editValue,
-    setEditValue,
-  } = editing;
-  const isActive = currentTime >= segment.start && currentTime < segment.end;
   const isProvisional = segment.provisional === true;
   const isSegmentReadOnly = readOnly || (isProvisional && !allowProvisionalEdits);
   const speakerName = speakerMap[segment.speaker] || segment.speaker;
-  const isEditingSpeaker = editingSpeaker === segment.speaker;
-  const isEditingSegmentSpeaker = editingSegmentSpeakerId === segmentId;
-  const isEditingText = editingTextId === segmentId;
-  const isRecentlyUpdated = isRecentlyUpdatedSegment(segment);
   const speakerColor = getColorByKey(speakerColors[segment.speaker] || "gray");
   const bubbleColor = isActive
     ? "border-2 border-status-success-border bg-status-success-bg"
@@ -85,35 +99,24 @@ export default function TranscriptLine({
     <div
       ref={isActive ? activeSegmentRef : null}
       data-segment-id={segmentId}
-      data-order-index={item.index}
+      data-order-index={index}
       className="flex flex-col mb-3 last:mb-0"
     >
       {/* Speaker Label */}
       <div className="flex flex-wrap items-baseline gap-2 mb-1">
-        {isEditingSpeaker ? (
+        {isEditingSpeaker && editor ? (
           <input
             autoFocus
             type="text"
-            value={editValue}
-            onChange={(e) => setEditValue(e.target.value)}
-            onBlur={editing.handleSpeakerRenameSubmit}
+            value={editor.value}
+            onChange={(e) => editor.setValue(e.target.value)}
+            onBlur={editor.handleSpeakerRenameSubmit}
             onKeyDown={(e) => {
-              if (e.key === "Enter") editing.handleSpeakerRenameSubmit();
-              if (e.key === "Escape") editing.cancelSpeakerRename();
+              if (e.key === "Enter") editor.handleSpeakerRenameSubmit();
+              if (e.key === "Escape") editor.cancelSpeakerRename();
             }}
             onClick={(e) => e.stopPropagation()}
             className="text-sm font-bold text-status-info-fg bg-surface-card border border-status-info-border rounded px-1 py-0.5 focus:outline-none focus:ring-2 focus:ring-status-info-border"
-          />
-        ) : isEditingSegmentSpeaker ? (
-          <input
-            autoFocus
-            type="text"
-            value={editValue}
-            onChange={(e) => setEditValue(e.target.value)}
-            onBlur={() => editing.handleSegmentSpeakerSubmit(segment)}
-            onKeyDown={(e) => editing.handleKeyDown(e, "segmentSpeaker", segment)}
-            onClick={(e) => e.stopPropagation()}
-            className="text-sm font-bold text-status-success-fg bg-surface-card border border-status-success-border rounded px-1 py-0.5 focus:outline-none focus:ring-2 focus:ring-status-success-border"
           />
         ) : (
           <div className="relative">
@@ -121,12 +124,12 @@ export default function TranscriptLine({
               onClick={(e) => {
                 e.stopPropagation();
                 if (isSegmentReadOnly) return;
-                editing.toggleSpeakerPopover(segmentId, e.currentTarget);
+                actions.toggleSpeakerPopover(segmentId, e.currentTarget);
               }}
               onDoubleClick={(e) => {
                 e.stopPropagation();
                 if (isSegmentReadOnly) return;
-                editing.startSpeakerRename(segment.speaker, speakerName);
+                actions.startSpeakerRename(segment.speaker, speakerName);
               }}
               disabled={isSegmentReadOnly}
               className={`text-base font-bold transition-colors text-left ${
@@ -145,18 +148,18 @@ export default function TranscriptLine({
               {speakerName}
             </button>
 
-            {activePopover?.segmentId === segmentId && !isSegmentReadOnly && (
+            {popoverAnchor && !isSegmentReadOnly && (
               <SpeakerAssignmentPopover
                 availableSpeakers={speakers}
                 globalSpeakers={globalSpeakers}
                 currentSpeakerLabel={segment.speaker}
                 speakerColors={speakerColors}
-                targetElement={activePopover.target}
+                targetElement={popoverAnchor}
                 onSelect={(assignment) => {
                   onUpdateSegmentSpeaker(segment, assignment);
-                  editing.closeSpeakerPopover();
+                  actions.closeSpeakerPopover();
                 }}
-                onClose={editing.closeSpeakerPopover}
+                onClose={actions.closeSpeakerPopover}
               />
             )}
           </div>
@@ -164,7 +167,7 @@ export default function TranscriptLine({
 
         <TranscriptLineBadges
           segment={segment}
-          showRevised={isRecentlyUpdated && !isEditingText && !isEditingSegmentSpeaker}
+          showRevised={isRecentlyUpdated && !isEditingText}
           hasPendingRemoteUpdate={hasPendingRemoteUpdate}
         />
       </div>
@@ -180,20 +183,20 @@ export default function TranscriptLine({
             : ""
         }`}
       >
-        {isEditingText ? (
+        {isEditingText && editor ? (
           <textarea
             autoFocus
-            value={editValue}
-            onChange={(e) => setEditValue(e.target.value)}
-            onBlur={() => editing.handleTextSubmit(segment)}
-            onKeyDown={(e) => editing.handleKeyDown(e, "text", segment)}
+            value={editor.value}
+            onChange={(e) => editor.setValue(e.target.value)}
+            onBlur={() => editor.handleTextSubmit(segment)}
+            onKeyDown={(e) => editor.handleKeyDown(e, segment)}
             className="w-full bg-transparent resize-none outline-none text-foreground leading-relaxed"
-            rows={Math.max(2, Math.ceil(editValue.length / 80))}
+            rows={Math.max(2, Math.ceil(editor.value.length / 80))}
           />
         ) : (
           <TranscriptLineText
             text={segment.text}
-            segmentKey={segmentId}
+            segmentId={segmentId}
             startMs={segmentStartMs(segment)}
             endMs={segmentEndMs(segment)}
             decorations={decorations}
@@ -202,7 +205,10 @@ export default function TranscriptLine({
                 ? ""
                 : "cursor-text hover:text-foreground"
             }`}
-            onClick={(e) => editing.handleTextClick(segment, segmentId, e)}
+            onClick={(e) => {
+              e.stopPropagation();
+              actions.startTextEdit(segment, segmentId);
+            }}
             title={isSegmentReadOnly ? undefined : "Click to edit text"}
           />
         )}
@@ -210,3 +216,5 @@ export default function TranscriptLine({
     </div>
   );
 }
+
+export default memo(TranscriptLine);

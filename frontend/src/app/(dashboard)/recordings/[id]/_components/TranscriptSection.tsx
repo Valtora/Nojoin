@@ -11,10 +11,14 @@ import {
   RecordingStatus,
   type GlobalSpeaker,
   type Recording,
+  type RecordingSpeaker,
   type TimelineNote,
   type TranscriptSegment,
   type TranscriptSpeakerAssignment,
 } from "@/types";
+
+// One empty list for every render, so the transcript's memoised lines hold.
+const NO_SPEAKERS: readonly RecordingSpeaker[] = Object.freeze([]);
 
 interface TranscriptSectionProps {
   active: boolean;
@@ -144,7 +148,7 @@ export default function TranscriptSection({
             onPause={onPause}
             onResume={onResume}
             speakerMap={speakerMap}
-            speakers={recording.speakers || []}
+            speakers={recording.speakers ?? NO_SPEAKERS}
             globalSpeakers={globalSpeakers}
             onRenameSpeaker={onRenameSpeaker}
             onUpdateSegmentSpeaker={onUpdateSegmentSpeaker}

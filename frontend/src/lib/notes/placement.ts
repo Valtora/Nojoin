@@ -32,6 +32,10 @@ export interface PlacementSegment {
   start_ms?: number | null;
   /** Seconds; read only when `start_ms` is absent. */
   start?: number | null;
+  /** Placement never reads the end; `segmentEndMs` does, for the views. */
+  end_ms?: number | null;
+  /** Seconds; read only when `end_ms` is absent. */
+  end?: number | null;
   text?: string | null;
 }
 
@@ -72,10 +76,7 @@ export const segmentStartMs = (segment: PlacementSegment): number => {
 };
 
 /** A line's end in ms: `end_ms`, else `end` in seconds, rounded as the start is. */
-export const segmentEndMs = (segment: {
-  end_ms?: number | null;
-  end?: number | null;
-}): number => {
+export const segmentEndMs = (segment: PlacementSegment): number => {
   if (segment.end_ms !== null && segment.end_ms !== undefined) {
     return Math.trunc(segment.end_ms);
   }

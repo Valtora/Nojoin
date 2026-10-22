@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import LiveTranscriptPanel from "@/components/LiveTranscriptPanel";
@@ -31,7 +31,7 @@ const renderLineText = (text: string, decorations: TextDecoration[]) =>
   render(
     <TranscriptLineText
       text={text}
-      segmentKey="utt-1"
+      segmentId="utt-1"
       startMs={0}
       endMs={1000}
       decorations={decorations}
@@ -82,17 +82,32 @@ describe("TranscriptLineText", () => {
     expect(pieces(line)).toEqual(["[alpha]", " beta ", "[*alpha]"]);
   });
 
-  it("renders overlapping decorations without repeating any text", () => {
+  it("draws overlapping decorations as one mark, without repeating any text", () => {
     const line = renderLineText("banana", [search(1, 4), search(3, 6)]);
 
     expect(line.textContent).toBe("banana");
-    expect(pieces(line)).toEqual(["b", "[an]", "[a]", "[na]"]);
+    expect(pieces(line)).toEqual(["b", "[anana]"]);
   });
 
-  it("styles the whole span of the current match where another overlaps it", () => {
+  it("styles the whole span of the current match where others overlap it", () => {
     const line = renderLineText("aaaa", [search(0, 2, true), search(1, 3), search(2, 4)]);
 
-    expect(pieces(line)).toEqual(["[*a]", "[*a]", "[a]", "[a]"]);
+    expect(pieces(line)).toEqual(["[*aa]", "[aa]"]);
+  });
+
+  it("keeps matches that only touch as separate marks", () => {
+    const line = renderLineText("aa", [search(0, 1), search(1, 2)]);
+
+    expect(pieces(line)).toEqual(["[a]", "[a]"]);
+  });
+
+  it("drops inverted and off-text decorations, and keeps a point at the end", () => {
+    const off = renderLineText("abcd", [search(3, 1), search(-2, -1), search(9, 12), search(-2, 0)]);
+    expect(pieces(off)).toEqual(["abcd"]);
+    cleanup();
+
+    const end = renderLineText("abcd", [search(4, 4), search(2, 9)]);
+    expect(pieces(end)).toEqual(["ab", "[cd]", "[]"]);
   });
 
   it("renders a zero-width decoration as an empty mark at its offset", () => {
@@ -107,8 +122,8 @@ describe("TranscriptLineText", () => {
       { start: 4, end: 6.75, text: "A line saved before ids.", speaker: "UNKNOWN" },
     ];
     const attributes = (container: HTMLElement) =>
-      Array.from(container.querySelectorAll<HTMLElement>("[data-segment-key]")).map((line) => [
-        line.dataset.segmentKey,
+      Array.from(container.querySelectorAll<HTMLElement>("p[data-segment-id]")).map((line) => [
+        line.dataset.segmentId,
         line.dataset.startMs,
         line.dataset.endMs,
       ]);
@@ -125,17 +140,24 @@ describe("TranscriptLineText", () => {
     expect(attributes(finished.container)).toEqual(liveAttributes);
   });
 
-  it("moves the current-match style to the next match in the finished view", () => {
-    renderFinished([{ id: "utt-1", start: 0, end: 2, text: "alpha beta alpha", speaker: "UNKNOWN" }]);
+  it("moves the current-match style forward one match per Enter in the finished view", () => {
+    renderFinished([
+      { id: "utt-1", start: 0, end: 2, text: "alpha beta alpha gamma alpha", speaker: "UNKNOWN" },
+    ]);
 
     fireEvent.click(screen.getByRole("button", { name: "Search" }));
     const find = screen.getByPlaceholderText("Find...");
     fireEvent.change(find, { target: { value: "alpha" } });
-    const line = document.querySelector<HTMLElement>('[data-segment-key="utt-1"]')!;
+    const line = document.querySelector<HTMLElement>('p[data-segment-id="utt-1"]')!;
+    const currentMarks = () =>
+      pieces(line)
+        .filter((piece) => piece?.startsWith("["))
+        .flatMap((piece, index) => (piece?.startsWith("[*") ? [index] : []));
 
     fireEvent.keyDown(find, { key: "Enter" });
-    expect(pieces(line)).toEqual(["[*alpha]", " beta ", "[alpha]"]);
+    const [first] = currentMarks();
     fireEvent.keyDown(find, { key: "Enter" });
-    expect(pieces(line)).toEqual(["[alpha]", " beta ", "[*alpha]"]);
+
+    expect(currentMarks()).toEqual([(first + 1) % 3]);
   });
 });
