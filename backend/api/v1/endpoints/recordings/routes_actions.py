@@ -20,6 +20,7 @@ from backend.utils.document_storage import (
     delete_document_files,
     recording_document_paths,
 )
+from backend.utils.recording_storage import delete_recording_artifacts_after_commit
 
 from .helpers import (
     _get_owned_calendar_event,
@@ -109,16 +110,14 @@ async def delete_recording(
     # delete (keep_imported_audio_task) and leave its new file behind.
     await db.refresh(recording, with_for_update=True)
 
+    # The paths are read under the lock, and the files go once the delete has
+    # committed, so a failed commit keeps them for the row it leaves.
+    artifacts = [(recording.id, recording.audio_path, recording.proxy_path)]
     document_paths = await recording_document_paths(db, [recording.id])
-    recordings_module.delete_recording_artifacts(
-        recording_id=recording.id,
-        audio_path=recording.audio_path,
-        proxy_path=recording.proxy_path,
-        logger=logger,
-    )
 
     await db.delete(recording)
     await db.commit()
+    delete_recording_artifacts_after_commit(artifacts, logger=logger)
     await delete_document_files(document_paths, logger=logger)
 
     return {"ok": True}
@@ -302,16 +301,13 @@ async def permanently_delete_recording(
         except Exception:  # noqa: BLE001 -- boundary: a revoke that cannot reach the broker must not block the delete
             pass
 
+    # Read under the lock and removed after the commit, as in delete_recording.
+    artifacts = [(recording.id, recording.audio_path, recording.proxy_path)]
     document_paths = await recording_document_paths(db, [recording.id])
-    recordings_module.delete_recording_artifacts(
-        recording_id=recording.id,
-        audio_path=recording.audio_path,
-        proxy_path=recording.proxy_path,
-        logger=logger,
-    )
 
     await db.delete(recording)
     await db.commit()
+    delete_recording_artifacts_after_commit(artifacts, logger=logger)
     await delete_document_files(document_paths, logger=logger)
 
     return {"ok": True}
