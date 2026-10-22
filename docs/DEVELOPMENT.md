@@ -305,6 +305,7 @@ Capture code lives in `frontend/src/lib/capture/`. After a capture change, check
 - Segment creation, sequential upload, FLAC decode on upload, live transcript dispatch, pause and resume, stop and finalise, and discard.
 - An upload backlog: block segment uploads in the browser's developer tools, close the tab, reopen it, and check that **Stop and process** uploads what the closed tab recorded before finalising.
 - The paused-recording lock after a refresh or a closed tab (a real unload, not in-app navigation).
+- A tab closed while signed out, or with the pause request blocked: the recording is offered as interrupted two minutes after its last upload, in a fresh tab and without a reload, and a capture still running in another tab is never offered.
 - Focus moving to another tab, window or application, which must not pause capture.
 
 ```bash

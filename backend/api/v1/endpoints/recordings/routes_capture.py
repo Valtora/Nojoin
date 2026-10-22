@@ -19,6 +19,7 @@ from backend.models.recording import (
     Recording,
     RecordingCaptureLifecycleResponse,
     RecordingStatus,
+    capture_looks_stalled,
 )
 from backend.models.recording_public import RecordingPublicRead, serialize_recording
 from backend.models.transcript import Transcript
@@ -196,17 +197,53 @@ async def resume_upload(
     current_user: User = Depends(get_current_recording_client_user),
 ):
     """
-    Resume a paused recording session.
+    Resume a paused recording session, or a capture whose tab is gone.
+
+    A capture that stopped uploading without its pause arriving (the tab closed
+    while signed out or offline) is resumed as if paused, once it has been quiet
+    for ``STALLED_CAPTURE_AFTER``. A capture still uploading is refused, so no
+    other tab or device can take it over (issue #519).
     """
     recording = await recordings_module._get_owned_recording(
         db, recording_id, current_user.id
     )
 
-    if recording.status != RecordingStatus.PAUSED:
+    resumed_after_stall = capture_looks_stalled(recording)
+    if recording.status != RecordingStatus.PAUSED and not resumed_after_stall:
+        still_capturing = (
+            recording.status == RecordingStatus.UPLOADING
+            and recording.client_status == ClientStatus.RECORDING
+        )
         raise HTTPException(
             status_code=409,
-            detail="Recording is not paused",
+            detail=(
+                recordings_module.CAPTURE_STILL_UPLOADING_DETAIL
+                if still_capturing
+                else "Recording is not paused"
+            ),
         )
+
+    if resumed_after_stall:
+        try:
+            recordings_module.record_pipeline_metric(
+                stage="stalled_capture_resumed",
+                recording_id=recording.id,
+                payload={
+                    "public_id": recording.public_id,
+                    "last_activity_at": (
+                        recording.last_activity_at.isoformat()
+                        if recording.last_activity_at
+                        else None
+                    ),
+                },
+                log=logger,
+            )
+        except Exception as exc:  # noqa: BLE001 -- boundary: metrics must never fail a resume
+            logger.warning(
+                "Failed to record stalled capture resume metric for recording %s: %s",
+                recording.id,
+                exc,
+            )
 
     recording.status = RecordingStatus.UPLOADING
     recording.client_status = ClientStatus.RECORDING

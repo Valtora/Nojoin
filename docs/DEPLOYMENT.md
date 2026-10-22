@@ -128,7 +128,7 @@ A finished backup archive, built by a worker and served by the API, is the one f
 
 ## Storage Hygiene
 
-A file in `data/documents/` or `data/recordings/` can outlive every row that names it: a process killed between a delete's commit and its unlink, a failed unlink, an **Overwrite** restore, or a write whose row never committed. Once a day, `cleanup_temp_recordings` on `worker-io` logs a line counting, for documents, audio, proxies, partial uploads (`.upload-tmp`, `.part`, and a proxy conversion's `.tmp`) and unrecognised files, the files that no row names and their bytes, and the rows whose file is missing. It also lists up to 50 of the files a removal would take. Rows are never changed, and a failure here is logged without failing the rest of the cleanup.
+A file in `data/documents/` or `data/recordings/` can outlive every row that names it: a process killed between a delete's commit and its unlink, a failed unlink, or a write whose row never committed. Once a day, `cleanup_temp_recordings` on `worker-io` logs a line counting, for documents, audio, proxies, partial uploads (`.upload-tmp`, `.part`, and a proxy conversion's `.tmp`) and unrecognised files, the files that no row names and their bytes, and the rows whose file is missing. It also lists up to 50 of the files a removal would take. Rows are never changed, and a failure here is logged without failing the rest of the cleanup.
 
 `NOJOIN_STORAGE_HYGIENE=delete` makes the daily run remove those files, logging each one with its size, modification time and category. To see the report and the files, or to remove them now:
 

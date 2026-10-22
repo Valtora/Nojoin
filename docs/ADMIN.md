@@ -112,4 +112,4 @@ The transcription engine and model, under **Advanced** in **Settings > Transcrip
 - Back up before upgrading ([DEPLOYMENT.md](DEPLOYMENT.md#upgrading-and-migration)).
 - For remote access, set a trusted public origin with `WEB_APP_URL` ([DEPLOYMENT.md](DEPLOYMENT.md#remote-access-and-trusted-public-origin)).
 - [CAPTURE.md](CAPTURE.md) covers browser support and missing audio. For a failed upload, transcode, live transcription, finalise or discard, check the API and worker logs.
-- Paused recordings are kept indefinitely and never cleaned up automatically.
+- Paused recordings, and captures interrupted without a pause, are kept indefinitely and never cleaned up automatically.
