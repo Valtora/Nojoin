@@ -533,6 +533,12 @@ export interface Recording extends Omit<BaseDBModel, "id"> {
    * only.
    */
   timeline_notes_list_signature?: string | null;
+  /**
+   * A live capture that has uploaded nothing for two minutes, so its tab is
+   * gone or cut off. Judged by the server, whose clock is the one that counts.
+   * Such a capture can be resumed, stopped or discarded from another tab.
+   */
+  capture_stalled?: boolean;
   is_archived: boolean;
   is_deleted: boolean;
   transcript?: Transcript;

@@ -11,7 +11,7 @@ const captureState = {
   controller: {
     getState: () => ({ error: null }),
   },
-  pausedRecording: null,
+  pausedRecording: null as { id: string; status: string } | null,
   runtimeActive: false,
   start: (...args: unknown[]) => start(...args),
   status: "idle",
@@ -116,5 +116,21 @@ describe("MeetingControls", () => {
     expect(screen.queryByTestId("live-controls")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Finalizing meeting..." })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Import Audio" })).toBeInTheDocument();
+  });
+
+  it("names an interrupted capture apart from a paused one", () => {
+    captureState.pausedRecording = { id: "rec-1", status: "UPLOADING" };
+    const { rerender } = render(<MeetingControls variant="dashboard" />);
+
+    expect(
+      screen.getByRole("button", { name: "Interrupted recording needs attention" }),
+    ).toBeDisabled();
+
+    captureState.pausedRecording = { id: "rec-1", status: "PAUSED" };
+    rerender(<MeetingControls variant="dashboard" />);
+
+    expect(
+      screen.getByRole("button", { name: "Paused recording needs attention" }),
+    ).toBeDisabled();
   });
 });

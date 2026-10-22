@@ -8,6 +8,7 @@ import { isReachable } from "@/lib/connectivity/reducer";
 import { useCapture } from "@/lib/capture/CaptureProvider";
 import { DEMO_MODE, DEMO_RECORDING_OFF } from "@/lib/demo";
 import { useNotificationStore } from "@/lib/notificationStore";
+import { RecordingStatus } from "@/types";
 
 import CaptureUnsupportedNotice from "./CaptureUnsupportedNotice";
 import LiveMeetingControls from "./LiveMeetingControls";
@@ -101,13 +102,21 @@ export default function MeetingControls({
               "Use Chrome on desktop for browser capture, or Chrome on Android/iOS for microphone-only capture.",
           }
         : hasPausedBlock
-          ? {
-              buttonLabel: "Paused recording needs attention",
-              buttonMode: "wait",
-              buttonDisabled: true,
-              buttonTooltip:
-                "Resume or discard the paused recording in the modal before starting anything new.",
-            }
+          ? pausedRecording?.status === RecordingStatus.UPLOADING
+            ? {
+                buttonLabel: "Interrupted recording needs attention",
+                buttonMode: "wait",
+                buttonDisabled: true,
+                buttonTooltip:
+                  "Resume, stop or discard the interrupted recording in the dialog before starting anything new.",
+              }
+            : {
+                buttonLabel: "Paused recording needs attention",
+                buttonMode: "wait",
+                buttonDisabled: true,
+                buttonTooltip:
+                  "Resume or discard the paused recording in the modal before starting anything new.",
+              }
           : isBusy
             ? {
                 buttonLabel:

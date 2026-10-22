@@ -60,7 +60,9 @@ export default function CaptureShell({ children }: CaptureShellProps) {
 
     setBusyAction("stop");
     try {
-      await stop();
+      // Named explicitly: this tab may have no capture of its own, or remember
+      // a different one, when the dialog offers another tab's lost capture.
+      await stop(pausedRecording.id);
       router.push(`/recordings/${pausedRecording.id}`);
 
         } catch (stopError: unknown) {

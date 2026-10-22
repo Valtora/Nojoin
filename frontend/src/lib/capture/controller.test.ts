@@ -18,7 +18,7 @@ const apiMocks = vi.hoisted(() => ({
   getRecording: vi.fn(),
   finalizeRecordingCapture: vi.fn(),
   pauseRecordingCapture: vi.fn(),
-  getPausedRecordings: vi.fn(),
+  getUnfinishedCaptures: vi.fn(),
   initRecording: vi.fn(),
   reportRecordingCaptureSources: vi.fn(),
   resumeRecordingCapture: vi.fn(),
@@ -38,13 +38,27 @@ const connectivityMocks = vi.hoisted(() => ({ status: "online" as string }));
 vi.mock("@/lib/api", () => ({
   discardRecordingCapture: apiMocks.discardRecordingCapture,
   finalizeRecordingCapture: apiMocks.finalizeRecordingCapture,
-  getPausedRecordings: apiMocks.getPausedRecordings,
+  getUnfinishedCaptures: apiMocks.getUnfinishedCaptures,
   getRecording: apiMocks.getRecording,
   initRecording: apiMocks.initRecording,
   isActiveRecordingConflictDetail: vi.fn(() => false),
   pauseRecordingCapture: apiMocks.pauseRecordingCapture,
   reportRecordingCaptureSources: apiMocks.reportRecordingCaptureSources,
   resumeRecordingCapture: apiMocks.resumeRecordingCapture,
+}));
+
+const captureLockMocks = vi.hoisted(() => {
+  const release = vi.fn();
+  return {
+    release,
+    holdCaptureLock: vi.fn(() => release),
+    isCaptureHeldInThisBrowser: vi.fn(async () => false),
+  };
+});
+
+vi.mock("./captureLock", () => ({
+  holdCaptureLock: captureLockMocks.holdCaptureLock,
+  isCaptureHeldInThisBrowser: captureLockMocks.isCaptureHeldInThisBrowser,
 }));
 
 vi.mock("@/lib/connectivity/monitor", () => ({
@@ -168,7 +182,7 @@ describe("capture controller", () => {
     apiMocks.discardRecordingCapture.mockResolvedValue(undefined);
     apiMocks.finalizeRecordingCapture.mockReset();
     apiMocks.pauseRecordingCapture.mockReset();
-    apiMocks.getPausedRecordings.mockReset();
+    apiMocks.getUnfinishedCaptures.mockReset();
     apiMocks.initRecording.mockReset();
     apiMocks.reportRecordingCaptureSources.mockReset();
     apiMocks.reportRecordingCaptureSources.mockResolvedValue(undefined);
@@ -178,7 +192,7 @@ describe("capture controller", () => {
       status: "UPLOADING",
       last_sequence: 0,
     });
-    apiMocks.getPausedRecordings.mockResolvedValue([]);
+    apiMocks.getUnfinishedCaptures.mockResolvedValue([]);
     featureDetectMocks.detectCaptureSupport.mockReset();
     featureDetectMocks.detectCaptureSupport.mockReturnValue({
       supported: true,
@@ -191,6 +205,9 @@ describe("capture controller", () => {
     sharedMocks.readPausedCaptureContext.mockReset();
     sharedMocks.readPausedCaptureContext.mockReturnValue(null);
     connectivityMocks.status = "online";
+    captureLockMocks.release.mockClear();
+    captureLockMocks.holdCaptureLock.mockClear();
+    captureLockMocks.isCaptureHeldInThisBrowser.mockClear();
   });
 
   afterEach(() => {
@@ -1061,8 +1078,8 @@ describe("recovering an interrupted capture", () => {
   beforeEach(() => {
     apiMocks.discardRecordingCapture.mockReset();
     apiMocks.discardRecordingCapture.mockResolvedValue(undefined);
-    apiMocks.getPausedRecordings.mockReset();
-    apiMocks.getPausedRecordings.mockResolvedValue([]);
+    apiMocks.getUnfinishedCaptures.mockReset();
+    apiMocks.getUnfinishedCaptures.mockResolvedValue([]);
     sharedMocks.readPausedCaptureContext.mockReset();
     sharedMocks.readPausedCaptureContext.mockReturnValue(null);
     notificationMocks.addNotification.mockReset();
@@ -1204,8 +1221,8 @@ describe("audio a closed tab recorded but never uploaded", () => {
     });
     apiMocks.discardRecordingCapture.mockReset();
     apiMocks.discardRecordingCapture.mockResolvedValue(undefined);
-    apiMocks.getPausedRecordings.mockReset();
-    apiMocks.getPausedRecordings.mockResolvedValue([]);
+    apiMocks.getUnfinishedCaptures.mockReset();
+    apiMocks.getUnfinishedCaptures.mockResolvedValue([]);
     apiMocks.reportRecordingCaptureSources.mockResolvedValue(undefined);
     pickSourceMocks.pickCaptureSource.mockReset();
     pickSourceMocks.pickCaptureSource.mockResolvedValue(sources);
@@ -1340,7 +1357,7 @@ describe("a capture whose session ends", () => {
     apiMocks.initRecording.mockReset();
     apiMocks.finalizeRecordingCapture.mockReset();
     apiMocks.pauseRecordingCapture.mockReset();
-    apiMocks.getPausedRecordings.mockResolvedValue([]);
+    apiMocks.getUnfinishedCaptures.mockResolvedValue([]);
     apiMocks.reportRecordingCaptureSources.mockResolvedValue(undefined);
     pickSourceMocks.pickCaptureSource.mockReset();
   });
@@ -1428,5 +1445,213 @@ describe("a capture whose session ends", () => {
     expect(apiMocks.pauseRecordingCapture).toHaveBeenCalledTimes(2);
     expect(controller.getState().status).toBe("paused");
     expect(controller.getState().error).toBeNull();
+  });
+});
+
+describe("a capture whose tab closed without pausing it (issue #519)", () => {
+  // What the server lists for a capture whose unload pause never arrived: it
+  // is still marked as uploading, and the server says whether it has stalled.
+  const capture = (overrides: Record<string, unknown> = {}) => ({
+    id: "rec-1",
+    name: "Weekly sync",
+    status: "UPLOADING",
+    client_status: "RECORDING",
+    capture_stalled: false,
+    ...overrides,
+  });
+
+  const microphoneSources = () => ({
+    mode: "microphone_only",
+    displayStream: null,
+    microphoneStream: {} as MediaStream,
+    captureReport: {
+      mode: "microphone_only",
+      requested_microphone_device_id: null,
+      requested_microphone_label: null,
+      available_microphones: [],
+      browser_microphone_track: null,
+      browser_display_audio_track: null,
+      browser_display_video_track: null,
+      shared_audio_available: false,
+      notes: [],
+    },
+    release: vi.fn(),
+  });
+
+  const controllers: CaptureController[] = [];
+  const newController = () => {
+    const controller = new CaptureController();
+    controllers.push(controller);
+    return controller;
+  };
+
+  beforeEach(() => {
+    resetSessionForTests();
+    apiMocks.getUnfinishedCaptures.mockReset();
+    apiMocks.getUnfinishedCaptures.mockResolvedValue([]);
+    apiMocks.discardRecordingCapture.mockReset();
+    apiMocks.discardRecordingCapture.mockResolvedValue(undefined);
+    apiMocks.initRecording.mockReset();
+    apiMocks.reportRecordingCaptureSources.mockResolvedValue(undefined);
+    pickSourceMocks.pickCaptureSource.mockReset();
+    featureDetectMocks.detectCaptureSupport.mockReturnValue({
+      supported: true,
+      mode: "microphone_only",
+    });
+    sharedMocks.readPausedCaptureContext.mockReset();
+    sharedMocks.readPausedCaptureContext.mockReturnValue(null);
+    captureLockMocks.release.mockClear();
+    captureLockMocks.holdCaptureLock.mockClear();
+    captureLockMocks.isCaptureHeldInThisBrowser.mockReset();
+    captureLockMocks.isCaptureHeldInThisBrowser.mockResolvedValue(false);
+  });
+
+  afterEach(async () => {
+    // Each controller left watching would keep its timer running.
+    await Promise.all(controllers.splice(0).map((controller) => controller.destroy()));
+    vi.useRealTimers();
+  });
+
+  it("offers it for resume, stop or discard once the server judges it stalled", async () => {
+    const stalled = capture({ capture_stalled: true });
+    apiMocks.getUnfinishedCaptures.mockResolvedValue([stalled]);
+    const controller = newController();
+
+    await expect(controller.refreshPausedRecording()).resolves.toEqual(stalled);
+
+    expect(controller.getState().pausedRecording).toEqual(stalled);
+  });
+
+  it("never offers a capture that is still uploading", async () => {
+    apiMocks.getUnfinishedCaptures.mockResolvedValue([capture()]);
+    const controller = newController();
+
+    await expect(controller.refreshPausedRecording()).resolves.toBeNull();
+
+    expect(controller.getState().pausedRecording).toBeNull();
+  });
+
+  it("never offers a stalled capture that another tab of this browser is running", async () => {
+    // That tab may only be waiting for a sign-in or a connection, with its
+    // audio kept in the browser. It still holds the capture lock.
+    apiMocks.getUnfinishedCaptures.mockResolvedValue([capture({ capture_stalled: true })]);
+    captureLockMocks.isCaptureHeldInThisBrowser.mockResolvedValue(true);
+    const controller = newController();
+
+    await expect(controller.refreshPausedRecording()).resolves.toBeNull();
+
+    expect(captureLockMocks.isCaptureHeldInThisBrowser).toHaveBeenCalledWith("rec-1");
+    expect(controller.getState().pausedRecording).toBeNull();
+  });
+
+  it("ignores an import, which also sits in UPLOADING", async () => {
+    vi.useFakeTimers();
+    apiMocks.getUnfinishedCaptures.mockResolvedValue([
+      capture({ client_status: undefined, capture_stalled: false }),
+    ]);
+    const controller = newController();
+
+    await expect(controller.refreshPausedRecording()).resolves.toBeNull();
+    await vi.advanceTimersByTimeAsync(120_000);
+
+    // Nothing to wait for, so nothing to look at again.
+    expect(apiMocks.getUnfinishedCaptures).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers it without a reload once it stalls", async () => {
+    vi.useFakeTimers();
+    apiMocks.getUnfinishedCaptures
+      .mockResolvedValueOnce([capture()])
+      .mockResolvedValue([capture({ capture_stalled: true })]);
+    const controller = newController();
+
+    await controller.refreshPausedRecording();
+    expect(controller.getState().pausedRecording).toBeNull();
+
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    expect(apiMocks.getUnfinishedCaptures).toHaveBeenCalledTimes(2);
+    expect(controller.getState().pausedRecording).toMatchObject({
+      id: "rec-1",
+      capture_stalled: true,
+    });
+  });
+
+  it("withdraws the offer by itself when the capture's own tab uploads again", async () => {
+    vi.useFakeTimers();
+    apiMocks.getUnfinishedCaptures
+      .mockResolvedValueOnce([capture({ capture_stalled: true })])
+      .mockResolvedValue([capture()]);
+    const controller = newController();
+
+    await controller.refreshPausedRecording();
+    expect(controller.getState().pausedRecording).not.toBeNull();
+
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    expect(controller.getState().pausedRecording).toBeNull();
+  });
+
+  it("stops looking once nothing is left unfinished", async () => {
+    vi.useFakeTimers();
+    apiMocks.getUnfinishedCaptures.mockResolvedValueOnce([capture()]).mockResolvedValue([]);
+    const controller = newController();
+
+    await controller.refreshPausedRecording();
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(apiMocks.getUnfinishedCaptures).toHaveBeenCalledTimes(2);
+
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(apiMocks.getUnfinishedCaptures).toHaveBeenCalledTimes(2);
+  });
+
+  it("a check already in flight cannot bring back a capture the user discarded", async () => {
+    const stalled = capture({ capture_stalled: true });
+    apiMocks.getUnfinishedCaptures.mockResolvedValueOnce([stalled]);
+    const controller = newController();
+    await controller.refreshPausedRecording();
+
+    let answerSlowCheck: (captures: unknown[]) => void = () => {};
+    apiMocks.getUnfinishedCaptures.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          answerSlowCheck = resolve;
+        }),
+    );
+    const slowCheck = controller.refreshPausedRecording();
+    apiMocks.getUnfinishedCaptures.mockResolvedValue([]);
+
+    await controller.cancel("rec-1");
+    answerSlowCheck([stalled]);
+    await slowCheck;
+
+    expect(apiMocks.discardRecordingCapture).toHaveBeenCalledWith("rec-1");
+    expect(controller.getState().pausedRecording).toBeNull();
+  });
+
+  it("marks its own capture as live to other tabs until the capture ends", async () => {
+    pickSourceMocks.pickCaptureSource.mockResolvedValue(microphoneSources());
+    apiMocks.initRecording.mockResolvedValue({ id: "rec-1", name: "Weekly sync" });
+    const controller = newController();
+
+    await controller.start("Weekly sync");
+
+    expect(captureLockMocks.holdCaptureLock).toHaveBeenCalledWith("rec-1");
+    expect(captureLockMocks.release).not.toHaveBeenCalled();
+
+    apiMocks.finalizeRecordingCapture.mockResolvedValue({ id: "rec-1", status: "QUEUED" });
+    await controller.stop();
+
+    expect(captureLockMocks.release).toHaveBeenCalledTimes(1);
+  });
+
+  it("never offers its own capture, however quiet the server finds it", async () => {
+    pickSourceMocks.pickCaptureSource.mockResolvedValue(microphoneSources());
+    apiMocks.initRecording.mockResolvedValue({ id: "rec-1", name: "Weekly sync" });
+    const controller = newController();
+    await controller.start("Weekly sync");
+    apiMocks.getUnfinishedCaptures.mockResolvedValue([capture({ capture_stalled: true })]);
+
+    await expect(controller.refreshPausedRecording()).resolves.toBeNull();
   });
 });

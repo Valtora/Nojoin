@@ -120,9 +120,14 @@ export const uploadRecordingSegment = async (
   return response.data;
 };
 
-export const getPausedRecordings = async (): Promise<Recording[]> => {
+/**
+ * The user's captures still open: paused ones, and ones still marked as
+ * uploading, whether live in some tab or stalled after their tab was lost.
+ * Imports in progress come back too, since they share the UPLOADING status.
+ */
+export const getUnfinishedCaptures = async (): Promise<Recording[]> => {
   const response = await api.get<Recording[]>(
-    "/recordings/?status=PAUSED&user=me",
+    "/recordings/?status=PAUSED&status=UPLOADING&user=me",
   );
   return response.data;
 };

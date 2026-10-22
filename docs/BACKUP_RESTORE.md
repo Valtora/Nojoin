@@ -64,7 +64,7 @@ If a recording's audio file is missing, empty or unreadable, cannot be re-encode
 
 Archives made before 2.6.0 left out the audio of WebM browser recordings and of AAC, MP4, WMA and WebM imports, so those recordings are metadata only. Take a new backup to capture their audio.
 
-> **Warning:** restoring one of those older archives with **Clear all existing data** deletes those recordings' audio from the server, because the archive has none to put back. **Skip** and **Overwrite** keep the audio already on disk. If you need to clear existing data, take a new backup and restore that instead.
+> **Warning:** restoring one of those older archives with **Clear all existing data** deletes those recordings' audio from the server, because the archive has none to put back. **Skip** keeps the audio already on disk. **Overwrite** keeps it when the file has the name it had when the backup was taken, as on the server the backup came from, and otherwise deletes it with the meeting it replaces. If you need to clear existing data, take a new backup and restore that instead.
 
 ## Restoring a Backup
 
@@ -79,7 +79,7 @@ Before changing anything, the restore checks the archive's format version, that 
 | Mode | Effect |
 | --- | --- |
 | **Skip** (default) | A meeting already here keeps its current copy, audio included. Only new meetings are added. |
-| **Overwrite** | A meeting already here is deleted, with everything attached to it, and replaced by the backup's copy. |
+| **Overwrite** | A meeting already here is deleted, with everything attached to it, and replaced by the backup's copy. Once the restore has committed, its audio, playback file and document files are deleted from disk, except a file the backup's copy uses: a meeting restored without audio keeps the audio file of the same name already here. |
 | **Clear all existing data** | Deletes every recording, transcript, document, task, tag, person, calendar connection and other archived record, and empties the recordings and documents folders, before restoring. User accounts are kept so nobody is locked out. Only this mode restores the archived system configuration. |
 
 A meeting counts as already here when its `meeting_uid` or `public_id` matches, or, for archives older than those identifiers, its audio file name. Both identifiers are restored, so recording links keep working and later backups from the same source merge without duplicates. A restored recording whose file name or identifier clashes with an unrelated one here gets a new one instead of failing.
