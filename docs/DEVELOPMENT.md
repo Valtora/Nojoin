@@ -380,6 +380,7 @@ These apply to all tracked source, frontend included.
 - **Auth**: the browser uses HttpOnly session cookies from `/api/v1/login/session`. Bearer tokens from `/api/v1/login/access-token` are for non-browser clients; never put one in a URL or anywhere else the browser exposes.
 - **Framework**: the Next.js App Router ([frontend/src/app/](../frontend/src/app/)) and Tailwind CSS, with functional components in [frontend/src/components/](../frontend/src/components/).
 - **TypeScript**: avoid `any`. Update the interfaces in `frontend/src/types/index.ts` first when adding settings or model fields.
+- **Rich text**: create every Tiptap editor with `injectCSS: false`. The CSP's nonce-based `style-src` refuses the `<style>` tag Tiptap would otherwise inject, so ProseMirror's base rules are in `globals.css`. `tiptapStyles.test.ts` fails on an editor without the option, or when a Tiptap upgrade changes those rules.
 
 ### Charts
 
