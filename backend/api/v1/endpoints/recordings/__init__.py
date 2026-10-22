@@ -68,6 +68,7 @@ from .capture_audio import (
     _touch_recording_last_activity,
 )
 from .constants import (
+    CAPTURE_STILL_UPLOADING_DETAIL,
     LOSSY_AUDIO_SUFFIXES,
     SEGMENT_CONTENT_TYPE_SUFFIXES,
     STATUS_UPDATES_CLOSED_DETAIL,

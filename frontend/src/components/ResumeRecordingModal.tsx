@@ -1,8 +1,8 @@
 "use client";
 
-import { PauseCircle, Square } from "lucide-react";
+import { AlertTriangle, PauseCircle, Square } from "lucide-react";
 
-import type { Recording } from "@/types";
+import { RecordingStatus, type Recording } from "@/types";
 import Button from "./ui/Button";
 import Modal from "./ui/Modal";
 
@@ -26,6 +26,11 @@ export default function ResumeRecordingModal({
   if (!recording) {
     return null;
   }
+
+  // Offered while still marked as uploading only once the server judged it
+  // stalled: its tab closed without the pause arriving (issue #519).
+  const interrupted = recording.status === RecordingStatus.UPLOADING;
+  const StatusIcon = interrupted ? AlertTriangle : PauseCircle;
 
   return (
     <Modal
@@ -73,11 +78,11 @@ export default function ResumeRecordingModal({
     >
       <div className="flex items-start gap-3">
         <div className="rounded-lg bg-action-tint p-2 text-action-tint-fg">
-          <PauseCircle aria-hidden="true" className="h-5 w-5" />
+          <StatusIcon aria-hidden="true" className="h-5 w-5" />
         </div>
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-action-text">
-            Recording paused
+            {interrupted ? "Recording interrupted" : "Recording paused"}
           </p>
           <h2 className="mt-2 text-xl font-semibold text-foreground">
             Choose what to do before starting anything new
@@ -85,11 +90,20 @@ export default function ResumeRecordingModal({
         </div>
       </div>
 
-      <p className="mt-4 text-sm leading-6 text-contrast-helper">
-        Nojoin found a paused recording for your account. Resume it to keep
-        recording, stop it to process the audio captured so far, or discard it
-        to clear the capture lock.
-      </p>
+      {interrupted ? (
+        <p className="mt-4 text-sm leading-6 text-contrast-helper">
+          Nojoin has received no audio from this recording for over two minutes,
+          so the tab recording it was probably closed or cut off. If it is still
+          open on another device, finish it there. Otherwise resume it to keep
+          recording, stop it to process the audio captured so far, or discard it.
+        </p>
+      ) : (
+        <p className="mt-4 text-sm leading-6 text-contrast-helper">
+          Nojoin found a paused recording for your account. Resume it to keep
+          recording, stop it to process the audio captured so far, or discard it
+          to clear the capture lock.
+        </p>
+      )}
 
       <div className="mt-4 rounded-lg border border-action-border bg-action-tint px-4 py-3 text-sm text-action-tint-fg">
         <p className="font-medium">{recording.name}</p>

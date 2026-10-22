@@ -30,6 +30,7 @@ from backend.models.recording import (
     Recording,
     RecordingPipelineGeneration,
     RecordingStatus,
+    capture_looks_stalled,
 )
 from backend.models.speaker import RecordingSpeaker
 from backend.models.transcript import Transcript
@@ -54,6 +55,8 @@ from backend.utils.recording_storage import (
 from backend.utils.time import utc_now
 
 from .constants import (
+    ACTIVE_RECORDING_CONFLICT_MESSAGE,
+    CAPTURE_IN_PROGRESS_CONFLICT_MESSAGE,
     LOSSY_AUDIO_SUFFIXES,
     SEGMENT_CONTENT_TYPE_SUFFIXES,
     STATUS_UPDATES_CLOSED_DETAIL,
@@ -213,9 +216,19 @@ def _get_last_uploaded_sequence(recording_id: int) -> int:
 
 
 def _build_active_recording_conflict(recording: Recording) -> dict[str, str]:
+    message = ACTIVE_RECORDING_CONFLICT_MESSAGE
+    # A capture still uploading is not offered anywhere yet: it may be running
+    # in another tab or on another device, or its tab may have closed moments
+    # ago without pausing it. Say which wait applies (issue #519).
+    if (
+        recording.status == RecordingStatus.UPLOADING
+        and recording.client_status == ClientStatus.RECORDING
+        and not capture_looks_stalled(recording)
+    ):
+        message = CAPTURE_IN_PROGRESS_CONFLICT_MESSAGE
     return {
         "code": "active_recording_exists",
-        "message": "Handle the existing active recording before starting a new one.",
+        "message": message,
         "recording_id": recording.public_id,
         "status": recording.status.value,
     }
