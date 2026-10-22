@@ -438,6 +438,10 @@ async def _abandon_failed_master(
     db: AsyncSession, recording: Recording, final_audio_path: str
 ) -> None:
     """Set a recording's segments aside after its master could not be built."""
+    # The segments are kept for recovery; the live speaker labels are not needed.
+    remove_live_label_state(
+        recordings_module.recording_upload_temp_dir(recording.id, create=False) / "live"
+    )
     failed_root: Path | None = None
     try:
         failed_root = recordings_module.move_recording_upload_to_failed(
