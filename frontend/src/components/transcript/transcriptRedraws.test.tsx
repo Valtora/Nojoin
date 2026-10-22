@@ -224,4 +224,23 @@ describe("transcript redraws", () => {
 
     expect(new Set(redrawn)).toEqual(new Set(["u2"]));
   });
+
+  it("redraws only the line a speaker rename is open on", () => {
+    const { rerender } = render(<Page time={1} />);
+    const alexOnU2 = document.querySelector('[data-order-index][data-segment-id="u2"] button');
+
+    // Alex speaks ten lines; the rename opens on u2 alone.
+    forget();
+    fireEvent.doubleClick(alexOnU2!);
+    expect(redrawn).toEqual(["u2"]);
+
+    // A tick inside u0 and a keystroke each redraw only the line with the input.
+    forget();
+    rerender(<Page time={1.5} />);
+    expect(redrawn).toEqual(["u2"]);
+
+    forget();
+    fireEvent.change(screen.getByDisplayValue("Alex"), { target: { value: "Avery" } });
+    expect(redrawn).toEqual(["u2"]);
+  });
 });
