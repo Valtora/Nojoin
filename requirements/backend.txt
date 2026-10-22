@@ -10,7 +10,7 @@ numpy==2.4.6
 # at finalize, in process. Pinned with worker.txt.
 soundfile==0.14.0
 openai>=3.35.1
-anthropic>=1.15.0
+anthropic>=2.1.0
 google-genai>=2.31.0
 # Exports (backend/services/exports): ReportLab lays out PDFs, python-docx
 # writes DOCX, and markdown-it-py parses the stored Markdown notes for all
