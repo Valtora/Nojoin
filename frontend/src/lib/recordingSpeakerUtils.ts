@@ -337,7 +337,7 @@ export const buildRecordingSpeakerDisplayMap = (
 };
 
 export const buildUniqueGlobalSpeakerIdByName = (
-  speakers: RecordingSpeaker[],
+  speakers: readonly RecordingSpeaker[],
   globalSpeakerById: Map<number, GlobalSpeaker>,
 ): Map<string, number> => {
   const idsByName = new Map<string, Set<number>>();

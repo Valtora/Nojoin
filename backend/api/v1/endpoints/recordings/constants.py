@@ -2,6 +2,9 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# The browser matches this exact text (`isCaptureClosedError` in
+# frontend/src/lib/api/capture.ts) to stand a tab down once its capture has been
+# stopped, so change the two together.
 UPLOAD_CLOSED_DETAIL = "Recording is no longer accepting capture uploads"
 ACTIVE_RECORDING_CONFLICT_MESSAGE = (
     "Handle the existing active recording before starting a new one."
@@ -13,6 +16,10 @@ CAPTURE_IN_PROGRESS_CONFLICT_MESSAGE = (
     "Another recording is still in progress. Stop it before starting a new one. "
     "If the tab recording it was closed, Nojoin offers to resume or discard it "
     "within two minutes."
+)
+CAPTURE_SUPERSEDED_CODE = "capture_superseded"
+CAPTURE_SUPERSEDED_MESSAGE = (
+    "This recording continued elsewhere: another tab or device resumed it."
 )
 STATUS_UPDATES_CLOSED_DETAIL = "Recording is no longer accepting capture status updates"
 UNSUPPORTED_SEGMENT_MEDIA_DETAIL = "Unsupported audio segment format. Use audio/flac, audio/wav, audio/webm, audio/ogg, or audio/mp4 with a matching filename suffix."

@@ -1,8 +1,8 @@
 import type { RecordingId } from "@/types";
-import { uploadRecordingSegment } from "@/lib/api";
+import { isCaptureEndedError, uploadRecordingSegment } from "@/lib/api";
 import { waitForSignInAfter } from "@/lib/session";
 
-import type { SegmentStore, StoredSegment } from "./segmentStore";
+import { storedSegmentEpoch, type SegmentStore, type StoredSegment } from "./segmentStore";
 import type { UploadQueueSize } from "./shared";
 
 const DEFAULT_RETRY_DELAYS_MS = [500, 1_000, 2_000, 4_000, 8_000];
@@ -33,10 +33,30 @@ export class UploaderTimeoutError extends Error {
 
 export interface SegmentUploaderOptions {
   recordingId: RecordingId;
+  /**
+   * The capture epoch this tab holds. Sent with every segment, so the server
+   * refuses them once the capture is resumed elsewhere (issue #570).
+   */
+  epoch: number;
+  /** The account the capture belongs to, kept with each stored segment. */
+  ownerId?: number;
   initialSequence?: number;
   uploadSegment?: typeof uploadRecordingSegment;
   onUploaded?: (sequence: number) => void;
   onStalled?: (error: Error) => void | Promise<void>;
+  /**
+   * Called once when the server refuses a segment because the capture has
+   * ended for this tab: resumed in another tab or on another device, or
+   * stopped. Nothing is uploaded after it, and the queue stays in the store.
+   */
+  onCaptureEnded?: (error: Error) => void | Promise<void>;
+  /**
+   * Looks into a failed upload that is not plainly the capture ending, and
+   * resolves an error when it turns out to be one, as a 404 for a recording
+   * discarded elsewhere does once the account is confirmed (issue #602). The
+   * uploader then stops as for any other ending.
+   */
+  checkCaptureGone?: (error: unknown) => Promise<Error | null>;
   /** Called whenever the queue grows or shrinks. */
   onQueueChange?: (size: UploadQueueSize) => void;
   /** Where queued segments survive a closed tab. Omitted, the queue is memory only. */
@@ -60,11 +80,19 @@ interface QueuedSegment {
 export class SegmentUploader {
   private readonly recordingId: RecordingId;
 
+  private readonly epoch: number;
+
+  private readonly ownerId?: number;
+
   private readonly uploadSegmentFn: typeof uploadRecordingSegment;
 
   private readonly onUploaded?: (sequence: number) => void;
 
   private readonly onStalled?: (error: Error) => void | Promise<void>;
+
+  private readonly onCaptureEnded?: (error: Error) => void | Promise<void>;
+
+  private readonly checkCaptureGone?: (error: unknown) => Promise<Error | null>;
 
   private readonly onQueueChange?: (size: UploadQueueSize) => void;
 
@@ -91,13 +119,20 @@ export class SegmentUploader {
 
   private stalledError: Error | null = null;
 
+  /** Set once the capture has ended for this tab. Unlike a stall, it never clears. */
+  private endedError: Error | null = null;
+
   private closed = false;
 
   constructor(options: SegmentUploaderOptions) {
     this.recordingId = options.recordingId;
+    this.epoch = options.epoch;
+    this.ownerId = options.ownerId;
     this.uploadSegmentFn = options.uploadSegment ?? uploadRecordingSegment;
     this.onUploaded = options.onUploaded;
     this.onStalled = options.onStalled;
+    this.onCaptureEnded = options.onCaptureEnded;
+    this.checkCaptureGone = options.checkCaptureGone;
     this.onQueueChange = options.onQueueChange;
     this.store = options.store;
     this.retryDelaysMs = options.retryDelaysMs ?? DEFAULT_RETRY_DELAYS_MS;
@@ -137,16 +172,7 @@ export class SegmentUploader {
     // Segments are kept while the uploader is stalled so a later recover()
     // can retry them instead of dropping recorded audio.
     this.pending.set(sequence, { blob, durationSeconds });
-    if (this.store) {
-      this.persisting.set(
-        sequence,
-        this.store
-          .put({ recordingId: this.recordingId, sequence, blob, durationSeconds })
-          .catch((error: unknown) => {
-            console.warn("[capture] could not keep a queued segment in the browser", error);
-          }),
-      );
-    }
+    this.persist(sequence, blob, durationSeconds);
     this.notifyQueueChange();
     this.scheduleDrain();
   }
@@ -154,8 +180,10 @@ export class SegmentUploader {
   /**
    * Queues segments a previous page left in the store, ahead of new audio.
    *
-   * They are already stored, so they are not written again; each is removed
-   * from the store once the server acknowledges it.
+   * Each is removed from the store once the server acknowledges it. One kept
+   * under an earlier epoch, or without its owner, is stored again under this
+   * uploader's, so a later page still finds it belongs to the capture if this
+   * one closes before it is sent.
    */
   restore(segments: StoredSegment[]) {
     if (this.closed) {
@@ -169,6 +197,12 @@ export class SegmentUploader {
         blob: segment.blob,
         durationSeconds: segment.durationSeconds,
       });
+      if (
+        storedSegmentEpoch(segment) !== this.epoch ||
+        (segment.ownerId === undefined && this.ownerId !== undefined)
+      ) {
+        this.persist(segment.sequence, segment.blob, segment.durationSeconds);
+      }
     }
     this.notifyQueueChange();
     this.scheduleDrain();
@@ -176,10 +210,11 @@ export class SegmentUploader {
 
   /**
    * Clears a stalled state and retries the queued segments. Returns false
-   * only when the uploader has been disposed and cannot upload again.
+   * when the uploader has been disposed, or the capture was resumed or
+   * stopped elsewhere, and it cannot upload again.
    */
   recover() {
-    if (this.closed) {
+    if (this.closed || this.endedError) {
       return false;
     }
 
@@ -203,6 +238,9 @@ export class SegmentUploader {
     const deadline = this.now() + timeoutMs;
 
     while (true) {
+      if (this.endedError) {
+        throw this.endedError;
+      }
       if (this.stalledError) {
         throw this.stalledError;
       }
@@ -253,7 +291,7 @@ export class SegmentUploader {
 
     this.drainPromise = (async () => {
       try {
-        while (!this.closed && !this.stalledError) {
+        while (!this.closed && !this.stalledError && !this.endedError) {
           const next = this.pending.get(this.nextExpectedSequence);
           if (!next) {
             break;
@@ -269,7 +307,12 @@ export class SegmentUploader {
         }
       } finally {
         this.drainPromise = null;
-        if (!this.closed && !this.stalledError && this.pending.has(this.nextExpectedSequence)) {
+        if (
+          !this.closed &&
+          !this.stalledError &&
+          !this.endedError &&
+          this.pending.has(this.nextExpectedSequence)
+        ) {
           this.scheduleDrain();
           return;
         }
@@ -281,7 +324,13 @@ export class SegmentUploader {
   }
 
   private scheduleDrain() {
-    if (this.drainScheduled || this.drainPromise || this.closed || this.stalledError) {
+    if (
+      this.drainScheduled ||
+      this.drainPromise ||
+      this.closed ||
+      this.stalledError ||
+      this.endedError
+    ) {
       return;
     }
 
@@ -292,6 +341,7 @@ export class SegmentUploader {
         this.drainPromise ||
         this.closed ||
         this.stalledError ||
+        this.endedError ||
         !this.pending.has(this.nextExpectedSequence)
       ) {
         return;
@@ -299,6 +349,28 @@ export class SegmentUploader {
 
       void this.drain().catch(() => {});
     });
+  }
+
+  /** Keeps a queued segment in the store under this uploader's epoch. */
+  private persist(sequence: number, blob: Blob, durationSeconds: number) {
+    if (!this.store) {
+      return;
+    }
+    this.persisting.set(
+      sequence,
+      this.store
+        .put({
+          recordingId: this.recordingId,
+          sequence,
+          blob,
+          durationSeconds,
+          epoch: this.epoch,
+          ...(this.ownerId === undefined ? {} : { ownerId: this.ownerId }),
+        })
+        .catch((error: unknown) => {
+          console.warn("[capture] could not keep a queued segment in the browser", error);
+        }),
+    );
   }
 
   /** Drops an acknowledged segment from the store, after its write if that is still running. */
@@ -328,10 +400,26 @@ export class SegmentUploader {
 
     for (;;) {
       try {
-        await this.uploadSegmentFn(this.recordingId, sequence, segment.blob);
+        await this.uploadSegmentFn(this.recordingId, sequence, segment.blob, {
+          epoch: this.epoch,
+        });
         return;
 
       } catch (error: unknown) {
+        // Another tab or device resumed, stopped or discarded the capture.
+        // Retrying gets the same answer, and the segment can never join the
+        // recording, so it stays in the store and nothing more is sent.
+        const gone = isCaptureEndedError(error)
+          ? error instanceof Error
+            ? error
+            : new Error("This recording ended elsewhere.")
+          : await this.checkCaptureGone?.(error);
+        if (gone) {
+          this.endedError = gone;
+          await this.onCaptureEnded?.(gone);
+          throw gone;
+        }
+
         // A failure while the session is unusable is not a failed attempt. The
         // segment, and every one recorded after it, waits for the user to sign
         // back in, however long that takes, rather than stalling the capture.

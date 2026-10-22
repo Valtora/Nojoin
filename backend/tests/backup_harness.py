@@ -24,6 +24,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     Text,
+    UniqueConstraint,
     create_engine,
     event,
 )
@@ -107,6 +108,7 @@ class TestUserTask(TestBase, table=True):
 
 class TestPeopleTag(TestBase, table=True):
     __tablename__ = "backup_test_p_tags"
+    __table_args__ = (UniqueConstraint("user_id", "name"),)
 
     name: str
     color: Optional[str] = None
@@ -140,6 +142,7 @@ class TestPeopleTagLink(TestBase, table=True):
 
 class TestTag(TestBase, table=True):
     __tablename__ = "backup_test_tags"
+    __table_args__ = (UniqueConstraint("user_id", "name"),)
 
     name: str
     color: Optional[str] = None
@@ -298,6 +301,7 @@ class TestRecordingSpeakerDriftRefusal(SQLModel, table=True):
 
 class TestRecordingTag(TestBase, table=True):
     __tablename__ = "backup_test_recording_tags"
+    __table_args__ = (UniqueConstraint("recording_id", "tag_id"),)
 
     recording_id: int = Field(foreign_key="backup_test_recordings.id")
     tag_id: int = Field(foreign_key="backup_test_tags.id")

@@ -159,6 +159,7 @@ SCHEMA_STATEMENTS = [
         is_archived BOOLEAN NOT NULL,
         is_deleted BOOLEAN NOT NULL,
         last_activity_at DATETIME,
+        capture_epoch INTEGER NOT NULL DEFAULT 0,
         user_id INTEGER,
         calendar_event_id INTEGER
     )
@@ -288,7 +289,8 @@ SCHEMA_STATEMENTS = [
         created_at DATETIME NOT NULL,
         updated_at DATETIME NOT NULL,
         recording_id INTEGER NOT NULL,
-        tag_id INTEGER NOT NULL
+        tag_id INTEGER NOT NULL,
+        UNIQUE (recording_id, tag_id)
     )
     """,
     """

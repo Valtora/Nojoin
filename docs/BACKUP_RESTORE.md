@@ -87,6 +87,7 @@ A meeting counts as already here when its `meeting_uid` or `public_id` matches, 
 ### What Else to Expect
 
 - A user whose username already exists here keeps their current account and password, and the archive's records for that username are given to them. Other users are created with their archived password hashes.
+- A tag or people tag whose owner already has one of that exact name, here or earlier in the archive, is not added again. Its sub-tags, meetings, tasks and people go to the tag already there, which keeps its colour and place. An archive made by 2.10.0 or earlier can hold a name twice for one user, and the copy nearest the top of the tag tree is the one kept.
 - Recordings that were still processing when the backup was taken are restored as processed if their transcript came across, and as errored otherwise. Reprocess an errored one to finish it.
 - A restore can finish while skipping some records, most often because their owner or parent could not be matched. The notification then says how many could not be restored, and the page lists which kinds of record were skipped and why under **Some records could not be restored**.
 
@@ -95,6 +96,16 @@ A meeting counts as already here when its `meeting_uid` or `public_id` matches, 
 Archives carry a format version. A server restores any archive at or below the format version it understands, so older backups keep working after an upgrade. An archive with a newer format version is refused with a message to upgrade the server first. An archive from a newer Nojoin release with the same format version still restores, with a warning in the API log.
 
 An archive older than format 3 holds each meeting's notes as one text, which restores as a single note at the top of the meeting. The note is added only when the restore inserts the transcript, so Skip mode or a second restore adds no duplicate.
+
+An archive made by 2.10.0 or earlier can hold people and people tags with no owner, and links into another user's People library. Before writing anything, the restore settles them as upgrading that installation does:
+
+- A person with no owner goes to the user whose meetings link them most, the earliest account on a tie. A people tag with no owner goes to the user whose people use it most, and a tag nobody uses goes to the first Owner account.
+- A link from one user's meeting to another user's person moves to the linking user's own person of that name. When they have none, one is created with the name and colour only. A person's link to another user's people tag moves the same way.
+- A people tag nested under another user's tag moves to the top level, or under the user's own copy when the parent had no owner. A recording tag nested under another user's tag moves to the top level.
+- A person or tag given to a user who already has that name is renamed "Name (2)", or the next free number.
+- A person no owned meeting links keeps no owner and is not restored, as before.
+
+Archives made since hold nothing to settle.
 
 ## Housekeeping
 

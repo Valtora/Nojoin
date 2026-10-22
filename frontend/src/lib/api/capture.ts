@@ -1,17 +1,29 @@
 import type { CaptureSourceReportPayload } from "@/lib/capture/sourceReport";
 import type {
   ActiveRecordingConflictDetail,
+  CaptureSupersededDetail,
   Recording,
   RecordingCaptureLifecycleResponse,
   RecordingId,
 } from "@/types";
 import api from "./client";
 
+/**
+ * The capture epoch a tab sends with its requests for its own capture. Left
+ * out, as for a stop or discard from a dialog, the request is not checked.
+ */
+export interface CaptureEpochOption {
+  epoch?: number;
+}
+
 export const pauseRecordingCapture = async (
   recordingId: RecordingId,
+  options: CaptureEpochOption = {},
 ): Promise<RecordingCaptureLifecycleResponse> => {
   const response = await api.post<RecordingCaptureLifecycleResponse>(
     `/recordings/${recordingId}/pause`,
+    undefined,
+    { params: { epoch: options.epoch } },
   );
   return response.data;
 };
@@ -23,11 +35,18 @@ export const reportRecordingCaptureSources = async (
   await api.post(`/recordings/${recordingId}/capture-source-report`, payload);
 };
 
+/**
+ * Resumes a capture. With the epoch this tab holds, it carries on with its own
+ * capture; without one, it takes the capture over and is issued the next epoch.
+ */
 export const resumeRecordingCapture = async (
   recordingId: RecordingId,
+  options: CaptureEpochOption = {},
 ): Promise<RecordingCaptureLifecycleResponse> => {
   const response = await api.post<RecordingCaptureLifecycleResponse>(
     `/recordings/${recordingId}/resume`,
+    undefined,
+    { params: { epoch: options.epoch } },
   );
   return response.data;
 };
@@ -53,18 +72,18 @@ export const updateRecordingMaxSpeakers = async (
 
 export const finalizeRecordingCapture = async (
   recordingId: RecordingId,
-  options: { clientElapsedSeconds?: number } = {},
+  options: { clientElapsedSeconds?: number } & CaptureEpochOption = {},
 ): Promise<Recording> => {
   // The browser's own recording time, so the server can judge coverage
   // against the capture rather than against the time spent uploading after it.
-  const params =
+  const clientElapsedSeconds =
     options.clientElapsedSeconds !== undefined && options.clientElapsedSeconds > 0
-      ? { client_elapsed_seconds: options.clientElapsedSeconds }
+      ? options.clientElapsedSeconds
       : undefined;
   const response = await api.post<Recording>(
     `/recordings/${recordingId}/finalize`,
     undefined,
-    { params },
+    { params: { client_elapsed_seconds: clientElapsedSeconds, epoch: options.epoch } },
   );
   return response.data;
 };
@@ -72,10 +91,14 @@ export const finalizeRecordingCapture = async (
 export const discardRecordingCapture = async (
   recordingId: RecordingId,
   discardReason?: string,
+  options: CaptureEpochOption = {},
 ): Promise<void> => {
   const params = new URLSearchParams();
   if (discardReason?.trim()) {
     params.set("reason", discardReason.trim());
+  }
+  if (options.epoch !== undefined) {
+    params.set("epoch", String(options.epoch));
   }
 
   const suffix = params.toString();
@@ -103,15 +126,16 @@ export const uploadRecordingSegment = async (
   recordingId: RecordingId,
   sequence: number,
   blob: Blob,
-  filename = `${sequence}.${resolveRecordingSegmentExtension(blob.type)}`,
+  options: CaptureEpochOption = {},
 ): Promise<{ status: string; segment: number }> => {
   const formData = new FormData();
-  formData.append("file", blob, filename);
+  formData.append("file", blob, `${sequence}.${resolveRecordingSegmentExtension(blob.type)}`);
 
   const response = await api.post<{ status: string; segment: number }>(
-    `/recordings/${recordingId}/segment?sequence=${sequence}`,
+    `/recordings/${recordingId}/segment`,
     formData,
     {
+      params: { sequence, epoch: options.epoch },
       headers: {
         "Content-Type": "multipart/form-data",
       },
@@ -147,3 +171,57 @@ export const isActiveRecordingConflictDetail = (
     typeof candidate.status === "string"
   );
 };
+
+export const isCaptureSupersededDetail = (
+  detail: unknown,
+): detail is CaptureSupersededDetail => {
+  if (!detail || typeof detail !== "object") {
+    return false;
+  }
+
+  const candidate = detail as Partial<CaptureSupersededDetail>;
+  return candidate.code === "capture_superseded" && typeof candidate.message === "string";
+};
+
+/**
+ * Whether the server refused a request because the capture was resumed in
+ * another tab or on another device after this tab's epoch was issued.
+ */
+export const isCaptureSupersededError = (error: unknown): boolean => {
+  if (!error || typeof error !== "object" || !("response" in error)) {
+    return false;
+  }
+  const response = (error as { response?: { status?: number; data?: { detail?: unknown } } })
+    .response;
+  return response?.status === 409 && isCaptureSupersededDetail(response.data?.detail);
+};
+
+/**
+ * What the server refuses every capture request with once the recording has
+ * been stopped. It mirrors `UPLOAD_CLOSED_DETAIL` in
+ * `backend/api/v1/endpoints/recordings/constants.py`.
+ */
+const CAPTURE_CLOSED_DETAIL = "Recording is no longer accepting capture uploads";
+
+/**
+ * Whether the server refused a request because the recording has been stopped
+ * and sent for processing, so it takes no more audio from any tab. A stop from
+ * the resume-or-discard dialog issues no epoch, so a tab whose capture was
+ * stopped elsewhere hears this rather than `capture_superseded`.
+ */
+export const isCaptureClosedError = (error: unknown): boolean => {
+  if (!error || typeof error !== "object" || !("response" in error)) {
+    return false;
+  }
+  const response = (error as { response?: { status?: number; data?: { detail?: unknown } } })
+    .response;
+  return response?.status === 409 && response.data?.detail === CAPTURE_CLOSED_DETAIL;
+};
+
+/**
+ * Whether the capture a tab holds has ended for it elsewhere: resumed in
+ * another tab or on another device, or stopped. Asking again gets the same
+ * answer, so the tab stands down.
+ */
+export const isCaptureEndedError = (error: unknown): boolean =>
+  isCaptureSupersededError(error) || isCaptureClosedError(error);

@@ -78,6 +78,7 @@ CREATE TABLE recordings (
     is_archived BOOLEAN NOT NULL,
     is_deleted BOOLEAN NOT NULL,
     last_activity_at DATETIME,
+    capture_epoch INTEGER NOT NULL DEFAULT 0,
     user_id INTEGER,
     calendar_event_id INTEGER
 )
@@ -393,7 +394,32 @@ CREATE TABLE p_tags (
     name VARCHAR(255) NOT NULL,
     color VARCHAR(32),
     user_id INTEGER,
-    parent_id INTEGER
+    parent_id INTEGER,
+    UNIQUE (user_id, name)
+)
+"""
+
+TAGS_SCHEMA = """
+CREATE TABLE tags (
+    id INTEGER PRIMARY KEY,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    name VARCHAR NOT NULL,
+    color VARCHAR,
+    user_id INTEGER,
+    parent_id INTEGER,
+    UNIQUE (user_id, name)
+)
+"""
+
+RECORDING_TAGS_SCHEMA = """
+CREATE TABLE recording_tags (
+    id INTEGER PRIMARY KEY,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    recording_id INTEGER,
+    tag_id INTEGER,
+    UNIQUE (recording_id, tag_id)
 )
 """
 

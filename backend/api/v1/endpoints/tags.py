@@ -3,7 +3,6 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import delete
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
@@ -15,7 +14,16 @@ from backend.services.recording_identity_service import (
     get_recording_by_public_id,
     get_recordings_by_public_ids,
 )
-from backend.services.tag_ownership import require_own_parent
+from backend.services.tag_ownership import (
+    TAG_EXISTS,
+    commit_tag_name,
+    find_tag_by_name,
+    get_or_create_tag,
+    link_recording_tag,
+    require_own_parent,
+    require_parent_outside_subtree,
+    require_unused_name,
+)
 
 router = APIRouter()
 
@@ -80,17 +88,11 @@ async def create_tag(
     current_user: User = Depends(get_current_user),
 ):
     """
-    Create a new tag.
+    Create a tag. A name the user already has answers 400, as for people tags.
+    The routes that add a tag to meetings by name use the existing tag instead.
     """
     await require_own_parent(db, Tag, tag_in.parent_id, current_user.id)
-
-    statement = select(Tag).where(
-        Tag.name == tag_in.name, Tag.user_id == current_user.id
-    )
-    result = await db.execute(statement)
-    existing = result.scalar_one_or_none()
-    if existing:
-        return existing
+    await require_unused_name(db, Tag, tag_in.name, current_user.id, detail=TAG_EXISTS)
 
     tag = Tag(
         name=tag_in.name,
@@ -99,7 +101,7 @@ async def create_tag(
         parent_id=tag_in.parent_id,
     )
     db.add(tag)
-    await db.commit()
+    await commit_tag_name(db, tag, detail=TAG_EXISTS)
     await db.refresh(tag)
     return tag
 
@@ -121,20 +123,14 @@ async def update_tag(
     # Use model_fields_set to check for explicit updates, including explicit None
     parent_set = "parent_id" in tag_update.model_fields_set
     if parent_set:
-        if tag_update.parent_id == tag.id:
-            raise HTTPException(status_code=400, detail="Tag cannot be its own parent")
         await require_own_parent(db, Tag, tag_update.parent_id, current_user.id)
+        await require_parent_outside_subtree(
+            db, Tag, tag_id, tag_update.parent_id, current_user.id
+        )
 
     if tag_update.name is not None:
         if tag_update.name != tag.name:
-            stmt = select(Tag).where(
-                Tag.name == tag_update.name, Tag.user_id == current_user.id
-            )
-            result = await db.execute(stmt)
-            if result.scalar_one_or_none():
-                raise HTTPException(
-                    status_code=400, detail="Tag with this name already exists"
-                )
+            await require_unused_name(db, Tag, tag_update.name, current_user.id)
         tag.name = tag_update.name
 
     if tag_update.color is not None:
@@ -143,7 +139,7 @@ async def update_tag(
     if parent_set:
         tag.parent_id = tag_update.parent_id
 
-    await db.commit()
+    await commit_tag_name(db, tag)
     await db.refresh(tag)
     return tag
 
@@ -160,36 +156,14 @@ async def add_tag_to_recording(
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
 
-    statement = select(Tag).where(
-        Tag.name == tag_in.name, Tag.user_id == current_user.id
+    tag, created = await get_or_create_tag(
+        db, Tag, tag_in.name, current_user.id, color=tag_in.color
     )
-    result = await db.execute(statement)
-    tag = result.scalar_one_or_none()
-
-    if not tag:
-        tag = Tag(name=tag_in.name, color=tag_in.color, user_id=current_user.id)
-        db.add(tag)
+    linked = await link_recording_tag(db, recording.id, tag.id)
+    if created or linked:
         await db.commit()
+    if created:
         await db.refresh(tag)
-
-    # Use first() instead of scalar_one_or_none() to be robust against existing duplicates
-    stmt = select(RecordingTag).where(
-        RecordingTag.recording_id == recording.id, RecordingTag.tag_id == tag.id
-    )
-    result = await db.execute(stmt)
-    existing_link = result.scalars().first()
-
-    if not existing_link:
-        link = RecordingTag(recording_id=recording.id, tag_id=tag.id)
-        db.add(link)
-        try:
-            await db.commit()
-        except IntegrityError:
-            await db.rollback()
-            # Race condition: tag was added by another request concurrently
-            # Return the tag as if we added it (idempotency)
-            pass
-
     return tag
 
 
@@ -205,22 +179,17 @@ async def remove_tag_from_recording(
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
 
-    statement = select(Tag).where(Tag.name == tag_name, Tag.user_id == current_user.id)
-    result = await db.execute(statement)
-    tag = result.scalar_one_or_none()
-
+    tag = await find_tag_by_name(db, Tag, tag_name, current_user.id)
     if not tag:
         raise HTTPException(status_code=404, detail="Tag not found")
 
-    stmt = select(RecordingTag).where(
-        RecordingTag.recording_id == recording.id, RecordingTag.tag_id == tag.id
+    # Every matching link, though the unique constraint leaves at most one.
+    await db.execute(
+        delete(RecordingTag).where(
+            RecordingTag.recording_id == recording.id, RecordingTag.tag_id == tag.id
+        )
     )
-    result = await db.execute(stmt)
-    link = result.scalar_one_or_none()
-
-    if link:
-        await db.delete(link)
-        await db.commit()
+    await db.commit()
 
     return {"ok": True}
 
@@ -255,17 +224,7 @@ async def batch_add_tag(
     """
     Add a tag to multiple recordings. Creates the tag if it doesn't exist.
     """
-    statement = select(Tag).where(
-        Tag.name == batch.tag_name, Tag.user_id == current_user.id
-    )
-    result = await db.execute(statement)
-    tag = result.scalar_one_or_none()
-
-    if not tag:
-        tag = Tag(name=batch.tag_name, user_id=current_user.id)
-        db.add(tag)
-        await db.commit()
-        await db.refresh(tag)
+    tag, created = await get_or_create_tag(db, Tag, batch.tag_name, current_user.id)
 
     # Iterated rather than expressed as a single set-difference query: batches
     # are capped at MAX_BATCH_RECORDING_IDS, so the clearer loop is worth more
@@ -285,21 +244,12 @@ async def batch_add_tag(
         if recording is None:
             continue
 
-        link_stmt = select(RecordingTag).where(
-            RecordingTag.recording_id == recording.id, RecordingTag.tag_id == tag.id
-        )
-        link_result = await db.execute(link_stmt)
-        if not link_result.scalars().first():
-            link = RecordingTag(recording_id=recording.id, tag_id=tag.id)
-            db.add(link)
+        if await link_recording_tag(db, recording.id, tag.id):
             count += 1
 
-    try:
-        await db.commit()
-    except IntegrityError:
-        await db.rollback()
-        # Exact count after fallback may be approximate if concurrent modifications occurred.
-        pass
+    await db.commit()
+    if created:
+        await db.refresh(tag)
     return {"ok": True, "count": count, "tag": tag}
 
 
@@ -312,12 +262,7 @@ async def batch_remove_tag(
     """
     Remove a tag from multiple recordings.
     """
-    statement = select(Tag).where(
-        Tag.name == batch.tag_name, Tag.user_id == current_user.id
-    )
-    result = await db.execute(statement)
-    tag = result.scalar_one_or_none()
-
+    tag = await find_tag_by_name(db, Tag, batch.tag_name, current_user.id)
     if not tag:
         return {"ok": True, "count": 0}
 

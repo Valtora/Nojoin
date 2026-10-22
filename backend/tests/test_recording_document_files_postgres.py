@@ -3,10 +3,12 @@
 Documents are stored flat in the documents directory, apart from the recording's
 audio, and their rows go by cascade. Most tests attach a document through the
 real upload route, delete through one of the paths that remove a recording or a
-document, and check the disk. Postgres because two of those paths delete with
-Core statements and rely on the foreign keys' ON DELETE CASCADE, which the SQLite
-suites do not enforce, and because the race tests hold one side's transaction
-open at a known point and wait until the other is blocked on its lock.
+document, and check the disk. The recording's own audio, proxy and upload
+segments go by the same rule, only once the delete has committed. Postgres
+because two of those paths delete with Core statements and rely on the foreign
+keys' ON DELETE CASCADE, which the SQLite suites do not enforce, and because the
+race tests hold one side's transaction open at a known point and wait until the
+other is blocked on its lock.
 
 Skips unless NOJOIN_TEST_POSTGRES_URL names a server. CI sets it for the backend
 suite.
@@ -204,6 +206,80 @@ def _add_document_row(harness, public_id: str, path: Path) -> None:
             )
         )
         session.commit()
+
+
+def _recording_rows(harness) -> int:
+    with Session(harness.engine) as session:
+        return session.exec(select(func.count()).select_from(Recording)).one()
+
+
+def _refuse_deletes_at_commit(harness, table: str) -> None:
+    """Make every delete from ``table`` fail when its transaction commits.
+
+    The trigger is deferred, so the delete itself runs and only the commit
+    fails, which rolls the rows back.
+    """
+    with harness.engine.begin() as connection:
+        connection.execute(
+            text(
+                f"CREATE FUNCTION refuse_{table}_delete() RETURNS trigger"
+                " LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'refused'; END $$"
+            )
+        )
+        connection.execute(
+            text(
+                f"CREATE CONSTRAINT TRIGGER refuse_{table}_delete AFTER DELETE"
+                f" ON {table} DEFERRABLE INITIALLY DEFERRED FOR EACH ROW"
+                f" EXECUTE FUNCTION refuse_{table}_delete()"
+            )
+        )
+
+
+# Each route that deletes one recording, with the status and bin state it accepts.
+RECORDING_DELETES = {
+    "delete": (RecordingStatus.PROCESSED, False),
+    "permanent": (RecordingStatus.PROCESSED, True),
+    "batch_permanent": (RecordingStatus.PROCESSED, True),
+    "discard": (RecordingStatus.UPLOADING, False),
+}
+
+
+async def _recording_with_files(harness, route: str) -> SimpleNamespace:
+    """A recording ``route`` can delete, with audio, proxy, a segment and a document."""
+    status, is_deleted = RECORDING_DELETES[route]
+    public_id = _add_recording(harness, "target", status=status, is_deleted=is_deleted)
+    recording_id = _recording_id(harness, public_id)
+    proxy = harness.recordings_dir / "target.mp3"
+    proxy.write_bytes(b"ID3")
+    with harness.engine.begin() as connection:
+        connection.execute(
+            text("UPDATE recordings SET proxy_path = :path WHERE id = :id"),
+            {"path": str(proxy), "id": recording_id},
+        )
+    segment = harness.recordings_dir / "temp" / str(recording_id) / "0.wav"
+    segment.parent.mkdir(parents=True)
+    segment.write_bytes(b"RIFF")
+    return SimpleNamespace(
+        public_id=public_id,
+        id=recording_id,
+        audio=harness.recordings_dir / "target.wav",
+        proxy=proxy,
+        segment=segment,
+        document=await _attach(harness, public_id),
+    )
+
+
+async def _delete_recording_through(harness, route: str, public_id: str):
+    if route == "delete":
+        method, url, body = "DELETE", f"/recordings/{public_id}", None
+    elif route == "permanent":
+        method, url, body = "DELETE", f"/recordings/{public_id}/permanent", None
+    elif route == "batch_permanent":
+        method, url = "POST", "/recordings/batch/permanent"
+        body = {"recording_ids": [public_id]}
+    else:
+        method, url, body = "POST", f"/recordings/{public_id}/discard", None
+    return await _request(harness, method, url, json=body, raise_app_exceptions=False)
 
 
 def _backend_pid(session: Session) -> int:
@@ -718,20 +794,7 @@ async def test_a_user_delete_whose_commit_fails_keeps_every_file(harness):
     document = await _attach(harness, public_id)
     harness.act_as("admin")
     audio = harness.recordings_dir / "theirs.wav"
-    with harness.engine.begin() as connection:
-        connection.execute(
-            text(
-                "CREATE FUNCTION refuse_user_delete() RETURNS trigger"
-                " LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'refused'; END $$"
-            )
-        )
-        connection.execute(
-            text(
-                "CREATE CONSTRAINT TRIGGER refuse_user_delete AFTER DELETE ON users"
-                " DEFERRABLE INITIALLY DEFERRED FOR EACH ROW"
-                " EXECUTE FUNCTION refuse_user_delete()"
-            )
-        )
+    _refuse_deletes_at_commit(harness, "users")
 
     response = await _request(harness, "DELETE", f"/users/{harness.users['member']}")
 
@@ -739,6 +802,76 @@ async def test_a_user_delete_whose_commit_fails_keeps_every_file(harness):
     assert audio.is_file()
     assert document.is_file()
     assert _document_rows(harness) == 1
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("route", list(RECORDING_DELETES))
+async def test_a_recording_delete_removes_its_audio_proxy_and_segments(harness, route):
+    target = await _recording_with_files(harness, route)
+
+    response = await _delete_recording_through(harness, route, target.public_id)
+
+    assert response.status_code == 200, response.text
+    assert _recording_rows(harness) == 0
+    assert not target.audio.exists()
+    assert not target.proxy.exists()
+    assert not target.segment.parent.exists()
+    assert not target.document.exists()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("route", list(RECORDING_DELETES))
+async def test_a_recording_delete_whose_commit_fails_keeps_every_file(harness, route):
+    """The files go only once the delete has committed (#536).
+
+    Unlinked before the commit, they went whatever the commit did, and a
+    failed one left the row naming audio and segments that were gone.
+    """
+    target = await _recording_with_files(harness, route)
+    _refuse_deletes_at_commit(harness, "recordings")
+
+    response = await _delete_recording_through(harness, route, target.public_id)
+
+    assert response.status_code == 500, response.text
+    assert _recording_rows(harness) == 1
+    assert target.audio.is_file()
+    assert target.proxy.is_file()
+    assert target.segment.is_file()
+    assert target.document.is_file()
+    assert _document_rows(harness) == 1
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("route", list(RECORDING_DELETES))
+async def test_a_recording_delete_succeeds_when_its_audio_cannot_be_removed(
+    harness, monkeypatch, caplog, route
+):
+    """A cleanup failure after the commit is logged and never fails the delete.
+
+    Checking the audio raises PermissionError, as under a directory the server
+    may not search. The delete has committed by then, so it answers as a clean
+    delete does, and the document's file is still removed.
+    """
+    target = await _recording_with_files(harness, route)
+    refused = target.audio.resolve()
+    exists = Path.exists
+
+    def refuse(self: Path, *args, **kwargs) -> bool:
+        if self == refused:
+            raise PermissionError(13, "Permission denied", str(self))
+        return exists(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "exists", refuse)
+
+    with caplog.at_level(logging.WARNING):
+        response = await _delete_recording_through(harness, route, target.public_id)
+
+    assert response.status_code == 200, response.text
+    assert _recording_rows(harness) == 0
+    assert target.audio.is_file()
+    assert not target.document.is_file()
+    assert f"Failed to remove the files of deleted recording {target.id}" in caplog.text
+    assert "Permission denied" in caplog.text
 
 
 @pytest.mark.anyio

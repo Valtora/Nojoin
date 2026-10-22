@@ -24,6 +24,7 @@ describe("capture uploader", () => {
     });
     const uploader = createSegmentUploader({
       recordingId: "rec-1",
+      epoch: 0,
       uploadSegment: uploadSegment as never,
     });
 
@@ -51,6 +52,7 @@ describe("capture uploader", () => {
 
     const uploader = createSegmentUploader({
       recordingId: "42",
+      epoch: 0,
       uploadSegment,
       wait,
       retryDelaysMs: [25, 50],
@@ -79,6 +81,7 @@ describe("capture uploader", () => {
 
     const uploader = createSegmentUploader({
       recordingId: "7",
+      epoch: 0,
       uploadSegment,
       wait,
       retryDelaysMs: [10, 20],
@@ -91,9 +94,9 @@ describe("capture uploader", () => {
     await expect(uploader.waitForIdle()).rejects.toThrow("stalled upload failure");
 
     expect(uploadSegment).toHaveBeenCalledTimes(3);
-    expect(uploadSegment).toHaveBeenNthCalledWith(1, "7", 0, expect.any(Blob));
-    expect(uploadSegment).toHaveBeenNthCalledWith(2, "7", 0, expect.any(Blob));
-    expect(uploadSegment).toHaveBeenNthCalledWith(3, "7", 0, expect.any(Blob));
+    expect(uploadSegment).toHaveBeenNthCalledWith(1, "7", 0, expect.any(Blob), { epoch: 0 });
+    expect(uploadSegment).toHaveBeenNthCalledWith(2, "7", 0, expect.any(Blob), { epoch: 0 });
+    expect(uploadSegment).toHaveBeenNthCalledWith(3, "7", 0, expect.any(Blob), { epoch: 0 });
     expect(wait).toHaveBeenCalledTimes(2);
     expect(onStalled).toHaveBeenCalledTimes(1);
     expect(onStalled).toHaveBeenCalledWith(stallError);
@@ -115,6 +118,7 @@ describe("capture uploader", () => {
 
     const uploader = createSegmentUploader({
       recordingId: "7",
+      epoch: 0,
       uploadSegment,
       wait,
       retryDelaysMs: [10],
@@ -141,6 +145,7 @@ describe("capture uploader", () => {
   it("refuses to recover once disposed", () => {
     const uploader = createSegmentUploader({
       recordingId: "7",
+      epoch: 0,
       uploadSegment: vi.fn(),
     });
 
@@ -159,6 +164,7 @@ describe("capture uploader", () => {
 
     const uploader = createSegmentUploader({
       recordingId: "7",
+      epoch: 0,
       uploadSegment: vi.fn(async (_recordingId: string, sequence: number) =>
         accepted(sequence),
       ),
@@ -187,6 +193,7 @@ describe("capture uploader", () => {
 
     const uploader = createSegmentUploader({
       recordingId: "7",
+      epoch: 0,
       uploadSegment: vi.fn(async (_recordingId: string, sequence: number) =>
         accepted(sequence),
       ),
@@ -206,6 +213,7 @@ describe("capture uploader", () => {
     const uploaded: number[] = [];
     const uploader = createSegmentUploader({
       recordingId: "7",
+      epoch: 0,
       uploadSegment: vi.fn(async (_recordingId: string, sequence: number) =>
         accepted(sequence),
       ),
@@ -241,6 +249,7 @@ describe("capture uploader with a segment store", () => {
     );
     const uploader = createSegmentUploader({
       recordingId: "rec-1",
+      epoch: 0,
       uploadSegment: uploadSegment as never,
       store,
     });
@@ -257,6 +266,7 @@ describe("capture uploader with a segment store", () => {
     const store = storeWith();
     const uploader = createSegmentUploader({
       recordingId: "rec-1",
+      epoch: 0,
       uploadSegment: vi.fn(() => new Promise(() => {})) as never,
       store,
     });
@@ -280,6 +290,7 @@ describe("capture uploader with a segment store", () => {
     const uploaded: number[] = [];
     const uploader = createSegmentUploader({
       recordingId: "rec-1",
+      epoch: 0,
       initialSequence: 5,
       uploadSegment: vi.fn(async (_id: string, sequence: number) => {
         uploaded.push(sequence);
@@ -301,6 +312,7 @@ describe("capture uploader with a segment store", () => {
     const sizes: { segments: number; seconds: number }[] = [];
     const uploader = createSegmentUploader({
       recordingId: "rec-1",
+      epoch: 0,
       uploadSegment: vi.fn(async (_id: string, sequence: number) => accepted(sequence)) as never,
       onQueueChange: (size) => sizes.push(size),
     });
@@ -350,6 +362,7 @@ describe("capture uploader when the session ends", () => {
     });
     const uploader = createSegmentUploader({
       recordingId: "rec-1",
+      epoch: 0,
       uploadSegment: uploadSegment as never,
       wait,
       retryDelaysMs: [10, 20],
@@ -384,6 +397,7 @@ describe("capture uploader when the session ends", () => {
     const onStalled = vi.fn(async () => {});
     const uploader = createSegmentUploader({
       recordingId: "rec-1",
+      epoch: 0,
       uploadSegment: vi.fn(async () => {
         throw sessionEnded();
       }) as never,
@@ -407,6 +421,7 @@ describe("capture uploader when the session ends", () => {
     });
     const uploader = createSegmentUploader({
       recordingId: "rec-1",
+      epoch: 0,
       uploadSegment: uploadSegment as never,
       waitForSignIn: () =>
         new Promise<boolean>((resolve) => {
@@ -421,5 +436,243 @@ describe("capture uploader when the session ends", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(uploadSegment).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("capture uploader once the capture is taken over or stopped elsewhere", () => {
+  const superseded = () => {
+    const error = new AxiosError("Request failed with status code 409");
+    Object.assign(error, {
+      response: {
+        status: 409,
+        data: {
+          detail: {
+            code: "capture_superseded",
+            message: "This recording continued elsewhere: another tab or device resumed it.",
+          },
+        },
+      },
+    });
+    return error;
+  };
+
+  it("sends the epoch it holds with every segment", async () => {
+    const uploadSegment = vi.fn(async (_id: string, sequence: number) => accepted(sequence));
+    const uploader = createSegmentUploader({
+      recordingId: "rec-1",
+      epoch: 4,
+      uploadSegment: uploadSegment as never,
+    });
+
+    uploader.enqueue(0, new Blob(["a"]), 2);
+    uploader.enqueue(1, new Blob(["b"]), 2);
+    await uploader.waitForIdle();
+
+    expect(uploadSegment.mock.calls.map((call) => (call as unknown[])[3])).toEqual([
+      { epoch: 4 },
+      { epoch: 4 },
+    ]);
+  });
+
+  it("stops at the refusal, without retrying, and keeps what it holds in the store", async () => {
+    const store = new MemorySegmentStore();
+    const onCaptureEnded = vi.fn(async () => {});
+    const onStalled = vi.fn(async () => {});
+    const wait = vi.fn(async () => {});
+    const uploadSegment = vi.fn(async (_id: string, sequence: number) => {
+      if (sequence === 1) {
+        throw superseded();
+      }
+      return accepted(sequence);
+    });
+    const uploader = createSegmentUploader({
+      recordingId: "rec-1",
+      epoch: 0,
+      uploadSegment: uploadSegment as never,
+      store,
+      wait,
+      onCaptureEnded,
+      onStalled,
+    });
+
+    uploader.enqueue(0, new Blob(["a"]), 2);
+    uploader.enqueue(1, new Blob(["b"]), 2);
+    uploader.enqueue(2, new Blob(["c"]), 2);
+
+    await expect(uploader.waitForIdle()).rejects.toMatchObject({ response: { status: 409 } });
+    expect(uploadSegment.mock.calls.map((call) => call[1])).toEqual([0, 1]);
+    expect(wait).not.toHaveBeenCalled();
+    expect(onStalled).not.toHaveBeenCalled();
+    expect(onCaptureEnded).toHaveBeenCalledTimes(1);
+    // Nothing more goes, even when asked to retry or given more audio.
+    expect(uploader.recover()).toBe(false);
+    uploader.enqueue(3, new Blob(["d"]), 2);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(uploadSegment).toHaveBeenCalledTimes(2);
+    await vi.waitFor(async () =>
+      expect((await store.list("rec-1")).map((segment) => segment.sequence)).toEqual([1, 2, 3]),
+    );
+  });
+
+  it("stops at the first refusal once the recording was stopped (issue #590)", async () => {
+    const closed = new AxiosError("Request failed with status code 409");
+    Object.assign(closed, {
+      response: { status: 409, data: { detail: "Recording is no longer accepting capture uploads" } },
+    });
+    const store = new MemorySegmentStore();
+    const onCaptureEnded = vi.fn(async () => {});
+    const onStalled = vi.fn(async () => {});
+    const wait = vi.fn(async () => {});
+    const uploadSegment = vi.fn(async (_id: string, sequence: number) => {
+      if (sequence === 1) {
+        throw closed;
+      }
+      return accepted(sequence);
+    });
+    const uploader = createSegmentUploader({
+      recordingId: "rec-1",
+      epoch: 0,
+      uploadSegment: uploadSegment as never,
+      store,
+      wait,
+      onCaptureEnded,
+      onStalled,
+    });
+
+    uploader.enqueue(0, new Blob(["a"]), 2);
+    uploader.enqueue(1, new Blob(["b"]), 2);
+
+    await expect(uploader.waitForIdle()).rejects.toBe(closed);
+    // Not retried as if the network were down, and never reported as a stall.
+    expect(uploadSegment).toHaveBeenCalledTimes(2);
+    expect(wait).not.toHaveBeenCalled();
+    expect(onStalled).not.toHaveBeenCalled();
+    expect(onCaptureEnded).toHaveBeenCalledWith(closed);
+    expect(uploader.recover()).toBe(false);
+    await vi.waitFor(async () =>
+      expect((await store.list("rec-1")).map((segment) => segment.sequence)).toEqual([1]),
+    );
+  });
+
+  it("stops at a failure the capture's check finds to be an ending (issue #602)", async () => {
+    const notFound = new AxiosError("Request failed with status code 404");
+    Object.assign(notFound, { response: { status: 404, data: { detail: "Recording not found" } } });
+    const discarded = new Error("This recording was discarded in another tab or on another device.");
+    const checkCaptureGone = vi.fn(async () => discarded);
+    const onCaptureEnded = vi.fn(async () => {});
+    const wait = vi.fn(async () => {});
+    const uploadSegment = vi.fn(async () => {
+      throw notFound;
+    });
+    const uploader = createSegmentUploader({
+      recordingId: "rec-1",
+      epoch: 0,
+      uploadSegment: uploadSegment as never,
+      wait,
+      checkCaptureGone,
+      onCaptureEnded,
+    });
+
+    uploader.enqueue(0, new Blob(["a"]), 2);
+
+    await expect(uploader.waitForIdle()).rejects.toBe(discarded);
+    expect(checkCaptureGone).toHaveBeenCalledWith(notFound);
+    expect(onCaptureEnded).toHaveBeenCalledWith(discarded);
+    expect(uploadSegment).toHaveBeenCalledTimes(1);
+    expect(wait).not.toHaveBeenCalled();
+    expect(uploader.recover()).toBe(false);
+  });
+
+  it("retries as usual when the capture's check finds nothing", async () => {
+    const checkCaptureGone = vi.fn(async () => null);
+    const wait = vi.fn(async () => {});
+    let attempts = 0;
+    const uploadSegment = vi.fn(async (_id: string, sequence: number) => {
+      attempts += 1;
+      if (attempts === 1) {
+        throw new AxiosError("Request failed with status code 404");
+      }
+      return accepted(sequence);
+    });
+    const uploader = createSegmentUploader({
+      recordingId: "rec-1",
+      epoch: 0,
+      uploadSegment: uploadSegment as never,
+      wait,
+      checkCaptureGone,
+    });
+
+    uploader.enqueue(0, new Blob(["a"]), 2);
+    await uploader.waitForIdle();
+
+    expect(checkCaptureGone).toHaveBeenCalledTimes(1);
+    expect(uploadSegment).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps the owning account with each segment, and adds it to restored audio (issue #589)", async () => {
+    const store = new MemorySegmentStore();
+    const restored: StoredSegment = {
+      recordingId: "rec-1",
+      sequence: 5,
+      blob: new Blob(["5"]),
+      durationSeconds: 2,
+      epoch: 2,
+    };
+    await store.put(restored);
+    const uploader = createSegmentUploader({
+      recordingId: "rec-1",
+      epoch: 2,
+      ownerId: 7,
+      initialSequence: 5,
+      uploadSegment: vi.fn(() => new Promise(() => {})) as never,
+      store,
+    });
+
+    uploader.restore([restored]);
+    uploader.enqueue(6, new Blob(["6"]), 2);
+
+    await vi.waitFor(async () =>
+      expect(
+        (await store.list("rec-1")).map((segment) => [segment.sequence, segment.ownerId]),
+      ).toEqual([
+        [5, 7],
+        [6, 7],
+      ]),
+    );
+    uploader.dispose();
+  });
+
+  it("keeps each segment under its epoch, and stores restored audio again under its own", async () => {
+    const store = new MemorySegmentStore();
+    const restored: StoredSegment[] = [
+      { recordingId: "rec-1", sequence: 5, blob: new Blob(["5"]), durationSeconds: 2, epoch: 1 },
+      { recordingId: "rec-1", sequence: 6, blob: new Blob(["6"]), durationSeconds: 2 },
+    ];
+    for (const segment of restored) {
+      await store.put(segment);
+    }
+    const uploader = createSegmentUploader({
+      recordingId: "rec-1",
+      epoch: 2,
+      initialSequence: 5,
+      // Never answers, so nothing leaves the store.
+      uploadSegment: vi.fn(() => new Promise(() => {})) as never,
+      store,
+    });
+
+    uploader.restore(restored);
+    uploader.enqueue(7, new Blob(["7"]), 2);
+
+    // A page that loads after this one closes finds all of it under epoch 2.
+    await vi.waitFor(async () =>
+      expect(
+        (await store.list("rec-1")).map((segment) => [segment.sequence, segment.epoch]),
+      ).toEqual([
+        [5, 2],
+        [6, 2],
+        [7, 2],
+      ]),
+    );
+    uploader.dispose();
   });
 });

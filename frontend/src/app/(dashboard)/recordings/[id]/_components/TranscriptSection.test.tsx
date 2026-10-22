@@ -1,7 +1,7 @@
 import { fireEvent, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { forgetNoteOutboxes, noteOutboxFor } from "@/lib/notes/noteOutbox";
+import { forgetNoteOutboxes, noteOutboxFor } from "@/lib/notes/noteOutboxes";
 import { renderWithProviders, screen } from "@/test/renderWithProviders";
 import {
   RecordingStatus,

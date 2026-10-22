@@ -20,6 +20,19 @@ export interface StoredSegment {
   sequence: number;
   blob: Blob;
   durationSeconds: number;
+  /**
+   * The capture epoch the segment is queued under. Absent on segments a build
+   * from before epochs kept, which count as epoch 0, the epoch such a capture
+   * had (issue #570).
+   */
+  epoch?: number;
+  /**
+   * The id of the account the capture belongs to, when the page knew it.
+   * Absent on segments kept before this was recorded. It lets the browser tell
+   * a recording that is gone from one owned by another account, since the
+   * server answers 404 for both (issue #589).
+   */
+  ownerId?: number;
 }
 
 export interface SegmentStore {
@@ -28,6 +41,8 @@ export interface SegmentStore {
   /** The recording's segments in sequence order. */
   list(recordingId: RecordingId): Promise<StoredSegment[]>;
   clear(recordingId: RecordingId): Promise<void>;
+  /** Each recording the store holds any segment for, once. */
+  recordingIds(): Promise<RecordingId[]>;
 }
 
 const DATABASE_NAME = "nojoin-capture";
@@ -118,6 +133,28 @@ export class IndexedDbSegmentStore implements SegmentStore {
     }
     await transactionDone(transaction);
   }
+
+  async recordingIds() {
+    const database = await this.open();
+    const transaction = database.transaction(STORE_NAME, "readonly");
+    const cursor = transaction
+      .objectStore(STORE_NAME)
+      .index(RECORDING_INDEX)
+      .openKeyCursor(null, "nextunique");
+    const ids: RecordingId[] = [];
+    await new Promise<void>((resolve, reject) => {
+      cursor.onsuccess = () => {
+        if (!cursor.result) {
+          resolve();
+          return;
+        }
+        ids.push(cursor.result.key as RecordingId);
+        cursor.result.continue();
+      };
+      cursor.onerror = () => reject(cursor.error);
+    });
+    return ids;
+  }
 }
 
 export class MemorySegmentStore implements SegmentStore {
@@ -146,11 +183,18 @@ export class MemorySegmentStore implements SegmentStore {
       this.segments.delete(this.key(recordingId, segment.sequence));
     }
   }
+
+  async recordingIds() {
+    return [...new Set([...this.segments.values()].map((segment) => segment.recordingId))];
+  }
 }
 
 export const createSegmentStore = (
   factory: IDBFactory | undefined = typeof indexedDB === "undefined" ? undefined : indexedDB,
 ): SegmentStore => (factory ? new IndexedDbSegmentStore(factory) : new MemorySegmentStore());
+
+/** The capture epoch a stored segment is queued under. */
+export const storedSegmentEpoch = (segment: StoredSegment) => segment.epoch ?? 0;
 
 /**
  * The run of stored segments that continues the server's own.

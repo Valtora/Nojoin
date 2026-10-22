@@ -12,6 +12,7 @@ import {
   removeTagFromRecording,
 } from "@/lib/api";
 import { getColorByKey, DEFAULT_TAG_COLORS } from "@/lib/constants";
+import { notifyRequestError } from "@/lib/notifyRequestError";
 import ContextMenu from "./ContextMenu";
 import Button from "./ui/Button";
 import IconButton from "./ui/IconButton";
@@ -79,9 +80,11 @@ export default function AddTagModal({
     e.preventDefault();
     if (!creatingSubTagFor || !newSubTagName.trim()) return;
 
-    await handleCreateTag(newSubTagName, creatingSubTagFor.id);
-    setCreatingSubTagFor(null);
-    setNewSubTagName("");
+    // A refused sub-tag keeps the form open with the name typed.
+    if (await handleCreateTag(newSubTagName, creatingSubTagFor.id)) {
+      setCreatingSubTagFor(null);
+      setNewSubTagName("");
+    }
   };
   const handleAddTag = async (tagName: string) => {
     if (processingTags.has(tagName)) return;
@@ -92,9 +95,8 @@ export default function AddTagModal({
       window.dispatchEvent(new CustomEvent("tags-updated"));
       if (onTagsUpdated) onTagsUpdated();
       setInputValue("");
-
-        } catch (error: unknown) {
-      console.error("Failed to add tag:", error);
+    } catch (error: unknown) {
+      notifyRequestError(error, "Failed to add tag.");
     } finally {
       setProcessingTags((prev) => {
         const next = new Set(prev);
@@ -104,41 +106,57 @@ export default function AddTagModal({
     }
   };
 
-  const handleCreateTag = async (name: string, parentId?: number) => {
-    if (!name.trim()) return;
-    if (processingTags.has(name.trim())) return;
+  /**
+   * Adds the tag named in the search field to the meeting, or creates a
+   * sub-tag under `parentId`. Resolves to whether it was added or created.
+   */
+  const handleCreateTag = async (
+    name: string,
+    parentId?: number,
+  ): Promise<boolean> => {
+    const trimmed = name.trim();
+    if (!trimmed) return false;
+    if (processingTags.has(trimmed)) return false;
 
-    setProcessingTags((prev) => new Set(prev).add(name.trim()));
+    setProcessingTags((prev) => new Set(prev).add(trimmed));
+    const randomColor =
+      DEFAULT_TAG_COLORS[Math.floor(Math.random() * DEFAULT_TAG_COLORS.length)];
     try {
+      if (parentId !== undefined) {
+        // A sub-tag is always a new tag. The API refuses a name the user
+        // already has, and the form keeps the name to correct.
+        await createTag(trimmed, randomColor, parentId);
+        await loadAllTags();
+        window.dispatchEvent(new CustomEvent("tags-updated"));
+        setInputValue("");
+        return true;
+      }
+      // Adding by name reuses the user's tag whose name matches ignoring case.
+      // The API creates the tag only when the user has none of that exact name,
+      // so a tag made since the list loaded is reused too.
       const existingTag = allTags.find(
-        (t) => t.name.toLowerCase() === name.trim().toLowerCase(),
+        (t) => t.name.toLowerCase() === trimmed.toLowerCase(),
       );
       if (existingTag) {
         await addTagToRecording(recordingId, existingTag.name);
-        window.dispatchEvent(new CustomEvent("tags-updated"));
-        if (onTagsUpdated) onTagsUpdated();
       } else {
-        const randomColor =
-          DEFAULT_TAG_COLORS[
-            Math.floor(Math.random() * DEFAULT_TAG_COLORS.length)
-          ];
-        await createTag(name.trim(), randomColor, parentId);
+        await addTagToRecording(recordingId, trimmed, randomColor);
         await loadAllTags();
-        if (!parentId) {
-          // Explicitly associates the newly created root tag with the current recording.
-          await addTagToRecording(recordingId, name.trim());
-          window.dispatchEvent(new CustomEvent("tags-updated"));
-          if (onTagsUpdated) onTagsUpdated();
-        }
       }
+      window.dispatchEvent(new CustomEvent("tags-updated"));
+      if (onTagsUpdated) onTagsUpdated();
       setInputValue("");
-
-        } catch (error: unknown) {
-      console.error("Failed to create tag:", error);
+      return true;
+    } catch (error: unknown) {
+      notifyRequestError(
+        error,
+        parentId === undefined ? "Failed to add tag." : "Failed to create tag.",
+      );
+      return false;
     } finally {
       setProcessingTags((prev) => {
         const next = new Set(prev);
-        next.delete(name.trim());
+        next.delete(trimmed);
         return next;
       });
     }
@@ -151,9 +169,8 @@ export default function AddTagModal({
       window.dispatchEvent(new CustomEvent("tags-updated"));
       if (onTagsUpdated) onTagsUpdated();
       setEditingTagId(null);
-
-        } catch (error: unknown) {
-      console.error("Failed to rename tag:", error);
+    } catch (error: unknown) {
+      notifyRequestError(error, "Failed to rename tag.");
     }
   };
 
@@ -167,9 +184,8 @@ export default function AddTagModal({
       await loadAllTags();
       window.dispatchEvent(new CustomEvent("tags-updated"));
       if (onTagsUpdated) onTagsUpdated();
-
-        } catch (error: unknown) {
-      console.error("Failed to delete tag:", error);
+    } catch (error: unknown) {
+      notifyRequestError(error, "Failed to delete tag.");
     }
   };
 
@@ -181,9 +197,8 @@ export default function AddTagModal({
       await removeTagFromRecording(recordingId, tagName);
       window.dispatchEvent(new CustomEvent("tags-updated"));
       if (onTagsUpdated) onTagsUpdated();
-
-        } catch (error: unknown) {
-      console.error("Failed to remove tag:", error);
+    } catch (error: unknown) {
+      notifyRequestError(error, "Failed to remove tag.");
     } finally {
       setProcessingTags((prev) => {
         const next = new Set(prev);
@@ -414,6 +429,7 @@ export default function AddTagModal({
               label: "Add Sub-tag",
               onClick: () => {
                 setCreatingSubTagFor(contextMenu.tag);
+                setNewSubTagName("");
                 setContextMenu(null);
               },
             },
