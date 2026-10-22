@@ -1,8 +1,8 @@
 """What a Claude model accepts, decided from its model id.
 
-The Anthropic API has no capability flag for the two request parameters Nojoin
-cares about here, and the SDK's ``models.retrieve`` is a network call the
-worker should not make on every request. The rules below are the published
+The Anthropic API has no capability flag for what Nojoin needs to know here,
+and the SDK's ``models.retrieve`` is a network call the worker should not make
+on every request. The rules below are the published
 per-model ones, keyed on the model line and version in the id, so a request
 never carries a parameter the model would reject with a 400.
 
@@ -42,11 +42,6 @@ class AnthropicModelCapabilities:
     # Omitting ``thinking`` still runs adaptive thinking, so thinking tokens count
     # against ``max_tokens`` on every call that does not turn it off.
     thinks_by_default: bool
-    # A non-default ``temperature`` is accepted. Opus 4.7 and later reject the
-    # parameter outright; Sonnet 5, Sonnet 5.5 and Haiku 5.5 reject any value but
-    # the default; Fable has no sampling control. The SDK does not type the
-    # parameter, so it travels in ``extra_body`` where it is accepted.
-    accepts_temperature: bool = False
 
 
 _UNKNOWN = AnthropicModelCapabilities(accepts_effort=False, thinks_by_default=False)
@@ -75,17 +70,14 @@ def anthropic_model_capabilities(model: str) -> AnthropicModelCapabilities:
         return AnthropicModelCapabilities(
             accepts_effort=version >= (4, 5),
             thinks_by_default=version >= (5, 0),
-            accepts_temperature=version <= (4, 6),
         )
     if line == "sonnet":
         return AnthropicModelCapabilities(
             accepts_effort=version >= (4, 6),
             thinks_by_default=version >= (5, 0),
-            accepts_temperature=version <= (4, 6),
         )
     # haiku
     return AnthropicModelCapabilities(
         accepts_effort=version >= (5, 5),
         thinks_by_default=version >= (5, 5),
-        accepts_temperature=version <= (4, 5),
     )

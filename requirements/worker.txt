@@ -10,9 +10,9 @@ onnx-asr==0.12.0
 silero-vad==6.2.3
 numpy==2.4.6
 pandas==3.0.6
-openai>=3.29.0
-anthropic>=1.13.0
-google-genai>=2.30.1
+openai>=3.35.1
+anthropic>=2.1.0
+google-genai>=2.31.0
 watchdog==6.0.0
 
 # Document parsing. PyMuPDF covers PDF text, table detection and page
@@ -48,10 +48,10 @@ fsspec==2026.9.0
 opentelemetry-api==1.45.1
 opentelemetry-sdk==1.45.1
 opentelemetry-exporter-otlp==1.45.1
-pyannote-core==6.0.1
+pyannote-core==6.1.0
 pyannote-database==6.1.1
-pyannote-metrics==4.1
-pyannote-pipeline==4.0.0
+pyannote-metrics==4.2.0
+pyannote-pipeline==4.1.0
 pytorch-metric-learning==2.9.0
 # Imported directly by the live speaker labels (assignment and clustering);
 # pyannote-metrics also pulls it in.
