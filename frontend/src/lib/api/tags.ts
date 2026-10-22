@@ -23,11 +23,13 @@ export const updateTag = async (
   return response.data;
 };
 
+/** Adds the user's tag of that name, creating it in `color` when they have none. */
 export const addTagToRecording = async (
   recordingId: RecordingId,
   tagName: string,
+  color?: string,
 ): Promise<void> => {
-  await api.post(`/tags/recordings/${recordingId}`, { name: tagName });
+  await api.post(`/tags/recordings/${recordingId}`, { name: tagName, color });
 };
 
 export const removeTagFromRecording = async (
