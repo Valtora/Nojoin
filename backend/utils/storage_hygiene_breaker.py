@@ -3,8 +3,9 @@
 Every rule only ever refuses. Only the bulk rule can be lifted, for one named
 directory and an expected count of files, so no single flag removes most of a
 directory: the split-brain rule refuses that whatever is passed. The clock rule
-is the only one that writes: when a deleting run passes every other rule, a
-probe in each directory it would remove files from, which it removes again.
+is the only one that writes. When a deleting run passes every other rule, it
+writes a probe in each directory the run would remove files from, then removes
+it again.
 """
 
 from __future__ import annotations

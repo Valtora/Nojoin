@@ -115,7 +115,8 @@ class HygieneOptions:
     may remove from it although that is over a tenth of it; any other count
     still trips. ``now`` and ``redis_client`` are seams for tests: the time the
     grace is measured from, and what opens the client the restore lock is read
-    through. The clock rule reads the worker's own clock, never ``now``.
+    through. The clock rule measures from the later of ``now`` and the
+    worker's own clock.
     """
 
     delete: bool = False
