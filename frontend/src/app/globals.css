@@ -532,10 +532,18 @@ html:is([data-ui-density="compact"], [data-ui-density="dense"]) .density-body-co
   color: var(--action-tint-fg);
 }
 
-.react-datepicker__day--selected,
-.react-datepicker__day--keyboard-selected {
+.react-datepicker__day--selected {
   background-color: var(--action);
   color: var(--action-on);
+}
+
+/* The keyboard's day, which is today in an empty picker, takes the hover tint
+   so it reads apart from the selection (#617). The hover repeats the library's
+   selector, which would otherwise paint it blue under white text. */
+.react-datepicker__day--keyboard-selected,
+.react-datepicker__day--keyboard-selected:not([aria-disabled=true]):hover {
+  background-color: var(--action-tint);
+  color: var(--foreground);
 }
 
 /* The time column and the popover's arrow repeat the library's own selectors:
