@@ -613,10 +613,11 @@ async def test_a_legacy_voiceprint_founding_a_person_stays_legacy(
 
 
 @pytest.mark.anyio
-# The canonical rename overrides the lock on purpose, as a user correction.
-@pytest.mark.parametrize("write_path", ["legacy"], indirect=True)
-async def test_a_legacy_rename_leaves_a_locked_voiceprint_alone(
-    client, session_maker, write_path
+# A stale voiceprint is replaced by a link when unlocked; locked, it is kept
+# until the voiceprint rebuild replaces it.
+@pytest.mark.parametrize("version", [CURRENT, None], ids=["current", "stale"])
+async def test_a_rename_leaves_a_locked_voiceprint_alone(
+    client, session_maker, write_path, version
 ) -> None:
     near = [0.8, 0.6]
     await _seed(
@@ -627,7 +628,7 @@ async def test_a_legacy_rename_leaves_a_locked_voiceprint_alone(
                 "id": 7,
                 "name": "Dana",
                 "embedding": VOICE,
-                "version": CURRENT,
+                "version": version,
                 "locked": True,
             }
         ],
@@ -639,8 +640,9 @@ async def test_a_legacy_rename_leaves_a_locked_voiceprint_alone(
     )
 
     assert response.status_code == 200
+    assert response.json()[0]["library_voiceprint"]["status"] == "skipped_locked"
     person = await _person(session_maker, "Dana")
-    assert (person.embedding, person.embedding_version) == (VOICE, CURRENT)
+    assert (person.embedding, person.embedding_version) == (VOICE, version)
 
 
 @pytest.mark.anyio

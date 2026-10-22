@@ -20,6 +20,7 @@ from backend.processing.embedding import (
     RecordingVoiceprint,
     cosine_similarity,
     judge_drift,
+    lock_blocks_user_link,
     offer_linked_voiceprint,
 )
 from backend.processing.embedding_version import EMBEDDING_METHOD_VERSION
@@ -277,8 +278,17 @@ async def apply_voiceprint_action(
         if not gs:
             raise HTTPException(status_code=404, detail="Global Speaker not found")
 
-        alpha = 0.4 if action.action == "force_link" else 0.3
-        library_update = offer_linked_voiceprint(gs, rec_speaker, alpha=alpha)
+        force = action.action == "force_link"
+        alpha = 0.4 if force else 0.3
+        # Force link is the user's explicit override of the lock: it folds
+        # through the drift guard as an unlocked link would, and the person
+        # stays locked.
+        library_update = offer_linked_voiceprint(
+            gs,
+            rec_speaker,
+            alpha=alpha,
+            locked=not force and lock_blocks_user_link(gs),
+        )
         if library_update.changed:
             db.add(gs)
 

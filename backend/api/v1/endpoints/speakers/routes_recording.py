@@ -23,6 +23,7 @@ from backend.models.transcript import Transcript
 from backend.models.user import User
 from backend.processing.embedding import (
     LibraryVoiceprintUpdate,
+    lock_blocks_user_link,
     offer_linked_voiceprint,
 )
 from backend.utils.canonical_pipeline import (
@@ -212,15 +213,11 @@ async def apply_recording_speaker_update(
             rs.name = None
 
             if rs.embedding:
-                # This path's lock only ever blocked a fold into an existing
-                # voiceprint, never the first one.
                 library_update = offer_linked_voiceprint(
                     global_speaker,
                     rs,
                     alpha=0.3,
-                    locked=bool(
-                        global_speaker.embedding and global_speaker.is_voiceprint_locked
-                    ),
+                    locked=lock_blocks_user_link(global_speaker),
                 )
                 if rs.id is not None:
                     legacy_library_updates[rs.id] = library_update
