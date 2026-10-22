@@ -312,7 +312,7 @@ export default function LiveTranscriptPanel({
                         </span>
                         <TranscriptLineText
                           text={segment.text}
-                          segmentKey={getTranscriptSegmentKey(segment, index)}
+                          segmentId={getTranscriptSegmentKey(segment, index)}
                           startMs={segmentStartMs(segment)}
                           endMs={segmentEndMs(segment)}
                           className="min-w-0 flex-1 text-sm italic leading-6 text-contrast-helper"

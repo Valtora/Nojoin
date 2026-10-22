@@ -1,25 +1,58 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { memo, type RefObject } from "react";
 import { Pause, Play } from "lucide-react";
 
 import { getColorByKey } from "@/lib/constants";
+import {
+  GlobalSpeaker,
+  RecordingSpeaker,
+  TranscriptSegment,
+  TranscriptSpeakerAssignment,
+} from "@/types";
 
 import IconButton from "../ui/IconButton";
 import { TOUCH_TARGET_SQUARE } from "../ui/touchTarget";
 
-import { formatTime, isRecentlyUpdatedSegment } from "./transcriptDisplay";
 import type {
-  IndexedTranscriptSegment,
-  TranscriptGroup as TranscriptGroupData,
+  SpeakerPopover,
+  TranscriptLineActions,
+  TranscriptOpenEditor,
+} from "./_hooks/useTranscriptEditing";
+import { sameDecorations, type TextDecoration } from "./textDecorations";
+import { formatTime } from "./transcriptDisplay";
+import {
+  LINE_KEY_SEPARATOR,
+  sameGroup,
+  type IndexedTranscriptSegment,
+  type TranscriptGroup as TranscriptGroupData,
 } from "./transcriptGroups";
+import TranscriptLine from "./TranscriptLine";
+
+/** What every line of the view shares; memoised by the view. */
+export interface TranscriptLineShared {
+  activeSegmentRef: RefObject<HTMLDivElement | null>;
+  readOnly: boolean;
+  allowProvisionalEdits: boolean;
+  speakerMap: Record<string, string>;
+  speakers: readonly RecordingSpeaker[];
+  globalSpeakers: GlobalSpeaker[];
+  speakerColors: Record<string, string>;
+  onUpdateSegmentSpeaker: (
+    segment: TranscriptSegment,
+    assignment: TranscriptSpeakerAssignment,
+  ) => void | Promise<void>;
+  pendingRemoteUtteranceIds: ReadonlySet<string>;
+  actions: TranscriptLineActions;
+}
 
 /** "Alex", "Alex and Blair", "Alex, Blair, and Sam". */
 const SPEAKER_LIST = new Intl.ListFormat("en", { type: "conjunction" });
 
 interface TranscriptGroupProps {
   group: TranscriptGroupData;
-  currentTime: number;
+  isGroupActive: boolean;
+  /** Playback is running and inside this group: false for every other group. */
   isPlaying: boolean;
   onPlaySegment: (start: number, end: number) => void;
   onPause: () => void;
@@ -27,35 +60,85 @@ interface TranscriptGroupProps {
   disableSegmentPlayback: boolean;
   /** Where each speaker first appears among the shown lines. */
   speakerDisplayOrder: ReadonlyMap<string, number>;
-  speakerMap: Record<string, string>;
-  speakerColors: Record<string, string>;
-  renderLine: (item: IndexedTranscriptSegment) => ReactNode;
+  lineShared: TranscriptLineShared;
+  /** Keys of this group's lines that playback is inside, one per line. */
+  activeLineKeys: string;
+  /** Keys of this group's lines revised in the last 15 s, one per line. */
+  recentLineKeys: string;
+  searchDecorations: (segmentId: string) => readonly TextDecoration[];
+  editingSpeaker: string | null;
+  editingTextId: string | null;
+  activePopover: SpeakerPopover | null;
+  /** The open editor when one of this group's lines shows it, else null. */
+  editor: TranscriptOpenEditor | null;
 }
 
 /**
  * A run of lines that overlap in time, under one timestamp and play button.
  * When more than one speaker is involved, each gets a lane.
+ *
+ * Memoised, like its lines: the view hands it values and lists of keys that
+ * change only when something in this group does, so a playback tick redraws
+ * the groups it enters and leaves and no others.
  */
-export default function TranscriptGroup({
+function TranscriptGroup({
   group,
-  currentTime,
+  isGroupActive,
   isPlaying,
   onPlaySegment,
   onPause,
   onResume,
   disableSegmentPlayback,
   speakerDisplayOrder,
-  speakerMap,
-  speakerColors,
-  renderLine,
+  lineShared,
+  activeLineKeys,
+  recentLineKeys,
+  searchDecorations,
+  editingSpeaker,
+  editingTextId,
+  activePopover,
+  editor,
 }: TranscriptGroupProps) {
-  const isGroupActive =
-    currentTime >= group.start && currentTime < group.end;
   /** The play button pauses this group's playback rather than starting it. */
   const pauses = isGroupActive && isPlaying;
-  const groupHasRecentRevision = group.items.some(({ segment }) =>
-    isRecentlyUpdatedSegment(segment),
-  );
+  const { speakerMap, speakerColors } = lineShared;
+  const activeKeys = activeLineKeys.split(LINE_KEY_SEPARATOR);
+  const recentKeys = recentLineKeys.split(LINE_KEY_SEPARATOR);
+  const groupHasRecentRevision = recentLineKeys !== "";
+
+  const renderLine = (item: IndexedTranscriptSegment) => {
+    const { segment, segmentId } = item;
+    const isEditingSpeaker = editingSpeaker === segment.speaker;
+    const isEditingText = editingTextId === segmentId;
+    return (
+      <TranscriptLine
+        key={segmentId}
+        segment={segment}
+        index={item.index}
+        segmentId={segmentId}
+        isActive={activeKeys.includes(segmentId)}
+        activeSegmentRef={lineShared.activeSegmentRef}
+        readOnly={lineShared.readOnly}
+        allowProvisionalEdits={lineShared.allowProvisionalEdits}
+        speakerMap={speakerMap}
+        speakers={lineShared.speakers}
+        globalSpeakers={lineShared.globalSpeakers}
+        speakerColors={speakerColors}
+        onUpdateSegmentSpeaker={lineShared.onUpdateSegmentSpeaker}
+        hasPendingRemoteUpdate={
+          typeof segment.id === "string" &&
+          lineShared.pendingRemoteUtteranceIds.has(segment.id)
+        }
+        isRecentlyUpdated={recentKeys.includes(segmentId)}
+        decorations={searchDecorations(segmentId)}
+        isEditingSpeaker={isEditingSpeaker}
+        isEditingText={isEditingText}
+        popoverAnchor={activePopover?.segmentId === segmentId ? activePopover.anchor : null}
+        actions={lineShared.actions}
+        editor={isEditingSpeaker || isEditingText ? editor : null}
+      />
+    );
+  };
 
   const involvedSpeakers = Array.from(group.involved).sort((left, right) => {
     const leftOrder = speakerDisplayOrder.get(left) ?? Number.MAX_SAFE_INTEGER;
@@ -159,3 +242,39 @@ export default function TranscriptGroup({
     </div>
   );
 }
+
+/**
+ * Every prop by identity, except three that are rebuilt more often than they
+ * change: the group, which grouping makes anew whenever any line changes; the
+ * speaker order, which only matters for this group's speakers; and the search
+ * decorations, a function that is new whenever any line's matches change.
+ * Those compare by what this group would draw from them.
+ */
+function sameGroupProps(previous: TranscriptGroupProps, next: TranscriptGroupProps): boolean {
+  const keys = Object.keys(next) as (keyof TranscriptGroupProps)[];
+  return (
+    keys.length === Object.keys(previous).length &&
+    keys.every((key) => {
+      switch (key) {
+        case "group":
+          return sameGroup(previous.group, next.group);
+        case "speakerDisplayOrder":
+          return [...next.group.involved].every(
+            (speaker) =>
+              previous.speakerDisplayOrder.get(speaker) === next.speakerDisplayOrder.get(speaker),
+          );
+        case "searchDecorations":
+          return next.group.items.every(({ segmentId }) =>
+            sameDecorations(
+              previous.searchDecorations(segmentId),
+              next.searchDecorations(segmentId),
+            ),
+          );
+        default:
+          return Object.is(previous[key], next[key]);
+      }
+    })
+  );
+}
+
+export default memo(TranscriptGroup, sameGroupProps);
