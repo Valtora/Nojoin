@@ -12,7 +12,7 @@ from .final_asr import (
     mark_transcript_without_speech,
     transcribe_with_gpu_oom_retry,
 )
-from .final_segments import combine_and_consolidate_segments
+from .final_segments import combine_and_consolidate_segments, drop_unheard_words
 from .speaker_assignment import assign_and_identify_speakers
 
 # ---------------------------------------------------------------------------
@@ -261,7 +261,7 @@ def _run_final_asr_stage(
     processed_audio_path: str,
     engine_override: dict | None,
 ) -> dict:
-    """Run the configured transcription engine.
+    """Run the configured engine and drop the words it placed in digital silence.
 
     A GPU OOM is retried once. Any failure marks the transcript failed and is
     re-raised as a TranscriptionError, so the orchestrator's error handler marks
@@ -317,7 +317,7 @@ def _run_final_asr_stage(
             transcription_result.get("segments", [])
         )
 
-    return transcription_result
+    return drop_unheard_words(transcription_result, processed_audio_path, recording_id)
 
 
 def _run_final_diarization_stage(

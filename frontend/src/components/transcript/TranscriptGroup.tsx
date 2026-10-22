@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, type RefObject } from "react";
+import { memo } from "react";
 import { Pause, Play } from "lucide-react";
 
 import { getColorByKey } from "@/lib/constants";
@@ -32,7 +32,6 @@ import TranscriptLine from "./TranscriptLine";
 
 /** What every line of the view shares; memoised by the view. */
 export interface TranscriptLineShared {
-  activeSegmentRef: RefObject<HTMLDivElement | null>;
   readOnly: boolean;
   allowProvisionalEdits: boolean;
   speakerMap: Record<string, string>;
@@ -67,7 +66,8 @@ interface TranscriptGroupProps {
   /** Keys of this group's lines revised in the last 15 s, one per line. */
   recentLineKeys: string;
   searchDecorations: (segmentId: string) => readonly TextDecoration[];
-  editingSpeaker: string | null;
+  /** The line whose speaker rename is open. */
+  editingSpeakerLineId: string | null;
   editingTextId: string | null;
   activePopover: SpeakerPopover | null;
   /** The open editor when one of this group's lines shows it, else null. */
@@ -95,7 +95,7 @@ function TranscriptGroup({
   activeLineKeys,
   recentLineKeys,
   searchDecorations,
-  editingSpeaker,
+  editingSpeakerLineId,
   editingTextId,
   activePopover,
   editor,
@@ -109,7 +109,7 @@ function TranscriptGroup({
 
   const renderLine = (item: IndexedTranscriptSegment) => {
     const { segment, segmentId } = item;
-    const isEditingSpeaker = editingSpeaker === segment.speaker;
+    const isEditingSpeaker = editingSpeakerLineId === segmentId;
     const isEditingText = editingTextId === segmentId;
     return (
       <TranscriptLine
@@ -118,7 +118,6 @@ function TranscriptGroup({
         index={item.index}
         segmentId={segmentId}
         isActive={activeKeys.includes(segmentId)}
-        activeSegmentRef={lineShared.activeSegmentRef}
         readOnly={lineShared.readOnly}
         allowProvisionalEdits={lineShared.allowProvisionalEdits}
         speakerMap={speakerMap}

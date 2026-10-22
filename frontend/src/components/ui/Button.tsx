@@ -2,6 +2,7 @@ import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { Loader2 } from "lucide-react";
 
 import { cn } from "@/lib/cn";
+import { DISABLED_LOOK, loadingButtonProps } from "./loadingButton";
 
 export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
 export type ButtonSize = "sm" | "md" | "lg";
@@ -9,7 +10,10 @@ export type ButtonSize = "sm" | "md" | "lg";
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
   size?: ButtonSize;
-  /** Shows a spinner and disables the button. The label stays, so the control does not resize. */
+  /**
+   * Shows a spinner and ignores clicks, while the button stays focusable. The
+   * label stays, so the control does not resize. Outranks `disabled`.
+   */
   loading?: boolean;
   /** Rendered before the label. Suppressed while loading, since the spinner takes its place. */
   iconLeft?: ReactNode;
@@ -51,6 +55,7 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
     iconRight,
     fullWidth = false,
     disabled,
+    onClick,
     className,
     children,
     type = "button",
@@ -62,19 +67,18 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
     <button
       ref={ref}
       type={type}
-      disabled={disabled || loading}
-      aria-busy={loading || undefined}
+      {...rest}
+      {...loadingButtonProps(loading, disabled, onClick)}
       className={cn(
         "inline-flex items-center justify-center rounded-lg font-semibold whitespace-nowrap",
         "transition-colors duration-150",
         "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring",
-        "disabled:cursor-not-allowed disabled:opacity-60",
+        DISABLED_LOOK,
         VARIANTS[variant],
         SIZES[size],
         fullWidth && "w-full",
         className,
       )}
-      {...rest}
     >
       {loading ? (
         <Loader2 aria-hidden="true" className="h-4 w-4 shrink-0 animate-spin" />

@@ -15,6 +15,8 @@ const originalOffsetHeight = Object.getOwnPropertyDescriptor(
   "offsetHeight",
 );
 const originalScrollIntoView = Element.prototype.scrollIntoView;
+// jsdom has no Element.scrollTo; search scrolls its first match into view.
+const originalScrollTo = Element.prototype.scrollTo;
 
 vi.mock("@/lib/notificationStore", () => ({
   useNotificationStore: () => ({ addNotification }),
@@ -100,6 +102,7 @@ beforeAll(() => {
   });
 
   Element.prototype.scrollIntoView = vi.fn();
+  Element.prototype.scrollTo = vi.fn();
 });
 
 afterAll(() => {
@@ -114,6 +117,7 @@ afterAll(() => {
     );
   }
   Element.prototype.scrollIntoView = originalScrollIntoView;
+  Element.prototype.scrollTo = originalScrollTo;
 });
 
 describe("TranscriptView", () => {

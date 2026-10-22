@@ -152,36 +152,38 @@ describe("PersonModal voiceprint lock", () => {
     expect(row?.contains(screen.getByRole("button", { name: "Delete" }))).toBe(true);
   });
 
-  it("is disabled and says so while the lock is saving", async () => {
+  it("says it is saving and ignores another click meanwhile", async () => {
     const answer = answerLater();
     render(modal(dana(true, false)));
 
     fireEvent.click(screen.getByRole("button", { name: "Lock voiceprint" }));
 
     const saving = screen.getByRole("button", { name: "Saving..." });
-    expect((saving as HTMLButtonElement).disabled).toBe(true);
+    expect(saving.getAttribute("aria-disabled")).toBe("true");
     expect(saving.getAttribute("aria-busy")).toBe("true");
+    fireEvent.click(saving);
+    expect(updateGlobalSpeaker).toHaveBeenCalledTimes(1);
     await answer(dana(true, true));
     expect(screen.getByRole("button", { name: "Unlock voiceprint" })).toBeTruthy();
   });
 
-  it("gives the toggle its focus back once the lock is saved", async () => {
+  // In Chrome a disabled toggle lost its focus to the page body, outside the
+  // dialog's focus trap (#539). jsdom keeps focus on a disabled button, so
+  // this checks the toggle is never disabled.
+  it("keeps the toggle focused while the lock saves", async () => {
     const answer = answerLater();
     render(modal(dana(true, false)));
     const toggle = screen.getByRole("button", { name: "Lock voiceprint" });
     toggle.focus();
 
     fireEvent.click(toggle);
-    // In Chrome the disabled toggle lost its focus to the page body, outside
-    // the dialog, and the focus trap did not bring it back. jsdom keeps the
-    // focus, so the test checks that the toggle takes it back itself.
-    const focus = vi.spyOn(toggle, "focus");
-    await answer(dana(true, true));
 
-    expect(focus).toHaveBeenCalled();
-    expect(document.activeElement).toBe(
-      screen.getByRole("button", { name: "Unlock voiceprint" }),
-    );
+    expect(screen.getByRole("button", { name: "Saving..." })).toBe(toggle);
+    expect((toggle as HTMLButtonElement).disabled).toBe(false);
+    expect(document.activeElement).toBe(toggle);
+    await answer(dana(true, true));
+    expect(screen.getByRole("button", { name: "Unlock voiceprint" })).toBe(toggle);
+    expect(document.activeElement).toBe(toggle);
   });
 
   it("leaves focus where it was when the toggle did not have it", async () => {
