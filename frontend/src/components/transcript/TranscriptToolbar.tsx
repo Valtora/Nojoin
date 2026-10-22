@@ -111,8 +111,17 @@ export default function TranscriptToolbar({
     };
     const onFocusOut = (event: FocusEvent) => {
       const next = event.relatedTarget;
-      rowHasFocusRef.current = next instanceof Node && row.contains(next);
-      if (next === null) focusIfDisabled(event.target, findRef.current);
+      if (next instanceof Node) {
+        rowHasFocusRef.current = row.contains(next);
+        return;
+      }
+      focusIfDisabled(event.target, findRef.current);
+      // Focus went to the page, or the row is being removed: Chrome blurs a
+      // focused element just before removing it. Settle it after the render,
+      // when a removed row has already handed focus to the toggle.
+      queueMicrotask(() => {
+        if (row.isConnected) rowHasFocusRef.current = row.contains(document.activeElement);
+      });
     };
     row.addEventListener("focusin", onFocusIn);
     row.addEventListener("focusout", onFocusOut);

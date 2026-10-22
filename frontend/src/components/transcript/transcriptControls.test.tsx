@@ -216,7 +216,7 @@ describe("transcript toolbar", () => {
   });
 
   /** Starts Replace All from the keyboard, as Chrome runs it: the button blurs as it disables. */
-  const startReplaceAll = () => {
+  const startReplaceAll = async () => {
     let finish = () => {};
     const onFindAndReplace = vi.fn(() => new Promise<void>((resolve) => (finish = resolve)));
     renderView({ onFindAndReplace });
@@ -227,11 +227,13 @@ describe("transcript toolbar", () => {
     fireEvent.click(replaceAll);
     expect(replaceAll).toBeDisabled();
     fireEvent.focusOut(replaceAll);
+    // Let the toolbar settle that focus-out before the next step.
+    await act(async () => {});
     return () => act(async () => finish());
   };
 
   it("sends focus to Find & Replace when Replace All finishes with focus still in the row", async () => {
-    const finish = startReplaceAll();
+    const finish = await startReplaceAll();
     expect(document.activeElement).toBe(findField());
 
     await finish();
@@ -240,13 +242,36 @@ describe("transcript toolbar", () => {
     expect(document.activeElement).toBe(button("Find & Replace"));
   });
 
+  it("sends focus to Find & Replace when the row is blurred as it is removed, as Chrome does", async () => {
+    // Chrome blurs a focused element just before removing it: focus is
+    // already on the page when its focusout fires. jsdom doesn't, so removal
+    // is wrapped to do the same here.
+    const removeChild = Node.prototype.removeChild;
+    const spy = vi.spyOn(Node.prototype, "removeChild").mockImplementation(function <T extends Node>(
+      this: Node,
+      child: T,
+    ): T {
+      const focused = document.activeElement;
+      if (focused instanceof HTMLElement && child.contains(focused)) focused.blur();
+      return removeChild.call(this, child) as T;
+    });
+    try {
+      const finish = await startReplaceAll();
+      await finish();
+      expect(document.activeElement).toBe(button("Find & Replace"));
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it("sends focus to Find & Replace when Replace All was reached from outside the row", async () => {
     let finish = () => {};
     renderView({ onFindAndReplace: () => new Promise<void>((resolve) => (finish = resolve)) });
     fireEvent.click(button("Find & Replace"));
     fireEvent.change(findField(), { target: { value: "alpha" } });
-    // Focus leaves the row, then comes straight back to Replace All.
+    // Focus leaves the row for the page, then comes back to Replace All.
     findField().blur();
+    await act(async () => {});
     const replaceAll = button(/Replace All/);
     replaceAll.focus();
     fireEvent.click(replaceAll);
@@ -256,8 +281,19 @@ describe("transcript toolbar", () => {
     expect(document.activeElement).toBe(button("Find & Replace"));
   });
 
+  it("leaves focus alone when the user tabbed out of the row, then clicked the page, while Replace All saved", async () => {
+    const finish = await startReplaceAll();
+    button("Undo").focus();
+    button("Undo").blur();
+    expect(document.activeElement).toBe(document.body);
+
+    await finish();
+
+    expect(document.activeElement).toBe(document.body);
+  });
+
   it("leaves focus alone when the user left the row while Replace All saved", async () => {
-    const finish = startReplaceAll();
+    const finish = await startReplaceAll();
     // A click on blank page takes focus from the find field to the page.
     findField().blur();
     expect(document.activeElement).toBe(document.body);
