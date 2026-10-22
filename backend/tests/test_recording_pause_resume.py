@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import json
 import wave
+from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -952,3 +953,296 @@ async def test_get_recording_hides_in_flight_transcript_content(
         processed_payload["transcript"]["segments"][0]["text"]
         == "Interim transcript text."
     )
+
+
+# Issue #519: a capture whose tab closed without its pause arriving stays
+# UPLOADING. Once it has been quiet past STALLED_CAPTURE_AFTER it is offered for
+# resume, stop or discard; a capture still uploading never is.
+QUIET_PAST_THRESHOLD = timedelta(minutes=3)
+QUIET_BRIEFLY = timedelta(seconds=40)
+
+
+async def _set_last_heard(
+    session_maker: sessionmaker, public_id: str, *, quiet_for: timedelta, capture: bool
+) -> datetime:
+    from backend.utils.time import utc_now
+
+    last_heard = utc_now() - quiet_for
+    # Init and resume mark a live capture RECORDING; an import leaves it unset.
+    client_status = "COALESCE(client_status, 'RECORDING')" if capture else "NULL"
+    async with session_maker() as session:
+        await session.execute(
+            text(
+                "UPDATE recordings SET last_activity_at = :last_heard, "
+                f"client_status = {client_status} WHERE public_id = :public_id"
+            ),
+            {"last_heard": last_heard, "public_id": public_id},
+        )
+        await session.commit()
+    return last_heard
+
+
+async def insert_capture(
+    session_maker: sessionmaker,
+    *,
+    recording_id: int,
+    public_id: str,
+    quiet_for: timedelta,
+    status: str = "UPLOADING",
+) -> datetime:
+    """A live capture last heard from ``quiet_for`` ago."""
+    await insert_recording(
+        session_maker, recording_id=recording_id, public_id=public_id, status=status
+    )
+    return await _set_last_heard(
+        session_maker, public_id, quiet_for=quiet_for, capture=True
+    )
+
+
+async def insert_import(
+    session_maker: sessionmaker, *, recording_id: int, public_id: str
+) -> None:
+    """An import still receiving its bytes, which also sits in UPLOADING."""
+    await insert_recording(
+        session_maker,
+        recording_id=recording_id,
+        public_id=public_id,
+        status="UPLOADING",
+    )
+    await _set_last_heard(
+        session_maker, public_id, quiet_for=QUIET_PAST_THRESHOLD, capture=False
+    )
+
+
+def test_capture_looks_stalled_only_for_a_quiet_live_capture() -> None:
+    from backend.models.recording import (
+        STALLED_CAPTURE_AFTER,
+        ClientStatus,
+        Recording,
+        RecordingStatus,
+        capture_looks_stalled,
+    )
+
+    now = datetime(2026, 10, 22, 12, 0, 0)
+
+    def capture(
+        *,
+        quiet_for: timedelta,
+        status: RecordingStatus = RecordingStatus.UPLOADING,
+        client_status: ClientStatus | None = ClientStatus.RECORDING,
+    ) -> Recording:
+        return Recording(
+            name="Weekly sync",
+            audio_path="/tmp/capture.wav",
+            status=status,
+            client_status=client_status,
+            last_activity_at=now - quiet_for,
+        )
+
+    def stalled(recording: Recording) -> bool:
+        return capture_looks_stalled(recording, now=now)
+
+    assert not stalled(capture(quiet_for=QUIET_BRIEFLY))
+    assert not stalled(capture(quiet_for=STALLED_CAPTURE_AFTER))
+    assert stalled(capture(quiet_for=STALLED_CAPTURE_AFTER + timedelta(seconds=1)))
+    # A pause that arrived is the ordinary paused lock, not a stall.
+    assert not stalled(
+        capture(
+            quiet_for=QUIET_PAST_THRESHOLD,
+            status=RecordingStatus.PAUSED,
+            client_status=ClientStatus.PAUSED,
+        )
+    )
+    # An import also sits in UPLOADING while its bytes arrive. It is no capture.
+    assert not stalled(capture(quiet_for=QUIET_PAST_THRESHOLD, client_status=None))
+
+
+async def _status_and_last_heard(
+    session_maker: sessionmaker, public_id: str
+) -> tuple[str, datetime]:
+    async with session_maker() as session:
+        row = (
+            await session.execute(
+                text(
+                    "SELECT status, last_activity_at FROM recordings "
+                    "WHERE public_id = :public_id"
+                ),
+                {"public_id": public_id},
+            )
+        ).one()
+    raw = row[1]
+    return row[0], raw if isinstance(raw, datetime) else datetime.fromisoformat(raw)
+
+
+@pytest.mark.anyio
+async def test_unfinished_capture_listing_flags_only_a_quiet_capture(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+) -> None:
+    set_session_cookie(client)
+    await insert_capture(
+        test_session_maker,
+        recording_id=3001,
+        public_id="capture-tab-gone",
+        quiet_for=QUIET_PAST_THRESHOLD,
+    )
+    await insert_capture(
+        test_session_maker,
+        recording_id=3002,
+        public_id="capture-riding-out-an-outage",
+        quiet_for=QUIET_BRIEFLY,
+    )
+    await insert_capture(
+        test_session_maker,
+        recording_id=3003,
+        public_id="capture-paused",
+        quiet_for=QUIET_PAST_THRESHOLD,
+        status="PAUSED",
+    )
+    await insert_import(test_session_maker, recording_id=3004, public_id="slow-import")
+
+    response = await client.get(
+        "/api/v1/recordings",
+        params=[("status", "PAUSED"), ("status", "UPLOADING"), ("user", "me")],
+    )
+
+    assert response.status_code == 200
+    assert {row["id"]: row["capture_stalled"] for row in response.json()} == {
+        "capture-tab-gone": True,
+        "capture-riding-out-an-outage": False,
+        "capture-paused": False,
+        "slow-import": False,
+    }
+
+
+@pytest.mark.anyio
+async def test_resume_takes_over_a_capture_whose_tab_is_gone(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+) -> None:
+    from backend.utils.time import utc_now
+
+    set_session_cookie(client)
+    public_id = "capture-tab-gone"
+    await insert_capture(
+        test_session_maker,
+        recording_id=3101,
+        public_id=public_id,
+        quiet_for=QUIET_PAST_THRESHOLD,
+    )
+
+    response = await client.post(
+        f"/api/v1/recordings/{public_id}/resume",
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "recording_id": public_id,
+        "status": "UPLOADING",
+        "last_sequence": -1,
+    }
+    status_value, last_heard = await _status_and_last_heard(
+        test_session_maker, public_id
+    )
+    assert status_value == "UPLOADING"
+    assert last_heard > utc_now() - timedelta(minutes=1)
+    # Fresh activity: the capture is live again, so nothing else may take it.
+    listing = await client.get(
+        "/api/v1/recordings", params={"status": "UPLOADING", "user": "me"}
+    )
+    assert [row["capture_stalled"] for row in listing.json()] == [False]
+
+
+@pytest.mark.anyio
+async def test_resume_refuses_a_capture_that_is_still_uploading(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+) -> None:
+    """Another tab or device must never take over a capture that is uploading."""
+    set_session_cookie(client)
+    public_id = "capture-riding-out-an-outage"
+    last_heard_before = await insert_capture(
+        test_session_maker,
+        recording_id=3201,
+        public_id=public_id,
+        quiet_for=QUIET_BRIEFLY,
+    )
+
+    response = await client.post(
+        f"/api/v1/recordings/{public_id}/resume",
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == (
+        "This recording is still in progress and received audio in the last two minutes."
+    )
+    status_value, last_heard = await _status_and_last_heard(
+        test_session_maker, public_id
+    )
+    assert (status_value, last_heard) == ("UPLOADING", last_heard_before)
+
+
+@pytest.mark.anyio
+async def test_resume_refuses_an_import_however_quiet(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+) -> None:
+    set_session_cookie(client)
+    await insert_import(test_session_maker, recording_id=3301, public_id="slow-import")
+
+    response = await client.post(
+        "/api/v1/recordings/slow-import/resume",
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Recording is not paused"
+
+
+@pytest.mark.anyio
+async def test_init_conflict_explains_a_capture_still_in_progress(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+) -> None:
+    from backend.api.v1.endpoints.recordings.constants import (
+        ACTIVE_RECORDING_CONFLICT_MESSAGE,
+        CAPTURE_IN_PROGRESS_CONFLICT_MESSAGE,
+    )
+
+    set_session_cookie(client)
+    public_id = "capture-elsewhere"
+    await insert_capture(
+        test_session_maker,
+        recording_id=3401,
+        public_id=public_id,
+        quiet_for=QUIET_BRIEFLY,
+    )
+
+    in_progress = await client.post(
+        "/api/v1/recordings/init",
+        params={"name": "Blocked meeting"},
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+
+    assert in_progress.status_code == 409
+    assert in_progress.json()["detail"] == {
+        "code": "active_recording_exists",
+        "message": CAPTURE_IN_PROGRESS_CONFLICT_MESSAGE,
+        "recording_id": public_id,
+        "status": "UPLOADING",
+    }
+
+    # Once stalled it is offered in the dialog, which the generic message suits.
+    await _set_last_heard(
+        test_session_maker, public_id, quiet_for=QUIET_PAST_THRESHOLD, capture=True
+    )
+    stalled = await client.post(
+        "/api/v1/recordings/init",
+        params={"name": "Blocked meeting"},
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+
+    assert stalled.status_code == 409
+    assert stalled.json()["detail"]["message"] == ACTIVE_RECORDING_CONFLICT_MESSAGE

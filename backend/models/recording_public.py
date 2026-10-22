@@ -13,7 +13,12 @@ from backend.models.document import (
     DocumentStatus,
     parse_looks_stalled,
 )
-from backend.models.recording import ClientStatus, Recording, RecordingStatus
+from backend.models.recording import (
+    ClientStatus,
+    Recording,
+    RecordingStatus,
+    capture_looks_stalled,
+)
 from backend.models.speaker import GlobalSpeakerRead, RecordingSpeaker
 from backend.models.tag import Tag, TagRead
 from backend.models.transcript import Transcript
@@ -223,6 +228,11 @@ class RecordingPublicRead(PublicModel):
     is_archived: bool = False
     is_deleted: bool = False
     last_activity_at: Optional[datetime] = None
+    # A live capture that has uploaded nothing for STALLED_CAPTURE_AFTER: its tab
+    # is gone or cut off. The client offers it for resume, stop or discard.
+    # Computed server-side, like Document.is_stalled, because last_activity_at
+    # carries no timezone and the browser's clock may disagree with the server's.
+    capture_stalled: bool = False
     transcript: Optional[TranscriptPublicRead] = None
     speakers: list[RecordingSpeakerPublicRead] = Field(default_factory=list)
     tags: list[TagRead] = Field(default_factory=list)
@@ -435,6 +445,7 @@ def serialize_recording(
         is_archived=recording.is_archived,
         is_deleted=recording.is_deleted,
         last_activity_at=recording.last_activity_at,
+        capture_stalled=capture_looks_stalled(recording),
         transcript=transcript,
         speakers=speakers,
         tags=tags,

@@ -62,6 +62,8 @@ Switching tabs or windows, using another application or moving between Nojoin pa
 
 Closing or reloading the Nojoin tab pauses the recording. Audio the server already has stays there, and audio recorded but not yet uploaded is kept in this browser's storage for the Nojoin site. Only the unfinished last segment, under two seconds, is lost. Next time you open Nojoin, it asks you to resume, stop and process, or discard; resuming or stopping in the same browser uploads the kept audio first.
 
+The pause can fail to arrive: the tab closed while signed out, or with no connection to the server. The recording then stays in progress with no tab capturing it. Once no audio has reached the server for two minutes, Nojoin offers it in the same dialog as an interrupted recording, in any tab or on any device, without a reload. Until then, **Start Meeting** reports that a recording is still in progress. A recording still open in another tab of the same browser is never offered, however long it has gone without uploading, since that tab may only be waiting for you to sign in again or for the connection to return.
+
 If the tab was lost before any audio reached the server, Nojoin discards the empty recording and tells you to start again. The usual cause is a server upgrade while the tab was open: the first page change after **Start Meeting** reloads the app. Select **Start Meeting** again.
 
 ### Signing In Again During A Recording
@@ -72,7 +74,7 @@ Sign in as the account that started the recording. Signing in from another tab w
 
 **Stop recording** in the dialog, or the browser's **Stop sharing** button, stops capturing and releases the microphone and shared tab at once. The rest of the audio uploads, and the recording is processed, after you sign in. Pause and discard need you to sign in first.
 
-Keep the tab open until you have signed in. A tab closed or reloaded while signed out cannot pause the recording, so it stays in progress, and the audio it had not uploaded stays in this browser. After you sign in again in the same browser, **Start Meeting** reports that a recording is still in progress. Open that recording and select **Stop** to upload the kept audio and process it.
+Keep the tab open until you have signed in. A tab closed or reloaded while signed out cannot pause the recording, so it stays in progress, and the audio it had not uploaded stays in this browser. Two minutes after its last upload, Nojoin offers it as an interrupted recording ([Closing Or Reloading The Tab](#closing-or-reloading-the-tab)). Resume it or choose **Stop and process** in the same browser to upload the kept audio first.
 
 ### Background Tabs And Sleep
 
@@ -88,13 +90,13 @@ To take notes on a second device, such as a phone while a laptop records, sign i
 
 ## Paused Recording Lock
 
-Each user can run one browser capture at a time. While a paused recording exists, the **Start Meeting** button reads **Paused recording needs attention** and imports are blocked until you choose in the dialog:
+Each user can run one browser capture at a time. While a paused recording exists, the **Start Meeting** button reads **Paused recording needs attention** and imports are blocked until you choose in the dialog. An interrupted recording, one whose tab closed without pausing it, holds the same lock, and the button reads **Interrupted recording needs attention**:
 
 - **Resume recording** continues the same recording. The browser asks you to share again.
 - **Stop and process** finalizes the audio already captured and queues processing without opening the share picker. Use it when the meeting is over or the capture was lost.
 - **Discard recording** deletes the partial recording.
 
-Nojoin keeps a paused recording until you choose. It never cleans one up or finalizes it for you.
+Nojoin keeps a paused or interrupted recording until you choose. It never pauses, cleans up or finalizes one for you. If the tab recording an interrupted capture was only cut off and starts uploading again, the dialog closes by itself within 30 seconds, and Nojoin refuses to resume that recording anywhere else while it is receiving audio.
 
 ## Capture Settings
 
