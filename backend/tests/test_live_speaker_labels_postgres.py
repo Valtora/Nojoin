@@ -701,3 +701,56 @@ def test_a_scoped_rename_racing_a_label_write_keeps_revisions_increasing(
         # The label's bump, then the rename's: neither is written over.
         assert after[line][2] == before[line][2] + 2, (line, before[line], after[line])
     assert len({after[line][0] for line in after}) == 1
+
+
+def test_two_corrections_to_every_line_of_a_speaker_take_turns(
+    postgres_test_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Each locks the speaker's lines in id order. Had each locked its own line
+    # first, two on different lines would each hold a line the other waits for.
+    from backend.utils.canonical_pipeline import core
+
+    with postgres_engine(postgres_test_url) as engine:
+        recording_id = _live_lines(engine)
+        _label_and_commit(engine, recording_id)
+        both_there = threading.Barrier(2, timeout=2.0)
+        select_lines = core._select_utterances_for_scope
+
+        def after_both_anchors(*args, **kwargs):
+            try:
+                both_there.wait()
+            except threading.BrokenBarrierError:
+                pass  # the other is waiting for this one's locks
+            return select_lines(*args, **kwargs)
+
+        monkeypatch.setattr(core, "_select_utterances_for_scope", after_both_anchors)
+
+        def everywhere(line: str, name: str):
+            outcome: dict = {}
+
+            def work() -> None:
+                try:
+                    with Session(engine) as person:
+                        update_utterance_speaker(
+                            person,
+                            recording_id=recording_id,
+                            utterance_public_id=line,
+                            new_speaker_name=name,
+                            scope=SpeakerCorrectionScope.SPEAKER_EVERYWHERE_IN_RECORDING,
+                        )
+                        person.commit()
+                        outcome["done"] = True
+                except Exception as exc:  # noqa: BLE001 -- the deadlock, reported
+                    outcome["error"] = exc
+
+            thread = threading.Thread(target=work)
+            thread.start()
+            return thread, outcome
+
+        runs = [everywhere("pg-c", "Ada"), everywhere("pg-a", "Bo")]
+        for thread, _ in runs:
+            thread.join(15.0)
+        projection = _projection(engine, recording_id)
+
+    assert [outcome for _, outcome in runs] == [{"done": True}, {"done": True}]
+    assert len(set(projection.values())) == 1

@@ -2,7 +2,7 @@ import logging
 
 from .constants import *
 from .public_ids import UtterancePublicIds, public_ids_for_write
-from .scope import _select_utterances_for_scope
+from .scope import _lock_anchor, _select_utterances_for_scope
 from .segmentation import *
 from .speaker import *
 from .speaker_matching import _find_matching_recording_speaker  # noqa: F401
@@ -1143,7 +1143,7 @@ def update_utterance_speaker(
     expected_revision: int | None = None,
     source: str = "api",
 ) -> tuple[TranscriptUtterance, RecordingSpeaker]:
-    utterance = _get_utterance(session, recording_id, utterance_public_id, lock=True)
+    utterance = _lock_anchor(session, recording_id, utterance_public_id, scope)
     if utterance is None:
         raise LookupError("Utterance not found")
     if expected_revision is not None and utterance.revision != expected_revision:
