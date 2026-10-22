@@ -15,6 +15,7 @@ from backend.services.recording_identity_service import (
     get_recording_by_public_id,
     get_recordings_by_public_ids,
 )
+from backend.services.tag_ownership import require_own_parent
 
 router = APIRouter()
 
@@ -81,6 +82,8 @@ async def create_tag(
     """
     Create a new tag.
     """
+    await require_own_parent(db, Tag, tag_in.parent_id, current_user.id)
+
     statement = select(Tag).where(
         Tag.name == tag_in.name, Tag.user_id == current_user.id
     )
@@ -115,6 +118,13 @@ async def update_tag(
     if not tag or tag.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Tag not found")
 
+    # Use model_fields_set to check for explicit updates, including explicit None
+    parent_set = "parent_id" in tag_update.model_fields_set
+    if parent_set:
+        if tag_update.parent_id == tag.id:
+            raise HTTPException(status_code=400, detail="Tag cannot be its own parent")
+        await require_own_parent(db, Tag, tag_update.parent_id, current_user.id)
+
     if tag_update.name is not None:
         if tag_update.name != tag.name:
             stmt = select(Tag).where(
@@ -130,12 +140,8 @@ async def update_tag(
     if tag_update.color is not None:
         tag.color = tag_update.color
 
-    # Use model_fields_set to check for explicit updates, including explicit None
-    if "parent_id" in tag_update.model_fields_set:
-        new_parent_id = tag_update.parent_id
-        if new_parent_id == tag.id:
-            raise HTTPException(status_code=400, detail="Tag cannot be its own parent")
-        tag.parent_id = new_parent_id
+    if parent_set:
+        tag.parent_id = tag_update.parent_id
 
     await db.commit()
     await db.refresh(tag)
