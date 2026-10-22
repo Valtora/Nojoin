@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
 from backend.processing.embedding import (
     LibraryVoiceprintUpdate,
+    lock_blocks_user_link,
     offer_linked_voiceprint,
 )
 
@@ -29,19 +30,19 @@ def apply_recording_speaker_identity_fields(
     merge_global_embedding_alpha: float | None = None,
     identity_confidence: float | None = None,
     identity_locked: bool | None = None,
-    respect_voiceprint_lock: bool = True,
+    user_link: bool = False,
 ) -> LibraryVoiceprintUpdate | None:
     """Mutate one recording speaker's identity fields in place.
 
-    When ``respect_voiceprint_lock`` is True (the default, used by automated
-    callers such as speaker-suggestion auto-apply), a voiceprint-locked global
-    speaker never receives an embedding update — neither merging into an
-    existing voiceprint nor seeding an empty one. The manual rename/promote
-    path passes False so an explicit human-initiated link still updates the
-    voiceprint, matching the documented intent that locking blocks *automated*
-    updates only. ``identity_confidence`` and ``identity_locked`` are written
-    only when a value is provided, so callers control whether the identity is
-    asserted as human-confirmed.
+    An automated link (the default, as for speaker-suggestion auto-apply)
+    never changes a voiceprint-locked person's voiceprint, nor gives them a
+    first one. A ``user_link`` (a rename or promote) takes the rule of every
+    link the user makes (``lock_blocks_user_link``): the lock blocks a change
+    to an existing voiceprint, but a locked person with none still gets one.
+    Either way a link the lock keeps out is still judged against the
+    person's voiceprint. ``identity_confidence`` and ``identity_locked`` are
+    written only when a value is provided, so callers control whether the
+    identity is asserted as human-confirmed.
 
     Returns what happened to the person's library voiceprint, or None when no
     voiceprint was offered to it (no person, no merge weight, or no recording
@@ -62,8 +63,9 @@ def apply_recording_speaker_identity_fields(
                 recording_speaker,
                 alpha=merge_global_embedding_alpha,
                 locked=(
-                    respect_voiceprint_lock
-                    and target_global_speaker.is_voiceprint_locked
+                    lock_blocks_user_link(target_global_speaker)
+                    if user_link
+                    else bool(target_global_speaker.is_voiceprint_locked)
                 ),
             )
             if library_update.changed:

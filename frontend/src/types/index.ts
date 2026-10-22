@@ -79,6 +79,27 @@ export interface GlobalSpeaker extends BaseDBModel {
   tags?: PeopleTag[];
 }
 
+/**
+ * The fields a person update changes; an absent field is left as it is.
+ * Mirrors `GlobalSpeakerUpdate` in backend/models/speaker.py.
+ */
+export interface GlobalSpeakerUpdate {
+  name?: string;
+  color?: string;
+  /**
+   * Locks or unlocks the voiceprint without changing it. A locked voiceprint
+   * is left as it is by renames, links, merges and automatic learning; only
+   * a force link, recalibrating and splitting the person change it.
+   */
+  is_voiceprint_locked?: boolean;
+  title?: string | null;
+  company?: string | null;
+  email?: string | null;
+  phone_number?: string | null;
+  notes?: string | null;
+  tag_ids?: number[];
+}
+
 export interface RecordingSpeaker extends BaseDBModel {
   recording_id: RecordingId;
   global_speaker_id?: number;
