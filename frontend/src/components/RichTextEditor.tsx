@@ -39,6 +39,9 @@ export default function RichTextEditor({ content, onChange, editable = true, onE
   const reported = useRef<string | null>(null);
 
   const editor = useEditor({
+    // The CSP refuses the style tag Tiptap would inject; the base rules are in
+    // globals.css (#501).
+    injectCSS: false,
     immediatelyRender: false,
     extensions: [
       StarterKit,

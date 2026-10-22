@@ -195,6 +195,20 @@ describe("SpeakerCapField inline layout", () => {
     expect(screen.getByLabelText(/max speakers/i)).toBeInTheDocument();
   });
 
+  // jsdom has no layout. In a 390px toolbar the icon alone wrapped onto a
+  // third line, under the label (#538).
+  it("wraps the hint icon with the stepper, not on its own", () => {
+    render(
+      <SpeakerCapField value={null} onCommit={vi.fn()} layout="inline" liveHint />,
+    );
+
+    const increase = screen.getByRole("button", { name: "Increase speaker limit" });
+    const icon = screen.getByTitle(/applied when you stop/i);
+    const unit = increase.parentElement?.parentElement;
+    expect(unit?.contains(icon)).toBe(true);
+    expect(unit?.contains(screen.getByText("Max Speakers"))).toBe(false);
+  });
+
   it("surfaces the hint visibly when an entry is rejected", () => {
     render(<SpeakerCapField value={2} onCommit={vi.fn()} layout="inline" />);
 
