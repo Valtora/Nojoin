@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { PeopleTag } from "@/types";
 import { DEFAULT_TAG_COLORS } from "@/lib/constants";
+import { notifyRequestError } from "@/lib/notifyRequestError";
 import {
   getPeopleTags,
   createPeopleTag,
@@ -112,8 +113,12 @@ export function PeopleTagSidebar({
     setExpandedTagIds(newSet);
   };
 
-  const handleAddTag = async (name: string, parentId?: number) => {
-    if (!name.trim()) return;
+  /** Resolves to whether the tag was created; a refused name stays in its field. */
+  const handleAddTag = async (
+    name: string,
+    parentId?: number,
+  ): Promise<boolean> => {
+    if (!name.trim()) return false;
     try {
       const randomColor =
         DEFAULT_TAG_COLORS[
@@ -127,8 +132,10 @@ export function PeopleTagSidebar({
       if (parentId) {
         setExpandedTagIds((prev) => new Set(prev).add(parentId));
       }
+      return true;
     } catch (error: unknown) {
-      console.error("Failed to add tag:", error);
+      notifyRequestError(error, "Failed to create tag.");
+      return false;
     }
   };
 
@@ -139,7 +146,7 @@ export function PeopleTagSidebar({
       await fetchTags();
       setEditingTagId(null);
     } catch (error: unknown) {
-      console.error("Failed to update tag:", error);
+      notifyRequestError(error, "Failed to rename tag.");
     }
   };
 
@@ -149,7 +156,7 @@ export function PeopleTagSidebar({
       await fetchTags();
       setConfirmDelete(null);
     } catch (error: unknown) {
-      console.error("Failed to delete tag:", error);
+      notifyRequestError(error, "Failed to delete tag.");
     }
   };
 
@@ -158,7 +165,7 @@ export function PeopleTagSidebar({
       await updatePeopleTag(id, { color });
       setTags((prev) => prev.map((t) => (t.id === id ? { ...t, color } : t)));
     } catch (error: unknown) {
-      console.error("Failed to update tag color:", error);
+      notifyRequestError(error, "Failed to change tag colour.");
     }
   };
 
@@ -360,7 +367,8 @@ interface TagNodeProps {
   onEditSave: (id: number, name: string) => void;
   addingSubTagTo: number | null;
   onAddSubStart: (id: number | null) => void;
-  onAddSubSave: (name: string, parentId: number) => void;
+  /** Resolves to whether the sub-tag was created. */
+  onAddSubSave: (name: string, parentId: number) => Promise<boolean>;
   onDelete: (tag: PeopleTag) => void;
   onColorChange: (id: number, color: string) => void;
 }
@@ -390,6 +398,22 @@ function TagNode({
 
   const [editValue, setEditValue] = useState(tag.name);
   const [subValue, setSubValue] = useState("");
+
+  // Each edit starts from the saved name, and each new sub-tag from an empty
+  // field, not from a name refused or abandoned earlier.
+  const startEdit = () => {
+    setEditValue(tag.name);
+    onEditStart(tag.id, tag.name);
+  };
+  const startSubTag = () => {
+    setSubValue("");
+    onAddSubStart(tag.id);
+  };
+
+  // A refused sub-tag name stays in the field so it can be corrected.
+  const saveSubTag = async () => {
+    if (await onAddSubSave(subValue, tag.id)) setSubValue("");
+  };
 
   return (
     <div>
@@ -430,7 +454,7 @@ function TagNode({
               onDoubleClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                onEditStart(tag.id, tag.name);
+                startEdit();
               }}
             >
               {tag.name}
@@ -445,7 +469,7 @@ function TagNode({
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                onEditStart(tag.id, tag.name);
+                startEdit();
               }}
               className="p-1.5 hover:text-action-text transition-all"
               title="Rename"
@@ -457,7 +481,7 @@ function TagNode({
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                onAddSubStart(tag.id);
+                startSubTag();
               }}
               className="p-1.5 hover:text-action-text transition-all"
               title="Add sub-tag"
@@ -513,17 +537,12 @@ function TagNode({
             value={subValue}
             onChange={(e) => setSubValue(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                onAddSubSave(subValue, tag.id);
-                setSubValue("");
-              } else if (e.key === "Escape") onAddSubStart(null);
+              if (e.key === "Enter") void saveSubTag();
+              else if (e.key === "Escape") onAddSubStart(null);
             }}
           />
           <button
-            onClick={() => {
-              onAddSubSave(subValue, tag.id);
-              setSubValue("");
-            }}
+            onClick={() => void saveSubTag()}
             className="p-1 text-action-text hover:bg-action-tint rounded"
           >
             <Check className="w-3.5 h-3.5" />

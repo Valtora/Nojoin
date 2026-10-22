@@ -8,13 +8,17 @@
 # never runs on. Both stages below must move together, or the venv is built on a
 # different interpreter than it executes on. scripts/check_held_pins.py enforces
 # this, and .github/dependabot.yml holds the base image at 3.12.
-FROM python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1 AS builder
+FROM python:3.12-slim@sha256:cb33f7f771ecec2ef1225cf39b159591a040391bd73e4c01f00fdfc4c47611d2 AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# The upgrade matters here although this stage ships only /opt/venv: pip
+# verifies PyPI against the OS trust store as well as its own, so a CA that
+# Debian has distrusted (#585) stays trusted for the install below until the
+# base image is republished.
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     git \
     libssl-dev \
     libffi-dev \
@@ -27,11 +31,19 @@ COPY requirements/ /app/requirements/
 
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
-RUN pip install --no-cache-dir -r requirements/backend.txt
+# Swap the venv's pip, a copy of the base image's, for the hash-pinned release
+# in requirements/pip.txt before it downloads anything, then remove it: the
+# runtime never runs pip, and from 26.2 pip ships an SBOM of its vendored
+# urllib3, msgpack and setuptools, whose fixable CVEs the image scan reports
+# like installed packages.
+RUN pip install --no-cache-dir --require-hashes -r requirements/pip.txt && \
+    pip install --no-cache-dir -r requirements/backend.txt && \
+    python -m pip uninstall -y pip && \
+    ! test -e /opt/venv/bin/pip
 
 # --- Runtime Stage ---
 # Must be the same image as the builder stage above; see the note there.
-FROM python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1 AS runtime
+FROM python:3.12-slim@sha256:cb33f7f771ecec2ef1225cf39b159591a040391bd73e4c01f00fdfc4c47611d2 AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
@@ -50,13 +62,19 @@ ENV PATH="/opt/venv/bin:$PATH"
 # archive well before they reach any digest this file could pin. Ahead of 2.5.1
 # the newest python:3.12-slim (built 2026-09-01) still carried fixable
 # CRITICAL/HIGH findings in gzip, libpcre2, libsqlite3 and perl-base, and the
-# release scan gate fails on those. Only the runtime stage is upgraded: the
-# builder stage contributes /opt/venv and nothing from its OS layer.
+# release scan gate fails on those. The builder stage upgrades too, for the
+# trust store its pip downloads through.
 RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     ffmpeg \
     libsndfile1 \
     gosu \
     && rm -rf /var/lib/apt/lists/*
+
+# Remove the base image's own pip, as the builder removed the venv's copy.
+# Nothing at runtime runs it, and its vendored certifi (2024.08.30 in the base
+# pinned above) still trusts the distrusted emSign ECC Root CA - G3 (#585).
+RUN /usr/local/bin/python3 -m pip uninstall -y --root-user-action=ignore pip && \
+    ! test -e /usr/local/bin/pip
 
 COPY --from=builder /opt/venv /opt/venv
 

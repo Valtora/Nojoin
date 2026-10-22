@@ -20,6 +20,12 @@ export interface StoredSegment {
   sequence: number;
   blob: Blob;
   durationSeconds: number;
+  /**
+   * The capture epoch the segment is queued under. Absent on segments a build
+   * from before epochs kept, which count as epoch 0, the epoch such a capture
+   * had (issue #570).
+   */
+  epoch?: number;
 }
 
 export interface SegmentStore {
@@ -151,6 +157,9 @@ export class MemorySegmentStore implements SegmentStore {
 export const createSegmentStore = (
   factory: IDBFactory | undefined = typeof indexedDB === "undefined" ? undefined : indexedDB,
 ): SegmentStore => (factory ? new IndexedDbSegmentStore(factory) : new MemorySegmentStore());
+
+/** The capture epoch a stored segment is queued under. */
+export const storedSegmentEpoch = (segment: StoredSegment) => segment.epoch ?? 0;
 
 /**
  * The run of stored segments that continues the server's own.

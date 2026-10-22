@@ -44,7 +44,7 @@ The **Tasks** page has **Open**, **Completed** and **Archived** views and a **Cr
 **Recordings** in the navigation lists your meetings, with **Archived** and **Deleted** views beside it.
 
 - **Search...** above the list matches meeting titles, tags and speaker names. Its filter button adds a date filter (a range, after or before) and a speaker filter.
-- **Tags** in the navigation hold your tags, which can nest. Select a tag to filter the list by it, drag a tag onto another to nest it, and right-click one to rename, add a sub-tag, promote or delete it. Tag a single meeting from its header.
+- **Tags** in the navigation hold your tags, which can nest. Select a tag to filter the list by it, drag a tag onto another to nest it, and right-click one to rename, add a sub-tag, promote or delete it. Tag a single meeting from its header. When a rename or move is refused, for example a name you already use or a tag dropped onto its own sub-tag, a notification gives the reason, and a refused rename keeps what you typed so you can correct it.
 - Right-click a recording for **Rename**, **Retry Speaker Inference**, **Retry Processing**, **Show Recording Info**, **Archive** and **Delete**. An unfinished recording offers **Discard Recording** in place of **Retry Processing**.
 - **Archive** moves a recording to **Archived**. **Delete** moves it to **Deleted**, the bin, where **Restore** brings it back and **Delete Permanently** removes it, its audio and its attached documents for good. Recordings stay in the bin until you delete them permanently.
 - Ctrl-click (Cmd-click on a Mac) or Shift-click to select several recordings, then use the batch bar to **Add Tag**, **Archive**, **Delete**, **Restore** or **Permanently Delete** them.
@@ -53,7 +53,7 @@ The **Tasks** page has **Open**, **Completed** and **Archived** views and a **Cr
 
 The **People** page is your speaker library: the people Nojoin can recognise across meetings, with their voiceprints and contact details. Each user has their own library, and a meeting's speakers are matched and linked only to people in its owner's library.
 
-- Search by name, email or company, and filter by people tags, which can nest like recording tags. Each user has their own people tags and recording tags, and no two tags in either set share a name.
+- Search by name, email or company, and filter by people tags, which can nest like recording tags. Each user has their own people tags and recording tags, and no two tags in either set share a name. A new or renamed people tag with a name already in use is refused with a notification, and the name you typed stays in its field.
 - Select several people for **Batch Edit People** or to delete them together.
 - A person's menu has **Edit Details**, **Recalibrate Voiceprint** to rebuild their voiceprint from better samples, **Split / Unmerge Speaker** and **Delete Person**.
 - In a person's details, **Lock voiceprint** keeps their voiceprint as it is: renames, links, merges and automatic learning leave it alone, and only **Link to different speaker** in **Create Voiceprint**, recalibrating or splitting the person changes it. **Unlock voiceprint** lets them update it again. Neither changes the voiceprint itself, and a locked person is still recognised in later meetings.
