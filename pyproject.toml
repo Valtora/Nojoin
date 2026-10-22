@@ -47,7 +47,9 @@ files = [
     "backend/api/error_handling.py",
     "backend/utils/upload_limit.py",
     "backend/utils/storage_hygiene.py",
+    "backend/utils/storage_hygiene_breaker.py",
     "backend/utils/storage_hygiene_report.py",
+    "backend/utils/storage_hygiene_scan.py",
     "backend/storage_hygiene.py",
     "backend/services/exports",
     # API-facing schema and ORM models (public/cross-module surface).
