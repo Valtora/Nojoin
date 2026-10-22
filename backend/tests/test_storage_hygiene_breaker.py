@@ -548,11 +548,12 @@ def test_a_restore_that_starts_before_the_first_unlink_stops_the_deletion(
 ) -> None:
     add_referenced_audio(db, layout, 1)
     orphan = write_file(layout.recordings / uuid_name(".wav"))
-    lock = FakeLockStore(False, True)
+    # Free at the start and before the clock probe, held by the first unlink.
+    lock = FakeLockStore(False, False, True)
 
     report = run(db, delete=True, bulk=True, lock=lock)
 
-    assert lock.reads == 2
+    assert lock.reads == 3
     assert rules(report) == [RULE_RESTORE_LOCK]
     assert orphan.exists()
 
@@ -562,12 +563,13 @@ def test_the_lock_is_read_again_every_25_flagged_files(
 ) -> None:
     add_referenced_audio(db, layout, 30)
     orphans = [write_file(layout.recordings / uuid_name(".wav")) for _ in range(30)]
-    # Free at the start, at the first unlink, then held by the 26th.
-    lock = FakeLockStore(False, False, True)
+    # Free at the start, before the clock probe, at the first unlink, then
+    # held by the 26th.
+    lock = FakeLockStore(False, False, False, True)
 
     report = run(db, delete=True, bulk={layout.recordings: 30}, lock=lock)
 
-    assert lock.reads == 3
+    assert lock.reads == 4
     assert rules(report) == [RULE_RESTORE_LOCK]
     assert report.deleted == 25
     assert sum(path.exists() for path in orphans) == 5
