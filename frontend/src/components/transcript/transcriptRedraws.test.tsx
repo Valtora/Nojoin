@@ -176,15 +176,10 @@ describe("transcript redraws", () => {
     fireEvent.click(screen.getByRole("button", { name: "Search" }));
     const find = screen.getByPlaceholderText("Find...");
 
+    // Typing the query marks its matches and makes the first one current.
     forget();
     fireEvent.change(find, { target: { value: "alpha" } });
     expect(redrawn.sort()).toEqual(lineIdsWith(/alpha/).sort());
-
-    // The first Enter makes the first match current: only its line changes.
-    forget();
-    fireEvent.keyDown(find, { key: "Enter" });
-    expect(redrawn).toEqual(["u0"]);
-    expect(groupsRedrawn()).toEqual([0]);
 
     // u0 has one match, so the next is u2's first: u0 and u2 change.
     forget();
