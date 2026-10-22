@@ -107,7 +107,7 @@ async def load_timeline_notes_list_signature_async(
             TimelineNote.recording_id == recording_id
         )
     )
-    return timeline_notes_list_signature(rows.tuples().all())
+    return timeline_notes_list_signature(rows.all())
 
 
 def serialize_timeline_note(
