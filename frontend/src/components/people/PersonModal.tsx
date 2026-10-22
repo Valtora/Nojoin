@@ -485,23 +485,28 @@ interface TagNode extends PeopleTag {
                       {/* Lock is offered only for a voiceprint; Unlock
                           whenever there is a lock to clear. */}
                       {(person.has_voiceprint || isVoiceprintLocked) && (
-                        <button
-                          type="button"
+                        // The inset row already has the ghost hover's fill,
+                        // so the hover steps up to the card instead.
+                        <Button
+                          variant="ghost"
+                          size="sm"
                           onClick={toggleVoiceprintLock}
-                          disabled={isChangingLock}
-                          className="flex items-center gap-1.5 text-contrast-helper hover:text-foreground text-sm font-medium px-3 py-1.5 hover:bg-surface-card rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          loading={isChangingLock}
+                          iconLeft={
+                            isVoiceprintLocked ? (
+                              <LockOpen aria-hidden="true" className="w-4 h-4" />
+                            ) : (
+                              <Lock aria-hidden="true" className="w-4 h-4" />
+                            )
+                          }
+                          className="text-sm font-medium hover:bg-surface-card"
                         >
-                          {isVoiceprintLocked ? (
-                            <LockOpen className="w-4 h-4" />
-                          ) : (
-                            <Lock className="w-4 h-4" />
-                          )}
                           {isChangingLock
                             ? "Saving..."
                             : isVoiceprintLocked
                               ? "Unlock voiceprint"
                               : "Lock voiceprint"}
-                        </button>
+                        </Button>
                       )}
                       {person.has_voiceprint && (
                         <button

@@ -124,6 +124,18 @@ describe("PersonModal voiceprint lock", () => {
     expect(screen.getByRole("button", { name: "Unlock voiceprint" })).toBeTruthy();
   });
 
+  it.each([
+    { locked: false, button: "Lock voiceprint" },
+    { locked: true, button: "Unlock voiceprint" },
+  ])("$button carries the design system's focus ring", ({ locked, button }) => {
+    render(modal(dana(true, locked)));
+
+    // The ring the Button primitive draws (docs/DESIGN.md, "The flat canon").
+    expect(screen.getByRole("button", { name: button }).className).toContain(
+      "focus-visible:outline-focus-ring",
+    );
+  });
+
   it("is disabled and says so while the lock is saving", async () => {
     const answer = answerLater();
     render(modal(dana(true, false)));
@@ -132,6 +144,7 @@ describe("PersonModal voiceprint lock", () => {
 
     const saving = screen.getByRole("button", { name: "Saving..." });
     expect((saving as HTMLButtonElement).disabled).toBe(true);
+    expect(saving.getAttribute("aria-busy")).toBe("true");
     await answer(dana(true, true));
     expect(screen.getByRole("button", { name: "Unlock voiceprint" })).toBeTruthy();
   });
