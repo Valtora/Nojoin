@@ -148,11 +148,18 @@ def delete_recording_artifacts(
     audio_path: str | None,
     proxy_path: str | None,
     logger: logging.Logger,
+    root: Path | None = None,
 ) -> None:
+    """Remove a recording's audio and proxy, and with an id its upload temp directory.
+
+    Only files inside ``root`` are removed, :func:`recordings_root_dir` when it is
+    not given. The restore passes its own recordings directory.
+    """
+    recordings_root = root if root is not None else recordings_root_dir(create=False)
     seen: set[Path] = set()
 
     for raw_path in (audio_path, proxy_path):
-        resolved = _resolve_path_within_recordings_root(raw_path)
+        resolved = resolve_path_within_root(raw_path, recordings_root)
         if resolved is None or resolved in seen:
             continue
 

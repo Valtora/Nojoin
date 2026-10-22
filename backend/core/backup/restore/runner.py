@@ -409,6 +409,7 @@ def _restore_backup_sync(request: _RestoreRequest):
 
                 stages._normalise_restored_recording_state(session, state)
                 stages._keep_document_files_still_named(session, state)
+                stages._keep_recording_files_still_named(session, state)
 
                 session.commit()
 
@@ -425,14 +426,16 @@ def _restore_backup_sync(request: _RestoreRequest):
                         shutil.rmtree(directory)
                     directory.mkdir(parents=True, exist_ok=True)
 
-            # The files of the documents an overwrite replaced, inside the
-            # documents directory only. Before the moves, as on a case-insensitive
-            # mount a missing replaced name can alias a destination unseen.
+            # The files of the documents and recordings an overwrite replaced,
+            # each inside its own directory only. Before the moves, as on a
+            # case-insensitive mount a missing replaced name can alias a
+            # destination unseen.
             unlink_document_files(
                 state.replaced_document_paths,
                 root=Path(request.documents_dir),
                 logger=logger,
             )
+            stages._unlink_replaced_recording_files(state)
             stages._restore_apply_pending_moves(state)
             stages._restore_config(zipf, state)
     finally:

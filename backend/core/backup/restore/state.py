@@ -60,6 +60,11 @@ class _RestoreState:
     claimed_destinations: Set[str] = field(default_factory=set)
     # Files of the documents an overwrite deleted along with their recordings.
     replaced_document_paths: List[str] = field(default_factory=list)
+    # (audio_path, proxy_path) of each recording an overwrite deleted. A path a
+    # remaining row still names is replaced by None before the commit.
+    replaced_recording_files: List[Tuple[str | None, str | None]] = field(
+        default_factory=list
+    )
     # Progress sink, so a Celery-hosted restore can stream status to its result backend.
     progress_callback: Any = None
     # table_name -> reason -> count, surfaced to the operator when the restore finishes.

@@ -11,6 +11,7 @@ import logging
 import os
 import shutil
 import zipfile
+from pathlib import Path
 from typing import Any, List, Tuple
 
 from sqlmodel import delete, select
@@ -29,6 +30,7 @@ from backend.core.backup.paths import _get_recording_match_keys
 from backend.core.backup.restore.state import _RestoreState
 from backend.utils.db_batching import bind_batches
 from backend.utils.document_storage import document_file_identity
+from backend.utils.recording_storage import delete_recording_artifacts
 
 logger = logging.getLogger(__name__)
 
@@ -261,22 +263,26 @@ def _restore_cleanup_staging(state: "_RestoreState") -> None:
         logger.warning("Failed to remove restore staging directory: %s", e)
 
 
-def _note_replaced_document_paths(
+def _note_replaced_files(
     session: Any, state: "_RestoreState", recording_ids: List[int]
 ) -> None:
-    """Record the document files of recordings an overwrite is about to delete.
+    """Record the files of recordings an overwrite is about to delete.
 
-    The document rows go with the recordings by cascade, and with them the only
-    record of where the files are. The recordings are locked first, in id order,
-    as the API's deletes lock theirs, so no upload commits a document this misses.
+    Their audio and proxy paths, and the files of their documents. The document
+    rows go with the recordings by cascade, and with them the only record of where
+    the files are. The recordings are locked first, in id order, as the API's
+    deletes lock theirs, so no upload commits a document this misses.
     """
     for id_batch in bind_batches(sorted(recording_ids)):
-        session.exec(
-            select(runtime.Recording.id)
+        recording_files = session.exec(
+            select(runtime.Recording.audio_path, runtime.Recording.proxy_path)
             .where(runtime.Recording.id.in_(id_batch))
             .order_by(runtime.Recording.id)
             .with_for_update()
         ).all()
+        state.replaced_recording_files.extend(
+            (audio_path, proxy_path) for audio_path, proxy_path in recording_files
+        )
         paths = session.exec(
             select(runtime.Document.file_path).where(
                 runtime.Document.recording_id.in_(id_batch)
@@ -302,6 +308,60 @@ def _keep_document_files_still_named(session: Any, state: "_RestoreState") -> No
         for path in state.replaced_document_paths
         if document_file_identity(path) not in named
     ]
+
+
+def _keep_recording_files_still_named(session: Any, state: "_RestoreState") -> None:
+    """Drop every replaced audio or proxy file a recording row still names.
+
+    A restored recording can land on the name its replaced copy had: its staged
+    audio moves in on top, or, with none in the archive, the old file is all it
+    has, which is how Overwrite keeps the audio an older archive left out. Files
+    are compared as for documents, so another spelling of a named file is kept.
+    """
+    if not state.replaced_recording_files:
+        return
+    named: set[Any] = set()
+    for audio_path, proxy_path in session.exec(
+        select(runtime.Recording.audio_path, runtime.Recording.proxy_path)
+    ).all():
+        named.add(document_file_identity(audio_path))
+        named.add(document_file_identity(proxy_path))
+    named.discard(None)
+
+    def unnamed(path: str | None) -> str | None:
+        return None if document_file_identity(path) in named else path
+
+    state.replaced_recording_files = [
+        (unnamed(audio_path), unnamed(proxy_path))
+        for audio_path, proxy_path in state.replaced_recording_files
+    ]
+
+
+def _unlink_replaced_recording_files(state: "_RestoreState") -> None:
+    """Remove the audio and proxies of the recordings an overwrite replaced.
+
+    Called after the commit and before staged files move in, for the reason the
+    documents' unlink gives. Only files inside the restore's recordings directory
+    go, symlinks resolved first. A failure is logged and the restore carries on,
+    as nothing may turn a committed restore into an error.
+    """
+    root = Path(os.fspath(state.recordings_dir))
+    for audio_path, proxy_path in state.replaced_recording_files:
+        try:
+            delete_recording_artifacts(
+                recording_id=None,
+                audio_path=audio_path,
+                proxy_path=proxy_path,
+                logger=logger,
+                root=root,
+            )
+        except Exception:  # noqa: BLE001 -- boundary: the restore has committed; a file left behind is reported by storage hygiene
+            logger.warning(
+                "Failed to delete the replaced recording files %s and %s",
+                audio_path,
+                proxy_path,
+                exc_info=True,
+            )
 
 
 def _restore_preflight_overwrite(
@@ -349,7 +409,7 @@ def _restore_preflight_overwrite(
             logger.info(
                 f"Overwrite: Pre-deleting {len(existing_ids)} conflicting recordings."
             )
-            _note_replaced_document_paths(session, state, existing_ids)
+            _note_replaced_files(session, state, existing_ids)
             # Delete via the Recording table so the configured
             # ON DELETE cascades remove dependent rows.
             session.exec(
