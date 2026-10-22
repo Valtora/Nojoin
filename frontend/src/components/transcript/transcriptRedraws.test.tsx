@@ -35,6 +35,20 @@ vi.mock("@/components/transcript/transcriptDisplay", async (importOriginal) => {
   };
 });
 
+// The view places the notes once for each new list of lines, so counting the
+// placements says whether it recomputed what it derives from the lines.
+let placements = 0;
+vi.mock("@/lib/notes/placement", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/notes/placement")>();
+  return {
+    ...actual,
+    placeTimelineNotes: (...args: Parameters<typeof actual.placeTimelineNotes>) => {
+      placements += 1;
+      return actual.placeTimelineNotes(...args);
+    },
+  };
+});
+
 vi.mock("@/lib/notificationStore", () => ({
   useNotificationStore: () => ({ addNotification: vi.fn() }),
 }));
@@ -49,6 +63,7 @@ afterAll(() => {
 const forget = () => {
   redrawn.length = 0;
   formatted.clear();
+  placements = 0;
 };
 beforeEach(forget);
 
@@ -185,7 +200,7 @@ describe("transcript redraws", () => {
         mode: "full",
       });
 
-    it("redraws nothing when it hands over the same lines", () => {
+    it("redraws and recomputes nothing when it hands over the same lines", () => {
       const first = fullSync(null, utterances());
       const { rerender } = render(<Page time={7} segments={first.segments} />);
 
@@ -194,6 +209,7 @@ describe("transcript redraws", () => {
 
       expect(redrawn).toEqual([]);
       expect(groupsRedrawn()).toEqual([]);
+      expect(placements).toBe(0);
     });
 
     it("redraws only the line it changes, with its new text", () => {
@@ -207,6 +223,7 @@ describe("transcript redraws", () => {
 
       expect(redrawn).toEqual(["u4"]);
       expect(groupsRedrawn()).toEqual([12]);
+      expect(placements).toBe(1);
       expect(screen.getByText("alpha, revised")).toBeInTheDocument();
     });
   });
