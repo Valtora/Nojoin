@@ -69,7 +69,7 @@ Your notes save as you type and can be edited until notes generation starts. The
 
 If the notes change on another device while you are editing them, nothing is saved over the other version until you choose **Keep mine** or **Use theirs** (**Discard mine** if they were deleted there). A change made offline is lost if you leave the recording before reconnecting.
 
-**Discard** deletes an unfinished recording, including one that is queued or processing, after you confirm. To remove a finished meeting, use **Delete** in the recordings list. If the tab closes or reloads mid-recording, the recording pauses and Nojoin asks you to resume it, stop and process it, or discard it before you start anything else ([Paused Recording Lock](CAPTURE.md#paused-recording-lock)).
+**Discard** deletes an unfinished recording, including one that is queued or processing, after you confirm. To remove a finished meeting, use **Delete** in the recordings list. If the tab closes or reloads mid-recording, the recording pauses and Nojoin asks you to resume it, stop and process it, or discard it before you start anything else ([Paused Recording Lock](CAPTURE.md#paused-recording-lock)). If the pause could not reach Nojoin, because the tab was signed out or offline as it closed, the same dialog appears two minutes after the last audio arrived ([Closing Or Reloading The Tab](CAPTURE.md#closing-or-reloading-the-tab)).
 
 ### Live Transcription
 
@@ -97,7 +97,7 @@ An administrator can turn Meeting Edge off for the installation, or give it its 
 
 ## Importing Recordings
 
-**Import Audio** at the top of the **Recordings** list imports an existing file, with an optional meeting name, date and **Max Speakers**. It is unavailable while a paused recording is waiting for you to resume, stop or discard it.
+**Import Audio** at the top of the **Recordings** list imports an existing file, with an optional meeting name, date and **Max Speakers**. It is unavailable while a paused or interrupted recording is waiting for you to resume, stop or discard it.
 
 Nojoin accepts WAV, MP3, M4A, AAC, WebM, OGG, FLAC, MP4, WMA and OPUS, and the media containers MKV, MKA, MOV, AVI, M4V, TS, MTS, MPG, MPEG and 3GP. It keeps only the audio. A file with no audio track is refused: the import shows as failed and nothing of the file is kept. An import is then processed like a live recording.
 
@@ -361,6 +361,6 @@ When a newer release is out, owners and administrators get a persistent notifica
 ## Troubleshooting
 
 - For capture problems, such as missing remote participants, a missing microphone or an unsupported browser, see [CAPTURE.md](CAPTURE.md#troubleshooting).
-- A paused recording blocks new capture until you resume it, stop and process it, or discard it.
+- A paused or interrupted recording blocks new capture until you resume it, stop and process it, or discard it.
 - A recording that failed shows its reason on its transcript tab. Fix the cause and use **Retry Processing**; an administrator can check the logs in **Settings > System and logs**.
 - For calendar sync problems, see [CALENDAR.md](CALENDAR.md#troubleshooting).

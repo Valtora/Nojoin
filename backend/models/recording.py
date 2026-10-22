@@ -1,10 +1,12 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from uuid import uuid4
 
 from sqlalchemy import BigInteger, Column, DateTime, ForeignKey, String
 from sqlmodel import Field, Relationship, SQLModel
+
+from backend.utils.time import utc_now
 
 from .base import BaseDBModel
 
@@ -152,6 +154,41 @@ class Recording(BaseDBModel, table=True):
         back_populates="recording",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"},
     )
+
+
+# How long a live capture can go without uploading before another tab or device
+# may offer it for resume or discard. A capture uploads a segment every 2 s and
+# writes last_activity_at at most every 15 s, and the longest gap seen in a
+# capture that carried on afterwards was 33 s, across an API restart. Nothing
+# acts on a capture by itself once this passes: it only becomes something the
+# user can resume, stop or discard from somewhere else (issue #519).
+STALLED_CAPTURE_AFTER = timedelta(minutes=2)
+
+
+def capture_looks_stalled(
+    recording: "Recording", *, now: Optional[datetime] = None
+) -> bool:
+    """Whether a live capture has stopped reaching the server.
+
+    True for a capture still marked UPLOADING whose last upload, start or resume
+    is older than ``STALLED_CAPTURE_AFTER``: its tab closed without its pause
+    arriving (signed out, offline or crashed), or it is cut off from the server.
+    The server cannot tell those apart, so this never pauses anything. The
+    client offers such a capture to the user, and resume accepts one, so a
+    capture that is still uploading can never be taken over.
+
+    Computed here rather than in the browser, whose clock may disagree with the
+    server's. Imports also sit in UPLOADING, so only a capture counts: init and
+    resume set its client status to RECORDING.
+    """
+    if recording.status != RecordingStatus.UPLOADING:
+        return False
+    if recording.client_status != ClientStatus.RECORDING:
+        return False
+    last_activity = recording.last_activity_at or recording.created_at
+    if last_activity is None:
+        return False
+    return (now or utc_now()) - last_activity > STALLED_CAPTURE_AFTER
 
 
 # Read Models
