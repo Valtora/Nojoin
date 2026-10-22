@@ -638,3 +638,24 @@ def test_editing_a_live_labelled_line_makes_no_speaker_of_its_label(status):
         "LIVE_PROVISIONAL_1",
     ]
     assert all(line["recording_speaker_id"] is None for line in lines.values())
+
+
+def test_auto_on_a_host_without_cuda_runs_no_label_step(monkeypatch, tmp_path):
+    # The lane imports the step whenever the setting is auto; the step itself
+    # must still stay off where it has no GPU.
+    import torch
+
+    import backend.core.db as core_db
+    from backend.utils.config_manager import config_manager
+
+    engine = _database()
+    model = SpeakerTrackModel()
+    monkeypatch.setattr(core_db, "get_sync_session", lambda: Session(engine))
+    monkeypatch.setattr(step, "_load_model", lambda device, config: model)
+    monkeypatch.setitem(config_manager.config, "live_speaker_labels", "auto")
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+
+    _run(tmp_path, speaker_audio([(0, 4, 1)], 4), 0.0, 4.0)
+
+    assert model.calls == 0
+    assert list(tmp_path.iterdir()) == []
