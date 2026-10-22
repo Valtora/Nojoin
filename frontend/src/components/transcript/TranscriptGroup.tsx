@@ -85,7 +85,9 @@ export default function TranscriptGroup({
             size="sm"
             // Who and when, so two groups in the same second differ.
             aria-label={`${pauses ? "Pause" : "Play"} ${SPEAKER_LIST.format(
-              involvedSpeakers.map((speaker) => speakerMap[speaker] || speaker),
+              involvedSpeakers.map((speaker) =>
+                segmentSpeakerDisplayName(speakerMap, speaker),
+              ),
             )} at ${formatTime(group.start)}`}
             title={pauses ? "Pause segment" : "Play segment"}
             onClick={() => {
