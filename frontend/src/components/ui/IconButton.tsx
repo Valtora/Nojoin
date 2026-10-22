@@ -3,6 +3,7 @@ import { Loader2 } from "lucide-react";
 
 import { cn } from "@/lib/cn";
 import type { ButtonVariant } from "./Button";
+import { DISABLED_LOOK, loadingButtonProps } from "./loadingButton";
 
 export type IconButtonSize = "sm" | "md" | "lg";
 
@@ -12,6 +13,7 @@ interface IconButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 
   icon: ReactNode;
   variant?: ButtonVariant;
   size?: IconButtonSize;
+  /** Shows a spinner and ignores clicks, as `Button`'s `loading` does. */
   loading?: boolean;
 }
 
@@ -45,6 +47,7 @@ const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(function IconB
     size = "md",
     loading = false,
     disabled,
+    onClick,
     className,
     type = "button",
     ...rest
@@ -55,18 +58,17 @@ const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(function IconB
     <button
       ref={ref}
       type={type}
-      disabled={disabled || loading}
-      aria-busy={loading || undefined}
+      {...rest}
+      {...loadingButtonProps(loading, disabled, onClick)}
       className={cn(
         "inline-flex shrink-0 items-center justify-center rounded-lg",
         "transition-colors duration-150",
         "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring",
-        "disabled:cursor-not-allowed disabled:opacity-60",
+        DISABLED_LOOK,
         VARIANTS[variant],
         SIZES[size],
         className,
       )}
-      {...rest}
     >
       {loading ? <Loader2 aria-hidden="true" className="animate-spin" /> : icon}
     </button>
