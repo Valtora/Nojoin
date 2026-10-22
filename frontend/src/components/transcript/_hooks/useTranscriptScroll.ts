@@ -10,6 +10,12 @@ import {
 
 import { TranscriptSegment } from "@/types";
 
+/**
+ * A line's row. Its text paragraph names the same line in `data-segment-id`
+ * too; the row alone carries `data-order-index`, and anchors the scroll.
+ */
+const LINE_ROWS = "[data-order-index]";
+
 export interface UseTranscriptScrollOptions {
   segments: TranscriptSegment[];
   /** Key of the segment currently aligned with playback, if any. */
@@ -77,7 +83,7 @@ export function useTranscriptScroll(
     }
 
     const segmentElements = Array.from(
-      container.querySelectorAll<HTMLElement>("[data-segment-id]"),
+      container.querySelectorAll<HTMLElement>(LINE_ROWS),
     );
     if (segmentElements.length === 0) {
       scrollAnchorRef.current = null;
@@ -118,7 +124,7 @@ export function useTranscriptScroll(
     }
 
     const segmentElements = Array.from(
-      container.querySelectorAll<HTMLElement>("[data-segment-id]"),
+      container.querySelectorAll<HTMLElement>(LINE_ROWS),
     );
     if (segmentElements.length === 0) {
       return;
