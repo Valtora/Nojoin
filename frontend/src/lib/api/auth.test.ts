@@ -8,9 +8,9 @@ import {
   sharedNoteStore,
   type StoredOutbox,
 } from "@/lib/notes/noteStore";
-import { resetSessionForTests } from "@/lib/session";
+import { noteSignedIn, resetSessionForTests, useSessionStore } from "@/lib/session";
 
-import { getCurrentUser, login, logout } from "./auth";
+import { askWhoIsSignedIn, getCurrentUser, login, logout } from "./auth";
 import api from "./client";
 
 // The real axios instance runs on the fetch adapter against a stubbed fetch.
@@ -153,6 +153,16 @@ describe("notes kept in the browser", () => {
     await getCurrentUser();
 
     await vi.waitFor(async () => expect(await store.get(ALICE, "rec-1")).toBeUndefined());
+  });
+
+  it("keeps the session and the notes as they are when it is only asked who is signed in", async () => {
+    noteSignedIn({ username: "alice", id: ALICE, force_password_change: false });
+    serverAnswers(signedInAnswer("bob", BOB));
+
+    expect(await askWhoIsSignedIn()).toMatchObject({ id: BOB, username: "bob" });
+
+    expect(useSessionStore.getState()).toMatchObject({ username: "alice", userId: ALICE });
+    expect(await store.get(ALICE, "rec-1")).toEqual(alicesNotes);
   });
 
   it("removes another account's notes when the browser turns out to be signed in as someone else", async () => {

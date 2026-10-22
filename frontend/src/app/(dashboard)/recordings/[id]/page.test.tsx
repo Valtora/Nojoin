@@ -28,6 +28,7 @@ const generateNotes = vi.fn();
 const updateSpeaker = vi.fn();
 const listTimelineNotes = vi.fn();
 const getCurrentUser = vi.fn();
+const askWhoIsSignedIn = vi.fn();
 
 let activePanel = "transcript";
 
@@ -68,6 +69,7 @@ vi.mock("@/lib/store", () => ({
 
 vi.mock("@/lib/api", () => ({
   getCurrentUser: (...args: unknown[]) => getCurrentUser(...args),
+  askWhoIsSignedIn: (...args: unknown[]) => askWhoIsSignedIn(...args),
   getRecording: (...args: unknown[]) => getRecording(...args),
   getSettings: (...args: unknown[]) => getSettings(...args),
   getGlobalSpeakers: (...args: unknown[]) => getGlobalSpeakers(...args),
@@ -584,8 +586,16 @@ describe("RecordingPage (detail): the recording answers 404", () => {
   // exists. Tabs share the cookie, so a sign-in in another tab changes it.
   let cookie: typeof ALICE = ALICE;
   let exists = true;
-  // `/users/me` as the real one is: it tells the session and the notes store.
+  // Every `/users/me`, counted: the check's, which only reads the answer, and
+  // the real kind (the sign-in dialog's probe), which tells the session and
+  // the notes store.
+  let meCalls = 0;
   const whoIsSignedIn = async () => {
+    meCalls += 1;
+    return cookie;
+  };
+  const signedInAs = async () => {
+    meCalls += 1;
     noteSignedIn(cookie);
     void storedNotesSignedIn(cookie.id);
     return cookie;
@@ -639,7 +649,9 @@ describe("RecordingPage (detail): the recording answers 404", () => {
       if (!exists || cookie.id !== ALICE.id) throw notFound();
       return buildRecording({ status: RecordingStatus.PROCESSING });
     });
-    getCurrentUser.mockReset().mockImplementation(whoIsSignedIn);
+    askWhoIsSignedIn.mockReset().mockImplementation(whoIsSignedIn);
+    getCurrentUser.mockReset().mockImplementation(signedInAs);
+    meCalls = 0;
     getSettings.mockResolvedValue({ enable_meeting_edge: true, meeting_edge_context_level: 2 });
     getGlobalSpeakers.mockResolvedValue([]);
     getTranscriptUtterances.mockReset().mockResolvedValue(buildUtteranceList());
@@ -667,17 +679,16 @@ describe("RecordingPage (detail): the recording answers 404", () => {
     expect(addNotification).not.toHaveBeenCalledWith(DISCARDED);
     expect(addNotification).toHaveBeenCalledTimes(1);
     expect(elsewhereMessages()).toEqual([expect.stringMatching(/now signed in as bob/)]);
-    expect(getCurrentUser).toHaveBeenCalledTimes(1);
+    expect(askWhoIsSignedIn).toHaveBeenCalledTimes(1);
   });
 
-  it("names the account the server answered with, even one the session doesn't take", async () => {
+  it("names the account the server answered with, and leaves the tab's session as the owner's", async () => {
     await open();
-    // bob must change his password first: the session ignores that answer.
-    cookie = { ...BOB, force_password_change: true };
+    cookie = BOB;
 
     await poll();
 
-    expect(useSessionStore.getState().username).toBe("alice");
+    expect(useSessionStore.getState()).toMatchObject({ username: "alice", userId: 1 });
     expect(elsewhereMessages()).toEqual([expect.stringMatching(/now signed in as bob/)]);
   });
 
@@ -705,7 +716,7 @@ describe("RecordingPage (detail): the recording answers 404", () => {
       await vi.advanceTimersByTimeAsync(10);
     });
 
-    expect(getCurrentUser).toHaveBeenCalledTimes(1);
+    expect(askWhoIsSignedIn).toHaveBeenCalledTimes(1);
     expect(useSessionStore.getState().signInRequired).toBe(true);
     expect(routerPush).not.toHaveBeenCalled();
   });
@@ -723,7 +734,7 @@ describe("RecordingPage (detail): the recording answers 404", () => {
   it("stays when the recording is found again by the time the account is known", async () => {
     await open();
     exists = false;
-    getCurrentUser.mockImplementationOnce(async () => {
+    askWhoIsSignedIn.mockImplementationOnce(async () => {
       // The owner signs back in from another tab while this is asked.
       exists = true;
       return whoIsSignedIn();
@@ -749,7 +760,7 @@ describe("RecordingPage (detail): the recording answers 404", () => {
     expect(routerPush).not.toHaveBeenCalled();
   });
 
-  it("puts the session back once a poll finds the owner back, and stores her notes again", async () => {
+  it("leaves the tab's session as the owner's, so her notes are still stored and the dialog asks for her", async () => {
     renderWithProviders(
       <>
         <RecordingPage params={Promise.resolve({ id: "rec-1" })} />
@@ -759,36 +770,78 @@ describe("RecordingPage (detail): the recording answers 404", () => {
     await screen.findByTestId("recording-status-display");
     cookie = BOB;
     await poll();
-    expect(useSessionStore.getState()).toMatchObject({ username: "bob", userId: 2 });
-
-    // alice signs back in from a tab whose ping this browser never delivers.
-    cookie = ALICE;
-    await poll();
-
+    expect(elsewhereMessages()).toHaveLength(1);
     expect(useSessionStore.getState()).toMatchObject({ username: "alice", userId: 1 });
-    // Her notes are kept in the browser again.
-    act(() => noteOutboxFor("rec-1").setDraft({ ...EMPTY_DRAFT, text: "typed after alice is back" }));
+
+    // alice keeps typing while bob's cookie is in: her notes are still stored.
+    act(() => noteOutboxFor("rec-1").setDraft({ ...EMPTY_DRAFT, text: "typed while bob is signed in" }));
     await waitFor(async () =>
       expect(await store.get(ALICE.id, "rec-1")).toMatchObject({
-        draft: { text: "typed after alice is back" },
+        draft: { text: "typed while bob is signed in" },
       }),
     );
-    // The text holds sign-in; when her session ends, the dialog asks for hers.
+    // The text holds sign-in for her; when her session ends, the dialog asks for her.
     act(() => useSessionStore.setState({ signInRequired: true }));
     expect(await screen.findByDisplayValue("alice")).toBeInTheDocument();
   });
 
-  it("puts the session back when another tab says the owner signed in", async () => {
+  it("asks nothing more when the owner comes back after notes were typed under the other account", async () => {
     await open();
     cookie = BOB;
     await poll();
-    getCurrentUser.mockClear();
+    act(() => noteOutboxFor("rec-1").setDraft({ ...EMPTY_DRAFT, text: "typed while bob's cookie is in" }));
+    const before = meCalls;
+
+    // alice signs back in from her other tab: a poll finds the recording.
+    cookie = ALICE;
+    await poll();
+    await advance(500);
+
+    expect(meCalls - before).toBe(0);
+    expect(useSessionStore.getState()).toMatchObject({ username: "alice", signInRequired: false });
+  });
+
+  it("asks nothing when another tab says the owner signed back in", async () => {
+    await open();
+    cookie = BOB;
+    await poll();
+    act(() => noteOutboxFor("rec-1").setDraft({ ...EMPTY_DRAFT, text: "typed while bob's cookie is in" }));
+    const before = meCalls;
 
     cookie = ALICE;
     otherTab().postMessage({ kind: "kept", accounts: [ALICE.id] });
+    await advance(200);
 
-    await waitFor(() => expect(useSessionStore.getState()).toMatchObject({ userId: 1 }));
-    expect(getCurrentUser).toHaveBeenCalledTimes(1);
+    expect(meCalls - before).toBe(0);
+  });
+
+  it("asks nothing when the owner comes back with a password change pending", async () => {
+    await open();
+    cookie = BOB;
+    await poll();
+    const before = meCalls;
+
+    cookie = { ...ALICE, force_password_change: true };
+    otherTab().postMessage({ kind: "kept", accounts: [ALICE.id] });
+    await advance(200);
+
+    expect(meCalls - before).toBe(0);
+  });
+
+  it("still leaves when the owner deletes the recording while her notes hold sign-in", async () => {
+    await open();
+    cookie = BOB;
+    await poll();
+    act(() => noteOutboxFor("rec-1").setDraft({ ...EMPTY_DRAFT, text: "typed while bob's cookie is in" }));
+    // alice signs back in and deletes it; no poll finds it in between.
+    cookie = ALICE;
+    exists = false;
+
+    // The next check is a minute after the first.
+    await advance(61_000);
+
+    expect(routerPush).toHaveBeenCalledWith("/recordings");
+    expect(meCalls).toBe(2);
   });
 
   it("reads a 404 as a removal again once the owner is back", async () => {
@@ -829,12 +882,12 @@ describe("RecordingPage (detail): the recording answers 404", () => {
     await advance(5 * 60_000);
 
     // The first 404, then one a minute.
-    expect(getCurrentUser.mock.calls.length).toBeLessThanOrEqual(6);
+    expect(askWhoIsSignedIn.mock.calls.length).toBeLessThanOrEqual(6);
     expect(elsewhereMessages()).toHaveLength(1);
   });
 
   it("checks one 404 at a time when the server is slow to say who is signed in", async () => {
-    getCurrentUser.mockImplementation(
+    askWhoIsSignedIn.mockImplementation(
       () => new Promise((resolve) => setTimeout(() => resolve(whoIsSignedIn()), 4_000)),
     );
     await open();
@@ -842,12 +895,12 @@ describe("RecordingPage (detail): the recording answers 404", () => {
 
     for (let i = 0; i < 4; i += 1) await poll();
 
-    expect(getCurrentUser).toHaveBeenCalledTimes(1);
+    expect(askWhoIsSignedIn).toHaveBeenCalledTimes(1);
     expect(addNotification).toHaveBeenCalledTimes(1);
   });
 
   it("leaves once when a removal is checked slowly", async () => {
-    getCurrentUser.mockImplementation(
+    askWhoIsSignedIn.mockImplementation(
       () => new Promise((resolve) => setTimeout(() => resolve(whoIsSignedIn()), 4_000)),
     );
     await open();
@@ -860,14 +913,14 @@ describe("RecordingPage (detail): the recording answers 404", () => {
   });
 
   it("does nothing once the page has gone while a check was on its way", async () => {
-    getCurrentUser.mockImplementation(
+    askWhoIsSignedIn.mockImplementation(
       () => new Promise((resolve) => setTimeout(() => resolve(whoIsSignedIn()), 4_000)),
     );
     const view = renderPage();
     await screen.findByTestId("recording-status-display");
     exists = false;
     await poll();
-    expect(getCurrentUser).toHaveBeenCalledTimes(1);
+    expect(askWhoIsSignedIn).toHaveBeenCalledTimes(1);
 
     view.unmount();
     await advance(5_000);
@@ -880,17 +933,16 @@ describe("RecordingPage (detail): the recording answers 404", () => {
     await open();
     cookie = BOB;
     await poll();
-    // alice is back, and a poll finds the recording, but the session can't
-    // be put back yet: it still says bob when the view is refreshed.
+    // Something else in the tab (another page's sign-in check, say) has told
+    // its session bob. alice is back, and the view is refreshed.
+    act(() => noteSignedIn(BOB));
     cookie = ALICE;
-    getCurrentUser.mockImplementation(async () => Promise.reject(new Error("Network Error")));
     await poll();
     await act(async () => {
       window.dispatchEvent(new CustomEvent("recording-updated", { detail: { id: "rec-1" } }));
       await vi.advanceTimersByTimeAsync(10);
     });
     expect(useSessionStore.getState().username).toBe("bob");
-    getCurrentUser.mockImplementation(whoIsSignedIn);
 
     // bob signs in again from the other tab.
     cookie = BOB;
@@ -904,13 +956,12 @@ describe("RecordingPage (detail): the recording answers 404", () => {
     const heading = await openWithTitle();
     cookie = BOB;
     await advance(1_000);
+    act(() => noteSignedIn(BOB));
     cookie = ALICE;
-    getCurrentUser.mockImplementation(async () => Promise.reject(new Error("Network Error")));
     // Editing the title loads the recording again.
     fireEvent.click(heading);
     await advance(10);
     expect(useSessionStore.getState().username).toBe("bob");
-    getCurrentUser.mockImplementation(whoIsSignedIn);
 
     exists = false;
     await advance(61_000);
@@ -934,6 +985,16 @@ describe("RecordingPage (detail): the recording answers 404", () => {
     expect(elsewhereMessages()).toEqual([expect.stringMatching(/now signed in as bob/)]);
   });
 
+  it("still says a recording that is gone on opening failed to load, and leaves", async () => {
+    exists = false;
+
+    renderPage();
+
+    await waitFor(() => expect(routerPush).toHaveBeenCalledWith("/recordings"));
+    expect(addNotification).toHaveBeenCalledWith({ type: "error", message: "Failed to load recording." });
+    expect(meCalls).toBe(0);
+  });
+
   it("stays on the recording when a poll fails for any other reason", async () => {
     await open();
     getRecording.mockImplementation(async () => {
@@ -943,11 +1004,11 @@ describe("RecordingPage (detail): the recording answers 404", () => {
     await poll();
 
     expect(routerPush).not.toHaveBeenCalled();
-    expect(getCurrentUser).not.toHaveBeenCalled();
+    expect(askWhoIsSignedIn).not.toHaveBeenCalled();
   });
 
   it("does nothing while it can't tell who is signed in, and asks again a minute later", async () => {
-    getCurrentUser.mockRejectedValueOnce(new Error("Network Error"));
+    askWhoIsSignedIn.mockRejectedValueOnce(new Error("Network Error"));
     await open();
     exists = false;
 
@@ -956,9 +1017,9 @@ describe("RecordingPage (detail): the recording answers 404", () => {
     expect(addNotification).not.toHaveBeenCalled();
 
     await advance(30_000);
-    expect(getCurrentUser).toHaveBeenCalledTimes(1);
+    expect(askWhoIsSignedIn).toHaveBeenCalledTimes(1);
     await advance(30_000);
-    expect(getCurrentUser).toHaveBeenCalledTimes(2);
+    expect(askWhoIsSignedIn).toHaveBeenCalledTimes(2);
     expect(routerPush).toHaveBeenCalledWith("/recordings");
   });
 });
