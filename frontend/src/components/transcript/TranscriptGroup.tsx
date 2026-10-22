@@ -65,7 +65,8 @@ interface TranscriptGroupProps {
   /** Keys of this group's lines revised in the last 15 s, one per line. */
   recentLineKeys: string;
   searchDecorations: (segmentId: string) => readonly TextDecoration[];
-  editingSpeaker: string | null;
+  /** The line whose speaker rename is open. */
+  editingSpeakerLineId: string | null;
   editingTextId: string | null;
   activePopover: SpeakerPopover | null;
   /** The open editor when one of this group's lines shows it, else null. */
@@ -93,7 +94,7 @@ function TranscriptGroup({
   activeLineKeys,
   recentLineKeys,
   searchDecorations,
-  editingSpeaker,
+  editingSpeakerLineId,
   editingTextId,
   activePopover,
   editor,
@@ -107,7 +108,7 @@ function TranscriptGroup({
 
   const renderLine = (item: IndexedTranscriptSegment) => {
     const { segment, segmentId } = item;
-    const isEditingSpeaker = editingSpeaker === segment.speaker;
+    const isEditingSpeaker = editingSpeakerLineId === segmentId;
     const isEditingText = editingTextId === segmentId;
     return (
       <TranscriptLine

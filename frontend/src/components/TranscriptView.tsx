@@ -271,8 +271,8 @@ export default function TranscriptView({
       .join(LINE_KEY_SEPARATOR);
   const holdsTheEditor = (items: readonly IndexedTranscriptSegment[]) =>
     items.some(
-      ({ segment, segmentId }) =>
-        segment.speaker === editing.editingSpeaker || segmentId === editing.editingTextId,
+      ({ segmentId }) =>
+        segmentId === editing.editingSpeakerLineId || segmentId === editing.editingTextId,
     );
 
   return (
@@ -344,7 +344,7 @@ export default function TranscriptView({
                   )}
                   recentLineKeys={lineKeys(group.items, isRecentlyUpdatedSegment)}
                   searchDecorations={search.searchDecorations}
-                  editingSpeaker={editing.editingSpeaker}
+                  editingSpeakerLineId={editing.editingSpeakerLineId}
                   editingTextId={editing.editingTextId}
                   activePopover={editing.activePopover}
                   editor={holdsTheEditor(group.items) ? editing.editor : null}

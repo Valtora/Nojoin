@@ -126,7 +126,7 @@ function TranscriptLine({
               onDoubleClick={(e) => {
                 e.stopPropagation();
                 if (isSegmentReadOnly) return;
-                actions.startSpeakerRename(segment.speaker, speakerName);
+                actions.startSpeakerRename(segmentId, segment.speaker, speakerName);
               }}
               disabled={isSegmentReadOnly}
               className={`text-base font-bold transition-colors text-left ${
