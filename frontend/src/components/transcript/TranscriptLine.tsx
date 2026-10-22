@@ -4,7 +4,10 @@ import type { RefObject } from "react";
 
 import { getColorByKey } from "@/lib/constants";
 import { segmentEndMs, segmentStartMs } from "@/lib/notes/placement";
-import { segmentSpeakerDisplayName } from "@/lib/recordingSpeakerUtils";
+import {
+  liveSpeakerDisplayName,
+  segmentSpeakerDisplayName,
+} from "@/lib/recordingSpeakerUtils";
 import {
   GlobalSpeaker,
   RecordingSpeaker,
@@ -73,6 +76,9 @@ export default function TranscriptLine({
   const isProvisional = segment.provisional === true;
   const isSegmentReadOnly = readOnly || (isProvisional && !allowProvisionalEdits);
   const speakerName = segmentSpeakerDisplayName(speakerMap, segment.speaker);
+  // A live label is no speaker of the recording yet, so it has no name to
+  // change; the line can still be assigned to a speaker.
+  const canRenameSpeaker = liveSpeakerDisplayName(segment.speaker) === null;
   const isEditingSpeaker = editingSpeaker === segment.speaker;
   const isEditingSegmentSpeaker = editingSegmentSpeakerId === segmentId;
   const isEditingText = editingTextId === segmentId;
@@ -126,7 +132,7 @@ export default function TranscriptLine({
               }}
               onDoubleClick={(e) => {
                 e.stopPropagation();
-                if (isSegmentReadOnly) return;
+                if (isSegmentReadOnly || !canRenameSpeaker) return;
                 editing.startSpeakerRename(segment.speaker, speakerName);
               }}
               disabled={isSegmentReadOnly}
@@ -140,7 +146,9 @@ export default function TranscriptLine({
               title={
                 isSegmentReadOnly
                   ? speakerName
-                  : "Click to change speaker, Double-click to rename"
+                  : canRenameSpeaker
+                    ? "Click to change speaker, Double-click to rename"
+                    : "Click to change speaker"
               }
             >
               {speakerName}

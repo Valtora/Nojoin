@@ -13,6 +13,7 @@ from backend.processing.live_diarization.engine import (
     Piece,
     _Window,
 )
+from backend.processing.live_diarization.files import BANK_FILENAME, STATE_TMP_FILENAME
 from backend.processing.live_diarization.lines import LabelTimeline
 from backend.processing.live_diarization.recluster import UnitBank
 from backend.processing.live_diarization.state import (
@@ -172,16 +173,30 @@ def test_an_engine_saved_after_every_run_matches_one_that_never_stopped(tmp_path
     assert np.array_equal(runs.bank.read(), whole.bank.read())
 
 
-def test_the_state_reaches_the_disk_before_it_replaces_the_old_one(
+def test_the_bank_and_state_reach_the_disk_before_the_state_counts_them(
     tmp_path, monkeypatch
 ):
     engine = new_engine(tmp_path, CONFIG)
-    _feed_all(engine, speaker_audio([(0, 4, 1)], 4), SpeakerTrackModel())
+    _feed_all(engine, speaker_audio([(0, 6, 1), (6, 12, 2)], 12), SpeakerTrackModel())
+    assert engine.bank.rows > 0
+    names = {
+        "bank": tmp_path / BANK_FILENAME,
+        "state": tmp_path / STATE_TMP_FILENAME,
+        "directory": tmp_path,
+    }
     calls = []
     real_fsync, real_replace = state_module.os.fsync, state_module.os.replace
-    monkeypatch.setattr(
-        state_module.os, "fsync", lambda fd: calls.append("fsync") or real_fsync(fd)
-    )
+
+    def fsync(fd):
+        inode = state_module.os.fstat(fd).st_ino
+        calls.extend(
+            name
+            for name, path in names.items()
+            if path.exists() and path.stat().st_ino == inode
+        )
+        real_fsync(fd)
+
+    monkeypatch.setattr(state_module.os, "fsync", fsync)
     monkeypatch.setattr(
         state_module.os,
         "replace",
@@ -190,8 +205,9 @@ def test_the_state_reaches_the_disk_before_it_replaces_the_old_one(
 
     save_engine(tmp_path, engine)
 
-    # A power loss after the rename must not leave an empty state behind it.
-    assert calls == ["fsync", "replace"]
+    # A power loss at any point leaves a state whose bank rows are all on disk,
+    # and never an empty file under the state's name.
+    assert calls == ["bank", "state", "replace", "directory"]
 
 
 def test_a_bank_row_written_after_the_last_save_is_cut_on_load(tmp_path):

@@ -4,7 +4,9 @@ The engine goes to one ``.npz`` written atomically (a temporary file, synced,
 then a rename), and the closed turn units to an append-only bank beside it, so
 a run rewrites only the small state and not every embedding of the meeting. The
 state records how many bank rows it accounts for. Rows written after that (a
-task that died between the two writes) are cut off on load.
+task that died between the two writes) are cut off on load. The bank is synced
+before the state is written, and the directory after the rename, so the state
+on disk never counts a bank row that is not.
 
 Only what is not zero is saved: the centroids of founded slots and the running
 sums of open units. The rest of the state is the carried 5 s of audio and a few
@@ -112,6 +114,8 @@ def save_engine(live_dir: Path, engine: LiveLabelEngine) -> None:
 
     buffer = io.BytesIO()
     np.savez(buffer, **arrays)
+    # The bank rows first: a state on disk never counts rows that are not.
+    _sync(live_dir / BANK_FILENAME)
     path = live_dir / STATE_FILENAME
     tmp = live_dir / STATE_TMP_FILENAME
     with open(tmp, "wb") as handle:
@@ -121,6 +125,20 @@ def save_engine(live_dir: Path, engine: LiveLabelEngine) -> None:
         # the new one, never an empty file under the state's name.
         os.fsync(handle.fileno())
     os.replace(tmp, path)
+    # The rename itself, so a run after a power loss finds the new state.
+    _sync(live_dir)
+
+
+def _sync(path: Path) -> None:
+    """fsync a file or directory, if it exists."""
+    try:
+        fd = os.open(path, os.O_RDONLY)
+    except FileNotFoundError:
+        return
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
 
 
 def load_engine(live_dir: Path, config: LiveLabelConfig) -> LiveLabelEngine | None:
@@ -177,8 +195,12 @@ def _validate(
     for name in _OPEN_SUMS:
         _check(data[name].shape == (len(open_slots), dim), name)
     count = len(data["unit_label"])
-    for name in _UNIT_FIELDS:
-        _check(data[f"unit_{name}"].shape == (count,), name)
+    for name, dtype in _UNIT_FIELDS.items():
+        field = data[f"unit_{name}"]
+        _check(field.shape == (count,) and field.dtype == dtype, name)
+    labels = data["unit_label"]
+    _check(bool(np.all((labels >= 0) & (labels < slots))), "unit labels")
+    _check(bool(np.all(data["unit_stable"] >= 0)), "unit passes")
     rows = data["unit_row"]
     _check(bool(np.all((rows >= -1) & (rows < bank_rows))), "unit bank rows")
     _check(bool(np.all(data["open_uid"] < count)), "open units")

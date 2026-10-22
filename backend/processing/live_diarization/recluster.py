@@ -17,9 +17,9 @@ speakers.
 The pass is bounded, since AHC costs time and memory quadratic in what it
 clusters. It takes every unlocked unit and every locked unit younger than
 ``recent_s``, up to ``max_units`` (the oldest locked units give way first).
-Older locked units can no longer change; of those, each label keeps its
-``anchors`` most recent in the pass, so a speaker heard only long ago still
-holds their label when they speak again. The centroid reset still sums every
+Older locked units can no longer change; of those, each label keeps
+``anchors`` in the pass, its most recent long (reliable) units first, so a
+speaker heard only long ago still holds their label when they speak again. The centroid reset still sums every
 unit.
 
 This is Nojoin's own code, not diart's.
@@ -272,13 +272,13 @@ def _name_clusters(
 
 
 def _units_in_pass(
-    t0: np.ndarray,
-    locked: np.ndarray,
-    labels: np.ndarray,
-    t_now: float,
-    params: ReclusterParams,
+    table: UnitTable, t_now: float, params: ReclusterParams
 ) -> np.ndarray:
     """The units one pass clusters: unlocked or recent, then each label's anchors."""
+    t0 = np.array(table.t0)
+    locked = np.array(table.locked, bool)
+    labels = np.array(table.label)
+    reliable = np.array(table.long) > 0
     chosen = ~locked | (t0 >= t_now - params.recent_s)
     excess = int(chosen.sum()) - params.max_units
     if excess > 0:
@@ -288,8 +288,9 @@ def _units_in_pass(
     older = ~chosen
     for label in np.unique(labels[older]):
         units = np.where(older & (labels == label))[0]
-        newest = units[np.argsort(t0[units], kind="stable")[-params.anchors :]]
-        chosen[newest] = True
+        # Long units first (only they found clusters), newest first within each.
+        best = units[np.lexsort((t0[units], reliable[units]))[-params.anchors :]]
+        chosen[best] = True
     return chosen
 
 
@@ -308,9 +309,7 @@ def recluster(
     vectors = bank.read()[np.array(table.row)].astype(np.float64)
     t0 = np.array(table.t0)
     current = np.array(table.label)
-    units = np.where(
-        _units_in_pass(t0, np.array(table.locked), current, t_now, params)
-    )[0]
+    units = np.where(_units_in_pass(table, t_now, params))[0]
     reliable = np.array(table.long)[units] > 0
     if reliable.sum() < 2:
         return result

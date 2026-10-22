@@ -267,20 +267,29 @@ def _aged_table(tmp_path, units: list[tuple[np.ndarray, int, bool, float]], held
     return table, bank
 
 
+def _pass_table(t0, locked, labels, long):
+    table = UnitTable(4, DIM)
+    table.t0, table.locked, table.label, table.long = t0, locked, labels, long
+    return table
+
+
 def test_a_pass_takes_recent_units_and_a_few_anchors_per_old_label():
     params = replace(RECLUSTER, recent_s=100.0, max_units=3, anchors=1)
-    t0 = np.array([0.0, 10.0, 20.0, 30.0, 950.0, 960.0, 5.0])
-    locked = np.array([True, True, True, True, True, True, False])
-    labels = np.array([0, 0, 1, 1, 0, 1, 2])
+    table = _pass_table(
+        t0=[0.0, 10.0, 20.0, 30.0, 950.0, 960.0, 5.0],
+        locked=[True, True, True, True, True, True, False],
+        labels=[0, 0, 1, 1, 0, 1, 2],
+        long=[1] * 7,
+    )
 
-    chosen = _units_in_pass(t0, locked, labels, 1000.0, params)
+    chosen = _units_in_pass(table, 1000.0, params)
 
     # Unlocked and recent units, then each old label's newest unit.
     assert chosen.tolist() == [False, True, False, True, True, True, True]
     # Within the window but over the cap: the oldest locked units give way
     # first, and their labels keep their anchors.
     wide = replace(params, recent_s=1000.0, max_units=4)
-    assert _units_in_pass(t0, locked, labels, 1000.0, wide).tolist() == [
+    assert _units_in_pass(table, 1000.0, wide).tolist() == [
         False,
         True,
         True,
@@ -289,6 +298,22 @@ def test_a_pass_takes_recent_units_and_a_few_anchors_per_old_label():
         True,
         True,
     ]
+
+
+def test_a_labels_anchors_are_its_newest_long_units():
+    # Only long units found clusters, so a label whose newest old units were
+    # all short must still bring long ones.
+    params = replace(RECLUSTER, recent_s=100.0, max_units=10, anchors=2)
+    table = _pass_table(
+        t0=[0.0, 10.0, 20.0, 30.0, 40.0],
+        locked=[True] * 5,
+        labels=[0] * 5,
+        long=[1, 1, 1, 0, 0],
+    )
+
+    chosen = _units_in_pass(table, 1000.0, params)
+
+    assert chosen.tolist() == [False, True, True, False, False]
 
 
 def test_a_label_heard_only_long_ago_still_claims_its_speaker(tmp_path):

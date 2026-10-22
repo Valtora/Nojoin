@@ -292,6 +292,21 @@ describe("TranscriptView", () => {
     expect(container.textContent).not.toContain("LIVE_");
   });
 
+  it("offers no rename for a live speaker label, which names no speaker", () => {
+    renderTranscriptView([
+      buildSegment({ id: "live-1", text: "Opening", speaker: "LIVE_PROVISIONAL_3" }),
+      buildSegment({ id: "named", text: "Named", speaker: "SPEAKER_00", start: 2, end: 3 }),
+    ]);
+
+    const live = screen.getByRole("button", { name: "Speaker 3" });
+    expect(live.getAttribute("title")).toBe("Click to change speaker");
+    fireEvent.doubleClick(live);
+    expect(screen.queryByDisplayValue("Speaker 3")).toBeNull();
+
+    fireEvent.doubleClick(screen.getByRole("button", { name: "Dana" }));
+    expect(screen.getByDisplayValue("Dana")).toBeTruthy();
+  });
+
   it("preserves scroll position when older utterances are inserted ahead of the current viewport", () => {
     positionMap.set("utt-1", { top: 0, height: 40 });
     positionMap.set("utt-2", { top: 80, height: 40 });

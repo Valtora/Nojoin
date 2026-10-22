@@ -404,10 +404,19 @@ def test_the_label_step_writes_nothing_and_removes_its_state_once_capture_ends(
             ).all()
 
     before = labels()
-    with engine.begin() as conn:
-        conn.execute(text("UPDATE recordings SET status = 'QUEUED'"))
+    calls = model.calls
+
+    def finalize_during_the_model_pass(windows):
+        with engine.begin() as conn:
+            conn.execute(text("UPDATE recordings SET status = 'QUEUED'"))
+        return SpeakerTrackModel.__call__(model, windows)
+
+    monkeypatch.setattr(
+        step, "_load_model", lambda device, config: finalize_during_the_model_pass
+    )
     _run(tmp_path, audio[4 * SAMPLE_RATE :], 4.0, 30.0)
 
+    assert model.calls > calls
     assert labels() == before
     assert not (tmp_path / STATE_FILENAME).exists()
     assert not (tmp_path / BANK_FILENAME).exists()
@@ -482,6 +491,9 @@ def test_a_write_that_fails_keeps_the_state_only_while_capture_goes_on(
     assert (tmp_path / LOCK_FILENAME).exists() is not finalized
 
 
+SLOTS = step.CONFIG.clustering.max_speakers
+
+
 def _without_member(state: bytes, member: str) -> bytes:
     source = zipfile.ZipFile(io.BytesIO(state))
     out = io.BytesIO()
@@ -519,6 +531,22 @@ STATE_DAMAGE = {
     ),
     "a unit pointing past the bank": lambda state, live_dir: _with_member(
         state, "unit_row", lambda rows: rows + 10_000
+    ),
+    # Sums restored into the wrong slots would extend another speaker's unit.
+    "open slots that are not the open units": lambda state, live_dir: _with_member(
+        state, "open_slots", lambda slots: (slots + 1) % SLOTS
+    ),
+    "a piece pointing past the units": lambda state, live_dir: _with_member(
+        state, "piece_unit", lambda units: units + 10_000
+    ),
+    "a unit label past the slots": lambda state, live_dir: _with_member(
+        state, "unit_label", lambda labels: labels + SLOTS
+    ),
+    "lock flags that are not flags": lambda state, live_dir: _with_member(
+        state, "unit_locked", lambda locked: locked.astype(np.float64) + 0.5
+    ),
+    "a negative pass count": lambda state, live_dir: _with_member(
+        state, "unit_stable", lambda stable: stable - 1
     ),
 }
 
@@ -659,3 +687,79 @@ def test_auto_on_a_host_without_cuda_runs_no_label_step(monkeypatch, tmp_path):
 
     assert model.calls == 0
     assert list(tmp_path.iterdir()) == []
+
+
+def test_a_run_queued_behind_finalize_does_no_model_pass(monkeypatch, tmp_path):
+    engine = _database()
+    model = SpeakerTrackModel()
+    _patch_step(monkeypatch, engine, model)
+    entered = []
+    real_lock = step._recording_lock
+
+    def recording_lock(live_dir):
+        entered.append(live_dir)
+        return real_lock(live_dir)
+
+    audio = speaker_audio([(0, 8, 1)], 8)
+    _run(tmp_path, audio[: 4 * SAMPLE_RATE], 0.0, 4.0)
+    calls = model.calls
+    monkeypatch.setattr(step, "_recording_lock", recording_lock)
+    # Finalize ended the capture; the state it left (a crash before its
+    # cleanup) goes with the queued run.
+    with engine.begin() as conn:
+        conn.execute(text("UPDATE recordings SET status = 'QUEUED'"))
+
+    _run(tmp_path, audio[4 * SAMPLE_RATE :], 4.0, 8.0)
+
+    assert model.calls == calls
+    assert entered == []
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_live_labels_are_never_left_for_the_model_to_name():
+    # The prompt asks the model to name only the recording's unresolved
+    # speakers; a live label is none, and reads as "Speaker N".
+    from backend.models.speaker import RecordingSpeaker
+    from backend.services.timeline_note_service import RecordingTimelineNotes
+    from backend.utils.meeting_intelligence import (
+        get_speakers_eligible_for_llm_renaming,
+    )
+    from backend.utils.meeting_notes import build_recording_speaker_map
+    from backend.worker.tasks.meeting_intelligence_stage import (
+        _build_automatic_meeting_intelligence_transcript_impl,
+    )
+
+    engine = _database()
+    _apply(
+        engine,
+        {
+            1000: LiveLabelDecision("LIVE_PROVISIONAL_2", locked=True, share=1.0),
+            10000: LiveLabelDecision("LIVE_PROVISIONAL_1", locked=True, share=1.0),
+        },
+    )
+    with Session(engine) as session:
+        update_utterance_speaker(
+            session,
+            recording_id=RECORDING_ID,
+            utterance_public_id="line-c",
+            new_speaker_name="Cy",
+        )
+        session.add(
+            RecordingSpeaker(recording_id=RECORDING_ID, diarization_label="SPEAKER_00")
+        )
+        session.commit()
+        speakers = session.execute(select(RecordingSpeaker)).scalars().all()
+        unresolved = get_speakers_eligible_for_llm_renaming(speakers)
+        segments = serialize_canonical_utterances(session, RECORDING_ID)
+        rendered = _build_automatic_meeting_intelligence_transcript_impl(
+            segments,
+            build_recording_speaker_map(speakers),
+            unresolved,
+            RecordingTimelineNotes(),
+        )
+
+    assert unresolved == ("SPEAKER_00",)
+    assert "Speaker 2: opening remarks" in rendered
+    assert "Speaker 1: a short reply" in rendered
+    assert "Cy: a second voice" in rendered
+    assert "LIVE_" not in rendered

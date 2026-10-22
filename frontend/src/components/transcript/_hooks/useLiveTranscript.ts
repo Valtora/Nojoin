@@ -105,17 +105,28 @@ export function useLiveTranscript(
       setHasLoaded(true);
     };
 
+    // One read at a time: a slow full read landing after a newer delta would
+    // put the older transcript back. A tick that finds one running is skipped.
+    let inFlight = false;
     // A poll failure is not worth surfacing over a running meeting: it does not
     // affect the capture or the final transcript, and the next tick retries.
     const poll = (mode: "full" | "delta") => {
-      sync(mode).catch((error) => {
-        console.error("Live transcript poll failed", error);
-      });
+      inFlight = true;
+      sync(mode)
+        .catch((error) => {
+          console.error("Live transcript poll failed", error);
+        })
+        .finally(() => {
+          inFlight = false;
+        });
     };
 
     poll("full");
     let polls = 0;
     const interval = setInterval(() => {
+      if (inFlight) {
+        return;
+      }
       polls += 1;
       poll(polls % LIVE_TRANSCRIPT_FULL_READ_EVERY_POLLS === 0 ? "full" : "delta");
     }, LIVE_TRANSCRIPT_POLL_INTERVAL_MS);

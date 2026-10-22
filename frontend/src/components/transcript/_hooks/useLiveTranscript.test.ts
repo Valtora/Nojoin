@@ -202,6 +202,54 @@ describe("useLiveTranscript", () => {
     ]);
   });
 
+  it("skips a tick while a read is in flight, so a slow full read cannot undo a newer delta", async () => {
+    // The server's line changes after the 10th poll's full read has started.
+    const server = { revision: 4, text: "older" };
+    let landFullRead: (delta: ReturnType<typeof buildDelta>) => void = () => {};
+    getTranscriptUtterances.mockResolvedValueOnce(
+      buildDelta(4, [buildUtterance("a", 0, "older", 4)]),
+    );
+    const shown: string[] = [];
+    renderHook(() => {
+      const live = useLiveTranscript(buildRecording());
+      shown.push(live.segments.map((segment) => segment.text).join());
+      return live;
+    });
+    await flushPendingRequests();
+    getTranscriptUtterances.mockImplementation(
+      async (_recordingId: string, afterRevision?: number) => {
+        if (afterRevision === undefined) {
+          return new Promise((resolve) => {
+            landFullRead = resolve;
+          });
+        }
+        return buildDelta(
+          server.revision,
+          afterRevision < server.revision
+            ? [buildUtterance("a", 0, server.text, server.revision)]
+            : [],
+        );
+      },
+    );
+    for (let poll = 1; poll <= LIVE_TRANSCRIPT_FULL_READ_EVERY_POLLS; poll += 1) {
+      await advanceOnePoll();
+    }
+    expect(getTranscriptUtterances).toHaveBeenLastCalledWith("rec-1", undefined);
+    const calls = getTranscriptUtterances.mock.calls.length;
+    Object.assign(server, { revision: 6, text: "newer" });
+
+    await advanceOnePoll();
+    expect(getTranscriptUtterances).toHaveBeenCalledTimes(calls);
+    await act(async () => {
+      landFullRead(buildDelta(4, [buildUtterance("a", 0, "older", 4)]));
+    });
+    await advanceOnePoll();
+
+    expect(getTranscriptUtterances).toHaveBeenLastCalledWith("rec-1", 4);
+    expect(shown.at(-1)).toBe("newer");
+    expect(shown.slice(shown.indexOf("newer"))).not.toContain("older");
+  });
+
   it("stops polling once the capture is finalized", async () => {
     getTranscriptUtterances.mockResolvedValue(
       buildDelta(1, [buildUtterance("a", 0, "line", 1)]),

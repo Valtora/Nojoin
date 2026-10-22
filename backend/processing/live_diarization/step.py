@@ -99,7 +99,14 @@ def _mono_samples(audio: Any) -> np.ndarray:
 def _recording_in_flight(session, recording_id: int, *, lock: bool = False) -> bool:
     from backend.models.recording import Recording, RecordingStatus
 
-    recording = session.get(Recording, recording_id, with_for_update=lock)
+    if lock:
+        # FOR NO KEY UPDATE: blocks a status change, not an insert that
+        # references the recording (an audio chunk, an utterance event).
+        recording = session.get(
+            Recording, recording_id, with_for_update={"key_share": True}
+        )
+    else:
+        recording = session.get(Recording, recording_id)
     return recording is not None and recording.status in {
         RecordingStatus.UPLOADING,
         RecordingStatus.PAUSED,
@@ -230,6 +237,11 @@ def run_live_speaker_labels(run: LiveLabelRun) -> None:
     """Label the run's lines. Raises on failure; the live task catches it."""
     device = live_speaker_labels_device()
     if device is None or (run.live_dir / DISABLED_FILENAME).exists():
+        return
+    if not _still_capturing(run.recording_id):
+        # Queued behind finalize: no model pass, and no lock file made; any
+        # state still here goes.
+        remove_live_label_state(run.live_dir)
         return
     with _recording_lock(run.live_dir) as held:
         if held:

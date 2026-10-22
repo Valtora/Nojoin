@@ -1072,7 +1072,7 @@ def update_utterance_text(
     expected_revision: int | None = None,
     source: str = "api",
 ) -> TranscriptUtterance:
-    utterance = _get_utterance(session, recording_id, utterance_public_id)
+    utterance = _get_utterance(session, recording_id, utterance_public_id, lock=True)
     if utterance is None:
         raise LookupError("Utterance not found")
     if expected_revision is not None and utterance.revision != expected_revision:
