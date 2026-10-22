@@ -23,6 +23,16 @@ const apiMocks = vi.hoisted(() => ({
     )?.response;
     return response?.status === 409 && response.data?.detail?.code === "capture_superseded";
   },
+  /** As in @/lib/api: a 409 saying the recording was stopped and takes no more audio. */
+  isCaptureClosedError: (error: unknown) => {
+    const response = (
+      error as { response?: { status?: number; data?: { detail?: unknown } } } | null
+    )?.response;
+    return (
+      response?.status === 409 &&
+      response.data?.detail === "Recording is no longer accepting capture uploads"
+    );
+  },
   discardRecordingCapture: vi.fn(),
   getRecording: vi.fn(),
   finalizeRecordingCapture: vi.fn(),
@@ -68,6 +78,9 @@ vi.mock("@/lib/api", () => ({
   getRecording: apiMocks.getRecording,
   initRecording: apiMocks.initRecording,
   isActiveRecordingConflictDetail: vi.fn(() => false),
+  isCaptureClosedError: apiMocks.isCaptureClosedError,
+  isCaptureEndedError: (error: unknown) =>
+    apiMocks.isCaptureSupersededError(error) || apiMocks.isCaptureClosedError(error),
   isCaptureSupersededError: apiMocks.isCaptureSupersededError,
   pauseRecordingCapture: apiMocks.pauseRecordingCapture,
   reportRecordingCaptureSources: apiMocks.reportRecordingCaptureSources,
@@ -788,7 +801,7 @@ describe("capture controller", () => {
     // "finalizing" disables every transport control, so settling there bricked
     // the UI with no way back to Stop, Resume, or Discard.
     apiMocks.finalizeRecordingCapture.mockRejectedValue(
-      buildConflictError("Recording is no longer accepting capture uploads"),
+      new AxiosError("Network Error", "ERR_NETWORK"),
     );
 
     const controller = new CaptureController() as any;
@@ -799,9 +812,7 @@ describe("capture controller", () => {
     };
     controller.runtime = null;
 
-    await expect(controller.stop()).rejects.toThrow(
-      "Recording is no longer accepting capture uploads",
-    );
+    await expect(controller.stop()).rejects.toThrow("Network Error");
 
     const state = controller.getState();
     expect(state.status).toBe("paused");
@@ -1944,11 +1955,11 @@ describe("an outage that outlasts the upload retries (issue #568)", () => {
 
   it("stops asking once the server refuses the pause", async () => {
     const { controller, uploaderOptions } = await startCapture();
-    const closed = new AxiosError("Request failed with status code 409");
-    Object.assign(closed, {
-      response: { status: 409, data: { detail: "Recording is no longer accepting capture uploads" } },
+    const refused = new AxiosError("Request failed with status code 500");
+    Object.assign(refused, {
+      response: { status: 500, data: { detail: "The pause could not be saved." } },
     });
-    apiMocks.pauseRecordingCapture.mockRejectedValue(closed);
+    apiMocks.pauseRecordingCapture.mockRejectedValue(refused);
 
     await uploaderOptions.onStalled?.(unreachable());
     await vi.waitFor(() => expect(apiMocks.pauseRecordingCapture).toHaveBeenCalledTimes(1));
@@ -2006,7 +2017,7 @@ describe("an outage that outlasts the upload retries (issue #568)", () => {
   });
 });
 
-describe("a capture resumed in another tab or on another device (issue #570)", () => {
+describe("a capture taken over or stopped elsewhere (issues #570, #590)", () => {
   const microphoneSources = () => ({
     mode: "microphone_only",
     displayStream: null,
@@ -2041,6 +2052,20 @@ describe("a capture resumed in another tab or on another device (issue #570)", (
     });
     return error;
   };
+
+  /** The server's answer once the recording was stopped, which issues no epoch. */
+  const closed = () => {
+    const error = new AxiosError("Request failed with status code 409");
+    Object.assign(error, {
+      response: {
+        status: 409,
+        data: { detail: "Recording is no longer accepting capture uploads" },
+      },
+    });
+    return error;
+  };
+
+  const STOPPED = /already been stopped and sent for processing/;
 
   const unreachable = () => new AxiosError("Network Error", "ERR_NETWORK");
 
@@ -2092,12 +2117,15 @@ describe("a capture resumed in another tab or on another device (issue #570)", (
   type Started = Awaited<ReturnType<typeof startCapture>>;
 
   /** The tab has stopped capturing and holds nothing of the recording any more. */
-  const expectStoodDown = ({ controller, sources, uploader, recorder }: Started) => {
+  const expectStoodDown = (
+    { controller, sources, uploader, recorder }: Started,
+    message = /continued in another tab or on another device/,
+  ) => {
     const state = controller.getState();
     expect(state.status).toBe("idle");
     expect(state.recordingId).toBeNull();
     expect(state.runtimeActive).toBe(false);
-    expect(state.error).toMatch(/continued in another tab or on another device/);
+    expect(state.error).toMatch(message);
     expect(recorder.stop).toHaveBeenCalledWith({ emitTail: false });
     expect(sources.release).toHaveBeenCalled();
     expect(uploader.dispose).toHaveBeenCalled();
@@ -2160,7 +2188,7 @@ describe("a capture resumed in another tab or on another device (issue #570)", (
     vi.mocked(started.uploader.pendingAudioSeconds).mockReturnValue(6);
     const clearStore = vi.spyOn(storeOf(started.controller), "clear");
 
-    await started.uploaderOptions.onSuperseded?.(superseded());
+    await started.uploaderOptions.onCaptureEnded?.(superseded());
 
     expectStoodDown(started);
     expect(started.controller.getState().error).toMatch(/About 6 seconds of audio/);
@@ -2321,6 +2349,94 @@ describe("a capture resumed in another tab or on another device (issue #570)", (
       second.restore.mock.calls[0][0].map((segment: { sequence: number }) => segment.sequence),
     ).toEqual([5]);
     expect(started.controller.getState().status).toBe("recording");
+  });
+
+  describe("once the recording was stopped elsewhere (issue #590)", () => {
+    it("stops capturing at the first refused segment, keeping the unsent audio", async () => {
+      const started = await startCapture();
+      vi.mocked(started.uploader.pendingAudioSeconds).mockReturnValue(4);
+      const clearStore = vi.spyOn(storeOf(started.controller), "clear");
+
+      await started.uploaderOptions.onCaptureEnded?.(closed());
+
+      expectStoodDown(started, STOPPED);
+      expect(started.controller.getState().error).toMatch(/About 4 seconds of audio/);
+      expect(clearStore).not.toHaveBeenCalled();
+      expect(apiMocks.pauseRecordingCapture).not.toHaveBeenCalled();
+      expect(apiMocks.finalizeRecordingCapture).not.toHaveBeenCalled();
+    });
+
+    it("stands down when the pause it owed is refused once the API answers", async () => {
+      const started = await startCapture();
+      apiMocks.pauseRecordingCapture.mockRejectedValueOnce(unreachable());
+      await started.uploaderOptions.onStalled?.(unreachable());
+      await vi.waitFor(() => expect(apiMocks.pauseRecordingCapture).toHaveBeenCalledTimes(1));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(started.controller.getState().status).toBe("paused");
+
+      apiMocks.pauseRecordingCapture.mockRejectedValueOnce(closed());
+      connectivityMocks.apiAnswered();
+
+      await vi.waitFor(() => expect(started.controller.getState().status).toBe("idle"));
+      expectStoodDown(started, STOPPED);
+    });
+
+    it("stands down when its pause is refused", async () => {
+      const started = await startCapture();
+      apiMocks.pauseRecordingCapture.mockRejectedValueOnce(closed());
+
+      await expect(started.controller.pause()).rejects.toThrow(STOPPED);
+
+      expectStoodDown(started, STOPPED);
+    });
+
+    it("stands down when its resume is refused", async () => {
+      const started = await startCapture();
+      await started.controller.pause();
+      apiMocks.resumeRecordingCapture.mockRejectedValueOnce(closed());
+
+      await expect(started.controller.resume()).rejects.toThrow(STOPPED);
+
+      expectStoodDown(started, STOPPED);
+      expect(started.recorder.resume).not.toHaveBeenCalled();
+    });
+
+    it("stands down rather than reading paused when its stop finds it already stopped", async () => {
+      const started = await startCapture();
+      apiMocks.finalizeRecordingCapture.mockRejectedValueOnce(closed());
+
+      await expect(started.controller.stop()).rejects.toThrow(STOPPED);
+
+      expectStoodDown(started, STOPPED);
+      // Nothing is owed to a recording that takes no more requests.
+      connectivityMocks.apiAnswered();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(apiMocks.pauseRecordingCapture).not.toHaveBeenCalled();
+    });
+
+    it("reads idle when a stop from the dialog finds it already stopped", async () => {
+      const controller = track(new CaptureController());
+      apiMocks.finalizeRecordingCapture.mockRejectedValueOnce(closed());
+
+      await expect(controller.stop("rec-1")).rejects.toThrow(STOPPED);
+
+      expect(controller.getState().status).toBe("idle");
+      expect(controller.getState().recordingId).toBeNull();
+    });
+
+    it("leaves the recording to processing when its discard is refused", async () => {
+      const started = await startCapture();
+      apiMocks.discardRecordingCapture.mockRejectedValueOnce(closed());
+      const clearStore = vi.spyOn(storeOf(started.controller), "clear");
+
+      await expect(started.controller.cancel()).rejects.toThrow(STOPPED);
+
+      expect(apiMocks.discardRecordingCapture).toHaveBeenCalledWith("rec-1", undefined, {
+        epoch: 3,
+      });
+      expect(clearStore).not.toHaveBeenCalled();
+      expect(started.controller.getState().status).toBe("idle");
+    });
   });
 });
 
