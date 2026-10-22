@@ -439,7 +439,7 @@ describe("capture uploader when the session ends", () => {
   });
 });
 
-describe("capture uploader once the capture is resumed elsewhere (issue #570)", () => {
+describe("capture uploader once the capture is taken over or stopped elsewhere", () => {
   const superseded = () => {
     const error = new AxiosError("Request failed with status code 409");
     Object.assign(error, {
@@ -476,7 +476,7 @@ describe("capture uploader once the capture is resumed elsewhere (issue #570)", 
 
   it("stops at the refusal, without retrying, and keeps what it holds in the store", async () => {
     const store = new MemorySegmentStore();
-    const onSuperseded = vi.fn(async () => {});
+    const onCaptureEnded = vi.fn(async () => {});
     const onStalled = vi.fn(async () => {});
     const wait = vi.fn(async () => {});
     const uploadSegment = vi.fn(async (_id: string, sequence: number) => {
@@ -491,7 +491,7 @@ describe("capture uploader once the capture is resumed elsewhere (issue #570)", 
       uploadSegment: uploadSegment as never,
       store,
       wait,
-      onSuperseded,
+      onCaptureEnded,
       onStalled,
     });
 
@@ -503,7 +503,7 @@ describe("capture uploader once the capture is resumed elsewhere (issue #570)", 
     expect(uploadSegment.mock.calls.map((call) => call[1])).toEqual([0, 1]);
     expect(wait).not.toHaveBeenCalled();
     expect(onStalled).not.toHaveBeenCalled();
-    expect(onSuperseded).toHaveBeenCalledTimes(1);
+    expect(onCaptureEnded).toHaveBeenCalledTimes(1);
     // Nothing more goes, even when asked to retry or given more audio.
     expect(uploader.recover()).toBe(false);
     uploader.enqueue(3, new Blob(["d"]), 2);
@@ -511,6 +511,46 @@ describe("capture uploader once the capture is resumed elsewhere (issue #570)", 
     expect(uploadSegment).toHaveBeenCalledTimes(2);
     await vi.waitFor(async () =>
       expect((await store.list("rec-1")).map((segment) => segment.sequence)).toEqual([1, 2, 3]),
+    );
+  });
+
+  it("stops at the first refusal once the recording was stopped (issue #590)", async () => {
+    const closed = new AxiosError("Request failed with status code 409");
+    Object.assign(closed, {
+      response: { status: 409, data: { detail: "Recording is no longer accepting capture uploads" } },
+    });
+    const store = new MemorySegmentStore();
+    const onCaptureEnded = vi.fn(async () => {});
+    const onStalled = vi.fn(async () => {});
+    const wait = vi.fn(async () => {});
+    const uploadSegment = vi.fn(async (_id: string, sequence: number) => {
+      if (sequence === 1) {
+        throw closed;
+      }
+      return accepted(sequence);
+    });
+    const uploader = createSegmentUploader({
+      recordingId: "rec-1",
+      epoch: 0,
+      uploadSegment: uploadSegment as never,
+      store,
+      wait,
+      onCaptureEnded,
+      onStalled,
+    });
+
+    uploader.enqueue(0, new Blob(["a"]), 2);
+    uploader.enqueue(1, new Blob(["b"]), 2);
+
+    await expect(uploader.waitForIdle()).rejects.toBe(closed);
+    // Not retried as if the network were down, and never reported as a stall.
+    expect(uploadSegment).toHaveBeenCalledTimes(2);
+    expect(wait).not.toHaveBeenCalled();
+    expect(onStalled).not.toHaveBeenCalled();
+    expect(onCaptureEnded).toHaveBeenCalledWith(closed);
+    expect(uploader.recover()).toBe(false);
+    await vi.waitFor(async () =>
+      expect((await store.list("rec-1")).map((segment) => segment.sequence)).toEqual([1]),
     );
   });
 

@@ -100,6 +100,8 @@ Nojoin keeps a paused or interrupted recording until you choose. It never pauses
 
 Resuming a recording in another tab or on another device takes it over. If the tab that was recording it is still open and reaches the server again, it stops recording, releases the microphone and shared tab, and says the recording continued elsewhere. Pause, stop and discard in that tab are refused the same way, so it cannot end or delete the recording under the tab now running it. Audio it recorded but had not uploaded is left out rather than mixed into the audio recorded since, and Nojoin says how much. Audio a closed tab kept in its browser is treated the same way: it is uploaded when you resume or stop the recording in that browser only if nobody resumed it elsewhere after that tab, and otherwise left out.
 
+**Stop and process** in another tab or on another device ends the recording for the tab that was recording it in the same way. Once that tab reaches the server again, it stops recording, releases the microphone and shared tab, and says the recording was already stopped and sent for processing. **Discard** in that tab is refused too, so it cannot delete the meeting being processed. To delete it, use **Discard Recording** in the recordings list.
+
 ## Capture Settings
 
 **Settings > Recording** holds the capture settings for this browser:
@@ -180,11 +182,15 @@ No browser API lets a page opt out of Memory Saver or read whether it is on, so 
 
 When more than 30 seconds of audio is waiting to upload, the controls say how far behind uploads are. The audio is kept in this browser and sent as the connection allows. Keep the tab open, though nothing is lost if it closes and you return in the same browser.
 
-If a segment keeps failing to upload for about 15 seconds, Nojoin pauses the recording and shows the error. The tab keeps the queued audio, the microphone and the shared tab, and **Start Meeting** stays unavailable until you resume, stop or discard. When the server cannot be told about the pause, Nojoin tells it once the connection returns, after uploading the queued audio, and **Resume** carries on with the same recording without asking you to share again. Two minutes after the last upload the server offers the recording as interrupted in any tab or on any device ([Closing Or Reloading The Tab](#closing-or-reloading-the-tab)). If it is resumed somewhere else meanwhile, this tab stops once the connection returns and says the recording continued elsewhere ([This recording continued elsewhere](#this-recording-continued-elsewhere)). An ended sign-in is different: recording carries on and uploads wait for you to sign in again ([Signing In Again During A Recording](#signing-in-again-during-a-recording)).
+If a segment keeps failing to upload for about 15 seconds, Nojoin pauses the recording and shows the error. The tab keeps the queued audio, the microphone and the shared tab, and **Start Meeting** stays unavailable until you resume, stop or discard. When the server cannot be told about the pause, Nojoin tells it once the connection returns, after uploading the queued audio, and **Resume** carries on with the same recording without asking you to share again. Two minutes after the last upload the server offers the recording as interrupted in any tab or on any device ([Closing Or Reloading The Tab](#closing-or-reloading-the-tab)). If it is resumed or stopped somewhere else meanwhile, this tab stops once the connection returns and says so ([This recording continued elsewhere](#this-recording-continued-elsewhere), [This recording has already been stopped](#this-recording-has-already-been-stopped)). An ended sign-in is different: recording carries on and uploads wait for you to sign in again ([Signing In Again During A Recording](#signing-in-again-during-a-recording)).
 
 ### This recording continued elsewhere
 
 The recording was resumed in another tab or on another device, so this tab stopped recording it and released the microphone and shared tab. Carry on, pause or stop from the tab or device that resumed it. If this tab had audio it had not uploaded, the message says how much: it is not in the recording, because adding it after the audio recorded meanwhile would put the meeting out of order.
+
+### This recording has already been stopped
+
+The recording was stopped in another tab or on another device and sent for processing, so this tab stopped recording it and released the microphone and shared tab. The meeting appears in the recordings list as usual. If this tab had audio it had not uploaded, the message says how much: it is not in the recording, which was finished without it.
 
 ### Stop did not finish
 

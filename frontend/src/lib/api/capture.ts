@@ -195,3 +195,33 @@ export const isCaptureSupersededError = (error: unknown): boolean => {
     .response;
   return response?.status === 409 && isCaptureSupersededDetail(response.data?.detail);
 };
+
+/**
+ * What the server refuses every capture request with once the recording has
+ * been stopped. It mirrors `UPLOAD_CLOSED_DETAIL` in
+ * `backend/api/v1/endpoints/recordings/constants.py`.
+ */
+const CAPTURE_CLOSED_DETAIL = "Recording is no longer accepting capture uploads";
+
+/**
+ * Whether the server refused a request because the recording has been stopped
+ * and sent for processing, so it takes no more audio from any tab. A stop from
+ * the resume-or-discard dialog issues no epoch, so a tab whose capture was
+ * stopped elsewhere hears this rather than `capture_superseded`.
+ */
+export const isCaptureClosedError = (error: unknown): boolean => {
+  if (!error || typeof error !== "object" || !("response" in error)) {
+    return false;
+  }
+  const response = (error as { response?: { status?: number; data?: { detail?: unknown } } })
+    .response;
+  return response?.status === 409 && response.data?.detail === CAPTURE_CLOSED_DETAIL;
+};
+
+/**
+ * Whether the capture a tab holds has ended for it elsewhere: resumed in
+ * another tab or on another device, or stopped. Asking again gets the same
+ * answer, so the tab stands down.
+ */
+export const isCaptureEndedError = (error: unknown): boolean =>
+  isCaptureSupersededError(error) || isCaptureClosedError(error);

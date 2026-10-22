@@ -1,5 +1,5 @@
 import type { RecordingId } from "@/types";
-import { isCaptureSupersededError, uploadRecordingSegment } from "@/lib/api";
+import { isCaptureEndedError, uploadRecordingSegment } from "@/lib/api";
 import { waitForSignInAfter } from "@/lib/session";
 
 import { storedSegmentEpoch, type SegmentStore, type StoredSegment } from "./segmentStore";
@@ -43,11 +43,11 @@ export interface SegmentUploaderOptions {
   onUploaded?: (sequence: number) => void;
   onStalled?: (error: Error) => void | Promise<void>;
   /**
-   * Called once when the server refuses a segment because the capture was
-   * resumed in another tab or on another device. Nothing is uploaded after it,
-   * and the queue stays in the store.
+   * Called once when the server refuses a segment because the capture has
+   * ended for this tab: resumed in another tab or on another device, or
+   * stopped. Nothing is uploaded after it, and the queue stays in the store.
    */
-  onSuperseded?: (error: Error) => void | Promise<void>;
+  onCaptureEnded?: (error: Error) => void | Promise<void>;
   /** Called whenever the queue grows or shrinks. */
   onQueueChange?: (size: UploadQueueSize) => void;
   /** Where queued segments survive a closed tab. Omitted, the queue is memory only. */
@@ -79,7 +79,7 @@ export class SegmentUploader {
 
   private readonly onStalled?: (error: Error) => void | Promise<void>;
 
-  private readonly onSuperseded?: (error: Error) => void | Promise<void>;
+  private readonly onCaptureEnded?: (error: Error) => void | Promise<void>;
 
   private readonly onQueueChange?: (size: UploadQueueSize) => void;
 
@@ -106,8 +106,8 @@ export class SegmentUploader {
 
   private stalledError: Error | null = null;
 
-  /** Set once the capture is resumed elsewhere. Unlike a stall, it never clears. */
-  private supersededError: Error | null = null;
+  /** Set once the capture has ended for this tab. Unlike a stall, it never clears. */
+  private endedError: Error | null = null;
 
   private closed = false;
 
@@ -117,7 +117,7 @@ export class SegmentUploader {
     this.uploadSegmentFn = options.uploadSegment ?? uploadRecordingSegment;
     this.onUploaded = options.onUploaded;
     this.onStalled = options.onStalled;
-    this.onSuperseded = options.onSuperseded;
+    this.onCaptureEnded = options.onCaptureEnded;
     this.onQueueChange = options.onQueueChange;
     this.store = options.store;
     this.retryDelaysMs = options.retryDelaysMs ?? DEFAULT_RETRY_DELAYS_MS;
@@ -192,11 +192,11 @@ export class SegmentUploader {
 
   /**
    * Clears a stalled state and retries the queued segments. Returns false
-   * when the uploader has been disposed, or the capture was resumed
-   * elsewhere, and it cannot upload again.
+   * when the uploader has been disposed, or the capture was resumed or
+   * stopped elsewhere, and it cannot upload again.
    */
   recover() {
-    if (this.closed || this.supersededError) {
+    if (this.closed || this.endedError) {
       return false;
     }
 
@@ -220,8 +220,8 @@ export class SegmentUploader {
     const deadline = this.now() + timeoutMs;
 
     while (true) {
-      if (this.supersededError) {
-        throw this.supersededError;
+      if (this.endedError) {
+        throw this.endedError;
       }
       if (this.stalledError) {
         throw this.stalledError;
@@ -273,7 +273,7 @@ export class SegmentUploader {
 
     this.drainPromise = (async () => {
       try {
-        while (!this.closed && !this.stalledError && !this.supersededError) {
+        while (!this.closed && !this.stalledError && !this.endedError) {
           const next = this.pending.get(this.nextExpectedSequence);
           if (!next) {
             break;
@@ -292,7 +292,7 @@ export class SegmentUploader {
         if (
           !this.closed &&
           !this.stalledError &&
-          !this.supersededError &&
+          !this.endedError &&
           this.pending.has(this.nextExpectedSequence)
         ) {
           this.scheduleDrain();
@@ -311,7 +311,7 @@ export class SegmentUploader {
       this.drainPromise ||
       this.closed ||
       this.stalledError ||
-      this.supersededError
+      this.endedError
     ) {
       return;
     }
@@ -323,7 +323,7 @@ export class SegmentUploader {
         this.drainPromise ||
         this.closed ||
         this.stalledError ||
-        this.supersededError ||
+        this.endedError ||
         !this.pending.has(this.nextExpectedSequence)
       ) {
         return;
@@ -381,15 +381,15 @@ export class SegmentUploader {
         return;
 
       } catch (error: unknown) {
-        // Another tab or device resumed the capture. Retrying gets the same
-        // answer, and the segment must not reach the recording, so it stays in
-        // the store and nothing more is sent.
-        if (isCaptureSupersededError(error)) {
-          const supersededError =
-            error instanceof Error ? error : new Error("This recording continued elsewhere.");
-          this.supersededError = supersededError;
-          await this.onSuperseded?.(supersededError);
-          throw supersededError;
+        // Another tab or device resumed or stopped the capture. Retrying gets
+        // the same answer, and the segment can never join the recording, so it
+        // stays in the store and nothing more is sent.
+        if (isCaptureEndedError(error)) {
+          const endedError =
+            error instanceof Error ? error : new Error("This recording ended elsewhere.");
+          this.endedError = endedError;
+          await this.onCaptureEnded?.(endedError);
+          throw endedError;
         }
 
         // A failure while the session is unusable is not a failed attempt. The
