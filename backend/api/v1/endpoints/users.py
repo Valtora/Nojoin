@@ -28,7 +28,7 @@ from backend.utils.document_storage import (
 )
 from backend.utils.invitation_roles import resolve_invitation_role
 from backend.utils.rate_limit import enforce_rate_limit
-from backend.utils.recording_storage import delete_recording_artifacts
+from backend.utils.recording_storage import delete_recording_artifacts_after_commit
 from backend.utils.time import utc_now
 
 router = APIRouter()
@@ -307,20 +307,8 @@ async def delete_user(
         )
 
     # The delete has committed, so no cleanup failure may turn it into an
-    # error. Each recording's files are removed on their own, and a failure is
-    # logged and skipped; the document files never raise, and still go.
-    for recording_id, audio_path, proxy_path in artifacts:
-        try:
-            delete_recording_artifacts(
-                recording_id=recording_id,
-                audio_path=audio_path,
-                proxy_path=proxy_path,
-                logger=logger,
-            )
-        except Exception:
-            logger.exception(
-                "Failed to remove the files of deleted recording %s", recording_id
-            )
+    # error. Neither call raises, so the document files still go.
+    delete_recording_artifacts_after_commit(artifacts, logger=logger)
     await delete_document_files(document_paths, logger=logger)
     return user
 
