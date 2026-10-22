@@ -9,6 +9,7 @@ from backend.processing.processing_tuning import (
     WORD_FLIP_MAX_GAP_KEY,
     resolve_tuning,
 )
+from backend.utils.word_text import reconstruct_text_from_words
 
 logger = logging.getLogger(__name__)
 
@@ -19,51 +20,6 @@ SEGMENT_OVERLAP_MIN_DURATION_S = 0.25
 # Defaults; a user's settings may override each (processing_tuning.py).
 ISOLATED_WORD_FLIP_MAX_DURATION_S = TUNING_SPECS[WORD_FLIP_MAX_DURATION_KEY].default
 ISOLATED_WORD_FLIP_MAX_GAP_S = TUNING_SPECS[WORD_FLIP_MAX_GAP_KEY].default
-_PUNCTUATION_ONLY_RE = re.compile(r"^[\.,!?;:%)\]\}]+$")
-_CONTRACTION_SUFFIXES = {
-    "'d",
-    "'ll",
-    "'m",
-    "'re",
-    "'s",
-    "'ve",
-    "n't",
-    "’d",
-    "’ll",
-    "’m",
-    "’re",
-    "’s",
-    "’ve",
-}
-
-
-def _reconstruct_text_from_words(words: list[dict]) -> str:
-    text_parts: list[str] = []
-    for index, word in enumerate(words):
-        token = str(word.get("word") or "")
-        if not token:
-            continue
-        if index == 0:
-            text_parts.append(token.lstrip())
-            continue
-        if token[:1].isspace():
-            text_parts.append(token)
-            continue
-
-        stripped_token = token.strip()
-        if not stripped_token:
-            continue
-        if stripped_token in _CONTRACTION_SUFFIXES or stripped_token.startswith(
-            ("'", "’")
-        ):
-            text_parts.append(stripped_token)
-            continue
-        if _PUNCTUATION_ONLY_RE.match(stripped_token):
-            text_parts.append(stripped_token)
-            continue
-        text_parts.append(f" {stripped_token}")
-
-    return "".join(text_parts).strip()
 
 
 def render_transcript(transcript_path, label_to_name, output_format="plain"):
@@ -311,6 +267,7 @@ def _combine_word_level(segments, speaker_turns, config=None):
             }
         )
 
+    _attribute_gap_words(word_assignments, speaker_turns)
     _smooth_isolated_word_speaker_flips(
         word_assignments,
         max_duration_s=resolve_tuning(config, WORD_FLIP_MAX_DURATION_KEY),
@@ -424,6 +381,71 @@ def _speaker_at_instant(instant: float, speaker_turns) -> str:
         if ending_here is None and turn.end == instant:
             ending_here = label
     return ending_here or "UNKNOWN"
+
+
+# Furthest, in seconds, a word that overlaps no diarisation turn may lie from a
+# turn and still take that turn's speaker (#508). Most such words abut a word
+# the merge attributed. Further out, a word could as easily be a reply the
+# diariser missed, or one the engine invented, as the stray end of a turn.
+GAP_WORD_TURN_TOLERANCE_S = 0.5
+
+
+def _attribute_gap_words(word_assignments: list[dict], speaker_turns) -> None:
+    """Give a word in a gap between diarisation turns the speaker of a turn near it.
+
+    A word that overlaps no turn is UNKNOWN after the overlap lookup, and flip
+    smoothing leaves UNKNOWN alone. Such a word takes the speaker of the nearest
+    turn within GAP_WORD_TURN_TOLERANCE_S, the earlier turn on a tie. When the
+    nearest attributed words before and after it share a speaker with a turn
+    that near, it takes theirs instead. A word further than that from every
+    turn stays UNKNOWN. Neighbours are read before any gap word is given a
+    speaker, so the order words are visited in changes nothing.
+    """
+    speakers = [assignment["speaker"] for assignment in word_assignments]
+    if "UNKNOWN" not in speakers:
+        return
+    turns = [
+        (turn, label) for turn, _, label in speaker_turns.itertracks(yield_label=True)
+    ]
+    before = _last_attributed_speakers(speakers)
+    after = _last_attributed_speakers(speakers[::-1])[::-1]
+    for index, assignment in enumerate(word_assignments):
+        if speakers[index] != "UNKNOWN":
+            continue
+        shared = before[index] if before[index] == after[index] else None
+        assignment["speaker"] = _gap_word_speaker(assignment["word"], turns, shared)
+
+
+def _last_attributed_speakers(speakers: list[str]) -> list[str | None]:
+    """For each word, the last speaker other than UNKNOWN strictly before it."""
+    last: str | None = None
+    found: list[str | None] = []
+    for speaker in speakers:
+        found.append(last)
+        if speaker != "UNKNOWN":
+            last = speaker
+    return found
+
+
+def _gap_word_speaker(word: dict, turns: list, shared: str | None) -> str:
+    """Speaker for a word that overlaps no turn: see _attribute_gap_words."""
+    start = float(word["start"])
+    end = max(start, float(word["end"]))
+    near = []
+    for turn, label in turns:
+        distance = max(0.0, start - turn.end, turn.start - end)
+        if not exceeds(distance, GAP_WORD_TURN_TOLERANCE_S):
+            near.append((distance, turn.start, label))
+    if not near:
+        return "UNKNOWN"
+    if shared is not None and any(label == shared for _, _, label in near):
+        return shared
+    nearest = min(distance for distance, _, _ in near)
+    return min(
+        (turn_start, label)
+        for distance, turn_start, label in near
+        if not exceeds(distance, nearest)
+    )[1]
 
 
 def _with_word_source_public_ids(segment: dict) -> dict:
@@ -664,8 +686,8 @@ def consolidate_diarized_transcript(
                     first_chunk_words = curr_words[:1]
                     remainder_words = curr_words[1:]
 
-                chunk_text = _reconstruct_text_from_words(first_chunk_words)
-                remainder_text = _reconstruct_text_from_words(remainder_words)
+                chunk_text = reconstruct_text_from_words(first_chunk_words)
+                remainder_text = reconstruct_text_from_words(remainder_words)
 
                 split_end_time = first_chunk_words[-1]["end"]
 

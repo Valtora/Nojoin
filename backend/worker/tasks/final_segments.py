@@ -1,8 +1,9 @@
-"""Combine stage of the finalize pipeline: ASR + diarization into final segments.
+"""Merge stage of the finalize pipeline: ASR + diarization into final segments.
 
 Extracted from ``pipeline.py`` to keep that module within its size budget. The
 ``transcript_utils`` import stays inside the function, as it was in the
-pipeline, so the stage tests can stub that module per test.
+pipeline, so the stage tests can stub that module per test. The ASR stage hands
+its result through ``drop_unheard_words`` before anything reads it.
 """
 
 import logging
@@ -12,6 +13,38 @@ from typing import Any
 from backend.processing.pipeline_metrics import record_pipeline_metric
 
 logger = logging.getLogger(__name__)
+
+
+def drop_unheard_words(result: dict, audio_path: str, recording_id: int) -> dict:
+    """``result`` less the words its engine placed in digital silence (#508).
+
+    ``audio_path`` is the audio the engine read. A word lying in one of its
+    exact-zero runs, with ``UNHEARD_WORD_GUARD_S`` to spare on each side, is
+    dropped (``backend/processing/unheard_words.py``). Best effort: audio that
+    cannot be read keeps every word.
+    """
+    from backend.processing.unheard_words import (
+        digital_silence_runs,
+        remove_unheard_words,
+    )
+
+    try:
+        runs = digital_silence_runs(audio_path)
+    except (OSError, RuntimeError) as exc:
+        logger.warning("Kept every ASR word: could not read %s: %s", audio_path, exc)
+        return result
+    filtered, dropped = remove_unheard_words(result, runs)
+    record_pipeline_metric(
+        stage="final_asr_unheard_words",
+        recording_id=recording_id,
+        payload={
+            "words_dropped": dropped.words,
+            "segments_dropped": dropped.segments,
+            "silent_runs": len(runs),
+        },
+        log=logger,
+    )
+    return filtered
 
 
 def combine_and_consolidate_segments(
