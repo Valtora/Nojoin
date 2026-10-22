@@ -26,6 +26,42 @@ describe("ModernDatePicker", () => {
     expect((popper as HTMLElement).style.position).toBe("fixed");
   });
 
+  // react-datepicker passes each day at midnight, so comparing it with a value
+  // that carries a time never matched, and the selected day kept body text on
+  // the action fill (3.46:1 in light, 1.60:1 in Marigold dark) (#617).
+  it("labels the selected day for its fill when the value has a time", () => {
+    render(
+      <ModernDatePicker
+        selected={new Date(2026, 9, 14, 10, 30)}
+        onChange={vi.fn()}
+        showTimeSelect
+        open
+      />,
+    );
+
+    const day = document.querySelector(".react-datepicker__day--selected");
+    expect(day?.textContent).toBe("14");
+    expect(day?.className).toContain("!text-action-on");
+    expect(day?.className).not.toContain("!text-foreground");
+  });
+
+  it("keeps body text on the days around it", () => {
+    render(
+      <ModernDatePicker
+        selected={new Date(2026, 9, 14, 10, 30)}
+        onChange={vi.fn()}
+        showTimeSelect
+        open
+      />,
+    );
+
+    const others = [...document.querySelectorAll(".react-datepicker__day")].filter(
+      (day) => !day.classList.contains("react-datepicker__day--selected"),
+    );
+    expect(others.length).toBeGreaterThan(27);
+    expect(others.every((day) => day.className.includes("!text-foreground"))).toBe(true);
+  });
+
   it("keeps the calendar inside the modal, where the focus trap can reach it", () => {
     render(
       <Modal open onClose={vi.fn()} title="Import Audio">

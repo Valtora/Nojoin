@@ -6,12 +6,13 @@ import { describe, expect, it } from "vitest";
 import { cssDeclarations } from "@/test/cssDeclarations";
 
 /**
- * globals.css themes react-datepicker's time column and popover arrow by
- * repeating the library's own selectors, which then win on order. A shorter
- * selector loses to the library's longer one, as `.react-datepicker__time` lost
- * to `.react-datepicker__time-container .react-datepicker__time` and left the
- * column white in dark mode (#503). This compares the two stylesheets, so a
- * library upgrade that colours another part of either fails here.
+ * globals.css themes react-datepicker's time column, popover arrow and
+ * keyboard day by repeating the library's own selectors, which then win on
+ * order. A shorter selector loses to the library's longer one, as
+ * `.react-datepicker__time` lost to `.react-datepicker__time-container
+ * .react-datepicker__time` and left the column white in dark mode (#503). This
+ * compares the two stylesheets, so a library upgrade that colours another part
+ * of any of them fails here.
  */
 const LIBRARY = path.resolve(
   __dirname,
@@ -19,7 +20,8 @@ const LIBRARY = path.resolve(
 );
 const GLOBALS = path.resolve(__dirname, "globals.css");
 
-const THEMED_PARTS = /react-datepicker__time|react-datepicker-time__|react-datepicker__triangle/;
+const THEMED_PARTS =
+  /react-datepicker__time|react-datepicker-time__|react-datepicker__triangle|react-datepicker__day--keyboard-selected/;
 // Coloured by the library but never on screen: v9 renders no time-name, and
 // the today-button variant needs a `todayButton` Nojoin never passes.
 const NOT_RENDERED = /react-datepicker__time-name|react-datepicker__time-container--with-today-button/;
@@ -34,7 +36,7 @@ function colourSlot(property: string): string {
   return property;
 }
 
-describe("react-datepicker time column and arrow colours", () => {
+describe("react-datepicker time column, arrow and keyboard day colours", () => {
   const library = cssDeclarations(readFileSync(LIBRARY, "utf8")).filter(
     (rule) =>
       THEMED_PARTS.test(rule.selector) &&
