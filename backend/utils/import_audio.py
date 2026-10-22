@@ -57,8 +57,7 @@ KEEPING_AUDIO_STEP = "Extracting audio..."
 # Upper bound on one extraction, and on a full read of a track's packets. A
 # stream copy runs at disk speed (6.5 s for a 3.5 GB, one-hour OBS recording,
 # cold) and an Opus re-encode at about 200x real time, so this only ever ends
-# a hung ffmpeg; it is not a latency budget (see ARCHITECTURE.md on proxy
-# timeouts).
+# a hung ffmpeg; it is not a latency budget.
 EXTRACT_TIMEOUT_S = 15 * 60
 
 # Codecs stored as they are (a stream copy: no re-encode, no quality loss), and

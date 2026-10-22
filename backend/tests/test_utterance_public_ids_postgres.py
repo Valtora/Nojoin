@@ -48,7 +48,6 @@ from backend.utils.canonical_pipeline.core import (
 )
 from backend.utils.canonical_pipeline.public_ids import is_utterance_public_id
 from backend.utils.canonical_pipeline.startup import ensure_canonical_backfill
-from backend.utils.live_transcript import build_transcription_result_from_segments
 from backend.worker.tasks.final_segments import combine_and_consolidate_segments
 
 SCHEMA = "finalize_public_id_test"
@@ -72,21 +71,14 @@ def _whisper_without_word_timestamps() -> dict:
     }
 
 
-def _live_reuse_transcription(live_public_id: str) -> dict:
-    """A transcription rebuilt from one live segment, as live-ASR reuse does."""
-    transcription, _ = build_transcription_result_from_segments(
-        [
-            {
-                "id": live_public_id,
-                "start": 0.0,
-                "end": 2.0,
-                "text": "Hello there.",
-                "segment_source": "live",
-            }
-        ]
-    )
-    assert transcription is not None
-    return transcription
+def _transcription_carrying_id(public_id: str) -> dict:
+    """A transcription whose one segment carries an utterance public id."""
+    return {
+        "text": "Hello there.",
+        "segments": [
+            {"id": public_id, "start": 0.0, "end": 2.0, "text": "Hello there."}
+        ],
+    }
 
 
 @pytest.fixture
@@ -192,7 +184,7 @@ def test_live_utterance_id_carried_through_the_merge_is_kept(
         text="Hello there.",
     )
     segments = combine_and_consolidate_segments(
-        _live_reuse_transcription(live_public_id),
+        _transcription_carrying_id(live_public_id),
         FakeDiarization([(0.0, 2.0, "SPEAKER_00")]),
         enable_diarization=True,
         recording_id=recording.id,
@@ -212,7 +204,7 @@ def test_utterance_id_held_by_another_recording_is_not_reused(
     for recording in (first, second):
         assert recording.id is not None
         segments = combine_and_consolidate_segments(
-            _live_reuse_transcription(carried_public_id),
+            _transcription_carrying_id(carried_public_id),
             None,
             enable_diarization=False,
             recording_id=recording.id,

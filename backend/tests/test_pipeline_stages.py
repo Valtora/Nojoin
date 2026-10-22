@@ -23,6 +23,7 @@ deterministic without mocking the unit under test.
 
 from __future__ import annotations
 
+import inspect
 import sys
 import types
 
@@ -204,18 +205,6 @@ def _install_happy_path_modules(monkeypatch, *, diarization_result=None, segment
     )
     _install(
         monkeypatch,
-        "backend.utils.live_transcript",
-        apply_live_authority_to_segments=lambda live, combined: combined,
-        build_transcription_result_from_segments=lambda segs: (
-            {"text": "", "segments": []},
-            [],
-        ),
-        merge_reusable_segments=lambda primary, additional: (
-            list(primary) + list(additional)
-        ),
-    )
-    _install(
-        monkeypatch,
         "backend.processing.text_embedding",
         release_embedding_model=lambda: None,
     )
@@ -231,13 +220,12 @@ def _install_happy_path_modules(monkeypatch, *, diarization_result=None, segment
         # Drive the legacy (non-canonical) path so these seam tests exercise
         # combine/consolidate + speaker assignment rather than the
         # canonical-write branch.
-        if key == "keep_models_loaded":
-            return True
         if key == "enable_canonical_transcript_writes":
             return False
         return default
 
     monkeypatch.setattr(tasks_module.config_manager, "get", _config_get)
+    monkeypatch.setattr(tasks_module.pipeline, "_release_pipeline_vram", lambda: None)
     monkeypatch.setattr(tasks_module, "auto_link_recording", lambda *a, **k: None)
     monkeypatch.setattr(tasks_module, "update_recording_status", lambda *a, **k: None)
     monkeypatch.setattr(
@@ -608,7 +596,14 @@ def test_asr_failure_is_recorded_even_when_freeing_gpu_memory_fails(monkeypatch)
     )
 
     def _driver_gone():
-        raise RuntimeError("CUDA driver unavailable")
+        # The task also releases memory as it starts and ends, through the same
+        # function. Only the OOM retry's release is the one under test.
+        retrying = any(
+            frame.function == "transcribe_with_gpu_oom_retry"
+            for frame in inspect.stack(0)
+        )
+        if retrying:
+            raise RuntimeError("CUDA driver unavailable")
 
     monkeypatch.setattr(pipeline_module, "_release_pipeline_vram", _driver_gone)
 

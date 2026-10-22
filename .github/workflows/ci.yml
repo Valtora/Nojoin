@@ -139,8 +139,8 @@ jobs:
           python -m pip install --no-deps -r requirements/worker-no-deps.txt
 
       # The images ship ffmpeg, and the tests that run real media through it
-      # skip where it is missing. Ubuntu's package is the 6.1 series, older
-      # than the 7.1 in the images.
+      # skip where it is missing. Ubuntu's package is the 6.1 series, as in the
+      # worker images; the API image ships 7.1.
       #
       # Its 63 MB of packages come from Ubuntu's mirrors, which some runners
       # reach at under 250 kB/s, so the packages are cached. The key is the

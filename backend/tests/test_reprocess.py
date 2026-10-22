@@ -694,11 +694,7 @@ def test_process_recording_task_applies_engine_override(monkeypatch):
         def close(self):
             pass
 
-    monkeypatch.setattr(
-        tasks_module.config_manager,
-        "get",
-        lambda key, default=None: True if key == "keep_models_loaded" else default,
-    )
+    monkeypatch.setattr(tasks_module.pipeline, "_release_pipeline_vram", lambda: None)
 
     fake_session = _FakeSession()
 
@@ -858,11 +854,10 @@ def test_process_recording_task_rolls_back_before_persisting_error_state(monkeyp
         tasks_module.config_manager,
         "get",
         lambda key, default=None: (
-            True
-            if key in {"keep_models_loaded", "enable_canonical_transcript_writes"}
-            else default
+            True if key == "enable_canonical_transcript_writes" else default
         ),
     )
+    monkeypatch.setattr(tasks_module.pipeline, "_release_pipeline_vram", lambda: None)
 
     fake_session = _FakeSession()
 
@@ -934,17 +929,6 @@ def test_process_recording_task_rolls_back_before_persisting_error_state(monkeyp
         get_audio_duration=lambda *a, **k: 60.0,
         convert_to_mp3=lambda *a, **k: None,
         convert_to_proxy_mp3=lambda *a, **k: None,
-    )
-    _install(
-        "backend.utils.live_transcript",
-        apply_live_authority_to_segments=lambda live, combined: combined,
-        build_transcription_result_from_segments=lambda segments: (
-            {"text": "", "segments": []},
-            [],
-        ),
-        merge_reusable_segments=lambda primary, additional: (
-            list(primary) + list(additional)
-        ),
     )
     _install("backend.processing.llm_services", get_llm_backend=lambda *a, **k: None)
     _install("backend.processing.text_embedding", release_embedding_model=lambda: None)
