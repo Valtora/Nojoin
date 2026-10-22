@@ -15,7 +15,11 @@ from backend.services.recording_identity_service import (
     get_recording_by_public_id,
     get_recordings_by_public_ids,
 )
-from backend.services.tag_ownership import require_own_parent
+from backend.services.tag_ownership import (
+    require_own_parent,
+    require_parent_outside_subtree,
+    require_unused_name,
+)
 
 router = APIRouter()
 
@@ -121,20 +125,14 @@ async def update_tag(
     # Use model_fields_set to check for explicit updates, including explicit None
     parent_set = "parent_id" in tag_update.model_fields_set
     if parent_set:
-        if tag_update.parent_id == tag.id:
-            raise HTTPException(status_code=400, detail="Tag cannot be its own parent")
         await require_own_parent(db, Tag, tag_update.parent_id, current_user.id)
+        await require_parent_outside_subtree(
+            db, Tag, tag_id, tag_update.parent_id, current_user.id
+        )
 
     if tag_update.name is not None:
         if tag_update.name != tag.name:
-            stmt = select(Tag).where(
-                Tag.name == tag_update.name, Tag.user_id == current_user.id
-            )
-            result = await db.execute(stmt)
-            if result.scalar_one_or_none():
-                raise HTTPException(
-                    status_code=400, detail="Tag with this name already exists"
-                )
+            await require_unused_name(db, Tag, tag_update.name, current_user.id)
         tag.name = tag_update.name
 
     if tag_update.color is not None:
