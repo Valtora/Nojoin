@@ -1,20 +1,24 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PersonModal } from "./PersonModal";
+import { httpError } from "@/test/httpErrors";
 import type { GlobalSpeaker } from "@/types";
 
 const addNotification = vi.fn();
 const updateGlobalSpeaker = vi.fn();
 const deleteGlobalSpeakerEmbedding = vi.fn();
+const createPeopleTag = vi.fn();
 
 vi.mock("@/lib/notificationStore", () => ({
-  useNotificationStore: () => ({ addNotification }),
+  useNotificationStore: Object.assign(() => ({ addNotification }), {
+    getState: () => ({ addNotification }),
+  }),
 }));
 
 vi.mock("@/lib/api", () => ({
   getPeopleTags: vi.fn().mockResolvedValue([]),
-  createPeopleTag: vi.fn(),
+  createPeopleTag: (...a: unknown[]) => createPeopleTag(...a),
   getGlobalSpeakers: vi.fn().mockResolvedValue([]),
   mergeSpeakers: vi.fn(),
   deleteGlobalSpeakerEmbedding: (...a: unknown[]) =>
@@ -245,5 +249,38 @@ describe("PersonModal voiceprint lock", () => {
     );
     expect(screen.getByRole("button", { name: "Unlock voiceprint" })).toBeTruthy();
     expect(onVoiceprintLockChanged).not.toHaveBeenCalled();
+  });
+});
+
+describe("PersonModal new tag", () => {
+  beforeEach(() => {
+    addNotification.mockReset();
+    createPeopleTag.mockReset();
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("says why a new tag was refused and keeps its name", async () => {
+    createPeopleTag.mockRejectedValue(httpError(400, "Tag already exists"));
+    render(modal(dana(false, false)));
+
+    fireEvent.click(screen.getByRole("button", { name: "New Tag" }));
+    const field = screen.getByPlaceholderText("New tag name...");
+    fireEvent.change(field, { target: { value: "Clients" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+
+    await waitFor(() =>
+      expect(addNotification).toHaveBeenCalledWith({
+        type: "error",
+        message: "Tag already exists",
+      }),
+    );
+    expect(createPeopleTag).toHaveBeenCalledWith("Clients");
+    expect(screen.getByPlaceholderText("New tag name...")).toHaveValue(
+      "Clients",
+    );
   });
 });
