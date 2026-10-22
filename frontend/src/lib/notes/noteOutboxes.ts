@@ -42,13 +42,47 @@ const guardUnsaved = () => {
   else window.removeEventListener("beforeunload", warnBeforeUnload);
 };
 
+/** The recordings this page holds an outbox for, and those of them with something unsent. */
+export interface NoteOutboxesHere {
+  held: readonly RecordingId[];
+  unsent: readonly RecordingId[];
+}
+
+let here: NoteOutboxesHere = { held: [], unsent: [] };
+const hereListeners = new Set<() => void>();
+
+const sameIds = (a: readonly RecordingId[], b: readonly RecordingId[]) =>
+  a.length === b.length && a.every((id, index) => id === b[index]);
+
+const changed = () => {
+  guardUnsaved();
+  const held = [...outboxes.keys()];
+  const unsent = [...outboxes]
+    .filter(([, { outbox }]) => outbox.hasUnsaved() || outbox.pendingDiscards().length > 0)
+    .map(([recordingId]) => recordingId);
+  if (sameIds(held, here.held) && sameIds(unsent, here.unsent)) return;
+  here = { held, unsent };
+  for (const listener of hereListeners) listener();
+};
+
+/** Calls `listener` whenever `noteOutboxesHere` changes. */
+export const subscribeNoteOutboxes = (listener: () => void): (() => void) => {
+  hereListeners.add(listener);
+  return () => hereListeners.delete(listener);
+};
+
+export const noteOutboxesHere = (): NoteOutboxesHere => here;
+
 /** The outbox of a recording, made on first use. */
 export const noteOutboxFor = (recordingId: RecordingId): NoteOutbox => {
   const known = outboxes.get(recordingId);
   if (known) return known.outbox;
   const outbox = new NoteOutbox(recordingId);
-  outbox.subscribe(guardUnsaved);
+  outbox.subscribe(changed);
   outboxes.set(recordingId, { outbox, stop: persistNoteOutbox(outbox, recordingId) });
+  // `useNoteOutbox` makes it during a render, and React refuses to update
+  // another component (the recordings rail) in the middle of one.
+  queueMicrotask(changed);
   return outbox;
 };
 
@@ -56,5 +90,5 @@ export const noteOutboxFor = (recordingId: RecordingId): NoteOutbox => {
 export const forgetNoteOutboxes = (): void => {
   for (const { stop } of outboxes.values()) stop();
   outboxes.clear();
-  guardUnsaved();
+  changed();
 };
