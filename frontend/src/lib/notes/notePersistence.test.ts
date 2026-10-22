@@ -756,7 +756,12 @@ describe("whether the browser holds the outbox", () => {
 
   it("is kept once the record has the outbox as it is now, and not while a change is on its way", async () => {
     const { outbox, persisted } = openKeptPage(sharedNoteStore);
+    // Nothing to keep yet, once the page has read the store.
+    await vi.waitFor(() => expect(persisted.kept()).toBe(true));
+    const changes = vi.fn();
+    persisted.subscribeKept(changes);
     outbox.setDraft(DRAFT);
+    expect(changes).toHaveBeenCalled();
     expect(persisted.kept()).toBe(false);
     await expect(persisted.whenWritten()).resolves.toBe(true);
     expect(persisted.kept()).toBe(true);
@@ -844,6 +849,19 @@ describe("whether the browser holds the outbox", () => {
     await vi.waitFor(async () =>
       expect((await stored(store))?.draft).toMatchObject({ text: "alice's, typed while bob is signed in" }),
     );
+  });
+
+  it("sends a note under its new id at once where the browser keeps nothing", async () => {
+    const { outbox } = openKeptPage(() => null);
+    createTimelineNote.mockImplementationOnce(async (_recording, payload) => {
+      server.creates.push(payload);
+      throw coded(409, "note_id_in_use");
+    });
+
+    outbox.submit({ kind: "tail", body: "Wrap-up", anchorMs: null });
+
+    await vi.waitFor(() => expect(server.notes.size).toBe(1));
+    expect(outbox.getSnapshot().entries).toEqual([]);
   });
 
   it("does not send a note under its new id while the browser refuses to keep that id", async () => {

@@ -252,6 +252,27 @@ describe("an ended session on a page holding notes not saved yet", () => {
       expect(await store.get(1, "rec-a")).toBeUndefined();
     });
 
+    it("waits for a write under way before it leaves", async () => {
+      renderWithProviders(<SessionSignInDialog />);
+      await typeAndEndSession("Half a thought");
+      const button = await screen.findByRole("button", { name: "Go to the sign-in page" });
+      const put = store.put.bind(store);
+      vi.spyOn(store, "put").mockImplementation(async (record) => {
+        await new Promise((resolve) => setTimeout(resolve, 30));
+        await put(record);
+      });
+
+      act(() => {
+        noteOutboxFor("rec-a").setDraft({ ...EMPTY_DRAFT, text: "Half a thought, then more" });
+        fireEvent.click(button);
+      });
+
+      await waitFor(() => expect(navigations).toEqual(["/login"]));
+      expect(await store.get(1, "rec-a")).toMatchObject({
+        draft: { text: "Half a thought, then more" },
+      });
+    });
+
     it("does not leave when a note stops being kept after the dialog offered it", async () => {
       renderWithProviders(<SessionSignInDialog />);
       await typeAndEndSession("Half a thought");

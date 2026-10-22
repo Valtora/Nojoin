@@ -212,12 +212,9 @@ export const persistNoteOutbox = (
     account !== null &&
     useSessionStore.getState().userId === account;
 
-  const kept = () =>
-    writable() &&
-    storeOf() !== null &&
-    !dirty &&
-    flushing === null &&
-    written === textOf(account as number);
+  // A write under way, or a change not written yet, leaves `written` behind
+  // the outbox; a sign-out, or no store at all, leaves the page not writable.
+  const kept = () => writable() && written === textOf(account as number);
 
   // One write at a time, each of the outbox as it is by then, so a burst of
   // changes (typing in the box) costs a write or two rather than one each.

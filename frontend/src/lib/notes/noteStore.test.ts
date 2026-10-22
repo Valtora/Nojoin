@@ -160,6 +160,7 @@ describe("the page's note store", () => {
     const { channel } = otherTab();
 
     channel.postMessage({ kind: "kept", accounts: "everyone" });
+    channel.postMessage({ kind: "kept", accounts: ["2"] });
     channel.postMessage({ kind: "cleared" });
     channel.postMessage({ kind: "kept", accounts: [BOB] });
     await vi.waitFor(() => expect(events).toEqual([{ kind: "kept", accounts: [BOB] }]));
