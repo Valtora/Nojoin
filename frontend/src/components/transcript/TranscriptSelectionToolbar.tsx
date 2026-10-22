@@ -25,11 +25,6 @@ interface NoteHandlers {
   onNoteOnText?: (selection: NoteSelection) => void;
 }
 
-interface TranscriptSelectionToolbarProps extends NoteHandlers {
-  captured: CapturedSelection;
-  onClose: () => void;
-}
-
 const boxOf = (range: Range): Box | null => {
   if (typeof range.getBoundingClientRect !== "function" || range.collapsed) return null;
   if (!range.startContainer.isConnected || !range.endContainer.isConnected) return null;
@@ -37,37 +32,12 @@ const boxOf = (range: Range): Box | null => {
   return { top, left, bottom, right };
 };
 
-/**
- * Add note and Copy for text selected in a transcript, under the selection,
- * where it doesn't cover a phone's own selection bar above it. Add note
- * writes the note in a popover in the processed view, and in the note box in
- * the live view. It follows the selection when the page scrolls, while the
- * selected text is still on the page.
- */
-export function TranscriptSelectionToolbar({
-  captured,
-  onClose,
-  onAddNote,
-  onNoteOnText,
-}: TranscriptSelectionToolbarProps) {
-  const [box, setBox] = useState(captured.box);
-  const [writing, setWriting] = useState(false);
-  const [anchor, setAnchor] = useState<HTMLDivElement | null>(null);
-  const anchorRef = useMemo(() => ({ current: anchor }), [anchor]);
-  const { panelRef, panelStyle, reposition } = useAnchoredPanel<HTMLDivElement>(
-    !writing,
-    anchorRef,
-  );
-  const { selection } = captured;
-
-  // Placed again once the selection's place has moved with a scroll.
-  useLayoutEffect(() => {
-    if (!writing) reposition();
-  }, [box, writing, reposition]);
-
+/** Where the selected text is on screen, followed through scrolls while it is on the page. */
+function useFollowedBox(range: Range, initial: Box) {
+  const [box, setBox] = useState(initial);
   useEffect(() => {
     const follow = () => {
-      const next = boxOf(captured.range);
+      const next = boxOf(range);
       if (next) setBox(next);
     };
     window.addEventListener("scroll", follow, true);
@@ -76,12 +46,72 @@ export function TranscriptSelectionToolbar({
       window.removeEventListener("scroll", follow, true);
       window.removeEventListener("resize", follow);
     };
-  }, [captured.range]);
+  }, [range]);
+  return box;
+}
+
+/** Where the selection is: what the bar and the note popover sit against. */
+function SelectionAnchor({ box, onAnchor }: { box: Box; onAnchor: (anchor: HTMLDivElement | null) => void }) {
+  return (
+    <div
+      ref={onAnchor}
+      aria-hidden="true"
+      data-selection-ui
+      style={{
+        position: "fixed",
+        top: box.top,
+        left: box.left,
+        width: Math.max(0, box.right - box.left),
+        height: Math.max(0, box.bottom - box.top),
+        pointerEvents: "none",
+      }}
+    />
+  );
+}
+
+/** The ⋯ button of the line with `segmentId`, where focus goes after a note on its text. */
+const lineTrigger = (root: HTMLElement | null, segmentId: string) => {
+  const text = Array.from(root?.querySelectorAll<HTMLElement>("p[data-segment-id]") ?? []).find(
+    (paragraph) => paragraph.dataset.segmentId === segmentId,
+  );
+  return text?.closest("[data-line-actions]")?.querySelector<HTMLElement>('[aria-haspopup="menu"]') ?? null;
+};
+
+interface TranscriptSelectionToolbarProps {
+  captured: CapturedSelection;
+  onClose: () => void;
+  /** The processed view: starts a note on the selection, from where it is now. */
+  onWrite?: (box: Box) => void;
+  onNoteOnText?: (selection: NoteSelection) => void;
+}
+
+/**
+ * Add note and Copy for text selected in a transcript, under the selection,
+ * where it doesn't cover a phone's own selection bar above it. It follows the
+ * selection when the page scrolls, while the selected text is still on the
+ * page.
+ */
+export function TranscriptSelectionToolbar({
+  captured,
+  onClose,
+  onWrite,
+  onNoteOnText,
+}: TranscriptSelectionToolbarProps) {
+  const box = useFollowedBox(captured.range, captured.box);
+  const [anchor, setAnchor] = useState<HTMLDivElement | null>(null);
+  const anchorRef = useMemo(() => ({ current: anchor }), [anchor]);
+  const { panelRef, panelStyle, reposition } = useAnchoredPanel<HTMLDivElement>(true, anchorRef);
+  const { selection } = captured;
+
+  // Placed again once the selection's place has moved with a scroll.
+  useLayoutEffect(() => {
+    reposition();
+  }, [box, reposition]);
 
   const addNote = () => {
     if (!selection) return;
-    if (onAddNote) {
-      setWriting(true);
+    if (onWrite) {
+      onWrite(box);
       return;
     }
     onClose();
@@ -100,59 +130,78 @@ export function TranscriptSelectionToolbar({
 
   return createPortal(
     <>
-      {/* Where the selection is: what the toolbar and the popover sit against. */}
+      <SelectionAnchor box={box} onAnchor={setAnchor} />
       <div
-        ref={setAnchor}
-        aria-hidden="true"
+        ref={panelRef}
+        role="toolbar"
+        aria-label="Selected text"
         data-selection-ui
-        style={{
-          position: "fixed",
-          top: box.top,
-          left: box.left,
-          width: Math.max(0, box.right - box.left),
-          height: Math.max(0, box.bottom - box.top),
-          pointerEvents: "none",
-        }}
-      />
-      {writing && selection && onAddNote && anchor ? (
+        style={panelStyle}
+        className="z-[var(--z-dropdown)] flex gap-1 rounded-lg border border-surface-border bg-surface-card p-1 shadow-float"
+      >
+        {selection ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            iconLeft={<StickyNote aria-hidden="true" className="h-4 w-4" />}
+            onClick={addNote}
+            className={`text-sm ${TOUCH_TARGET_HEIGHT}`}
+          >
+            Add note
+          </Button>
+        ) : null}
+        <Button
+          variant="ghost"
+          size="sm"
+          iconLeft={<Copy aria-hidden="true" className="h-4 w-4" />}
+          onClick={() => void copy()}
+          className={`text-sm ${TOUCH_TARGET_HEIGHT}`}
+        >
+          Copy
+        </Button>
+      </div>
+    </>,
+    document.body,
+  );
+}
+
+interface Writing extends CapturedSelection {
+  selection: NoteSelection;
+}
+
+/**
+ * The note popover for a selection, in the processed view. It lives apart
+ * from the bar and the selection, which a tap or a scroll drops: once
+ * writing starts only the popover's own rule closes it, so a press outside
+ * closes it only while its box is empty.
+ */
+function SelectionNoteWriter({
+  writing,
+  root,
+  onAddNote,
+  onClose,
+}: {
+  writing: Writing;
+  root: RefObject<HTMLElement | null>;
+  onAddNote: (note: OutboxDraft) => string | null;
+  onClose: () => void;
+}) {
+  const box = useFollowedBox(writing.range, writing.box);
+  const [anchor, setAnchor] = useState<HTMLDivElement | null>(null);
+  const { selection } = writing;
+
+  return createPortal(
+    <>
+      <SelectionAnchor box={box} onAnchor={setAnchor} />
+      {anchor ? (
         <NoteOnSelectionPopover
           selection={selection}
           title={`Note on the selected text at ${formatTimelineMs(selection.startMs)}`}
           anchor={anchor}
+          returnFocus={() => lineTrigger(root.current, writing.segmentId)?.focus()}
           onSubmit={(body) => onAddNote({ kind: "selection", body, anchorMs: null, selection })}
           onClose={onClose}
         />
-      ) : null}
-      {!writing ? (
-        <div
-          ref={panelRef}
-          role="toolbar"
-          aria-label="Selected text"
-          data-selection-ui
-          style={panelStyle}
-          className="z-[var(--z-dropdown)] flex gap-1 rounded-lg border border-surface-border bg-surface-card p-1 shadow-float"
-        >
-          {selection ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              iconLeft={<StickyNote aria-hidden="true" className="h-4 w-4" />}
-              onClick={addNote}
-              className={`text-sm ${TOUCH_TARGET_HEIGHT}`}
-            >
-              Add note
-            </Button>
-          ) : null}
-          <Button
-            variant="ghost"
-            size="sm"
-            iconLeft={<Copy aria-hidden="true" className="h-4 w-4" />}
-            onClick={() => void copy()}
-            className={`text-sm ${TOUCH_TARGET_HEIGHT}`}
-          >
-            Copy
-          </Button>
-        </div>
       ) : null}
     </>,
     document.body,
@@ -160,22 +209,45 @@ export function TranscriptSelectionToolbar({
 }
 
 /**
- * The selection toolbar for the transcript lines inside `root`, while some of
- * their text is selected. Nothing without a way to add a note.
+ * The selection bar for the transcript lines inside `root`, while some of
+ * their text is selected, and the note being written on a selection.
+ * Nothing without a way to add a note.
  */
 export default function TranscriptSelectionNotes({
   root,
   onAddNote,
   onNoteOnText,
 }: NoteHandlers & { root: RefObject<HTMLElement | null> }) {
-  const { captured, clear } = useCapturedSelection(root);
+  const [writing, setWriting] = useState<Writing | null>(null);
+  const writingNote = writing && onAddNote ? writing : null;
+  const { captured, clear } = useCapturedSelection(root, writingNote !== null);
+
+  if (writingNote && onAddNote) {
+    return (
+      <SelectionNoteWriter
+        key={writingNote.seq}
+        writing={writingNote}
+        root={root}
+        onAddNote={onAddNote}
+        onClose={() => setWriting(null)}
+      />
+    );
+  }
   if (!captured || (!onAddNote && !onNoteOnText)) return null;
+  const { selection } = captured;
   return (
     <TranscriptSelectionToolbar
       key={captured.seq}
       captured={captured}
       onClose={clear}
-      onAddNote={onAddNote}
+      onWrite={
+        onAddNote && selection
+          ? (box) => {
+              setWriting({ ...captured, selection, box });
+              clear();
+            }
+          : undefined
+      }
       onNoteOnText={onNoteOnText}
     />
   );

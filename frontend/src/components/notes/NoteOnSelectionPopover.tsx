@@ -18,9 +18,11 @@ interface NoteOnSelectionPopoverProps {
   /**
    * What it sits against, which stays mounted while it is open: a line's ⋯
    * button, or the place of a text selection. Focus goes back there when it
-   * closes, if it takes focus.
+   * closes, unless `returnFocus` puts it somewhere else.
    */
   anchor: HTMLElement;
+  /** Puts focus back when it closes, for an anchor that can't take focus. */
+  returnFocus?: () => void;
   /** Queues the note; returns why it was refused, or null once it is on its way. */
   onSubmit: (body: string) => string | null;
   onClose: () => void;
@@ -36,6 +38,7 @@ export default function NoteOnSelectionPopover({
   selection,
   title,
   anchor,
+  returnFocus,
   onSubmit,
   onClose,
 }: NoteOnSelectionPopoverProps) {
@@ -51,7 +54,8 @@ export default function NoteOnSelectionPopover({
 
   const close = () => {
     onClose();
-    anchor.focus();
+    if (returnFocus) returnFocus();
+    else anchor.focus();
   };
 
   // The box takes focus once the popover is placed: before that it is

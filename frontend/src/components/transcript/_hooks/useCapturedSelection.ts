@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, type RefObject } from "react";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 
 import type { NoteSelection } from "@/lib/notes/noteOutbox";
 import { linePicksOfRange, selectionFromPicks } from "@/lib/notes/selectionRange";
@@ -26,6 +26,8 @@ export interface CapturedSelection {
   selection: NoteSelection | null;
   /** The selected text as the page has it, for Copy. */
   text: string;
+  /** The first line it takes, in page order. */
+  segmentId: string;
   /** Where it was on screen, for a toolbar to sit under. */
   box: Box;
   /** The range itself, to place the toolbar again after a scroll while it holds. */
@@ -51,15 +53,20 @@ const boxOf = (range: Range): Box => {
  * So a selection that collapses keeps what was captured, and a press anywhere
  * but the toolbar, Escape, or a new selection replaces it. A selection a
  * rewrite collapses while it is still being dragged is simply never captured.
+ *
+ * While `paused` (a note on a selection is being written) it neither
+ * captures nor drops anything: presses and new selections are the note's
+ * business, not the bar's.
  */
-export function useCapturedSelection(root: RefObject<HTMLElement | null>) {
+export function useCapturedSelection(root: RefObject<HTMLElement | null>, paused = false) {
   const [captured, setCaptured] = useState<CapturedSelection | null>(null);
   const clear = useCallback(() => setCaptured(null), []);
+  const seqRef = useRef(0);
 
   useEffect(() => {
+    if (paused) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let pressing = false;
-    let seq = 0;
 
     const capture = () => {
       const container = root.current;
@@ -69,11 +76,12 @@ export function useCapturedSelection(root: RefObject<HTMLElement | null>) {
       if (!container.contains(range.commonAncestorContainer)) return;
       const picks = linePicksOfRange(range, container);
       if (picks.length === 0) return;
-      seq += 1;
+      seqRef.current += 1;
       setCaptured({
-        seq,
+        seq: seqRef.current,
         selection: selectionFromPicks(picks),
         text: selection.toString(),
+        segmentId: picks[0].line.segmentId,
         box: boxOf(range),
         range: range.cloneRange(),
       });
@@ -110,7 +118,7 @@ export function useCapturedSelection(root: RefObject<HTMLElement | null>) {
       document.removeEventListener("pointercancel", onRelease, true);
       document.removeEventListener("keydown", onKey);
     };
-  }, [root]);
+  }, [root, paused]);
 
   return { captured, clear };
 }
