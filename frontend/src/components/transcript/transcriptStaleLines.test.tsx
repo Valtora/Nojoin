@@ -102,6 +102,15 @@ const STEPS: Step[] = [
   { name: "reassign a line", apply: (p) => withLine(p, "u5", { speaker: "SPEAKER_0" }), shows: true },
   // Blair now speaks first, so the overlap's lanes swap; its own lines don't change.
   { name: "reassign the first line", apply: (p) => withLine(p, "u0", { speaker: "SPEAKER_1" }), shows: true },
+  // Every later line moves one place down: same segment objects, new indexes.
+  {
+    name: "add a line before the rest",
+    apply: (p) => ({
+      ...p,
+      segments: [{ id: "u-new", speaker: "SPEAKER_1", start: -3, end: -1, text: "before" }, ...p.segments],
+    }),
+    shows: true,
+  },
   { name: "poll equal lines", apply: (p) => ({ ...p, segments: p.segments.map((segment) => ({ ...segment })) }), shows: false },
   { name: "stop playing", apply: (p) => ({ ...p, isPlaying: false }), shows: true },
   { name: "seek between lines", apply: (p) => ({ ...p, currentTime: 2.5 }), shows: true },

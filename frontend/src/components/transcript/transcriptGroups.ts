@@ -23,21 +23,19 @@ export interface TranscriptGroup {
  */
 export const LINE_KEY_SEPARATOR = "\n";
 
-const areSetsEqual = (a: ReadonlySet<string>, b: ReadonlySet<string>): boolean =>
+const areSetsEqual = (a: Set<string>, b: Set<string>): boolean =>
   a.size === b.size && [...a].every((value) => b.has(value));
 
 /**
- * Whether two groups hold the same lines, as the same segment objects, over
- * the same span and speakers. Grouping runs again whenever any line changes;
- * a group this leaves alone need not redraw.
+ * Whether two groups hold the same lines, as the same segment objects in the
+ * same places. A group's span and speakers come from its lines, so they match
+ * too. Grouping runs again whenever any line changes; a group this leaves
+ * alone need not redraw.
  */
 export function sameGroup(left: TranscriptGroup, right: TranscriptGroup): boolean {
   return (
     left === right ||
-    (left.start === right.start &&
-      left.end === right.end &&
-      areSetsEqual(left.involved, right.involved) &&
-      left.items.length === right.items.length &&
+    (left.items.length === right.items.length &&
       left.items.every((item, at) => {
         const other = right.items[at];
         return (
