@@ -153,9 +153,7 @@ def _resolve_recordings_identity(ctx: "_RowContext") -> "RowOutcome":
                 if v is existing_rec
             ]:
                 ctx.state.existing_recordings_by_identity.pop(stale_key, None)
-            stages._note_replaced_document_paths(
-                ctx.session, ctx.state, [existing_rec.id]
-            )
+            stages._note_replaced_files(ctx.session, ctx.state, [existing_rec.id])
             ctx.session.delete(existing_rec)
             ctx.session.flush()
         else:
