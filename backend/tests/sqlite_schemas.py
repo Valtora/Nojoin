@@ -393,7 +393,8 @@ CREATE TABLE p_tags (
     name VARCHAR(255) NOT NULL,
     color VARCHAR(32),
     user_id INTEGER,
-    parent_id INTEGER
+    parent_id INTEGER,
+    UNIQUE (user_id, name)
 )
 """
 
@@ -405,7 +406,8 @@ CREATE TABLE tags (
     name VARCHAR NOT NULL,
     color VARCHAR,
     user_id INTEGER,
-    parent_id INTEGER
+    parent_id INTEGER,
+    UNIQUE (user_id, name)
 )
 """
 
