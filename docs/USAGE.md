@@ -51,7 +51,7 @@ The **Tasks** page has **Open**, **Completed** and **Archived** views and a **Cr
 
 ## People Workspace
 
-The **People** page is your speaker library: the people Nojoin can recognise across meetings, with their voiceprints and contact details.
+The **People** page is your speaker library: the people Nojoin can recognise across meetings, with their voiceprints and contact details. Each user has their own library, and a meeting's speakers are matched and linked only to people in its owner's library.
 
 - Search by name, email or company, and filter by people tags, which can nest like recording tags.
 - Select several people for **Batch Edit People** or to delete them together.
