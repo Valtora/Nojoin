@@ -301,6 +301,7 @@ class TestRecordingSpeakerDriftRefusal(SQLModel, table=True):
 
 class TestRecordingTag(TestBase, table=True):
     __tablename__ = "backup_test_recording_tags"
+    __table_args__ = (UniqueConstraint("recording_id", "tag_id"),)
 
     recording_id: int = Field(foreign_key="backup_test_recordings.id")
     tag_id: int = Field(foreign_key="backup_test_tags.id")
