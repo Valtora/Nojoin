@@ -88,6 +88,10 @@ export function PersonModal({
   // The person the dialog shows now. A lock answer that arrives after it has
   // moved on to someone else must not be shown as theirs.
   const shownPersonId = useRef<number | null>(null);
+  // Saving disables the toggle, and a browser drops the focus of a disabled
+  // button, so a keyboard user is given it back once the answer arrives.
+  const lockButtonRef = useRef<HTMLButtonElement>(null);
+  const refocusLock = useRef(false);
   const [confirmMerge, setConfirmMerge] = useState<{
     target: GlobalSpeaker;
   } | null>(null);
@@ -96,8 +100,16 @@ export function PersonModal({
 
   useEffect(() => {
     shownPersonId.current = person?.id ?? null;
+    refocusLock.current = false;
     setIsChangingLock(false);
   }, [person?.id]);
+
+  useEffect(() => {
+    if (!isChangingLock && refocusLock.current) {
+      refocusLock.current = false;
+      lockButtonRef.current?.focus();
+    }
+  }, [isChangingLock]);
 
   // Load available tags
   useEffect(() => {
@@ -298,6 +310,7 @@ interface TagNode extends PeopleTag {
     const { id, name } = person;
     const lock = !isVoiceprintLocked;
 
+    refocusLock.current = document.activeElement === lockButtonRef.current;
     setIsChangingLock(true);
     try {
       const updated = await updateGlobalSpeaker(id, {
@@ -492,6 +505,7 @@ interface TagNode extends PeopleTag {
                         // The inset row already has the ghost hover's fill,
                         // so the hover steps up to the card instead.
                         <Button
+                          ref={lockButtonRef}
                           variant="ghost"
                           size="sm"
                           onClick={toggleVoiceprintLock}

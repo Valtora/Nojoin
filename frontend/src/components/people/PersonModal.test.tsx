@@ -159,6 +159,37 @@ describe("PersonModal voiceprint lock", () => {
     expect(screen.getByRole("button", { name: "Unlock voiceprint" })).toBeTruthy();
   });
 
+  it("gives the toggle its focus back once the lock is saved", async () => {
+    const answer = answerLater();
+    render(modal(dana(true, false)));
+    const toggle = screen.getByRole("button", { name: "Lock voiceprint" });
+    toggle.focus();
+
+    fireEvent.click(toggle);
+    // In Chrome the disabled toggle lost its focus to the page body, outside
+    // the dialog, and the focus trap did not bring it back. jsdom keeps the
+    // focus, so the test checks that the toggle takes it back itself.
+    const focus = vi.spyOn(toggle, "focus");
+    await answer(dana(true, true));
+
+    expect(focus).toHaveBeenCalled();
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: "Unlock voiceprint" }),
+    );
+  });
+
+  it("leaves focus where it was when the toggle did not have it", async () => {
+    const answer = answerLater();
+    render(modal(dana(true, false)));
+    const name = screen.getByDisplayValue("Dana");
+    name.focus();
+
+    fireEvent.click(screen.getByRole("button", { name: "Lock voiceprint" }));
+    await answer(dana(true, true));
+
+    expect(document.activeElement).toBe(name);
+  });
+
   it("keeps a late answer for Dana off Eli's dialog", async () => {
     const answer = answerLater();
     const onVoiceprintLockChanged = vi.fn();
