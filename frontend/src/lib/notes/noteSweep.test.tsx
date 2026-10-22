@@ -234,6 +234,15 @@ describe("sending the notes kept for recordings this page never opened", () => {
     await waitFor(() => expect(unsentRecordings()).toEqual(["rec-d"]));
   });
 
+  it("keeps the mark for text left in the box, which only this browser has, and never sends it", async () => {
+    await keep("rec-a", [], "Half a thought about the vendor");
+
+    await sweepStoredNotes(ALICE.id);
+
+    await waitFor(() => expect(unsentRecordings()).toEqual(["rec-a"]));
+    expect(createTimelineNote).not.toHaveBeenCalled();
+  });
+
   it("marks the recording until its notes are sent", async () => {
     await keep("rec-a", ["Budget agreed"]);
     server.failures.push(NO_ANSWER);
