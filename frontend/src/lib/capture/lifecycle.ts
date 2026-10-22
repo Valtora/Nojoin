@@ -125,14 +125,15 @@ export class CaptureLifecycle {
   }
 }
 
-export const sendPauseBeacon = (recordingId: RecordingId) => {
+export const sendPauseBeacon = (recordingId: RecordingId, epoch: number) => {
   if (typeof navigator === "undefined" || !navigator.sendBeacon) {
     return false;
   }
 
   try {
+    // The epoch keeps a tab whose capture was resumed elsewhere from pausing it.
     return navigator.sendBeacon(
-      `${API_BASE_URL}/recordings/${recordingId}/pause`,
+      `${API_BASE_URL}/recordings/${recordingId}/pause?epoch=${epoch}`,
       new Blob([], { type: "text/plain" }),
     );
   } catch {

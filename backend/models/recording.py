@@ -3,7 +3,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from uuid import uuid4
 
-from sqlalchemy import BigInteger, Column, DateTime, ForeignKey, String
+from sqlalchemy import BigInteger, Column, DateTime, ForeignKey, Integer, String
 from sqlmodel import Field, Relationship, SQLModel
 
 from backend.utils.time import utc_now
@@ -117,6 +117,13 @@ class Recording(BaseDBModel, table=True):
     is_archived: bool = Field(default=False, index=True)
     is_deleted: bool = Field(default=False, index=True)
     last_activity_at: Optional[datetime] = Field(default=None, sa_type=DateTime)
+    # Which tab or device holds a live capture. Init starts it at 0 and a resume
+    # that takes the capture over issues the next one, after which a segment,
+    # pause or finalize sent with an earlier epoch is refused (issue #570).
+    capture_epoch: int = Field(
+        default=0,
+        sa_column=Column(Integer, nullable=False, server_default="0", default=0),
+    )
 
     user_id: Optional[int] = Field(
         default=None,
@@ -256,12 +263,16 @@ class RecordingInitResponse(SQLModel):
     id: str
     name: str
     upload_token: Optional[str] = None
+    capture_epoch: int = 0
 
 
 class RecordingCaptureLifecycleResponse(SQLModel):
     recording_id: str
     status: RecordingStatus
     last_sequence: int
+    # The capture epoch once the call is done: unchanged by a pause or by the
+    # holding tab's resume, the next one after a resume that takes over.
+    capture_epoch: int = 0
 
 
 class CaptureTrackReport(SQLModel):

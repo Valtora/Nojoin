@@ -51,6 +51,7 @@ CREATE TABLE recordings (
     is_archived BOOLEAN NOT NULL,
     is_deleted BOOLEAN NOT NULL,
     last_activity_at DATETIME,
+    capture_epoch INTEGER NOT NULL DEFAULT 0,
     user_id INTEGER,
     calendar_event_id INTEGER
 )
@@ -463,6 +464,7 @@ async def test_session_init_pause_resume_finalize_round_trip(
     assert init_response.status_code == 200
     init_payload = init_response.json()
     assert init_payload["upload_token"] is None
+    assert init_payload["capture_epoch"] == 0
     recording_id = init_payload["id"]
 
     first_segment = await client.post(
@@ -482,6 +484,7 @@ async def test_session_init_pause_resume_finalize_round_trip(
         "recording_id": recording_id,
         "status": "PAUSED",
         "last_sequence": 0,
+        "capture_epoch": 0,
     }
 
     paused_list = await client.get(
@@ -499,10 +502,12 @@ async def test_session_init_pause_resume_finalize_round_trip(
         headers={"Origin": TRUSTED_ORIGIN},
     )
     assert resume_response.status_code == 200
+    # A resume without an epoch takes the capture over.
     assert resume_response.json() == {
         "recording_id": recording_id,
         "status": "UPLOADING",
         "last_sequence": 0,
+        "capture_epoch": 1,
     }
 
     async with test_session_maker() as session:
@@ -1141,6 +1146,7 @@ async def test_resume_takes_over_a_capture_whose_tab_is_gone(
         "recording_id": public_id,
         "status": "UPLOADING",
         "last_sequence": -1,
+        "capture_epoch": 1,
     }
     status_value, last_heard = await _status_and_last_heard(
         test_session_maker, public_id
@@ -1246,3 +1252,235 @@ async def test_init_conflict_explains_a_capture_still_in_progress(
 
     assert stalled.status_code == 409
     assert stalled.json()["detail"]["message"] == ACTIVE_RECORDING_CONFLICT_MESSAGE
+
+
+# Issue #570: a resume that takes a capture over issues the next capture epoch,
+# and the segments, pauses and finalize of the tab that held it are refused from
+# then on, so that tab cannot overwrite what the new one records.
+SUPERSEDED = {
+    "code": "capture_superseded",
+    "message": "This recording continued elsewhere: another tab or device resumed it.",
+}
+
+
+async def _post(client: AsyncClient, path: str, **kwargs):
+    return await client.post(
+        f"/api/v1/recordings/{path}", headers={"Origin": TRUSTED_ORIGIN}, **kwargs
+    )
+
+
+async def _upload(
+    client: AsyncClient,
+    recording_id: str,
+    sequence: int,
+    payload: bytes,
+    *,
+    epoch: int | None,
+):
+    params = {"sequence": sequence}
+    if epoch is not None:
+        params["epoch"] = epoch
+    return await _post(
+        client,
+        f"{recording_id}/segment",
+        params=params,
+        files={"file": (f"{sequence}.wav", payload, "audio/wav")},
+    )
+
+
+async def _taken_over_capture(client: AsyncClient) -> str:
+    """A capture tab A started and paused, then took over elsewhere at epoch 1."""
+    set_session_cookie(client)
+    init = await _post(client, "init", params={"name": "Weekly sync"})
+    recording_id = init.json()["id"]
+    assert (
+        await _upload(client, recording_id, 0, make_wav_bytes(), epoch=0)
+    ).status_code == 200
+    assert (
+        await _post(client, f"{recording_id}/pause", params={"epoch": 0})
+    ).status_code == 200
+
+    takeover = await _post(client, f"{recording_id}/resume")
+    assert takeover.status_code == 200
+    assert takeover.json()["capture_epoch"] == 1
+    assert takeover.json()["last_sequence"] == 0
+    return recording_id
+
+
+async def _recording_row(session_maker: sessionmaker, public_id: str):
+    async with session_maker() as session:
+        return (
+            await session.execute(
+                text(
+                    "SELECT id, status, client_status, capture_epoch FROM recordings "
+                    "WHERE public_id = :public_id"
+                ),
+                {"public_id": public_id},
+            )
+        ).one()
+
+
+@pytest.mark.anyio
+async def test_a_segment_from_a_tab_whose_capture_was_taken_over_is_refused(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+    tmp_path: Path,
+) -> None:
+    recording_id = await _taken_over_capture(client)
+    new_tab_audio = make_wav_bytes(duration_s=0.5)
+    old_tab_audio = make_wav_bytes(duration_s=0.25)
+
+    new_tab = await _upload(client, recording_id, 1, new_tab_audio, epoch=1)
+    old_tab = await _upload(client, recording_id, 1, old_tab_audio, epoch=0)
+
+    assert new_tab.status_code == 200
+    assert old_tab.status_code == 409
+    assert old_tab.json()["detail"] == SUPERSEDED
+    row = await _recording_row(test_session_maker, recording_id)
+    upload_dir = _recording_temp_dir(tmp_path, row.id, create=False)
+    # The new tab's segment stands, and the refused one left nothing behind.
+    assert (upload_dir / "1.wav").read_bytes() == new_tab_audio
+    assert sorted(path.name for path in upload_dir.iterdir()) == ["0.wav", "1.wav"]
+    async with test_session_maker() as session:
+        durations = (
+            await session.execute(
+                text(
+                    "SELECT sequence_no, duration_ms FROM recording_audio_chunks "
+                    "WHERE recording_id = :id ORDER BY sequence_no"
+                ),
+                {"id": row.id},
+            )
+        ).all()
+    assert [tuple(duration) for duration in durations] == [(0, 250), (1, 500)]
+
+    # A later segment from the old tab is refused the same way, before the new
+    # tab reaches that sequence.
+    ahead = await _upload(client, recording_id, 2, old_tab_audio, epoch=0)
+    assert ahead.status_code == 409
+    assert not (upload_dir / "2.wav").exists()
+
+
+@pytest.mark.anyio
+async def test_a_late_pause_from_a_superseded_tab_is_refused(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+) -> None:
+    recording_id = await _taken_over_capture(client)
+
+    late_pause = await _post(client, f"{recording_id}/pause", params={"epoch": 0})
+
+    assert late_pause.status_code == 409
+    assert late_pause.json()["detail"] == SUPERSEDED
+    row = await _recording_row(test_session_maker, recording_id)
+    assert (row.status, row.client_status, row.capture_epoch) == (
+        "UPLOADING",
+        "RECORDING",
+        1,
+    )
+    # The tab now holding it pauses as usual.
+    own_pause = await _post(client, f"{recording_id}/pause", params={"epoch": 1})
+    assert own_pause.status_code == 200
+    assert own_pause.json()["capture_epoch"] == 1
+
+
+@pytest.mark.anyio
+async def test_a_stop_from_a_superseded_tab_does_not_finalize(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+) -> None:
+    recording_id = await _taken_over_capture(client)
+
+    stale_stop = await _post(client, f"{recording_id}/finalize", params={"epoch": 0})
+
+    assert stale_stop.status_code == 409
+    assert stale_stop.json()["detail"] == SUPERSEDED
+    row = await _recording_row(test_session_maker, recording_id)
+    assert row.status == "UPLOADING"
+    # Stop from a dialog acts for no tab, and finalizes whoever holds it.
+    dialog_stop = await _post(client, f"{recording_id}/finalize")
+    assert dialog_stop.status_code == 200
+    assert dialog_stop.json()["status"] == "QUEUED"
+
+
+@pytest.mark.anyio
+async def test_a_superseded_tab_cannot_resume_its_old_capture(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+) -> None:
+    recording_id = await _taken_over_capture(client)
+    # The new holder pauses, so only the epoch stands in the old tab's way.
+    assert (
+        await _post(client, f"{recording_id}/pause", params={"epoch": 1})
+    ).status_code == 200
+
+    stale_resume = await _post(client, f"{recording_id}/resume", params={"epoch": 0})
+
+    assert stale_resume.status_code == 409
+    assert stale_resume.json()["detail"] == SUPERSEDED
+    row = await _recording_row(test_session_maker, recording_id)
+    assert (row.status, row.capture_epoch) == ("PAUSED", 1)
+
+
+@pytest.mark.anyio
+async def test_the_holding_tab_resumes_its_capture_while_the_server_holds_it_uploading(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+) -> None:
+    """A pause that never arrived does not keep the holding tab from resuming."""
+    set_session_cookie(client)
+    public_id = "capture-pause-never-arrived"
+    await insert_capture(
+        test_session_maker,
+        recording_id=3501,
+        public_id=public_id,
+        quiet_for=QUIET_BRIEFLY,
+    )
+
+    takeover = await _post(client, f"{public_id}/resume")
+    holder = await _post(client, f"{public_id}/resume", params={"epoch": 0})
+
+    # Nobody else may take a capture that is still uploading.
+    assert takeover.status_code == 409
+    assert holder.status_code == 200
+    assert holder.json()["capture_epoch"] == 0
+    row = await _recording_row(test_session_maker, public_id)
+    assert (row.status, row.client_status, row.capture_epoch) == (
+        "UPLOADING",
+        "RECORDING",
+        0,
+    )
+
+
+@pytest.mark.anyio
+async def test_the_holding_tab_cannot_resume_a_closed_recording(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+) -> None:
+    set_session_cookie(client)
+    await insert_recording(
+        test_session_maker, recording_id=3601, public_id="queued", status="QUEUED"
+    )
+    await insert_import(test_session_maker, recording_id=3602, public_id="slow-import")
+
+    closed = await _post(client, "queued/resume", params={"epoch": 0})
+    an_import = await _post(client, "slow-import/resume", params={"epoch": 0})
+
+    assert closed.status_code == 409
+    assert closed.json()["detail"] == "Recording is no longer accepting capture uploads"
+    assert an_import.status_code == 409
+    assert an_import.json()["detail"] == "Recording is not paused"
+
+
+@pytest.mark.anyio
+async def test_a_tab_on_an_older_build_sends_no_epoch_and_is_not_checked(
+    client: AsyncClient,
+) -> None:
+    """Without an epoch nothing is fenced, as before epochs existed."""
+    recording_id = await _taken_over_capture(client)
+
+    segment = await _upload(client, recording_id, 1, make_wav_bytes(), epoch=None)
+    pause = await _post(client, f"{recording_id}/pause")
+
+    assert segment.status_code == 200
+    assert pause.status_code == 200
+    assert pause.json()["capture_epoch"] == 1
