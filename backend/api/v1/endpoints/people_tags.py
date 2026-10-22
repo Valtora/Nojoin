@@ -12,8 +12,16 @@ from backend.models.people_tag_schemas import (
     PeopleTagUpdate,
 )
 from backend.models.user import User
+from backend.services.tag_ownership import TAG_NOT_FOUND, require_own_parent
 
 router = APIRouter()
+
+
+async def _get_own_tag(db: AsyncSession, tag_id: int, user_id: int) -> PeopleTag:
+    tag = await db.get(PeopleTag, tag_id)
+    if not tag or tag.user_id != user_id:
+        raise HTTPException(status_code=404, detail=TAG_NOT_FOUND)
+    return tag
 
 
 @router.get("/", response_model=List[PeopleTagRead])
@@ -21,11 +29,11 @@ async def list_people_tags(
     db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
     """
-    List all tags for people.
+    List the user's own tags for people.
     """
     query = (
         select(PeopleTag)
-        .where((PeopleTag.user_id == current_user.id) | (PeopleTag.user_id == None))
+        .where(PeopleTag.user_id == current_user.id)
         .order_by(PeopleTag.name)
     )
 
@@ -42,9 +50,10 @@ async def create_people_tag(
     """
     Create a new tag for people.
     """
+    await require_own_parent(db, PeopleTag, tag_in.parent_id, current_user.id)
+
     stmt = select(PeopleTag).where(
-        PeopleTag.name == tag_in.name,
-        (PeopleTag.user_id == current_user.id) | (PeopleTag.user_id == None),
+        PeopleTag.name == tag_in.name, PeopleTag.user_id == current_user.id
     )
     result = await db.execute(stmt)
     if result.scalar_one_or_none():
@@ -72,14 +81,14 @@ async def update_people_tag(
     """
     Update a tag.
     """
-    tag = await db.get(PeopleTag, tag_id)
-    if not tag:
-        raise HTTPException(status_code=404, detail="Tag not found")
-
-    if tag.user_id and tag.user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Not authorized to update this tag")
+    tag = await _get_own_tag(db, tag_id, current_user.id)
 
     update_data = tag_in.model_dump(exclude_unset=True)
+    if "parent_id" in update_data:
+        await require_own_parent(
+            db, PeopleTag, update_data["parent_id"], current_user.id
+        )
+
     for field, value in update_data.items():
         setattr(tag, field, value)
 
@@ -98,12 +107,7 @@ async def delete_people_tag(
     """
     Delete a tag.
     """
-    tag = await db.get(PeopleTag, tag_id)
-    if not tag:
-        raise HTTPException(status_code=404, detail="Tag not found")
-
-    if tag.user_id and tag.user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Not authorized to delete this tag")
+    tag = await _get_own_tag(db, tag_id, current_user.id)
 
     await db.delete(tag)
     await db.commit()
