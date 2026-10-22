@@ -172,7 +172,10 @@ export default function TranscriptActionsMenu({
       event.stopPropagation();
       close();
     } else if (event.key === "Tab") {
+      // The menu sits at the end of the page: the browser's Tab carries on
+      // from the ⋯ button instead.
       setOpen(false);
+      triggerRef.current?.focus();
     }
   };
 

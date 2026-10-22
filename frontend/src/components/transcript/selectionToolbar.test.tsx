@@ -116,6 +116,66 @@ describe("selected text in the finished transcript", () => {
     noToolbar();
   });
 
+  it("keeps a note being written through a press outside it, or a new selection", () => {
+    const props = renderFinished();
+    drag([0, 0], [0, 5]);
+    fireEvent.click(within(toolbar()).getByRole("button", { name: "Add note" }));
+    const box = screen.getByRole("textbox", { name: "Note" });
+    fireEvent.change(box, { target: { value: "half-written thought" } });
+
+    // A press on the transcript: to scroll on a phone, or to look at a line.
+    fireEvent.pointerDown(lineText(1));
+    fireEvent.pointerUp(lineText(1));
+    act(() => {
+      vi.advanceTimersByTime(SELECTION_SETTLE_MS);
+    });
+    expect(screen.getByRole("textbox", { name: "Note" })).toHaveValue("half-written thought");
+
+    // Selecting other text, say to copy it, neither drops it nor offers a bar.
+    drag([1, 0], [1, 8]);
+    expect(screen.getByRole("textbox", { name: "Note" })).toHaveValue("half-written thought");
+    noToolbar();
+
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Note" }), { key: "Enter" });
+    expect(props.onAddNote).toHaveBeenCalledWith(
+      expect.objectContaining({ body: "half-written thought", selection: expect.objectContaining({ quotedText: "Forty" }) }),
+    );
+    // Back to the ⋯ button of the line the text was on, not the top of the page.
+    expect(screen.getByRole("button", { name: "Actions for Alex's line at 00:12" })).toHaveFocus();
+    // And no bar left over from the text selected while writing.
+    noToolbar();
+  });
+
+  it("closes an empty note on a press outside it, as a line's note does", () => {
+    renderFinished();
+    drag([0, 0], [0, 5]);
+    fireEvent.click(within(toolbar()).getByRole("button", { name: "Add note" }));
+    fireEvent.pointerDown(lineText(1));
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("offers nothing while the mouse is still dragging, however long it rests", () => {
+    renderFinished();
+    fireEvent.pointerDown(lineText(0));
+    const range = document.createRange();
+    range.setStart(lineText(0).firstChild!, 0);
+    range.setEnd(lineText(0).firstChild!, 5);
+    document.getSelection()!.removeAllRanges();
+    document.getSelection()!.addRange(range);
+    act(() => {
+      document.dispatchEvent(new Event("selectionchange"));
+      vi.advanceTimersByTime(SELECTION_SETTLE_MS * 4);
+    });
+    noToolbar();
+
+    fireEvent.pointerUp(lineText(0));
+    act(() => {
+      vi.advanceTimersByTime(SELECTION_SETTLE_MS);
+    });
+    expect(toolbar()).toBeInTheDocument();
+  });
+
   it("runs a note on text across two lines from the first word taken to the last", () => {
     const props = renderFinished();
     drag([0, 19], [1, 8]);

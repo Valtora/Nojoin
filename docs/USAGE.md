@@ -125,7 +125,7 @@ In the transcript:
 - **Low confidence** marks a line whose speaker Nojoin is unsure of and nobody has set by hand.
 - Notes you placed during the meeting ([Live Notes](#live-notes)) show on their own line after the line they follow.
 - The **⋯** button beside a speaker's name opens the line's menu: **Note on this line**, **Edit text**, **Change speaker** and **Play from here**, which plays on rather than stopping at the line's end. It shows when you point at the line or tab to it, and always on a touch screen, where pressing and holding the speaker's name also opens it. In the menu, the arrow keys move and Escape closes it. A note on a line quotes the line's words; Enter saves it and Shift+Enter starts a new line. One that can't be saved waits on its line with **Retry** and **Discard**.
-- Select some text, in one line or across several, for a bar with **Add note** and **Copy**. A note on selected text quotes those words, and its time runs from the first word you touched to the last, estimated from the line's start and end. Clicking to end a selection keeps it rather than opening the editor; Escape or a click elsewhere puts the bar away.
+- Select some text, in one line or across several, for a bar with **Add note** and **Copy**. A note on selected text quotes those words, and its time runs from the first word you touched to the last, estimated from the line's start and end. Clicking to end a selection keeps it rather than opening the editor; Escape or a click elsewhere puts the bar away. A note you have started typing stays open, whatever you click or select, until you save or cancel it.
 
 **Export** saves the notes, analytics and transcript as one PDF, Word or text file, or the audio as MP3 ([Exporting A Meeting](#exporting-a-meeting)).
 
