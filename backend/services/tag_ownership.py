@@ -3,6 +3,10 @@
 Recording tags (``tags``) and people tags (``p_tags``) each belong to one
 user. An id naming another user's tag, a tag with no owner or no tag at all
 answers 404 with the same body, the rule the People routes apply to people.
+
+Among one user's tags, a tag never sits under itself or one of its own
+sub-tags, and no two share a name. A change that would break either answers
+400.
 """
 
 from collections.abc import Iterable
@@ -19,6 +23,9 @@ TagModel = Union[type[Tag], type[PeopleTag]]
 
 TAG_NOT_FOUND = "Tag not found"
 PARENT_TAG_NOT_FOUND = "Parent tag not found"
+TAG_OWN_PARENT = "Tag cannot be its own parent"
+TAG_UNDER_OWN_SUB_TAG = "Tag cannot be nested under one of its own sub-tags"
+TAG_NAME_TAKEN = "Tag with this name already exists"
 
 
 async def require_own_tag_ids(
@@ -51,3 +58,56 @@ async def require_own_parent(
         await require_own_tag_ids(
             db, model, [parent_id], user_id, detail=PARENT_TAG_NOT_FOUND
         )
+
+
+async def require_parent_outside_subtree(
+    db: AsyncSession,
+    model: TagModel,
+    tag_id: int,
+    parent_id: Optional[int],
+    user_id: int,
+) -> None:
+    """Answer 400 if ``parent_id`` is the tag itself or one of its sub-tags.
+
+    Walks up from the new parent through the user's tags. The walk ends at a
+    tag it has already passed, so a loop saved before this check existed
+    cannot hold the request. Moving a tag in such a loop to a parent outside
+    it is allowed, and is how the loop is broken.
+    """
+    if parent_id is None:
+        return
+    if parent_id == tag_id:
+        raise HTTPException(status_code=400, detail=TAG_OWN_PARENT)
+    result = await db.execute(
+        select(model.id, model.parent_id).where(col(model.user_id) == user_id)
+    )
+    parent_of = {row[0]: row[1] for row in result.all()}
+    passed: set[int] = set()
+    ancestor = parent_of.get(parent_id)
+    while ancestor is not None and ancestor not in passed:
+        if ancestor == tag_id:
+            raise HTTPException(status_code=400, detail=TAG_UNDER_OWN_SUB_TAG)
+        passed.add(ancestor)
+        ancestor = parent_of.get(ancestor)
+
+
+async def require_unused_name(
+    db: AsyncSession,
+    model: TagModel,
+    name: str,
+    user_id: int,
+    *,
+    detail: str = TAG_NAME_TAKEN,
+) -> None:
+    """Answer 400 if the user already has a tag called ``name``.
+
+    Any match will do, so a name held twice before this check existed answers
+    400 rather than failing a lookup that expects one row.
+    """
+    result = await db.execute(
+        select(model.id)
+        .where(col(model.name) == name, col(model.user_id) == user_id)
+        .limit(1)
+    )
+    if result.first() is not None:
+        raise HTTPException(status_code=400, detail=detail)

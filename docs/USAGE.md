@@ -53,7 +53,7 @@ The **Tasks** page has **Open**, **Completed** and **Archived** views and a **Cr
 
 The **People** page is your speaker library: the people Nojoin can recognise across meetings, with their voiceprints and contact details. Each user has their own library, and a meeting's speakers are matched and linked only to people in its owner's library.
 
-- Search by name, email or company, and filter by people tags, which can nest like recording tags. Each user has their own people tags and recording tags.
+- Search by name, email or company, and filter by people tags, which can nest like recording tags. Each user has their own people tags and recording tags, and no two tags in either set share a name.
 - Select several people for **Batch Edit People** or to delete them together.
 - A person's menu has **Edit Details**, **Recalibrate Voiceprint** to rebuild their voiceprint from better samples, **Split / Unmerge Speaker** and **Delete Person**.
 - In a person's details, **Lock voiceprint** keeps their voiceprint as it is: renames, links, merges and automatic learning leave it alone, and only **Link to different speaker** in **Create Voiceprint**, recalibrating or splitting the person changes it. **Unlock voiceprint** lets them update it again. Neither changes the voiceprint itself, and a locked person is still recognised in later meetings.

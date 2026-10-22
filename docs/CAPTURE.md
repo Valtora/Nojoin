@@ -178,11 +178,11 @@ No browser API lets a page opt out of Memory Saver or read whether it is on, so 
 
 When more than 30 seconds of audio is waiting to upload, the controls say how far behind uploads are. The audio is kept in this browser and sent as the connection allows. Keep the tab open, though nothing is lost if it closes and you return in the same browser.
 
-If a segment keeps failing to upload for about 15 seconds, Nojoin pauses the recording and shows the error. The queued audio is kept, and resuming or stopping uploads it first. An ended sign-in is the exception: recording carries on and uploads wait for you to sign in again ([Signing In Again During A Recording](#signing-in-again-during-a-recording)).
+If a segment keeps failing to upload for about 15 seconds, Nojoin pauses the recording and shows the error. The tab keeps the queued audio, the microphone and the shared tab, and **Start Meeting** stays unavailable until you resume, stop or discard. When the server cannot be told about the pause, Nojoin tells it once the connection returns, after uploading the queued audio, and **Resume** carries on with the same recording without asking you to share again. After an outage of more than about a minute and a half, Nojoin leaves the recording as it is, since another device may have resumed it by then: two minutes after the last upload the server offers it as interrupted ([Closing Or Reloading The Tab](#closing-or-reloading-the-tab)), and **Resume** in this tab works again from then. An ended sign-in is different: recording carries on and uploads wait for you to sign in again ([Signing In Again During A Recording](#signing-in-again-during-a-recording)).
 
 ### Stop did not finish
 
-The meeting button names the stage while stopping. If stopping fails, the recording returns to paused with an error, and you can stop it again from the live controls, the floating badge or the resume-or-discard dialog. Stopping does not need the original capture, so it works after a reload.
+The meeting button names the stage while stopping. If stopping fails, the recording returns to paused with an error, and Nojoin pauses it on the server too, once it can reach it. You can then stop it again from the controls on the recording's page or from the resume-or-discard dialog. Stopping does not need the original capture, so it works after a reload.
 
 ### Browser recording unavailable
 
