@@ -499,6 +499,8 @@ Some versions are declared in several files that must agree, and a pin sometimes
 
 The base image also fixes the worker's Python minor. The API image, CI, mypy and the Python prerequisite in this guide and in CONTRIBUTING.md must match it: `EXPECTED_PYTHON` and `PYTHON_DECLARATIONS` make the `--offline` run fail on drift, and a Dependabot `ignore:` entry keeps the API base on 3.12. The image tag names the torch version, not Python's, so run `python -V` in a new base before adopting it. The 2.14.1 image ships 3.12.
 
+The pre-commit hooks must run the release CI pins. `HOOKED_TOOLS` makes the `--offline` run fail when the Ruff hook's `rev` in `.pre-commit-config.yaml` differs from the `ruff` pin in `requirements/lint.txt`. Dependabot bumps the pin and not the hook, so move the `rev` in the same pull request.
+
 To move torch, change test.txt, local.txt, both `FROM` lines in Dockerfile.worker (tag and digest) and `MATCHED_STACKS` together, and move torchvision to its pair. Keep the base on the CUDA build PyPI's torch uses (CUDA 13.0 for 2.14.1), so that local.txt installs the same build without an index URL; pip ignores an `--index-url` written on a requirement line. Then run diarisation, Whisper, an ONNX engine and text embeddings on a GPU in the rebuilt worker image, because CI has no GPU and installs torch from PyPI. Dependabot raises the pip and Docker halves as separate pull requests, each of which fails the drift check alone, so combine them.
 
 #### fastembed's Pillow cap

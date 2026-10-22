@@ -8,7 +8,7 @@ upgrade can fix, so the hold has to be re-justified every time the advisory's
 affected range is revised. The policy, and the one-off dismissal procedure, are
 in docs/DEVELOPMENT.md#held-pins-and-unfixable-advisories.
 
-This script does three things:
+This script does four things:
 
 1. **Drift check (offline).** Every file that declares a matched stack must
    declare the same version, and every hold must match the stack it holds.
@@ -21,7 +21,11 @@ This script does three things:
    unchecked, Dependabot walked the API base image from 3.12 to 3.14 on its own
    and made the interpreter serving every HTTP request the only one the test
    suite never ran on.
-3. **Release check (network).** For each hold, ask PyPI whether the blocking
+3. **Hook check (offline).** A tool that both CI and a pre-commit hook run
+   must be the same release in both, or a file the hook passes, or rewrites
+   with ``--fix``, can still fail CI. Dependabot bumps the requirements pin and
+   not the hook, so the bump fails here until the hook moves with it.
+4. **Release check (network).** For each hold, ask PyPI whether the blocking
    package has published a version that lets the pin move, so the hold is
    revisited when it can actually be lifted rather than on every alert. No pin
    is held at present, so this half currently has nothing to check.
@@ -401,6 +405,58 @@ def check_declaration(declaration: Declaration) -> list[str]:
     return problems
 
 
+@dataclass(frozen=True)
+class HookedTool:
+    """A tool pinned in a requirements file and run again by a pre-commit hook."""
+
+    package: str
+    requirements: str
+    # The hook repository, whose ``rev`` is ``v`` and the package version.
+    hook_repo: str
+
+
+HOOKED_TOOLS: tuple[HookedTool, ...] = (
+    HookedTool(
+        package="ruff",
+        requirements="requirements/lint.txt",
+        hook_repo="https://github.com/astral-sh/ruff-pre-commit",
+    ),
+)
+
+PRE_COMMIT_CONFIG = ".pre-commit-config.yaml"
+
+
+def check_hooks() -> list[str]:
+    """Return a problem per pre-commit hook that runs another release than CI."""
+    config = (REPO_ROOT / PRE_COMMIT_CONFIG).read_text(encoding="utf-8")
+    problems: list[str] = []
+    for tool in HOOKED_TOOLS:
+        requirements = (REPO_ROOT / tool.requirements).read_text(encoding="utf-8")
+        pin = re.search(
+            PIN_RE_TEMPLATE.format(package=re.escape(tool.package)),
+            requirements,
+            re.MULTILINE,
+        )
+        hook = re.search(
+            rf"^\s*-\s+repo:\s*{re.escape(tool.hook_repo)}\s*\n\s*rev:\s*v?(\S+)",
+            config,
+            re.MULTILINE,
+        )
+        if pin is None or hook is None:
+            problems.append(
+                f"{tool.package}: expected a pin in {tool.requirements} and a "
+                f"{tool.hook_repo} hook in {PRE_COMMIT_CONFIG}; the hook check "
+                f"is not covering what it claims to."
+            )
+        elif pin.group(1) != hook.group(1):
+            problems.append(
+                f"{tool.package}: {tool.requirements} pins {pin.group(1)} but the "
+                f"pre-commit hook in {PRE_COMMIT_CONFIG} runs {hook.group(1)}. "
+                f"Move the hook's rev to v{pin.group(1)} in the same change."
+            )
+    return problems
+
+
 def check_interpreter() -> list[str]:
     """Return a problem per surface whose Python version is out of alignment."""
     return [
@@ -474,8 +530,9 @@ def render_text(
         print(f"ERROR: could not check {failure}")
     if not problems:
         print(
-            "Matched-stack pins agree with every recorded stack and hold, and "
-            f"every surface running backend/ declares Python {EXPECTED_PYTHON}."
+            "Matched-stack pins agree with every recorded stack and hold, "
+            f"every surface running backend/ declares Python {EXPECTED_PYTHON}, "
+            "and every pre-commit hook runs the release CI pins."
         )
     if not HOLDS:
         print("No dependency pin is currently held.")
@@ -496,6 +553,7 @@ def main() -> int:
     problems = [problem for stack in MATCHED_STACKS for problem in check_drift(stack)]
     problems += check_hold_records()
     problems += check_interpreter()
+    problems += check_hooks()
     results, failures = ((), []) if args.offline else check_releases(HOLDS)
     results = list(results)
     actionable = bool(problems or [r for r in results if r["status"] != "held"])
