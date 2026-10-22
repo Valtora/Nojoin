@@ -52,6 +52,7 @@ files = [
     "backend/utils/storage_hygiene_report.py",
     "backend/utils/storage_hygiene_scan.py",
     "backend/storage_hygiene.py",
+    "backend/core/backup/restore/legacy_owners.py",
     "backend/services/exports",
     # API-facing schema and ORM models (public/cross-module surface).
     "backend/models/base.py",

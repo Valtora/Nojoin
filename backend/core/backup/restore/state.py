@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Set, Tuple
 
 from backend.core.backup.restore import jobs
+from backend.core.backup.restore.legacy_owners import OwnerRepairs
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +66,9 @@ class _RestoreState:
     replaced_recording_files: List[Tuple[str | None, str | None]] = field(
         default_factory=list
     )
+    # Owners for an older archive's people and people tags, made to its rows as each
+    # table is read (restore/legacy_owners.py). Empty for an archive that needs none.
+    owner_repairs: OwnerRepairs = field(default_factory=OwnerRepairs)
     # Progress sink, so a Celery-hosted restore can stream status to its result backend.
     progress_callback: Any = None
     # table_name -> reason -> count, surfaced to the operator when the restore finishes.
