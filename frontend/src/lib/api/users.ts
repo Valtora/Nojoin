@@ -18,6 +18,11 @@ export const getUsers = async (
   return response.data;
 };
 
+/**
+ * Who the browser is signed in as, told to neither the session nor the notes
+ * kept in the browser, unlike `getCurrentUser`: for a check that only reads
+ * the answer.
+ */
 export const getUserMe = async (): Promise<User> => {
   const response = await api.get<User>("/users/me");
   return response.data;

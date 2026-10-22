@@ -1,8 +1,8 @@
 """A tag change keeps the user's tags a tree, with each name held once.
 
 Both tag routes refuse a parent that is the tag itself or one of its
-sub-tags, and a rename to a name the user already has. Alice (user 1) is
-signed in. The recording tags and the people tags hold the same rows:
+sub-tags, and a new tag or a rename with a name the user already has. Alice
+(user 1) is signed in. The recording tags and the people tags hold the same rows:
 Projects > Website > Launch, Archive at the top level, Draft and Review
 nested under each other (a loop saved before the check existed), and Bob's
 Budget.
@@ -43,6 +43,7 @@ SEED = (
 OWN_PARENT = {"detail": "Tag cannot be its own parent"}
 UNDER_OWN_SUB_TAG = {"detail": "Tag cannot be nested under one of its own sub-tags"}
 NAME_TAKEN = {"detail": "Tag with this name already exists"}
+TAG_EXISTS = {"detail": "Tag already exists"}
 
 # (table, route) for recording tags and people tags.
 ROUTES = pytest.mark.parametrize(
@@ -185,6 +186,42 @@ async def test_a_tag_cannot_take_a_name_the_user_already_has(
 
     assert (response.status_code, response.json()) == (400, NAME_TAKEN)
     assert await _tags(session_maker, table) == before
+
+
+@pytest.mark.anyio
+@ROUTES
+@pytest.mark.parametrize(
+    ("name", "parent_id"),
+    [("Archive", None), ("Archive", PROJECTS), ("Launch", None)],
+    ids=["top-level", "as-a-sub-tag", "a-sub-tag-name"],
+)
+async def test_a_new_tag_cannot_take_a_name_the_user_already_has(  # noqa: PLR0913 - two fixtures, two parametrize axes
+    client, session_maker, table, route, name, parent_id
+) -> None:
+    before = await _tags(session_maker, table)
+
+    response = await client.post(
+        f"{route}/", json={"name": name, "color": "red", "parent_id": parent_id}
+    )
+
+    assert (response.status_code, response.json()) == (400, TAG_EXISTS)
+    assert await _tags(session_maker, table) == before
+
+
+@pytest.mark.anyio
+@ROUTES
+async def test_a_new_tag_may_take_a_name_only_another_user_has_or_another_case(
+    client, session_maker, table, route
+) -> None:
+    bobs_name = await client.post(
+        f"{route}/", json={"name": "Budget", "parent_id": PROJECTS}
+    )
+    other_case = await client.post(f"{route}/", json={"name": "archive"})
+
+    assert [bobs_name.status_code, other_case.status_code] == [200, 200]
+    tags = await _tags(session_maker, table)
+    assert tags[bobs_name.json()["id"]] == ("Budget", PROJECTS)
+    assert tags[other_case.json()["id"]] == ("archive", None)
 
 
 @pytest.mark.anyio

@@ -49,6 +49,8 @@ export interface NoteStore {
   get(account: number, recordingId: RecordingId): Promise<unknown>;
   put(record: StoredOutbox): Promise<void>;
   remove(account: number, recordingId: RecordingId): Promise<void>;
+  /** The recordings `account` has a record for. */
+  recordingsOf(account: number): Promise<RecordingId[]>;
   /** Removes every record of an account not in `accounts`. */
   keepOnly(accounts: readonly number[]): Promise<void>;
   clear(): Promise<void>;
@@ -128,6 +130,18 @@ export class IndexedDbNoteStore implements NoteStore {
     return this.write((store) => store.delete([account, recordingId]));
   }
 
+  async recordingsOf(account: number) {
+    const database = await this.open();
+    const transaction = database.transaction(STORE_NAME, "readonly");
+    // Every key, filtered here: each sign-in leaves one account's records.
+    const keys = await requestResult(transaction.objectStore(STORE_NAME).getAllKeys());
+    return keys.flatMap((key) =>
+      Array.isArray(key) && key[0] === account && typeof key[1] === "string"
+        ? [key[1] as RecordingId]
+        : [],
+    );
+  }
+
   async keepOnly(accounts: readonly number[]) {
     const database = await this.open();
     const transaction = database.transaction(STORE_NAME, "readwrite");
@@ -161,6 +175,12 @@ export class MemoryNoteStore implements NoteStore {
 
   async remove(account: number, recordingId: RecordingId) {
     this.records.delete(this.key(account, recordingId));
+  }
+
+  async recordingsOf(account: number) {
+    return [...this.records.values()]
+      .filter((record) => record.account === account)
+      .map((record) => record.recordingId);
   }
 
   async keepOnly(accounts: readonly number[]) {

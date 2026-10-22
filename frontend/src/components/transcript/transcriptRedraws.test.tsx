@@ -233,15 +233,13 @@ describe("transcript redraws", () => {
     fireEvent.click(screen.getByRole("button", { name: "Search" }));
     const find = screen.getByPlaceholderText("Find...");
 
+    // Typing the query marks its matches and makes the first one current.
     forget();
     fireEvent.change(find, { target: { value: "alpha" } });
     expect(redrawn.sort()).toEqual(lineIdsWith(/alpha/).sort());
-
-    // The first Enter makes the first match current: only its line changes.
-    forget();
-    fireEvent.keyDown(find, { key: "Enter" });
-    expect(redrawn).toEqual(["u0"]);
-    expect(groupsRedrawn()).toEqual([0]);
+    expect(groupsRedrawn()).toEqual(
+      SEGMENTS.filter((segment) => /alpha/.test(segment.text)).map((segment) => segment.start),
+    );
 
     // u0 has one match, so the next is u2's first: u0 and u2 change.
     forget();
@@ -282,5 +280,24 @@ describe("transcript redraws", () => {
     rerender(<Page time={-1} segments={changed} />);
 
     expect(new Set(redrawn)).toEqual(new Set(["u2"]));
+  });
+
+  it("redraws only the line a speaker rename is open on", () => {
+    const { rerender } = render(<Page time={1} />);
+    const alexOnU2 = document.querySelector('[data-order-index][data-segment-id="u2"] button');
+
+    // Alex speaks ten lines; the rename opens on u2 alone.
+    forget();
+    fireEvent.doubleClick(alexOnU2!);
+    expect(redrawn).toEqual(["u2"]);
+
+    // A tick inside u0 and a keystroke each redraw only the line with the input.
+    forget();
+    rerender(<Page time={1.5} />);
+    expect(redrawn).toEqual(["u2"]);
+
+    forget();
+    fireEvent.change(screen.getByDisplayValue("Alex"), { target: { value: "Avery" } });
+    expect(redrawn).toEqual(["u2"]);
   });
 });

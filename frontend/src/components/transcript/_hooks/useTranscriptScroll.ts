@@ -18,13 +18,12 @@ const LINE_ROWS = "[data-order-index]";
 
 export interface UseTranscriptScrollOptions {
   segments: TranscriptSegment[];
-  /** Key of the segment currently aligned with playback, if any. */
+  /** Key of the shown line playback-follow keeps in view, if any. */
   activeSegmentKey: string | null;
 }
 
 export interface TranscriptScroll {
   scrollContainerRef: RefObject<HTMLDivElement | null>;
-  activeSegmentRef: RefObject<HTMLDivElement | null>;
   scrollSegmentIntoView: (
     segmentKey: string,
     behavior?: ScrollBehavior,
@@ -42,7 +41,6 @@ export function useTranscriptScroll(
 ): TranscriptScroll {
   const { segments, activeSegmentKey } = options;
 
-  const activeSegmentRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const scrollAnchorRef = useRef<{
     segmentId: string;
@@ -107,12 +105,11 @@ export function useTranscriptScroll(
     };
   }, []);
 
+  // Follows the line by its key. Overlapping lines can be active together, and
+  // a line that stops being active doesn't move this to one that still is.
   useEffect(() => {
-    if (activeSegmentRef.current) {
-      const segmentKey = activeSegmentRef.current.dataset.segmentId;
-      if (segmentKey) {
-        scrollSegmentIntoView(segmentKey, "smooth");
-      }
+    if (activeSegmentKey) {
+      scrollSegmentIntoView(activeSegmentKey, "smooth");
     }
   }, [activeSegmentKey, scrollSegmentIntoView]);
 
@@ -155,7 +152,6 @@ export function useTranscriptScroll(
 
   return {
     scrollContainerRef,
-    activeSegmentRef,
     scrollSegmentIntoView,
     updateScrollAnchor,
   };
