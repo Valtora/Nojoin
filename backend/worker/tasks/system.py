@@ -33,10 +33,13 @@ def cleanup_temp_recordings(self):
 
     # Last, so the sweeps above have already run. It reads in a session of its
     # own, opened after it lists the directories.
-    run_storage_hygiene(
-        get_sync_session,
-        HygieneOptions(delete=storage_hygiene_mode() == STORAGE_HYGIENE_DELETE),
-    )
+    try:
+        run_storage_hygiene(
+            get_sync_session,
+            HygieneOptions(delete=storage_hygiene_mode() == STORAGE_HYGIENE_DELETE),
+        )
+    except Exception:  # noqa: BLE001 -- boundary: hygiene is the last, optional step; the sweeps above already ran and must still count as done
+        logger.exception("Storage hygiene failed; the cleanup sweeps above completed")
 
 
 @celery_app.task(name="backend.worker.tasks.download_models_task", bind=True)

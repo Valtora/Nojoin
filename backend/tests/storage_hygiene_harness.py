@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import os
 import time
-from collections.abc import Iterator
+import uuid
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -158,7 +159,9 @@ def add_recording(
         return recording.id
 
 
-def add_document(engine: Engine, recording_id: int, file_path: str | Path) -> int:
+def add_document(
+    engine: Engine, recording_id: int | None, file_path: str | Path
+) -> int:
     with Session(engine) as session:
         document = Document(
             recording_id=recording_id, title="Agenda", file_path=str(file_path)
@@ -169,14 +172,34 @@ def add_document(engine: Engine, recording_id: int, file_path: str | Path) -> in
         return document.id
 
 
+def uuid_name(extension: str) -> str:
+    """A name as Nojoin mints one: a lowercase uuid4 and the extension."""
+    return f"{uuid.uuid4()}{extension}"
+
+
 def add_referenced_audio(
     engine: Engine, layout: Layout, count: int, *, size: int = 10
 ) -> list[Path]:
     """``count`` recordings, each naming an old audio file of ``size`` bytes."""
     paths = []
-    for index in range(count):
-        path = write_file(layout.recordings / f"kept-{index}.wav", size=size)
+    for _ in range(count):
+        path = write_file(layout.recordings / uuid_name(".wav"), size=size)
         add_recording(engine, path)
+        paths.append(path)
+    return paths
+
+
+def add_referenced_documents(
+    engine: Engine, layout: Layout, count: int, *, size: int = 10
+) -> list[Path]:
+    """``count`` old documents, attached to a recording whose audio exists."""
+    recording_id = add_recording(
+        engine, write_file(layout.recordings / uuid_name(".wav"), size=size)
+    )
+    paths = []
+    for _ in range(count):
+        path = write_file(layout.documents / uuid_name(".pdf"), size=size)
+        add_document(engine, recording_id, path)
         paths.append(path)
     return paths
 
@@ -208,15 +231,29 @@ def run(
     *,
     lock: FakeLockStore | None = None,
     delete: bool = False,
-    allow_bulk: bool = False,
+    bulk: Mapping[Path, int] | bool = False,
     now: float | None = None,
 ) -> HygieneReport:
-    """One run as the daily task makes it, against ``engine`` and a free lock."""
+    """One run as the daily task makes it, against ``engine`` and a free lock.
+
+    ``bulk`` passes allowances as the CLI's --allow-bulk and --expect do. True
+    takes the operator's way to them: a dry run first, then each directory
+    allowed exactly the count that dry run printed for it.
+    """
+    if bulk is True:
+        dry = run_storage_hygiene(
+            lambda: Session(engine),
+            HygieneOptions(now=now, redis_client=FakeLockStore().open),
+        )
+        bulk = {d.path: d.candidates for d in dry.directories if d.candidates}
     store = lock or FakeLockStore()
     return run_storage_hygiene(
         lambda: Session(engine),
         HygieneOptions(
-            delete=delete, allow_bulk=allow_bulk, now=now, redis_client=store.open
+            delete=delete,
+            bulk_allowances=bulk or {},
+            now=now,
+            redis_client=store.open,
         ),
     )
 

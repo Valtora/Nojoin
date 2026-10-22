@@ -13,6 +13,7 @@ from sqlmodel import select
 import backend.api.v1.endpoints.speakers as speakers_module
 from backend.api.deps import get_current_user, get_db
 from backend.core.task_dispatch import dispatch_task
+from backend.models.people_tag import PeopleTag, PeopleTagLink
 from backend.models.people_tag_schemas import PeopleTagRead
 from backend.models.recording import (
     Recording,
@@ -43,6 +44,7 @@ from backend.processing.embedding import (
 )
 from backend.processing.embedding_version import EMBEDDING_METHOD_VERSION
 from backend.services.recording_identity_service import get_recordings_by_public_ids
+from backend.services.tag_ownership import require_own_tag_ids
 from backend.utils.canonical_pipeline import (
     recording_ready_for_canonical_backfill,
     update_recording_speaker_identity,
@@ -88,8 +90,6 @@ async def list_global_speakers(
     """
     List all global speakers (People) with filtering.
     """
-    from backend.models.people_tag import PeopleTagLink
-
     # Query with left join to count recordings
     query = (
         select(GlobalSpeaker, func.count(RecordingSpeaker.id).label("recording_count"))
@@ -191,7 +191,9 @@ async def create_global_speaker(
             detail=f"A person with the name '{speaker_in.name}' already exists in your library.",
         )
 
-    import backend.models.people_tag as pt
+    tag_ids = await require_own_tag_ids(
+        db, PeopleTag, speaker_in.tag_ids, current_user.id
+    )
 
     speaker = GlobalSpeaker(
         name=speaker_in.name,
@@ -207,9 +209,9 @@ async def create_global_speaker(
     await db.commit()
     await db.refresh(speaker)
 
-    if speaker_in.tag_ids:
-        for tag_id in speaker_in.tag_ids:
-            link = pt.PeopleTagLink(global_speaker_id=speaker.id, tag_id=tag_id)
+    if tag_ids:
+        for tag_id in tag_ids:
+            link = PeopleTagLink(global_speaker_id=speaker.id, tag_id=tag_id)
             db.add(link)
         await db.commit()
         await db.refresh(speaker)
@@ -323,6 +325,14 @@ async def update_global_speaker(
     if not speaker or speaker.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Speaker not found")
 
+    new_tag_ids: Optional[set[int]] = None
+    if speaker_in.tag_ids is not None:
+        new_tag_ids = set(
+            await require_own_tag_ids(
+                db, PeopleTag, speaker_in.tag_ids, current_user.id
+            )
+        )
+
     if speaker_in.name is not None and speaker_in.name != speaker.name:
         stmt = select(GlobalSpeaker).where(
             GlobalSpeaker.name == speaker_in.name,
@@ -369,9 +379,7 @@ async def update_global_speaker(
     if speaker_in.notes is not None:
         speaker.notes = speaker_in.notes
 
-    if speaker_in.tag_ids is not None:
-        from backend.models.people_tag import PeopleTagLink
-
+    if new_tag_ids is not None:
         stmt = select(PeopleTagLink).where(
             PeopleTagLink.global_speaker_id == speaker_id
         )
@@ -379,7 +387,6 @@ async def update_global_speaker(
         existing_links = result.scalars().all()
 
         existing_tag_ids = {link.tag_id for link in existing_links}
-        new_tag_ids = set(speaker_in.tag_ids)
 
         # Remove tags not in new list
         for link in existing_links:
