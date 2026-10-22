@@ -649,42 +649,59 @@ export class CaptureController {
     }
   };
 
+  /**
+   * Pauses the capture in this tab, then on the server.
+   *
+   * The tab reads paused as soon as its recorder stops taking audio, whatever
+   * becomes of the request: a tab that reads recording while nothing is
+   * recorded loses whatever the user says next (issue #582). The server is
+   * told the way it is after an upload stall, once the queued audio has gone,
+   * so a pause that does not reach it is sent again when the API next answers
+   * and before any resume.
+   *
+   * Resolves once the server has the pause, or owes it with a warning when the
+   * server could not be reached. Rejects when the server refused it, with the
+   * tab still paused, or when the capture continued elsewhere.
+   */
   pause = async () => {
-    if (!this.runtime || !this.state.recordingId) {
-      return;
-    }
-
-    if (this.state.status === "paused") {
-      return;
-    }
-
-    const recordingId = this.state.recordingId;
     const runtime = this.runtime;
-    let response;
-    try {
-      await runtime.recorder.pause();
-      await runtime.uploader.waitForIdle();
-      this.stopElapsedTimer();
-      response = await retryAfterSignIn(() =>
-        pauseRecordingCapture(recordingId, { epoch: runtime.epoch }),
-      );
-    } catch (error: unknown) {
-      throw await this.ifContinuedElsewhere(error, runtime);
+    const recordingId = this.state.recordingId;
+    if (!runtime || !recordingId || this.state.status !== "recording") {
+      return;
     }
+
+    await runtime.recorder.pause();
+    // An upload stall, a stop, an unload or a takeover may have acted while
+    // the recorder paused, and owns the capture from here.
+    if (this.runtime !== runtime || this.state.status !== "recording") {
+      return;
+    }
+    this.stopElapsedTimer();
     writePausedCaptureContext({
-      recordingId: response.recording_id,
-      lastSequence: Math.max(response.last_sequence, this.state.lastSequence),
+      recordingId,
+      lastSequence: this.state.lastSequence,
       persistedAt: Date.now(),
     });
-    this.setState({
-      status: "paused",
-      lastSequence: Math.max(response.last_sequence, this.state.lastSequence),
-      elapsedSeconds: Math.max(
-        this.state.elapsedSeconds,
-        sequenceToElapsedSeconds(response.last_sequence),
-      ),
-    });
-    await this.refreshPausedRecording().catch(() => {});
+    this.setState({ status: "paused" });
+    this.unconfirmedPause = { recordingId, failedAt: Number.NEGATIVE_INFINITY };
+
+    const error = await this.sendServerPause({ drainFirst: true });
+    if (!error) {
+      return;
+    }
+    if (isCaptureSupersededError(error)) {
+      throw await this.ifContinuedElsewhere(error, runtime);
+    }
+    if (this.unconfirmedPause?.recordingId === recordingId) {
+      useNotificationStore.getState().addNotification({
+        type: "warning",
+        message:
+          "Recording paused. Nojoin could not reach the server to tell it, " +
+          "and will once the connection returns.",
+      });
+      return;
+    }
+    throw new Error(formatCaptureError(error));
   };
 
   resume = async (recordingId?: RecordingId): Promise<StartCaptureResult> => {
@@ -1355,8 +1372,9 @@ export class CaptureController {
     const runtime = this.runtime;
     const ownCapture = Boolean(runtime) && this.state.recordingId === recordingId;
     if (ownCapture && this.state.status === "paused") {
-      // A retry that sends the kept audio before the pause stalled again. The
-      // user was told when capture paused, and the retry carries on by itself.
+      // The queue sent ahead of an owed pause stalled, and the pause goes next
+      // anyway. After an earlier stall the user has already been told; a
+      // pause from the controls warns if the server cannot be reached.
       return;
     }
 

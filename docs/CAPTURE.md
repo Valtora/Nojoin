@@ -49,7 +49,7 @@ Brave may need its shields or site settings relaxed before it shows capture prom
 
 ## Pause, Resume, Stop, And Discard
 
-- **Pause** stops capturing and keeps everything recorded so far.
+- **Pause** stops capturing and keeps everything recorded so far. The controls read **Paused** as soon as capture stops. If Nojoin cannot reach the server, it says so, keeps the recording paused in this tab, and tells the server once the connection returns. If the server refuses the pause, this tab stays paused and shows the server's reason.
 - **Resume** continues the same recording. After a pause in the live controls it carries on with the same shared tab and microphone. After the tab was closed or reloaded, the browser asks you to share again.
 - **Stop** releases the microphone and shared tab, uploads any audio still queued, and queues the recording for processing. While queued audio uploads, the controls read **Uploading** and show how much is left, and the meeting button names the current stage. Stop also works on a paused recording, including one whose tab was closed.
 - **Discard** permanently deletes an unfinished recording, whether it is recording, paused, queued or processing: its audio, any attached documents, any processing under way and the meeting itself. Nojoin asks you to confirm first. Discard is in the live controls, the floating recording badge, the resume-or-discard dialog and the recordings list's context menu (**Discard Recording**).
