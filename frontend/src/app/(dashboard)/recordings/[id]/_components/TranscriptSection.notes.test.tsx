@@ -112,4 +112,23 @@ describe("a note on a line of the processed transcript", () => {
     );
     expect(createTimelineNote.mock.calls[1][1].id).toBe(createTimelineNote.mock.calls[0][1].id);
   });
+
+  it("puts focus on the transcript when a failed note on a line is discarded", async () => {
+    createTimelineNote.mockRejectedValueOnce(NO_ANSWER);
+    renderSection();
+
+    fireEvent.click(screen.getByRole("button", { name: "Actions for Blair's line at 01:05" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Note on this line" }));
+    const box = screen.getByRole("textbox", { name: "Note" });
+    fireEvent.change(box, { target: { value: "Check the figure" } });
+    fireEvent.keyDown(box, { key: "Enter" });
+    const note = await screen.findByTestId("timeline-note");
+    const discard = await within(note).findByRole("button", { name: /^Discard note/ });
+    discard.focus();
+    fireEvent.click(discard);
+
+    await waitFor(() => expect(screen.queryByTestId("timeline-note")).toBeNull());
+    expect(document.activeElement).not.toBe(document.body);
+    expect(document.activeElement).toContainElement(screen.getByText("Forty thousand for the venue"));
+  });
 });

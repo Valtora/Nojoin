@@ -81,13 +81,34 @@ export default function NoteOnSelectionPopover({
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.nativeEvent.isComposing || event.keyCode === 229) return;
-    if (event.key === "Escape") {
-      event.preventDefault();
-      close();
-    } else if (event.key === "Enter" && !event.shiftKey) {
+    if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       save();
     }
+  };
+
+  // Escape from anywhere in it. A Tab out of it, which would go on from the
+  // end of the page where it sits, closes it and carries on from the anchor
+  // instead, while the box is empty; with a note in the box, Tab wraps.
+  const handlePanelKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      close();
+      return;
+    }
+    if (event.key !== "Tab") return;
+    const stops = Array.from(
+      panelRef.current?.querySelectorAll<HTMLElement>("textarea, button:not(:disabled)") ?? [],
+    );
+    const edge = event.shiftKey ? stops[0] : stops[stops.length - 1];
+    if (document.activeElement !== edge) return;
+    if (isBlank) {
+      close();
+      return;
+    }
+    event.preventDefault();
+    (event.shiftKey ? stops[stops.length - 1] : stops[0])?.focus();
   };
 
   // On the body, so no translucent transcript group (a stacking context)
@@ -101,6 +122,7 @@ export default function NoteOnSelectionPopover({
       data-testid="note-on-selection"
       className="z-[var(--z-dropdown)] w-80 max-w-[calc(100vw-1rem)] rounded-lg border border-surface-border bg-surface-card p-3 shadow-float"
       onClick={(event) => event.stopPropagation()}
+      onKeyDown={handlePanelKeyDown}
     >
       <p id={titleId} className="text-xs font-semibold text-contrast-helper">
         Note on the line at {where}
