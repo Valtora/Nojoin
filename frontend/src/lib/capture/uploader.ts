@@ -50,6 +50,13 @@ export interface SegmentUploaderOptions {
    * stopped. Nothing is uploaded after it, and the queue stays in the store.
    */
   onCaptureEnded?: (error: Error) => void | Promise<void>;
+  /**
+   * Looks into a failed upload that is not plainly the capture ending, and
+   * resolves an error when it turns out to be one, as a 404 for a recording
+   * discarded elsewhere does once the account is confirmed (issue #602). The
+   * uploader then stops as for any other ending.
+   */
+  checkCaptureGone?: (error: unknown) => Promise<Error | null>;
   /** Called whenever the queue grows or shrinks. */
   onQueueChange?: (size: UploadQueueSize) => void;
   /** Where queued segments survive a closed tab. Omitted, the queue is memory only. */
@@ -84,6 +91,8 @@ export class SegmentUploader {
   private readonly onStalled?: (error: Error) => void | Promise<void>;
 
   private readonly onCaptureEnded?: (error: Error) => void | Promise<void>;
+
+  private readonly checkCaptureGone?: (error: unknown) => Promise<Error | null>;
 
   private readonly onQueueChange?: (size: UploadQueueSize) => void;
 
@@ -123,6 +132,7 @@ export class SegmentUploader {
     this.onUploaded = options.onUploaded;
     this.onStalled = options.onStalled;
     this.onCaptureEnded = options.onCaptureEnded;
+    this.checkCaptureGone = options.checkCaptureGone;
     this.onQueueChange = options.onQueueChange;
     this.store = options.store;
     this.retryDelaysMs = options.retryDelaysMs ?? DEFAULT_RETRY_DELAYS_MS;
@@ -396,15 +406,18 @@ export class SegmentUploader {
         return;
 
       } catch (error: unknown) {
-        // Another tab or device resumed or stopped the capture. Retrying gets
-        // the same answer, and the segment can never join the recording, so it
-        // stays in the store and nothing more is sent.
-        if (isCaptureEndedError(error)) {
-          const endedError =
-            error instanceof Error ? error : new Error("This recording ended elsewhere.");
-          this.endedError = endedError;
-          await this.onCaptureEnded?.(endedError);
-          throw endedError;
+        // Another tab or device resumed, stopped or discarded the capture.
+        // Retrying gets the same answer, and the segment can never join the
+        // recording, so it stays in the store and nothing more is sent.
+        const gone = isCaptureEndedError(error)
+          ? error instanceof Error
+            ? error
+            : new Error("This recording ended elsewhere.")
+          : await this.checkCaptureGone?.(error);
+        if (gone) {
+          this.endedError = gone;
+          await this.onCaptureEnded?.(gone);
+          throw gone;
         }
 
         // A failure while the session is unusable is not a failed attempt. The
