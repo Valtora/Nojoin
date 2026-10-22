@@ -73,9 +73,21 @@ If the notes change on another device while you are editing them, nothing is sav
 
 ### Live Transcription
 
-The **Live Transcript** panel shows each sentence a few seconds after it is spoken. It follows the newest line until you scroll up to read back; **Jump to latest** resumes following. The panel is read-only, and the full transcript replaces it once processing finishes.
+The **Live Transcript** panel shows each sentence a few seconds after it is spoken. It follows the newest line until you scroll up to read back; **Jump to latest** resumes following. Its lines are read-only, and the full transcript replaces them once processing finishes.
 
 Live lines carry no speaker names, because speakers are identified when the recording is processed. A line is labelled **Microphone** or **Shared audio** when Nojoin can tell which source carried it. These labels name the audio source, not the person: in a room with no shared tab audio, everyone arrives on the microphone ([CAPTURE.md](CAPTURE.md#what-nojoin-captures)).
+
+### Live Notes
+
+The box under the live transcript adds a note at a moment in the meeting. Enter adds it and Shift+Enter starts a new line. The menu before the box, **Place note**, sets where it goes, and the line under the box says where the next note will land:
+
+- **At typing start**, the default, places the note where the recording was when you typed its first character, however long you take to finish it. Clearing the box starts again.
+- **At send** places it where the recording is when you press Enter.
+- **Before the transcript** and **After the transcript** make a note on the whole meeting, kept with the Notes box. While the Notes box is empty, a note before the transcript becomes its text, which you can go on editing there. Otherwise it is listed under **Other notes**, like every note after the transcript.
+
+A placed note shows on its own line, with its time, after the line being spoken when it was placed. A line still being transcribed can arrive after your note and appears above it. Time spent paused does not count, so a note written during a pause follows the last line before it. The processed transcript shows the note after the line spoken then, and the AI reads it there.
+
+A note that could not be saved stays where you wrote it, marked with the reason, with **Retry** and **Discard**. Retrying never adds it twice, and never brings back a note deleted on another device. When the recording stops, here or on another device, text still in the box is kept, with **Add note** and **Discard**. Unsaved notes and text stay listed, with the processing progress and then above the processed transcript, until you save or discard them, and Nojoin asks before you close the page while any remain. On a phone, the box stays above the on-screen keyboard.
 
 ### Meeting Edge
 
@@ -105,6 +117,7 @@ In the transcript:
 - Click a line's text to edit it. Click a speaker name to reassign that line or the whole transcript, and double-click it to rename the speaker.
 - The toolbar has **Undo**, **Redo**, **Search**, **Find & Replace** and export.
 - **Low confidence** marks a line whose speaker Nojoin is unsure of and nobody has set by hand.
+- Notes you placed during the meeting ([Live Notes](#live-notes)) show on their own line after the line they follow.
 
 **Export** saves the notes, analytics and transcript as one PDF, Word or text file, or the audio as MP3 ([Exporting A Meeting](#exporting-a-meeting)).
 

@@ -522,12 +522,17 @@ export interface Recording extends Omit<BaseDBModel, "id"> {
   captured_audio_seconds?: number | null;
   /**
    * Where capture is now on the audio timeline, in ms: the end of the last
-   * transcoded segment, run on by the time since it arrived (at most 2.5 s)
-   * while recording. Present only while capture is open.
+   * transcoded segment, run on by the time since it arrived, or since the last
+   * resume if later (at most 2.5 s), while recording. Present only while
+   * capture is open.
    */
   live_audio_ms?: number | null;
-  /** Every note on the recording, in timeline order. Detail endpoint only. */
-  timeline_notes?: TimelineNote[] | null;
+  /**
+   * Changes whenever the recording's notes list (`listTimelineNotes`) would,
+   * so a page holding that list fetches it again only then. Detail endpoint
+   * only.
+   */
+  timeline_notes_list_signature?: string | null;
   is_archived: boolean;
   is_deleted: boolean;
   transcript?: Transcript;

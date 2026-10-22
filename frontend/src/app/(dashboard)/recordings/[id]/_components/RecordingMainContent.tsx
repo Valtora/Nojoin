@@ -6,6 +6,7 @@ import { useNavigationStore, type ActivePanel } from "@/lib/store";
 import {
   GlobalSpeaker,
   Recording,
+  TimelineNote,
   TranscriptSegment,
   TranscriptSpeakerAssignment,
 } from "@/types";
@@ -20,6 +21,8 @@ import AnalyticsSection from "./AnalyticsSection";
 
 interface RecordingMainContentProps {
   recording: Recording;
+  /** The recording's notes as last listed; null while they load. */
+  timelineNotes: readonly TimelineNote[] | null;
   isMobile: boolean;
   activePanel: ActivePanel;
   setActivePanel: (panel: ActivePanel) => void;
@@ -91,6 +94,7 @@ const tabClassName = (active: boolean) =>
 
 export default function RecordingMainContent({
   recording,
+  timelineNotes,
   isMobile,
   activePanel,
   setActivePanel,
@@ -214,6 +218,7 @@ export default function RecordingMainContent({
         <TranscriptSection
           active={activePanel === "transcript"}
           recording={recording}
+          timelineNotes={timelineNotes}
           transcriptSegments={transcriptSegments}
           currentTime={currentTime}
           isPlaying={isPlaying}
