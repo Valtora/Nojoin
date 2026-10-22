@@ -225,3 +225,30 @@ def test_mark_recording_audio_chunks_ready_for_cleanup_sets_deadline_without_del
     assert chunk_path.exists()
     assert row[0] == "finalized"
     assert row[1] is not None
+
+
+def test_delete_recording_artifacts_without_recording_id_keeps_upload_temp_dir(
+    storage_root: Path,
+) -> None:
+    """The failed-finalize paths rely on this: only the master goes, not temp/<id>/.
+
+    When a capture's master cannot be built, the routes delete the partial
+    master with ``recording_id=None`` so the segments - already moved to
+    failed/, or left in temp/<id>/ when the move itself failed - survive for
+    the 24-hour chunk sweep the failed chunk rows point at.
+    """
+    master_path = storage_root / "recording.wav"
+    master_path.write_bytes(b"partial master")
+
+    temp_dir = recording_upload_temp_dir(303, create=True)
+    (temp_dir / "0.wav").write_bytes(b"segment")
+
+    delete_recording_artifacts(
+        recording_id=None,
+        audio_path=str(master_path),
+        proxy_path=None,
+        logger=logging.getLogger(__name__),
+    )
+
+    assert not master_path.exists()
+    assert (temp_dir / "0.wav").exists()
