@@ -92,6 +92,58 @@ describe("speaker rename", () => {
     expect(renameInputs()).toEqual([]);
   });
 
+  it("sends a second speaker's rename while the first saves", async () => {
+    let finish = () => {};
+    const onRenameSpeaker = vi
+      .fn()
+      .mockImplementationOnce(() => new Promise<void>((resolve) => (finish = resolve)))
+      .mockImplementation(async () => {});
+    renderView(onRenameSpeaker);
+    await openRename("u0");
+    fireEvent.change(renameInputs()[0], { target: { value: "Avery" } });
+    fireEvent.keyDown(renameInputs()[0], { key: "Enter" });
+    // The mousedown on Blair's name blurs Alex's input.
+    fireEvent.blur(renameInputs()[0]);
+    await act(async () => {});
+
+    await openRename("u1");
+    fireEvent.change(renameInputs()[0], { target: { value: "Bryn" } });
+    fireEvent.keyDown(renameInputs()[0], { key: "Enter" });
+    await act(async () => {});
+    await act(async () => finish());
+
+    expect(onRenameSpeaker.mock.calls).toEqual([
+      ["SPEAKER_A", "Avery"],
+      ["SPEAKER_B", "Bryn"],
+    ]);
+  });
+
+  it("sends nothing when the input blurs with the name cleared", async () => {
+    const onRenameSpeaker = vi.fn(async () => {});
+    renderView(onRenameSpeaker);
+    await openRename("u0");
+
+    fireEvent.change(renameInputs()[0], { target: { value: "  " } });
+    fireEvent.blur(renameInputs()[0]);
+    await act(async () => {});
+
+    expect(onRenameSpeaker).not.toHaveBeenCalled();
+    expect(renameInputs()).toEqual([]);
+  });
+
+  it("sends nothing when Escape closes the input over a new name", async () => {
+    const onRenameSpeaker = vi.fn(async () => {});
+    renderView(onRenameSpeaker);
+    await openRename("u0");
+
+    fireEvent.change(renameInputs()[0], { target: { value: "Avery" } });
+    fireEvent.keyDown(renameInputs()[0], { key: "Escape" });
+    await act(async () => {});
+
+    expect(onRenameSpeaker).not.toHaveBeenCalled();
+    expect(renameInputs()).toEqual([]);
+  });
+
   it("sends nothing when the input blurs with the name unchanged", async () => {
     const onRenameSpeaker = vi.fn(async () => {});
     renderView(onRenameSpeaker);

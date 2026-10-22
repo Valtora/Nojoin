@@ -61,8 +61,11 @@ export interface TranscriptLineActions {
 interface SpeakerRename {
   label: string;
   segmentId: string;
-  /** The name when the rename opened: submitting it unchanged saves nothing. */
-  name: string;
+  /**
+   * The name it opened with, then the name it sent: submitting that again
+   * saves nothing.
+   */
+  savedName: string;
 }
 
 /** The open editor's value and handlers, for the lines that show it. */
@@ -143,11 +146,12 @@ export function useTranscriptEditing(
     onActiveEditUtteranceChange(activeSegment?.id || null);
   }, [editingTextId, onActiveEditUtteranceChange, segments]);
 
-  // Enter and the input's blur both submit, so an unchanged name, or a second
-  // submit while the first saves, closes the input without a request.
+  // Enter and the input's blur both submit, so an unchanged name, or the same
+  // name submitted again while it saves, closes the input without a request.
   const handleSpeakerRenameSubmit = async () => {
     const name = editValue.trim();
-    if (speakerRename && name && name !== speakerRename.name && !isSubmitting) {
+    if (speakerRename && name && name !== speakerRename.savedName) {
+      setSpeakerRename({ ...speakerRename, savedName: name });
       setIsSubmitting(true);
       try {
         await onRenameSpeaker(speakerRename.label, name);
@@ -248,7 +252,7 @@ export function useTranscriptEditing(
         ),
       closeSpeakerPopover: () => setActivePopover(null),
       startSpeakerRename: (segmentId, speakerLabel, speakerName) => {
-        setSpeakerRename({ label: speakerLabel, segmentId, name: speakerName });
+        setSpeakerRename({ label: speakerLabel, segmentId, savedName: speakerName });
         setEditValue(speakerName);
         setActivePopover(null);
       },
