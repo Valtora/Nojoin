@@ -238,16 +238,33 @@ const resumeStoring = () => {
   emit({ kind: "resumed" });
 };
 
+/**
+ * Repeats another tab's removal in this tab. A write of this tab's can land
+ * between that tab's removal and its ping; this removal comes after it, and
+ * after any write this tab had begun. A tab that never opened the store has
+ * written nothing.
+ */
+const removeAgain = (remove: (store: NoteStore) => Promise<void>) => {
+  if (!shared) return;
+  // Refused: the next sign-in or sign-out removes them again.
+  remove(shared).catch(() => undefined);
+};
+
 const heard = (data: unknown) => {
   if (!isPing(data)) return;
   if (data.kind === "signed-out") {
     stopStoring();
+    removeAgain((store) => store.clear());
     return;
   }
-  // Another tab's sign-in as this tab's account: the browser is that
-  // account's again, so this tab may store its notes again.
   const { userId } = useSessionStore.getState();
-  if (userId !== null && data.accounts.includes(userId)) resumeStoring();
+  if (userId !== null) {
+    // Another tab's sign-in as this tab's account: the browser is that
+    // account's again, so this tab may store its notes again. As another
+    // account, it removed this account's notes, and so does this tab.
+    if (data.accounts.includes(userId)) resumeStoring();
+    else removeAgain((store) => store.keepOnly(data.accounts));
+  }
   emit({ kind: "kept", accounts: data.accounts });
 };
 

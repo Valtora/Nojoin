@@ -254,7 +254,11 @@ export const persistNoteOutbox = (
    * A write that goes unanswered for `NEW_ID_WAIT_MS` leaves the page in
    * memory only until it answers, and the note goes out regardless: the
    * stored copy is a stopgap, and must never hold a note back for good. Once
-   * that write answers, the outbox as it is by then is written after it.
+   * that write answers, the outbox as it is by then is written after it. A
+   * tab that closes or crashes before that write answers can leave the old id
+   * stored, and the next visit sends the note a second time (ARCHITECTURE.md,
+   * "Unsaved notes in the browser"). A close no longer asks first, as the note
+   * has gone out.
    */
   const newIdSafe = async () => {
     let timer: ReturnType<typeof setTimeout> | undefined;

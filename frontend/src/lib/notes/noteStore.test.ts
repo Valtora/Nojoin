@@ -1,7 +1,7 @@
 import { IDBFactory } from "fake-indexeddb";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { resetSessionForTests } from "@/lib/session";
+import { noteSignedIn, resetSessionForTests } from "@/lib/session";
 
 import {
   CLEAR_ON_SIGN_OUT_MS,
@@ -12,6 +12,7 @@ import {
   setNoteStoreForTests,
   sharedNoteStore,
   storedNotesSignedIn,
+  storingStopped,
   subscribeStoreEvents,
   type NoteStore,
   type StoredOutbox,
@@ -174,6 +175,53 @@ describe("the page's note store", () => {
     await storedNotesSignedIn();
     expect(sharedNoteStore()).toBe(store);
     expect(events.at(-1)).toEqual({ kind: "resumed" });
+    stop();
+  });
+
+  it("keeps a tab with no known account stopped when another tab's sign-in keeps an account", async () => {
+    setNoteStoreForTests(new MemoryNoteStore());
+    const events: StoreEvent[] = [];
+    const stop = subscribeStoreEvents((event) => events.push(event));
+    const { channel } = otherTab();
+    channel.postMessage({ kind: "signed-out" });
+    await vi.waitFor(() => expect(storingStopped()).toBe(true));
+
+    channel.postMessage({ kind: "kept", accounts: [ALICE] });
+
+    await vi.waitFor(() => expect(events.at(-1)).toEqual({ kind: "kept", accounts: [ALICE] }));
+    expect(storingStopped()).toBe(true);
+    stop();
+  });
+
+  it("removes again what another tab's sign-out removed, so a write landing before its ping doesn't outlive it", async () => {
+    const store = new MemoryNoteStore();
+    setNoteStoreForTests(store);
+    // A page with a recording open listens to the other tabs.
+    const stop = subscribeStoreEvents(() => undefined);
+    const { channel } = otherTab();
+    // The other tab cleared the store; a write of this tab's landed before its ping.
+    await store.put(record(ALICE, "rec-1"));
+
+    channel.postMessage({ kind: "signed-out" });
+
+    await vi.waitFor(async () => expect(await store.get(ALICE, "rec-1")).toBeUndefined());
+    stop();
+  });
+
+  it("removes again this tab's account's notes that another account's sign-in removed", async () => {
+    noteSignedIn({ username: "alice", force_password_change: false, id: ALICE });
+    const store = new MemoryNoteStore();
+    setNoteStoreForTests(store);
+    const stop = subscribeStoreEvents(() => undefined);
+    const { channel } = otherTab();
+    // bob's cleanup removed alice's notes; a write of alice's tab landed before its ping.
+    await store.put(record(ALICE, "rec-1"));
+    await store.put(record(BOB, "rec-2"));
+
+    channel.postMessage({ kind: "kept", accounts: [BOB] });
+
+    await vi.waitFor(async () => expect(await store.get(ALICE, "rec-1")).toBeUndefined());
+    expect(await store.get(BOB, "rec-2")).toEqual(record(BOB, "rec-2"));
     stop();
   });
 

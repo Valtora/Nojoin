@@ -59,7 +59,7 @@ const NOTES_WORDING = {
 const NOTES_SITUATION =
   "Your sign-in ended with notes on this page not saved yet. They stay on this page and save once you sign in.";
 const NOTES_LEAVING =
-  "Going to the sign-in page leaves this page, and your browser asks first. Signing in there as a different account removes the notes kept in this browser.";
+  "Going to the sign-in page leaves this page, and your browser asks first where it supports that. Signing in there as a different account removes the notes kept in this browser.";
 
 /**
  * Asks for the password in place when the session ends during a capture, or
