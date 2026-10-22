@@ -71,6 +71,17 @@ export const segmentStartMs = (segment: PlacementSegment): number => {
   return roundHalfEven(Number(segment.start || 0) * 1000);
 };
 
+/** A line's end in ms: `end_ms`, else `end` in seconds, rounded as the start is. */
+export const segmentEndMs = (segment: {
+  end_ms?: number | null;
+  end?: number | null;
+}): number => {
+  if (segment.end_ms !== null && segment.end_ms !== undefined) {
+    return Math.trunc(segment.end_ms);
+  }
+  return roundHalfEven(Number(segment.end || 0) * 1000);
+};
+
 /** When a body note happened on the audio timeline. */
 export const noteTimeMs = (note: PlacementNote): number => {
   if (note.kind === "selection") {
