@@ -3,7 +3,8 @@ import type { ComponentProps } from "react";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import TranscriptView from "@/components/TranscriptView";
-import type { RecordingSpeaker, TranscriptSegment } from "@/types";
+import { applyTranscriptDelta, type LocalTranscriptState } from "@/lib/transcriptState";
+import type { RecordingSpeaker, TranscriptSegment, TranscriptUtterance } from "@/types";
 
 // Each line draws its badges once per render of the line, so counting badge
 // renders counts line redraws.
@@ -34,6 +35,20 @@ vi.mock("@/components/transcript/transcriptDisplay", async (importOriginal) => {
   };
 });
 
+// The view places the notes once for each new list of lines, so counting the
+// placements says whether it recomputed what it derives from the lines.
+let placements = 0;
+vi.mock("@/lib/notes/placement", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/notes/placement")>();
+  return {
+    ...actual,
+    placeTimelineNotes: (...args: Parameters<typeof actual.placeTimelineNotes>) => {
+      placements += 1;
+      return actual.placeTimelineNotes(...args);
+    },
+  };
+});
+
 vi.mock("@/lib/notificationStore", () => ({
   useNotificationStore: () => ({ addNotification: vi.fn() }),
 }));
@@ -48,6 +63,7 @@ afterAll(() => {
 const forget = () => {
   redrawn.length = 0;
   formatted.clear();
+  placements = 0;
 };
 beforeEach(forget);
 
@@ -169,6 +185,47 @@ describe("transcript redraws", () => {
 
     expect(redrawn).toEqual(["u4"]);
     expect(groupsRedrawn()).toEqual([12]);
+  });
+
+  describe("a full sync", () => {
+    // The lines as the API hands them over, new objects on every sync.
+    const utterances = (): TranscriptUtterance[] =>
+      SEGMENTS.map(({ id, start, end, text, speaker }) => ({ id: id!, start, end, text, speaker, revision: 1 }));
+    const fullSync = (currentState: LocalTranscriptState | null, next: TranscriptUtterance[]) =>
+      applyTranscriptDelta({
+        currentState,
+        recordingId: "rec-1",
+        fallbackSegments: [],
+        delta: { recording_id: "rec-1", revision: 1, utterances: next, tombstones: [], speakers: [] },
+        mode: "full",
+      });
+
+    it("redraws and recomputes nothing when it hands over the same lines", () => {
+      const first = fullSync(null, utterances());
+      const { rerender } = render(<Page time={7} segments={first.segments} />);
+
+      forget();
+      rerender(<Page time={7} segments={fullSync(first, utterances()).segments} />);
+
+      expect(redrawn).toEqual([]);
+      expect(groupsRedrawn()).toEqual([]);
+      expect(placements).toBe(0);
+    });
+
+    it("redraws only the line it changes, with its new text", () => {
+      const first = fullSync(null, utterances());
+      const { rerender } = render(<Page time={7} segments={first.segments} />);
+      const next = utterances();
+      next[4] = { ...next[4], text: "alpha, revised", revision: 2 };
+
+      forget();
+      rerender(<Page time={7} segments={fullSync(first, next).segments} />);
+
+      expect(redrawn).toEqual(["u4"]);
+      expect(groupsRedrawn()).toEqual([12]);
+      expect(placements).toBe(1);
+      expect(screen.getByText("alpha, revised")).toBeInTheDocument();
+    });
   });
 
   it("redraws only the lines and groups whose matches change as the search moves", () => {
