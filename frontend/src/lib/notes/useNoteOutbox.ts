@@ -1,17 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
+import { useSessionStore } from "@/lib/session";
 import type { Recording, RecordingId } from "@/types";
 
 import { EMPTY_DRAFT, type NoteOutbox, type OutboxSnapshot } from "./noteOutbox";
-import {
-  goneNotes,
-  noteOutboxFor,
-  subscribeNoteOutboxes,
-  unsentRecordings,
-  type GoneNotes,
-} from "./noteOutboxes";
+import { noteOutboxesHere, noteOutboxFor, subscribeNoteOutboxes } from "./noteOutboxes";
+import { sharedNoteStore } from "./noteStore";
 import { useTimelineNotes } from "./useTimelineNotes";
 
 const EMPTY_SNAPSHOT: OutboxSnapshot = {
@@ -85,12 +81,35 @@ export function useRecordingNotes(
   return notes;
 }
 
-/** The recordings whose notes, discards or box text this page has not saved yet. */
+/**
+ * The recordings with notes, discards or box text not saved yet in this
+ * browser, for the signed-in account (issue #558). A recording this page holds
+ * an outbox for goes by that outbox; any other by the record the browser kept
+ * for it, read when the page loads and again whenever this page's outboxes
+ * change. Nothing is sent from here: opening the recording does that.
+ */
 export function useUnsentRecordings(): readonly RecordingId[] {
-  return useSyncExternalStore(subscribeNoteOutboxes, unsentRecordings, unsentRecordings);
-}
+  const outboxes = useSyncExternalStore(subscribeNoteOutboxes, noteOutboxesHere, noteOutboxesHere);
+  const account = useSessionStore((state) => state.userId);
+  const [stored, setStored] = useState<{ account: number; recordings: RecordingId[] } | null>(null);
 
-/** The notes of recordings found gone, waiting to be copied or dismissed. */
-export function useGoneNotes(): readonly GoneNotes[] {
-  return useSyncExternalStore(subscribeNoteOutboxes, goneNotes, goneNotes);
+  useEffect(() => {
+    const store = account === null ? null : sharedNoteStore();
+    if (account === null || !store) return;
+    let current = true;
+    store.recordingsOf(account).then(
+      (recordings) => {
+        if (current) setStored({ account, recordings });
+      },
+      () => undefined,
+    );
+    return () => {
+      current = false;
+    };
+  }, [account, outboxes]);
+
+  return useMemo(() => {
+    const kept = stored !== null && stored.account === account ? stored.recordings : [];
+    return [...kept.filter((id) => !outboxes.held.includes(id)), ...outboxes.unsent];
+  }, [stored, account, outboxes]);
 }

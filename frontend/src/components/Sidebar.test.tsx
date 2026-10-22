@@ -217,15 +217,17 @@ describe("Sidebar", () => {
     });
   });
 
-  describe("notes not saved yet", () => {
-    it("marks a recording in the list whose notes this page has not saved", async () => {
+  describe("unsent notes", () => {
+    it("marks a recording in the list with unsent notes", async () => {
       unsentRecordings = ["rec-1"];
       renderWithProviders(<Sidebar />);
 
       const heading = await screen.findByRole("heading", { name: "Latest meeting" });
       const item = heading.closest("a") ?? heading.parentElement!;
 
-      expect(within(item).getByText("Notes not saved yet")).toBeInTheDocument();
+      expect(within(item).getByText("Unsent notes")).toBeInTheDocument();
+      // The mark is part of the link to the recording, so it is read with it.
+      expect(screen.getByRole("link", { name: /Latest meeting.*Unsent notes/ })).toBeInTheDocument();
     });
 
     it("leaves the mark off the recording on screen, which shows its notes itself", async () => {
@@ -235,7 +237,7 @@ describe("Sidebar", () => {
 
       await screen.findByRole("heading", { name: "Latest meeting" });
 
-      expect(screen.queryByText("Notes not saved yet")).not.toBeInTheDocument();
+      expect(screen.queryByText("Unsent notes")).not.toBeInTheDocument();
     });
 
     it("shows no mark when every note is saved", async () => {
@@ -243,7 +245,7 @@ describe("Sidebar", () => {
 
       await screen.findByRole("heading", { name: "Latest meeting" });
 
-      expect(screen.queryByText("Notes not saved yet")).not.toBeInTheDocument();
+      expect(screen.queryByText("Unsent notes")).not.toBeInTheDocument();
     });
   });
 

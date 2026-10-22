@@ -1054,7 +1054,7 @@ export default function Sidebar() {
                         {formatDurationString(recording.duration_seconds)}
                       </span>
                     </div>
-                    {/* The open recording lists its own notes not saved yet. */}
+                    {/* The open recording lists its own unsent notes. */}
                     {!isActive && unsentRecordings.includes(recording.id) && (
                       <Badge
                         tone="warning"
@@ -1062,7 +1062,7 @@ export default function Sidebar() {
                         icon={<NotebookPen aria-hidden="true" />}
                         className={`mt-2 ${selectionMode || isSelected ? "ml-6" : ""}`}
                       >
-                        Notes not saved yet
+                        Unsent notes
                       </Badge>
                     )}
                   </Link>

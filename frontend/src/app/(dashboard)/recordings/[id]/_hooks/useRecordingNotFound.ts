@@ -2,11 +2,11 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import { askWhoIsSignedIn, getRecording } from "@/lib/api";
 import { getErrorStatus } from "@/lib/errors";
-import { notFoundMeans } from "@/lib/notFoundMeans";
-import { noteRecordingRemoved } from "@/lib/notes/noteOutboxes";
 import type { NewNotification } from "@/lib/notificationStore";
 import { noteSignedIn, useSessionStore } from "@/lib/session";
 import type { RecordingId } from "@/types";
+
+import { notFoundMeans } from "./recordingDetailUtils";
 
 /**
  * How long a page that stayed after a 404 waits before asking `/users/me`
@@ -116,8 +116,6 @@ export function useRecordingNotFound(
           );
           if (!current()) return;
           if (status === 404) {
-            // Its notes can't be saved now: they wait to be copied.
-            noteRecordingRemoved(recordingId);
             addNotification({ type: "info", message: RECORDING_REMOVED_MESSAGE });
             leave();
             return;

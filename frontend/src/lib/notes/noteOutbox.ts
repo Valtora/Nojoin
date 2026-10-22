@@ -275,8 +275,7 @@ export const inlineNotes = (
   return notes;
 };
 
-/** Whether the box holds nothing worth keeping. */
-export const isBlankDraft = (draft: ComposerDraft) => stripNote(draft.text) === "";
+const isBlankDraft = (draft: ComposerDraft) => stripNote(draft.text) === "";
 
 export class NoteOutbox {
   private entries: OutboxEntry[] = [];
@@ -298,7 +297,6 @@ export class NoteOutbox {
   };
   private readonly listeners = new Set<() => void>();
   private readonly writeListeners = new Set<() => void>();
-  private readonly goneListeners = new Set<() => void>();
   private writeBarrier: (() => Promise<boolean>) | null = null;
   /** Entries given a new id that a kept copy of the outbox may not have yet. */
   private readonly unkeptIds = new Set<string>();
@@ -314,16 +312,6 @@ export class NoteOutbox {
   subscribeWrites = (listener: () => void): (() => void) => {
     this.writeListeners.add(listener);
     return () => this.writeListeners.delete(listener);
-  };
-
-  /**
-   * Called when the server says the recording does not exist
-   * (`recording_not_found`). That may also mean the browser is signed in as
-   * another account now, which the listener tells apart (`notFoundMeans`).
-   */
-  subscribeRecordingGone = (listener: () => void): (() => void) => {
-    this.goneListeners.add(listener);
-    return () => this.goneListeners.delete(listener);
   };
 
   getSnapshot = (): OutboxSnapshot => this.snapshot;
@@ -541,7 +529,6 @@ export class NoteOutbox {
         return;
       }
       this.fail(key, FAILURE_ERRORS[failure]);
-      if (failure === "recordingGone") for (const listener of this.goneListeners) listener();
     } finally {
       clearTimeout(slow);
     }
