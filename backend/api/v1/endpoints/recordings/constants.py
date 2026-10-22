@@ -2,6 +2,9 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# The browser matches this exact text (`isCaptureClosedError` in
+# frontend/src/lib/api/capture.ts) to stand a tab down once its capture has been
+# stopped, so change the two together.
 UPLOAD_CLOSED_DETAIL = "Recording is no longer accepting capture uploads"
 ACTIVE_RECORDING_CONFLICT_MESSAGE = (
     "Handle the existing active recording before starting a new one."

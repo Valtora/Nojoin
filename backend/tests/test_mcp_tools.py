@@ -289,7 +289,8 @@ SCHEMA_STATEMENTS = [
         created_at DATETIME NOT NULL,
         updated_at DATETIME NOT NULL,
         recording_id INTEGER NOT NULL,
-        tag_id INTEGER NOT NULL
+        tag_id INTEGER NOT NULL,
+        UNIQUE (recording_id, tag_id)
     )
     """,
     """

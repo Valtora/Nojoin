@@ -106,46 +106,57 @@ export default function AddTagModal({
     }
   };
 
-  /** Resolves to whether the tag was created or added. */
+  /**
+   * Adds the tag named in the search field to the meeting, or creates a
+   * sub-tag under `parentId`. Resolves to whether it was added or created.
+   */
   const handleCreateTag = async (
     name: string,
     parentId?: number,
   ): Promise<boolean> => {
-    if (!name.trim()) return false;
-    if (processingTags.has(name.trim())) return false;
+    const trimmed = name.trim();
+    if (!trimmed) return false;
+    if (processingTags.has(trimmed)) return false;
 
-    setProcessingTags((prev) => new Set(prev).add(name.trim()));
+    setProcessingTags((prev) => new Set(prev).add(trimmed));
+    const randomColor =
+      DEFAULT_TAG_COLORS[Math.floor(Math.random() * DEFAULT_TAG_COLORS.length)];
     try {
+      if (parentId !== undefined) {
+        // A sub-tag is always a new tag. The API refuses a name the user
+        // already has, and the form keeps the name to correct.
+        await createTag(trimmed, randomColor, parentId);
+        await loadAllTags();
+        window.dispatchEvent(new CustomEvent("tags-updated"));
+        setInputValue("");
+        return true;
+      }
+      // Adding by name reuses the user's tag whose name matches ignoring case.
+      // The API creates the tag only when the user has none of that exact name,
+      // so a tag made since the list loaded is reused too.
       const existingTag = allTags.find(
-        (t) => t.name.toLowerCase() === name.trim().toLowerCase(),
+        (t) => t.name.toLowerCase() === trimmed.toLowerCase(),
       );
       if (existingTag) {
         await addTagToRecording(recordingId, existingTag.name);
-        window.dispatchEvent(new CustomEvent("tags-updated"));
-        if (onTagsUpdated) onTagsUpdated();
       } else {
-        const randomColor =
-          DEFAULT_TAG_COLORS[
-            Math.floor(Math.random() * DEFAULT_TAG_COLORS.length)
-          ];
-        await createTag(name.trim(), randomColor, parentId);
+        await addTagToRecording(recordingId, trimmed, randomColor);
         await loadAllTags();
-        if (!parentId) {
-          // Explicitly associates the newly created root tag with the current recording.
-          await addTagToRecording(recordingId, name.trim());
-          window.dispatchEvent(new CustomEvent("tags-updated"));
-          if (onTagsUpdated) onTagsUpdated();
-        }
       }
+      window.dispatchEvent(new CustomEvent("tags-updated"));
+      if (onTagsUpdated) onTagsUpdated();
       setInputValue("");
       return true;
     } catch (error: unknown) {
-      notifyRequestError(error, "Failed to create tag.");
+      notifyRequestError(
+        error,
+        parentId === undefined ? "Failed to add tag." : "Failed to create tag.",
+      );
       return false;
     } finally {
       setProcessingTags((prev) => {
         const next = new Set(prev);
-        next.delete(name.trim());
+        next.delete(trimmed);
         return next;
       });
     }

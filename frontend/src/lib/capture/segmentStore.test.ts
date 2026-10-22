@@ -53,6 +53,19 @@ describe.each([
     expect(await store.list("rec-2")).toHaveLength(1);
   });
 
+  it("names each recording it holds audio for once", async () => {
+    const store = createStore();
+    expect(await store.recordingIds()).toEqual([]);
+    for (const sequence of [0, 1, 2]) {
+      await store.put(segment("rec-1", sequence));
+    }
+    await store.put(segment("rec-2", 4));
+
+    expect((await store.recordingIds()).sort()).toEqual(["rec-1", "rec-2"]);
+    await store.clear("rec-1");
+    expect(await store.recordingIds()).toEqual(["rec-2"]);
+  });
+
   it("replaces a segment written twice", async () => {
     const store = createStore();
     await store.put(segment("rec-1", 0));
