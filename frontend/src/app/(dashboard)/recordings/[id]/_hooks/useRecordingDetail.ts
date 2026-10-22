@@ -78,6 +78,7 @@ import {
   shouldPollRecordingUpdates,
   type TranscriptHistoryItem,
 } from "./recordingDetailUtils";
+import { useRecordingNotFound } from "./useRecordingNotFound";
 
 interface UseRecordingDetailParams {
   params: Promise<{ id: string }>;
@@ -168,6 +169,7 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
   const navigateToRecordings = useCallback(() => {
     router.push("/recordings");
   }, [router]);
+  const recordingNotFound = useRecordingNotFound(addNotification, navigateToRecordings);
 
   const transcriptSegments = useMemo(
     () => transcriptState?.segments || recording?.transcript?.segments || [],
@@ -333,8 +335,9 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
   }, [activeTranscriptEditId]);
 
   const fetchRecording = useCallback(async () => {
+    let id: string | null = null;
     try {
-      const { id } = await params;
+      ({ id } = await params);
       const sentAt = audioClock.stamp();
       const [recData, gsData, settingsData] = await Promise.all([
         getRecording(id),
@@ -342,6 +345,8 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
         getSettings().catch(() => null),
       ]);
       audioClock.observe(recData, sentAt);
+      recordingNotFound.loaded(id);
+      recordingNotFound.found();
       setRecording(recData);
       setGlobalSpeakers(gsData);
       if (settingsData) {
@@ -358,6 +363,12 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
 
         } catch (e: unknown) {
       console.error("Failed to fetch recording:", e);
+      // A refresh of the recording on screen answered 404: checked as a
+      // poll's is, so another account's sign-in doesn't send the page away.
+      if (id !== null && recordingNotFound.isLoaded(id) && getErrorStatus(e) === 404) {
+        if (!useSessionStore.getState().signInRequired) await recordingNotFound.notFound(id);
+        return null;
+      }
       addNotification({
         type: "error",
         message: "Failed to load recording.",
@@ -367,7 +378,7 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
     } finally {
       setLoading(false);
     }
-  }, [addNotification, audioClock, params, isEditingTitle, router]);
+  }, [addNotification, audioClock, params, isEditingTitle, router, recordingNotFound]);
 
   const refreshRecordingView = useCallback(async () => {
     const refreshedRecording = await fetchRecording();
@@ -445,6 +456,7 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
         const sentAt = audioClock.stamp();
         const data = await getRecording(id);
         audioClock.observe(data, sentAt);
+        recordingNotFound.found();
 
         if (hasPolledRecordingChanged(recording, data)) {
           setRecording(data);
@@ -454,22 +466,20 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
             } catch (e: unknown) {
         console.error("Polling failed", e);
         if (
-          pollFailureMeansRemoved(
+          !pollFailureMeansRemoved(
             getErrorStatus(e),
             !useSessionStore.getState().signInRequired,
           )
         ) {
-          addNotification({
-            type: "info",
-            message: "Recording was discarded or deleted.",
-          });
-          router.push("/recordings");
+          return;
         }
+        const { id } = await params;
+        await recordingNotFound.notFound(id);
       }
     }, pollIntervalMs);
 
     return () => clearInterval(interval);
-  }, [params, recording, isEditingTitle, addNotification, router, audioClock]);
+  }, [params, recording, isEditingTitle, audioClock, recordingNotFound]);
 
   useEffect(() => {
     if (!recording || isInFlightRecording || !shouldPollRecordingUpdates(recording)) {
