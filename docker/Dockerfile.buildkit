@@ -3,4 +3,4 @@
 # Nothing builds this file. scripts/release.py reads the image reference from
 # the FROM line and runs its docker-container builder on it, so the pin lives
 # where Dependabot's docker ecosystem keeps it current alongside the bases.
-FROM moby/buildkit:v0.34.0@sha256:b059f8d7226d0b326bc871af489a5dddf65e36af4d20d14251b072974d9ee87c
+FROM moby/buildkit:v0.34.1@sha256:99368f3e46177c6405b9740e4461d91cee004128daeecca78d4ceac50ec1da5c

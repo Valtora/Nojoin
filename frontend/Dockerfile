@@ -1,5 +1,5 @@
 # Pinned by digest for reproducible builds; Dependabot keeps the tag comment current.
-FROM node:26-alpine@sha256:143494b1da2945f061539253adc65e4f1569ddf07da2d384c022c791a9d90a4a AS base
+FROM node:26-alpine@sha256:40cd011b55415bc894e45b02fdd5a5dfde056921b7d23a64c74f80497af48797 AS base
 
 # Install dependencies only when needed
 FROM base AS deps

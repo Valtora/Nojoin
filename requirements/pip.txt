@@ -1,0 +1,13 @@
+# The pip that installs backend.txt into the API image's venv. Dockerfile.api
+# installs it before backend.txt and uninstalls it afterwards, so it never
+# ships in the image.
+#
+# The venv starts with the base image's pip, whose vendored certifi still trusts
+# the distrusted emSign ECC Root CA - G3 (#585). That pip downloads this file's
+# wheel, so the hashes vouch for it rather than TLS: --require-hashes refuses
+# anything else. pip 26.2.2 vendors certifi 2026.10.19, the first release
+# without the root, so backend.txt is fetched over a connection that does not
+# trust it. Dependabot moves the version and the hashes together.
+pip==26.2.2 \
+    --hash=sha256:fd7f4dfa8190e014013b9f08f3e973f4e4c26ffd179a204895533a7254813a70 \
+    --hash=sha256:3a8e5c800492787f33a4114ef54444546c340df428974ebba17e0fd47e11af2f
