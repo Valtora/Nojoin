@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import {
   ArrowRightLeft,
   ChevronDown,
@@ -12,7 +12,19 @@ import {
   Undo2,
 } from "lucide-react";
 
+import Button from "../ui/Button";
+import IconButton from "../ui/IconButton";
+
 import type { TranscriptSearch } from "./_hooks/useTranscriptSearch";
+
+/** A toggle that is on keeps the action tint, hovered or not. */
+const PRESSED = "bg-action-tint text-action-text hover:bg-action-tint hover:text-action-text";
+
+/**
+ * Find Next, Replace and Replace All are `Button` at `sm`, 32 px. On a touch
+ * screen they take the full 44 px target.
+ */
+const TOOLBAR_BUTTON_TOUCH = "pointer-coarse:h-[44px]";
 
 interface TranscriptToolbarProps {
   onUndo: () => void;
@@ -50,6 +62,25 @@ export default function TranscriptToolbar({
   onReplaceAll,
 }: TranscriptToolbarProps) {
   const [showSettings, setShowSettings] = useState(false);
+  const settingsRef = useRef<HTMLDivElement>(null);
+  const settingsToggleRef = useRef<HTMLButtonElement>(null);
+  const settingsPanelId = useId();
+
+  // Escape closes the settings menu. Focus inside it goes back to the toggle,
+  // so it isn't lost with the menu.
+  useEffect(() => {
+    if (!showSettings) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (settingsRef.current?.contains(document.activeElement)) {
+        settingsToggleRef.current?.focus();
+      }
+      setShowSettings(false);
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [showSettings]);
+
   const {
     findText,
     setFindText,
@@ -73,46 +104,53 @@ export default function TranscriptToolbar({
   return (
     <div className="z-10 flex flex-col border-b-2 border-surface-border bg-surface-inset shadow-card">
       {/* Row 1: Header & Global Actions */}
-      <div className="flex items-center justify-end overflow-x-auto px-2 py-2 sm:px-4 sm:py-2.5 md:px-5 md:py-3">
+      {/* The 40 px buttons sit in less padding, so the row keeps its height
+          from sm up. */}
+      <div className="flex items-center justify-end overflow-x-auto px-2 py-1 sm:px-4 sm:py-1.5 md:px-5 md:py-2">
         <div className="flex items-center gap-0.5 sm:gap-1">
-          <button
+          <IconButton
+            size="sm"
+            aria-label="Undo"
+            title="Undo"
             onClick={onUndo}
             disabled={!canUndo}
-            className="rounded-lg p-1.5 text-contrast-helper transition-colors hover:bg-surface-inset hover:text-contrast-muted disabled:cursor-not-allowed disabled:opacity-30 sm:p-2"
-            title="Undo"
-          >
-            <Undo2 className="w-4 h-4" />
-          </button>
-          <button
+            icon={<Undo2 aria-hidden="true" />}
+          />
+          <IconButton
+            size="sm"
+            aria-label="Redo"
+            title="Redo"
             onClick={onRedo}
             disabled={!canRedo}
-            className="rounded-lg p-1.5 text-contrast-helper transition-colors hover:bg-surface-inset hover:text-contrast-muted disabled:cursor-not-allowed disabled:opacity-30 sm:p-2"
-            title="Redo"
-          >
-            <Redo2 className="w-4 h-4" />
-          </button>
+            icon={<Redo2 aria-hidden="true" />}
+          />
           <div className="mx-0.5 h-4 w-px bg-surface-card sm:mx-1" />
-          <button
+          <IconButton
+            size="sm"
+            aria-label={exportDisabled ? "Export transcript disabled" : "Export transcript"}
+            title={exportTitle}
             onClick={onExport}
             disabled={exportDisabled}
-            aria-label={exportDisabled ? "Export transcript disabled" : "Export transcript"}
-            className="rounded-lg p-1.5 text-contrast-helper transition-colors hover:bg-surface-inset hover:text-contrast-muted sm:p-2"
-            title={exportTitle}
-          >
-            <Download className="w-4 h-4" />
-          </button>
-          <button
+            icon={<Download aria-hidden="true" />}
+          />
+          <IconButton
+            size="sm"
+            aria-label="Search"
+            title="Search"
+            aria-pressed={showSearch}
             onClick={() => {
               const newState = !showSearch;
               setShowSearch(newState);
               if (!newState) setShowReplace(false);
             }}
-            className={`rounded-lg p-1.5 transition-colors sm:p-2 ${showSearch && !showReplace ? "bg-action-tint text-action-text" : "text-contrast-helper hover:bg-surface-inset hover:text-action-text"}`}
-            title="Search"
-          >
-            <Search className="w-4 h-4" />
-          </button>
-          <button
+            className={showSearch ? PRESSED : undefined}
+            icon={<Search aria-hidden="true" />}
+          />
+          <IconButton
+            size="sm"
+            aria-label="Find & Replace"
+            title="Find & Replace"
+            aria-pressed={showReplace}
             onClick={() => {
               if (showReplace) {
                 setShowReplace(false);
@@ -122,51 +160,56 @@ export default function TranscriptToolbar({
                 setShowSearch(true);
               }
             }}
-            className={`rounded-lg p-1.5 transition-colors sm:p-2 ${showReplace ? "bg-action-tint text-action-text" : "text-contrast-helper hover:bg-surface-inset hover:text-action-text"}`}
-            title="Find & Replace"
-          >
-            <ArrowRightLeft className="w-4 h-4" />
-          </button>
+            className={showReplace ? PRESSED : undefined}
+            icon={<ArrowRightLeft aria-hidden="true" />}
+          />
         </div>
       </div>
 
       {/* Row 2: Search & Replace Controls */}
       {(showSearch || showReplace) && (
         <div className="animate-in slide-in-from-top-2 flex flex-wrap items-center gap-1.5 border-t border-control-border px-2 pb-2 pt-2 duration-200 sm:gap-2 sm:px-4 sm:pb-3 sm:pt-3 md:px-5">
-          <div className="relative min-w-40 flex-[1_1_11rem] sm:min-w-48 sm:flex-[1_1_14rem]">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-contrast-icon-muted" />
-            <input
-              placeholder="Find..."
-              value={findText}
-              onChange={(e) => setFindText(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  if (e.shiftKey) prevMatch();
-                  else nextMatch();
-                }
-              }}
-              className="w-full pl-8 pr-28 py-1.5 text-sm rounded-md border border-control-border bg-surface-inset focus:ring-2 focus:ring-action outline-none min-w-0"
-              autoFocus
-            />
-            {matches.length > 0 && (
-              <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-1 text-xs text-contrast-helper whitespace-nowrap bg-surface-card rounded px-1">
-                <span>
+          <div className="flex min-w-40 flex-[1_1_11rem] items-center gap-0.5 sm:min-w-48 sm:flex-[1_1_14rem]">
+            <div className="relative min-w-0 flex-1">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-contrast-icon-muted" />
+              <input
+                placeholder="Find..."
+                value={findText}
+                onChange={(e) => setFindText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    if (e.shiftKey) prevMatch();
+                    else nextMatch();
+                  }
+                }}
+                className="w-full pl-8 pr-20 py-1.5 text-sm rounded-md border border-control-border bg-surface-inset focus:ring-2 focus:ring-action outline-none min-w-0"
+                autoFocus
+              />
+              {matches.length > 0 && (
+                <span className="absolute right-1 top-1/2 -translate-y-1/2 text-xs text-contrast-helper whitespace-nowrap bg-surface-card rounded px-1">
                   {currentMatchIndex + 1} of {matches.length}
                 </span>
-                <button
-                  onClick={prevMatch}
-                  className="p-1 hover:bg-surface-inset rounded"
-                >
-                  <ChevronUp className="w-3 h-3" />
-                </button>
-                <button
-                  onClick={nextMatch}
-                  className="p-1 hover:bg-surface-inset rounded"
-                >
-                  <ChevronDown className="w-3 h-3" />
-                </button>
-              </div>
-            )}
+              )}
+            </div>
+            {/* Beside the field rather than inside it, so each is a 40 px
+                target. They stay while there are no matches, so the row
+                doesn't shift as the matches come and go. */}
+            <IconButton
+              size="sm"
+              aria-label="Previous match"
+              title="Previous match (Shift+Enter)"
+              onClick={prevMatch}
+              disabled={matches.length === 0}
+              icon={<ChevronUp aria-hidden="true" />}
+            />
+            <IconButton
+              size="sm"
+              aria-label="Next match"
+              title="Next match (Enter)"
+              onClick={nextMatch}
+              disabled={matches.length === 0}
+              icon={<ChevronDown aria-hidden="true" />}
+            />
           </div>
           {showReplace && (
             <div className="relative min-w-40 flex-[1_1_11rem] sm:min-w-48 sm:flex-[1_1_14rem]">
@@ -182,14 +225,18 @@ export default function TranscriptToolbar({
           {showReplace && (
             <div className="flex min-w-0 flex-[1_0_auto] flex-wrap items-center justify-end gap-1.5 sm:gap-2">
               {/* Settings Toggle */}
-              <div className="relative">
-                <button
-                  onClick={() => setShowSettings(!showSettings)}
-                  className={`rounded-md p-1.5 transition-colors ${showSettings ? "bg-action-tint text-action-text" : "text-contrast-helper hover:bg-surface-inset hover:text-contrast-muted"}`}
+              <div ref={settingsRef} className="relative">
+                <IconButton
+                  ref={settingsToggleRef}
+                  size="sm"
+                  aria-label="Advanced Search Settings"
                   title="Advanced Search Settings"
-                >
-                  <Settings className="w-4 h-4" />
-                </button>
+                  aria-expanded={showSettings}
+                  aria-controls={showSettings ? settingsPanelId : undefined}
+                  onClick={() => setShowSettings(!showSettings)}
+                  className={showSettings ? PRESSED : undefined}
+                  icon={<Settings aria-hidden="true" />}
+                />
 
                 {/* Settings Dropdown */}
                 {showSettings && (
@@ -198,7 +245,10 @@ export default function TranscriptToolbar({
                       className="fixed inset-0 z-[var(--z-dropdown)]"
                       onClick={() => setShowSettings(false)}
                     />
-                    <div className="absolute right-0 top-full mt-2 w-48 bg-surface-card rounded-lg shadow-float border border-surface-border p-2 z-[var(--z-dropdown)] flex flex-col gap-1">
+                    <div
+                      id={settingsPanelId}
+                      className="absolute right-0 top-full mt-2 w-48 bg-surface-card rounded-lg shadow-float border border-surface-border p-2 z-[var(--z-dropdown)] flex flex-col gap-1"
+                    >
                       <div className="text-xs font-semibold text-contrast-icon-muted px-2 py-1 mb-1 border-b border-surface-border">
                         Search Options
                       </div>
@@ -248,29 +298,33 @@ export default function TranscriptToolbar({
 
               <div className="mx-0.5 h-4 w-px bg-surface-card sm:mx-1" />
 
-              <button
+              <Button
+                size="sm"
                 onClick={nextMatch}
                 disabled={matches.length === 0}
-                className="whitespace-nowrap rounded-md border border-surface-border bg-surface-inset px-2.5 py-1.5 text-xs text-contrast-muted shadow-card hover:bg-surface-inset disabled:cursor-not-allowed disabled:opacity-50 sm:px-3 sm:text-sm"
+                className={`sm:text-sm ${TOOLBAR_BUTTON_TOUCH}`}
               >
                 <span className="sm:hidden">Next</span>
                 <span className="hidden sm:inline">Find Next</span>
-              </button>
-              <button
+              </Button>
+              <Button
+                size="sm"
                 onClick={onReplaceCurrent}
                 disabled={matches.length === 0 || isSubmitting}
-                className="whitespace-nowrap rounded-md border border-surface-border bg-surface-inset px-2.5 py-1.5 text-xs text-contrast-muted shadow-card hover:bg-surface-inset disabled:cursor-not-allowed disabled:opacity-50 sm:px-3 sm:text-sm"
+                className={`sm:text-sm ${TOOLBAR_BUTTON_TOUCH}`}
               >
                 Replace
-              </button>
-              <button
+              </Button>
+              <Button
+                size="sm"
+                variant="primary"
                 onClick={onReplaceAll}
                 disabled={!findText || isSubmitting}
-                className="whitespace-nowrap rounded-md bg-action px-2.5 py-1.5 text-xs text-action-on shadow-card hover:bg-action-hover disabled:cursor-not-allowed disabled:opacity-50 sm:px-3 sm:text-sm"
+                className={`sm:text-sm ${TOOLBAR_BUTTON_TOUCH}`}
               >
                 <span className="sm:hidden">All</span>
                 <span className="hidden sm:inline">Replace All</span>
-              </button>
+              </Button>
             </div>
           )}
         </div>
