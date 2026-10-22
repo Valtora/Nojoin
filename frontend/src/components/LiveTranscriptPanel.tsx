@@ -23,6 +23,7 @@ import { CaptureSourceChannel, TranscriptSegment } from "@/types";
 
 import TimelineNoteLine from "./notes/TimelineNoteLine";
 import LiveLineMenu from "./transcript/LiveLineMenu";
+import TranscriptSelectionNotes from "./transcript/TranscriptSelectionToolbar";
 import TranscriptLineText from "./transcript/TranscriptLineText";
 
 /**
@@ -90,7 +91,10 @@ interface LiveTranscriptPanelProps {
   onDiscardNote?: (key: string) => void;
   /** Rendered under the transcript window: the note box. */
   footer?: ReactNode;
-  /** Puts the note box's next note on a line; without it lines have no menu. */
+  /**
+   * Puts the note box's next note on a line, or on selected text; without it
+   * lines have no menu and a selection no toolbar.
+   */
   onNoteOnLine?: (selection: NoteSelection) => void;
 }
 
@@ -357,6 +361,7 @@ export default function LiveTranscriptPanel({
 
         {footer}
       </div>
+      <TranscriptSelectionNotes root={scrollContainerRef} onNoteOnText={onNoteOnLine} />
     </section>
   );
 }

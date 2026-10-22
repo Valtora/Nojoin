@@ -226,6 +226,9 @@ function TranscriptLine({
             }`}
             onClick={(e) => {
               e.stopPropagation();
+              // The click that ends a drag-select keeps the selection, for
+              // its toolbar, rather than opening the editor over it.
+              if (window.getSelection()?.isCollapsed === false) return;
               actions.startTextEdit(segment, segmentId);
             }}
             title={isSegmentReadOnly ? undefined : "Click to edit text"}

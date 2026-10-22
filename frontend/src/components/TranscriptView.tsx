@@ -24,6 +24,7 @@ import {
 } from "./transcript/transcriptGroups";
 import { formatTime, isRecentlyUpdatedSegment } from "./transcript/transcriptDisplay";
 import TranscriptGroup, { type TranscriptLineShared } from "./transcript/TranscriptGroup";
+import TranscriptSelectionNotes from "./transcript/TranscriptSelectionToolbar";
 import TranscriptToolbar from "./transcript/TranscriptToolbar";
 import { bodyNotesAmongLines, placeTimelineNotes } from "@/lib/notes/placement";
 import type { InlineNote, OutboxDraft } from "@/lib/notes/noteOutbox";
@@ -392,6 +393,7 @@ export default function TranscriptView({
           }),
         ]}
       </div>
+      <TranscriptSelectionNotes root={scrollContainerRef} onAddNote={onAddNote ? addNote : undefined} />
     </div>
   );
 }

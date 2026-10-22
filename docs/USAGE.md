@@ -87,7 +87,7 @@ The box under the live transcript adds a note at a moment in the meeting. Enter 
 - **At send** places it where the recording is when you press Enter.
 - **Before the transcript** and **After the transcript** make a note on the whole meeting, kept with the Notes box. While the Notes box is empty, a note before the transcript becomes its text, which you can go on editing there. Otherwise it is listed under **Other notes**, like every note after the transcript.
 
-To write about one line, choose **Note on this line** from the **⋯** button beside it. The button shows when you point at the line or tab to it, and always on a touch screen, where pressing and holding the line's time also opens it. The line's words appear above the box, and the next note quotes them and follows that line. Remove them with **✕**, or choose another place, and the note is placed as before.
+To write about one line, choose **Note on this line** from the **⋯** button beside it. The button shows when you point at the line or tab to it, and always on a touch screen, where pressing and holding the line's time also opens it. The line's words appear above the box, and the next note quotes them and follows that line. Remove them with **✕**, or choose another place, and the note is placed as before. To write about some of the words, select them, across lines if you like, and choose **Add note** in the bar under them; the note quotes just those words. A line rewritten while you select it keeps the words as you selected them.
 
 A placed note shows on its own line, with its time, after the line being spoken when it was placed. A line still being transcribed can arrive after your note and appears above it. Time spent paused does not count, so a note written during a pause follows the last line before it. The processed transcript shows the note after the line spoken then, and the AI reads it there.
 
@@ -125,6 +125,7 @@ In the transcript:
 - **Low confidence** marks a line whose speaker Nojoin is unsure of and nobody has set by hand.
 - Notes you placed during the meeting ([Live Notes](#live-notes)) show on their own line after the line they follow.
 - The **⋯** button beside a speaker's name opens the line's menu: **Note on this line**, **Edit text**, **Change speaker** and **Play from here**, which plays on rather than stopping at the line's end. It shows when you point at the line or tab to it, and always on a touch screen, where pressing and holding the speaker's name also opens it. In the menu, the arrow keys move and Escape closes it. A note on a line quotes the line's words; Enter saves it and Shift+Enter starts a new line. One that can't be saved waits on its line with **Retry** and **Discard**.
+- Select some text, in one line or across several, for a bar with **Add note** and **Copy**. A note on selected text quotes those words, and its time runs from the first word you touched to the last, estimated from the line's start and end. Clicking to end a selection keeps it rather than opening the editor; Escape or a click elsewhere puts the bar away.
 
 **Export** saves the notes, analytics and transcript as one PDF, Word or text file, or the audio as MP3 ([Exporting A Meeting](#exporting-a-meeting)).
 
