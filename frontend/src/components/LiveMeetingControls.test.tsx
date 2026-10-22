@@ -74,6 +74,30 @@ describe("LiveMeetingControls", () => {
     expect(screen.getByText(/Uploading the last 13:44 of audio/)).toBeInTheDocument();
   });
 
+  // jsdom has no layout. In a 390px viewport the group held one line and put
+  // the speaker cap's increase button 107px past the toolbar card (#538).
+  it("lets Attach Docs and the speaker cap wrap on a narrow card", () => {
+    render(
+      <LiveMeetingControls
+        size="bar"
+        barTrailing={<button type="button">Attach Docs</button>}
+      />,
+    );
+
+    const group = screen.getByRole("button", { name: "Attach Docs" }).parentElement;
+    expect(group?.contains(screen.getByLabelText(/max speakers/i))).toBe(true);
+    expect(group?.className).toContain("flex-wrap");
+    expect(group?.className).not.toContain("shrink-0");
+  });
+
+  // At 360px a fixed 18rem floor put Stop and Discard 10px past the card.
+  it("never holds the transport wider than the card", () => {
+    render(<LiveMeetingControls size="bar" />);
+
+    const transport = screen.getByTitle("Stop recording").parentElement;
+    expect(transport?.className).toContain("min-w-[min(18rem,100%)]");
+  });
+
   it("says a stop is finishing once nothing is left to send", () => {
     captureState.status = "finalizing";
     captureState.stopStage = "finalizing";
