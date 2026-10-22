@@ -433,6 +433,7 @@ only. Build a surface from these before reaching for raw elements.
 | --- | --- |
 | `Button` | Any labelled action. `variant`: primary, secondary, ghost, danger. `size`: sm, md, lg. `loading` disables it and swaps the leading icon for a spinner, keeping the label so the control does not resize. |
 | `IconButton` | An action with no label. `aria-label` is required, as the control's only name. The smallest size draws a 16px glyph in a 40px box, so the target stays reachable. |
+| `touchTarget.ts` | Gives a control at `sm` the full 44 × 44px target on a touch screen: `TOUCH_TARGET_SQUARE` for an `IconButton`, `TOUCH_TARGET_HEIGHT` for a `Button`. The sizes are px, so the smaller root of compact and dense cannot shrink them. |
 | `Card` | The resting surface. `interactive` turns on the tint-and-border hover. |
 | `Badge`, `StatusBadge` | Pills. `StatusBadge` maps a `RecordingStatus` to a tone, a glyph and a label. |
 | `Input`, `Select` | Form fields, both built on the shared `fieldChrome` helper. `Select` is a native select, for the platform picker on a phone; it relies on `color-scheme` (see [Themes](#themes)). |
