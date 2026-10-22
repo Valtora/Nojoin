@@ -1,6 +1,8 @@
 import logging
 import os
 
+from backend.utils.env_comments import clear_comment_values
+
 logger = logging.getLogger(__name__)
 
 # ONNX Runtime's Linux builds upload usage telemetry to Microsoft from 1.29 on
@@ -45,4 +47,7 @@ def setup_secure_umask():
     logger.info("Configured process umask to 0o%04o (was 0o%04o)", umask_val, old_umask)
 
 
+# Ahead of the umask and of every other reader: an operator's .env copied from
+# an older template hands some variables a comment as their value (#520).
+clear_comment_values()
 setup_secure_umask()
