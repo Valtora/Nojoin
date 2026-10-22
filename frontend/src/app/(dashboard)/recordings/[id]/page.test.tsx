@@ -699,9 +699,15 @@ describe("RecordingPage (detail): the recording answers 404", () => {
     cookie = BOB;
 
     await advance(5 * 60_000);
+    // A reload of the view asks nothing either, and stays.
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent("recording-updated", { detail: { id: "rec-1" } }));
+      await vi.advanceTimersByTimeAsync(10);
+    });
 
     expect(getCurrentUser).toHaveBeenCalledTimes(1);
     expect(useSessionStore.getState().signInRequired).toBe(true);
+    expect(routerPush).not.toHaveBeenCalled();
   });
 
   it("leaves a recording that is gone for the account that opened it", async () => {
