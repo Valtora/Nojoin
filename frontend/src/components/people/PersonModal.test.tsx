@@ -136,6 +136,16 @@ describe("PersonModal voiceprint lock", () => {
     );
   });
 
+  it("lets the voiceprint row wrap, so Delete stays in a phone-width dialog", () => {
+    render(modal(dana(true, true)));
+
+    // jsdom has no layout. In a 375px viewport the unwrapped row put Delete
+    // past the dialog's edge once the lock sat beside it.
+    const row = screen.getByText("Voiceprint Active").closest(".justify-between");
+    expect(row?.className).toContain("flex-wrap");
+    expect(row?.contains(screen.getByRole("button", { name: "Delete" }))).toBe(true);
+  });
+
   it("is disabled and says so while the lock is saving", async () => {
     const answer = answerLater();
     render(modal(dana(true, false)));

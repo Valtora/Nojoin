@@ -454,9 +454,13 @@ interface TagNode extends PeopleTag {
                 </h3>
 
                 <div className="flex flex-col gap-4">
-                  {/* Voiceprint Status */}
-                  <div className="flex items-center justify-between p-3 bg-surface-inset rounded-lg border border-surface-border">
-                    <div className="flex items-center gap-3">
+                  {/* Voiceprint Status. Wraps, so that on a phone the
+                      lock and Delete move under the status instead of
+                      pushing Delete out of the dialog. The status claims
+                      12rem before the buttons wrap, so on a wider dialog
+                      its text wraps beside them instead. */}
+                  <div className="flex flex-wrap items-center justify-between gap-3 p-3 bg-surface-inset rounded-lg border border-surface-border">
+                    <div className="flex min-w-0 grow basis-48 items-center gap-3">
                       <div
                         className={`p-2 rounded-full ${person.has_voiceprint ? "bg-status-success-bg text-status-success-fg" : "bg-surface-inset text-contrast-icon-muted text-contrast-helper"}`}
                       >
@@ -481,7 +485,7 @@ interface TagNode extends PeopleTag {
                         )}
                       </div>
                     </div>
-                    <div className="flex items-center gap-1">
+                    <div className="ml-auto flex items-center gap-1">
                       {/* Lock is offered only for a voiceprint; Unlock
                           whenever there is a lock to clear. */}
                       {(person.has_voiceprint || isVoiceprintLocked) && (
