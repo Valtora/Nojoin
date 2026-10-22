@@ -26,9 +26,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import Engine, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlmodel import Session, SQLModel, create_engine
@@ -507,6 +508,55 @@ async def test_a_finalize_that_fails_in_the_database_marks_the_recording_failed(
     )
     assert not Path(row["audio_path"]).exists()
     assert any_env.dispatched == []
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("commit", ["succeeds", "fails"])
+async def test_a_finalize_refused_in_assembly_removes_the_upload_only_once_failed(
+    env: _Env, monkeypatch: pytest.MonkeyPatch, commit: str
+) -> None:
+    """A refusal raised as an HTTP error marks the import failed, then removes
+    its parts and assembled file. Removed first, they went even when marking
+    it failed did not commit, and the recording stayed UPLOADING with chunk
+    rows naming parts that were gone (#536)."""
+    from backend.api.v1.endpoints.recordings import routes_import_upload
+
+    async def _refuse(db, *, recording_id: int, audio_path: str):
+        raise HTTPException(status_code=422, detail="The upload was refused.")
+
+    monkeypatch.setattr(
+        routes_import_upload, "_bootstrap_import_audio_windows", _refuse
+    )
+    if commit == "fails":
+        with env.engine.begin() as connection:
+            connection.execute(
+                text(
+                    "CREATE TRIGGER refuse_failure BEFORE UPDATE OF status"
+                    " ON recordings WHEN NEW.status = 'ERROR'"
+                    " BEGIN SELECT RAISE(ABORT, 'refused'); END"
+                )
+            )
+    source = env.tmp / "screen.mkv"
+    source.write_bytes(b"an upload whose finalize is refused")
+
+    if commit == "fails":
+        with pytest.raises(IntegrityError):
+            await _post(env, "chunked", source)
+        row = _recording(env)
+        assert row["status"] == "UPLOADING"
+        part = recording_upload_temp_dir(row["id"]) / "0.part"
+        assert part.read_bytes() == source.read_bytes()
+        assert Path(row["audio_path"]).is_file()
+    else:
+        response = await _post(env, "chunked", source)
+        assert response.status_code == 422, response.text
+        row = _recording(env)
+        assert (row["status"], row["processing_step"]) == (
+            "ERROR",
+            "The upload was refused.",
+        )
+        assert _files(env.recordings) == []
+    assert env.dispatched == []
 
 
 @pytest.mark.anyio

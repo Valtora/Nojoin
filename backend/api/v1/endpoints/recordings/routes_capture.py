@@ -40,6 +40,7 @@ from backend.utils.document_storage import (
 )
 from backend.utils.rate_limit import enforce_upload_concurrency
 from backend.utils.recording_audio_sync import BROWSER_AUDIO_SEGMENT_SUFFIXES
+from backend.utils.recording_storage import delete_recording_artifacts_after_commit
 from backend.utils.time import utc_now
 from backend.utils.upload_limit import UPLOAD_LIMIT_SEGMENT, stream_and_validate_upload
 
@@ -748,14 +749,11 @@ async def discard_upload(
 
     # Attached documents go with the row by FK cascade, so read their paths
     # first. The lock taken above holds back any document insert until the
-    # delete commits, so none can land between this read and the cascade.
+    # delete commits, so none can land between this read and the cascade. The
+    # files, the upload's segments included, go once the delete has committed,
+    # so a failed commit keeps them for the capture it leaves.
+    artifacts = [(recording.id, recording.audio_path, recording.proxy_path)]
     document_paths = await recording_document_paths(db, [recording.id])
-    recordings_module.delete_recording_artifacts(
-        recording_id=recording.id,
-        audio_path=recording.audio_path,
-        proxy_path=recording.proxy_path,
-        logger=logger,
-    )
 
     await db.execute(
         delete(RecordingAudioChunk).where(
@@ -770,6 +768,7 @@ async def discard_upload(
     await db.execute(delete(Transcript).where(Transcript.recording_id == recording.id))
     await db.execute(delete(Recording).where(Recording.id == recording.id))
     await db.commit()
+    delete_recording_artifacts_after_commit(artifacts, logger=logger)
     await delete_document_files(document_paths, logger=logger)
 
     return {"ok": True}
