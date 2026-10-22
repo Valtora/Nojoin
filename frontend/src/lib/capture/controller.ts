@@ -7,6 +7,7 @@ import {
   getUnfinishedCaptures,
   initRecording,
   isActiveRecordingConflictDetail,
+  isCaptureSupersededError,
   pauseRecordingCapture,
   reportRecordingCaptureSources,
   resumeRecordingCapture,
@@ -33,6 +34,7 @@ import {
 import {
   contiguousSegmentsAfter,
   createSegmentStore,
+  storedSegmentEpoch,
   type SegmentStore,
   type StoredSegment,
 } from "./segmentStore";
@@ -65,6 +67,12 @@ type StateListener = (state: CaptureState) => void;
 
 interface ActiveRuntime {
   recordingId: RecordingId;
+  /**
+   * The capture epoch this tab holds, from init or resume. Every request it
+   * makes for its capture carries it, and the server refuses them once the
+   * capture is resumed in another tab or on another device (issue #570).
+   */
+  epoch: number;
   sources: PickedCaptureSources;
   captureReport: CaptureSourceReportSnapshot;
   mixer: CaptureMixer;
@@ -75,16 +83,16 @@ interface ActiveRuntime {
   mediaReleased?: boolean;
   /** Tells other tabs of this browser that this capture is live. */
   releaseCaptureLock: () => void;
-  /** When the server last answered a request for this capture. */
-  heardFromServerAt: number;
 }
 
 /**
  * A pause this tab has made that the server has not received.
  *
  * The recorder pauses at once. Until the server is told, it holds the capture
- * as uploading, and it refuses to resume a capture it holds as uploading, so
- * the pause is sent when the API next answers and before any resume.
+ * as uploading and, after two minutes, offers it to other tabs and devices as
+ * interrupted, so the pause is sent when the API next answers and before any
+ * resume. It carries this tab's epoch, so it is refused rather than pausing a
+ * capture someone has resumed elsewhere meanwhile.
  */
 interface UnconfirmedPause {
   recordingId: RecordingId;
@@ -189,22 +197,32 @@ const COVERAGE_RECENT_OUTAGE_MS = 5 * 60_000;
  */
 const CAPTURE_RECHECK_INTERVAL_MS = 30_000;
 
-/**
- * How long after the server last heard from this tab's capture no other tab or
- * device can have taken it over.
- *
- * The server offers a capture it holds as uploading to others once it has been
- * quiet for two minutes, judged from activity it records at most every 15
- * seconds (`STALLED_CAPTURE_AFTER` and `LAST_ACTIVITY_WRITE_INTERVAL` on the
- * backend), so 105 seconds after this tab's last answered request at the
- * earliest (issue #519). A pause the server never received is sent late only
- * inside this window. Outside it the capture may have been resumed elsewhere,
- * and a late pause would mark that capture paused under the device running it.
- */
-const UNCONFIRMED_PAUSE_WINDOW_MS = 90_000;
+const describeAudioLength = (seconds: number) =>
+  seconds >= 90
+    ? `${Math.round(seconds / 60)} minutes`
+    : `${Math.max(1, Math.round(seconds))} seconds`;
 
-const canSendPauseLate = (runtime: ActiveRuntime) =>
-  Date.now() - runtime.heardFromServerAt < UNCONFIRMED_PAUSE_WINDOW_MS;
+/** What a tab says once the server refuses it because its capture moved on. */
+const continuedElsewhereMessage = (queuedSeconds: number) =>
+  "This recording continued in another tab or on another device, so this tab " +
+  "has stopped recording it." +
+  (queuedSeconds > 0
+    ? ` About ${describeAudioLength(queuedSeconds)} of audio this tab recorded ` +
+      "had not uploaded and is not in the recording."
+    : "");
+
+/**
+ * The epoch under which audio this browser kept continues the capture.
+ *
+ * A tab resuming its own capture keeps its epoch. A takeover is issued the
+ * next one, and only audio kept under the epoch just before it follows what the
+ * server holds: anything older was queued by a tab whose capture someone else
+ * then carried on, and would land out of order.
+ */
+const continuingEpoch = (
+  response: { capture_epoch: number },
+  heldEpoch: number | undefined,
+) => heldEpoch ?? response.capture_epoch - 1;
 
 /**
  * Whether the API itself answered a failed request, as opposed to the request
@@ -560,6 +578,7 @@ export class CaptureController {
 
       await this.activateRuntime({
         recordingId: initResponse.id,
+        epoch: initResponse.capture_epoch,
         startSequence: 0,
         sources,
         captureReport: sources.captureReport,
@@ -640,10 +659,18 @@ export class CaptureController {
     }
 
     const recordingId = this.state.recordingId;
-    await this.runtime.recorder.pause();
-    await this.runtime.uploader.waitForIdle();
-    this.stopElapsedTimer();
-    const response = await retryAfterSignIn(() => pauseRecordingCapture(recordingId));
+    const runtime = this.runtime;
+    let response;
+    try {
+      await runtime.recorder.pause();
+      await runtime.uploader.waitForIdle();
+      this.stopElapsedTimer();
+      response = await retryAfterSignIn(() =>
+        pauseRecordingCapture(recordingId, { epoch: runtime.epoch }),
+      );
+    } catch (error: unknown) {
+      throw await this.ifContinuedElsewhere(error, runtime);
+    }
     writePausedCaptureContext({
       recordingId: response.recording_id,
       lastSequence: Math.max(response.last_sequence, this.state.lastSequence),
@@ -673,18 +700,27 @@ export class CaptureController {
     // onto those dead tracks would record silence.
     if (
       this.runtime &&
+      this.runtime.recordingId === targetRecordingId &&
       !this.runtime.mediaReleased &&
       this.state.status === "paused"
     ) {
-      await this.confirmUnconfirmedPause();
-      const response = await retryAfterSignIn(() =>
-        resumeRecordingCapture(targetRecordingId),
-      );
-      this.runtime.heardFromServerAt = Date.now();
+      const runtime = this.runtime;
+      let response;
+      try {
+        await this.confirmUnconfirmedPause();
+        // The epoch makes this the tab carrying on with its own capture, which
+        // the server accepts while it still holds the capture as uploading, and
+        // refuses once another tab or device has taken it over.
+        response = await retryAfterSignIn(() =>
+          resumeRecordingCapture(targetRecordingId, { epoch: runtime.epoch }),
+        );
+      } catch (error: unknown) {
+        throw await this.ifContinuedElsewhere(error, runtime);
+      }
       // A stalled uploader (for example after a network outage) still holds
       // the queued segments; recovering it retries them before new audio.
-      this.runtime.uploader.recover();
-      this.runtime.recorder.resume();
+      runtime.uploader.recover();
+      runtime.recorder.resume();
       this.startElapsedTimer(this.state.elapsedSeconds);
       clearPausedCaptureContext();
       this.setState({
@@ -695,7 +731,7 @@ export class CaptureController {
       });
       await this.reportCaptureSourceAttempt(
         targetRecordingId,
-        buildCaptureSourceReportPayload(this.runtime.captureReport, {
+        buildCaptureSourceReportPayload(runtime.captureReport, {
           attempt_kind: "resume",
           outcome: "success",
           notes: ["reused_existing_browser_tracks"],
@@ -719,6 +755,10 @@ export class CaptureController {
       error: null,
     });
 
+    // After a failed stop this tab still holds the capture, with its media
+    // released. It resumes as the holder, so its own uploads, which may still
+    // be sending, are not refused as a takeover's would be.
+    const heldRuntime = this.runtime?.recordingId === targetRecordingId ? this.runtime : null;
     let sources: PickedCaptureSources | null = null;
     let resumeResponse: Awaited<ReturnType<typeof resumeRecordingCapture>> | null = null;
 
@@ -736,17 +776,21 @@ export class CaptureController {
         });
       }
 
-      resumeResponse = await resumeRecordingCapture(targetRecordingId);
+      resumeResponse = await resumeRecordingCapture(targetRecordingId, {
+        epoch: heldRuntime?.epoch,
+      });
       // Audio a previous page recorded but never uploaded goes first, and new
       // audio continues numbering after it.
       const restoredSegments = await this.loadQueuedSegments(
         targetRecordingId,
         resumeResponse.last_sequence,
+        continuingEpoch(resumeResponse, heldRuntime?.epoch),
       );
       const lastRecordedSequence =
         restoredSegments.at(-1)?.sequence ?? resumeResponse.last_sequence;
       await this.activateRuntime({
         recordingId: targetRecordingId,
+        epoch: resumeResponse.capture_epoch,
         startSequence: lastRecordedSequence + 1,
         uploadFromSequence: resumeResponse.last_sequence + 1,
         restoredSegments,
@@ -786,8 +830,12 @@ export class CaptureController {
         );
       }
       sources?.release();
+      if (isCaptureSupersededError(error)) {
+        throw await this.ifContinuedElsewhere(error, heldRuntime);
+      }
       if (resumeResponse) {
-        await pauseRecordingCapture(targetRecordingId).catch(() => {});
+        const epoch = resumeResponse.capture_epoch;
+        await pauseRecordingCapture(targetRecordingId, { epoch }).catch(() => {});
       }
       this.setState({
         status: "error",
@@ -824,13 +872,13 @@ export class CaptureController {
     this.captureActionTicket += 1;
 
     const hadRuntime = Boolean(this.runtime);
+    const runtime = this.runtime;
     // Finalize accepts an uploading recording, and a stop that fails owes the
     // pause again.
     this.forgetUnconfirmedPause();
     this.setState({ status: "finalizing", error: null, finalizeRetry: null });
 
     try {
-      const runtime = this.runtime;
       if (runtime) {
         this.setStopStage("stopping-recorder");
         await withStageTimeout(
@@ -857,6 +905,10 @@ export class CaptureController {
             timeoutMs: UPLOAD_FLUSH_TIMEOUT_MS,
           });
         } catch (flushError: unknown) {
+          // Nothing of this tab's can finish a capture carried on elsewhere.
+          if (isCaptureSupersededError(flushError)) {
+            throw flushError;
+          }
           // Keep going: finalize refuses an incomplete upload with a retryable
           // 409, which is a far better outcome than never calling it.
           console.warn(
@@ -872,6 +924,7 @@ export class CaptureController {
       const recording = await this.finalizeRecordingWhenReady(
         targetRecordingId,
         hadRuntime ? this.state.elapsedSeconds : undefined,
+        runtime?.recordingId === targetRecordingId ? runtime.epoch : undefined,
       );
       clearPausedCaptureContext();
       await this.segmentStore.clear(targetRecordingId).catch(() => {});
@@ -894,6 +947,9 @@ export class CaptureController {
       return recording;
 
     } catch (error: unknown) {
+      if (isCaptureSupersededError(error)) {
+        throw await this.ifContinuedElsewhere(error, runtime);
+      }
       const message = formatCaptureError(error);
       console.error(
         `[capture] stop failed during stage "${this.state.stopStage}"`,
@@ -968,12 +1024,20 @@ export class CaptureController {
     }
     this.captureActionTicket += 1;
 
+    // A tab whose capture continued elsewhere must not delete it from under
+    // the tab now running it. A discard from a dialog or the list sends none.
+    const epoch =
+      this.runtime?.recordingId === targetRecordingId ? this.runtime.epoch : undefined;
     if (this.runtime) {
       await this.runtime.recorder.stop({ emitTail: false }).catch(() => {});
       await this.disposeRuntime();
     }
 
-    await discardRecordingCapture(targetRecordingId);
+    try {
+      await discardRecordingCapture(targetRecordingId, undefined, { epoch });
+    } catch (error: unknown) {
+      throw await this.ifContinuedElsewhere(error, null);
+    }
     // A check that began while the discard was in flight may still list it.
     this.captureActionTicket += 1;
     await this.segmentStore.clear(targetRecordingId).catch(() => {});
@@ -1057,24 +1121,50 @@ export class CaptureController {
    *
    * Anything the server already has, or anything past a gap, is removed from
    * the store: the first is uploaded, the second could never be finalized.
+   * So is audio kept under an epoch other than `epoch`: the capture was
+   * carried on elsewhere after it was recorded, and it would land out of
+   * order or over the audio recorded since (issue #570).
    */
   private loadQueuedSegments = async (
     recordingId: RecordingId,
     serverLastSequence: number,
+    epoch: number,
   ): Promise<StoredSegment[]> => {
     const stored = await this.segmentStore.list(recordingId).catch((error: unknown) => {
       console.warn("[capture] could not read queued segments from the browser", error);
       return [] as StoredSegment[];
     });
-    const usable = contiguousSegmentsAfter(stored, serverLastSequence);
+    const ofThisCapture = stored.filter((segment) => storedSegmentEpoch(segment) === epoch);
+    const usable = contiguousSegmentsAfter(ofThisCapture, serverLastSequence);
     const usableSequences = new Set(usable.map((segment) => segment.sequence));
     for (const segment of stored) {
       if (!usableSequences.has(segment.sequence)) {
         void this.segmentStore.remove(recordingId, segment.sequence).catch(() => {});
       }
     }
+    this.reportLeftOutAudio(
+      stored.filter((segment) => storedSegmentEpoch(segment) !== epoch),
+    );
     return usable;
   };
+
+  private reportLeftOutAudio(leftOut: StoredSegment[]) {
+    if (leftOut.length === 0) {
+      return;
+    }
+    const seconds = leftOut.reduce((total, segment) => total + segment.durationSeconds, 0);
+    console.warn("[capture] left out audio kept from before the capture continued elsewhere", {
+      segments: leftOut.length,
+      seconds,
+    });
+    useNotificationStore.getState().addNotification({
+      type: "warning",
+      message:
+        `About ${describeAudioLength(seconds)} of audio this browser kept for ` +
+        "this recording was left out, because the recording continued in " +
+        "another tab or on another device after it was recorded.",
+    });
+  }
 
   /**
    * Uploads what a previous page recorded but never sent, before a stop.
@@ -1089,14 +1179,21 @@ export class CaptureController {
     }
     this.setStopStage("flushing-uploads");
     // Pausing an already paused recording changes nothing and reports the last
-    // sequence the server holds.
+    // sequence the server holds, and its epoch. Only audio a tab of this
+    // browser kept under that epoch continues the capture, and it is sent
+    // under it, as that tab would have.
     const response = await retryAfterSignIn(() => pauseRecordingCapture(recordingId));
-    const segments = await this.loadQueuedSegments(recordingId, response.last_sequence);
+    const segments = await this.loadQueuedSegments(
+      recordingId,
+      response.last_sequence,
+      response.capture_epoch,
+    );
     if (segments.length === 0) {
       return;
     }
     const uploader = createSegmentUploader({
       recordingId,
+      epoch: response.capture_epoch,
       initialSequence: response.last_sequence + 1,
       store: this.segmentStore,
       onQueueChange: (uploadQueue) => {
@@ -1114,6 +1211,7 @@ export class CaptureController {
 
   private activateRuntime = async (options: {
     recordingId: RecordingId;
+    epoch: number;
     /** First sequence the recorder numbers new audio with. */
     startSequence: number;
     /** First sequence the server is missing, when queued audio precedes new audio. */
@@ -1134,15 +1232,13 @@ export class CaptureController {
 
     const uploader = createSegmentUploader({
       recordingId: options.recordingId,
+      epoch: options.epoch,
       initialSequence: options.uploadFromSequence ?? options.startSequence,
       store: this.segmentStore,
       onQueueChange: (uploadQueue) => {
         this.setState({ uploadQueue });
       },
       onUploaded: (sequence) => {
-        if (this.runtime?.recordingId === options.recordingId) {
-          this.runtime.heardFromServerAt = Date.now();
-        }
         this.setState({
           lastSequence: sequence,
           elapsedSeconds: Math.max(
@@ -1154,6 +1250,13 @@ export class CaptureController {
       },
       onStalled: async (error) => {
         await this.handleUploaderStalled(options.recordingId, error);
+      },
+      onSuperseded: async () => {
+        const runtime = this.runtime;
+        // A stop under way reports it itself, once its flush fails.
+        if (runtime?.uploader === uploader && this.state.status !== "finalizing") {
+          await this.captureContinuedElsewhere(runtime);
+        }
       },
     });
 
@@ -1228,6 +1331,7 @@ export class CaptureController {
 
     this.runtime = {
       recordingId: options.recordingId,
+      epoch: options.epoch,
       sources: options.sources,
       captureReport: options.captureReport,
       mixer,
@@ -1236,8 +1340,6 @@ export class CaptureController {
       waveform,
       displayTracksCleanup,
       releaseCaptureLock: holdCaptureLock(options.recordingId),
-      // Every caller has just had the start or resume accepted.
-      heardFromServerAt: Date.now(),
     };
     this.stopCaptureRecheck();
     this.setState({ runtimeActive: true });
@@ -1325,18 +1427,6 @@ export class CaptureController {
       return null;
     }
 
-    if (!canSendPauseLate(runtime)) {
-      // The capture may have been taken over elsewhere by now. The server
-      // offers it as interrupted once it judges it stalled, and a resume here
-      // asks the server rather than pausing first.
-      console.warn(
-        "[capture] the server never received this pause, and it is too late to send it",
-        pause.recordingId,
-      );
-      this.forgetUnconfirmedPause();
-      return null;
-    }
-
     if (drainFirst) {
       // As with a pause from the controls, the audio this tab kept goes before
       // the pause, so a stop or resume from anywhere afterwards has all of it.
@@ -1352,12 +1442,13 @@ export class CaptureController {
     }
 
     try {
-      const response = await retryAfterSignIn(() => pauseRecordingCapture(pause.recordingId));
+      const response = await retryAfterSignIn(() =>
+        pauseRecordingCapture(pause.recordingId, { epoch: runtime.epoch }),
+      );
       if (this.unconfirmedPause !== pause) {
         return null;
       }
       this.forgetUnconfirmedPause();
-      runtime.heardFromServerAt = Date.now();
       const lastSequence = Math.max(response.last_sequence, this.state.lastSequence);
       writePausedCaptureContext({
         recordingId: response.recording_id,
@@ -1377,6 +1468,11 @@ export class CaptureController {
     } catch (pauseError: unknown) {
       if (this.unconfirmedPause !== pause) {
         return null;
+      }
+      if (isCaptureSupersededError(pauseError)) {
+        this.forgetUnconfirmedPause();
+        await this.captureContinuedElsewhere(runtime);
+        return pauseError;
       }
       if (answeredByServer(pauseError)) {
         // A refusal is the server's answer, and asking again gets the same one.
@@ -1426,8 +1522,67 @@ export class CaptureController {
   };
 
   /** Whether closing the tab still has to tell the server about a pause. */
-  private owesServerPause = () =>
-    Boolean(this.unconfirmedPause && this.runtime && canSendPauseLate(this.runtime));
+  private owesServerPause = () => Boolean(this.unconfirmedPause && this.runtime);
+
+  /**
+   * Stops this tab capturing once the server says the capture was resumed in
+   * another tab or on another device (issue #570).
+   *
+   * Nothing this tab holds can join the recording any more, so its media, Web
+   * Lock and uploader go, and it reads idle. The audio it had not uploaded
+   * stays in this browser's store, under its old epoch, until this browser
+   * next resumes or stops the recording and finds it left behind.
+   */
+  private captureContinuedElsewhere = async (runtime: ActiveRuntime | null) => {
+    if (runtime && this.runtime !== runtime) {
+      return;
+    }
+    const queuedSeconds = runtime?.uploader.pendingAudioSeconds() ?? 0;
+    this.captureActionTicket += 1;
+    if (runtime) {
+      console.warn("[capture] the recording continued elsewhere", runtime.recordingId);
+      await runtime.recorder.stop({ emitTail: false }).catch(() => {});
+      if (this.runtime !== runtime) {
+        return;
+      }
+      await this.disposeRuntime();
+    }
+    clearPausedCaptureContext();
+    this.resetCoverageTracking();
+    this.setState({
+      status: "idle",
+      error: continuedElsewhereMessage(queuedSeconds),
+      lastSequence: -1,
+      elapsedSeconds: 0,
+      recordingId: null,
+      pausedRecording: null,
+      runtimeActive: false,
+      levels: DEFAULT_CAPTURE_LEVELS,
+      finalizeRetry: null,
+      stopStage: null,
+      coverageWarning: null,
+    });
+    this.lifecycle.updateRecordingId(null);
+    // Not awaited: a user action rejects straight after this, and its caller
+    // skips its own toast only while the error above is still set.
+    void this.refreshPausedRecording().catch(() => {});
+  };
+
+  /**
+   * The error a user action rejects with. When the server refused it because
+   * the capture continued elsewhere, this tab stands down first.
+   */
+  private ifContinuedElsewhere = async (
+    error: unknown,
+    runtime: ActiveRuntime | null,
+  ): Promise<unknown> => {
+    if (!isCaptureSupersededError(error)) {
+      return error;
+    }
+    const message = continuedElsewhereMessage(runtime?.uploader.pendingAudioSeconds() ?? 0);
+    await this.captureContinuedElsewhere(runtime);
+    return new Error(this.state.error ?? message);
+  };
 
   /**
    * Asks the backend how much audio it holds, and re-judges coverage.
@@ -1653,13 +1808,14 @@ export class CaptureController {
   private finalizeRecordingWhenReady = async (
     recordingId: RecordingId,
     clientElapsedSeconds?: number,
+    epoch?: number,
   ) => {
     const maxAttempts = FINALIZE_RETRY_DELAYS_MS.length;
     try {
       for (let attempt = 0; ; attempt += 1) {
         try {
           return await retryAfterSignIn(() =>
-            finalizeRecordingCapture(recordingId, { clientElapsedSeconds }),
+            finalizeRecordingCapture(recordingId, { clientElapsedSeconds, epoch }),
           );
 
         } catch (error: unknown) {
@@ -1695,6 +1851,7 @@ export class CaptureController {
 
     const recordingId = this.state.recordingId;
     const lastSequence = this.state.lastSequence;
+    const epoch = this.runtime.epoch;
     // A pause made after an upload stall or a failed stop may not have
     // reached the server yet.
     const serverHoldsPause = this.state.status === "paused" && !this.owesServerPause();
@@ -1714,9 +1871,9 @@ export class CaptureController {
       await this.runtime.recorder.stop({ emitTail: false });
 
       if (!serverHoldsPause) {
-        const paused = request.useBeacon ? sendPauseBeacon(recordingId) : false;
+        const paused = request.useBeacon ? sendPauseBeacon(recordingId, epoch) : false;
         if (!paused) {
-          const response = await pauseRecordingCapture(recordingId);
+          const response = await pauseRecordingCapture(recordingId, { epoch });
           this.setState({
             lastSequence: Math.max(response.last_sequence, lastSequence),
             elapsedSeconds: Math.max(

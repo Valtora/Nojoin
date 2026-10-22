@@ -213,4 +213,5 @@ async def init_upload(
     return RecordingInitResponse(
         id=recording.public_id,
         name=recording.name,
+        capture_epoch=recording.capture_epoch,
     )
