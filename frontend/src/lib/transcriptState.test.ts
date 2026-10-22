@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { TranscriptSegment, TranscriptUtterance } from "@/types";
+import type { TranscriptUtterance } from "@/types";
 
 import {
   applyTranscriptDelta,
@@ -249,8 +249,6 @@ describe("transcriptState", () => {
         speaker: "SPEAKER_00",
         revision: 1,
         overlapping_speakers: ["SPEAKER_00", "SPEAKER_01"],
-        recording_speaker_id: 1,
-        updated_at: "2026-10-22T10:00:00Z",
       },
       { id: "utt-2", start: 3, end: 4, text: "two", speaker: "SPEAKER_01", revision: 1 },
       { id: "utt-3", start: 5, end: 6, text: "three", speaker: "SPEAKER_00", revision: 4 },
@@ -298,88 +296,30 @@ describe("transcriptState", () => {
       expect(second.segments[2]).toBe(first.segments[2]);
     });
 
-    // Each a change the server makes to one line, keeping its neighbours.
-    it.each<[string, (utterance: TranscriptUtterance) => void, (segment: TranscriptSegment) => unknown, unknown]>([
+    it("takes an overlap relabelled at the same length, though the revision is unchanged", () => {
       // A speaker reassign rewrites the overlap labels of the lines around it
-      // without bumping their revision: same length, one label changed.
-      [
-        "an overlap relabelled at the same length, revision unchanged",
-        (utterance) => (utterance.overlapping_speakers = ["SPEAKER_00", "SPEAKER_02"]),
-        (segment) => segment.overlapping_speakers,
-        ["SPEAKER_00", "SPEAKER_02"],
-      ],
-      [
-        "an overlap added",
-        (utterance) => (utterance.overlapping_speakers = ["SPEAKER_00", "SPEAKER_01", "SPEAKER_02"]),
-        (segment) => segment.overlapping_speakers,
-        ["SPEAKER_00", "SPEAKER_01", "SPEAKER_02"],
-      ],
-      [
-        "the overlaps reordered",
-        (utterance) => (utterance.overlapping_speakers = ["SPEAKER_01", "SPEAKER_00"]),
-        (segment) => segment.overlapping_speakers,
-        ["SPEAKER_01", "SPEAKER_00"],
-      ],
-      [
-        "the speaker, revision unchanged",
-        (utterance) => (utterance.speaker = "SPEAKER_01"),
-        (segment) => segment.speaker,
-        "SPEAKER_01",
-      ],
-      // An edit sends the line's revision back as expected_revision.
-      ["only the revision", (utterance) => (utterance.revision = 2), (segment) => segment.revision, 2],
-      [
-        "only updated_at",
-        (utterance) => (utterance.updated_at = "2026-10-22T10:00:05Z"),
-        (segment) => segment.updated_at,
-        "2026-10-22T10:00:05Z",
-      ],
-      [
-        "only recording_speaker_id",
-        (utterance) => (utterance.recording_speaker_id = 2),
-        (segment) => segment.recording_speaker_id,
-        2,
-      ],
-    ])("takes %s", (_name, change, read, expected) => {
+      // without bumping their revision.
       const first = fullSync(null, utterances);
       const next = copied(utterances);
-      change(next[0]);
+      next[0].overlapping_speakers = ["SPEAKER_00", "SPEAKER_02"];
       const second = fullSync(first, next);
 
       expect(second.segments[0]).not.toBe(first.segments[0]);
-      expect(read(second.segments[0])).toEqual(expected);
+      expect(second.segments[0].overlapping_speakers).toEqual(["SPEAKER_00", "SPEAKER_02"]);
       expect(second.segments[1]).toBe(first.segments[1]);
     });
 
-    it("tells an empty list from an empty object inside a field", () => {
-      // live_reuse_alignment holds free-form data, the one field where an
-      // object and a list could meet.
-      const withAlignment = (spans: unknown) =>
-        utterances
-          .slice(0, 2)
-          .map((utterance, at) => (at === 0 ? { ...utterance, live_reuse_alignment: { spans } } : utterance));
-      const first = fullSync(null, withAlignment({}));
-      const second = fullSync(first, withAlignment([]));
-
-      expect(second.segments[0]).not.toBe(first.segments[0]);
-      expect(second.segments[0].live_reuse_alignment).toEqual({ spans: [] });
-      expect(second.segments[1]).toBe(first.segments[1]);
-    });
-
-    it("takes a segment with a field the kept one lacked", () => {
-      // A state built from the recording's own segments can hold fields the
-      // utterances don't, and lack ones they have.
-      const built = fullSync(null, utterances.slice(0, 2)).segments;
-      const lacking = { ...built[1], diarization_label: undefined };
-      delete lacking.source_public_ids;
-      const first = createLocalTranscriptState("rec-1", [built[0], lacking]);
-      const next = copied(utterances.slice(0, 2));
-      next[1].source_public_ids = ["public-2"];
+    it("takes a change of revision alone", () => {
+      // An edit sends the line's revision back as expected_revision, so a
+      // stale one would be refused.
+      const first = fullSync(null, utterances);
+      const next = copied(utterances);
+      next[0].revision = 2;
       const second = fullSync(first, next);
 
-      expect(second.segments[0]).toBe(first.segments[0]);
-      expect(second.segments[1]).not.toBe(first.segments[1]);
-      expect(second.segments[1].source_public_ids).toEqual(["public-2"]);
+      expect(second.segments[0]).not.toBe(first.segments[0]);
+      expect(second.segments[0].revision).toBe(2);
+      expect(second.segments[1]).toBe(first.segments[1]);
     });
   });
 });

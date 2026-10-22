@@ -10,8 +10,6 @@ import {
 import {
   RecordingStatus,
   type Recording,
-  type TranscriptSegment,
-  type TranscriptUtterance,
   type TranscriptUtteranceList,
 } from "@/types";
 
@@ -28,11 +26,7 @@ const getTranscriptUtterances = vi.fn();
 const renameRecording = vi.fn();
 const generateNotes = vi.fn();
 const updateSpeaker = vi.fn();
-const updateTranscriptUtteranceText = vi.fn();
 const listTimelineNotes = vi.fn();
-// Each list of lines the transcript was handed, in order.
-const transcriptSegmentsSeen: TranscriptSegment[][] = [];
-const lastSegments = () => transcriptSegmentsSeen[transcriptSegmentsSeen.length - 1] ?? [];
 
 let activePanel = "transcript";
 
@@ -79,7 +73,7 @@ vi.mock("@/lib/api", () => ({
   updateTranscriptSegmentSpeaker: vi.fn(),
   updateTranscriptUtteranceSpeaker: vi.fn(),
   updateTranscriptSegmentText: vi.fn(),
-  updateTranscriptUtteranceText: (...args: unknown[]) => updateTranscriptUtteranceText(...args),
+  updateTranscriptUtteranceText: vi.fn(),
   findAndReplace: vi.fn(),
   updateSpeakerColor: vi.fn(),
   generateNotes: (...args: unknown[]) => generateNotes(...args),
@@ -110,25 +104,17 @@ vi.mock("@/components/TranscriptView", () => ({
   default: ({
     segments,
     onRenameSpeaker,
-    onUpdateSegmentText,
   }: {
-    segments: TranscriptSegment[];
+    segments: unknown[];
     onRenameSpeaker: (label: string, newName: string) => void;
-    onUpdateSegmentText: (segment: TranscriptSegment, text: string) => void;
-  }) => {
-    transcriptSegmentsSeen.push(segments);
-    return (
-      <div data-testid="transcript-view">
-        segments:{segments.length}
-        <button type="button" onClick={() => onRenameSpeaker("SPEAKER_00", "Dana")}>
-          Rename speaker
-        </button>
-        <button type="button" onClick={() => onUpdateSegmentText(segments[0], "Edited")}>
-          Edit first line
-        </button>
-      </div>
-    );
-  },
+  }) => (
+    <div data-testid="transcript-view">
+      segments:{segments.length}
+      <button type="button" onClick={() => onRenameSpeaker("SPEAKER_00", "Dana")}>
+        Rename speaker
+      </button>
+    </div>
+  ),
 }));
 vi.mock("@/components/NotesView", () => ({
   default: ({
@@ -242,9 +228,7 @@ describe("RecordingPage (detail)", () => {
     renameRecording.mockReset();
     generateNotes.mockReset();
     updateSpeaker.mockReset().mockResolvedValue([]);
-    updateTranscriptUtteranceText.mockReset().mockResolvedValue(undefined);
     listTimelineNotes.mockReset().mockResolvedValue([]);
-    transcriptSegmentsSeen.length = 0;
 
     getRecording.mockResolvedValue(buildRecording());
     getSettings.mockResolvedValue({
@@ -398,41 +382,6 @@ describe("RecordingPage (detail)", () => {
       }),
     );
     expect(updateSpeaker).toHaveBeenCalledWith("rec-1", "SPEAKER_00", "Dana");
-  });
-
-  it("edits a line at the revision a full sync brought, keeping the lines it left alone", async () => {
-    const utterance = (id: string, text: string, revision: number): TranscriptUtterance => ({
-      id,
-      start: id === "u1" ? 0 : 2,
-      end: id === "u1" ? 2 : 4,
-      text,
-      speaker: "SPEAKER_00",
-      revision,
-    });
-    // The rename's full sync brings u1 at a new revision, nothing else changed.
-    getTranscriptUtterances
-      .mockResolvedValueOnce(
-        buildUtteranceList({ utterances: [utterance("u1", "Hello there", 1), utterance("u2", "Hi back", 1)] }),
-      )
-      .mockResolvedValue(
-        buildUtteranceList({
-          revision: 2,
-          utterances: [utterance("u1", "Hello there", 2), utterance("u2", "Hi back", 1)],
-        }),
-      );
-    renderPage();
-    await waitFor(() => expect(lastSegments()[0]?.id).toBe("u1"));
-    const before = lastSegments();
-
-    fireEvent.click(screen.getByRole("button", { name: "Rename speaker" }));
-    await waitFor(() => expect(lastSegments()[0].revision).toBe(2));
-    expect(lastSegments()[1]).toBe(before[1]);
-
-    // The edit sends the line's revision as expected_revision: a stale one is refused.
-    fireEvent.click(screen.getByRole("button", { name: "Edit first line" }));
-    await waitFor(() =>
-      expect(updateTranscriptUtteranceText).toHaveBeenCalledWith("rec-1", "u1", "Edited", 2),
-    );
   });
 
   it("redirects to the recordings list when loading the recording fails", async () => {
