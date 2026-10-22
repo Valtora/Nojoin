@@ -6,9 +6,34 @@ import Fuse from "fuse.js";
 import { TranscriptSegment } from "@/types";
 import { getTranscriptSegmentKey } from "@/lib/transcriptSegments";
 
-import type { SearchDecoration } from "../textDecorations";
+import { sameDecorations, type SearchDecoration } from "../textDecorations";
 
 const NO_DECORATIONS: readonly SearchDecoration[] = [];
+
+type DecorationsByLine = ReadonlyMap<string, readonly SearchDecoration[]>;
+
+/**
+ * `next`, with each line's list swapped for the one it had before when the
+ * two hold the same decorations. A change to any line finds the matches
+ * again, which rebuilds every line's list; this keeps the lines whose matches
+ * didn't move from redrawing.
+ */
+function useKeptDecorations(next: DecorationsByLine): DecorationsByLine {
+  const [state, setState] = useState({ seen: next, kept: next });
+  if (state.seen === next) return state.kept;
+  const kept = new Map<string, readonly SearchDecoration[]>();
+  next.forEach((decorations, segmentId) => {
+    const before = state.kept.get(segmentId);
+    kept.set(
+      segmentId,
+      before && sameDecorations(before, decorations) ? before : decorations,
+    );
+  });
+  // Stored during render, as React's docs do for a value derived from the
+  // previous render; this render already returns the result.
+  setState({ seen: next, kept });
+  return kept;
+}
 
 export interface TranscriptSearchMatch {
   segmentId: string;
@@ -244,11 +269,12 @@ export function useTranscriptSearch(
     );
     return byLine;
   }, [currentMatch, matchesByLine, plainDecorations]);
+  const keptDecorationsByLine = useKeptDecorations(decorationsByLine);
 
   const searchDecorations = useCallback(
     (segmentId: string): readonly SearchDecoration[] =>
-      decorationsByLine.get(segmentId) ?? NO_DECORATIONS,
-    [decorationsByLine],
+      keptDecorationsByLine.get(segmentId) ?? NO_DECORATIONS,
+    [keptDecorationsByLine],
   );
 
   const resetFindReplace = () => {

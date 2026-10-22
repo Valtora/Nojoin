@@ -1,6 +1,6 @@
 "use client";
 
-import { type MouseEventHandler, type ReactNode } from "react";
+import type { MouseEventHandler, ReactNode } from "react";
 
 import { buildTextRuns, type TextDecoration, type TextRun } from "./textDecorations";
 
@@ -95,7 +95,7 @@ const renderRun = (text: string, run: TextRun, index: number): ReactNode => {
  * without knowing which view drew it. `decorations` mark ranges of the text;
  * the paragraph's text is always the line's text, each character once.
  */
-function TranscriptLineText({
+export default function TranscriptLineText({
   text,
   segmentId,
   startMs,
@@ -121,5 +121,3 @@ function TranscriptLineText({
     </p>
   );
 }
-
-export default TranscriptLineText;

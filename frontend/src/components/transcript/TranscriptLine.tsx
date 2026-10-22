@@ -22,15 +22,19 @@ import type { IndexedTranscriptSegment } from "./transcriptGroups";
 import TranscriptLineBadges from "./TranscriptLineBadges";
 import TranscriptLineText from "./TranscriptLineText";
 
-interface TranscriptLineProps {
-  item: IndexedTranscriptSegment;
+/**
+ * The line, its place among all the lines and its key, as separate props:
+ * grouping wraps them anew whenever any line changes, and a line whose own
+ * segment object is unchanged need not redraw.
+ */
+type TranscriptLineProps = Pick<IndexedTranscriptSegment, "segment" | "index" | "segmentId"> & {
   /** Playback is inside this line. */
   isActive: boolean;
   activeSegmentRef: RefObject<HTMLDivElement | null>;
   readOnly: boolean;
   allowProvisionalEdits: boolean;
   speakerMap: Record<string, string>;
-  speakers: RecordingSpeaker[];
+  speakers: readonly RecordingSpeaker[];
   globalSpeakers: GlobalSpeaker[];
   speakerColors: Record<string, string>;
   onUpdateSegmentSpeaker: (
@@ -50,7 +54,7 @@ interface TranscriptLineProps {
   actions: TranscriptLineActions;
   /** The open editor, for a line that shows it; null on every other line. */
   editor: TranscriptOpenEditor | null;
-}
+};
 
 /**
  * One line of the finished transcript: its speaker (click to reassign,
@@ -62,7 +66,9 @@ interface TranscriptLineProps {
  * identity until it means something new.
  */
 function TranscriptLine({
-  item,
+  segment,
+  index,
+  segmentId,
   isActive,
   activeSegmentRef,
   readOnly,
@@ -81,7 +87,6 @@ function TranscriptLine({
   actions,
   editor,
 }: TranscriptLineProps) {
-  const { segment, segmentId } = item;
   const isProvisional = segment.provisional === true;
   const isSegmentReadOnly = readOnly || (isProvisional && !allowProvisionalEdits);
   const speakerName = speakerMap[segment.speaker] || segment.speaker;
@@ -94,7 +99,7 @@ function TranscriptLine({
     <div
       ref={isActive ? activeSegmentRef : null}
       data-segment-id={segmentId}
-      data-order-index={item.index}
+      data-order-index={index}
       className="flex flex-col mb-3 last:mb-0"
     >
       {/* Speaker Label */}

@@ -30,6 +30,29 @@ interface ClampedRange {
   to: number;
 }
 
+/**
+ * Whether two lists hold the same decorations in the same order, field by
+ * field. A memoised group compares by this, and search keeps a line's list
+ * while it holds the same contents, so a rebuilt list redraws nothing. Fields
+ * in a different order count as different: that costs a redraw, never a
+ * stale line.
+ */
+export function sameDecorations(
+  left: readonly TextDecoration[],
+  right: readonly TextDecoration[],
+): boolean {
+  if (left === right) return true;
+  if (left.length !== right.length) return false;
+  return left.every((decoration, index) => {
+    const mine = Object.entries(decoration);
+    const theirs = Object.entries(right[index]);
+    return (
+      mine.length === theirs.length &&
+      mine.every(([key, value], at) => theirs[at][0] === key && Object.is(theirs[at][1], value))
+    );
+  });
+}
+
 const clamp = (value: number, length: number) =>
   Math.min(Math.max(0, value), length);
 

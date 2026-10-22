@@ -15,16 +15,15 @@ import { useTranscriptSearch } from "./transcript/_hooks/useTranscriptSearch";
 import { useTranscriptScroll } from "./transcript/_hooks/useTranscriptScroll";
 import { useTranscriptEditing } from "./transcript/_hooks/useTranscriptEditing";
 import { useStableCallback } from "./transcript/_hooks/useStableCallback";
+import { useContentStable } from "./transcript/_hooks/useContentStable";
 import {
   buildTranscriptGroups,
   indexSegments,
+  LINE_KEY_SEPARATOR,
   type IndexedTranscriptSegment,
 } from "./transcript/transcriptGroups";
 import { formatTime, isRecentlyUpdatedSegment } from "./transcript/transcriptDisplay";
-import TranscriptGroup, {
-  LINE_KEY_SEPARATOR,
-  type TranscriptLineShared,
-} from "./transcript/TranscriptGroup";
+import TranscriptGroup, { type TranscriptLineShared } from "./transcript/TranscriptGroup";
 import TranscriptToolbar from "./transcript/TranscriptToolbar";
 import { bodyNotesAmongLines, placeTimelineNotes } from "@/lib/notes/placement";
 import TimelineNoteLine from "./notes/TimelineNoteLine";
@@ -38,7 +37,7 @@ interface TranscriptViewProps {
   onPause: () => void;
   onResume: () => void;
   speakerMap: Record<string, string>;
-  speakers: RecordingSpeaker[];
+  speakers: readonly RecordingSpeaker[];
   globalSpeakers: GlobalSpeaker[];
   onRenameSpeaker: (label: string, newName: string) => void | Promise<void>;
   onUpdateSegmentSpeaker: (
@@ -66,13 +65,13 @@ interface TranscriptViewProps {
   emptyStateTitle?: string;
   emptyStateDescription?: string;
   onActiveEditUtteranceChange?: (utteranceId: string | null) => void;
-  pendingRemoteUtteranceIds?: string[];
+  pendingRemoteUtteranceIds?: readonly string[];
   /** The recording's notes; point and selection notes show among the lines. */
   timelineNotes?: readonly TimelineNote[] | null;
 }
 
 // One empty list for every render, so the memoised lines it reaches hold.
-const NO_PENDING_UPDATES: string[] = [];
+const NO_PENDING_UPDATES: readonly string[] = [];
 
 const NOTE_TIME_COLUMN =
   "min-w-16 md:min-w-[60px] shrink-0 pt-1 text-right font-mono text-sm text-contrast-icon-muted";
@@ -90,14 +89,14 @@ export default function TranscriptView({
   isPlaying,
   onPause,
   onResume,
-  speakerMap,
-  speakers,
-  globalSpeakers,
+  speakerMap: speakerMapProp,
+  speakers: speakersProp,
+  globalSpeakers: globalSpeakersProp,
   onRenameSpeaker,
   onUpdateSegmentSpeaker,
   onUpdateSegmentText,
   onFindAndReplace,
-  speakerColors,
+  speakerColors: speakerColorsProp,
   onUndo,
   onRedo,
   canUndo,
@@ -109,12 +108,20 @@ export default function TranscriptView({
   emptyStateTitle = "No transcript segments",
   emptyStateDescription,
   onActiveEditUtteranceChange,
-  pendingRemoteUtteranceIds = NO_PENDING_UPDATES,
+  pendingRemoteUtteranceIds: pendingRemoteUtteranceIdsProp = NO_PENDING_UPDATES,
   timelineNotes,
 }: TranscriptViewProps) {
   // Find & Replace toolbar visibility (search match state lives in the hook)
   const [showSearch, setShowSearch] = useState(false);
   const [showReplace, setShowReplace] = useState(false);
+
+  // The recording page's poll hands these over anew every few seconds, most
+  // often with the same contents; every line reads them.
+  const speakerMap = useContentStable(speakerMapProp);
+  const speakers = useContentStable(speakersProp);
+  const globalSpeakers = useContentStable(globalSpeakersProp);
+  const speakerColors = useContentStable(speakerColorsProp);
+  const pendingRemoteUtteranceIds = useContentStable(pendingRemoteUtteranceIdsProp);
 
   const pendingRemoteUtteranceIdSet = useMemo(
     () => new Set(pendingRemoteUtteranceIds),
@@ -321,13 +328,16 @@ export default function TranscriptView({
             const groupKey = group.items.map((item) => item.segmentId).join("|");
             const notesAfterGroup =
               notesAmongLines.afterLine.get(group.items[group.items.length - 1].index) ?? [];
+            const isGroupActive = currentTime >= group.start && currentTime < group.end;
 
             return (
               <Fragment key={groupKey || groupIndex}>
                 <TranscriptGroup
                   group={group}
-                  isGroupActive={currentTime >= group.start && currentTime < group.end}
-                  isPlaying={isPlaying}
+                  isGroupActive={isGroupActive}
+                  // Only the group playback is in shows play or pause, so
+                  // only it redraws when playback starts or stops.
+                  isPlaying={isPlaying && isGroupActive}
                   onPlaySegment={playSegment}
                   onPause={pause}
                   onResume={resume}

@@ -34,6 +34,10 @@ export interface SpeakerPopover {
   /**
    * What the popover sits against, and what a click may land on without
    * closing it: the speaker's name, or a menu's button.
+   *
+   * It must stay mounted while the popover is open, such as a menu's ⋯
+   * trigger, never an item inside a menu that closes: the popover is placed
+   * against it and would be left pointing at a detached node.
    */
   anchor: HTMLElement;
 }

@@ -16,11 +16,13 @@ import type {
   TranscriptLineActions,
   TranscriptOpenEditor,
 } from "./_hooks/useTranscriptEditing";
-import type { TextDecoration } from "./textDecorations";
+import { sameDecorations, type TextDecoration } from "./textDecorations";
 import { formatTime } from "./transcriptDisplay";
-import type {
-  IndexedTranscriptSegment,
-  TranscriptGroup as TranscriptGroupData,
+import {
+  LINE_KEY_SEPARATOR,
+  sameGroup,
+  type IndexedTranscriptSegment,
+  type TranscriptGroup as TranscriptGroupData,
 } from "./transcriptGroups";
 import TranscriptLine from "./TranscriptLine";
 
@@ -30,7 +32,7 @@ export interface TranscriptLineShared {
   readOnly: boolean;
   allowProvisionalEdits: boolean;
   speakerMap: Record<string, string>;
-  speakers: RecordingSpeaker[];
+  speakers: readonly RecordingSpeaker[];
   globalSpeakers: GlobalSpeaker[];
   speakerColors: Record<string, string>;
   onUpdateSegmentSpeaker: (
@@ -44,6 +46,7 @@ export interface TranscriptLineShared {
 interface TranscriptGroupProps {
   group: TranscriptGroupData;
   isGroupActive: boolean;
+  /** Playback is running and inside this group: false for every other group. */
   isPlaying: boolean;
   onPlaySegment: (start: number, end: number) => void;
   onPause: () => void;
@@ -63,9 +66,6 @@ interface TranscriptGroupProps {
   /** The open editor when one of this group's lines shows it, else null. */
   editor: TranscriptOpenEditor | null;
 }
-
-/** Separates the keys in `activeLineKeys` and `recentLineKeys`. */
-export const LINE_KEY_SEPARATOR = "\n";
 
 /**
  * A run of lines that overlap in time, under one timestamp and play button.
@@ -105,7 +105,9 @@ function TranscriptGroup({
     return (
       <TranscriptLine
         key={segmentId}
-        item={item}
+        segment={segment}
+        index={item.index}
+        segmentId={segmentId}
         isActive={activeKeys.includes(segmentId)}
         activeSegmentRef={lineShared.activeSegmentRef}
         readOnly={lineShared.readOnly}
@@ -229,4 +231,38 @@ function TranscriptGroup({
   );
 }
 
-export default memo(TranscriptGroup);
+/**
+ * Every prop by identity, except three that are rebuilt more often than they
+ * change: the group, which grouping makes anew whenever any line changes; the
+ * speaker order, which only matters for this group's speakers; and the search
+ * decorations, a function that is new whenever any line's matches change.
+ * Those compare by what this group would draw from them.
+ */
+function sameGroupProps(previous: TranscriptGroupProps, next: TranscriptGroupProps): boolean {
+  const keys = Object.keys(next) as (keyof TranscriptGroupProps)[];
+  return (
+    keys.length === Object.keys(previous).length &&
+    keys.every((key) => {
+      switch (key) {
+        case "group":
+          return sameGroup(previous.group, next.group);
+        case "speakerDisplayOrder":
+          return [...next.group.involved].every(
+            (speaker) =>
+              previous.speakerDisplayOrder.get(speaker) === next.speakerDisplayOrder.get(speaker),
+          );
+        case "searchDecorations":
+          return next.group.items.every(({ segmentId }) =>
+            sameDecorations(
+              previous.searchDecorations(segmentId),
+              next.searchDecorations(segmentId),
+            ),
+          );
+        default:
+          return Object.is(previous[key], next[key]);
+      }
+    })
+  );
+}
+
+export default memo(TranscriptGroup, sameGroupProps);
