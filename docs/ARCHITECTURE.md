@@ -448,8 +448,9 @@ All three carry the user's `token_version` and are checked against the `revoked_
   - more than half of the stored paths relative to the working directory naming missing files;
   - more than half of a directory's recognised files past the grace unreferenced, which no option lifts, logged at ERROR when the run would remove files and at WARNING otherwise;
   - removing more than 10% of a directory's files or bytes, which `--allow-bulk <directory> --expect <count>`, given once per directory, lifts for that directory when the count is the dry run's;
-  - the restore lock held or unreadable. It is read before the listing, before the first unlink and again every 25 flagged files, and fails closed, because a restore proceeds without it when Redis is down. Its 6-hour expiry bounds what it covers.
-- **Audit.** Every removed file is logged at INFO with its size, mtime and category, and a trip at WARNING with its rules. A run that removes nothing lists its candidates, the daily run up to 50.
+  - the restore lock held or unreadable. It is read before the listing, before the first unlink and again every 25 flagged files, and fails closed, because a restore proceeds without it when Redis is down. Its 6-hour expiry bounds what it covers;
+  - in a deleting run that every other rule lets through, a directory whose clock trails the worker's by more than an hour, logged at ERROR. The grace compares mtimes with the worker's clock, and on an NFS or SMB mount the server sets them. The run writes a probe, `.nojoin-hygiene-clock-<uuid hex>`, in each scanned directory that exists, reads its mtime back from the filesystem after the write and removes it in a `finally`. A probe that cannot be written trips the rule, which fails closed. The probe is a dotfile, so no listing, concurrent ones included, ever sees it. A report-only run, or one another rule stops (a restore included), writes nothing, and a clock running ahead only keeps more files, so it needs no rule.
+- **Audit.** Every removed file is logged at INFO with its size, mtime and category, and a trip at WARNING with its rules, or at ERROR where noted above. A run that removes nothing lists its candidates, the daily run up to 50.
 
 ### Data Model
 

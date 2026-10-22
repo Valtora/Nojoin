@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 import time
 import uuid
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -26,12 +26,15 @@ from backend.models.document import Document
 from backend.models.pipeline import RecordingAudioChunk
 from backend.models.recording import Recording, RecordingStatus
 from backend.models.user import User
+from backend.utils import storage_hygiene
 from backend.utils.path_manager import PathManager
 from backend.utils.storage_hygiene import (
     HygieneOptions,
     HygieneReport,
     run_storage_hygiene,
 )
+from backend.utils.storage_hygiene_report import BreakerTrip
+from backend.utils.storage_hygiene_scan import ScanDirectory
 
 POSTGRES_SCHEMA = "storage_hygiene_test"
 HOUR = 60 * 60
@@ -88,6 +91,21 @@ def write_file(path: Path, *, size: int = 10, age_hours: float = OLD) -> Path:
 def set_age(path: Path, age_hours: float, *, now: float | None = None) -> None:
     moment = (time.time() if now is None else now) - age_hours * HOUR
     os.utime(path, (moment, moment), follow_symlinks=False)
+
+
+def read_only_after_the_clock_check(
+    monkeypatch: pytest.MonkeyPatch, directory: Path
+) -> None:
+    """Make ``directory`` read-only once the clock rule has written its probe
+    there, so its unlinks fail. One read-only from the start trips that rule."""
+    check = storage_hygiene.clock_trips
+
+    def check_then_lock(directories: Sequence[ScanDirectory]) -> list[BreakerTrip]:
+        trips = check(directories)
+        directory.chmod(0o500)
+        return trips
+
+    monkeypatch.setattr(storage_hygiene, "clock_trips", check_then_lock)
 
 
 SQLITE_TABLES = (User, Recording, Document, RecordingAudioChunk)

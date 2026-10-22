@@ -2,11 +2,17 @@
 
 Every rule only ever refuses. Only the bulk rule can be lifted, for one named
 directory and an expected count of files, so no single flag removes most of a
-directory: the split-brain rule refuses that whatever is passed.
+directory: the split-brain rule refuses that whatever is passed. The clock rule
+is the only one that writes: when a deleting run passes every other rule, a
+probe in each directory, which it removes again.
 """
 
 from __future__ import annotations
 
+import logging
+import os
+import time
+import uuid
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -15,6 +21,7 @@ from backend.core.backup.format import RESTORE_LOCK_KEY
 from backend.utils.path_manager import PathManager
 from backend.utils.storage_hygiene_report import (
     RULE_BULK,
+    RULE_CLOCK,
     RULE_DATA_ROOT,
     RULE_EMPTY_TABLE,
     RULE_MISSING_FILES,
@@ -28,6 +35,8 @@ from backend.utils.storage_hygiene_report import (
 )
 from backend.utils.storage_hygiene_scan import References, ScanDirectory
 
+logger = logging.getLogger("backend.utils.storage_hygiene")
+
 # Over this share of one category's stored paths naming missing files, data/ is
 # probably not this database's, as when a fresh Postgres volume sits behind an
 # old data mount. Measured per category so plentiful documents cannot dilute
@@ -39,6 +48,11 @@ MAX_UNREFERENCED_PERCENT = 50
 # Over this share of one directory's files or bytes, a run is a bulk removal,
 # which needs --allow-bulk for that directory and the expected count.
 MAX_REMOVED_PERCENT = 10
+# Over this many seconds between a fresh probe's mtime and the worker's clock,
+# the grace would let go of files written within it.
+MAX_CLOCK_LAG_SECONDS = 60 * 60
+# A dotfile, so no listing, this run's or a concurrent one's, ever includes it.
+CLOCK_PROBE_PREFIX = ".nojoin-hygiene-clock-"
 
 
 def _data_root_trips(directories: Sequence[ScanDirectory]) -> list[BreakerTrip]:
@@ -164,6 +178,69 @@ def breaker_trips(
     trips.extend(_working_directory_trips(references))
     trips.extend(_split_brain_trips(directories))
     trips.extend(_bulk_trips(directories, allowances))
+    return trips
+
+
+def _write_probe(path: Path) -> None:
+    """Create the probe and push a write through, so the filesystem sets its
+    mtime as it does for every stored file."""
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        os.write(descriptor, b"Nojoin storage hygiene clock probe\n")
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def _remove_probe(path: Path) -> None:
+    try:
+        # A probe that was never created leaves nothing to remove, and on a
+        # read-only filesystem unlinking it would fail for that reason too.
+        if os.path.lexists(path):
+            os.unlink(path)
+    except OSError as error:
+        logger.warning("Storage hygiene could not remove its probe %s: %s", path, error)
+
+
+def _clock_trip(directory: Path) -> BreakerTrip | None:
+    probe = directory / f"{CLOCK_PROBE_PREFIX}{uuid.uuid4().hex}"
+    try:
+        _write_probe(probe)
+        # The mtime the filesystem gives the probe, read back after the write.
+        lag = time.time() - os.stat(probe).st_mtime_ns / 1_000_000_000
+    except OSError as error:
+        return BreakerTrip(
+            RULE_CLOCK,
+            f"{directory}: could not write and read back a probe to check its "
+            f"clock: {str(error).rstrip('.')}",
+        )
+    finally:
+        _remove_probe(probe)
+    if lag > MAX_CLOCK_LAG_SECONDS:
+        return BreakerTrip(
+            RULE_CLOCK,
+            f"{directory}: its clock is {lag / 3600:.1f} hours behind this worker's, "
+            "so files written within the 24-hour grace would look older",
+        )
+    return None
+
+
+def clock_trips(directories: Sequence[ScanDirectory]) -> list[BreakerTrip]:
+    """Why each directory's clock cannot be trusted for the grace, from a probe
+    written there. Only for a run about to remove files: one that reports, or
+    that another rule stops, writes nothing.
+
+    The grace compares each file's mtime with this worker's clock, but on an NFS
+    or SMB mount the server sets the mtime. A clock running ahead only keeps more
+    files. A directory that is not there holds nothing to remove.
+    """
+    trips: list[BreakerTrip] = []
+    for directory in directories:
+        if not directory.path.is_dir():
+            continue
+        trip = _clock_trip(directory.path)
+        if trip is not None:
+            trips.append(trip)
     return trips
 
 

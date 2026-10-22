@@ -9,7 +9,9 @@ every stored path in one statement, soft-deleted rows included, then subtracts
 (:mod:`backend.utils.storage_hygiene_scan` says what keeps a file). A row that
 commits after the listing can only add references, and a file written after it
 is not in the listing at all. Only unreferenced files older than the grace,
-under names Nojoin writes, are candidates. Before unlinking, the rows are read
+under names Nojoin writes, are candidates. The grace is measured with this
+worker's clock, so a run about to remove files first checks, with a probe
+file, that no directory's clock trails it. Before unlinking, the rows are read
 again, the restore lock is read every few files, and each file's inode and
 mtime are checked once more. The circuit breaker
 (:mod:`backend.utils.storage_hygiene_breaker`) turns a run that looks wrong into
@@ -31,6 +33,7 @@ from sqlmodel import Session
 
 from backend.utils.storage_hygiene_breaker import (
     breaker_trips,
+    clock_trips,
     open_redis_client,
     restore_lock_trip,
 )
@@ -43,6 +46,7 @@ from backend.utils.storage_hygiene_report import (
     PARTIAL_UPLOADS,
     PROXIES,
     RULE_BULK,
+    RULE_CLOCK,
     RULE_DATA_ROOT,
     RULE_EMPTY_TABLE,
     RULE_MISSING_FILES,
@@ -74,6 +78,7 @@ __all__ = [
     "PARTIAL_UPLOADS",
     "PROXIES",
     "RULE_BULK",
+    "RULE_CLOCK",
     "RULE_DATA_ROOT",
     "RULE_EMPTY_TABLE",
     "RULE_MISSING_FILES",
@@ -110,7 +115,7 @@ class HygieneOptions:
     may remove from it although that is over a tenth of it; any other count
     still trips. ``now`` and ``redis_client`` are seams for tests: the time the
     grace is measured from, and what opens the client the restore lock is read
-    through.
+    through. The clock rule reads the worker's own clock, never ``now``.
     """
 
     delete: bool = False
@@ -257,9 +262,12 @@ def _delete(
 
 def _log_run(report: HygieneReport) -> None:
     if report.tripped:
-        # A split brain that would have cost files is an error; in a run that
-        # only reports, as the daily flag mode does, a warning is enough.
-        severe = report.delete_requested and RULE_SPLIT_BRAIN in report.rules
+        # A split brain or a lagging clock that would have cost files is an
+        # error; in a run that only reports, as the daily flag mode does, a
+        # warning is enough.
+        severe = report.delete_requested and any(
+            rule in report.rules for rule in (RULE_SPLIT_BRAIN, RULE_CLOCK)
+        )
         logger.log(
             logging.ERROR if severe else logging.WARNING,
             "Storage hygiene circuit breaker tripped (%s): %s",
@@ -308,6 +316,11 @@ def run_storage_hygiene(
     report.breaker = breaker_trips(scanned, report.directories, references, allowances)
     if lock_trip is not None:
         report.breaker.append(lock_trip)
+    # Only a run that would go on to remove files writes its probes, so a run
+    # that reports, or that another rule stops, during a restore included,
+    # writes nothing.
+    if options.delete and not report.breaker:
+        report.breaker = clock_trips(scanned)
 
     if options.delete and not report.breaker:
         _delete(candidates, report, session_factory, options)

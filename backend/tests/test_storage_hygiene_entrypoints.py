@@ -28,6 +28,7 @@ from backend.tests.storage_hygiene_harness import (
     add_referenced_audio,
     add_referenced_documents,
     make_layout,
+    read_only_after_the_clock_check,
     sqlite_engine,
     uuid_name,
     write_file,
@@ -319,7 +320,7 @@ def test_no_flag_removes_most_of_a_directory(
 def test_the_cli_exits_3_when_a_file_cannot_be_removed(
     layout: Layout, db: Engine, orphan: Path, monkeypatch: pytest.MonkeyPatch, capsys
 ) -> None:
-    layout.recordings.chmod(0o500)
+    read_only_after_the_clock_check(monkeypatch, layout.recordings)
     try:
         code, out = _cli(db, monkeypatch, capsys, "--delete")
     finally:
