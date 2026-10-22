@@ -11,14 +11,15 @@ import {
   server,
 } from "@/test/fakeNotesServer";
 
-import { NoteOutbox, type ComposerDraft } from "./noteOutbox";
+import { NoteOutbox, shownNotes, type ComposerDraft } from "./noteOutbox";
 import { persistNoteOutbox, readStoredOutbox } from "./notePersistence";
 import {
+  clearStoredNotes,
   IndexedDbNoteStore,
-  keepOnlyNotesOf,
   MemoryNoteStore,
   NOTE_RECORD_VERSION,
   setNoteStoreForTests,
+  storedNotesSignedIn,
   type NoteStore,
   type StoredOutbox,
 } from "./noteStore";
@@ -30,8 +31,11 @@ vi.mock("@/lib/api", async (importOriginal) => ({
 
 const RECORDING = "rec-1";
 const DRAFT: ComposerDraft = { text: "Half a thought", mode: "typing", typingStartMs: 70_000 };
+const ALICE = 1;
+const BOB = 2;
 
-const signedIn = (username: string) => noteSignedIn({ username, force_password_change: false });
+const signedIn = (username: string, id: number) =>
+  noteSignedIn({ username, force_password_change: false, id });
 
 const settle = async () => {
   for (let index = 0; index < 10; index += 1) await Promise.resolve();
@@ -64,11 +68,31 @@ const closePages = () => {
   pages = [];
 };
 
-const stored = async (store: NoteStore, account = "alice") =>
+const stored = async (store: NoteStore, account = ALICE) =>
   (await store.get(account, RECORDING)) as StoredOutbox | undefined;
 
-const storedNoteIds = async (store: NoteStore, account = "alice") =>
+const storedNoteIds = async (store: NoteStore, account = ALICE) =>
   ((await stored(store, account))?.notes ?? []).map((note) => (note as { id: string }).id);
+
+/** Records every write to `store`, and how many were under way at once. */
+const watchWrites = (store: NoteStore) => {
+  const writes: StoredOutbox[] = [];
+  let running = 0;
+  const seen = { most: 0 };
+  const put = store.put.bind(store);
+  vi.spyOn(store, "put").mockImplementation(async (record) => {
+    writes.push(structuredClone(record));
+    running += 1;
+    seen.most = Math.max(seen.most, running);
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      await put(record);
+    } finally {
+      running -= 1;
+    }
+  });
+  return { writes, seen };
+};
 
 /** A page as alice with one note whose create failed, one whose answer was lost, and text in the box. */
 const leaveUnsavedNotes = async (store: NoteStore) => {
@@ -95,7 +119,7 @@ describe("a note outbox kept in the browser", () => {
   beforeEach(() => {
     resetNotesServer();
     resetSessionForTests();
-    signedIn("alice");
+    signedIn("alice", ALICE);
     store = new IndexedDbNoteStore(new IDBFactory());
   });
 
@@ -142,39 +166,96 @@ describe("a note outbox kept in the browser", () => {
     const creates = server.creates.length;
     closePages();
 
-    signedIn("bob");
-    await keepOnlyNotesOf("bob");
+    signedIn("bob", BOB);
+    await storedNotesSignedIn(BOB);
     const outbox = await openPageAndRead(store);
 
     expect(outbox.getSnapshot().entries).toEqual([]);
     expect(outbox.getSnapshot().draft.text).toBe("");
     expect(server.creates).toHaveLength(creates);
-    expect(await stored(store, "alice")).toBeUndefined();
+    expect(await stored(store, ALICE)).toBeUndefined();
 
     // Back as alice: what bob's sign-in removed stays gone.
     closePages();
-    signedIn("alice");
+    signedIn("alice", ALICE);
+    await storedNotesSignedIn(ALICE);
     const again = await openPageAndRead(store);
     expect(again.getSnapshot().entries).toEqual([]);
     expect(again.getSnapshot().draft.text).toBe("");
     expect(server.creates).toHaveLength(creates);
   });
 
-  it("reads nothing until the session says who is signed in", async () => {
+  it("keeps an account's notes through a rename, and sends them after it signs in under the new name", async () => {
+    setNoteStoreForTests(store);
+    const before = await leaveUnsavedNotes(store);
+    closePages();
+
+    // alice is renamed alice2 (by herself, or by an administrator) and signs in again.
+    resetSessionForTests();
+    signedIn("alice2", ALICE);
+    await storedNotesSignedIn(ALICE);
+    const outbox = openPage(store);
+
+    await vi.waitFor(() => expect(outbox.getSnapshot().draft).toEqual(DRAFT));
+    await vi.waitFor(() => expect(server.notes.has(before[0].id)).toBe(true));
+    expect(server.notes.size).toBe(2);
+  });
+
+  it("stores nothing while the browser is signed in as another account, and writes afresh once the owner is back", async () => {
+    setNoteStoreForTests(store);
+    await storedNotesSignedIn(ALICE);
+    const tab = await openPageAndRead(store);
+
+    // Another tab signs in as bob; with nothing unsaved, nothing holds sign-in,
+    // and this tab finds out from /users/me.
+    signedIn("bob", BOB);
+    await storedNotesSignedIn(BOB);
+    tab.setDraft({ ...DRAFT, text: "bob's private text" });
+    await settle();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(await stored(store, ALICE)).toBeUndefined();
+    expect(await stored(store, BOB)).toBeUndefined();
+
+    // bob's reload finds nothing; alice's later sign-in finds nothing of bob's.
+    closePages();
+    const bobPage = await openPageAndRead(store);
+    expect(bobPage.getSnapshot().draft.text).toBe("");
+    closePages();
+    resetSessionForTests();
+    signedIn("alice", ALICE);
+    await storedNotesSignedIn(ALICE);
+    const alicePage = await openPageAndRead(store);
+    expect(alicePage.getSnapshot().draft.text).toBe("");
+
+    // The owner back on a page that stayed open: its text is written afresh.
+    const owned = openPage(store);
+    await vi.waitFor(() => expect(pages).toHaveLength(2));
+    owned.setDraft(DRAFT);
+    signedIn("bob", BOB);
+    owned.setDraft({ ...DRAFT, text: "typed meanwhile" });
+    signedIn("alice", ALICE);
+    await vi.waitFor(async () =>
+      expect((await stored(store, ALICE))?.draft).toEqual({ ...DRAFT, text: "typed meanwhile" }),
+    );
+  });
+
+  it("reads nothing until the session says which account is signed in", async () => {
     await leaveUnsavedNotes(store);
     closePages();
     resetSessionForTests();
     const get = vi.spyOn(store, "get");
 
     const outbox = openPage(store);
-    useSessionStore.setState({ signInRequired: true, username: "alice" });
+    useSessionStore.setState({ username: "alice" });
+    await settle();
+    useSessionStore.setState({ signInRequired: true, userId: ALICE });
     await settle();
     expect(get).not.toHaveBeenCalled();
     expect(outbox.getSnapshot().entries).toEqual([]);
 
-    signedIn("alice");
+    signedIn("alice", ALICE);
     await vi.waitFor(() => expect(outbox.getSnapshot().draft).toEqual(DRAFT));
-    expect(get).toHaveBeenCalledWith("alice", RECORDING);
+    expect(get).toHaveBeenCalledWith(ALICE, RECORDING);
   });
 
   it("restores nothing to a page that went away before its read finished", async () => {
@@ -199,10 +280,61 @@ describe("a note outbox kept in the browser", () => {
     await vi.waitFor(async () => expect(await stored(store)).toBeDefined());
 
     useSessionStore.setState({ signInRequired: true });
-    await store.keepOnly("bob");
-    signedIn("alice");
+    await store.keepOnly([BOB]);
+    signedIn("alice", ALICE);
 
     await vi.waitFor(async () => expect((await stored(store))?.draft).toEqual(DRAFT));
+  });
+
+  it("stores nothing after signing out, and writes again once the page signs back in", async () => {
+    setNoteStoreForTests(store);
+    const outbox = new NoteOutbox(RECORDING);
+    pages.push(persistNoteOutbox(outbox, RECORDING));
+    outbox.setDraft(DRAFT);
+    await vi.waitFor(async () => expect(await stored(store)).toBeDefined());
+
+    await clearStoredNotes();
+    expect(await stored(store)).toBeUndefined();
+    outbox.setDraft({ ...DRAFT, text: "after signing out" });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(await stored(store)).toBeUndefined();
+
+    // The leave prompt was cancelled; the user signs in on the page.
+    await storedNotesSignedIn();
+    await vi.waitFor(async () =>
+      expect((await stored(store))?.draft).toEqual({ ...DRAFT, text: "after signing out" }),
+    );
+  });
+
+  it("never keeps a sent note together with the text it was sent from", async () => {
+    const { writes } = watchWrites(store);
+    const outbox = await openPageAndRead(store);
+    outbox.setDraft({ ...DRAFT, text: "Budget agreed", mode: "send" });
+    await vi.waitFor(() => expect(writes).toHaveLength(1));
+
+    outbox.submit({ kind: "point", body: "Budget agreed", anchorMs: 1_000 }, { clearDraft: true });
+    expect(outbox.getSnapshot().draft).toEqual({ text: "", mode: "send", typingStartMs: null });
+    await vi.waitFor(() => expect(server.notes.size).toBe(1));
+    await vi.waitFor(async () => expect(await stored(store)).toBeUndefined());
+
+    expect(writes.some((record) => record.notes.length > 0 && record.draft !== null)).toBe(false);
+  });
+
+  it("writes one record at a time, and an unchanged one not at all", async () => {
+    const { writes, seen } = watchWrites(store);
+    const outbox = await openPageAndRead(store);
+    for (const text of ["H", "Ha", "Hal", "Half", "Half a"]) {
+      outbox.setDraft({ ...DRAFT, text });
+      await new Promise((resolve) => setTimeout(resolve, 2));
+    }
+    await vi.waitFor(async () => expect((await stored(store))?.draft).toMatchObject({ text: "Half a" }));
+    expect(seen.most).toBe(1);
+
+    const count = writes.length;
+    outbox.setDraft({ ...DRAFT, text: "Half a" });
+    outbox.setDraft({ ...DRAFT, text: "Half a" });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(writes).toHaveLength(count);
   });
 
   it("does not make a note again that another device deleted after its create landed", async () => {
@@ -248,6 +380,29 @@ describe("a note outbox kept in the browser", () => {
     expect([...server.notes.keys()]).toEqual([fresh.id]);
   });
 
+  it("keeps a note's new id before sending it under that id", async () => {
+    const memory = new MemoryNoteStore();
+    const events: string[] = [];
+    const put = memory.put.bind(memory);
+    vi.spyOn(memory, "put").mockImplementation(async (record) => {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      await put(record);
+      const ids = (record.notes as Array<{ id: string }>).map((note) => note.id).join(",");
+      events.push(`kept ${ids} after ${server.creates.length} creates`);
+    });
+    createTimelineNote.mockImplementationOnce(async (_recording, payload) => {
+      server.creates.push(payload);
+      throw coded(409, "note_id_in_use");
+    });
+    const outbox = await openPageAndRead(memory);
+
+    outbox.submit({ kind: "tail", body: "Wrap-up", anchorMs: null });
+    await vi.waitFor(() => expect(server.creates).toHaveLength(2));
+    const fresh = server.creates[1].id!;
+    // A kept copy had the new id before the create under it went out.
+    expect(events).toContain(`kept ${fresh} after 1 creates`);
+  });
+
   it("sends a discard the server never confirmed again after a reload", async () => {
     const outbox = openPage(store);
     server.loseNextAnswer = true;
@@ -268,6 +423,27 @@ describe("a note outbox kept in the browser", () => {
     expect(server.notes.size).toBe(0);
     expect(reloaded.getSnapshot().entries).toEqual([]);
     await vi.waitFor(async () => expect(await stored(store)).toBeUndefined());
+  });
+
+  it("keeps a listed note hidden after a reload while its discard is still on its way", async () => {
+    const outbox = openPage(store);
+    server.loseNextAnswer = true;
+    outbox.submit({ kind: "point", body: "Scrap this", anchorMs: 1_000 });
+    await settle();
+    const [entry] = outbox.getSnapshot().entries;
+    server.failures.push(NO_ANSWER);
+    outbox.discard(entry.key);
+    await vi.waitFor(async () => expect((await stored(store))?.discards).toHaveLength(1));
+    closePages();
+
+    // The delete fails again after the reload, and a listing still has the note.
+    server.failures.push(NO_ANSWER);
+    const reloaded = await openPageAndRead(store);
+    await vi.waitFor(() => expect(deleteTimelineNote).toHaveBeenCalledTimes(2));
+    const listed = [...server.notes.values()];
+    expect(listed.map((note) => note.id)).toEqual([entry.id]);
+
+    expect(shownNotes(listed, reloaded.getSnapshot())).toEqual([]);
   });
 
   it("leaves a note a listing already has, and the box's text typed since", async () => {
@@ -292,7 +468,7 @@ describe("a note outbox where the browser keeps nothing", () => {
   beforeEach(() => {
     resetNotesServer();
     resetSessionForTests();
-    signedIn("alice");
+    signedIn("alice", ALICE);
   });
 
   afterEach(() => {
@@ -339,17 +515,17 @@ describe("a note outbox where the browser keeps nothing", () => {
     const outbox = openPage(store);
     outbox.setDraft(DRAFT);
     await vi.waitFor(() => expect(put).toHaveBeenCalledTimes(1));
-    expect(await store.get("alice", RECORDING)).toBeUndefined();
+    expect(await store.get(ALICE, RECORDING)).toBeUndefined();
 
     // Any change tries again, even one that leaves the record as it was.
     outbox.setDraft({ ...DRAFT });
     await vi.waitFor(async () =>
-      expect(((await store.get("alice", RECORDING)) as StoredOutbox | undefined)?.draft).toEqual(DRAFT),
+      expect(((await store.get(ALICE, RECORDING)) as StoredOutbox | undefined)?.draft).toEqual(DRAFT),
     );
 
     outbox.setDraft({ ...DRAFT, text: "Half a thought, then more" });
     await vi.waitFor(async () =>
-      expect(((await store.get("alice", RECORDING)) as StoredOutbox | undefined)?.draft).toEqual({
+      expect(((await store.get(ALICE, RECORDING)) as StoredOutbox | undefined)?.draft).toEqual({
         ...DRAFT,
         text: "Half a thought, then more",
       }),
@@ -360,7 +536,7 @@ describe("a note outbox where the browser keeps nothing", () => {
 describe("records of another version", () => {
   const NEWER = {
     version: NOTE_RECORD_VERSION + 1,
-    account: "alice",
+    account: ALICE,
     recordingId: RECORDING,
     shape: "whatever a later version writes",
   };
@@ -382,11 +558,13 @@ describe("records of another version", () => {
     anchorMs: 61_250,
     createdAt: "2026-10-22T09:00:00.000Z",
   };
+  const restoredOf = (read: ReturnType<typeof readStoredOutbox>) =>
+    read && typeof read === "object" ? read.restored : read;
 
   beforeEach(() => {
     resetNotesServer();
     resetSessionForTests();
-    signedIn("alice");
+    signedIn("alice", ALICE);
   });
 
   afterEach(() => {
@@ -394,27 +572,65 @@ describe("records of another version", () => {
     resetSessionForTests();
   });
 
-  it("leaves a later version's record alone, and never writes over it", async () => {
+  it.each([
+    ["a later version's", NEWER],
+    [
+      "an earlier version's",
+      { ...NEWER, version: NOTE_RECORD_VERSION - 1, notes: [POINT], draft: null, discards: [] },
+    ],
+  ])("leaves %s record alone: nothing sent, nothing written over it", async (_name, raw) => {
     const store = new MemoryNoteStore();
-    await store.put(NEWER as unknown as StoredOutbox);
+    await store.put(raw as unknown as StoredOutbox);
 
     const put = vi.spyOn(store, "put");
+    const remove = vi.spyOn(store, "remove");
     const outbox = await openPageAndRead(store);
     outbox.setDraft(DRAFT);
     await settle();
 
     expect(outbox.getSnapshot().entries).toEqual([]);
+    expect(server.creates).toHaveLength(0);
     expect(put).not.toHaveBeenCalled();
-    expect(await store.get("alice", RECORDING)).toEqual(NEWER);
+    expect(remove).not.toHaveBeenCalled();
+    expect(await store.get(ALICE, RECORDING)).toEqual(raw);
+  });
+
+  it("upgrades an earlier version's record step by step, and reads the result", () => {
+    const upgrades = {
+      [NOTE_RECORD_VERSION - 2]: (record: Record<string, unknown>) => ({
+        ...record,
+        notes: [record.note],
+      }),
+      [NOTE_RECORD_VERSION - 1]: (record: Record<string, unknown>) => ({
+        ...record,
+        draft: { text: record.box, mode: "typing", typingStartMs: null },
+      }),
+    };
+
+    const read = readStoredOutbox(
+      { version: NOTE_RECORD_VERSION - 2, note: POINT, box: "Half" },
+      upgrades,
+    );
+
+    expect(restoredOf(read)).toEqual({
+      notes: [POINT],
+      draft: { text: "Half", mode: "typing", typingStartMs: null },
+      discards: [],
+    });
+    // A gap in the steps leaves the record for a version that can read it.
+    expect(
+      readStoredOutbox({ version: NOTE_RECORD_VERSION - 2 }, { [NOTE_RECORD_VERSION - 2]: (r) => r }),
+    ).toBe("older");
   });
 
   it("keeps a note of a kind it can't send, and writes it back as it was", async () => {
-    const store = new MemoryNoteStore();
+    const store = new IndexedDbNoteStore(new IDBFactory());
+    const selection = { ...SELECTION, start_ms: 1_000, future: { nested: [1, 2, 3] } };
     await store.put({
       version: NOTE_RECORD_VERSION,
-      account: "alice",
+      account: ALICE,
       recordingId: RECORDING,
-      notes: [SELECTION, POINT],
+      notes: [selection, POINT],
       draft: null,
       discards: [],
     });
@@ -425,13 +641,14 @@ describe("records of another version", () => {
     expect(outbox.getSnapshot().entries).toEqual([]);
     expect(server.creates.map((create) => create.id)).toEqual(["pt-1"]);
     await vi.waitFor(async () =>
-      expect(((await store.get("alice", RECORDING)) as StoredOutbox).notes).toEqual([SELECTION]),
+      expect(((await store.get(ALICE, RECORDING)) as StoredOutbox).notes).toEqual([selection]),
     );
   });
 
   it.each([
     ["a later version", { version: NOTE_RECORD_VERSION + 1 }, "newer"],
-    ["an earlier version", { version: NOTE_RECORD_VERSION - 1, notes: [POINT] }, null],
+    ["an earlier version with no upgrade", { version: NOTE_RECORD_VERSION - 1, notes: [POINT] }, "older"],
+    ["a version that isn't a whole number", { version: 0.5, notes: [POINT] }, null],
     ["no version", { notes: [POINT] }, null],
     ["not a record", "corrupt", null],
     ["nothing", undefined, null],
@@ -458,8 +675,7 @@ describe("records of another version", () => {
       discards: [{ id: "d-1", writeToken: "d-token" }, { id: "d-2" }, null],
     });
 
-    expect(read).not.toBe("newer");
-    expect(read && read !== "newer" ? read.restored : null).toEqual({
+    expect(restoredOf(read)).toEqual({
       notes: [POINT, { ...POINT, id: "head-1", kind: "head", anchorMs: null }],
       draft: { text: "Half", mode: "typing", typingStartMs: null },
       discards: [{ id: "d-1", writeToken: "d-token" }],
@@ -469,11 +685,7 @@ describe("records of another version", () => {
   it("reads a record with no draft and no discards", () => {
     const read = readStoredOutbox({ version: NOTE_RECORD_VERSION, notes: [POINT] });
 
-    expect(read && read !== "newer" ? read.restored : null).toEqual({
-      notes: [POINT],
-      draft: null,
-      discards: [],
-    });
+    expect(restoredOf(read)).toEqual({ notes: [POINT], draft: null, discards: [] });
   });
 
   it("keeps each draft mode it knows", () => {
@@ -482,11 +694,7 @@ describe("records of another version", () => {
         version: NOTE_RECORD_VERSION,
         draft: { text: "x", mode, typingStartMs: 5 },
       });
-      expect(read && read !== "newer" ? read.restored.draft : null).toEqual({
-        text: "x",
-        mode,
-        typingStartMs: 5,
-      });
+      expect(restoredOf(read)).toMatchObject({ draft: { text: "x", mode, typingStartMs: 5 } });
     }
   });
 
@@ -494,7 +702,7 @@ describe("records of another version", () => {
     const store = new MemoryNoteStore();
     await store.put({
       version: NOTE_RECORD_VERSION,
-      account: "alice",
+      account: ALICE,
       recordingId: RECORDING,
       notes: [],
       draft: null,

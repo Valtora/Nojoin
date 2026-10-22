@@ -1,20 +1,31 @@
 import { IDBFactory } from "fake-indexeddb";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import {
+  holdSignInInPlace,
+  noteSignedIn,
+  resetSessionForTests,
+  useSessionStore,
+} from "@/lib/session";
 
 import {
   CLEAR_ON_SIGN_OUT_MS,
   clearStoredNotes,
   IndexedDbNoteStore,
-  keepOnlyNotesOf,
   MemoryNoteStore,
   NOTE_RECORD_VERSION,
   setNoteStoreForTests,
   sharedNoteStore,
+  storedNotesSignedIn,
+  subscribeStoringResumed,
   type NoteStore,
   type StoredOutbox,
 } from "./noteStore";
 
-const record = (account: string, recordingId: string, body = "Budget agreed"): StoredOutbox => ({
+const ALICE = 1;
+const BOB = 2;
+
+const record = (account: number, recordingId: string, body = "Budget agreed"): StoredOutbox => ({
   version: NOTE_RECORD_VERSION,
   account,
   recordingId,
@@ -31,58 +42,110 @@ describe.each([
 ] as [string, () => NoteStore][])("%s note store", (_name, createStore) => {
   it("keeps one record per account and recording, and replaces it on each write", async () => {
     const store = createStore();
-    await store.put(record("alice", "rec-1"));
-    await store.put(record("alice", "rec-1", "Budget agreed, in full"));
-    await store.put(record("alice", "rec-2"));
-    await store.put(record("bob", "rec-1"));
+    await store.put(record(ALICE, "rec-1"));
+    await store.put(record(ALICE, "rec-1", "Budget agreed, in full"));
+    await store.put(record(ALICE, "rec-2"));
+    await store.put(record(BOB, "rec-1"));
 
-    expect(await store.get("alice", "rec-1")).toEqual(record("alice", "rec-1", "Budget agreed, in full"));
-    expect(await store.get("bob", "rec-1")).toEqual(record("bob", "rec-1"));
-    expect(await store.get("carol", "rec-1")).toBeUndefined();
+    expect(await store.get(ALICE, "rec-1")).toEqual(record(ALICE, "rec-1", "Budget agreed, in full"));
+    expect(await store.get(BOB, "rec-1")).toEqual(record(BOB, "rec-1"));
+    expect(await store.get(3, "rec-1")).toBeUndefined();
 
-    await store.remove("alice", "rec-1");
-    expect(await store.get("alice", "rec-1")).toBeUndefined();
-    expect(await store.get("alice", "rec-2")).toEqual(record("alice", "rec-2"));
+    await store.remove(ALICE, "rec-1");
+    expect(await store.get(ALICE, "rec-1")).toBeUndefined();
+    expect(await store.get(ALICE, "rec-2")).toEqual(record(ALICE, "rec-2"));
   });
 
-  it("removes every other account's records, and everything on clear", async () => {
+  it("removes the records of every account not kept, and everything on clear", async () => {
     const store = createStore();
-    await store.put(record("alice", "rec-1"));
-    await store.put(record("alice", "rec-2"));
-    await store.put(record("bob", "rec-3"));
+    await store.put(record(ALICE, "rec-1"));
+    await store.put(record(ALICE, "rec-2"));
+    await store.put(record(BOB, "rec-3"));
+    await store.put(record(3, "rec-4"));
 
-    await store.keepOnly("bob");
-    expect(await store.get("alice", "rec-1")).toBeUndefined();
-    expect(await store.get("alice", "rec-2")).toBeUndefined();
-    expect(await store.get("bob", "rec-3")).toEqual(record("bob", "rec-3"));
+    await store.keepOnly([BOB, 3]);
+    expect(await store.get(ALICE, "rec-1")).toBeUndefined();
+    expect(await store.get(ALICE, "rec-2")).toBeUndefined();
+    expect(await store.get(BOB, "rec-3")).toEqual(record(BOB, "rec-3"));
+    expect(await store.get(3, "rec-4")).toEqual(record(3, "rec-4"));
 
     await store.clear();
-    expect(await store.get("bob", "rec-3")).toBeUndefined();
+    expect(await store.get(BOB, "rec-3")).toBeUndefined();
+  });
+});
+
+describe("the IndexedDB note store and a later version", () => {
+  it("closes its connection when another tab opens a later version, and opens afresh after", async () => {
+    const factory = new IDBFactory();
+    const store = new IndexedDbNoteStore(factory);
+    await store.put(record(ALICE, "rec-1"));
+
+    // A later version of the app upgrades the database in another tab: it
+    // waits for this connection to close, and would wait for ever otherwise.
+    const upgraded = await new Promise<string>((resolve) => {
+      const request = factory.open("nojoin-notes", 2);
+      request.onblocked = () => resolve("blocked");
+      request.onsuccess = () => {
+        request.result.close();
+        resolve("upgraded");
+      };
+    });
+    expect(upgraded).toBe("upgraded");
   });
 });
 
 describe("the page's note store", () => {
+  beforeEach(() => {
+    resetSessionForTests();
+  });
+
   afterEach(() => {
     vi.useRealTimers();
     setNoteStoreForTests(null);
+    resetSessionForTests();
   });
 
-  it("removes other accounts' notes when the browser is found signed in, once per account", async () => {
+  it("removes other accounts' notes once the server names the account, and again whenever it changes", async () => {
     const store = new MemoryNoteStore();
     const keepOnly = vi.spyOn(store, "keepOnly");
     setNoteStoreForTests(store);
-    await store.put(record("alice", "rec-1"));
-    await store.put(record("bob", "rec-2"));
+    await store.put(record(ALICE, "rec-1"));
+    await store.put(record(BOB, "rec-2"));
 
-    await keepOnlyNotesOf("bob");
-    await keepOnlyNotesOf("bob");
+    // A sign-in that doesn't name the account by id removes nothing yet.
+    await storedNotesSignedIn();
+    expect(keepOnly).not.toHaveBeenCalled();
+
+    await storedNotesSignedIn(BOB);
+    await storedNotesSignedIn(BOB);
     expect(keepOnly).toHaveBeenCalledTimes(1);
-    expect(await store.get("alice", "rec-1")).toBeUndefined();
-    expect(await store.get("bob", "rec-2")).toEqual(record("bob", "rec-2"));
+    expect(await store.get(ALICE, "rec-1")).toBeUndefined();
+    expect(await store.get(BOB, "rec-2")).toEqual(record(BOB, "rec-2"));
 
-    await keepOnlyNotesOf("alice");
+    await storedNotesSignedIn(ALICE);
     expect(keepOnly).toHaveBeenCalledTimes(2);
-    expect(await store.get("bob", "rec-2")).toBeUndefined();
+    expect(await store.get(BOB, "rec-2")).toBeUndefined();
+
+    await store.put(record(BOB, "rec-3"));
+    await storedNotesSignedIn(BOB);
+    expect(keepOnly).toHaveBeenCalledTimes(3);
+  });
+
+  it("keeps the owner's notes in a page holding sign-in for them while another account signs in", async () => {
+    const store = new MemoryNoteStore();
+    setNoteStoreForTests(store);
+    noteSignedIn({ username: "alice", force_password_change: false, id: ALICE });
+    holdSignInInPlace(true, "notes");
+    await store.put(record(ALICE, "rec-1"));
+    await store.put(record(3, "rec-2"));
+
+    // The browser turns out to be signed in as bob: the page stays alice's.
+    noteSignedIn({ username: "bob", force_password_change: false, id: BOB });
+    expect(useSessionStore.getState().userId).toBe(ALICE);
+    await storedNotesSignedIn(BOB);
+
+    expect(await store.get(ALICE, "rec-1")).toEqual(record(ALICE, "rec-1"));
+    expect(await store.get(3, "rec-2")).toBeUndefined();
   });
 
   it("tries again on the next sign-in when removing other accounts' notes fails", async () => {
@@ -90,20 +153,33 @@ describe("the page's note store", () => {
     const keepOnly = vi.spyOn(store, "keepOnly").mockRejectedValueOnce(new Error("quota"));
     setNoteStoreForTests(store);
 
-    await expect(keepOnlyNotesOf("bob")).resolves.toBeUndefined();
-    await keepOnlyNotesOf("bob");
+    await expect(storedNotesSignedIn(BOB)).resolves.toBeUndefined();
+    await storedNotesSignedIn(BOB);
     expect(keepOnly).toHaveBeenCalledTimes(2);
   });
 
-  it("removes every note on sign-out and stores nothing from the page after", async () => {
+  it("removes every note on sign-out, and stores nothing until the server accepts a sign-in again", async () => {
     const store = new MemoryNoteStore();
     setNoteStoreForTests(store);
-    await store.put(record("alice", "rec-1"));
+    const resumed = vi.fn();
+    const stop = subscribeStoringResumed(resumed);
+    await store.put(record(ALICE, "rec-1"));
+    await storedNotesSignedIn(ALICE);
 
     await clearStoredNotes();
-
-    expect(await store.get("alice", "rec-1")).toBeUndefined();
+    expect(await store.get(ALICE, "rec-1")).toBeUndefined();
     expect(sharedNoteStore()).toBeNull();
+
+    // The leave prompt was cancelled, and the user signs in again on the page.
+    await storedNotesSignedIn();
+    expect(sharedNoteStore()).toBe(store);
+    expect(resumed).toHaveBeenCalledTimes(1);
+
+    // The same account's cleanup runs again: the sign-out forgot it was done.
+    const keepOnly = vi.spyOn(store, "keepOnly");
+    await storedNotesSignedIn(ALICE);
+    expect(keepOnly).toHaveBeenCalledTimes(1);
+    stop();
   });
 
   it("does not hold up sign-out when the storage never answers", async () => {
@@ -135,7 +211,7 @@ describe("the page's note store", () => {
     vi.stubGlobal("indexedDB", undefined);
     try {
       expect(sharedNoteStore()).toBeNull();
-      await expect(keepOnlyNotesOf("bob")).resolves.toBeUndefined();
+      await expect(storedNotesSignedIn(BOB)).resolves.toBeUndefined();
       await expect(clearStoredNotes()).resolves.toBeUndefined();
     } finally {
       vi.unstubAllGlobals();

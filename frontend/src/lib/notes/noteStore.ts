@@ -1,3 +1,4 @@
+import { useSessionStore } from "@/lib/session";
 import type { RecordingId } from "@/types";
 
 /**
@@ -7,8 +8,10 @@ import type { RecordingId } from "@/types";
  * rewritten whenever the recording's outbox changes and removed once it holds
  * nothing.
  *
- * Only the signed-in account's records are kept: signing in as another
- * account removes every other account's, and signing out removes them all.
+ * Records are keyed by the account's id, which a rename does not change. Only
+ * the signed-in account's records are kept: the first `/users/me` after a
+ * sign-in as another account removes every other account's (except, in a page
+ * holding sign-in for its owner, the owner's), and signing out removes them all.
  *
  * Persistence is best-effort, as for capture's segments (`segmentStore`). A
  * browser without IndexedDB, or one that refuses a read or a write, keeps the
@@ -17,8 +20,9 @@ import type { RecordingId } from "@/types";
 
 /**
  * The record layout this version writes. A record from a later version is
- * neither read nor overwritten, and a note of a kind this version can't send
- * is written back as it was found.
+ * neither read nor overwritten; one from an earlier version is upgraded by
+ * `RECORD_MIGRATIONS`, or else left alone the same way. A note of a kind this
+ * version can't send is written back as it was found.
  */
 export const NOTE_RECORD_VERSION = 1;
 
@@ -29,7 +33,8 @@ export interface StoredDiscard {
 
 export interface StoredOutbox {
   version: number;
-  account: string;
+  /** The account's id (`SessionState.userId`). */
+  account: number;
   recordingId: RecordingId;
   /** The notes not saved yet, oldest first; see `readStoredOutbox`. */
   notes: unknown[];
@@ -39,12 +44,12 @@ export interface StoredOutbox {
 }
 
 export interface NoteStore {
-  /** The stored record, unread: anything a later version may have written. */
-  get(account: string, recordingId: RecordingId): Promise<unknown>;
+  /** The stored record, unread: anything another version may have written. */
+  get(account: number, recordingId: RecordingId): Promise<unknown>;
   put(record: StoredOutbox): Promise<void>;
-  remove(account: string, recordingId: RecordingId): Promise<void>;
-  /** Removes every other account's records. */
-  keepOnly(account: string): Promise<void>;
+  remove(account: number, recordingId: RecordingId): Promise<void>;
+  /** Removes every record of an account not in `accounts`. */
+  keepOnly(accounts: readonly number[]): Promise<void>;
   clear(): Promise<void>;
 }
 
@@ -72,7 +77,7 @@ export class IndexedDbNoteStore implements NoteStore {
 
   private open() {
     if (!this.database) {
-      this.database = new Promise<IDBDatabase>((resolve, reject) => {
+      const opening = new Promise<IDBDatabase>((resolve, reject) => {
         const request = this.factory.open(DATABASE_NAME, DATABASE_VERSION);
         request.onupgradeneeded = () => {
           const database = request.result;
@@ -80,12 +85,22 @@ export class IndexedDbNoteStore implements NoteStore {
             database.createObjectStore(STORE_NAME, { keyPath: ["account", "recordingId"] });
           }
         };
-        request.onsuccess = () => resolve(request.result);
+        request.onsuccess = () => {
+          const database = request.result;
+          // A later version, opened in another tab, waits for every open
+          // connection to close: this one closes, and opens afresh next time.
+          database.onversionchange = () => {
+            database.close();
+            if (this.database === opening) this.database = null;
+          };
+          resolve(database);
+        };
         request.onerror = () => reject(request.error);
       });
+      this.database = opening;
       // A failed open is retried on the next call instead of being cached.
-      this.database.catch(() => {
-        this.database = null;
+      opening.catch(() => {
+        if (this.database === opening) this.database = null;
       });
     }
     return this.database;
@@ -98,7 +113,7 @@ export class IndexedDbNoteStore implements NoteStore {
     await transactionDone(transaction);
   }
 
-  async get(account: string, recordingId: RecordingId) {
+  async get(account: number, recordingId: RecordingId) {
     const database = await this.open();
     const transaction = database.transaction(STORE_NAME, "readonly");
     return requestResult(transaction.objectStore(STORE_NAME).get([account, recordingId]));
@@ -108,17 +123,17 @@ export class IndexedDbNoteStore implements NoteStore {
     return this.write((store) => store.put(record));
   }
 
-  remove(account: string, recordingId: RecordingId) {
+  remove(account: number, recordingId: RecordingId) {
     return this.write((store) => store.delete([account, recordingId]));
   }
 
-  async keepOnly(account: string) {
+  async keepOnly(accounts: readonly number[]) {
     const database = await this.open();
     const transaction = database.transaction(STORE_NAME, "readwrite");
     const store = transaction.objectStore(STORE_NAME);
     const keys = await requestResult(store.getAllKeys());
     for (const key of keys) {
-      if (Array.isArray(key) && key[0] !== account) store.delete(key);
+      if (Array.isArray(key) && !accounts.includes(key[0] as number)) store.delete(key);
     }
     await transactionDone(transaction);
   }
@@ -131,11 +146,11 @@ export class IndexedDbNoteStore implements NoteStore {
 export class MemoryNoteStore implements NoteStore {
   private readonly records = new Map<string, StoredOutbox>();
 
-  private key(account: string, recordingId: RecordingId) {
+  private key(account: number, recordingId: RecordingId) {
     return JSON.stringify([account, recordingId]);
   }
 
-  async get(account: string, recordingId: RecordingId) {
+  async get(account: number, recordingId: RecordingId) {
     return structuredClone(this.records.get(this.key(account, recordingId)));
   }
 
@@ -143,13 +158,13 @@ export class MemoryNoteStore implements NoteStore {
     this.records.set(this.key(record.account, record.recordingId), structuredClone(record));
   }
 
-  async remove(account: string, recordingId: RecordingId) {
+  async remove(account: number, recordingId: RecordingId) {
     this.records.delete(this.key(account, recordingId));
   }
 
-  async keepOnly(account: string) {
+  async keepOnly(accounts: readonly number[]) {
     for (const [key, record] of this.records) {
-      if (record.account !== account) this.records.delete(key);
+      if (!accounts.includes(record.account)) this.records.delete(key);
     }
   }
 
@@ -169,10 +184,11 @@ const browserIndexedDb = (): IDBFactory | null => {
 };
 
 let shared: NoteStore | null | undefined;
-/** Set once this page has signed out: nothing is stored from it again. */
+/** Set by signing out, until the server accepts a sign-in again: nothing is stored meanwhile. */
 let signedOut = false;
+const signedBackIn = new Set<() => void>();
 
-/** The page's store, or null when notes can only be kept in memory. */
+/** The page's store, or null when notes can only be kept in memory, or not at all just now. */
 export const sharedNoteStore = (): NoteStore | null => {
   if (signedOut) return null;
   if (shared === undefined) {
@@ -182,32 +198,58 @@ export const sharedNoteStore = (): NoteStore | null => {
   return shared;
 };
 
-let keptAccount: string | null = null;
+/** Calls `listener` when storing resumes after a sign-out that did not leave the page. */
+export const subscribeStoringResumed = (listener: () => void): (() => void) => {
+  signedBackIn.add(listener);
+  return () => signedBackIn.delete(listener);
+};
 
-/**
- * Removes every account's stored notes but `account`'s. Called whenever the
- * server says who the browser is signed in as, so another account's notes are
- * gone before any page of this one can open them.
- */
-export const keepOnlyNotesOf = async (account: string): Promise<void> => {
+let keptAccounts: string | null = null;
+
+/** Removes every record of an account not in `accounts`, unless that was the last thing done. */
+const keepOnlyNotesOf = async (accounts: readonly number[]): Promise<void> => {
   const store = sharedNoteStore();
-  if (!store || keptAccount === account) return;
-  keptAccount = account;
+  const key = [...accounts].sort((left, right) => left - right).join(",");
+  if (!store || keptAccounts === key) return;
+  keptAccounts = key;
   try {
-    await store.keepOnly(account);
+    await store.keepOnly(accounts);
   } catch {
     // Tried again on the next sign-in.
-    keptAccount = null;
+    keptAccounts = null;
   }
+};
+
+/**
+ * Called whenever the server accepts this browser's session: storing resumes
+ * if a sign-out had stopped it, and once the account's id is known (from
+ * `/users/me`), every other account's notes are removed, so they are never
+ * shown or sent as this one. A page holding sign-in for its owner keeps the
+ * owner's until the owner signs back in.
+ */
+export const storedNotesSignedIn = async (accountId?: number): Promise<void> => {
+  if (signedOut) {
+    signedOut = false;
+    for (const listener of signedBackIn) listener();
+  }
+  if (accountId === undefined) return;
+  const { heldInPlace, userId } = useSessionStore.getState();
+  const owner = heldInPlace && userId !== null && userId !== accountId ? [userId] : [];
+  await keepOnlyNotesOf([accountId, ...owner]);
 };
 
 /** How long signing out waits for the stored notes to be removed. */
 export const CLEAR_ON_SIGN_OUT_MS = 2_000;
 
-/** Signing out: removes every stored note, and stores none from this page again. */
+/**
+ * Signing out: removes every stored note, and stores none until the server
+ * accepts a sign-in again (which, should the user stay on the page by
+ * cancelling the leave prompt, can happen here).
+ */
 export const clearStoredNotes = async (): Promise<void> => {
   const store = sharedNoteStore();
   signedOut = true;
+  keptAccounts = null;
   if (!store) return;
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
@@ -232,5 +274,5 @@ export const clearStoredNotes = async (): Promise<void> => {
 export const setNoteStoreForTests = (store?: NoteStore | null): void => {
   shared = store;
   signedOut = false;
-  keptAccount = null;
+  keptAccounts = null;
 };

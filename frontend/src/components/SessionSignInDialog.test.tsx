@@ -214,6 +214,7 @@ describe("session sign-in dialog", () => {
       screen.getByText(/The notes belong to alice, so they save only once alice signs in again/),
     ).toBeInTheDocument();
     expect(screen.getByText("The notes belong to this account, so sign in as it.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Go to the sign-in page" })).toBeEnabled();
 
     fireEvent.change(passwordField(), { target: { value: "temporary" } });
     fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
@@ -228,6 +229,8 @@ describe("session sign-in dialog", () => {
     expect(await screen.findByText("Sign in to keep uploading")).toBeInTheDocument();
     expect(screen.getByText(/Nojoin is still recording/)).toBeInTheDocument();
     expect(screen.getByText("Notes not saved yet wait too, and save once you sign in.")).toBeInTheDocument();
+    // Leaving would reload the tab and end the capture.
+    expect(screen.queryByRole("button", { name: "Go to the sign-in page" })).not.toBeInTheDocument();
   });
 
   it("describes a stop that is waiting to finish", async () => {

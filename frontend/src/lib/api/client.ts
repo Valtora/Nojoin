@@ -9,6 +9,15 @@ export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL
 const FIRST_RUN_PASSWORD_AUTH_SCHEME = "Bootstrap";
 const FORCE_PASSWORD_CHANGE_REDIRECT = "/settings/profile";
 
+/**
+ * Leaves for the sign-in page with a full reload, which clears the signed-in
+ * session's in-memory client state.
+ */
+export const reloadToSignIn = () => {
+  // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- a full reload is required: the interceptor runs outside React (no router), and the reload clears the signed-in session's in-memory client state
+  window.location.href = "/login";
+};
+
 type ValidationErrorItem = {
   loc?: unknown;
   msg?: unknown;
@@ -114,8 +123,7 @@ api.interceptors.response.use(
         // here would discard the client's authorization parameters.
         !window.location.pathname.startsWith("/oauth/authorize")
       ) {
-        // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- a full reload is required: this runs outside React (no router), and the reload clears the signed-in session's in-memory client state
-        window.location.href = "/login";
+        reloadToSignIn();
       }
     }
 

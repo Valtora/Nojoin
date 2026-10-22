@@ -1,15 +1,16 @@
-import { clearStoredNotes, keepOnlyNotesOf } from "@/lib/notes/noteStore";
+import { clearStoredNotes, storedNotesSignedIn } from "@/lib/notes/noteStore";
 import { noteSignedIn } from "@/lib/session";
 import type { User } from "@/types";
 import api from "./client";
 
 /**
- * Records who the browser is signed in as. Notes kept in this browser for any
- * other account are removed, so they are never shown or sent as this one.
+ * Records who the browser is signed in as. Once the account's id is known,
+ * notes kept in this browser for any other account are removed, so they are
+ * never shown or sent as this one (`storedNotesSignedIn`).
  */
-const signedInAs = (user: { username: string; force_password_change: boolean }) => {
+const signedInAs = (user: { username: string; force_password_change: boolean; id?: number }) => {
   noteSignedIn(user);
-  void keepOnlyNotesOf(user.username);
+  void storedNotesSignedIn(user.id);
 };
 
 export const login = async (

@@ -25,7 +25,7 @@ import { formatTimelineMs } from "./placement";
  * | `saving` | 201, or 200 (an earlier attempt landed) | entry gone; the note is shown from here until a listing has it |
  * | `saving` | no answer for `SLOW_SAVE_MS` | `failed` ("no answer yet"), the request still running; a late 2xx still saves it |
  * | `saving` | no answer, or 5xx | `failed`; Retry sends the same create again |
- * | `saving` | 409 `note_id_in_use` | the id is another note's: once more under a new id and token, then `failed` |
+ * | `saving` | 409 `note_id_in_use` | the id is another note's: once more under a new id and token, once a kept copy has them, then `failed` |
  * | `saving` | 410 `note_deleted_by_you` | discarded here while on its way: entry gone |
  * | `saving` | 410 `note_deleted_elsewhere` | a lost create landed and another device deleted it: entry gone, with a notice; never made again |
  * | `saving` | refused while sign-in is held in place (`@/lib/session`) | `failed` ("sign in again"); sent again once the owner signs back in |
@@ -296,6 +296,7 @@ export class NoteOutbox {
   };
   private readonly listeners = new Set<() => void>();
   private readonly writeListeners = new Set<() => void>();
+  private writeBarrier: (() => Promise<void>) | null = null;
 
   constructor(private readonly recordingId: RecordingId) {}
 
@@ -321,10 +322,21 @@ export class NoteOutbox {
   };
 
   /**
-   * Queues a note and sends it. Returns why it was refused before sending (too
-   * long, or empty), or null once it is on its way.
+   * Waits, before a note goes out under a new id, until a kept copy of the
+   * outbox has that id (`persistNoteOutbox`), so a reload can't send the note
+   * a second time under the old one.
    */
-  submit = (draft: OutboxDraft): string | null => {
+  setWriteBarrier = (barrier: (() => Promise<void>) | null): void => {
+    this.writeBarrier = barrier;
+  };
+
+  /**
+   * Queues a note and sends it. Returns why it was refused before sending (too
+   * long, or empty), or null once it is on its way. With `clearDraft`, the box's
+   * text is emptied in the same change, so no kept copy of the outbox ever
+   * holds both the note and the text it was sent from.
+   */
+  submit = (draft: OutboxDraft, options: { clearDraft?: boolean } = {}): string | null => {
     const body = stripNote(draft.body);
     if (!body) return "Type a note first.";
     if (noteLength(body) > NOTE_BODY_MAX_CHARS) return NOTE_TOO_LONG_ERROR;
@@ -345,6 +357,7 @@ export class NoteOutbox {
       error: null,
     };
     this.entries = [...this.entries, entry];
+    if (options.clearDraft) this.draft = { ...EMPTY_DRAFT, mode: this.draft.mode };
     this.publish();
     void this.send(entry.key);
     return null;
@@ -480,6 +493,7 @@ export class NoteOutbox {
       const failure = failureOf(error);
       if (failure === "idInUse" && freshIdsLeft > 0) {
         this.patch(key, { id: newNoteId(), writeToken: newNoteId() });
+        await this.writeBarrier?.();
         await this.send(key, freshIdsLeft - 1);
         return;
       }

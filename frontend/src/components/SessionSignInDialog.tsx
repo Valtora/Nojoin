@@ -4,8 +4,10 @@ import { LogIn, Square } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 
 import { getCurrentUser, login } from "@/lib/api";
+import { reloadToSignIn } from "@/lib/api/client";
 import { useCapture } from "@/lib/capture/CaptureProvider";
 import { getErrorMessage } from "@/lib/errors";
+import { releaseSignInForNotes } from "@/lib/notes/noteOutboxes";
 import { useSessionStore } from "@/lib/session";
 import { useOnDepsChange } from "@/lib/useOnDepsChange";
 
@@ -56,7 +58,7 @@ const NOTES_WORDING = {
   blocked: "your notes cannot save",
 };
 const NOTES_SITUATION =
-  "Your sign-in ended with notes on this page not saved yet. They wait in this browser and save once you sign in.";
+  "Your sign-in ended with notes on this page not saved yet. They stay on this page and save once you sign in.";
 
 /**
  * Asks for the password in place when the session ends during a capture, or
@@ -130,6 +132,11 @@ export default function SessionSignInDialog() {
     stop().catch(() => {});
   };
 
+  const handleLeave = () => {
+    releaseSignInForNotes();
+    reloadToSignIn();
+  };
+
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
     setError(null);
@@ -153,14 +160,20 @@ export default function SessionSignInDialog() {
   return (
     <Modal
       open={open}
-      // Everything waiting on the session waits on this dialog, so it has no
-      // way out other than signing in.
+      // Everything waiting on the session waits on this dialog, so it can't be
+      // dismissed. Notes alone may leave for the sign-in page (an account
+      // renamed meanwhile can't sign in here): they are kept in the browser.
       onClose={() => {}}
       dismissible={false}
       hideCloseButton
       title={wording.title}
       footer={
         <>
+          {forCapture ? null : (
+            <Button variant="secondary" onClick={handleLeave} disabled={signingIn}>
+              Go to the sign-in page
+            </Button>
+          )}
           {canStop ? (
             <Button
               variant="secondary"

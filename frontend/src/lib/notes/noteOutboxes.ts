@@ -27,15 +27,22 @@ const warnBeforeUnload = (event: BeforeUnloadEvent) => {
 };
 
 let guarded = false;
+let holding = false;
+/** Set when the user leaves for the sign-in page from the dialog. */
+let released = false;
 
 // Listening only while something is unsaved: a page with a beforeunload
 // listener can be kept out of the back/forward cache.
 const guardUnsaved = () => {
   if (typeof window === "undefined") return;
   const needed = anyUnsaved();
+  const hold = needed && !released;
+  if (hold !== holding) {
+    holding = hold;
+    holdSignInInPlace(hold, "notes");
+  }
   if (needed === guarded) return;
   guarded = needed;
-  holdSignInInPlace(needed, "notes");
   if (needed) window.addEventListener("beforeunload", warnBeforeUnload);
   else window.removeEventListener("beforeunload", warnBeforeUnload);
 };
@@ -50,9 +57,21 @@ export const noteOutboxFor = (recordingId: RecordingId): NoteOutbox => {
   return outbox;
 };
 
-/** Tests: forget every recording's outbox. */
+/**
+ * Lets go of sign-in for good on this page, which is leaving for the sign-in
+ * page: the way out of the dialog when the account can't sign in here, say
+ * after a rename. The notes stay in the browser for the account to find on
+ * its next sign-in.
+ */
+export const releaseSignInForNotes = (): void => {
+  released = true;
+  guardUnsaved();
+};
+
+/** Tests: forget every recording's outbox, and any release. */
 export const forgetNoteOutboxes = (): void => {
   for (const { stop } of outboxes.values()) stop();
   outboxes.clear();
+  released = false;
   guardUnsaved();
 };

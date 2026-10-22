@@ -94,11 +94,11 @@ describe("one outbox per recording", () => {
   it("keeps each recording's outbox in the browser, and stops once forgotten", async () => {
     const store = new MemoryNoteStore();
     setNoteStoreForTests(store);
-    noteSignedIn({ username: "alice", force_password_change: false });
+    noteSignedIn({ username: "alice", force_password_change: false, id: 1 });
     try {
       noteOutboxFor("rec-a").setDraft({ ...EMPTY_DRAFT, text: "Half a thought" });
       await vi.waitFor(async () =>
-        expect(await store.get("alice", "rec-a")).toMatchObject({
+        expect(await store.get(1, "rec-a")).toMatchObject({
           draft: { text: "Half a thought" },
         }),
       );
@@ -107,7 +107,7 @@ describe("one outbox per recording", () => {
       forgetNoteOutboxes();
       outbox.setDraft({ ...EMPTY_DRAFT, text: "Typed after the page let go" });
       await settle();
-      expect(await store.get("alice", "rec-a")).toMatchObject({
+      expect(await store.get(1, "rec-a")).toMatchObject({
         draft: { text: "Half a thought" },
       });
     } finally {
@@ -197,6 +197,24 @@ describe("an ended session on a page holding notes not saved yet", () => {
     });
 
     expect(navigations).toEqual(["/login"]);
+  });
+
+  it("leaves for the sign-in page when asked, and holds sign-in no more", async () => {
+    renderWithProviders(<SessionSignInDialog />);
+    act(() => {
+      noteOutboxFor("rec-a").setDraft({ ...EMPTY_DRAFT, text: "Half a thought" });
+    });
+    await expect(api.get("/recordings/rec-a")).rejects.toMatchObject({
+      response: { status: 401 },
+    });
+
+    // Renamed meanwhile, say: the dialog can only sign in as the old name.
+    fireEvent.click(await screen.findByRole("button", { name: "Go to the sign-in page" }));
+
+    expect(navigations).toEqual(["/login"]);
+    expect(useSessionStore.getState().heldBy).toEqual([]);
+    // What was typed is still on the page, and kept in the browser, for the next sign-in.
+    expect(noteOutboxFor("rec-a").getSnapshot().draft.text).toBe("Half a thought");
   });
 
   it("saves a note refused for the ended session once its owner signs back in through the dialog", async () => {

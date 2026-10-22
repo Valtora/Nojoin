@@ -14,6 +14,7 @@ import {
 import {
   NOTE_RECORD_VERSION,
   sharedNoteStore,
+  subscribeStoringResumed,
   type NoteStore,
   type StoredDiscard,
   type StoredOutbox,
@@ -23,8 +24,8 @@ import {
  * Keeps a recording's note outbox in the browser (`noteStore`) and brings it
  * back after a reload (issue #537).
  *
- * The outbox is bound to the account the tab is signed in as once the session
- * works, and only that account's record is read or written. Reading it hands
+ * The outbox is bound to the account (by id) the tab is signed in as once the
+ * session works, and only that account's record is read or written. Reading it hands
  * its notes back to the outbox, which sends each again under its own id and
  * write token, so a note whose create landed before the reload is not made
  * twice. From then on, every change to the outbox rewrites the record.
@@ -75,19 +76,40 @@ export interface StoredRead {
   foreign: unknown[];
 }
 
+/** Upgrades a stored record from one version of the layout to the next. */
+export type RecordMigration = (record: Record<string, unknown>) => Record<string, unknown>;
+
 /**
- * Reads a stored record: what it restores, "newer" for a record a later
- * version wrote (left alone), or null when there is nothing usable. A note of
+ * The upgrade from each earlier layout version to the one after it. Version 1
+ * is the first, so there are none yet; a change to the layout (B3's selection
+ * notes, say) bumps `NOTE_RECORD_VERSION` and adds the step from the old one.
+ */
+export const RECORD_MIGRATIONS: Readonly<Record<number, RecordMigration>> = {};
+
+/**
+ * Reads a stored record: what it restores; "newer" for a record a later
+ * version wrote, or "older" for an earlier one with no upgrade to this
+ * version (both left alone); or null when there is nothing usable. A note of
  * a kind this version knows but can't read is dropped; one of a kind it does
  * not know is kept for the version that wrote it.
  */
-export const readStoredOutbox = (raw: unknown): StoredRead | "newer" | null => {
-  if (!isRecord(raw) || typeof raw.version !== "number") return null;
-  if (raw.version > NOTE_RECORD_VERSION) return "newer";
-  if (raw.version !== NOTE_RECORD_VERSION) return null;
+export const readStoredOutbox = (
+  raw: unknown,
+  migrations: Readonly<Record<number, RecordMigration>> = RECORD_MIGRATIONS,
+): StoredRead | "newer" | "older" | null => {
+  if (!isRecord(raw) || !Number.isInteger(raw.version)) return null;
+  let record = raw;
+  let version = raw.version as number;
+  if (version > NOTE_RECORD_VERSION) return "newer";
+  while (version < NOTE_RECORD_VERSION) {
+    const upgrade = migrations[version];
+    if (!upgrade) return "older";
+    version += 1;
+    record = { ...upgrade(record), version };
+  }
   const notes: RestoredNote[] = [];
   const foreign: unknown[] = [];
-  for (const value of Array.isArray(raw.notes) ? raw.notes : []) {
+  for (const value of Array.isArray(record.notes) ? record.notes : []) {
     if (!isRecord(value)) continue;
     if (isText(value.kind) && !isKnownKind(value.kind)) {
       foreign.push(value);
@@ -97,32 +119,35 @@ export const readStoredOutbox = (raw: unknown): StoredRead | "newer" | null => {
     if (note) notes.push(note);
   }
   return {
-    restored: { notes, draft: readDraft(raw.draft), discards: readDiscards(raw.discards) },
+    restored: { notes, draft: readDraft(record.draft), discards: readDiscards(record.discards) },
     foreign,
   };
 };
 
 /**
  * Persists `outbox` for as long as the page has it. Returns a function that
- * stops. Does nothing where notes can only be kept in memory.
+ * stops. Where notes can only be kept in memory it never reads or writes.
+ *
+ * The record is written only while the session is the account the outbox was
+ * bound to. A recording belongs to one account, so while the browser turns out
+ * to be signed in as another, nothing is stored; once the owner is back, the
+ * record is written afresh, since the other account's sign-in may have removed it.
  */
 export const persistNoteOutbox = (
   outbox: NoteOutbox,
   recordingId: RecordingId,
   storeOf: () => NoteStore | null = sharedNoteStore,
 ): (() => void) => {
-  if (!storeOf()) return () => undefined;
-
-  let account: string | null = null;
+  let account: number | null = null;
   let ready = false;
   let foreign: unknown[] = [];
   /** The record last written, as JSON; "" when there is none. */
   let written: string | null = null;
   let dirty = false;
-  let writing = false;
+  let flushing: Promise<void> | null = null;
   let stopped = false;
 
-  const record = (owner: string): StoredOutbox | null => {
+  const record = (owner: number): StoredOutbox | null => {
     const { entries, draft } = outbox.getSnapshot();
     const notes: unknown[] = [
       ...entries.map(({ id, writeToken, kind, body, anchorMs, createdAt }) => ({
@@ -148,42 +173,60 @@ export const persistNoteOutbox = (
     };
   };
 
+  const writable = () =>
+    ready && !stopped && account !== null && useSessionStore.getState().userId === account;
+
   // One write at a time, each of the outbox as it is by then, so a burst of
   // changes (typing in the box) costs a write or two rather than one each.
   const flush = async () => {
-    if (writing) return;
-    writing = true;
-    try {
-      while (dirty && ready && !stopped && account !== null) {
-        dirty = false;
-        const store = storeOf();
-        if (!store) return;
-        const next = record(account);
-        const text = next ? JSON.stringify(next) : "";
-        if (text === written) continue;
-        try {
-          if (next) await store.put(next);
-          else await store.remove(account, recordingId);
-          written = text;
-        } catch {
-          // Still held in memory; the next change tries again.
-          written = null;
-        }
+    while (dirty && writable()) {
+      const store = storeOf();
+      // Signed out: still dirty, so written once storing resumes.
+      if (!store) return;
+      dirty = false;
+      const owner = account as number;
+      const next = record(owner);
+      const text = next ? JSON.stringify(next) : "";
+      if (text === written) continue;
+      try {
+        if (next) await store.put(next);
+        else await store.remove(owner, recordingId);
+        written = text;
+      } catch {
+        // Still held in memory; the next change tries again.
+        written = null;
       }
-    } finally {
-      writing = false;
     }
+  };
+
+  const startFlush = () => {
+    if (flushing) return;
+    flushing = flush().finally(() => {
+      flushing = null;
+      // A change that came in as the last write finished.
+      if (dirty && writable() && storeOf()) startFlush();
+    });
   };
 
   const changed = () => {
     dirty = true;
-    void flush();
+    startFlush();
   };
 
-  const bind = async (owner: string) => {
-    account = owner;
+  const rewrite = () => {
+    written = null;
+    changed();
+  };
+
+  /** Resolves once the outbox as it is now has been written, or can't be. */
+  const whenWritten = async () => {
+    while (flushing) await flushing;
+  };
+
+  const bind = async (owner: number) => {
     const store = storeOf();
-    if (!store) return;
+    if (!store || account !== null) return;
+    account = owner;
     let raw: unknown;
     try {
       raw = await store.get(owner, recordingId);
@@ -193,8 +236,8 @@ export const persistNoteOutbox = (
     }
     if (stopped) return;
     const read = readStoredOutbox(raw);
-    // A later version's record is left for that version.
-    if (read === "newer") return;
+    // Another version's record is left for a version that can read it.
+    if (read === "newer" || read === "older") return;
     if (read) {
       foreign = read.foreign;
       outbox.restore(read.restored);
@@ -204,25 +247,31 @@ export const persistNoteOutbox = (
     changed();
   };
 
+  const isOwner = (state: SessionState | undefined) =>
+    state !== undefined && state.userId === account && !state.signInRequired;
+
   const watch = (state: SessionState, previous?: SessionState) => {
     if (account === null) {
-      if (state.username !== null && !state.signInRequired) void bind(state.username);
+      if (state.userId !== null && !state.signInRequired) void bind(state.userId);
       return;
     }
-    // Back from an ended session as the same account: write the record again,
-    // since a sign-in as another account meanwhile removed it.
-    if (previous?.signInRequired && !state.signInRequired && state.username === account) {
-      written = null;
-      changed();
-    }
+    // Back as the owner, from an ended session or from another account.
+    if (isOwner(state) && !isOwner(previous)) rewrite();
   };
 
   const stopOutbox = outbox.subscribe(changed);
   const stopSession = useSessionStore.subscribe(watch);
+  const stopResumed = subscribeStoringResumed(() => {
+    if (account === null) watch(useSessionStore.getState());
+    else rewrite();
+  });
+  outbox.setWriteBarrier(whenWritten);
   watch(useSessionStore.getState());
   return () => {
     stopped = true;
     stopOutbox();
     stopSession();
+    stopResumed();
+    outbox.setWriteBarrier(null);
   };
 };

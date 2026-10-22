@@ -36,6 +36,12 @@ export interface SessionState {
    * them carry on.
    */
   username: string | null;
+  /**
+   * The id of the account `username` names, once the server has said
+   * (`/users/me`), and null until then. Unlike the username it survives a
+   * rename, so what this browser keeps for an account is keyed by it.
+   */
+  userId: number | null;
   /** Another account the browser was found signed in as while sign-in was held. */
   otherUsername: string | null;
 }
@@ -45,6 +51,7 @@ export const useSessionStore = create<SessionState>(() => ({
   heldInPlace: false,
   heldBy: [],
   username: null,
+  userId: null,
   otherUsername: null,
 }));
 
@@ -106,29 +113,43 @@ export const noteSessionRefusal = (error: unknown): boolean => {
 /**
  * Records that the server accepted this tab's session as `user`.
  *
- * While sign-in is held in place, only the account that held it counts. Tabs share the session cookie, so a sign-in as somebody else in
- * another tab replaces this tab's session too, and the server refuses that
- * account's uploads to this recording. Finding the browser signed in as
- * another account therefore ends the session for this tab, as an expiry
- * would. A session that must change its password first does not count either.
+ * While sign-in is held in place, only the account that held it counts. Tabs
+ * share the session cookie, so a sign-in as somebody else in another tab
+ * replaces this tab's session too, and the server refuses that account's
+ * uploads to this recording. Finding the browser signed in as another account
+ * therefore ends the session for this tab, as an expiry would. A session that
+ * must change its password first does not count either.
+ *
+ * `user.id` comes with `/users/me` only; a sign-in that does not say keeps the
+ * id it had for the same username, and forgets it for another. The id is how
+ * a held page knows its own account after a rename.
  */
 export const noteSignedIn = (user: {
   username: string;
   force_password_change: boolean;
+  id?: number;
 }) => {
   if (user.force_password_change) {
     return;
   }
   const state = useSessionStore.getState();
-  if (state.heldInPlace && state.username !== null && state.username !== user.username) {
+  // The same account under a new name (renamed meanwhile) is still the owner.
+  const renamed = user.id !== undefined && user.id === state.userId;
+  if (
+    state.heldInPlace &&
+    state.username !== null &&
+    state.username !== user.username &&
+    !renamed
+  ) {
     if (!state.signInRequired || state.otherUsername !== user.username) {
       useSessionStore.setState({ signInRequired: true, otherUsername: user.username });
     }
     return;
   }
+  const userId = user.id ?? (state.username === user.username ? state.userId : null);
   if (!state.signInRequired) {
-    if (state.username !== user.username) {
-      useSessionStore.setState({ username: user.username });
+    if (state.username !== user.username || state.userId !== userId) {
+      useSessionStore.setState({ username: user.username, userId });
     }
     return;
   }
@@ -137,6 +158,7 @@ export const noteSignedIn = (user: {
   useSessionStore.setState({
     signInRequired: false,
     username: user.username,
+    userId,
     otherUsername: null,
   });
   const resolved = waiters;
@@ -218,6 +240,7 @@ export const resetSessionForTests = () => {
     heldInPlace: false,
     heldBy: [],
     username: null,
+    userId: null,
     otherUsername: null,
   });
 };

@@ -70,9 +70,11 @@ describe("logout", () => {
 });
 
 describe("notes kept in the browser", () => {
+  const ALICE = 1;
+  const BOB = 2;
   const alicesNotes: StoredOutbox = {
     version: NOTE_RECORD_VERSION,
-    account: "alice",
+    account: ALICE,
     recordingId: "rec-1",
     notes: [],
     draft: { text: "Half a thought", mode: "typing", typingStartMs: null },
@@ -80,8 +82,9 @@ describe("notes kept in the browser", () => {
   };
   let store: MemoryNoteStore;
 
-  const signedInAnswer = (username: string) => async () =>
-    new Response(JSON.stringify({ id: 2, username, force_password_change: false }), {
+  // `/users/me` names the account by id; the sign-in endpoint does not.
+  const signedInAnswer = (username: string, id?: number) => async () =>
+    new Response(JSON.stringify({ id, username, force_password_change: false }), {
       status: 200,
       headers: { "content-type": "application/json" },
     });
@@ -125,7 +128,7 @@ describe("notes kept in the browser", () => {
       pathname: "/recordings",
       set href(url: string) {
         navigations.push(url);
-        void store.get("alice", "rec-1").then((found) => {
+        void store.get(ALICE, "rec-1").then((found) => {
           storedAtNavigation = found;
         });
       },
@@ -138,28 +141,35 @@ describe("notes kept in the browser", () => {
     await vi.waitFor(() => expect(storedAtNavigation).toBeUndefined());
   });
 
-  it("removes another account's notes when someone else signs in", async () => {
+  it("removes another account's notes once the server names who signed in", async () => {
     serverAnswers(signedInAnswer("bob"));
-
     await login("bob", "secret");
+    // The sign-in alone doesn't name the account by id, so nothing goes yet.
+    expect(await store.get(ALICE, "rec-1")).toEqual(alicesNotes);
 
-    await vi.waitFor(async () => expect(await store.get("alice", "rec-1")).toBeUndefined());
+    serverAnswers(signedInAnswer("bob", BOB));
+    await getCurrentUser();
+
+    await vi.waitFor(async () => expect(await store.get(ALICE, "rec-1")).toBeUndefined());
   });
 
   it("removes another account's notes when the browser turns out to be signed in as someone else", async () => {
-    serverAnswers(signedInAnswer("bob"));
+    serverAnswers(signedInAnswer("bob", BOB));
 
     await getCurrentUser();
 
-    await vi.waitFor(async () => expect(await store.get("alice", "rec-1")).toBeUndefined());
+    await vi.waitFor(async () => expect(await store.get(ALICE, "rec-1")).toBeUndefined());
   });
 
-  it("keeps the account's own notes when it signs in again", async () => {
-    serverAnswers(signedInAnswer("alice"));
-
+  it("keeps the account's own notes when it signs in again, under its old name or a new one", async () => {
+    serverAnswers(signedInAnswer("alice", ALICE));
     await login("alice", "secret");
     await getCurrentUser();
+    expect(await store.get(ALICE, "rec-1")).toEqual(alicesNotes);
 
-    expect(await store.get("alice", "rec-1")).toEqual(alicesNotes);
+    serverAnswers(signedInAnswer("alice-renamed", ALICE));
+    await login("alice-renamed", "secret");
+    await getCurrentUser();
+    expect(await store.get(ALICE, "rec-1")).toEqual(alicesNotes);
   });
 });

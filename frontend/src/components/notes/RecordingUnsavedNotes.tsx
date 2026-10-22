@@ -76,13 +76,14 @@ export default function RecordingUnsavedNotes({
   };
 
   const sendDraft = () => {
-    const refusal = outbox.submit(noteFromDraft(draft, readEndMs));
+    // The note and the box's emptying are one change, so a kept copy of the
+    // outbox never holds both.
+    const refusal = outbox.submit(noteFromDraft(draft, readEndMs), { clearDraft: true });
     if (refusal) {
       setDraftError(refusal);
       return;
     }
     setDraftError(null);
-    clearDraft();
     headingRef.current?.focus();
   };
 
