@@ -27,6 +27,9 @@ export default function MarkdownBubble({
   html = true,
 }: MarkdownBubbleProps) {
   const editor = useEditor({
+    // The CSP refuses the style tag Tiptap would inject; the base rules are in
+    // globals.css (#501).
+    injectCSS: false,
     editable: false,
     extensions: [
       StarterKit,

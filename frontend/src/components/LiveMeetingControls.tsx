@@ -341,7 +341,10 @@ export default function LiveMeetingControls({
             </span>
           </div>
 
-          <div className="flex min-w-[18rem] max-w-[34rem] flex-1 flex-wrap items-center gap-2">
+          {/* The floor stops the transport being squeezed beside the clock,
+              but never reaches past the card: a 360px phone leaves it about
+              17rem (#538). */}
+          <div className="flex min-w-[min(18rem,100%)] max-w-[34rem] flex-1 flex-wrap items-center gap-2">
             {isRecording ? (
               <button
                 type="button"
@@ -389,7 +392,11 @@ export default function LiveMeetingControls({
             </button>
           </div>
 
-          <div className="flex shrink-0 items-center gap-3">
+          {/* Attach Docs and the speaker cap together are wider than the card
+              on a phone (#538), so they wrap. The row places this group by its
+              full width, so it moves to a line of its own before its contents
+              wrap. */}
+          <div className="flex flex-wrap items-center gap-3">
             {barTrailing}
             {speakerCapField}
           </div>
