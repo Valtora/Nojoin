@@ -14,6 +14,7 @@ from sqlmodel import select
 from backend.models.pipeline import TranscriptUtterance, TranscriptUtteranceState
 from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
 from backend.utils.canonical_pipeline import UNKNOWN_SPEAKER, list_active_utterances
+from backend.utils.live_speaker_labels import live_speaker_display_name
 
 from .metrics import UtteranceRow, compute_deterministic_metrics
 from .warnings import build_attribution_warning
@@ -112,7 +113,7 @@ def _describe_unlisted_key(speaker_key: str) -> dict[str, Any]:
         return {
             "speaker_key": speaker_key,
             "public_id": None,
-            "name": label,
+            "name": live_speaker_display_name(label) or label,
             "diarization_label": label,
             "color": None,
             "global_speaker_id": None,

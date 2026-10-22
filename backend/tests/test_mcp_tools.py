@@ -2660,3 +2660,25 @@ async def test_analyse_meeting_refuses_a_run_already_in_flight(
 
     with pytest.raises(ToolError, match="already being analysed"):
         await analyse_meeting(public_id)
+
+
+@pytest.mark.anyio
+async def test_get_transcript_utterances_names_a_live_label_as_the_panel_does(
+    session_maker, test_user: User, mcp_context
+):
+    bind_mcp_identity(test_user)
+    public_id = await seed_recording_with_speakers(session_maker, user_id=test_user.id)
+    await seed_canonical_transcript(session_maker)
+    async with session_maker() as session:
+        await session.execute(
+            text(
+                "UPDATE transcript_utterances SET speaker_label = 'LIVE_PROVISIONAL_4', "
+                "recording_speaker_id = NULL WHERE public_id = 'u-2'"
+            )
+        )
+        await session.commit()
+
+    result = await get_transcript_utterances(public_id)
+
+    speakers = {u["id"]: u["speaker"] for u in result["utterances"]}
+    assert speakers == {"u-1": "SPEAKER_00", "u-2": "Speaker 4"}

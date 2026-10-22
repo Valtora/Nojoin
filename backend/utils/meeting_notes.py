@@ -2,6 +2,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 
+from backend.utils.live_speaker_labels import speaker_display_name
+
 PLACEHOLDER_SPEAKER_PATTERN = re.compile(
     r"^(SPEAKER_\d+|Speaker \d+|Unknown|New Voice .*)$",
     re.IGNORECASE,
@@ -170,14 +172,16 @@ def format_segments_for_llm(
 
     for segment in segments:
         speaker_label = segment.get("speaker", "Unknown")
-        speaker_name = speaker_map.get(speaker_label, speaker_label)
+        speaker_name = speaker_display_name(speaker_label, speaker_map)
         start_seconds = float(segment.get("start", 0))
         timestamp = _format_prompt_timestamp(start_seconds)
         if with_end:
             end_seconds = float(segment.get("end", start_seconds))
             timestamp = f"{timestamp} - {_format_prompt_timestamp(end_seconds)}"
         overlapping = segment.get("overlapping_speakers") or []
-        overlapping_names = [speaker_map.get(label, label) for label in overlapping]
+        overlapping_names = [
+            speaker_display_name(label, speaker_map) for label in overlapping
+        ]
         overlapping_suffix = (
             f" (with {', '.join(overlapping_names)})" if overlapping_names else ""
         )

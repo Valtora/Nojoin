@@ -50,6 +50,28 @@ const stableHash = (value: string): number => {
   return Math.abs(hash);
 };
 
+/** A live speaker label, `LIVE_PROVISIONAL_<n>`, written by the live lane's clustering. */
+const LIVE_SPEAKER_LABEL = /^LIVE_PROVISIONAL_(\d+)$/;
+
+/**
+ * "Speaker 3" for the live label `LIVE_PROVISIONAL_3`, else null.
+ *
+ * Live labels number voices in the order they were first heard. No recording
+ * speaker stands behind one, so every view shows it under this name.
+ */
+export const liveSpeakerDisplayName = (
+  label: string | null | undefined,
+): string | null => {
+  const match = LIVE_SPEAKER_LABEL.exec(label ?? "");
+  return match ? `Speaker ${Number.parseInt(match[1], 10)}` : null;
+};
+
+/** The name a transcript shows for a line's speaker label. */
+export const segmentSpeakerDisplayName = (
+  speakerMap: Record<string, string>,
+  label: string,
+): string => speakerMap[label] || liveSpeakerDisplayName(label) || label;
+
 const getGenericSpeakerAliasesForLabel = (label: string): string[] => {
   const liveMatch = label.match(/^LIVE_(\d+)$/);
   if (liveMatch) {

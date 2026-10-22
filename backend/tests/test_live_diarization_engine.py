@@ -5,6 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from backend.processing.live_diarization import state as state_module
 from backend.processing.live_diarization.clustering import StepAssignment
 from backend.processing.live_diarization.engine import (
     LiveLabelConfig,
@@ -104,7 +105,7 @@ def test_labels_lock_after_two_unchanged_reclusters(tmp_path):
     _feed_all(engine, audio[15 * SAMPLE_RATE :], model, start_n=15 * SAMPLE_RATE)
     two_passes = LabelTimeline.from_engine(engine).label_line(1.0, 4.0)
 
-    assert one_pass.speaker == two_passes.speaker == "LIVE_1"
+    assert one_pass.speaker == two_passes.speaker == "LIVE_PROVISIONAL_1"
     assert one_pass.locked is False
     assert two_passes.locked is True
 
@@ -151,6 +152,46 @@ def test_audio_already_seen_is_not_scored_twice(tmp_path):
 
     assert model.windows == 12
     assert engine.audio_end_n == 6 * SAMPLE_RATE
+
+
+def test_an_engine_saved_after_every_run_matches_one_that_never_stopped(tmp_path):
+    # The state keeps only founded centroids and open units' sums; whatever it
+    # leaves out must be zero, or the saved engine would drift from this one.
+    audio = speaker_audio([(0, 9, 1), (9, 14, 2), (14, 15, 3), (15, 30, 1)], 31)
+    whole = LiveLabelEngine(CONFIG, UnitBank(tmp_path / "bank", CONFIG.embedding_dim))
+    _feed_all(whole, audio, SpeakerTrackModel())
+    (tmp_path / "runs").mkdir()
+    runs = _feed_in_runs(tmp_path / "runs", audio, SpeakerTrackModel())
+
+    assert runs.pieces == whole.pieces
+    assert runs.units.label == whole.units.label
+    assert runs.units.locked == whole.units.locked
+    assert np.array_equal(runs.clustering.active, whole.clustering.active)
+    assert np.array_equal(runs.clustering.centers, whole.clustering.centers)
+    assert np.array_equal(runs.units.open_sum_all, whole.units.open_sum_all)
+    assert np.array_equal(runs.bank.read(), whole.bank.read())
+
+
+def test_the_state_reaches_the_disk_before_it_replaces_the_old_one(
+    tmp_path, monkeypatch
+):
+    engine = new_engine(tmp_path, CONFIG)
+    _feed_all(engine, speaker_audio([(0, 4, 1)], 4), SpeakerTrackModel())
+    calls = []
+    real_fsync, real_replace = state_module.os.fsync, state_module.os.replace
+    monkeypatch.setattr(
+        state_module.os, "fsync", lambda fd: calls.append("fsync") or real_fsync(fd)
+    )
+    monkeypatch.setattr(
+        state_module.os,
+        "replace",
+        lambda src, dst: calls.append("replace") or real_replace(src, dst),
+    )
+
+    save_engine(tmp_path, engine)
+
+    # A power loss after the rename must not leave an empty state behind it.
+    assert calls == ["fsync", "replace"]
 
 
 def test_a_bank_row_written_after_the_last_save_is_cut_on_load(tmp_path):

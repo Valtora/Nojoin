@@ -73,6 +73,7 @@ files = [
     "backend/processing/processing_tuning.py",
     "backend/processing/live_diarization",
     "backend/utils/canonical_pipeline/live_labels.py",
+    "backend/utils/live_speaker_labels.py",
 ]
 
 [tool.ruff]

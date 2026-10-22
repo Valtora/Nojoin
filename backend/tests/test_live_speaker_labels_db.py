@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import fcntl
+import io
 import json
 import threading
 import time
+import zipfile
 
+import numpy as np
 import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.pool import StaticPool
@@ -41,6 +44,7 @@ from backend.tests.sqlite_schemas import (
 )
 from backend.utils.canonical_pipeline import (
     append_utterances_from_segments,
+    apply_compatibility_segment_replace,
     finalize_utterances_from_segments,
     get_canonical_transcript_revision,
     serialize_canonical_delta,
@@ -160,7 +164,9 @@ def test_a_label_is_an_utterance_event_that_the_live_read_returns():
     with Session(engine) as session:
         before = get_canonical_transcript_revision(session, RECORDING_ID)
 
-    _apply(engine, {1000: LiveLabelDecision("LIVE_2", locked=False, share=0.9)})
+    _apply(
+        engine, {1000: LiveLabelDecision("LIVE_PROVISIONAL_2", locked=False, share=0.9)}
+    )
 
     with Session(engine) as session:
         _, changed, tombstones = serialize_canonical_delta(
@@ -177,13 +183,15 @@ def test_a_label_is_an_utterance_event_that_the_live_read_returns():
             .all()
         )
     assert [u["id"] for u in changed] == ["line-a"]
-    assert changed[0]["speaker"] == "LIVE_2"
+    assert changed[0]["speaker"] == "LIVE_PROVISIONAL_2"
     assert changed[0]["speaker_state"] == "provisional"
     assert changed[0]["recording_speaker_id"] is None
     assert tombstones == []
     assert event_types == ["live_speaker_label"]
 
-    _apply(engine, {1000: LiveLabelDecision("LIVE_2", locked=True, share=0.9)})
+    _apply(
+        engine, {1000: LiveLabelDecision("LIVE_PROVISIONAL_2", locked=True, share=0.9)}
+    )
     with Session(engine) as session:
         lines = _by_id(serialize_canonical_utterances(session, RECORDING_ID))
         projection = json.loads(
@@ -192,12 +200,12 @@ def test_a_label_is_an_utterance_event_that_the_live_read_returns():
     assert lines["line-a"]["speaker_state"] == "stable"
     assert lines["line-a"]["revision"] == 3
     assert lines["line-b"]["speaker"] == "UNKNOWN"
-    assert {s["id"]: s["speaker"] for s in projection}["line-a"] == "LIVE_2"
+    assert {s["id"]: s["speaker"] for s in projection}["line-a"] == "LIVE_PROVISIONAL_2"
 
 
 def test_an_unchanged_label_writes_nothing():
     engine = _database()
-    table = {1000: LiveLabelDecision("LIVE_1", locked=False, share=1.0)}
+    table = {1000: LiveLabelDecision("LIVE_PROVISIONAL_1", locked=False, share=1.0)}
     first = _apply(engine, table)
     second = _apply(engine, table)
 
@@ -215,7 +223,9 @@ def test_a_line_a_person_named_is_never_relabelled():
         )
         session.commit()
 
-    write = _apply(engine, {1000: LiveLabelDecision("LIVE_1", locked=False, share=1.0)})
+    write = _apply(
+        engine, {1000: LiveLabelDecision("LIVE_PROVISIONAL_1", locked=False, share=1.0)}
+    )
 
     with Session(engine) as session:
         line = _by_id(serialize_canonical_utterances(session, RECORDING_ID))["line-a"]
@@ -235,7 +245,8 @@ def test_a_live_line_the_final_pass_replaced_is_never_relabelled():
         session.commit()
 
     write = _apply(
-        engine, {10000: LiveLabelDecision("LIVE_3", locked=False, share=1.0)}
+        engine,
+        {10000: LiveLabelDecision("LIVE_PROVISIONAL_3", locked=False, share=1.0)},
     )
 
     with Session(engine) as session:
@@ -251,9 +262,9 @@ def test_locked_lines_are_settled_and_not_decided_again():
     write = _apply(
         engine,
         {
-            1000: LiveLabelDecision("LIVE_1", locked=True, share=1.0),
+            1000: LiveLabelDecision("LIVE_PROVISIONAL_1", locked=True, share=1.0),
             10000: LiveLabelDecision("UNKNOWN", locked=False, share=0.4),
-            21000: LiveLabelDecision("LIVE_2", locked=True, share=1.0),
+            21000: LiveLabelDecision("LIVE_PROVISIONAL_2", locked=True, share=1.0),
         },
     )
     assert write.settled_ms == 9000
@@ -267,7 +278,7 @@ def test_locked_lines_are_settled_and_not_decided_again():
     assert again.settled_ms == 9000
     with Session(engine) as session:
         lines = _by_id(serialize_canonical_utterances(session, RECORDING_ID))
-    assert lines["line-c"]["speaker"] == "LIVE_2"
+    assert lines["line-c"]["speaker"] == "LIVE_PROVISIONAL_2"
 
 
 FINAL_SEGMENTS = [
@@ -316,9 +327,9 @@ def test_the_final_transcript_is_identical_with_labels_on_and_off():
     _apply(
         labels_on,
         {
-            1000: LiveLabelDecision("LIVE_1", locked=False, share=0.8),
-            10000: LiveLabelDecision("LIVE_2", locked=True, share=1.0),
-            21000: LiveLabelDecision("LIVE_1", locked=True, share=0.7),
+            1000: LiveLabelDecision("LIVE_PROVISIONAL_1", locked=False, share=0.8),
+            10000: LiveLabelDecision("LIVE_PROVISIONAL_2", locked=True, share=1.0),
+            21000: LiveLabelDecision("LIVE_PROVISIONAL_1", locked=True, share=0.7),
         },
     )
 
@@ -366,9 +377,9 @@ def test_the_label_step_labels_each_run_and_keeps_numbers_across_runs(
 
     with Session(engine) as session:
         lines = _by_id(serialize_canonical_utterances(session, RECORDING_ID))
-    assert lines["line-a"]["speaker"] == "LIVE_1"
-    assert lines["line-b"]["speaker"] == "LIVE_1"
-    assert lines["line-c"]["speaker"] == "LIVE_2"
+    assert lines["line-a"]["speaker"] == "LIVE_PROVISIONAL_1"
+    assert lines["line-b"]["speaker"] == "LIVE_PROVISIONAL_1"
+    assert lines["line-c"]["speaker"] == "LIVE_PROVISIONAL_2"
     assert lines["line-a"]["speaker_state"] == "stable"
     assert lines["line-c"]["speaker_state"] == "provisional"
     assert (tmp_path / STATE_FILENAME).exists()
@@ -400,6 +411,8 @@ def test_the_label_step_writes_nothing_and_removes_its_state_once_capture_ends(
     assert labels() == before
     assert not (tmp_path / STATE_FILENAME).exists()
     assert not (tmp_path / BANK_FILENAME).exists()
+    # The step held its lock file while it removed it; nothing is left.
+    assert not (tmp_path / LOCK_FILENAME).exists()
 
 
 def _hold_label_lock(live_dir):
@@ -442,17 +455,95 @@ def test_a_label_step_gives_up_on_a_lock_that_stays_taken(monkeypatch, tmp_path)
     assert not (tmp_path / STATE_FILENAME).exists()
 
 
-def test_an_unreadable_state_stops_labels_for_the_recording(monkeypatch, tmp_path):
+@pytest.mark.parametrize("finalized", [False, True])
+def test_a_write_that_fails_keeps_the_state_only_while_capture_goes_on(
+    monkeypatch, tmp_path, finalized
+):
+    engine = _database()
+    _patch_step(monkeypatch, engine, SpeakerTrackModel())
+    audio = speaker_audio([(0, 30, 1)], 30)
+    _run(tmp_path, audio[: 4 * SAMPLE_RATE], 0.0, 4.0)
+
+    def fail(session, **kwargs):
+        if finalized:
+            # Finalize commits its status and removes the state while this
+            # run waits on its write, which then fails (a lock timeout).
+            with engine.begin() as conn:
+                conn.execute(text("UPDATE recordings SET status = 'QUEUED'"))
+            remove_live_label_state(tmp_path)
+        raise RuntimeError("lock timeout")
+
+    monkeypatch.setattr(step, "apply_live_speaker_labels", fail)
+    with pytest.raises(RuntimeError, match="lock timeout"):
+        _run(tmp_path, audio[4 * SAMPLE_RATE : 8 * SAMPLE_RATE], 4.0, 8.0)
+
+    assert (tmp_path / STATE_FILENAME).exists() is not finalized
+    assert (tmp_path / BANK_FILENAME).exists() is not finalized
+    assert (tmp_path / LOCK_FILENAME).exists() is not finalized
+
+
+def _without_member(state: bytes, member: str) -> bytes:
+    source = zipfile.ZipFile(io.BytesIO(state))
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w") as target:
+        for item in source.infolist():
+            if item.filename != f"{member}.npy":
+                target.writestr(item, source.read(item.filename))
+    return out.getvalue()
+
+
+def _with_member(state: bytes, member: str, change) -> bytes:
+    with np.load(io.BytesIO(state)) as saved:
+        arrays = {key: saved[key] for key in saved.files}
+    assert arrays[member].size
+    arrays[member] = change(arrays[member])
+    out = io.BytesIO()
+    np.savez(out, **arrays)
+    return out.getvalue()
+
+
+def _cut_bank(live_dir):
+    bank = live_dir / BANK_FILENAME
+    bank.write_bytes(bank.read_bytes()[:-1])
+
+
+STATE_DAMAGE = {
+    "not a state": lambda state, live_dir: b"truncated",
+    # A power loss before the data reached the disk.
+    "empty": lambda state, live_dir: b"",
+    "truncated zip": lambda state, live_dir: state[: len(state) // 2],
+    "a member missing": lambda state, live_dir: _without_member(state, "centers"),
+    # One column would broadcast into every centroid without complaint.
+    "centroids of the wrong shape": lambda state, live_dir: _with_member(
+        state, "centers", lambda centers: centers[:, :1]
+    ),
+    "a unit pointing past the bank": lambda state, live_dir: _with_member(
+        state, "unit_row", lambda rows: rows + 10_000
+    ),
+}
+
+
+@pytest.mark.parametrize("damage", [*STATE_DAMAGE, "bank shorter than the state"])
+def test_an_unreadable_state_stops_labels_for_the_recording(
+    monkeypatch, tmp_path, damage
+):
     engine = _database()
     model = SpeakerTrackModel()
     _patch_step(monkeypatch, engine, model)
-    (tmp_path / STATE_FILENAME).write_bytes(b"truncated")
+    audio = speaker_audio([(0, 12, 1)], 12)
+    _run(tmp_path, audio, 0.0, 12.0)
+    calls = model.calls
+    state_path = tmp_path / STATE_FILENAME
+    if damage in STATE_DAMAGE:
+        state_path.write_bytes(STATE_DAMAGE[damage](state_path.read_bytes(), tmp_path))
+    else:
+        _cut_bank(tmp_path)
 
-    audio = speaker_audio([(0, 10, 1)], 10)
-    _run(tmp_path, audio, 0.0, 10.0)
-    _run(tmp_path, audio, 10.0, 20.0)
+    # Neither run raises: labels stop and the text lane never sees an error.
+    _run(tmp_path, audio, 12.0, 24.0)
+    _run(tmp_path, audio, 24.0, 36.0)
 
-    assert model.calls == 0
+    assert model.calls == calls
     assert (tmp_path / "speaker_labels.off").exists()
 
 
@@ -486,7 +577,6 @@ def test_live_labels_run_only_when_auto_and_the_lane_is_on_cuda(
 
     monkeypatch.setitem(config_manager.config, "live_speaker_labels", mode)
     monkeypatch.setitem(config_manager.config, "processing_device", device)
-    monkeypatch.delenv("LIVE_SPEAKER_LABELS", raising=False)
     monkeypatch.setattr(torch.cuda, "is_available", lambda: cuda)
 
     assert step.live_speaker_labels_device() == expected
@@ -494,7 +584,9 @@ def test_live_labels_run_only_when_auto_and_the_lane_is_on_cuda(
 
 def test_finalised_lines_ignore_a_live_label_left_in_their_payload():
     engine = _database()
-    _apply(engine, {1000: LiveLabelDecision("LIVE_1", locked=False, share=0.8)})
+    _apply(
+        engine, {1000: LiveLabelDecision("LIVE_PROVISIONAL_1", locked=False, share=0.8)}
+    )
     _finalised(engine)
 
     with Session(engine) as session:
@@ -506,3 +598,43 @@ def test_finalised_lines_ignore_a_live_label_left_in_their_payload():
         line = _by_id(serialize_canonical_utterances(session, RECORDING_ID))["line-a"]
     assert "live_speaker_label" in json.loads(row)
     assert line["speaker_state"] == "stable"
+
+
+@pytest.mark.parametrize("status", ["UPLOADING", "ERROR"])
+def test_editing_a_live_labelled_line_makes_no_speaker_of_its_label(status):
+    # A failed final pass leaves the live lines as the transcript, and the
+    # recording in ERROR accepts find-and-replace and segment PUTs, which
+    # rebuild every line from the projection; so do undo, restore and backfill.
+    engine = _database()
+    _apply(
+        engine,
+        {
+            1000: LiveLabelDecision("LIVE_PROVISIONAL_2", locked=False, share=0.9),
+            10000: LiveLabelDecision("LIVE_PROVISIONAL_1", locked=True, share=1.0),
+        },
+    )
+    with engine.begin() as conn:
+        conn.execute(text("UPDATE recordings SET status = :s"), {"s": status})
+    with Session(engine) as session:
+        segments = json.loads(
+            session.execute(text("SELECT segments FROM transcripts")).scalar_one()
+        )
+        for segment in segments:
+            if segment["id"] == "line-a":
+                segment["text"] = "opening remarks, corrected"
+        apply_compatibility_segment_replace(
+            session, recording_id=RECORDING_ID, segments=segments
+        )
+        session.commit()
+        speakers = session.execute(
+            text("SELECT COUNT(*) FROM recording_speakers")
+        ).scalar_one()
+        lines = _by_id(serialize_canonical_utterances(session, RECORDING_ID))
+
+    assert speakers == 0
+    assert lines["line-a"]["text"] == "opening remarks, corrected"
+    assert [lines[key]["speaker"] for key in ("line-a", "line-b")] == [
+        "LIVE_PROVISIONAL_2",
+        "LIVE_PROVISIONAL_1",
+    ]
+    assert all(line["recording_speaker_id"] is None for line in lines.values())

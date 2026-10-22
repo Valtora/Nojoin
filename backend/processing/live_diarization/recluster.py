@@ -5,14 +5,22 @@ A unit is a run of consecutive steps in which one slot was assigned, capped at
 members (all members when none is long). Closed units go to an append-only
 bank on disk, one float32 row each.
 
-Every ``recluster_every_s``, every unit closes and the whole bank is clustered
-again (average-linkage AHC on cosine distance). The clusters are matched
-one-to-one to the labels on display, weighted by unit length, so a cluster
-keeps the label most of its speech already shows. A unit's label then follows
-its cluster. Two passes in a row that leave a unit's label unchanged lock it,
-as does age (``lock_age_s``). A locked unit never changes again. The online
-centroids are then reset to the per-label sums, so the next steps match
-against the corrected speakers.
+Every ``recluster_every_s``, every unit closes and the bank is clustered again
+(average-linkage AHC on cosine distance). The clusters are matched one-to-one
+to the labels on display, weighted by unit length, so a cluster keeps the label
+most of its speech already shows. A unit's label then follows its cluster. Two
+passes in a row that leave a unit's label unchanged lock it, as does age
+(``lock_age_s``). A locked unit never changes again. The online centroids are
+then reset to the per-label sums, so the next steps match against the corrected
+speakers.
+
+The pass is bounded, since AHC costs time and memory quadratic in what it
+clusters. It takes every unlocked unit and every locked unit younger than
+``recent_s``, up to ``max_units`` (the oldest locked units give way first).
+Older locked units can no longer change; of those, each label keeps its
+``anchors`` most recent in the pass, so a speaker heard only long ago still
+holds their label when they speak again. The centroid reset still sums every
+unit.
 
 This is Nojoin's own code, not diart's.
 """
@@ -40,6 +48,9 @@ class ReclusterParams:
     max_steps: int
     lock_passes: int
     lock_age_s: float
+    recent_s: float
+    max_units: int
+    anchors: int
 
 
 class UnitBank:
@@ -260,6 +271,28 @@ def _name_clusters(
     return names
 
 
+def _units_in_pass(
+    t0: np.ndarray,
+    locked: np.ndarray,
+    labels: np.ndarray,
+    t_now: float,
+    params: ReclusterParams,
+) -> np.ndarray:
+    """The units one pass clusters: unlocked or recent, then each label's anchors."""
+    chosen = ~locked | (t0 >= t_now - params.recent_s)
+    excess = int(chosen.sum()) - params.max_units
+    if excess > 0:
+        oldest_locked = np.where(chosen & locked)[0]
+        oldest_locked = oldest_locked[np.argsort(t0[oldest_locked], kind="stable")]
+        chosen[oldest_locked[:excess]] = False
+    older = ~chosen
+    for label in np.unique(labels[older]):
+        units = np.where(older & (labels == label))[0]
+        newest = units[np.argsort(t0[units], kind="stable")[-params.anchors :]]
+        chosen[newest] = True
+    return chosen
+
+
 def recluster(
     table: UnitTable,
     bank: UnitBank,
@@ -267,30 +300,32 @@ def recluster(
     params: ReclusterParams,
     t_now: float,
 ) -> ReclusterResult:
-    """One pass over the whole bank: relabel, lock, then reset the centroids."""
+    """One bounded pass over the bank: relabel, lock, then reset the centroids."""
     table.close_all(bank)
     result = ReclusterResult(units=table.count)
     if table.count < 2:
         return result
-    rows = np.array(table.row)
-    vectors = bank.read()[rows].astype(np.float64)
-    reliable = np.array(table.long) > 0
+    vectors = bank.read()[np.array(table.row)].astype(np.float64)
+    t0 = np.array(table.t0)
+    current = np.array(table.label)
+    units = np.where(
+        _units_in_pass(t0, np.array(table.locked), current, t_now, params)
+    )[0]
+    reliable = np.array(table.long)[units] > 0
     if reliable.sum() < 2:
         return result
 
-    clusters = _cluster_units(vectors, reliable, params)
-    current = np.array(table.label)
+    clusters = _cluster_units(vectors[units], reliable, params)
     held_slot = clustering.held_slot
     names = _name_clusters(
         clusters,
-        current,
-        np.array(table.steps, np.float64),
+        current[units],
+        np.array(table.steps, np.float64)[units],
         reserved=set(np.where(clustering.active)[0].tolist()),
         held_slot=held_slot,
     )
     result.clusters = len(names)
-    t0 = np.array(table.t0)
-    for unit, cluster in enumerate(clusters):
+    for unit, cluster in zip(units.tolist(), clusters.tolist()):
         if table.locked[unit]:
             continue
         new_label = names[int(cluster)]

@@ -66,6 +66,9 @@ class LiveLabelConfig:
         max_steps=10,
         lock_passes=2,
         lock_age_s=600.0,
+        recent_s=1200.0,
+        max_units=1000,
+        anchors=10,
     )
 
     @property

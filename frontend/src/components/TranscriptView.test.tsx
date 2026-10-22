@@ -259,6 +259,39 @@ describe("TranscriptView", () => {
     expect(screen.getByTestId("overlap-lane-body-SPEAKER_B").style.minHeight).toBe("7rem");
   });
 
+  // A capture whose processing failed keeps its live lines, labels included.
+  it("shows live speaker labels as Speaker N, in lines and overlap lanes", () => {
+    const now = new Date().toISOString();
+
+    const { container } = renderTranscriptView([
+      buildSegment({ id: "live-1", text: "Opening", speaker: "LIVE_PROVISIONAL_3", start: 0, end: 1 }),
+      buildSegment({
+        id: "live-2",
+        text: "First voice",
+        speaker: "LIVE_PROVISIONAL_3",
+        start: 10,
+        end: 12,
+        overlapping_speakers: ["LIVE_PROVISIONAL_12"],
+        updated_at: now,
+      }),
+      buildSegment({
+        id: "live-3",
+        text: "Second voice",
+        speaker: "LIVE_PROVISIONAL_12",
+        start: 10.5,
+        end: 11.5,
+        overlapping_speakers: ["LIVE_PROVISIONAL_3"],
+        updated_at: now,
+      }),
+      buildSegment({ id: "named", text: "Named", speaker: "SPEAKER_00", start: 20, end: 21 }),
+    ]);
+
+    expect(screen.getAllByText("Speaker 3").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Speaker 12").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Dana").length).toBeGreaterThan(0);
+    expect(container.textContent).not.toContain("LIVE_");
+  });
+
   it("preserves scroll position when older utterances are inserted ahead of the current viewport", () => {
     positionMap.set("utt-1", { top: 0, height: 40 });
     positionMap.set("utt-2", { top: 80, height: 40 });

@@ -4,6 +4,7 @@ import type { RefObject } from "react";
 
 import { getColorByKey } from "@/lib/constants";
 import { segmentEndMs, segmentStartMs } from "@/lib/notes/placement";
+import { segmentSpeakerDisplayName } from "@/lib/recordingSpeakerUtils";
 import {
   GlobalSpeaker,
   RecordingSpeaker,
@@ -71,7 +72,7 @@ export default function TranscriptLine({
   const isActive = currentTime >= segment.start && currentTime < segment.end;
   const isProvisional = segment.provisional === true;
   const isSegmentReadOnly = readOnly || (isProvisional && !allowProvisionalEdits);
-  const speakerName = speakerMap[segment.speaker] || segment.speaker;
+  const speakerName = segmentSpeakerDisplayName(speakerMap, segment.speaker);
   const isEditingSpeaker = editingSpeaker === segment.speaker;
   const isEditingSegmentSpeaker = editingSegmentSpeakerId === segmentId;
   const isEditingText = editingTextId === segmentId;

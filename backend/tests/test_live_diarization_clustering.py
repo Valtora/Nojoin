@@ -2,17 +2,27 @@
 
 from __future__ import annotations
 
-import numpy as np
+from dataclasses import replace
 
+import numpy as np
+import pytest
+
+from backend.processing.live_diarization import recluster as recluster_module
 from backend.processing.live_diarization.clustering import (
     ClusteringParams,
     OnlineSpeakerClustering,
 )
-from backend.processing.live_diarization.engine import LiveLabelConfig
+from backend.processing.live_diarization.engine import (
+    LiveLabelConfig,
+    LiveLabelEngine,
+    Piece,
+)
+from backend.processing.live_diarization.lines import LabelTimeline
 from backend.processing.live_diarization.recluster import (
     ReclusterParams,
     UnitBank,
     UnitTable,
+    _units_in_pass,
     recluster,
 )
 
@@ -113,6 +123,42 @@ def test_with_every_slot_taken_a_new_voice_is_held():
     assert step.extra == [(0, clustering.held_slot)]
 
 
+def test_the_last_slot_below_the_held_one_still_founds_a_speaker():
+    # Slots 0-2 can be founded; slot 3 is the held slot and is never one.
+    small = ClusteringParams(**{**PARAMS.__dict__, "max_speakers": 4})
+    clustering = _clustering_with(A, B, params=small)
+    step = clustering.identify(_segmentation(0.9), C[None])
+
+    assert step.pairs == [(0, 2)]
+    assert step.founded == 1
+    assert clustering.active.tolist() == [True, True, True, False]
+
+
+def test_a_held_unit_at_the_slot_cap_ages_into_a_line_that_settles(tmp_path):
+    # Every slot below the held one is founded, so the re-cluster cannot name
+    # the held voice's cluster. Its unit keeps the held slot, locks with age,
+    # and the line holding it settles unlabelled.
+    params = ClusteringParams(**{**PARAMS.__dict__, "max_speakers": 3})
+    clustering = _clustering_with(A, B, params=params)
+    table, bank = _table(tmp_path, [(A, 0, True), (B, 1, True), (C, 2, False)], held=2)
+
+    recluster(table, bank, clustering, RECLUSTER, t_now=10.0)
+    assert table.label == [0, 1, 2]
+    assert table.locked == [True, True, False]
+    recluster(table, bank, clustering, RECLUSTER, t_now=RECLUSTER.lock_age_s)
+    assert table.label == [0, 1, 2]
+    assert table.locked == [True, True, True]
+
+    engine = LiveLabelEngine(LiveLabelConfig(clustering=params), bank)
+    engine.units = table
+    engine.clustering = clustering
+    engine.next_end_n = 20 * engine.config.sample_rate
+    engine.pieces = [Piece(start=1.0, end=4.0, unit=2)]
+    decision = LabelTimeline.from_engine(engine).label_line(1.0, 4.0)
+    assert decision.speaker == "UNKNOWN"
+    assert decision.locked is True
+
+
 RECLUSTER = ReclusterParams(
     every_s=10.0,
     threshold=0.45,
@@ -120,6 +166,9 @@ RECLUSTER = ReclusterParams(
     max_steps=10,
     lock_passes=2,
     lock_age_s=600.0,
+    recent_s=1200.0,
+    max_units=1000,
+    anchors=10,
 )
 
 
@@ -207,3 +256,66 @@ def test_a_relabelled_unit_starts_its_count_again(tmp_path):
     assert table.label == [0, 0, 0]
     assert table.stable[2] == 0
     assert table.locked[2] is False
+
+
+def _aged_table(tmp_path, units: list[tuple[np.ndarray, int, bool, float]], held: int):
+    """Like ``_table``, with each unit's start time."""
+    table, bank = _table(
+        tmp_path, [(vector, label, locked) for vector, label, locked, _ in units], held
+    )
+    table.t0 = [t0 for *_, t0 in units]
+    return table, bank
+
+
+def test_a_pass_takes_recent_units_and_a_few_anchors_per_old_label():
+    params = replace(RECLUSTER, recent_s=100.0, max_units=3, anchors=1)
+    t0 = np.array([0.0, 10.0, 20.0, 30.0, 950.0, 960.0, 5.0])
+    locked = np.array([True, True, True, True, True, True, False])
+    labels = np.array([0, 0, 1, 1, 0, 1, 2])
+
+    chosen = _units_in_pass(t0, locked, labels, 1000.0, params)
+
+    # Unlocked and recent units, then each old label's newest unit.
+    assert chosen.tolist() == [False, True, False, True, True, True, True]
+    # Within the window but over the cap: the oldest locked units give way
+    # first, and their labels keep their anchors.
+    wide = replace(params, recent_s=1000.0, max_units=4)
+    assert _units_in_pass(t0, locked, labels, 1000.0, wide).tolist() == [
+        False,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+    ]
+
+
+def test_a_label_heard_only_long_ago_still_claims_its_speaker(tmp_path):
+    # Speaker A spoke long ago (locked, label 0) and B since. A returns, and
+    # the online step split A's return onto label 2. The pass must give it
+    # back label 0, from the anchors of A's past alone.
+    params = ClusteringParams(**{**PARAMS.__dict__, "max_speakers": 5})
+    clustering = _clustering_with(A, B, _unit(1, 0.05), params=params)
+    old_a = [(_unit(1, 0.01 * k), 0, True, float(k)) for k in range(6)]
+    recent_b = [(B, 1, True, 1900.0), (B, 1, True, 1910.0)]
+    back = [(_unit(1, 0.05), 2, False, 1990.0), (_unit(1, 0.04), 2, False, 1995.0)]
+    bounded = replace(RECLUSTER, recent_s=100.0, max_units=10, anchors=2)
+    table, bank = _aged_table(tmp_path, old_a + recent_b + back, held=4)
+    linkage_rows = []
+    real_linkage = recluster_module.linkage
+
+    def counting_linkage(points, **kwargs):
+        linkage_rows.append(len(points))
+        return real_linkage(points, **kwargs)
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(recluster_module, "linkage", counting_linkage)
+        recluster(table, bank, clustering, bounded, t_now=2000.0)
+
+    assert table.label[-2:] == [0, 0]
+    # The four recent units and A's two newest old ones.
+    assert linkage_rows == [6]
+    # The centroids still sum every unit, in the pass or not.
+    vectors = bank.read().astype(np.float64)
+    assert np.allclose(clustering.centers[0], vectors[[0, 1, 2, 3, 4, 5, 8, 9]].sum(0))
