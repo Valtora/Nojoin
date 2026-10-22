@@ -205,18 +205,6 @@ def _install_happy_path_modules(monkeypatch, *, diarization_result=None, segment
     )
     _install(
         monkeypatch,
-        "backend.utils.live_transcript",
-        apply_live_authority_to_segments=lambda live, combined: combined,
-        build_transcription_result_from_segments=lambda segs: (
-            {"text": "", "segments": []},
-            [],
-        ),
-        merge_reusable_segments=lambda primary, additional: (
-            list(primary) + list(additional)
-        ),
-    )
-    _install(
-        monkeypatch,
         "backend.processing.text_embedding",
         release_embedding_model=lambda: None,
     )

@@ -1,10 +1,9 @@
 """Which segment-carried ids may become an utterance ``public_id``.
 
-A segment's ``id`` is a request, not an identity. Live-ASR reuse puts a live
-utterance's public id there on purpose (``build_transcription_result_from_segments``
-and ``_with_word_source_public_ids``), and a transcript projection carries the
-ids of the utterances it was built from, but the same key also carries whatever
-an engine called its segments: openai-whisper numbers them 0, 1, 2. A kept id
+A segment's ``id`` is a request, not an identity. A transcript projection
+carries the ids of the utterances it was built from, but the same key also
+carries whatever an engine called its segments: openai-whisper numbers them 0,
+1, 2. A kept id
 is persisted as ``transcript_utterances.public_id``, which is unique across
 every recording.
 
