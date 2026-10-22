@@ -30,6 +30,7 @@ from backend.processing.browser_live_audio import (
     LIVE_SOURCE_AUTHORITY_OVERLAP,
 )
 from backend.processing.engines.errors import TranscriptionError
+from backend.processing.live_diarization.setting import live_speaker_labels_requested
 from backend.processing.pipeline_metrics import (
     pipeline_metric_timer,
     record_pipeline_metric,
@@ -1775,21 +1776,20 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
             log=logger,
         )
 
-        # Speaker labels last, in a try block of their own: the text and the
-        # lane state are saved, and must not be reported as a failed run.
-        try:
-            from backend.processing.live_diarization import step as live_labels
+        try:  # labels last, in a try block of their own: text and lane state are saved
+            if live_speaker_labels_requested():  # off, none of their code is imported
+                from backend.processing.live_diarization import step as live_labels
 
-            live_labels.run_live_speaker_labels(
-                live_labels.LiveLabelRun(
-                    recording_id=recording_id,
-                    sequence=sequence,
-                    live_dir=live_dir,
-                    audio=combined,
-                    audio_start_s=combined_abs_start,
-                    next_text_start_s=new_abs_start,
+                live_labels.run_live_speaker_labels(
+                    live_labels.LiveLabelRun(
+                        recording_id=recording_id,
+                        sequence=sequence,
+                        live_dir=live_dir,
+                        audio=combined,
+                        audio_start_s=combined_abs_start,
+                        next_text_start_s=new_abs_start,
+                    )
                 )
-            )
         except Exception:  # noqa: BLE001 -- boundary: labels are best-effort
             logger.exception("Live speaker labels failed for %s", recording_id)
 

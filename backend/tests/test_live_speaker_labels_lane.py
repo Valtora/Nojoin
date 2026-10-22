@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import sys
+
+import backend.processing.live_diarization as live_diarization
 from backend.models.recording import RecordingStatus
 from backend.processing import live_transcribe as lt
 from backend.processing.live_diarization import step
@@ -13,6 +16,7 @@ from backend.tests.test_live_transcription import (
     _patch_live_deps,
     _run_live_task,
 )
+from backend.utils.config_manager import config_manager
 
 
 def _lane(monkeypatch, tmp_path):
@@ -26,6 +30,7 @@ def _lane(monkeypatch, tmp_path):
     )
     transcript = _FakeTranscript()
     session = _FakeSession(_FakeRecording(RecordingStatus.UPLOADING, transcript))
+    monkeypatch.setitem(config_manager.config, "live_speaker_labels", "auto")
     return temp_dir, audio_store, transcript, session
 
 
@@ -84,8 +89,6 @@ def test_the_label_step_runs_after_the_text_and_lane_state_are_saved(
 def test_with_labels_off_no_model_loads_and_no_label_state_is_written(
     monkeypatch, tmp_path
 ):
-    from backend.utils.config_manager import config_manager
-
     temp_dir, audio_store, transcript, session = _lane(monkeypatch, tmp_path)
     monkeypatch.setitem(config_manager.config, "live_speaker_labels", "off")
     loads = []
@@ -103,3 +106,22 @@ def test_with_labels_off_no_model_loads_and_no_label_state_is_written(
         "state.json",
     ]
     assert [segment["speaker"] for segment in transcript.segments] == ["UNKNOWN"]
+
+
+def test_with_labels_off_the_live_task_never_imports_the_label_code(
+    monkeypatch, tmp_path
+):
+    # The step module pulls in the engine and SciPy. Off is the default, so a
+    # default install's live runs must not import it at all.
+    temp_dir, audio_store, transcript, session = _lane(monkeypatch, tmp_path)
+    monkeypatch.setitem(config_manager.config, "live_speaker_labels", "off")
+    monkeypatch.delattr(live_diarization, "step", raising=False)
+    monkeypatch.setitem(sys.modules, "backend.processing.live_diarization.step", None)
+    failures = []
+    monkeypatch.setattr(lt.logger, "exception", lambda *args: failures.append(args))
+
+    _make_segment_wav(temp_dir, 0, 2.0, audio_store)
+    _run_live_task(monkeypatch, 42, 0, session)
+
+    assert failures == []
+    assert [segment["text"] for segment in transcript.segments] == ["hello"]

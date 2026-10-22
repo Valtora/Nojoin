@@ -31,12 +31,11 @@ from backend.utils.config_manager import config_manager
 from .engine import FeedResult, LiveLabelConfig, LiveLabelEngine, ModelFn
 from .files import DISABLED_FILENAME, remove_live_label_state
 from .lines import LabelTimeline
+from .setting import live_speaker_labels_requested
 from .state import LiveLabelStateError, load_engine, new_engine, save_engine
 
 logger = logging.getLogger(__name__)
 
-LIVE_SPEAKER_LABELS_KEY = "live_speaker_labels"
-LIVE_SPEAKER_LABELS_AUTO = "auto"
 # Pieces this far before the earliest line that can still change are kept.
 PRUNE_MARGIN_S = 1.0
 CONFIG = LiveLabelConfig()
@@ -48,8 +47,7 @@ def live_speaker_labels_device() -> str | None:
     ``auto`` means on when the live lane runs on CUDA: the model pass costs
     about a third of real time on 16 CPU threads, which the lane cannot spare.
     """
-    mode = str(config_manager.get(LIVE_SPEAKER_LABELS_KEY, "off") or "off")
-    if mode.strip().lower() != LIVE_SPEAKER_LABELS_AUTO:
+    if not live_speaker_labels_requested():
         return None
     import torch
 
