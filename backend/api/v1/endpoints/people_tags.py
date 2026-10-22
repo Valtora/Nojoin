@@ -12,7 +12,12 @@ from backend.models.people_tag_schemas import (
     PeopleTagUpdate,
 )
 from backend.models.user import User
-from backend.services.tag_ownership import TAG_NOT_FOUND, require_own_parent
+from backend.services.tag_ownership import (
+    TAG_NOT_FOUND,
+    require_own_parent,
+    require_parent_outside_subtree,
+    require_unused_name,
+)
 
 router = APIRouter()
 
@@ -51,13 +56,9 @@ async def create_people_tag(
     Create a new tag for people.
     """
     await require_own_parent(db, PeopleTag, tag_in.parent_id, current_user.id)
-
-    stmt = select(PeopleTag).where(
-        PeopleTag.name == tag_in.name, PeopleTag.user_id == current_user.id
+    await require_unused_name(
+        db, PeopleTag, tag_in.name, current_user.id, detail="Tag already exists"
     )
-    result = await db.execute(stmt)
-    if result.scalar_one_or_none():
-        raise HTTPException(status_code=400, detail="Tag already exists")
 
     tag = PeopleTag(
         name=tag_in.name,
@@ -84,10 +85,18 @@ async def update_people_tag(
     tag = await _get_own_tag(db, tag_id, current_user.id)
 
     update_data = tag_in.model_dump(exclude_unset=True)
+    # A tag always has a name, so null leaves it as it is, as on PATCH /tags.
+    if update_data.get("name") is None:
+        update_data.pop("name", None)
     if "parent_id" in update_data:
         await require_own_parent(
             db, PeopleTag, update_data["parent_id"], current_user.id
         )
+        await require_parent_outside_subtree(
+            db, PeopleTag, tag_id, update_data["parent_id"], current_user.id
+        )
+    if update_data.get("name", tag.name) != tag.name:
+        await require_unused_name(db, PeopleTag, update_data["name"], current_user.id)
 
     for field, value in update_data.items():
         setattr(tag, field, value)

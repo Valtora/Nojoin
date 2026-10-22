@@ -21,6 +21,7 @@ from backend.utils.document_storage import (
     delete_document_files,
     recording_document_paths,
 )
+from backend.utils.recording_storage import delete_recording_artifacts_after_commit
 from backend.utils.time import utc_now
 
 from .router import router
@@ -140,20 +141,20 @@ async def batch_permanently_delete_recordings(
         # repoint audio_path between this read and the delete.
         await db.refresh(recording, with_for_update=True)
 
-    # Read before any delete is flushed, which would cascade the rows away.
+    # Read before any delete is flushed, which would cascade the rows away. The
+    # files go once the delete has committed, so a failed commit keeps them.
+    artifacts = [
+        (recording.id, recording.audio_path, recording.proxy_path)
+        for recording in recordings
+    ]
     document_paths = await recording_document_paths(
         db, [recording.id for recording in recordings]
     )
     for recording in recordings:
-        recordings_module.delete_recording_artifacts(
-            recording_id=recording.id,
-            audio_path=recording.audio_path,
-            proxy_path=recording.proxy_path,
-            logger=logger,
-        )
         await db.delete(recording)
 
     await db.commit()
+    delete_recording_artifacts_after_commit(artifacts, logger=logger)
     await delete_document_files(document_paths, logger=logger)
     return {"ok": True, "count": len(recordings)}
 

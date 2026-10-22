@@ -25,16 +25,10 @@ from backend.tests.sqlite_schemas import (
     P_TAGS_SCHEMA,
     PEOPLE_TAGS_SCHEMA,
     RECORDING_SPEAKERS_SCHEMA,
+    TAGS_SCHEMA,
 )
 
 NOW = "2026-10-22 00:00:00"
-TAGS_SCHEMA = """
-CREATE TABLE tags (
-    id INTEGER PRIMARY KEY, created_at DATETIME NOT NULL,
-    updated_at DATETIME NOT NULL, name VARCHAR NOT NULL, color VARCHAR,
-    user_id INTEGER, parent_id INTEGER
-)
-"""
 
 # People tags: Alice's, Bob's, and one with no owner.
 ALICES_CLIENT, ALICES_LEAD, BOBS_VENDOR, NO_OWNER = 1, 2, 3, 4
