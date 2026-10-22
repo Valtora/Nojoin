@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, type RefObject } from "react";
+import { memo } from "react";
 
 import { getColorByKey } from "@/lib/constants";
 import { segmentEndMs, segmentStartMs } from "@/lib/notes/placement";
@@ -30,7 +30,6 @@ import TranscriptLineText from "./TranscriptLineText";
 type TranscriptLineProps = Pick<IndexedTranscriptSegment, "segment" | "index" | "segmentId"> & {
   /** Playback is inside this line. */
   isActive: boolean;
-  activeSegmentRef: RefObject<HTMLDivElement | null>;
   readOnly: boolean;
   allowProvisionalEdits: boolean;
   speakerMap: Record<string, string>;
@@ -70,7 +69,6 @@ function TranscriptLine({
   index,
   segmentId,
   isActive,
-  activeSegmentRef,
   readOnly,
   allowProvisionalEdits,
   speakerMap,
@@ -97,7 +95,6 @@ function TranscriptLine({
 
   return (
     <div
-      ref={isActive ? activeSegmentRef : null}
       data-segment-id={segmentId}
       data-order-index={index}
       className="flex flex-col mb-3 last:mb-0"
