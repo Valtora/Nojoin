@@ -12,6 +12,7 @@ import {
   removeTagFromRecording,
 } from "@/lib/api";
 import { getColorByKey, DEFAULT_TAG_COLORS } from "@/lib/constants";
+import { notifyRequestError } from "@/lib/notifyRequestError";
 import ContextMenu from "./ContextMenu";
 import Button from "./ui/Button";
 import IconButton from "./ui/IconButton";
@@ -79,9 +80,11 @@ export default function AddTagModal({
     e.preventDefault();
     if (!creatingSubTagFor || !newSubTagName.trim()) return;
 
-    await handleCreateTag(newSubTagName, creatingSubTagFor.id);
-    setCreatingSubTagFor(null);
-    setNewSubTagName("");
+    // A refused sub-tag keeps the form open with the name typed.
+    if (await handleCreateTag(newSubTagName, creatingSubTagFor.id)) {
+      setCreatingSubTagFor(null);
+      setNewSubTagName("");
+    }
   };
   const handleAddTag = async (tagName: string) => {
     if (processingTags.has(tagName)) return;
@@ -92,9 +95,8 @@ export default function AddTagModal({
       window.dispatchEvent(new CustomEvent("tags-updated"));
       if (onTagsUpdated) onTagsUpdated();
       setInputValue("");
-
-        } catch (error: unknown) {
-      console.error("Failed to add tag:", error);
+    } catch (error: unknown) {
+      notifyRequestError(error, "Failed to add tag.");
     } finally {
       setProcessingTags((prev) => {
         const next = new Set(prev);
@@ -104,9 +106,13 @@ export default function AddTagModal({
     }
   };
 
-  const handleCreateTag = async (name: string, parentId?: number) => {
-    if (!name.trim()) return;
-    if (processingTags.has(name.trim())) return;
+  /** Resolves to whether the tag was created or added. */
+  const handleCreateTag = async (
+    name: string,
+    parentId?: number,
+  ): Promise<boolean> => {
+    if (!name.trim()) return false;
+    if (processingTags.has(name.trim())) return false;
 
     setProcessingTags((prev) => new Set(prev).add(name.trim()));
     try {
@@ -132,9 +138,10 @@ export default function AddTagModal({
         }
       }
       setInputValue("");
-
-        } catch (error: unknown) {
-      console.error("Failed to create tag:", error);
+      return true;
+    } catch (error: unknown) {
+      notifyRequestError(error, "Failed to create tag.");
+      return false;
     } finally {
       setProcessingTags((prev) => {
         const next = new Set(prev);
@@ -151,9 +158,8 @@ export default function AddTagModal({
       window.dispatchEvent(new CustomEvent("tags-updated"));
       if (onTagsUpdated) onTagsUpdated();
       setEditingTagId(null);
-
-        } catch (error: unknown) {
-      console.error("Failed to rename tag:", error);
+    } catch (error: unknown) {
+      notifyRequestError(error, "Failed to rename tag.");
     }
   };
 
@@ -167,9 +173,8 @@ export default function AddTagModal({
       await loadAllTags();
       window.dispatchEvent(new CustomEvent("tags-updated"));
       if (onTagsUpdated) onTagsUpdated();
-
-        } catch (error: unknown) {
-      console.error("Failed to delete tag:", error);
+    } catch (error: unknown) {
+      notifyRequestError(error, "Failed to delete tag.");
     }
   };
 
@@ -181,9 +186,8 @@ export default function AddTagModal({
       await removeTagFromRecording(recordingId, tagName);
       window.dispatchEvent(new CustomEvent("tags-updated"));
       if (onTagsUpdated) onTagsUpdated();
-
-        } catch (error: unknown) {
-      console.error("Failed to remove tag:", error);
+    } catch (error: unknown) {
+      notifyRequestError(error, "Failed to remove tag.");
     } finally {
       setProcessingTags((prev) => {
         const next = new Set(prev);
@@ -414,6 +418,7 @@ export default function AddTagModal({
               label: "Add Sub-tag",
               onClick: () => {
                 setCreatingSubTagFor(contextMenu.tag);
+                setNewSubTagName("");
                 setContextMenu(null);
               },
             },
