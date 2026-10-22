@@ -91,13 +91,16 @@ export function useTranscriptSearch(
 
   const [matches, setMatches] = useState<TranscriptSearchMatch[]>([]);
   const [currentMatchIndex, setCurrentMatchIndex] = useState(-1);
-  const prevFindTextRef = useRef(findText);
+  // The query the matches were last found for; null while there are none, so
+  // the next query counts as new even if it repeats the last one.
+  const prevFindTextRef = useRef<string | null>(null);
 
   // Calculate matches when findText or segments change
   useEffect(() => {
     if (!findText.trim() || !showSearch) {
       setMatches([]);
       setCurrentMatchIndex(-1);
+      prevFindTextRef.current = null;
       return;
     }
 
@@ -185,9 +188,13 @@ export function useTranscriptSearch(
 
     setMatches(newMatches);
 
+    // Read now: React runs the updater below during the next render, after
+    // the ref has moved on to this query.
+    const queryChanged = findText !== prevFindTextRef.current;
     setCurrentMatchIndex((prevIndex) => {
-      // If search term changed, reset to first match
-      if (findText !== prevFindTextRef.current) {
+      // A new query starts at its first match, as does one that had none
+      // until an option or the transcript changed.
+      if (queryChanged || prevIndex < 0) {
         return newMatches.length > 0 ? 0 : -1;
       }
 

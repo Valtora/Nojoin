@@ -31,8 +31,8 @@ const SEGMENTS: TranscriptSegment[] = [
   { id: "u1", speaker: "SPEAKER_1", start: 65, end: 67, text: "beta alpha" },
 ];
 
-function renderView(overrides: Partial<ComponentProps<typeof TranscriptView>> = {}) {
-  return render(
+function transcriptView(overrides: Partial<ComponentProps<typeof TranscriptView>> = {}) {
+  return (
     <TranscriptView
       recordingId="rec-1"
       segments={SEGMENTS}
@@ -55,9 +55,12 @@ function renderView(overrides: Partial<ComponentProps<typeof TranscriptView>> = 
       canRedo
       onExport={vi.fn()}
       {...overrides}
-    />,
+    />
   );
 }
+
+const renderView = (overrides: Partial<ComponentProps<typeof TranscriptView>> = {}) =>
+  render(transcriptView(overrides));
 
 const button = (name: string | RegExp) => screen.getByRole("button", { name });
 const findField = () => screen.getByPlaceholderText("Find...");
@@ -135,13 +138,69 @@ describe("transcript toolbar", () => {
 
     fireEvent.change(findField(), { target: { value: "alpha" } });
     expect(button("Next match")).toBeEnabled();
+    expect(screen.getByText("1 of 2")).toBeInTheDocument();
 
     fireEvent.click(button("Next match"));
+    expect(screen.getByText("2 of 2")).toBeInTheDocument();
+    fireEvent.click(button("Next match"));
     expect(screen.getByText("1 of 2")).toBeInTheDocument();
+    fireEvent.click(button("Previous match"));
+    expect(screen.getByText("2 of 2")).toBeInTheDocument();
+  });
+
+  it("makes a query's first match current as it is typed", () => {
+    renderView();
+    fireEvent.click(button("Search"));
+
+    fireEvent.change(findField(), { target: { value: "alpha" } });
+
+    expect(screen.getByText("1 of 2")).toBeInTheDocument();
+    // The current match is drawn in the action colour, on the first line.
+    const current = document.querySelectorAll("mark.bg-action");
+    expect(current).toHaveLength(1);
+    expect(current[0].closest("[data-segment-id]")).toHaveAttribute("data-segment-id", "u0");
+  });
+
+  it("starts a new query at its first match, even one that repeats a cleared query", () => {
+    renderView();
+    fireEvent.click(button("Search"));
+    fireEvent.change(findField(), { target: { value: "alpha" } });
     fireEvent.click(button("Next match"));
     expect(screen.getByText("2 of 2")).toBeInTheDocument();
-    fireEvent.click(button("Previous match"));
+
+    fireEvent.change(findField(), { target: { value: "beta" } });
     expect(screen.getByText("1 of 2")).toBeInTheDocument();
+
+    fireEvent.change(findField(), { target: { value: "" } });
+    fireEvent.change(findField(), { target: { value: "beta" } });
+    expect(screen.getByText("1 of 2")).toBeInTheDocument();
+  });
+
+  it("starts at the first match when unticking an option gives the query matches", () => {
+    renderView();
+    fireEvent.click(button("Find & Replace"));
+    fireEvent.click(button("Advanced Search Settings"));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Case Sensitive" }));
+    fireEvent.change(findField(), { target: { value: "ALPHA" } });
+    expect(screen.queryByText(/ of 2/)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Case Sensitive" }));
+
+    expect(screen.getByText("1 of 2")).toBeInTheDocument();
+  });
+
+  it("starts at the first match when a line that matches arrives", () => {
+    const view = renderView();
+    fireEvent.click(button("Search"));
+    fireEvent.change(findField(), { target: { value: "budget" } });
+
+    view.rerender(
+      transcriptView({
+        segments: [...SEGMENTS, { id: "u2", speaker: "SPEAKER_0", start: 90, end: 92, text: "the budget" }],
+      }),
+    );
+
+    expect(screen.getByText("1 of 1")).toBeInTheDocument();
   });
 
   it("announces the match count from one polite live region", () => {
@@ -151,8 +210,8 @@ describe("transcript toolbar", () => {
     expect(region).toHaveAttribute("aria-atomic", "true");
     expect(region).toHaveTextContent(/^$/);
 
+    // Typing the query is enough: no key press.
     fireEvent.change(findField(), { target: { value: "alpha" } });
-    fireEvent.keyDown(findField(), { key: "Enter" });
     expect(document.querySelector('[aria-live="polite"]')).toBe(region);
     expect(region).toHaveTextContent("1 of 2");
 
@@ -189,7 +248,6 @@ describe("transcript toolbar", () => {
     renderView({ onUpdateSegmentText: vi.fn(() => new Promise<void>(() => {})) });
     fireEvent.click(button("Find & Replace"));
     fireEvent.change(findField(), { target: { value: "alpha" } });
-    fireEvent.keyDown(findField(), { key: "Enter" });
     const replace = button(/^Replace$/);
     replace.focus();
 

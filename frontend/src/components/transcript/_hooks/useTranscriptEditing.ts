@@ -55,7 +55,19 @@ export interface TranscriptLineActions {
   /** Opens the line's speaker popover against `anchor`, even if it is open already. */
   openSpeakerPopover: (segmentId: string, anchor: HTMLElement) => void;
   closeSpeakerPopover: () => void;
-  startSpeakerRename: (speakerLabel: string, speakerName: string) => void;
+  /** Opens the rename of the line's speaker, on that line alone. */
+  startSpeakerRename: (segmentId: string, speakerLabel: string, speakerName: string) => void;
+}
+
+/** A speaker rename, open on the line it was started from. */
+interface SpeakerRename {
+  label: string;
+  segmentId: string;
+  /**
+   * The name it opened with, then the name it sent: submitting that again
+   * saves nothing.
+   */
+  savedName: string;
 }
 
 /** The open editor's value and handlers, for the lines that show it. */
@@ -70,8 +82,11 @@ export interface TranscriptOpenEditor {
 }
 
 export interface TranscriptEditing {
-  /** The speaker label being renamed everywhere. */
-  editingSpeaker: string | null;
+  /**
+   * The line a speaker rename was opened from, the only one that shows its
+   * input. The new name applies to every line of that speaker.
+   */
+  editingSpeakerLineId: string | null;
   /** The line whose text is open in the editor. */
   editingTextId: string | null;
   activePopover: SpeakerPopover | null;
@@ -106,7 +121,7 @@ export function useTranscriptEditing(
   } = options;
   const { addNotification } = useNotificationStore();
 
-  const [editingSpeaker, setEditingSpeaker] = useState<string | null>(null);
+  const [speakerRename, setSpeakerRename] = useState<SpeakerRename | null>(null);
   const [editingTextId, setEditingTextId] = useState<string | null>(null);
   const [activePopover, setActivePopover] = useState<SpeakerPopover | null>(
     null,
@@ -114,7 +129,7 @@ export function useTranscriptEditing(
   const [editValue, setEditValue] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const editInProgress = Boolean(editingSpeaker || editingTextId || isSubmitting);
+  const editInProgress = Boolean(speakerRename || editingTextId || isSubmitting);
 
   useEffect(() => {
     if (!onActiveEditUtteranceChange) {
@@ -133,17 +148,21 @@ export function useTranscriptEditing(
     onActiveEditUtteranceChange(activeSegment?.id || null);
   }, [editingTextId, onActiveEditUtteranceChange, segments]);
 
+  // Enter and the input's blur both submit, so an unchanged name, or the same
+  // name submitted again while it saves, closes the input without a request.
   const handleSpeakerRenameSubmit = async () => {
-    if (editingSpeaker && editValue.trim()) {
+    const name = editValue.trim();
+    if (speakerRename && name && name !== speakerRename.savedName) {
+      setSpeakerRename({ ...speakerRename, savedName: name });
       setIsSubmitting(true);
       try {
-        await onRenameSpeaker(editingSpeaker, editValue.trim());
+        await onRenameSpeaker(speakerRename.label, name);
       } finally {
         setIsSubmitting(false);
-        setEditingSpeaker(null);
+        setSpeakerRename(null);
       }
     } else {
-      setEditingSpeaker(null);
+      setSpeakerRename(null);
     }
   };
 
@@ -216,7 +235,7 @@ export function useTranscriptEditing(
       e.preventDefault();
       handleTextSubmit(segment);
     } else if (e.key === "Escape") {
-      setEditingSpeaker(null);
+      setSpeakerRename(null);
       setEditingTextId(null);
     }
   };
@@ -227,7 +246,7 @@ export function useTranscriptEditing(
         if (readOnly || (segment.provisional === true && !allowProvisionalEdits)) return;
         setEditingTextId(segmentId);
         setEditValue(segment.text);
-        setEditingSpeaker(null);
+        setSpeakerRename(null);
       },
       toggleSpeakerPopover: (segmentId, anchor) =>
         setActivePopover((open) =>
@@ -235,8 +254,8 @@ export function useTranscriptEditing(
         ),
       openSpeakerPopover: (segmentId, anchor) => setActivePopover({ segmentId, anchor }),
       closeSpeakerPopover: () => setActivePopover(null),
-      startSpeakerRename: (speakerLabel, speakerName) => {
-        setEditingSpeaker(speakerLabel);
+      startSpeakerRename: (segmentId, speakerLabel, speakerName) => {
+        setSpeakerRename({ label: speakerLabel, segmentId, savedName: speakerName });
         setEditValue(speakerName);
         setActivePopover(null);
       },
@@ -245,7 +264,7 @@ export function useTranscriptEditing(
   );
 
   return {
-    editingSpeaker,
+    editingSpeakerLineId: speakerRename?.segmentId ?? null,
     editingTextId,
     activePopover,
     isSubmitting,
@@ -257,7 +276,7 @@ export function useTranscriptEditing(
       handleTextSubmit,
       handleKeyDown,
       handleSpeakerRenameSubmit,
-      cancelSpeakerRename: () => setEditingSpeaker(null),
+      cancelSpeakerRename: () => setSpeakerRename(null),
     },
     handleFindReplaceSubmit,
     handleReplaceCurrent,

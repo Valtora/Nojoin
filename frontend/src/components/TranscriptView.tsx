@@ -10,7 +10,6 @@ import {
 } from "@/types";
 import { Fragment, useMemo, useState } from "react";
 import { Radio } from "lucide-react";
-import { getTranscriptSegmentKey } from "@/lib/transcriptSegments";
 import { useTranscriptSearch } from "./transcript/_hooks/useTranscriptSearch";
 import { useTranscriptScroll } from "./transcript/_hooks/useTranscriptScroll";
 import { useTranscriptEditing } from "./transcript/_hooks/useTranscriptEditing";
@@ -142,17 +141,30 @@ export default function TranscriptView({
     [pendingRemoteUtteranceIds],
   );
 
-  const activeSegmentIndex = segments.findIndex(
-    (s) => currentTime >= s.start && currentTime < s.end,
-  );
+  // Memoised on the lines, so a playback tick hands every line the same item
+  // and the same group, and an unchanged line does not redraw.
+  const displaySegments = useMemo(() => {
+    const hasKnownSpeakers = segments.some((s) => s.speaker !== "UNKNOWN");
+
+    // Map to preserve original indices before filtering
+    const indexedSegments = indexSegments(segments);
+
+    return hasKnownSpeakers
+      ? indexedSegments.filter(
+          ({ segment }) =>
+            segment.speaker !== "UNKNOWN" || segment.provisional === true,
+        )
+      : indexedSegments;
+  }, [segments]);
+
+  // Playback-follow keeps the first shown line playback is in in view.
   const activeSegmentKey =
-    activeSegmentIndex >= 0
-      ? getTranscriptSegmentKey(segments[activeSegmentIndex], activeSegmentIndex)
-      : null;
+    displaySegments.find(
+      ({ segment }) => currentTime >= segment.start && currentTime < segment.end,
+    )?.segmentId ?? null;
 
   const {
     scrollContainerRef,
-    activeSegmentRef,
     scrollSegmentIntoView,
     updateScrollAnchor,
   } = useTranscriptScroll({ segments, activeSegmentKey });
@@ -173,22 +185,6 @@ export default function TranscriptView({
       setShowSearch(false);
     },
   });
-
-  // Memoised on the lines, so a playback tick hands every line the same item
-  // and the same group, and an unchanged line does not redraw.
-  const displaySegments = useMemo(() => {
-    const hasKnownSpeakers = segments.some((s) => s.speaker !== "UNKNOWN");
-
-    // Map to preserve original indices before filtering
-    const indexedSegments = indexSegments(segments);
-
-    return hasKnownSpeakers
-      ? indexedSegments.filter(
-          ({ segment }) =>
-            segment.speaker !== "UNKNOWN" || segment.provisional === true,
-        )
-      : indexedSegments;
-  }, [segments]);
 
   const speakerDisplayOrder = useMemo(() => {
     const order = new Map<string, number>();
@@ -269,7 +265,6 @@ export default function TranscriptView({
   const addNote = useStableCallback((note: OutboxDraft) => onAddNote?.(note) ?? null);
   const lineShared = useMemo<TranscriptLineShared>(
     () => ({
-      activeSegmentRef,
       readOnly,
       allowProvisionalEdits,
       speakerMap,
@@ -283,7 +278,6 @@ export default function TranscriptView({
       onPlayFrom: disableSegmentPlayback ? null : playFrom,
     }),
     [
-      activeSegmentRef,
       readOnly,
       allowProvisionalEdits,
       speakerMap,
@@ -309,8 +303,8 @@ export default function TranscriptView({
       .join(LINE_KEY_SEPARATOR);
   const holdsTheEditor = (items: readonly IndexedTranscriptSegment[]) =>
     items.some(
-      ({ segment, segmentId }) =>
-        segment.speaker === editing.editingSpeaker || segmentId === editing.editingTextId,
+      ({ segmentId }) =>
+        segmentId === editing.editingSpeakerLineId || segmentId === editing.editingTextId,
     );
 
   return (
@@ -382,7 +376,7 @@ export default function TranscriptView({
                   )}
                   recentLineKeys={lineKeys(group.items, isRecentlyUpdatedSegment)}
                   searchDecorations={search.searchDecorations}
-                  editingSpeaker={editing.editingSpeaker}
+                  editingSpeakerLineId={editing.editingSpeakerLineId}
                   editingTextId={editing.editingTextId}
                   activePopover={editing.activePopover}
                   editor={holdsTheEditor(group.items) ? editing.editor : null}
