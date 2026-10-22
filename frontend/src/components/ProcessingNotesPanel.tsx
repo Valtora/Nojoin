@@ -16,7 +16,10 @@ import {
   stripNote,
   type HeadNoteConflict,
 } from "@/lib/notes/headNoteSync";
+import type { OutboxEntry } from "@/lib/notes/noteOutbox";
 import type { TimelineNote } from "@/types";
+
+import UnsavedNotesList from "./notes/UnsavedNotesList";
 
 const SAVE_DEBOUNCE_MS = 1800;
 // The character count shows from here, so the limit is never a surprise.
@@ -36,6 +39,20 @@ interface ProcessingNotesPanelProps {
   /** The recording's other meeting-wide notes, shown read-only under the box. */
   otherNotes?: readonly TimelineNote[];
   /**
+   * Meeting-wide notes from the live note box still on their way, listed with
+   * the other notes, where each will stay once saved.
+   */
+  pendingNotes?: readonly OutboxEntry[];
+  onRetryPendingNote?: (key: string) => void;
+  onDiscardPendingNote?: (key: string) => void;
+  /** Where focus goes when Discard removes the last of them. */
+  onPendingNotesEmptied?: () => void;
+  /**
+   * A lower floor for the box, while the live note box beside it takes the
+   * meeting's notes and the transcript needs the height.
+   */
+  compact?: boolean;
+  /**
    * Changes when what failed an earlier save has since cleared up on its own,
    * such as a clear's delete resent in the background: the box then saves
    * again, if its last save failed.
@@ -44,6 +61,7 @@ interface ProcessingNotesPanelProps {
 }
 
 const NO_OTHER_NOTES: readonly TimelineNote[] = [];
+const NO_PENDING_NOTES: readonly OutboxEntry[] = [];
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
@@ -153,6 +171,11 @@ function ProcessingNotesPanel({
   disabled = false,
   disabledMessage,
   otherNotes = NO_OTHER_NOTES,
+  pendingNotes = NO_PENDING_NOTES,
+  onRetryPendingNote,
+  onDiscardPendingNote,
+  onPendingNotesEmptied,
+  compact = false,
   retrySaves = 0,
 }: ProcessingNotesPanelProps) {
   const normalisedValue = value ?? "";
@@ -541,7 +564,7 @@ function ProcessingNotesPanel({
           aria-describedby={shownLength !== null ? countId : undefined}
           aria-invalid={overLimit}
           disabled={disabled}
-          className={`density-surface-panel min-h-[10rem] w-full flex-1 resize-none border border-control-border bg-control-bg px-4 py-4 text-sm leading-6 text-contrast-muted outline-none transition ${disabled ? "cursor-not-allowed opacity-70" : "focus:border-action focus:ring-2 focus:ring-action"}`}
+          className={`density-surface-panel ${compact ? "min-h-[6rem]" : "min-h-[10rem]"} w-full flex-1 resize-none border border-control-border bg-control-bg px-4 py-4 text-sm leading-6 text-contrast-muted outline-none transition ${disabled ? "cursor-not-allowed opacity-70" : "focus:border-action focus:ring-2 focus:ring-action"}`}
         />
         {/* Focusable only from code: it takes focus when the lock takes the
             box from under the caret, so the reason is read out, and hands it
@@ -577,7 +600,7 @@ function ProcessingNotesPanel({
           {overLimit ? ". Shorten the notes to save them." : ""}
         </p>
       ) : null}
-      {otherNotes.length > 0 ? (
+      {otherNotes.length > 0 || pendingNotes.length > 0 ? (
         <div className="mt-3">
           <h4
             id={otherNotesHeadingId}
@@ -585,20 +608,36 @@ function ProcessingNotesPanel({
           >
             Other notes
           </h4>
-          <ul
+          {/* Saved and unsaved notes share one scroll box, capped as the list
+              alone was, and lower while capture is live, so notes piling up
+              during an outage cannot take the live transcript's height. */}
+          <div
+            role="group"
             aria-labelledby={otherNotesHeadingId}
             tabIndex={0}
-            className="mt-2 max-h-40 space-y-2 overflow-y-auto outline-none focus-visible:ring-2 focus-visible:ring-action"
+            className={`mt-2 ${compact ? "max-h-28" : "max-h-40"} space-y-2 overflow-y-auto outline-none focus-visible:ring-2 focus-visible:ring-action`}
           >
-            {otherNotes.map((note) => (
-              <li
-                key={note.id}
-                className="density-surface-panel whitespace-pre-wrap break-words bg-surface-inset px-3 py-2 text-sm leading-6 text-contrast-muted"
-              >
-                {note.body}
-              </li>
-            ))}
-          </ul>
+            {otherNotes.length > 0 ? (
+              <ul aria-labelledby={otherNotesHeadingId} className="space-y-2">
+                {otherNotes.map((note) => (
+                  <li
+                    key={note.id}
+                    className="density-surface-panel whitespace-pre-wrap break-words bg-surface-inset px-3 py-2 text-sm leading-6 text-contrast-muted"
+                  >
+                    {note.body}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            {pendingNotes.length > 0 && onRetryPendingNote && onDiscardPendingNote ? (
+              <UnsavedNotesList
+                entries={pendingNotes}
+                onRetry={onRetryPendingNote}
+                onDiscard={onDiscardPendingNote}
+                onEmptied={onPendingNotesEmptied}
+              />
+            ) : null}
+          </div>
         </div>
       ) : null}
       <p className="mt-3 text-xs text-contrast-helper">

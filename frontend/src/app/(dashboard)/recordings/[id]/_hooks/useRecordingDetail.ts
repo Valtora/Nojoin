@@ -63,6 +63,8 @@ import {
   type LocalTranscriptState,
 } from "@/lib/transcriptState";
 import { useDragSelectionLock } from "@/lib/useDragSelectionLock";
+import { AudioClock } from "@/lib/notes/audioClock";
+import { useRecordingNotes } from "@/lib/notes/useNoteOutbox";
 import { useViewportDensity } from "@/components/ViewportDensityProvider";
 import { useRecordingActions } from "@/components/recordings/_hooks/useRecordingActions";
 
@@ -88,6 +90,15 @@ interface UseRecordingDetailParams {
  */
 export function useRecordingDetail({ params }: UseRecordingDetailParams) {
   const [recording, setRecording] = useState<Recording | null>(null);
+  // Fed every read of the recording, changed or not: `recording` ignores
+  // `live_audio_ms`, which changes on every poll.
+  const [audioClock] = useState(() => new AudioClock());
+  // Fetched when `timeline_notes_list_signature` changes; null while loading.
+  // The note box's outbox is kept per recording, here and in every view.
+  const timelineNotes = useRecordingNotes(
+    recording,
+    recording ? shouldPollRecordingUpdates(recording) : false,
+  );
   const [globalSpeakers, setGlobalSpeakers] = useState<GlobalSpeaker[]>([]);
   const [meetingEdgeEnabled, setMeetingEdgeEnabled] = useState(true);
   const [meetingEdgeContextLevel, setMeetingEdgeContextLevel] = useState(
@@ -324,11 +335,13 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
   const fetchRecording = useCallback(async () => {
     try {
       const { id } = await params;
+      const sentAt = audioClock.stamp();
       const [recData, gsData, settingsData] = await Promise.all([
         getRecording(id),
         getGlobalSpeakers(),
         getSettings().catch(() => null),
       ]);
+      audioClock.observe(recData, sentAt);
       setRecording(recData);
       setGlobalSpeakers(gsData);
       if (settingsData) {
@@ -354,7 +367,7 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
     } finally {
       setLoading(false);
     }
-  }, [addNotification, params, isEditingTitle, router]);
+  }, [addNotification, audioClock, params, isEditingTitle, router]);
 
   const refreshRecordingView = useCallback(async () => {
     const refreshedRecording = await fetchRecording();
@@ -429,7 +442,9 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
       }
       try {
         const { id } = await params;
+        const sentAt = audioClock.stamp();
         const data = await getRecording(id);
+        audioClock.observe(data, sentAt);
 
         if (hasPolledRecordingChanged(recording, data)) {
           setRecording(data);
@@ -454,7 +469,7 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
     }, pollIntervalMs);
 
     return () => clearInterval(interval);
-  }, [params, recording, isEditingTitle, addNotification, router]);
+  }, [params, recording, isEditingTitle, addNotification, router, audioClock]);
 
   useEffect(() => {
     if (!recording || isInFlightRecording || !shouldPollRecordingUpdates(recording)) {
@@ -1130,6 +1145,8 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
     // Core data
     recording,
     setRecording,
+    audioClock,
+    timelineNotes,
     globalSpeakers,
     loading,
     meetingEdgeEnabled,

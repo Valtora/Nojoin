@@ -22,6 +22,7 @@ from backend.utils.timeline_notes import (
     render_notes_as_lines,
     render_notes_list_context,
     render_user_notes_context,
+    timeline_notes_list_signature,
 )
 
 
@@ -95,6 +96,18 @@ async def load_recording_timeline_notes_async(
     return RecordingTimelineNotes(
         notes=notes, author_names=await load_author_names_async(db, notes)
     )
+
+
+async def load_timeline_notes_list_signature_async(
+    db: AsyncSession, recording_id: int
+) -> str:
+    """The signature of a recording's notes list, reading ids and revisions only."""
+    rows = await db.execute(
+        select(TimelineNote.public_id, TimelineNote.revision).where(
+            TimelineNote.recording_id == recording_id
+        )
+    )
+    return timeline_notes_list_signature(rows.tuples().all())
 
 
 def serialize_timeline_note(

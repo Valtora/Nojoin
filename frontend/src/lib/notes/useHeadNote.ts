@@ -13,7 +13,7 @@ import { HeadNoteSync } from "./headNoteSync";
  */
 export function useHeadNote(
   recordingId: RecordingId,
-  timelineNotes: TimelineNote[] | null | undefined,
+  timelineNotes: readonly TimelineNote[] | null | undefined,
 ) {
   const [sync] = useState(() => new HeadNoteSync(recordingId, timelineNotes));
 

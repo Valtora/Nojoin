@@ -8,9 +8,10 @@ arrived is added, capped at about one segment, because a segment holds the
 audio of the moments just before it was sent.
 
 So the estimate trails the truth by the upload and transcode delay (typically
-well under a second), is exact while paused, and can run up to the cap ahead
-just after a resume, before the first new segment lands. Every device viewing
-the recording reads the same figure.
+well under a second) and is exact while paused. After a resume it runs on from
+the resume, not from the last segment, which arrived before the pause: run on
+from that, it would sit at the cap ahead of the truth until the first new
+segment lands. Every device viewing the recording reads the same figure.
 """
 
 from __future__ import annotations
@@ -40,18 +41,28 @@ def estimate_live_audio_ms(
     *,
     last_chunk_end_ms: Optional[int],
     last_chunk_received_at: Optional[datetime],
-    status: RecordingStatus,
-    client_status: Optional[ClientStatus],
+    advancing: bool,
     now: datetime,
+    resumed_at: Optional[datetime] = None,
 ) -> int:
-    """The current position on the audio timeline, in ms. 0 before any segment."""
+    """The current position on the audio timeline, in ms. 0 before any segment.
+
+    ``advancing`` is ``capture_is_advancing`` for the recording: only then does
+    the figure run on past the last segment.
+
+    ``resumed_at`` is when capture last resumed, if after the last segment
+    arrived: the recording's ``last_activity_at``, which every resume sets.
+    Uploads set it too, at most every 15 s and at about their own arrival, so
+    when no resume followed the last segment it changes the figure by moments.
+    """
     if last_chunk_end_ms is None:
         return 0
-    if last_chunk_received_at is None or not capture_is_advancing(
-        status, client_status
-    ):
+    if last_chunk_received_at is None or not advancing:
         return int(last_chunk_end_ms)
-    elapsed_ms = int((now - last_chunk_received_at).total_seconds() * 1000)
+    since = last_chunk_received_at
+    if resumed_at is not None and resumed_at > since:
+        since = resumed_at
+    elapsed_ms = int((now - since).total_seconds() * 1000)
     return int(last_chunk_end_ms) + min(
         max(elapsed_ms, 0), LIVE_AUDIO_EXTRAPOLATION_MAX_MS
     )

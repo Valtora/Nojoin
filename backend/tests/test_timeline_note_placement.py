@@ -14,6 +14,7 @@ import pytest
 from backend.models.recording import ClientStatus, RecordingStatus
 from backend.utils.live_audio_clock import (
     LIVE_AUDIO_EXTRAPOLATION_MAX_MS,
+    capture_is_advancing,
     estimate_live_audio_ms,
 )
 from backend.utils.timeline_notes import (
@@ -30,6 +31,7 @@ from backend.utils.timeline_notes import (
     render_notes_list_context,
     render_timeline_for_llm,
     render_user_notes_context,
+    timeline_notes_list_signature,
     timeline_notes_signature,
 )
 
@@ -279,6 +281,19 @@ def test_the_notes_signature_ignores_a_revision_that_changed_nothing() -> None:
     assert timeline_notes_signature([]) == ""
 
 
+def test_the_list_signature_follows_every_id_and_revision() -> None:
+    base = timeline_notes_list_signature([("a", 1), ("b", 3)])
+    assert base.startswith("2:")
+    assert base == timeline_notes_list_signature([("b", 3), ("a", 1)])
+    # Unlike the prompts' signature, a revision that changed nothing counts:
+    # the list shows it, with its write token.
+    assert base != timeline_notes_list_signature([("a", 1), ("b", 4)])
+    # One note deleted and another made in its place, between two polls.
+    assert base != timeline_notes_list_signature([("a", 1), ("c", 3)])
+    assert base != timeline_notes_list_signature([("a", 1)])
+    assert timeline_notes_list_signature([]).startswith("0:")
+
+
 # --- The live audio clock ----------------------------------------------------
 
 NOW = datetime(2026, 1, 1, 10, 0, tzinfo=timezone.utc)
@@ -290,6 +305,7 @@ def _clock(
     received_ago_ms: Optional[int] = 800,
     status: RecordingStatus = RecordingStatus.UPLOADING,
     client_status: Optional[ClientStatus] = ClientStatus.RECORDING,
+    resumed_ago_ms: Optional[int] = None,
 ) -> int:
     received_at = (
         NOW - timedelta(milliseconds=received_ago_ms)
@@ -299,9 +315,13 @@ def _clock(
     return estimate_live_audio_ms(
         last_chunk_end_ms=end_ms,
         last_chunk_received_at=received_at,
-        status=status,
-        client_status=client_status,
+        advancing=capture_is_advancing(status, client_status),
         now=NOW,
+        resumed_at=(
+            NOW - timedelta(milliseconds=resumed_ago_ms)
+            if resumed_ago_ms is not None
+            else None
+        ),
     )
 
 
@@ -326,3 +346,10 @@ def test_before_any_segment_the_clock_reads_zero() -> None:
 
 def test_a_segment_stamped_after_now_does_not_wind_the_clock_back() -> None:
     assert _clock(received_ago_ms=-500) == 60_000
+
+
+def test_after_a_resume_the_clock_runs_on_from_the_resume() -> None:
+    # The last segment arrived before a pause of a minute; resumed 400 ms ago.
+    assert _clock(received_ago_ms=60_000, resumed_ago_ms=400) == 60_400
+    # A resume before the last segment arrived changes nothing.
+    assert _clock(received_ago_ms=800, resumed_ago_ms=5_000) == 60_800

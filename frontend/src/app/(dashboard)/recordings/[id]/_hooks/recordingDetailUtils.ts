@@ -81,13 +81,6 @@ const meetingEdgeSignature = (recording: Recording) =>
     payload: recording.transcript?.meeting_edge_payload ?? null,
   });
 
-// A note's revision is bumped on every edit, so id and revision say whether
-// anything about the notes changed.
-const timelineNotesSignature = (recording: Recording) =>
-  (recording.timeline_notes ?? [])
-    .map((note) => `${note.id}:${note.revision}`)
-    .join(",");
-
 /** Whether a polled copy of the recording differs in anything the page shows. */
 /**
  * Whether a failed poll means the recording is gone. A 404 does, except while
@@ -111,7 +104,8 @@ export const hasPolledRecordingChanged = (current: Recording, polled: Recording)
   polled.has_audio !== current.has_audio ||
   polled.transcript?.notes_status !== current.transcript?.notes_status ||
   polled.transcript?.notes !== current.transcript?.notes ||
-  timelineNotesSignature(polled) !== timelineNotesSignature(current) ||
+  // Changes with the notes list, which the page then fetches.
+  polled.timeline_notes_list_signature !== current.timeline_notes_list_signature ||
   meetingEdgeSignature(polled) !== meetingEdgeSignature(current) ||
   JSON.stringify(polled.speakers) !== JSON.stringify(current.speakers);
 

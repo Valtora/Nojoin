@@ -1,12 +1,17 @@
 "use client";
 
+import { useCallback, useMemo, useRef } from "react";
 import { AlertCircle } from "lucide-react";
 
 import TranscriptView from "@/components/TranscriptView";
+import RecordingUnsavedNotes from "@/components/notes/RecordingUnsavedNotes";
+import { shownNotes } from "@/lib/notes/noteOutbox";
+import { useNoteOutbox } from "@/lib/notes/useNoteOutbox";
 import {
   RecordingStatus,
   type GlobalSpeaker,
   type Recording,
+  type TimelineNote,
   type TranscriptSegment,
   type TranscriptSpeakerAssignment,
 } from "@/types";
@@ -14,6 +19,8 @@ import {
 interface TranscriptSectionProps {
   active: boolean;
   recording: Recording;
+  /** The recording's notes as last listed; null while they load. */
+  timelineNotes?: readonly TimelineNote[] | null;
   transcriptSegments: TranscriptSegment[];
   currentTime: number;
   isPlaying: boolean;
@@ -49,6 +56,7 @@ interface TranscriptSectionProps {
 export default function TranscriptSection({
   active,
   recording,
+  timelineNotes,
   transcriptSegments,
   currentTime,
   isPlaying,
@@ -71,6 +79,21 @@ export default function TranscriptSection({
   onActiveEditUtteranceChange,
 }: TranscriptSectionProps) {
   const transcriptStatus = recording.transcript?.transcript_status;
+  // The listed notes and those saved from this page since, less any it
+  // discarded: the outbox outlives the live view, and its notes land here.
+  const { snapshot: outboxState } = useNoteOutbox(recording.id);
+  const { saved: outboxSaved, discarded: outboxDiscarded } = outboxState;
+  const notes = useMemo(
+    () => shownNotes(timelineNotes, { saved: outboxSaved, discarded: outboxDiscarded }),
+    [timelineNotes, outboxSaved, outboxDiscarded],
+  );
+  const sectionRef = useRef<HTMLDivElement>(null);
+  const durationSeconds = recording.duration_seconds;
+  const readEndMs = useCallback(
+    () => Math.round((durationSeconds ?? 0) * 1000),
+    [durationSeconds],
+  );
+  const focusSection = useCallback(() => sectionRef.current?.focus(), []);
   // A failed transcription is reported, never shown as an empty transcript,
   // which would let a crashed ASR run pass for a silent meeting.
   // Only while the recording is in ERROR: a retry or speaker-inference run
@@ -82,7 +105,9 @@ export default function TranscriptSection({
 
   return (
     <div
-      className={`absolute inset-0 flex flex-col ${active ? "z-10 visible" : "z-0 invisible"}`}
+      ref={sectionRef}
+      tabIndex={-1}
+      className={`absolute inset-0 flex flex-col outline-none ${active ? "z-10 visible" : "z-0 invisible"}`}
     >
       {transcriptionError ? (
         <div
@@ -100,6 +125,14 @@ export default function TranscriptSection({
           </div>
         </div>
       ) : null}
+      {/* A note from the live note box that never saved, or text left in it,
+          outlives processing: listed here until saved or discarded. */}
+      <RecordingUnsavedNotes
+        recordingId={recording.id}
+        readEndMs={readEndMs}
+        onEmptied={focusSection}
+        className="mx-4 mt-4 max-h-[40%] shrink-0 overflow-y-auto border-b border-surface-divider pb-3"
+      />
       {transcriptSegments.length > 0 ? (
         <div className="min-h-0 flex-1">
           <TranscriptView
@@ -125,6 +158,7 @@ export default function TranscriptSection({
             onExport={onExport}
             onActiveEditUtteranceChange={onActiveEditUtteranceChange}
             pendingRemoteUtteranceIds={deferredTranscriptUtteranceIds}
+            timelineNotes={notes}
           />
         </div>
       ) : (
