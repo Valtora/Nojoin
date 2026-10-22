@@ -156,6 +156,32 @@ describe("session sign-in dialog", () => {
     expect(useSessionStore.getState().signInRequired).toBe(false);
   });
 
+  it("closes only once the server names the signed-in account as the recording's", async () => {
+    noteSignedIn({ ...alice, id: 1 });
+    apiMocks.login.mockImplementation(async (username: string) => {
+      noteSignedIn({ username, force_password_change: false });
+      return { username, force_password_change: false, is_superuser: false };
+    });
+    // A new account was given the name "alice" after hers was renamed.
+    apiMocks.getCurrentUser.mockImplementation(async () => {
+      const user = { username: "alice", force_password_change: false, id: 3 };
+      noteSignedIn(user);
+      return user;
+    });
+    renderWithProviders(<SessionSignInDialog />);
+    endSession();
+
+    fireEvent.change(await screen.findByLabelText("Password"), { target: { value: "theirs" } });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+
+    await waitFor(() => expect(apiMocks.getCurrentUser).toHaveBeenCalled());
+    expect(apiMocks.login.mock.invocationCallOrder[0]).toBeLessThan(
+      apiMocks.getCurrentUser.mock.invocationCallOrder[0],
+    );
+    expect(await screen.findByText(/This browser is now signed in as alice/)).toBeInTheDocument();
+    expect(useSessionStore.getState()).toMatchObject({ signInRequired: true, userId: 1 });
+  });
+
   it("shows why a sign-in failed and stays open", async () => {
     apiMocks.login.mockRejectedValue(
       Object.assign(new Error("Request failed"), {
@@ -189,6 +215,48 @@ describe("session sign-in dialog", () => {
     expect(await screen.findByText(/Your password was reset/)).toBeInTheDocument();
     expect(passwordField()).toHaveValue("");
     expect(screen.getByText("Sign in to keep uploading")).toBeInTheDocument();
+  });
+
+  it("asks for sign-in to save the notes when only notes not saved yet hold it", async () => {
+    holdSignInInPlace(false);
+    holdSignInInPlace(true, "notes");
+    captureState.status = "idle";
+    captureState.runtimeActive = false;
+    apiMocks.login.mockResolvedValue({
+      username: "alice",
+      force_password_change: true,
+      is_superuser: false,
+    });
+    renderWithProviders(<SessionSignInDialog />);
+    act(() => {
+      noteSignedIn({ username: "bob", force_password_change: false });
+    });
+
+    expect(await screen.findByText("Sign in to save your notes")).toBeInTheDocument();
+    expect(screen.getByText(/with notes on this page not saved yet/)).toBeInTheDocument();
+    expect(screen.queryByText(/recording/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Stop recording" })).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/The notes belong to alice, so they save only once alice signs in again/),
+    ).toBeInTheDocument();
+    expect(screen.getByText("The notes belong to this account, so sign in as it.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Go to the sign-in page" })).toBeEnabled();
+
+    fireEvent.change(passwordField(), { target: { value: "temporary" } });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    expect(await screen.findByText(/so your notes cannot save until/)).toBeInTheDocument();
+  });
+
+  it("says notes wait too when a capture and notes both hold sign-in", async () => {
+    holdSignInInPlace(true, "notes");
+    renderWithProviders(<SessionSignInDialog />);
+    endSession();
+
+    expect(await screen.findByText("Sign in to keep uploading")).toBeInTheDocument();
+    expect(screen.getByText(/Nojoin is still recording/)).toBeInTheDocument();
+    expect(screen.getByText("Notes not saved yet wait too, and save once you sign in.")).toBeInTheDocument();
+    // Leaving would reload the tab and end the capture.
+    expect(screen.queryByRole("button", { name: "Go to the sign-in page" })).not.toBeInTheDocument();
   });
 
   it("describes a stop that is waiting to finish", async () => {

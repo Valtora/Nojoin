@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { TimelineNote, TimelineNoteCreate } from "@/types";
 
-import { forgetNoteOutboxes, noteOutboxFor } from "./noteOutbox";
+import { forgetNoteOutboxes, noteOutboxFor } from "./noteOutboxes";
 import { useRecordingNotes } from "./useNoteOutbox";
 
 const listTimelineNotes = vi.fn();
