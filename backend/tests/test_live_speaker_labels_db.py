@@ -763,3 +763,37 @@ def test_live_labels_are_never_left_for_the_model_to_name():
     assert "Speaker 1: a short reply" in rendered
     assert "Cy: a second voice" in rendered
     assert "LIVE_" not in rendered
+
+
+@pytest.mark.parametrize("finalized", [True, False])
+def test_a_finalize_during_a_stalled_save_reports_nothing(
+    monkeypatch, tmp_path, finalized
+):
+    # Finalize ends the capture and removes the state while this run's save
+    # waits on the disk, so the temporary file is gone before its rename.
+    from backend.processing.live_diarization import state as state_module
+
+    engine = _database()
+    _patch_step(monkeypatch, engine, SpeakerTrackModel())
+    audio = speaker_audio([(0, 30, 1)], 30)
+    _run(tmp_path, audio[: 4 * SAMPLE_RATE], 0.0, 4.0)
+    real_fsync = state_module.os.fsync
+    calls = []
+
+    def stalled_fsync(fd):
+        calls.append(fd)
+        if len(calls) == 2:  # the bank, then the state's temporary file
+            if finalized:
+                with engine.begin() as conn:
+                    conn.execute(text("UPDATE recordings SET status = 'QUEUED'"))
+            remove_live_label_state(tmp_path)
+        return real_fsync(fd)
+
+    monkeypatch.setattr(state_module.os, "fsync", stalled_fsync)
+    if finalized:
+        _run(tmp_path, audio[4 * SAMPLE_RATE : 8 * SAMPLE_RATE], 4.0, 8.0)
+        assert list(tmp_path.iterdir()) == []
+    else:
+        # Still capturing: a state that vanished is a real failure.
+        with pytest.raises(FileNotFoundError):
+            _run(tmp_path, audio[4 * SAMPLE_RATE : 8 * SAMPLE_RATE], 4.0, 8.0)

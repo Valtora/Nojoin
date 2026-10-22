@@ -19,6 +19,11 @@ projection written from an older copy is put right on the next run. No
 a live label is not a speaker of the recording, and the final pass never reads
 one. Lines that ended before ``settled_ms`` already have their final label and
 are not read again.
+
+The settled cursor assumes lines commit in the order they end, which the live
+lane does: a line committed later with an earlier end would never be read. A
+segment PUT that moves an open line's end to or before the cursor leaves that
+line with its unlocked label until finalize replaces it.
 """
 
 from __future__ import annotations

@@ -279,6 +279,12 @@ def _label_run(run: LiveLabelRun, device: str) -> None:
             # next run labels these lines from the saved engine.
             if not ended:
                 _save(run, engine, write)
+        except FileNotFoundError:
+            # Finalize removed the files under a stalled save: once the capture
+            # has ended, that is not a failure to report.
+            if _still_capturing(run.recording_id):
+                raise
+            ended = True
         finally:
             # The capture can end at any point up to here (finalize, or a
             # finalize whose master cannot be built), removing the state, and

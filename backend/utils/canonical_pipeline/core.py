@@ -2,6 +2,7 @@ import logging
 
 from .constants import *
 from .public_ids import UtterancePublicIds, public_ids_for_write
+from .scope import _select_utterances_for_scope
 from .segmentation import *
 from .speaker import *
 from .speaker_matching import _find_matching_recording_speaker  # noqa: F401
@@ -1968,46 +1969,6 @@ def _update_projection_segment_by_public_id(
         transcript.segments = updated_segments
         flag_modified(transcript, "segments")
         return
-
-
-def _select_utterances_for_scope(
-    session,
-    *,
-    recording_id: int,
-    anchor_utterance: TranscriptUtterance,
-    scope: SpeakerCorrectionScope,
-    current_key: int | str | None,
-) -> list[TranscriptUtterance]:
-    active_utterances = list_active_utterances(session, recording_id)
-    if scope == SpeakerCorrectionScope.UTTERANCE_ONLY:
-        return [anchor_utterance]
-
-    if scope == SpeakerCorrectionScope.SPEAKER_EVERYWHERE_IN_RECORDING:
-        return [
-            utterance
-            for utterance in active_utterances
-            if (utterance.recording_speaker_id or utterance.speaker_label)
-            == current_key
-        ]
-
-    if scope == SpeakerCorrectionScope.FROM_THIS_UTTERANCE_FORWARD:
-        return [
-            utterance
-            for utterance in active_utterances
-            if (utterance.recording_speaker_id or utterance.speaker_label)
-            == current_key
-            and utterance.start_ms >= anchor_utterance.start_ms
-        ]
-
-    if scope == SpeakerCorrectionScope.MERGE_INTO_SPEAKER:
-        return [
-            utterance
-            for utterance in active_utterances
-            if (utterance.recording_speaker_id or utterance.speaker_label)
-            == current_key
-        ]
-
-    return [anchor_utterance]
 
 
 __all__ = [name for name in globals() if not name.startswith("__")]

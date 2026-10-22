@@ -23,14 +23,25 @@ import { Recording, TranscriptSegment } from "@/types";
 export const LIVE_TRANSCRIPT_POLL_INTERVAL_MS = 3000;
 
 /**
- * Every this many polls the feed reads the whole transcript, not the delta.
+ * Every this many reads the feed reads the whole transcript, not the delta.
  *
  * The delta cursor is the highest event id seen. An edit that commits after a
  * later-numbered one, such as a live speaker label written while a person edits
- * another line, falls behind the cursor and no delta returns it. The full read
- * picks it up within half a minute.
+ * another line, falls behind the cursor and no delta returns it. Every 10th read
+ * picks it up: 30 s while each read answers within a poll, longer when slow
+ * reads make ticks skip, since a skipped tick is not a read.
  */
 export const LIVE_TRANSCRIPT_FULL_READ_EVERY_POLLS = 10;
+
+/**
+ * A read that has not answered by now is abandoned and aborted.
+ *
+ * Only one read runs at a time, so a request that never answers (a dropped
+ * connection; the API client sets no timeout) would otherwise stop the feed for
+ * the rest of the capture. Five poll intervals: a full read of a long meeting
+ * on a busy box still fits, and a stall costs at most five skipped ticks.
+ */
+export const LIVE_TRANSCRIPT_READ_TIMEOUT_MS = 15_000;
 
 export interface LiveTranscript {
   segments: TranscriptSegment[];
@@ -87,7 +98,25 @@ export function useLiveTranscript(
           ? current.revision
           : undefined;
 
-      const delta = await getTranscriptUtterances(recordingId, afterRevision);
+      const controller = new AbortController();
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const timedOut = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          controller.abort();
+          reject(new Error("Live transcript read timed out"));
+        }, LIVE_TRANSCRIPT_READ_TIMEOUT_MS);
+      });
+      let delta;
+      try {
+        // Raced as well as aborted: an answer that comes after the timeout is
+        // dropped, so it cannot land over a newer read.
+        delta = await Promise.race([
+          getTranscriptUtterances(recordingId, afterRevision, controller.signal),
+          timedOut,
+        ]);
+      } finally {
+        clearTimeout(timer);
+      }
       if (cancelled) {
         return;
       }

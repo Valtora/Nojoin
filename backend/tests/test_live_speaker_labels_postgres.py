@@ -19,6 +19,7 @@ from sqlmodel import Session, select
 from backend.models.pipeline import (
     ProcessingRunKind,
     RecordingAudioChunk,
+    SpeakerCorrectionScope,
     TranscriptUtterance,
     TranscriptUtteranceState,
 )
@@ -37,6 +38,9 @@ from backend.utils.canonical_pipeline import (
 from backend.utils.canonical_pipeline.live_labels import (
     LiveLabelDecision,
     apply_live_speaker_labels,
+)
+from backend.utils.canonical_pipeline.segmentation import (
+    _speaker_state_for_utterance,
 )
 
 
@@ -295,6 +299,37 @@ def _rows(engine, recording_id: int) -> dict[str, str]:
         }
 
 
+def _projection_fields(engine, recording_id: int) -> dict[str, tuple]:
+    with Session(engine) as session:
+        transcript = session.execute(
+            select(Transcript).where(Transcript.recording_id == recording_id)
+        ).scalar_one()
+        return {
+            segment["id"]: (
+                segment["speaker"],
+                segment["speaker_state"],
+                segment["revision"],
+            )
+            for segment in transcript.segments
+        }
+
+
+def _row_fields(engine, recording_id: int) -> dict[str, tuple]:
+    with Session(engine) as session:
+        return {
+            row.public_id: (
+                row.speaker_label,
+                _speaker_state_for_utterance(row),
+                row.revision,
+            )
+            for row in session.execute(
+                select(TranscriptUtterance).where(
+                    TranscriptUtterance.recording_id == recording_id
+                )
+            ).scalars()
+        }
+
+
 def test_a_skipped_line_stays_open_and_is_labelled_on_a_later_run(
     postgres_test_url: str,
 ) -> None:
@@ -382,13 +417,14 @@ def test_a_projection_an_edit_wrote_over_settled_lines_is_rebuilt(
         assert _projection(engine, recording_id)["pg-a"] == "UNKNOWN"
 
         _label_run(engine, recording_id, first.settled_ms)
-        projection = _projection(engine, recording_id)
-        rows = _rows(engine, recording_id)
+        projection = _projection_fields(engine, recording_id)
+        rows = _row_fields(engine, recording_id)
 
     # pg-a and pg-b settled on the first run, so the second reads only pg-c.
     assert first.settled_ms == 14000
     assert projection == rows
-    assert projection["pg-a"] == projection["pg-b"] == "LIVE_PROVISIONAL_1"
+    assert projection["pg-a"][:2] == ("LIVE_PROVISIONAL_1", "stable")
+    assert projection["pg-b"][:2] == ("LIVE_PROVISIONAL_1", "stable")
 
 
 @pytest.mark.parametrize("stale_revision", [True, False])
@@ -566,3 +602,102 @@ def test_search_index_chunks_show_live_speakers_as_speaker_n(
 
     assert [chunk.meta["speakers"] for chunk in chunks] == [["Speaker 1"]]
     assert chunks[0].content.startswith("Speaker 1: opening remarks\n")
+
+
+def test_the_transcript_is_locked_before_the_lines_are_read(
+    postgres_test_url: str,
+) -> None:
+    # The lines read and the projection written must be as of the lock, or an
+    # edit committing in between leaves the projection behind its rows.
+    with postgres_engine(postgres_test_url) as engine:
+        recording_id = _live_lines(engine)
+        statements: list[str] = []
+
+        def record(conn, cursor, statement, *rest):
+            if "FOR UPDATE" in statement or "transcript_utterances" in statement:
+                statements.append(statement)
+
+        event.listen(engine, "before_cursor_execute", record)
+        try:
+            _label_and_commit(engine, recording_id)
+        finally:
+            event.remove(engine, "before_cursor_execute", record)
+
+    reads = [s for s in statements if s.lstrip().upper().startswith("SELECT")]
+    assert "FROM transcripts" in reads[0] and "FOR UPDATE" in reads[0]
+    assert "SKIP LOCKED" in reads[1]
+    assert "transcript_utterances" in reads[2] and "FOR UPDATE" not in reads[2]
+
+
+def test_two_label_writes_for_one_recording_take_turns(postgres_test_url: str) -> None:
+    # The flock serialises label steps on one host only; the row lock holds
+    # wherever the second one runs.
+    with postgres_engine(postgres_test_url) as engine:
+        recording_id = add_recording(
+            engine, "capture.wav", status=RecordingStatus.UPLOADING
+        )
+        with Session(engine) as first, Session(engine) as second:
+            assert _recording_in_flight(first, recording_id, lock=True)
+            second.execute(text("SET lock_timeout = '200ms'"))
+            with pytest.raises(OperationalError, match="lock timeout"):
+                _recording_in_flight(second, recording_id, lock=True)
+            second.rollback()
+            first.rollback()
+
+
+def _decide(locked_until_ms: int):
+    def decide(start_ms: int, end_ms: int) -> LiveLabelDecision:
+        return LiveLabelDecision(
+            "LIVE_PROVISIONAL_1", locked=end_ms <= locked_until_ms, share=1.0
+        )
+
+    return decide
+
+
+def test_a_scoped_rename_racing_a_label_write_keeps_revisions_increasing(
+    postgres_test_url: str,
+) -> None:
+    with postgres_engine(postgres_test_url) as engine:
+        recording_id = _live_lines(engine)
+        # Run 1 labels every line and settles pg-a (ends 9 s).
+        with Session(engine) as session:
+            first = apply_live_speaker_labels(
+                session, recording_id=recording_id, settled_ms=0, decide=_decide(9000)
+            )
+            session.commit()
+        before = _row_fields(engine, recording_id)
+        with Session(engine) as labels:
+            # Run 2 locks pg-b and pg-c, a revision bump each, not committed yet.
+            apply_live_speaker_labels(
+                labels,
+                recording_id=recording_id,
+                settled_ms=first.settled_ms,
+                decide=_decide(10**9),
+            )
+
+            def rename() -> None:
+                with Session(engine) as person:
+                    # As the route does: the lines are in the session already.
+                    listed = list_active_utterances(person, recording_id)
+                    update_utterance_speaker(
+                        person,
+                        recording_id=recording_id,
+                        utterance_public_id="pg-a",
+                        new_speaker_name="Ada",
+                        scope=SpeakerCorrectionScope.SPEAKER_EVERYWHERE_IN_RECORDING,
+                    )
+                    person.commit()
+                    return len(listed)
+
+            thread, outcome = _in_thread(rename)
+            thread.join(1.0)
+            waited = thread.is_alive()
+            labels.commit()
+        thread.join(10.0)
+        after = _row_fields(engine, recording_id)
+
+    assert waited and outcome["value"] == 3
+    for line in ("pg-b", "pg-c"):
+        # The label's bump, then the rename's: neither is written over.
+        assert after[line][2] == before[line][2] + 2, (line, before[line], after[line])
+    assert len({after[line][0] for line in after}) == 1
