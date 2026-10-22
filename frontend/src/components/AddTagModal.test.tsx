@@ -34,7 +34,7 @@ const messages = () =>
     .getState()
     .activeNotifications.map(({ type, message }) => `${type}: ${message}`);
 
-async function openMenuItem(tagName: string, item: string) {
+function renderModal() {
   render(
     <AddTagModal
       isOpen
@@ -43,10 +43,32 @@ async function openMenuItem(tagName: string, item: string) {
       currentTags={[]}
     />,
   );
+}
+
+async function openMenuItem(tagName: string, item: string) {
+  renderModal();
   fireEvent.click(
     await screen.findByRole("button", { name: `Tag options for ${tagName}` }),
   );
   fireEvent.click(screen.getByText(item));
+}
+
+async function submitSubTag(name: string) {
+  fireEvent.change(screen.getByLabelText("Sub-tag Name"), {
+    target: { value: name },
+  });
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
+  });
+}
+
+async function enterInSearch(name: string) {
+  await screen.findByRole("button", { name: "Clients" });
+  const search = screen.getByLabelText("Search or create tag");
+  fireEvent.change(search, { target: { value: name } });
+  await act(async () => {
+    fireEvent.keyDown(search, { key: "Enter" });
+  });
 }
 
 describe("AddTagModal", () => {
@@ -82,28 +104,63 @@ describe("AddTagModal", () => {
     createTag.mockRejectedValue(httpError(404, "Parent tag not found"));
     await openMenuItem("Clients", "Add Sub-tag");
 
-    fireEvent.change(screen.getByLabelText("Sub-tag Name"), {
-      target: { value: "Partners" },
-    });
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Create" }));
-    });
+    await submitSubTag("Partners");
 
     expect(createTag).toHaveBeenCalledWith("Partners", expect.any(String), 1);
     expect(messages()).toEqual(["error: Parent tag not found"]);
     expect(screen.getByLabelText("Sub-tag Name")).toHaveValue("Partners");
   });
 
+  it("asks for a sub-tag with a name in use and says why it was refused", async () => {
+    createTag.mockRejectedValue(httpError(400, "Tag already exists"));
+    await openMenuItem("Clients", "Add Sub-tag");
+
+    await submitSubTag("suppliers");
+
+    expect(createTag).toHaveBeenCalledWith("suppliers", expect.any(String), 1);
+    expect(addTagToRecording).not.toHaveBeenCalled();
+    expect(messages()).toEqual(["error: Tag already exists"]);
+    expect(screen.getByLabelText("Sub-tag Name")).toHaveValue("suppliers");
+  });
+
+  it("creates a sub-tag without adding it to the meeting", async () => {
+    createTag.mockResolvedValue({ id: 3, name: "Partners", parent_id: 1 });
+    await openMenuItem("Clients", "Add Sub-tag");
+
+    await submitSubTag("Partners");
+
+    expect(createTag).toHaveBeenCalledWith("Partners", expect.any(String), 1);
+    expect(addTagToRecording).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText("Sub-tag Name")).toBeNull();
+    expect(messages()).toEqual([]);
+  });
+
+  it("adds a new name to the meeting in one request", async () => {
+    renderModal();
+
+    await enterInSearch("Partners");
+
+    expect(createTag).not.toHaveBeenCalled();
+    expect(addTagToRecording).toHaveBeenCalledWith(
+      "rec-1",
+      "Partners",
+      expect.any(String),
+    );
+    expect(getTags).toHaveBeenCalledTimes(2);
+  });
+
+  it("adds the tag whose name matches ignoring case", async () => {
+    renderModal();
+
+    await enterInSearch("clients");
+
+    expect(createTag).not.toHaveBeenCalled();
+    expect(addTagToRecording).toHaveBeenCalledWith("rec-1", "Clients");
+  });
+
   it("says why a tag could not be added to the meeting", async () => {
     addTagToRecording.mockRejectedValue(httpError(404, "Recording not found"));
-    render(
-      <AddTagModal
-        isOpen
-        onClose={vi.fn()}
-        recordingId={"rec-1" as RecordingId}
-        currentTags={[]}
-      />,
-    );
+    renderModal();
 
     const clients = await screen.findByRole("button", { name: "Clients" });
     await act(async () => {

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 
-import { askWhoIsSignedIn, getRecording } from "@/lib/api";
+import { getRecording, getUserMe } from "@/lib/api";
 import { getErrorStatus } from "@/lib/errors";
 import type { NewNotification } from "@/lib/notificationStore";
 import { noteSignedIn, useSessionStore } from "@/lib/session";
@@ -21,7 +21,7 @@ export const RECORDING_REMOVED_MESSAGE = "Recording was discarded or deleted.";
  * other account's answer opens the sign-in dialog, pinned to the owner.
  */
 const whoIsSignedIn = async () => {
-  const user = await askWhoIsSignedIn();
+  const user = await getUserMe();
   if (useSessionStore.getState().heldInPlace) noteSignedIn(user);
   return user;
 };

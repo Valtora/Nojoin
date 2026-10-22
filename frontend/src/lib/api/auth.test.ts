@@ -10,8 +10,9 @@ import {
 } from "@/lib/notes/noteStore";
 import { noteSignedIn, resetSessionForTests, useSessionStore } from "@/lib/session";
 
-import { askWhoIsSignedIn, getCurrentUser, login, logout } from "./auth";
+import { getCurrentUser, login, logout } from "./auth";
 import api from "./client";
+import { getUserMe } from "./users";
 
 // The real axios instance runs on the fetch adapter against a stubbed fetch.
 // jsdom cannot navigate, so location is a stand-in that logs every
@@ -159,7 +160,7 @@ describe("notes kept in the browser", () => {
     noteSignedIn({ username: "alice", id: ALICE, force_password_change: false });
     serverAnswers(signedInAnswer("bob", BOB));
 
-    expect(await askWhoIsSignedIn()).toMatchObject({ id: BOB, username: "bob" });
+    expect(await getUserMe()).toMatchObject({ id: BOB, username: "bob" });
 
     expect(useSessionStore.getState()).toMatchObject({ username: "alice", userId: ALICE });
     expect(await store.get(ALICE, "rec-1")).toEqual(alicesNotes);

@@ -28,7 +28,7 @@ const generateNotes = vi.fn();
 const updateSpeaker = vi.fn();
 const listTimelineNotes = vi.fn();
 const getCurrentUser = vi.fn();
-const askWhoIsSignedIn = vi.fn();
+const getUserMe = vi.fn();
 
 let activePanel = "transcript";
 
@@ -69,7 +69,7 @@ vi.mock("@/lib/store", () => ({
 
 vi.mock("@/lib/api", () => ({
   getCurrentUser: (...args: unknown[]) => getCurrentUser(...args),
-  askWhoIsSignedIn: (...args: unknown[]) => askWhoIsSignedIn(...args),
+  getUserMe: (...args: unknown[]) => getUserMe(...args),
   getRecording: (...args: unknown[]) => getRecording(...args),
   getSettings: (...args: unknown[]) => getSettings(...args),
   getGlobalSpeakers: (...args: unknown[]) => getGlobalSpeakers(...args),
@@ -649,7 +649,7 @@ describe("RecordingPage (detail): the recording answers 404", () => {
       if (!exists || cookie.id !== ALICE.id) throw notFound();
       return buildRecording({ status: RecordingStatus.PROCESSING });
     });
-    askWhoIsSignedIn.mockReset().mockImplementation(whoIsSignedIn);
+    getUserMe.mockReset().mockImplementation(whoIsSignedIn);
     getCurrentUser.mockReset().mockImplementation(signedInAs);
     meCalls = 0;
     getSettings.mockResolvedValue({ enable_meeting_edge: true, meeting_edge_context_level: 2 });
@@ -679,7 +679,7 @@ describe("RecordingPage (detail): the recording answers 404", () => {
     expect(addNotification).not.toHaveBeenCalledWith(DISCARDED);
     expect(addNotification).toHaveBeenCalledTimes(1);
     expect(elsewhereMessages()).toEqual([expect.stringMatching(/now signed in as bob/)]);
-    expect(askWhoIsSignedIn).toHaveBeenCalledTimes(1);
+    expect(getUserMe).toHaveBeenCalledTimes(1);
   });
 
   it("names the account the server answered with, and leaves the tab's session as the owner's", async () => {
@@ -716,7 +716,7 @@ describe("RecordingPage (detail): the recording answers 404", () => {
       await vi.advanceTimersByTimeAsync(10);
     });
 
-    expect(askWhoIsSignedIn).toHaveBeenCalledTimes(1);
+    expect(getUserMe).toHaveBeenCalledTimes(1);
     expect(useSessionStore.getState().signInRequired).toBe(true);
     expect(routerPush).not.toHaveBeenCalled();
   });
@@ -734,7 +734,7 @@ describe("RecordingPage (detail): the recording answers 404", () => {
   it("stays when the recording is found again by the time the account is known", async () => {
     await open();
     exists = false;
-    askWhoIsSignedIn.mockImplementationOnce(async () => {
+    getUserMe.mockImplementationOnce(async () => {
       // The owner signs back in from another tab while this is asked.
       exists = true;
       return whoIsSignedIn();
@@ -882,12 +882,12 @@ describe("RecordingPage (detail): the recording answers 404", () => {
     await advance(5 * 60_000);
 
     // The first 404, then one a minute.
-    expect(askWhoIsSignedIn.mock.calls.length).toBeLessThanOrEqual(6);
+    expect(getUserMe.mock.calls.length).toBeLessThanOrEqual(6);
     expect(elsewhereMessages()).toHaveLength(1);
   });
 
   it("checks one 404 at a time when the server is slow to say who is signed in", async () => {
-    askWhoIsSignedIn.mockImplementation(
+    getUserMe.mockImplementation(
       () => new Promise((resolve) => setTimeout(() => resolve(whoIsSignedIn()), 4_000)),
     );
     await open();
@@ -895,12 +895,12 @@ describe("RecordingPage (detail): the recording answers 404", () => {
 
     for (let i = 0; i < 4; i += 1) await poll();
 
-    expect(askWhoIsSignedIn).toHaveBeenCalledTimes(1);
+    expect(getUserMe).toHaveBeenCalledTimes(1);
     expect(addNotification).toHaveBeenCalledTimes(1);
   });
 
   it("leaves once when a removal is checked slowly", async () => {
-    askWhoIsSignedIn.mockImplementation(
+    getUserMe.mockImplementation(
       () => new Promise((resolve) => setTimeout(() => resolve(whoIsSignedIn()), 4_000)),
     );
     await open();
@@ -913,14 +913,14 @@ describe("RecordingPage (detail): the recording answers 404", () => {
   });
 
   it("does nothing once the page has gone while a check was on its way", async () => {
-    askWhoIsSignedIn.mockImplementation(
+    getUserMe.mockImplementation(
       () => new Promise((resolve) => setTimeout(() => resolve(whoIsSignedIn()), 4_000)),
     );
     const view = renderPage();
     await screen.findByTestId("recording-status-display");
     exists = false;
     await poll();
-    expect(askWhoIsSignedIn).toHaveBeenCalledTimes(1);
+    expect(getUserMe).toHaveBeenCalledTimes(1);
 
     view.unmount();
     await advance(5_000);
@@ -1004,11 +1004,11 @@ describe("RecordingPage (detail): the recording answers 404", () => {
     await poll();
 
     expect(routerPush).not.toHaveBeenCalled();
-    expect(askWhoIsSignedIn).not.toHaveBeenCalled();
+    expect(getUserMe).not.toHaveBeenCalled();
   });
 
   it("does nothing while it can't tell who is signed in, and asks again a minute later", async () => {
-    askWhoIsSignedIn.mockRejectedValueOnce(new Error("Network Error"));
+    getUserMe.mockRejectedValueOnce(new Error("Network Error"));
     await open();
     exists = false;
 
@@ -1017,9 +1017,9 @@ describe("RecordingPage (detail): the recording answers 404", () => {
     expect(addNotification).not.toHaveBeenCalled();
 
     await advance(30_000);
-    expect(askWhoIsSignedIn).toHaveBeenCalledTimes(1);
+    expect(getUserMe).toHaveBeenCalledTimes(1);
     await advance(30_000);
-    expect(askWhoIsSignedIn).toHaveBeenCalledTimes(2);
+    expect(getUserMe).toHaveBeenCalledTimes(2);
     expect(routerPush).toHaveBeenCalledWith("/recordings");
   });
 });

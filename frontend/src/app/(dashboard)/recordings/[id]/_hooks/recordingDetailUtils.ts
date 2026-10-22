@@ -99,10 +99,11 @@ export type NotFoundMeaning =
 /**
  * What a 404 for the page's recording says, once the server has named the
  * account the browser is signed in as (`whoIsSignedIn`, which tells the
- * session too). Tabs share the session cookie, so after a sign-in as another
- * account in another tab, this tab's requests go out as that account, and a
- * recording that still exists answers 404 (issue #583). Only for `account`,
- * the account that first loaded the recording, does a 404 mean it is gone.
+ * session only where sign-in is held). Tabs share the session cookie, so
+ * after a sign-in as another account in another tab, this tab's requests go
+ * out as that account, and a recording that still exists answers 404 (issue
+ * #583). Only for `account`, the account that first loaded the recording,
+ * does a 404 mean it is gone.
  *
  * - "removed": the recording is gone.
  * - "signed-in-elsewhere": the browser is `username`'s now.
