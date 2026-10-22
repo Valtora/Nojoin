@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 
 import { AudioClock } from "@/lib/notes/audioClock";
 import { type OutboxEntry } from "@/lib/notes/noteOutbox";
-import { forgetNoteOutboxes } from "@/lib/notes/noteOutboxes";
+import { forgetNoteOutboxes, noteOutboxFor } from "@/lib/notes/noteOutboxes";
 import {
   ClientStatus,
   RecordingStatus,
@@ -173,6 +173,29 @@ describe("RecordingStatusDisplay live notes", () => {
     const noteAt = items.findIndex((text) => text.includes("Budget approved"));
     expect(items[noteAt - 1]).toContain("Legal signs off Friday.");
     expect(screen.getByTestId("live-note-status")).toHaveTextContent("Note added at 01:02.");
+  });
+
+  it("empties the box in the same change that queues its note", async () => {
+    createTimelineNote.mockImplementation(async (_id: string, payload: TimelineNoteCreate) =>
+      savedNote(payload),
+    );
+    renderLive();
+    await screen.findByText("We need the budget.");
+    // A kept copy of the outbox is written from each change: none may hold
+    // both the note and the text it was sent from.
+    const outbox = noteOutboxFor("rec-1");
+    const both: boolean[] = [];
+    const stop = outbox.subscribe(() => {
+      const { entries, draft } = outbox.getSnapshot();
+      both.push(entries.length > 0 && draft.text !== "");
+    });
+
+    addNote("Budget approved");
+    await waitFor(() => expect(createTimelineNote).toHaveBeenCalledTimes(1));
+    stop();
+
+    expect(both.length).toBeGreaterThan(0);
+    expect(both).not.toContain(true);
   });
 
   it("before the clock's first read, anchors a note at the latest line heard", async () => {

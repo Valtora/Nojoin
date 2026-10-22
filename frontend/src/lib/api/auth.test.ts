@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  clearStoredNotes,
   MemoryNoteStore,
   NOTE_RECORD_VERSION,
   setNoteStoreForTests,
+  sharedNoteStore,
   type StoredOutbox,
 } from "@/lib/notes/noteStore";
 import { resetSessionForTests } from "@/lib/session";
@@ -159,6 +161,17 @@ describe("notes kept in the browser", () => {
     await getCurrentUser();
 
     await vi.waitFor(async () => expect(await store.get(ALICE, "rec-1")).toBeUndefined());
+  });
+
+  it("stores notes again once a sign-in is accepted after a sign-out that stayed on the page", async () => {
+    await clearStoredNotes();
+    expect(sharedNoteStore()).toBeNull();
+
+    // The leave prompt was cancelled, and the user signs in in the dialog.
+    serverAnswers(signedInAnswer("alice"));
+    await login("alice", "secret");
+
+    expect(sharedNoteStore()).toBe(store);
   });
 
   it("keeps the account's own notes when it signs in again, under its old name or a new one", async () => {
