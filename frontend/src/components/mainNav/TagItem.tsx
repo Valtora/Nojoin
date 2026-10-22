@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useOnDepsChange } from "@/lib/useOnDepsChange";
 import { ChevronRight, Plus, X } from "lucide-react";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
@@ -67,7 +67,8 @@ interface TagItemProps {
   onToggle: () => void;
   onColorChange: (colorKey: string) => void;
   onDelete: () => void;
-  onRename: (newName: string) => void;
+  /** Resolves to whether the rename was saved. */
+  onRename: (newName: string) => Promise<boolean>;
   onAddChild: () => void;
   onContextMenu: (e: React.MouseEvent) => void;
   isEditing: boolean;
@@ -104,6 +105,11 @@ export default function TagItem({
 }: TagItemProps) {
   const color = getColorByKey(tag.color);
   const [editValue, setEditValue] = useState(tag.name);
+  // The name the API last refused in this edit. Leaving the field with it
+  // still typed abandons the edit instead of sending it again.
+  const [refusedName, setRefusedName] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const saving = useRef(false);
 
   const {
     attributes,
@@ -128,14 +134,38 @@ export default function TagItem({
 
   // Reset the edit value when editing starts
   useOnDepsChange([isEditing, tag.name], () => {
-    if (isEditing) setEditValue(tag.name);
+    if (isEditing) {
+      setEditValue(tag.name);
+      setRefusedName(null);
+    }
   });
 
-  const handleSubmit = () => {
-    if (editValue.trim() && editValue.trim() !== tag.name) {
-      onRename(editValue.trim());
+  const handleSubmit = async () => {
+    // While a rename is in flight, its outcome decides what the field does.
+    if (saving.current) return;
+    const name = editValue.trim();
+    if (!name || name === tag.name) {
+      onCancelEdit();
+      return;
+    }
+    saving.current = true;
+    const saved = await onRename(name);
+    saving.current = false;
+    if (saved) return;
+    // A refused name stays in the field to be corrected while the field has
+    // focus. If focus has already left, the edit is abandoned.
+    if (document.activeElement === inputRef.current) {
+      setRefusedName(name);
     } else {
       onCancelEdit();
+    }
+  };
+
+  const handleBlur = () => {
+    if (refusedName !== null && editValue.trim() === refusedName) {
+      onCancelEdit();
+    } else {
+      void handleSubmit();
     }
   };
 
@@ -210,11 +240,12 @@ export default function TagItem({
           onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
             setEditValue(e.target.value)
           }
+          ref={inputRef}
           onKeyDown={(e: React.KeyboardEvent) => {
-            if (e.key === "Enter") handleSubmit();
+            if (e.key === "Enter") void handleSubmit();
             if (e.key === "Escape") onCancelEdit();
           }}
-          onBlur={handleSubmit}
+          onBlur={handleBlur}
           autoFocus
           className="flex-1 text-sm bg-control-bg text-foreground border border-control-border rounded px-1 py-0.5 focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-focus-ring select-text"
           onClick={(e: React.MouseEvent) => e.stopPropagation()}

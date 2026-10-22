@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 
-import { getCurrentUser, getRecording } from "@/lib/api";
+import { askWhoIsSignedIn, getRecording } from "@/lib/api";
 import { getErrorStatus } from "@/lib/errors";
 import { notFoundMeans } from "@/lib/notFoundMeans";
 import { noteRecordingRemoved } from "@/lib/notes/noteOutboxes";
-import { subscribeStoreEvents } from "@/lib/notes/noteStore";
 import type { NewNotification } from "@/lib/notificationStore";
-import { useSessionStore } from "@/lib/session";
+import { noteSignedIn, useSessionStore } from "@/lib/session";
 import type { RecordingId } from "@/types";
 
 /**
@@ -16,6 +15,16 @@ import type { RecordingId } from "@/types";
 export const NOT_FOUND_RECHECK_MS = 60_000;
 
 export const RECORDING_REMOVED_MESSAGE = "Recording was discarded or deleted.";
+
+/**
+ * `/users/me`, told to the session only where sign-in is held: there the
+ * other account's answer opens the sign-in dialog, pinned to the owner.
+ */
+const whoIsSignedIn = async () => {
+  const user = await askWhoIsSignedIn();
+  if (useSessionStore.getState().heldInPlace) noteSignedIn(user);
+  return user;
+};
 
 interface LoadedAs {
   recordingId: RecordingId;
@@ -30,12 +39,14 @@ interface LoadedAs {
  * tab makes this page's requests answer 404 although nothing was deleted.
  * Before acting on a 404, the page asks `/users/me` (`notFoundMeans`): the
  * account that first loaded the recording sees it gone, and the page leaves;
- * under another account, it stays and says so once. That answer moves the
- * tab's session to the other account, so once the owner is back (a request
- * for the recording succeeds, or another tab's ping names the owner's
- * account), the page asks `/users/me` once more to move it back. Until then
- * it asks at most once a minute, so a recording really removed meanwhile is
+ * under another account, it stays and says so once. While the 404s go on, it
+ * asks at most once a minute, so a recording really removed meanwhile is
  * still noticed.
+ *
+ * The answer only decides what the 404 means. It leaves the tab's session as
+ * it was, the owner's, so her notes are still stored and a notes hold begun
+ * meanwhile is hers; only a page that holds sign-in passes it on, which opens
+ * the sign-in dialog for the owner.
  */
 export function useRecordingNotFound(
   addNotification: (notification: NewNotification) => unknown,
@@ -49,21 +60,12 @@ export function useRecordingNotFound(
   // before then does nothing once it answers.
   const generationRef = useRef(0);
 
-  // The owner signed back in from another tab, whose `/users/me` pinged this
-  // one. This page polls on under the cookie, and nothing else would tell
-  // the tab's session the owner is back.
-  useEffect(() => {
-    const stop = subscribeStoreEvents((event) => {
-      const account = loadedAsRef.current?.account ?? null;
-      if (event.kind !== "kept" || account === null || !event.accounts.includes(account)) return;
-      if (useSessionStore.getState().userId === account) return;
-      getCurrentUser().catch(() => undefined);
-    });
-    return () => {
-      stop();
+  useEffect(
+    () => () => {
       generationRef.current += 1;
-    };
-  }, []);
+    },
+    [],
+  );
 
   /** The recording loaded: the first load of each recording decides the page's account. */
   const loaded = useCallback((recordingId: RecordingId) => {
@@ -82,12 +84,7 @@ export function useRecordingNotFound(
   /** A request for the recording succeeded: if the browser was another account's, the owner is back. */
   const found = useCallback(() => {
     askedAtRef.current = null;
-    if (!signedInElsewhereRef.current) return;
     signedInElsewhereRef.current = false;
-    const account = loadedAsRef.current?.account ?? null;
-    if (account !== null && useSessionStore.getState().userId !== account) {
-      getCurrentUser().catch(() => undefined);
-    }
   }, []);
 
   /**
@@ -106,7 +103,7 @@ export function useRecordingNotFound(
         const loadedAs = loadedAsRef.current;
         const answer = await notFoundMeans(
           loadedAs?.recordingId === recordingId ? loadedAs.account : null,
-          getCurrentUser,
+          whoIsSignedIn,
           () => useSessionStore.getState().signInRequired,
         );
         if (!current()) return;

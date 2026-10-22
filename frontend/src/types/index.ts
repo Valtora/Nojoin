@@ -551,12 +551,26 @@ export interface RecordingInitResponse {
   id: RecordingId;
   name: string;
   upload_token?: string | null;
+  /** The capture epoch this tab holds from now on. */
+  capture_epoch: number;
 }
 
 export interface RecordingCaptureLifecycleResponse {
   recording_id: RecordingId;
   status: RecordingStatus;
   last_sequence: number;
+  /**
+   * The capture epoch once the call is done. A pause and the holding tab's own
+   * resume leave it as it was; a resume that takes the capture over issues the
+   * next one.
+   */
+  capture_epoch: number;
+}
+
+/** A 409 for a request from a tab whose capture was resumed elsewhere. */
+export interface CaptureSupersededDetail {
+  code: "capture_superseded";
+  message: string;
 }
 
 export interface ActiveRecordingConflictDetail {

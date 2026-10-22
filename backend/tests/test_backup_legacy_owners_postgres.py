@@ -28,6 +28,7 @@ import psycopg
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.engine import make_url
+from sqlmodel import SQLModel
 
 import backend.core.backup.restore.stages as backup_stages
 from backend.core.backup import BackupManager, runtime
@@ -45,6 +46,13 @@ from backend.tests.test_backup_legacy_owners import (
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BEFORE = "7ff0bbdadad8"
+
+# Today's export selects every column the models name, and BEFORE predates some
+# of them. Each column a later revision adds is listed with the DDL that adds
+# it, so the old archive can be made, and is dropped again before the upgrade.
+COLUMNS_ADDED_AFTER_BEFORE = {
+    ("recordings", "capture_epoch"): "INTEGER NOT NULL DEFAULT 0",
+}
 
 
 def _alembic(database_url: str, *args: str) -> None:
@@ -194,6 +202,34 @@ def _seed_tags(conn: psycopg.Connection) -> None:
         )
 
 
+def _add_columns_added_after_before(conn: psycopg.Connection) -> None:
+    existing = set(
+        conn.execute(
+            "SELECT table_name, column_name FROM information_schema.columns"
+            " WHERE table_schema = current_schema()"
+        ).fetchall()
+    )
+    tables = {table for table, _ in existing}
+    missing = {
+        (table.name, column.name)
+        for table in SQLModel.metadata.sorted_tables
+        if table.name in tables
+        for column in table.columns
+        if (table.name, column.name) not in existing
+    }
+    assert missing == set(COLUMNS_ADDED_AFTER_BEFORE), (
+        "List each column a revision after BEFORE adds in COLUMNS_ADDED_AFTER_BEFORE: "
+        f"{sorted(missing)}"
+    )
+    for (table, column), ddl in COLUMNS_ADDED_AFTER_BEFORE.items():
+        conn.execute(f'ALTER TABLE "{table}" ADD COLUMN "{column}" {ddl}')
+
+
+def _drop_columns_added_after_before(conn: psycopg.Connection) -> None:
+    for table, column in COLUMNS_ADDED_AFTER_BEFORE:
+        conn.execute(f'ALTER TABLE "{table}" DROP COLUMN "{column}"')
+
+
 def _back_up(database_url: str, monkeypatch: pytest.MonkeyPatch) -> str:
     engine = create_engine(driver_urls(database_url)[1])
     monkeypatch.setattr(runtime, "sync_engine", engine)
@@ -266,7 +302,10 @@ def test_an_old_archive_restores_as_the_upgraded_install_would(
 ) -> None:
     with psycopg.connect(databases.src) as conn:
         _seed_before(conn)
+        _add_columns_added_after_before(conn)
     old_archive = _back_up(databases.src, monkeypatch)
+    with psycopg.connect(databases.src) as conn:
+        _drop_columns_added_after_before(conn)
     _alembic(databases.src, "upgrade", "head")
     new_archive = _back_up(databases.src, monkeypatch)
 
