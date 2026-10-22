@@ -9,7 +9,12 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Install build dependencies. python3-venv is required because the PyTorch
 # base image ships a system Python without ensurepip (it dropped the bundled
 # conda environment), so `python -m venv` below cannot bootstrap pip otherwise.
-RUN apt-get update && apt-get install -y --no-install-recommends \
+#
+# Upgrade first, as the runtime stage does. This stage ships only /opt/venv, but
+# the venv's pip is Ubuntu's build, which verifies PyPI against the OS trust
+# store alone. The pinned base is not republished, so without the upgrade a CA
+# that Ubuntu has distrusted (#585) stays trusted for every install below.
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     git \
     libssl-dev \
     libffi-dev \
@@ -83,13 +88,15 @@ ENV HF_HUB_DISABLE_SHARED_BLOBS=1
 ENV LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2
 
 RUN apt-get update && \
-    # Patch packages the pinned PyTorch base ships behind the Ubuntu archive:
-    # OpenSSL (CVE-2026-45447, CVE-2026-84782) and the linux-libc-dev kernel
-    # headers, whose CVEs the image scan flags although a container runs the
-    # host's kernel. --only-upgrade takes the archive's newest build whenever
-    # this layer is rebuilt, so later fixes to either need no edit here.
-    apt-get install -y --no-install-recommends --only-upgrade \
-        openssl libssl3t64 linux-libc-dev && \
+    # Patch everything the pinned PyTorch base ships behind the Ubuntu archive,
+    # as Dockerfile.api does. The base is not republished for Ubuntu fixes, and
+    # the scan has flagged OpenSSL (CVE-2026-45447, CVE-2026-84782) and the
+    # linux-libc-dev kernel headers, which it reports although a container runs
+    # the host's kernel. An upgrade of named packages missed ca-certificates,
+    # which left the distrusted emSign ECC Root CA - G3 in the OS bundle that
+    # the LLM SDKs verify against (#585). The upgrade takes the archive's newest
+    # builds whenever this layer is rebuilt.
+    apt-get upgrade -y && \
     apt-get install -y --no-install-recommends \
     ffmpeg \
     libsndfile1 \
