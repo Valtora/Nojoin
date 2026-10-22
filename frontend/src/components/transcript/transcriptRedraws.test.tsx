@@ -180,6 +180,9 @@ describe("transcript redraws", () => {
     forget();
     fireEvent.change(find, { target: { value: "alpha" } });
     expect(redrawn.sort()).toEqual(lineIdsWith(/alpha/).sort());
+    expect(groupsRedrawn()).toEqual(
+      SEGMENTS.filter((segment) => /alpha/.test(segment.text)).map((segment) => segment.start),
+    );
 
     // u0 has one match, so the next is u2's first: u0 and u2 change.
     forget();
