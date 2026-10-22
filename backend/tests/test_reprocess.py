@@ -935,17 +935,6 @@ def test_process_recording_task_rolls_back_before_persisting_error_state(monkeyp
         convert_to_mp3=lambda *a, **k: None,
         convert_to_proxy_mp3=lambda *a, **k: None,
     )
-    _install(
-        "backend.utils.live_transcript",
-        apply_live_authority_to_segments=lambda live, combined: combined,
-        build_transcription_result_from_segments=lambda segments: (
-            {"text": "", "segments": []},
-            [],
-        ),
-        merge_reusable_segments=lambda primary, additional: (
-            list(primary) + list(additional)
-        ),
-    )
     _install("backend.processing.llm_services", get_llm_backend=lambda *a, **k: None)
     _install("backend.processing.text_embedding", release_embedding_model=lambda: None)
 
