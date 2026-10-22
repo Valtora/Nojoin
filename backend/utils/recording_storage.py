@@ -4,6 +4,7 @@ import logging
 import os
 import shutil
 import time
+from collections.abc import Iterable
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -185,6 +186,36 @@ def delete_recording_artifacts(
         logger.warning(
             "Failed to delete recording temp directory %s: %s", temp_dir, error
         )
+
+
+def delete_recording_artifacts_after_commit(
+    artifacts: Iterable[tuple[int, str | None, str | None]],
+    *,
+    logger: logging.Logger,
+) -> None:
+    """Remove the files of recordings whose delete has committed. Never raises.
+
+    Each ``(id, audio_path, proxy_path)`` is read while the delete holds the row
+    locked ``FOR UPDATE``, and this runs only once the delete has committed, so
+    a failed commit keeps every file its surviving row names. A process killed
+    between the commit and this call leaves the files behind, for storage
+    hygiene to report. Each recording's files are removed on their own, and a
+    failure is logged and skipped: nothing may turn a committed delete into an
+    error. It is synchronous, so once the commit has returned, a cancelled
+    request still removes the files.
+    """
+    for recording_id, audio_path, proxy_path in artifacts:
+        try:
+            delete_recording_artifacts(
+                recording_id=recording_id,
+                audio_path=audio_path,
+                proxy_path=proxy_path,
+                logger=logger,
+            )
+        except Exception:
+            logger.exception(
+                "Failed to remove the files of deleted recording %s", recording_id
+            )
 
 
 def _cleanup_empty_chunk_parent_dirs(path: Path, *, logger: logging.Logger) -> None:

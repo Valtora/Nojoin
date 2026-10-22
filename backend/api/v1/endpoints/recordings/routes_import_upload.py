@@ -395,13 +395,15 @@ async def finalize_chunked_import(
             audio_path=recording.audio_path,
         )
     except HTTPException as exc:
+        # Marked failed before its files go, as in the branch below, so a
+        # commit that fails keeps the parts its chunk rows still name.
+        await _mark_recording_upload_error(db, recording, str(exc.detail))
         recordings_module.delete_recording_artifacts(
-            recording_id=recording.id,
-            audio_path=recording.audio_path,
+            recording_id=recording_pk,
+            audio_path=assembled_path,
             proxy_path=None,
             logger=logger,
         )
-        await _mark_recording_upload_error(db, recording, str(exc.detail))
         raise
     except Exception as e:  # noqa: BLE001 -- boundary: any failure to assemble the upload is recorded on the recording and reported
         await db.rollback()
