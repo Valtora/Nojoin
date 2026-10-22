@@ -1,7 +1,12 @@
 import axios from "axios";
 
 import { recordRequestOutcome } from "@/lib/connectivity/monitor";
-import { isSessionEndedError, noteSessionRefusal, stampSessionRequest } from "@/lib/session";
+import {
+  isSessionEndedError,
+  noteSessionRefusal,
+  stampSessionRequest,
+  useSessionStore,
+} from "@/lib/session";
 
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL
   ? `${process.env.NEXT_PUBLIC_API_URL}/v1`
@@ -16,6 +21,17 @@ const FORCE_PASSWORD_CHANGE_REDIRECT = "/settings/profile";
 export const reloadToSignIn = () => {
   // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- a full reload is required: it clears the signed-in session's in-memory client state
   window.location.href = "/login";
+};
+
+/**
+ * Leaves a page whose sign-in is held in place for the sign-in page, unless a
+ * sign-in has come back meanwhile, in this tab or another. The page's leave
+ * warning still applies. Returns whether it left.
+ */
+export const leaveForSignIn = (): boolean => {
+  if (!useSessionStore.getState().signInRequired) return false;
+  reloadToSignIn();
+  return true;
 };
 
 type ValidationErrorItem = {

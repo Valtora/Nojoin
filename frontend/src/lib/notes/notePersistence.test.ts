@@ -21,6 +21,7 @@ import {
   setNoteStoreForTests,
   sharedNoteStore,
   storedNotesSignedIn,
+  storingStopped,
   type NoteStore,
   type StoredOutbox,
 } from "./noteStore";
@@ -48,7 +49,7 @@ let pages: Array<() => void> = [];
 /** Opens the recording on a page whose outbox is kept in `store`. */
 const openPage = (store: NoteStore | null) => {
   const outbox = new NoteOutbox(RECORDING);
-  pages.push(persistNoteOutbox(outbox, RECORDING, () => store).stop);
+  pages.push(persistNoteOutbox(outbox, RECORDING, () => store));
   return outbox;
 };
 
@@ -290,7 +291,7 @@ describe("a note outbox kept in the browser", () => {
   it("stores nothing after signing out, and writes again once the page signs back in", async () => {
     setNoteStoreForTests(store);
     const outbox = new NoteOutbox(RECORDING);
-    pages.push(persistNoteOutbox(outbox, RECORDING).stop);
+    pages.push(persistNoteOutbox(outbox, RECORDING));
     outbox.setDraft(DRAFT);
     await vi.waitFor(async () => expect(await stored(store)).toBeDefined());
 
@@ -454,7 +455,7 @@ describe("a note outbox kept in the browser", () => {
     const outbox = new NoteOutbox(RECORDING);
     outbox.ingest([...server.notes.values()]);
     outbox.setDraft({ ...DRAFT, text: "Typed first" });
-    pages.push(persistNoteOutbox(outbox, RECORDING, () => store).stop);
+    pages.push(persistNoteOutbox(outbox, RECORDING, () => store));
 
     await vi.waitFor(() => expect(server.notes.size).toBe(2));
     expect(outbox.getSnapshot().entries).toEqual([]);
@@ -719,7 +720,7 @@ describe("records of another version", () => {
   });
 });
 
-describe("whether the browser holds the outbox", () => {
+describe("storing beside other tabs and sign-outs", () => {
   let store: NoteStore;
   let tabs: BroadcastChannel[] = [];
 
@@ -730,13 +731,24 @@ describe("whether the browser holds the outbox", () => {
     return channel;
   };
 
-  /** Opens the recording, and returns the outbox and how it is kept. */
-  const openKeptPage = (storeOf: () => NoteStore | null = () => store) => {
+  /** Opens the recording on a page writing to `storeOf()`. */
+  const openStoringPage = (storeOf: () => NoteStore | null = () => store) => {
     const outbox = new NoteOutbox(RECORDING);
-    const persisted = persistNoteOutbox(outbox, RECORDING, storeOf);
-    pages.push(persisted.stop);
-    return { outbox, persisted };
+    pages.push(persistNoteOutbox(outbox, RECORDING, storeOf));
+    return outbox;
   };
+
+  const storedDraft = async () => ((await stored(store))?.draft as ComposerDraft | null) ?? null;
+
+  /** Waits a little, for a write that should not happen. */
+  const noWrite = () => new Promise((resolve) => setTimeout(resolve, 20));
+
+  /** The next create is refused: its id is another note's. */
+  const idInUseOnce = () =>
+    createTimelineNote.mockImplementationOnce(async (_recording, payload) => {
+      server.creates.push(payload);
+      throw coded(409, "note_id_in_use");
+    });
 
   beforeEach(() => {
     resetNotesServer();
@@ -754,109 +766,91 @@ describe("whether the browser holds the outbox", () => {
     resetSessionForTests();
   });
 
-  it("is kept once the record has the outbox as it is now, and not while a change is on its way", async () => {
-    const { outbox, persisted } = openKeptPage(sharedNoteStore);
-    // Nothing to keep yet, once the page has read the store.
-    await vi.waitFor(() => expect(persisted.kept()).toBe(true));
-    const changes = vi.fn();
-    persisted.subscribeKept(changes);
-    outbox.setDraft(DRAFT);
-    expect(changes).toHaveBeenCalled();
-    expect(persisted.kept()).toBe(false);
-    await expect(persisted.whenWritten()).resolves.toBe(true);
-    expect(persisted.kept()).toBe(true);
-
-    vi.spyOn(store, "put").mockRejectedValueOnce(new DOMException("full", "QuotaExceededError"));
-    outbox.setDraft({ ...DRAFT, text: "more" });
-    await expect(persisted.whenWritten()).resolves.toBe(false);
-    expect((await stored(store))?.draft).toEqual(DRAFT);
-  });
-
-  it("is not kept where there is no store, or after a sign-out cancelled at the leave prompt", async () => {
-    const memoryOnly = openKeptPage(() => null);
-    memoryOnly.outbox.setDraft(DRAFT);
-    await expect(memoryOnly.persisted.whenWritten()).resolves.toBe(false);
-
-    const { outbox, persisted } = openKeptPage(sharedNoteStore);
-    outbox.setDraft(DRAFT);
-    await expect(persisted.whenWritten()).resolves.toBe(true);
-    const changes = vi.fn();
-    persisted.subscribeKept(changes);
-    await clearStoredNotes();
-    expect(changes).toHaveBeenCalled();
-    expect(persisted.kept()).toBe(false);
-    outbox.setDraft({ ...DRAFT, text: "after the cancelled sign-out" });
-    await expect(persisted.whenWritten()).resolves.toBe(false);
-    expect(await stored(store)).toBeUndefined();
-  });
-
-  it.each([
-    ["a later version's", NOTE_RECORD_VERSION + 1],
-    ["an earlier version's", NOTE_RECORD_VERSION - 1],
-  ])("is not kept beside %s record, which it leaves alone", async (_name, version) => {
-    await store.put({ version, account: ALICE, recordingId: RECORDING } as unknown as StoredOutbox);
-    const { outbox, persisted } = openKeptPage();
-    await settle();
-    outbox.setDraft(DRAFT);
-    await expect(persisted.whenWritten()).resolves.toBe(false);
-  });
-
-  it("is not kept while the browser is signed in as another account", async () => {
-    const { outbox, persisted } = openKeptPage();
-    outbox.setDraft(DRAFT);
-    await expect(persisted.whenWritten()).resolves.toBe(true);
-
-    signedIn("bob", BOB);
-    expect(persisted.kept()).toBe(false);
-  });
-
   it("stops storing when another tab signs out, until a sign-in is accepted here", async () => {
     // Whichever store the page was handed, not only the page's shared one.
-    const { outbox, persisted } = openKeptPage();
+    const outbox = openStoringPage();
     outbox.setDraft(DRAFT);
-    await expect(persisted.whenWritten()).resolves.toBe(true);
+    await vi.waitFor(async () => expect(await storedDraft()).toEqual(DRAFT));
 
     // The other tab removed every record, and says so.
     await store.clear();
     otherTab().postMessage({ kind: "signed-out" });
-    await vi.waitFor(() => expect(persisted.kept()).toBe(false));
+    await vi.waitFor(() => expect(storingStopped()).toBe(true));
     outbox.setDraft({ ...DRAFT, text: "typed after the other tab signed out" });
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await noWrite();
     expect(await stored(store)).toBeUndefined();
 
     await storedNotesSignedIn(ALICE);
     await vi.waitFor(async () =>
-      expect((await stored(store))?.draft).toMatchObject({ text: "typed after the other tab signed out" }),
+      expect(await storedDraft()).toMatchObject({ text: "typed after the other tab signed out" }),
     );
-    expect(persisted.kept()).toBe(true);
+  });
+
+  it("stores again once another tab signs in as this tab's account after a sign-out", async () => {
+    const outbox = openStoringPage(sharedNoteStore);
+    outbox.setDraft(DRAFT);
+    await vi.waitFor(async () => expect(await storedDraft()).toEqual(DRAFT));
+    await store.clear();
+    otherTab().postMessage({ kind: "signed-out" });
+    await vi.waitFor(() => expect(storingStopped()).toBe(true));
+
+    // The other tab signs back in as alice; its cleanup keeps alice.
+    otherTab().postMessage({ kind: "kept", accounts: [ALICE] });
+
+    await vi.waitFor(async () => expect(await storedDraft()).toEqual(DRAFT));
+    expect(storingStopped()).toBe(false);
+  });
+
+  it("stays stopped when another tab signs in as another account after a sign-out", async () => {
+    const outbox = openStoringPage(sharedNoteStore);
+    outbox.setDraft(DRAFT);
+    await vi.waitFor(async () => expect(await storedDraft()).toEqual(DRAFT));
+    await store.clear();
+    otherTab().postMessage({ kind: "signed-out" });
+    otherTab().postMessage({ kind: "kept", accounts: [BOB] });
+    await noWrite();
+    await noWrite();
+
+    expect(storingStopped()).toBe(true);
+    expect(await stored(store)).toBeUndefined();
+  });
+
+  it("writes the outbox again after a sign-out cancelled at the leave prompt and a sign-in here, though nothing changed", async () => {
+    const outbox = openStoringPage(sharedNoteStore);
+    outbox.setDraft(DRAFT);
+    await vi.waitFor(async () => expect(await storedDraft()).toEqual(DRAFT));
+
+    await clearStoredNotes();
+    expect(await stored(store)).toBeUndefined();
+    // The dialog's sign-in is accepted; nothing was typed meanwhile.
+    await storedNotesSignedIn(ALICE);
+
+    await vi.waitFor(async () => expect(await storedDraft()).toEqual(DRAFT));
   });
 
   it("stops storing an account another tab's cleanup removed, until that account is back", async () => {
-    const { outbox, persisted } = openKeptPage(sharedNoteStore);
+    const outbox = openStoringPage(sharedNoteStore);
     outbox.setDraft(DRAFT);
-    await expect(persisted.whenWritten()).resolves.toBe(true);
+    await vi.waitFor(async () => expect(await storedDraft()).toEqual(DRAFT));
 
     // bob signed in in another tab, and its cleanup removed alice's record.
     await store.keepOnly([BOB]);
     otherTab().postMessage({ kind: "kept", accounts: [BOB] });
-    await vi.waitFor(() => expect(persisted.kept()).toBe(false));
+    await noWrite();
     outbox.setDraft({ ...DRAFT, text: "alice's, typed while bob is signed in" });
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await noWrite();
     expect(await stored(store)).toBeUndefined();
 
     // A cleanup that keeps alice: the browser is hers again.
     otherTab().postMessage({ kind: "kept", accounts: [ALICE] });
     await vi.waitFor(async () =>
-      expect((await stored(store))?.draft).toMatchObject({ text: "alice's, typed while bob is signed in" }),
+      expect(await storedDraft()).toMatchObject({ text: "alice's, typed while bob is signed in" }),
     );
   });
 
   it("sends a note under its new id at once where the browser keeps nothing", async () => {
-    const { outbox } = openKeptPage(() => null);
-    createTimelineNote.mockImplementationOnce(async (_recording, payload) => {
-      server.creates.push(payload);
-      throw coded(409, "note_id_in_use");
-    });
+    const outbox = openStoringPage(() => null);
+    idInUseOnce();
 
     outbox.submit({ kind: "tail", body: "Wrap-up", anchorMs: null });
 
@@ -864,8 +858,35 @@ describe("whether the browser holds the outbox", () => {
     expect(outbox.getSnapshot().entries).toEqual([]);
   });
 
+  it.each([
+    ["a sign-out stopped storing", () => clearStoredNotes()],
+    [
+      "another account's cleanup removed the record",
+      async () => {
+        await store.keepOnly([BOB]);
+        otherTab().postMessage({ kind: "kept", accounts: [BOB] });
+        await noWrite();
+      },
+    ],
+  ])("sends a note under its new id once %s, as no stored copy has the old one", async (_name, lose) => {
+    const outbox = openStoringPage(sharedNoteStore);
+    server.failures.push(NO_ANSWER);
+    outbox.submit({ kind: "tail", body: "Wrap-up", anchorMs: null });
+    await vi.waitFor(async () => expect(await storedNoteIds(store)).toHaveLength(1));
+    const [entry] = outbox.getSnapshot().entries;
+    await lose();
+    expect(await stored(store)).toBeUndefined();
+
+    idInUseOnce();
+    outbox.retry(entry.key);
+
+    await vi.waitFor(() => expect(server.notes.size).toBe(1));
+    expect(outbox.getSnapshot().entries).toEqual([]);
+    expect(await stored(store)).toBeUndefined();
+  });
+
   it("does not send a note under its new id while the browser refuses to keep that id", async () => {
-    const { outbox } = openKeptPage(sharedNoteStore);
+    const outbox = openStoringPage(sharedNoteStore);
     await settle();
     const put = store.put.bind(store);
     let refusing = false;

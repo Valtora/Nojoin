@@ -1,4 +1,5 @@
 import { isRecord } from "@/lib/errors";
+import { useSessionStore } from "@/lib/session";
 import type { RecordingId } from "@/types";
 
 /**
@@ -208,8 +209,9 @@ const emit = (event: StoreEvent) => {
 /**
  * Tabs share the store, so each tells the others what it removed: a sign-out
  * stops every tab storing, and the cleanup after a sign-in stops a tab storing
- * for an account it removed. Where the browser has no BroadcastChannel, a tab
- * finds out only from its own session.
+ * for an account it removed, or lets a tab of the account it kept store again.
+ * Where the browser has no BroadcastChannel, a tab finds out only from its own
+ * session.
  */
 const CHANNEL_NAME = "nojoin-notes";
 
@@ -230,10 +232,23 @@ const stopStoring = () => {
   emit({ kind: "stopped" });
 };
 
+const resumeStoring = () => {
+  if (!signedOut) return;
+  signedOut = false;
+  emit({ kind: "resumed" });
+};
+
 const heard = (data: unknown) => {
   if (!isPing(data)) return;
-  if (data.kind === "signed-out") stopStoring();
-  else emit({ kind: "kept", accounts: data.accounts });
+  if (data.kind === "signed-out") {
+    stopStoring();
+    return;
+  }
+  // Another tab's sign-in as this tab's account: the browser is that
+  // account's again, so this tab may store its notes again.
+  const { userId } = useSessionStore.getState();
+  if (userId !== null && data.accounts.includes(userId)) resumeStoring();
+  emit({ kind: "kept", accounts: data.accounts });
 };
 
 const tabsChannel = (): BroadcastChannel | null => {
@@ -285,10 +300,7 @@ export const subscribeStoreEvents = (listener: (event: StoreEvent) => void): (()
  * removed account stops until that account signs back in on it.
  */
 export const storedNotesSignedIn = async (accountId?: number): Promise<void> => {
-  if (signedOut) {
-    signedOut = false;
-    emit({ kind: "resumed" });
-  }
+  resumeStoring();
   if (accountId === undefined) return;
   const store = sharedNoteStore();
   if (!store) return;
@@ -309,7 +321,8 @@ export const CLEAR_ON_SIGN_OUT_MS = 2_000;
 /**
  * Signing out: removes every stored note, and stops this tab and every other
  * storing any until the server accepts a sign-in in it again (which, should
- * the user stay on the page by cancelling the leave prompt, can happen there).
+ * the user stay on the page by cancelling the leave prompt, can happen there),
+ * or another tab signs in as its account.
  */
 export const clearStoredNotes = async (): Promise<void> => {
   const store = sharedNoteStore();

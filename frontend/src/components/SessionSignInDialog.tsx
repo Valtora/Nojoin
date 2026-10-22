@@ -1,17 +1,12 @@
 "use client";
 
 import { LogIn, Square } from "lucide-react";
-import { useEffect, useState, useSyncExternalStore, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 
 import { getCurrentUser, login } from "@/lib/api";
-import { reloadToSignIn } from "@/lib/api/client";
+import { leaveForSignIn } from "@/lib/api/client";
 import { useCapture } from "@/lib/capture/CaptureProvider";
 import { getErrorMessage } from "@/lib/errors";
-import {
-  allUnsavedKept,
-  releaseSignInForNotes,
-  subscribeUnsavedKept,
-} from "@/lib/notes/noteOutboxes";
 import { useSessionStore } from "@/lib/session";
 import { useOnDepsChange } from "@/lib/useOnDepsChange";
 
@@ -63,6 +58,8 @@ const NOTES_WORDING = {
 };
 const NOTES_SITUATION =
   "Your sign-in ended with notes on this page not saved yet. They stay on this page and save once you sign in.";
+const NOTES_LEAVING =
+  "Going to the sign-in page leaves this page, and your browser asks first. Signing in there as a different account removes the notes kept in this browser.";
 
 /**
  * Asks for the password in place when the session ends during a capture, or
@@ -86,10 +83,6 @@ export default function SessionSignInDialog() {
   const otherUsername = useSessionStore((state) => state.otherUsername);
   const heldBy = useSessionStore((state) => state.heldBy);
   const forCapture = heldBy.includes("capture");
-  // Leaving reloads the tab: offered only while the browser holds every
-  // unsaved note to bring back, and never during a capture, which it would end.
-  const notesKept = useSyncExternalStore(subscribeUnsavedKept, allUnsavedKept, () => false);
-  const canLeave = !forCapture && notesKept;
   const wording = forCapture ? CAPTURE_WORDING : NOTES_WORDING;
   const { runtimeActive, status, stop, uploadQueue } = useCapture();
   const [typedUsername, setTypedUsername] = useState("");
@@ -140,8 +133,10 @@ export default function SessionSignInDialog() {
     stop().catch(() => {});
   };
 
-  const handleLeave = async () => {
-    if (await releaseSignInForNotes()) reloadToSignIn();
+  // The reload goes through the leave warning, which the notes not saved yet
+  // keep armed; cancelled, the page and this dialog stay as they are.
+  const handleLeave = () => {
+    leaveForSignIn();
   };
 
   const handleSubmit = async (event: FormEvent) => {
@@ -174,18 +169,19 @@ export default function SessionSignInDialog() {
       open={open}
       // Everything waiting on the session waits on this dialog, so it can't be
       // dismissed. Notes alone may leave for the sign-in page (an account
-      // renamed meanwhile can't sign in here) once the browser holds them.
+      // renamed meanwhile can't sign in here); a capture can't, as the reload
+      // would end it.
       onClose={() => {}}
       dismissible={false}
       hideCloseButton
       title={wording.title}
       footer={
         <>
-          {canLeave ? (
+          {forCapture ? null : (
             <Button variant="secondary" onClick={handleLeave} disabled={signingIn}>
               Go to the sign-in page
             </Button>
-          ) : null}
+          )}
           {canStop ? (
             <Button
               variant="secondary"
@@ -213,6 +209,10 @@ export default function SessionSignInDialog() {
         <p className="text-sm leading-6 text-contrast-helper">
           {forCapture ? situation(status) : NOTES_SITUATION}
         </p>
+
+        {forCapture ? null : (
+          <p className="text-sm leading-6 text-contrast-helper">{NOTES_LEAVING}</p>
+        )}
 
         {forCapture && heldBy.includes("notes") ? (
           <p className="text-sm leading-6 text-contrast-helper">

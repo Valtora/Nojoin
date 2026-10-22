@@ -2,7 +2,7 @@ import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import SessionSignInDialog from "@/components/SessionSignInDialog";
-import api from "@/lib/api/client";
+import api, { leaveForSignIn } from "@/lib/api/client";
 import {
   holdSignInInPlace,
   noteSignedIn,
@@ -222,20 +222,24 @@ describe("an ended session on a page holding notes not saved yet", () => {
       await screen.findByText("Sign in to save your notes");
     };
 
-    it("is offered once the browser holds every unsaved note, and leaves without the leave prompt", async () => {
+    it("is offered, and leaves through the leave warning, which stays armed", async () => {
       renderWithProviders(<SessionSignInDialog />);
       await typeAndEndSession("Half a thought");
+      await vi.waitFor(async () => expect(await store.get(1, "rec-a")).toBeDefined());
+      expect(
+        screen.getByText(/Signing in there as a different account removes the notes kept in this browser/),
+      ).toBeInTheDocument();
 
       // Renamed meanwhile, say: the dialog can only sign in as the old name.
-      fireEvent.click(await screen.findByRole("button", { name: "Go to the sign-in page" }));
+      fireEvent.click(screen.getByRole("button", { name: "Go to the sign-in page" }));
 
-      await waitFor(() => expect(navigations).toEqual(["/login"]));
-      expect(useSessionStore.getState().heldBy).toEqual([]);
-      expect(leave()).toBe(false);
-      expect(await store.get(1, "rec-a")).toMatchObject({ draft: { text: "Half a thought" } });
+      expect(navigations).toEqual(["/login"]);
+      // Stored or not, the browser asks before the page goes.
+      expect(leave()).toBe(true);
+      expect(useSessionStore.getState().heldBy).toEqual(["notes"]);
     });
 
-    it("is not offered while the browser doesn't hold the notes, as after a sign-out cancelled at the leave prompt", async () => {
+    it("is offered when the browser holds none of the notes, as after a sign-out cancelled at the leave prompt", async () => {
       renderWithProviders(<SessionSignInDialog />);
       act(() => {
         noteOutboxFor("rec-a").setDraft({ ...EMPTY_DRAFT, text: "Half a thought" });
@@ -247,48 +251,18 @@ describe("an ended session on a page holding notes not saved yet", () => {
 
       await typeAndEndSession("Half a thought, and more");
 
-      expect(screen.queryByRole("button", { name: "Go to the sign-in page" })).toBeNull();
+      expect(screen.getByRole("button", { name: "Go to the sign-in page" })).toBeEnabled();
       expect(leave()).toBe(true);
       expect(await store.get(1, "rec-a")).toBeUndefined();
     });
 
-    it("waits for a write under way before it leaves", async () => {
-      renderWithProviders(<SessionSignInDialog />);
-      await typeAndEndSession("Half a thought");
-      const button = await screen.findByRole("button", { name: "Go to the sign-in page" });
-      const put = store.put.bind(store);
-      vi.spyOn(store, "put").mockImplementation(async (record) => {
-        await new Promise((resolve) => setTimeout(resolve, 30));
-        await put(record);
-      });
-
-      act(() => {
-        noteOutboxFor("rec-a").setDraft({ ...EMPTY_DRAFT, text: "Half a thought, then more" });
-        fireEvent.click(button);
-      });
-
-      await waitFor(() => expect(navigations).toEqual(["/login"]));
-      expect(await store.get(1, "rec-a")).toMatchObject({
-        draft: { text: "Half a thought, then more" },
-      });
-    });
-
-    it("does not leave when a note stops being kept after the dialog offered it", async () => {
-      renderWithProviders(<SessionSignInDialog />);
-      await typeAndEndSession("Half a thought");
-      const button = await screen.findByRole("button", { name: "Go to the sign-in page" });
-      vi.spyOn(store, "put").mockRejectedValue(new DOMException("full", "QuotaExceededError"));
-
-      act(() => {
-        noteOutboxFor("rec-a").setDraft({ ...EMPTY_DRAFT, text: "Half a thought, then more" });
-        fireEvent.click(button);
-      });
-
-      await waitFor(() =>
-        expect(screen.queryByRole("button", { name: "Go to the sign-in page" })).toBeNull(),
-      );
+    it("stays put when a sign-in came back meanwhile", () => {
+      expect(leaveForSignIn()).toBe(false);
       expect(navigations).toEqual([]);
-      expect(useSessionStore.getState().heldBy).toEqual(["notes"]);
+
+      useSessionStore.setState({ signInRequired: true });
+      expect(leaveForSignIn()).toBe(true);
+      expect(navigations).toEqual(["/login"]);
     });
   });
 

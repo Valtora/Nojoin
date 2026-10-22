@@ -126,25 +126,13 @@ export const readStoredOutbox = (
   };
 };
 
-/** A recording's outbox as kept in the browser by `persistNoteOutbox`. */
-export interface PersistedOutbox {
-  /** Stops reading and writing; the record stays as it is. */
-  stop(): void;
-  /**
-   * Whether the store holds the outbox as it is now: this page reads and
-   * writes the record, may write it just now, and its last write is of the
-   * outbox's current state.
-   */
-  kept(): boolean;
-  /** Resolves, once any write under way is done, with `kept()`. */
-  whenWritten(): Promise<boolean>;
-  /** Calls `listener` whenever `kept()` may have changed. */
-  subscribeKept(listener: () => void): () => void;
-}
-
 /**
- * Persists `outbox` for as long as the page has it. Where notes can only be
- * kept in memory it never reads or writes.
+ * Persists `outbox` for as long as the page has it, and returns a function
+ * that stops. Where notes can only be kept in memory it never reads or writes.
+ *
+ * The stored copy is a stopgap for a crash, a killed tab or an ended session.
+ * It never stands in for the leave warning (`noteOutboxes`), and two tabs on
+ * one recording share it: the last to write wins.
  *
  * The record is written only while the session is the account the outbox was
  * bound to. A recording belongs to one account, so while the browser turns out
@@ -156,7 +144,7 @@ export const persistNoteOutbox = (
   outbox: NoteOutbox,
   recordingId: RecordingId,
   storeOf: () => NoteStore | null = sharedNoteStore,
-): PersistedOutbox => {
+): (() => void) => {
   let account: number | null = null;
   let ready = false;
   /** Set when a cleanup removed this account's records, until the account is back. */
@@ -167,12 +155,6 @@ export const persistNoteOutbox = (
   let dirty = false;
   let flushing: Promise<void> | null = null;
   let stopped = false;
-  const keptListeners = new Set<() => void>();
-
-  const notify = () => {
-    for (const listener of keptListeners) listener();
-  };
-
   const record = (owner: number): StoredOutbox | null => {
     const { entries, draft } = outbox.getSnapshot();
     const notes: unknown[] = [
@@ -212,10 +194,6 @@ export const persistNoteOutbox = (
     account !== null &&
     useSessionStore.getState().userId === account;
 
-  // A write under way, or a change not written yet, leaves `written` behind
-  // the outbox; a sign-out, or no store at all, leaves the page not writable.
-  const kept = () => writable() && written === textOf(account as number);
-
   // One write at a time, each of the outbox as it is by then, so a burst of
   // changes (typing in the box) costs a write or two rather than one each.
   const flush = async () => {
@@ -245,14 +223,12 @@ export const persistNoteOutbox = (
       flushing = null;
       // A change that came in as the last write finished.
       if (dirty && writable() && storeOf()) startFlush();
-      else notify();
     });
   };
 
   const changed = () => {
     dirty = true;
     startFlush();
-    notify();
   };
 
   const rewrite = () => {
@@ -260,9 +236,16 @@ export const persistNoteOutbox = (
     changed();
   };
 
-  const whenWritten = async () => {
+  /**
+   * Whether a note may go out under a new id: once any write under way is
+   * done, no stored copy can still hold its old one. That is so when the
+   * record has the outbox as it is, and when this page never wrote one, was
+   * stopped, or lost its record to a sign-out or another account's cleanup.
+   */
+  const newIdSafe = async () => {
     while (flushing) await flushing;
-    return kept();
+    if (!ready || stopped || evicted || storingStopped()) return true;
+    return written === textOf(account as number);
   };
 
   const bind = async (owner: number) => {
@@ -304,7 +287,6 @@ export const persistNoteOutbox = (
     }
     // Back as the owner, from an ended session or from another account.
     if (isOwner(state) && !isOwner(previous)) backAsOwner();
-    else notify();
   };
 
   const onStoreEvent = (event: StoreEvent) => {
@@ -315,17 +297,11 @@ export const persistNoteOutbox = (
     }
     if (event.kind === "kept" && account !== null) {
       const ours = event.accounts.includes(account);
-      if (ours && evicted) {
-        backAsOwner();
-        return;
-      }
-      if (!ours) {
-        // This account's records are gone, and the browser is another's now.
-        evicted = true;
-        written = null;
-      }
+      // This account's records are gone, and the browser is another's now;
+      // or the browser is this account's again.
+      if (!ours) evicted = true;
+      else if (evicted) backAsOwner();
     }
-    notify();
   };
 
   // The outbox's own changes rewrite the record; the barrier keeps a note
@@ -333,22 +309,13 @@ export const persistNoteOutbox = (
   const stopOutbox = outbox.subscribe(changed);
   const stopSession = useSessionStore.subscribe(watch);
   const stopEvents = subscribeStoreEvents(onStoreEvent);
-  outbox.setWriteBarrier(async () => (await whenWritten()) || !ready || stopped);
+  outbox.setWriteBarrier(newIdSafe);
   watch(useSessionStore.getState());
-  return {
-    stop: () => {
-      stopped = true;
-      stopOutbox();
-      stopSession();
-      stopEvents();
-      outbox.setWriteBarrier(null);
-      notify();
-    },
-    kept,
-    whenWritten,
-    subscribeKept: (listener) => {
-      keptListeners.add(listener);
-      return () => keptListeners.delete(listener);
-    },
+  return () => {
+    stopped = true;
+    stopOutbox();
+    stopSession();
+    stopEvents();
+    outbox.setWriteBarrier(null);
   };
 };
