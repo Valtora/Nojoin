@@ -69,6 +69,8 @@ files = [
     "backend/processing/engines/onnx_asr_backstop.py",
     "backend/processing/onnx_threads.py",
     "backend/processing/processing_tuning.py",
+    "backend/processing/live_diarization",
+    "backend/utils/canonical_pipeline/live_labels.py",
 ]
 
 [tool.ruff]

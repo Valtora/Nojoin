@@ -23,6 +23,7 @@ from backend.models.recording import (
 from backend.models.recording_public import RecordingPublicRead, serialize_recording
 from backend.models.transcript import Transcript
 from backend.models.user import User
+from backend.processing.live_diarization.files import remove_live_label_state
 from backend.processing.speaker_cap import (
     MAX_SPEAKER_CAP,
     MIN_SPEAKER_CAP,
@@ -600,6 +601,11 @@ async def finalize_upload(
     db.add(recording)
     await db.commit()
     await db.refresh(recording)
+    # The live speaker labels hold centroids and turn embeddings. Nothing reads
+    # them once the capture ends, so they go now, not with the temp directory.
+    remove_live_label_state(
+        recordings_module.recording_upload_temp_dir(recording.id, create=False) / "live"
+    )
 
     _record_finalize_capture_metrics(
         recording,

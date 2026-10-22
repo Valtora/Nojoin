@@ -70,25 +70,6 @@ LIVE_SAMPLE_RATE = BROWSER_LIVE_SAMPLE_RATE_HZ
 # conversational transitions; a shorter one fragments a single speaker's normal
 # pauses into many short utterances.
 LIVE_MIN_SILENCE_MS = 320
-LIVE_SPEAKER_MATCH_THRESHOLD = 0.72
-LIVE_SPEAKER_MATCH_MARGIN = 0.05
-LIVE_SPEAKER_SOFT_MATCH_THRESHOLD = 0.62
-LIVE_SPEAKER_SOFT_MATCH_MARGIN = 0.12
-LIVE_SYSTEM_SOURCE_SOFT_MATCH_THRESHOLD = 0.67
-LIVE_SYSTEM_SOURCE_SOFT_MATCH_MARGIN = 0.16
-LIVE_NEW_SPEAKER_THRESHOLD = 0.35
-LIVE_GLOBAL_SPEAKER_MATCH_THRESHOLD = 0.78
-LIVE_MIN_EMBEDDING_DURATION_S = 0.5
-LIVE_VOICEPRINT_MIN_CLEAN_DURATION_S = 1.5
-LIVE_RECORDING_SPEAKER_VOICEPRINT_ALPHA = 0.20
-# Utterances at least this long extract their identification embedding from a
-# centered sub-window rather than the full clip, so cross-speaker audio at
-# the utterance boundaries does not contaminate recording-speaker voiceprints.
-LIVE_EMBEDDING_CENTER_TRIM_MIN_DURATION_S = 2.0
-LIVE_EMBEDDING_CENTER_TRIM_RATIO = 0.15
-LIVE_GLOBAL_SPEAKER_VOICEPRINT_ALPHA = 0.10
-LIVE_MIN_NEW_SPEAKER_DURATION_S = 2.0
-LIVE_TAIL_RECONCILIATION_WINDOW_MS = 12_000
 LIVE_INITIAL_SEQUENCE = 0
 LIVE_SOURCE_DOMINANT_SHARE_THRESHOLD = 0.65
 LIVE_SOURCE_DOMINANCE_RATIO_THRESHOLD = 1.5
@@ -1793,6 +1774,24 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
             },
             log=logger,
         )
+
+        # Speaker labels last, in a try block of their own: the text and the
+        # lane state are saved, and must not be reported as a failed run.
+        try:
+            from backend.processing.live_diarization import step as live_labels
+
+            live_labels.run_live_speaker_labels(
+                live_labels.LiveLabelRun(
+                    recording_id=recording_id,
+                    sequence=sequence,
+                    live_dir=live_dir,
+                    audio=combined,
+                    audio_start_s=combined_abs_start,
+                    next_text_start_s=new_abs_start,
+                )
+            )
+        except Exception:  # noqa: BLE001 -- boundary: labels are best-effort
+            logger.exception("Live speaker labels failed for %s", recording_id)
 
     except Exception as exc:  # noqa: BLE001 -- boundary: live failures are non-fatal
         # Non-fatal: log and move on. Finalize transcribes the whole recording,

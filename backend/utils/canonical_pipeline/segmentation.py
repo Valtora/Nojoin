@@ -135,6 +135,15 @@ def _speaker_state_for_utterance(
         return ROLLING_DIARIZATION_SPEAKER_STATE_MANUAL_OVERRIDE
 
     confidence_payload = dict(utterance.confidence_payload or {})
+    live_label = confidence_payload.get(LIVE_SPEAKER_LABEL_PAYLOAD_KEY)
+    if (
+        isinstance(live_label, dict)
+        and utterance.state == TranscriptUtteranceState.PROVISIONAL
+    ):
+        if live_label.get("locked") is True:
+            return ROLLING_DIARIZATION_SPEAKER_STATE_STABLE
+        return ROLLING_DIARIZATION_SPEAKER_STATE_PROVISIONAL
+
     rolling_payload = dict(confidence_payload.get("rolling_diarization") or {})
     if rolling_payload.get("speaker_state"):
         return str(rolling_payload["speaker_state"])

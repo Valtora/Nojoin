@@ -41,7 +41,7 @@ GRANDFATHERED: dict[str, int] = {
     # What remains is the core final-recording pipeline.
     "backend/worker/tasks/pipeline.py": 1134,
     "backend/utils/canonical_pipeline/core.py": 2013,
-    "backend/processing/live_transcribe.py": 1800,
+    "backend/processing/live_transcribe.py": 1799,
 }
 
 

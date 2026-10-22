@@ -1,0 +1,464 @@
+"""Live speaker labels written to canonical utterances, read back, and finalised."""
+
+from __future__ import annotations
+
+import json
+
+import pytest
+from sqlalchemy import create_engine, text
+from sqlalchemy.pool import StaticPool
+from sqlmodel import Session, select
+
+from backend.models.pipeline import (
+    ProcessingRunKind,
+    TranscriptUtterance,
+    TranscriptUtteranceState,
+)
+from backend.models.recording import Recording, RecordingStatus
+from backend.processing.live_diarization import step
+from backend.processing.live_diarization.files import (
+    BANK_FILENAME,
+    STATE_FILENAME,
+    remove_live_label_state,
+)
+from backend.tests.live_label_fakes import SAMPLE_RATE, SpeakerTrackModel, speaker_audio
+from backend.tests.sqlite_schemas import (
+    GLOBAL_SPEAKERS_SCHEMA,
+    PROCESSING_RUNS_SCHEMA,
+    RECORDING_SPEAKER_ALIASES_SCHEMA,
+    RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA,
+    RECORDING_SPEAKERS_SCHEMA,
+    RECORDINGS_SCHEMA,
+    SPEAKER_CORRECTION_EVENTS_SCHEMA,
+    TIMELINE_NOTES_SCHEMA,
+    TRANSCRIPT_UTTERANCE_EVENTS_SCHEMA,
+    TRANSCRIPT_UTTERANCES_SCHEMA,
+    TRANSCRIPTS_SCHEMA,
+)
+from backend.utils.canonical_pipeline import (
+    append_utterances_from_segments,
+    finalize_utterances_from_segments,
+    get_canonical_transcript_revision,
+    serialize_canonical_delta,
+    serialize_canonical_utterances,
+    update_utterance_speaker,
+)
+from backend.utils.canonical_pipeline.live_labels import (
+    LiveLabelDecision,
+    apply_live_speaker_labels,
+)
+
+RECORDING_ID = 1
+LINES = [
+    {"id": "line-a", "start": 1.0, "end": 9.0, "text": "opening remarks"},
+    {"id": "line-b", "start": 10.0, "end": 14.0, "text": "a short reply"},
+    {"id": "line-c", "start": 21.0, "end": 29.0, "text": "a second voice"},
+]
+
+
+def _database():
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    with engine.begin() as conn:
+        for ddl in (
+            RECORDINGS_SCHEMA,
+            TRANSCRIPTS_SCHEMA,
+            GLOBAL_SPEAKERS_SCHEMA,
+            RECORDING_SPEAKERS_SCHEMA,
+            RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA,
+            PROCESSING_RUNS_SCHEMA,
+            TRANSCRIPT_UTTERANCES_SCHEMA,
+            TRANSCRIPT_UTTERANCE_EVENTS_SCHEMA,
+            RECORDING_SPEAKER_ALIASES_SCHEMA,
+            SPEAKER_CORRECTION_EVENTS_SCHEMA,
+            TIMELINE_NOTES_SCHEMA,
+        ):
+            conn.execute(text(ddl))
+        conn.execute(
+            text(
+                """
+                INSERT INTO recordings (
+                    id, created_at, updated_at, name, public_id, meeting_uid,
+                    audio_path, status, upload_progress, processing_progress,
+                    pipeline_generation, is_archived, is_deleted, user_id
+                ) VALUES (
+                    1, :now, :now, 'Live meeting', 'live-rec', 'meeting-uid-live',
+                    '/tmp/live.wav', 'UPLOADING', 50, 10, 'unified', 0, 0, 1
+                )
+                """
+            ),
+            {"now": "2026-10-21 00:00:00"},
+        )
+        conn.execute(
+            text(
+                """
+                INSERT INTO transcripts (
+                    id, created_at, updated_at, recording_id, text, segments,
+                    notes, meeting_edge_status, notes_status, transcript_status
+                ) VALUES (1, :now, :now, 1, '', '[]', NULL, 'idle', 'pending', 'processing')
+                """
+            ),
+            {"now": "2026-10-21 00:00:00"},
+        )
+    with Session(engine) as session:
+        append_utterances_from_segments(
+            session,
+            recording_id=RECORDING_ID,
+            segments=[
+                {
+                    **line,
+                    "speaker": "UNKNOWN",
+                    "provisional": True,
+                    "segment_source": "live",
+                    "speaker_state": "provisional",
+                }
+                for line in LINES
+            ],
+            run_kind=ProcessingRunKind.LIVE,
+            source="live",
+            state_override=TranscriptUtteranceState.PROVISIONAL,
+            trigger_source="worker",
+        )
+        session.commit()
+    return engine
+
+
+def _decisions(table: dict[int, LiveLabelDecision], calls: list[int] | None = None):
+    def decide(start_ms: int, end_ms: int) -> LiveLabelDecision:
+        if calls is not None:
+            calls.append(start_ms)
+        return table.get(
+            start_ms, LiveLabelDecision("UNKNOWN", locked=False, share=None)
+        )
+
+    return decide
+
+
+def _apply(engine, table, settled_ms=0, calls=None):
+    with Session(engine) as session:
+        write = apply_live_speaker_labels(
+            session,
+            recording_id=RECORDING_ID,
+            settled_ms=settled_ms,
+            decide=_decisions(table, calls),
+        )
+        session.commit()
+    return write
+
+
+def _by_id(payloads):
+    return {payload["id"]: payload for payload in payloads}
+
+
+def test_a_label_is_an_utterance_event_that_the_live_read_returns():
+    engine = _database()
+    with Session(engine) as session:
+        before = get_canonical_transcript_revision(session, RECORDING_ID)
+
+    _apply(engine, {1000: LiveLabelDecision("LIVE_2", locked=False, share=0.9)})
+
+    with Session(engine) as session:
+        _, changed, tombstones = serialize_canonical_delta(
+            session, RECORDING_ID, after_revision=before
+        )
+        event_types = (
+            session.execute(
+                text(
+                    "SELECT event_type FROM transcript_utterance_events WHERE id > :rev"
+                ),
+                {"rev": before},
+            )
+            .scalars()
+            .all()
+        )
+    assert [u["id"] for u in changed] == ["line-a"]
+    assert changed[0]["speaker"] == "LIVE_2"
+    assert changed[0]["speaker_state"] == "provisional"
+    assert changed[0]["recording_speaker_id"] is None
+    assert tombstones == []
+    assert event_types == ["live_speaker_label"]
+
+    _apply(engine, {1000: LiveLabelDecision("LIVE_2", locked=True, share=0.9)})
+    with Session(engine) as session:
+        lines = _by_id(serialize_canonical_utterances(session, RECORDING_ID))
+        projection = json.loads(
+            session.execute(text("SELECT segments FROM transcripts")).scalar_one()
+        )
+    assert lines["line-a"]["speaker_state"] == "stable"
+    assert lines["line-a"]["revision"] == 3
+    assert lines["line-b"]["speaker"] == "UNKNOWN"
+    assert {s["id"]: s["speaker"] for s in projection}["line-a"] == "LIVE_2"
+
+
+def test_an_unchanged_label_writes_nothing():
+    engine = _database()
+    table = {1000: LiveLabelDecision("LIVE_1", locked=False, share=1.0)}
+    first = _apply(engine, table)
+    second = _apply(engine, table)
+
+    assert (first.changed, second.changed) == (1, 0)
+
+
+def test_a_line_a_person_named_is_never_relabelled():
+    engine = _database()
+    with Session(engine) as session:
+        update_utterance_speaker(
+            session,
+            recording_id=RECORDING_ID,
+            utterance_public_id="line-a",
+            new_speaker_name="Ada",
+        )
+        session.commit()
+
+    write = _apply(engine, {1000: LiveLabelDecision("LIVE_1", locked=False, share=1.0)})
+
+    with Session(engine) as session:
+        line = _by_id(serialize_canonical_utterances(session, RECORDING_ID))["line-a"]
+    assert write.changed == 0
+    assert line["speaker"].startswith("MANUAL_")
+    assert line["speaker_state"] == "manual_override"
+
+
+def test_a_live_line_the_final_pass_replaced_is_never_relabelled():
+    engine = _database()
+    with Session(engine) as session:
+        line = session.exec(
+            select(TranscriptUtterance).where(TranscriptUtterance.public_id == "line-b")
+        ).one()
+        line.state = TranscriptUtteranceState.SUPERSEDED
+        session.add(line)
+        session.commit()
+
+    write = _apply(
+        engine, {10000: LiveLabelDecision("LIVE_3", locked=False, share=1.0)}
+    )
+
+    with Session(engine) as session:
+        line = session.exec(
+            select(TranscriptUtterance).where(TranscriptUtterance.public_id == "line-b")
+        ).one()
+    assert write.changed == 0
+    assert line.speaker_label == "UNKNOWN"
+
+
+def test_locked_lines_are_settled_and_not_decided_again():
+    engine = _database()
+    write = _apply(
+        engine,
+        {
+            1000: LiveLabelDecision("LIVE_1", locked=True, share=1.0),
+            10000: LiveLabelDecision("UNKNOWN", locked=False, share=0.4),
+            21000: LiveLabelDecision("LIVE_2", locked=True, share=1.0),
+        },
+    )
+    assert write.settled_ms == 9000
+    assert write.open_from_s == 10.0
+
+    calls: list[int] = []
+    again = _apply(engine, {}, settled_ms=write.settled_ms, calls=calls)
+
+    # line-a is behind the settled prefix and line-c carries its lock.
+    assert calls == [10000]
+    assert again.settled_ms == 9000
+    with Session(engine) as session:
+        lines = _by_id(serialize_canonical_utterances(session, RECORDING_ID))
+    assert lines["line-c"]["speaker"] == "LIVE_2"
+
+
+FINAL_SEGMENTS = [
+    # Same boundaries as line-a, so finalize matches that live row in place.
+    {"start": 1.0, "end": 9.0, "speaker": "SPEAKER_00", "text": "Opening remarks."},
+    {"start": 9.5, "end": 14.5, "speaker": "SPEAKER_01", "text": "A short reply."},
+    {"start": 21.0, "end": 28.0, "speaker": "SPEAKER_00", "text": "A second voice."},
+]
+VOLATILE = {"id", "revision", "updated_at"}
+
+
+def _finalised(engine):
+    with Session(engine) as session:
+        recording = session.get(Recording, RECORDING_ID)
+        recording.status = RecordingStatus.PROCESSING
+        session.add(recording)
+        finalize_utterances_from_segments(
+            session,
+            recording_id=RECORDING_ID,
+            segments=[dict(segment) for segment in FINAL_SEGMENTS],
+            trigger_source="worker",
+        )
+        session.commit()
+        lines = [
+            {k: v for k, v in line.items() if k not in VOLATILE}
+            for line in serialize_canonical_utterances(session, RECORDING_ID)
+        ]
+        speakers = (
+            session.execute(
+                text("SELECT diarization_label FROM recording_speakers ORDER BY id")
+            )
+            .scalars()
+            .all()
+        )
+        active = session.execute(
+            text(
+                "SELECT COUNT(*) FROM transcript_utterances WHERE UPPER(state) != 'SUPERSEDED'"
+            )
+        ).scalar_one()
+    return lines, speakers, active
+
+
+def test_the_final_transcript_is_identical_with_labels_on_and_off():
+    labels_off = _database()
+    labels_on = _database()
+    _apply(
+        labels_on,
+        {
+            1000: LiveLabelDecision("LIVE_1", locked=False, share=0.8),
+            10000: LiveLabelDecision("LIVE_2", locked=True, share=1.0),
+            21000: LiveLabelDecision("LIVE_1", locked=True, share=0.7),
+        },
+    )
+
+    off_lines, off_speakers, off_active = _finalised(labels_off)
+    on_lines, on_speakers, on_active = _finalised(labels_on)
+
+    assert on_lines == off_lines
+    assert on_speakers == off_speakers == ["SPEAKER_00", "SPEAKER_01"]
+    assert on_active == off_active == 3
+    assert [line["speaker_state"] for line in on_lines] == ["stable"] * 3
+    assert not any(line["speaker"].startswith("LIVE_") for line in on_lines)
+
+
+def _patch_step(monkeypatch, engine, model):
+    import backend.core.db as core_db
+
+    monkeypatch.setattr(core_db, "get_sync_session", lambda: Session(engine))
+    monkeypatch.setattr(step, "live_speaker_labels_device", lambda: "cpu")
+    monkeypatch.setattr(step, "_load_model", lambda device, config: model)
+
+
+def _run(live_dir, audio, start_s, next_text_start_s):
+    step.run_live_speaker_labels(
+        step.LiveLabelRun(
+            recording_id=RECORDING_ID,
+            sequence=0,
+            live_dir=live_dir,
+            audio=audio,
+            audio_start_s=start_s,
+            next_text_start_s=next_text_start_s,
+        )
+    )
+
+
+def test_the_label_step_labels_each_run_and_keeps_numbers_across_runs(
+    monkeypatch, tmp_path
+):
+    engine = _database()
+    _patch_step(monkeypatch, engine, SpeakerTrackModel())
+    audio = speaker_audio([(0, 10, 1), (10, 14, 1), (14, 20, 1), (20, 32, 2)], 32)
+
+    for start in range(0, 32, 2):
+        chunk = audio[start * SAMPLE_RATE : (start + 2) * SAMPLE_RATE]
+        _run(tmp_path, chunk, float(start), float(start + 2))
+
+    with Session(engine) as session:
+        lines = _by_id(serialize_canonical_utterances(session, RECORDING_ID))
+    assert lines["line-a"]["speaker"] == "LIVE_1"
+    assert lines["line-b"]["speaker"] == "LIVE_1"
+    assert lines["line-c"]["speaker"] == "LIVE_2"
+    assert lines["line-a"]["speaker_state"] == "stable"
+    assert lines["line-c"]["speaker_state"] == "provisional"
+    assert (tmp_path / STATE_FILENAME).exists()
+
+
+def test_the_label_step_writes_nothing_and_removes_its_state_once_capture_ends(
+    monkeypatch, tmp_path
+):
+    engine = _database()
+    model = SpeakerTrackModel()
+    _patch_step(monkeypatch, engine, model)
+    audio = speaker_audio([(0, 30, 1)], 30)
+    _run(tmp_path, audio[: 4 * SAMPLE_RATE], 0.0, 4.0)
+    assert (tmp_path / STATE_FILENAME).exists()
+
+    def labels():
+        with Session(engine) as session:
+            return session.execute(
+                text(
+                    "SELECT public_id, speaker_label, revision FROM transcript_utterances"
+                )
+            ).all()
+
+    before = labels()
+    with engine.begin() as conn:
+        conn.execute(text("UPDATE recordings SET status = 'QUEUED'"))
+    _run(tmp_path, audio[4 * SAMPLE_RATE :], 4.0, 30.0)
+
+    assert labels() == before
+    assert not (tmp_path / STATE_FILENAME).exists()
+    assert not (tmp_path / BANK_FILENAME).exists()
+
+
+def test_an_unreadable_state_stops_labels_for_the_recording(monkeypatch, tmp_path):
+    engine = _database()
+    model = SpeakerTrackModel()
+    _patch_step(monkeypatch, engine, model)
+    (tmp_path / STATE_FILENAME).write_bytes(b"truncated")
+
+    audio = speaker_audio([(0, 10, 1)], 10)
+    _run(tmp_path, audio, 0.0, 10.0)
+    _run(tmp_path, audio, 10.0, 20.0)
+
+    assert model.calls == 0
+    assert (tmp_path / "speaker_labels.off").exists()
+
+
+def test_removing_the_state_tolerates_files_that_are_already_gone(tmp_path):
+    (tmp_path / STATE_FILENAME).write_bytes(b"state")
+    remove_live_label_state(tmp_path)
+    remove_live_label_state(tmp_path)
+
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize(
+    ("mode", "device", "cuda", "expected"),
+    [
+        (None, "auto", True, None),
+        ("off", "auto", True, None),
+        ("on", "auto", True, None),
+        ("auto", "auto", True, "cuda"),
+        ("AUTO ", "cuda", True, "cuda"),
+        ("auto", "cuda:1", True, "cuda:1"),
+        ("auto", "cpu", True, None),
+        ("auto", "auto", False, None),
+    ],
+)
+def test_live_labels_run_only_when_auto_and_the_lane_is_on_cuda(
+    monkeypatch, mode, device, cuda, expected
+):
+    import torch
+
+    from backend.utils.config_manager import config_manager
+
+    monkeypatch.setitem(config_manager.config, "live_speaker_labels", mode)
+    monkeypatch.setitem(config_manager.config, "processing_device", device)
+    monkeypatch.delenv("LIVE_SPEAKER_LABELS", raising=False)
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: cuda)
+
+    assert step.live_speaker_labels_device() == expected
+
+
+def test_finalised_lines_ignore_a_live_label_left_in_their_payload():
+    engine = _database()
+    _apply(engine, {1000: LiveLabelDecision("LIVE_1", locked=False, share=0.8)})
+    _finalised(engine)
+
+    with Session(engine) as session:
+        row = session.execute(
+            text(
+                "SELECT confidence_payload FROM transcript_utterances WHERE public_id='line-a'"
+            )
+        ).scalar_one()
+        line = _by_id(serialize_canonical_utterances(session, RECORDING_ID))["line-a"]
+    assert "live_speaker_label" in json.loads(row)
+    assert line["speaker_state"] == "stable"

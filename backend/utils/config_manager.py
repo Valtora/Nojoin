@@ -205,6 +205,9 @@ DEFAULT_SYSTEM_CONFIG = {
     "live_forced_max_s": 8.0,
     "live_max_segment_s": 20.0,
     "live_speech_pad_ms": 300,
+    # Provisional speaker labels in the live transcript: "off", or "auto" to run
+    # them when the live lane is on CUDA. See docs/DEPLOYMENT.md.
+    "live_speaker_labels": "off",
     "vad_parameters": {
         "threshold": 0.5,
         "min_speech_duration_ms": 250,
