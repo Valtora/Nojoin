@@ -249,6 +249,8 @@ Final processing retries a GPU out-of-memory failure once, after releasing every
 
 `Recording.max_speakers` is an optional upper bound, settable at import, on reprocess and during a live capture. `NULL` (the default) passes no speaker keyword to pyannote. A value is passed as `max_speakers`, never `num_speakers`, because an exact count forces a split whenever the user overcounts.
 
+A person (`global_speakers`) belongs to one user (`user_id`). Identification, the voiceprint dialog, renames and every other lookup read only the people of the recording's owner, so a recording speaker links only to a person in its owner's library.
+
 Voiceprints are comparable only within one extraction procedure. `EMBEDDING_METHOD_VERSION` in [backend/processing/embedding_version.py](../backend/processing/embedding_version.py), which imports no torch, is stored on `global_speakers.embedding_version` and `recording_speakers.embedding_version`. Identification and the duplicate-merge pass refuse to score across versions. Any change to how embeddings are produced must bump the version, and any new comparison must check `embeddings_are_comparable`. Thresholds are in [backend/processing/embedding.py](../backend/processing/embedding.py).
 
 Every write must keep a stored voiceprint's version true:

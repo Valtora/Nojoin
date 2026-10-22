@@ -17,6 +17,32 @@ from backend.utils.time import utc_now
 logger = logging.getLogger(__name__)
 
 
+async def _demo_person(session, user_id: int, name: str, color: str) -> GlobalSpeaker:
+    """The user's own person for one of the demo's speakers.
+
+    A re-seed links the person an earlier seed made, so the user's library
+    never holds a name twice.
+    """
+    existing = (
+        (
+            await session.execute(
+                select(GlobalSpeaker).where(
+                    GlobalSpeaker.name == name, GlobalSpeaker.user_id == user_id
+                )
+            )
+        )
+        .scalars()
+        .first()
+    )
+    if existing is not None:
+        return existing
+    person = GlobalSpeaker(name=name, color=color, user_id=user_id)
+    session.add(person)
+    await session.commit()
+    await session.refresh(person)
+    return person
+
+
 async def seed_demo_data(user_id: int | None = None, force: bool = False) -> None:
     """
     Seeds the database with a demo recording if it doesn't exist.
@@ -118,10 +144,9 @@ async def seed_demo_data(user_id: int | None = None, force: bool = False) -> Non
         ]
 
         for spk in speakers_data:
-            global_spk = GlobalSpeaker(name=spk["name"], color=spk["color"])
-            session.add(global_spk)
-            await session.commit()
-            await session.refresh(global_spk)
+            global_spk = await _demo_person(
+                session, target_user.id, spk["name"], spk["color"]
+            )
 
             rec_spk = RecordingSpeaker(
                 recording_id=recording.id,

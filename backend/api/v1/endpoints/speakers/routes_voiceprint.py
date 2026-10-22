@@ -39,6 +39,27 @@ from .router import router
 logger = logging.getLogger(__name__)
 
 
+async def _own_people(db: AsyncSession, user_id: int) -> list[GlobalSpeaker]:
+    """The user's own people, the only ones a voiceprint is matched against."""
+    result = await db.execute(
+        select(GlobalSpeaker).where(GlobalSpeaker.user_id == user_id)
+    )
+    return list(result.scalars().all())
+
+
+async def _get_own_person(
+    db: AsyncSession, person_id: int, user_id: int
+) -> GlobalSpeaker:
+    """Load a person of the user's own library to link a speaker to.
+
+    A person in someone else's library answers exactly as a missing one does.
+    """
+    person = await db.get(GlobalSpeaker, person_id)
+    if person is None or person.user_id != user_id:
+        raise HTTPException(status_code=404, detail="Global Speaker not found")
+    return person
+
+
 async def _judge_extracted_voiceprint(
     db: AsyncSession, rec_speaker: RecordingSpeaker
 ) -> None:
@@ -154,9 +175,7 @@ async def extract_voiceprint(
     await db.commit()
     await db.refresh(rec_speaker)
 
-    all_global_stmt = select(GlobalSpeaker)
-    all_global_result = await db.execute(all_global_stmt)
-    all_global_speakers = all_global_result.scalars().all()
+    all_global_speakers = await _own_people(db, current_user.id)
 
     matched_speaker = None
     best_score = 0.0
@@ -243,7 +262,8 @@ async def apply_voiceprint_action(
             )
 
         existing_stmt = select(GlobalSpeaker).where(
-            GlobalSpeaker.name == action.new_speaker_name
+            GlobalSpeaker.name == action.new_speaker_name,
+            GlobalSpeaker.user_id == current_user.id,
         )
         existing_result = await db.execute(existing_stmt)
         if existing_result.scalar_one_or_none():
@@ -251,7 +271,7 @@ async def apply_voiceprint_action(
                 status_code=400, detail="A Global Speaker with this name already exists"
             )
 
-        new_gs = GlobalSpeaker(name=action.new_speaker_name)
+        new_gs = GlobalSpeaker(name=action.new_speaker_name, user_id=current_user.id)
         library_update = offer_linked_voiceprint(new_gs, rec_speaker, alpha=0.3)
         db.add(new_gs)
         await db.commit()
@@ -274,9 +294,7 @@ async def apply_voiceprint_action(
         if not action.global_speaker_id:
             raise HTTPException(status_code=400, detail="global_speaker_id is required")
 
-        gs = await db.get(GlobalSpeaker, action.global_speaker_id)
-        if not gs:
-            raise HTTPException(status_code=404, detail="Global Speaker not found")
+        gs = await _get_own_person(db, action.global_speaker_id, current_user.id)
 
         force = action.action == "force_link"
         alpha = 0.4 if force else 0.3
@@ -388,9 +406,7 @@ async def extract_all_voiceprints(
     if not transcript or not transcript_segments:
         raise HTTPException(status_code=400, detail="No transcript segments found")
 
-    all_global_stmt = select(GlobalSpeaker)
-    all_global_result = await db.execute(all_global_stmt)
-    all_global_speakers = list(all_global_result.scalars().all())
+    all_global_speakers = await _own_people(db, current_user.id)
 
     device_str = speakers_module.config_manager.get("processing_device", "cpu")
     results = []
