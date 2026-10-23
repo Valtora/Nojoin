@@ -65,3 +65,9 @@ Database migrations run automatically on the first API start after upgrading. Ba
 <!-- Maintainer: note any change to supported browsers/OSes or capture behaviour. Default below. -->
 
 - Supported browsers, operating systems and audio sources are unchanged.
+
+### Changes
+
+<!-- Filled in when the release is published, from the commits since the previous tag. Keep this heading and the placeholder below when rewriting the notes: Docs validation fails without them. -->
+
+{{CHANGELOG}}
