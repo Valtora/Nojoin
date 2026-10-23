@@ -506,6 +506,7 @@ async def get_transcript_utterances(
         get_transcript_utterances as api_get_transcript_utterances,
     )
     from backend.core.db import async_session_maker
+    from backend.utils.live_speaker_labels import live_speaker_display_name
 
     user = get_current_mcp_user()
     if after_revision is not None and after_revision < 0:
@@ -523,6 +524,11 @@ async def get_transcript_utterances(
 
     result = payload.model_dump()
     utterances = result["utterances"]
+    for utterance in utterances:
+        # A live label, as the live panel shows it.
+        live_name = live_speaker_display_name(utterance.get("speaker"))
+        if live_name is not None:
+            utterance["speaker"] = live_name
     page_end = offset + limit
     result["utterances"] = utterances[offset:page_end]
     result["total_utterances"] = len(utterances)

@@ -463,6 +463,19 @@ describe("transcript play buttons", () => {
     expect(names).toEqual(["Play Alex at 01:05", "Play Blair at 01:05", "Play Alex and Blair at 01:10"]);
   });
 
+  it("names a live label's group by its Speaker N name", () => {
+    renderView({
+      segments: [
+        { id: "u0", speaker: "LIVE_PROVISIONAL_3", start: 0, end: 2, text: "Opening." },
+        { id: "u1", speaker: "LIVE_PROVISIONAL_3", start: 70, end: 74, text: "Both of us" },
+        { id: "u2", speaker: "LIVE_PROVISIONAL_12", start: 71, end: 73, text: "at once." },
+      ],
+    });
+
+    expect(button("Play Speaker 3 at 00:00")).toBeInTheDocument();
+    expect(button("Play Speaker 3 and Speaker 12 at 01:10")).toBeInTheDocument();
+  });
+
   it("names the playing group's button Pause and pauses it", () => {
     const onPause = vi.fn();
     renderView({ currentTime: 1, isPlaying: true, onPause });

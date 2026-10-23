@@ -40,6 +40,7 @@ from backend.processing.embedding import (
     RecordingVoiceprint,
     fold_recording_voiceprint,
 )
+from backend.utils.live_speaker_labels import live_speaker_display_name
 from backend.utils.speaker_assignment import (
     matches_speaker_name,
     reconcile_segment_assignment,
@@ -183,19 +184,49 @@ def _speaker_kind_for_label(label: str, source_segment: dict[str, Any]) -> str:
     return "automated"
 
 
+def _names_no_speaker(value: str) -> bool:
+    """True for a segment speaker that no ``RecordingSpeaker`` may be made from.
+
+    A live label (``LIVE_PROVISIONAL_<n>``) is no speaker of the recording: the
+    line keeps it and readers show "Speaker <n>". A row made from it would be a
+    nameable speaker, linkable to a person, that the final pass never chose.
+    """
+    return (
+        not value
+        or value == UNKNOWN_SPEAKER
+        or (live_speaker_display_name(value) is not None)
+    )
+
+
 def _get_utterance(
-    session, recording_id: int, utterance_public_id: str
+    session, recording_id: int, utterance_public_id: str, *, lock: bool = False
 ) -> TranscriptUtterance | None:
+    """The utterance; ``lock`` reads it ``FOR UPDATE``, current as of the lock.
+
+    A speaker edit locks it before checking the client's revision, so a live
+    label written meanwhile fails the check instead of being overwritten.
+    """
     statement = (
         select(TranscriptUtterance)
         .where(TranscriptUtterance.recording_id == recording_id)
         .where(TranscriptUtterance.public_id == utterance_public_id)
     )
+    if lock:
+        statement = statement.with_for_update().execution_options(
+            populate_existing=True
+        )
     return session.execute(statement).scalar_one_or_none()
 
 
-def _load_transcript(session, recording_id: int) -> Transcript | None:
+def _load_transcript(
+    session, recording_id: int, *, lock: bool = False
+) -> Transcript | None:
+    """The transcript; ``lock`` reads it ``FOR UPDATE``, current as of the lock."""
     statement = select(Transcript).where(Transcript.recording_id == recording_id)
+    if lock:
+        statement = statement.with_for_update().execution_options(
+            populate_existing=True
+        )
     return session.execute(statement).scalar_one_or_none()
 
 
