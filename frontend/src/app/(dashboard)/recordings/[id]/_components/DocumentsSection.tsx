@@ -14,6 +14,9 @@ export default function DocumentsSection({
 }: DocumentsSectionProps) {
   return (
     <div
+      role="tabpanel"
+      id="panel-documents"
+      aria-labelledby="tab-documents"
       className={`absolute inset-0 flex flex-col ${active ? "z-10 visible" : "z-0 invisible"}`}
     >
       <DocumentsView recordingId={recordingId} />

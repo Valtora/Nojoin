@@ -133,6 +133,9 @@ export default function TranscriptSection({
     <div
       ref={sectionRef}
       tabIndex={-1}
+      role="tabpanel"
+      id="panel-transcript"
+      aria-labelledby="tab-transcript"
       className={`absolute inset-0 flex flex-col outline-none ${active ? "z-10 visible" : "z-0 invisible"}`}
     >
       {transcriptionError ? (
