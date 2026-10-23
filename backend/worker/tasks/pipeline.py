@@ -151,7 +151,7 @@ def _resolve_input_audio(
 def _run_final_asr_stage(
     ctx: _PipelineRunContext,
     recording: Recording,
-    processed_audio_path: str,
+    audio_path: str,
     engine_override: dict | None,
 ) -> dict:
     """Run the configured engine and drop the words it placed in digital silence.
@@ -181,13 +181,13 @@ def _run_final_asr_stage(
         payload={
             "engine": merged_config.get("transcription_backend"),
             "engine_override": bool(engine_override),
-            "input_path": processed_audio_path,
+            "input_path": audio_path,
         },
         log=logger,
     ) as metric:
         try:
             transcription_result = transcribe_with_gpu_oom_retry(
-                processed_audio_path, merged_config, free_gpu=_release_pipeline_vram
+                audio_path, merged_config, free_gpu=_release_pipeline_vram
             )
         except Exception as exc:
             if is_task_interruption(exc):
@@ -209,13 +209,13 @@ def _run_final_asr_stage(
             transcription_result.get("segments", [])
         )
 
-    return drop_unheard_words(transcription_result, processed_audio_path, recording_id)
+    return drop_unheard_words(transcription_result, audio_path, recording_id)
 
 
 def _run_final_diarization_stage(
     ctx: _PipelineRunContext,
     recording: Recording,
-    processed_audio_path: str,
+    audio_path: str,
 ):
     """Run pyannote diarization and the best-effort phantom-speaker filter.
 
@@ -249,14 +249,14 @@ def _run_final_diarization_stage(
             stage="final_diarization_invocation",
             recording_id=recording_id,
             payload={
-                "input_path": processed_audio_path,
+                "input_path": audio_path,
                 "enabled": True,
                 "max_speakers": speaker_cap,
             },
             log=logger,
         ) as metric:
             diarization_result = diarize_audio(
-                processed_audio_path,
+                audio_path,
                 config=merged_config,
                 max_speakers=speaker_cap,
             )
@@ -273,7 +273,7 @@ def _run_final_diarization_stage(
 
             try:
                 diarization_result = filter_phantom_speakers(
-                    diarization_result, processed_audio_path, config=merged_config
+                    diarization_result, audio_path, config=merged_config
                 )
             except Exception as e:  # noqa: BLE001 -- boundary: phantom filter is best-effort
                 logger.warning(

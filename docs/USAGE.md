@@ -201,8 +201,8 @@ To keep more brief speakers, lower the phantom filter's limits or raise its merg
 
 With voice activity detection on, two switches choose which steps hear the filtered audio. Both are on by default.
 
+- **Mute non-speech for transcription**: off, transcription hears the whole recording. This can recover distant or quiet speech the filter dropped, but it can add words from background noise and be less accurate on close microphones. Words it recovers outside any speaker's turn stay unattributed: the transcript view and meeting chat leave them out, while exports and meeting notes include them. Turn off muting for speaker separation too to give most of them a speaker.
 - **Mute non-speech for speaker separation**: off, speaker separation hears the whole recording. In small meetings this tells people apart better and puts more short replies on the right speaker, but it takes longer on long recordings.
-- **Mute non-speech for transcription**: off, transcription hears the whole recording. This can recover distant or quiet speech the filter dropped, but it can add words from background noise and lose short replies on close microphones. Words it recovers outside any speaker's turn stay unattributed: the transcript view hides them, while exports and meeting notes include them. Turn off muting for speaker separation too to give them a speaker.
 
 Voice activity detection still runs with both switches off, so a recording with no speech still completes with an empty transcript. Turning voice activity detection off unmutes both.
 

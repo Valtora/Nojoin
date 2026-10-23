@@ -242,7 +242,7 @@ With `enable_vad` on, the VAD stage keeps two files: the normalised 16 kHz mono 
 - `vad_mute_diarization` covers diarisation, the phantom filter and final-pass voiceprint extraction, which score the clusters diarisation found. Voiceprint rebuilds always read the source recording.
 - Invariant: muting zeroes samples and never cuts them, so both files have the same rate, length and time base. Word times and turn times need no offset whichever file each stage read.
 - VAD runs whenever `enable_vad` is on, so the no-speech short-circuit holds with both switches off. With `enable_vad` off, both stages read the unmuted file, whatever the switches hold.
-- A word that unmuted transcription places more than `GAP_WORD_TURN_TOLERANCE_S` from any turn of a muted diarisation stays `UNKNOWN`: hidden in the transcript view and counted as unattributed, but kept in exports and `transcript.text`.
+- A word that unmuted transcription places more than `GAP_WORD_TURN_TOLERANCE_S` from any turn of a muted diarisation stays `UNKNOWN`: hidden in the transcript view, left out of Meeting Chat's transcript and counted as unattributed, but kept in exports, meeting notes and `transcript.text`.
 
 ### Word Timestamps In The Merge
 

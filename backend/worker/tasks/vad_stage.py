@@ -9,12 +9,16 @@ pipeline, so the stage tests can stub those modules per test.
 """
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from backend.processing.engines.base import VAD_MUTED_INPUT
 from backend.processing.vad_muting import muted_stages
 
 from .constants import *  # noqa: F403
 from .final_asr import mark_transcript_without_speech
+
+if TYPE_CHECKING:
+    from .pipeline import _PipelineRunContext
 
 
 @dataclass
@@ -59,7 +63,9 @@ def _complete_without_speech(session, recording: Recording) -> None:
     session.commit()
 
 
-def run_vad_stage(ctx, recording: Recording, audio_path: str) -> VadStageResult:
+def run_vad_stage(
+    ctx: "_PipelineRunContext", recording: Recording, audio_path: str
+) -> VadStageResult:
     """Preprocess audio to 16k mono and (when enabled) mute non-speech regions.
 
     On the "no speech" short-circuit, persists an empty transcript, marks the

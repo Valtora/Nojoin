@@ -1126,7 +1126,8 @@ def test_combine_stage_receives_the_owners_merged_settings(monkeypatch):
 @pytest.mark.parametrize("enable_vad", [True, False])
 def test_asr_stage_is_told_whether_vad_muted_its_audio(monkeypatch, enable_vad):
     """An engine may decode skipped speech again only in VAD-muted audio, so
-    the stage says whether VAD ran, whatever the stored settings hold."""
+    the stage says whether the engine's own audio is muted (with the default
+    switches, whether VAD ran), whatever the stored settings hold."""
     recording = _FakeRecording(722)
     transcript = _FakeTranscript(722)
     session = _FakeSession(recording, transcript)
@@ -1319,7 +1320,8 @@ def test_vad_off_unmutes_both_stages_whatever_the_switches_hold(monkeypatch):
 
     _run_task(monkeypatch, session, recording_id=725, llm_config=llm_config)
 
-    assert seen["asr"] == seen["diarize"] == seen["voiceprints"] == _UNMUTED
+    assert seen["asr"] == _UNMUTED
+    assert seen["diarize"] == seen["phantom"] == seen["voiceprints"] == _UNMUTED
     assert seen["vad_muted_input"] is False
 
 
@@ -1355,11 +1357,17 @@ def test_no_speech_still_completes_empty_with_both_stages_unmuted(monkeypatch):
     assert transcript.text == ""
 
 
-def test_unmuted_transcription_keeps_a_word_outside_the_vads_speech(
-    monkeypatch, tmp_path
+@pytest.mark.parametrize(
+    ("mute_transcription", "expected_text"),
+    [(False, "Over here."), (True, "")],
+)
+def test_the_zero_run_drop_reads_the_file_transcription_heard(
+    monkeypatch, tmp_path, mute_transcription, expected_text
 ):
     """With transcription unmuted, the zero-run drop reads the unmuted file, so a
-    word where VAD heard no speech is kept: often it is speech VAD missed."""
+    word where VAD heard no speech is kept: often it is speech VAD missed. With
+    it muted, the same word lies in exact zeros and goes, so both files were
+    read."""
     recording = _FakeRecording(727)
     transcript = _FakeTranscript(727)
     session = _FakeSession(recording, transcript)
@@ -1400,8 +1408,8 @@ def test_unmuted_transcription_keeps_a_word_outside_the_vads_speech(
         },
         release_model_cache=lambda: None,
     )
-    llm_config = _tuned_llm_config(vad_mute_transcription=False)
+    llm_config = _tuned_llm_config(vad_mute_transcription=mute_transcription)
 
     _run_task(monkeypatch, session, recording_id=727, llm_config=llm_config)
 
-    assert transcript.text.strip() == "Over here."
+    assert (transcript.text or "").strip() == expected_text
