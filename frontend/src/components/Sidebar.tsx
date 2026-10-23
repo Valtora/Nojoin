@@ -51,6 +51,7 @@ import { createFuse } from "@/lib/searchUtils";
 import { getColorByKey } from "@/lib/constants";
 import { useViewportDensity } from "./ViewportDensityProvider";
 import { Badge } from "./ui/Badge";
+import { useForgetNotesOfDeletedRecordings } from "@/lib/notes/deletedRecordingNotes";
 import { useUnsentRecordings } from "@/lib/notes/useNoteOutbox";
 import { useRecordingStatusNotifications } from "./recordings/_hooks/useRecordingStatusNotifications";
 import { useSidebarResize } from "./recordings/_hooks/useSidebarResize";
@@ -83,8 +84,15 @@ const formatTime = (date: Date) => {
   });
 };
 
-const StatusIcon = ({ status }: { status: RecordingStatus }) => {
-  switch (status) {
+const StatusIcon = ({ recording }: { recording: Recording }) => {
+  if (recording.import_stalled) {
+    return (
+      <span className="cursor-help" title="This import did not finish uploading.">
+        <AlertCircle className="w-3 h-3 text-status-warning-fg" />
+      </span>
+    );
+  }
+  switch (recording.status) {
     case RecordingStatus.PROCESSED:
       return null;
     case RecordingStatus.QUEUED:
@@ -261,6 +269,7 @@ export default function Sidebar() {
   }, []);
 
   useRecordingStatusNotifications(recordings);
+  useForgetNotesOfDeletedRecordings(hasLoadedRecordings ? recordings : null);
 
   const filteredRecordings = useMemo(() => {
     if (!debouncedSearchQuery) return recordings;
@@ -1031,7 +1040,7 @@ export default function Sidebar() {
                           {recording.name}
                         </h3>
                       </div>
-                      <StatusIcon status={recording.status} />
+                      <StatusIcon recording={recording} />
                     </div>
 
                     <div

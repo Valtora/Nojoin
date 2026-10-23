@@ -9,7 +9,9 @@ export const DISABLED_LOOK =
 const ignoreClick = (event: MouseEvent<HTMLButtonElement>) => event.preventDefault();
 
 /**
- * The attributes `Button` and `IconButton` put on a loading button.
+ * The attributes `Button` and `IconButton` put on a loading button. A raw
+ * `<button>` that runs its own request spreads them too, with `DISABLED_LOOK`
+ * or its own `aria-disabled:` classes for the look (#614).
  *
  * A loading button stays enabled, so it keeps keyboard focus: Chrome moves
  * focus from a button to the page body once it is disabled, which in a dialog
@@ -21,8 +23,8 @@ const ignoreClick = (event: MouseEvent<HTMLButtonElement>) => event.preventDefau
  */
 export function loadingButtonProps(
   loading: boolean,
-  disabled: boolean | undefined,
-  onClick: MouseEventHandler<HTMLButtonElement> | undefined,
+  disabled?: boolean,
+  onClick?: MouseEventHandler<HTMLButtonElement>,
 ) {
   if (!loading) return { disabled, onClick };
   return {

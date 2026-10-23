@@ -5,6 +5,7 @@ from backend.processing.engines.errors import (
     transcription_error_from,
 )
 from backend.utils.import_audio import KEEPING_AUDIO_STEP
+from backend.utils.transcription_models import known_engine_override
 
 from .constants import *
 from .final_asr import (
@@ -92,21 +93,18 @@ def _resolve_input_audio(
     device_suffix = ctx.device_suffix
     temp_files = ctx.temp_files
 
-    audio_path = recording.audio_path
+    audio_path = confined_recording_path(recording.audio_path)
+    proxy_path = confined_recording_path(recording.proxy_path)
     if not audio_path or not os.path.exists(audio_path):
-        if recording.proxy_path and os.path.exists(recording.proxy_path):
+        if proxy_path and os.path.exists(proxy_path):
             logger.info(
                 "Source audio missing, but proxy exists. Restoring from proxy..."
             )
             from backend.utils.audio import convert_to_wav
 
             restore_audio_path = audio_path
-            if not restore_audio_path:
-                base_path, _ = os.path.splitext(recording.proxy_path)
-                restore_audio_path = f"{base_path}.restored.wav"
-                recording.audio_path = restore_audio_path
-            elif not restore_audio_path.lower().endswith(".wav"):
-                base_path, _ = os.path.splitext(restore_audio_path)
+            if not (audio_path or "").lower().endswith(".wav"):
+                base_path, _ = os.path.splitext(audio_path or proxy_path)
                 restore_audio_path = f"{base_path}.restored.wav"
                 recording.audio_path = restore_audio_path
 
@@ -114,7 +112,7 @@ def _resolve_input_audio(
             session.add(recording)
             session.commit()
 
-            if convert_to_wav(recording.proxy_path, restore_audio_path):
+            if convert_to_wav(proxy_path, restore_audio_path):
                 logger.info("Successfully restored source audio from proxy.")
                 audio_path = restore_audio_path
             else:
@@ -280,8 +278,7 @@ def _run_final_asr_stage(
     session.commit()
 
     if engine_override:
-        merged_config.update(engine_override)
-        logger.info("Reprocess: engine override applied: %s", engine_override)
+        merged_config.update(known_engine_override(engine_override))
 
     with pipeline_metric_timer(
         stage="final_asr_invocation",

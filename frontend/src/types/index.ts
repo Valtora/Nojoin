@@ -539,6 +539,12 @@ export interface Recording extends Omit<BaseDBModel, "id"> {
    * Such a capture can be resumed, stopped or discarded from another tab.
    */
   capture_stalled?: boolean;
+  /**
+   * A file import that has received no part for 15 minutes, so the page
+   * sending it went away. Judged by the server. It cannot be resumed, only
+   * imported again or discarded.
+   */
+  import_stalled?: boolean;
   is_archived: boolean;
   is_deleted: boolean;
   transcript?: Transcript;

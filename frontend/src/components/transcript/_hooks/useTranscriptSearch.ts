@@ -209,13 +209,16 @@ export function useTranscriptSearch(
     prevFindTextRef.current = findText;
   }, [findText, segments, showSearch, caseSensitive, isFuzzy, useRegex]);
 
-  // Scroll to current match
+  // Scroll to the current match when it moves to another line or position.
+  // A poll that rebuilds `matches` around the same match leaves the view alone.
+  const currentMatch = matches[currentMatchIndex];
+  const currentMatchLine = currentMatch?.segmentId;
+  const currentMatchStart = currentMatch?.startIndex;
   useEffect(() => {
-    if (currentMatchIndex >= 0 && matches[currentMatchIndex]) {
-      const match = matches[currentMatchIndex];
-      scrollSegmentIntoView(match.segmentId, "smooth");
+    if (currentMatchLine !== undefined) {
+      scrollSegmentIntoView(currentMatchLine, "smooth");
     }
-  }, [currentMatchIndex, matches, scrollSegmentIntoView]);
+  }, [currentMatchLine, currentMatchStart, scrollSegmentIntoView]);
 
   const nextMatch = () => {
     if (matches.length === 0) return;
@@ -262,7 +265,6 @@ export function useTranscriptSearch(
     return byLine;
   }, [matchesByLine, segments]);
 
-  const currentMatch = matches[currentMatchIndex];
   const decorationsByLine = useMemo(() => {
     const lineMatches = currentMatch && matchesByLine.get(currentMatch.segmentId);
     const plain = currentMatch && plainDecorations.get(currentMatch.segmentId);

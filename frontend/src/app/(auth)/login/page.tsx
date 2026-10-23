@@ -7,6 +7,7 @@ import Image from "next/image";
 import { login, getCurrentUser } from "@/lib/api";
 import { DEMO_MODE, DEMO_PASSWORD, DEMO_USERNAME } from "@/lib/demo";
 import { Lock, User } from "lucide-react";
+import { loadingButtonProps } from "@/components/ui/loadingButton";
 
 function formatLoginError(error: unknown): string {
   if (!axios.isAxiosError(error)) {
@@ -113,9 +114,8 @@ export default function LoginPage() {
             )}
             <button
               type="button"
-              disabled={loading}
-              onClick={() => void signIn(DEMO_USERNAME, DEMO_PASSWORD)}
-              className="w-full flex justify-center py-3 px-4 border border-transparent text-sm font-semibold rounded-lg text-action-on bg-action hover:bg-action-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+              {...loadingButtonProps(loading, undefined, () => void signIn(DEMO_USERNAME, DEMO_PASSWORD))}
+              className="w-full flex justify-center py-3 px-4 border border-transparent text-sm font-semibold rounded-lg text-action-on bg-action hover:bg-action-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:opacity-60 disabled:cursor-not-allowed transition-colors aria-disabled:opacity-60 aria-disabled:cursor-not-allowed"
             >
               {loading ? "Opening the demo..." : "Enter the demo"}
             </button>
@@ -191,8 +191,8 @@ export default function LoginPage() {
             <div>
               <button
                 type="submit"
-                disabled={loading}
-                className="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-semibold rounded-lg text-action-on bg-action hover:bg-action-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+                {...loadingButtonProps(loading)}
+                className="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-semibold rounded-lg text-action-on bg-action hover:bg-action-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:opacity-60 disabled:cursor-not-allowed transition-colors aria-disabled:opacity-60 aria-disabled:cursor-not-allowed"
               >
                 {loading ? "Signing in..." : "Sign in"}
               </button>

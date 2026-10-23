@@ -18,6 +18,7 @@ import {
   segmentEndMs,
   segmentStartMs,
 } from "@/lib/notes/placement";
+import { liveSpeakerDisplayName } from "@/lib/recordingSpeakerUtils";
 import { getTranscriptSegmentKey } from "@/lib/transcriptSegments";
 import { CaptureSourceChannel, TranscriptSegment } from "@/types";
 
@@ -66,19 +67,13 @@ const sourceChannelOf = (
   return channel === "microphone" || channel === "system" ? channel : null;
 };
 
-/** A live speaker label, `LIVE_<n>`, written by the live lane's clustering. */
-const LIVE_SPEAKER_LABEL = /^LIVE_(\d+)$/;
-
 /**
- * "Speaker 3" for a line the live lane labelled `LIVE_3`, else null.
- *
- * Live labels number voices in the order they were first heard. They are not
- * the final pass's speakers, which are named when the recording is processed.
+ * "Speaker 3" for a line the live lane labelled `LIVE_PROVISIONAL_3`, else null.
+ * These are not the final pass's speakers, which are named when the recording
+ * is processed.
  */
-const liveSpeakerOf = (segment: TranscriptSegment): string | null => {
-  const match = LIVE_SPEAKER_LABEL.exec(segment.speaker ?? "");
-  return match ? `Speaker ${Number(match[1])}` : null;
-};
+const liveSpeakerOf = (segment: TranscriptSegment): string | null =>
+  liveSpeakerDisplayName(segment.speaker);
 
 interface LiveTranscriptPanelProps {
   segments: TranscriptSegment[];

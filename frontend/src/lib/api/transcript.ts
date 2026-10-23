@@ -34,6 +34,7 @@ export const updateTranscriptUtteranceSpeaker = async (
 export const getTranscriptUtterances = async (
   recordingId: RecordingId,
   afterRevision?: number,
+  signal?: AbortSignal,
 ): Promise<TranscriptUtteranceList> => {
   const params = new URLSearchParams();
 
@@ -42,9 +43,10 @@ export const getTranscriptUtterances = async (
   }
 
   const suffix = params.toString();
-  const response = await api.get<TranscriptUtteranceList>(
-    `/transcripts/${recordingId}/utterances${suffix ? `?${suffix}` : ""}`,
-  );
+  const url = `/transcripts/${recordingId}/utterances${suffix ? `?${suffix}` : ""}`;
+  const response = signal
+    ? await api.get<TranscriptUtteranceList>(url, { signal })
+    : await api.get<TranscriptUtteranceList>(url);
   return response.data;
 };
 

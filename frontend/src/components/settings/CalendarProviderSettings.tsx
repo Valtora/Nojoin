@@ -26,6 +26,7 @@ import {
   SETTINGS_INPUT_CLASS,
   SETTINGS_VALUE_CLASS,
 } from "./settingsControls";
+import { loadingButtonProps } from "@/components/ui/loadingButton";
 
 
 interface ProviderFormState {
@@ -380,8 +381,7 @@ export default function CalendarProviderSettings() {
               )}
               <button
                 type="button"
-                onClick={() => handleSave(key)}
-                disabled={isSaving || !dirty}
+                {...loadingButtonProps(isSaving, !dirty, () => handleSave(key))}
                 className={SETTINGS_BUTTON_PRIMARY}
               >
                 {isSaving ? (

@@ -500,7 +500,7 @@ def _resolve_documents(ctx: "_RowContext") -> "RowOutcome":
             ctx.item_data["file_path"] = new_path
 
     staged_document = ctx.state.stage_path(archived_file_path or "")
-    if archived_file_path and os.path.isfile(staged_document):
+    if archived_file_path and staged_document and os.path.isfile(staged_document):
         destination = ctx.item_data["file_path"]
         if not ctx.state.claim_move(staged_document, destination):
             stem, ext = os.path.splitext(destination)

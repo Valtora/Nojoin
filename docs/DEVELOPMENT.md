@@ -308,9 +308,9 @@ Capture code lives in `frontend/src/lib/capture/`. After a capture change, check
 - A tab closed while signed out, or with the pause request blocked: the recording is offered as interrupted two minutes after its last upload, in a fresh tab and without a reload, and a capture still running in another tab is never offered.
 - A pause that does not reach the server: block `/pause` in the developer tools and select **Pause**. The controls read **Paused** with a warning, the elapsed time stops, and once `/pause` is unblocked the pause reaches the server within 30 seconds. **Resume** then carries on with the same capture.
 - An outage longer than the upload retries: take the capturing tab offline for about 30 seconds. It settles in paused with **Start Meeting** unavailable, the pause reaches the server once the tab is back online, and **Resume** carries on with the same capture and no gap or repeat in the segment numbers.
-- A takeover: start a capture, block its uploads until the recording is offered as interrupted (two minutes), resume it in another browser, then unblock the first tab. The first tab stops with the message that the recording continued elsewhere, and the finished recording holds the first tab's uploaded audio followed by the second browser's, with no segment replaced.
+- A takeover: start a capture, block its uploads until the recording is offered as interrupted (two minutes), resume it in another browser, then unblock the first tab. The first tab stops with the message that the recording continued elsewhere and offers the audio it had not uploaded as a download, and the finished recording holds the first tab's uploaded audio followed by the second browser's, with no segment replaced.
 - A discard elsewhere: pause a capture, choose **Discard recording** for it in another browser's resume-or-discard dialog, then select **Resume** in the first tab. It stops with the message that the recording was discarded and releases the microphone and shared tab. With a second account signed in from another tab of the first browser instead, the first tab keeps recording and asks for its owner's sign-in.
-- A stop elsewhere: pause a capture, choose **Stop and process** for it in another browser's resume-or-discard dialog, then select **Resume** in the first tab. It stops with the message that the recording was already stopped, releases the microphone and shared tab, and shows no recording controls. Any audio that tab had not uploaded is then gone from its IndexedDB queue (`nojoin-capture`).
+- A stop elsewhere: pause a capture, choose **Stop and process** for it in another browser's resume-or-discard dialog, then select **Resume** in the first tab. It stops with the message that the recording was already stopped, releases the microphone and shared tab, and shows no recording controls. Any audio that tab had not uploaded is then gone from its IndexedDB queue (`nojoin-capture`) and offered as a download, and the downloaded FLAC plays back that stretch.
 - Focus moving to another tab, window or application, which must not pause capture.
 
 ```bash
@@ -380,6 +380,7 @@ These apply to all tracked source, frontend included.
 - **Auth**: the browser uses HttpOnly session cookies from `/api/v1/login/session`. Bearer tokens from `/api/v1/login/access-token` are for non-browser clients; never put one in a URL or anywhere else the browser exposes.
 - **Framework**: the Next.js App Router ([frontend/src/app/](../frontend/src/app/)) and Tailwind CSS, with functional components in [frontend/src/components/](../frontend/src/components/).
 - **TypeScript**: avoid `any`. Update the interfaces in `frontend/src/types/index.ts` first when adding settings or model fields.
+- **Rich text**: create every Tiptap editor with `injectCSS: false`. The CSP's nonce-based `style-src` refuses the `<style>` tag Tiptap would otherwise inject, so ProseMirror's base rules are in `globals.css`. `tiptapStyles.test.ts` fails on an editor without the option, or when a Tiptap upgrade changes those rules.
 
 ### Charts
 
@@ -572,7 +573,7 @@ Some findings need an image-level fix rather than a requirements bump:
 
 ### Automated Release Notes
 
-After the rolling tags move, `publish-release-notes` finds the previous tag with `git describe`, renders that range with `scripts/render_release_notes.py`, looks up the published digests, and fills [.github/release-notes-template.md](../.github/release-notes-template.md), replacing `{{VERSION}}`, `{{IMAGE_DIGESTS}}` and `{{CHANGELOG}}` where they appear. The current template has no `{{CHANGELOG}}`, so a release carries only the hand-written sections (Highlights, Upgrade, Migration, Rollback, Known Issues and Browser-Capture Compatibility). `make_latest` follows `publish_latest`.
+After the rolling tags move, `publish-release-notes` finds the previous tag with `git describe`, renders that range with `scripts/render_release_notes.py`, looks up the published digests, and fills [.github/release-notes-template.md](../.github/release-notes-template.md), replacing `{{VERSION}}`, `{{IMAGE_DIGESTS}}` and `{{CHANGELOG}}`. The changelog goes under **Changes**, after the hand-written sections (Highlights, Upgrade, Migration, Rollback, Known Issues and Browser-Capture Compatibility), with commits grouped by Conventional Commit type and the minor ones folded into a collapsed block. Rewrite the notes around the three placeholders, not over them: `scripts/validate_docs.py`, which the `Docs validation` job runs on every pull request, fails when one is missing. `make_latest` follows `publish_latest`.
 
 ## Related Docs
 

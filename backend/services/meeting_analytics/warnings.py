@@ -16,6 +16,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from backend.utils.live_speaker_labels import live_speaker_display_name
+
 from .constants import (
     LOW_SHARE_SPEAKER_COUNT_TRIGGER,
     LOW_SHARE_SPEAKER_THRESHOLD,
@@ -70,8 +72,12 @@ def build_attribution_warning(
             }
         )
 
+    # A live label has no speaker row to name until the capture is processed.
     unnamed = [
-        speaker["speaker_key"] for speaker in speakers if not speaker.get("is_named")
+        speaker["speaker_key"]
+        for speaker in speakers
+        if not speaker.get("is_named")
+        and live_speaker_display_name(speaker.get("diarization_label")) is None
     ]
     if unnamed:
         reasons.append({"code": "unnamed_speakers", "speaker_keys": unnamed})

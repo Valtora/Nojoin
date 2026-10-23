@@ -3,6 +3,7 @@
 import logging
 import os
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Dict, List, Set, Tuple
 
 from backend.core.backup.format import ARCHIVE_QUALITY_COMPRESSED
@@ -12,8 +13,17 @@ from backend.core.backup.paths import (
     _get_document_subpath,
     _get_recording_subpath,
 )
+from backend.utils.recording_storage import (
+    recordings_root_dir,
+    resolve_path_within_root,
+)
 
 logger = logging.getLogger(__name__)
+
+# Why a row's file was left out of the archive, for the log.
+_AUDIO_NOT_ON_DISK = "missing or empty on disk"
+_DOCUMENT_NOT_ON_DISK = "not found on disk"
+_OUTSIDE_DATA_DIR = "outside the {} directory"
 
 
 @dataclass
@@ -63,21 +73,28 @@ class _DocumentPlan:
     missing_files: int = 0
 
 
-def _resolve_source_audio_path(
+def _within_any(path: str, roots: Tuple[Path, ...]) -> bool:
+    """Whether ``path``, with its links followed, is inside one of ``roots``."""
+    return any(resolve_path_within_root(path, root) is not None for root in roots)
+
+
+def _find_source_audio(
     audio_path: str | None,
     recordings_dir: str | os.PathLike[str],
-) -> str | None:
-    """Find a recording's audio on disk, or ``None`` if it is not there or is empty.
+) -> Tuple[str | None, str]:
+    """A recording's audio on disk, or ``None`` and why it is not taken.
 
     An empty file, left by an interrupted write, is no audio: the player treats it
     as unavailable, so the backup counts it as missing rather than archiving it.
 
     ``Recording.audio_path`` is stored relative to the process working directory,
     which is ``/app`` in every container. The recordings directory is tried as a
-    fallback so a library moved via ``NOJOIN_DATA_DIR`` still resolves.
+    fallback so a library moved via ``NOJOIN_DATA_DIR`` still resolves. Only a
+    file inside a recordings directory is taken: ``recordings_dir`` or the one
+    uploads and imports write to.
     """
     if not audio_path:
-        return None
+        return None, _AUDIO_NOT_ON_DISK
 
     candidates = [os.path.abspath(audio_path)]
 
@@ -87,20 +104,38 @@ def _resolve_source_audio_path(
             os.path.abspath(os.path.join(os.fspath(recordings_dir), subpath))
         )
 
+    roots = (Path(os.fspath(recordings_dir)), recordings_root_dir(create=False))
+    reason = _AUDIO_NOT_ON_DISK
     for candidate in candidates:
-        if os.path.isfile(candidate) and os.path.getsize(candidate) > 0:
-            return candidate
+        if not (os.path.isfile(candidate) and os.path.getsize(candidate) > 0):
+            continue
+        if not _within_any(candidate, roots):
+            reason = _OUTSIDE_DATA_DIR.format("recordings")
+            continue
+        return candidate, ""
 
-    return None
+    return None, reason
 
 
-def _resolve_document_source_path(
+def _resolve_source_audio_path(
+    audio_path: str | None,
+    recordings_dir: str | os.PathLike[str],
+) -> str | None:
+    """Find a recording's audio on disk, or ``None`` (see :func:`_find_source_audio`)."""
+    return _find_source_audio(audio_path, recordings_dir)[0]
+
+
+def _find_document_source(
     file_path: str | None,
     documents_dir: str | os.PathLike[str],
-) -> str | None:
-    """Find a document's file on disk, trying the documents directory as a fallback."""
+) -> Tuple[str | None, str]:
+    """A document's file on disk, or ``None`` and why it is not taken.
+
+    The documents directory is tried as a fallback, as for audio, and only a file
+    inside it is taken.
+    """
     if not file_path:
-        return None
+        return None, _DOCUMENT_NOT_ON_DISK
 
     candidates = [os.path.abspath(file_path)]
     subpath = _get_document_subpath(file_path)
@@ -108,11 +143,26 @@ def _resolve_document_source_path(
         candidates.append(
             os.path.abspath(os.path.join(os.fspath(documents_dir), subpath))
         )
-    for candidate in candidates:
-        if os.path.isfile(candidate):
-            return candidate
 
-    return None
+    roots = (Path(os.fspath(documents_dir)),)
+    reason = _DOCUMENT_NOT_ON_DISK
+    for candidate in candidates:
+        if not os.path.isfile(candidate):
+            continue
+        if not _within_any(candidate, roots):
+            reason = _OUTSIDE_DATA_DIR.format("documents")
+            continue
+        return candidate, ""
+
+    return None, reason
+
+
+def _resolve_document_source_path(
+    file_path: str | None,
+    documents_dir: str | os.PathLike[str],
+) -> str | None:
+    """Find a document's file on disk, or ``None`` (see :func:`_find_document_source`)."""
+    return _find_document_source(file_path, documents_dir)[0]
 
 
 def _build_audio_plan(
@@ -129,10 +179,11 @@ def _build_audio_plan(
         if not audio_path:
             continue
 
-        source_path = _resolve_source_audio_path(audio_path, recordings_dir)
+        source_path, reason = _find_source_audio(audio_path, recordings_dir)
         if source_path is None:
             logger.warning(
-                "Recording audio missing or empty on disk; archiving metadata only: %s",
+                "Recording audio %s; archiving metadata only: %s",
+                reason,
                 audio_path,
             )
             plan.missing_audio += 1
@@ -182,10 +233,11 @@ def _build_document_plan(
         if not file_path:
             continue
 
-        source_path = _resolve_document_source_path(file_path, documents_dir)
+        source_path, reason = _find_document_source(file_path, documents_dir)
         if source_path is None:
             logger.warning(
-                "Document file not found on disk; archiving metadata only: %s",
+                "Document file %s; archiving metadata only: %s",
+                reason,
                 file_path,
             )
             plan.missing_files += 1

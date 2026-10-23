@@ -6,6 +6,7 @@ import type {
   RecordingInitResponse,
   ReprocessRequest,
 } from "@/types";
+import { discardRecordingCapture } from "./capture";
 import api, { API_BASE_URL } from "./client";
 
 export interface RecordingFilters {
@@ -170,28 +171,37 @@ export const importAudio = async (
   );
   const recording = initResponse.data;
 
-  for (let i = 0; i < totalChunks; i++) {
-    const start = i * CHUNK_SIZE;
-    const end = Math.min(start + CHUNK_SIZE, file.size);
-    const chunk = file.slice(start, end);
+  try {
+    for (let i = 0; i < totalChunks; i++) {
+      const start = i * CHUNK_SIZE;
+      const end = Math.min(start + CHUNK_SIZE, file.size);
+      const chunk = file.slice(start, end);
 
-    const formData = new FormData();
-    formData.append("file", chunk);
+      const formData = new FormData();
+      formData.append("file", chunk);
 
-    // Chunked imports keep their existing import-part sequence; browser live capture uses 0-based segments.
-    await api.post(
-      `/recordings/import/chunked/segment?recording_id=${recording.id}&sequence=${i + 1}`,
-      formData,
-      {
-        headers: { "Content-Type": "multipart/form-data" },
-      },
-    );
+      // Chunked imports keep their existing import-part sequence; browser live capture uses 0-based segments.
+      await api.post(
+        `/recordings/import/chunked/segment?recording_id=${recording.id}&sequence=${i + 1}`,
+        formData,
+        {
+          headers: { "Content-Type": "multipart/form-data" },
+        },
+      );
 
-    if (options?.onUploadProgress) {
-      const progress = Math.round(((i + 1) / totalChunks) * 100);
-      // Cap at 99% until finalized
-      options.onUploadProgress(Math.min(progress, 99));
+      if (options?.onUploadProgress) {
+        const progress = Math.round(((i + 1) / totalChunks) * 100);
+        // Cap at 99% until finalized
+        options.onUploadProgress(Math.min(progress, 99));
+      }
     }
+  } catch (error: unknown) {
+    // Nothing can finish this import now, and trying again starts a new one,
+    // so the parts that arrived would otherwise sit in the list as an import
+    // still uploading (issue #569). Only before finalize: a finalize whose
+    // answer was lost may have queued the recording, which must stay.
+    await discardRecordingCapture(recording.id, "import_failed").catch(() => {});
+    throw error;
   }
 
   const finalizeResponse = await api.post<Recording>(
@@ -203,6 +213,15 @@ export const importAudio = async (
   }
 
   return finalizeResponse.data;
+};
+
+/**
+ * The signed-in user's imports that stopped before their upload finished, as
+ * the server judges them (`import_stalled`): the page sending each went away.
+ */
+export const getStalledImports = async (): Promise<Recording[]> => {
+  const response = await api.get<Recording[]>("/recordings/?status=UPLOADING&user=me");
+  return response.data.filter((recording) => recording.import_stalled === true);
 };
 
 export const getSupportedAudioFormats = (): string[] => {

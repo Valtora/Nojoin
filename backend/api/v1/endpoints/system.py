@@ -30,6 +30,11 @@ from backend.api.services.health_service import (
     get_admin_health_status,
     get_system_health_status,
 )
+from backend.api.services.log_download import (
+    all_services_log,
+    one_service_log,
+    open_log_stream,
+)
 from backend.api.v1.endpoints.setup import (
     FIRST_RUN_SETUP_ACCESS_DENIED_DETAIL,
     enforce_setup_rate_limit,
@@ -181,8 +186,9 @@ ALLOWED_CONTAINERS = {
     "nojoin-dev-socket-proxy",
 }
 
-# What the live log view streams when "all" is selected. Matches the picker in
-# SystemTab.tsx; the legacy single worker and the socket proxy are left out.
+# What the live log view streams, and the download holds, when "all" is
+# selected. Matches the picker in SystemLogs.tsx; the legacy single worker and
+# the socket proxy are left out.
 LOG_ALL_CONTAINERS = (
     "nojoin-api",
     "nojoin-worker-gpu",
@@ -195,41 +201,50 @@ LOG_ALL_CONTAINERS = (
     "nojoin-db",
 )
 
+# The picker's value for every service at once.
+LOG_ALL = "all"
+
+
+def _open_one_log(docker_client: DockerClient, container: str) -> Any:
+    try:
+        return open_log_stream(docker_client, container)
+    except NotFound:
+        raise HTTPException(status_code=404, detail=f"Container {container} not found")
+    except Exception as e:  # noqa: BLE001 -- boundary: docker-py raises assorted errors; all of them become one 500
+        logger.error(f"Error fetching logs for {container}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.get("/logs/download")
 def download_logs(
     container: str, current_user: User = Depends(get_current_active_superuser)
 ):
     """
-    Download logs for a specific container.
+    Download one container's whole log, or with ``all`` the newest lines of
+    every service the live view streams, merged by time into one file.
     Requires Superuser privileges.
+
+    Streamed as Docker reads it, so a long log never sits whole in memory.
     """
-    if container not in ALLOWED_CONTAINERS:
+    if container != LOG_ALL and container not in ALLOWED_CONTAINERS:
         raise HTTPException(status_code=403, detail="Forbidden")
 
     docker_client = client
     if docker_client is None:
         raise HTTPException(status_code=503, detail="Docker client unavailable")
 
-    try:
-        container_obj = docker_client.containers.get(container)
-        logs = container_obj.logs(timestamps=True).decode("utf-8")
+    if container == LOG_ALL:
+        body = all_services_log(docker_client, LOG_ALL_CONTAINERS)
+        filename = "nojoin-all_logs.txt"
+    else:
+        body = one_service_log(container, _open_one_log(docker_client, container))
+        filename = f"{container}_logs.txt"
 
-        def iter_logs():
-            yield logs
-
-        return StreamingResponse(
-            iter_logs(),
-            media_type="text/plain",
-            headers={
-                "Content-Disposition": f"attachment; filename={container}_logs.txt"
-            },
-        )
-    except NotFound:
-        raise HTTPException(status_code=404, detail=f"Container {container} not found")
-    except Exception as e:  # noqa: BLE001 -- boundary: docker-py raises assorted errors; all of them become one 500
-        logger.error(f"Error fetching logs for {container}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    return StreamingResponse(
+        body,
+        media_type="text/plain",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
 
 
 @router.websocket("/logs/live")
@@ -244,7 +259,7 @@ async def websocket_logs(
     and pushes to an asyncio queue to prevent blocking the main event loop.
     Supports streaming from a single container or "all" containers.
     """
-    if container != "all" and container not in ALLOWED_CONTAINERS:
+    if container != LOG_ALL and container not in ALLOWED_CONTAINERS:
         await websocket.close(code=1008)
         return
 
@@ -286,7 +301,7 @@ async def websocket_logs(
                 err_msg = f"[{container_name}] Error reading logs: {e}"
                 asyncio.run_coroutine_threadsafe(q.put(err_msg), loop)
 
-    targets = list(LOG_ALL_CONTAINERS) if container == "all" else [container]
+    targets = list(LOG_ALL_CONTAINERS) if container == LOG_ALL else [container]
 
     import threading
 

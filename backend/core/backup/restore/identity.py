@@ -275,7 +275,7 @@ def _assign_recording_destination(ctx: "_RowContext", audio_path) -> None:
             ctx.item_data["audio_path"] = new_path
 
     staged_audio = ctx.state.stage_path(audio_path or "")
-    if audio_path and os.path.isfile(staged_audio):
+    if audio_path and staged_audio and os.path.isfile(staged_audio):
         destination = ctx.item_data["audio_path"]
         if not ctx.state.claim_move(staged_audio, destination):
             stem, ext = os.path.splitext(destination)

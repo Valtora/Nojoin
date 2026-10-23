@@ -43,6 +43,7 @@ import {
   SETTINGS_CONTROL_END,
 } from "./settingsControls";
 import { cn } from "@/lib/cn";
+import { loadingButtonProps } from "@/components/ui/loadingButton";
 
 const PROVIDER_LABELS: Record<CalendarProvider, string> = {
   google: "Google",
@@ -338,8 +339,7 @@ export default function CalendarConnectionsSettings() {
               >
                 <button
                   type="button"
-                  disabled={!provider.configured || isConnecting}
-                  onClick={() => handleConnect(provider.provider)}
+                  {...loadingButtonProps(isConnecting, !provider.configured, () => handleConnect(provider.provider))}
                   className={SETTINGS_BUTTON_PRIMARY}
                 >
                   {isConnecting ? (
@@ -403,8 +403,7 @@ export default function CalendarConnectionsSettings() {
                       <div className="flex flex-wrap gap-2">
                         <button
                           type="button"
-                          disabled={isBusy}
-                          onClick={() => handleManualSync(connection.id)}
+                          {...loadingButtonProps(busyKey === `sync:${connection.id}`, isBusy, () => handleManualSync(connection.id))}
                           className={SETTINGS_BUTTON_SECONDARY}
                         >
                           {busyKey === `sync:${connection.id}` ? (
@@ -416,8 +415,7 @@ export default function CalendarConnectionsSettings() {
                         </button>
                         <button
                           type="button"
-                          disabled={isBusy}
-                          onClick={() => handleDisconnect(connection.id)}
+                          {...loadingButtonProps(busyKey === `disconnect:${connection.id}`, isBusy, () => handleDisconnect(connection.id))}
                           className={SETTINGS_BUTTON_DANGER}
                         >
                           {busyKey === `disconnect:${connection.id}` ? (

@@ -18,6 +18,7 @@ import DocumentUploadModal from "./DocumentUploadModal";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { getErrorMessage } from "@/lib/errors";
 import ConfirmationModal from "./ConfirmationModal";
+import { loadingButtonProps } from "@/components/ui/loadingButton";
 
 interface DocumentsViewProps {
   recordingId: RecordingId;
@@ -391,9 +392,8 @@ export default function DocumentsView({ recordingId }: DocumentsViewProps) {
                           )}
                         </button>
                         <button
-                          onClick={() => handleReparse(doc)}
-                          disabled={reparsingId === doc.id || (isBusy(doc) && !looksStalled(doc))}
-                          className="rounded-lg p-1.5 text-contrast-icon-muted transition-colors hover:bg-action-tint hover:text-action-text disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-contrast-icon-muted"
+                          {...loadingButtonProps(reparsingId === doc.id, isBusy(doc) && !looksStalled(doc), () => handleReparse(doc))}
+                          className="rounded-lg p-1.5 text-contrast-icon-muted transition-colors hover:bg-action-tint hover:text-action-text disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-contrast-icon-muted aria-disabled:opacity-40 aria-disabled:hover:bg-transparent aria-disabled:hover:text-contrast-icon-muted"
                           title="Parse again with visual analysis"
                         >
                           {reparsingId === doc.id ? (

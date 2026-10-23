@@ -30,6 +30,7 @@ import { getColorByKey } from "@/lib/constants";
 import { useNotificationStore } from "@/lib/notificationStore";
 import type { Recording, RecordingId, Tag, UserTask } from "@/types";
 import TaskDeadlineModal from "./ui/TaskDeadlineModal";
+import { loadingButtonProps } from "@/components/ui/loadingButton";
 
 type TaskView = "open" | "completed" | "archived";
 
@@ -574,8 +575,8 @@ export default function TasksWorkspace() {
                 </button>
                 <button
                   type="submit"
-                  disabled={submitting}
-                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-action px-4 py-3 text-sm font-semibold text-action-on transition-colors hover:bg-action-hover disabled:cursor-not-allowed disabled:opacity-60"
+                  {...loadingButtonProps(submitting)}
+                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-action px-4 py-3 text-sm font-semibold text-action-on transition-colors hover:bg-action-hover disabled:cursor-not-allowed disabled:opacity-60 aria-disabled:cursor-not-allowed aria-disabled:opacity-60"
                 >
                   {submitting ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -662,9 +663,8 @@ export default function TasksWorkspace() {
                       <div className="flex gap-2">
                         <button
                           type="button"
-                          onClick={() => void saveEdit(task)}
-                          disabled={isBusy}
-                          className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-action px-4 py-2.5 text-sm font-semibold text-action-on hover:bg-action-hover disabled:opacity-60"
+                          {...loadingButtonProps(isBusy, undefined, () => void saveEdit(task))}
+                          className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-action px-4 py-2.5 text-sm font-semibold text-action-on hover:bg-action-hover disabled:opacity-60 aria-disabled:opacity-60"
                         >
                           {isBusy && <Loader2 className="h-4 w-4 animate-spin" />}
                           Save
@@ -755,7 +755,7 @@ export default function TasksWorkspace() {
                       {!task.archived_at && (
                         <button
                           type="button"
-                          onClick={() =>
+                          {...loadingButtonProps(isBusy, undefined, () =>
                             void handleTaskUpdate(
                               task,
                               { completed: !task.completed_at },
@@ -763,9 +763,8 @@ export default function TasksWorkspace() {
                                 ? "Task reopened."
                                 : "Task completed.",
                             )
-                          }
-                          disabled={isBusy}
-                          className="inline-flex items-center gap-2 rounded-2xl border border-surface-border bg-surface-card px-3 py-2.5 text-sm font-semibold text-contrast-muted hover:border-status-success-border hover:text-status-success-fg disabled:opacity-60"
+                          )}
+                          className="inline-flex items-center gap-2 rounded-2xl border border-surface-border bg-surface-card px-3 py-2.5 text-sm font-semibold text-contrast-muted hover:border-status-success-border hover:text-status-success-fg disabled:opacity-60 aria-disabled:opacity-60"
                         >
                           {task.completed_at ? (
                             <RotateCcw className="h-4 w-4" />
@@ -777,7 +776,7 @@ export default function TasksWorkspace() {
                       )}
                       <button
                         type="button"
-                        onClick={() =>
+                        {...loadingButtonProps(isBusy, undefined, () =>
                           void handleTaskUpdate(
                             task,
                             { archived: !task.archived_at },
@@ -785,9 +784,8 @@ export default function TasksWorkspace() {
                               ? "Task restored."
                               : "Task archived.",
                           )
-                        }
-                        disabled={isBusy}
-                        className="inline-flex items-center gap-2 rounded-2xl border border-surface-border bg-surface-card px-3 py-2.5 text-sm font-semibold text-contrast-muted hover:border-status-warning-border hover:text-status-warning-fg disabled:opacity-60"
+                        )}
+                        className="inline-flex items-center gap-2 rounded-2xl border border-surface-border bg-surface-card px-3 py-2.5 text-sm font-semibold text-contrast-muted hover:border-status-warning-border hover:text-status-warning-fg disabled:opacity-60 aria-disabled:opacity-60"
                       >
                         {task.archived_at ? (
                           <ArchiveRestore className="h-4 w-4" />
@@ -798,9 +796,8 @@ export default function TasksWorkspace() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => void handleDeleteTask(task)}
-                        disabled={isBusy}
-                        className="inline-flex items-center gap-2 rounded-2xl border border-surface-border bg-surface-card px-3 py-2.5 text-sm font-semibold text-contrast-muted hover:border-status-danger-border hover:text-status-danger-fg disabled:opacity-60"
+                        {...loadingButtonProps(isBusy, undefined, () => void handleDeleteTask(task))}
+                        className="inline-flex items-center gap-2 rounded-2xl border border-surface-border bg-surface-card px-3 py-2.5 text-sm font-semibold text-contrast-muted hover:border-status-danger-border hover:text-status-danger-fg disabled:opacity-60 aria-disabled:opacity-60"
                       >
                         {isBusy ? (
                           <Loader2 className="h-4 w-4 animate-spin" />

@@ -161,6 +161,47 @@ describe("transcriptState", () => {
     expect(nextState.segments[0]?.text).toBe("newer local state");
   });
 
+  describe("a delta poll", () => {
+    const currentState = createLocalTranscriptState(
+      "rec-1",
+      [
+        { id: "utt-1", start: 1, end: 2, text: "one", speaker: "SPEAKER_00", revision: 1 },
+        { id: "utt-2", start: 3, end: 4, text: "two", speaker: "SPEAKER_01", revision: 1 },
+      ],
+      4,
+    );
+    const deltaPoll = (utterances: TranscriptUtterance[], tombstones: string[] = []) =>
+      applyTranscriptDelta({
+        currentState,
+        recordingId: "rec-1",
+        fallbackSegments: [],
+        delta: { recording_id: "rec-1", revision: 5, utterances, tombstones, speakers: [] },
+      });
+
+    it("hands back the same list when it applies nothing", () => {
+      const nextState = deltaPoll([]);
+
+      expect(nextState.segments).toBe(currentState.segments);
+      expect(nextState.revision).toBe(5);
+    });
+
+    it("takes a changed line into a new list", () => {
+      const nextState = deltaPoll([
+        { id: "utt-2", start: 3, end: 4, text: "two, edited", speaker: "SPEAKER_01", revision: 2 },
+      ]);
+
+      expect(nextState.segments).not.toBe(currentState.segments);
+      expect(nextState.segments[0]).toBe(currentState.segments[0]);
+      expect(nextState.segments[1]?.text).toBe("two, edited");
+    });
+
+    it("drops a tombstoned line", () => {
+      const nextState = deltaPoll([], ["utt-1"]);
+
+      expect(nextState.segments.map((segment) => segment.id)).toEqual(["utt-2"]);
+    });
+  });
+
   it("defers tombstones for the utterance currently being edited", () => {
     const currentState = createLocalTranscriptState("rec-1", [
       {

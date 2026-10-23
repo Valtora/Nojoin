@@ -22,6 +22,7 @@ import {
 import useDebouncedAutosave, {
   type SettingsAutosaveSnapshot,
 } from './useDebouncedAutosave';
+import { loadingButtonProps } from '@/components/ui/loadingButton';
 
 interface AccountSettingsProps {
   forcePasswordChange?: boolean;
@@ -297,7 +298,7 @@ export default function AccountSettings({
               <SettingsBlock className="flex justify-end">
                 <button
                   type="submit"
-                  disabled={passwordLoading}
+                  {...loadingButtonProps(passwordLoading)}
                   className={SETTINGS_BUTTON_PRIMARY}
                 >
                   {passwordLoading && (

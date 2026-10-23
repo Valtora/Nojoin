@@ -61,6 +61,14 @@ vi.mock("@/lib/notes/useNoteOutbox", () => ({
   useUnsentRecordings: () => unsentRecordings,
 }));
 
+const sweptLists: (readonly { id: string }[] | null)[] = [];
+
+vi.mock("@/lib/notes/deletedRecordingNotes", () => ({
+  useForgetNotesOfDeletedRecordings: (listed: readonly { id: string }[] | null) => {
+    sweptLists.push(listed);
+  },
+}));
+
 vi.mock("@/lib/capture/CaptureProvider", () => ({
   useCapture: () => ({
     cancel: vi.fn(),
@@ -163,6 +171,7 @@ describe("Sidebar", () => {
     pausedRecording = null;
     pathname = "/recordings";
     unsentRecordings = [];
+    sweptLists.length = 0;
     useImportAudioStore.setState({ isImportAudioOpen: false });
 
     getRecordings.mockResolvedValue([recording]);
@@ -217,6 +226,18 @@ describe("Sidebar", () => {
     });
   });
 
+  it("marks an import that did not finish rather than showing it uploading (issue #569)", async () => {
+    getRecordings.mockResolvedValue([
+      { ...recording, status: RecordingStatus.UPLOADING, import_stalled: true },
+      { ...recording, id: "rec-2", name: "Import on its way", status: RecordingStatus.UPLOADING },
+    ]);
+    renderWithProviders(<Sidebar />);
+
+    await screen.findByRole("heading", { name: "Latest meeting" });
+
+    expect(screen.getAllByTitle("This import did not finish uploading.")).toHaveLength(1);
+  });
+
   describe("unsent notes", () => {
     it("marks a recording in the list with unsent notes", async () => {
       unsentRecordings = ["rec-1"];
@@ -246,6 +267,15 @@ describe("Sidebar", () => {
       await screen.findByRole("heading", { name: "Latest meeting" });
 
       expect(screen.queryByText("Unsent notes")).not.toBeInTheDocument();
+    });
+
+    it("looks for notes of recordings deleted elsewhere once the list has loaded (issue #636)", async () => {
+      renderWithProviders(<Sidebar />);
+
+      await screen.findByRole("heading", { name: "Latest meeting" });
+
+      expect(sweptLists[0]).toBeNull();
+      expect(sweptLists.at(-1)?.map(({ id }) => id)).toEqual(["rec-1"]);
     });
   });
 

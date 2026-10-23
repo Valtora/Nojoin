@@ -115,11 +115,11 @@ describe("LiveTranscriptPanel", () => {
 
   it("names a live speaker label only where the speaker changes", () => {
     renderPanel([
-      buildSegment({ id: "a", start: 0, text: "opening", speaker: "LIVE_1" }),
-      buildSegment({ id: "b", start: 2, text: "still me", speaker: "LIVE_1" }),
-      buildSegment({ id: "c", start: 4, text: "a reply", speaker: "LIVE_12" }),
+      buildSegment({ id: "a", start: 0, text: "opening", speaker: "LIVE_PROVISIONAL_1" }),
+      buildSegment({ id: "b", start: 2, text: "still me", speaker: "LIVE_PROVISIONAL_1" }),
+      buildSegment({ id: "c", start: 4, text: "a reply", speaker: "LIVE_PROVISIONAL_12" }),
       buildSegment({ id: "d", start: 6, text: "who said that", speaker: "UNKNOWN" }),
-      buildSegment({ id: "e", start: 8, text: "me again", speaker: "LIVE_1" }),
+      buildSegment({ id: "e", start: 8, text: "me again", speaker: "LIVE_PROVISIONAL_1" }),
     ]);
 
     // An unlabelled line in between shows no label and breaks the run, so the
@@ -135,14 +135,14 @@ describe("LiveTranscriptPanel", () => {
         id: "a",
         start: 0,
         text: "settled",
-        speaker: "LIVE_2",
+        speaker: "LIVE_PROVISIONAL_2",
         speaker_state: "stable",
       }),
       buildSegment({
         id: "b",
         start: 2,
         text: "still settling",
-        speaker: "LIVE_3",
+        speaker: "LIVE_PROVISIONAL_3",
         speaker_state: "provisional",
       }),
     ]);

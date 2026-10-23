@@ -284,6 +284,15 @@ export class SegmentUploader {
     this.pending.clear();
   }
 
+  /**
+   * Resolves once every write to the store this uploader began has finished,
+   * so what the store holds is all it was asked to keep. Disposing it does not
+   * stop them.
+   */
+  async settled() {
+    await Promise.all(this.persisting.values());
+  }
+
   private drain() {
     if (this.drainPromise) {
       return this.drainPromise;

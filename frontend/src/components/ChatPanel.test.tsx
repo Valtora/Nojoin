@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { CliOAuthStatus, Settings } from "@/types";
+import { UserRole, type CliOAuthStatus, type Settings, type User } from "@/types";
 import ChatPanel from "./ChatPanel";
 
 const getSettings = vi.fn();
@@ -49,9 +49,17 @@ const DISABLED = /Chat is disabled/;
 const SUBSCRIPTION_MESSAGE = /Your AI subscription is not connected/;
 const API_KEY_MESSAGE = /configure an API key and select a model/;
 
-const renderPanel = (settings: Partial<Settings>, isSuperuser = true) => {
+const SETUP_ACCOUNT: Pick<User, "is_superuser" | "role"> = {
+  is_superuser: true,
+  role: UserRole.OWNER,
+};
+
+const renderPanel = (
+  settings: Partial<Settings>,
+  user: Pick<User, "is_superuser" | "role"> = SETUP_ACCOUNT,
+) => {
   getSettings.mockResolvedValue(settings as Settings);
-  getUserMe.mockResolvedValue({ is_superuser: isSuperuser });
+  getUserMe.mockResolvedValue(user);
   return render(<ChatPanel />);
 };
 
@@ -105,12 +113,25 @@ describe("ChatPanel AI availability gate", () => {
   });
 
   it("tells a non-admin to contact their administrator", async () => {
-    renderPanel({ llm_provider: "gemini" }, false);
+    renderPanel(
+      { llm_provider: "gemini" },
+      { is_superuser: false, role: UserRole.USER },
+    );
 
     expect(
       await screen.findByText(/contact your administrator/),
     ).toBeInTheDocument();
   });
+
+  it.each([UserRole.OWNER, UserRole.ADMIN])(
+    "sends an %s who is not the setup account to Settings",
+    async (role) => {
+      // Any administrator can choose the model in Settings > AI providers.
+      renderPanel({ llm_provider: "gemini" }, { is_superuser: false, role });
+
+      expect(await screen.findByText(API_KEY_MESSAGE)).toBeInTheDocument();
+    },
+  );
 
   it("enables chat for a configured server default", async () => {
     renderPanel(SERVER_READY);

@@ -15,6 +15,8 @@
  * textareas the primitives do not wrap.
  */
 
+import { DISABLED_LOOK } from "@/components/ui/loadingButton";
+
 const CONTROL_BASE =
   "w-full rounded-lg border border-control-border bg-control-bg px-3 py-2 text-sm text-foreground transition-colors duration-150 placeholder:text-control-placeholder focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-focus-ring disabled:cursor-not-allowed disabled:border-control-disabled-border disabled:bg-control-disabled-bg disabled:text-control-disabled-fg";
 
@@ -24,8 +26,9 @@ export const SETTINGS_SELECT_CLASS = CONTROL_BASE;
 
 export const SETTINGS_TEXTAREA_CLASS = `${CONTROL_BASE} min-h-28 resize-y leading-6`;
 
-const BUTTON_BASE =
-  "inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold whitespace-nowrap transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:cursor-not-allowed disabled:opacity-60";
+// DISABLED_LOOK covers aria-disabled too: a button busy with its own request
+// stays enabled so it keeps keyboard focus (loadingButtonProps, #614).
+const BUTTON_BASE = `inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold whitespace-nowrap transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring ${DISABLED_LOOK}`;
 
 export const SETTINGS_BUTTON_PRIMARY = `${BUTTON_BASE} border border-transparent bg-action text-action-on hover:bg-action-hover active:bg-action-active`;
 

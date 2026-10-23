@@ -7,6 +7,7 @@ import Image from "next/image";
 import { registerUser, validateInvitation, login } from "@/lib/api";
 import { getErrorMessage } from "@/lib/errors";
 import { Loader2, User, Lock } from "lucide-react";
+import { loadingButtonProps } from "@/components/ui/loadingButton";
 
 function RegisterForm() {
   const router = useRouter();
@@ -246,8 +247,8 @@ function RegisterForm() {
           <div>
             <button
               type="submit"
-              disabled={loading}
-              className="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-lg text-action-on bg-action hover:bg-action-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+              {...loadingButtonProps(loading)}
+              className="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-lg text-action-on bg-action hover:bg-action-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:opacity-60 disabled:cursor-not-allowed transition-colors aria-disabled:opacity-60 aria-disabled:cursor-not-allowed"
             >
               {loading ? (
                 <Loader2 className="w-5 h-5 animate-spin" />

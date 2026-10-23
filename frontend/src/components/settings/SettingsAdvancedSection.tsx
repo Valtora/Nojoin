@@ -33,10 +33,10 @@ export default function SettingsAdvancedSection({
   categoryId,
   children,
 }: SettingsAdvancedSectionProps) {
-  const { settings, isAdmin } = useSettingsContext();
+  const { settings, viewer } = useSettingsContext();
   const [openRequest, setOpenRequest] = useState(0);
 
-  const { advanced } = partitionByAdvanced(categoryId, { isAdmin });
+  const { advanced } = partitionByAdvanced(categoryId, viewer);
   // A string, because the partition is a fresh array on every render.
   const advancedIds = advanced.map((entry) => entry.id).join(" ");
 
@@ -65,8 +65,8 @@ export default function SettingsAdvancedSection({
 
   return (
     <SettingsAdvanced
-      changedCount={countChangedAdvanced(categoryId, settings, { isAdmin })}
-      attentionCount={countAttentionAdvanced(categoryId, settings, { isAdmin })}
+      changedCount={countChangedAdvanced(categoryId, settings, viewer)}
+      attentionCount={countAttentionAdvanced(categoryId, settings, viewer)}
       openRequest={openRequest}
     >
       {children}

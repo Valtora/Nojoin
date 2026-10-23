@@ -93,7 +93,7 @@ A placed note shows on its own line, with its time, after the line being spoken 
 
 A note that could not be saved stays where you wrote it, marked with the reason, with **Retry** and **Discard**. Retrying never adds it twice, and never brings back a note deleted on another device. When the recording stops, here or on another device, text still in the box is kept, with **Add note** and **Discard**. Unsaved notes and text stay listed, with the processing progress and then above the processed transcript, until you save or discard them, and Nojoin asks before you close the page while any remain, where the browser supports that. Where the browser allows, they are also kept in it, so after a crash or a closed tab they come back when you open the recording again in this browser, and are sent once more without adding any twice. They are not sent until you do. This copy is only a safety net, and on browsers that don't ask (such as Safari on iPhone and iPad) the only cover for a closed tab: two tabs on one recording share it, the last to write wins, and a tab opened while another is live on the recording can bring back that tab's half-typed text. If your sign-in ends while a page holds unsaved notes, Nojoin asks for your password there instead of going to the sign-in page. The dialog also offers **Go to the sign-in page**, say after your username changed; your browser asks first, where it supports that. Signing out, or signing in as someone else, removes them from the browser. On a phone, the box stays above the on-screen keyboard.
 
-The recordings list marks a recording **Unsent notes** while this browser holds notes or text in the box for it that are not saved yet, or a discarded note that Nojoin has not yet confirmed as removed. Open the recording to send them; a note that fails again is listed there with **Retry** and **Discard**. The recording you have open shows no mark, since it lists its unsaved notes itself. The list reads what the browser kept when the page loads and follows this tab's own notes after that, so a change made in another tab shows after a reload. Notes kept for a recording since deleted permanently get no mark, and stay in the browser until signing out, or signing in as someone else, removes them.
+The recordings list marks a recording **Unsent notes** while this browser holds notes or text in the box for it that are not saved yet, or a discarded note that Nojoin has not yet confirmed as removed. Open the recording to send them; a note that fails again is listed there with **Retry** and **Discard**. The recording you have open shows no mark, since it lists its unsaved notes itself. The list reads what the browser kept when the page loads and follows this tab's own notes after that, so a change made in another tab shows after a reload. Deleting a recording permanently, or discarding it, in this browser removes the notes kept for it, in every tab. A recording deleted permanently or discarded on another device gets no mark. Its notes are removed the next time Nojoin is opened or reloaded in this browser, once the recordings list has loaded, or sooner if a page of the recording open here finds it gone. Moving a recording to the bin keeps them, since it can be restored.
 
 ### Meeting Edge
 
@@ -104,6 +104,8 @@ An administrator can turn Meeting Edge off for the installation, or give it its 
 ## Importing Recordings
 
 **Import Audio** at the top of the **Recordings** list imports an existing file, with an optional meeting name, date and **Max Speakers**. It is unavailable while a paused or interrupted recording is waiting for you to resume, stop or discard it.
+
+Keep the page open until the import finishes. Closing or reloading it during the upload makes the browser ask first. An import whose page closes or loses its connection before the whole file arrives cannot carry on, since the file is on your device. The recordings list marks it, and 15 minutes after the last of it arrived Nojoin says the import did not finish, in a notification that stays until you choose: **Import again** discards it and opens **Import Audio** so you can choose the file again, and **Discard** deletes what arrived. Closing the notification leaves the import until you next open or reload a page. An import that fails while the dialog is open is discarded at once, so trying again leaves nothing behind. An unfinished import never stops you starting a meeting.
 
 Nojoin accepts WAV, MP3, M4A, AAC, WebM, OGG, FLAC, MP4, WMA and OPUS, and the media containers MKV, MKA, MOV, AVI, M4V, TS, MTS, MPG, MPEG and 3GP. It keeps only the audio. A file with no audio track is refused: the import shows as failed and nothing of the file is kept. An import is then processed like a live recording.
 
@@ -120,7 +122,8 @@ A processed meeting has **Transcript**, **Notes**, **Documents** and **Analytics
 In the transcript:
 
 - Playback highlights the current line, and the play button beside a line's timestamp plays from there.
-- Click a line's text to edit it. Click a speaker name to reassign that line or the whole transcript, and double-click it to rename the speaker.
+- Click a line's text to edit it. Click a speaker name to reassign that line or the whole transcript, and double-click it to rename the speaker. A live label such as **Speaker 3**, kept when processing fails, names no speaker, so it can be reassigned but not renamed.
+- You can edit another line or rename another speaker while an edit saves. **Replace** and **Replace All** are unavailable until every edit has saved.
 - The toolbar has **Undo**, **Redo**, **Search**, **Find & Replace** and export. Typing in the find field selects the first match; Enter and Shift+Enter, or the arrows beside it, move between matches. Escape closes the Search Options menu.
 - **Low confidence** marks a line whose speaker Nojoin is unsure of and nobody has set by hand.
 - Notes you placed during the meeting ([Live Notes](#live-notes)) show on their own line after the line they follow.
@@ -268,6 +271,8 @@ The tab warns when a meeting shows signs of this: several speakers with a very s
 
 Attach PDF, PowerPoint, Word, Excel, CSV, text, Markdown, PNG or JPEG files, up to 250 MB each, from the **Documents** tab of a processed meeting or with **Attach Docs** while a meeting is recording or processing. Browse to several files or drag them onto the dialog. They upload one after another, and if one fails the rest still go through and the failed ones stay listed to retry.
 
+A PDF that is damaged or cut short, for example by an interrupted download, fails to parse and its card shows the error. Download or export it again from its source and attach the new copy.
+
 Meeting notes are generated once, at the end of processing, from every document parsed by then. A document attached during the meeting is normally in time. One attached later is not, so the Notes tab shows a banner offering to regenerate. Regenerating uses your AI provider and overwrites your edits to the notes.
 
 #### Visual Analysis
@@ -369,5 +374,5 @@ When a newer release is out, owners and administrators get a persistent notifica
 
 - For capture problems, such as missing remote participants, a missing microphone or an unsupported browser, see [CAPTURE.md](CAPTURE.md#troubleshooting).
 - A paused or interrupted recording blocks new capture until you resume it, stop and process it, or discard it.
-- A recording that failed shows its reason on its transcript tab. Fix the cause and use **Retry Processing**; an administrator can check the logs in **Settings > System and logs**.
+- A recording that failed shows its reason on its transcript tab. Fix the cause and use **Retry Processing**; the account that set up Nojoin can check the logs in **Settings > System and logs**.
 - For calendar sync problems, see [CALENDAR.md](CALENDAR.md#troubleshooting).

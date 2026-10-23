@@ -23,6 +23,9 @@ class _Result:
     def scalars(self):
         return SimpleNamespace(all=lambda: list(self._scalars_all))
 
+    def all(self):
+        return []
+
 
 class _FakeSession:
     """Minimal async session: serves users by id and records mutations."""
@@ -39,7 +42,7 @@ class _FakeSession:
         self.committed = False
         self.rolled_back = False
 
-    async def get(self, _model, pk, with_for_update: bool = False):
+    async def get(self, _model, pk, **_options):
         return self._users.get(pk)
 
     async def execute(self, _statement):

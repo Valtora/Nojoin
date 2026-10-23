@@ -17,6 +17,11 @@ from backend.processing.documents import (
     open_document,
 )
 from backend.processing.documents.markdown_tables import rows_to_markdown_table
+from backend.processing.documents.pdf import (
+    RENDER_CEILING_PX,
+    RENDER_MAX_EDGE_PX,
+    render_zoom,
+)
 from backend.processing.documents.types import PageSource
 from backend.processing.documents.vision import (
     _strip_code_fence,
@@ -101,19 +106,92 @@ def xlsx_path(tmp_path):
     return str(path)
 
 
+def _pdf_canvas(path, pagesize=(595, 842)):
+    """A ReportLab canvas, once the PDF parser's own libraries are present.
+
+    The test files are drawn with ReportLab so that they do not come from the
+    library that parses them.
+    """
+    pytest.importorskip("pypdfium2")
+    pytest.importorskip("pdfplumber")
+    canvas = pytest.importorskip("reportlab.pdfgen.canvas")
+    return canvas.Canvas(str(path), pagesize=pagesize)
+
+
 @pytest.fixture
 def pdf_path(tmp_path):
-    pymupdf = pytest.importorskip("pymupdf")
-
-    document = pymupdf.open()
-    first = document.new_page()
-    first.insert_text((72, 100), "Quarterly Review", fontsize=18)
-    first.insert_text((72, 140), "Revenue grew 12% in EMEA.", fontsize=11)
-    document.new_page().insert_text((72, 100), "Second page content.", fontsize=11)
-
     path = tmp_path / "doc.pdf"
-    document.save(str(path))
+    pdf = _pdf_canvas(path)
+    pdf.setFont("Helvetica", 18)
+    pdf.drawString(72, 742, "Quarterly Review")
+    pdf.setFont("Helvetica", 11)
+    pdf.drawString(72, 702, "Revenue grew 12% in EMEA.")
+    pdf.showPage()
+    pdf.setFont("Helvetica", 11)
+    pdf.drawString(72, 742, "Second page content.")
+    pdf.save()
     return str(path)
+
+
+# Cells with the spaces, hyphens, thousands separators and decimal points that
+# PyMuPDF 2.0 mangled in table extraction (pymupdf/PyMuPDF#5198).
+RULED_TABLE_ROWS = [
+    ["Workstream", "Owner", "Due", "Ticket", "Variance"],
+    ["Storage migration", "Avery Holt", "2026-11-04", "OPS-1182", "-1,550"],
+    ["Vendor renewal", "Morgan Pike", "2026-11-18", "FIN-0431", "0.74"],
+]
+
+
+def _draw_ruled_table(path, *, page_compression=None):
+    """A table ruled on every side under a one-line heading."""
+    widths = [130, 90, 80, 70, 70]
+    row_height = 20
+    left, top = 72, 700
+    right = left + sum(widths)
+    bottom = top - row_height * len(RULED_TABLE_ROWS)
+
+    pdf = _pdf_canvas(path)
+    if page_compression is not None:
+        pdf.setPageCompression(page_compression)
+    pdf.setFont("Helvetica", 9)
+    pdf.drawString(left, top + 30, "Workstream status")
+    for index in range(len(RULED_TABLE_ROWS) + 1):
+        y = top - index * row_height
+        pdf.line(left, y, right, y)
+    x = left
+    for width in [0, *widths]:
+        x += width
+        pdf.line(x, top, x, bottom)
+    for index, row in enumerate(RULED_TABLE_ROWS):
+        x = left
+        for cell, width in zip(row, widths):
+            pdf.drawString(x + 4, top - (index + 1) * row_height + 6, cell)
+            x += width
+    pdf.save()
+    return str(path)
+
+
+@pytest.fixture
+def ruled_table_pdf_path(tmp_path):
+    return _draw_ruled_table(tmp_path / "table.pdf")
+
+
+def _columns_pdf(path, names):
+    """One page of side-by-side columns, each drawn top to bottom in turn."""
+    pdf = _pdf_canvas(path)
+    pdf.setFont("Helvetica", 9)
+    gutter = 18
+    width = (595 - 2 * 54 - gutter * (len(names) - 1)) / len(names)
+    for column, name in enumerate(names):
+        x = 54 + column * (width + gutter)
+        for line in range(1, 9):
+            pdf.drawString(x, 760 - line * 14, f"{name} column line {line}")
+    pdf.save()
+    return str(path)
+
+
+def _png_size(data: bytes) -> tuple[int, int]:
+    return int.from_bytes(data[16:20], "big"), int.from_bytes(data[20:24], "big")
 
 
 def _pages(path, *, want_images=False):
@@ -231,6 +309,108 @@ def test_pdf_renders_one_image_per_page_only_when_asked(pdf_path):
     assert all(len(page.images) == 1 for page in with_images)
     assert all(page.images[0].media_type == "image/png" for page in with_images)
     assert all(page.images[0].data.startswith(b"\x89PNG") for page in with_images)
+    # An A4 page renders at the long-edge target.
+    assert max(_png_size(with_images[0].images[0].data)) == RENDER_MAX_EDGE_PX
+
+
+@pytest.mark.parametrize(
+    ("size", "long_edge"),
+    [
+        ((612, 792), RENDER_MAX_EDGE_PX),  # US Letter: the target
+        ((720, 405), RENDER_MAX_EDGE_PX),  # a slide: scaled up to the target
+        ((841.89, 1190.55), 1786),  # A3: the zoom floor binds
+        ((2383.94, 3370.39), RENDER_CEILING_PX),  # A0: the ceiling binds
+        ((14400, 14400), RENDER_CEILING_PX),  # the largest page PDF allows
+    ],
+)
+def test_render_zoom_keeps_the_long_edge_within_the_ceiling(size, long_edge):
+    assert round(max(size) * render_zoom(*size)) == long_edge
+
+
+def test_pdf_render_of_an_oversized_page_is_capped(tmp_path):
+    """A 200-inch page used to be rendered at the zoom floor, 21,600 px square,
+    which asked for a 1.4 GB bitmap."""
+    path = tmp_path / "poster.pdf"
+    pdf = _pdf_canvas(path, pagesize=(14400, 14400))
+    pdf.setFont("Helvetica", 400)
+    pdf.drawString(720, 7200, "Floor plan")
+    pdf.save()
+
+    _, pages = _pages(str(path), want_images=True)
+
+    assert "Floor plan" in pages[0].text
+    assert _png_size(pages[0].images[0].data) == (RENDER_CEILING_PX, RENDER_CEILING_PX)
+
+
+@pytest.mark.parametrize(
+    "names", [("Left", "Right"), ("Left", "Middle", "Right")], ids=["two", "three"]
+)
+def test_pdf_columns_come_out_one_after_another(tmp_path, names):
+    """Side-by-side columns read column by column, never line by line across
+    the page, which is what sorting the text layer by position used to do."""
+    _, pages = _pages(_columns_pdf(tmp_path / "columns.pdf", names))
+
+    lines = [line.strip() for line in pages[0].text.splitlines() if line.strip()]
+
+    assert lines == [f"{name} column line {n}" for name in names for n in range(1, 9)]
+
+
+def test_pdf_table_cells_keep_their_exact_text(ruled_table_pdf_path):
+    """Every cell comes back as written, spaces and punctuation included.
+
+    PyMuPDF 2.0 returned "Storage migration" as "Storagemigration" and
+    "2026-11-04" as "20261104 - -" (pymupdf/PyMuPDF#5198). The assertion is on
+    our own output, so it stays the acceptance test if the library changes.
+    """
+    _, pages = _pages(ruled_table_pdf_path)
+
+    assert rows_to_markdown_table(RULED_TABLE_ROWS) in pages[0].text
+
+
+def _break_xref(path) -> None:
+    """Point every cross-reference entry past the end of the file.
+
+    PDFium rebuilds the table by scanning the file; pdfminer.six, under
+    pdfplumber, finds no pages at all.
+    """
+    data = path.read_bytes()
+    head, marker, tail = data.rpartition(b"\nxref\n")
+    lines = [
+        b"9999999999" + line[10:]
+        if line[:10].isdigit() and line.rstrip().endswith(b" n")
+        else line
+        for line in tail.split(b"\n")
+    ]
+    path.write_bytes(head + marker + b"\n".join(lines))
+
+
+def test_pdf_pdfplumber_cannot_read_still_yields_text_and_images(tmp_path):
+    """Tables are best-effort: a file pdfplumber cannot read loses its tables,
+    not its text or its page images."""
+    path = tmp_path / "broken.pdf"
+    _draw_ruled_table(path, page_compression=0)
+    _break_xref(path)
+
+    count, pages = _pages(str(path), want_images=True)
+
+    assert count == 1
+    assert "Storage migration" in pages[0].text
+    assert "| --- |" not in pages[0].text
+    assert len(pages[0].images) == 1
+
+
+def test_pdf_a_page_whose_tables_fail_keeps_its_text(ruled_table_pdf_path, monkeypatch):
+    page_module = pytest.importorskip("pdfplumber.page")
+
+    def broken(self, *args, **kwargs):
+        raise ValueError("unreadable table")
+
+    monkeypatch.setattr(page_module.Page, "find_tables", broken)
+
+    _, pages = _pages(ruled_table_pdf_path)
+
+    assert "Storage migration" in pages[0].text
+    assert "| --- |" not in pages[0].text
 
 
 # ---------------------------------------------------------------------------
@@ -250,11 +430,9 @@ def test_text_and_markdown_are_single_pages(tmp_path):
 def test_image_upload_has_no_text_but_always_carries_its_image(tmp_path):
     """`want_images=False` is ignored for images on purpose: without the image
     there is nothing at all, and the orchestrator needs to see that."""
-    pymupdf = pytest.importorskip("pymupdf")
+    image_module = pytest.importorskip("PIL.Image")
     path = tmp_path / "shot.png"
-    pixmap = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 8, 8))
-    pixmap.clear_with(200)
-    pixmap.save(str(path))
+    image_module.new("RGB", (8, 8), (200, 200, 200)).save(path)
 
     _, pages = _pages(str(path), want_images=False)
     assert pages[0].text == ""

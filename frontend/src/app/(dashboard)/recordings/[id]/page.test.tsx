@@ -10,6 +10,7 @@ import {
 import {
   RecordingStatus,
   type Recording,
+  type TranscriptSegment,
   type TranscriptUtteranceList,
 } from "@/types";
 
@@ -26,6 +27,7 @@ const getTranscriptUtterances = vi.fn();
 const renameRecording = vi.fn();
 const generateNotes = vi.fn();
 const updateSpeaker = vi.fn();
+const updateTranscriptUtteranceText = vi.fn();
 const listTimelineNotes = vi.fn();
 const getCurrentUser = vi.fn();
 const getUserMe = vi.fn();
@@ -80,7 +82,7 @@ vi.mock("@/lib/api", () => ({
   updateTranscriptSegmentSpeaker: vi.fn(),
   updateTranscriptUtteranceSpeaker: vi.fn(),
   updateTranscriptSegmentText: vi.fn(),
-  updateTranscriptUtteranceText: vi.fn(),
+  updateTranscriptUtteranceText: (...args: unknown[]) => updateTranscriptUtteranceText(...args),
   findAndReplace: vi.fn(),
   updateSpeakerColor: vi.fn(),
   generateNotes: (...args: unknown[]) => generateNotes(...args),
@@ -111,14 +113,26 @@ vi.mock("@/components/TranscriptView", () => ({
   default: ({
     segments,
     onRenameSpeaker,
+    onUpdateSegmentText,
+    onUndo,
+    canUndo,
   }: {
-    segments: unknown[];
+    segments: TranscriptSegment[];
     onRenameSpeaker: (label: string, newName: string) => void;
+    onUpdateSegmentText: (segment: TranscriptSegment, text: string) => void;
+    onUndo: () => void;
+    canUndo: boolean;
   }) => (
-    <div data-testid="transcript-view">
+    <div data-testid="transcript-view" data-can-undo={String(canUndo)}>
       segments:{segments.length}
       <button type="button" onClick={() => onRenameSpeaker("SPEAKER_00", "Dana")}>
         Rename speaker
+      </button>
+      <button type="button" onClick={() => onUpdateSegmentText(segments[0], "Edited")}>
+        Edit first line
+      </button>
+      <button type="button" onClick={onUndo}>
+        Undo
       </button>
     </div>
   ),
@@ -250,6 +264,7 @@ describe("RecordingPage (detail)", () => {
     renameRecording.mockReset();
     generateNotes.mockReset();
     updateSpeaker.mockReset().mockResolvedValue([]);
+    updateTranscriptUtteranceText.mockReset().mockResolvedValue(undefined);
     listTimelineNotes.mockReset().mockResolvedValue([]);
 
     getRecording.mockResolvedValue(buildRecording());
@@ -404,6 +419,44 @@ describe("RecordingPage (detail)", () => {
       }),
     );
     expect(updateSpeaker).toHaveBeenCalledWith("rec-1", "SPEAKER_00", "Dana");
+  });
+
+  it("undoes a line's text edit alone, though its sync brought another line's change", async () => {
+    const utterance = (id: string, text: string, revision: number) => ({
+      id,
+      start: id === "u0" ? 0 : 2,
+      end: id === "u0" ? 2 : 4,
+      text,
+      speaker: "SPEAKER_00",
+      revision,
+    });
+    getTranscriptUtterances.mockImplementation(async (_id: string, afterRevision?: number) =>
+      afterRevision === undefined
+        ? buildUtteranceList({
+            revision: 1,
+            utterances: [utterance("u0", "Hello there", 1), utterance("u1", "Hi back", 1)],
+          })
+        : // Replace All, or another device, changed the second line as well.
+          buildUtteranceList({
+            revision: 3,
+            utterances: [utterance("u0", "Edited", 2), utterance("u1", "Hi again", 2)],
+          }),
+    );
+    renderPage();
+    await waitFor(() => expect(getTranscriptUtterances).toHaveBeenCalledWith("rec-1", undefined));
+
+    fireEvent.click(await screen.findByRole("button", { name: "Edit first line" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("transcript-view")).toHaveAttribute("data-can-undo", "true"),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+
+    await waitFor(() => expect(updateTranscriptUtteranceText).toHaveBeenCalledTimes(2));
+    await act(async () => {});
+    expect(updateTranscriptUtteranceText.mock.calls).toEqual([
+      ["rec-1", "u0", "Edited", 1],
+      ["rec-1", "u0", "Hello there", 2],
+    ]);
   });
 
   it("redirects to the recordings list when loading the recording fails", async () => {
@@ -842,6 +895,19 @@ describe("RecordingPage (detail): the recording answers 404", () => {
 
     expect(routerPush).toHaveBeenCalledWith("/recordings");
     expect(meCalls).toBe(2);
+  });
+
+  it("forgets the notes kept for a recording it finds gone for its owner", async () => {
+    await open();
+    act(() => noteOutboxFor("rec-1").setDraft({ ...EMPTY_DRAFT, text: "typed before the delete" }));
+    await vi.waitFor(async () => expect(await store.get(ALICE.id, "rec-1")).toBeDefined());
+
+    exists = false;
+    await poll();
+
+    expect(routerPush).toHaveBeenCalledWith("/recordings");
+    await vi.waitFor(async () => expect(await store.get(ALICE.id, "rec-1")).toBeUndefined());
+    expect(useSessionStore.getState().heldBy).toEqual([]);
   });
 
   it("reads a 404 as a removal again once the owner is back", async () => {

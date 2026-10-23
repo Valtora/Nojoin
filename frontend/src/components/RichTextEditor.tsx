@@ -2,8 +2,6 @@
 
 import { useEditor, EditorContent, Editor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
-import Underline from '@tiptap/extension-underline';
-import Link from '@tiptap/extension-link';
 import { TableKit } from '@tiptap/extension-table';
 import { Markdown } from 'tiptap-markdown';
 import { useEffect, useRef } from 'react';
@@ -39,18 +37,24 @@ export default function RichTextEditor({ content, onChange, editable = true, onE
   const reported = useRef<string | null>(null);
 
   const editor = useEditor({
+    // The CSP refuses the style tag Tiptap would inject; the base rules are in
+    // globals.css (#501).
+    injectCSS: false,
     immediatelyRender: false,
     extensions: [
-      StarterKit,
-      Underline,
-      Link.configure({
-        openOnClick: true,
-        autolink: true,
-        linkOnPaste: true,
-        HTMLAttributes: {
-          class: 'text-status-info-fg underline hover:text-status-info-fg cursor-pointer',
-          target: '_blank',
-          rel: 'noopener noreferrer',
+      // StarterKit already includes Link and Underline, so Link is configured
+      // through it: registering either again ran two copies of its plugins
+      // (#621).
+      StarterKit.configure({
+        link: {
+          openOnClick: true,
+          autolink: true,
+          linkOnPaste: true,
+          HTMLAttributes: {
+            class: 'text-status-info-fg underline hover:text-status-info-fg cursor-pointer',
+            target: '_blank',
+            rel: 'noopener noreferrer',
+          },
         },
       }),
       // Registering the table nodes is what makes Markdown tables survive a

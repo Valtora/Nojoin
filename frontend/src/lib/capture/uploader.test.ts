@@ -280,6 +280,38 @@ describe("capture uploader with a segment store", () => {
     );
   });
 
+  it("says when the writes it began have finished, disposed or not (issue #605)", async () => {
+    const store = storeWith();
+    let finishWrite: () => void = () => {};
+    vi.spyOn(store, "put").mockImplementationOnce(
+      (segment) =>
+        new Promise<void>((resolve) => {
+          finishWrite = () => {
+            void MemorySegmentStore.prototype.put.call(store, segment).then(resolve);
+          };
+        }),
+    );
+    const uploader = createSegmentUploader({
+      recordingId: "rec-1",
+      epoch: 0,
+      uploadSegment: vi.fn(() => new Promise(() => {})) as never,
+      store,
+    });
+    uploader.enqueue(0, new Blob(["a"]), 2);
+    uploader.dispose();
+
+    let settled = false;
+    const settling = uploader.settled().then(() => {
+      settled = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(settled).toBe(false);
+
+    finishWrite();
+    await settling;
+    expect((await store.list("rec-1")).map((segment) => segment.sequence)).toEqual([0]);
+  });
+
   it("uploads restored segments first, without writing them again", async () => {
     const restored: StoredSegment[] = [
       { recordingId: "rec-1", sequence: 5, blob: new Blob(["5"]), durationSeconds: 2 },

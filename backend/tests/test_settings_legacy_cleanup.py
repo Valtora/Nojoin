@@ -21,7 +21,10 @@ class _FakeScalarResult:
     def __init__(self, value=None):
         self._value = value
 
-    def scalar_one_or_none(self):
+    def scalars(self):
+        return self
+
+    def first(self):
         return self._value
 
 

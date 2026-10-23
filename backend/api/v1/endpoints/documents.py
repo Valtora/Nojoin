@@ -1,6 +1,6 @@
 import logging
 import os
-from typing import List
+from typing import List, NewType
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
@@ -28,6 +28,7 @@ from backend.utils.document_storage import (
 )
 from backend.utils.path_manager import PathManager
 from backend.utils.rate_limit import enforce_upload_concurrency
+from backend.utils.stored_paths import confined_document_path
 from backend.utils.time import utc_now
 from backend.utils.upload_limit import (
     UPLOAD_LIMIT_DOCUMENT,
@@ -37,6 +38,14 @@ from backend.utils.upload_limit import (
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+# A boolean form field whose declared default applies when the field is absent.
+# FastAPI 0.147+ reads an absent `bool` form field as an unchecked HTML checkbox,
+# so False whatever the default, and it recognises such a field by an annotation
+# of exactly `bool` or `bool | None`. A NewType of bool is neither, yet Pydantic
+# still parses it as a bool and OpenAPI still shows a boolean with its default.
+# test_document_upload_deep_parse.py fails if a FastAPI release changes this.
+FormBoolWithDefault = NewType("FormBoolWithDefault", bool)
 
 
 async def _get_owned_recording(
@@ -142,10 +151,11 @@ def _backfill_size(document: Document) -> bool:
     disk is accurate rather than a guess: an uploaded document is written once
     and never rewritten, so the file's size *is* its upload size.
     """
-    if document.file_size_bytes is not None:
+    file_path = confined_document_path(document.file_path)
+    if document.file_size_bytes is not None or file_path is None:
         return False
     try:
-        document.file_size_bytes = os.path.getsize(document.file_path)
+        document.file_size_bytes = os.path.getsize(file_path)
     except OSError:
         # The file is gone. Leave it NULL, which renders as an em dash, rather
         # than recording a zero that would read as an empty document.
@@ -173,13 +183,16 @@ async def download_document(
     if not recording or recording.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Document not found")
 
-    if not document.file_path or not os.path.exists(document.file_path):
+    file_path = confined_document_path(document.file_path)
+    if file_path is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+    if not os.path.exists(file_path):
         raise HTTPException(
             status_code=410, detail="The original file is no longer available."
         )
 
     return FileResponse(
-        path=document.file_path,
+        path=file_path,
         # Sanitised: the title is user-supplied and ends up in a
         # Content-Disposition header, where a quote or newline could inject one.
         filename=_safe_download_name(document.title, document.file_path),
@@ -212,15 +225,16 @@ async def upload_document(  # noqa: PLR0913 - FastAPI dependencies are parameter
     request: Request,
     recording_id: str,
     file: UploadFile = File(...),
-    deep_parse: bool = Form(True),
+    deep_parse: FormBoolWithDefault = Form(FormBoolWithDefault(True)),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Upload a document to be included in the meeting's context.
 
-    ``deep_parse`` defaults to true: pages are sent to a vision-capable model so
-    charts, diagrams and scanned pages survive. Setting it false restricts the
-    parse to structural extraction, which costs nothing and calls no provider.
+    ``deep_parse`` defaults to true, including when the field is left out: pages
+    are sent to a vision-capable model so charts, diagrams and scanned pages
+    survive. Setting it false restricts the parse to structural extraction,
+    which costs nothing and calls no provider.
     """
     # The document's place in the list is reserved now, before the bytes are
     # read: the client uploads a batch two at a time, and a row stamped at
@@ -328,7 +342,8 @@ async def reparse_document(
             detail="This document is already being parsed.",
         )
 
-    if not os.path.exists(document.file_path):
+    file_path = confined_document_path(document.file_path)
+    if not file_path or not os.path.exists(file_path):
         raise HTTPException(
             status_code=410,
             detail="The original file is no longer available, so it cannot be parsed again.",

@@ -890,9 +890,12 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
           deferActiveEdit: false,
         });
         if (syncResult?.segments) {
+          // The undo step holds this line alone. The sync can bring other
+          // changes with it, such as a save or Replace All running beside
+          // this one, and undoing this edit must not revert those.
           pushTranscriptHistory(
             `Edit text ${segment.id}`,
-            previousSegments,
+            previousSegments.filter((previous) => previous.id === segment.id),
             syncResult.segments,
           );
         }

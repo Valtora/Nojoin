@@ -1,5 +1,6 @@
 from backend.models.transcript import TRANSCRIPTION_FAILED_NOTES_MESSAGE
 from backend.utils.context_window import ContextWindowExceededError
+from backend.utils.live_speaker_labels import speaker_display_name
 
 from .constants import *
 
@@ -444,7 +445,7 @@ def index_transcript_task(self, recording_id: int):
             start = seg["start"]
             end = seg["end"]
             speaker_label = seg["speaker"]
-            speaker_name = speaker_map.get(speaker_label, speaker_label)
+            speaker_name = speaker_display_name(speaker_label, speaker_map)
 
             if current_length == 0:
                 temp_chunk_start = start

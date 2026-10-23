@@ -37,6 +37,7 @@ from backend.core.backup.records import (
     _serialise_backup_table_rows,
 )
 from backend.utils.audio import ensure_ffmpeg_in_path
+from backend.utils.media_commands import FFMPEG
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +52,7 @@ def _compress_to_opus(input_path: str) -> str:
     temp_opus.close()
 
     cmd = [
-        "ffmpeg",
+        *FFMPEG,
         "-y",
         "-i",
         input_path,

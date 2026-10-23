@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 
 import type { ReleaseInfo, VersionInfo } from "@/types";
 
@@ -58,6 +58,32 @@ beforeEach(() => {
 });
 
 describe("UpdatesSettings", () => {
+  // Chrome moves focus from a disabled button to the page body, so the button
+  // stays enabled while it checks and ignores clicks instead (#614).
+  it("keeps focus on Check for updates while it checks", async () => {
+    render(<UpdatesSettings />);
+    const button = await screen.findByRole("button", { name: "Check for updates" });
+    let answer: (value: VersionInfo) => void = () => undefined;
+    getVersion.mockImplementationOnce(
+      () => new Promise<VersionInfo>((resolve) => (answer = resolve)),
+    );
+    button.focus();
+
+    fireEvent.click(button);
+
+    const checking = await screen.findByRole("button", { name: "Checking..." });
+    expect(checking).toBe(button);
+    expect(button).toBeEnabled();
+    expect(button).toHaveAttribute("aria-disabled", "true");
+    expect(button).toHaveFocus();
+    fireEvent.click(button);
+    expect(getVersion).toHaveBeenCalledTimes(2);
+
+    await act(async () => answer(versionInfo));
+    expect(button).toHaveAccessibleName("Check for updates");
+    expect(button).toHaveFocus();
+  });
+
   it("renders release notes as formatted text, without the maintainer's comments", async () => {
     render(<UpdatesSettings />);
 
