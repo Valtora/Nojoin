@@ -27,6 +27,7 @@ import TranscriptSelectionNotes from "./transcript/TranscriptSelectionToolbar";
 import TranscriptToolbar from "./transcript/TranscriptToolbar";
 import { bodyNotesAmongLines, placeTimelineNotes } from "@/lib/notes/placement";
 import type { InlineNote, OutboxDraft } from "@/lib/notes/noteOutbox";
+import CollapsedLineNotes from "./notes/CollapsedLineNotes";
 import TimelineNoteLine from "./notes/TimelineNoteLine";
 
 interface TranscriptViewProps {
@@ -85,6 +86,9 @@ const NO_PENDING_UPDATES: readonly string[] = [];
 
 const NOTE_TIME_COLUMN =
   "min-w-16 md:min-w-[60px] shrink-0 pt-1 text-right font-mono text-sm text-contrast-icon-muted";
+
+/** A note the server holds; one still on its way, or refused, is not. */
+const isSavedNote = (note: TimelineNote | InlineNote) => !("status" in note) || note.status === "saved";
 
 /**
  * The finished transcript: toolbar, then the lines in groups of overlapping
@@ -381,7 +385,14 @@ export default function TranscriptView({
                   activePopover={editing.activePopover}
                   editor={holdsTheEditor(group.items) ? editing.editor : null}
                 />
-                {notesAfterGroup.map(renderNote)}
+                <CollapsedLineNotes
+                  notes={notesAfterGroup}
+                  isSaved={isSavedNote}
+                  renderNote={renderNote}
+                  lineTime={() => formatTime(group.items[group.items.length - 1].segment.start)}
+                  timeColumnClassName={NOTE_TIME_COLUMN}
+                  className="px-2"
+                />
               </Fragment>
             );
           }),
