@@ -232,3 +232,41 @@ def test_generate_proxy_task_mixdowns_browser_capture_for_proxy(
         assert recording[1] == str(audio_path)
     finally:
         verification_engine.dispose()
+
+
+def test_generate_proxy_task_makes_no_proxy_beside_audio_outside_the_recordings_directories(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.utils import stored_paths
+
+    monkeypatch.setattr(
+        stored_paths, "recording_roots", lambda: (tmp_path / "recordings",)
+    )
+    db_path = tmp_path / "proxy-test.sqlite"
+    engine = create_engine(f"sqlite:///{db_path}", future=True)
+    with engine.begin() as connection:
+        connection.execute(text(RECORDING_PROXY_SCHEMA))
+
+    audio_path = tmp_path / "elsewhere" / "meeting.wav"
+    audio_path.parent.mkdir()
+    audio_path.write_bytes(b"fake-wav")
+    create_recording_row(engine, recording_id=1, audio_path=str(audio_path))
+
+    converted: list[tuple] = []
+    monkeypatch.setattr(
+        "backend.utils.audio.convert_to_proxy_mp3",
+        lambda *args, **kwargs: converted.append(args) or True,
+    )
+    monkeypatch.setattr(tasks_module, "get_sync_session", lambda: Session(engine))
+    tasks_module.generate_proxy_task._session = None
+
+    try:
+        tasks_module.generate_proxy_task.run(1)
+    finally:
+        if tasks_module.generate_proxy_task._session is not None:
+            tasks_module.generate_proxy_task._session.close()
+        tasks_module.generate_proxy_task._session = None
+        engine.dispose()
+
+    assert converted == []

@@ -72,7 +72,7 @@ Archives made before 2.6.0 left out the audio of WebM browser recordings and of 
 2. Choose what happens to meetings that are already here (**Skip** or **Overwrite**), or turn on **Clear all existing data**, then select **Start restore**.
 3. Keep the tab open until the upload finishes. The server then restores the archive and you can leave: a notification reports the result, and the page lists any records that could not be restored until you dismiss them. Reload Nojoin afterwards to see the restored data.
 
-Before changing anything, the restore checks the archive's format version, that every record file is readable, and that there is enough free disk space, and refuses an archive that fails any of them. The database changes are a single transaction, and files move into place only after it commits, so a restore that fails at any point leaves the installation as it was, even with **Clear all existing data**.
+Before changing anything, the restore checks the archive's format version, that every record file is readable, that no recording or document names its file by a path leading out of its folder, and that there is enough free disk space, and refuses an archive that fails any of them. Only files unpacked from the archive move into the recordings and documents directories. The database changes are a single transaction, and files move into place only after it commits, so a restore that fails at any point leaves the installation as it was, even with **Clear all existing data**.
 
 ### Conflict Modes
 

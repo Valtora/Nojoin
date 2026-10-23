@@ -35,6 +35,7 @@ from backend.utils.import_audio_probe import (
     track_span,
 )
 from backend.utils.media_commands import FFMPEG
+from backend.utils.stored_paths import confined_recording_path
 
 logger = logging.getLogger(__name__)
 
@@ -235,6 +236,8 @@ def keep_imported_audio(source_path: str, work_dir: Path) -> KeptAudio:
     On any of these ``source_path`` is left in place for the caller to remove,
     and nothing else is left behind.
     """
+    if confined_recording_path(source_path) is None:
+        raise ImportServerError(f"{source_path} is outside the recordings directories.")
     suffix = Path(source_path).suffix.lower()
     if suffix in AUDIO_ONLY_SUFFIXES:
         return KeptAudio(source_path)

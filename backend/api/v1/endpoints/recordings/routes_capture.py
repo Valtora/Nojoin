@@ -42,6 +42,7 @@ from backend.utils.document_storage import (
 from backend.utils.rate_limit import enforce_upload_concurrency
 from backend.utils.recording_audio_sync import BROWSER_AUDIO_SEGMENT_SUFFIXES
 from backend.utils.recording_storage import delete_recording_artifacts_after_commit
+from backend.utils.stored_paths import require_recording_path
 from backend.utils.time import utc_now
 from backend.utils.upload_limit import UPLOAD_LIMIT_SEGMENT, stream_and_validate_upload
 
@@ -684,8 +685,8 @@ async def finalize_upload(
         understated the duration by 3% (issue #417).
         """
         return recordings_module.write_browser_master_audio(
-            [row.storage_path for row in chunk_rows],
-            final_audio_path,
+            [require_recording_path(row.storage_path) for row in chunk_rows],
+            require_recording_path(final_audio_path),
         )
 
     try:

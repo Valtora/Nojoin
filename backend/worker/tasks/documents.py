@@ -277,10 +277,11 @@ def process_document_task(self, document_id: int, force_reparse: bool = False):
         if force_reparse:
             _clear_previous_parse(session, document)
 
-        if not os.path.exists(document.file_path):
+        file_path = confined_document_path(document.file_path)
+        if not file_path or not os.path.exists(file_path):
             raise FileNotFoundError("The uploaded file is no longer on disk.")
 
-        _parse_document(session, document)
+        _parse_document(session, document, file_path)
 
     except Exception as e:  # noqa: BLE001 -- boundary: any parse failure marks the document
         _record_parse_failure(session, document, document_id, e)
@@ -510,12 +511,12 @@ def _resolve_vision(session, document: Document):
     return backend, True, None
 
 
-def _parse_document(session, document: Document) -> None:
-    """Walk the document's pages, persist each, then index it."""
+def _parse_document(session, document: Document, file_path: str) -> None:
+    """Read ``file_path`` page by page, persist each page, then index it."""
     backend, use_vision, warning = _resolve_vision(session, document)
 
-    source = open_document(document.file_path, want_images=use_vision)
-    is_rendered = is_rendered_page_format(document.file_path)
+    source = open_document(file_path, want_images=use_vision)
+    is_rendered = is_rendered_page_format(file_path)
 
     document.page_count = source.page_count
     document.parse_stage = STAGE_ANALYSING if use_vision else STAGE_READING
@@ -544,7 +545,7 @@ def _parse_document(session, document: Document) -> None:
 
     # An image upload has no text layer at all, so a structural fallback
     # produces nothing. That is an error, not an empty success.
-    if is_vision_only_format(document.file_path) and not any(
+    if is_vision_only_format(file_path) and not any(
         (page.content or "").strip() for page in writer.stored
     ):
         detail = (

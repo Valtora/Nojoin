@@ -47,6 +47,7 @@ from backend.utils.live_audio_clock import (
     estimate_live_audio_ms,
 )
 from backend.utils.processing_eta import estimate_processing_eta
+from backend.utils.stored_paths import confined_recording_path
 from backend.utils.time import utc_now
 from backend.utils.timezones import (
     get_timezone,
@@ -490,11 +491,13 @@ async def get_recording_info(
 
     info = {"original": None, "proxy": None}
 
-    if recording.audio_path and os.path.exists(recording.audio_path):
-        info["original"] = analyze_audio_file(recording.audio_path)
+    audio_path = confined_recording_path(recording.audio_path)
+    if audio_path and os.path.exists(audio_path):
+        info["original"] = analyze_audio_file(audio_path)
 
-    if recording.proxy_path and os.path.exists(recording.proxy_path):
-        info["proxy"] = analyze_audio_file(recording.proxy_path)
+    proxy_path = confined_recording_path(recording.proxy_path)
+    if proxy_path and os.path.exists(proxy_path):
+        info["proxy"] = analyze_audio_file(proxy_path)
 
     return info
 
@@ -511,7 +514,8 @@ async def stream_recording(
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
 
-    if not recording.proxy_path or not os.path.exists(recording.proxy_path):
+    file_path = confined_recording_path(recording.proxy_path)
+    if not file_path or not os.path.exists(file_path):
         # A proxy is only ever on its way when there is audio to make it from.
         # Without any, answering 202 would leave the player waiting forever.
         if not _recording_has_audio(recording):
@@ -524,7 +528,6 @@ async def stream_recording(
             detail="Audio proxy is being prepared. Please try again shortly.",
         )
 
-    file_path = recording.proxy_path
     media_type = "audio/mpeg"
 
     file_size = os.path.getsize(file_path)

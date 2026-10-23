@@ -4,6 +4,7 @@ import os
 from os import PathLike
 
 from backend.utils.recording_audio_sync import BROWSER_AUDIO_SEGMENT_SUFFIXES
+from backend.utils.stored_paths import confined_recording_path
 
 
 def _path_exists(path: str | PathLike[str] | None) -> bool:
@@ -27,8 +28,8 @@ def select_recording_audio_for_embedding(recording) -> str | None:
     playback artifact.
     """
 
-    audio_path = getattr(recording, "audio_path", None)
-    proxy_path = getattr(recording, "proxy_path", None)
+    audio_path = confined_recording_path(getattr(recording, "audio_path", None))
+    proxy_path = confined_recording_path(getattr(recording, "proxy_path", None))
 
     audio_exists = _path_exists(audio_path)
     proxy_exists = _path_exists(proxy_path)

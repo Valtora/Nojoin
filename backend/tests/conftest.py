@@ -1,6 +1,8 @@
 import os
 import sqlite3
+import tempfile
 from datetime import UTC, date, datetime
+from pathlib import Path
 
 import pytest
 import redis.connection
@@ -16,6 +18,7 @@ from backend.tests.redis_guard import (
     record_and_refuse,
     transcripts_route_modules,
 )
+from backend.utils import stored_paths
 
 
 def _adapt_date(value: date) -> str:
@@ -74,6 +77,22 @@ def redis_contact_guard(monkeypatch):
             f"{attempts[-1]}",
             pytrace=False,
         )
+
+
+@pytest.fixture(autouse=True)
+def stored_files_may_live_in_temp(monkeypatch):
+    """Let recordings and documents live in the system temp directory too.
+
+    Tests keep their media under ``tmp_path``, or name a path under it that
+    they never create, where the stored-path check
+    (``backend/utils/stored_paths.py``) would refuse it. A test of that check
+    sets the roots itself, and can take the unpatched functions from here.
+    """
+    real = (stored_paths.recording_roots, stored_paths.document_roots)
+    temp = Path(tempfile.gettempdir())
+    monkeypatch.setattr(stored_paths, "recording_roots", lambda: (*real[0](), temp))
+    monkeypatch.setattr(stored_paths, "document_roots", lambda: (*real[1](), temp))
+    return real
 
 
 class _StubbedTask:
