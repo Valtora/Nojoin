@@ -8,6 +8,7 @@ import {
   getTimeRemainingState,
   parseTaskDeadline,
 } from "./taskUtils";
+import { loadingButtonProps } from "@/components/ui/loadingButton";
 
 interface TaskRowCallbacks {
   isBusy: boolean;
@@ -56,8 +57,7 @@ function TaskActionButtons({
     <div className={wrapperClassName}>
       <button
         type="button"
-        onClick={() => void handleArchiveTask(task)}
-        disabled={isBusy}
+        {...loadingButtonProps(isBusy, undefined, () => void handleArchiveTask(task))}
         className="inline-flex h-12 w-12 items-center justify-center rounded-l-2xl text-contrast-helper transition-colors hover:bg-status-warning-bg hover:text-status-warning-fg"
         aria-label={`Archive ${task.title}`}
       >
@@ -65,8 +65,7 @@ function TaskActionButtons({
       </button>
       <button
         type="button"
-        onClick={() => void handleDeleteTask(task.id)}
-        disabled={isBusy}
+        {...loadingButtonProps(isBusy, undefined, () => void handleDeleteTask(task.id))}
         className="inline-flex h-12 w-12 items-center justify-center rounded-r-2xl text-contrast-helper transition-colors hover:bg-status-danger-bg hover:text-status-danger-fg"
         aria-label={`Delete ${task.title}`}
       >
@@ -152,8 +151,7 @@ export default function TaskRow(props: TaskRowProps) {
       <div className="density-surface-subtle group grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-4 gap-y-3 bg-surface-inset px-4 py-4 transition-colors hover:bg-action-tint sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:gap-4">
         <button
           type="button"
-          onClick={() => void handleToggleTask(task)}
-          disabled={isBusy}
+          {...loadingButtonProps(isBusy, undefined, () => void handleToggleTask(task))}
           className="inline-flex h-8 w-8 shrink-0 self-center items-center justify-center rounded-full border border-control-border bg-surface-card text-contrast-icon-muted transition-colors hover:border-action-border hover:bg-action-tint hover:text-action-text"
           aria-label={`Mark ${task.title} complete`}
         >
@@ -235,8 +233,7 @@ export default function TaskRow(props: TaskRowProps) {
     <div className="density-surface-subtle grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-4 gap-y-3 bg-surface-inset px-4 py-4 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:gap-4">
       <button
         type="button"
-        onClick={() => void handleToggleTask(task)}
-        disabled={isBusy}
+        {...loadingButtonProps(isBusy, undefined, () => void handleToggleTask(task))}
         className="inline-flex h-8 w-8 shrink-0 self-center items-center justify-center rounded-full border border-status-success-border bg-status-success-bg text-status-success-fg transition-colors hover:border-status-success-border"
         aria-label={`Mark ${task.title} incomplete`}
       >

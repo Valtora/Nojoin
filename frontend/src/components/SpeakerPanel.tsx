@@ -36,6 +36,7 @@ import {
   useSpeakerPanelActions,
 } from "./speakers/_hooks/useSpeakerPanelActions";
 import { useMergedSpeakerClusters } from "./speakers/_hooks/useMergedSpeakerClusters";
+import { loadingButtonProps } from "@/components/ui/loadingButton";
 
 interface SpeakerPanelProps {
   speakers: RecordingSpeaker[];
@@ -376,10 +377,9 @@ export default function SpeakerPanel({
                         </span>
                         <button
                           type="button"
-                          className="shrink-0 rounded px-2 py-0.5 text-xs font-medium text-action-text hover:bg-action-tint disabled:opacity-50"
+                          className="shrink-0 rounded px-2 py-0.5 text-xs font-medium text-action-text hover:bg-action-tint disabled:opacity-50 aria-disabled:opacity-50"
                           title="Give these lines back to a speaker of their own"
-                          disabled={isSubmitting}
-                          onClick={() => handleUndoMerge(cluster)}
+                          {...loadingButtonProps(isSubmitting, undefined, () => handleUndoMerge(cluster))}
                         >
                           Undo merge
                         </button>

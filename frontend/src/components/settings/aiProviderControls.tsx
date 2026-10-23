@@ -9,6 +9,7 @@ import {
   SETTINGS_BUTTON_SECONDARY,
   SETTINGS_SELECT_CLASS,
 } from "./settingsControls";
+import { loadingButtonProps } from "@/components/ui/loadingButton";
 
 /** The one status vocabulary for a provider, on every AI card. */
 export function ProviderStatusBadge({ gap }: { gap: ProviderConfigGap | null }) {
@@ -85,8 +86,7 @@ export function ModelPicker({
       {onRefresh && (
         <button
           type="button"
-          onClick={onRefresh}
-          disabled={refreshing || refreshDisabled}
+          {...loadingButtonProps(Boolean(refreshing), refreshDisabled, onRefresh)}
           aria-label={refreshLabel}
           title={refreshLabel}
           className={cn(SETTINGS_BUTTON_SECONDARY, "h-10 w-10 shrink-0 px-0")}
@@ -141,8 +141,7 @@ export function TestConnection({
       <button
         id={id}
         type="button"
-        onClick={onTest}
-        disabled={Boolean(validating)}
+        {...loadingButtonProps(busy, Boolean(validating), onTest)}
         aria-describedby={`${id}-help`}
         className={SETTINGS_BUTTON_SECONDARY}
       >

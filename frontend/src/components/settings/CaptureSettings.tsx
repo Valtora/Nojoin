@@ -16,6 +16,7 @@ import {
   SETTINGS_SELECT_CLASS,
   SETTINGS_VALUE_CLASS,
 } from "./settingsControls";
+import { loadingButtonProps } from "@/components/ui/loadingButton";
 
 interface MicrophoneOption {
   deviceId: string;
@@ -442,11 +443,10 @@ export default function CaptureSettings() {
         aside={
           <button
             type="button"
-            onClick={() => {
+            {...loadingButtonProps(previewLoading, undefined, () => {
               setPreviewError(null);
               setPreviewEnabled((current) => !current);
-            }}
-            disabled={previewLoading}
+            })}
             className={SETTINGS_BUTTON_SECONDARY}
           >
             {previewLoading ? (
