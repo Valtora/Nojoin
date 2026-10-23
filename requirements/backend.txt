@@ -1,5 +1,5 @@
 -r base.txt
-fastapi==0.146.0
+fastapi==0.151.0
 uvicorn[standard]==0.54.0
 mcp==2.3.0
 # Backend specific dependencies
