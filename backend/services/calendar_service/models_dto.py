@@ -83,3 +83,14 @@ class IncrementalSyncResetRequired(Exception):
 
 class UnreadableCalendarConnectionState(Exception):
     pass
+
+
+class CalendarReauthorisationRequired(ValueError):
+    """The connection has no usable grant, so only reconnecting it can help.
+
+    Raised when no refresh token is stored, or when the provider's token
+    endpoint refuses the stored one with an ``OAUTH_RECONNECT_ERROR_CODES``
+    answer. Sync records it as ``reauthorisation_required``, which keeps the
+    connection out of the periodic sync and the push sweep until it is
+    reconnected.
+    """

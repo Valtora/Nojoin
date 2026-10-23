@@ -17,6 +17,7 @@ token / Microsoft ``clientState``); the payload is treated only as a
 from __future__ import annotations
 
 import logging
+import re
 import secrets
 import uuid
 from dataclasses import dataclass
@@ -38,12 +39,15 @@ from backend.models.calendar import (
     CalendarPushChannel,
     CalendarPushChannelStatus,
     CalendarSource,
+    CalendarSyncStatus,
 )
 from backend.services.calendar_service import (
     MICROSOFT_GRAPH_URL,
     _build_push_notification_url,
+    _describe_provider_failure,
     _get_access_token_for_connection,
     _parse_iso_datetime,
+    _truncate_error,
     get_provider_runtime_config,
 )
 from backend.utils.time import utc_now
@@ -60,8 +64,17 @@ MICROSOFT_SUBSCRIPTION_TTL = timedelta(minutes=4200)
 GOOGLE_RENEW_WITHIN = timedelta(hours=24)
 MICROSOFT_RENEW_WITHIN = timedelta(hours=6)
 # Do not re-attempt a failed provisioning more often than this (avoids hammering
-# a provider from an unreachable instance on every sync).
+# a provider from an unreachable instance on every sync). The short wait follows
+# a network error, a 5xx or a 429; the long one follows any other 4xx, which is
+# the provider refusing the request as made (webhook address unreachable or
+# blocked, domain unverified, permission missing) and needs a change here first.
 PUSH_FAILURE_BACKOFF = timedelta(minutes=30)
+PUSH_REJECTED_BACKOFF = timedelta(hours=6)
+# ``_describe_provider_failure`` starts ``last_error`` with the HTTP status, and
+# ``_push_retry_backoff`` reads it back from there.
+RECORDED_HTTP_STATUS = re.compile(r"^HTTP (\d{3})\b")
+HTTP_CLIENT_ERRORS = range(400, 500)
+HTTP_TOO_MANY_REQUESTS = 429
 # Coalesce notification bursts into a single sync per connection.
 NOTIFICATION_DEBOUNCE_SECONDS = 20
 SYNC_DEBOUNCE_COUNTDOWN = 3
@@ -107,11 +120,19 @@ def _format_graph_datetime(value: datetime) -> str:
     return value.replace(microsecond=0).isoformat() + "Z"
 
 
-def _truncate_error(value: str | None) -> str | None:
-    if not value:
-        return None
-    cleaned = " ".join(str(value).split())
-    return cleaned[:500] if cleaned else None
+def _push_retry_backoff(last_error: str | None) -> timedelta:
+    """How long a failed channel waits before its next provisioning attempt.
+
+    A row recorded before ``last_error`` carried the status gets the short wait
+    once, and the next failure rewrites it.
+    """
+    match = RECORDED_HTTP_STATUS.match(last_error or "")
+    if match is None:
+        return PUSH_FAILURE_BACKOFF
+    status = int(match.group(1))
+    if status in HTTP_CLIENT_ERRORS and status != HTTP_TOO_MANY_REQUESTS:
+        return PUSH_REJECTED_BACKOFF
+    return PUSH_FAILURE_BACKOFF
 
 
 def _needs_renewal(provider: str, channel: CalendarPushChannel, now: datetime) -> bool:
@@ -135,9 +156,10 @@ def _should_provision(
     if channel is None:
         return True
     if channel.status == CalendarPushChannelStatus.FAILED.value:
+        # ``_mark_channel_failed`` stamps updated_at with the attempt time.
         if channel.updated_at is None:
             return True
-        return (now - channel.updated_at) >= PUSH_FAILURE_BACKOFF
+        return (now - channel.updated_at) >= _push_retry_backoff(channel.last_error)
     if channel.status == CalendarPushChannelStatus.STOPPED.value:
         return True
     return _needs_renewal(provider, channel, now)
@@ -495,7 +517,7 @@ async def _mark_channel_failed(
     ctx: _ReconcileContext,
     calendar: CalendarSource,
     existing: CalendarPushChannel | None,
-    error: Exception,
+    detail: str,
 ) -> None:
     provider = ctx.connection.provider
     row = existing or await _find_channel_for_calendar(ctx.db, calendar.id, provider)
@@ -506,7 +528,11 @@ async def _mark_channel_failed(
             provider=provider,
         )
     row.status = CalendarPushChannelStatus.FAILED.value
-    row.last_error = _truncate_error(str(error))
+    row.last_error = _truncate_error(detail)
+    # The backoff runs from updated_at, whose onupdate fires only when another
+    # column changes. A repeat of the same failure changes none, so without this
+    # stamp no UPDATE is sent and every sync would retry.
+    row.updated_at = utc_now()
     ctx.db.add(row)
 
 
@@ -537,13 +563,38 @@ async def _provision_selected_calendars(
         try:
             await _ensure_channel(ctx, calendar, channel)
         except Exception as exc:  # noqa: BLE001 -- boundary: one calendar's channel failing must not stop the others
+            detail = _describe_provider_failure(exc)
             logger.warning(
-                "Failed to provision %s push channel for calendar %s: %s",
+                "Failed to provision %s push channel for calendar %s: %s "
+                "(next attempt in %d minutes)",
                 provider,
                 calendar.id,
-                exc,
+                detail,
+                _push_retry_backoff(detail) // timedelta(minutes=1),
             )
-            await _mark_channel_failed(ctx, calendar, channel, exc)
+            await _mark_channel_failed(ctx, calendar, channel, detail)
+
+
+async def _drop_channels_awaiting_reconnect(db, connection: CalendarConnection) -> None:
+    """Forget the channels of a connection that must be reconnected.
+
+    The provider refuses its grant, so a token request would only fail again,
+    and without a token nothing can be renewed or stopped at the provider.
+    Deleting the rows ends the Live sync badge, and a notification still
+    arriving for one of them is then ignored rather than queueing a sync that
+    fails too. Reconnecting provisions fresh channels.
+    """
+    channels = await _load_connection_channels(db, connection.id)
+    if not channels:
+        return
+    for channel in channels:
+        await db.delete(channel)
+    await db.commit()
+    logger.info(
+        "Dropped %d push channel(s) for connection %s until it is reconnected",
+        len(channels),
+        connection.id,
+    )
 
 
 async def reconcile_push_channels_for_connection(
@@ -554,8 +605,13 @@ async def reconcile_push_channels_for_connection(
     Creates channels for selected calendars, renews those near expiry, and stops
     channels for deselected calendars or when push is disabled. Commits the
     session. Individual provider failures are recorded per calendar and do not
-    abort the rest.
+    abort the rest. A connection awaiting a reconnect only has its channel rows
+    dropped, with no token request.
     """
+    if connection.sync_status == CalendarSyncStatus.REAUTHORISATION_REQUIRED.value:
+        await _drop_channels_awaiting_reconnect(db, connection)
+        return
+
     provider = connection.provider
     runtime_config = await get_provider_runtime_config(db, provider)
     existing = await _load_connection_channels(db, connection.id)
@@ -655,9 +711,16 @@ async def _collect_reconcile_connection_ids() -> list[int]:
             .join(CalendarSource, CalendarSource.connection_id == CalendarConnection.id)
             .where(CalendarSource.is_selected.is_(True))
             .where(CalendarConnection.provider.in_(push_providers))
+            .where(
+                CalendarConnection.sync_status
+                != CalendarSyncStatus.REAUTHORISATION_REQUIRED.value
+            )
             .distinct()
         )
         ids = set((await db.execute(provisionable)).scalars().all())
+        # Every connection with channel rows is visited, one awaiting a
+        # reconnect included: the reconcile drops its rows without a token
+        # request, so it drops out of this list after one sweep.
         with_channels = select(CalendarPushChannel.connection_id).distinct()
         ids |= set((await db.execute(with_channels)).scalars().all())
     return sorted(ids)

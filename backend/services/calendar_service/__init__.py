@@ -55,6 +55,7 @@ from .dashboard import (
     get_dashboard_summary,
 )
 from .models_dto import (
+    CalendarReauthorisationRequired,
     IncrementalSyncResetRequired,
     ProviderCalendarRecord,
     ProviderEventRecord,
@@ -91,6 +92,18 @@ from .persistence import (
     _serialise_connection_with_push,
     _serialise_source,
     _upsert_connection,
+)
+from .provider_errors import (
+    PROVIDER_ERROR_DETAIL_LIMIT,
+    PROVIDER_REASON_PATTERN,
+    CalendarConnectFailed,
+    _describe_failure_for_log,
+    _describe_provider_failure,
+    _google_error_reason,
+    _provider_error_fields,
+    _provider_error_reason,
+    _truncate_error,
+    _usable_reason,
 )
 from .providers import (
     _build_google_events_query_params,
@@ -133,6 +146,7 @@ from .text_utils import (
     _meeting_url_rank,
     _normalise_colour_value,
     _normalise_text,
+    _oauth_reconnect_error_code,
     _parse_iso_datetime,
     _pick_preferred_meeting_url,
     _request_json,

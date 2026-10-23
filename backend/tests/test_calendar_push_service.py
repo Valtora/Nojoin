@@ -10,9 +10,13 @@ import asyncio
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 
+import httpx
+import pytest
+
 from backend.core.encryption import encrypt_secret
 from backend.models.calendar import CalendarProvider, CalendarPushChannelStatus
 from backend.services import calendar_push_service as push
+from backend.services.calendar_service import PROVIDER_ERROR_DETAIL_LIMIT
 
 NOW = datetime(2026, 7, 2, 12, 0, 0)
 
@@ -111,6 +115,190 @@ def test_should_provision_missing_failed_stopped_and_healthy() -> None:
     # An ACTIVE channel with an unknown (NULL) expiration must be reprovisioned.
     active_unknown_expiry = _channel(expiration=None)
     assert push._should_provision(provider, active_unknown_expiry, NOW) is True
+
+
+ACCESS_TOKEN = "provider-access-token"
+GOOGLE_CALENDAR_ADDRESS = "alice.example@example.com"
+
+
+def _provider_error(status_code: int, body: dict | str) -> httpx.HTTPStatusError:
+    """An error as httpx raises it, with the token and calendar in the request."""
+    request = httpx.Request(
+        "POST",
+        f"https://www.googleapis.com/calendar/v3/calendars/{GOOGLE_CALENDAR_ADDRESS}/events/watch",
+        headers={"Authorization": f"Bearer {ACCESS_TOKEN}"},
+    )
+    if isinstance(body, dict):
+        response = httpx.Response(status_code, json=body, request=request)
+    else:
+        response = httpx.Response(status_code, text=body, request=request)
+    return httpx.HTTPStatusError(
+        f"Client error '{status_code}' for url '{request.url}'",
+        request=request,
+        response=response,
+    )
+
+
+GRAPH_VALIDATION_FAILED = {
+    "error": {
+        "code": "InvalidRequest",
+        "message": (
+            "Subscription validation request failed. Notification endpoint must "
+            "respond with 200 OK to validation request."
+        ),
+        "innerError": {"request-id": "00000000-0000-0000-0000-000000000003"},
+    }
+}
+GOOGLE_WEBHOOK_UNVERIFIED = {
+    "error": {
+        "code": 400,
+        "message": (
+            "Unauthorized WebHook callback channel: "
+            "https://nojoin.example.com/api/v1/calendar/webhooks/google"
+        ),
+        "errors": [
+            {
+                "domain": "global",
+                "reason": "pushWebhookBadDomain",
+                "message": "Unauthorized WebHook callback channel",
+            }
+        ],
+        "status": "INVALID_ARGUMENT",
+    }
+}
+
+
+def test_describe_provider_failure_keeps_graph_code_and_message() -> None:
+    detail = push._describe_provider_failure(
+        _provider_error(400, GRAPH_VALIDATION_FAILED)
+    )
+
+    assert detail == (
+        "HTTP 400 InvalidRequest: Subscription validation request failed. "
+        "Notification endpoint must respond with 200 OK to validation request."
+    )
+
+
+def test_describe_provider_failure_keeps_google_reason_and_message() -> None:
+    detail = push._describe_provider_failure(
+        _provider_error(400, GOOGLE_WEBHOOK_UNVERIFIED)
+    )
+
+    assert detail == (
+        "HTTP 400 pushWebhookBadDomain: Unauthorized WebHook callback channel: "
+        "https://nojoin.example.com/api/v1/calendar/webhooks/google"
+    )
+
+
+@pytest.mark.parametrize(
+    "body",
+    [GRAPH_VALIDATION_FAILED, GOOGLE_WEBHOOK_UNVERIFIED, "<html>blocked</html>", {}],
+)
+def test_describe_provider_failure_never_carries_the_request(body) -> None:
+    detail = push._describe_provider_failure(_provider_error(400, body))
+
+    assert ACCESS_TOKEN not in detail
+    assert GOOGLE_CALENDAR_ADDRESS not in detail
+    assert "alice" not in detail.lower()
+
+
+def test_describe_provider_failure_without_a_json_body_keeps_the_status() -> None:
+    assert push._describe_provider_failure(_provider_error(502, "<html>")) == "HTTP 502"
+
+
+def test_describe_provider_failure_caps_the_provider_text() -> None:
+    body = {"error": {"code": "InvalidRequest", "message": "x" * 1000}}
+
+    detail = push._describe_provider_failure(_provider_error(400, body))
+
+    assert detail.startswith("HTTP 400 InvalidRequest: xxx")
+    assert len(detail) == len("HTTP 400 ") + PROVIDER_ERROR_DETAIL_LIMIT
+
+
+def test_describe_provider_failure_names_a_network_error() -> None:
+    detail = push._describe_provider_failure(
+        httpx.ConnectError("All connection attempts failed")
+    )
+
+    assert detail == "ConnectError: All connection attempts failed"
+
+
+@pytest.mark.parametrize(
+    ("last_error", "backoff"),
+    [
+        ("HTTP 400 InvalidRequest: Subscription validation request failed.", 360),
+        ("HTTP 401 InvalidAuthenticationToken: Access token has expired.", 360),
+        ("HTTP 403 Forbidden: Insufficient privileges.", 360),
+        ("HTTP 404 ResourceNotFound: Resource not found.", 360),
+        ("HTTP 429 TooManyRequests: Retry later.", 30),
+        ("HTTP 500 InternalServerError: Unexpected error.", 30),
+        ("HTTP 503", 30),
+        ("ConnectError: All connection attempts failed", 30),
+        ("ReadTimeout: The read operation timed out", 30),
+        # The wording rows carried before the status was recorded.
+        (
+            "Client error '400 Bad Request' for url "
+            "'https://graph.microsoft.com/v1.0/subscriptions'",
+            30,
+        ),
+        (None, 30),
+    ],
+)
+def test_push_retry_backoff_waits_longer_after_a_refusal(last_error, backoff) -> None:
+    assert push._push_retry_backoff(last_error) == timedelta(minutes=backoff)
+
+
+def test_should_provision_times_a_refusal_with_the_long_backoff() -> None:
+    provider = CalendarProvider.MICROSOFT.value
+
+    def refused(minutes_ago: int) -> SimpleNamespace:
+        return _channel(
+            provider=provider,
+            status=CalendarPushChannelStatus.FAILED.value,
+            last_error="HTTP 400 InvalidRequest: Subscription validation failed.",
+            updated_at=NOW - timedelta(minutes=minutes_ago),
+        )
+
+    def unreachable(minutes_ago: int) -> SimpleNamespace:
+        return _channel(
+            provider=provider,
+            status=CalendarPushChannelStatus.FAILED.value,
+            last_error="HTTP 503 ServiceUnavailable: Try again.",
+            updated_at=NOW - timedelta(minutes=minutes_ago),
+        )
+
+    assert push._should_provision(provider, refused(45), NOW) is False
+    assert push._should_provision(provider, refused(359), NOW) is False
+    assert push._should_provision(provider, refused(360), NOW) is True
+    assert push._should_provision(provider, unreachable(29), NOW) is False
+    assert push._should_provision(provider, unreachable(30), NOW) is True
+
+
+def test_mark_channel_failed_stamps_the_attempt_even_for_the_same_failure(
+    monkeypatch,
+) -> None:
+    """Writing the same status and error again changes no column, so the
+    ``updated_at`` onupdate never fires; the attempt must be stamped by hand."""
+    detail = "HTTP 400 InvalidRequest: Subscription validation request failed."
+    row = _channel(
+        provider=CalendarProvider.MICROSOFT.value,
+        status=CalendarPushChannelStatus.FAILED.value,
+        last_error=detail,
+        updated_at=NOW - timedelta(days=30),
+    )
+    added: list = []
+    ctx = SimpleNamespace(
+        db=SimpleNamespace(add=added.append),
+        connection=SimpleNamespace(id=7, provider=CalendarProvider.MICROSOFT.value),
+    )
+    monkeypatch.setattr(push, "utc_now", lambda: NOW)
+
+    asyncio.run(push._mark_channel_failed(ctx, SimpleNamespace(id=1), row, detail))
+
+    assert row.status == CalendarPushChannelStatus.FAILED.value
+    assert row.last_error == detail
+    assert row.updated_at == NOW
+    assert added == [row]
 
 
 def test_debounced_enqueue_closes_redis_client_when_set_fails(monkeypatch) -> None:

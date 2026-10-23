@@ -30,6 +30,10 @@ import {
   Trash2,
   Zap,
 } from "lucide-react";
+import {
+  CALENDAR_CONNECT_LABELS as CONNECT_LABELS,
+  describeCalendarConnectFailure,
+} from "./calendarConnectResult";
 import SettingsBlock from "./SettingsBlock";
 import SettingsCallout from "./SettingsCallout";
 import SettingsCard from "./SettingsCard";
@@ -48,11 +52,6 @@ import { loadingButtonProps } from "@/components/ui/loadingButton";
 const PROVIDER_LABELS: Record<CalendarProvider, string> = {
   google: "Google",
   microsoft: "Microsoft",
-};
-
-const CONNECT_LABELS: Record<CalendarProvider, string> = {
-  google: "Google Calendar",
-  microsoft: "Outlook Calendar",
 };
 
 const STATUS_LABELS: Record<CalendarSyncStatus, string> = {
@@ -108,6 +107,16 @@ export default function CalendarConnectionsSettings() {
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const { addNotification } = useNotificationStore();
   const handledCallbackRef = useRef(false);
+  // A sign-in arrives by a full page load, so the outcome it carries in the
+  // query string is read once, when the card first renders. The effect below
+  // then strips it from the address bar.
+  const [connectFailure, setConnectFailure] = useState(() =>
+    describeCalendarConnectFailure(
+      searchParams.get("calendar"),
+      searchParams.get("provider"),
+      searchParams.get("reason"),
+    ),
+  );
 
   const loadOverview = useCallback(async () => {
     setLoading(true);
@@ -144,26 +153,21 @@ export default function CalendarConnectionsSettings() {
     const nextSearchParams = new URLSearchParams(searchParams.toString());
     nextSearchParams.delete("calendar");
     nextSearchParams.delete("provider");
+    nextSearchParams.delete("reason");
     const nextQuery = nextSearchParams.toString();
     const providerLabel = CONNECT_LABELS[provider as CalendarProvider] || "calendar";
-    addNotification({
-      type: calendarStatus === "success" ? "success" : "error",
-      message: (() => {
-        if (calendarStatus === "success") {
-          return `${providerLabel} connected successfully`;
-        }
-        if (calendarStatus === "config-error") {
-          return `${providerLabel} sign-in is not configured yet. An administrator must add the installation OAuth app credentials first.`;
-        }
-        if (calendarStatus === "tenant-config-error") {
-          return `${providerLabel} sign-in is configured to use tenant common, but the Microsoft app registration is still single-tenant. In Entra, change Supported account types to include organisational directories and personal Microsoft accounts, or enter a specific tenant ID instead of common.`;
-        }
-        if (calendarStatus === "cancelled") {
-          return `${providerLabel} connection was cancelled.`;
-        }
-        return `Failed to connect ${providerLabel}`;
-      })(),
-    });
+    // A failure is shown in the card, where it stays until dismissed.
+    if (calendarStatus === "success") {
+      addNotification({
+        type: "success",
+        message: `${providerLabel} connected successfully`,
+      });
+    } else if (calendarStatus === "cancelled") {
+      addNotification({
+        type: "error",
+        message: `${providerLabel} connection was cancelled.`,
+      });
+    }
     router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname, {
       scroll: false,
     });
@@ -176,6 +180,7 @@ export default function CalendarConnectionsSettings() {
   );
 
   const handleConnect = async (provider: CalendarProvider) => {
+    setConnectFailure(null);
     setBusyKey(`connect:${provider}`);
     try {
       const { authorisation_url } = await startCalendarAuthorisation(provider);
@@ -313,6 +318,27 @@ export default function CalendarConnectionsSettings() {
       title="Calendars"
       description="Connect a Google or Outlook account, approve access on its own sign-in page, then choose which calendars Nojoin shows you."
     >
+      {connectFailure && (
+        <SettingsBlock>
+          <div role="alert">
+            <SettingsCallout tone="error" title={connectFailure.title}>
+              <p>{connectFailure.message}</p>
+              {connectFailure.hint && <p className="mt-2">{connectFailure.hint}</p>}
+              {connectFailure.reasonText && (
+                <p className="mt-2 text-xs">{connectFailure.reasonText}</p>
+              )}
+              <button
+                type="button"
+                onClick={() => setConnectFailure(null)}
+                className="mt-2 font-semibold underline underline-offset-2"
+              >
+                Dismiss
+              </button>
+            </SettingsCallout>
+          </div>
+        </SettingsBlock>
+      )}
+
       {loading ? (
         <SettingsBlock>
           <div className="flex items-center gap-2 text-sm contrast-helper">
