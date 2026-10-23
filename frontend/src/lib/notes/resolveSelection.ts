@@ -6,12 +6,16 @@ import { interpolatedTokens, type DrawnLine } from "./selectionRange";
  * A note keeps the span the words were selected at and a snapshot of the
  * words (`start_ms`, `end_ms`, `quoted_text`). Reprocessing rebuilds the
  * transcript, and the final pass writes different words from the live one,
- * so the quote is looked for again on every render, and only near its span:
+ * so the quote is looked for again at read time, and only near its span:
  * among the words whose time falls within `marginMs` of it. Nothing found here
  * is written back; the note keeps what the user saw.
  *
- * Words are compared case-folded with punctuation stripped. The match is the
- * run of words with the fewest word edits from the quote (approximate
+ * Words are compared case-folded with punctuation stripped. A selection may
+ * start or end inside a word, and its quote keeps just the characters chosen
+ * (B3c), so the quote's first word also matches a word that ends with it, its
+ * last a word that starts with it, and a one-word quote any word holding it;
+ * such a match is no edit, but a whole word wins a tie over one. The match is
+ * the run of words with the fewest word edits from the quote (approximate
  * substring matching, Sellers), scored `1 - edits / quote words`; a tie goes
  * to the run nearest the span's middle. A score of 1 is `exact`; at least
  * `floor` is `fuzzy`; anything lower is `unanchored`, and nothing is marked:
@@ -47,12 +51,12 @@ export interface AnchoredNote {
 
 /**
  * How far either side of its span a note's words are looked for, and the
- * lowest score a match is shown at. Calibrated on 7,500 selections of live
- * and processed text of the benchmark recordings, resolved on their final and
- * reprocessed text: past 2 s a wider margin finds almost nothing more and
- * marks more wrong words; a floor of 0.6 would refuse 1.6% more, nearly all
- * of them right (two-word quotes with one word changed), and one of 0.4 adds
- * nothing.
+ * lowest score a match is shown at. Chosen on 7,500 selections of live and
+ * processed text of three benchmark recordings, resolved on their final and
+ * reprocessed text (tuning data, not a held-out test): past 2 s a wider
+ * margin finds almost nothing more and marks more wrong words; a floor of 0.6
+ * would refuse 1.6% more, nearly all of them right (two-word quotes with one
+ * word changed), and one of 0.4 adds nothing.
  */
 export const ANCHOR_MARGIN_MS = 2_000;
 export const ANCHOR_SCORE_FLOOR = 0.5;
@@ -119,25 +123,40 @@ interface Match {
   edits: number;
 }
 
+// Costs in the match: an edit outweighs every part-word match a run can hold
+// (two at most), so part-word matches only break ties between equal edits.
+const EDIT = 4;
+const PART_WORD = 1;
+
+/** What matching quote word `index` of `count` to `word` costs. */
+const wordCost = (quoteWord: string, index: number, count: number, word: string): number => {
+  if (quoteWord === word) return 0;
+  const partWord =
+    count === 1
+      ? word.includes(quoteWord)
+      : (index === 0 && word.endsWith(quoteWord)) || (index === count - 1 && word.startsWith(quoteWord));
+  return partWord ? PART_WORD : EDIT;
+};
+
 /**
  * The run `tokens[start..end)` with the fewest word edits from `quote`
- * (Sellers' approximate substring match), ties to the run whose middle is
- * nearest `midMs`.
+ * (Sellers' approximate substring match), ties to the run with fewer
+ * part-word matches, then to the one whose middle is nearest `midMs`.
  */
 const bestMatch = (quote: readonly string[], tokens: readonly WindowToken[], midMs: number): Match => {
   const width = tokens.length + 1;
-  // Row i: the edits to match quote[0..i) ending at each token; a match may start anywhere.
+  // Row i: the cost of matching quote[0..i) ending at each token; a match may start anywhere.
   let edits = new Array<number>(width).fill(0);
   let starts = Array.from({ length: width }, (_, end) => end);
   for (let i = 1; i <= quote.length; i += 1) {
     const nextEdits = new Array<number>(width);
     const nextStarts = new Array<number>(width);
-    nextEdits[0] = i;
+    nextEdits[0] = i * EDIT;
     nextStarts[0] = 0;
     for (let j = 1; j < width; j += 1) {
-      const substitute = edits[j - 1] + (quote[i - 1] === tokens[j - 1].word ? 0 : 1);
-      const skipQuoteWord = edits[j] + 1;
-      const extraWord = nextEdits[j - 1] + 1;
+      const substitute = edits[j - 1] + wordCost(quote[i - 1], i - 1, quote.length, tokens[j - 1].word);
+      const skipQuoteWord = edits[j] + EDIT;
+      const extraWord = nextEdits[j - 1] + EDIT;
       if (substitute <= skipQuoteWord && substitute <= extraWord) {
         nextEdits[j] = substitute;
         nextStarts[j] = starts[j - 1];
@@ -152,18 +171,18 @@ const bestMatch = (quote: readonly string[], tokens: readonly WindowToken[], mid
     edits = nextEdits;
     starts = nextStarts;
   }
-  let best: Match = { start: 0, end: 0, edits: quote.length };
+  let best = { start: 0, end: 0, cost: quote.length * EDIT };
   let bestDistance = Infinity;
   for (let end = 1; end < width; end += 1) {
     const start = starts[end];
-    if (start >= end || edits[end] > best.edits) continue;
+    if (start >= end || edits[end] > best.cost) continue;
     const distance = Math.abs((tokens[start].startMs + tokens[end - 1].endMs) / 2 - midMs);
-    if (edits[end] < best.edits || distance < bestDistance) {
-      best = { start, end, edits: edits[end] };
+    if (edits[end] < best.cost || distance < bestDistance) {
+      best = { start, end, cost: edits[end] };
       bestDistance = distance;
     }
   }
-  return best;
+  return { start: best.start, end: best.end, edits: Math.floor(best.cost / EDIT) };
 };
 
 /** Where a selection note's words are now in `lines`: exact, fuzzy, or nowhere. */

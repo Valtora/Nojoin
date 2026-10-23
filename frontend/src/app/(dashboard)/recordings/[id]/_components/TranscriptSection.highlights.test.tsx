@@ -316,4 +316,61 @@ describe("editing a note in the processed transcript", () => {
     expect(noteLine("n-exact")).toHaveTextContent("Changed on my phone");
     expect(marks()).toHaveLength(1);
   });
+
+  it("puts focus back in the box when a save is refused, and says why as an alert", async () => {
+    updateTimelineNote.mockRejectedValueOnce({ isAxiosError: true, message: "Network Error" });
+    renderSection([EXACT]);
+
+    const editor = openFromLine("n-exact", "Check the figure");
+    fireEvent.change(within(editor).getByRole("textbox"), { target: { value: "Mine" } });
+    const save = within(editor).getByRole("button", { name: "Save note" });
+    save.focus();
+    fireEvent.click(save);
+
+    expect(await within(editor).findByRole("alert")).toHaveTextContent("No answer from Nojoin. Try again.");
+    expect(document.activeElement).toBe(within(editor).getByRole("textbox"));
+  });
+});
+
+describe("leaving the page with a note's change unsaved", () => {
+  const leave = () => {
+    const event = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(event);
+    return event.defaultPrevented;
+  };
+  const openFromLine = (id: string, body: string) => {
+    fireEvent.click(within(noteLine(id)).getByRole("button", { name: `Edit note at 01:05, “${body}”` }));
+    return screen.getByRole("dialog", { name: "Edit the note at 01:05" });
+  };
+
+  it("asks while an edit is on its way, and not once it is saved", async () => {
+    let answer: (note: TimelineNote) => void = () => undefined;
+    updateTimelineNote.mockImplementationOnce(() => new Promise((resolve) => (answer = resolve)));
+    renderSection([EXACT]);
+
+    const editor = openFromLine("n-exact", "Check the figure");
+    expect(leave()).toBe(false);
+    fireEvent.change(within(editor).getByRole("textbox"), { target: { value: "Mine" } });
+    fireEvent.click(within(editor).getByRole("button", { name: "Save note" }));
+    expect(leave()).toBe(true);
+
+    answer({ ...EXACT, body: "Mine", revision: 4 });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(leave()).toBe(false);
+  });
+
+  it("asks while a refused delete is still open, and not once it is given up", async () => {
+    deleteTimelineNote.mockRejectedValueOnce(conflict({ ...EXACT, body: "Changed on my phone", revision: 5 }));
+    renderSection([EXACT]);
+
+    const editor = openFromLine("n-exact", "Check the figure");
+    fireEvent.click(within(editor).getByRole("button", { name: "Delete" }));
+    fireEvent.click(within(editor).getByRole("button", { name: "Confirm delete" }));
+    await within(editor).findByRole("alert");
+    expect(leave()).toBe(true);
+
+    fireEvent.click(within(editor).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(leave()).toBe(false);
+  });
 });

@@ -90,9 +90,15 @@ export default function NoteOnSelectionPopover({
     return () => document.removeEventListener("pointerdown", closeOnOutsidePress, true);
   }, [isUnchanged, anchor, onClose, panelRef]);
 
+  // A refused write keeps the popover open. The button pressed was disabled
+  // while it ran, which dropped focus to the page, so it goes to the box.
   const finish = (refusal: Refusal) => {
-    if (refusal) setError(refusal);
-    else close();
+    if (!refusal) {
+      close();
+      return;
+    }
+    setError(refusal);
+    boxRef.current?.focus();
   };
 
   /**
@@ -198,7 +204,7 @@ export default function NoteOnSelectionPopover({
         className="density-surface-panel mt-2 w-full resize-none border border-control-border bg-control-bg px-3 py-2 text-sm leading-5 text-contrast-muted outline-none focus:border-action focus:ring-2 focus:ring-action"
       />
       {error ? (
-        <p id={errorId} className="mt-1 text-xs text-status-danger-fg">
+        <p id={errorId} role="alert" className="mt-1 text-xs text-status-danger-fg">
           {error}
         </p>
       ) : null}

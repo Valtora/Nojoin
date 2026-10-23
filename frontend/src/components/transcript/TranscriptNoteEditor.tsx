@@ -1,8 +1,9 @@
 "use client";
 
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 
 import type { InlineNote } from "@/lib/notes/noteOutbox";
+import { holdPendingNoteWrite } from "@/lib/notes/noteOutboxes";
 import type { EditableNote, NoteEditRefusal } from "@/lib/notes/useNoteEdits";
 import type { TimelineNote } from "@/types";
 
@@ -54,6 +55,14 @@ function Editor({
 }: NoteEditHandlers & { note: TimelineNote | InlineNote; anchor: HTMLElement; onClose: () => void }) {
   // A deleted note's line is going: the caller has moved focus somewhere that stays.
   const removed = useRef(false);
+  // From the first Save or Delete until the editor closes, saved or given up:
+  // a write on its way, or refused and still open, holds the page.
+  const release = useRef<(() => void) | null>(null);
+  useEffect(() => () => release.current?.(), []);
+  const holding = <T,>(write: () => Promise<T>) => {
+    release.current ??= holdPendingNoteWrite();
+    return write();
+  };
   const startMs = note.kind === "selection" ? note.start_ms : note.anchor_ms;
   return (
     <NoteOnSelectionPopover
@@ -64,11 +73,11 @@ function Editor({
       returnFocus={() => {
         if (!removed.current) focusAfter(anchor);
       }}
-      onSubmit={(body) => onEditNote(note, body)}
+      onSubmit={(body) => holding(() => onEditNote(note, body))}
       onDelete={
         onDeleteNote
           ? async () => {
-              const refusal = await onDeleteNote(note);
+              const refusal = await holding(() => onDeleteNote(note));
               removed.current = refusal === null;
               return refusal;
             }

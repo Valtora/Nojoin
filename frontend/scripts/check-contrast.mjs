@@ -120,6 +120,9 @@ const PAIRINGS = [
   { label: "action text hover on card", fg: "action-text-hover", bg: ["surface-page", "surface-card"], min: AA_TEXT },
   { label: "tint text on tint (on card)", fg: "action-tint-fg", bg: ["surface-page", "surface-card", "action-tint"], min: AA_TEXT },
   { label: "tint text on hover tint (on card)", fg: "action-tint-fg", bg: ["surface-page", "surface-card", "action-tint-hover"], min: AA_TEXT },
+  // A note's words in the transcript: the underline is what marks them, since
+  // the tint alone barely shows on a light card.
+  { label: "note underline on tint (on card)", fg: "action-text", bg: ["surface-page", "surface-card", "action-tint"], min: AA_NON_TEXT },
   { label: "action border vs card", fg: "action-border", bg: ["surface-page", "surface-card"], min: HAIRLINE },
 
   // Danger family, held to the same rules as the action family.
