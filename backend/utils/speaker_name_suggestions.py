@@ -147,11 +147,7 @@ class SpeakerInferenceSuggestion:
         rationale = str(self.rationale).strip() if self.rationale else None
         source = str(self.source).strip() or "llm"
         evidence_spans = tuple(self.evidence_spans or ())
-        signals = tuple(
-            dict.fromkeys(
-                signal.strip() for signal in self.signals or () if str(signal).strip()
-            )
-        )
+        signals = _string_signals(self.signals)
 
         object.__setattr__(self, "diarization_label", label)
         object.__setattr__(self, "suggested_name", suggested_name)
@@ -592,8 +588,17 @@ def _read_string_list(value: Any) -> tuple[str, ...]:
         return ()
     if not isinstance(value, list):
         raise SpeakerSuggestionContractError("'signals' must be an array when present")
+    return _string_signals(value)
+
+
+def _string_signals(values: Any) -> tuple[str, ...]:
+    """The distinct non-blank string signals; anything else is dropped."""
     return tuple(
-        dict.fromkeys(str(item).strip() for item in value if str(item).strip())
+        dict.fromkeys(
+            value.strip()
+            for value in values or ()
+            if isinstance(value, str) and value.strip()
+        )
     )
 
 

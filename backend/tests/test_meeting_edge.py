@@ -1,13 +1,31 @@
 from __future__ import annotations
 
+import json
+import logging
+import warnings
+
 from backend.utils.meeting_edge import (
+    MEETING_EDGE_ITEM_REPR_MAX_CHARS,
     MeetingEdgeRequest,
+    MeetingEdgeResult,
     build_meeting_edge_prompt,
     build_meeting_edge_prompt_parts,
+    meeting_edge_item_text,
     merge_meeting_edge_concept_history,
     parse_meeting_edge_response,
     serialize_meeting_edge_result,
 )
+
+
+def _edge_response(**fields: object) -> str:
+    payload: dict[str, object] = {
+        "summary": "Alice Example is walking through the launch plan.",
+        "questions": [],
+        "points": [],
+        "concepts": [],
+    }
+    payload.update(fields)
+    return json.dumps(payload)
 
 
 def test_build_meeting_edge_prompt_includes_focus_and_recent_transcript() -> None:
@@ -353,3 +371,162 @@ def test_meeting_edge_cache_prefix_is_stable_across_refreshes() -> None:
     assert first_prefix == second_prefix
     assert first_suffix != second_suffix
     assert first_suffix.startswith(MEETING_EDGE_CACHE_SPLIT_MARKER)
+
+
+def test_parse_meeting_edge_response_reads_text_from_wrapped_items() -> None:
+    result = parse_meeting_edge_response(
+        _edge_response(
+            questions=[
+                {"text": "How do we roll back if the launch slips?"},
+                {"question": "Who signs off for Alice Example's team?"},
+            ],
+            points=[
+                {"point": "The budget needs confirming before Friday."},
+                {"content": "The vendor contract renews in March."},
+            ],
+        )
+    )
+
+    assert result.questions == (
+        "How do we roll back if the launch slips?",
+        "Who signs off for Alice Example's team?",
+    )
+    assert result.points == (
+        "The budget needs confirming before Friday.",
+        "The vendor contract renews in March.",
+    )
+    payload = serialize_meeting_edge_result(result)
+    assert all(isinstance(item, str) for item in payload["questions"])
+    assert all(isinstance(item, str) for item in payload["points"])
+
+
+def test_parse_meeting_edge_response_drops_items_without_text(caplog) -> None:
+    caplog.set_level(logging.WARNING, logger="backend.utils.meeting_edge")
+
+    result = parse_meeting_edge_response(
+        _edge_response(
+            questions=[
+                {"term": "SLA", "explanation": "Service level agreement"},
+                42,
+                ["Who owns the rollback?"],
+                None,
+                {"text": "   "},
+                "  ",
+                "Who owns the vendor contract?",
+                "What is the rollback window?",
+                "When does Bob Sample need the figures?",
+                "Is there a fourth question past the cap?",
+            ],
+        )
+    )
+
+    # Five items carried no text; the blank string is not counted. None of them
+    # takes a place, so the first three real questions all survive the cap.
+    assert result.questions == (
+        "Who owns the vendor contract?",
+        "What is the rollback window?",
+        "When does Bob Sample need the figures?",
+    )
+    messages = [record.getMessage() for record in caplog.records]
+    assert messages == ["Meeting Edge dropped 5 questions item(s) with no text"]
+    assert "SLA" not in messages[0]
+
+
+def test_parse_meeting_edge_response_unwraps_stored_item_reprs() -> None:
+    result = parse_meeting_edge_response(
+        _edge_response(
+            questions=[
+                "{'text': \"How do we handle Alice Example's rollback?\"}",
+                "{'term': 'SLA', 'explanation': 'Service level agreement'}",
+                '{"question": "Who signs the contract?"}',
+            ],
+            points=[
+                "Confirm the {budget} line with Bob Sample.",
+                "{Bob Sample owns the budget}",
+                "{'Alice Example', 'Bob Sample'}",
+            ],
+        )
+    )
+
+    assert result.questions == (
+        "How do we handle Alice Example's rollback?",
+        "Who signs the contract?",
+    )
+    # Prose that merely contains or sits in braces is not a repr and stays.
+    assert result.points == (
+        "Confirm the {budget} line with Bob Sample.",
+        "{Bob Sample owns the budget}",
+        "{'Alice Example', 'Bob Sample'}",
+    )
+
+
+def test_meeting_edge_item_text_reads_only_a_short_repr() -> None:
+    long_text = "a" * MEETING_EDGE_ITEM_REPR_MAX_CHARS
+    overlong = "{'text': '" + long_text + "'}"
+
+    assert meeting_edge_item_text(overlong) == overlong
+    assert meeting_edge_item_text("{'text': 'Ask Alice Example.'}") == (
+        "Ask Alice Example."
+    )
+    with warnings.catch_warnings():
+        # A stray backslash would be a SyntaxWarning, which must not escape.
+        warnings.simplefilter("error")
+        assert meeting_edge_item_text("{'text': 'Open C:\\plans first.'}") == (
+            "Open C:\\plans first."
+        )
+    assert meeting_edge_item_text({"text": 7}) is None
+    assert meeting_edge_item_text(3.5) is None
+
+
+def test_meeting_edge_result_and_request_hold_only_text() -> None:
+    result = MeetingEdgeResult(
+        summary="Launch review.",
+        questions=({"text": "Ask Alice Example about the rollback plan."},),  # type: ignore[arg-type]
+        points=(7,),  # type: ignore[arg-type]
+        concepts=(),
+    )
+    request = MeetingEdgeRequest(
+        recent_transcript="Alice Example: we launch on Friday.",
+        previous_questions=("{'text': 'Ask Bob Sample about the budget.'}",),
+        previous_points=("{'term': 'SLA', 'explanation': 'Service level agreement'}",),
+    )
+
+    assert result.questions == ("Ask Alice Example about the rollback plan.",)
+    assert result.points == ()
+    assert request.previous_questions == ("Ask Bob Sample about the budget.",)
+    assert request.previous_points == ()
+
+
+def test_parse_meeting_edge_response_skips_malformed_concepts(caplog) -> None:
+    caplog.set_level(logging.WARNING, logger="backend.utils.meeting_edge")
+
+    result = parse_meeting_edge_response(
+        _edge_response(
+            questions=["Who owns the runbook?"],
+            concepts=[
+                "SLA",
+                {"term": "Runbook"},
+                {"term": "  ", "explanation": "Blank term."},
+                {"term": "Go-live", "explanation": "The planned launch date."},
+            ],
+        )
+    )
+
+    assert result.questions == ("Who owns the runbook?",)
+    assert serialize_meeting_edge_result(result)["concepts"] == [
+        {"term": "Go-live", "explanation": "The planned launch date."}
+    ]
+    assert [record.getMessage() for record in caplog.records] == [
+        "Meeting Edge dropped 3 malformed concept(s)"
+    ]
+
+
+def test_meeting_edge_prompt_asks_for_plain_string_items() -> None:
+    prompt = build_meeting_edge_prompt(
+        MeetingEdgeRequest(recent_transcript="Alice Example: hello.")
+    )
+
+    assert (
+        "Each entry in `questions` and `points` is a plain JSON string, never an object."
+        in prompt
+    )
