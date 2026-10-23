@@ -105,7 +105,9 @@ async def retired_companion_prefix(legacy_path: str) -> JSONResponse:
     methods=["POST"],
     include_in_schema=False,
 )
-async def retired_companion_routes(**_: str) -> JSONResponse:
+async def retired_companion_routes() -> JSONResponse:
+    # No parameters: FastAPI reads any it is given, `**kwargs` included, as a
+    # required query parameter and answers 422 before this runs.
     return _companion_retired()
 
 
