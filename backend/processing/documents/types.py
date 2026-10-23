@@ -1,8 +1,8 @@
 """Shared types for document parsing.
 
 Kept free of format-specific imports so the orchestrator and the API layer can
-use them without pulling in PyMuPDF, python-pptx or openpyxl -- all of which are
-worker-only dependencies.
+use them without pulling in pypdfium2, pdfplumber, python-pptx or openpyxl --
+all of which are worker-only dependencies.
 """
 
 from __future__ import annotations

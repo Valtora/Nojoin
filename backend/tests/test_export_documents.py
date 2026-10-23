@@ -12,7 +12,7 @@ from datetime import datetime
 from io import BytesIO
 from zipfile import ZipFile
 
-import pymupdf
+import pdfplumber
 from docx import Document
 
 from backend.services.exports import build_document, render, theme
@@ -55,19 +55,19 @@ def _pdf_text(parts=None, sections=ALL_SECTIONS, *, branded=True) -> str:
     payload = render(
         build_document(parts or meeting_parts(), sections, branded=branded), "pdf"
     )
-    with pymupdf.open(stream=payload, filetype="pdf") as document:
-        return "\n".join(page.get_text() for page in document)
+    with pdfplumber.open(BytesIO(payload)) as document:
+        return "\n".join(page.extract_text() for page in document.pages)
 
 
 def _pdf_link_targets(*, branded: bool) -> set[str]:
     """Every link annotation's URI across the PDF's pages."""
     payload = render(build_document(meeting_parts(), ["notes"], branded=branded), "pdf")
-    with pymupdf.open(stream=payload, filetype="pdf") as document:
+    with pdfplumber.open(BytesIO(payload)) as document:
         return {
             link["uri"]
-            for page in document
-            for link in page.get_links()
-            if "uri" in link
+            for page in document.pages
+            for link in page.hyperlinks
+            if link.get("uri")
         }
 
 

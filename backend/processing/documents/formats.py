@@ -55,9 +55,10 @@ def _image(path: str, *, want_images: bool) -> DocumentSource:
     return open_image(path, want_images=want_images)
 
 
-# Every parser is imported lazily inside its wrapper: PyMuPDF, python-pptx,
-# python-docx and openpyxl are worker-only, and importing this module must stay
-# cheap enough for the API process, which only needs the extension list.
+# Every parser is imported lazily inside its wrapper: pypdfium2, pdfplumber,
+# python-pptx, python-docx and openpyxl are worker-only, and importing this
+# module must stay cheap enough for the API process, which only needs the
+# extension list.
 _PARSERS: Dict[str, Callable[..., DocumentSource]] = {
     ".pdf": _pdf,
     ".pptx": _pptx,
