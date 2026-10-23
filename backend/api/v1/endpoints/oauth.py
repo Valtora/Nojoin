@@ -218,8 +218,11 @@ async def authorize_decision(
 
 
 class TokenRequestForm(BaseModel):
-    grant_type: str
-    client_id: str
+    # Defaults, not required fields: FastAPI reads an empty form value as absent
+    # and would answer a missing required field with its own 422, where RFC 6749
+    # section 5.2 wants an OAuth error body. The endpoint rejects both itself.
+    grant_type: str = ""
+    client_id: str = ""
     code: Optional[str] = None
     redirect_uri: Optional[str] = None
     code_verifier: Optional[str] = None
@@ -241,6 +244,10 @@ async def token_endpoint(
         detail="Too many token requests. Please try again later.",
     )
     try:
+        # An empty client_id needs no check here: no client matches it, so the
+        # grant handlers answer invalid_client.
+        if not form.grant_type:
+            raise OAuthError("invalid_request", "grant_type is required.")
         if form.grant_type == "authorization_code":
             if not form.code or not form.redirect_uri:
                 raise OAuthError(
