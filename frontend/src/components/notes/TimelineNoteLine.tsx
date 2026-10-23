@@ -1,11 +1,13 @@
 "use client";
 
 import { useRef } from "react";
-import { StickyNote } from "lucide-react";
+import { Pencil, StickyNote } from "lucide-react";
 
 import { noteSnippet } from "@/lib/notes/noteOutbox";
 
 import Button from "../ui/Button";
+import IconButton from "../ui/IconButton";
+import { TOUCH_TARGET_SQUARE } from "../ui/touchTarget";
 
 import { NOTE_BUTTON_TOUCH } from "./noteButtons";
 
@@ -14,6 +16,14 @@ interface TimelineNoteLineProps {
   body: string;
   /** The words a selection note is on, as they read when it was written. */
   quote?: string | null;
+  /**
+   * Set when the quote's words are no longer in the transcript near the
+   * note's time: the quote is struck through, and `nowReads` is what the
+   * transcript says there now (empty when it says nothing).
+   */
+  wordsChanged?: { nowReads: string } | null;
+  /** Opens the note's editor against the button pressed; without it, no Edit button. */
+  onEdit?: (trigger: HTMLElement) => void;
   /** The note's time, written the way the surrounding lines write theirs. */
   timeLabel: string;
   status?: "saved" | "saving" | "failed";
@@ -37,6 +47,8 @@ export default function TimelineNoteLine({
   noteId,
   body,
   quote = null,
+  wordsChanged = null,
+  onEdit,
   timeLabel,
   status = "saved",
   error = null,
@@ -73,10 +85,18 @@ export default function TimelineNoteLine({
         {quote ? (
           <blockquote
             data-testid="timeline-note-quote"
-            className="mt-0.5 line-clamp-2 break-words text-sm italic leading-6 text-contrast-helper"
+            className={`mt-0.5 line-clamp-2 break-words text-sm italic leading-6 text-contrast-helper ${
+              wordsChanged ? "line-through" : ""
+            }`}
           >
             <span className="sr-only">On the words: </span>“{quote}”
           </blockquote>
+        ) : null}
+        {quote && wordsChanged ? (
+          <p data-testid="timeline-note-words-changed" className="text-xs leading-5 text-contrast-helper">
+            Words changed since this note.
+            {wordsChanged.nowReads ? ` Here it now reads “${noteSnippet(wordsChanged.nowReads, 120)}”.` : null}
+          </p>
         ) : null}
         <p className="mt-0.5 whitespace-pre-wrap break-words text-sm leading-6 text-foreground">
           {body}
@@ -112,6 +132,16 @@ export default function TimelineNoteLine({
           </div>
         ) : null}
       </div>
+      {onEdit && status === "saved" ? (
+        <IconButton
+          size="sm"
+          aria-label={`Edit note ${name}`}
+          title="Edit or delete this note"
+          icon={<Pencil aria-hidden="true" />}
+          onClick={(event) => onEdit(event.currentTarget)}
+          className={`shrink-0 -my-1 ${TOUCH_TARGET_SQUARE}`}
+        />
+      ) : null}
     </div>
   );
 }

@@ -195,7 +195,7 @@ function SelectionNoteWriter({
       <SelectionAnchor box={box} onAnchor={setAnchor} />
       {anchor ? (
         <NoteOnSelectionPopover
-          selection={selection}
+          quote={selection.quotedText}
           title={`Note on the selected text at ${formatTimelineMs(selection.startMs)}`}
           anchor={anchor}
           returnFocus={() => lineTrigger(root.current, writing.segmentId)?.focus()}

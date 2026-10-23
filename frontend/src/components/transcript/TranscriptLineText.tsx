@@ -2,7 +2,12 @@
 
 import type { ReactNode } from "react";
 
-import { buildTextRuns, type TextDecoration, type TextRun } from "./textDecorations";
+import {
+  buildTextRuns,
+  type NoteDecoration,
+  type TextDecoration,
+  type TextRun,
+} from "./textDecorations";
 
 interface TranscriptLineTextProps {
   text: string;
@@ -17,25 +22,42 @@ interface TranscriptLineTextProps {
 
 const NO_DECORATIONS: readonly TextDecoration[] = [];
 
-/** How a run draws: `null` for plain text. */
-type SearchLook = "match" | "current" | null;
+/**
+ * How a run draws: `null` for plain text. A search match draws over a note's
+ * words, since it is what the reader is looking for now; a note's words found
+ * with changes draw as such when any note on them was.
+ */
+type Look = "match" | "current" | "note" | "note-changed" | null;
 
-const lookOf = (decorations: readonly TextDecoration[]): SearchLook => {
-  let look: SearchLook = null;
+const lookOf = (decorations: readonly TextDecoration[]): Look => {
+  let look: Look = null;
   for (const decoration of decorations) {
     switch (decoration.kind) {
       case "search":
         look = look === "current" || decoration.current ? "current" : "match";
         break;
+      case "note":
+        if (look === "match" || look === "current") break;
+        look = look === "note-changed" || decoration.fuzzy ? "note-changed" : "note";
+        break;
       default: {
         // A new kind fails to compile here until it has a look.
-        const unhandled: never = decoration.kind;
+        const unhandled: never = decoration;
         return unhandled;
       }
     }
   }
   return look;
 };
+
+const SEARCH_CLASSES = {
+  match: "bg-status-warning-bg text-status-warning-fg",
+  current: "bg-action text-action-on",
+};
+
+/** The first note on a run, which a click on it edits. */
+const noteOf = (decorations: readonly TextDecoration[]) =>
+  decorations.find((decoration): decoration is NoteDecoration => decoration.kind === "note");
 
 /**
  * Joins neighbouring runs that draw alike and share a decoration, so matches
@@ -74,10 +96,26 @@ const renderRun = (text: string, run: TextRun, index: number): ReactNode => {
   if (look === null) {
     return slice;
   }
+  if (look === "match" || look === "current") {
+    return (
+      <mark key={index} className={`${SEARCH_CLASSES[look]} rounded-sm px-0.5`}>
+        {slice}
+      </mark>
+    );
+  }
+  const note = noteOf(run.decorations);
+  // No padding: a note's words keep their place, so the line reads as it did.
+  // Underlined as well as tinted, since a bubble can be the tint's own colour
+  // (an orange speaker); dotted where the words have changed.
   return (
     <mark
       key={index}
-      className={`${look === "current" ? "bg-action text-action-on" : "bg-status-warning-bg text-status-warning-fg"} rounded-sm px-0.5`}
+      data-note-id={note?.noteId}
+      data-note-anchor={look === "note-changed" ? "fuzzy" : "exact"}
+      title={note?.title}
+      className={`cursor-pointer rounded-sm bg-action-tint text-action-tint-fg underline decoration-action-text decoration-2 underline-offset-4 ${
+        look === "note-changed" ? "decoration-dotted" : "decoration-solid"
+      }`}
     >
       {slice}
     </mark>

@@ -4,17 +4,22 @@ import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 
 import { createPortal } from "react-dom";
 
 import { stripNote } from "@/lib/notes/headNoteSync";
-import type { NoteSelection } from "@/lib/notes/noteOutbox";
 
 import Button from "../ui/Button";
 import { useAnchoredPanel } from "../ui/useAnchoredPanel";
 
 import { NOTE_BUTTON_TOUCH } from "./noteButtons";
 
+/** Why a write was refused, or null once it is done or on its way. */
+type Refusal = string | null;
+
 interface NoteOnSelectionPopoverProps {
-  selection: NoteSelection;
+  /** The words the note is on; null for a note on a point in time. */
+  quote: string | null;
   /** Names the popover: "Note on the line at 01:05". */
   title: string;
+  /** The note's text when it opens: an edit's, or empty for a new note. */
+  initialText?: string;
   /**
    * What it sits against, which stays mounted while it is open: a line's ⋯
    * button, or the place of a text selection. Focus goes back there when it
@@ -23,27 +28,36 @@ interface NoteOnSelectionPopoverProps {
   anchor: HTMLElement;
   /** Puts focus back when it closes, for an anchor that can't take focus. */
   returnFocus?: () => void;
-  /** Queues the note; returns why it was refused, or null once it is on its way. */
-  onSubmit: (body: string) => string | null;
+  /**
+   * Queues or saves the note. Returns, or resolves to, why it was refused, and
+   * the popover stays open with the text as typed; null closes it.
+   */
+  onSubmit: (body: string) => Refusal | Promise<Refusal>;
+  /** Deletes the note, after a second press to confirm; null closes the popover. */
+  onDelete?: () => Promise<Refusal>;
   onClose: () => void;
 }
 
 /**
- * A note on chosen transcript text, in the finished view: the quote, a box
- * and Save. Enter saves and Shift+Enter starts a new line, as in the live
- * note box; Escape and Cancel close it. A press outside closes it only while
- * the box is empty, so a stray tap never throws a note away.
+ * A note in the finished view: the quote it is on, a box and Save, and for a
+ * note being edited, Delete. Enter saves and Shift+Enter starts a new line, as
+ * in the live note box; Escape and Cancel close it. A press outside closes it
+ * only while the text is as it opened, so a stray tap never throws a note away.
  */
 export default function NoteOnSelectionPopover({
-  selection,
+  quote,
   title,
+  initialText = "",
   anchor,
   returnFocus,
   onSubmit,
+  onDelete,
   onClose,
 }: NoteOnSelectionPopoverProps) {
-  const [text, setText] = useState("");
+  const [text, setText] = useState(initialText);
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const anchorRef = useMemo(() => ({ current: anchor }), [anchor]);
   const { panelRef, panelStyle } = useAnchoredPanel<HTMLDivElement>(true, anchorRef);
   const boxRef = useRef<HTMLTextAreaElement>(null);
@@ -51,6 +65,7 @@ export default function NoteOnSelectionPopover({
   const titleId = useId();
   const errorId = useId();
   const isBlank = stripNote(text) === "";
+  const isUnchanged = stripNote(text) === stripNote(initialText);
 
   const close = () => {
     onClose();
@@ -65,7 +80,7 @@ export default function NoteOnSelectionPopover({
   }, [placed]);
 
   useEffect(() => {
-    if (!isBlank) return;
+    if (!isUnchanged) return;
     const closeOnOutsidePress = (event: PointerEvent) => {
       const target = event.target as Node;
       if (panelRef.current?.contains(target) || anchor.contains(target)) return;
@@ -73,16 +88,42 @@ export default function NoteOnSelectionPopover({
     };
     document.addEventListener("pointerdown", closeOnOutsidePress, true);
     return () => document.removeEventListener("pointerdown", closeOnOutsidePress, true);
-  }, [isBlank, anchor, onClose, panelRef]);
+  }, [isUnchanged, anchor, onClose, panelRef]);
 
-  const save = () => {
-    if (isBlank) return;
-    const refusal = onSubmit(text);
-    if (refusal) {
-      setError(refusal);
+  const finish = (refusal: Refusal) => {
+    if (refusal) setError(refusal);
+    else close();
+  };
+
+  /**
+   * Runs a write; closes once it is done or on its way, else says why and
+   * keeps the text. A queued note answers at once; a save waits for Nojoin.
+   */
+  const settle = (write: () => Refusal | Promise<Refusal>) => {
+    const outcome = write();
+    if (!(outcome instanceof Promise)) {
+      finish(outcome);
       return;
     }
-    close();
+    setBusy(true);
+    void outcome.then((refusal) => {
+      setBusy(false);
+      finish(refusal);
+    });
+  };
+
+  const save = () => {
+    if (isBlank || busy) return;
+    settle(() => onSubmit(text));
+  };
+
+  const remove = () => {
+    if (!onDelete || busy) return;
+    if (!confirmingDelete) {
+      setConfirmingDelete(true);
+      return;
+    }
+    settle(onDelete);
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -109,7 +150,7 @@ export default function NoteOnSelectionPopover({
     );
     const edge = event.shiftKey ? stops[0] : stops[stops.length - 1];
     if (document.activeElement !== edge) return;
-    if (isBlank) {
+    if (isUnchanged) {
       close();
       return;
     }
@@ -135,9 +176,11 @@ export default function NoteOnSelectionPopover({
       <p id={titleId} className="text-xs font-semibold text-contrast-helper">
         {title}
       </p>
-      <blockquote className="mt-1 line-clamp-3 border-l-2 border-action-border pl-2 text-sm italic leading-5 text-contrast-muted">
-        {selection.quotedText}
-      </blockquote>
+      {quote ? (
+        <blockquote className="mt-1 line-clamp-3 border-l-2 border-action-border pl-2 text-sm italic leading-5 text-contrast-muted">
+          {quote}
+        </blockquote>
+      ) : null}
       <textarea
         ref={boxRef}
         rows={3}
@@ -145,6 +188,7 @@ export default function NoteOnSelectionPopover({
         onChange={(event) => {
           setText(event.target.value);
           setError(null);
+          setConfirmingDelete(false);
         }}
         onKeyDown={handleKeyDown}
         aria-label="Note"
@@ -158,14 +202,25 @@ export default function NoteOnSelectionPopover({
           {error}
         </p>
       ) : null}
-      <div className="mt-2 flex justify-end gap-2">
+      <div className="mt-2 flex flex-wrap items-center justify-end gap-2">
+        {onDelete ? (
+          <Button
+            size="sm"
+            variant={confirmingDelete ? "danger" : "ghost"}
+            disabled={busy}
+            onClick={remove}
+            className={`${NOTE_BUTTON_TOUCH} mr-auto`}
+          >
+            {confirmingDelete ? "Confirm delete" : "Delete"}
+          </Button>
+        ) : null}
         <Button size="sm" onClick={close} className={NOTE_BUTTON_TOUCH}>
           Cancel
         </Button>
         <Button
           size="sm"
           variant="primary"
-          disabled={isBlank}
+          disabled={isBlank || busy}
           onClick={save}
           className={NOTE_BUTTON_TOUCH}
         >

@@ -116,6 +116,55 @@ describe("TranscriptLineText", () => {
     expect(pieces(line)).toEqual(["a", "[]", "b"]);
   });
 
+  it("marks a note's words under a search match, which draws over them", () => {
+    const note = (from: number, to: number, fuzzy = false): TextDecoration => ({
+      kind: "note",
+      from,
+      to,
+      noteId: fuzzy ? "n-2" : "n-1",
+      fuzzy,
+      title: "Note: “why”",
+    });
+    // In either order: a line hands its search matches first, then its notes.
+    for (const decorations of [
+      [search(6, 10), note(0, 14)],
+      [note(0, 14), search(6, 10)],
+    ]) {
+      const line = renderLineText("forty thousand for the venue", decorations);
+
+      expect(pieces(line)).toEqual(["[forty ]", "[thou]", "[sand]", " for the venue"]);
+      const [before, match, after] = Array.from(line.querySelectorAll("mark"));
+      expect(match.dataset.noteId).toBeUndefined();
+      expect(match.className).toMatch(/bg-status-warning-bg/);
+      for (const mark of [before, after]) {
+        expect(mark.dataset).toMatchObject({ noteId: "n-1", noteAnchor: "exact" });
+        expect(mark.title).toBe("Note: “why”");
+      }
+      expect(line.textContent).toBe("forty thousand for the venue");
+      cleanup();
+    }
+    // And where the match starts first and runs into the note's words.
+    const into = renderLineText("forty thousand for the venue", [search(0, 10), note(6, 14)]);
+    expect(pieces(into)).toEqual(["[forty thou]", "[sand]", " for the venue"]);
+    const [match, rest] = Array.from(into.querySelectorAll("mark"));
+    expect(match.dataset.noteId).toBeUndefined();
+    expect(rest.dataset.noteId).toBe("n-1");
+    cleanup();
+
+    // Where an exact note's words and a changed one's overlap, they draw as
+    // changed, whichever note starts first.
+    const anchors = (decorations: TextDecoration[]) =>
+      Array.from(renderLineText("forty thousand", decorations).querySelectorAll("mark")).map(
+        (mark) => [mark.textContent, mark.dataset.noteAnchor],
+      );
+    expect(anchors([note(0, 14), note(6, 14, true)])).toEqual([
+      ["forty ", "exact"],
+      ["thousand", "fuzzy"],
+    ]);
+    cleanup();
+    expect(anchors([note(0, 14, true), note(6, 14)])).toEqual([["forty thousand", "fuzzy"]]);
+  });
+
   it("names each line and its span on the timeline alike in the live and finished views", () => {
     const segments: TranscriptSegment[] = [
       { id: "utt-1", start: 1.25, end: 3.5, text: "First line.", speaker: "UNKNOWN" },

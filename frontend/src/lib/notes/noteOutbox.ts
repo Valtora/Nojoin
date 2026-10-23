@@ -273,6 +273,8 @@ export interface InlineNote {
   end_ms?: number | null;
   quoted_text?: string | null;
   created_at: string;
+  /** A saved note's revision, which an edit names; absent while it is on its way. */
+  revision?: number;
   status: "saved" | "saving" | "failed";
   error: string | null;
 }
