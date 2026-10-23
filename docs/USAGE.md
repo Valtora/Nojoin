@@ -118,7 +118,7 @@ A processed meeting has **Transcript**, **Notes**, **Documents** and **Analytics
 In the transcript:
 
 - Playback highlights the current line, and the play button beside a line's timestamp plays from there.
-- Click a line's text to edit it. Click a speaker name to reassign that line or the whole transcript, and double-click it to rename the speaker.
+- Click a line's text to edit it. Click a speaker name to reassign that line or the whole transcript, and double-click it to rename the speaker. A live label such as **Speaker 3**, kept when processing fails, names no speaker, so it can be reassigned but not renamed.
 - The toolbar has **Undo**, **Redo**, **Search**, **Find & Replace** and export. Typing in the find field selects the first match; Enter and Shift+Enter, or the arrows beside it, move between matches. Escape closes the Search Options menu.
 - **Low confidence** marks a line whose speaker Nojoin is unsure of and nobody has set by hand.
 - Notes you placed during the meeting ([Live Notes](#live-notes)) show on their own line after the line they follow.

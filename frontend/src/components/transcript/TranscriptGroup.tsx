@@ -4,6 +4,7 @@ import { memo } from "react";
 import { Pause, Play } from "lucide-react";
 
 import { getColorByKey } from "@/lib/constants";
+import { segmentSpeakerDisplayName } from "@/lib/recordingSpeakerUtils";
 import {
   GlobalSpeaker,
   RecordingSpeaker,
@@ -147,7 +148,9 @@ function TranscriptGroup({
       return leftOrder - rightOrder;
     }
 
-    return (speakerMap[left] || left).localeCompare(speakerMap[right] || right);
+    return segmentSpeakerDisplayName(speakerMap, left).localeCompare(
+      segmentSpeakerDisplayName(speakerMap, right),
+    );
   });
 
   return (
@@ -164,7 +167,9 @@ function TranscriptGroup({
             size="sm"
             // Who and when, so two groups in the same second differ.
             aria-label={`${pauses ? "Pause" : "Play"} ${SPEAKER_LIST.format(
-              involvedSpeakers.map((speaker) => speakerMap[speaker] || speaker),
+              involvedSpeakers.map((speaker) =>
+                segmentSpeakerDisplayName(speakerMap, speaker),
+              ),
             )} at ${formatTime(group.start)}`}
             title={pauses ? "Pause segment" : "Play segment"}
             onClick={() => {
@@ -210,7 +215,7 @@ function TranscriptGroup({
                   className={`min-w-0 flex flex-col rounded-xl border ${laneColor.border} bg-surface-card`}
                 >
                   <div className={`px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] ${laneColor.text} border-b border-surface-divider`}>
-                    {speakerMap[speaker] || speaker}
+                    {segmentSpeakerDisplayName(speakerMap, speaker)}
                   </div>
                   <div
                     data-testid={`overlap-lane-body-${speaker}`}
@@ -222,7 +227,7 @@ function TranscriptGroup({
                     ) : (
                       <div className="h-full w-full min-h-[50px] flex items-center justify-center border border-dashed border-control-border rounded-xl bg-surface-card">
                         <div className="flex flex-col items-center gap-0.5 opacity-60">
-                          <div className="font-semibold text-contrast-helper text-sm">{speakerMap[speaker] || speaker}</div>
+                          <div className="font-semibold text-contrast-helper text-sm">{segmentSpeakerDisplayName(speakerMap, speaker)}</div>
                           <div className="text-[11px] uppercase tracking-wider">(overlapping speech)</div>
                         </div>
                       </div>

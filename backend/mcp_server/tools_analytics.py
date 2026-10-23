@@ -353,7 +353,8 @@ async def get_meeting_analytics(recording_id: str) -> dict[str, Any]:
 
     Only meetings that have finished processing have analytics: a recording
     still capturing or processing has no speaker attribution yet, because
-    diarisation runs when the recording is finalised.
+    diarisation runs when the recording is finalised. At most its lines carry
+    provisional live labels, named "Speaker N", which the final pass replaces.
 
     Args:
         recording_id: The recording's string id from list_recordings.

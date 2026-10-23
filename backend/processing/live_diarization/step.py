@@ -96,10 +96,17 @@ def _mono_samples(audio: Any) -> np.ndarray:
     return np.asarray(samples, dtype=np.float32).reshape(-1)
 
 
-def _recording_in_flight(session, recording_id: int) -> bool:
+def _recording_in_flight(session, recording_id: int, *, lock: bool = False) -> bool:
     from backend.models.recording import Recording, RecordingStatus
 
-    recording = session.get(Recording, recording_id)
+    if lock:
+        # FOR NO KEY UPDATE: blocks a status change, not an insert that
+        # references the recording (an audio chunk, an utterance event).
+        recording = session.get(
+            Recording, recording_id, with_for_update={"key_share": True}
+        )
+    else:
+        recording = session.get(Recording, recording_id)
     return recording is not None and recording.status in {
         RecordingStatus.UPLOADING,
         RecordingStatus.PAUSED,
@@ -127,7 +134,9 @@ def _write_labels(recording_id: int, engine: LiveLabelEngine) -> LiveLabelWrite 
 
     session = get_sync_session()
     try:
-        if not _recording_in_flight(session, recording_id):
+        # Locked until the labels commit: finalize's status change waits, so no
+        # label lands after the capture has ended.
+        if not _recording_in_flight(session, recording_id, lock=True):
             return None
         write = apply_live_speaker_labels(
             session,
@@ -229,6 +238,11 @@ def run_live_speaker_labels(run: LiveLabelRun) -> None:
     device = live_speaker_labels_device()
     if device is None or (run.live_dir / DISABLED_FILENAME).exists():
         return
+    if not _still_capturing(run.recording_id):
+        # Queued behind finalize: no model pass, and no lock file made; any
+        # state still here goes.
+        remove_live_label_state(run.live_dir)
+        return
     with _recording_lock(run.live_dir) as held:
         if held:
             _label_run(run, device)
@@ -260,17 +274,24 @@ def _label_run(run: LiveLabelRun, device: str) -> None:
         write = _write_labels(run.recording_id, engine)
         ended = write is None
     finally:
-        # Saved even when the write failed: the audio is consumed, and the
-        # next run labels these lines from the saved engine.
-        if ended:
-            remove_live_label_state(run.live_dir)
-        else:
-            _save(run, engine, write)
-    if write is None:
-        return
-    # Finalize can land between the write and the save; it removes the state,
-    # and no live run comes after it, so this run removes what it just saved.
-    if not _still_capturing(run.recording_id):
-        remove_live_label_state(run.live_dir)
-        return
-    _record(run, engine, feed, write, started)
+        try:
+            # Saved even when the write failed: the audio is consumed, and the
+            # next run labels these lines from the saved engine.
+            if not ended:
+                _save(run, engine, write)
+        except FileNotFoundError:
+            # Finalize removed the files under a stalled save: once the capture
+            # has ended, that is not a failure to report.
+            if _still_capturing(run.recording_id):
+                raise
+            ended = True
+        finally:
+            # The capture can end at any point up to here (finalize, or a
+            # finalize whose master cannot be built), removing the state, and
+            # no live run comes after it. Checked after the save, so this run
+            # removes what it saved; a capture ending later is finalize's.
+            ended = ended or not _still_capturing(run.recording_id)
+            if ended:
+                remove_live_label_state(run.live_dir)
+    if write is not None and not ended:
+        _record(run, engine, feed, write, started)

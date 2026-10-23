@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   buildMeetingSpeakerColors,
   buildRecordingSpeakerDisplayMap,
+  liveSpeakerDisplayName,
+  segmentSpeakerDisplayName,
 } from "./recordingSpeakerUtils";
 import type { RecordingSpeaker } from "@/types";
 
@@ -130,5 +132,33 @@ describe("recordingSpeakerUtils", () => {
 
     expect(speakerMap.SPEAKER_00).toBe("Ezra Klein");
     expect(speakerMap["Speaker 1"]).toBe("Ezra Klein");
+  });
+});
+
+describe("live speaker labels", () => {
+  it("names only a live label", () => {
+    expect(liveSpeakerDisplayName("LIVE_PROVISIONAL_3")).toBe("Speaker 3");
+    expect(liveSpeakerDisplayName("LIVE_PROVISIONAL_12")).toBe("Speaker 12");
+    // LIVE_3 is the older live label, which the pipeline makes a speaker of.
+    for (const label of [
+      "SPEAKER_03",
+      "UNKNOWN",
+      "LIVE_3",
+      "LIVE_PROVISIONAL_",
+      "LIVE_PROVISIONAL_3a",
+      "xLIVE_PROVISIONAL_3",
+      null,
+      undefined,
+    ]) {
+      expect(liveSpeakerDisplayName(label)).toBeNull();
+    }
+  });
+
+  it("prefers the recording's name, then Speaker N, then the label", () => {
+    const speakerMap = { SPEAKER_00: "Dana", LIVE_PROVISIONAL_4: "Ada" };
+    expect(segmentSpeakerDisplayName(speakerMap, "SPEAKER_00")).toBe("Dana");
+    expect(segmentSpeakerDisplayName(speakerMap, "LIVE_PROVISIONAL_4")).toBe("Ada");
+    expect(segmentSpeakerDisplayName(speakerMap, "LIVE_PROVISIONAL_7")).toBe("Speaker 7");
+    expect(segmentSpeakerDisplayName(speakerMap, "SPEAKER_09")).toBe("SPEAKER_09");
   });
 });
