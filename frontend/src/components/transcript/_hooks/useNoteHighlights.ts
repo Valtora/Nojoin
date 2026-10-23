@@ -43,6 +43,18 @@ export function useNoteHighlights(
     [notes, lines],
   );
 
+  // What each unanchored note's span reads now, read once with the marks:
+  // the note lines ask on every render, playback ticks included.
+  const changed = useMemo(() => {
+    const byNote = new Map<string, { nowReads: string }>();
+    for (const [noteId, resolution] of highlights.byNote) {
+      if (resolution.state === "unanchored") {
+        byNote.set(noteId, { nowReads: textOfRanges(resolution.bestGuess, lines) });
+      }
+    }
+    return byNote;
+  }, [highlights, lines]);
+
   const noteDecorations = useCallback(
     (segmentId: string): readonly TextDecoration[] => highlights.byLine.get(segmentId) ?? NO_MARKS,
     [highlights],
@@ -50,12 +62,8 @@ export function useNoteHighlights(
 
   /** For a note whose words aren't in the transcript now, what its span reads; else null. */
   const wordsChanged = useCallback(
-    (noteId: string): { nowReads: string } | null => {
-      const resolution = highlights.byNote.get(noteId);
-      if (resolution?.state !== "unanchored") return null;
-      return { nowReads: textOfRanges(resolution.bestGuess, lines) };
-    },
-    [highlights, lines],
+    (noteId: string): { nowReads: string } | null => changed.get(noteId) ?? null,
+    [changed],
   );
 
   return { noteDecorations, wordsChanged };
