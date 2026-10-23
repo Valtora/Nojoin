@@ -115,7 +115,7 @@ If transcription fails, the recording is marked **Error**, a notification says s
 
 ## Transcript And Playback
 
-A processed meeting has **Transcript**, **Notes**, **Documents** and **Analytics** tabs. On desktop the **Speakers** and **Chat** panels share a resizable column beside them; on a phone, **Speakers** is in the header's actions menu. The header also holds the meeting's tags and its linked calendar event. The panels and the recordings list collapse from their headers and stay as you left them.
+A processed meeting has **Transcript**, **Notes**, **Documents** and **Analytics** tabs. On desktop the **Speakers** and **Chat** panels share a resizable column beside them; on a phone, **Speakers** is a fifth tab. The header also holds the meeting's tags and its linked calendar event. The panels and the recordings list collapse from their headers and stay as you left them.
 
 In the transcript:
 

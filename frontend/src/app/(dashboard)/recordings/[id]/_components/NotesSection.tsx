@@ -48,6 +48,9 @@ export default function NotesSection({
 
   return (
     <div
+      role="tabpanel"
+      id="panel-notes"
+      aria-labelledby="tab-notes"
       className={`absolute inset-0 flex flex-col ${active ? "z-10 visible" : "z-0 invisible"}`}
     >
       {showStaleBanner && (

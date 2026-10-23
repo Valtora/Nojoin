@@ -1,6 +1,7 @@
 "use client";
 
-import type { RefObject } from "react";
+import { ChevronsLeft, ChevronsRight } from "lucide-react";
+import { useEffect, useRef, type RefObject } from "react";
 
 import { useNavigationStore, type ActivePanel } from "@/lib/store";
 import {
@@ -18,6 +19,7 @@ import TranscriptSection from "./TranscriptSection";
 import NotesSection from "./NotesSection";
 import DocumentsSection from "./DocumentsSection";
 import AnalyticsSection from "./AnalyticsSection";
+import { useScrollEdges } from "../_hooks/useScrollEdges";
 
 interface RecordingMainContentProps {
   recording: Recording;
@@ -85,12 +87,42 @@ interface RecordingMainContentProps {
   onNotesRedo: () => void;
 }
 
-const tabClassName = (active: boolean) =>
-  `flex min-w-0 items-center justify-center border-b-2 px-3 py-2.5 text-[13px] font-medium transition-colors md:px-6 md:py-3 md:text-sm ${
+// On mobile the row scrolls sideways, so each tab keeps its full label.
+const tabClassName = (active: boolean, isMobile: boolean) =>
+  `flex ${isMobile ? "flex-1 shrink-0" : "min-w-0"} items-center justify-center border-b-2 px-3 py-2.5 text-[13px] font-medium transition-colors md:px-6 md:py-3 md:text-sm ${
     active
       ? "border-action text-action-text bg-surface-card"
       : "border-transparent text-contrast-helper hover:text-foreground hover:bg-surface-inset"
   }`;
+
+// On desktop the speaker panel lives in the side column, so it has no tab.
+const TABS: { panel: ActivePanel; label: string }[] = [
+  { panel: "transcript", label: "Transcript" },
+  { panel: "notes", label: "Notes" },
+  { panel: "documents", label: "Documents" },
+  { panel: "analytics", label: "Analytics" },
+];
+const MOBILE_TABS = [...TABS, { panel: "speakers" as const, label: "Speakers" }];
+
+// Marks a side of the mobile tab row with tabs scrolled out of view. Decorative:
+// the tabs themselves stay reachable, and a tap passes through to the one below.
+// The row is inset over card, so the fade stacks both to match it.
+function MoreTabsHint({ side }: { side: "left" | "right" }) {
+  const Icon = side === "left" ? ChevronsLeft : ChevronsRight;
+  return (
+    <div
+      aria-hidden="true"
+      data-testid={`more-tabs-${side}`}
+      className={`pointer-events-none absolute top-0 bottom-0.5 z-10 from-surface-card from-50% to-transparent ${side === "left" ? "left-0 bg-linear-to-r" : "right-0 bg-linear-to-l"}`}
+    >
+      <div
+        className={`flex h-full w-8 items-center from-surface-inset from-50% to-transparent px-1 text-contrast-helper ${side === "left" ? "justify-start bg-linear-to-r" : "justify-end bg-linear-to-l"}`}
+      >
+        <Icon className="h-4 w-4" />
+      </div>
+    </div>
+  );
+}
 
 export default function RecordingMainContent({
   recording,
@@ -144,6 +176,17 @@ export default function RecordingMainContent({
   const setSpeakerPanelCollapsed = useNavigationStore(
     (state) => state.setSpeakerPanelCollapsed,
   );
+  const tablistRef = useRef<HTMLDivElement>(null);
+  const tabsOutOfView = useScrollEdges(tablistRef, isMobile);
+
+  // A tab chosen other than by a tap on the row (the page reopening on the
+  // panel last used, Analytics' link to the speakers) may sit past its edge.
+  useEffect(() => {
+    if (!isMobile) return;
+    tablistRef.current
+      ?.querySelector(`#tab-${activePanel}`)
+      ?.scrollIntoView({ inline: "nearest", block: "nearest" });
+  }, [isMobile, activePanel]);
 
   return (
     <div className="flex-1 flex flex-col min-h-0 h-full">
@@ -167,49 +210,33 @@ export default function RecordingMainContent({
         onTimeUpdate={onTimeUpdate}
         onPlay={() => setIsPlaying(true)}
         onPause={() => setIsPlaying(false)}
-        onShowSpeakers={
-          isMobile
-            ? () => {
-                setActivePanel("speakers");
-                setIsMobileHeaderActionsOpen(false);
-              }
-            : undefined
-        }
       />
 
-      {/* Panel Tabs. Four on every viewport: five labels do not fit legibly at
-          360px, so on mobile the speaker panel is reached from the header's
-          actions menu, and on desktop it lives in the side column. */}
-      <div className="shrink-0 bg-surface-inset">
-        <div className="grid grid-cols-4 border-b-2 border-surface-border">
-          <button
-            id="tab-transcript"
-            onClick={() => setActivePanel("transcript")}
-            className={tabClassName(activePanel === "transcript")}
-          >
-            <span className="truncate">Transcript</span>
-          </button>
-          <button
-            id="tab-notes"
-            onClick={() => setActivePanel("notes")}
-            className={tabClassName(activePanel === "notes")}
-          >
-            <span className="truncate">Notes</span>
-          </button>
-          <button
-            id="tab-documents"
-            onClick={() => setActivePanel("documents")}
-            className={tabClassName(activePanel === "documents")}
-          >
-            <span className="truncate">Documents</span>
-          </button>
-          <button
-            id="tab-analytics"
-            onClick={() => setActivePanel("analytics")}
-            className={tabClassName(activePanel === "analytics")}
-          >
-            <span className="truncate">Analytics</span>
-          </button>
+      {/* Panel Tabs. On mobile, Speakers is a fifth tab and the row scrolls
+          sideways; on desktop the speaker panel lives in the side column. */}
+      <div className="relative shrink-0 bg-surface-inset">
+        {tabsOutOfView.left && <MoreTabsHint side="left" />}
+        {tabsOutOfView.right && <MoreTabsHint side="right" />}
+        <div
+          ref={tablistRef}
+          role="tablist"
+          aria-label="Meeting panels"
+          className={`${isMobile ? "flex overflow-x-auto" : "grid grid-cols-4"} border-b-2 border-surface-border`}
+        >
+          {(isMobile ? MOBILE_TABS : TABS).map(({ panel, label }) => (
+            <button
+              key={panel}
+              type="button"
+              role="tab"
+              id={`tab-${panel}`}
+              aria-selected={activePanel === panel}
+              aria-controls={`panel-${panel}`}
+              onClick={() => setActivePanel(panel)}
+              className={tabClassName(activePanel === panel, isMobile)}
+            >
+              <span className="truncate">{label}</span>
+            </button>
+          ))}
         </div>
       </div>
 
@@ -276,6 +303,9 @@ export default function RecordingMainContent({
 
         {isMobile && (
           <div
+            role="tabpanel"
+            id="panel-speakers"
+            aria-labelledby="tab-speakers"
             className={`absolute inset-0 flex flex-col ${activePanel === "speakers" ? "z-10 visible" : "z-0 invisible"}`}
           >
             <SpeakerPanel

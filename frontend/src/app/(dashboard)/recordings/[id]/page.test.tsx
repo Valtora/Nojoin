@@ -6,6 +6,7 @@ import {
   renderWithProviders,
   screen,
   waitFor,
+  within,
 } from "@/test/renderWithProviders";
 import {
   RecordingStatus,
@@ -275,9 +276,12 @@ describe("RecordingPage (detail)", () => {
     getGlobalSpeakers.mockResolvedValue([]);
     getTranscriptUtterances.mockResolvedValue(buildUtteranceList());
     renameRecording.mockResolvedValue(undefined);
+    // jsdom has no layout, so no scrollIntoView; the phone's tab row calls it.
+    Element.prototype.scrollIntoView = scrollIntoView.mockReset();
   });
 
   afterEach(() => {
+    Element.prototype.scrollIntoView = originalScrollIntoView;
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
@@ -587,6 +591,88 @@ describe("RecordingPage (detail)", () => {
     expect(clearanceAncestors(transcript)).toHaveLength(0);
   });
 
+  // On a phone the speaker panel opens in the tab area, so it has a tab of its
+  // own: with none, no tab shows as current and nothing leads back (#650).
+  it("gives the speaker panel a fifth tab on a phone, current while it is open", async () => {
+    activePanel = "speakers";
+    const tablist = await openTabs(360);
+
+    expect(tabLabels(tablist)).toEqual([
+      "Transcript", "Notes", "Documents", "Analytics", "Speakers",
+    ]);
+    expect(within(tablist).getAllByRole("tab", { selected: true })).toEqual([
+      within(tablist).getByRole("tab", { name: "Speakers" }),
+    ]);
+  });
+
+  // The phone's row scrolls sideways, and Speakers starts past its edge at
+  // 360 px; opened from elsewhere (Analytics' link), its tab is brought into view.
+  it("scrolls the phone's current tab into view when it was chosen without a tap", async () => {
+    activePanel = "speakers";
+    const tablist = await openTabs(360);
+
+    const speakersTab = within(tablist).getByRole("tab", { name: "Speakers" });
+    await waitFor(() => {
+      expect(scrollIntoView.mock.contexts).toContain(speakersTab);
+    });
+    expect(scrollIntoView).toHaveBeenCalledWith({ inline: "nearest", block: "nearest" });
+  });
+
+  // jsdom has no layout, so the row's geometry is set by hand; the hints are
+  // read from it on scroll.
+  it.each([
+    ["at the start", 0, 400, ["right"]],
+    ["within a pixel of the start", 0.5, 400, ["right"]],
+    ["in the middle", 20, 400, ["left", "right"]],
+    ["at the end", 40, 400, ["left"]],
+    ["within a pixel of the end", 39.5, 400, ["left"]],
+    ["when every tab fits", 0, 360, []],
+  ])("marks the sides with tabs out of view %s", async (_, scrollLeft, scrollWidth, sides) => {
+    const tablist = await openTabs(360);
+
+    for (const [key, value] of Object.entries({ scrollLeft, scrollWidth, clientWidth: 360 })) {
+      Object.defineProperty(tablist, key, { configurable: true, value });
+    }
+    fireEvent.scroll(tablist);
+
+    expect(
+      ["left", "right"].filter((side) => screen.queryByTestId(`more-tabs-${side}`)),
+    ).toEqual(sides);
+  });
+
+  it("switches panels from the phone's tabs, and has no Speakers item in the actions menu", async () => {
+    const tablist = await openTabs(360);
+
+    fireEvent.click(within(tablist).getByRole("tab", { name: "Speakers" }));
+    expect(setActivePanel).toHaveBeenLastCalledWith("speakers");
+    fireEvent.click(within(tablist).getByRole("tab", { name: "Notes" }));
+    expect(setActivePanel).toHaveBeenLastCalledWith("notes");
+
+    fireEvent.click(screen.getByRole("button", { name: "Show meeting actions" }));
+    expect(screen.queryByRole("button", { name: "Speakers" })).toBeNull();
+  });
+
+  it("keeps four tabs on desktop, where the speaker panel is in the side column", async () => {
+    const tablist = await openTabs(1440);
+
+    expect(tabLabels(tablist)).toEqual([
+      "Transcript", "Notes", "Documents", "Analytics",
+    ]);
+    expect(
+      within(tablist).getByRole("tab", { name: "Transcript", selected: true }),
+    ).toBeInTheDocument();
+  });
+
+  it.each([360, 1440])("ties each tab to the panel it shows, at %i px", async (width) => {
+    const tablist = await openTabs(width);
+
+    for (const tab of within(tablist).getAllByRole("tab")) {
+      const panel = document.getElementById(tab.getAttribute("aria-controls") ?? "");
+      expect(panel).toHaveAttribute("role", "tabpanel");
+      expect(panel).toHaveAttribute("aria-labelledby", tab.id);
+    }
+  });
+
   it("does not toast a notes error that was already there when the page opened", async () => {
     getRecording.mockResolvedValue(
       buildRecording({
@@ -619,6 +705,19 @@ describe("RecordingPage (detail)", () => {
     });
   });
 });
+
+const originalScrollIntoView = Element.prototype.scrollIntoView;
+const scrollIntoView = vi.fn();
+
+async function openTabs(width: number): Promise<HTMLElement> {
+  vi.stubGlobal("innerWidth", width);
+  vi.stubGlobal("innerHeight", 800);
+  renderPage();
+  return screen.findByRole("tablist", { name: "Meeting panels" });
+}
+
+const tabLabels = (tablist: HTMLElement) =>
+  within(tablist).getAllByRole("tab").map((tab) => tab.textContent);
 
 function clearanceAncestors(element: HTMLElement): HTMLElement[] {
   const found: HTMLElement[] = [];

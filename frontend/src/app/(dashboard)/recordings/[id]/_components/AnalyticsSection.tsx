@@ -31,6 +31,9 @@ export default function AnalyticsSection({
 }: AnalyticsSectionProps) {
   return (
     <div
+      role="tabpanel"
+      id="panel-analytics"
+      aria-labelledby="tab-analytics"
       className={`absolute inset-0 flex flex-col ${active ? "z-10 visible" : "z-0 invisible"}`}
     >
       {/* Mounted only once the tab has been opened, so an unopened tab costs
