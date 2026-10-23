@@ -783,7 +783,11 @@ async function openTabs(width: number): Promise<HTMLElement> {
   vi.stubGlobal("innerWidth", width);
   vi.stubGlobal("innerHeight", 800);
   renderPage();
-  return screen.findByRole("tablist", { name: "Meeting panels" });
+  const tablist = await screen.findByRole("tablist", { name: "Meeting panels" });
+  // Finding the row doesn't wait for its effects; flush them so the scroll
+  // listener is attached before a test scrolls it.
+  await act(async () => {});
+  return tablist;
 }
 
 const tabLabels = (tablist: HTMLElement) =>
