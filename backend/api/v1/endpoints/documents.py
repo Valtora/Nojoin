@@ -23,6 +23,7 @@ from backend.models.user import User
 from backend.processing.documents import SUPPORTED_EXTENSIONS
 from backend.services.recording_identity_service import get_recording_by_public_id
 from backend.utils.document_storage import (
+    RecordingGoneError,
     delete_document_files,
     insert_document_or_remove_file,
 )
@@ -57,6 +58,14 @@ async def _get_owned_recording(
     if recording is None:
         raise HTTPException(status_code=404, detail="Recording not found")
     return recording
+
+
+async def _insert_document(db: AsyncSession, document: Document) -> None:
+    """Insert a new document's row, answering 404 if its recording went meanwhile."""
+    try:
+        await insert_document_or_remove_file(db, document, logger=logger)
+    except RecordingGoneError as error:
+        raise HTTPException(status_code=404, detail="Recording not found") from error
 
 
 # Configuration for documents storage. Resolved through PathManager so it tracks
@@ -96,7 +105,7 @@ async def create_text_document(
         status=DocumentStatus.PENDING,
         parse_mode=DocumentParseMode.STRUCTURAL,
     )
-    await insert_document_or_remove_file(db, document, logger=logger)
+    await _insert_document(db, document)
     await db.commit()
     await db.refresh(document)
 
@@ -294,7 +303,7 @@ async def upload_document(  # noqa: PLR0913 - FastAPI dependencies are parameter
             DocumentParseMode.VISUAL if deep_parse else DocumentParseMode.STRUCTURAL
         ),
     )
-    await insert_document_or_remove_file(db, document, logger=logger)
+    await _insert_document(db, document)
     await db.commit()
     await db.refresh(document)
 

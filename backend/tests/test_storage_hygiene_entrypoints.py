@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 import tempfile
 import uuid
 from collections.abc import Iterator
@@ -446,3 +447,30 @@ def test_a_failing_hygiene_run_does_not_fail_the_daily_cleanup(
     ]
     assert len(failure) == 1
     assert failure[0].exc_info is not None
+
+
+def test_a_hygiene_module_that_fails_to_load_does_not_stop_the_daily_cleanup(
+    layout: Layout,
+    daily_mode: str,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The sweeps before hygiene must still run when its import fails.
+
+    #660 put a FastAPI import on the hygiene path, which the worker images do
+    not install. The task imported hygiene on its first line, so it failed
+    before any sweep ran.
+    """
+    monkeypatch.setitem(sys.modules, "backend.utils.storage_hygiene", None)
+    stale = write_file(layout.recordings / "failed" / "1_failed_x.wav", age_hours=72)
+
+    with caplog.at_level(logging.ERROR):
+        system_tasks.cleanup_temp_recordings.run()
+
+    assert not stale.exists(), daily_mode
+    failure = [
+        r for r in caplog.records if r.getMessage().startswith("Storage hygiene failed")
+    ]
+    assert len(failure) == 1
+    assert failure[0].exc_info is not None
+    assert isinstance(failure[0].exc_info[1], ImportError)
