@@ -58,18 +58,41 @@ def _transcribe_seeded(model, audio_path: str, device: str, **kwargs) -> dict:
         return model.transcribe(audio_path, **kwargs)
 
 
-def _first_speech(muted_path: str) -> np.ndarray:
-    """Up to the first 30 s of speech in a VAD-muted file, its gaps closed up.
+# Each silence in the detection window is cut to this many samples (100 ms)
+# rather than closed up: Whisper hears speech with short pauses more surely than
+# speech spliced end to end. On 13 English recordings it raised the top-language
+# probability on 10, lowered it on none, and got every language right (#673).
+DETECTION_GAP_SAMPLES = whisper.audio.SAMPLE_RATE // 10
 
-    Every sample VAD dropped is an exact zero there, so the nonzero samples are
-    the speech, in order. Reads only as far as it needs.
+
+def _cap_gaps(block: np.ndarray, run: int) -> tuple[np.ndarray, int]:
+    """``block`` with every run of exact zeros cut to DETECTION_GAP_SAMPLES.
+
+    ``run`` is the length of the zero run the previous block ended on, so a
+    silence across two blocks is cut once. Returns the kept samples and the
+    length of the zero run this block ends on.
+    """
+    index = np.arange(block.size)
+    last_sound = np.maximum.accumulate(np.where(block != 0, index, -1))
+    zeros_so_far = np.where(last_sound < 0, index + 1 + run, index - last_sound)
+    keep = (block != 0) | (zeros_so_far <= DETECTION_GAP_SAMPLES)
+    ends_silent = block.size > 0 and block[-1] == 0
+    return block[keep], int(zeros_so_far[-1]) if ends_silent else 0
+
+
+def _first_speech(muted_path: str) -> np.ndarray:
+    """The first 30 s of a VAD-muted file with every silence cut to 100 ms.
+
+    Every sample VAD dropped is an exact zero there, so what is left is the
+    speech, in order, with short pauses. Reads only as far as it needs.
     """
     window = whisper.audio.N_SAMPLES
     speech: list[np.ndarray] = []
-    found = 0
+    found = run = 0
     for block in soundfile.blocks(muted_path, blocksize=window, dtype="float32"):
-        speech.append(block[block != 0])
-        found += speech[-1].size
+        kept, run = _cap_gaps(block, run)
+        speech.append(kept)
+        found += kept.size
         if found >= window:
             break
     return np.concatenate(speech)[:window]
@@ -84,14 +107,28 @@ def _detect_language_on_speech(model, config: dict | None) -> str | None:
     be mostly zeros, which gave English only narrowly. So whenever VAD ran,
     detect on the first 30 s of its speech instead, whichever file the engine
     reads. With VAD off there is no speech map: return None and Whisper detects
-    on its own input, as before.
+    on its own input, as before. So does any failure here: detection only picks
+    the language, and must never fail a transcription that would have run.
     """
     muted_path = (config or {}).get(LANGUAGE_DETECTION_AUDIO)
-    if not muted_path:
+    if not muted_path or not model.is_multilingual:
         return None
-    speech = _first_speech(muted_path)
-    mel = whisper.log_mel_spectrogram(whisper.pad_or_trim(speech), model.dims.n_mels)
-    _, probs = model.detect_language(mel.to(model.device))
+    try:
+        speech = _first_speech(muted_path)
+        mel = whisper.log_mel_spectrogram(
+            whisper.pad_or_trim(speech), model.dims.n_mels
+        )
+        _, probs = model.detect_language(mel.to(model.device))
+    except (ValueError, RuntimeError, OSError) as e:
+        # soundfile's LibsndfileError is a RuntimeError: caught here, it never
+        # reaches the caller's RuntimeError branch that drops the cached model.
+        logger.warning(
+            "Language detection on VAD speech in %s failed (%s); Whisper detects "
+            "on its own input instead",
+            muted_path,
+            e,
+        )
+        return None
     language = max(probs, key=probs.get)
     logger.info(
         "Detected language %s (p=%.2f) on the first %.1f s of VAD speech in %s",

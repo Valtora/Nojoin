@@ -49,13 +49,17 @@ class _FakeModel:
 
     dims = types.SimpleNamespace(n_mels=80)
     device = torch.device("cpu")
+    is_multilingual = True
 
     def __init__(self):
         self.detected_on: list[torch.Tensor] = []
         self.transcribed: list[tuple[str, dict]] = []
+        self.detection_error: Exception | None = None
 
     def detect_language(self, mel):
         self.detected_on.append(mel)
+        if self.detection_error:
+            raise self.detection_error
         return torch.tensor(0), {"en": 0.9, "ja": 0.1}
 
     def transcribe(self, audio_path, **kwargs):
@@ -71,25 +75,30 @@ def model(monkeypatch):
     return fake
 
 
-def _write_pair(tmp_path, muted: np.ndarray) -> dict:
+def _write_pair(tmp_path, muted: np.ndarray, subtype: str = "FLOAT") -> dict:
     """The VAD stage's two files: ``muted``, and it with room noise everywhere."""
     noise = np.random.default_rng(0).normal(0, 0.01, muted.size).astype(np.float32)
     paths = {"muted": str(tmp_path / "rec_vad_processed.wav")}
     paths["unmuted"] = str(tmp_path / "rec_vad.wav")
-    soundfile.write(paths["muted"], muted, RATE, subtype="FLOAT")
-    soundfile.write(paths["unmuted"], muted + noise, RATE, subtype="FLOAT")
+    soundfile.write(paths["muted"], muted, RATE, subtype=subtype)
+    soundfile.write(paths["unmuted"], muted + noise, RATE, subtype=subtype)
     return paths
+
+
+# Whisper hears each silence of the detection window cut to 100 ms.
+GAP = _silence(0.1)
+WINDOW = 30 * RATE
 
 
 @pytest.fixture
 def files(tmp_path):
-    """Speech at 5-15 s and 25-55 s; its first 30 s are the first stretch and
-    20 s of the second."""
+    """Speech at 5-15 s and 25-55 s. The detection window is a 100 ms pause, the
+    first stretch, another 100 ms pause, and the second stretch to 30 s."""
     first, second = _tone(10, 0.1, 220), _tone(30, 0.2, 440)
     paths = _write_pair(
         tmp_path, np.concatenate([_silence(5), first, _silence(10), second])
     )
-    paths["speech"] = np.concatenate([first, second[: 20 * RATE]])
+    paths["speech"] = np.concatenate([GAP, first, GAP, second])[:WINDOW]
     return paths
 
 
@@ -119,15 +128,75 @@ def test_auto_language_is_detected_on_the_speech(model, files, muted):
     assert result["language"] == "en"
 
 
+def test_a_silence_across_two_reads_is_cut_once(model, tmp_path):
+    """The file is read 30 s at a time; a pause spanning 30 s still keeps 100 ms."""
+    first, second = _tone(29, 0.1, 220), _tone(9, 0.2, 440)
+    files = _write_pair(tmp_path, np.concatenate([first, _silence(2), second]))
+
+    WhisperEngine().transcribe(files["unmuted"], _auto(files, muted=False))
+
+    speech = np.concatenate([first, GAP, second])[:WINDOW]
+    assert torch.equal(model.detected_on[0], whisper.log_mel_spectrogram(speech, 80))
+
+
 def test_under_30_s_of_speech_is_padded_to_whispers_window(model, tmp_path):
     speech = _tone(12, 0.1, 220)
     files = _write_pair(tmp_path, np.concatenate([_silence(3), speech, _silence(3)]))
 
     WhisperEngine().transcribe(files["unmuted"], _auto(files, muted=False))
 
-    expected = whisper.log_mel_spectrogram(whisper.pad_or_trim(speech), 80)
+    window = whisper.pad_or_trim(np.concatenate([GAP, speech, GAP]))
+    expected = whisper.log_mel_spectrogram(window, 80)
     assert torch.equal(model.detected_on[0], expected)
     assert model.transcribed[0][1]["language"] == "en"
+
+
+def test_a_16_bit_muted_file_is_read_the_same_way(model, tmp_path):
+    """The VAD stage writes 16-bit PCM: its speech, read back, is what is heard."""
+    first, second = _tone(10, 0.1, 220), _tone(30, 0.2, 440)
+    muted = np.concatenate([_silence(5), first, _silence(10), second])
+    files = _write_pair(tmp_path, muted, subtype="PCM_16")
+    stored, _ = soundfile.read(files["muted"], dtype="float32")
+
+    WhisperEngine().transcribe(files["unmuted"], _auto(files, muted=False))
+
+    parts = [GAP, stored[5 * RATE : 15 * RATE], GAP, stored[25 * RATE :]]
+    expected = whisper.log_mel_spectrogram(np.concatenate(parts)[:WINDOW], 80)
+    assert torch.equal(model.detected_on[0], expected)
+    assert model.transcribed[0][1]["language"] == "en"
+
+
+def test_a_failed_detection_leaves_the_language_to_whisper(model, files):
+    model.detection_error = RuntimeError("CUDA error: device-side assert")
+
+    result = WhisperEngine().transcribe(files["unmuted"], _auto(files, muted=False))
+
+    assert len(model.detected_on) == 1
+    assert "language" not in model.transcribed[0][1]
+    assert result["language"] == "ja"
+
+
+def test_an_unreadable_detection_file_keeps_the_loaded_model(model, files, tmp_path):
+    """soundfile's error is a RuntimeError; it must not reach the branch that
+    drops the cached model after a failed transcription."""
+    broken = tmp_path / "broken_vad_processed.wav"
+    broken.write_bytes(b"not a wav file")
+    config = {**_auto(files, muted=False), LANGUAGE_DETECTION_AUDIO: str(broken)}
+
+    WhisperEngine().transcribe(files["unmuted"], config)
+
+    assert model.detected_on == []
+    assert "language" not in model.transcribed[0][1]
+    assert list(whisper_engine._model_cache.values()) == [model]
+
+
+def test_an_english_only_model_is_not_asked_to_detect(model, files):
+    model.is_multilingual = False
+
+    WhisperEngine().transcribe(files["unmuted"], _auto(files, muted=False))
+
+    assert model.detected_on == []
+    assert "language" not in model.transcribed[0][1]
 
 
 def test_a_set_language_is_used_without_detection(model, files):

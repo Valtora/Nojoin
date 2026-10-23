@@ -225,7 +225,7 @@ The engine and its model are install-wide settings.
 
 Each user's transcription language reaches live, final, import and reprocess ASR and is part of the ASR result hash. Whisper gets a language when one is selected, Canary gets its source-language parameter, and Parakeet always auto-detects.
 
-- On automatic, Whisper would detect the language from the first 30 s of the file it reads: room noise in the unmuted file, mostly zeros in the muted one. So when VAD ran, the engine first detects on the first 30 s of speech in the muted file (`LANGUAGE_DETECTION_AUDIO`, its gaps closed up), whichever file it transcribes, and transcribes with that language (#671). With VAD off, Whisper detects on its own input as before.
+- On automatic, Whisper would detect the language from the first 30 s of the file it reads: room noise in the unmuted file, mostly zeros in the muted one. So when VAD ran, the engine first detects on the first 30 s of speech in the muted file (`LANGUAGE_DETECTION_AUDIO`, each silence cut to 100 ms), whichever file it transcribes, and transcribes with that language (#671). With VAD off, or if that detection fails, Whisper detects on its own input as before.
 
 ### Words In Digital Silence
 
