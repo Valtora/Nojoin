@@ -386,7 +386,9 @@ describe("leaving the page with a note's change unsaved", () => {
 
     answer({ ...EXACT, body: "Mine", revision: 4 });
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    expect(leave()).toBe(false);
+    // The editor lets go in its unmount effect, which React may run after
+    // the commit that took the dialog away.
+    await waitFor(() => expect(leave()).toBe(false));
   });
 
   it("asks while a refused delete is still open, and not once it is given up", async () => {
