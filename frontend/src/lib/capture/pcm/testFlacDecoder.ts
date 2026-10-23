@@ -1,13 +1,31 @@
 /**
  * A FLAC decoder for tests: just the subset `encodeFlac` writes.
  *
- * STREAMINFO, fixed-blocksize frames, and constant, verbatim and fixed
- * subframes with Rice-coded residuals. It checks both CRCs, so a round trip
- * through it proves the stream is well formed as well as lossless. The backend
- * test of the golden fixture checks the same stream against libFLAC.
+ * STREAMINFO, fixed- and variable-blocksize frames (the second from
+ * `joinFlacSegments`), and constant, verbatim and fixed subframes with
+ * Rice-coded residuals. It checks both CRCs, so a round trip through it
+ * proves the stream is well formed as well as lossless. The backend tests of
+ * the golden fixtures check the same streams against libFLAC.
  */
 
 import { crc16, crc8 } from "./flacEncoder";
+
+/**
+ * The samples in the golden fixtures. Integer-only, so the Python test can
+ * generate identical samples.
+ */
+export const goldenPcm = (frames = 5_000) => {
+  const pcm = new Int16Array(frames * 2);
+  let state = 1;
+  for (let index = 0; index < frames; index += 1) {
+    state = (Math.imul(state, 1103515245) + 12345) & 0x7fffffff;
+    const noise = ((state >> 16) % 201) - 100;
+    const saw = ((index * 29) % 4000) - 2000;
+    pcm[index * 2] = index < 1_200 ? 0 : saw + noise;
+    pcm[index * 2 + 1] = (Math.floor(index / 50) % 2) * 6000 - 3000 + Math.floor(noise / 4);
+  }
+  return pcm;
+};
 
 class BitReader {
   private position = 0;
@@ -172,19 +190,27 @@ export const decodeFlac = (bytes: Uint8Array): DecodedFlac => {
   const samples = new Int16Array(info.totalFrames * info.channels);
   let written = 0;
   let expectedFrameNumber = 0;
+  let blocking: number | null = null;
   while (!reader.exhausted) {
     const frameStart = reader.bytePosition;
-    if (reader.readBits(14) !== 0b11111111111110) {
+    if (reader.readBits(15) !== 0b111111111111100) {
       throw new Error("Lost frame sync.");
     }
-    reader.readBits(2);
+    const frameBlocking = reader.readBits(1);
+    if (blocking !== null && frameBlocking !== blocking) {
+      throw new Error("Frames disagree on the blocking strategy.");
+    }
+    blocking = frameBlocking;
     const blockSizeCode = reader.readBits(4);
     reader.readBits(4);
     const channels = reader.readBits(4) + 1;
     reader.readBits(4);
-    const frameNumber = readUtf8Number(reader);
-    if (frameNumber !== expectedFrameNumber) {
-      throw new Error(`Frame ${frameNumber} where ${expectedFrameNumber} was expected.`);
+    // A fixed-blocksize frame carries its frame number, a variable-blocksize
+    // one the number of its first sample.
+    const number = readUtf8Number(reader);
+    const expected = blocking === 1 ? written / info.channels : expectedFrameNumber;
+    if (number !== expected) {
+      throw new Error(`Frame numbered ${number} where ${expected} was expected.`);
     }
     expectedFrameNumber += 1;
     let blockSize = 4096;

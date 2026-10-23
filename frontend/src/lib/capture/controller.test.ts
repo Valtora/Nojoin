@@ -9,7 +9,10 @@ import {
 } from "@/lib/session";
 
 import { CaptureController } from "./controller";
+import { LEFT_OUT_AUDIO_KEEP_MS, type LeftOutAudio, type LeftOutAudioStore } from "./leftOutAudio";
 import { sendPauseBeacon } from "./lifecycle";
+import { encodeFlac } from "./pcm/flacEncoder";
+import { decodeFlac } from "./pcm/testFlacDecoder";
 import { PickSourceError } from "./pickSource";
 import { createBrowserRecorder } from "./recorder";
 import type { SegmentStore } from "./segmentStore";
@@ -209,6 +212,7 @@ vi.mock("./uploader", () => ({
     waitForIdle: vi.fn(),
     recover: vi.fn(() => true),
     dispose: vi.fn(),
+    settled: vi.fn(async () => {}),
     pendingSegmentCount: vi.fn(() => 0),
     pendingAudioSeconds: vi.fn(() => 0),
   })),
@@ -2657,6 +2661,179 @@ describe("a capture taken over or stopped elsewhere (issues #570, #590)", () => 
       expect(started.controller.getState().status).toBe("idle");
     });
   });
+
+  describe("keeping the audio it left out to download (issue #605)", () => {
+    const ALICE = 7;
+
+    /** A real 2 s capture segment, whose samples differ by sequence. */
+    const pcmFor = (sequence: number) => {
+      const pcm = new Int16Array(32_000 * 2);
+      for (let frame = 0; frame < 32_000; frame += 1) {
+        pcm[frame * 2] = Math.round(6000 * Math.sin((frame + sequence * 977) / 13));
+        pcm[frame * 2 + 1] = sequence * 10;
+      }
+      return pcm;
+    };
+
+    const flacSegment = (sequence: number, epoch: number) => ({
+      recordingId: "rec-1",
+      sequence,
+      blob: new Blob([encodeFlac(pcmFor(sequence), 2, 16_000).buffer as ArrayBuffer], {
+        type: "audio/flac",
+      }),
+      durationSeconds: 2,
+      epoch,
+      ownerId: ALICE,
+    });
+
+    const leftOutOf = (controller: CaptureController) =>
+      (controller as unknown as { leftOutAudio: LeftOutAudioStore }).leftOutAudio;
+
+    const sequencesKept = async (controller: CaptureController) =>
+      (await storeOf(controller).list("rec-1")).map((segment) => segment.sequence);
+
+    /** The samples of one joined download. */
+    const samplesOf = async (audio: LeftOutAudio) =>
+      decodeFlac(new Uint8Array(await audio.blob.arrayBuffer())).samples;
+
+    const joined = (sequences: number[]) => {
+      const all = new Int16Array(sequences.length * 32_000 * 2);
+      sequences.forEach((sequence, index) => all.set(pcmFor(sequence), index * 32_000 * 2));
+      return all;
+    };
+
+    const offered = () =>
+      notificationMocks.addNotification.mock.calls
+        .map(([notification]) => notification)
+        .filter((notification) => String(notification.id).startsWith("left-out-audio-"));
+
+    beforeEach(() => {
+      apiMocks.getUserMe.mockReset();
+      apiMocks.getUserMe.mockResolvedValue({ id: ALICE, username: "alice" });
+      apiMocks.getRecording.mockReset();
+      apiMocks.getRecording.mockResolvedValue({
+        id: "rec-1",
+        name: "Weekly sync",
+        status: "UPLOADING",
+      });
+    });
+
+    it.each([
+      ["continues elsewhere", superseded],
+      ["is stopped elsewhere", closed],
+    ])("keeps the audio a tab had not uploaded when its capture %s", async (_name, refusal) => {
+      const started = await startCapture(3);
+      for (const sequence of [5, 6]) {
+        await storeOf(started.controller).put(flacSegment(sequence, 3));
+      }
+      // Kept by an earlier tab of this browser: not this one's to move.
+      await storeOf(started.controller).put(flacSegment(2, 1));
+
+      await started.uploaderOptions.onCaptureEnded?.(refusal());
+
+      await vi.waitFor(async () => expect(await leftOutOf(started.controller).list()).toHaveLength(1));
+      const [audio] = await leftOutOf(started.controller).list();
+      expect(audio).toMatchObject({
+        recordingId: "rec-1",
+        recordingName: "Weekly sync",
+        ownerId: ALICE,
+        seconds: 4,
+      });
+      expect(await samplesOf(audio)).toEqual(joined([5, 6]));
+      expect(await sequencesKept(started.controller)).toEqual([2]);
+      await vi.waitFor(() =>
+        expect(offered()).toEqual([
+          expect.objectContaining({ id: `left-out-audio-${audio.id}`, persistent: true }),
+        ]),
+      );
+    });
+
+    it("waits for the segments the tab was still storing", async () => {
+      const started = await startCapture(3);
+      let storeLate: () => void = () => {};
+      vi.mocked(started.uploader.settled).mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            storeLate = () => {
+              void storeOf(started.controller).put(flacSegment(5, 3)).then(resolve);
+            };
+          }),
+      );
+
+      await started.uploaderOptions.onCaptureEnded?.(superseded());
+      storeLate();
+
+      await vi.waitFor(async () => expect(await leftOutOf(started.controller).list()).toHaveLength(1));
+      expect(await sequencesKept(started.controller)).toEqual([]);
+    });
+
+    it("keeps the audio a takeover in this browser leaves out", async () => {
+      const controller = track(new CaptureController());
+      for (const sequence of [5, 6, 7, 8]) {
+        await storeOf(controller).put(flacSegment(sequence, 1));
+      }
+      (controller as unknown as { state: object }).state = {
+        ...controller.getState(),
+        pausedRecording: { id: "rec-1", name: "Weekly sync" },
+      };
+      pickSourceMocks.pickCaptureSource.mockResolvedValue(microphoneSources());
+      apiMocks.resumeRecordingCapture.mockResolvedValue(lifecycle("UPLOADING", 6, 3));
+      let keptWhenRecordingBegan: number[] | null = null;
+      vi.mocked(createSegmentUploader).mockImplementationOnce((options) => {
+        void storeOf(controller)
+          .list("rec-1")
+          .then((segments) => {
+            keptWhenRecordingBegan = segments.map((segment) => segment.sequence);
+          });
+        return {
+          enqueue: vi.fn(),
+          restore: vi.fn(),
+          waitForIdle: vi.fn(),
+          recover: vi.fn(() => true),
+          dispose: vi.fn(),
+          settled: vi.fn(async () => {}),
+          pendingSegmentCount: vi.fn(() => 0),
+          pendingAudioSeconds: vi.fn(() => 0),
+          options,
+        } as never;
+      });
+
+      await controller.resume("rec-1");
+
+      const [audio] = await leftOutOf(controller).list();
+      expect(audio).toMatchObject({ recordingName: "Weekly sync", seconds: 8 });
+      expect(await samplesOf(audio)).toEqual(joined([5, 6, 7, 8]));
+      await vi.waitFor(() => expect(keptWhenRecordingBegan).toEqual([]));
+      // Offered for download, so the warning that it was lost is not given.
+      expect(notificationMocks.addNotification).not.toHaveBeenCalledWith(
+        expect.objectContaining({ message: expect.stringMatching(/was left out, because/) }),
+      );
+      // Offered again by each check, which the notification store ignores
+      // while the first is on screen.
+      await vi.waitFor(() =>
+        expect(new Set(offered().map((notification) => notification.id))).toEqual(
+          new Set([`left-out-audio-${audio.id}`]),
+        ),
+      );
+    });
+
+    it("keeps nothing of a recording discarded elsewhere", async () => {
+      noteSignedIn({ username: "alice", force_password_change: false, id: ALICE });
+      const started = await startCapture(3);
+      await storeOf(started.controller).put(flacSegment(5, 3));
+      const notFound = new AxiosError("Request failed with status code 404");
+      Object.assign(notFound, { response: { status: 404, data: { detail: "Recording not found" } } });
+      apiMocks.getRecording.mockRejectedValue(notFound);
+
+      const gone = await started.uploaderOptions.checkCaptureGone?.(notFound);
+      await started.uploaderOptions.onCaptureEnded?.(gone as Error);
+
+      // The check for finished captures removes it, as the discard asked.
+      await vi.waitFor(async () => expect(await sequencesKept(started.controller)).toEqual([]));
+      expect(await leftOutOf(started.controller).list()).toEqual([]);
+      expect(offered()).toEqual([]);
+    });
+  });
 });
 
 describe("a pause from the controls that the server does not take (issue #582)", () => {
@@ -3082,5 +3259,100 @@ describe("audio kept for a capture finished elsewhere (issue #589)", () => {
     await controller.start("Weekly sync");
 
     expect(vi.mocked(createSegmentUploader).mock.calls[0][0].ownerId).toBe(ALICE);
+  });
+
+  describe("keeping it to download rather than removing it (issue #605)", () => {
+    const BOB = 8;
+
+    const flacKept = (recordingId: string, sequence: number) => {
+      const pcm = new Int16Array(32_000 * 2).fill(sequence);
+      return {
+        ...kept(recordingId, sequence, ALICE),
+        blob: new Blob([encodeFlac(pcm, 2, 16_000).buffer as ArrayBuffer], { type: "audio/flac" }),
+      };
+    };
+
+    const leftOutOf = (controller: CaptureController) =>
+      (controller as unknown as { leftOutAudio: LeftOutAudioStore }).leftOutAudio;
+
+    const download = (id: string, ownerId: number, keptAt = Date.now()): LeftOutAudio => ({
+      id,
+      recordingId: "rec-3",
+      ownerId,
+      blob: new Blob(["fLaC"], { type: "audio/flac" }),
+      seconds: 60,
+      keptAt,
+    });
+
+    const offeredIds = () =>
+      notificationMocks.addNotification.mock.calls
+        .map(([notification]) => String(notification.id))
+        .filter((id) => id.startsWith("left-out-audio-"));
+
+    beforeEach(() => {
+      notificationMocks.addNotification.mockReset();
+    });
+
+    it("keeps it, under the recording's name, once the server reports the recording stopped", async () => {
+      const controller = new CaptureController();
+      controllers.push(controller);
+      await storeOf(controller).put(flacKept("rec-9", 4));
+      await storeOf(controller).put(flacKept("rec-9", 5));
+      apiMocks.getRecording.mockResolvedValue({ id: "rec-9", name: "Board call", status: "PROCESSED" });
+
+      await controller.refreshPausedRecording();
+      await settle(controller);
+
+      const [audio] = await leftOutOf(controller).list();
+      expect(audio).toMatchObject({
+        recordingId: "rec-9",
+        recordingName: "Board call",
+        ownerId: ALICE,
+        seconds: 4,
+      });
+      expect(await keptSequences(controller, "rec-9")).toEqual([]);
+      await vi.waitFor(() => expect(offeredIds()).toContain(`left-out-audio-${audio.id}`));
+    });
+
+    it("keeps nothing of a recording gone for the account that kept it", async () => {
+      const controller = new CaptureController();
+      controllers.push(controller);
+      await storeOf(controller).put(flacKept("rec-9", 4));
+      apiMocks.getRecording.mockRejectedValue(notFound());
+
+      await controller.refreshPausedRecording();
+      await settle(controller);
+
+      expect(await keptSequences(controller, "rec-9")).toEqual([]);
+      expect(await leftOutOf(controller).list()).toEqual([]);
+    });
+
+    it("offers what it kept only to the account that recorded it", async () => {
+      const controller = new CaptureController();
+      controllers.push(controller);
+      await leftOutOf(controller).put(download("alices", ALICE));
+      await leftOutOf(controller).put(download("bobs", BOB));
+
+      await controller.refreshPausedRecording();
+      await settle(controller);
+
+      await vi.waitFor(() => expect(offeredIds()).toEqual(["left-out-audio-alices"]));
+      expect((await leftOutOf(controller).list()).map((audio) => audio.id)).toEqual([
+        "alices",
+        "bobs",
+      ]);
+    });
+
+    it("removes what nobody took within a week", async () => {
+      const controller = new CaptureController();
+      controllers.push(controller);
+      await leftOutOf(controller).put(download("old", BOB, Date.now() - LEFT_OUT_AUDIO_KEEP_MS - 1));
+
+      await controller.refreshPausedRecording();
+      await settle(controller);
+
+      await vi.waitFor(async () => expect(await leftOutOf(controller).list()).toEqual([]));
+      expect(offeredIds()).toEqual([]);
+    });
   });
 });

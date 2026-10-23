@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { crc16, crc8, encodeFlac, FLAC_MIN_FRAMES } from "./flacEncoder";
-import { decodeFlac } from "./testFlacDecoder";
+import { decodeFlac, goldenPcm } from "./testFlacDecoder";
 
 /**
  * The golden fixture lives with the backend, whose test decodes it with
@@ -18,20 +18,6 @@ const GOLDEN_FIXTURE = resolve(
   __dirname,
   "../../../../../backend/tests/fixtures/browser_capture_golden.flac",
 );
-
-/** Integer-only, so the Python test can generate identical samples. */
-export const goldenPcm = (frames = 5_000) => {
-  const pcm = new Int16Array(frames * 2);
-  let state = 1;
-  for (let index = 0; index < frames; index += 1) {
-    state = (Math.imul(state, 1103515245) + 12345) & 0x7fffffff;
-    const noise = ((state >> 16) % 201) - 100;
-    const saw = ((index * 29) % 4000) - 2000;
-    pcm[index * 2] = index < 1_200 ? 0 : saw + noise;
-    pcm[index * 2 + 1] = (Math.floor(index / 50) % 2) * 6000 - 3000 + Math.floor(noise / 4);
-  }
-  return pcm;
-};
 
 const seeded = (seed: number) => {
   let state = seed;
