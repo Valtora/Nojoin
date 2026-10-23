@@ -36,10 +36,6 @@ EXEMPT_PREFIXES = ("backend/tests/", "backend/alembic/versions/")
 # allowed up to its recorded count and FAILS if it grows beyond it. Lower the
 # count when a file shrinks. Do not add new entries; remove them over time.
 GRANDFATHERED: dict[str, int] = {
-    # Being decomposed per-stage (mirroring the llm_services split): the
-    # meeting-intelligence and meeting-edge stages moved to their own modules.
-    # What remains is the core final-recording pipeline.
-    "backend/worker/tasks/pipeline.py": 1017,
     "backend/utils/canonical_pipeline/core.py": 1974,
     "backend/processing/live_transcribe.py": 1799,
 }

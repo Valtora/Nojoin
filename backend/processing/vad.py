@@ -12,6 +12,7 @@ from backend.processing.processing_tuning import (
     VAD_THRESHOLD_KEY,
     normalise_tuning_value,
 )
+from backend.processing.vad_muting import VAD_EDGE_MUTE_MS
 from backend.utils.audio import load_audio
 
 # silero_vad calls torch.set_num_threads(1) when it is first imported, which
@@ -66,8 +67,8 @@ def mute_non_speech_segments(
     min_silence_duration_ms: int | None = None,
     fade_duration_ms: int | None = None,
     silence_method: str | None = None,  # "mute" or "fade"
-    start_mute_ms: int = 1000,  # Mute first X ms to remove recording artifacts
-    end_mute_ms: int = 1000,  # Mute last X ms to remove recording artifacts
+    start_mute_ms: int = VAD_EDGE_MUTE_MS,  # Mute first X ms: recording artifacts
+    end_mute_ms: int = VAD_EDGE_MUTE_MS,  # Mute last X ms: recording artifacts
     config: Mapping[str, Any] | None = None,
 ) -> Tuple[bool, float]:
     """
@@ -83,8 +84,10 @@ def mute_non_speech_segments(
         min_silence_duration_ms: Minimum silence gap to preserve (default: 100ms)
         fade_duration_ms: Fade duration for smooth transitions (default: 50ms)
         silence_method: Method for handling non-speech ("mute" or "fade")
-        start_mute_ms: Duration in ms to forcibly mute at the start (default: 200ms)
-        end_mute_ms: Duration in ms to forcibly mute at the end (default: 200ms)
+        start_mute_ms: Duration in ms to forcibly mute at the start (default:
+            VAD_EDGE_MUTE_MS, 1000 ms)
+        end_mute_ms: Duration in ms to forcibly mute at the end (default:
+            VAD_EDGE_MUTE_MS, 1000 ms)
         config: The recording owner's merged settings; a valid ``vad_threshold``
             there overrides the install's VAD threshold.
 

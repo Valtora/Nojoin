@@ -32,11 +32,15 @@ import numpy as np
 import pytest
 import soundfile
 
+# Before any test patches os.path.exists, which matplotlib reads on import.
+from pyannote.core import Annotation, Segment
+
 from backend.models.recording import ClientStatus, RecordingStatus
 from backend.models.transcript import Transcript
 from backend.processing import transcribe as real_transcribe
 from backend.processing.engines.base import VAD_MUTED_INPUT
 from backend.worker import tasks as tasks_module
+from backend.worker.tasks import vad_stage
 
 
 def _install(monkeypatch, module_name: str, **attrs) -> None:
@@ -502,7 +506,8 @@ def _record_downstream_stages(monkeypatch) -> dict[str, list]:
 
 def test_asr_engine_failure_marks_transcript_and_recording_failed(monkeypatch):
     """An engine error ends in ERROR with the reason, never an empty 'completed'
-    transcript, and nothing downstream runs on the missing text."""
+    transcript, and nothing downstream runs on the missing text. Diarisation
+    ran before ASR (#670)."""
     recording = _FakeRecording(704)
     transcript = _FakeTranscript(704)
     session = _FakeSession(recording, transcript)
@@ -522,7 +527,8 @@ def test_asr_engine_failure_marks_transcript_and_recording_failed(monkeypatch):
     assert transcript.transcript_status == "error"
     assert transcript.error_message == message
     assert transcript.text is None
-    assert ran == {"diarize": [], "notes": [], "followups": []}
+    assert len(ran["diarize"]) == 1
+    assert ran["notes"] == ran["followups"] == []
 
 
 def test_asr_gpu_oom_is_retried_once_and_can_recover(monkeypatch):
@@ -787,7 +793,7 @@ def test_duplicate_resolved_name_auto_merges_and_rewrites_segments(monkeypatch):
     # A truthy diarization result gates embedding extraction (and therefore
     # global identification) on. Phantom filter + speaker_merge are best-effort.
     _install_happy_path_modules(
-        monkeypatch, diarization_result=object(), segments=consolidated
+        monkeypatch, diarization_result=_NoTurns(), segments=consolidated
     )
     _install(
         monkeypatch,
@@ -889,7 +895,7 @@ def test_unidentified_speakers_get_sequential_names(monkeypatch):
         {"start": 1.0, "end": 2.0, "speaker": "SPEAKER_01", "text": "b"},
     ]
     _install_happy_path_modules(
-        monkeypatch, diarization_result=object(), segments=consolidated
+        monkeypatch, diarization_result=_NoTurns(), segments=consolidated
     )
     _install(
         monkeypatch,
@@ -1097,7 +1103,7 @@ def test_combine_stage_receives_the_owners_merged_settings(monkeypatch):
     recording = _FakeRecording(721)
     transcript = _FakeTranscript(721)
     session = _FakeSession(recording, transcript)
-    _install_happy_path_modules(monkeypatch, diarization_result=object())
+    _install_happy_path_modules(monkeypatch, diarization_result=_NoTurns())
     _install(
         monkeypatch,
         "backend.processing.phantom_filter",
@@ -1220,6 +1226,14 @@ def test_nothing_downstream_sees_a_word_placed_in_the_muted_silence(
 
 _UNMUTED = "/tmp/recording_vad.wav"
 _MUTED = "/tmp/recording_vad_processed.wav"
+_UNION = "/tmp/recording_vad_union.wav"
+
+
+class _NoTurns:
+    """A diarisation result that turns speaker work on but holds no turns."""
+
+    def itertracks(self, yield_label=False):
+        return iter(())
 
 
 def _capture_stage_audio(monkeypatch) -> dict:
@@ -1233,7 +1247,7 @@ def _capture_stage_audio(monkeypatch) -> dict:
 
     def _diarize(path, *a, **k):
         seen["diarize"] = path
-        return object()
+        return _one_turn(5.0, 6.0)
 
     def _phantom(diarization, path, *a, **k):
         seen["phantom"] = path
@@ -1242,6 +1256,13 @@ def _capture_stage_audio(monkeypatch) -> dict:
     def _voiceprints(path, *a, **k):
         seen["voiceprints"] = path
         return {}
+
+    def _union(unmuted_path, muted_path, output_path, turns):
+        seen["union"] = (unmuted_path, muted_path, turns)
+        return 1.0
+
+    # The fake paths hold no audio; the real write is tested on real files.
+    monkeypatch.setattr(vad_stage, "write_union_muted_audio", _union)
 
     _install(
         monkeypatch,
@@ -1277,10 +1298,11 @@ def _capture_stage_audio(monkeypatch) -> dict:
 def test_each_stage_reads_the_audio_its_own_switch_picks(
     monkeypatch, mute_transcription, mute_diarization
 ):
-    """Transcription reads the muted file only when its switch says so, and
-    diarisation, the phantom filter and voiceprints follow the other switch,
-    whatever the first holds. The engine is told its audio is muted only when
-    it is."""
+    """Diarisation, the phantom filter and voiceprints follow their own switch,
+    whatever transcription's holds. Muted transcription reads the union of VAD
+    speech and the turns found on the unmuted file, or the VAD-muted file when
+    diarisation heard that file itself (#670). The engine is told its audio is
+    muted only when it is."""
     recording = _FakeRecording(724)
     session = _FakeSession(recording, _FakeTranscript(724))
     _install_happy_path_modules(monkeypatch)
@@ -1294,7 +1316,11 @@ def test_each_stage_reads_the_audio_its_own_switch_picks(
     _run_task(monkeypatch, session, recording_id=724, llm_config=llm_config)
 
     speaker_side = _MUTED if mute_diarization else _UNMUTED
-    assert seen["asr"] == (_MUTED if mute_transcription else _UNMUTED)
+    transcribed = _UNION if mute_transcription else _UNMUTED
+    if mute_transcription and mute_diarization:
+        transcribed = _MUTED
+    assert seen["asr"] == transcribed
+    assert ("union" in seen) is (transcribed == _UNION)
     assert seen["vad_muted_input"] is mute_transcription
     assert seen["diarize"] == speaker_side
     assert seen["phantom"] == speaker_side
@@ -1303,8 +1329,8 @@ def test_each_stage_reads_the_audio_its_own_switch_picks(
 
 def test_a_user_with_neither_switch_stored_diarises_the_unmuted_file(monkeypatch):
     """The upgrade path: the worker's merge applies no user defaults, so the
-    switches arrive unset. Transcription stays muted and the speaker side
-    hears the whole recording."""
+    switches arrive unset. The speaker side hears the whole recording, and
+    transcription hears VAD speech plus the turns diarisation found there."""
     recording = _FakeRecording(728)
     session = _FakeSession(recording, _FakeTranscript(728))
     _install_happy_path_modules(monkeypatch)
@@ -1314,7 +1340,8 @@ def test_a_user_with_neither_switch_stored_diarises_the_unmuted_file(monkeypatch
 
     _run_task(monkeypatch, session, recording_id=728, llm_config=llm_config)
 
-    assert seen["asr"] == _MUTED
+    assert seen["asr"] == _UNION
+    assert seen["union"] == (_UNMUTED, _MUTED, [(5.0, 6.0)])
     assert seen["vad_muted_input"] is True
     assert seen["diarize"] == seen["phantom"] == seen["voiceprints"] == _UNMUTED
 
@@ -1431,3 +1458,231 @@ def test_the_zero_run_drop_reads_the_file_transcription_heard(
     _run_task(monkeypatch, session, recording_id=727, llm_config=llm_config)
 
     assert (transcript.text or "").strip() == expected_text
+
+
+# --- transcription hears what diarisation heard (#670) -------------------------
+
+
+def _one_turn(start: float, end: float) -> Annotation:
+    annotation = Annotation()
+    annotation[Segment(start, end)] = "SPEAKER_00"
+    return annotation
+
+
+def _install_real_vad_files(monkeypatch, tmp_path, *, diarization) -> dict:
+    """Real unmuted and muted files (VAD kept 1-3 s), a diarisation stub, and an
+    ASR stub that hears "Morning." in VAD speech and "Over here." at 10 s.
+    Returns what each stage saw, in the order the stages ran."""
+    seen: dict = {"order": [], "cleaned": []}
+    unmuted = str(tmp_path / "recording_vad.wav")
+    soundfile.write(
+        unmuted, np.full(20 * 16000, 0.05, dtype=np.float32), 16000, subtype="PCM_16"
+    )
+    _install(
+        monkeypatch,
+        "backend.processing.audio_preprocessing",
+        cleanup_temp_file=seen["cleaned"].append,
+        convert_wav_to_mp3=lambda *a, **k: None,
+        preprocess_audio_for_vad=lambda path: unmuted,
+        repair_audio_file=lambda *a, **k: None,
+        validate_audio_file=lambda *a, **k: None,
+    )
+
+    def _mute(input_path, output_path, **kwargs):
+        seen["muted"] = output_path
+        audio = np.zeros(20 * 16000, dtype=np.float32)
+        audio[16000 : 3 * 16000] = 0.05  # the only speech VAD kept: 1 s to 3 s
+        soundfile.write(output_path, audio, 16000, subtype="PCM_16")
+        return True, 2.0
+
+    def _diarize(path, *a, **k):
+        seen["order"].append("diarize")
+        return diarization
+
+    def _asr(path, config=None):
+        seen["order"].append("transcribe")
+        seen["asr"] = path
+        seen["vad_muted_input"] = config[VAD_MUTED_INPUT]
+        segments = []
+        for start, end, text in ((1.5, 2.2, " Morning."), (10.0, 10.8, " Over here.")):
+            words = [{"start": start, "end": end, "word": text}]
+            segments.append({"start": start, "end": end, "text": text, "words": words})
+        return {"text": " Morning. Over here.", "language": "en", "segments": segments}
+
+    _install(monkeypatch, "backend.processing.vad", mute_non_speech_segments=_mute)
+    _install(
+        monkeypatch,
+        "backend.processing.diarize",
+        diarize_audio=_diarize,
+        release_pipeline_cache=lambda: seen["order"].append("release diarization"),
+    )
+    _install(
+        monkeypatch,
+        "backend.processing.phantom_filter",
+        filter_phantom_speakers=lambda diarization, *a, **k: diarization,
+    )
+    _install(
+        monkeypatch,
+        "backend.processing.transcribe",
+        transcribe_audio=_asr,
+        release_model_cache=lambda: seen["order"].append("release asr"),
+    )
+    seen["unmuted"] = unmuted
+    return seen
+
+
+@pytest.mark.parametrize(
+    ("settings", "reads", "text"),
+    [
+        ({}, "union", "Morning. Over here."),
+        ({"enable_diarization": False}, "muted", "Morning."),
+        ({"vad_mute_transcription": False}, "unmuted", "Morning. Over here."),
+        ({"enable_vad": False}, "unmuted", "Morning. Over here."),
+        ({"vad_mute_diarization": True}, "muted", "Morning."),
+    ],
+)
+def test_muted_transcription_hears_the_turns_diarisation_found(
+    monkeypatch, tmp_path, settings, reads, text
+):
+    """With transcription muted and diarisation on, ASR and the zero-run drop
+    read the muted file opened inside every turn, so a word VAD muted but a turn
+    covers is kept, and the engine is still told its audio is VAD-muted. With
+    diarisation off, or diarisation that heard the muted file, it is the
+    VAD-muted file; with transcription unmuted or VAD off, the unmuted one, as
+    before. The union file is cleaned up."""
+    recording = _FakeRecording(730)
+    transcript = _FakeTranscript(730)
+    session = _FakeSession(recording, transcript)
+    _install_happy_path_modules(monkeypatch)
+    seen = _install_real_vad_files(
+        monkeypatch, tmp_path, diarization=_one_turn(9.5, 11.5)
+    )
+    llm_config = _tuned_llm_config(**settings)
+
+    _run_task(monkeypatch, session, recording_id=730, llm_config=llm_config)
+
+    union = str(tmp_path / "recording_vad_union.wav")
+    expected = {"union": union, "unmuted": seen["unmuted"]}.get(reads)
+    assert seen["asr"] == (expected or seen["muted"])
+    assert seen["vad_muted_input"] is (reads != "unmuted")
+    assert (union in seen["cleaned"]) is (reads == "union")
+    assert transcript.text.strip() == text
+
+
+def test_diarisation_runs_before_asr_and_each_frees_the_card_after(
+    monkeypatch, tmp_path
+):
+    from backend.processing import onnx_providers
+
+    recording = _FakeRecording(731)
+    session = _FakeSession(recording, _FakeTranscript(731))
+    _install_happy_path_modules(monkeypatch)
+    seen = _install_real_vad_files(
+        monkeypatch, tmp_path, diarization=_one_turn(9.5, 11.5)
+    )
+    monkeypatch.setattr(onnx_providers, "gpu_is_present", lambda: True)
+
+    _run_task(monkeypatch, session, recording_id=731)
+
+    assert seen["order"] == [
+        "diarize",
+        "release diarization",
+        "transcribe",
+        "release asr",
+    ]
+
+
+def test_progress_only_moves_forward_through_the_reordered_stages(
+    monkeypatch, tmp_path
+):
+    recording = _FakeRecording(735)
+    session = _FakeSession(recording, _FakeTranscript(735))
+    _install_happy_path_modules(monkeypatch)
+    seen = _install_real_vad_files(
+        monkeypatch, tmp_path, diarization=_one_turn(9.5, 11.5)
+    )
+    progress: list[tuple[int, str]] = []
+
+    def _record_progress(*args, meta=None, **kwargs):
+        progress.append((meta["progress"], meta["stage"]))
+
+    task = tasks_module.process_recording_task
+    monkeypatch.setattr(
+        tasks_module, "resolve_llm_config", lambda *a, **k: _tuned_llm_config()
+    )
+    monkeypatch.setattr(task, "_session", session, raising=False)
+    monkeypatch.setattr(task, "update_state", _record_progress, raising=False)
+
+    task.run(735, False, None)
+
+    assert seen["order"][0] == "diarize"
+    assert [stage for _, stage in progress][:3] == [
+        "VAD",
+        "Diarization",
+        "Transcription",
+    ]
+    values = [value for value, _ in progress]
+    assert all(before < after for before, after in zip(values, values[1:])), values
+
+
+def test_a_failed_diarisation_still_yields_the_vad_muted_transcript(
+    monkeypatch, tmp_path
+):
+    """diarize_audio returns None on any failure: ASR then reads the VAD-muted
+    file, and the transcript completes on one speaker."""
+    recording = _FakeRecording(732)
+    transcript = _FakeTranscript(732)
+    session = _FakeSession(recording, transcript)
+    _install_happy_path_modules(monkeypatch)
+    seen = _install_real_vad_files(monkeypatch, tmp_path, diarization=None)
+
+    result = _run_task(monkeypatch, session, recording_id=732)
+
+    assert result == {"status": "success", "recording_id": 732}
+    assert seen["asr"] == seen["muted"]
+    assert transcript.transcript_status == "completed"
+    assert transcript.text.strip() == "Morning."
+
+
+def test_a_union_that_cannot_be_written_falls_back_to_the_vad_muted_file(
+    monkeypatch, tmp_path
+):
+    recording = _FakeRecording(733)
+    transcript = _FakeTranscript(733)
+    session = _FakeSession(recording, transcript)
+    _install_happy_path_modules(monkeypatch)
+    seen = _install_real_vad_files(
+        monkeypatch, tmp_path, diarization=_one_turn(9.5, 11.5)
+    )
+
+    def _disk_full(*args, **kwargs):
+        raise OSError("No space left on device")
+
+    monkeypatch.setattr(vad_stage, "write_union_muted_audio", _disk_full)
+
+    result = _run_task(monkeypatch, session, recording_id=733)
+
+    assert result == {"status": "success", "recording_id": 733}
+    assert seen["asr"] == seen["muted"]
+    assert transcript.text.strip() == "Morning."
+
+
+def test_a_time_limit_while_writing_the_union_stops_the_task(monkeypatch, tmp_path):
+    from celery.exceptions import SoftTimeLimitExceeded
+
+    recording = _FakeRecording(734)
+    session = _FakeSession(recording, _FakeTranscript(734))
+    _install_happy_path_modules(monkeypatch)
+    seen = _install_real_vad_files(
+        monkeypatch, tmp_path, diarization=_one_turn(9.5, 11.5)
+    )
+
+    def _time_up(*args, **kwargs):
+        raise SoftTimeLimitExceeded()
+
+    monkeypatch.setattr(vad_stage, "write_union_muted_audio", _time_up)
+
+    _run_task(monkeypatch, session, recording_id=734)
+
+    assert "transcribe" not in seen["order"]
+    assert recording.status == RecordingStatus.ERROR

@@ -82,7 +82,7 @@ Use Docker Desktop with the WSL 2 backend and NVIDIA Windows driver 580 or newer
 
 A GPU never loads int8: ONNX Runtime has no CUDA kernels for most quantised operations, so an int8 graph runs mostly on the CPU even with the CUDA provider loaded. Parakeet's int8 weights drop stretches of clear speech, so Parakeet loads fp32 on a CPU as well. Preparation fetches the precision the lane will load and validates the model on the CPU, so it briefly needs that much host memory but no VRAM.
 
-Both engines transcribe in windows of 15 to 30 seconds that close at a pause, on every host, because longer windows lost speech. A window with no signal, such as a stretch VAD muted, is skipped. A GPU out-of-memory failure in final processing is retried once with GPU memory freed. The ASR models are released before diarisation starts: ONNX Runtime's memory arena never shrinks, and without the release diarisation fails with CUDA out of memory.
+Both engines transcribe in windows of 15 to 30 seconds that close at a pause, on every host, because longer windows lost speech. A window with no signal, such as a stretch VAD muted, is skipped. A GPU out-of-memory failure in final processing is retried once with GPU memory freed. Diarisation runs first and its pipeline is released before ASR loads, and the ASR models are released before voiceprint extraction: ONNX Runtime's memory arena never shrinks, so on a small card a stage that follows ASR without the release fails with CUDA out of memory.
 
 #### Diagnosing a CPU Fallback
 
