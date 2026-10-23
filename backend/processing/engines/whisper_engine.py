@@ -17,7 +17,7 @@ import whisper
 from ...utils.config_manager import config_manager
 from ...utils.languages import resolve_transcription_language_code
 from ...utils.model_cache_paths import whisper_cache_root
-from .base import LANGUAGE_DETECTION_AUDIO, VAD_MUTED_INPUT, TranscriptionEngine
+from .base import LANGUAGE_DETECTION_AUDIO, TranscriptionEngine
 from .errors import (
     TranscriptionError,
     is_task_interruption,
@@ -79,15 +79,15 @@ def _detect_language_on_speech(model, config: dict | None) -> str | None:
     """The language Whisper hears in the first 30 s of speech, or None (#671).
 
     Whisper detects an automatic language on the first 30 s of the file it
-    transcribes. In the VAD-muted file those hold speech and exact zeros; in the
-    unmuted one they can be room noise, which on far-field meetings came out as
-    Japanese for English speech. So when the engine reads unmuted audio, detect
-    on the speech of the muted file instead. With VAD off there is no speech
-    map: return None and Whisper detects on its own input, as before.
+    transcribes. In the unmuted file those can be room noise, which on far-field
+    meetings came out as Japanese for English speech; in the muted one they can
+    be mostly zeros, which gave English only narrowly. So whenever VAD ran,
+    detect on the first 30 s of its speech instead, whichever file the engine
+    reads. With VAD off there is no speech map: return None and Whisper detects
+    on its own input, as before.
     """
-    config = config or {}
-    muted_path = config.get(LANGUAGE_DETECTION_AUDIO)
-    if config.get(VAD_MUTED_INPUT) or not muted_path:
+    muted_path = (config or {}).get(LANGUAGE_DETECTION_AUDIO)
+    if not muted_path:
         return None
     speech = _first_speech(muted_path)
     mel = whisper.log_mel_spectrogram(whisper.pad_or_trim(speech), model.dims.n_mels)

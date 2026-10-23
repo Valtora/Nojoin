@@ -8,9 +8,9 @@ from abc import ABC, abstractmethod
 VAD_MUTED_INPUT = "vad_muted_input"
 
 # Config key the finalize pipeline sets when VAD ran: the path of the VAD-muted
-# file, where every sample outside speech is an exact zero. An engine that reads
-# unmuted audio may detect an automatic language on this file's speech instead
-# (#671). Unset with VAD off and in the live lane.
+# file, where every sample outside speech is an exact zero. An engine may detect
+# an automatic language on this file's speech rather than on the start of the
+# file it reads (#671). Unset with VAD off and in the live lane.
 LANGUAGE_DETECTION_AUDIO = "language_detection_audio"
 
 

@@ -1,10 +1,10 @@
-"""Whisper detects an automatic language on speech, not on unmuted noise (#671).
+"""Whisper detects an automatic language on speech (#671).
 
-Whisper picks the language from the first 30 s of the file it reads. On the
-unmuted file those can be room noise, so when the engine transcribes unmuted
-audio after VAD ran, it detects on the speech of the VAD-muted file instead.
-Only the Whisper model is faked: the routing, the audio read and the log-mel
-are the engine's own.
+Whisper picks the language from the first 30 s of the file it reads: room noise
+in the unmuted file, mostly zeros in the muted one. Whenever VAD ran, the engine
+detects on the first 30 s of speech in the VAD-muted file instead. Only the
+Whisper model is faked: the routing, the audio read and the log-mel are the
+engine's own.
 """
 
 from __future__ import annotations
@@ -93,22 +93,28 @@ def files(tmp_path):
     return paths
 
 
-def _unmuted_auto(files) -> dict:
+def _auto(files, *, muted: bool) -> dict:
+    """The config the pipeline hands an automatic-language run after VAD."""
     return {
         "processing_device": "cpu",
-        VAD_MUTED_INPUT: False,
+        VAD_MUTED_INPUT: muted,
         LANGUAGE_DETECTION_AUDIO: files["muted"],
     }
 
 
-def test_auto_language_on_unmuted_audio_is_detected_on_the_speech(model, files):
-    result = WhisperEngine().transcribe(files["unmuted"], _unmuted_auto(files))
+@pytest.mark.parametrize("muted", [False, True])
+def test_auto_language_is_detected_on_the_speech(model, files, muted):
+    """Muted or not, the engine transcribes its own input in the language heard
+    in the first 30 s of speech, not in its input's first 30 s."""
+    audio = files["muted" if muted else "unmuted"]
+
+    result = WhisperEngine().transcribe(audio, _auto(files, muted=muted))
 
     expected = whisper.log_mel_spectrogram(files["speech"], 80)
     assert len(model.detected_on) == 1
     assert torch.equal(model.detected_on[0], expected)
     [(path, kwargs)] = model.transcribed
-    assert path == files["unmuted"]
+    assert path == audio
     assert kwargs["language"] == "en"
     assert result["language"] == "en"
 
@@ -117,22 +123,11 @@ def test_under_30_s_of_speech_is_padded_to_whispers_window(model, tmp_path):
     speech = _tone(12, 0.1, 220)
     files = _write_pair(tmp_path, np.concatenate([_silence(3), speech, _silence(3)]))
 
-    WhisperEngine().transcribe(files["unmuted"], _unmuted_auto(files))
+    WhisperEngine().transcribe(files["unmuted"], _auto(files, muted=False))
 
     expected = whisper.log_mel_spectrogram(whisper.pad_or_trim(speech), 80)
     assert torch.equal(model.detected_on[0], expected)
     assert model.transcribed[0][1]["language"] == "en"
-
-
-def test_auto_language_on_muted_audio_is_left_to_whisper(model, files):
-    config = {VAD_MUTED_INPUT: True, LANGUAGE_DETECTION_AUDIO: files["muted"]}
-
-    WhisperEngine().transcribe(files["muted"], config)
-
-    assert model.detected_on == []
-    [(path, kwargs)] = model.transcribed
-    assert path == files["muted"]
-    assert "language" not in kwargs
 
 
 def test_a_set_language_is_used_without_detection(model, files):
