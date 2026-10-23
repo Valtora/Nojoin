@@ -12,6 +12,7 @@ from backend.services.timeline_note_service import (
     RecordingTimelineNotes,
     load_recording_timeline_notes,
 )
+from backend.utils.meeting_edge import normalize_meeting_edge_items
 from backend.utils.timeline_notes import (
     iter_timeline,
     render_note_line,
@@ -35,12 +36,18 @@ def _hash_meeting_edge_text(value: str | None) -> str:
 
 
 def _read_meeting_edge_payload_items(payload: dict | None, key: str) -> tuple[str, ...]:
+    """The previous refresh's items, as the next prompt shows them.
+
+    Read through the same rule as a fresh response, so an item stored as the
+    repr of an object is unwrapped or dropped rather than shown to the model
+    as its own earlier suggestion.
+    """
     if not isinstance(payload, dict):
         return ()
     value = payload.get(key)
     if not isinstance(value, list):
         return ()
-    return tuple(str(item).strip() for item in value if str(item).strip())
+    return normalize_meeting_edge_items(value)
 
 
 def _parse_meeting_edge_generated_at(payload: dict | None) -> datetime | None:
