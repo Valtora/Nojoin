@@ -407,6 +407,7 @@ The bundled proxy publishes ports `14141` and `14443` on `127.0.0.1` by default 
 6. Serve the whole site through that one origin, including `/mcp` and `/.well-known/oauth-*` for the [MCP connector](MCP.md). The bundled proxy already routes those paths to the API.
 7. Stream responses without buffering, forward WebSocket upgrades, and allow long-lived connections and large request bodies ([below](#streaming-websocket-and-upload-forwarding)).
 8. Add the edge proxy to `NOJOIN_TRUSTED_PROXIES` ([below](#trusted-proxy-ips-for-rate-limiting)).
+9. If the proxy keeps an access log, mask the one-time codes some request URLs carry ([SECURITY.md](SECURITY.md#operator-rules)). Nginx's default log records them, and Caddy logs nothing unless a `log` directive is set.
 
 ### Why the Host and Proto Headers Matter
 
