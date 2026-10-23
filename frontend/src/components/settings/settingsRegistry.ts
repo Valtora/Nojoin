@@ -376,12 +376,12 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
     id: "recording-vad-mute-diarization",
     label: "Mute non-speech for speaker separation",
     description:
-      "Off lets speaker separation hear everything: better in small meetings, slower on long recordings.",
+      "On limits speaker separation to the filtered speech: faster on long recordings, but worse at telling speakers apart.",
     category: "recording",
     access: "all",
     advanced: "safe-default",
     settingsKeys: ["vad_mute_diarization"],
-    defaultValue: true,
+    defaultValue: false,
     keywords: ["vad", "mute", "unmuted", "silence", "diarization", "speaker separation", "short replies"],
   },
   {

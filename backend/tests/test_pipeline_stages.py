@@ -1301,6 +1301,24 @@ def test_each_stage_reads_the_audio_its_own_switch_picks(
     assert seen["voiceprints"] == speaker_side
 
 
+def test_a_user_with_neither_switch_stored_diarises_the_unmuted_file(monkeypatch):
+    """The upgrade path: the worker's merge applies no user defaults, so the
+    switches arrive unset. Transcription stays muted and the speaker side
+    hears the whole recording."""
+    recording = _FakeRecording(728)
+    session = _FakeSession(recording, _FakeTranscript(728))
+    _install_happy_path_modules(monkeypatch)
+    seen = _capture_stage_audio(monkeypatch)
+    llm_config = _tuned_llm_config(enable_auto_voiceprints=True)
+    assert "vad_mute_diarization" not in llm_config.merged_config
+
+    _run_task(monkeypatch, session, recording_id=728, llm_config=llm_config)
+
+    assert seen["asr"] == _MUTED
+    assert seen["vad_muted_input"] is True
+    assert seen["diarize"] == seen["phantom"] == seen["voiceprints"] == _UNMUTED
+
+
 def test_vad_off_unmutes_both_stages_whatever_the_switches_hold(monkeypatch):
     recording = _FakeRecording(725)
     session = _FakeSession(recording, _FakeTranscript(725))

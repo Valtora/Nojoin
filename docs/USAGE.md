@@ -199,10 +199,10 @@ Every field starts empty, meaning inherit: your installation's value if an admin
 
 To keep more brief speakers, lower the phantom filter's limits or raise its merge similarity. The same **Advanced** block has **Voice activity detection**, which filters silence and noise before transcription and can be turned off if quiet speech is cut off, and **Speaker separation**, which you can turn off for single-speaker recordings to speed up processing.
 
-With voice activity detection on, two switches choose which steps hear the filtered audio. Both are on by default.
+With voice activity detection on, two switches choose which steps hear the filtered audio. By default transcription hears the filtered audio and speaker separation hears the whole recording.
 
-- **Mute non-speech for transcription**: off, transcription hears the whole recording. This can recover distant or quiet speech the filter dropped, but it can add words from background noise and be less accurate on close microphones. Words it recovers outside any speaker's turn stay unattributed: the transcript view and meeting chat leave them out, while exports and meeting notes include them. Turn off muting for speaker separation too to give most of them a speaker.
-- **Mute non-speech for speaker separation**: off, speaker separation hears the whole recording. In small meetings this tells people apart better and puts more short replies on the right speaker, but it takes longer on long recordings.
+- **Mute non-speech for transcription** (on by default): off, transcription hears the whole recording. This can recover distant or quiet speech the filter dropped, but it can add words from background noise and be less accurate on close microphones. With speaker separation also muted, words it recovers outside any speaker's turn stay unattributed: the transcript view and meeting chat leave them out, while exports and meeting notes include them. Leave muting for speaker separation off to give most of them a speaker.
+- **Mute non-speech for speaker separation** (off by default): off, speaker separation hears the whole recording. This tells people apart better, above all with room or distant microphones, and puts more short replies on the right speaker, but on long recordings speaker separation can take up to about one and a half times as long. Turn it on to go back to how earlier versions worked: faster on long recordings, but worse at telling speakers apart.
 
 Voice activity detection still runs with both switches off, so a recording with no speech still completes with an empty transcript. Turning voice activity detection off unmutes both.
 

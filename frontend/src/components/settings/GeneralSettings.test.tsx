@@ -17,11 +17,21 @@ function renderProcessing(settings: Settings) {
 }
 
 describe("GeneralSettings processing: muting per stage (#486)", () => {
-  it("shows both stages muted until a switch is turned off", () => {
+  it("shows transcription muted and speaker separation unmuted until set", () => {
     renderProcessing({});
 
     expect(screen.getByRole("switch", { name: TRANSCRIPTION })).toBeChecked();
-    expect(screen.getByRole("switch", { name: SPEAKERS })).toBeChecked();
+    expect(screen.getByRole("switch", { name: SPEAKERS })).not.toBeChecked();
+  });
+
+  it("turns speaker separation's muting back on", () => {
+    const onUpdate = renderProcessing({ enable_vad: true });
+
+    fireEvent.click(screen.getByRole("switch", { name: SPEAKERS }));
+
+    expect(onUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ vad_mute_diarization: true }),
+    );
   });
 
   it("turns off one stage's muting and leaves the other's as it was", () => {

@@ -658,7 +658,7 @@ export interface Settings {
   install_glossary_terms?: string;
   enable_vad?: boolean;
   // With VAD on, whether transcription and speaker separation hear the muted
-  // audio. Both default true.
+  // audio. Transcription defaults true, speaker separation false.
   vad_mute_transcription?: boolean;
   vad_mute_diarization?: boolean;
   enable_diarization?: boolean;
