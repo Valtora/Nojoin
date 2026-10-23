@@ -154,10 +154,15 @@ const LogLine = memo(function LogLine({
   );
 });
 
+/** The file name the API's Content-Disposition gives the download. */
+function logFileName(container: string): string {
+  return container === "all" ? "nojoin-all_logs.txt" : `${container}_logs.txt`;
+}
+
 /**
- * The live log console and per-service download. The API serves both to the
- * superuser alone, so SystemTab renders this only for that account and no
- * other account opens the stream.
+ * The live log console and download, of one service or all of them. The API
+ * serves both to the superuser alone, so SystemTab renders this only for that
+ * account and no other account opens the stream.
  */
 export default function SystemLogs() {
   const [logs, setLogs] = useState<string[]>([]);
@@ -354,12 +359,13 @@ export default function SystemLogs() {
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement("a");
       link.href = url;
-      link.setAttribute("download", `${selectedContainer}_logs.txt`);
+      link.setAttribute("download", logFileName(selectedContainer));
       document.body.appendChild(link);
       link.click();
       link.remove();
-
-        } catch (error: unknown) {
+      // A log can run to tens of megabytes; the page keeps none of it.
+      window.URL.revokeObjectURL(url);
+    } catch (error: unknown) {
       console.error("Download failed", error);
       addNotification({ type: "error", message: "Failed to download logs." });
     }

@@ -101,7 +101,7 @@ The transcription engine and model, under **Advanced** in **Settings > Transcrip
 **Settings > System and logs** shows:
 
 - Service health, refreshed every 30 seconds: database, queue, worker, FFmpeg, storage, transcription model, speaker separation, processing device and AI. The AI check reads **Configured** when the default provider has a credential and a model, **No model selected** when it has a credential but no model, **Fallback only** when only the fallback can answer, and **Not configured** when there is no provider.
-- Live logs from one service or all of them, filtered by text, regular expression or level, and downloadable per service. Only the setup account sees these.
+- Live logs from one service or all of them, filtered by text, regular expression or level. Only the setup account sees these. **Download** saves the chosen service's whole log, or with **All services** the newest 10,000 lines of each service in one file, in time order and marked with the service's name as in the live view.
 
 ### Updates
 
