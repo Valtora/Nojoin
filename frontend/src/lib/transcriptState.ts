@@ -139,6 +139,8 @@ export const applyTranscriptDelta = ({
     }
   }
 
+  // A delta that applies nothing keeps the list, as a full sync does when
+  // nothing changed, so a poll with no news doesn't recompute the views.
   const nextSegments =
     mode === "full"
       ? utterancesToApply.length > 0
@@ -147,11 +149,13 @@ export const applyTranscriptDelta = ({
             sortTranscriptSegments(utterancesToApply.map(transcriptSegmentFromUtterance)),
           )
         : sortTranscriptSegments(fallbackSegments)
-      : mergeTranscriptUtteranceDelta(
-          baseState.segments,
-          utterancesToApply,
-          tombstonesToApply,
-        );
+      : utterancesToApply.length === 0 && tombstonesToApply.length === 0
+        ? baseState.segments
+        : mergeTranscriptUtteranceDelta(
+            baseState.segments,
+            utterancesToApply,
+            tombstonesToApply,
+          );
 
   return {
     recordingId,
