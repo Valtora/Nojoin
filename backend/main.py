@@ -24,6 +24,7 @@ from backend.startup_migrations import (
     run_startup_migrations,
     should_skip_startup_migrations,
 )
+from backend.utils.logging_config import install_log_redaction
 from backend.utils.version import get_installed_version
 
 logger = logging.getLogger(__name__)
@@ -399,6 +400,12 @@ def create_app(*, app_lifespan=lifespan) -> FastAPI:
 
     return app
 
+
+# uvicorn's access log prints each request line with its query string, and the
+# calendar sign-in callback carries a one-time code there. Installed here rather
+# than left to setup_logging, which the API runs only as a side effect of
+# importing backend.preload_models.
+install_log_redaction()
 
 app = create_app()
 
