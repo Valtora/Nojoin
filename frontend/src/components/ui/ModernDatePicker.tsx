@@ -1,5 +1,6 @@
 import React, { forwardRef } from 'react';
 import DatePicker, { DatePickerProps } from 'react-datepicker';
+import { isSameDay } from 'date-fns';
 import { Calendar } from 'lucide-react';
 
 import { cn } from '@/lib/cn';
@@ -122,7 +123,9 @@ export default function ModernDatePicker({
           dayClassName={(date) =>
             cn(
               "!rounded-md hover:!bg-action-tint",
-              selected && date.getTime() === selected.getTime()
+              // By day: the library passes each day at midnight, and a value
+              // with a time never equals it (#617).
+              selected && isSameDay(date, selected)
                 ? "!bg-action !text-action-on hover:!bg-action-hover"
                 : "!text-foreground"
             )

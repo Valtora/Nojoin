@@ -13,13 +13,14 @@ def _get_subpath_after(path: str | None, marker: str) -> str | None:
     """Return the portion of ``path`` below the last ``marker`` directory component.
 
     Falls back to the bare filename so a path stored in an unexpected layout still
-    yields a stable archive member name.
+    yields a stable archive member name. ``.`` and ``..`` components are dropped,
+    so the result never leads above the directory it is joined to.
     """
     if not path:
         return None
 
     normalized = str(path).strip().replace("\\", "/")
-    parts = [part for part in normalized.split("/") if part and part != "."]
+    parts = [part for part in normalized.split("/") if part not in ("", ".", "..")]
     if not parts:
         return None
 
@@ -31,6 +32,16 @@ def _get_subpath_after(path: str | None, marker: str) -> str | None:
             break
 
     return parts[-1]
+
+
+def _leaves_its_directory(path: Any) -> bool:
+    """Whether a stored path has a ``..`` component.
+
+    Nojoin never writes one, so an archive row holding one is refused.
+    """
+    if not isinstance(path, str):
+        return False
+    return ".." in path.replace("\\", "/").split("/")
 
 
 def _get_recording_subpath(audio_path: str | None) -> str | None:

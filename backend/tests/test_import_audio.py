@@ -681,6 +681,9 @@ def test_ffmpeg_stopped_by_sigterm_is_a_server_failure(
     def run_until_stopped(cmd, **kwargs):
         if cmd[0] != "ffmpeg":
             return real_run(cmd, **kwargs)
+        # The input comes through a pipe here, so the pipe is allowed too.
+        cmd = list(cmd)
+        cmd[cmd.index("-protocol_whitelist") + 1] = "file,pipe"
         cmd = ["pipe:0" if arg == str(source) else arg for arg in cmd]
         process = subprocess.Popen(
             cmd,

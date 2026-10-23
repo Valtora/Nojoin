@@ -3,6 +3,7 @@
 import { ChevronRight, Loader2 } from "lucide-react";
 
 import { cn } from "@/lib/cn";
+import { loadingButtonProps } from "@/components/ui/loadingButton";
 
 /** The shared furniture of the analytics tab.
  *
@@ -111,9 +112,8 @@ export const Prompt = ({
     {actionLabel && onAction && (
       <button
         type="button"
-        onClick={onAction}
-        disabled={busy}
-        className="inline-flex items-center gap-2 rounded-lg bg-action px-3 py-1.5 text-sm font-medium text-action-on transition-colors hover:bg-action-hover disabled:opacity-60"
+        {...loadingButtonProps(Boolean(busy), undefined, onAction)}
+        className="inline-flex items-center gap-2 rounded-lg bg-action px-3 py-1.5 text-sm font-medium text-action-on transition-colors hover:bg-action-hover disabled:opacity-60 aria-disabled:opacity-60"
       >
         {busy ? (
           <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />

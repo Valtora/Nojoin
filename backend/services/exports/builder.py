@@ -12,6 +12,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
+from backend.utils.live_speaker_labels import speaker_display_name
+
 from .analytics_blocks import analytics_blocks
 from .formatting import format_duration, format_meeting_date, format_meeting_datetime
 from .markdown_blocks import notes_to_blocks
@@ -81,7 +83,7 @@ def _transcript_section(parts: MeetingParts) -> Section:
     lines = tuple(
         TranscriptLine(
             start_seconds=float(segment.get("start") or 0),
-            speaker=parts.speaker_names_by_label.get(label, label),
+            speaker=speaker_display_name(label, parts.speaker_names_by_label),
             color=parts.speaker_colors_by_label.get(label),
             text=str(segment.get("text") or "").strip(),
         )

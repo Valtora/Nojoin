@@ -5,6 +5,8 @@ import shutil
 import subprocess
 from typing import List
 
+from backend.utils.media_commands import FFMPEG, FFPROBE
+
 logger = logging.getLogger(__name__)
 
 LOSSY_AUDIO_BITRATE_FLOOR_BITS_PER_SECOND = 128_000
@@ -61,7 +63,7 @@ def get_audio_duration(file_path: str) -> float:
     ensure_ffmpeg_in_path()
 
     cmd = [
-        "ffprobe",
+        *FFPROBE,
         "-v",
         "error",
         "-show_entries",
@@ -98,7 +100,7 @@ def _concatenate_with_ffmpeg_concat_demuxer(segment_paths: List[str], output_pat
             f.write(f"file '{safe_path}'\n")
 
     cmd = [
-        "ffmpeg",
+        *FFMPEG,
         "-y",  # Overwrite output file
         "-f",
         "concat",
@@ -157,7 +159,7 @@ def convert_to_mono_16k(input_path: str, output_path: str):
     ensure_ffmpeg_in_path()
 
     cmd = [
-        "ffmpeg",
+        *FFMPEG,
         "-y",
         "-i",
         input_path,
@@ -194,7 +196,7 @@ def convert_to_16k_wav(
     """
     ensure_ffmpeg_in_path()
 
-    cmd = ["ffmpeg", "-y", "-i", input_path, "-acodec", "pcm_s16le", "-ar", "16000"]
+    cmd = [*FFMPEG, "-y", "-i", input_path, "-acodec", "pcm_s16le", "-ar", "16000"]
     if mono:
         cmd += ["-ac", "1"]
     cmd += ["-rf64", "auto", output_path]
@@ -214,7 +216,7 @@ def convert_to_mp3(input_path: str, output_path: str) -> bool:
     ensure_ffmpeg_in_path()
 
     cmd = [
-        "ffmpeg",
+        *FFMPEG,
         "-y",
         "-i",
         input_path,
@@ -245,7 +247,7 @@ def convert_to_wav(input_path: str, output_path: str) -> bool:
     """
     ensure_ffmpeg_in_path()
 
-    cmd = ["ffmpeg", "-y", "-i", input_path, "-acodec", "pcm_s16le", output_path]
+    cmd = [*FFMPEG, "-y", "-i", input_path, "-acodec", "pcm_s16le", output_path]
 
     try:
         subprocess.run(cmd, check=True, capture_output=True)
@@ -285,7 +287,7 @@ def convert_to_proxy_mp3(
         final_output_path = f"{output_path}.{uuid.uuid4().hex[:8]}.tmp"
 
     cmd = [
-        "ffmpeg",
+        *FFMPEG,
         "-y",
         "-i",
         input_path,

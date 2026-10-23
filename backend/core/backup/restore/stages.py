@@ -26,13 +26,19 @@ from backend.core.backup.format import (
     RESTORED_RECORDING_TERMINAL_STATUS,
     TRANSIENT_RECORDING_STATUSES,
 )
-from backend.core.backup.paths import _get_recording_match_keys
+from backend.core.backup.paths import _get_recording_match_keys, _leaves_its_directory
 from backend.core.backup.restore.state import _RestoreState
 from backend.utils.db_batching import bind_batches
 from backend.utils.document_storage import document_file_identity
 from backend.utils.recording_storage import delete_recording_artifacts
 
 logger = logging.getLogger(__name__)
+
+# The columns an archive row names a file by, by archive member.
+_ARCHIVED_PATH_COLUMNS = {
+    "recordings.json": ("audio_path", "proxy_path"),
+    "documents.json": ("file_path",),
+}
 
 
 def _parse_version(value: Any) -> Tuple[int, ...]:
@@ -114,11 +120,12 @@ def _restore_preflight_validate(zipf: zipfile.ZipFile, state: "_RestoreState") -
         if not member.endswith(".json"):
             continue
         try:
-            json.loads(zipf.read(member))
+            data = json.loads(zipf.read(member))
         except Exception as e:  # noqa: BLE001 -- boundary: every unreadable member is re-raised as one damaged-archive error
             raise ValueError(
                 f"This backup is damaged: {member} is not readable ({e})."
             ) from e
+        _refuse_paths_leaving_their_directory(member, data)
 
     payload_bytes = sum(
         info.file_size
@@ -137,6 +144,24 @@ def _restore_preflight_validate(zipf: zipfile.ZipFile, state: "_RestoreState") -
                 "Not enough free disk space to restore this backup: it needs about "
                 f"{required // (1024 * 1024)} MB including headroom, but only "
                 f"{free_bytes // (1024 * 1024)} MB is available."
+            )
+
+
+def _refuse_paths_leaving_their_directory(member: str, data: Any) -> None:
+    """Refuse an archive whose rows name a file by a path with a ``..`` component.
+
+    Nojoin never writes one, so the archive is refused whole, before anything
+    changes, as for an archive member with such a name.
+    """
+    columns = _ARCHIVED_PATH_COLUMNS.get(member)
+    if not columns or not isinstance(data, list):
+        return
+    for row in data:
+        if isinstance(row, dict) and any(
+            _leaves_its_directory(row.get(column)) for column in columns
+        ):
+            raise ValueError(
+                f"This backup is damaged: {member} names a file outside its folder."
             )
 
 

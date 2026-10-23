@@ -24,6 +24,7 @@ import {
 } from "@/lib/api";
 import { getCliOAuthStatus } from "@/lib/api/cliOauth";
 import { AiAvailability, resolveAiAvailability } from "@/lib/aiAvailability";
+import { isAdministrator } from "@/lib/roles";
 import { ChatMessage, CliOAuthStatus, RecordingId, Tag } from "@/types";
 import Link from "next/link";
 import MarkdownBubble from "./MarkdownBubble";
@@ -75,7 +76,8 @@ export default function ChatPanel({
     const load = async () => {
       const [settings, user] = await Promise.all([getSettings(), getUserMe()]);
       if (cancelled) return;
-      setIsAdmin(user.is_superuser);
+      // Any administrator can choose the model in Settings > AI providers.
+      setIsAdmin(isAdministrator(user));
 
       // Only users routed through their own subscription need the connection
       // status, so everyone else is spared the extra request.

@@ -2,7 +2,9 @@ import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  LIVE_TRANSCRIPT_FULL_READ_EVERY_POLLS,
   LIVE_TRANSCRIPT_POLL_INTERVAL_MS,
+  LIVE_TRANSCRIPT_READ_TIMEOUT_MS,
   useLiveTranscript,
 } from "./useLiveTranscript";
 import { ClientStatus, Recording, RecordingStatus } from "@/types";
@@ -114,7 +116,7 @@ describe("useLiveTranscript", () => {
 
     await flushPendingRequests();
     expect(result.current.hasLoaded).toBe(true);
-    expect(getTranscriptUtterances).toHaveBeenCalledWith("rec-1", undefined);
+    expect(getTranscriptUtterances).toHaveBeenCalledWith("rec-1", undefined, expect.any(AbortSignal));
     expect(result.current.segments.map((segment) => segment.text)).toEqual([
       "first line",
     ]);
@@ -122,7 +124,7 @@ describe("useLiveTranscript", () => {
     await advanceOnePoll();
 
     // The cursor advances so each poll asks only for what it has not seen.
-    expect(getTranscriptUtterances).toHaveBeenLastCalledWith("rec-1", 4);
+    expect(getTranscriptUtterances).toHaveBeenLastCalledWith("rec-1", 4, expect.any(AbortSignal));
     expect(result.current.segments.map((segment) => segment.text)).toEqual([
       "first line",
       "second line",
@@ -160,6 +162,131 @@ describe("useLiveTranscript", () => {
       "survives",
       "recovered",
     ]);
+  });
+
+  it("reads the whole transcript now and then, so a change the cursor skipped shows", async () => {
+    // A label committed after a later-numbered edit: no delta returns it.
+    getTranscriptUtterances
+      .mockResolvedValueOnce(
+        buildDelta(4, [
+          buildUtterance("a", 0, "first line", 3),
+          buildUtterance("b", 5, "second line", 4),
+        ]),
+      )
+      .mockResolvedValueOnce(buildDelta(8, []));
+
+    const { result } = renderHook(() => useLiveTranscript(buildRecording()));
+    await flushPendingRequests();
+    await advanceOnePoll();
+
+    getTranscriptUtterances.mockImplementation(
+      async (_recordingId: string, afterRevision?: number) =>
+        afterRevision === undefined
+          ? buildDelta(8, [
+              { ...buildUtterance("a", 0, "first line", 5), speaker: "LIVE_PROVISIONAL_1" },
+              buildUtterance("b", 5, "second line", 4),
+            ])
+          : buildDelta(8, []),
+    );
+    for (let poll = 2; poll < LIVE_TRANSCRIPT_FULL_READ_EVERY_POLLS; poll += 1) {
+      await advanceOnePoll();
+      expect(getTranscriptUtterances).toHaveBeenLastCalledWith("rec-1", 8, expect.any(AbortSignal));
+    }
+    expect(result.current.segments[0].speaker).toBe("UNKNOWN");
+
+    await advanceOnePoll();
+
+    expect(getTranscriptUtterances).toHaveBeenLastCalledWith("rec-1", undefined, expect.any(AbortSignal));
+    expect(result.current.segments.map((segment) => segment.speaker)).toEqual([
+      "LIVE_PROVISIONAL_1",
+      "UNKNOWN",
+    ]);
+  });
+
+  it("skips a tick while a read is in flight, so a slow full read cannot undo a newer delta", async () => {
+    // The server's line changes after the 10th poll's full read has started.
+    const server = { revision: 4, text: "older" };
+    let landFullRead: (delta: ReturnType<typeof buildDelta>) => void = () => {};
+    getTranscriptUtterances.mockResolvedValueOnce(
+      buildDelta(4, [buildUtterance("a", 0, "older", 4)]),
+    );
+    const shown: string[] = [];
+    renderHook(() => {
+      const live = useLiveTranscript(buildRecording());
+      shown.push(live.segments.map((segment) => segment.text).join());
+      return live;
+    });
+    await flushPendingRequests();
+    getTranscriptUtterances.mockImplementation(
+      async (_recordingId: string, afterRevision?: number) => {
+        if (afterRevision === undefined) {
+          return new Promise((resolve) => {
+            landFullRead = resolve;
+          });
+        }
+        return buildDelta(
+          server.revision,
+          afterRevision < server.revision
+            ? [buildUtterance("a", 0, server.text, server.revision)]
+            : [],
+        );
+      },
+    );
+    for (let poll = 1; poll <= LIVE_TRANSCRIPT_FULL_READ_EVERY_POLLS; poll += 1) {
+      await advanceOnePoll();
+    }
+    expect(getTranscriptUtterances).toHaveBeenLastCalledWith("rec-1", undefined, expect.any(AbortSignal));
+    const calls = getTranscriptUtterances.mock.calls.length;
+    Object.assign(server, { revision: 6, text: "newer" });
+
+    await advanceOnePoll();
+    expect(getTranscriptUtterances).toHaveBeenCalledTimes(calls);
+    await act(async () => {
+      landFullRead(buildDelta(4, [buildUtterance("a", 0, "older", 4)]));
+    });
+    await advanceOnePoll();
+
+    expect(getTranscriptUtterances).toHaveBeenLastCalledWith("rec-1", 4, expect.any(AbortSignal));
+    expect(shown.at(-1)).toBe("newer");
+    expect(shown.slice(shown.indexOf("newer"))).not.toContain("older");
+  });
+
+  it("abandons a read that never answers, so the feed keeps going", async () => {
+    // A dropped connection: the API client sets no timeout of its own.
+    let stalled = false;
+    let hung: AbortSignal | undefined;
+    getTranscriptUtterances.mockImplementation(
+      (_recordingId: string, afterRevision?: number, signal?: AbortSignal) => {
+        if (afterRevision === 4 && !stalled) {
+          stalled = true;
+          hung = signal;
+          return new Promise(() => {});
+        }
+        return Promise.resolve(
+          afterRevision === undefined
+            ? buildDelta(4, [buildUtterance("a", 0, "first line", 4)])
+            : buildDelta(5, [buildUtterance("b", 5, "after the stall", 5)]),
+        );
+      },
+    );
+
+    const { result } = renderHook(() => useLiveTranscript(buildRecording()));
+    await flushPendingRequests();
+    await advanceOnePoll();
+    const calls = getTranscriptUtterances.mock.calls.length;
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(LIVE_TRANSCRIPT_READ_TIMEOUT_MS);
+    });
+    await advanceOnePoll();
+
+    expect(getTranscriptUtterances.mock.calls.length).toBeGreaterThan(calls);
+    expect(result.current.segments.map((segment) => segment.text)).toEqual([
+      "first line",
+      "after the stall",
+    ]);
+    // The abandoned request is cancelled, not left open.
+    expect(hung?.aborted).toBe(true);
   });
 
   it("stops polling once the capture is finalized", async () => {

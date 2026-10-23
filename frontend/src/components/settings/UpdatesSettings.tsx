@@ -16,6 +16,7 @@ import SettingsStatusBadge, {
   type SettingsStatusBadgeTone,
 } from "./SettingsStatusBadge";
 import { SETTINGS_BUTTON_SECONDARY } from "./settingsControls";
+import { loadingButtonProps } from "@/components/ui/loadingButton";
 
 const RELEASES_PAGE_URL = "https://github.com/Valtora/Nojoin/releases";
 const DEPLOYMENT_GUIDE_URL =
@@ -200,8 +201,7 @@ export default function UpdatesSettings() {
   const refreshButton = (
     <button
       type="button"
-      onClick={() => void loadVersionInfo(true)}
-      disabled={refreshing}
+      {...loadingButtonProps(refreshing, undefined, () => void loadVersionInfo(true))}
       className={SETTINGS_BUTTON_SECONDARY}
     >
       <RefreshCw

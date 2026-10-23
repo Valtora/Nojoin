@@ -61,8 +61,33 @@ export const SETTINGS_CATEGORY_IDS = [
 
 export type SettingsCategoryId = (typeof SETTINGS_CATEGORY_IDS)[number];
 
-/** Who a category (or a single setting) is for. */
-export type SettingsAccess = "all" | "admin";
+/**
+ * Who a category (or a single setting) is for: everyone, administrators
+ * (Owners, Admins and the superuser), or only the superuser, the account
+ * created at first-run setup. Each mirrors the check on the API behind it.
+ */
+export type SettingsAccess = "all" | "admin" | "superuser";
+
+/** The signed-in account, as far as settings access is concerned. */
+export interface SettingsViewer {
+  /** An Owner, an Admin or the superuser. */
+  isAdmin: boolean;
+  isSuperuser: boolean;
+}
+
+export function canViewSettings(
+  access: SettingsAccess,
+  viewer: SettingsViewer,
+): boolean {
+  switch (access) {
+    case "all":
+      return true;
+    case "admin":
+      return viewer.isAdmin;
+    case "superuser":
+      return viewer.isSuperuser;
+  }
+}
 
 /**
  * Who a setting applies to, when that is not just the signed-in person:
@@ -78,8 +103,10 @@ export interface SettingsCategoryMetadata {
   description: string;
   icon: LucideIcon;
   /**
-   * "admin" hides the category from non-admins entirely. Categories holding a
-   * mix declare "all" and rely on per-entry access in the registry.
+   * "admin" hides the category from non-admins entirely, and "superuser" from
+   * everyone but the superuser. Categories holding a mix declare the widest
+   * access any of their content has and rely on per-entry access in the
+   * registry.
    */
   access: SettingsAccess;
   /**
@@ -182,7 +209,8 @@ export const SETTINGS_CATEGORIES: Record<
     description:
       "Back up everything on this installation, and restore it from a backup.",
     icon: Archive,
-    access: "admin",
+    // Every backup endpoint requires the superuser.
+    access: "superuser",
   },
   privacy: {
     id: "privacy",
@@ -237,13 +265,14 @@ export interface SettingsNavGroup {
   items: SettingsCategoryMetadata[];
 }
 
-export function getVisibleSettingsCategories({
-  isAdmin,
-  forcePasswordChange = false,
-}: {
-  isAdmin: boolean;
+export interface SettingsNavOptions extends SettingsViewer {
   forcePasswordChange?: boolean;
-}): SettingsCategoryMetadata[] {
+}
+
+export function getVisibleSettingsCategories({
+  forcePasswordChange = false,
+  ...viewer
+}: SettingsNavOptions): SettingsCategoryMetadata[] {
   if (forcePasswordChange) {
     return SETTINGS_CATEGORY_IDS.map((id) => SETTINGS_CATEGORIES[id]).filter(
       (category) => category.visibleWhenForcePasswordChange,
@@ -251,15 +280,14 @@ export function getVisibleSettingsCategories({
   }
 
   return SETTINGS_CATEGORY_IDS.map((id) => SETTINGS_CATEGORIES[id]).filter(
-    (category) => category.access === "all" || isAdmin,
+    (category) => canViewSettings(category.access, viewer),
   );
 }
 
 /** The sidebar shape: categories bucketed into their groups, empty groups dropped. */
-export function getSettingsNavGroups(options: {
-  isAdmin: boolean;
-  forcePasswordChange?: boolean;
-}): SettingsNavGroup[] {
+export function getSettingsNavGroups(
+  options: SettingsNavOptions,
+): SettingsNavGroup[] {
   const visible = getVisibleSettingsCategories(options);
 
   return SETTINGS_GROUP_IDS.map((groupId) => ({

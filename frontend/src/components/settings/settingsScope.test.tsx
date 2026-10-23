@@ -31,7 +31,7 @@ describe("settings scope declarations", () => {
 
   it("leaves admin-only pages unmarked, since everything there is install-wide", () => {
     const onAdminPages = scoped
-      .filter((entry) => SETTINGS_CATEGORIES[entry.category].access === "admin")
+      .filter((entry) => SETTINGS_CATEGORIES[entry.category].access !== "all")
       .map((entry) => entry.id);
 
     expect(onAdminPages).toEqual([]);

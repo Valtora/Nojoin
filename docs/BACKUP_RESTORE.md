@@ -60,7 +60,7 @@ A large library can produce an archive bigger than the restore upload limit, whi
 
 ### Recordings Without Audio
 
-If a recording's audio file is missing, empty or unreadable, cannot be re-encoded, or clashes with another recording's name in the archive, its metadata, transcript and notes are still archived. The download tells you how many recordings were affected, and `backup_info.json` in the archive records the counts (`recordings_without_audio`, `recordings_audio_failed`, and `documents_without_files` and `documents_failed` for attached documents). Those recordings restore without playable audio.
+If a recording's audio file is missing, empty or unreadable, cannot be re-encoded, or clashes with another recording's name in the archive, its metadata, transcript and notes are still archived. A file a recording or document names outside Nojoin's recordings or documents directory counts as missing. The download tells you how many recordings were affected, and `backup_info.json` in the archive records the counts (`recordings_without_audio`, `recordings_audio_failed`, and `documents_without_files` and `documents_failed` for attached documents). Those recordings restore without playable audio.
 
 Archives made before 2.6.0 left out the audio of WebM browser recordings and of AAC, MP4, WMA and WebM imports, so those recordings are metadata only. Take a new backup to capture their audio.
 
@@ -72,7 +72,7 @@ Archives made before 2.6.0 left out the audio of WebM browser recordings and of 
 2. Choose what happens to meetings that are already here (**Skip** or **Overwrite**), or turn on **Clear all existing data**, then select **Start restore**.
 3. Keep the tab open until the upload finishes. The server then restores the archive and you can leave: a notification reports the result, and the page lists any records that could not be restored until you dismiss them. Reload Nojoin afterwards to see the restored data.
 
-Before changing anything, the restore checks the archive's format version, that every record file is readable, and that there is enough free disk space, and refuses an archive that fails any of them. The database changes are a single transaction, and files move into place only after it commits, so a restore that fails at any point leaves the installation as it was, even with **Clear all existing data**.
+Before changing anything, the restore checks the archive's format version, that every record file is readable, that no recording or document names its file by a path leading out of its folder, and that there is enough free disk space, and refuses an archive that fails any of them. Only files unpacked from the archive move into the recordings and documents directories. The database changes are a single transaction, and files move into place only after it commits, so a restore that fails at any point leaves the installation as it was, even with **Clear all existing data**.
 
 ### Conflict Modes
 

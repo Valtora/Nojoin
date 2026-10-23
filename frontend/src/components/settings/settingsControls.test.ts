@@ -3,6 +3,12 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import {
+  SETTINGS_BUTTON_DANGER,
+  SETTINGS_BUTTON_PRIMARY,
+  SETTINGS_BUTTON_SECONDARY,
+} from "./settingsControls";
+
 /**
  * Source guard for the settings control vocabulary (settingsControls.ts).
  *
@@ -29,6 +35,18 @@ function violations(pattern: RegExp): string[] {
 }
 
 describe("settings controls", () => {
+  // A button busy with its own request is aria-disabled rather than disabled,
+  // so it keeps keyboard focus (#614), and has to look the same.
+  it.each([
+    ["primary", SETTINGS_BUTTON_PRIMARY],
+    ["secondary", SETTINGS_BUTTON_SECONDARY],
+    ["danger", SETTINGS_BUTTON_DANGER],
+  ])("dims a %s button when aria-disabled, as when disabled", (_, classes) => {
+    expect(classes).toContain("disabled:opacity-60");
+    expect(classes).toContain("aria-disabled:opacity-60");
+    expect(classes).toContain("aria-disabled:cursor-not-allowed");
+  });
+
   it("draws focus with the shared ring, not a hand-written one", () => {
     expect(violations(/\bfocus(-visible)?:ring-/)).toEqual([]);
   });

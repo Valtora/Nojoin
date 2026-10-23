@@ -448,6 +448,12 @@ only. Build a surface from these before reaching for raw elements.
 | `useAnchoredPanel` | Positions a dropdown or popover against its trigger with `position: fixed`, flipping above when there is more room and clamping to the viewport, so a panel opened inside a modal is not clipped. |
 | `FitText` | A single line that must fit its container, such as the meeting title. Steps the font down from a designed size to a readability floor, then wraps to two clamped lines. |
 
+**A raw button busy with its own request behaves as a loading `Button` does.** Where a control
+cannot be a `Button`, such as a settings button drawn from `settingsControls.ts`, spread
+`loadingButtonProps` from `ui/loadingButton.ts` rather than setting `disabled` for the wait, and
+pair its `disabled:` classes with `aria-disabled:` ones (the settings classes already do). It then
+keeps keyboard focus and ignores clicks until the request ends.
+
 ### Settings pages
 
 Settings has its own primitives in

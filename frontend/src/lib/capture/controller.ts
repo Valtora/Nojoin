@@ -30,8 +30,16 @@ import { RecordingStatus, type Recording, type RecordingId } from "@/types";
 
 import { holdCaptureLock, isCaptureHeldInThisBrowser } from "./captureLock";
 import { detectCaptureSupport } from "./featureDetect";
+import {
+  createLeftOutAudioStore,
+  describeAudioLength,
+  offerLeftOutAudio,
+  type LeftOutAudioStore,
+} from "./leftOutAudio";
 import { CaptureLifecycle, sendPauseBeacon } from "./lifecycle";
 import { createCaptureMixer, type CaptureMixer } from "./mixer";
+import { FLAC_MIME_TYPE } from "./pcm/flacEncoder";
+import { joinFlacSegments } from "./pcm/flacJoin";
 import { pickCaptureSource, PickSourceError, type PickedCaptureSources } from "./pickSource";
 import {
   CAPTURE_SEGMENT_SECONDS,
@@ -237,11 +245,6 @@ const COVERAGE_RECENT_OUTAGE_MS = 5 * 60_000;
  */
 const CAPTURE_RECHECK_INTERVAL_MS = 30_000;
 
-const describeAudioLength = (seconds: number) =>
-  seconds >= 90
-    ? `${Math.round(seconds / 60)} minutes`
-    : `${Math.max(1, Math.round(seconds))} seconds`;
-
 /**
  * A 404 for this tab's capture once `/users/me` has named the capture's own
  * account and the recording still answers 404: it was discarded elsewhere
@@ -423,6 +426,18 @@ export class CaptureController {
 
   private readonly segmentStore: SegmentStore = createSegmentStore();
 
+  /** Audio left out of its recording, kept for its owner to download (issue #605). */
+  private readonly leftOutAudio: LeftOutAudioStore = createLeftOutAudioStore();
+
+  /**
+   * Recordings whose kept audio is being set aside to download, so a check
+   * for finished captures leaves it alone and a resume reads the store after.
+   */
+  private readonly settingAside = new Map<RecordingId, Promise<unknown>>();
+
+  /** Offers of left-out audio closed on this page. They return on the next. */
+  private readonly closedLeftOutOffers = new Set<string>();
+
   private captureRecheckTimerId: ReturnType<typeof setInterval> | null = null;
 
   /** Whether kept audio is being checked against the server, so one check runs. */
@@ -520,7 +535,7 @@ export class CaptureController {
       // An action began meanwhile and will look again itself when it ends.
       return decision;
     }
-    void this.clearAudioKeptForFinishedCaptures(unfinished);
+    void this.settleAudioKeptForFinishedCaptures(unfinished);
     this.setState({ pausedRecording: decision });
     if (this.runtime || captures.length === 0) {
       this.stopCaptureRecheck();
@@ -1242,49 +1257,185 @@ export class CaptureController {
   /**
    * The stored segments that continue what the server holds.
    *
-   * Anything the server already has, or anything past a gap, is removed from
-   * the store: the first is uploaded, the second could never be finalized.
-   * So is audio kept under an epoch other than `epoch`: the capture was
-   * carried on elsewhere after it was recorded, and it would land out of
-   * order or over the audio recorded since (issue #570).
+   * Anything the server already has is removed from the store, since it was
+   * uploaded. So is everything else that cannot be sent: audio past a gap,
+   * which could never be finalized, and audio kept under an epoch other than
+   * `epoch`, which was recorded before the capture was carried on elsewhere
+   * and would land out of order or over the audio recorded since (issue
+   * #570). That audio is kept to download instead (issue #605).
    */
-  private loadQueuedSegments = async (
+  private loadQueuedSegments = (
     recordingId: RecordingId,
     serverLastSequence: number,
     epoch: number,
-  ): Promise<StoredSegment[]> => {
-    const stored = await this.segmentStore.list(recordingId).catch((error: unknown) => {
-      console.warn("[capture] could not read queued segments from the browser", error);
-      return [] as StoredSegment[];
-    });
-    const ofThisCapture = stored.filter((segment) => storedSegmentEpoch(segment) === epoch);
-    const usable = contiguousSegmentsAfter(ofThisCapture, serverLastSequence);
-    const usableSequences = new Set(usable.map((segment) => segment.sequence));
-    for (const segment of stored) {
-      if (!usableSequences.has(segment.sequence)) {
-        void this.segmentStore.remove(recordingId, segment.sequence).catch(() => {});
+  ): Promise<StoredSegment[]> =>
+    this.keptAudioTask(recordingId, async () => {
+      const stored = await this.segmentStore.list(recordingId).catch((error: unknown) => {
+        console.warn("[capture] could not read queued segments from the browser", error);
+        return [] as StoredSegment[];
+      });
+      const ofThisCapture = (segment: StoredSegment) => storedSegmentEpoch(segment) === epoch;
+      const usable = contiguousSegmentsAfter(stored.filter(ofThisCapture), serverLastSequence);
+      const usableSequences = new Set(usable.map((segment) => segment.sequence));
+      const leftOut: StoredSegment[] = [];
+      for (const segment of stored) {
+        if (usableSequences.has(segment.sequence)) {
+          continue;
+        }
+        if (ofThisCapture(segment) && segment.sequence <= serverLastSequence) {
+          void this.segmentStore.remove(recordingId, segment.sequence).catch(() => {});
+        } else {
+          leftOut.push(segment);
+        }
       }
-    }
-    this.reportLeftOutAudio(
-      stored.filter((segment) => storedSegmentEpoch(segment) !== epoch),
-    );
-    return usable;
+      const paused = this.state.pausedRecording;
+      const kept = await this.keepLeftOutAudio(recordingId, leftOut, {
+        recordingName: paused?.id === recordingId ? paused.name : undefined,
+      });
+      if (kept === 0) {
+        this.reportLeftOutAudio(leftOut.filter((segment) => !ofThisCapture(segment)));
+      }
+      return usable;
+    });
+
+  /**
+   * Runs `task` once any earlier one for the same recording's kept audio has
+   * finished, so audio is set aside once and a resume reads the store only
+   * after it has been. A check for finished captures passes over a recording
+   * with a task under way.
+   */
+  private keptAudioTask = <T>(recordingId: RecordingId, task: () => Promise<T>): Promise<T> => {
+    const previous = this.settingAside.get(recordingId) ?? Promise.resolve();
+    const run = previous.catch(() => {}).then(task);
+    this.settingAside.set(recordingId, run);
+    const release = () => {
+      if (this.settingAside.get(recordingId) === run) {
+        this.settingAside.delete(recordingId);
+      }
+    };
+    run.then(release, release);
+    return run;
   };
 
   /**
-   * Removes the audio this browser kept for captures that have finished
-   * elsewhere (issue #589).
+   * Moves kept audio that can never join its recording out of the capture
+   * store, keeping it as one FLAC file for its owner to download (issue #605).
+   *
+   * The segments leave the store whatever happens, as they did before there
+   * was anything to download: left there, they would be sent with a later
+   * capture of the recording or collide with audio it records. Returns the
+   * seconds kept, 0 when none could be: the segments could not be read or
+   * joined, the browser refused the write, or no account is known to own them.
+   */
+  private keepLeftOutAudio = async (
+    recordingId: RecordingId,
+    segments: StoredSegment[],
+    details: { ownerId?: number; recordingName?: string },
+  ): Promise<number> => {
+    if (segments.length === 0) {
+      return 0;
+    }
+    let kept = 0;
+    try {
+      const ownerId =
+        details.ownerId ??
+        segments.find((segment) => segment.ownerId !== undefined)?.ownerId ??
+        signedInAccountId();
+      const joined =
+        ownerId === undefined
+          ? null
+          : joinFlacSegments(
+              await Promise.all(
+                segments.map(async (segment) => new Uint8Array(await segment.blob.arrayBuffer())),
+              ),
+            );
+      if (ownerId !== undefined && joined) {
+        const keptAt = Date.now();
+        const seconds = joined.frames / joined.sampleRate;
+        await this.leftOutAudio.put({
+          id: `${recordingId}-${segments[0].sequence}-${keptAt}`,
+          recordingId,
+          ...(details.recordingName ? { recordingName: details.recordingName } : {}),
+          ownerId,
+          blob: new Blob([joined.bytes], { type: FLAC_MIME_TYPE }),
+          seconds,
+          keptAt,
+        });
+        kept = seconds;
+      }
+    } catch (error: unknown) {
+      console.warn("[capture] could not keep audio left out of a recording to download", error);
+    }
+    await Promise.all(
+      segments.map((segment) =>
+        this.segmentStore.remove(recordingId, segment.sequence).catch(() => {}),
+      ),
+    );
+    if (kept > 0) {
+      console.info("[capture] kept audio left out of a recording to download", {
+        recordingId,
+        seconds: kept,
+      });
+      void this.offerLeftOutAudio();
+    }
+    return kept;
+  };
+
+  /** Offers the signed-in account the audio left out of its recordings. */
+  private offerLeftOutAudio = async () => {
+    try {
+      await offerLeftOutAudio({
+        store: this.leftOutAudio,
+        closed: this.closedLeftOutOffers,
+        signedInAs: async () =>
+          signedInAccountId() ?? (await getUserMe().catch(() => null))?.id,
+      });
+    } catch (error: unknown) {
+      console.warn("[capture] could not offer audio left out of a recording", error);
+    }
+  };
+
+  /**
+   * Keeps to download the audio a tab had not uploaded when its capture
+   * continued or was stopped elsewhere (issue #605). Audio of a recording
+   * discarded elsewhere is not offered: the check for finished captures
+   * removes it, as the discard asked.
+   */
+  private setAsideStoodDownAudio = (runtime: ActiveRuntime | null, error: unknown) => {
+    if (!runtime || error instanceof CaptureDiscardedError) {
+      return Promise.resolve(0);
+    }
+    const { recordingId, epoch, ownerId, uploader } = runtime;
+    return this.keptAudioTask(recordingId, async () => {
+      await uploader.settled();
+      const stored = await this.segmentStore.list(recordingId);
+      const leftOut = stored.filter((segment) => storedSegmentEpoch(segment) === epoch);
+      if (leftOut.length === 0) {
+        return 0;
+      }
+      const recordingName = await getRecording(recordingId).then(
+        (recording) => recording?.name,
+        () => undefined,
+      );
+      return this.keepLeftOutAudio(recordingId, leftOut, { ownerId, recordingName });
+    });
+  };
+
+  /**
+   * Settles the audio this browser kept for captures that have finished
+   * elsewhere (issues #589, #605), then offers what was left out.
    *
    * Kept audio is sent only when this browser resumes or stops its capture, so
    * audio kept for one stopped, discarded or taken over and finished on another
    * device would otherwise stay for good, and none of it can join the
    * recording. A capture the server still lists as unfinished keeps its audio,
-   * whoever holds it. Any other is looked up first, and its audio removed only
-   * when the server says the recording is finished, or says it does not exist
-   * while this page is signed in as the account that kept the audio: another
-   * account gets the same 404 for a recording it does not own.
+   * whoever holds it. Any other is looked up first. Audio of a recording the
+   * server reports finished is kept to download. Audio of one it says does not
+   * exist is removed, but only while this page is signed in as the account
+   * that kept the audio: another account gets the same 404 for a recording it
+   * does not own.
    */
-  private clearAudioKeptForFinishedCaptures = async (unfinished: Recording[]) => {
+  private settleAudioKeptForFinishedCaptures = async (unfinished: Recording[]) => {
     if (this.checkingKeptAudio) {
       return;
     }
@@ -1295,16 +1446,23 @@ export class CaptureController {
         if (
           listed.has(recordingId) ||
           this.runtime?.recordingId === recordingId ||
-          this.keptAudioUndecided.has(recordingId)
+          this.keptAudioUndecided.has(recordingId) ||
+          this.settingAside.has(recordingId)
         ) {
           continue;
         }
-        const finished = await this.isKeptAudioFinished(recordingId);
-        if (finished) {
-          console.info("[capture] cleared audio kept for a recording finished elsewhere", recordingId);
-          await this.segmentStore.clear(recordingId);
-        } else if (finished === null) {
+        const verdict = await this.judgeKeptAudio(recordingId);
+        if (verdict === "undecided") {
           this.keptAudioUndecided.add(recordingId);
+        } else if (verdict === "gone") {
+          console.info("[capture] cleared audio kept for a recording discarded elsewhere", recordingId);
+          await this.keptAudioTask(recordingId, () => this.segmentStore.clear(recordingId));
+        } else if (verdict !== "unfinished") {
+          await this.keptAudioTask(recordingId, async () =>
+            this.keepLeftOutAudio(recordingId, await this.segmentStore.list(recordingId), {
+              recordingName: verdict.name,
+            }),
+          );
         }
       }
     } catch (error: unknown) {
@@ -1312,34 +1470,41 @@ export class CaptureController {
     } finally {
       this.checkingKeptAudio = false;
     }
+    await this.offerLeftOutAudio();
   };
 
   /**
-   * True when the recording kept audio belongs to is finished or gone, false
-   * when it may still take it or the server could not be asked, and null when
-   * the server's answer cannot say.
+   * What became of the recording audio was kept for: the recording, once it
+   * is finished; "gone" once the server says it does not exist while this page
+   * is signed in as the account the audio was kept under; "undecided" when a
+   * 404 cannot say; and "unfinished" while it may still take the audio or the
+   * server could not be asked.
    */
-  private isKeptAudioFinished = async (recordingId: RecordingId): Promise<boolean | null> => {
+  private judgeKeptAudio = async (
+    recordingId: RecordingId,
+  ): Promise<Recording | "unfinished" | "gone" | "undecided"> => {
     try {
-      return isFinishedCapture(await getRecording(recordingId));
+      const recording = await getRecording(recordingId);
+      return isFinishedCapture(recording) ? recording : "unfinished";
     } catch (error: unknown) {
       if (!(error instanceof AxiosError) || error.response?.status !== 404) {
-        return false;
+        return "unfinished";
       }
       const [kept] = await this.segmentStore.list(recordingId);
       if (kept?.ownerId === undefined) {
-        return null;
+        return "undecided";
       }
       // Asked rather than read from the session, which a page that has only
       // just loaded may not have filled in yet.
       const signedInAs = await getUserMe().catch(() => null);
       if (!signedInAs) {
-        return false;
+        return "unfinished";
       }
-      return signedInAs.id === kept.ownerId ? true : null;
+      return signedInAs.id === kept.ownerId ? "gone" : "undecided";
     }
   };
 
+  /** Says how much audio was left out when none of it could be kept to download. */
   private reportLeftOutAudio(leftOut: StoredSegment[]) {
     if (leftOut.length === 0) {
       return;
@@ -1769,8 +1934,8 @@ export class CaptureController {
    *
    * Nothing this tab holds can join the recording any more, so its media, Web
    * Lock and uploader go, and it reads idle. The audio it had not uploaded
-   * stays in this browser's store, under its old epoch, until this browser
-   * next resumes or stops the recording and finds it left behind.
+   * moves from the capture store to the audio kept for its owner to download
+   * (issue #605).
    */
   private captureEndedElsewhere = async (runtime: ActiveRuntime | null, error: unknown) => {
     if (runtime && this.runtime !== runtime) {
@@ -1807,8 +1972,12 @@ export class CaptureController {
       coverageWarning: null,
     });
     this.lifecycle.updateRecordingId(null);
-    // Not awaited: a user action rejects straight after this, and its caller
-    // skips its own toast only while the error above is still set.
+    // Neither is awaited: a user action rejects straight after this, and its
+    // caller skips its own toast only while the error above is still set. The
+    // check that the refresh starts passes over audio still being set aside.
+    void this.setAsideStoodDownAudio(runtime, error).catch((setAsideError: unknown) => {
+      console.warn("[capture] could not set aside the audio this tab had not uploaded", setAsideError);
+    });
     void this.refreshPausedRecording().catch(() => {});
   };
 

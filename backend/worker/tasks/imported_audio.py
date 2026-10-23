@@ -51,6 +51,7 @@ from backend.utils.recording_storage import (
     delete_recording_artifacts,
     recording_upload_temp_dir,
 )
+from backend.utils.stored_paths import confined_recording_path
 
 from .constants import DatabaseTask, celery_app
 from .pipeline import _sweeps_recordings
@@ -214,7 +215,9 @@ def _rebuild_import_window(
     if not rows:
         return
     for row in rows:
-        _remove_quietly(row.storage_path)
+        stored = confined_recording_path(row.storage_path)
+        if stored is not None:
+            _remove_quietly(stored)
     session.execute(
         delete(RecordingAudioChunk)
         .where(RecordingAudioChunk.recording_id == recording_id)

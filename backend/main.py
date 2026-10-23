@@ -143,6 +143,7 @@ from backend.utils.config_manager import (
     is_mcp_enabled,
 )
 from backend.utils.deployment_warnings import log_deployment_warnings
+from backend.utils.primary_owner import get_primary_owner_async
 from backend.utils.rate_limit import log_trusted_proxy_warnings
 from backend.utils.stall_watchdog import start_stall_watchdog
 
@@ -150,9 +151,7 @@ from backend.utils.stall_watchdog import start_stall_watchdog
 async def ensure_owner_exists():
     """Promote the first user to OWNER when no user holds that role."""
     async with async_session_maker() as session:
-        query = select(User).where(User.role == "owner")
-        result = await session.execute(query)
-        owner = result.scalar_one_or_none()
+        owner = await get_primary_owner_async(session)
 
         if not owner:
             logger.warning("No owner found. Promoting the first user to OWNER.")

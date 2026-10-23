@@ -10,6 +10,8 @@ import {
   SETTINGS_GROUP_IDS,
   getSettingsNavGroups,
   resolveLegacySettingsTab,
+  type SettingsAccess,
+  type SettingsViewer,
 } from "./settingsCategories";
 import {
   ADVANCED_CRITERION_LABELS,
@@ -51,6 +53,23 @@ function readDeclaredSettingsKeys(): string[] {
 }
 
 const declaredKeys = readDeclaredSettingsKeys();
+
+/** The account created at first-run setup. */
+const SUPERUSER: SettingsViewer = { isAdmin: true, isSuperuser: true };
+/** Any other Owner or Admin. */
+const ADMIN: SettingsViewer = { isAdmin: true, isSuperuser: false };
+const USER: SettingsViewer = { isAdmin: false, isSuperuser: false };
+
+const ACCESS_RANK: Record<SettingsAccess, number> = {
+  all: 0,
+  admin: 1,
+  superuser: 2,
+};
+
+const visibleCategoryIds = (viewer: SettingsViewer) =>
+  getSettingsNavGroups(viewer)
+    .flatMap((group) => group.items)
+    .map((item) => item.id);
 
 describe("settings registry parity", () => {
   it("finds a plausible number of declared Settings keys", () => {
@@ -163,39 +182,51 @@ describe("settings categories", () => {
     expect(misplaced).toEqual([]);
   });
 
-  it("never puts an all-access entry in an admin-only category", () => {
+  it("never puts an entry in a category narrower than its own access", () => {
     // Otherwise the entry is invisible to the users it was written for.
     const stranded = SETTINGS_REGISTRY.filter(
       (entry) =>
-        entry.access === "all" &&
-        SETTINGS_CATEGORIES[entry.category].access === "admin",
+        ACCESS_RANK[entry.access] <
+        ACCESS_RANK[SETTINGS_CATEGORIES[entry.category].access],
     ).map((entry) => `${entry.id} in ${entry.category}`);
 
     expect(stranded).toEqual([]);
   });
 
-  it("shows fewer categories to a non-admin than to an admin", () => {
-    const adminCount = getSettingsNavGroups({ isAdmin: true }).flatMap(
-      (group) => group.items,
-    ).length;
-    const userCount = getSettingsNavGroups({ isAdmin: false }).flatMap(
-      (group) => group.items,
-    ).length;
+  it("shows the superuser every category, other administrators fewer, and users fewer still", () => {
+    const superuserCount = visibleCategoryIds(SUPERUSER).length;
+    const adminCount = visibleCategoryIds(ADMIN).length;
+    const userCount = visibleCategoryIds(USER).length;
 
-    expect(adminCount).toBe(SETTINGS_CATEGORY_IDS.length);
+    expect(superuserCount).toBe(SETTINGS_CATEGORY_IDS.length);
+    expect(adminCount).toBeLessThan(superuserCount);
     expect(userCount).toBeLessThan(adminCount);
     expect(userCount).toBeGreaterThan(0);
   });
 
+  it("shows Backup and restore to the superuser alone, as its API allows", () => {
+    expect(visibleCategoryIds(SUPERUSER)).toContain("backup");
+    expect(visibleCategoryIds(ADMIN)).not.toContain("backup");
+    expect(visibleCategoryIds(USER)).not.toContain("backup");
+  });
+
+  it("shows System and logs to every administrator", () => {
+    // Service health is open to any administrator; only the logs are not.
+    expect(visibleCategoryIds(ADMIN)).toContain("system");
+    expect(visibleCategoryIds(USER)).not.toContain("system");
+  });
+
   it("drops groups that have no visible category", () => {
-    for (const group of getSettingsNavGroups({ isAdmin: false })) {
-      expect(group.items.length).toBeGreaterThan(0);
+    for (const viewer of [ADMIN, USER]) {
+      for (const group of getSettingsNavGroups(viewer)) {
+        expect(group.items.length).toBeGreaterThan(0);
+      }
     }
   });
 
   it("locks navigation to Profile during a forced password change", () => {
     const groups = getSettingsNavGroups({
-      isAdmin: true,
+      ...SUPERUSER,
       forcePasswordChange: true,
     });
     const items = groups.flatMap((group) => group.items);
@@ -230,15 +261,15 @@ describe("advanced gate", () => {
   });
 
   it("never leaves a category with nothing visible", () => {
-    for (const isAdmin of [true, false]) {
+    for (const viewer of [SUPERUSER, ADMIN, USER]) {
       for (const id of SETTINGS_CATEGORY_IDS) {
-        const entries = getRegistryEntriesForCategory(id, { isAdmin });
+        const entries = getRegistryEntriesForCategory(id, viewer);
         if (entries.length === 0) continue;
 
-        const { standard } = partitionByAdvanced(id, { isAdmin });
+        const { standard } = partitionByAdvanced(id, viewer);
         expect(
           standard.length,
-          `${id} would hide all of its content behind Advanced (isAdmin=${isAdmin})`,
+          `${id} would hide all of its content behind Advanced (${JSON.stringify(viewer)})`,
         ).toBeGreaterThan(0);
       }
     }
@@ -247,18 +278,18 @@ describe("advanced gate", () => {
   it("suppresses the gate when everything in a category is advanced", () => {
     // The floor rule: rather than an all-collapsed page, show everything.
     const fullyGated = SETTINGS_CATEGORY_IDS.filter((id) => {
-      const entries = getRegistryEntriesForCategory(id, { isAdmin: true });
+      const entries = getRegistryEntriesForCategory(id, SUPERUSER);
       return entries.length > 0 && entries.every((entry) => entry.advanced);
     });
 
     for (const id of fullyGated) {
-      expect(categoryUsesAdvancedGate(id, { isAdmin: true })).toBe(false);
+      expect(categoryUsesAdvancedGate(id, SUPERUSER)).toBe(false);
     }
   });
 
   it("gates Recording but not Profile", () => {
-    expect(categoryUsesAdvancedGate("recording", { isAdmin: false })).toBe(true);
-    expect(categoryUsesAdvancedGate("profile", { isAdmin: false })).toBe(false);
+    expect(categoryUsesAdvancedGate("recording", USER)).toBe(true);
+    expect(categoryUsesAdvancedGate("profile", USER)).toBe(false);
   });
 });
 
@@ -268,7 +299,7 @@ describe("changed-count badge", () => {
       countChangedAdvanced(
         "recording",
         { enable_vad: true, enable_diarization: true },
-        { isAdmin: false },
+        USER,
       ),
     ).toBe(0);
   });
@@ -278,25 +309,25 @@ describe("changed-count badge", () => {
       countChangedAdvanced(
         "recording",
         { enable_vad: false, enable_diarization: true },
-        { isAdmin: false },
+        USER,
       ),
     ).toBe(1);
   });
 
   it("ignores unset values rather than counting them as changed", () => {
-    expect(countChangedAdvanced("recording", {}, { isAdmin: false })).toBe(0);
+    expect(countChangedAdvanced("recording", {}, USER)).toBe(0);
   });
 
   it("counts a processing tuning value only once the user sets one", () => {
     expect(
-      countChangedAdvanced("recording", { vad_threshold: 0.3 }, { isAdmin: false }),
+      countChangedAdvanced("recording", { vad_threshold: 0.3 }, USER),
     ).toBe(1);
     // null is "inherit", which is what every user starts with.
     expect(
       countChangedAdvanced(
         "recording",
         { vad_threshold: null, phantom_merge_threshold: null },
-        { isAdmin: false },
+        USER,
       ),
     ).toBe(0);
   });
@@ -306,7 +337,7 @@ describe("changed-count badge", () => {
       countChangedAdvanced(
         "recording",
         { word_flip_max_duration_s: 0, word_flip_max_gap_s: 0.1 },
-        { isAdmin: false },
+        USER,
       ),
     ).toBe(1);
   });
@@ -314,12 +345,12 @@ describe("changed-count badge", () => {
 
 describe("registry search", () => {
   it("returns nothing for an empty query", () => {
-    expect(searchSettingsRegistry("", { isAdmin: true })).toEqual([]);
-    expect(searchSettingsRegistry("   ", { isAdmin: true })).toEqual([]);
+    expect(searchSettingsRegistry("", SUPERUSER)).toEqual([]);
+    expect(searchSettingsRegistry("   ", SUPERUSER)).toEqual([]);
   });
 
   it("finds settings across categories, not just categories", () => {
-    const results = searchSettingsRegistry("gain", { isAdmin: false });
+    const results = searchSettingsRegistry("gain", USER);
     const ids = results.map((result) => result.entry.id);
 
     expect(ids).toContain("recording-microphone-gain");
@@ -327,7 +358,7 @@ describe("registry search", () => {
   });
 
   it("reaches a setting that lives behind the Advanced gate", () => {
-    const ids = searchSettingsRegistry("echo", { isAdmin: false }).map(
+    const ids = searchSettingsRegistry("echo", USER).map(
       (result) => result.entry.id,
     );
 
@@ -339,7 +370,7 @@ describe("registry search", () => {
     ["quiet speech", "recording-vad-threshold"],
     ["brief speaker", "recording-phantom-filter"],
   ])("finds processing tuning by %s", (query, id) => {
-    const ids = searchSettingsRegistry(query, { isAdmin: false }).map(
+    const ids = searchSettingsRegistry(query, USER).map(
       (result) => result.entry.id,
     );
 
@@ -347,19 +378,32 @@ describe("registry search", () => {
   });
 
   it("hides admin-only settings from a non-admin", () => {
-    const adminIds = searchSettingsRegistry("hugging face", {
-      isAdmin: true,
-    }).map((result) => result.entry.id);
-    const userIds = searchSettingsRegistry("hugging face", {
-      isAdmin: false,
-    }).map((result) => result.entry.id);
+    const adminIds = searchSettingsRegistry("hugging face", ADMIN).map(
+      (result) => result.entry.id,
+    );
+    const userIds = searchSettingsRegistry("hugging face", USER).map(
+      (result) => result.entry.id,
+    );
 
     expect(adminIds).toContain("ai-providers-hf-token");
     expect(userIds).not.toContain("ai-providers-hf-token");
   });
 
+  it("finds the logs and backups for the superuser alone", () => {
+    // Their endpoints refuse every other account.
+    const ids = (query: string, viewer: SettingsViewer) =>
+      searchSettingsRegistry(query, viewer).map((result) => result.entry.id);
+
+    expect(ids("logs", SUPERUSER)).toContain("system-logs");
+    expect(ids("logs", ADMIN)).not.toContain("system-logs");
+    expect(ids("health", ADMIN)).toContain("system-health");
+    expect(ids("restore", SUPERUSER)).toContain("backup-restore");
+    expect(ids("restore", ADMIN)).not.toContain("backup-restore");
+    expect(ids("backup", ADMIN)).not.toContain("backup-export");
+  });
+
   it("orders better matches first", () => {
-    const results = searchSettingsRegistry("password", { isAdmin: false });
+    const results = searchSettingsRegistry("password", USER);
 
     expect(results.length).toBeGreaterThan(0);
     expect(results[0].entry.id).toBe("profile-password");
@@ -368,7 +412,7 @@ describe("registry search", () => {
   it("finds settings by their old names", () => {
     // The categories were renamed; the words users know were kept as keywords.
     const byOldName = (query: string) =>
-      searchSettingsRegistry(query, { isAdmin: true }).map(
+      searchSettingsRegistry(query, SUPERUSER).map(
         (result) => result.entry.category,
       );
 

@@ -4,7 +4,10 @@ A line takes the label that holds a strict majority of the diarised speech
 inside it. Held speech counts in the total but for no label, so a line that is
 mostly held, or split between two voices, stays unlabelled. A line's label is
 locked once every piece inside it is in a locked unit and the engine has
-emitted every piece the line can have; it never changes after that.
+emitted every piece the line can have; it never changes after that. Held
+speech locks too, when a re-cluster with every slot taken finds it no label
+and its unit ages out, so such a line settles, unlabelled unless the rest of
+its speech holds the majority.
 """
 
 from __future__ import annotations
@@ -14,18 +17,13 @@ from dataclasses import dataclass
 import numpy as np
 
 from backend.utils.canonical_pipeline.live_labels import LiveLabelDecision
+from backend.utils.live_speaker_labels import live_speaker_label
 
 from .engine import LiveLabelEngine
 
 UNKNOWN_SPEAKER = "UNKNOWN"
-LIVE_LABEL_PREFIX = "LIVE_"
 # Share of a line's diarised speech the winning label must exceed.
 LINE_MAJORITY = 0.5
-
-
-def live_speaker_label(slot: int) -> str:
-    """The utterance label of a slot: ``LIVE_1`` for slot 0, shown as "Speaker 1"."""
-    return f"{LIVE_LABEL_PREFIX}{slot + 1}"
 
 
 @dataclass(frozen=True)
@@ -62,13 +60,14 @@ class LabelTimeline:
         seconds = overlap[inside]
         labels = self.label[inside]
         labelled = labels >= 0
-        locked = complete and bool(self.locked[inside].all()) and bool(labelled.all())
+        locked = complete and bool(self.locked[inside].all())
         if not labelled.any():
             return LiveLabelDecision(UNKNOWN_SPEAKER, locked=locked, share=0.0)
         per_label = np.bincount(labels[labelled], weights=seconds[labelled])
         winner = int(np.argmax(per_label))
         share = float(per_label[winner] / seconds.sum())
         speaker = (
-            live_speaker_label(winner) if share > LINE_MAJORITY else UNKNOWN_SPEAKER
+            # Slot 0 is LIVE_PROVISIONAL_1, shown as "Speaker 1".
+            live_speaker_label(winner + 1) if share > LINE_MAJORITY else UNKNOWN_SPEAKER
         )
         return LiveLabelDecision(speaker, locked=locked, share=round(share, 3))

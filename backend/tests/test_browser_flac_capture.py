@@ -22,6 +22,8 @@ from httpx import AsyncClient
 from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 
+from backend.processing.live_diarization.files import LIVE_LABEL_FILENAMES
+from backend.tests.test_live_speaker_labels_lifecycle import write_label_state
 from backend.tests.test_recording_segment_transcode import (  # noqa: F401 -- fixtures
     TRUSTED_ORIGIN,
     _chunk_rows_for_recording,
@@ -126,10 +128,13 @@ def captured_metrics(monkeypatch: pytest.MonkeyPatch) -> list[dict]:
 
 
 GOLDEN_FIXTURE = Path(__file__).parent / "fixtures" / "browser_capture_golden.flac"
+JOINED_GOLDEN_FIXTURE = (
+    Path(__file__).parent / "fixtures" / "browser_capture_joined_golden.flac"
+)
 
 
 def _golden_pcm(frames: int = 5_000) -> np.ndarray:
-    """The generator in frontend/src/lib/capture/pcm/flacEncoder.test.ts."""
+    """The generator in frontend/src/lib/capture/pcm/testFlacDecoder.ts."""
     pcm = np.zeros((frames, 2), dtype=np.int16)
     state = 1
     for index in range(frames):
@@ -154,6 +159,29 @@ def test_libflac_decodes_what_the_browser_encoder_writes() -> None:
     )
 
     assert (info.format, info.subtype, info.channels) == ("FLAC", "PCM_16", 2)
+    assert sample_rate == 16_000
+    assert np.array_equal(decoded, _golden_pcm())
+
+
+def test_libflac_decodes_segments_the_browser_joined() -> None:
+    """Audio left out of a recording downloads as one FLAC file (issue #605).
+
+    The browser joins its kept segments without decoding them, rewriting each
+    frame header as a variable-blocksize frame numbered by sample. The frontend
+    test pins the joiner to this fixture, the golden samples cut into three
+    segments; this one proves libFLAC reads the joined stream sample for sample.
+    """
+    info = soundfile.info(str(JOINED_GOLDEN_FIXTURE))
+    decoded, sample_rate = soundfile.read(
+        str(JOINED_GOLDEN_FIXTURE), dtype="int16", always_2d=True
+    )
+
+    assert (info.format, info.subtype, info.channels, info.frames) == (
+        "FLAC",
+        "PCM_16",
+        2,
+        5_000,
+    )
     assert sample_rate == 16_000
     assert np.array_equal(decoded, _golden_pcm())
 
@@ -440,3 +468,73 @@ async def test_finalize_decodes_a_flac_segment_its_upload_left_behind(
     assert finalize.json()["duration_seconds"] == pytest.approx(4.0)
     assert (upload_dir / "0.wav").exists()
     assert not (upload_dir / "0.flac").exists()
+
+
+async def _capture_with_label_state(
+    client: AsyncClient, session_maker: sessionmaker, tmp_path: Path
+) -> tuple[str, Path, list[Path]]:
+    public_id, recording_id = await _start(client, session_maker)
+    for sequence in range(2):
+        assert await _upload(client, public_id, sequence, make_flac_bytes()) == 200
+    live_dir = _recording_temp_dir(tmp_path, recording_id, create=False) / "live"
+    return public_id, live_dir, write_label_state(live_dir)
+
+
+@pytest.mark.anyio
+async def test_finalize_removes_the_label_state(
+    client: AsyncClient, test_session_maker: sessionmaker, tmp_path: Path
+) -> None:
+    public_id, live_dir, paths = await _capture_with_label_state(
+        client, test_session_maker, tmp_path
+    )
+    kept = live_dir / "state.json"
+    kept.write_text("{}")
+
+    finalize = await client.post(
+        f"/api/v1/recordings/{public_id}/finalize",
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+
+    assert finalize.status_code == 200
+    assert not any(path.exists() for path in paths)
+    # Only the labels' files: the lane's own state is not this feature's.
+    assert kept.exists()
+
+
+@pytest.mark.anyio
+async def test_a_master_that_cannot_be_built_leaves_no_label_state_behind(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.api.v1.endpoints import recordings as recordings_module
+    from backend.utils import recording_storage
+
+    failed_root = tmp_path / "failed"
+    monkeypatch.setattr(
+        recording_storage, "recordings_failed_dir", lambda create=True: failed_root
+    )
+
+    def refuse(paths, output_path):
+        raise BrowserAudioFormatError("segments differ")
+
+    monkeypatch.setattr(recordings_module, "write_browser_master_audio", refuse)
+    public_id, live_dir, _ = await _capture_with_label_state(
+        client, test_session_maker, tmp_path
+    )
+    failed_root.mkdir()
+
+    finalize = await client.post(
+        f"/api/v1/recordings/{public_id}/finalize",
+        headers={"Origin": TRUSTED_ORIGIN},
+    )
+
+    assert finalize.status_code == 400
+    # The segments were set aside for recovery, without the label state.
+    moved = list(failed_root.iterdir())
+    assert len(moved) == 1
+    assert any(moved[0].glob("*.wav"))
+    leftovers = [p for p in moved[0].rglob("*") if p.name in LIVE_LABEL_FILENAMES]
+    assert leftovers == []
+    assert not live_dir.exists()

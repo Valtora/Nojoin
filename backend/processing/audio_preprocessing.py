@@ -9,6 +9,7 @@ from typing import Dict, Iterator, Optional
 
 from backend.core.exceptions import AudioFormatError
 from backend.utils.audio import convert_to_16k_wav, convert_to_mono_16k
+from backend.utils.media_commands import FFMPEG, FFPROBE
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +24,7 @@ def validate_audio_file(file_path: str) -> Dict:
 
     try:
         cmd = [
-            "ffprobe",
+            *FFPROBE,
             "-v",
             "quiet",
             "-print_format",
@@ -73,7 +74,7 @@ def repair_audio_file(file_path: str) -> Optional[str]:
         # Try to convert to 16-bit PCM WAV, ignoring errors
         # -err_detect ignore_err: ignore decoding errors
         cmd = [
-            "ffmpeg",
+            *FFMPEG,
             "-y",
             "-err_detect",
             "ignore_err",
@@ -313,7 +314,7 @@ def convert_wav_to_mp3(input_wav_path: str, output_mp3_path: str) -> bool:
             f"[Audio Conversion] Converting WAV to MP3: {input_wav_path} -> {output_mp3_path}"
         )
 
-        cmd = ["ffmpeg", "-y", "-i", input_wav_path, "-b:a", "128k", output_mp3_path]
+        cmd = [*FFMPEG, "-y", "-i", input_wav_path, "-b:a", "128k", output_mp3_path]
 
         subprocess.run(cmd, check=True, capture_output=True)
 
@@ -340,7 +341,7 @@ def analyze_audio_file(file_path: str) -> Optional[Dict]:
         ensure_ffmpeg_in_path()
 
         cmd = [
-            "ffprobe",
+            *FFPROBE,
             "-v",
             "quiet",
             "-print_format",
@@ -406,7 +407,7 @@ def normalize_audio_levels(
         # TP: true peak target
         # LRA: loudness range target
         cmd = [
-            "ffmpeg",
+            *FFMPEG,
             "-y",
             "-i",
             input_path,

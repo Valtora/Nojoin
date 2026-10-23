@@ -34,6 +34,8 @@ from backend.utils.import_audio_probe import (
     track_end,
     track_span,
 )
+from backend.utils.media_commands import FFMPEG
+from backend.utils.stored_paths import confined_recording_path
 
 logger = logging.getLogger(__name__)
 
@@ -234,6 +236,8 @@ def keep_imported_audio(source_path: str, work_dir: Path) -> KeptAudio:
     On any of these ``source_path`` is left in place for the caller to remove,
     and nothing else is left behind.
     """
+    if confined_recording_path(source_path) is None:
+        raise ImportServerError(f"{source_path} is outside the recordings directories.")
     suffix = Path(source_path).suffix.lower()
     if suffix in AUDIO_ONLY_SUFFIXES:
         return KeptAudio(source_path)
@@ -342,7 +346,7 @@ def _write_audio_track(
         The new file is removed in every case.
     """
     target = str(Path(work_dir) / f"{uuid4()}{plan.suffix}")
-    cmd = ["ffmpeg", "-nostdin", "-y", "-v", "error", "-i", source_path]
+    cmd = [*FFMPEG, "-nostdin", "-y", "-v", "error", "-i", source_path]
     cmd += ["-map", f"0:{track['index']}", *plan.codec_arguments]
     if (seconds(track.get("start_time")) or 0.0) > 0:
         cmd += ["-avoid_negative_ts", "make_zero"]

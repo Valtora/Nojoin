@@ -217,6 +217,18 @@ describe("Sidebar", () => {
     });
   });
 
+  it("marks an import that did not finish rather than showing it uploading (issue #569)", async () => {
+    getRecordings.mockResolvedValue([
+      { ...recording, status: RecordingStatus.UPLOADING, import_stalled: true },
+      { ...recording, id: "rec-2", name: "Import on its way", status: RecordingStatus.UPLOADING },
+    ]);
+    renderWithProviders(<Sidebar />);
+
+    await screen.findByRole("heading", { name: "Latest meeting" });
+
+    expect(screen.getAllByTitle("This import did not finish uploading.")).toHaveLength(1);
+  });
+
   describe("unsent notes", () => {
     it("marks a recording in the list with unsent notes", async () => {
       unsentRecordings = ["rec-1"];

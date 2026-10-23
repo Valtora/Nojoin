@@ -28,7 +28,7 @@ _live_capture_check_cache: tuple[float, bool] | None = None
 
 
 def _has_active_live_capture() -> bool:
-    """Return True while any recording is actively uploading live segments.
+    """Return True while any live capture is uploading segments.
 
     Reloading the live ASR model on every segment costs ~9s (observed in worker
     logs), so while a capture is in flight the per-task cache release is skipped
@@ -47,12 +47,16 @@ def _has_active_live_capture() -> bool:
         from sqlmodel import select
 
         from backend.core.db import get_sync_session
-        from backend.models.recording import Recording, RecordingStatus
+        from backend.models.recording import ClientStatus, Recording, RecordingStatus
 
         with get_sync_session() as session:
+            # Only a capture that is recording sends segments. A file import
+            # also sits in UPLOADING, for good once its page closes, and would
+            # otherwise keep the model resident with no capture at all (#569).
             row = session.exec(
                 select(Recording.id)
                 .where(Recording.status == RecordingStatus.UPLOADING)
+                .where(Recording.client_status == ClientStatus.RECORDING)
                 .where(Recording.is_deleted == False)  # noqa: E712
                 .limit(1)
             ).first()

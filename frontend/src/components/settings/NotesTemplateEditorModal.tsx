@@ -17,6 +17,7 @@ import {
   SETTINGS_INPUT_CLASS,
   SETTINGS_TEXTAREA_CLASS,
 } from "./settingsControls";
+import { loadingButtonProps } from "@/components/ui/loadingButton";
 
 interface NotesTemplateEditorModalProps {
   isOpen: boolean;
@@ -249,8 +250,7 @@ export default function NotesTemplateEditorModal({
             />
             <button
               type="button"
-              onClick={handleGenerate}
-              disabled={readOnly || generating || !brief.trim()}
+              {...loadingButtonProps(generating, readOnly || !brief.trim(), handleGenerate)}
               className={SETTINGS_BUTTON_PRIMARY}
             >
               {generating ? (

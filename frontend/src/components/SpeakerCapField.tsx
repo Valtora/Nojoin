@@ -212,18 +212,22 @@ export default function SpeakerCapField({
           <Users className="h-3.5 w-3.5" aria-hidden="true" />
           Max Speakers
         </label>
-        {stepper}
-        {/* The rail's copy of this control drops the hint icon, which would
-            wrap onto a row of its own there. The workspace toolbar keeps it. */}
-        {compact ? null : (
-          <span
-            className="text-contrast-icon-muted"
-            title={hintText}
-            aria-hidden="true"
-          >
-            <Info className="h-3.5 w-3.5" />
-          </span>
-        )}
+        {/* The icon wraps with the stepper, so a narrow toolbar puts the
+            label on a line of its own rather than the icon (#538). */}
+        <div className="flex items-center gap-2">
+          {stepper}
+          {/* The rail's copy of this control drops the hint icon, which would
+              wrap onto a row of its own there. The workspace toolbar keeps it. */}
+          {compact ? null : (
+            <span
+              className="text-contrast-icon-muted"
+              title={hintText}
+              aria-hidden="true"
+            >
+              <Info className="h-3.5 w-3.5" />
+            </span>
+          )}
+        </div>
         {/* Present for screen readers and for the invalid case, where a tooltip
             alone would leave a rejected entry unexplained. */}
         <p

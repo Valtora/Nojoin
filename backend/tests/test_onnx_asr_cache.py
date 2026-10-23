@@ -24,6 +24,7 @@ from backend.tests.hf_cache_layout import (
     write_onnx_asr_repo,
 )
 from backend.utils.onnx_asr_cache import ONNX_ASR_MODELS, ONNX_ASR_QUANTIZATIONS
+from backend.utils.transcription_models import ENGINE_OVERRIDE_CHOICES
 
 ENGINES = {"parakeet": ParakeetEngine, "canary": CanaryEngine}
 
@@ -40,6 +41,15 @@ def test_the_table_names_the_model_the_engine_loads(status_key):
     loaded_id = engine._to_onnx_asr_id(engine.default_model_id)
 
     assert ONNX_ASR_MODELS[status_key].onnx_asr_id == loaded_id
+
+
+@pytest.mark.parametrize("status_key", ONNX_ASR_MODELS)
+def test_each_model_a_reprocess_may_choose_is_one_the_engine_maps(status_key):
+    engine = ENGINES[status_key]()
+    choices = ENGINE_OVERRIDE_CHOICES[engine.config_key]
+
+    assert engine.default_model_id in choices
+    assert set(choices) == set(engine.onnx_id_map)
 
 
 @pytest.mark.parametrize("status_key", ONNX_ASR_MODELS)

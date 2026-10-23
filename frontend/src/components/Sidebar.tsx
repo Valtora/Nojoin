@@ -83,8 +83,15 @@ const formatTime = (date: Date) => {
   });
 };
 
-const StatusIcon = ({ status }: { status: RecordingStatus }) => {
-  switch (status) {
+const StatusIcon = ({ recording }: { recording: Recording }) => {
+  if (recording.import_stalled) {
+    return (
+      <span className="cursor-help" title="This import did not finish uploading.">
+        <AlertCircle className="w-3 h-3 text-status-warning-fg" />
+      </span>
+    );
+  }
+  switch (recording.status) {
     case RecordingStatus.PROCESSED:
       return null;
     case RecordingStatus.QUEUED:
@@ -1031,7 +1038,7 @@ export default function Sidebar() {
                           {recording.name}
                         </h3>
                       </div>
-                      <StatusIcon status={recording.status} />
+                      <StatusIcon recording={recording} />
                     </div>
 
                     <div

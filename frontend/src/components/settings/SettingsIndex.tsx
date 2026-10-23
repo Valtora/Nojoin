@@ -29,11 +29,11 @@ export default function SettingsIndex() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { isDesktop } = useViewportDensity();
-  const { isAdmin, loading, forcePasswordChange } = useSettingsContext();
+  const { viewer, loading, forcePasswordChange } = useSettingsContext();
 
   const groups = useMemo(
-    () => getSettingsNavGroups({ isAdmin, forcePasswordChange }),
-    [forcePasswordChange, isAdmin],
+    () => getSettingsNavGroups({ ...viewer, forcePasswordChange }),
+    [forcePasswordChange, viewer],
   );
 
   const legacyTab = resolveLegacySettingsTab(searchParams.get("tab"));

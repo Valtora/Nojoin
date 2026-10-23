@@ -107,6 +107,7 @@ from backend.utils.speaker_name_suggestions import (
     supersede_pending_transcript_speaker_suggestions,
 )
 from backend.utils.status_manager import update_recording_status
+from backend.utils.stored_paths import confined_document_path, confined_recording_path
 from backend.utils.time import utc_now
 from backend.utils.timeline_notes import render_timeline_for_llm
 

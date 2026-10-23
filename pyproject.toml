@@ -40,6 +40,7 @@ files = [
     "backend/utils/config_manager.py",
     "backend/utils/env_comments.py",
     "backend/utils/time.py",
+    "backend/utils/primary_owner.py",
     "backend/core/exceptions.py",
     "backend/core/security.py",
     "backend/core/encryption.py",
@@ -76,6 +77,7 @@ files = [
     "backend/processing/unheard_words.py",
     "backend/processing/live_diarization",
     "backend/utils/canonical_pipeline/live_labels.py",
+    "backend/utils/live_speaker_labels.py",
     "backend/utils/word_text.py",
 ]
 

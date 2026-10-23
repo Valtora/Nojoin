@@ -54,7 +54,14 @@ def test_download_logs_allowed(test_app):
     client = TestClient(test_app)
     response = client.get("/api/v1/system/logs/download?container=nojoin-api")
     assert response.status_code == 200
-    assert "mock logs content" in response.text
+    assert response.text == "line 1\nline 2\n"
+
+
+def test_download_logs_for_every_service(test_app):
+    client = TestClient(test_app)
+    response = client.get("/api/v1/system/logs/download?container=all")
+    assert response.status_code == 200
+    assert "[nojoin-api] line 1" in response.text
 
 
 def test_download_logs_forbidden(test_app):

@@ -13,6 +13,7 @@ import threading
 from typing import Any
 
 from backend.utils.audio import ensure_ffmpeg_in_path
+from backend.utils.media_commands import FFPROBE
 
 # A header probe reads the start of the file, so this only ever ends a hung one.
 PROBE_TIMEOUT_S = 60
@@ -71,7 +72,7 @@ def run_ffprobe(arguments: list[str], path: str, *, timeout: float) -> dict[str,
         UnreadableMediaError: ffprobe exited with an error or wrote no JSON.
     """
     ensure_ffmpeg_in_path()
-    cmd = ["ffprobe", "-v", "error", *arguments, "-of", "json", path]
+    cmd = [*FFPROBE, "-v", "error", *arguments, "-of", "json", path]
     try:
         result = subprocess.run(cmd, capture_output=True, check=True, timeout=timeout)
     except subprocess.CalledProcessError as exc:
@@ -218,7 +219,7 @@ def _packet_bounds(
 ) -> tuple[float | None, float | None]:
     """The first packet's start and the latest packet end ffprobe lists."""
     ensure_ffmpeg_in_path()
-    cmd = ["ffprobe", "-v", "error", *arguments, "-of", "csv=p=0", path]
+    cmd = [*FFPROBE, "-v", "error", *arguments, "-of", "csv=p=0", path]
     first: float | None = None
     end: float | None = None
     with tempfile.TemporaryFile() as stderr:

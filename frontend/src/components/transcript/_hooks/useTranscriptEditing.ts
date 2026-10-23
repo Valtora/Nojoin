@@ -59,16 +59,23 @@ export interface TranscriptLineActions {
   startSpeakerRename: (segmentId: string, speakerLabel: string, speakerName: string) => void;
 }
 
-/** A speaker rename, open on the line it was started from. */
-interface SpeakerRename {
-  label: string;
+/** The one edit open: a line's text, or a rename of the line's speaker. */
+type OpenEdit = {
+  /** Tells this edit from one opened later on the same line. */
+  key: symbol;
+  /** The line it was opened on. */
   segmentId: string;
+  value: string;
   /**
-   * The name it opened with, then the name it sent: submitting that again
+   * The value it opened with, then the value it sent: submitting that again
    * saves nothing.
    */
-  savedName: string;
-}
+  saved: string;
+} & ({ kind: "text" } | { kind: "rename"; label: string });
+
+/** What a submit would save: a name is trimmed, a line's text is kept as typed. */
+const valueToSave = (edit: OpenEdit) =>
+  edit.kind === "rename" ? edit.value.trim() : edit.value;
 
 /** The open editor's value and handlers, for the lines that show it. */
 export interface TranscriptOpenEditor {
@@ -90,6 +97,7 @@ export interface TranscriptEditing {
   /** The line whose text is open in the editor. */
   editingTextId: string | null;
   activePopover: SpeakerPopover | null;
+  /** A save is in flight: Replace and Replace All are held back until none is. */
   isSubmitting: boolean;
   /** An edit is open or saving: export waits for it. */
   editInProgress: boolean;
@@ -102,8 +110,9 @@ export interface TranscriptEditing {
 /**
  * The finished transcript's edit state for {@link TranscriptView}: renaming a
  * speaker, editing a line's text, the speaker popover, and the find/replace
- * writes. One edit is open at a time, and `isSubmitting` holds every other
- * write back while one is saving.
+ * writes. One edit is open at a time, but saves run side by side: a line or a
+ * name can be saved while another save runs, and Replace and Replace All are
+ * held back until none is running.
  */
 export function useTranscriptEditing(
   options: UseTranscriptEditingOptions,
@@ -121,15 +130,15 @@ export function useTranscriptEditing(
   } = options;
   const { addNotification } = useNotificationStore();
 
-  const [speakerRename, setSpeakerRename] = useState<SpeakerRename | null>(null);
-  const [editingTextId, setEditingTextId] = useState<string | null>(null);
+  const [edit, setEdit] = useState<OpenEdit | null>(null);
   const [activePopover, setActivePopover] = useState<SpeakerPopover | null>(
     null,
   );
-  const [editValue, setEditValue] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [savesInFlight, setSavesInFlight] = useState(0);
 
-  const editInProgress = Boolean(speakerRename || editingTextId || isSubmitting);
+  const editingTextId = edit?.kind === "text" ? edit.segmentId : null;
+  const isSubmitting = savesInFlight > 0;
+  const editInProgress = edit !== null || isSubmitting;
 
   useEffect(() => {
     if (!onActiveEditUtteranceChange) {
@@ -148,36 +157,59 @@ export function useTranscriptEditing(
     onActiveEditUtteranceChange(activeSegment?.id || null);
   }, [editingTextId, onActiveEditUtteranceChange, segments]);
 
-  // Enter and the input's blur both submit, so an unchanged name, or the same
-  // name submitted again while it saves, closes the input without a request.
-  const handleSpeakerRenameSubmit = async () => {
-    const name = editValue.trim();
-    if (speakerRename && name && name !== speakerRename.savedName) {
-      setSpeakerRename({ ...speakerRename, savedName: name });
-      setIsSubmitting(true);
-      try {
-        await onRenameSpeaker(speakerRename.label, name);
-      } finally {
-        setIsSubmitting(false);
-        setSpeakerRename(null);
-      }
-    } else {
-      setSpeakerRename(null);
+  const trackSave = async (save: () => void | Promise<void>) => {
+    setSavesInFlight((count) => count + 1);
+    try {
+      await save();
+    } finally {
+      setSavesInFlight((count) => count - 1);
     }
   };
 
-  const handleTextSubmit = async (segment: TranscriptSegment) => {
-    if (editValue !== segment.text && !isSubmitting) {
-      setIsSubmitting(true);
-      try {
-        await onUpdateSegmentText(segment, editValue);
-      } finally {
-        setIsSubmitting(false);
-        setEditingTextId(null);
-      }
-    } else {
-      setEditingTextId(null);
+  // The editor stays open while it saves, showing what was sent. It closes
+  // then only if it is still the editor the save came from and still holds
+  // that value, so an edit opened or typed meanwhile stays open.
+  const saveFromEditor = async (
+    open: OpenEdit,
+    value: string,
+    save: () => void | Promise<void>,
+  ) => {
+    setEdit({ ...open, saved: value });
+    try {
+      await trackSave(save);
+    } finally {
+      setEdit((now) =>
+        now?.key === open.key && valueToSave(now) === value ? null : now,
+      );
     }
+  };
+
+  // Enter and the input's blur both submit, so an empty or unchanged name, or
+  // the same name submitted again while it saves, closes the input without a
+  // request.
+  const handleSpeakerRenameSubmit = async () => {
+    if (edit?.kind !== "rename") return;
+    const name = valueToSave(edit);
+    if (!name || name === edit.saved) {
+      setEdit(null);
+      return;
+    }
+    const { label } = edit;
+    await saveFromEditor(edit, name, () => onRenameSpeaker(label, name));
+  };
+
+  // The same for a line's text, which may be empty. It is compared with the
+  // text the editor opened with, not the line's text now: a line reopened
+  // while its last save runs opens on the old text, and once that save lands,
+  // comparing with the line would send the old text back.
+  const handleTextSubmit = async (segment: TranscriptSegment) => {
+    if (edit?.kind !== "text") return;
+    const text = valueToSave(edit);
+    if (text === edit.saved) {
+      setEdit(null);
+      return;
+    }
+    await saveFromEditor(edit, text, () => onUpdateSegmentText(segment, text));
   };
 
   const handleFindReplaceSubmit = async () => {
@@ -192,17 +224,14 @@ export function useTranscriptEditing(
       return;
     }
 
-    setIsSubmitting(true);
-    try {
+    await trackSave(async () => {
       await onFindAndReplace(findText, replaceText, {
         caseSensitive,
         useRegex,
       });
       search.resetFindReplace();
       onFindReplaceDone();
-    } finally {
-      setIsSubmitting(false);
-    }
+    });
   };
 
   const handleReplaceCurrent = async () => {
@@ -220,14 +249,13 @@ export function useTranscriptEditing(
     const suffix = segment.text.substring(match.startIndex + match.length);
     const newText = prefix + replaceText + suffix;
 
-    setIsSubmitting(true);
-    try {
-      await onUpdateSegmentText(segment, newText);
-    } catch (e: unknown) {
-      console.error("Failed to replace text", e);
-    } finally {
-      setIsSubmitting(false);
-    }
+    await trackSave(async () => {
+      try {
+        await onUpdateSegmentText(segment, newText);
+      } catch (e: unknown) {
+        console.error("Failed to replace text", e);
+      }
+    });
   };
 
   const handleKeyDown = (e: KeyboardEvent, segment: TranscriptSegment) => {
@@ -235,8 +263,7 @@ export function useTranscriptEditing(
       e.preventDefault();
       handleTextSubmit(segment);
     } else if (e.key === "Escape") {
-      setSpeakerRename(null);
-      setEditingTextId(null);
+      setEdit(null);
     }
   };
 
@@ -244,9 +271,13 @@ export function useTranscriptEditing(
     () => ({
       startTextEdit: (segment, segmentId) => {
         if (readOnly || (segment.provisional === true && !allowProvisionalEdits)) return;
-        setEditingTextId(segmentId);
-        setEditValue(segment.text);
-        setSpeakerRename(null);
+        setEdit({
+          key: Symbol("text edit"),
+          kind: "text",
+          segmentId,
+          value: segment.text,
+          saved: segment.text,
+        });
       },
       toggleSpeakerPopover: (segmentId, anchor) =>
         setActivePopover((open) =>
@@ -255,8 +286,14 @@ export function useTranscriptEditing(
       openSpeakerPopover: (segmentId, anchor) => setActivePopover({ segmentId, anchor }),
       closeSpeakerPopover: () => setActivePopover(null),
       startSpeakerRename: (segmentId, speakerLabel, speakerName) => {
-        setSpeakerRename({ label: speakerLabel, segmentId, savedName: speakerName });
-        setEditValue(speakerName);
+        setEdit({
+          key: Symbol("speaker rename"),
+          kind: "rename",
+          label: speakerLabel,
+          segmentId,
+          value: speakerName,
+          saved: speakerName,
+        });
         setActivePopover(null);
       },
     }),
@@ -264,19 +301,19 @@ export function useTranscriptEditing(
   );
 
   return {
-    editingSpeakerLineId: speakerRename?.segmentId ?? null,
+    editingSpeakerLineId: edit?.kind === "rename" ? edit.segmentId : null,
     editingTextId,
     activePopover,
     isSubmitting,
     editInProgress,
     lineActions,
     editor: {
-      value: editValue,
-      setValue: setEditValue,
+      value: edit?.value ?? "",
+      setValue: (value) => setEdit((open) => (open ? { ...open, value } : open)),
       handleTextSubmit,
       handleKeyDown,
       handleSpeakerRenameSubmit,
-      cancelSpeakerRename: () => setSpeakerRename(null),
+      cancelSpeakerRename: () => setEdit(null),
     },
     handleFindReplaceSubmit,
     handleReplaceCurrent,
