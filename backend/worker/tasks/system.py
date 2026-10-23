@@ -15,12 +15,6 @@ def cleanup_temp_recordings(self):
     from backend.processing.audio_preprocessing import (
         cleanup_stale_pipeline_temp_files,
     )
-    from backend.utils.storage_hygiene import (
-        STORAGE_HYGIENE_DELETE,
-        HygieneOptions,
-        run_storage_hygiene,
-        storage_hygiene_mode,
-    )
 
     cleaned_count = cleanup_recording_audio_chunks(self.session, logger=logger)
     cleaned_count += cleanup_stale_recording_artifacts(max_age_hours=24, logger=logger)
@@ -32,8 +26,16 @@ def cleanup_temp_recordings(self):
     logger.info(f"Cleanup complete. Removed {cleaned_count} items.")
 
     # Last, so the sweeps above have already run. It reads in a session of its
-    # own, opened after it lists the directories.
+    # own, opened after it lists the directories. Imported inside the guard, so
+    # a hygiene module that fails to load stops only this step (#660).
     try:
+        from backend.utils.storage_hygiene import (
+            STORAGE_HYGIENE_DELETE,
+            HygieneOptions,
+            run_storage_hygiene,
+            storage_hygiene_mode,
+        )
+
         run_storage_hygiene(
             get_sync_session,
             HygieneOptions(delete=storage_hygiene_mode() == STORAGE_HYGIENE_DELETE),
