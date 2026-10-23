@@ -299,6 +299,10 @@ DEFAULT_USER_SETTINGS = {
     "glossary_terms": "",
     "install_glossary_terms": "",
     "enable_vad": True,  # Enable Voice Activity Detection (silence filtering)
+    # With VAD on, whether each final-pass stage hears the muted audio
+    # (backend/processing/vad_muting.py).
+    "vad_mute_transcription": True,
+    "vad_mute_diarization": True,
     "enable_diarization": True,  # Enable Speaker Diarization (who said what)
     # Processing tuning (backend/processing/processing_tuning.py). None means
     # inherit: the install's config.json value if set, else the shipped default.

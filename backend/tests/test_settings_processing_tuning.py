@@ -125,6 +125,29 @@ def test_an_out_of_range_value_is_rejected(body) -> None:
     assert row == {"vad_threshold": 0.4}
 
 
+def test_the_vad_mute_switches_default_on_and_save_independently() -> None:
+    """#486: each stage's mute switch reads on until set, and saves alone."""
+    (before, saved), row = _run(
+        [("GET", None), ("POST", {"vad_mute_diarization": False})]
+    )
+
+    assert before.json()["vad_mute_transcription"] is True
+    assert before.json()["vad_mute_diarization"] is True
+    assert saved.status_code == 200
+    assert row["vad_mute_diarization"] is False
+    assert row.get("vad_mute_transcription", True) is True
+
+
+@pytest.mark.parametrize(
+    "body", [{"vad_mute_transcription": "maybe"}, {"vad_mute_diarization": [1]}]
+)
+def test_a_vad_mute_switch_must_be_a_bool(body) -> None:
+    (response,), row = _run([("POST", body)])
+
+    assert response.status_code == 422
+    assert row == {}
+
+
 def test_null_resets_a_value_to_inherit() -> None:
     (response,), row = _run(
         [("POST", {"vad_threshold": None})], stored={"vad_threshold": 0.3}

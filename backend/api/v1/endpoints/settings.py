@@ -116,6 +116,8 @@ class SettingsUpdate(BaseModel):
     glossary_terms: Optional[str] = None
     install_glossary_terms: Optional[str] = None
     enable_vad: Optional[bool] = None
+    vad_mute_transcription: Optional[bool] = None
+    vad_mute_diarization: Optional[bool] = None
     enable_diarization: Optional[bool] = None
     spellcheck_language: Optional[str] = None
     timezone: Optional[str] = None

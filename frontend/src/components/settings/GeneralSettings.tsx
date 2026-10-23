@@ -173,6 +173,7 @@ export default function GeneralSettings({
       "processing",
       "vad",
       "silence",
+      "mute",
       "diarization",
       "voice activity detection",
       "speaker separation",
@@ -395,6 +396,44 @@ export default function GeneralSettings({
               checked={settings.enable_vad !== false} // Default true
               onCheckedChange={(checked) =>
                 onUpdate({ ...settings, enable_vad: checked })
+              }
+            />
+          </SettingsRow>
+
+          <SettingsRow
+            id="recording-vad-mute-transcription"
+            labelId="recording-vad-mute-transcription-label"
+            descriptionId="recording-vad-mute-transcription-help"
+            label="Mute non-speech for transcription"
+            description="Off lets transcription hear everything, which can recover distant speech but can add words from noise and lose short replies on close microphones. Turn off muting for speaker separation too, or some recovered words stay unattributed and hidden in the transcript."
+            controlClassName={SETTINGS_CONTROL_END}
+          >
+            <Switch
+              aria-labelledby="recording-vad-mute-transcription-label"
+              aria-describedby="recording-vad-mute-transcription-help"
+              checked={settings.vad_mute_transcription !== false} // Default true
+              disabled={settings.enable_vad === false}
+              onCheckedChange={(checked) =>
+                onUpdate({ ...settings, vad_mute_transcription: checked })
+              }
+            />
+          </SettingsRow>
+
+          <SettingsRow
+            id="recording-vad-mute-diarization"
+            labelId="recording-vad-mute-diarization-label"
+            descriptionId="recording-vad-mute-diarization-help"
+            label="Mute non-speech for speaker separation"
+            description="Off lets speaker separation hear everything, which tells speakers apart better in small meetings but takes longer on long recordings."
+            controlClassName={SETTINGS_CONTROL_END}
+          >
+            <Switch
+              aria-labelledby="recording-vad-mute-diarization-label"
+              aria-describedby="recording-vad-mute-diarization-help"
+              checked={settings.vad_mute_diarization !== false} // Default true
+              disabled={settings.enable_vad === false}
+              onCheckedChange={(checked) =>
+                onUpdate({ ...settings, vad_mute_diarization: checked })
               }
             />
           </SettingsRow>

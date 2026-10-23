@@ -199,6 +199,13 @@ Every field starts empty, meaning inherit: your installation's value if an admin
 
 To keep more brief speakers, lower the phantom filter's limits or raise its merge similarity. The same **Advanced** block has **Voice activity detection**, which filters silence and noise before transcription and can be turned off if quiet speech is cut off, and **Speaker separation**, which you can turn off for single-speaker recordings to speed up processing.
 
+With voice activity detection on, two switches choose which steps hear the filtered audio. Both are on by default.
+
+- **Mute non-speech for speaker separation**: off, speaker separation hears the whole recording. In small meetings this tells people apart better and puts more short replies on the right speaker, but it takes longer on long recordings.
+- **Mute non-speech for transcription**: off, transcription hears the whole recording. This can recover distant or quiet speech the filter dropped, but it can add words from background noise and lose short replies on close microphones. Words it recovers outside any speaker's turn stay unattributed: the transcript view hides them, while exports and meeting notes include them. Turn off muting for speaker separation too to give them a speaker.
+
+Voice activity detection still runs with both switches off, so a recording with no speech still completes with an empty transcript. Turning voice activity detection off unmutes both.
+
 ### When Voiceprints Need Rebuilding
 
 When an upgrade changes how voiceprints are made, Nojoin rebuilds your saved voiceprints from the original audio in the background, a few meetings at a time. There is nothing to press. Until a voiceprint is rebuilt it is not used for automatic identification, so recognition can be weaker for a while after such an upgrade. A person whose meetings each hold less than 20 seconds of their clear speech keeps the outdated voiceprint, and is not recognised until you link them to a speaker in a meeting with enough.

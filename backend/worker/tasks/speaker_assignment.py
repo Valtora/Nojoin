@@ -71,7 +71,7 @@ def _extract_speaker_voiceprints(ctx, recording: Recording, diarization_result) 
     logger.info("Extracting speaker voiceprints (enable_auto_voiceprints=True)")
 
     return extract_embeddings(
-        ctx.processed_audio_path,
+        ctx.diarization_audio_path,
         diarization_result,
         device_str=merged_config.get("processing_device", "cpu"),
         config=merged_config,
