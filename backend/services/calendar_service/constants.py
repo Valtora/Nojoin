@@ -25,6 +25,16 @@ GOOGLE_EVENTS_URL_TEMPLATE = (
 MICROSOFT_GRAPH_URL = "https://graph.microsoft.com/v1.0"
 MICROSOFT_COMMON_TENANT = "common"
 OAUTH_STATE_TTL_SECONDS = 10 * 60
+# OAuth ``error`` codes (RFC 6749 section 5.2 and OpenID Connect) with which a
+# token endpoint refuses a stored refresh token for good: revoked, expired,
+# password changed, or new consent or MFA needed. Only signing in again fixes
+# them. Microsoft sends its AADSTS refusals (50076, 50173, 65001, 70008,
+# 700082) as ``invalid_grant`` or ``interaction_required``, with the AADSTS
+# number in ``error_description`` and ``error_codes``.
+OAUTH_RECONNECT_ERROR_CODES = frozenset(
+    {"invalid_grant", "interaction_required", "consent_required", "login_required"}
+)
+OAUTH_RECONNECT_STATUS_CODES = frozenset({400, 401})
 SYNC_WINDOW_MONTHS_BACK = 12
 SYNC_WINDOW_MONTHS_FORWARD = 12
 

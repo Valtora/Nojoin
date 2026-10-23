@@ -17,6 +17,7 @@ from http import HTTPStatus
 from typing import Any
 from urllib.parse import urlencode
 
+import httpx
 import redis.asyncio as redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -37,8 +38,13 @@ from .constants import (
     OAUTH_STATE_TTL_SECONDS,
     PROVIDER_DISPLAY_NAMES,
 )
-from .models_dto import ProviderIdentity, ProviderRuntimeConfig, TokenBundle
-from .text_utils import _request_json, _utc_now
+from .models_dto import (
+    CalendarReauthorisationRequired,
+    ProviderIdentity,
+    ProviderRuntimeConfig,
+    TokenBundle,
+)
+from .text_utils import _oauth_reconnect_error_code, _request_json, _utc_now
 from .urls import _build_redirect_uri
 
 # HTTPException is raised only from this module's API-facing helpers, never from
@@ -306,12 +312,27 @@ async def _get_access_token_for_connection(
     if access_token and connection.token_expires_at is None:
         return access_token
     if not refresh_token:
-        raise ValueError("Calendar connection requires reauthorisation")
+        raise CalendarReauthorisationRequired(
+            "Calendar connection requires reauthorisation: no refresh token stored"
+        )
 
-    if connection.provider == CalendarProvider.GOOGLE.value:
-        refreshed = await _refresh_google_access_token(runtime_config, refresh_token)
-    else:
-        refreshed = await _refresh_microsoft_access_token(runtime_config, refresh_token)
+    try:
+        if connection.provider == CalendarProvider.GOOGLE.value:
+            refreshed = await _refresh_google_access_token(
+                runtime_config, refresh_token
+            )
+        else:
+            refreshed = await _refresh_microsoft_access_token(
+                runtime_config, refresh_token
+            )
+    except httpx.HTTPStatusError as exc:
+        refusal_code = _oauth_reconnect_error_code(exc)
+        if refusal_code is None:
+            raise
+        raise CalendarReauthorisationRequired(
+            "Calendar connection requires reauthorisation: the token endpoint "
+            f"answered HTTP {exc.response.status_code} {refusal_code}"
+        ) from exc
 
     connection.access_token_encrypted = encrypt_secret(refreshed.access_token)
     connection.refresh_token_encrypted = (
