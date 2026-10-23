@@ -10,7 +10,9 @@ import { ClientStatus, Recording, RecordingStatus } from "@/types";
  * reaches the PAUSED recording status at all.
  *
  * The PAUSED status is checked alongside the client status so that an older
- * capture paused with no client status recorded still resolves correctly.
+ * capture paused with no client status recorded still resolves correctly. The
+ * server holds the capture lock by the same rule (`is_live_capture` in
+ * backend/models/recording.py), so an import never blocks a capture.
  */
 export const isLiveCaptureInProgress = (
   recording: Recording | null | undefined,

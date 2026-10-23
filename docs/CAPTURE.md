@@ -90,7 +90,7 @@ To take notes on a second device, such as a phone while a laptop records, sign i
 
 ## Paused Recording Lock
 
-Each user can run one browser capture at a time. While a paused recording exists, the **Start Meeting** button reads **Paused recording needs attention** and imports are blocked until you choose in the dialog. An interrupted recording, one whose tab closed without pausing it, holds the same lock, and the button reads **Interrupted recording needs attention**:
+Each user can run one browser capture at a time. While a paused recording exists, the **Start Meeting** button reads **Paused recording needs attention** and imports are blocked until you choose in the dialog. An interrupted recording, one whose tab closed without pausing it, holds the same lock, and the button reads **Interrupted recording needs attention**. A file import never holds it, even one that did not finish ([Importing Recordings](USAGE.md#importing-recordings)). The dialog offers:
 
 - **Resume recording** continues the same recording. The browser asks you to share again.
 - **Stop and process** finalizes the audio already captured and queues processing without opening the share picker. Use it when the meeting is over or the capture was lost.
