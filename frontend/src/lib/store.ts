@@ -8,8 +8,8 @@ export type ActivePanel =
   | "notes"
   | "documents"
   | "analytics"
-  // Mobile only. On desktop the speaker panel lives in the side column, and on
-  // mobile it is reached from the header's actions menu rather than a tab.
+  // Mobile only, where it is a tab. On desktop the speaker panel lives in the
+  // side column.
   | "speakers";
 
 interface NavigationState {

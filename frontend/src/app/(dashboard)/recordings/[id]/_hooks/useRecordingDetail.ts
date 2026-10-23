@@ -415,8 +415,8 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
     }
   }, [isMobile]);
 
-  // The "speakers" panel exists only on mobile, where the header's actions menu
-  // opens it; desktop shows the speaker panel in the side column. Leaving mobile
+  // The "speakers" panel exists only on mobile, where it has a tab; desktop
+  // shows the speaker panel in the side column. Leaving mobile
   // while it is active would blank the main content, so fall back to the
   // transcript.
   useEffect(() => {
