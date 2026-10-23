@@ -573,7 +573,7 @@ Some findings need an image-level fix rather than a requirements bump:
 
 ### Automated Release Notes
 
-After the rolling tags move, `publish-release-notes` finds the previous tag with `git describe`, renders that range with `scripts/render_release_notes.py`, looks up the published digests, and fills [.github/release-notes-template.md](../.github/release-notes-template.md), replacing `{{VERSION}}`, `{{IMAGE_DIGESTS}}` and `{{CHANGELOG}}` where they appear. The current template has no `{{CHANGELOG}}`, so a release carries only the hand-written sections (Highlights, Upgrade, Migration, Rollback, Known Issues and Browser-Capture Compatibility). `make_latest` follows `publish_latest`.
+After the rolling tags move, `publish-release-notes` finds the previous tag with `git describe`, renders that range with `scripts/render_release_notes.py`, looks up the published digests, and fills [.github/release-notes-template.md](../.github/release-notes-template.md), replacing `{{VERSION}}`, `{{IMAGE_DIGESTS}}` and `{{CHANGELOG}}`. The changelog goes under **Changes**, after the hand-written sections (Highlights, Upgrade, Migration, Rollback, Known Issues and Browser-Capture Compatibility), with commits grouped by Conventional Commit type and the minor ones folded into a collapsed block. Rewrite the notes around the three placeholders, not over them: `scripts/validate_docs.py`, which the `Docs validation` job runs on every pull request, fails when one is missing. `make_latest` follows `publish_latest`.
 
 ## Related Docs
 

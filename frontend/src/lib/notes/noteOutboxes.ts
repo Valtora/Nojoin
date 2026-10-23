@@ -1,8 +1,14 @@
-import { holdSignInInPlace } from "@/lib/session";
+import { holdSignInInPlace, useSessionStore } from "@/lib/session";
 import type { RecordingId } from "@/types";
 
 import { NoteOutbox } from "./noteOutbox";
 import { persistNoteOutbox } from "./notePersistence";
+import {
+  forgetStoredRecording,
+  sharedNoteStore,
+  subscribeStoreEvents,
+  type StoreEvent,
+} from "./noteStore";
 
 /**
  * One outbox per recording for the life of the page, so a note on its way and
@@ -17,7 +23,7 @@ import { persistNoteOutbox } from "./notePersistence";
  * signs back in (issue #537).
  */
 
-const outboxes = new Map<RecordingId, { outbox: NoteOutbox; stop: () => void }>();
+const outboxes = new Map<RecordingId, { outbox: NoteOutbox; stop: () => Promise<void> }>();
 
 const anyUnsaved = () => [...outboxes.values()].some(({ outbox }) => outbox.hasUnsaved());
 
@@ -73,22 +79,74 @@ export const subscribeNoteOutboxes = (listener: () => void): (() => void) => {
 
 export const noteOutboxesHere = (): NoteOutboxesHere => here;
 
+/**
+ * Lets go of a recording's outbox, once a write of it already under way has
+ * finished. Returns whether the page held one.
+ */
+const dropOutbox = async (recordingId: RecordingId): Promise<boolean> => {
+  const held = outboxes.get(recordingId);
+  if (!held) return false;
+  outboxes.delete(recordingId);
+  changed();
+  await held.stop();
+  return true;
+};
+
+// Another tab deleted a recording for good: this page drops its outbox for
+// it, and removes the record again in case a write of its own landed after.
+const onStoreEvent = (event: StoreEvent) => {
+  if (event.kind !== "forgot") return;
+  void dropOutbox(event.recordingId).then(async (held) => {
+    const { userId } = useSessionStore.getState();
+    const store = sharedNoteStore();
+    if (!held || userId === null || !store) return;
+    await store.remove(userId, event.recordingId).catch(() => undefined);
+  });
+};
+
+let listening = false;
+
 /** The outbox of a recording, made on first use. */
 export const noteOutboxFor = (recordingId: RecordingId): NoteOutbox => {
   const known = outboxes.get(recordingId);
   if (known) return known.outbox;
+  if (!listening) {
+    listening = true;
+    subscribeStoreEvents(onStoreEvent);
+  }
   const outbox = new NoteOutbox(recordingId);
-  outbox.subscribe(changed);
-  outboxes.set(recordingId, { outbox, stop: persistNoteOutbox(outbox, recordingId) });
+  const stopListening = outbox.subscribe(changed);
+  const stopPersisting = persistNoteOutbox(outbox, recordingId);
+  outboxes.set(recordingId, {
+    outbox,
+    stop: () => {
+      stopListening();
+      return stopPersisting();
+    },
+  });
   // `useNoteOutbox` makes it during a render, and React refuses to update
   // another component (the recordings rail) in the middle of one.
   queueMicrotask(changed);
   return outbox;
 };
 
+/**
+ * Forgets the notes of a recording deleted for good (issue #610): this page's
+ * outbox for it, the signed-in account's record of it, and every other tab's
+ * outbox for it. None of them can be sent any more, so none of them is kept,
+ * marked in the recordings list or allowed to hold the page.
+ */
+export const forgetRecordingNotes = async (recordingId: RecordingId): Promise<void> => {
+  await dropOutbox(recordingId);
+  await forgetStoredRecording(recordingId);
+  // The recordings list reads the store again.
+  here = { ...here };
+  for (const listener of hereListeners) listener();
+};
+
 /** Tests: forget every recording's outbox. */
 export const forgetNoteOutboxes = (): void => {
-  for (const { stop } of outboxes.values()) stop();
+  for (const { stop } of outboxes.values()) void stop();
   outboxes.clear();
   changed();
 };

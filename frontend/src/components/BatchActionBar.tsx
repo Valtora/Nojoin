@@ -13,6 +13,7 @@ import {
   batchAddTagToRecordings,
   batchRemoveTagFromRecordings,
 } from "@/lib/api";
+import { forgetRecordingNotes } from "@/lib/notes/noteOutboxes";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { notifyRequestError } from "@/lib/notifyRequestError";
 
@@ -116,6 +117,7 @@ export default function BatchActionBar({
       onConfirm: async () => {
         try {
           await batchPermanentlyDeleteRecordings(selectedRecordingIds);
+          for (const id of selectedRecordingIds) void forgetRecordingNotes(id);
           addNotification({
             type: "success",
             message: `Permanently deleted ${selectedRecordingIds.length} recordings`,

@@ -218,7 +218,9 @@ export type StoreEvent =
   /** The next accepted sign-in resumed it. */
   | { kind: "resumed" }
   /** Every record of an account not in `accounts` was removed. */
-  | { kind: "kept"; accounts: number[] };
+  | { kind: "kept"; accounts: number[] }
+  /** Another tab deleted `recordingId` for good and removed its record. */
+  | { kind: "forgot"; recordingId: RecordingId };
 
 const storeListeners = new Set<(event: StoreEvent) => void>();
 
@@ -235,7 +237,10 @@ const emit = (event: StoreEvent) => {
  */
 const CHANNEL_NAME = "nojoin-notes";
 
-type Ping = { kind: "signed-out" } | { kind: "kept"; accounts: number[] };
+type Ping =
+  | { kind: "signed-out" }
+  | { kind: "kept"; accounts: number[] }
+  | { kind: "forgot"; recordingId: RecordingId };
 
 let channel: BroadcastChannel | null | undefined;
 
@@ -244,7 +249,8 @@ const isPing = (data: unknown): data is Ping =>
   (data.kind === "signed-out" ||
     (data.kind === "kept" &&
       Array.isArray(data.accounts) &&
-      data.accounts.every((account) => Number.isInteger(account))));
+      data.accounts.every((account) => Number.isInteger(account))) ||
+    (data.kind === "forgot" && typeof data.recordingId === "string" && data.recordingId !== ""));
 
 const stopStoring = () => {
   if (signedOut) return;
@@ -272,6 +278,11 @@ const removeAgain = (remove: (store: NoteStore) => Promise<void>) => {
 
 const heard = (data: unknown) => {
   if (!isPing(data)) return;
+  if (data.kind === "forgot") {
+    // A page holding the recording's outbox drops it (`noteOutboxes`).
+    emit({ kind: "forgot", recordingId: data.recordingId });
+    return;
+  }
   if (data.kind === "signed-out") {
     stopStoring();
     removeAgain((store) => store.clear());
@@ -350,6 +361,23 @@ export const storedNotesSignedIn = async (accountId?: number): Promise<void> => 
   }
   emit({ kind: "kept", accounts });
   tell({ kind: "kept", accounts });
+};
+
+/**
+ * A recording deleted for good (issue #610): removes the signed-in account's
+ * record of it, and tells the other tabs, so a page holding its outbox drops
+ * it and removes the record again after any write of its own.
+ */
+export const forgetStoredRecording = async (recordingId: RecordingId): Promise<void> => {
+  tell({ kind: "forgot", recordingId });
+  const { userId } = useSessionStore.getState();
+  const store = sharedNoteStore();
+  if (userId === null || !store) return;
+  try {
+    await store.remove(userId, recordingId);
+  } catch {
+    // Left until a sign-out, or another account's sign-in, removes it.
+  }
 };
 
 /** How long signing out waits for the stored notes to be removed. */
