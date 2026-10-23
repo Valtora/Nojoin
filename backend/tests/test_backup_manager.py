@@ -2277,6 +2277,66 @@ def test_audio_that_collides_on_its_archive_name_is_counted_and_logged(
         assert members == ["recordings/meeting.opus"]
 
 
+def test_audio_outside_the_recordings_directories_is_left_out_and_logged(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # Only a file inside a recordings directory is archived: the one the data
+    # directory holds, or the one uploads and imports write to.
+    context = build_test_context(tmp_path / "source")
+    uploads = tmp_path / "uploads"
+    uploads.mkdir()
+    monkeypatch.setenv("RECORDINGS_DIR", str(uploads))
+    recordings_dir = context.path_manager.recordings_directory
+    kept = recordings_dir / "kept.wav"
+    kept.write_bytes(b"KEPT")
+    uploaded = uploads / "uploaded.wav"
+    uploaded.write_bytes(b"UPLOADED")
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    outside = elsewhere / "outside.wav"
+    outside.write_bytes(b"OUTSIDE")
+    linked = recordings_dir / "linked.wav"
+    linked.symlink_to(outside)
+    climbing = f"{recordings_dir}/../../elsewhere/outside.wav"
+    rows = [
+        SimpleNamespace(audio_path=path)
+        for path in (str(kept), str(uploaded), str(outside), str(linked), climbing)
+    ]
+
+    plan = backup_plans._build_audio_plan(
+        rows, recordings_dir, backup_format.ARCHIVE_QUALITY_ORIGINAL
+    )
+
+    assert [entry.source_path for entry in plan.entries] == [str(kept), str(uploaded)]
+    assert plan.missing_audio == 3
+    assert caplog.text.count("outside the recordings directory") == 3
+    assert backup_plans._resolve_source_audio_path(str(outside), recordings_dir) is None
+
+
+def test_document_outside_the_documents_directory_is_left_out_and_logged(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    context = build_test_context(tmp_path / "source")
+    documents_dir = context.path_manager.documents_directory
+    kept = documents_dir / "agenda.pdf"
+    kept.write_bytes(b"AGENDA")
+    outside = tmp_path / "outside.pdf"
+    outside.write_bytes(b"OUTSIDE")
+    climbing = f"{documents_dir}/../../outside.pdf"
+    rows = [
+        SimpleNamespace(file_path=path) for path in (str(kept), str(outside), climbing)
+    ]
+
+    plan = backup_plans._build_document_plan(rows, documents_dir)
+
+    assert plan.entries == [(str(kept), "documents/agenda.pdf")]
+    assert plan.missing_files == 2
+    assert caplog.text.count("outside the documents directory") == 2
+
+
 @pytest.mark.anyio
 async def test_recording_without_archived_audio_never_takes_another_recordings_member(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch

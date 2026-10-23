@@ -60,7 +60,7 @@ A large library can produce an archive bigger than the restore upload limit, whi
 
 ### Recordings Without Audio
 
-If a recording's audio file is missing, empty or unreadable, cannot be re-encoded, or clashes with another recording's name in the archive, its metadata, transcript and notes are still archived. The download tells you how many recordings were affected, and `backup_info.json` in the archive records the counts (`recordings_without_audio`, `recordings_audio_failed`, and `documents_without_files` and `documents_failed` for attached documents). Those recordings restore without playable audio.
+If a recording's audio file is missing, empty or unreadable, cannot be re-encoded, or clashes with another recording's name in the archive, its metadata, transcript and notes are still archived. A file a recording or document names outside Nojoin's recordings or documents directory counts as missing. The download tells you how many recordings were affected, and `backup_info.json` in the archive records the counts (`recordings_without_audio`, `recordings_audio_failed`, and `documents_without_files` and `documents_failed` for attached documents). Those recordings restore without playable audio.
 
 Archives made before 2.6.0 left out the audio of WebM browser recordings and of AAC, MP4, WMA and WebM imports, so those recordings are metadata only. Take a new backup to capture their audio.
 
