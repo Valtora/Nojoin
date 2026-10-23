@@ -346,7 +346,7 @@ Most settings belong to your account. One marked **This browser** is kept in the
 
 Two per-user settings:
 
-- **Transcription language**, under **Settings > Transcription**, is the language spoken in your recordings. The default is **Auto-detect**. Whisper can detect a language or be forced to one, Canary takes the listed forced languages, and Parakeet always detects.
+- **Transcription language**, under **Settings > Transcription**, is the language spoken in your recordings. The default is **Auto-detect**. Whisper can detect a language or be forced to one, and Parakeet always detects. Canary can't detect a language, so it needs one set: with Canary the setting shows **English** until you choose another, and recordings are transcribed as English.
 - **Notes language**, under **Settings > Notes and live assistance**, is the language of generated titles, headings, summaries, notes and action items, and of the AI meeting analysis. The default is English. Choose British or American English, the transcription language, another listed language, or **Custom** with your own instruction for language, conventions, tone and heading style.
 
 Changes apply to new work. Reprocess a recording to transcribe it in a new language, and generate its notes again to change their language; saved notes are not translated. Neither setting translates the interface, Meeting Edge or chat.

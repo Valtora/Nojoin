@@ -638,6 +638,31 @@ def test_canary_passes_forced_language_to_recognizer(tmp_path, monkeypatch):
     assert result["language"] == "fr"
 
 
+def test_canary_on_auto_transcribes_as_english(tmp_path, monkeypatch):
+    from backend.processing.engines.canary_engine import CanaryEngine
+
+    audio_path = tmp_path / "canary.wav"
+    _write_silence(audio_path, 1)
+    calls = []
+
+    class _Recognizer:
+        def recognize(self, path, **kwargs):
+            calls.append((path, kwargs))
+            return _FakeRecognized()
+
+    class _Model:
+        def with_timestamps(self):
+            return _Recognizer()
+
+    engine = CanaryEngine()
+    monkeypatch.setattr(engine, "_get_model", lambda config: _Model())
+
+    result = engine.transcribe(str(audio_path), {"transcription_language": "auto"})
+
+    assert calls == [(str(audio_path), {"language": "en"})]
+    assert result["language"] == "en"
+
+
 def test_parakeet_ignores_forced_language(tmp_path, monkeypatch):
     from backend.processing.engines.parakeet_engine import ParakeetEngine
 

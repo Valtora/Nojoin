@@ -755,6 +755,8 @@ export interface LanguageChoice {
 
 export interface TranscriptionEngineLanguageCapability {
   forced_language: boolean;
+  /** False when the engine can't detect a language (Canary transcribes "auto" as English). */
+  auto_detect: boolean;
   guidance: string;
 }
 

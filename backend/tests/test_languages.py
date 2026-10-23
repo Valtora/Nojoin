@@ -42,6 +42,44 @@ def test_resolve_transcription_language_respects_engine_capability() -> None:
     assert resolve_transcription_language_code(settings, "parakeet") is None
 
 
+@pytest.mark.parametrize("settings", [{"transcription_language": "auto"}, {}])
+def test_canary_on_auto_resolves_to_english(settings: dict[str, str]) -> None:
+    # onnx-asr prompts Canary with English when no language is passed.
+    assert resolve_transcription_language_code(settings, "canary") == "en"
+
+
+@pytest.mark.parametrize("settings", [{"transcription_language": "auto"}, {}])
+def test_whisper_and_parakeet_on_auto_still_detect(settings: dict[str, str]) -> None:
+    assert resolve_transcription_language_code(settings, "whisper") is None
+    assert resolve_transcription_language_code(settings, "parakeet") is None
+
+
+def test_registry_says_only_canary_cannot_auto_detect() -> None:
+    capabilities = get_language_registry_payload()["engine_capabilities"]
+
+    assert capabilities["canary"]["auto_detect"] is False
+    assert capabilities["whisper"]["auto_detect"] is True
+    assert capabilities["parakeet"]["auto_detect"] is True
+
+
+def test_canary_on_auto_notes_follow_english() -> None:
+    resolved = resolve_language_preferences(
+        {"transcription_language": "auto", "notes_language": "same_as_transcription"},
+        transcription_backend="canary",
+    )
+
+    assert resolved.notes_language_label == "Same as transcription (English)"
+
+
+def test_canary_hash_records_auto_as_english() -> None:
+    base = {"transcription_backend": "canary", "canary_model": "nemo-canary-1b-v2"}
+
+    automatic = build_asr_config_hash({**base, "transcription_language": "auto"})
+    english = build_asr_config_hash({**base, "transcription_language": "en"})
+
+    assert automatic == english
+
+
 def test_british_english_notes_instruction_is_explicit() -> None:
     resolved = resolve_language_preferences({"notes_language": "english_british"})
 
