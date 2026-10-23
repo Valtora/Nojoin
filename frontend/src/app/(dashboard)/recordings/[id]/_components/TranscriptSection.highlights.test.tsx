@@ -253,6 +253,36 @@ describe("editing a note in the processed transcript", () => {
     ).toHaveValue("Check the figure");
   });
 
+  it("keeps an editor holding typed text when another note's words are pressed", () => {
+    // On the line before, so neither note folds into a count.
+    const morning: TimelineNote = {
+      ...EXACT,
+      id: "n-morning",
+      body: "Say hello",
+      start_ms: 0,
+      end_ms: 2_000,
+      quoted_text: "Good morning",
+    };
+    renderSection([EXACT, morning]);
+    const other = () => document.querySelector<HTMLElement>('mark[data-note-id="n-morning"]')!;
+    const press = (element: HTMLElement) => {
+      fireEvent.pointerDown(element);
+      fireEvent.click(element);
+    };
+
+    const editor = openFromLine("n-exact", "Check the figure");
+    fireEvent.change(within(editor).getByRole("textbox"), { target: { value: "Mine" } });
+    press(other());
+    expect(within(screen.getByRole("dialog", { name: "Edit the note at 01:05" })).getByRole("textbox")).toHaveValue(
+      "Mine",
+    );
+
+    // Back as it opened, it gives way to the words pressed.
+    fireEvent.change(within(editor).getByRole("textbox"), { target: { value: "Check the figure" } });
+    press(other());
+    expect(within(screen.getByRole("dialog")).getByRole("textbox")).toHaveValue("Say hello");
+  });
+
   it("on a change made elsewhere, shows the note as it is now and keeps the text typed", async () => {
     updateTimelineNote.mockRejectedValueOnce(conflict({ ...EXACT, body: "Changed on my phone", revision: 5 }));
     renderSection([EXACT]);

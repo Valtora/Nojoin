@@ -235,6 +235,17 @@ export default function TranscriptView({
   // Each saved selection note's words, found in the lines as they read now.
   const { noteDecorations, wordsChanged } = useNoteHighlights(segments, timelineNotes);
   const [editingNote, setEditingNote] = useState<EditingNote | null>(null);
+  // The editor shows only while its note is a saved one in the list.
+  const shownEditor =
+    editingNote !== null &&
+    (timelineNotes ?? []).some((note) => note.id === editingNote.noteId && isSavedNote(note))
+      ? editingNote
+      : null;
+  // An editor still open holds typed text or a write, so another note's marks
+  // or pencil never replace it; one left as it opened has already closed on
+  // the press (`NoteOnSelectionPopover`).
+  const openNoteEditor = (next: EditingNote) =>
+    setEditingNote((open) => (open !== null && open === shownEditor ? open : next));
   const canEditNote = (note: TimelineNote | InlineNote) =>
     onEditNote !== undefined && isSavedNote(note) && note.revision !== undefined;
   // A click on a note's marked words edits the note, unless it ended a
@@ -245,7 +256,7 @@ export default function TranscriptView({
     const noteId = mark?.dataset.noteId;
     if (!mark || !noteId || !onEditNote) return;
     if (window.getSelection()?.isCollapsed === false) return;
-    setEditingNote({ noteId, anchor: mark });
+    openNoteEditor({ noteId, anchor: mark });
   };
   const renderNote = (note: TimelineNote | InlineNote) => {
     const key = "key" in note ? note.key : note.id;
@@ -258,7 +269,7 @@ export default function TranscriptView({
           wordsChanged={note.kind === "selection" ? wordsChanged(note.id) : null}
           onEdit={
             canEditNote(note)
-              ? (trigger) => setEditingNote({ noteId: note.id, anchor: trigger })
+              ? (trigger) => openNoteEditor({ noteId: note.id, anchor: trigger })
               : undefined
           }
           timeLabel={formatTime(
@@ -432,7 +443,7 @@ export default function TranscriptView({
       <TranscriptSelectionNotes root={scrollContainerRef} onAddNote={onAddNote ? addNote : undefined} />
       {onEditNote ? (
         <TranscriptNoteEditor
-          editing={editingNote}
+          editing={shownEditor}
           notes={timelineNotes}
           onEditNote={onEditNote}
           onDeleteNote={onDeleteNote}
