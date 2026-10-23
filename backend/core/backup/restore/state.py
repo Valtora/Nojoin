@@ -85,9 +85,17 @@ class _RestoreState:
             except Exception:  # noqa: BLE001 -- boundary: progress reporting must never fail a restore
                 logger.debug("Restore progress callback failed", exc_info=True)
 
-    def stage_path(self, member: str) -> str:
-        """Absolute path an archive member was unpacked to."""
-        return os.path.abspath(os.path.join(os.fspath(self.staging_dir), member))
+    def stage_path(self, member: str) -> str | None:
+        """Absolute path an archive member was unpacked to.
+
+        None for a name that does not lead inside the staging directory, such as
+        an absolute path: only what was unpacked there is ever moved into place.
+        """
+        staging_root = os.path.abspath(os.fspath(self.staging_dir))
+        staged = os.path.abspath(os.path.join(staging_root, member))
+        if not staged.startswith(staging_root + os.sep):
+            return None
+        return staged
 
     def claim_move(self, staged: str, destination: str) -> bool:
         """Queue a staged file to be moved into place after the commit.

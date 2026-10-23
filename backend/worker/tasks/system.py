@@ -221,14 +221,15 @@ def generate_proxy_task(self, recording_id: int):
             logger.error(f"Recording {recording_id} not found for proxy generation")
             return
 
-        if not recording.audio_path or not os.path.exists(recording.audio_path):
+        audio_path = confined_recording_path(recording.audio_path)
+        if not audio_path or not os.path.exists(audio_path):
             logger.error(f"Audio file not found for recording {recording_id}")
             return
 
-        base_path, _ = os.path.splitext(recording.audio_path)
+        base_path, _ = os.path.splitext(audio_path)
         proxy_path = f"{base_path}.mp3"
 
-        if _paths_point_to_same_media(recording.audio_path, proxy_path):
+        if _paths_point_to_same_media(audio_path, proxy_path):
             logger.info(
                 "Recording %s already uses an MP3 source; reusing it as proxy audio.",
                 recording_id,
@@ -241,9 +242,7 @@ def generate_proxy_task(self, recording_id: int):
         logger.info(f"Generating proxy for recording {recording_id} at {proxy_path}")
 
         mix_to_mono = _recording_uses_browser_capture(session, recording_id)
-        if convert_to_proxy_mp3(
-            recording.audio_path, proxy_path, mix_to_mono=mix_to_mono
-        ):
+        if convert_to_proxy_mp3(audio_path, proxy_path, mix_to_mono=mix_to_mono):
             recording.proxy_path = proxy_path
             session.add(recording)
             session.commit()

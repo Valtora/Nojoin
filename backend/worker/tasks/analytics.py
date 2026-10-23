@@ -22,6 +22,7 @@ from backend.models.recording import Recording
 from backend.models.transcript import Transcript
 from backend.processing.pipeline_metrics import pipeline_metric_timer
 from backend.utils.analytics_payload import DELIVERY_KEY, merge_analytics_payload
+from backend.utils.stored_paths import confined_recording_path
 from backend.utils.time import utc_now
 
 logger = logging.getLogger(__name__)
@@ -88,7 +89,8 @@ def compute_delivery_analytics_task(recording_id: int) -> dict[str, Any]:
         if transcript is None:
             return {"status": "skipped", "reason": "transcript_not_found"}
 
-        if not recording.audio_path or not os.path.exists(recording.audio_path):
+        audio_path = confined_recording_path(recording.audio_path)
+        if not audio_path or not os.path.exists(audio_path):
             # A recording whose audio is gone can never produce these, so this
             # is a terminal state the interface should report rather than a
             # failure worth retrying.
@@ -118,7 +120,7 @@ def compute_delivery_analytics_task(recording_id: int) -> dict[str, Any]:
                 log=logger,
             ) as metric:
                 delivery = analyse_delivery(
-                    recording.audio_path,
+                    audio_path,
                     utterances,
                     browser_capture=browser_capture,
                 )

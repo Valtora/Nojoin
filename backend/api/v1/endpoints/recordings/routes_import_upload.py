@@ -28,6 +28,7 @@ from backend.processing.speaker_cap import (
 from backend.utils.audio import concatenate_binary_files, get_audio_duration
 from backend.utils.import_audio import KEEPING_AUDIO_STEP, MEDIA_CONTAINER_SUFFIXES
 from backend.utils.rate_limit import enforce_upload_concurrency
+from backend.utils.stored_paths import require_recording_path
 from backend.utils.time import utc_now
 from backend.utils.upload_limit import (
     UPLOAD_LIMIT_LEGACY_RECORDING,
@@ -368,11 +369,13 @@ async def finalize_chunked_import(
     recording_pk = recording.id
     assembled_path = recording.audio_path
     try:
-        segment_paths = [row.storage_path for row in chunk_rows]
+        segment_paths = [require_recording_path(row.storage_path) for row in chunk_rows]
         # A worker thread copies the parts: a video import runs to gigabytes,
         # and every other request waits while the event loop is copying.
         await asyncio.to_thread(
-            concatenate_binary_files, segment_paths, recording.audio_path
+            concatenate_binary_files,
+            segment_paths,
+            require_recording_path(recording.audio_path),
         )
 
         file_stats = os.stat(recording.audio_path)

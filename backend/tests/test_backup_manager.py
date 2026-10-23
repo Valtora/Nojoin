@@ -928,6 +928,161 @@ async def test_restore_rejects_zip_slip_path_traversal_and_fails_job(
     await target_context.async_engine.dispose()
 
 
+def _start_restore_job(job_id: str) -> None:
+    BackupManager.restore_jobs[job_id] = {
+        "status": "pending",
+        "progress": "Queued",
+        "error": None,
+    }
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("member", "row"),
+    [
+        ("recordings.json", {"id": 40, "audio_path": "recordings/../../outside.wav"}),
+        ("recordings.json", {"id": 40, "audio_path": "..\\outside.wav"}),
+        (
+            "documents.json",
+            {"id": 3, "recording_id": 40, "file_path": "documents/../outside.pdf"},
+        ),
+    ],
+)
+async def test_restore_refuses_a_row_naming_a_file_outside_its_folder(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    member: str,
+    row: dict[str, Any],
+) -> None:
+    # Nojoin never writes a path with a ".." component, so the archive is
+    # refused whole, before anything changes.
+    context = build_test_context(tmp_path / "target")
+    patch_backup_manager(monkeypatch, context)
+    backup_zip = tmp_path / "climbing.zip"
+    with zipfile.ZipFile(backup_zip, "w") as archive:
+        for table_name, _ in TEST_MODELS:
+            rows = [row] if f"{table_name}.json" == member else []
+            archive.writestr(f"{table_name}.json", json.dumps(rows))
+
+    _start_restore_job("climbing-job")
+    await BackupManager.restore_backup("climbing-job", str(backup_zip))
+
+    job = BackupManager.restore_jobs["climbing-job"]
+    assert job["status"] == "failed"
+    assert f"{member} names a file outside its folder" in (job["error"] or "")
+    with Session(context.sync_engine) as session:
+        assert session.exec(select(TestRecording)).all() == []
+
+    await context.async_engine.dispose()
+
+
+@pytest.mark.anyio
+async def test_restore_moves_into_place_only_files_it_unpacked(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A row may name its audio by any path, and an older archive may name one
+    # by an absolute path. Only a member unpacked into staging is moved.
+    context = build_test_context(tmp_path / "target")
+    patch_backup_manager(monkeypatch, context)
+    monkeypatch.setattr(
+        backup_stages, "_enqueue_recording_finalization", lambda *args, **kwargs: None
+    )
+    elsewhere = tmp_path / "elsewhere" / "outside.wav"
+    elsewhere.parent.mkdir()
+    elsewhere.write_bytes(b"NOT FROM THE ARCHIVE")
+
+    backup_zip = tmp_path / "absolute.zip"
+    with zipfile.ZipFile(backup_zip, "w") as archive:
+        archive.writestr(
+            "users.json",
+            json.dumps(
+                [
+                    {
+                        "id": 1,
+                        "created_at": utc_now().isoformat(),
+                        "updated_at": utc_now().isoformat(),
+                        "username": "alice",
+                        "hashed_password": "hashed-password",
+                        "is_active": True,
+                        "is_superuser": False,
+                        "force_password_change": False,
+                        "role": "user",
+                        "settings": {},
+                    }
+                ]
+            ),
+        )
+        archive.writestr(
+            "recordings.json",
+            json.dumps(
+                [
+                    {
+                        "id": 40,
+                        "created_at": utc_now().isoformat(),
+                        "updated_at": utc_now().isoformat(),
+                        "name": "Planning",
+                        "meeting_uid": "absolute-path-meeting-uid",
+                        "audio_path": str(elsewhere),
+                        "status": "PROCESSED",
+                        "user_id": 1,
+                    }
+                ]
+            ),
+        )
+        for table_name, _ in TEST_MODELS:
+            if table_name not in {"users", "recordings"}:
+                archive.writestr(f"{table_name}.json", "[]")
+
+    _start_restore_job("absolute-job")
+    await BackupManager.restore_backup("absolute-job", str(backup_zip))
+
+    assert BackupManager.restore_jobs["absolute-job"]["status"] == "completed"
+    assert elsewhere.read_bytes() == b"NOT FROM THE ARCHIVE"
+    recordings_dir = context.path_manager.recordings_directory
+    assert list(recordings_dir.iterdir()) == []
+    with Session(context.sync_engine) as session:
+        restored = session.exec(select(TestRecording)).one()
+    assert restored.audio_path.endswith("outside.wav")
+    assert Path(restored.audio_path).resolve().parent == recordings_dir.resolve()
+
+    await context.async_engine.dispose()
+
+
+def test_archive_paths_never_lead_above_the_directory_they_join(tmp_path: Path) -> None:
+    root = tmp_path / "recordings"
+
+    assert backup_paths._get_subpath_after(
+        "recordings/../../etc/meeting.wav", "recordings"
+    ) == ("etc/meeting.wav")
+    restored = backup_paths._build_runtime_recording_audio_path(
+        "recordings/../../meeting.wav", root
+    )
+    assert Path(restored).resolve().parent == root.resolve()
+
+
+def test_only_paths_inside_staging_are_staged(tmp_path: Path) -> None:
+    from backend.core.backup.restore.state import _RestoreState
+
+    state = _RestoreState(
+        job_id="stage",
+        clear_existing=False,
+        overwrite_existing=False,
+        recordings_dir=tmp_path / "recordings",
+        config_path=tmp_path / "config.json",
+        user_data_dir=tmp_path,
+        documents_dir=tmp_path / "documents",
+        id_map={},
+        staging_dir=tmp_path / "staging",
+    )
+
+    assert state.stage_path("recordings/meeting.wav") == str(
+        tmp_path / "staging" / "recordings" / "meeting.wav"
+    )
+    assert state.stage_path(str(tmp_path / "elsewhere.wav")) is None
+    assert state.stage_path("recordings/../../elsewhere.wav") is None
+
+
 @pytest.mark.anyio
 async def test_identity_remap_assigns_new_ids_and_remaps_child_foreign_keys(
     tmp_path: Path,
