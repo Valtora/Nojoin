@@ -81,6 +81,16 @@ describe("react-datepicker time column, arrow and keyboard day colours", () => {
     }
   });
 
+  // The library styles no focused day or time, so Chrome drew its default
+  // ring rather than the design system's (#623).
+  it.each([".react-datepicker__day:focus-visible", ".react-datepicker__time-list-item:focus-visible"])(
+    "rings %s with the focus ring token",
+    (selector) => {
+      const outline = globals.find((rule) => rule.selector === selector && rule.property === "outline");
+      expect(outline?.value).toBe("2px solid var(--focus-ring)");
+    },
+  );
+
   it("colours the column without !important", () => {
     const forced = globals.filter(
       (rule) =>

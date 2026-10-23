@@ -3,7 +3,6 @@
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { Markdown } from 'tiptap-markdown';
-import Link from '@tiptap/extension-link';
 import { TableKit } from '@tiptap/extension-table';
 import { useEffect } from 'react';
 
@@ -32,14 +31,18 @@ export default function MarkdownBubble({
     injectCSS: false,
     editable: false,
     extensions: [
-      StarterKit,
-      Link.configure({
-        openOnClick: true,
-        autolink: true,
-        HTMLAttributes: {
-          class: linkClassName,
-          target: '_blank',
-          rel: 'noopener noreferrer',
+      // StarterKit already includes Link (and Underline), so Link is
+      // configured through it: registering it again ran two copies of its
+      // plugins (#621).
+      StarterKit.configure({
+        link: {
+          openOnClick: true,
+          autolink: true,
+          HTMLAttributes: {
+            class: linkClassName,
+            target: '_blank',
+            rel: 'noopener noreferrer',
+          },
         },
       }),
       // Read-only surface, so column resizing would only get in the way; the

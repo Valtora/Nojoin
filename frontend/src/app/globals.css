@@ -546,6 +546,20 @@ html:is([data-ui-density="compact"], [data-ui-density="dense"]) .density-body-co
   color: var(--foreground);
 }
 
+/* The library gives a focused day or time no style, so Chrome drew its own
+   ring. They take the design system's ring instead (#623), as Button draws it.
+   A time sits in a scrolling list that would clip a ring drawn outside it, so
+   its ring is drawn inside. */
+.react-datepicker__day:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.react-datepicker__time-list-item:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
 /* The time column and the popover's arrow repeat the library's own selectors:
    at the same specificity and loaded later, they win without !important. A
    shorter selector loses to the library's, which is how the column stayed
