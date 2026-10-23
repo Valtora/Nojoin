@@ -24,6 +24,7 @@ export default function LiveLineMenu({ segment, onNoteOnLine }: LiveLineMenuProp
     view: "live",
     canNote: selection !== null,
     canEdit: false,
+    provisional: true,
     canPlay: false,
   }).map((action) => ({
     ...action,

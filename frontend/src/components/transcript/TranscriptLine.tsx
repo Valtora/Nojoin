@@ -62,8 +62,9 @@ type TranscriptLineProps = Pick<IndexedTranscriptSegment, "segment" | "index" | 
 
 /**
  * One line of the finished transcript: its speaker (click to reassign,
- * double-click to rename), its pills, its ⋯ menu, and its text in a bubble
- * that turns into an editor on click.
+ * double-click to rename), its pills, its ⋯ menu, and its text in a bubble,
+ * which turns into an editor only from the menu's Edit text: a click on the
+ * text selects it, for a note or a copy.
  *
  * Memoised: a playback tick or a keystroke in the find bar redraws only the
  * lines whose own props changed, so every prop is either a value or keeps its
@@ -219,19 +220,7 @@ function TranscriptLine({
             startMs={segmentStartMs(segment)}
             endMs={segmentEndMs(segment)}
             decorations={decorations}
-            className={`leading-relaxed whitespace-pre-wrap text-contrast-muted ${
-              isSegmentReadOnly
-                ? ""
-                : "cursor-text hover:text-foreground"
-            }`}
-            onClick={(e) => {
-              e.stopPropagation();
-              // The click that ends a drag-select keeps the selection, for
-              // its toolbar, rather than opening the editor over it.
-              if (window.getSelection()?.isCollapsed === false) return;
-              actions.startTextEdit(segment, segmentId);
-            }}
-            title={isSegmentReadOnly ? undefined : "Click to edit text"}
+            className="leading-relaxed whitespace-pre-wrap text-contrast-muted"
           />
         )}
       </div>

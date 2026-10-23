@@ -80,6 +80,7 @@ export default function TranscriptLineMenu({
     view: "finished",
     canNote: onAddNote !== null && selection !== null,
     canEdit: !isSegmentReadOnly,
+    provisional: segment.provisional === true,
     canPlay: onPlayFrom !== null,
   }).map((action) => ({ ...action, onSelect: run[action.id] }));
 

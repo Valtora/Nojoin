@@ -192,7 +192,7 @@ describe("selected text in the finished transcript", () => {
     );
   });
 
-  it("keeps the selection rather than opening the editor on the click that ends it", () => {
+  it("opens no editor on a click on a line's text, whether or not it ends a selection", () => {
     renderFinished();
     drag([0, 6], [0, 14]);
     fireEvent.click(lineText(0));
@@ -200,10 +200,10 @@ describe("selected text in the finished transcript", () => {
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
     expect(toolbar()).toBeInTheDocument();
 
-    // A plain click, with nothing selected, still edits the line.
+    // Edit text in the line's ⋯ menu is the only way into the editor.
     document.getSelection()!.removeAllRanges();
     fireEvent.click(lineText(0));
-    expect(screen.getByRole("textbox")).toHaveValue("Forty thousand for the venue");
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
   });
 
   it("goes away on Escape, or on a press anywhere but the toolbar", () => {

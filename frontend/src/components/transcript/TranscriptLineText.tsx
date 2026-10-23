@@ -1,6 +1,6 @@
 "use client";
 
-import type { MouseEventHandler, ReactNode } from "react";
+import type { ReactNode } from "react";
 
 import { buildTextRuns, type TextDecoration, type TextRun } from "./textDecorations";
 
@@ -13,8 +13,6 @@ interface TranscriptLineTextProps {
   endMs: number;
   decorations?: readonly TextDecoration[];
   className: string;
-  title?: string;
-  onClick?: MouseEventHandler<HTMLParagraphElement>;
 }
 
 const NO_DECORATIONS: readonly TextDecoration[] = [];
@@ -102,8 +100,6 @@ export default function TranscriptLineText({
   endMs,
   decorations = NO_DECORATIONS,
   className,
-  title,
-  onClick,
 }: TranscriptLineTextProps) {
   const runs = decorations.length === 0 ? [] : joinRuns(buildTextRuns(text, decorations));
   const isPlain = runs.every((run) => run.decorations.length === 0);
@@ -114,8 +110,6 @@ export default function TranscriptLineText({
       data-start-ms={startMs}
       data-end-ms={endMs}
       className={className}
-      onClick={onClick}
-      title={title}
     >
       {isPlain ? text : runs.map((run, index) => renderRun(text, run, index))}
     </p>

@@ -144,10 +144,24 @@ describe("a finished line's ⋯ menu", () => {
     expect(screen.getByRole("textbox")).toHaveValue("  forty thousand  ");
 
     // On to the next line to edit: the first editor closes, the new one has focus.
-    fireEvent.click(screen.getByText("alpha and beta"));
+    openMenu("Actions for Alex's line at 00:00");
+    choose("Edit text");
     const next = screen.getByRole("textbox");
     expect(next).toHaveValue("alpha and beta");
     expect(next).toHaveFocus();
+  });
+
+  it("offers no Edit text on a line still live, which the final pass replaces", () => {
+    renderView({
+      allowProvisionalEdits: true,
+      segments: [SEGMENTS[0], { ...SEGMENTS[1], provisional: true }],
+    });
+    openMenu();
+    expect(items().map((item) => item.textContent)).toEqual([
+      "Note on this line",
+      "Change speaker",
+      "Play from here",
+    ]);
   });
 
   it("plays on from the line's start, not to the end of its group", () => {

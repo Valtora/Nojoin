@@ -4,7 +4,13 @@ import { lineActionsFor, type LineActionContext } from "./actions";
 
 const ids = (context: LineActionContext) => lineActionsFor(context).map((action) => action.id);
 
-const FINISHED: LineActionContext = { view: "finished", canNote: true, canEdit: true, canPlay: true };
+const FINISHED: LineActionContext = {
+  view: "finished",
+  canNote: true,
+  canEdit: true,
+  provisional: false,
+  canPlay: true,
+};
 
 describe("lineActionsFor", () => {
   it("offers a finished line a note, its edits and playback, in that order", () => {
@@ -20,8 +26,12 @@ describe("lineActionsFor", () => {
     expect(ids({ ...FINISHED, canPlay: false })).toEqual(["note", "editText", "changeSpeaker"]);
   });
 
+  it("offers no text edit on a line still live, which the final pass replaces", () => {
+    expect(ids({ ...FINISHED, provisional: true })).toEqual(["note", "changeSpeaker", "play"]);
+  });
+
   it("leaves out the note where none can be added", () => {
     expect(ids({ ...FINISHED, canNote: false })).toEqual(["editText", "changeSpeaker", "play"]);
-    expect(ids({ view: "live", canNote: false, canEdit: true, canPlay: true })).toEqual([]);
+    expect(ids({ ...FINISHED, view: "live", canNote: false })).toEqual([]);
   });
 });

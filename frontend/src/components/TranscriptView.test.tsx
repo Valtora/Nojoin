@@ -151,7 +151,8 @@ describe("TranscriptView", () => {
       screen.getByRole("button", { name: "Export transcript" }),
     ).toBeEnabled();
 
-    fireEvent.click(screen.getByText("Stable text"));
+    fireEvent.click(screen.getByRole("button", { name: /^Actions for / }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Edit text" }));
 
     expect(
       screen.getByRole("button", { name: "Export transcript disabled" }),
