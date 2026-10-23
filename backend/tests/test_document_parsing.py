@@ -116,6 +116,48 @@ def pdf_path(tmp_path):
     return str(path)
 
 
+# Cells with the spaces, hyphens, thousands separators and decimal points that
+# PyMuPDF 2.0 mangled in table extraction (pymupdf/PyMuPDF#5198).
+RULED_TABLE_ROWS = [
+    ["Workstream", "Owner", "Due", "Ticket", "Variance"],
+    ["Storage migration", "Avery Holt", "2026-11-04", "OPS-1182", "-1,550"],
+    ["Vendor renewal", "Morgan Pike", "2026-11-18", "FIN-0431", "0.74"],
+]
+
+
+@pytest.fixture
+def ruled_table_pdf_path(tmp_path):
+    """A table ruled on every side, drawn with ReportLab so that the file does
+    not come from the library that parses it."""
+    pytest.importorskip("pymupdf")
+    canvas = pytest.importorskip("reportlab.pdfgen.canvas")
+
+    widths = [130, 90, 80, 70, 70]
+    row_height = 20
+    left, top = 72, 700
+    right = left + sum(widths)
+    bottom = top - row_height * len(RULED_TABLE_ROWS)
+
+    path = tmp_path / "table.pdf"
+    pdf = canvas.Canvas(str(path), pagesize=(595, 842))
+    pdf.setFont("Helvetica", 9)
+    pdf.drawString(left, top + 30, "Workstream status")
+    for index in range(len(RULED_TABLE_ROWS) + 1):
+        y = top - index * row_height
+        pdf.line(left, y, right, y)
+    x = left
+    for width in [0, *widths]:
+        x += width
+        pdf.line(x, top, x, bottom)
+    for index, row in enumerate(RULED_TABLE_ROWS):
+        x = left
+        for cell, width in zip(row, widths):
+            pdf.drawString(x + 4, top - (index + 1) * row_height + 6, cell)
+            x += width
+    pdf.save()
+    return str(path)
+
+
 def _pages(path, *, want_images=False):
     source = open_document(path, want_images=want_images)
     return source.page_count, list(source.pages())
@@ -231,6 +273,18 @@ def test_pdf_renders_one_image_per_page_only_when_asked(pdf_path):
     assert all(len(page.images) == 1 for page in with_images)
     assert all(page.images[0].media_type == "image/png" for page in with_images)
     assert all(page.images[0].data.startswith(b"\x89PNG") for page in with_images)
+
+
+def test_pdf_table_cells_keep_their_exact_text(ruled_table_pdf_path):
+    """Every cell comes back as written, spaces and punctuation included.
+
+    PyMuPDF 2.0 returned "Storage migration" as "Storagemigration" and
+    "2026-11-04" as "20261104 - -" (pymupdf/PyMuPDF#5198). The assertion is on
+    our own output, so it stays the acceptance test if the library changes.
+    """
+    _, pages = _pages(ruled_table_pdf_path)
+
+    assert rows_to_markdown_table(RULED_TABLE_ROWS) in pages[0].text
 
 
 # ---------------------------------------------------------------------------

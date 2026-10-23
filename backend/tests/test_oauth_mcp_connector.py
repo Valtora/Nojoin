@@ -427,6 +427,33 @@ async def test_pkce_mismatch_rejected(
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("form", "status", "error"),
+    [
+        (
+            {"grant_type": "refresh_token", "client_id": "", "refresh_token": "r"},
+            401,
+            "invalid_client",
+        ),
+        ({"grant_type": "refresh_token", "refresh_token": "r"}, 401, "invalid_client"),
+        ({"grant_type": "", "client_id": "app"}, 400, "invalid_request"),
+        ({"client_id": "app"}, 400, "invalid_request"),
+    ],
+)
+async def test_token_request_missing_a_field_gets_an_oauth_error(
+    client: AsyncClient, form, status, error
+):
+    """FastAPI reads an empty form value as absent. Neither an empty nor a
+    missing client_id or grant_type may become FastAPI's own 422: RFC 6749
+    section 5.2 wants an OAuth error body."""
+    response = await client.post("/api/v1/oauth/token", data=form)
+
+    assert response.status_code == status
+    assert response.json()["error"] == error
+    assert response.headers["cache-control"] == "no-store"
+
+
+@pytest.mark.anyio
 async def test_refresh_rotation_and_reuse_revocation(
     client: AsyncClient, fixed_origin, isolated_keyring
 ):
