@@ -20,7 +20,12 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import numpy as np
+    from numpy.typing import NDArray
+    from pyannote.core import Annotation
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +90,7 @@ def muted_stages(config: Mapping[str, object] | None) -> MutedStages:
     )
 
 
-def diarised_turns(diarization: Any) -> list[tuple[float, float]]:
+def diarised_turns(diarization: Annotation) -> list[tuple[float, float]]:
     """(start, end) seconds of every turn in a pyannote ``Annotation``."""
     return [
         (float(turn.start), float(turn.end)) for turn, _ in diarization.itertracks()
@@ -105,7 +110,9 @@ def _turn_frames(
     return sorted(spans)
 
 
-def _inside_turns(spans: list[tuple[int, int]], offset: int, length: int):
+def _inside_turns(
+    spans: list[tuple[int, int]], offset: int, length: int
+) -> NDArray[np.bool_]:
     """Mask of the frames ``offset`` to ``offset + length`` that lie in a span."""
     import numpy as np
 
@@ -127,9 +134,12 @@ def write_union_muted_audio(
 ) -> float:
     """Write the muted file with the unmuted audio put back inside every turn.
 
-    The result is zero only where VAD heard no speech and no turn lies, and in
-    the first and last ``edge_mute_ms``, which stay muted. Inside VAD speech it
-    is the muted file unchanged. Returns the seconds of audio put back.
+    Outside every turn, and in the first and last ``edge_mute_ms``, the result
+    is the muted file; inside a turn it is the unmuted file. With the default
+    "mute" silence method the muted file's speech equals the unmuted file, so
+    the result is zero only where VAD heard no speech and no turn lies. With
+    "fade", VAD speech inside a turn comes back unfaded. Returns the seconds of
+    audio put back.
 
     Raises ``ValueError`` when the two files differ in rate, channels or
     length, and what soundfile raises for a file it cannot read or write.

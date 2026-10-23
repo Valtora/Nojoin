@@ -4,7 +4,8 @@ Extracted from ``pipeline.py`` to keep that module within its size budget. With
 VAD on, the stage keeps two files of the same length and rate, the normalised
 16 kHz mono file and a copy with non-speech set to exact zeros, and hands each
 later stage the one its setting asks for (``backend/processing/vad_muting.py``,
-#486). The heavy imports stay inside the function, as they were in the
+#486). Once diarisation has run, muted transcription may read a third file
+instead: the muted one opened inside every diarised turn (#670). The heavy imports stay inside the function, as they were in the
 pipeline, so the stage tests can stub those modules per test.
 """
 
@@ -12,7 +13,6 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from backend.processing.engines.base import VAD_MUTED_INPUT
-from backend.processing.engines.errors import is_task_interruption
 from backend.processing.vad_muting import (
     diarised_turns,
     muted_stages,
@@ -23,6 +23,8 @@ from .constants import *  # noqa: F403
 from .final_asr import mark_transcript_without_speech
 
 if TYPE_CHECKING:
+    from pyannote.core import Annotation
+
     from .pipeline import _PipelineRunContext
 
 
@@ -140,10 +142,8 @@ def run_vad_stage(
         diarization_audio_path=vad_output_path if muted.diarization else vad_input_path,
         unmuted_audio_path=vad_input_path,
     )
-    logger.info(
-        f"Transcribing {result.transcription_audio_path}; "
-        f"diarizing {result.diarization_audio_path}"
-    )
+    # Transcription's file is logged once diarisation has run, when it is chosen.
+    logger.info(f"Diarizing {result.diarization_audio_path}")
     for path in (result.transcription_audio_path, result.diarization_audio_path):
         if not os.path.exists(path):
             raise FileNotFoundError(f"Processed audio file missing: {path}")
@@ -151,39 +151,60 @@ def run_vad_stage(
 
 
 def transcription_audio_after_diarization(
-    ctx: "_PipelineRunContext", vad_result: VadStageResult, diarization
+    ctx: "_PipelineRunContext",
+    vad_result: VadStageResult,
+    diarization: "Annotation | None",
 ) -> str:
     """The audio ASR reads, once diarisation has run (#670).
 
     Muted transcription hears the muted file with the unmuted audio put back
     inside every diarised turn, so it mutes only where neither VAD nor
     diarisation heard speech. The file keeps VAD's zeros everywhere else, so
-    ``VAD_MUTED_INPUT`` still holds for it. Unmuted transcription, and muted
-    transcription with no turns (diarisation off, failed or empty), read the
-    file the VAD stage picked. If the union cannot be written, ASR reads the
-    VAD-muted file, as it did before.
+    ``VAD_MUTED_INPUT`` still holds for it. Every other case reads the file the
+    VAD stage picked: unmuted transcription, diarisation off, failed or with no
+    turns, and diarisation that heard the muted file itself. If the union
+    cannot be written, ASR reads the VAD-muted file, as it did before.
     """
-    muted_path = vad_result.transcription_audio_path
-    if not ctx.merged_config.get(VAD_MUTED_INPUT) or diarization is None:
-        return muted_path
-    unmuted_path = vad_result.unmuted_audio_path
-    union_path = f"{os.path.splitext(unmuted_path)[0]}_union.wav"
-    try:
-        turns = diarised_turns(diarization)
-        if not turns:
-            return muted_path
-        ctx.temp_files.append(union_path)
-        restored_s = write_union_muted_audio(
-            unmuted_path, muted_path, union_path, turns
+    path, restored_s = _union_or_vad_file(ctx, vad_result, diarization)
+    if restored_s is None:
+        logger.info("Transcribing %s", path)
+    else:
+        logger.info(
+            "Transcribing %s: VAD speech plus %.1f s of diarised speech VAD muted",
+            path,
+            restored_s,
         )
-    except Exception as exc:  # noqa: BLE001 -- boundary: the VAD-muted file still transcribes; the warning says why the union was skipped
-        if is_task_interruption(exc):
-            raise
-        logger.warning("Transcribing the VAD-muted file; no union: %s", exc)
-        return muted_path
-    logger.info(
-        "Transcribing %s: VAD speech plus %.1f s of diarised speech VAD muted",
-        union_path,
-        restored_s,
-    )
-    return union_path
+    return path
+
+
+def _union_or_vad_file(
+    ctx: "_PipelineRunContext",
+    vad_result: VadStageResult,
+    diarization: "Annotation | None",
+) -> tuple[str, float | None]:
+    """The union file and the seconds it put back, or the VAD stage's file and None."""
+    vad_path = vad_result.transcription_audio_path
+    unmuted_path = vad_result.unmuted_audio_path
+    if vad_path is None or unmuted_path is None:
+        raise ValueError("the VAD stage finished without audio to transcribe")
+    if (
+        not ctx.merged_config.get(VAD_MUTED_INPUT)
+        or diarization is None
+        or muted_stages(ctx.merged_config).diarization
+    ):
+        return vad_path, None
+    turns = diarised_turns(diarization)
+    if not turns:
+        return vad_path, None
+    union_path = f"{os.path.splitext(unmuted_path)[0]}_union.wav"
+    ctx.temp_files.append(union_path)
+    try:
+        restored_s = write_union_muted_audio(unmuted_path, vad_path, union_path, turns)
+    except (OSError, RuntimeError, ValueError) as exc:
+        logger.warning(
+            "Could not write %s, so transcription reads the VAD-muted file: %s",
+            union_path,
+            exc,
+        )
+        return vad_path, None
+    return union_path, restored_s
