@@ -223,7 +223,9 @@ The engine and its model are install-wide settings.
 - A stretch that retry leaves wordless is decoded a second time from the last subtoken of the word before it, keeping only the words that start inside the stretch. A stretch with no word before it in its window gets no second try.
 - Invariant: a stretch is retried at most twice, and nothing is retried a third time. Stretches don't overlap, and neither do second tries, so the retries decode at most twice the window's own audio. One INFO line per recording counts both retries, what the second recovered or skipped, and what is still wordless.
 
-Each user's transcription language reaches live, final, import and reprocess ASR and is part of the ASR result hash. Whisper gets a language only when one is selected, Canary gets its source-language parameter, and Parakeet always auto-detects.
+Each user's transcription language reaches live, final, import and reprocess ASR and is part of the ASR result hash. Whisper gets a language when one is selected, Canary gets its source-language parameter, and Parakeet always auto-detects.
+
+- On automatic, Whisper detects the language from the first 30 s of the file it reads. When that file is unmuted and VAD ran, those 30 s can be room noise, so the engine first detects on the first 30 s of speech in the muted file (`LANGUAGE_DETECTION_AUDIO`, its gaps closed up) and transcribes with that language (#671). On muted input and with VAD off, Whisper detects on its own input as before.
 
 ### Words In Digital Silence
 

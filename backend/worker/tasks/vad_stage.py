@@ -11,7 +11,7 @@ pipeline, so the stage tests can stub those modules per test.
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from backend.processing.engines.base import VAD_MUTED_INPUT
+from backend.processing.engines.base import LANGUAGE_DETECTION_AUDIO, VAD_MUTED_INPUT
 from backend.processing.vad_muting import muted_stages
 
 from .constants import *  # noqa: F403
@@ -107,6 +107,7 @@ def run_vad_stage(
         if not vad_success:
             raise RuntimeError("VAD execution failed")
         temp_files.append(vad_output_path)
+        ctx.merged_config[LANGUAGE_DETECTION_AUDIO] = vad_output_path
 
         if speech_duration < 1.0:
             logger.warning(

@@ -8,6 +8,8 @@ import threading
 import traceback
 import warnings
 
+import numpy as np
+import soundfile
 import torch
 import tqdm
 import whisper
@@ -15,7 +17,7 @@ import whisper
 from ...utils.config_manager import config_manager
 from ...utils.languages import resolve_transcription_language_code
 from ...utils.model_cache_paths import whisper_cache_root
-from .base import TranscriptionEngine
+from .base import LANGUAGE_DETECTION_AUDIO, VAD_MUTED_INPUT, TranscriptionEngine
 from .errors import (
     TranscriptionError,
     is_task_interruption,
@@ -54,6 +56,51 @@ def _transcribe_seeded(model, audio_path: str, device: str, **kwargs) -> dict:
     with torch.random.fork_rng(devices=devices):
         torch.manual_seed(FALLBACK_SAMPLING_SEED)
         return model.transcribe(audio_path, **kwargs)
+
+
+def _first_speech(muted_path: str) -> np.ndarray:
+    """Up to the first 30 s of speech in a VAD-muted file, its gaps closed up.
+
+    Every sample VAD dropped is an exact zero there, so the nonzero samples are
+    the speech, in order. Reads only as far as it needs.
+    """
+    window = whisper.audio.N_SAMPLES
+    speech: list[np.ndarray] = []
+    found = 0
+    for block in soundfile.blocks(muted_path, blocksize=window, dtype="float32"):
+        speech.append(block[block != 0])
+        found += speech[-1].size
+        if found >= window:
+            break
+    return np.concatenate(speech)[:window]
+
+
+def _detect_language_on_speech(model, config: dict | None) -> str | None:
+    """The language Whisper hears in the first 30 s of speech, or None (#671).
+
+    Whisper detects an automatic language on the first 30 s of the file it
+    transcribes. In the VAD-muted file those hold speech and exact zeros; in the
+    unmuted one they can be room noise, which on far-field meetings came out as
+    Japanese for English speech. So when the engine reads unmuted audio, detect
+    on the speech of the muted file instead. With VAD off there is no speech
+    map: return None and Whisper detects on its own input, as before.
+    """
+    config = config or {}
+    muted_path = config.get(LANGUAGE_DETECTION_AUDIO)
+    if config.get(VAD_MUTED_INPUT) or not muted_path:
+        return None
+    speech = _first_speech(muted_path)
+    mel = whisper.log_mel_spectrogram(whisper.pad_or_trim(speech), model.dims.n_mels)
+    _, probs = model.detect_language(mel.to(model.device))
+    language = max(probs, key=probs.get)
+    logger.info(
+        "Detected language %s (p=%.2f) on the first %.1f s of VAD speech in %s",
+        language,
+        probs[language],
+        speech.size / whisper.audio.SAMPLE_RATE,
+        muted_path,
+    )
+    return language
 
 
 # --- Whisper Progress Listener Infrastructure ---
@@ -303,6 +350,8 @@ class WhisperEngine(TranscriptionEngine):
                 "condition_on_previous_text": False,
             }
             language_code = resolve_transcription_language_code(config, self.name)
+            if not language_code:
+                language_code = _detect_language_on_speech(model, config)
             if language_code:
                 transcribe_kwargs["language"] = language_code
 
