@@ -128,10 +128,13 @@ def captured_metrics(monkeypatch: pytest.MonkeyPatch) -> list[dict]:
 
 
 GOLDEN_FIXTURE = Path(__file__).parent / "fixtures" / "browser_capture_golden.flac"
+JOINED_GOLDEN_FIXTURE = (
+    Path(__file__).parent / "fixtures" / "browser_capture_joined_golden.flac"
+)
 
 
 def _golden_pcm(frames: int = 5_000) -> np.ndarray:
-    """The generator in frontend/src/lib/capture/pcm/flacEncoder.test.ts."""
+    """The generator in frontend/src/lib/capture/pcm/testFlacDecoder.ts."""
     pcm = np.zeros((frames, 2), dtype=np.int16)
     state = 1
     for index in range(frames):
@@ -156,6 +159,29 @@ def test_libflac_decodes_what_the_browser_encoder_writes() -> None:
     )
 
     assert (info.format, info.subtype, info.channels) == ("FLAC", "PCM_16", 2)
+    assert sample_rate == 16_000
+    assert np.array_equal(decoded, _golden_pcm())
+
+
+def test_libflac_decodes_segments_the_browser_joined() -> None:
+    """Audio left out of a recording downloads as one FLAC file (issue #605).
+
+    The browser joins its kept segments without decoding them, rewriting each
+    frame header as a variable-blocksize frame numbered by sample. The frontend
+    test pins the joiner to this fixture, the golden samples cut into three
+    segments; this one proves libFLAC reads the joined stream sample for sample.
+    """
+    info = soundfile.info(str(JOINED_GOLDEN_FIXTURE))
+    decoded, sample_rate = soundfile.read(
+        str(JOINED_GOLDEN_FIXTURE), dtype="int16", always_2d=True
+    )
+
+    assert (info.format, info.subtype, info.channels, info.frames) == (
+        "FLAC",
+        "PCM_16",
+        2,
+        5_000,
+    )
     assert sample_rate == 16_000
     assert np.array_equal(decoded, _golden_pcm())
 

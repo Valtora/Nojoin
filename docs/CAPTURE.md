@@ -98,11 +98,23 @@ Each user can run one browser capture at a time. While a paused recording exists
 
 Nojoin keeps a paused or interrupted recording until you choose. It never pauses, cleans up or finalizes one for you. If the tab recording an interrupted capture was only cut off and starts uploading again, the dialog closes by itself within 30 seconds, and Nojoin refuses to resume that recording anywhere else while it is receiving audio.
 
-Resuming a recording in another tab or on another device takes it over. If the tab that was recording it is still open and reaches the server again, it stops recording, releases the microphone and shared tab, and says the recording continued elsewhere. Pause, stop and discard in that tab are refused the same way, so it cannot end or delete the recording under the tab now running it. Audio it recorded but had not uploaded is left out rather than mixed into the audio recorded since, and Nojoin says how much. Audio a closed tab kept in its browser is treated the same way: it is uploaded when you resume or stop the recording in that browser only if nobody resumed it elsewhere after that tab, and otherwise left out. Once the recording has been stopped, discarded or finished somewhere else, audio a browser kept for it can never join it, so Nojoin removes it from that browser the next time it checks for unfinished recordings there.
+Resuming a recording in another tab or on another device takes it over. If the tab that was recording it is still open and reaches the server again, it stops recording, releases the microphone and shared tab, and says the recording continued elsewhere. Pause, stop and discard in that tab are refused the same way, so it cannot end or delete the recording under the tab now running it. Audio it recorded but had not uploaded is left out rather than mixed into the audio recorded since, and Nojoin says how much and offers it as a download ([Audio Left Out Of A Recording](#audio-left-out-of-a-recording)). Audio a closed tab kept in its browser is treated the same way: it is uploaded when you resume or stop the recording in that browser only if nobody resumed it elsewhere after that tab, and otherwise left out. Once the recording has been stopped or finished somewhere else, audio a browser kept for it can never join it, so the next time Nojoin checks for unfinished recordings in that browser it offers that audio as a download too. Audio kept for a recording discarded somewhere else is removed from the browser instead.
 
 **Stop and process** in another tab or on another device ends the recording for the tab that was recording it in the same way. Once that tab reaches the server again, it stops recording, releases the microphone and shared tab, and says the recording was already stopped and sent for processing. **Discard** in that tab is refused too, so it cannot delete the meeting being processed. To delete it, use **Discard Recording** in the recordings list.
 
 **Discard recording** in another tab or on another device ends it for that tab too, which then says the recording was discarded. A request sent while the browser is signed in as another account, from another tab, also finds the recording missing, so the tab first checks which account the browser is signed in as. If it is someone else, the tab keeps the recording and asks its owner to sign in again ([Signing In Again During A Recording](#signing-in-again-during-a-recording)).
+
+### Audio Left Out Of A Recording
+
+When audio a browser recorded can never join its recording, Nojoin joins it into one FLAC file, keeps it in that browser and offers it in a notification that stays until you act on it. That happens when a capture is resumed or stopped in another tab or on another device before the tab recording it had uploaded everything, and when a recording the browser kept audio for is stopped or finished somewhere else.
+
+- **Download** saves the file and removes the browser's copy.
+- **Delete** removes it.
+- Closing the notification hides it until you next open or reload a Nojoin page.
+
+The file holds only the stretch missing from the recording, exactly as recorded: 16 kHz, with the shared audio on the left channel and the microphone on the right. To have it transcribed, import it as a recording of its own ([Importing Recordings](USAGE.md#importing-recordings)).
+
+Nojoin offers the audio only while the browser is signed in as the account that recorded it. Audio nobody downloads or deletes is removed seven days after it was left out, and clearing the site's data removes it at once.
 
 ## Capture Settings
 
@@ -188,7 +200,7 @@ If a segment keeps failing to upload for about 15 seconds, Nojoin pauses the rec
 
 ### This recording continued elsewhere
 
-The recording was resumed in another tab or on another device, so this tab stopped recording it and released the microphone and shared tab. Carry on, pause or stop from the tab or device that resumed it. If this tab had audio it had not uploaded, the message says how much: it is not in the recording, because adding it after the audio recorded meanwhile would put the meeting out of order. Nojoin removes it from this browser once the recording is finished.
+The recording was resumed in another tab or on another device, so this tab stopped recording it and released the microphone and shared tab. Carry on, pause or stop from the tab or device that resumed it. If this tab had audio it had not uploaded, the message says how much: it is not in the recording, because adding it after the audio recorded meanwhile would put the meeting out of order. Nojoin offers it as a download ([Audio Left Out Of A Recording](#audio-left-out-of-a-recording)).
 
 ### This recording was discarded elsewhere
 
@@ -196,7 +208,7 @@ The recording was discarded in another tab or on another device, so this tab sto
 
 ### This recording has already been stopped
 
-The recording was stopped in another tab or on another device and sent for processing, so this tab stopped recording it and released the microphone and shared tab. The meeting appears in the recordings list as usual. If this tab had audio it had not uploaded, the message says how much: it is not in the recording, which was finished without it, and Nojoin removes it from this browser.
+The recording was stopped in another tab or on another device and sent for processing, so this tab stopped recording it and released the microphone and shared tab. The meeting appears in the recordings list as usual. If this tab had audio it had not uploaded, the message says how much: it is not in the recording, which was finished without it, but you can download it ([Audio Left Out Of A Recording](#audio-left-out-of-a-recording)).
 
 ### Stop did not finish
 
