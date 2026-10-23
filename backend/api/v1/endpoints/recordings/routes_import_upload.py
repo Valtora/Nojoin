@@ -28,6 +28,7 @@ from backend.processing.speaker_cap import (
 from backend.utils.audio import concatenate_binary_files, get_audio_duration
 from backend.utils.import_audio import KEEPING_AUDIO_STEP, MEDIA_CONTAINER_SUFFIXES
 from backend.utils.rate_limit import enforce_upload_concurrency
+from backend.utils.time import utc_now
 from backend.utils.upload_limit import (
     UPLOAD_LIMIT_LEGACY_RECORDING,
     stream_and_validate_upload,
@@ -229,6 +230,9 @@ async def init_chunked_import(
         status=RecordingStatus.UPLOADING,
         max_speakers=normalize_speaker_cap(options.max_speakers),
         user_id=current_user.id,
+        # Moved on by every part, so an import whose page went away can be told
+        # from one still uploading (import_looks_stalled, issue #569).
+        last_activity_at=utc_now(),
     )
 
     recorded_at = options.recorded_at
@@ -302,6 +306,8 @@ async def upload_chunked_segment(
             source_kind="import_part",
             suffix=".part",
         )
+        recording.last_activity_at = utc_now()
+        db.add(recording)
         await db.commit()
     except Exception as e:  # noqa: BLE001 -- boundary: the partial segment is removed and the failure becomes one sanitised 500
         try:

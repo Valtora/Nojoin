@@ -31,6 +31,7 @@ from backend.models.recording import (
     RecordingPipelineGeneration,
     RecordingStatus,
     capture_looks_stalled,
+    live_capture_clause,
 )
 from backend.models.speaker import RecordingSpeaker
 from backend.models.transcript import Transcript
@@ -185,12 +186,19 @@ async def _get_active_capture_recording_for_user(
     db: AsyncSession,
     user_id: int,
 ) -> Recording | None:
+    """The user's unfinished live capture, which holds the capture lock.
+
+    A file import also sits in UPLOADING while its parts arrive, and one whose
+    page closed stays there, but it is not a capture and must not block one
+    (issue #569).
+    """
     query = (
         select(Recording)
         .where(Recording.user_id == user_id)
         .where(
             Recording.status.in_([RecordingStatus.UPLOADING, RecordingStatus.PAUSED])
         )
+        .where(live_capture_clause())
         .where(Recording.is_deleted == False)
         .order_by(Recording.updated_at.desc())
     )

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { useHydrated } from '@/lib/useHydrated';
 import { Upload, FileAudio, CheckCircle, Calendar, FileText } from 'lucide-react';
 import Button from '@/components/ui/Button';
@@ -58,6 +58,20 @@ export default function ImportAudioModal({ isOpen, onClose, onSuccess }: ImportA
     setUploadProgress(0);
     setIsDragging(false);
   }, []);
+
+  // A page closed or reloaded mid-upload cannot finish the import, and the
+  // parts already sent wait in the list for the user to discard them (issue
+  // #569), so the browser asks first.
+  useEffect(() => {
+    if (uploadState !== 'uploading') return;
+    const warnBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      // Older browsers show the prompt only when this is set.
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warnBeforeUnload);
+    return () => window.removeEventListener('beforeunload', warnBeforeUnload);
+  }, [uploadState]);
 
   const handleClose = useCallback(() => {
     if (uploadState === 'uploading') return;
