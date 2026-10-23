@@ -5,6 +5,7 @@ from logging.handlers import RotatingFileHandler
 
 from .config_manager import config_manager
 from .path_manager import path_manager
+from .url_redaction import redact_url_secrets
 
 LOG_PATH = str(path_manager.log_path)
 
@@ -87,7 +88,7 @@ class SensitiveDataFilter(logging.Filter):
         for pattern in self._KEY_VALUE_PATTERNS:
             sanitized = pattern.sub(r"\1[REDACTED]\3", sanitized)
         sanitized = self._AUTH_SCHEME_PATTERN.sub(r"\1\2 [REDACTED]", sanitized)
-        return sanitized
+        return redact_url_secrets(sanitized)
 
     def _sanitize_value(self, key, value):
         if isinstance(key, str) and key.lower() in self._SENSITIVE_FIELD_NAMES:
@@ -127,6 +128,25 @@ class SensitiveDataFilter(logging.Filter):
                 record.args = self._sanitize_value(None, record.args)
 
         return True
+
+
+# uvicorn's loggers print request URLs: the access log, and the WebSocket lines
+# it writes to uvicorn.error. They have handlers of their own and never reach the
+# root handlers' filters.
+URL_LOGGER_NAMES = ("uvicorn.access", "uvicorn.error")
+
+
+def install_log_redaction():
+    """Mask secrets in the request URLs uvicorn logs.
+
+    Idempotent. The API calls it at import, and setup_logging calls it for the
+    workers. A later logging.config.dictConfig keeps logger filters, so the
+    order against uvicorn's own logging setup does not matter.
+    """
+    for name in URL_LOGGER_NAMES:
+        target = logging.getLogger(name)
+        if not any(isinstance(f, SensitiveDataFilter) for f in target.filters):
+            target.addFilter(SensitiveDataFilter())
 
 
 def setup_logging(log_level=None):
@@ -177,10 +197,17 @@ def setup_logging(log_level=None):
     logging.getLogger("urllib3").setLevel(logging.WARNING)
     logging.getLogger("huggingface_hub").setLevel(logging.WARNING)
     logging.getLogger("requests").setLevel(logging.WARNING)
+    # httpx logs every request it sends at INFO, URL and all: a calendar's id in
+    # the path, which for a Google account is its address, and the provider's
+    # sync cursor in the query. The calendar code logs its own failures with the
+    # status and the provider's error, addresses masked.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
 
     # Ensure Celery loggers are explicitly set to the correct level
     logging.getLogger("celery").setLevel(log_level)
     logging.getLogger("celery.task").setLevel(log_level)
     logging.getLogger("celery.worker").setLevel(log_level)
+
+    install_log_redaction()
 
     logging.info("Logging configured.")
