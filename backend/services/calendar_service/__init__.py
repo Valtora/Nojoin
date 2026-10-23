@@ -93,6 +93,18 @@ from .persistence import (
     _serialise_source,
     _upsert_connection,
 )
+from .provider_errors import (
+    PROVIDER_ERROR_DETAIL_LIMIT,
+    PROVIDER_REASON_PATTERN,
+    CalendarConnectFailed,
+    _describe_failure_for_log,
+    _describe_provider_failure,
+    _google_error_reason,
+    _provider_error_fields,
+    _provider_error_reason,
+    _truncate_error,
+    _usable_reason,
+)
 from .providers import (
     _build_google_events_query_params,
     _build_microsoft_calendar_view_url,

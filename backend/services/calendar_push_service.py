@@ -44,8 +44,10 @@ from backend.models.calendar import (
 from backend.services.calendar_service import (
     MICROSOFT_GRAPH_URL,
     _build_push_notification_url,
+    _describe_provider_failure,
     _get_access_token_for_connection,
     _parse_iso_datetime,
+    _truncate_error,
     get_provider_runtime_config,
 )
 from backend.utils.time import utc_now
@@ -68,9 +70,7 @@ MICROSOFT_RENEW_WITHIN = timedelta(hours=6)
 # blocked, domain unverified, permission missing) and needs a change here first.
 PUSH_FAILURE_BACKOFF = timedelta(minutes=30)
 PUSH_REJECTED_BACKOFF = timedelta(hours=6)
-# Cap on the provider's error code and message kept in logs and ``last_error``.
-PUSH_ERROR_DETAIL_LIMIT = 200
-# ``_describe_push_failure`` starts ``last_error`` with the HTTP status, and
+# ``_describe_provider_failure`` starts ``last_error`` with the HTTP status, and
 # ``_push_retry_backoff`` reads it back from there.
 RECORDED_HTTP_STATUS = re.compile(r"^HTTP (\d{3})\b")
 HTTP_CLIENT_ERRORS = range(400, 500)
@@ -118,69 +118,6 @@ def _google_expiration_to_datetime(value: Any) -> datetime | None:
 
 def _format_graph_datetime(value: datetime) -> str:
     return value.replace(microsecond=0).isoformat() + "Z"
-
-
-def _truncate_error(value: str | None, limit: int = 500) -> str | None:
-    if not value:
-        return None
-    cleaned = " ".join(str(value).split())
-    return cleaned[:limit] if cleaned else None
-
-
-def _google_error_reason(error: dict[str, Any]) -> str | None:
-    """Google's specific reason (``pushWebhookBadDomain``), else its status."""
-    for item in error.get("errors") or []:
-        if isinstance(item, dict) and isinstance(item.get("reason"), str):
-            return item["reason"]
-    status = error.get("status")
-    return status if isinstance(status, str) else None
-
-
-def _provider_error_fields(payload: Any) -> tuple[str | None, str | None]:
-    """Pick the error code and message out of a provider's JSON error body.
-
-    Graph sends ``{"error": {"code": "InvalidRequest", "message": ...}}``, Google
-    ``{"error": {"code": 400, "message": ..., "errors": [{"reason": ...}]}}``,
-    and a token endpoint ``{"error": "invalid_grant", "error_description": ...}``.
-    """
-    if not isinstance(payload, dict):
-        return None, None
-    error = payload.get("error")
-    if isinstance(error, str):
-        description = payload.get("error_description")
-        return error, description if isinstance(description, str) else None
-    if not isinstance(error, dict):
-        return None, None
-    code = error.get("code")
-    if not isinstance(code, str):
-        code = _google_error_reason(error)
-    message = error.get("message")
-    return code, message if isinstance(message, str) else None
-
-
-def _describe_push_failure(exc: Exception) -> str:
-    """Summarise a failed provisioning call for the log and ``last_error``.
-
-    Keeps the HTTP status and the provider's own error code and message, which
-    say why a subscription was refused where httpx's status line does not. It
-    reads only the error fields of the response body, never the request, so no
-    token or calendar address reaches it, and it caps the provider's text.
-    """
-    if isinstance(exc, httpx.HTTPStatusError):
-        try:
-            payload = exc.response.json()
-        except ValueError:
-            payload = None
-        code, message = _provider_error_fields(payload)
-        detail = _truncate_error(
-            ": ".join(part for part in (code, message) if part),
-            PUSH_ERROR_DETAIL_LIMIT,
-        )
-        status_line = f"HTTP {exc.response.status_code}"
-        return f"{status_line} {detail}" if detail else status_line
-    detail = _truncate_error(str(exc), PUSH_ERROR_DETAIL_LIMIT)
-    name = type(exc).__name__
-    return f"{name}: {detail}" if detail else name
 
 
 def _push_retry_backoff(last_error: str | None) -> timedelta:
@@ -626,7 +563,7 @@ async def _provision_selected_calendars(
         try:
             await _ensure_channel(ctx, calendar, channel)
         except Exception as exc:  # noqa: BLE001 -- boundary: one calendar's channel failing must not stop the others
-            detail = _describe_push_failure(exc)
+            detail = _describe_provider_failure(exc)
             logger.warning(
                 "Failed to provision %s push channel for calendar %s: %s "
                 "(next attempt in %d minutes)",

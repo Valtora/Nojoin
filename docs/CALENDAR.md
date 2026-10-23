@@ -75,6 +75,8 @@ Live sync needs no extra Microsoft setup: `Calendars.Read` covers change-notific
 
 Each connected account has **Sync now** and **Disconnect** buttons, and shows its status: **Up to date**, **Syncing**, **Needs attention** or **Reconnect required**.
 
+If the connection fails after you approve access, the **Calendars** card says why, with the provider's own reason, and no account is added. [Connecting Fails After Sign-In](#connecting-fails-after-sign-in) lists the common causes.
+
 To check a new setup, connect an account as a normal user, select a calendar, and confirm the dashboard shows its events.
 
 ## Dashboard and Linked Recordings
@@ -124,6 +126,17 @@ Nojoin holds the **Secret ID** instead of the secret **Value**. Enter the **Valu
 ### Admin Approval Message in Microsoft
 
 The tenant blocks user consent for the delegated permissions. A tenant administrator must grant consent.
+
+### Connecting Fails After Sign-In
+
+The **Calendars** card shows what the provider said, and the API log (`docker logs nojoin-api`) records the step that failed with the HTTP status and the provider's error code and message, for example `Connecting a google calendar failed at the calendar list step: HTTP 403 forbidden: ...`. The log never holds the account's tokens or address. Common reasons:
+
+- **`notACalendarUser`, or `forbidden` from Google for a Google Workspace account.** Calendar is turned off for that user, or the Workspace administrator restricts third-party apps' access to the Calendar API. In the Google Admin console, turn Calendar on for the user under **Apps > Google Workspace > Calendar**, or mark Nojoin's OAuth app as trusted under **Security > Access and data control > API controls**.
+- **`admin_policy_enforced` from Google.** The Workspace administrator blocks the app. Trust it under **API controls** as above.
+- **`accessNotConfigured` from Google.** The Google Calendar API is not enabled in the Google Cloud project behind the client ID. Enable it, as in [Google OAuth Setup](#google-oauth-setup).
+- **`ErrorAccessDenied` from Microsoft.** The tenant blocks the app or has not consented to its permissions. See [Admin Approval Message in Microsoft](#admin-approval-message-in-microsoft).
+- **`MailboxNotEnabledForRESTAPI` from Microsoft.** The account has no Exchange Online mailbox, for example because it is unlicensed or its mailbox is hosted on-premises, so it has no calendar Nojoin can read.
+- **`invalid_client`.** The provider refused the app credentials. For Microsoft, see [`invalid_client` During Token Exchange](#invalid_client-during-token-exchange).
 
 ### Google Testing Mode Blocks a User
 

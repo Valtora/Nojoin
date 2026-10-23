@@ -8,10 +8,13 @@ vi.mock("./SettingsProvider", () => ({
   useSettingsContext: () => context,
 }));
 
+// The address the card renders at; a sign-in comes back with its outcome in the
+// query string.
+const navigation = { search: new URLSearchParams(), replace: vi.fn() };
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ replace: vi.fn(), push: vi.fn() }),
+  useRouter: () => ({ replace: navigation.replace, push: vi.fn() }),
   usePathname: () => "/settings/integrations",
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => navigation.search,
 }));
 
 const unconfigured: CalendarOverview = {
@@ -36,6 +39,8 @@ import CalendarConnectionsSettings from "./CalendarConnectionsSettings";
 
 beforeEach(() => {
   context.isAdmin = false;
+  navigation.search = new URLSearchParams();
+  navigation.replace.mockClear();
 });
 
 describe("CalendarConnectionsSettings with no providers set up", () => {
@@ -94,5 +99,59 @@ describe("CalendarConnectionsSettings with a connection", () => {
     await act(async () => answer(connection));
     expect(sync).not.toHaveAttribute("aria-busy");
     expect(sync).toHaveFocus();
+  });
+});
+
+describe("CalendarConnectionsSettings after a sign-in fails", () => {
+  it("says why Google refused the calendars, with the Workspace hint", async () => {
+    navigation.search = new URLSearchParams(
+      "calendar=error&provider=google&reason=forbidden",
+    );
+    render(<CalendarConnectionsSettings />);
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Could not connect Google Calendar");
+    expect(alert).toHaveTextContent(
+      "Google refused Nojoin access to this account's calendars.",
+    );
+    expect(alert).toHaveTextContent(
+      "an administrator may have turned Calendar off for you, or restricted third-party apps' access to the Calendar API, in the Google Admin console.",
+    );
+    expect(alert).toHaveTextContent("Reason given by Google: forbidden");
+    expect(navigation.replace).toHaveBeenCalledWith("/settings/integrations", {
+      scroll: false,
+    });
+  });
+
+  it("says why Microsoft refused the calendars", async () => {
+    navigation.search = new URLSearchParams(
+      "calendar=error&provider=microsoft&reason=ErrorAccessDenied",
+    );
+    render(<CalendarConnectionsSettings />);
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Could not connect Outlook Calendar");
+    expect(alert).toHaveTextContent(
+      "Microsoft refused Nojoin access to this account's calendars.",
+    );
+    expect(alert).toHaveTextContent("Reason given by Microsoft: ErrorAccessDenied");
+  });
+
+  it("stays until dismissed", async () => {
+    navigation.search = new URLSearchParams("calendar=error&provider=google");
+    render(<CalendarConnectionsSettings />);
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Something went wrong while connecting.");
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("shows nothing after a successful sign-in", async () => {
+    navigation.search = new URLSearchParams("calendar=success&provider=google");
+    render(<CalendarConnectionsSettings />);
+
+    await screen.findByText(/Ask an administrator to add it/);
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 });

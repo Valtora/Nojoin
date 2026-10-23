@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import PlainTextResponse, RedirectResponse
@@ -24,7 +25,10 @@ from backend.services.calendar_push_service import (
     handle_microsoft_notification,
 )
 from backend.services.calendar_service import (
+    PROVIDER_REASON_PATTERN,
+    CalendarConnectFailed,
     _build_account_redirect,
+    _describe_failure_for_log,
     disconnect_connection,
     get_dashboard_summary,
     get_overview,
@@ -46,6 +50,8 @@ router = APIRouter()
 # notification batches are small, so anything larger is rejected before parsing
 # to stop an attacker exhausting worker memory with a huge JSON body.
 MICROSOFT_WEBHOOK_MAX_BODY_BYTES = 1024 * 1024
+# An Entra sign-in error number, such as AADSTS50194, inside an error description.
+AADSTS_CODE_PATTERN = re.compile(r"AADSTS\d{1,8}")
 
 
 def _validate_provider(provider: str) -> str:
@@ -67,6 +73,27 @@ def _map_callback_status(
     ):
         return "tenant-config-error"
     return "error"
+
+
+def _log_refused_sign_in(
+    provider: str, error: str | None, error_description: str | None
+) -> None:
+    """Log why the provider sent the user back without a code.
+
+    Keeps the OAuth error code and any Entra ``AADSTS`` number, never the
+    description itself, which can name the account. Both come from the query
+    string, so only values shaped like a provider code are written.
+    """
+    if not error:
+        logger.warning("%s calendar sign-in came back without a code", provider)
+        return
+    aadsts = AADSTS_CODE_PATTERN.search(error_description or "")
+    logger.warning(
+        "%s calendar sign-in came back with error %s%s",
+        provider,
+        error if PROVIDER_REASON_PATTERN.fullmatch(error) else "(unrecognised)",
+        f" ({aadsts.group(0)})" if aadsts else "",
+    )
 
 
 @router.get("", response_model=CalendarOverviewRead)
@@ -132,7 +159,12 @@ async def start_calendar_authorisation_redirect(
         return RedirectResponse(
             _build_account_redirect(status_value, provider), status_code=303
         )
-    except Exception:  # noqa: BLE001 -- boundary: OAuth start failures are shown on the account page, not as a 500
+    except Exception as exc:  # noqa: BLE001 -- boundary: OAuth start failures are logged and shown on the settings page, not as a 500
+        logger.warning(
+            "Starting a %s calendar sign-in failed: %s",
+            provider,
+            _describe_failure_for_log(exc),
+        )
         return RedirectResponse(
             _build_account_redirect("error", provider), status_code=303
         )
@@ -163,13 +195,37 @@ async def calendar_authorisation_callback(
 
     if error or not code or not state:
         status_value = _map_callback_status(provider, error, error_description)
+        if status_value != "cancelled":
+            _log_refused_sign_in(provider, error, error_description)
         return RedirectResponse(
-            _build_account_redirect(status_value, provider), status_code=303
+            _build_account_redirect(status_value, provider, error), status_code=303
         )
 
     try:
         await handle_callback(db, provider, current_user, code, state)
-    except Exception:  # noqa: BLE001 -- boundary: callback failures are shown on the account page, not as a 500
+    except CalendarConnectFailed as exc:
+        logger.warning(
+            "Connecting a %s calendar failed at the %s step: %s",
+            provider,
+            exc.step,
+            exc.detail,
+        )
+        return RedirectResponse(
+            _build_account_redirect("error", provider, exc.reason), status_code=303
+        )
+    except HTTPException as exc:
+        # The integration is not configured, or the sign-in session expired or
+        # belongs to someone else: fixed messages with nothing of the account.
+        logger.warning("Connecting a %s calendar failed: %s", provider, exc.detail)
+        return RedirectResponse(
+            _build_account_redirect("error", provider), status_code=303
+        )
+    except Exception as exc:  # noqa: BLE001 -- boundary: callback failures are logged and shown on the settings page, not as a 500
+        logger.warning(
+            "Connecting a %s calendar failed: %s",
+            provider,
+            _describe_failure_for_log(exc),
+        )
         return RedirectResponse(
             _build_account_redirect("error", provider), status_code=303
         )

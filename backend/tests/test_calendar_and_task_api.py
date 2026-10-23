@@ -6,6 +6,7 @@ import logging
 import pkgutil
 from datetime import UTC, datetime
 
+import httpx
 import pytest
 from fastapi import FastAPI, HTTPException
 from httpx import ASGITransport, AsyncClient
@@ -1229,11 +1230,11 @@ async def test_calendar_dashboard_surfaces_recordings_without_calendar_connectio
     [
         (
             HTTPException(status_code=400, detail="Provider is not configured"),
-            "/settings?tab=account&calendar=config-error&provider=google",
+            "/settings/integrations?calendar=config-error&provider=google",
         ),
         (
             RuntimeError("boom"),
-            "/settings?tab=account&calendar=error&provider=google",
+            "/settings/integrations?calendar=error&provider=google",
         ),
     ],
 )
@@ -1267,7 +1268,7 @@ async def test_oauth_start_failures_redirect_to_relative_account_settings(
         (
             "google",
             {"error": "access_denied"},
-            "/settings?tab=account&calendar=cancelled&provider=google",
+            "/settings/integrations?calendar=cancelled&provider=google",
         ),
         (
             "microsoft",
@@ -1275,7 +1276,7 @@ async def test_oauth_start_failures_redirect_to_relative_account_settings(
                 "error": "server_error",
                 "error_description": "AADSTS50194: application is not configured as multi-tenant",
             },
-            "/settings?tab=account&calendar=tenant-config-error&provider=microsoft",
+            "/settings/integrations?calendar=tenant-config-error&provider=microsoft",
         ),
     ],
 )
@@ -1320,7 +1321,7 @@ async def test_oauth_callback_exception_redirects_to_relative_account_settings(
     assert response.status_code == 303
     assert (
         response.headers["location"]
-        == "/settings?tab=account&calendar=error&provider=google"
+        == "/settings/integrations?calendar=error&provider=google"
     )
 
 
@@ -1348,8 +1349,237 @@ async def test_oauth_callback_success_redirects_to_relative_account_settings(
     assert response.status_code == 303
     assert (
         response.headers["location"]
-        == "/settings?tab=account&calendar=success&provider=google"
+        == "/settings/integrations?calendar=success&provider=google"
     )
+
+
+# What a provider hands back during a connection, for the tests below. None of
+# these may reach the log: they are the credentials and the account's address.
+CONNECT_ACCESS_TOKEN = "provider-access-token-1234"
+CONNECT_REFRESH_TOKEN = "provider-refresh-token-5678"
+CONNECT_CODE = "authorisation-code-9012"
+CONNECT_STATE = "oauth-state-3456"
+CONNECT_EMAIL = "alice@example.com"
+GOOGLE_CALENDAR_LIST_FORBIDDEN = {
+    "error": {
+        "code": 403,
+        "message": "The caller does not have permission",
+        "errors": [
+            {
+                "message": "The caller does not have permission",
+                "domain": "global",
+                "reason": "forbidden",
+            }
+        ],
+        "status": "PERMISSION_DENIED",
+    }
+}
+GRAPH_CALENDAR_LIST_DENIED = {
+    "error": {
+        "code": "ErrorAccessDenied",
+        "message": "Access is denied. Check credentials and try again.",
+        "innerError": {"request-id": "00000000-0000-0000-0000-000000000004"},
+    }
+}
+
+
+def _backend_log(caplog: pytest.LogCaptureFixture) -> str:
+    """What this codebase logged, without httpx's request lines, which carry
+    the test client's own callback URL with its code and state."""
+    return "\n".join(
+        record.getMessage()
+        for record in caplog.records
+        if record.name.startswith("backend")
+    )
+
+
+def _answer_provider(calendar_list_refusal: dict) -> httpx.MockTransport:
+    """Google or Microsoft accepting the code and the account lookup, then
+    refusing the calendar list with 403."""
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if request.method == "POST" and path.endswith("/token"):
+            return httpx.Response(
+                200,
+                json={
+                    "access_token": CONNECT_ACCESS_TOKEN,
+                    "refresh_token": CONNECT_REFRESH_TOKEN,
+                    "expires_in": 3599,
+                    "scope": "openid email profile calendar.readonly",
+                },
+            )
+        if path == "/v1/userinfo":
+            return httpx.Response(
+                200,
+                json={"sub": "account-1", "email": CONNECT_EMAIL, "name": "Alice"},
+            )
+        if path == "/v1.0/me":
+            return httpx.Response(
+                200,
+                json={"id": "account-1", "mail": CONNECT_EMAIL, "displayName": "Alice"},
+            )
+        if path in ("/calendar/v3/users/me/calendarList", "/v1.0/me/calendars"):
+            return httpx.Response(403, json=calendar_list_refusal)
+        raise AssertionError(f"unexpected provider request {request.method} {path}")
+
+    return httpx.MockTransport(answer)
+
+
+@pytest.fixture
+def stub_provider(monkeypatch: pytest.MonkeyPatch):
+    """Stand in for the provider and the sign-in state a callback needs.
+
+    The service opens its own ``httpx.AsyncClient`` per request, so the class
+    is swapped for one that defaults to the stub transport; the test client
+    passes its own transport and is unaffected. The state lookup and the rate
+    limit would otherwise reach for Redis.
+    """
+    from backend.api.v1.endpoints import calendar as calendar_endpoint
+    from backend.services.calendar_service import sync as calendar_sync
+
+    real_client = httpx.AsyncClient
+
+    async def _no_rate_limit(*_args, **_kwargs) -> None:
+        return None
+
+    def _stub(provider: str, calendar_list_refusal: dict) -> None:
+        transport = _answer_provider(calendar_list_refusal)
+
+        class StubProviderClient(real_client):
+            def __init__(self, *args, **kwargs) -> None:
+                kwargs.setdefault("transport", transport)
+                super().__init__(*args, **kwargs)
+
+        async def _pop_state(state: str) -> dict[str, object] | None:
+            if state != CONNECT_STATE:
+                return None
+            return {"user_id": 1, "provider": provider, "code_verifier": "verifier"}
+
+        monkeypatch.setattr(httpx, "AsyncClient", StubProviderClient)
+        monkeypatch.setattr(calendar_sync, "_pop_oauth_state", _pop_state)
+        monkeypatch.setattr(calendar_endpoint, "enforce_rate_limit", _no_rate_limit)
+
+    return _stub
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("provider", "refusal", "reason", "logged"),
+    [
+        (
+            "google",
+            GOOGLE_CALENDAR_LIST_FORBIDDEN,
+            "forbidden",
+            "HTTP 403 forbidden: The caller does not have permission",
+        ),
+        (
+            "microsoft",
+            GRAPH_CALENDAR_LIST_DENIED,
+            "ErrorAccessDenied",
+            "HTTP 403 ErrorAccessDenied: Access is denied. Check credentials and "
+            "try again.",
+        ),
+    ],
+)
+async def test_oauth_callback_keeps_the_reason_a_provider_refused_the_calendars(
+    client: AsyncClient,
+    override_current_user,
+    test_session_maker: sessionmaker,
+    stub_provider,
+    caplog: pytest.LogCaptureFixture,
+    provider: str,
+    refusal: dict,
+    reason: str,
+    logged: str,
+) -> None:
+    stub_provider(provider, refusal)
+    await seed_provider_config(test_session_maker, provider=provider)
+    override_current_user(1)
+    caplog.set_level(logging.DEBUG, logger="backend")
+
+    response = await client.get(
+        f"/api/v1/calendar/oauth/{provider}/callback",
+        params={"code": CONNECT_CODE, "state": CONNECT_STATE},
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == (
+        f"/settings/integrations?calendar=error&provider={provider}&reason={reason}"
+    )
+    logged_text = _backend_log(caplog)
+    assert (
+        f"Connecting a {provider} calendar failed at the calendar list step: {logged}"
+        in logged_text
+    )
+    for secret in (
+        CONNECT_ACCESS_TOKEN,
+        CONNECT_REFRESH_TOKEN,
+        CONNECT_CODE,
+        CONNECT_STATE,
+        CONNECT_EMAIL,
+    ):
+        assert secret not in logged_text
+    assert (
+        await fetch_scalar(
+            test_session_maker, "SELECT COUNT(*) FROM calendar_connections"
+        )
+        == 0
+    )
+
+
+@pytest.mark.anyio
+async def test_oauth_callback_logs_and_carries_a_refused_sign_in(
+    client: AsyncClient,
+    override_current_user,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    override_current_user(1)
+    caplog.set_level(logging.DEBUG, logger="backend")
+
+    response = await client.get(
+        "/api/v1/calendar/oauth/microsoft/callback",
+        params={
+            "error": "unauthorized_client",
+            "error_description": (
+                f"AADSTS700016: Application not found for {CONNECT_EMAIL}."
+            ),
+        },
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == (
+        "/settings/integrations?calendar=error&provider=microsoft"
+        "&reason=unauthorized_client"
+    )
+    logged_text = _backend_log(caplog)
+    assert (
+        "microsoft calendar sign-in came back with error unauthorized_client "
+        "(AADSTS700016)"
+    ) in logged_text
+    assert CONNECT_EMAIL not in logged_text
+
+
+@pytest.mark.anyio
+async def test_oauth_callback_drops_a_reason_that_is_not_a_provider_code(
+    client: AsyncClient,
+    override_current_user,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    override_current_user(1)
+    caplog.set_level(logging.DEBUG, logger="backend")
+
+    response = await client.get(
+        "/api/v1/calendar/oauth/google/callback",
+        params={"error": "Call +44 20 7946 0000 to restore access"},
+    )
+
+    assert response.headers["location"] == (
+        "/settings/integrations?calendar=error&provider=google"
+    )
+    logged_text = _backend_log(caplog)
+    assert "google calendar sign-in came back with error (unrecognised)" in logged_text
+    assert "7946" not in logged_text
 
 
 @pytest.mark.anyio
