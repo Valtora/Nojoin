@@ -101,6 +101,17 @@ export const renameRecording = async (
   return response.data;
 };
 
+/** Sets the recording's language; null returns it to the owner's setting. */
+export const setRecordingTranscriptionLanguage = async (
+  id: RecordingId,
+  transcriptionLanguage: string | null,
+): Promise<Recording> => {
+  const response = await api.patch<Recording>(`/recordings/${id}`, {
+    transcription_language: transcriptionLanguage,
+  });
+  return response.data;
+};
+
 export const reprocessRecording = async (
   id: RecordingId,
   body: ReprocessRequest,

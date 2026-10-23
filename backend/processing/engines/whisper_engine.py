@@ -98,8 +98,9 @@ def _first_speech(muted_path: str) -> np.ndarray:
     return np.concatenate(speech)[:window]
 
 
-def _detect_language_on_speech(model, config: dict | None) -> str | None:
-    """The language Whisper hears in the first 30 s of speech, or None (#671).
+def _detect_language_on_speech(model, config: dict | None) -> tuple[str, float] | None:
+    """The language Whisper hears in the first 30 s of speech and its
+    probability, or None (#671).
 
     Whisper detects an automatic language on the first 30 s of the file it
     transcribes. In the unmuted file those can be room noise, which on far-field
@@ -108,7 +109,9 @@ def _detect_language_on_speech(model, config: dict | None) -> str | None:
     detect on the first 30 s of its speech instead, whichever file the engine
     reads. With VAD off there is no speech map: return None and Whisper detects
     on its own input, as before. So does any failure here: detection only picks
-    the language, and must never fail a transcription that would have run.
+    or checks the language, and must never fail a transcription that would have
+    run. It runs with a language set too, so the recording page can say when
+    the speech sounds like another one.
     """
     muted_path = (config or {}).get(LANGUAGE_DETECTION_AUDIO)
     if not muted_path or not model.is_multilingual:
@@ -146,7 +149,29 @@ def _detect_language_on_speech(model, config: dict | None) -> str | None:
         speech.size / whisper.audio.SAMPLE_RATE,
         muted_path,
     )
-    return language
+    return language, float(probs[language])
+
+
+def _choose_language(
+    model, config: dict | None, engine: str
+) -> tuple[str | None, dict | None]:
+    """The language to transcribe in, and what detection heard, if it ran.
+
+    Detection runs even when a language is set, to check it (#671): the set
+    language is still the one transcribed in, and on automatic the detected
+    one is.
+    """
+    detection = _detect_language_on_speech(model, config)
+    language = resolve_transcription_language_code(config, engine)
+    if detection is None:
+        return language, None
+    code, probability = detection
+    record = {
+        "detected": code,
+        "detected_label": whisper.tokenizer.LANGUAGES.get(code, code).title(),
+        "probability": round(probability, 3),
+    }
+    return language or code, record
 
 
 # --- Whisper Progress Listener Infrastructure ---
@@ -395,13 +420,13 @@ class WhisperEngine(TranscriptionEngine):
                 "word_timestamps": enable_word_timestamps,
                 "condition_on_previous_text": False,
             }
-            language_code = resolve_transcription_language_code(config, self.name)
-            if not language_code:
-                language_code = _detect_language_on_speech(model, config)
+            language_code, detection = _choose_language(model, config, self.name)
             if language_code:
                 transcribe_kwargs["language"] = language_code
 
             result = _transcribe_seeded(model, audio_path, device, **transcribe_kwargs)
+            if detection:
+                result["language_detection"] = detection
 
             logger.info(
                 f"Transcription completed for {audio_path}. Detected language: {result.get('language')}"

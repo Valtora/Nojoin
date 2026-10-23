@@ -10,7 +10,9 @@ import {
   inferSpeakers,
   permanentlyDeleteRecording,
   renameRecording,
+  reprocessRecording,
   restoreRecording,
+  setRecordingTranscriptionLanguage,
   softDeleteRecording,
 } from "@/lib/api";
 import { useCapture } from "@/lib/capture/CaptureProvider";
@@ -18,12 +20,13 @@ import { getErrorStatus } from "@/lib/errors";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { forgetRecordingNotes } from "@/lib/notes/noteOutboxes";
 import { dispatchRecordingRemoved } from "@/lib/recordingEvents";
-import { RecordingId } from "@/types";
+import { LanguageNotice, RecordingId } from "@/types";
 
 /**
  * Shared action model for the per-recording actions used by the sidebar list
  * (`Sidebar.tsx`), the live view (`RecordingStatusDisplay.tsx`) and the
- * recording page (`useRecordingDetail.ts`, for the audio export).
+ * recording page (`useRecordingDetail.ts`, for the audio export, and
+ * `LanguageNoticeBanner.tsx`, for the language notice's answers).
  *
  * DEVELOPMENT.md requires these surfaces to stay behaviourally synchronised,
  * and this hook is the single source of truth for that behaviour.
@@ -48,6 +51,8 @@ export const RECORDING_ACTION_IDS = [
   "softDelete",
   "permanentDelete",
   "exportAudio",
+  "setTranscriptionLanguage",
+  "reprocessInLanguage",
 ] as const;
 
 export type RecordingActionId = (typeof RECORDING_ACTION_IDS)[number];
@@ -97,6 +102,19 @@ export interface RecordingActions {
   exportAudio: (
     id: RecordingId,
     name: string,
+    callbacks?: RecordingActionCallbacks,
+  ) => Promise<void>;
+  /** Sets the recording's language without reprocessing ("Keep English"). */
+  setTranscriptionLanguage: (
+    id: RecordingId,
+    language: string | null,
+    callbacks?: RecordingActionCallbacks,
+  ) => Promise<void>;
+  /** Reprocesses with `engine`, setting the recording's language first. */
+  reprocessInLanguage: (
+    id: RecordingId,
+    language: string,
+    engine: LanguageNotice["engine"],
     callbacks?: RecordingActionCallbacks,
   ) => Promise<void>;
 }
@@ -257,6 +275,41 @@ export function useRecordingActions(): RecordingActions {
           console.error("Failed to export audio", e);
           addNotification({
             message: audioExportFailureMessage(e),
+            type: "error",
+          });
+          callbacks?.onError?.();
+        }
+      },
+
+      setTranscriptionLanguage: async (id, language, callbacks) => {
+        try {
+          await setRecordingTranscriptionLanguage(id, language);
+          callbacks?.onSuccess?.();
+        } catch (e: unknown) {
+          console.error("Failed to set the recording's language", e);
+          addNotification({
+            message: "Failed to set the recording's language.",
+            type: "error",
+          });
+          callbacks?.onError?.();
+        }
+      },
+
+      reprocessInLanguage: async (id, language, engine, callbacks) => {
+        try {
+          await reprocessRecording(id, {
+            transcription_backend: engine,
+            transcription_language: language,
+          });
+          addNotification({
+            message: "Recording reprocessing started.",
+            type: "success",
+          });
+          callbacks?.onSuccess?.();
+        } catch (e: unknown) {
+          console.error("Failed to reprocess recording", e);
+          addNotification({
+            message: "Failed to start reprocessing. Please try again.",
             type: "error",
           });
           callbacks?.onError?.();

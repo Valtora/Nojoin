@@ -21,6 +21,11 @@ class Transcript(BaseDBModel, table=True):
 
     text: Optional[str] = None
     segments: List[Dict[str, Any]] = Field(default=[], sa_column=Column(JSONB))
+    # What Whisper heard on VAD speech beside the language this run used
+    # (backend/utils/language_notice.py, #671). None when no detection ran.
+    language_detection: Optional[Dict[str, Any]] = Field(
+        default=None, sa_column=Column(JSONB)
+    )
     notes: Optional[str] = Field(default=None, sa_column=Column(Text))
     meeting_edge_focus: Optional[str] = Field(default=None, sa_column=Column(Text))
     meeting_edge_payload: Optional[Dict[str, Any]] = Field(

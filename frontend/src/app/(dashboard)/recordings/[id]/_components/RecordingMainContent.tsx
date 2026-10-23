@@ -20,6 +20,7 @@ import {
 import SpeakerPanel from "@/components/SpeakerPanel";
 
 import RecordingHeader from "./RecordingHeader";
+import LanguageNoticeBanner from "./LanguageNoticeBanner";
 import TranscriptSection from "./TranscriptSection";
 import NotesSection from "./NotesSection";
 import DocumentsSection from "./DocumentsSection";
@@ -240,6 +241,10 @@ export default function RecordingMainContent({
         onPlay={() => setIsPlaying(true)}
         onPause={() => setIsPlaying(false)}
       />
+
+      {/* Above the tabs, so it is in view from every panel: the language
+          affects the notes as well as the transcript. */}
+      <LanguageNoticeBanner recording={recording} />
 
       {/* Panel Tabs. On mobile, Speakers is a fifth tab and the row scrolls
           sideways; on desktop the speaker panel lives in the side column. */}

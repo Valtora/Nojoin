@@ -24,6 +24,8 @@ const api = {
   softDeleteRecording: vi.fn(),
   permanentlyDeleteRecording: vi.fn(),
   exportAudio: vi.fn(),
+  setRecordingTranscriptionLanguage: vi.fn(),
+  reprocessRecording: vi.fn(),
 };
 
 vi.mock("@/lib/api", () => ({
@@ -38,6 +40,9 @@ vi.mock("@/lib/api", () => ({
   permanentlyDeleteRecording: (...a: unknown[]) =>
     api.permanentlyDeleteRecording(...a),
   exportAudio: (...a: unknown[]) => api.exportAudio(...a),
+  setRecordingTranscriptionLanguage: (...a: unknown[]) =>
+    api.setRecordingTranscriptionLanguage(...a),
+  reprocessRecording: (...a: unknown[]) => api.reprocessRecording(...a),
 }));
 
 const captureState: {
@@ -265,4 +270,65 @@ describe("useRecordingActions", () => {
     }
     expect(onError).toHaveBeenCalledTimes(3);
   });
+  it("sets the recording's language without reprocessing it", async () => {
+    const onSuccess = vi.fn();
+    const { result } = renderHook(() => useRecordingActions());
+
+    await act(async () => {
+      await result.current.setTranscriptionLanguage("rec-1", "en", { onSuccess });
+    });
+
+    expect(api.setRecordingTranscriptionLanguage).toHaveBeenCalledWith("rec-1", "en");
+    expect(api.reprocessRecording).not.toHaveBeenCalled();
+    expect(onSuccess).toHaveBeenCalledTimes(1);
+  });
+
+  it("reprocesses with the engine and the recording's new language", async () => {
+    const onSuccess = vi.fn();
+    const { result } = renderHook(() => useRecordingActions());
+
+    await act(async () => {
+      // The engine is the notice's, passed through as it is.
+      await result.current.reprocessInLanguage("rec-1", "auto", "canary", {
+        onSuccess,
+      });
+    });
+
+    expect(api.reprocessRecording).toHaveBeenCalledWith("rec-1", {
+      transcription_backend: "canary",
+      transcription_language: "auto",
+    });
+    expect(onSuccess).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["setTranscriptionLanguage", "reprocessInLanguage"] as const)(
+    "reports a failed %s and leaves the notice to be answered again",
+    async (action) => {
+      api.setRecordingTranscriptionLanguage.mockRejectedValue(new Error("down"));
+      api.reprocessRecording.mockRejectedValue(new Error("down"));
+      const onSuccess = vi.fn();
+      const onError = vi.fn();
+      const { result } = renderHook(() => useRecordingActions());
+
+      await act(async () => {
+        if (action === "setTranscriptionLanguage") {
+          await result.current.setTranscriptionLanguage("rec-1", "en", {
+            onSuccess,
+            onError,
+          });
+        } else {
+          await result.current.reprocessInLanguage("rec-1", "de", "whisper", {
+            onSuccess,
+            onError,
+          });
+        }
+      });
+
+      expect(onError).toHaveBeenCalledTimes(1);
+      expect(onSuccess).not.toHaveBeenCalled();
+      expect(addNotification).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "error" }),
+      );
+    },
+  );
 });

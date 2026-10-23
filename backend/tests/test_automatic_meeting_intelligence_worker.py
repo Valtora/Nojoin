@@ -72,6 +72,7 @@ CREATE TABLE transcripts (
     recording_id INTEGER NOT NULL UNIQUE,
     text TEXT,
     segments JSON NOT NULL,
+    language_detection JSON,
     notes TEXT,
     meeting_edge_focus TEXT,
     meeting_edge_payload JSON,

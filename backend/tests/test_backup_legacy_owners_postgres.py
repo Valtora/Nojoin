@@ -53,6 +53,7 @@ BEFORE = "7ff0bbdadad8"
 COLUMNS_ADDED_AFTER_BEFORE = {
     ("recordings", "capture_epoch"): "INTEGER NOT NULL DEFAULT 0",
     ("recordings", "transcription_language"): "VARCHAR(16)",
+    ("transcripts", "language_detection"): "JSONB",
 }
 
 

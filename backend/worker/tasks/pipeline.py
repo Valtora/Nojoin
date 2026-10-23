@@ -4,6 +4,7 @@ from backend.processing.engines.errors import (
     transcription_error_from,
 )
 from backend.utils.import_audio import KEEPING_AUDIO_STEP
+from backend.utils.language_notice import language_detection_record
 from backend.utils.transcription_models import known_engine_override
 
 from .constants import *
@@ -319,10 +320,12 @@ def _persist_final_transcript(
     ).first()
 
     full_text = transcription_result.get("text", "")
+    detection = language_detection_record(transcription_result, ctx.merged_config)
 
     if transcript:
         transcript.text = full_text
         transcript.segments = final_segments
+        transcript.language_detection = detection
         transcript.complete_transcription()
         transcript.set_notes_error_message(None)
         if transcript.notes_status == "error":
@@ -333,6 +336,7 @@ def _persist_final_transcript(
             recording_id=recording.id,
             text=full_text,
             segments=final_segments,
+            language_detection=detection,
             transcript_status="completed",
         )
         session.add(transcript)

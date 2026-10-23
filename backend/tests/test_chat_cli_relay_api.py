@@ -48,7 +48,7 @@ CREATE TABLE recordings (
 );
 CREATE TABLE transcripts (
     id INTEGER PRIMARY KEY, created_at TIMESTAMP NOT NULL, updated_at TIMESTAMP NOT NULL,
-    recording_id INTEGER NOT NULL UNIQUE, text TEXT, segments JSON NOT NULL, notes TEXT,
+    recording_id INTEGER NOT NULL UNIQUE, text TEXT, segments JSON NOT NULL, language_detection JSON, notes TEXT,
     meeting_edge_focus TEXT, meeting_edge_payload JSON,
     meeting_edge_status VARCHAR NOT NULL DEFAULT 'idle', meeting_edge_error_message TEXT,
     meeting_edge_source_signature TEXT, speaker_name_suggestions JSON,

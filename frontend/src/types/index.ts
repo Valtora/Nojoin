@@ -487,6 +487,22 @@ export interface CalendarEventLink {
   ends_at: string | null;
 }
 
+/**
+ * Language detection heard another language than the transcript used. The
+ * server sends it once processing is complete, until the recording has a
+ * language of its own.
+ */
+export interface LanguageNotice {
+  kind: "mismatch";
+  detected: string;
+  detected_label: string;
+  used: string;
+  used_label: string;
+  engine: "whisper" | "parakeet" | "canary";
+  /** What "Reprocess in <detected>" sets: the detected code, or "auto" when it isn't listed. */
+  reprocess_language: string;
+}
+
 export interface Recording extends Omit<BaseDBModel, "id"> {
   id: RecordingId;
   name: string;
@@ -550,6 +566,8 @@ export interface Recording extends Omit<BaseDBModel, "id"> {
    * imported again or discarded.
    */
   import_stalled?: boolean;
+  /** Detail read only; null when there is nothing to ask. */
+  language_notice?: LanguageNotice | null;
   is_archived: boolean;
   is_deleted: boolean;
   transcript?: Transcript;

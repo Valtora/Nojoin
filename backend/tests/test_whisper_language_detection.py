@@ -57,12 +57,13 @@ class _FakeModel:
         self.detected_on: list[torch.Tensor] = []
         self.transcribed: list[tuple[str, dict]] = []
         self.detection_error: Exception | None = None
+        self.heard = {"en": 0.9, "ja": 0.1}
 
     def detect_language(self, mel):
         self.detected_on.append(mel)
         if self.detection_error:
             raise self.detection_error
-        return torch.tensor(0), {"en": 0.9, "ja": 0.1}
+        return torch.tensor(0), dict(self.heard)
 
     def transcribe(self, audio_path, **kwargs):
         self.transcribed.append((audio_path, kwargs))
@@ -176,6 +177,7 @@ def test_a_failed_detection_leaves_the_language_to_whisper(model, files):
     assert len(model.detected_on) == 1
     assert "language" not in model.transcribed[0][1]
     assert result["language"] == "ja"
+    assert "language_detection" not in result
 
 
 def test_a_muted_file_with_no_speech_leaves_the_language_to_whisper(model, tmp_path):
@@ -212,24 +214,52 @@ def test_an_english_only_model_is_not_asked_to_detect(model, files):
     assert "language" not in model.transcribed[0][1]
 
 
-def test_a_set_language_is_used_without_detection(model, files):
+def test_a_set_language_is_still_checked_by_detection(model, files):
+    """With a language set, Whisper transcribes in it and reports what it heard
+    on the speech, so the recording page can say when they differ (#671)."""
     config = {
         "transcription_language": "fr",
         VAD_MUTED_INPUT: False,
         LANGUAGE_DETECTION_AUDIO: files["muted"],
     }
 
-    WhisperEngine().transcribe(files["unmuted"], config)
+    result = WhisperEngine().transcribe(files["unmuted"], config)
 
-    assert model.detected_on == []
+    expected = whisper.log_mel_spectrogram(files["speech"], 80)
+    assert len(model.detected_on) == 1
+    assert torch.equal(model.detected_on[0], expected)
     assert model.transcribed[0][1]["language"] == "fr"
+    assert result["language"] == "fr"
+    assert result["language_detection"] == {
+        "detected": "en",
+        "detected_label": "English",
+        "probability": 0.9,
+    }
+
+
+def test_an_automatic_run_reports_the_language_it_detected(model, files):
+    result = WhisperEngine().transcribe(files["unmuted"], _auto(files, muted=False))
+
+    assert result["language"] == "en"
+    assert result["language_detection"]["detected"] == "en"
+    assert result["language_detection"]["probability"] == 0.9
+
+
+def test_a_language_whisper_knows_but_nojoin_does_not_list_is_named(model, files):
+    model.heard = {"he": 0.8, "en": 0.2}
+
+    result = WhisperEngine().transcribe(files["unmuted"], _auto(files, muted=False))
+
+    assert result["language_detection"]["detected_label"] == "Hebrew"
+    assert model.transcribed[0][1]["language"] == "he"
 
 
 def test_with_vad_off_whisper_detects_on_its_input_as_before(model, files):
-    WhisperEngine().transcribe(files["unmuted"], {VAD_MUTED_INPUT: False})
+    result = WhisperEngine().transcribe(files["unmuted"], {VAD_MUTED_INPUT: False})
 
     assert model.detected_on == []
     assert "language" not in model.transcribed[0][1]
+    assert "language_detection" not in result
 
 
 def _detection_audio_handed_to_asr(monkeypatch, **settings) -> dict:
