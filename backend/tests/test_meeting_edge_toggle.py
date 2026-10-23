@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import backend.worker.tasks as tasks_module
 from backend.models.timeline_note import TimelineNote
 from backend.services.timeline_note_service import RecordingTimelineNotes
+from backend.utils.meeting_edge import MeetingEdgeRequest, build_meeting_edge_prompt
 
 
 class _ExecResult:
@@ -185,6 +186,43 @@ def test_refresh_meeting_edge_task_passes_rolling_summary_and_previous_suggestio
     )
     assert captured["previous_questions"] == ("Previously asked question?",)
     assert captured["previous_points"] == ("Previously raised point.",)
+
+
+def test_stored_item_reprs_never_reach_previously_suggested():
+    # Items stored before issue #652 are the Python repr of an object.
+    stored_payload = {
+        "questions": [
+            "{'text': 'Ask Alice Example about the rollback plan.'}",
+            "{'term': 'SLA', 'explanation': 'Service level agreement'}",
+            "Who owns the vendor contract?",
+        ],
+        "points": [
+            "{'text': \"Bob Sample's budget is not confirmed.\"}",
+            7,
+        ],
+    }
+
+    questions = tasks_module._read_meeting_edge_payload_items(
+        stored_payload, "questions"
+    )
+    points = tasks_module._read_meeting_edge_payload_items(stored_payload, "points")
+    prompt = build_meeting_edge_prompt(
+        MeetingEdgeRequest(
+            recent_transcript="Alice Example: we launch on Friday.",
+            previous_questions=questions,
+            previous_points=points,
+        )
+    )
+
+    assert questions == (
+        "Ask Alice Example about the rollback plan.",
+        "Who owns the vendor contract?",
+    )
+    assert points == ("Bob Sample's budget is not confirmed.",)
+    previous = prompt.split("# Previously Suggested", 1)[1].split("# User Focus", 1)[0]
+    assert "- Ask Alice Example about the rollback plan." in previous
+    assert "- Bob Sample's budget is not confirmed." in previous
+    assert "{" not in previous
 
 
 def test_should_refresh_meeting_edge_on_context_level_change():

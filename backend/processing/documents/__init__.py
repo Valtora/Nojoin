@@ -4,9 +4,9 @@ The public surface is deliberately small. ``formats`` answers "can this file be
 parsed and how", the orchestrator in ``backend.worker.tasks.documents`` drives
 the parse, and everything else here is an implementation detail of one format.
 
-Nothing at import time pulls in PyMuPDF, python-pptx, python-docx or openpyxl:
-the API process imports this package only to validate an upload's extension, and
-those libraries live in the worker image alone.
+Nothing at import time pulls in pypdfium2, pdfplumber, python-pptx, python-docx
+or openpyxl: the API process imports this package only to validate an upload's
+extension, and those libraries live in the worker image alone.
 """
 
 from .chunking import chunk_page_content

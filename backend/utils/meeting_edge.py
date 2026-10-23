@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import ast
 import json
+import logging
 import re
+import warnings
 from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
@@ -13,7 +16,21 @@ from backend.utils.meeting_notes import (
 )
 from backend.utils.prompt_blocks import render_prompt_blocks
 
+logger = logging.getLogger(__name__)
+
 JSON_FENCE_PATTERN = re.compile(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", re.IGNORECASE)
+
+MEETING_EDGE_MAX_ITEMS = 3
+
+# A model sometimes wraps a question or point in an object. These are the keys
+# whose string value is taken as the item's text, in this order; an object with
+# none of them is dropped.
+MEETING_EDGE_ITEM_TEXT_KEYS = ("text", "question", "point", "content")
+
+# Items stored before issue #652 hold the Python repr of such an object, for
+# example "{'text': 'Ask Alice Example ...'}". Only a string this short is read
+# back as one, and only with ast.literal_eval.
+MEETING_EDGE_ITEM_REPR_MAX_CHARS = 2000
 
 MEETING_EDGE_CONTEXT_LEVEL_MIN = 1
 MEETING_EDGE_CONTEXT_LEVEL_MAX = 5
@@ -59,6 +76,7 @@ MEETING_EDGE_CRITICAL_RULES = """- Be tactful, professional, constructive, and n
 - Only explain concepts that were actually mentioned or clearly implied by the recent transcript.
 - Include all distinct concepts from the recent transcript that materially help comprehension, not just the top one or two.
 - Keep each question, point, and explanation concise.
+- Each entry in `questions` and `points` is a plain JSON string, never an object.
 - Return valid JSON only. Do not include prose before or after the JSON object."""
 
 MEETING_EDGE_JSON_SCHEMA = """{
@@ -118,12 +136,12 @@ class MeetingEdgeRequest:
         object.__setattr__(
             self,
             "previous_questions",
-            _normalize_string_items(tuple(self.previous_questions or ()), max_items=3),
+            normalize_meeting_edge_items(self.previous_questions or ()),
         )
         object.__setattr__(
             self,
             "previous_points",
-            _normalize_string_items(tuple(self.previous_points or ()), max_items=3),
+            normalize_meeting_edge_items(self.previous_points or ()),
         )
 
 
@@ -159,8 +177,8 @@ class MeetingEdgeResult:
         if not summary:
             raise MeetingEdgeContractError("summary must be a non-empty string")
 
-        questions = _normalize_string_items(self.questions, max_items=3)
-        points = _normalize_string_items(self.points, max_items=3)
+        questions = normalize_meeting_edge_items(self.questions)
+        points = normalize_meeting_edge_items(self.points)
         concepts = tuple(self.concepts)
 
         object.__setattr__(self, "summary", summary)
@@ -256,8 +274,8 @@ def parse_meeting_edge_response(
     payload = _load_meeting_edge_payload(response_text)
     result = MeetingEdgeResult(
         summary=_read_required_string(payload, "summary"),
-        questions=_read_string_list(payload, "questions", max_items=3),
-        points=_read_string_list(payload, "points", max_items=3),
+        questions=_read_string_list(payload, "questions"),
+        points=_read_string_list(payload, "points"),
         concepts=_read_concepts(payload),
         rolling_summary=_read_optional_string(payload, "rolling_summary"),
     )
@@ -436,17 +454,77 @@ def _normalize_context_level(value: Any) -> int:
     )
 
 
-def _normalize_string_items(
-    items: Sequence[str],
+def meeting_edge_item_text(item: Any) -> str | None:
+    """The text of one question or point, or None when it carries none.
+
+    A string is its own text unless it is the stored repr of a wrapped item.
+    An object gives the first non-empty string under
+    MEETING_EDGE_ITEM_TEXT_KEYS. Anything else (a number, a list, a concept
+    filed in the wrong list) has no text.
+    """
+    if isinstance(item, str):
+        wrapped = _read_item_repr(item)
+        if wrapped is None:
+            return _clean_item_text(item)
+        item = wrapped
+    if not isinstance(item, Mapping):
+        return None
+    for key in MEETING_EDGE_ITEM_TEXT_KEYS:
+        value = item.get(key)
+        if isinstance(value, str) and (text := _clean_item_text(value)):
+            return text
+    return None
+
+
+def normalize_meeting_edge_items(
+    items: Sequence[Any],
+    *,
+    max_items: int = MEETING_EDGE_MAX_ITEMS,
+) -> tuple[str, ...]:
+    texts, _dropped = _collect_item_texts(items, max_items=max_items)
+    return texts
+
+
+def _collect_item_texts(
+    items: Sequence[Any],
     *,
     max_items: int,
-) -> tuple[str, ...]:
-    normalized: list[str] = []
-    for item in items[:max_items]:
-        cleaned = re.sub(r"\s+", " ", str(item).strip())
-        if cleaned:
-            normalized.append(cleaned)
-    return tuple(normalized)
+) -> tuple[tuple[str, ...], int]:
+    """Up to max_items texts, and how many items carried no text.
+
+    Items without text are skipped before the cap, so one never takes the
+    place of a later item. Blank strings are skipped without being counted.
+    """
+    texts: list[str] = []
+    dropped = 0
+    for item in items:
+        text = meeting_edge_item_text(item)
+        if text is None:
+            if not isinstance(item, str) or item.strip():
+                dropped += 1
+        elif len(texts) < max_items:
+            texts.append(text)
+    return tuple(texts), dropped
+
+
+def _clean_item_text(value: str) -> str | None:
+    return re.sub(r"\s+", " ", value.strip()) or None
+
+
+def _read_item_repr(value: str) -> Mapping[str, Any] | None:
+    candidate = value.strip()
+    if not (candidate.startswith("{") and candidate.endswith("}")):
+        return None
+    if len(candidate) > MEETING_EDGE_ITEM_REPR_MAX_CHARS:
+        return None
+    try:
+        with warnings.catch_warnings():
+            # A stray backslash in the text is a SyntaxWarning, not an error.
+            warnings.simplefilter("ignore", SyntaxWarning)
+            parsed = ast.literal_eval(candidate)
+    except (ValueError, TypeError, SyntaxError, MemoryError, RecursionError):
+        return None
+    return parsed if isinstance(parsed, Mapping) else None
 
 
 def _load_meeting_edge_payload(response_text: str) -> Mapping[str, Any]:
@@ -536,20 +614,17 @@ def _read_optional_string(payload: Mapping[str, Any], key: str) -> str | None:
     return cleaned or None
 
 
-def _read_string_list(
-    payload: Mapping[str, Any],
-    key: str,
-    *,
-    max_items: int,
-) -> tuple[str, ...]:
+def _read_string_list(payload: Mapping[str, Any], key: str) -> tuple[str, ...]:
     value = payload.get(key, [])
     if value is None:
         return ()
     if not isinstance(value, list):
         raise MeetingEdgeContractError(f"{key} must be an array")
-    return _normalize_string_items(
-        tuple(str(item) for item in value), max_items=max_items
-    )
+    texts, dropped = _collect_item_texts(value, max_items=MEETING_EDGE_MAX_ITEMS)
+    if dropped:
+        # A count only: the items are meeting content.
+        logger.warning("Meeting Edge dropped %d %s item(s) with no text", dropped, key)
+    return texts
 
 
 def _read_concepts(payload: Mapping[str, Any]) -> tuple[MeetingEdgeConcept, ...]:
@@ -559,17 +634,28 @@ def _read_concepts(payload: Mapping[str, Any]) -> tuple[MeetingEdgeConcept, ...]
     if not isinstance(value, list):
         raise MeetingEdgeContractError("concepts must be an array")
 
-    concepts: list[MeetingEdgeConcept] = []
-    for item in value:
-        if not isinstance(item, Mapping):
-            raise MeetingEdgeContractError("Each concept must be an object")
-        concepts.append(
-            MeetingEdgeConcept(
-                term=_read_required_string(item, "term"),
-                explanation=_read_required_string(item, "explanation"),
-            )
-        )
+    concepts = _concepts_from_items(value)
+    dropped = len(value) - len(concepts)
+    if dropped:
+        logger.warning("Meeting Edge dropped %d malformed concept(s)", dropped)
+    return concepts
 
+
+def _concepts_from_items(items: Sequence[Any]) -> tuple[MeetingEdgeConcept, ...]:
+    """The well-formed concepts in items; a malformed one is skipped."""
+    concepts: list[MeetingEdgeConcept] = []
+    for item in items:
+        if not isinstance(item, Mapping):
+            continue
+        try:
+            concepts.append(
+                MeetingEdgeConcept(
+                    term=_read_required_string(item, "term"),
+                    explanation=_read_required_string(item, "explanation"),
+                )
+            )
+        except MeetingEdgeContractError:
+            continue
     return tuple(concepts)
 
 
@@ -603,18 +689,4 @@ def _read_serialized_concepts(
     if value is None or not isinstance(value, list):
         return ()
 
-    concepts: list[MeetingEdgeConcept] = []
-    for item in value:
-        if not isinstance(item, Mapping):
-            continue
-        try:
-            concepts.append(
-                MeetingEdgeConcept(
-                    term=_read_required_string(item, "term"),
-                    explanation=_read_required_string(item, "explanation"),
-                )
-            )
-        except MeetingEdgeContractError:
-            continue
-
-    return tuple(concepts)
+    return _concepts_from_items(value)

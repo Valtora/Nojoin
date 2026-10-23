@@ -59,7 +59,7 @@ An install-wide secondary provider (`secondary_llm_provider`, or `SECONDARY_LLM_
 
 `process_document_task` (parse lane, `backend/processing/documents/`) writes one `document_pages` row per page, slide, sheet or heading-bounded section, and records which tier produced each:
 
-1. **Structural.** PyMuPDF text with reading-order sorting and table detection for PDFs; for Office files, the underlying XML, which yields slide titles, table cells, speaker notes and the values behind native charts.
+1. **Structural.** For PDFs, pypdfium2 text in the order the file draws it, which keeps columns apart, and pdfplumber tables found from their ruling lines; for Office files, the underlying XML, which yields slide titles, table cells, speaker notes and the values behind native charts.
 2. **Visual analysis** (on by default) sends each page's images to the user's model. For PDFs and images the model sees the rendered page and its output replaces the text layer; for Office files it sees the embedded figures and its output supplements the structural text.
 3. **Local OCR** (Tesseract, in the worker image) supplements pages with little text layer, and needs no AI provider.
 

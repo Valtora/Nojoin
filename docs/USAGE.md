@@ -268,6 +268,8 @@ The tab warns when a meeting shows signs of this: several speakers with a very s
 
 Attach PDF, PowerPoint, Word, Excel, CSV, text, Markdown, PNG or JPEG files, up to 250 MB each, from the **Documents** tab of a processed meeting or with **Attach Docs** while a meeting is recording or processing. Browse to several files or drag them onto the dialog. They upload one after another, and if one fails the rest still go through and the failed ones stay listed to retry.
 
+A PDF that is damaged or cut short, for example by an interrupted download, fails to parse and its card shows the error. Download or export it again from its source and attach the new copy.
+
 Meeting notes are generated once, at the end of processing, from every document parsed by then. A document attached during the meeting is normally in time. One attached later is not, so the Notes tab shows a banner offering to regenerate. Regenerating uses your AI provider and overwrites your edits to the notes.
 
 #### Visual Analysis
