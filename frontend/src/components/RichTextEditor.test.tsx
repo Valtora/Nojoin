@@ -126,3 +126,31 @@ describe("MarkdownBubble table support", () => {
     expect(screen.getByText("DEC-001")).toBeInTheDocument();
   });
 });
+
+describe("Tiptap extensions", () => {
+  const LINKED = "Alice Example shared [the plan](https://example.com/plan).";
+  type EditorRoot = HTMLElement & { editor?: Editor };
+
+  // StarterKit 3 already includes Link and Underline. Registering either again
+  // ran two copies of its autolink, click and paste plugins, and Tiptap warned
+  // on every editor (#621).
+  it.each([
+    ["MarkdownBubble", () => <MarkdownBubble content={LINKED} />],
+    ["RichTextEditor", () => <RichTextEditor content={LINKED} onChange={vi.fn()} />],
+  ])("%s registers each extension once and keeps its link attributes", async (_, ui) => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const { container } = render(ui());
+
+    const link = await screen.findByRole("link", { name: "the plan" });
+    const root = container.querySelector(".ProseMirror") as EditorRoot | null;
+    const names = root?.editor?.extensionManager.extensions.map((extension) => extension.name) ?? [];
+    expect(names).toContain("link");
+    expect(names).toContain("underline");
+    expect(names.filter((name, index) => names.indexOf(name) !== index)).toEqual([]);
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveAttribute("rel", "noopener noreferrer");
+    expect(link.className).toContain("text-status-info-fg");
+    expect(warn).not.toHaveBeenCalledWith(expect.stringContaining("Duplicate extension names"));
+    warn.mockRestore();
+  });
+});
