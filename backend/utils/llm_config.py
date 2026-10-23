@@ -4,9 +4,8 @@ from dataclasses import dataclass
 from typing import Any, Mapping
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel import Session, select
+from sqlmodel import Session
 
-from backend.models.user import User
 from backend.utils.config_manager import (
     TRANSCRIPTION_SETTING_KEYS,
     async_get_system_api_keys,
@@ -14,6 +13,7 @@ from backend.utils.config_manager import (
     get_system_api_keys,
     strip_legacy_automatic_ai_settings,
 )
+from backend.utils.primary_owner import get_primary_owner, get_primary_owner_async
 
 SYSTEM_LLM_FIELDS = (
     "llm_provider",
@@ -446,7 +446,7 @@ def resolve_llm_config(
     user_id: int | None = None,
 ) -> ResolvedLLMConfig:
     system_keys = get_system_api_keys(session)
-    owner = session.exec(select(User).where(User.role == "owner")).first()
+    owner = get_primary_owner(session)
     owner_settings = getattr(owner, "settings", {}) if owner else {}
 
     merged = _merge_llm_config(
@@ -470,8 +470,7 @@ async def resolve_llm_config_async(
     user_id: int | None = None,
 ) -> ResolvedLLMConfig:
     system_keys = await async_get_system_api_keys(db)
-    result = await db.execute(select(User).where(User.role == "owner"))
-    owner = result.scalar_one_or_none()
+    owner = await get_primary_owner_async(db)
     owner_settings = getattr(owner, "settings", {}) if owner else {}
 
     merged = _merge_llm_config(

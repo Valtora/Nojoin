@@ -14,9 +14,7 @@ import logging
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel import select
 
-from backend.models.user import User
 from backend.utils.config_manager import (
     DEFAULT_SYSTEM_CONFIG,
     TRANSCRIPTION_BACKENDS,
@@ -24,6 +22,7 @@ from backend.utils.config_manager import (
     WHISPER_MODEL_SIZES,
     config_manager,
 )
+from backend.utils.primary_owner import get_primary_owner_async
 
 logger = logging.getLogger(__name__)
 
@@ -104,10 +103,7 @@ async def carry_owner_transcription_choice(session: AsyncSession) -> dict[str, s
     object, is left alone, and a failed write raises before the row is touched, so the next
     start tries again. Returns the values written to config.json.
     """
-    result = await session.execute(
-        select(User).where(User.role == "owner").order_by(User.id).limit(1)
-    )
-    owner = result.scalars().first()
+    owner = await get_primary_owner_async(session)
     row = dict(owner.settings or {}) if owner is not None else {}
     held = [key for key in TRANSCRIPTION_SETTING_KEYS if key in row]
     if owner is None or not held:

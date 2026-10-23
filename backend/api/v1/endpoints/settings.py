@@ -49,6 +49,7 @@ from backend.utils.ollama_url_policy import (
     OllamaURLValidationError,
     validate_ollama_api_url,
 )
+from backend.utils.primary_owner import get_primary_owner_async
 from backend.utils.timezones import validate_timezone_name
 
 router = APIRouter()
@@ -446,12 +447,7 @@ async def _merge_settings(user_settings: dict, db: AsyncSession) -> dict:
 
     # The owner's AI settings fill install-wide AI keys that system config
     # leaves unset. Defaults below then skip any install-wide AI key that is set.
-    from sqlmodel import select
-
-    from backend.models.user import User
-
-    result = await db.execute(select(User).where(User.role == "owner"))
-    owner = result.scalar_one_or_none()
+    owner = await get_primary_owner_async(db)
     owner_settings = getattr(owner, "settings", {}) if owner else {}
 
     _apply_install_wide_ai_owner_fallback(merged, owner_settings)

@@ -40,6 +40,7 @@ files = [
     "backend/utils/config_manager.py",
     "backend/utils/env_comments.py",
     "backend/utils/time.py",
+    "backend/utils/primary_owner.py",
     "backend/core/exceptions.py",
     "backend/core/security.py",
     "backend/core/encryption.py",

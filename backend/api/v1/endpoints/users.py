@@ -1,8 +1,9 @@
 import logging
+from dataclasses import dataclass
 from typing import Any, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
@@ -60,28 +61,49 @@ LAST_OWNER_DETAIL = (
     "Nojoin needs at least one active Owner. Make another account an Owner "
     "before changing or removing this one."
 )
+LAST_SUPERUSER_DETAIL = (
+    "No other active account has superuser rights, so this one cannot be "
+    "deactivated, deleted or lose them."
+)
 
 
-async def lock_active_owner_ids(db: AsyncSession) -> set[int]:
-    """Lock every active Owner's row and return their ids.
+@dataclass(frozen=True)
+class PrivilegedAccounts:
+    """The active Owners and superusers, as locked by ``lock_privileged_accounts``."""
 
-    Every change that can take the Owner role or an active account from an
-    Owner takes these locks before it reads its target, in id order, so two
-    such changes run one after the other and the second counts what the first
-    left: two Owners demoting or deleting each other at once cannot both
-    succeed. FOR NO KEY UPDATE, so an insert that references an Owner, such as
-    a new recording, does not wait on it.
+    owner_ids: frozenset[int] = frozenset()
+    superuser_ids: frozenset[int] = frozenset()
+
+
+async def lock_privileged_accounts(db: AsyncSession) -> PrivilegedAccounts:
+    """Lock every active Owner's and superuser's row and return their ids.
+
+    Every change that can take the Owner role, superuser rights or an active
+    account from one of them takes these locks before it reads its target, so
+    two such changes run one after the other and the second counts what the
+    first left: two accounts demoting or deleting each other at once cannot
+    both succeed. One statement in id order, so every route takes the locks in
+    the same order. FOR NO KEY UPDATE, so an insert that references one of
+    these accounts, such as a new recording, does not wait on it.
     """
-    result = await db.execute(
-        select(User.id)
-        .where(User.role == UserRole.OWNER, User.is_active == True)
-        .order_by(User.id)
-        .with_for_update(key_share=True)
+    rows = (
+        await db.execute(
+            select(User.id, User.role, User.is_superuser)
+            .where(
+                or_(User.role == UserRole.OWNER, User.is_superuser == True),
+                User.is_active == True,
+            )
+            .order_by(User.id)
+            .with_for_update(key_share=True)
+        )
+    ).all()
+    return PrivilegedAccounts(
+        owner_ids=frozenset(row.id for row in rows if row.role == UserRole.OWNER),
+        superuser_ids=frozenset(row.id for row in rows if row.is_superuser),
     )
-    return set(result.scalars().all())
 
 
-def refuse_removing_last_owner(owner_ids: set[int], user_id: int) -> None:
+def refuse_removing_last_owner(owner_ids: frozenset[int], user_id: int) -> None:
     """Refuse a change that would leave the installation without an Owner.
 
     Granting the Owner role takes an Owner, so once none is left only a
@@ -89,6 +111,38 @@ def refuse_removing_last_owner(owner_ids: set[int], user_id: int) -> None:
     """
     if owner_ids == {user_id}:
         raise HTTPException(status_code=409, detail=LAST_OWNER_DETAIL)
+
+
+def refuse_removing_last_superuser(superuser_ids: frozenset[int], user: User) -> None:
+    """Refuse a change that would leave no active superuser.
+
+    Backup and restore, the logs and editing users need superuser rights, and
+    only a superuser can grant them, so once none is active only a database
+    edit could bring them back.
+    """
+    if user.is_superuser and not superuser_ids - {user.id}:
+        raise HTTPException(status_code=409, detail=LAST_SUPERUSER_DETAIL)
+
+
+def _update_removes_access(user_in: UserUpdate) -> bool:
+    return (
+        user_in.is_active is False
+        or user_in.is_superuser is False
+        or (user_in.role is not None and user_in.role != UserRole.OWNER)
+    )
+
+
+def refuse_update_removing_access(
+    accounts: PrivilegedAccounts, current_user: User, user: User, user_in: UserUpdate
+) -> None:
+    """Refuse an edit that would lock everyone out of a role or of superuser rights."""
+    deactivates = user_in.is_active is False
+    if deactivates and user.id == current_user.id:
+        raise HTTPException(status_code=400, detail="Cannot deactivate yourself")
+    if deactivates or user_in.is_superuser is False:
+        refuse_removing_last_superuser(accounts.superuser_ids, user)
+    if deactivates or (user_in.role is not None and user_in.role != UserRole.OWNER):
+        refuse_removing_last_owner(accounts.owner_ids, user.id)
 
 
 def authorize_role_change(current_user: User, user: User, role: str) -> None:
@@ -289,8 +343,8 @@ async def delete_user(
     ):
         raise HTTPException(status_code=403, detail="Not authorized")
 
-    # The Owners first, as in every change that can remove one.
-    owner_ids = await lock_active_owner_ids(db)
+    # These first, as in every change that can remove an Owner or a superuser.
+    accounts = await lock_privileged_accounts(db)
 
     # Locked, as delete_recording locks its recording, before the document
     # paths are read below. An upload creating a recording for this user waits
@@ -308,16 +362,8 @@ async def delete_user(
     if user.role == UserRole.OWNER and current_user.role != UserRole.OWNER:
         raise HTTPException(status_code=403, detail="Cannot delete the owner")
 
-    refuse_removing_last_owner(owner_ids, user.id)
-
-    if user.is_superuser:
-        query = select(func.count(User.id)).where(User.is_superuser == True)
-        result = await db.execute(query)
-        admin_count = result.scalar_one()
-        if admin_count <= 1:
-            raise HTTPException(
-                status_code=400, detail="Cannot delete the last admin account"
-            )
+    refuse_removing_last_owner(accounts.owner_ids, user.id)
+    refuse_removing_last_superuser(accounts.superuser_ids, user)
 
     # The recordings are locked too, in id order: a document insert waits on
     # its recording's lock, so none can commit a row the read misses either.
@@ -383,7 +429,9 @@ async def update_user_role(
         raise HTTPException(status_code=400, detail="Invalid role")
 
     removes_owner = role != UserRole.OWNER
-    owner_ids = await lock_active_owner_ids(db) if removes_owner else set()
+    accounts = (
+        await lock_privileged_accounts(db) if removes_owner else PrivilegedAccounts()
+    )
 
     # Read after the lock, so a change another request just committed counts.
     user = await db.get(User, user_id, populate_existing=True)
@@ -392,7 +440,7 @@ async def update_user_role(
 
     authorize_role_change(current_user, user, role)
     if removes_owner:
-        refuse_removing_last_owner(owner_ids, user.id)
+        refuse_removing_last_owner(accounts.owner_ids, user.id)
 
     user.role = role
     db.add(user)
@@ -470,10 +518,11 @@ async def update_user(
     """
     Update a user. Only for superusers.
     """
-    removes_owner = user_in.is_active is False or (
-        user_in.role is not None and user_in.role != UserRole.OWNER
+    accounts = (
+        await lock_privileged_accounts(db)
+        if _update_removes_access(user_in)
+        else PrivilegedAccounts()
     )
-    owner_ids = await lock_active_owner_ids(db) if removes_owner else set()
 
     # Read after the lock, so a change another request just committed counts.
     user = await db.get(User, user_id, populate_existing=True)
@@ -482,6 +531,9 @@ async def update_user(
             status_code=404,
             detail="The user with this id does not exist in the system",
         )
+    if user_in.role is not None:
+        authorize_role_change(current_user, user, user_in.role)
+    refuse_update_removing_access(accounts, current_user, user, user_in)
 
     if user_in.username:
         query = select(User).where(User.username == user_in.username)
@@ -510,10 +562,7 @@ async def update_user(
         # Explicit null clears the override back to the install default.
         user.ai_analysis_daily_limit = user_in.ai_analysis_daily_limit
     if user_in.role is not None:
-        authorize_role_change(current_user, user, user_in.role)
         user.role = user_in.role
-    if removes_owner:
-        refuse_removing_last_owner(owner_ids, user.id)
 
     db.add(user)
     if bump_required:
