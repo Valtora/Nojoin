@@ -148,6 +148,7 @@ async def reprocess_recording(
     Re-run the full processing pipeline with a caller-chosen transcription engine.
     """
     from backend.utils.config_manager import TRANSCRIPTION_BACKENDS
+    from backend.utils.transcription_models import ENGINE_OVERRIDE_CHOICES
 
     recording = await _get_owned_recording(db, recording_id, current_user.id)
 
@@ -182,12 +183,17 @@ async def reprocess_recording(
         )
 
     engine_override: dict = {"transcription_backend": body.transcription_backend}
-    if body.whisper_model_size is not None:
-        engine_override["whisper_model_size"] = body.whisper_model_size
-    if body.parakeet_model is not None:
-        engine_override["parakeet_model"] = body.parakeet_model
-    if body.canary_model is not None:
-        engine_override["canary_model"] = body.canary_model
+    for key in ("whisper_model_size", "parakeet_model", "canary_model"):
+        value = getattr(body, key)
+        if value is None:
+            continue
+        if value not in ENGINE_OVERRIDE_CHOICES[key]:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unknown {key}. Choose one of: "
+                + ", ".join(ENGINE_OVERRIDE_CHOICES[key]),
+            )
+        engine_override[key] = value
 
     if "max_speakers" in body.model_fields_set:
         recording.max_speakers = normalize_speaker_cap(body.max_speakers)

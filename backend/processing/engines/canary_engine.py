@@ -1,6 +1,7 @@
 # Canary transcription engine: a thin subclass of the shared OnnxAsrEngine.
 # The onnx-asr logic and the timestamped-result mapper live in onnx_asr_engine.
 
+from ...utils.transcription_models import CANARY_MODEL_IDS
 from .onnx_asr_engine import OnnxAsrEngine
 
 
@@ -11,4 +12,5 @@ class CanaryEngine(OnnxAsrEngine):
     config_key = "canary_model"
     default_model_id = "nemo-canary-1b-v2"
     supports_forced_language = True
-    # onnx_id_map empty: the Nojoin model id is already the onnx-asr name.
+    # The Nojoin model id is already the onnx-asr name.
+    onnx_id_map = CANARY_MODEL_IDS

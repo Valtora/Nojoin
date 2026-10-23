@@ -584,7 +584,7 @@ async def test_reprocess_optional_model_keys_only_when_provided(
         "/api/v1/recordings/rec-205/reprocess",
         json={
             "transcription_backend": "whisper",
-            "whisper_model_size": "large-v3",
+            "whisper_model_size": "large",
         },
     )
 
@@ -593,9 +593,70 @@ async def test_reprocess_optional_model_keys_only_when_provided(
     override = calls[0][0][2]
     assert override == {
         "transcription_backend": "whisper",
-        "whisper_model_size": "large-v3",
+        "whisper_model_size": "large",
     }
     assert "parakeet_model" not in override
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("whisper_model_size", "large-v9"),
+        ("whisper_model_size", "models/whisper/custom.pt"),
+        ("parakeet_model", "parakeet-other"),
+        ("parakeet_model", "/models/parakeet"),
+        ("canary_model", "canary-other"),
+    ],
+)
+async def test_reprocess_rejects_a_model_it_does_not_know(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+    monkeypatch,
+    key: str,
+    value: str,
+) -> None:
+    """Only the model ids the install offers are accepted, with 400 otherwise."""
+    await _insert_recording(test_session_maker, recording_id=206, public_id="rec-206")
+    calls = _patch_delay(monkeypatch)
+
+    response = await client.post(
+        "/api/v1/recordings/rec-206/reprocess",
+        json={"transcription_backend": "whisper", key: value},
+    )
+
+    assert response.status_code == 400
+    assert key in response.json()["detail"]
+    assert calls == []
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("backend", "key", "value"),
+    [
+        ("whisper", "whisper_model_size", "turbo"),
+        ("parakeet", "parakeet_model", "parakeet-tdt-0.6b-v3"),
+        ("canary", "canary_model", "nemo-canary-1b-v2"),
+    ],
+)
+async def test_reprocess_accepts_each_engines_model(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+    monkeypatch,
+    backend: str,
+    key: str,
+    value: str,
+) -> None:
+    await _insert_recording(test_session_maker, recording_id=208, public_id="rec-208")
+    calls = _patch_delay(monkeypatch)
+
+    response = await client.post(
+        "/api/v1/recordings/rec-208/reprocess",
+        json={"transcription_backend": backend, key: value},
+    )
+
+    assert response.status_code == 200
+    assert calls[0][0][2] == {"transcription_backend": backend, key: value}
 
 
 @pytest.mark.anyio
@@ -633,9 +694,9 @@ async def test_reprocess_promotes_legacy_recording_to_unified(
 # --- task unit test ---------------------------------------------------------
 
 
-def test_process_recording_task_applies_engine_override(monkeypatch):
-    """process_recording_task merges engine_override into merged_config before
-    the transcription stage, so the engine keys reach transcribe_audio."""
+def _transcription_config(monkeypatch, engine_override: dict) -> dict:
+    """The config transcribe_audio sees when process_recording_task runs with
+    ``engine_override``."""
     from backend.models.recording import RecordingStatus
     from backend.worker import tasks as tasks_module
 
@@ -757,8 +818,6 @@ def test_process_recording_task_applies_engine_override(monkeypatch):
 
     monkeypatch.setattr("os.path.exists", lambda path: True)
 
-    engine_override = {"transcription_backend": "parakeet", "parakeet_model": "v3"}
-
     # process_recording_task is a bound Celery task: task.run carries `self`
     # implicitly. Inject the fake DB session and stub the progress callback.
     task = tasks_module.process_recording_task
@@ -768,8 +827,38 @@ def test_process_recording_task_applies_engine_override(monkeypatch):
     with pytest.raises(_StopPipeline):
         task.run(301, False, engine_override)
 
-    assert captured["config"]["transcription_backend"] == "parakeet"
-    assert captured["config"]["parakeet_model"] == "v3"
+    return captured["config"]
+
+
+def test_process_recording_task_applies_engine_override(monkeypatch):
+    """process_recording_task merges engine_override into merged_config before
+    the transcription stage, so the engine keys reach transcribe_audio."""
+    config = _transcription_config(
+        monkeypatch,
+        {"transcription_backend": "parakeet", "parakeet_model": "parakeet-tdt-0.6b-v3"},
+    )
+
+    assert config["transcription_backend"] == "parakeet"
+    assert config["parakeet_model"] == "parakeet-tdt-0.6b-v3"
+
+
+def test_process_recording_task_ignores_unknown_engine_override_entries(monkeypatch):
+    """An override's unknown model ids and keys are left out of the config; its
+    known entries still apply."""
+    config = _transcription_config(
+        monkeypatch,
+        {
+            "transcription_backend": "parakeet",
+            "parakeet_model": "/models/parakeet",
+            "whisper_model_size": "models/whisper/custom.pt",
+            "processing_device": "cuda",
+        },
+    )
+
+    assert config["transcription_backend"] == "parakeet"
+    assert "parakeet_model" not in config
+    assert config["whisper_model_size"] == "base"
+    assert "processing_device" not in config
 
 
 def test_process_recording_task_rolls_back_before_persisting_error_state(monkeypatch):

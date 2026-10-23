@@ -19,6 +19,7 @@ from backend.utils.browser_capture_audio import (
     decode_browser_flac_segment,
 )
 from backend.utils.config_manager import config_manager
+from backend.utils.media_commands import FFMPEG
 from backend.utils.recording_audio_registration import (
     ChunkStream,
     advance_recording_audio_cursor,
@@ -62,7 +63,7 @@ def _locate_staged_browser_segment(recording_id: int, sequence: int) -> Path | N
 def _run_ffmpeg_transcode(input_path: Path, output_path: Path) -> None:
     """Transcode browser WebM/Ogg into canonical stereo live-capture WAV."""
     command = [
-        "ffmpeg",
+        *FFMPEG,
         "-nostdin",
         "-loglevel",
         "error",
