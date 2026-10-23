@@ -176,6 +176,17 @@ def test_a_failed_detection_leaves_the_language_to_whisper(model, files):
     assert result["language"] == "ja"
 
 
+def test_a_muted_file_with_no_speech_leaves_the_language_to_whisper(model, tmp_path):
+    """VAD can count speech in the first and last second, which the mute step
+    always zeroes. A window of only pauses is not detected on."""
+    files = _write_pair(tmp_path, _silence(40))
+
+    WhisperEngine().transcribe(files["unmuted"], _auto(files, muted=False))
+
+    assert model.detected_on == []
+    assert "language" not in model.transcribed[0][1]
+
+
 def test_an_unreadable_detection_file_keeps_the_loaded_model(model, files, tmp_path):
     """soundfile's error is a RuntimeError; it must not reach the branch that
     drops the cached model after a failed transcription."""

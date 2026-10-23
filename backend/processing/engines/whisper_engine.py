@@ -115,6 +115,15 @@ def _detect_language_on_speech(model, config: dict | None) -> str | None:
         return None
     try:
         speech = _first_speech(muted_path)
+        if not speech.any():
+            # VAD counted speech the mute step then zeroed (the first and last
+            # second are always muted): nothing to detect on.
+            logger.info(
+                "No VAD speech in %s to detect a language on; Whisper detects "
+                "on its own input instead",
+                muted_path,
+            )
+            return None
         mel = whisper.log_mel_spectrogram(
             whisper.pad_or_trim(speech), model.dims.n_mels
         )
