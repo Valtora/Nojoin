@@ -20,6 +20,7 @@ watchdog==6.0.0
 # XML rather than pixels, which is why no headless-office renderer is needed
 # here. python-docx is also pinned in backend.txt (Markdown-to-DOCX export);
 # the worker needs its own copy because the two images share no layer.
+# 2.0 is skipped; the ignore entry in .github/dependabot.yml gives the reason.
 PyMuPDF==1.28.2
 python-pptx==1.0.2
 python-docx==1.2.0

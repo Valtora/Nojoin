@@ -1,6 +1,6 @@
 import logging
 import os
-from typing import List
+from typing import List, NewType
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
@@ -38,6 +38,14 @@ from backend.utils.upload_limit import (
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+# A boolean form field whose declared default applies when the field is absent.
+# FastAPI 0.147+ reads an absent `bool` form field as an unchecked HTML checkbox,
+# so False whatever the default, and it recognises such a field by an annotation
+# of exactly `bool` or `bool | None`. A NewType of bool is neither, yet Pydantic
+# still parses it as a bool and OpenAPI still shows a boolean with its default.
+# test_document_upload_deep_parse.py fails if a FastAPI release changes this.
+FormBoolWithDefault = NewType("FormBoolWithDefault", bool)
 
 
 async def _get_owned_recording(
@@ -217,15 +225,16 @@ async def upload_document(  # noqa: PLR0913 - FastAPI dependencies are parameter
     request: Request,
     recording_id: str,
     file: UploadFile = File(...),
-    deep_parse: bool = Form(True),
+    deep_parse: FormBoolWithDefault = Form(FormBoolWithDefault(True)),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Upload a document to be included in the meeting's context.
 
-    ``deep_parse`` defaults to true: pages are sent to a vision-capable model so
-    charts, diagrams and scanned pages survive. Setting it false restricts the
-    parse to structural extraction, which costs nothing and calls no provider.
+    ``deep_parse`` defaults to true, including when the field is left out: pages
+    are sent to a vision-capable model so charts, diagrams and scanned pages
+    survive. Setting it false restricts the parse to structural extraction,
+    which costs nothing and calls no provider.
     """
     # The document's place in the list is reserved now, before the bytes are
     # read: the client uploads a batch two at a time, and a row stamped at

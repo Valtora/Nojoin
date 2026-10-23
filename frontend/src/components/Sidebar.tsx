@@ -51,6 +51,7 @@ import { createFuse } from "@/lib/searchUtils";
 import { getColorByKey } from "@/lib/constants";
 import { useViewportDensity } from "./ViewportDensityProvider";
 import { Badge } from "./ui/Badge";
+import { useForgetNotesOfDeletedRecordings } from "@/lib/notes/deletedRecordingNotes";
 import { useUnsentRecordings } from "@/lib/notes/useNoteOutbox";
 import { useRecordingStatusNotifications } from "./recordings/_hooks/useRecordingStatusNotifications";
 import { useSidebarResize } from "./recordings/_hooks/useSidebarResize";
@@ -268,6 +269,7 @@ export default function Sidebar() {
   }, []);
 
   useRecordingStatusNotifications(recordings);
+  useForgetNotesOfDeletedRecordings(hasLoadedRecordings ? recordings : null);
 
   const filteredRecordings = useMemo(() => {
     if (!debouncedSearchQuery) return recordings;

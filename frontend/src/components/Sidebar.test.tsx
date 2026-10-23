@@ -61,6 +61,14 @@ vi.mock("@/lib/notes/useNoteOutbox", () => ({
   useUnsentRecordings: () => unsentRecordings,
 }));
 
+const sweptLists: (readonly { id: string }[] | null)[] = [];
+
+vi.mock("@/lib/notes/deletedRecordingNotes", () => ({
+  useForgetNotesOfDeletedRecordings: (listed: readonly { id: string }[] | null) => {
+    sweptLists.push(listed);
+  },
+}));
+
 vi.mock("@/lib/capture/CaptureProvider", () => ({
   useCapture: () => ({
     cancel: vi.fn(),
@@ -163,6 +171,7 @@ describe("Sidebar", () => {
     pausedRecording = null;
     pathname = "/recordings";
     unsentRecordings = [];
+    sweptLists.length = 0;
     useImportAudioStore.setState({ isImportAudioOpen: false });
 
     getRecordings.mockResolvedValue([recording]);
@@ -258,6 +267,15 @@ describe("Sidebar", () => {
       await screen.findByRole("heading", { name: "Latest meeting" });
 
       expect(screen.queryByText("Unsent notes")).not.toBeInTheDocument();
+    });
+
+    it("looks for notes of recordings deleted elsewhere once the list has loaded (issue #636)", async () => {
+      renderWithProviders(<Sidebar />);
+
+      await screen.findByRole("heading", { name: "Latest meeting" });
+
+      expect(sweptLists[0]).toBeNull();
+      expect(sweptLists.at(-1)?.map(({ id }) => id)).toEqual(["rec-1"]);
     });
   });
 
