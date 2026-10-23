@@ -657,6 +657,10 @@ export interface Settings {
   glossary_terms?: string;
   install_glossary_terms?: string;
   enable_vad?: boolean;
+  // With VAD on, whether transcription and speaker separation hear the muted
+  // audio. Transcription defaults true, speaker separation false.
+  vad_mute_transcription?: boolean;
+  vad_mute_diarization?: boolean;
   enable_diarization?: boolean;
   // Processing tuning (lib/processingTuning.ts). null means inherit the
   // install's value, else the shipped default.

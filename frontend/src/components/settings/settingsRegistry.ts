@@ -361,6 +361,30 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
     keywords: ["vad", "voice activity detection", "silence", "filter", "processing"],
   },
   {
+    id: "recording-vad-mute-transcription",
+    label: "Mute non-speech for transcription",
+    description:
+      "Off lets transcription hear everything: it can recover distant speech but can add words from noise.",
+    category: "recording",
+    access: "all",
+    advanced: "safe-default",
+    settingsKeys: ["vad_mute_transcription"],
+    defaultValue: true,
+    keywords: ["vad", "mute", "unmuted", "silence", "transcription", "distant", "far-field"],
+  },
+  {
+    id: "recording-vad-mute-diarization",
+    label: "Mute non-speech for speaker separation",
+    description:
+      "On limits speaker separation to the filtered speech: faster on long recordings, but worse at telling speakers apart.",
+    category: "recording",
+    access: "all",
+    advanced: "safe-default",
+    settingsKeys: ["vad_mute_diarization"],
+    defaultValue: false,
+    keywords: ["vad", "mute", "unmuted", "silence", "diarization", "speaker separation", "short replies"],
+  },
+  {
     id: "recording-remeasure-delivery",
     label: "Re-measure delivery after edits",
     description:

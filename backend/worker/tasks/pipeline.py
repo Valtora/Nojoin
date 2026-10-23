@@ -1,4 +1,3 @@
-from backend.processing.engines.base import VAD_MUTED_INPUT
 from backend.processing.engines.errors import (
     TranscriptionError,
     is_task_interruption,
@@ -10,11 +9,11 @@ from backend.utils.transcription_models import known_engine_override
 from .constants import *
 from .final_asr import (
     mark_transcript_failed,
-    mark_transcript_without_speech,
     transcribe_with_gpu_oom_retry,
 )
 from .final_segments import combine_and_consolidate_segments, drop_unheard_words
 from .speaker_assignment import assign_and_identify_speakers
+from .vad_stage import run_vad_stage
 
 # ---------------------------------------------------------------------------
 # process_recording_task orchestration stages
@@ -45,9 +44,9 @@ class _PipelineRunContext:
     device_suffix: str
     temp_files: list[str]
     merged_config: dict
-    # Set once the VAD stage produces the processed (16k mono) audio; consumed by
-    # the speaker-assignment stage.
-    processed_audio_path: str | None = None
+    # Set once the VAD stage picks the diarisation side's (16k mono) audio;
+    # consumed by the speaker-assignment stage for voiceprints.
+    diarization_audio_path: str | None = None
 
 
 @dataclass
@@ -60,19 +59,6 @@ class _InputAudioResolution:
     """
 
     audio_path: str | None
-    finished: bool = False
-
-
-@dataclass
-class _VadStageResult:
-    """Outcome of the VAD/preprocess stage.
-
-    ``processed_audio_path`` feeds ASR/diarization. ``finished`` signals the
-    "no speech detected" short-circuit: an empty transcript has been persisted
-    and the recording marked PROCESSED, so the orchestrator returns ``None``.
-    """
-
-    processed_audio_path: str | None
     finished: bool = False
 
 
@@ -162,101 +148,10 @@ def _resolve_input_audio(
     return _InputAudioResolution(audio_path=audio_path)
 
 
-def _run_vad_stage(
-    ctx: _PipelineRunContext,
-    recording: Recording,
-    audio_path: str,
-) -> _VadStageResult:
-    """Preprocess audio to 16k mono and (when enabled) mute non-speech regions.
-
-    On the "no speech" short-circuit, persists an empty transcript, marks the
-    recording PROCESSED, and returns ``finished=True`` so the orchestrator
-    returns without running ASR. Otherwise returns the processed audio path.
-    """
-    from backend.processing.audio_preprocessing import preprocess_audio_for_vad
-    from backend.processing.vad import mute_non_speech_segments
-
-    session = ctx.session
-    device_suffix = ctx.device_suffix
-    temp_files = ctx.temp_files
-    recording_id = ctx.recording_id
-
-    enable_vad = ctx.merged_config.get("enable_vad", True)
-    ctx.merged_config[VAD_MUTED_INPUT] = bool(enable_vad)
-
-    if enable_vad:
-        ctx.task.update_state(state="PROCESSING", meta={"progress": 30, "stage": "VAD"})
-        recording.processing_step = f"Filtering silence and noise...{device_suffix}"
-        recording.processing_progress = 30
-        session.add(recording)
-        session.commit()
-
-        vad_input_path = preprocess_audio_for_vad(audio_path)
-        if not vad_input_path:
-            raise RuntimeError("VAD preprocessing failed")
-        temp_files.append(vad_input_path)
-
-        vad_output_path = vad_input_path.replace("_vad.wav", "_vad_processed.wav")
-        vad_success, speech_duration = mute_non_speech_segments(
-            vad_input_path, vad_output_path, config=ctx.merged_config
-        )
-
-        if not vad_success:
-            raise RuntimeError("VAD execution failed")
-        temp_files.append(vad_output_path)
-
-        if speech_duration < 1.0:
-            logger.warning(
-                f"No speech detected in recording {recording_id} (speech duration: {speech_duration}s)"
-            )
-            recording.status = RecordingStatus.PROCESSED
-            recording.client_status = ClientStatus.IDLE
-            recording.processing_step = "Completed (No speech detected)"
-            recording.processing_completed_at = utc_now()
-
-            transcript = session.exec(
-                select(Transcript).where(Transcript.recording_id == recording.id)
-            ).first()
-            if not transcript:
-                transcript = Transcript(recording_id=recording.id)
-
-            mark_transcript_without_speech(transcript)
-
-            mark_recording_audio_chunks_ready_for_cleanup(
-                session,
-                recording_id=recording.id,
-                upload_status="finalized",
-            )
-            auto_link_recording(session, recording)
-            session.add(transcript)
-            session.add(recording)
-            session.commit()
-            return _VadStageResult(processed_audio_path=None, finished=True)
-
-        # Use WAV for processing to avoid sample count mismatches in Pyannote
-        processed_audio_path = vad_output_path
-    else:
-        logger.info("VAD disabled, skipping silence filtering.")
-        # Still need to preprocess to ensure 16k mono wav for Whisper/Pyannote
-        vad_input_path = preprocess_audio_for_vad(audio_path)
-        if not vad_input_path:
-            raise RuntimeError("Audio preprocessing failed")
-        temp_files.append(vad_input_path)
-        processed_audio_path = vad_input_path
-
-    logger.info(
-        f"Using processed audio for transcription/diarization: {processed_audio_path}"
-    )
-    if not os.path.exists(processed_audio_path):
-        raise FileNotFoundError(f"Processed audio file missing: {processed_audio_path}")
-
-    return _VadStageResult(processed_audio_path=processed_audio_path)
-
-
 def _run_final_asr_stage(
     ctx: _PipelineRunContext,
     recording: Recording,
-    processed_audio_path: str,
+    audio_path: str,
     engine_override: dict | None,
 ) -> dict:
     """Run the configured engine and drop the words it placed in digital silence.
@@ -286,13 +181,13 @@ def _run_final_asr_stage(
         payload={
             "engine": merged_config.get("transcription_backend"),
             "engine_override": bool(engine_override),
-            "input_path": processed_audio_path,
+            "input_path": audio_path,
         },
         log=logger,
     ) as metric:
         try:
             transcription_result = transcribe_with_gpu_oom_retry(
-                processed_audio_path, merged_config, free_gpu=_release_pipeline_vram
+                audio_path, merged_config, free_gpu=_release_pipeline_vram
             )
         except Exception as exc:
             if is_task_interruption(exc):
@@ -314,13 +209,13 @@ def _run_final_asr_stage(
             transcription_result.get("segments", [])
         )
 
-    return drop_unheard_words(transcription_result, processed_audio_path, recording_id)
+    return drop_unheard_words(transcription_result, audio_path, recording_id)
 
 
 def _run_final_diarization_stage(
     ctx: _PipelineRunContext,
     recording: Recording,
-    processed_audio_path: str,
+    audio_path: str,
 ):
     """Run pyannote diarization and the best-effort phantom-speaker filter.
 
@@ -354,14 +249,14 @@ def _run_final_diarization_stage(
             stage="final_diarization_invocation",
             recording_id=recording_id,
             payload={
-                "input_path": processed_audio_path,
+                "input_path": audio_path,
                 "enabled": True,
                 "max_speakers": speaker_cap,
             },
             log=logger,
         ) as metric:
             diarization_result = diarize_audio(
-                processed_audio_path,
+                audio_path,
                 config=merged_config,
                 max_speakers=speaker_cap,
             )
@@ -378,7 +273,7 @@ def _run_final_diarization_stage(
 
             try:
                 diarization_result = filter_phantom_speakers(
-                    diarization_result, processed_audio_path, config=merged_config
+                    diarization_result, audio_path, config=merged_config
                 )
             except Exception as e:  # noqa: BLE001 -- boundary: phantom filter is best-effort
                 logger.warning(
@@ -720,16 +615,15 @@ def process_recording_task(
         audio_path = audio_resolution.audio_path
 
         # --- Stage: VAD / preprocess ---
-        vad_result = _run_vad_stage(ctx, recording, audio_path)
+        vad_result = run_vad_stage(ctx, recording, audio_path)
         if vad_result.finished:
             return
-        processed_audio_path = vad_result.processed_audio_path
         # Cache for the speaker-assignment stage.
-        ctx.processed_audio_path = processed_audio_path
+        ctx.diarization_audio_path = vad_result.diarization_audio_path
 
         # --- Stage: transcription (ASR) ---
         transcription_result = _run_final_asr_stage(
-            ctx, recording, processed_audio_path, engine_override
+            ctx, recording, vad_result.transcription_audio_path, engine_override
         )
 
         # Hand the card back before diarization asks for it.
@@ -737,7 +631,7 @@ def process_recording_task(
 
         # --- Stage: diarization ---
         diarization_result = _run_final_diarization_stage(
-            ctx, recording, processed_audio_path
+            ctx, recording, vad_result.diarization_audio_path
         )
         enable_diarization = merged_config.get("enable_diarization", True)
 
