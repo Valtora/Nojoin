@@ -31,6 +31,7 @@ interface RecordingUnsavedNotesProps {
 }
 
 const draftPlace = (draft: ComposerDraft) => {
+  if (draft.selection) return `On the text at ${formatTimelineMs(draft.selection.startMs)}`;
   switch (draft.mode) {
     case "typing":
       return draft.typingStartMs === null

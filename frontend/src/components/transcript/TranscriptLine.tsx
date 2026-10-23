@@ -3,6 +3,7 @@
 import { memo } from "react";
 
 import { getColorByKey } from "@/lib/constants";
+import type { OutboxDraft } from "@/lib/notes/noteOutbox";
 import { segmentEndMs, segmentStartMs } from "@/lib/notes/placement";
 import {
   liveSpeakerDisplayName,
@@ -24,6 +25,7 @@ import type {
 import type { TextDecoration } from "./textDecorations";
 import type { IndexedTranscriptSegment } from "./transcriptGroups";
 import TranscriptLineBadges from "./TranscriptLineBadges";
+import TranscriptLineMenu from "./TranscriptLineMenu";
 import TranscriptLineText from "./TranscriptLineText";
 
 /**
@@ -55,14 +57,17 @@ type TranscriptLineProps = Pick<IndexedTranscriptSegment, "segment" | "index" | 
   /** Where this line's speaker popover sits, while it is open. */
   popoverAnchor: HTMLElement | null;
   actions: TranscriptLineActions;
+  onAddNote: ((note: OutboxDraft) => string | null) | null;
+  onPlayFrom: ((startSeconds: number) => void) | null;
   /** The open editor, for a line that shows it; null on every other line. */
   editor: TranscriptOpenEditor | null;
 };
 
 /**
  * One line of the finished transcript: its speaker (click to reassign,
- * double-click to rename), its pills, and its text in a bubble that turns into
- * an editor on click.
+ * double-click to rename), its pills, its ⋯ menu, and its text in a bubble,
+ * which turns into an editor only from the menu's Edit text: a click on the
+ * text selects it, for a note or a copy.
  *
  * Memoised: a playback tick or a keystroke in the find bar redraws only the
  * lines whose own props changed, so every prop is either a value or keeps its
@@ -87,6 +92,8 @@ function TranscriptLine({
   isEditingText,
   popoverAnchor,
   actions,
+  onAddNote,
+  onPlayFrom,
   editor,
 }: TranscriptLineProps) {
   const isProvisional = segment.provisional === true;
@@ -104,7 +111,8 @@ function TranscriptLine({
     <div
       data-segment-id={segmentId}
       data-order-index={index}
-      className="flex flex-col mb-3 last:mb-0"
+      data-line-actions
+      className="group/line flex flex-col mb-3 last:mb-0"
     >
       {/* Speaker Label */}
       <div className="flex flex-wrap items-baseline gap-2 mb-1">
@@ -176,6 +184,18 @@ function TranscriptLine({
           showRevised={isRecentlyUpdated && !isEditingText}
           hasPendingRemoteUpdate={hasPendingRemoteUpdate}
         />
+
+        <TranscriptLineMenu
+          segment={segment}
+          segmentId={segmentId}
+          speakerName={speakerName}
+          isSegmentReadOnly={isSegmentReadOnly}
+          actions={actions}
+          onAddNote={onAddNote}
+          onPlayFrom={onPlayFrom}
+          isEditingText={isEditingText}
+          isChangingSpeaker={popoverAnchor !== null}
+        />
       </div>
 
       {/* Transcript Text */}
@@ -206,16 +226,7 @@ function TranscriptLine({
             startMs={segmentStartMs(segment)}
             endMs={segmentEndMs(segment)}
             decorations={decorations}
-            className={`leading-relaxed whitespace-pre-wrap text-contrast-muted ${
-              isSegmentReadOnly
-                ? ""
-                : "cursor-text hover:text-foreground"
-            }`}
-            onClick={(e) => {
-              e.stopPropagation();
-              actions.startTextEdit(segment, segmentId);
-            }}
-            title={isSegmentReadOnly ? undefined : "Click to edit text"}
+            className="leading-relaxed whitespace-pre-wrap text-contrast-muted"
           />
         )}
       </div>

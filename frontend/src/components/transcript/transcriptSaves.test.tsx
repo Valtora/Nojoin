@@ -77,7 +77,8 @@ const textEditor = () => document.querySelector("textarea");
 const renameInput = () => document.querySelector<HTMLInputElement>('input[type="text"]');
 
 async function openText(id: string) {
-  fireEvent.click(row(id).querySelector('[title="Click to edit text"]')!);
+  fireEvent.click(row(id).querySelector('[aria-haspopup="menu"]')!);
+  fireEvent.click(screen.getByRole("menuitem", { name: "Edit text" }));
   await act(async () => {});
 }
 

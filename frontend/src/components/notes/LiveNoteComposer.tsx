@@ -17,6 +17,8 @@ import {
   CornerDownLeft,
   SendHorizontal,
   TextCursorInput,
+  TextQuote,
+  X,
   type LucideIcon,
 } from "lucide-react";
 
@@ -25,6 +27,7 @@ import {
   EMPTY_DRAFT,
   notePlace,
   noteFromDraft,
+  noteSnippet,
   type ComposerDraft,
   type NoteInsertMode,
   type OutboxDraft,
@@ -51,6 +54,10 @@ const MODE_ICONS: Record<NoteInsertMode, LucideIcon> = {
   tail: ArrowDownToLine,
 };
 
+/** The menu's entry while the next note is on chosen text (`draft.selection`). */
+const ON_SELECTION = "selection";
+const ON_SELECTION_LABEL = "On the chosen text";
+
 interface LiveNoteComposerProps {
   /** Where capture is on the audio timeline now, in ms. */
   readAudioNow: () => number;
@@ -75,6 +82,9 @@ interface Message {
 const isBlank = (text: string) => stripNote(text) === "";
 
 const modeHint = (draft: ComposerDraft) => {
+  if (draft.selection) {
+    return `On the text at ${formatTimelineMs(draft.selection.startMs)}, which the note quotes.`;
+  }
   switch (draft.mode) {
     case "typing":
       return draft.typingStartMs !== null && !isBlank(draft.text)
@@ -102,6 +112,10 @@ const modeHint = (draft: ComposerDraft) => {
  * box drops that anchor; the next character takes a new one. "At send"
  * anchors it on Enter. "Before" and "After the transcript" make a note on
  * the whole meeting, kept with the Notes box rather than among the lines.
+ * "Note on this line", from a line's ⋯ menu, puts the next note on that
+ * line's text: the quote shows above the box and the mode reads "On the
+ * chosen text" until the note is sent or the quote removed, when the mode
+ * before it comes back.
  *
  * One row, so it costs the transcript window as little height as it can: the
  * mode is an icon-sized select (its options say the modes in full), and the
@@ -126,7 +140,8 @@ export default function LiveNoteComposer({
   const keyboardInset = useKeyboardInset();
   const modeId = useId();
   const hintId = useId();
-  const ModeIcon = MODE_ICONS[draft.mode];
+  const { selection } = draft;
+  const ModeIcon = selection ? TextQuote : MODE_ICONS[draft.mode];
 
   // Grows with its text, chat-style, up to the cap its classes set.
   useLayoutEffect(() => {
@@ -165,11 +180,11 @@ export default function LiveNoteComposer({
       return;
     }
     setDraft({ text: "", mode: draft.mode, typingStartMs: null });
-    const place = notePlace({ kind: note.kind, anchorMs: note.anchorMs });
+    const place = notePlace(note);
     say(
-      note.kind === "point"
-        ? `Note added ${place}.`
-        : `Note added ${place}, with the Notes box.`,
+      note.kind === "head" || note.kind === "tail"
+        ? `Note added ${place}, with the Notes box.`
+        : `Note added ${place}.`,
       "info",
     );
     // A click on Send leaves focus on a button that is now disabled.
@@ -206,6 +221,29 @@ export default function LiveNoteComposer({
       className="sticky z-[var(--z-sticky)] mt-2 shrink-0 bg-surface-card pt-1"
       style={{ bottom: `calc(${keyboardInset}px + env(safe-area-inset-bottom, 0px))` }}
     >
+      {selection ? (
+        <div
+          data-testid="note-selection-chip"
+          className="mb-1.5 flex items-center gap-2 rounded-lg bg-action-tint py-0.5 pl-2 text-xs text-action-tint-fg"
+        >
+          <TextQuote aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+          <span className="min-w-0 flex-1 truncate">
+            {formatTimelineMs(selection.startMs)} “{noteSnippet(selection.quotedText, 80)}”
+          </span>
+          <IconButton
+            size="sm"
+            aria-label="Don't put the note on this text"
+            title="Don't put the note on this text"
+            onClick={() => {
+              setDraft({ ...draft, selection: null });
+              setMessage(null);
+              box.current?.focus();
+            }}
+            className="h-7 w-7 text-action-tint-fg hover:bg-action-tint-hover hover:text-action-tint-fg pointer-coarse:h-[44px] pointer-coarse:w-[44px] pointer-coarse:-my-2"
+            icon={<X aria-hidden="true" />}
+          />
+        </div>
+      ) : null}
       <div className="flex items-end gap-1.5">
         <label htmlFor={modeId} className="sr-only">
           Place note
@@ -213,14 +251,17 @@ export default function LiveNoteComposer({
         <div className="relative h-[44px] w-[52px] shrink-0">
           <select
             id={modeId}
-            value={draft.mode}
-            title={MODE_LABELS[draft.mode]}
+            value={selection ? ON_SELECTION : draft.mode}
+            title={selection ? ON_SELECTION_LABEL : MODE_LABELS[draft.mode]}
             onChange={(event) => {
-              setDraft({ ...draft, mode: event.target.value as NoteInsertMode });
+              const { value } = event.target;
+              if (value === ON_SELECTION) return;
+              setDraft({ ...draft, mode: value as NoteInsertMode, selection: null });
               setMessage(null);
             }}
             className="absolute inset-0 h-full w-full cursor-pointer appearance-none rounded-lg border border-control-border bg-control-bg text-transparent outline-none focus:border-action focus:ring-2 focus:ring-action [&>option]:text-foreground"
           >
+            {selection ? <option value={ON_SELECTION}>{ON_SELECTION_LABEL}</option> : null}
             {(Object.keys(MODE_LABELS) as NoteInsertMode[]).map((value) => (
               <option key={value} value={value}>
                 {MODE_LABELS[value]}

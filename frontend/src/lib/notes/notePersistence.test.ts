@@ -153,6 +153,50 @@ describe("a note outbox kept in the browser", () => {
     expect((await stored(store))?.draft).toEqual(DRAFT);
   });
 
+  it("brings a note on a line back after a reload, and sends it once with its span and quote", async () => {
+    const outbox = openPage(store);
+    server.failures.push(NO_ANSWER);
+    outbox.submit({
+      kind: "selection",
+      body: "Check this figure",
+      anchorMs: null,
+      selection: { startMs: 12_000, endMs: 15_500, quotedText: "forty thousand" },
+    });
+    await settle();
+    const [entry] = outbox.getSnapshot().entries;
+    expect(entry.status).toBe("failed");
+    await vi.waitFor(async () => expect(await storedNoteIds(store)).toEqual([entry.id]));
+    closePages();
+
+    const again = openPage(store);
+    await vi.waitFor(() => expect(again.getSnapshot().saved.map((note) => note.id)).toEqual([entry.id]));
+    expect(again.getSnapshot().entries).toEqual([]);
+    expect(server.creates.at(-1)).toEqual({
+      id: entry.id,
+      write_token: entry.writeToken,
+      kind: "selection",
+      body: "Check this figure",
+      start_ms: 12_000,
+      end_ms: 15_500,
+      quoted_text: "forty thousand",
+    });
+    expect(server.notes.size).toBe(1);
+  });
+
+  it("brings back the line the box's text is on after a reload", async () => {
+    const onLine: ComposerDraft = {
+      ...DRAFT,
+      selection: { startMs: 12_000, endMs: 15_500, quotedText: "forty thousand" },
+    };
+    const outbox = openPage(store);
+    outbox.setDraft(onLine);
+    await vi.waitFor(async () => expect((await stored(store))?.draft).toEqual(onLine));
+    closePages();
+
+    const again = openPage(store);
+    await vi.waitFor(() => expect(again.getSnapshot().draft).toEqual(onLine));
+  });
+
   it("removes the record once nothing is left unsaved", async () => {
     const outbox = openPage(store);
     outbox.setDraft(DRAFT);
@@ -561,10 +605,11 @@ describe("records of another version", () => {
     recordingId: RECORDING,
     shape: "whatever a later version writes",
   };
-  const SELECTION = {
-    id: "sel-1",
-    writeToken: "sel-token",
-    kind: "selection",
+  /** A kind a later version might add. */
+  const FUTURE_KIND = {
+    id: "hl-1",
+    writeToken: "hl-token",
+    kind: "highlight",
     body: "On this passage",
     startMs: 1_000,
     endMs: 4_000,
@@ -646,12 +691,12 @@ describe("records of another version", () => {
 
   it("keeps a note of a kind it can't send, and writes it back as it was", async () => {
     const store = new IndexedDbNoteStore(new IDBFactory());
-    const selection = { ...SELECTION, start_ms: 1_000, future: { nested: [1, 2, 3] } };
+    const future = { ...FUTURE_KIND, start_ms: 1_000, future: { nested: [1, 2, 3] } };
     await store.put({
       version: NOTE_RECORD_VERSION,
       account: ALICE,
       recordingId: RECORDING,
-      notes: [selection, POINT],
+      notes: [future, POINT],
       draft: null,
       discards: [],
     });
@@ -662,7 +707,7 @@ describe("records of another version", () => {
     expect(outbox.getSnapshot().entries).toEqual([]);
     expect(server.creates.map((create) => create.id)).toEqual(["pt-1"]);
     await vi.waitFor(async () =>
-      expect(((await store.get(ALICE, RECORDING)) as StoredOutbox).notes).toEqual([selection]),
+      expect(((await store.get(ALICE, RECORDING)) as StoredOutbox).notes).toEqual([future]),
     );
   });
 
@@ -700,6 +745,45 @@ describe("records of another version", () => {
       notes: [POINT, { ...POINT, id: "head-1", kind: "head", anchorMs: null }],
       draft: { text: "Half", mode: "typing", typingStartMs: null },
       discards: [{ id: "d-1", writeToken: "d-token" }],
+    });
+  });
+
+  it("reads a selection note's span and quote, and drops one without a span to send", () => {
+    const SELECTION = {
+      id: "sel-1",
+      writeToken: "sel-token",
+      kind: "selection",
+      body: "Check this figure",
+      anchorMs: null,
+      startMs: 12_000,
+      endMs: 15_500,
+      quotedText: "forty thousand",
+      createdAt: "2026-10-22T09:00:00.000Z",
+    };
+    const read = readStoredOutbox({
+      version: NOTE_RECORD_VERSION,
+      notes: [
+        SELECTION,
+        { ...SELECTION, id: "backwards", endMs: 12_000 },
+        { ...SELECTION, id: "no-quote", quotedText: "  " },
+        { ...SELECTION, id: "no-start", startMs: undefined },
+      ],
+    });
+
+    expect(restoredOf(read)).toEqual({
+      notes: [
+        {
+          id: "sel-1",
+          writeToken: "sel-token",
+          kind: "selection",
+          body: "Check this figure",
+          anchorMs: null,
+          selection: { startMs: 12_000, endMs: 15_500, quotedText: "forty thousand" },
+          createdAt: "2026-10-22T09:00:00.000Z",
+        },
+      ],
+      draft: null,
+      discards: [],
     });
   });
 

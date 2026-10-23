@@ -76,7 +76,7 @@ export const transcriptSteps: DriveStep[] = [
     element: '#transcript-view',
     popover: {
       title: 'Transcript View',
-      description: 'This is where you can read the full transcript of your meeting. Click on any segment to jump to that point in the audio.',
+      description: 'This is where you read the full transcript of your meeting. Select some text to add a note on it, or use the ⋯ button beside a speaker\'s name to play from that line, edit its text or change its speaker.',
       side: 'right',
     },
     onHighlightStarted: () => {
