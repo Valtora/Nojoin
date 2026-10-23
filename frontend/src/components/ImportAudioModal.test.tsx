@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { importAudio } from "@/lib/api";
+
 import { fireEvent, renderWithProviders, screen } from "@/test/renderWithProviders";
 
 const addNotification = vi.fn();
@@ -45,6 +47,32 @@ describe("ImportAudioModal", () => {
 
     expect(addNotification).not.toHaveBeenCalled();
     expect(screen.getByText(name)).toBeInTheDocument();
+  });
+
+  it("asks before the page closes while an import uploads (issue #569)", async () => {
+    let finish: () => void = () => {};
+    vi.mocked(importAudio).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = () => resolve({ id: "rec-1" } as never);
+        }),
+    );
+    renderWithProviders(<ImportAudioModal isOpen onClose={vi.fn()} />);
+    selectFile("quarterly-review.mp4");
+
+    const before = () => {
+      const event = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(event);
+      return event.defaultPrevented;
+    };
+
+    expect(before()).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "Import Audio" }));
+    expect(before()).toBe(true);
+
+    finish();
+    await screen.findByText(/success/i);
+    expect(before()).toBe(false);
   });
 
   it("still rejects a format the backend cannot import", () => {

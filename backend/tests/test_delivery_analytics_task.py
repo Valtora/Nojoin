@@ -210,6 +210,27 @@ def test_missing_audio_is_terminal_rather_than_retried(
     assert payload is None
 
 
+def test_audio_outside_the_recordings_directories_counts_as_missing(
+    tmp_path: Path, audio_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from backend.utils import stored_paths
+
+    monkeypatch.setattr(
+        stored_paths, "recording_roots", lambda: (tmp_path / "recordings",)
+    )
+    engine = _make_engine(tmp_path, "outside")
+    with engine.begin() as connection:
+        _seed(connection, audio_path=str(audio_file))
+
+    result = _run(engine, monkeypatch)
+
+    assert result["status"] == "skipped"
+    status, payload, error = _transcript_row(engine)
+    assert status == "error"
+    assert "no longer available" in error
+    assert payload is None
+
+
 def test_a_failure_mid_run_does_not_leave_the_transcript_generating(
     tmp_path: Path, audio_file: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

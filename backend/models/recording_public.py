@@ -18,6 +18,7 @@ from backend.models.recording import (
     Recording,
     RecordingStatus,
     capture_looks_stalled,
+    import_looks_stalled,
 )
 from backend.models.speaker import GlobalSpeakerRead, RecordingSpeaker
 from backend.models.tag import Tag, TagRead
@@ -233,6 +234,9 @@ class RecordingPublicRead(PublicModel):
     # Computed server-side, like Document.is_stalled, because last_activity_at
     # carries no timezone and the browser's clock may disagree with the server's.
     capture_stalled: bool = False
+    # A file import that has received no part for STALLED_IMPORT_AFTER: the page
+    # sending it went away. The client offers to import it again or discard it.
+    import_stalled: bool = False
     transcript: Optional[TranscriptPublicRead] = None
     speakers: list[RecordingSpeakerPublicRead] = Field(default_factory=list)
     tags: list[TagRead] = Field(default_factory=list)
@@ -446,6 +450,7 @@ def serialize_recording(
         is_deleted=recording.is_deleted,
         last_activity_at=recording.last_activity_at,
         capture_stalled=capture_looks_stalled(recording),
+        import_stalled=import_looks_stalled(recording),
         transcript=transcript,
         speakers=speakers,
         tags=tags,

@@ -3,8 +3,8 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from uuid import uuid4
 
-from sqlalchemy import BigInteger, Column, DateTime, ForeignKey, Integer, String
-from sqlmodel import Field, Relationship, SQLModel
+from sqlalchemy import BigInteger, Column, DateTime, ForeignKey, Integer, String, or_
+from sqlmodel import Field, Relationship, SQLModel, col
 
 from backend.utils.time import utc_now
 
@@ -163,6 +163,29 @@ class Recording(BaseDBModel, table=True):
     )
 
 
+def is_live_capture(recording: "Recording") -> bool:
+    """Whether a recording is a live browser capture, running or paused.
+
+    Status alone cannot say: a file import sits in UPLOADING too while its parts
+    arrive. Only the capture endpoints set a client status of RECORDING or
+    PAUSED, and only a capture reaches the PAUSED status, which also covers one
+    paused before captures recorded a client status. Mirrors
+    ``isLiveCaptureInProgress`` in frontend/src/lib/liveCapture.ts.
+    """
+    return recording.status == RecordingStatus.PAUSED or recording.client_status in {
+        ClientStatus.RECORDING,
+        ClientStatus.PAUSED,
+    }
+
+
+def live_capture_clause() -> Any:
+    """``is_live_capture`` as a SQL condition on ``Recording``."""
+    return or_(
+        col(Recording.status) == RecordingStatus.PAUSED,
+        col(Recording.client_status).in_([ClientStatus.RECORDING, ClientStatus.PAUSED]),
+    )
+
+
 # How long a live capture can go without uploading before another tab or device
 # may offer it for resume or discard. A capture uploads a segment every 2 s and
 # writes last_activity_at at most every 15 s, and the longest gap seen in a
@@ -196,6 +219,33 @@ def capture_looks_stalled(
     if last_activity is None:
         return False
     return (now or utc_now()) - last_activity > STALLED_CAPTURE_AFTER
+
+
+# How long a file import can go without a part arriving before the client says
+# it did not finish. The browser sends one 10 MB part at a time, and
+# last_activity_at moves when each has arrived, so a slow link leaves a long gap
+# between them: 15 minutes is a part at about 90 kbit/s. Nothing acts on an
+# import by itself once this passes: the user is told and chooses (issue #569).
+STALLED_IMPORT_AFTER = timedelta(minutes=15)
+
+
+def import_looks_stalled(
+    recording: "Recording", *, now: Optional[datetime] = None
+) -> bool:
+    """Whether a file import stopped before its upload finished.
+
+    True for a recording still marked UPLOADING that is not a live capture and
+    whose last part, or start, is older than ``STALLED_IMPORT_AFTER``: the page
+    sending it closed or lost its connection. An import cannot be resumed, since
+    the file is on the user's device, so the client offers to import it again
+    or discard what arrived.
+    """
+    if recording.status != RecordingStatus.UPLOADING or is_live_capture(recording):
+        return False
+    last_activity = recording.last_activity_at or recording.created_at
+    if last_activity is None:
+        return False
+    return (now or utc_now()) - last_activity > STALLED_IMPORT_AFTER
 
 
 # Read Models

@@ -103,6 +103,8 @@ An administrator can turn Meeting Edge off for the installation, or give it its 
 
 **Import Audio** at the top of the **Recordings** list imports an existing file, with an optional meeting name, date and **Max Speakers**. It is unavailable while a paused or interrupted recording is waiting for you to resume, stop or discard it.
 
+Keep the page open until the import finishes. Closing or reloading it during the upload makes the browser ask first. An import whose page closes or loses its connection before the whole file arrives cannot carry on, since the file is on your device. The recordings list marks it, and 15 minutes after the last of it arrived Nojoin says the import did not finish, in a notification that stays until you choose: **Import again** discards it and opens **Import Audio** so you can choose the file again, and **Discard** deletes what arrived. Closing the notification leaves the import until you next open or reload a page. An import that fails while the dialog is open is discarded at once, so trying again leaves nothing behind. An unfinished import never stops you starting a meeting.
+
 Nojoin accepts WAV, MP3, M4A, AAC, WebM, OGG, FLAC, MP4, WMA and OPUS, and the media containers MKV, MKA, MOV, AVI, M4V, TS, MTS, MPG, MPEG and 3GP. It keeps only the audio. A file with no audio track is refused: the import shows as failed and nothing of the file is kept. An import is then processed like a live recording.
 
 ### Retry Processing

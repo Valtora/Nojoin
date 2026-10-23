@@ -125,6 +125,7 @@ describe("api public surface", () => {
         "getSettings",
         "getSpeakerSegments",
         "getSpellcheckIgnoredWords",
+        "getStalledImports",
         "getSupportedAudioFormats",
         "getSystemStatus",
         "getTags",

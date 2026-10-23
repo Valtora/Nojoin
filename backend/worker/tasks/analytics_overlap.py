@@ -27,6 +27,7 @@ from backend.models.recording import Recording
 from backend.models.transcript import Transcript
 from backend.processing.pipeline_metrics import pipeline_metric_timer
 from backend.utils.analytics_payload import AUDIO_OVERLAP_KEY, merge_analytics_payload
+from backend.utils.stored_paths import confined_recording_path
 from backend.utils.time import utc_now
 
 logger = logging.getLogger(__name__)
@@ -66,7 +67,8 @@ def compute_overlap_analytics_task(recording_id: int) -> dict[str, Any]:
         if transcript is None:
             return {"status": "skipped", "reason": "transcript_not_found"}
 
-        if not recording.audio_path or not os.path.exists(recording.audio_path):
+        audio_path = confined_recording_path(recording.audio_path)
+        if not audio_path or not os.path.exists(audio_path):
             _write_overlap_block(
                 session,
                 recording_id,
@@ -90,7 +92,7 @@ def compute_overlap_analytics_task(recording_id: int) -> dict[str, Any]:
                 payload={},
                 log=logger,
             ) as metric:
-                block = measure_audio_overlap(recording.audio_path, hf_token)
+                block = measure_audio_overlap(audio_path, hf_token)
                 metric["payload"].update(
                     {
                         "region_count": block["region_count"],

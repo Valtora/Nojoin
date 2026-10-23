@@ -28,6 +28,7 @@ from backend.utils.document_storage import (
 )
 from backend.utils.path_manager import PathManager
 from backend.utils.rate_limit import enforce_upload_concurrency
+from backend.utils.stored_paths import confined_document_path
 from backend.utils.time import utc_now
 from backend.utils.upload_limit import (
     UPLOAD_LIMIT_DOCUMENT,
@@ -142,10 +143,11 @@ def _backfill_size(document: Document) -> bool:
     disk is accurate rather than a guess: an uploaded document is written once
     and never rewritten, so the file's size *is* its upload size.
     """
-    if document.file_size_bytes is not None:
+    file_path = confined_document_path(document.file_path)
+    if document.file_size_bytes is not None or file_path is None:
         return False
     try:
-        document.file_size_bytes = os.path.getsize(document.file_path)
+        document.file_size_bytes = os.path.getsize(file_path)
     except OSError:
         # The file is gone. Leave it NULL, which renders as an em dash, rather
         # than recording a zero that would read as an empty document.
@@ -173,13 +175,16 @@ async def download_document(
     if not recording or recording.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Document not found")
 
-    if not document.file_path or not os.path.exists(document.file_path):
+    file_path = confined_document_path(document.file_path)
+    if file_path is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+    if not os.path.exists(file_path):
         raise HTTPException(
             status_code=410, detail="The original file is no longer available."
         )
 
     return FileResponse(
-        path=document.file_path,
+        path=file_path,
         # Sanitised: the title is user-supplied and ends up in a
         # Content-Disposition header, where a quote or newline could inject one.
         filename=_safe_download_name(document.title, document.file_path),
@@ -328,7 +333,8 @@ async def reparse_document(
             detail="This document is already being parsed.",
         )
 
-    if not os.path.exists(document.file_path):
+    file_path = confined_document_path(document.file_path)
+    if not file_path or not os.path.exists(file_path):
         raise HTTPException(
             status_code=410,
             detail="The original file is no longer available, so it cannot be parsed again.",

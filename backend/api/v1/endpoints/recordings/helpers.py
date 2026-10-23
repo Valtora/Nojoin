@@ -31,6 +31,7 @@ from backend.models.recording import (
     RecordingPipelineGeneration,
     RecordingStatus,
     capture_looks_stalled,
+    live_capture_clause,
 )
 from backend.models.speaker import RecordingSpeaker
 from backend.models.transcript import Transcript
@@ -52,6 +53,7 @@ from backend.utils.recording_audio_sync import (
 from backend.utils.recording_storage import (
     RECORDING_UPLOAD_RETENTION_HOURS,
 )
+from backend.utils.stored_paths import confined_recording_path
 from backend.utils.time import utc_now
 
 from .constants import (
@@ -68,7 +70,8 @@ logger = logging.getLogger(__name__)
 
 
 def _recording_has_proxy(recording: Recording) -> bool:
-    return bool(recording.proxy_path and os.path.exists(recording.proxy_path))
+    proxy_path = confined_recording_path(recording.proxy_path)
+    return bool(proxy_path and os.path.exists(proxy_path))
 
 
 def _recording_has_audio(recording: Recording) -> bool:
@@ -79,10 +82,11 @@ def _recording_has_audio(recording: Recording) -> bool:
     """
     if _recording_has_proxy(recording):
         return True
-    if not recording.audio_path:
+    audio_path = confined_recording_path(recording.audio_path)
+    if not audio_path:
         return False
     try:
-        return os.path.getsize(recording.audio_path) > 0
+        return os.path.getsize(audio_path) > 0
     except OSError:
         return False
 
@@ -185,12 +189,19 @@ async def _get_active_capture_recording_for_user(
     db: AsyncSession,
     user_id: int,
 ) -> Recording | None:
+    """The user's unfinished live capture, which holds the capture lock.
+
+    A file import also sits in UPLOADING while its parts arrive, and one whose
+    page closed stays there, but it is not a capture and must not block one
+    (issue #569).
+    """
     query = (
         select(Recording)
         .where(Recording.user_id == user_id)
         .where(
             Recording.status.in_([RecordingStatus.UPLOADING, RecordingStatus.PAUSED])
         )
+        .where(live_capture_clause())
         .where(Recording.is_deleted == False)
         .order_by(Recording.updated_at.desc())
     )
