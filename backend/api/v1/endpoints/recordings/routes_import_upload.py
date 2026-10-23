@@ -27,6 +27,7 @@ from backend.processing.speaker_cap import (
 )
 from backend.utils.audio import concatenate_binary_files, get_audio_duration
 from backend.utils.import_audio import KEEPING_AUDIO_STEP, MEDIA_CONTAINER_SUFFIXES
+from backend.utils.languages import validate_transcription_language
 from backend.utils.rate_limit import enforce_upload_concurrency
 from backend.utils.stored_paths import require_recording_path
 from backend.utils.time import utc_now
@@ -105,6 +106,22 @@ class ImportOptions:
             "auto-detect, which is the default."
         ),
     )
+    transcription_language: Optional[str] = Query(
+        None,
+        description=(
+            "The language to transcribe in: auto or a listed code. Omit to "
+            "follow the owner's setting, which is the default."
+        ),
+    )
+
+    def recording_language(self) -> Optional[str]:
+        """The validated language, or None to follow the owner's setting."""
+        if self.transcription_language is None:
+            return None
+        try:
+            return validate_transcription_language(self.transcription_language)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.post("/import", response_model=RecordingPublicRead)
@@ -126,6 +143,7 @@ async def import_audio(
             status_code=400,
             detail=f"Unsupported audio format '{file_ext}'. Supported formats: {', '.join(sorted(SUPPORTED_AUDIO_FORMATS))}",
         )
+    transcription_language = options.recording_language()
 
     unique_filename = f"{uuid4()}{file_ext}"
     file_path = str(recordings_module.recordings_root_dir() / unique_filename)
@@ -171,6 +189,7 @@ async def import_audio(
         status=RecordingStatus.QUEUED,
         processing_step=KEEPING_AUDIO_STEP,
         max_speakers=normalize_speaker_cap(options.max_speakers),
+        transcription_language=transcription_language,
         user_id=current_user.id,
     )
 
@@ -213,6 +232,7 @@ async def init_chunked_import(
             status_code=400,
             detail=f"Unsupported audio format '{file_ext}'. Supported formats: {', '.join(sorted(SUPPORTED_AUDIO_FORMATS))}",
         )
+    transcription_language = options.recording_language()
 
     unique_filename = f"{uuid4()}{file_ext}"
     file_path = str(recordings_module.recordings_root_dir() / unique_filename)
@@ -230,6 +250,7 @@ async def init_chunked_import(
         audio_path=file_path,
         status=RecordingStatus.UPLOADING,
         max_speakers=normalize_speaker_cap(options.max_speakers),
+        transcription_language=transcription_language,
         user_id=current_user.id,
         # Moved on by every part, so an import whose page went away can be told
         # from one still uploading (import_looks_stalled, issue #569).

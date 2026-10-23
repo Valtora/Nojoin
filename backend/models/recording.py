@@ -3,9 +3,11 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from uuid import uuid4
 
+from pydantic import field_validator
 from sqlalchemy import BigInteger, Column, DateTime, ForeignKey, Integer, String, or_
 from sqlmodel import Field, Relationship, SQLModel, col
 
+from backend.utils.languages import validate_transcription_language
 from backend.utils.time import utc_now
 
 from .base import BaseDBModel
@@ -113,6 +115,11 @@ class Recording(BaseDBModel, table=True):
             "NULL means auto-detect, which is the default and leaves diarization "
             "unconstrained. Applied as pyannote's max_speakers, never num_speakers."
         ),
+    )
+    # The language this recording is transcribed in: "auto" or a listed code.
+    # NULL means the owner's setting (``apply_recording_language``, #671).
+    transcription_language: Optional[str] = Field(
+        default=None, sa_column=Column(String(16), nullable=True)
     )
     is_archived: bool = Field(default=False, index=True)
     is_deleted: bool = Field(default=False, index=True)
@@ -307,6 +314,15 @@ class RecordingRead(BaseDBModel):
 
 class RecordingUpdate(SQLModel):
     name: Optional[str] = None
+    # Three states, told apart by model_fields_set: absent leaves the
+    # recording's language alone, null returns it to the owner's setting, and
+    # "auto" or a listed code sets it.
+    transcription_language: Optional[str] = None
+
+    @field_validator("transcription_language")
+    @classmethod
+    def _validate_transcription_language(cls, value: Optional[str]) -> Optional[str]:
+        return None if value is None else validate_transcription_language(value)
 
 
 class RecordingInitResponse(SQLModel):

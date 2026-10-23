@@ -42,6 +42,7 @@ CREATE TABLE recordings (
     is_deleted BOOLEAN NOT NULL,
     last_activity_at DATETIME,
     capture_epoch INTEGER NOT NULL DEFAULT 0,
+    transcription_language VARCHAR(16),
     user_id INTEGER,
     calendar_event_id INTEGER
 )
@@ -691,12 +692,134 @@ async def test_reprocess_promotes_legacy_recording_to_unified(
     assert generation == "unified"
 
 
+# --- the recording's language (#671) ----------------------------------------
+
+
+async def _set_language(session_maker, recording_id: int, language: str | None):
+    async with session_maker() as session:
+        await session.execute(
+            text("UPDATE recordings SET transcription_language = :lang WHERE id = :id"),
+            {"lang": language, "id": recording_id},
+        )
+        await session.commit()
+
+
+async def _language(session_maker, recording_id: int) -> str | None:
+    async with session_maker() as session:
+        return (
+            await session.execute(
+                text("SELECT transcription_language FROM recordings WHERE id = :id"),
+                {"id": recording_id},
+            )
+        ).scalar_one()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("body", "expected"),
+    [
+        ({}, "de"),  # absent keeps the recording's language
+        ({"transcription_language": None}, None),  # null: the owner's setting
+        ({"transcription_language": "FR"}, "fr"),  # a listed code sets it
+        ({"transcription_language": "auto"}, "auto"),
+    ],
+)
+async def test_reprocess_sets_the_recordings_language_in_three_states(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+    monkeypatch,
+    body: dict,
+    expected: str | None,
+) -> None:
+    await _insert_recording(test_session_maker, recording_id=210, public_id="rec-210")
+    await _set_language(test_session_maker, 210, "de")
+    calls = _patch_delay(monkeypatch)
+
+    response = await client.post(
+        "/api/v1/recordings/rec-210/reprocess",
+        json={"transcription_backend": "whisper", **body},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["transcription_language"] == expected
+    assert await _language(test_session_maker, 210) == expected
+    # Stored on the recording, not sent as an engine override, so later runs
+    # keep it.
+    assert calls[0][0][2] == {"transcription_backend": "whisper"}
+
+
+@pytest.mark.anyio
+async def test_reprocess_refuses_an_unlisted_language(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+    monkeypatch,
+) -> None:
+    await _insert_recording(test_session_maker, recording_id=211, public_id="rec-211")
+    await _set_language(test_session_maker, 211, "de")
+    calls = _patch_delay(monkeypatch)
+
+    response = await client.post(
+        "/api/v1/recordings/rec-211/reprocess",
+        json={"transcription_backend": "whisper", "transcription_language": "he"},
+    )
+
+    assert response.status_code == 422
+    assert calls == []
+    assert await _language(test_session_maker, 211) == "de"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("body", "expected"),
+    [
+        ({"name": "Renamed"}, "de"),  # a rename leaves the language alone
+        ({"transcription_language": None}, None),
+        ({"transcription_language": "en"}, "en"),
+    ],
+)
+async def test_patch_sets_the_recordings_language(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+    body: dict,
+    expected: str | None,
+) -> None:
+    await _insert_recording(test_session_maker, recording_id=212, public_id="rec-212")
+    await _set_language(test_session_maker, 212, "de")
+
+    response = await client.patch("/api/v1/recordings/rec-212", json=body)
+
+    assert response.status_code == 200
+    assert response.json()["transcription_language"] == expected
+    assert await _language(test_session_maker, 212) == expected
+
+
+@pytest.mark.anyio
+async def test_patch_refuses_an_unlisted_language(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+) -> None:
+    await _insert_recording(test_session_maker, recording_id=213, public_id="rec-213")
+
+    response = await client.patch(
+        "/api/v1/recordings/rec-213", json={"transcription_language": "he"}
+    )
+
+    assert response.status_code == 422
+    assert await _language(test_session_maker, 213) is None
+
+
 # --- task unit test ---------------------------------------------------------
 
 
-def _transcription_config(monkeypatch, engine_override: dict) -> dict:
+def _transcription_config(
+    monkeypatch,
+    engine_override: dict | None,
+    *,
+    recording_language: str | None = None,
+    owner_language: str = "auto",
+) -> dict:
     """The config transcribe_audio sees when process_recording_task runs with
-    ``engine_override``."""
+    ``engine_override``, for a recording and owner with these languages."""
     from backend.models.recording import RecordingStatus
     from backend.worker import tasks as tasks_module
 
@@ -716,6 +839,7 @@ def _transcription_config(monkeypatch, engine_override: dict) -> dict:
         "whisper_model_size": "base",
         "enable_vad": False,
         "enable_diarization": False,
+        "transcription_language": owner_language,
     }
 
     class _FakeLlmConfig:
@@ -736,6 +860,7 @@ def _transcription_config(monkeypatch, engine_override: dict) -> dict:
         processing_completed_at = None
         processing_progress = 0
         processing_step = ""
+        transcription_language = recording_language
 
     class _FakeSession:
         def get(self, model, recording_id):
@@ -859,6 +984,22 @@ def test_process_recording_task_ignores_unknown_engine_override_entries(monkeypa
     assert "parakeet_model" not in config
     assert config["whisper_model_size"] == "base"
     assert "processing_device" not in config
+
+
+@pytest.mark.parametrize(
+    ("recording_language", "expected"), [("fr", "fr"), ("auto", "auto"), (None, "de")]
+)
+def test_final_asr_gets_the_recordings_language_over_the_owners(
+    monkeypatch, recording_language, expected
+):
+    config = _transcription_config(
+        monkeypatch,
+        None,
+        recording_language=recording_language,
+        owner_language="de",
+    )
+
+    assert config["transcription_language"] == expected
 
 
 def test_process_recording_task_rolls_back_before_persisting_error_state(monkeypatch):
@@ -1124,6 +1265,58 @@ async def test_import_audio_bootstraps_durable_import_chunk_and_window(
     assert chunk_rows[0][3] == 12000
     assert Path(chunk_rows[0][4]).exists()
     assert manifest_rows == [("import", 0, 12000, 0, 0)]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("query", "expected"), [("&transcription_language=fr", "fr"), ("", None)]
+)
+async def test_a_chunked_import_records_its_language(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+    monkeypatch,
+    tmp_path: Path,
+    query: str,
+    expected: str | None,
+) -> None:
+    monkeypatch.setenv("RECORDINGS_DIR", str(tmp_path))
+
+    response = await client.post(
+        f"/api/v1/recordings/import/chunked/init?filename=meeting.wav{query}"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["transcription_language"] == expected
+    async with test_session_maker() as session:
+        stored = (
+            await session.execute(text("SELECT transcription_language FROM recordings"))
+        ).scalar_one()
+    assert stored == expected
+
+
+@pytest.mark.anyio
+async def test_an_import_in_an_unlisted_language_is_refused_before_saving(
+    client: AsyncClient,
+    test_session_maker: sessionmaker,
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    calls = _patch_delay(monkeypatch, _KEEP_AUDIO_TASK)
+    monkeypatch.setenv("RECORDINGS_DIR", str(tmp_path))
+
+    response = await client.post(
+        "/api/v1/recordings/import?transcription_language=he",
+        files={"file": ("import.wav", b"RIFF....fakewavdata", "audio/wav")},
+    )
+
+    assert response.status_code == 422
+    assert calls == []
+    assert not any(tmp_path.rglob("*.wav"))
+    async with test_session_maker() as session:
+        count = (
+            await session.execute(text("SELECT count(*) FROM recordings"))
+        ).scalar_one()
+    assert count == 0
 
 
 @pytest.mark.anyio

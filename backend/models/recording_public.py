@@ -199,6 +199,8 @@ class RecordingPublicRead(PublicModel):
     processing_eta_learning: bool = False
     processing_eta_sample_size: int = 0
     max_speakers: Optional[int] = None
+    # "auto" or a listed code; None means the owner's setting (#671).
+    transcription_language: Optional[str] = None
     # How much audio the server actually holds, summed from the transcoded
     # segments. The live view compares this against its own wall clock to tell
     # whether capture is keeping up; it cannot derive the figure itself, because
@@ -443,6 +445,7 @@ def serialize_recording(
         processing_eta_learning=processing_eta_learning,
         processing_eta_sample_size=processing_eta_sample_size,
         max_speakers=getattr(recording, "max_speakers", None),
+        transcription_language=getattr(recording, "transcription_language", None),
         captured_audio_seconds=captured_audio_seconds,
         live_audio_ms=live_audio_ms,
         timeline_notes_list_signature=timeline_notes_list_signature,

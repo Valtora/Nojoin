@@ -64,6 +64,7 @@ SCHEMA_STATEMENTS = [
         is_deleted BOOLEAN,
         last_activity_at DATETIME,
         capture_epoch INTEGER NOT NULL DEFAULT 0,
+        transcription_language VARCHAR(16),
         user_id INTEGER,
         calendar_event_id INTEGER
     )

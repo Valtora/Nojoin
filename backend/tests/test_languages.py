@@ -6,6 +6,7 @@ from backend.processing.llm_services import LLMBackend
 from backend.utils.asr_config import build_asr_config_hash
 from backend.utils.config_manager import get_default_user_settings
 from backend.utils.languages import (
+    apply_recording_language,
     get_language_registry_payload,
     resolve_language_preferences,
     resolve_transcription_language_code,
@@ -78,6 +79,34 @@ def test_canary_hash_records_auto_as_english() -> None:
     english = build_asr_config_hash({**base, "transcription_language": "en"})
 
     assert automatic == english
+
+
+class _Recording:
+    def __init__(self, transcription_language: str | None) -> None:
+        self.transcription_language = transcription_language
+
+
+@pytest.mark.parametrize(
+    ("recording_language", "user_language", "expected"),
+    [
+        ("fr", "de", "fr"),  # the recording's own language comes first
+        ("auto", "de", None),  # ...even when it is auto: Whisper detects
+        (None, "de", "de"),  # NULL follows the owner's setting
+        (None, None, None),  # and with neither, auto
+    ],
+)
+def test_the_recordings_language_resolves_before_the_owners(
+    recording_language: str | None, user_language: str | None, expected: str | None
+) -> None:
+    settings = {"transcription_backend": "whisper"}
+    if user_language:
+        settings["transcription_language"] = user_language
+
+    resolved = apply_recording_language(settings, _Recording(recording_language))
+
+    assert resolve_transcription_language_code(resolved, "whisper") == expected
+    # A copy: the owner's settings themselves are left alone.
+    assert settings.get("transcription_language") == user_language
 
 
 def test_british_english_notes_instruction_is_explicit() -> None:

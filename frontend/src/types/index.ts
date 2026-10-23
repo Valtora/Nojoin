@@ -511,6 +511,11 @@ export interface Recording extends Omit<BaseDBModel, "id"> {
   /** Optional upper bound on diarized speakers. null means auto-detect. */
   max_speakers?: number | null;
   /**
+   * The language this recording is transcribed in: "auto" or a listed code.
+   * null means the owner's setting.
+   */
+  transcription_language?: string | null;
+  /**
    * Seconds of audio the server actually holds, summed from the transcoded
    * segments. Present only while capture is open; the detail endpoint omits it
    * once a recording is finished, where `duration_seconds` is the better figure.
@@ -1189,6 +1194,11 @@ export interface ReprocessRequest {
    * auto-detect; a number sets it.
    */
   max_speakers?: number | null;
+  /**
+   * Omit to keep the recording's language; null returns it to the owner's
+   * setting; "auto" or a listed code sets it.
+   */
+  transcription_language?: string | null;
 }
 
 export interface AudioFileMetadata {

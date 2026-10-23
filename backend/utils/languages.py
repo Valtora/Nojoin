@@ -133,6 +133,22 @@ def validate_language_settings(settings: Mapping[str, Any]) -> None:
         )
 
 
+def apply_recording_language(
+    settings: Mapping[str, Any] | None, recording: Any
+) -> dict[str, Any]:
+    """``settings`` with the recording's transcription language over the owner's.
+
+    The language resolves recording first, then the owner's setting, then
+    ``auto`` (#671): a recording with no language of its own (NULL) follows
+    the setting. Returns a copy; ``settings`` is not changed.
+    """
+    resolved = dict(settings or {})
+    language = getattr(recording, "transcription_language", None)
+    if language:
+        resolved["transcription_language"] = language
+    return resolved
+
+
 def resolve_transcription_language_code(
     settings: Mapping[str, Any] | None,
     transcription_backend: str | None = None,

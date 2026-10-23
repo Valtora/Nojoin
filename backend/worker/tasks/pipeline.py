@@ -542,6 +542,9 @@ def process_recording_task(
 
     llm_config = resolve_llm_config(session, user_settings, user_id=recording.user_id)
     merged_config = llm_config.merged_config
+    # The recording's language over the owner's (#671). In place, like the
+    # engine override: the notes stage reads this same dict.
+    merged_config.update(apply_recording_language(merged_config, recording))
 
     # Platform/Device detection for UX
     import torch
