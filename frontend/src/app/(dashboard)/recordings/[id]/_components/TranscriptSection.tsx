@@ -155,7 +155,8 @@ export default function TranscriptSection({
           outlives processing: listed here until saved or discarded. */}
       <RecordingUnsavedNotes
         recordingId={recording.id}
-        kinds={LISTED_NOTES}
+        // With no lines to show a note on its line, every kind is listed here.
+        kinds={transcriptSegments.length > 0 ? LISTED_NOTES : undefined}
         readEndMs={readEndMs}
         onEmptied={focusSection}
         className="mx-4 mt-4 max-h-[40%] shrink-0 overflow-y-auto border-b border-surface-divider pb-3"
