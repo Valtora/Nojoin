@@ -10,6 +10,7 @@ from fastapi import HTTPException
 from httpx import ASGITransport, AsyncClient
 
 from backend.api.deps import get_current_admin_user, get_current_user, get_db
+from backend.api.v1.api import legacy_companion_router
 from backend.api.v1.endpoints import invitations, setup, system
 from backend.main import create_app
 from backend.utils.config_manager import ConfigManager
@@ -829,6 +830,64 @@ async def test_operational_system_endpoints_require_authentication() -> None:
     assert admin_health.status_code == 401
 
 
+COMPANION_RETIRED_BODY = {
+    "error": "companion_retired",
+    "message": "The Nojoin Companion app has been retired. Please update your installation and use the web app for recording.",
+    "see": "https://github.com/Valtora/Nojoin/blob/main/docs/CAPTURE.md",
+}
+
+# Every method each retired Companion route is registered for, as
+# (method, route path, a concrete path to call it on).
+RETIRED_COMPANION_CALLS = [
+    *(
+        (method, "/companion/{legacy_path:path}", "/companion/pairing/status")
+        for method in ("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
+    ),
+    ("GET", "/login/companion-local-token", "/login/companion-local-token"),
+    ("POST", "/login/companion-local-token", "/login/companion-local-token"),
+    ("POST", "/login/companion-pairing", "/login/companion-pairing"),
+    ("DELETE", "/login/companion-pairing", "/login/companion-pairing"),
+    ("DELETE", "/login/companion-pairing/pending", "/login/companion-pairing/pending"),
+    (
+        "POST",
+        "/login/companion-pairing/disconnect",
+        "/login/companion-pairing/disconnect",
+    ),
+    (
+        "GET",
+        "/login/companion-pairing/requests/{request_id}",
+        "/login/companion-pairing/requests/abc123",
+    ),
+    (
+        "DELETE",
+        "/login/companion-pairing/requests/{request_id}",
+        "/login/companion-pairing/requests/abc123",
+    ),
+    (
+        "POST",
+        "/login/companion-pairing/request/opened",
+        "/login/companion-pairing/request/opened",
+    ),
+    (
+        "POST",
+        "/login/companion-pairing/request/reject",
+        "/login/companion-pairing/request/reject",
+    ),
+    (
+        "POST",
+        "/login/companion-pairing/request/complete",
+        "/login/companion-pairing/request/complete",
+    ),
+    ("GET", "/login/companion-events", "/login/companion-events"),
+    ("POST", "/login/companion-token/exchange", "/login/companion-token/exchange"),
+    (
+        "POST",
+        "/recordings/{recording_id}/upload-token",
+        "/recordings/42/upload-token",
+    ),
+]
+
+
 @pytest.mark.anyio
 async def test_companion_releases_endpoint_is_gone_for_authenticated_users() -> None:
     app, _ = _build_app(initialized=True)
@@ -842,11 +901,67 @@ async def test_companion_releases_endpoint_is_gone_for_authenticated_users() -> 
         response = await client.get("/api/v1/system/companion-releases")
 
     assert response.status_code == 410
-    assert response.json() == {
-        "error": "companion_retired",
-        "message": "The Nojoin Companion app has been retired. Please update your installation and use the web app for recording.",
-        "see": "https://github.com/Valtora/Nojoin/blob/main/docs/CAPTURE.md",
+    assert response.json() == COMPANION_RETIRED_BODY
+
+
+def test_retired_companion_calls_cover_every_registered_route() -> None:
+    registered = {
+        (method, route.path)
+        for route in legacy_companion_router.routes
+        for method in route.methods
     }
+
+    assert registered == {(method, path) for method, path, _ in RETIRED_COMPANION_CALLS}
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [(method, path) for method, _, path in RETIRED_COMPANION_CALLS],
+    ids=[f"{method} {route}" for method, route, _ in RETIRED_COMPANION_CALLS],
+)
+async def test_retired_companion_routes_are_gone(method: str, path: str) -> None:
+    app, _ = _build_app(initialized=True)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL
+    ) as client:
+        bare = await client.request(method, f"/api/v1{path}")
+        with_query_and_body = await client.request(
+            method,
+            f"/api/v1{path}",
+            params={"_": "1", "client": "companion"},
+            json={"pairing_code": "123456"},
+        )
+
+    for response in (bare, with_query_and_body):
+        assert response.status_code == 410, response.text
+        assert response.json() == COMPANION_RETIRED_BODY
+        assert "set-cookie" not in response.headers
+
+
+@pytest.mark.anyio
+async def test_retired_companion_routes_stay_out_of_the_openapi_schema() -> None:
+    app, _ = _build_app(initialized=True)
+    app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
+        id=1, role="user"
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL
+    ) as client:
+        response = await client.get("/api/v1/openapi.json")
+
+    assert response.status_code == 200
+    schema_paths = response.json()["paths"]
+    retired_paths = {f"/api/v1{route}" for _, route, _ in RETIRED_COMPANION_CALLS}
+    assert retired_paths.isdisjoint(schema_paths)
+    assert not any(
+        parameter["name"] == "_"
+        for operations in schema_paths.values()
+        for operation in operations.values()
+        for parameter in operation.get("parameters", [])
+    )
 
 
 @pytest.mark.anyio
