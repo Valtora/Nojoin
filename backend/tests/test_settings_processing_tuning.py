@@ -125,6 +125,39 @@ def test_an_out_of_range_value_is_rejected(body) -> None:
     assert row == {"vad_threshold": 0.4}
 
 
+def test_the_vad_mute_switches_default_and_save_independently() -> None:
+    """#486: transcription reads muted and speaker separation unmuted until
+    set, and each switch saves alone."""
+    (before, diar_on, asr_off, after), row = _run(
+        [
+            ("GET", None),
+            ("POST", {"vad_mute_diarization": True}),
+            ("POST", {"vad_mute_transcription": False}),
+            ("GET", None),
+        ]
+    )
+
+    assert before.json()["vad_mute_transcription"] is True
+    assert before.json()["vad_mute_diarization"] is False
+    assert diar_on.json()["vad_mute_diarization"] is True
+    assert diar_on.json()["vad_mute_transcription"] is True
+    assert asr_off.status_code == 200
+    assert after.json()["vad_mute_transcription"] is False
+    assert after.json()["vad_mute_diarization"] is True
+    assert row["vad_mute_transcription"] is False
+    assert row["vad_mute_diarization"] is True
+
+
+@pytest.mark.parametrize(
+    "body", [{"vad_mute_transcription": "maybe"}, {"vad_mute_diarization": [1]}]
+)
+def test_a_vad_mute_switch_must_be_a_bool(body) -> None:
+    (response,), row = _run([("POST", body)])
+
+    assert response.status_code == 422
+    assert row == {}
+
+
 def test_null_resets_a_value_to_inherit() -> None:
     (response,), row = _run(
         [("POST", {"vad_threshold": None})], stored={"vad_threshold": 0.3}

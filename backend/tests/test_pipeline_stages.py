@@ -1126,7 +1126,8 @@ def test_combine_stage_receives_the_owners_merged_settings(monkeypatch):
 @pytest.mark.parametrize("enable_vad", [True, False])
 def test_asr_stage_is_told_whether_vad_muted_its_audio(monkeypatch, enable_vad):
     """An engine may decode skipped speech again only in VAD-muted audio, so
-    the stage says whether VAD ran, whatever the stored settings hold."""
+    the stage says whether the engine's own audio is muted (with the default
+    switches, whether VAD ran), whatever the stored settings hold."""
     recording = _FakeRecording(722)
     transcript = _FakeTranscript(722)
     session = _FakeSession(recording, transcript)
@@ -1213,3 +1214,220 @@ def test_nothing_downstream_sees_a_word_placed_in_the_muted_silence(
 
     assert seen["texts"] == ["Morning."]
     assert transcript.text == "Morning."
+
+
+# --- muted audio per stage (#486) ---------------------------------------------
+
+_UNMUTED = "/tmp/recording_vad.wav"
+_MUTED = "/tmp/recording_vad_processed.wav"
+
+
+def _capture_stage_audio(monkeypatch) -> dict:
+    """Record the audio path each final-pass consumer is handed."""
+    seen: dict = {}
+
+    def _asr(path, config=None):
+        seen["asr"] = path
+        seen["vad_muted_input"] = config[VAD_MUTED_INPUT]
+        return {"text": "hello", "language": "en", "segments": []}
+
+    def _diarize(path, *a, **k):
+        seen["diarize"] = path
+        return object()
+
+    def _phantom(diarization, path, *a, **k):
+        seen["phantom"] = path
+        return diarization
+
+    def _voiceprints(path, *a, **k):
+        seen["voiceprints"] = path
+        return {}
+
+    _install(
+        monkeypatch,
+        "backend.processing.transcribe",
+        transcribe_audio=_asr,
+        release_model_cache=lambda: None,
+    )
+    _install(
+        monkeypatch,
+        "backend.processing.diarize",
+        diarize_audio=_diarize,
+        release_pipeline_cache=lambda: None,
+    )
+    _install(
+        monkeypatch,
+        "backend.processing.phantom_filter",
+        filter_phantom_speakers=_phantom,
+    )
+    _install(
+        monkeypatch,
+        "backend.processing.embedding_core",
+        extract_embeddings=_voiceprints,
+        EMBEDDING_METHOD_VERSION=2,
+        release_embedding_model_cache=lambda: None,
+    )
+    return seen
+
+
+@pytest.mark.parametrize(
+    ("mute_transcription", "mute_diarization"),
+    [(True, True), (True, False), (False, True), (False, False)],
+)
+def test_each_stage_reads_the_audio_its_own_switch_picks(
+    monkeypatch, mute_transcription, mute_diarization
+):
+    """Transcription reads the muted file only when its switch says so, and
+    diarisation, the phantom filter and voiceprints follow the other switch,
+    whatever the first holds. The engine is told its audio is muted only when
+    it is."""
+    recording = _FakeRecording(724)
+    session = _FakeSession(recording, _FakeTranscript(724))
+    _install_happy_path_modules(monkeypatch)
+    seen = _capture_stage_audio(monkeypatch)
+    llm_config = _tuned_llm_config(
+        enable_auto_voiceprints=True,
+        vad_mute_transcription=mute_transcription,
+        vad_mute_diarization=mute_diarization,
+    )
+
+    _run_task(monkeypatch, session, recording_id=724, llm_config=llm_config)
+
+    speaker_side = _MUTED if mute_diarization else _UNMUTED
+    assert seen["asr"] == (_MUTED if mute_transcription else _UNMUTED)
+    assert seen["vad_muted_input"] is mute_transcription
+    assert seen["diarize"] == speaker_side
+    assert seen["phantom"] == speaker_side
+    assert seen["voiceprints"] == speaker_side
+
+
+def test_a_user_with_neither_switch_stored_diarises_the_unmuted_file(monkeypatch):
+    """The upgrade path: the worker's merge applies no user defaults, so the
+    switches arrive unset. Transcription stays muted and the speaker side
+    hears the whole recording."""
+    recording = _FakeRecording(728)
+    session = _FakeSession(recording, _FakeTranscript(728))
+    _install_happy_path_modules(monkeypatch)
+    seen = _capture_stage_audio(monkeypatch)
+    llm_config = _tuned_llm_config(enable_auto_voiceprints=True)
+    assert "vad_mute_diarization" not in llm_config.merged_config
+
+    _run_task(monkeypatch, session, recording_id=728, llm_config=llm_config)
+
+    assert seen["asr"] == _MUTED
+    assert seen["vad_muted_input"] is True
+    assert seen["diarize"] == seen["phantom"] == seen["voiceprints"] == _UNMUTED
+
+
+def test_vad_off_unmutes_both_stages_whatever_the_switches_hold(monkeypatch):
+    recording = _FakeRecording(725)
+    session = _FakeSession(recording, _FakeTranscript(725))
+    _install_happy_path_modules(monkeypatch)
+    seen = _capture_stage_audio(monkeypatch)
+
+    def _no_mute(*a, **k):
+        raise AssertionError("VAD must not run when it is off")
+
+    _install(monkeypatch, "backend.processing.vad", mute_non_speech_segments=_no_mute)
+    llm_config = _tuned_llm_config(
+        enable_vad=False,
+        enable_auto_voiceprints=True,
+        vad_mute_transcription=True,
+        vad_mute_diarization=True,
+    )
+
+    _run_task(monkeypatch, session, recording_id=725, llm_config=llm_config)
+
+    assert seen["asr"] == _UNMUTED
+    assert seen["diarize"] == seen["phantom"] == seen["voiceprints"] == _UNMUTED
+    assert seen["vad_muted_input"] is False
+
+
+def test_no_speech_still_completes_empty_with_both_stages_unmuted(monkeypatch):
+    """VAD still runs with both switches off, so its short-circuit holds."""
+    recording = _FakeRecording(726)
+    transcript = _FakeTranscript(726)
+    session = _FakeSession(recording, transcript)
+    _install_happy_path_modules(monkeypatch)
+
+    def _exploding_transcribe(*args, **kwargs):
+        raise AssertionError("ASR must not run when no speech is detected")
+
+    _install(
+        monkeypatch,
+        "backend.processing.transcribe",
+        transcribe_audio=_exploding_transcribe,
+        release_model_cache=lambda: None,
+    )
+    _install(
+        monkeypatch,
+        "backend.processing.vad",
+        mute_non_speech_segments=lambda *a, **k: (True, 0.0),
+    )
+    llm_config = _tuned_llm_config(
+        vad_mute_transcription=False, vad_mute_diarization=False
+    )
+
+    result = _run_task(monkeypatch, session, recording_id=726, llm_config=llm_config)
+
+    assert result is None
+    assert recording.processing_step == "Completed (No speech detected)"
+    assert transcript.text == ""
+
+
+@pytest.mark.parametrize(
+    ("mute_transcription", "expected_text"),
+    [(False, "Over here."), (True, "")],
+)
+def test_the_zero_run_drop_reads_the_file_transcription_heard(
+    monkeypatch, tmp_path, mute_transcription, expected_text
+):
+    """With transcription unmuted, the zero-run drop reads the unmuted file, so a
+    word where VAD heard no speech is kept: often it is speech VAD missed. With
+    it muted, the same word lies in exact zeros and goes, so both files were
+    read."""
+    recording = _FakeRecording(727)
+    transcript = _FakeTranscript(727)
+    session = _FakeSession(recording, transcript)
+    _install_happy_path_modules(monkeypatch)
+    vad_input = str(tmp_path / "recording_vad.wav")
+    soundfile.write(
+        vad_input, np.full(20 * 16000, 0.05, dtype=np.float32), 16000, subtype="PCM_16"
+    )
+    _install(
+        monkeypatch,
+        "backend.processing.audio_preprocessing",
+        cleanup_temp_file=lambda *a, **k: None,
+        convert_wav_to_mp3=lambda *a, **k: None,
+        preprocess_audio_for_vad=lambda path: vad_input,
+        repair_audio_file=lambda *a, **k: None,
+        validate_audio_file=lambda *a, **k: None,
+    )
+
+    def _mute(input_path, output_path, **kwargs):
+        audio = np.zeros(20 * 16000, dtype=np.float32)
+        audio[16000 : 3 * 16000] = 0.25  # the only speech VAD kept: 1 s to 3 s
+        soundfile.write(output_path, audio, 16000, subtype="PCM_16")
+        return True, 2.0
+
+    _install(monkeypatch, "backend.processing.vad", mute_non_speech_segments=_mute)
+    missed = {"start": 10.0, "end": 10.8, "text": " Over here."}
+    missed["words"] = [
+        {"start": 10.0, "end": 10.4, "word": " Over"},
+        {"start": 10.4, "end": 10.8, "word": " here."},
+    ]
+    _install(
+        monkeypatch,
+        "backend.processing.transcribe",
+        transcribe_audio=lambda *a, **k: {
+            "text": " Over here.",
+            "language": "en",
+            "segments": [missed],
+        },
+        release_model_cache=lambda: None,
+    )
+    llm_config = _tuned_llm_config(vad_mute_transcription=mute_transcription)
+
+    _run_task(monkeypatch, session, recording_id=727, llm_config=llm_config)
+
+    assert (transcript.text or "").strip() == expected_text

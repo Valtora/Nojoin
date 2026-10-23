@@ -12,6 +12,11 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from backend.processing.processing_tuning import TUNING_KEYS
+from backend.processing.vad_muting import (
+    VAD_MUTE_DEFAULTS,
+    VAD_MUTE_DIARIZATION_KEY,
+    VAD_MUTE_TRANSCRIPTION_KEY,
+)
 from backend.utils.languages import (
     AUTO_TRANSCRIPTION_LANGUAGE,
     DEFAULT_NOTES_LANGUAGE,
@@ -299,6 +304,11 @@ DEFAULT_USER_SETTINGS = {
     "glossary_terms": "",
     "install_glossary_terms": "",
     "enable_vad": True,  # Enable Voice Activity Detection (silence filtering)
+    # With VAD on, whether each final-pass stage hears the muted audio
+    # (backend/processing/vad_muting.py): transcription does by default,
+    # speaker separation does not.
+    VAD_MUTE_TRANSCRIPTION_KEY: VAD_MUTE_DEFAULTS[VAD_MUTE_TRANSCRIPTION_KEY],
+    VAD_MUTE_DIARIZATION_KEY: VAD_MUTE_DEFAULTS[VAD_MUTE_DIARIZATION_KEY],
     "enable_diarization": True,  # Enable Speaker Diarization (who said what)
     # Processing tuning (backend/processing/processing_tuning.py). None means
     # inherit: the install's config.json value if set, else the shipped default.
