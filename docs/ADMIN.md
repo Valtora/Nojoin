@@ -12,6 +12,8 @@ This guide is for Owners and Admins of a self-hosted Nojoin installation. [USAGE
 
 Some actions also need superuser rights, which only the account created at first-run setup (the setup account) has: editing an existing user's username, password, active status or AI analysis limit, backup and restore, and viewing or downloading logs. Settings shows these to the setup account alone. Other Owners and Admins can still create and delete accounts and change roles in the users table, within the Owner limits above.
 
+An installation always keeps at least one active Owner, since only an Owner can make another. Nojoin refuses to change the role of, deactivate or delete the last one and says why, so make another account an Owner first. This holds when two Owners demote or delete each other at the same moment: one change goes through and the other is refused.
+
 ## Users and Invitations
 
 Registration is by invitation only. **Settings > Users and access** has three parts:

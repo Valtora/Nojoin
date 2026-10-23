@@ -410,7 +410,7 @@ class _AdminSession:
         self.user = user
         self.committed = False
 
-    async def get(self, _model, pk):
+    async def get(self, _model, pk, **_options):
         return self.user if pk == self.user.id else None
 
     async def execute(self, _statement):

@@ -18,8 +18,10 @@ vi.mock("@/lib/api", () => ({
   updateUserRole: (...args: unknown[]) => updateUserRole(...args),
 }));
 
+const addNotification = vi.fn();
+
 vi.mock("@/lib/notificationStore", () => ({
-  useNotificationStore: () => ({ addNotification: vi.fn() }),
+  useNotificationStore: () => ({ addNotification }),
 }));
 
 const context = {
@@ -55,6 +57,16 @@ async function renderAs(viewer: { isSuperuser: boolean; role: UserRole }) {
   await screen.findByText("bob.example");
 }
 
+const LAST_OWNER =
+  "Nojoin needs at least one active Owner. Make another account an Owner " +
+  "before changing or removing this one.";
+
+/** The API's refusal, as axios rejects with it. */
+const refusal = (detail: string) => ({
+  isAxiosError: true,
+  response: { status: 409, data: { detail } },
+});
+
 const roleOptions = (select: HTMLElement) =>
   within(select)
     .getAllByRole("option")
@@ -66,6 +78,7 @@ describe("UsersTab", () => {
     updateUser.mockReset().mockResolvedValue(MEMBER);
     updateUserRole.mockReset().mockResolvedValue(MEMBER);
     deleteUser.mockReset();
+    addNotification.mockReset();
   });
 
   it("gives the setup account the full edit dialog", async () => {
@@ -148,5 +161,60 @@ describe("UsersTab", () => {
     expect(
       screen.getByRole("button", { name: "Delete alice.example" }),
     ).toBeInTheDocument();
+  });
+
+  it("shows the API's refusal when the last Owner would step down", async () => {
+    await renderAs({ isSuperuser: false, role: UserRole.OWNER });
+    updateUserRole.mockRejectedValue(refusal(LAST_OWNER));
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Change the role of me.example" }),
+    );
+    fireEvent.change(await screen.findByLabelText("Role"), {
+      target: { value: UserRole.ADMIN },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() =>
+      expect(addNotification).toHaveBeenCalledWith({
+        message: LAST_OWNER,
+        type: "error",
+      }),
+    );
+    // The dialog stays open on the refused change, to pick another.
+    expect(screen.getByLabelText("Role")).toHaveValue(UserRole.ADMIN);
+  });
+
+  it("shows the API's refusal of the setup account's edit", async () => {
+    await renderAs({ isSuperuser: true, role: UserRole.OWNER });
+    updateUser.mockRejectedValue(refusal(LAST_OWNER));
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit me.example" }));
+    fireEvent.click(await screen.findByLabelText("Active account"));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() =>
+      expect(addNotification).toHaveBeenCalledWith({
+        message: LAST_OWNER,
+        type: "error",
+      }),
+    );
+    expect(updateUser.mock.calls[0][1]).toMatchObject({ is_active: false });
+  });
+
+  it("shows the API's refusal of a delete", async () => {
+    // As when the viewer lost the Owner role to a change made meanwhile.
+    await renderAs({ isSuperuser: false, role: UserRole.OWNER });
+    deleteUser.mockRejectedValue(refusal(LAST_OWNER));
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete alice.example" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
+
+    await waitFor(() =>
+      expect(addNotification).toHaveBeenCalledWith({
+        message: LAST_OWNER,
+        type: "error",
+      }),
+    );
   });
 });
