@@ -152,7 +152,7 @@ If the database outlives its encryption key, for example because `DATA_ENCRYPTIO
 
 If an account never shows the **Live sync** badge, check each requirement under [Enabling Live Sync](#enabling-live-sync), starting with the provider's **Live sync** switch. Calendars still refresh every 15 minutes.
 
-A CDN or web application firewall in front of Nojoin must let Microsoft and Google `POST` to the two webhook paths. Microsoft checks the address while creating a subscription and refuses it when that request is blocked.
+A CDN or web application firewall in front of Nojoin must let Microsoft and Google `POST` to the two webhook paths. Microsoft checks the address while creating a subscription and refuses it when that request is blocked. Cloudflare's Bot Fight Mode is a common cause: it challenges these requests, and the log shows Microsoft's `Subscription validation request failed` with status `Forbidden`. No rule can exempt a path from Bot Fight Mode, so either turn it off, move to Super Bot Fight Mode (Pro plan and above) with a custom rule that skips it for the two paths, or leave live sync off.
 
 The `worker-io` log records each failed attempt with the HTTP status and the provider's own error code and message.
 
