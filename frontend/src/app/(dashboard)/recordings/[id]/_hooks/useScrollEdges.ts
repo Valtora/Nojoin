@@ -32,9 +32,8 @@ export function useScrollEdges(
           : { left, right },
       );
     };
+    update();
     row.addEventListener("scroll", update, { passive: true });
-    // Observing reports each element's size once at the start, so this also
-    // takes the first reading.
     const observer = new ResizeObserver(update);
     observer.observe(row);
     for (const child of row.children) observer.observe(child);

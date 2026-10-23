@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   act,
@@ -281,9 +281,14 @@ describe("RecordingPage (detail)", () => {
   });
 
   afterEach(() => {
-    Element.prototype.scrollIntoView = originalScrollIntoView;
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+  });
+
+  // Restored only once the block is done: a render still settling as a test
+  // ends must not meet jsdom's missing scrollIntoView.
+  afterAll(() => {
+    Element.prototype.scrollIntoView = originalScrollIntoView;
   });
 
   it("shows a loading state before the recording resolves", () => {
@@ -640,6 +645,38 @@ describe("RecordingPage (detail)", () => {
     ).toEqual(sides);
   });
 
+  it("marks the sides on the row's first measure, with no scroll", async () => {
+    const observers: { callback: ResizeObserverCallback; targets: Element[] }[] = [];
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        private entry: (typeof observers)[number];
+        constructor(callback: ResizeObserverCallback) {
+          this.entry = { callback, targets: [] };
+          observers.push(this.entry);
+        }
+        observe(target: Element) {
+          this.entry.targets.push(target);
+        }
+        unobserve() {}
+        disconnect() {}
+      },
+    );
+    const tablist = await openTabs(360);
+
+    for (const [key, value] of Object.entries({ scrollLeft: 0, scrollWidth: 400, clientWidth: 360 })) {
+      Object.defineProperty(tablist, key, { configurable: true, value });
+    }
+    act(() => {
+      for (const { callback, targets } of observers) {
+        if (targets.includes(tablist)) callback([], {} as ResizeObserver);
+      }
+    });
+
+    expect(screen.getByTestId("more-tabs-right")).toBeInTheDocument();
+    expect(screen.queryByTestId("more-tabs-left")).toBeNull();
+  });
+
   it("switches panels from the phone's tabs, and has no Speakers item in the actions menu", async () => {
     const tablist = await openTabs(360);
 
@@ -671,6 +708,39 @@ describe("RecordingPage (detail)", () => {
       expect(panel).toHaveAttribute("role", "tabpanel");
       expect(panel).toHaveAttribute("aria-labelledby", tab.id);
     }
+  });
+
+  // Desktop holds "speakers" for one render before the page falls back to the
+  // transcript; the first tab stands in for it meanwhile.
+  it.each([
+    [360, "speakers", "speakers"],
+    [1440, "notes", "notes"],
+    [1440, "speakers", "transcript"],
+  ])("at %i px with %s open, only the %s tab is in the Tab order", async (width, open, focusable) => {
+    activePanel = open;
+    const tablist = await openTabs(width);
+
+    expect(
+      within(tablist).getAllByRole("tab").filter((tab) => tab.tabIndex === 0).map((tab) => tab.id),
+    ).toEqual([`tab-${focusable}`]);
+  });
+
+  it.each([
+    [360, "analytics", "ArrowRight", "speakers"],
+    [1440, "analytics", "ArrowRight", "transcript"],
+    [360, "transcript", "ArrowLeft", "speakers"],
+    [360, "analytics", "Home", "transcript"],
+    [360, "notes", "End", "speakers"],
+    [1440, "speakers", "ArrowRight", "notes"],
+  ])("at %i px from %s, %s opens %s and focuses its tab", async (width, from, key, to) => {
+    activePanel = from;
+    const tablist = await openTabs(width);
+
+    const start = within(tablist).getAllByRole("tab").find((tab) => tab.tabIndex === 0);
+    fireEvent.keyDown(start!, { key });
+
+    expect(setActivePanel).toHaveBeenLastCalledWith(to);
+    expect(document.activeElement).toBe(document.getElementById(`tab-${to}`));
   });
 
   it("does not toast a notes error that was already there when the page opened", async () => {

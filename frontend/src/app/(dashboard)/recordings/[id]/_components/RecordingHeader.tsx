@@ -73,7 +73,6 @@ export default function RecordingHeader({
             .catch(console.error);
         }}
       />
-
     </div>
   );
 

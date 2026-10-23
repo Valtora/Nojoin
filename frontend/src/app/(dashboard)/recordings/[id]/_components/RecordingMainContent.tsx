@@ -1,7 +1,12 @@
 "use client";
 
 import { ChevronsLeft, ChevronsRight } from "lucide-react";
-import { useEffect, useRef, type RefObject } from "react";
+import {
+  useEffect,
+  useRef,
+  type KeyboardEvent,
+  type RefObject,
+} from "react";
 
 import { useNavigationStore, type ActivePanel } from "@/lib/store";
 import {
@@ -178,6 +183,30 @@ export default function RecordingMainContent({
   );
   const tablistRef = useRef<HTMLDivElement>(null);
   const tabsOutOfView = useScrollEdges(tablistRef, isMobile);
+  const tabs = isMobile ? MOBILE_TABS : TABS;
+  // The tab that Tab and the arrow keys start from: the current panel's, or the
+  // first when it has no tab here (desktop holds "speakers" for one render
+  // before useRecordingDetail falls back to the transcript).
+  const current = tabs.some(({ panel }) => panel === activePanel)
+    ? activePanel
+    : tabs[0].panel;
+
+  // Arrow keys move between tabs and open them, wrapping at the ends; Home and
+  // End jump to the first and last (the WAI-ARIA tabs pattern).
+  const onTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
+    const index = tabs.findIndex(({ panel }) => panel === current);
+    const targets: Record<string, number> = {
+      ArrowLeft: index - 1,
+      ArrowRight: index + 1,
+      Home: 0,
+      End: tabs.length - 1,
+    };
+    if (!(event.key in targets)) return;
+    event.preventDefault();
+    const { panel } = tabs[(targets[event.key] + tabs.length) % tabs.length];
+    setActivePanel(panel);
+    tablistRef.current?.querySelector<HTMLElement>(`#tab-${panel}`)?.focus();
+  };
 
   // A tab chosen other than by a tap on the row (the page reopening on the
   // panel last used, Analytics' link to the speakers) may sit past its edge.
@@ -223,7 +252,7 @@ export default function RecordingMainContent({
           aria-label="Meeting panels"
           className={`${isMobile ? "flex overflow-x-auto" : "grid grid-cols-4"} border-b-2 border-surface-border`}
         >
-          {(isMobile ? MOBILE_TABS : TABS).map(({ panel, label }) => (
+          {tabs.map(({ panel, label }) => (
             <button
               key={panel}
               type="button"
@@ -231,7 +260,9 @@ export default function RecordingMainContent({
               id={`tab-${panel}`}
               aria-selected={activePanel === panel}
               aria-controls={`panel-${panel}`}
+              tabIndex={panel === current ? 0 : -1}
               onClick={() => setActivePanel(panel)}
+              onKeyDown={onTabKeyDown}
               className={tabClassName(activePanel === panel, isMobile)}
             >
               <span className="truncate">{label}</span>
