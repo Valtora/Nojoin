@@ -16,6 +16,7 @@ import pytest
 from backend.core.encryption import encrypt_secret
 from backend.models.calendar import CalendarProvider, CalendarPushChannelStatus
 from backend.services import calendar_push_service as push
+from backend.services.calendar_service import PROVIDER_ERROR_DETAIL_LIMIT
 
 NOW = datetime(2026, 7, 2, 12, 0, 0)
 
@@ -167,8 +168,10 @@ GOOGLE_WEBHOOK_UNVERIFIED = {
 }
 
 
-def test_describe_push_failure_keeps_graph_code_and_message() -> None:
-    detail = push._describe_push_failure(_provider_error(400, GRAPH_VALIDATION_FAILED))
+def test_describe_provider_failure_keeps_graph_code_and_message() -> None:
+    detail = push._describe_provider_failure(
+        _provider_error(400, GRAPH_VALIDATION_FAILED)
+    )
 
     assert detail == (
         "HTTP 400 InvalidRequest: Subscription validation request failed. "
@@ -176,8 +179,8 @@ def test_describe_push_failure_keeps_graph_code_and_message() -> None:
     )
 
 
-def test_describe_push_failure_keeps_google_reason_and_message() -> None:
-    detail = push._describe_push_failure(
+def test_describe_provider_failure_keeps_google_reason_and_message() -> None:
+    detail = push._describe_provider_failure(
         _provider_error(400, GOOGLE_WEBHOOK_UNVERIFIED)
     )
 
@@ -191,29 +194,29 @@ def test_describe_push_failure_keeps_google_reason_and_message() -> None:
     "body",
     [GRAPH_VALIDATION_FAILED, GOOGLE_WEBHOOK_UNVERIFIED, "<html>blocked</html>", {}],
 )
-def test_describe_push_failure_never_carries_the_request(body) -> None:
-    detail = push._describe_push_failure(_provider_error(400, body))
+def test_describe_provider_failure_never_carries_the_request(body) -> None:
+    detail = push._describe_provider_failure(_provider_error(400, body))
 
     assert ACCESS_TOKEN not in detail
     assert GOOGLE_CALENDAR_ADDRESS not in detail
     assert "alice" not in detail.lower()
 
 
-def test_describe_push_failure_without_a_json_body_keeps_the_status() -> None:
-    assert push._describe_push_failure(_provider_error(502, "<html>")) == "HTTP 502"
+def test_describe_provider_failure_without_a_json_body_keeps_the_status() -> None:
+    assert push._describe_provider_failure(_provider_error(502, "<html>")) == "HTTP 502"
 
 
-def test_describe_push_failure_caps_the_provider_text() -> None:
+def test_describe_provider_failure_caps_the_provider_text() -> None:
     body = {"error": {"code": "InvalidRequest", "message": "x" * 1000}}
 
-    detail = push._describe_push_failure(_provider_error(400, body))
+    detail = push._describe_provider_failure(_provider_error(400, body))
 
     assert detail.startswith("HTTP 400 InvalidRequest: xxx")
-    assert len(detail) == len("HTTP 400 ") + push.PUSH_ERROR_DETAIL_LIMIT
+    assert len(detail) == len("HTTP 400 ") + PROVIDER_ERROR_DETAIL_LIMIT
 
 
-def test_describe_push_failure_names_a_network_error() -> None:
-    detail = push._describe_push_failure(
+def test_describe_provider_failure_names_a_network_error() -> None:
+    detail = push._describe_provider_failure(
         httpx.ConnectError("All connection attempts failed")
     )
 

@@ -63,9 +63,12 @@ ACCOUNT_REDIRECT_STATUSES = (
     "cancelled",
     "tenant-config-error",
 )
+# The callback lands on the page that holds the Calendars card. The settings
+# index turns a legacy ``?tab=`` link into a category route and drops every other
+# query parameter, so pointing at ``/settings?tab=...`` loses the result.
 ACCOUNT_REDIRECT_PATHS = {
     provider: {
-        status_value: f"/settings?{urlencode({'tab': 'account', 'calendar': status_value, 'provider': provider})}"
+        status_value: f"/settings/integrations?{urlencode({'calendar': status_value, 'provider': provider})}"
         for status_value in ACCOUNT_REDIRECT_STATUSES
     }
     for provider in PROVIDER_DISPLAY_NAMES

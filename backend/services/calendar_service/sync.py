@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 
+import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlmodel import select
@@ -39,7 +40,11 @@ from .config import (
 from .constants import PROVIDER_DISPLAY_NAMES
 from .models_dto import (
     IncrementalSyncResetRequired,
+    ProviderCalendarRecord,
     ProviderEventSyncResult,
+    ProviderIdentity,
+    ProviderRuntimeConfig,
+    TokenBundle,
     UnreadableCalendarConnectionState,
 )
 from .oauth import (
@@ -61,6 +66,7 @@ from .persistence import (
     _serialise_connection_with_push,
     _upsert_connection,
 )
+from .provider_errors import CalendarConnectFailed, _describe_failure_for_log
 from .providers import (
     _get_microsoft_delta_cursor,
     _list_google_calendars,
@@ -135,6 +141,34 @@ async def get_overview(db: AsyncSession, user: User) -> CalendarOverviewRead:
     )
 
 
+async def _read_connecting_account(
+    provider: str,
+    runtime_config: ProviderRuntimeConfig,
+    code: str,
+    code_verifier: str,
+) -> tuple[TokenBundle, ProviderIdentity, list[ProviderCalendarRecord]]:
+    """Exchange the code, then read the account and its calendars.
+
+    A failure at any step is raised as ``CalendarConnectFailed``, naming the step
+    and keeping the provider's own error code and message for the callback to
+    log and show. Nothing is stored until all three succeed.
+    """
+    google = provider == CalendarProvider.GOOGLE.value
+    step = "token exchange"
+    try:
+        exchange_code = _exchange_google_code if google else _exchange_microsoft_code
+        token_bundle = await exchange_code(runtime_config, code, code_verifier)
+        step = "account lookup"
+        fetch_identity = _fetch_google_identity if google else _fetch_microsoft_identity
+        identity = await fetch_identity(token_bundle.access_token)
+        step = "calendar list"
+        list_calendars = _list_google_calendars if google else _list_microsoft_calendars
+        provider_calendars = await list_calendars(token_bundle.access_token)
+    except (httpx.HTTPError, KeyError, ValueError) as exc:
+        raise CalendarConnectFailed(step, exc) from exc
+    return token_bundle, identity, provider_calendars
+
+
 async def handle_callback(
     db: AsyncSession, provider: str, user: User, code: str, state: str
 ) -> CalendarConnection:
@@ -157,18 +191,9 @@ async def handle_callback(
             status_code=400, detail="The calendar connection session is invalid"
         )
 
-    if provider == CalendarProvider.GOOGLE.value:
-        token_bundle = await _exchange_google_code(
-            runtime_config, code, str(state_payload["code_verifier"])
-        )
-        identity = await _fetch_google_identity(token_bundle.access_token)
-        provider_calendars = await _list_google_calendars(token_bundle.access_token)
-    else:
-        token_bundle = await _exchange_microsoft_code(
-            runtime_config, code, str(state_payload["code_verifier"])
-        )
-        identity = await _fetch_microsoft_identity(token_bundle.access_token)
-        provider_calendars = await _list_microsoft_calendars(token_bundle.access_token)
+    token_bundle, identity, provider_calendars = await _read_connecting_account(
+        provider, runtime_config, code, str(state_payload["code_verifier"])
+    )
 
     connection = await _upsert_connection(
         db,
@@ -180,11 +205,12 @@ async def handle_callback(
     await _refresh_connection_calendars(db, connection, provider_calendars)
     try:
         await sync_connection_in_session(db, connection.id)
-    except Exception:  # noqa: BLE001 -- boundary: the connection is saved; the periodic sync retries
+    except Exception as exc:  # noqa: BLE001 -- boundary: the connection is saved; the periodic sync retries
         logger.warning(
-            "Initial calendar sync failed for connection %s (%s)",
+            "Initial calendar sync failed for connection %s (%s): %s",
             connection.id,
             provider,
+            _describe_failure_for_log(exc),
         )
     await db.refresh(connection)
     await _enqueue_push_channel_refresh(connection.id)
@@ -540,9 +566,10 @@ async def sync_connection_in_session(db: AsyncSession, connection_id: int) -> No
         return
     except Exception as exc:  # noqa: BLE001 -- boundary: provider and network errors are recorded on the connection, not raised
         logger.warning(
-            "Calendar sync failed for connection %s (%s)",
+            "Calendar sync failed for connection %s (%s): %s",
             connection.id,
             connection.provider,
+            _describe_failure_for_log(exc),
         )
         failure_status, failure_message = _classify_sync_failure(exc)
         connection.sync_status = failure_status
