@@ -897,6 +897,19 @@ describe("RecordingPage (detail): the recording answers 404", () => {
     expect(meCalls).toBe(2);
   });
 
+  it("forgets the notes kept for a recording it finds gone for its owner", async () => {
+    await open();
+    act(() => noteOutboxFor("rec-1").setDraft({ ...EMPTY_DRAFT, text: "typed before the delete" }));
+    await vi.waitFor(async () => expect(await store.get(ALICE.id, "rec-1")).toBeDefined());
+
+    exists = false;
+    await poll();
+
+    expect(routerPush).toHaveBeenCalledWith("/recordings");
+    await vi.waitFor(async () => expect(await store.get(ALICE.id, "rec-1")).toBeUndefined());
+    expect(useSessionStore.getState().heldBy).toEqual([]);
+  });
+
   it("reads a 404 as a removal again once the owner is back", async () => {
     await open();
     cookie = BOB;

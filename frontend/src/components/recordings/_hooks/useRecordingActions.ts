@@ -16,6 +16,7 @@ import {
 import { useCapture } from "@/lib/capture/CaptureProvider";
 import { getErrorStatus } from "@/lib/errors";
 import { useNotificationStore } from "@/lib/notificationStore";
+import { forgetRecordingNotes } from "@/lib/notes/noteOutboxes";
 import { dispatchRecordingRemoved } from "@/lib/recordingEvents";
 import { RecordingId } from "@/types";
 
@@ -176,6 +177,8 @@ export function useRecordingActions(): RecordingActions {
             await discardRecordingCapture(id, "user_discarded");
             dispatchRecordingRemoved(id);
           }
+          // Notes typed during the meeting can't be saved to it any more.
+          void forgetRecordingNotes(id);
           addNotification({
             message: "Recording discarded.",
             type: "success",
@@ -238,6 +241,7 @@ export function useRecordingActions(): RecordingActions {
       permanentDelete: async (id, callbacks) => {
         try {
           await permanentlyDeleteRecording(id);
+          void forgetRecordingNotes(id);
           callbacks?.onSuccess?.();
         } catch (e: unknown) {
           console.error("Failed to permanently delete", e);

@@ -13,8 +13,18 @@ import { NO_ANSWER, resetNotesServer, server } from "@/test/fakeNotesServer";
 import { renderWithProviders } from "@/test/renderWithProviders";
 
 import { EMPTY_DRAFT } from "./noteOutbox";
-import { forgetNoteOutboxes, noteOutboxFor } from "./noteOutboxes";
-import { clearStoredNotes, MemoryNoteStore, setNoteStoreForTests } from "./noteStore";
+import {
+  forgetNoteOutboxes,
+  forgetRecordingNotes,
+  noteOutboxesHere,
+  noteOutboxFor,
+} from "./noteOutboxes";
+import {
+  clearStoredNotes,
+  MemoryNoteStore,
+  setNoteStoreForTests,
+  type StoredOutbox,
+} from "./noteStore";
 
 const login = vi.hoisted(() => vi.fn());
 
@@ -111,6 +121,84 @@ describe("one outbox per recording", () => {
         draft: { text: "Half a thought" },
       });
     } finally {
+      setNoteStoreForTests(null);
+    }
+  });
+
+  it("forgets a recording deleted for good: its outbox, its record, its mark and its hold on the page", async () => {
+    const store = new MemoryNoteStore();
+    setNoteStoreForTests(store);
+    noteSignedIn({ username: "alice", force_password_change: false, id: 1 });
+    try {
+      const outbox = noteOutboxFor("rec-a");
+      noteOutboxFor("rec-b").setDraft({ ...EMPTY_DRAFT, text: "Another meeting" });
+      outbox.setDraft({ ...EMPTY_DRAFT, text: "Half a thought" });
+      await vi.waitFor(async () => expect(await store.recordingsOf(1)).toHaveLength(2));
+      expect(leave()).toBe(true);
+
+      await forgetRecordingNotes("rec-a");
+
+      expect(await store.recordingsOf(1)).toEqual(["rec-b"]);
+      expect(noteOutboxesHere()).toEqual({ held: ["rec-b"], unsent: ["rec-b"] });
+      // The page asks before closing for rec-b's text alone.
+      noteOutboxFor("rec-b").setDraft(EMPTY_DRAFT);
+      expect(leave()).toBe(false);
+      expect(useSessionStore.getState().heldBy).toEqual([]);
+      // The forgotten outbox writes nothing more, and a new one starts empty.
+      outbox.setDraft({ ...EMPTY_DRAFT, text: "Typed after the delete" });
+      await settle();
+      expect(await store.get(1, "rec-a")).toBeUndefined();
+      expect(noteOutboxFor("rec-a")).not.toBe(outbox);
+      expect(noteOutboxFor("rec-a").getSnapshot().draft.text).toBe("");
+    } finally {
+      setNoteStoreForTests(null);
+    }
+  });
+
+  it("doesn't let a write under way bring a forgotten recording's record back", async () => {
+    const store = new MemoryNoteStore();
+    let finishPut = () => {};
+    const put = store.put.bind(store);
+    vi.spyOn(store, "put").mockImplementation(
+      (stored: StoredOutbox) =>
+        new Promise<void>((resolve) => {
+          finishPut = () => void put(stored).then(resolve);
+        }),
+    );
+    setNoteStoreForTests(store);
+    noteSignedIn({ username: "alice", force_password_change: false, id: 1 });
+    try {
+      noteOutboxFor("rec-a").setDraft({ ...EMPTY_DRAFT, text: "Half a thought" });
+      await vi.waitFor(() => expect(store.put).toHaveBeenCalled());
+
+      const forgetting = forgetRecordingNotes("rec-a");
+      // Everything else the forget does has run by the time the write lands.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      finishPut();
+      await forgetting;
+
+      expect(await store.get(1, "rec-a")).toBeUndefined();
+    } finally {
+      setNoteStoreForTests(null);
+    }
+  });
+
+  it("drops its outbox when another tab forgets the recording", async () => {
+    const store = new MemoryNoteStore();
+    setNoteStoreForTests(store);
+    noteSignedIn({ username: "alice", force_password_change: false, id: 1 });
+    const otherTab = new BroadcastChannel("nojoin-notes");
+    try {
+      noteOutboxFor("rec-a").setDraft({ ...EMPTY_DRAFT, text: "Half a thought" });
+      await vi.waitFor(async () => expect(await store.get(1, "rec-a")).toBeDefined());
+
+      otherTab.postMessage({ kind: "forgot", recordingId: "rec-a" });
+
+      await vi.waitFor(() => expect(noteOutboxesHere().held).toEqual([]));
+      await vi.waitFor(async () => expect(await store.get(1, "rec-a")).toBeUndefined());
+      expect(leave()).toBe(false);
+    } finally {
+      otherTab.close();
       setNoteStoreForTests(null);
     }
   });

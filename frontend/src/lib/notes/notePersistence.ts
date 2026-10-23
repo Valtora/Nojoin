@@ -137,7 +137,8 @@ export const NEW_ID_WAIT_MS = 2_000;
 
 /**
  * Persists `outbox` for as long as the page has it, and returns a function
- * that stops. Where notes can only be kept in memory it never reads or writes.
+ * that stops, whose promise settles once a write already under way has
+ * finished. Where notes can only be kept in memory it never reads or writes.
  *
  * The stored copy is a stopgap for a crash, a killed tab or an ended session.
  * It never stands in for the leave warning (`noteOutboxes`), and two tabs on
@@ -153,7 +154,7 @@ export const persistNoteOutbox = (
   outbox: NoteOutbox,
   recordingId: RecordingId,
   storeOf: () => NoteStore | null = sharedNoteStore,
-): (() => void) => {
+): (() => Promise<void>) => {
   let account: number | null = null;
   let ready = false;
   /** Set when a cleanup removed this account's records, until the account is back. */
@@ -339,11 +340,12 @@ export const persistNoteOutbox = (
   const stopEvents = subscribeStoreEvents(onStoreEvent);
   outbox.setWriteBarrier(newIdSafe);
   watch(useSessionStore.getState());
-  return () => {
+  return async () => {
     stopped = true;
     stopOutbox();
     stopSession();
     stopEvents();
     outbox.setWriteBarrier(null);
+    await flushing?.catch(() => undefined);
   };
 };
