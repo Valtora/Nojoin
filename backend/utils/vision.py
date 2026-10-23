@@ -1,8 +1,9 @@
 """Shared types for sending images to a language model.
 
 Lives in utils rather than in the documents package so the LLM backends can
-depend on it without importing anything that pulls in PyMuPDF or python-pptx --
-those are worker-only dependencies and the API image does not ship them.
+depend on it without importing anything that pulls in pypdfium2 or
+python-pptx -- those are worker-only dependencies and the API image does not
+ship them.
 """
 
 from __future__ import annotations

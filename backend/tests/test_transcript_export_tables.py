@@ -6,7 +6,7 @@ notes reach a format is caught as well.
 
 from io import BytesIO
 
-import pymupdf
+import pdfplumber
 from docx import Document
 
 from backend.services.exports import build_document, render, theme
@@ -15,18 +15,23 @@ from backend.tests.export_fixtures import meeting_parts
 
 def _pdf(parts, sections=("notes",), *, branded=True):
     payload = render(build_document(parts, sections, branded=branded), "pdf")
-    return pymupdf.open(stream=payload, filetype="pdf")
+    return pdfplumber.open(BytesIO(payload))
 
 
 def _header_fills(page) -> list:
-    """Filled shapes in the table header colour on one page."""
+    """Filled rectangles in the table header colour on one page."""
     target = tuple(int(theme.TABLE_HEADER_FILL[i : i + 2], 16) / 255 for i in (1, 3, 5))
     return [
-        drawing
-        for drawing in page.get_drawings()
-        if drawing.get("fill") is not None
-        and all(abs(a - b) < 0.01 for a, b in zip(drawing["fill"], target))
+        rect
+        for rect in page.rects
+        if rect.get("fill")
+        and len(rect.get("non_stroking_color") or ()) == 3
+        and all(abs(a - b) < 0.01 for a, b in zip(rect["non_stroking_color"], target))
     ]
+
+
+def _draws_shapes(page) -> bool:
+    return bool(page.rects or page.lines or page.curves)
 
 
 def test_docx_export_writes_native_tables() -> None:
@@ -50,9 +55,9 @@ def test_docx_export_keeps_the_transcript_alongside_tables() -> None:
 
 def test_pdf_export_draws_tables_without_markdown_delimiters() -> None:
     with _pdf(meeting_parts()) as document:
-        page = document[0]
-        text = page.get_text()
-        assert len(page.get_drawings()) > 0
+        page = document.pages[0]
+        text = page.extract_text()
+        assert _draws_shapes(page)
 
     assert "ENG-1421" in text
     # Raw Markdown delimiters must not survive into the rendered page.
@@ -70,11 +75,11 @@ def test_pdf_header_backgrounds_stay_on_the_page_with_the_table() -> None:
     )
 
     with _pdf(parts) as document:
-        assert document.page_count >= 3
-        assert len(_header_fills(document[0])) == 2
-        for page in list(document)[1:]:
+        assert len(document.pages) >= 3
+        assert len(_header_fills(document.pages[0])) == 2
+        for page in document.pages[1:]:
             assert _header_fills(page) == [], (
-                f"stray header fill on page {page.number + 1}"
+                f"stray header fill on page {page.page_number}"
             )
 
 
@@ -84,18 +89,18 @@ def test_pdf_header_row_repeats_only_while_its_table_continues() -> None:
     parts = meeting_parts(notes=f"## Actions\n\n{table}\n## After\n\nClosing words.\n")
 
     with _pdf(parts) as document:
-        pages_with_rows = [p for p in document if "ACT-" in p.get_text()]
+        pages_with_rows = [p for p in document.pages if "ACT-" in p.extract_text()]
         assert len(pages_with_rows) >= 2
         # Every page the table runs onto opens with its header row again.
         for page in pages_with_rows:
             assert len(_header_fills(page)) == 1
-            assert "Owner" in page.get_text()
+            assert "Owner" in page.extract_text()
 
 
 def test_pdf_export_handles_notes_without_tables() -> None:
     with _pdf(meeting_parts(notes="## Summary\n\nA short summary.")) as document:
-        assert "A short summary." in document[0].get_text()
-        assert _header_fills(document[0]) == []
+        assert "A short summary." in document.pages[0].extract_text()
+        assert _header_fills(document.pages[0]) == []
 
 
 def test_txt_export_pads_notes_tables_into_columns() -> None:
