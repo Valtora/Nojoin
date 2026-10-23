@@ -15,7 +15,19 @@ export interface SearchDecoration {
   current: boolean;
 }
 
-export type TextDecoration = SearchDecoration;
+/** The words a selection note is on, as found in the text now (`resolveSelection`). */
+export interface NoteDecoration {
+  kind: "note";
+  from: number;
+  to: number;
+  noteId: string;
+  /** Found with words changed since the note was written. */
+  fuzzy: boolean;
+  /** What a pointer over it shows. */
+  title: string;
+}
+
+export type TextDecoration = SearchDecoration | NoteDecoration;
 
 /** A stretch of text covered by the same decorations, in render order. */
 export interface TextRun {

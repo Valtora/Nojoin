@@ -8,7 +8,7 @@ import {
   TimelineNote,
   TranscriptSpeakerAssignment,
 } from "@/types";
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useMemo, useState, type MouseEvent } from "react";
 import { Radio } from "lucide-react";
 import { useTranscriptSearch } from "./transcript/_hooks/useTranscriptSearch";
 import { useTranscriptScroll } from "./transcript/_hooks/useTranscriptScroll";
@@ -25,6 +25,11 @@ import { formatTime, isRecentlyUpdatedSegment } from "./transcript/transcriptDis
 import TranscriptGroup, { type TranscriptLineShared } from "./transcript/TranscriptGroup";
 import TranscriptSelectionNotes from "./transcript/TranscriptSelectionToolbar";
 import TranscriptToolbar from "./transcript/TranscriptToolbar";
+import TranscriptNoteEditor, {
+  type EditingNote,
+  type NoteEditHandlers,
+} from "./transcript/TranscriptNoteEditor";
+import { isSavedNote, useNoteHighlights } from "./transcript/_hooks/useNoteHighlights";
 import { bodyNotesAmongLines, placeTimelineNotes } from "@/lib/notes/placement";
 import type { InlineNote, OutboxDraft } from "@/lib/notes/noteOutbox";
 import CollapsedLineNotes from "./notes/CollapsedLineNotes";
@@ -79,6 +84,10 @@ interface TranscriptViewProps {
   onRetryNote?: (key: string) => void;
   /** Removes a failed note's line: the caller moves focus somewhere that stays. */
   onDiscardNote?: (key: string) => void;
+  /** Saves a saved note's new text; without it, notes can't be edited here. */
+  onEditNote?: NoteEditHandlers["onEditNote"];
+  /** Deletes a saved note: the caller moves focus somewhere that stays. */
+  onDeleteNote?: NoteEditHandlers["onDeleteNote"];
 }
 
 // One empty list for every render, so the memoised lines it reaches hold.
@@ -86,9 +95,6 @@ const NO_PENDING_UPDATES: readonly string[] = [];
 
 const NOTE_TIME_COLUMN =
   "min-w-16 md:min-w-[60px] shrink-0 pt-1 text-right font-mono text-sm text-contrast-icon-muted";
-
-/** A note the server holds; one still on its way, or refused, is not. */
-const isSavedNote = (note: TimelineNote | InlineNote) => !("status" in note) || note.status === "saved";
 
 /**
  * The finished transcript: toolbar, then the lines in groups of overlapping
@@ -127,6 +133,8 @@ export default function TranscriptView({
   onAddNote,
   onRetryNote,
   onDiscardNote,
+  onEditNote,
+  onDeleteNote,
 }: TranscriptViewProps) {
   // Find & Replace toolbar visibility (search match state lives in the hook)
   const [showSearch, setShowSearch] = useState(false);
@@ -224,6 +232,32 @@ export default function TranscriptView({
       ),
     [notePlacements, displaySegments],
   );
+  // Each saved selection note's words, found in the lines as they read now.
+  const { noteDecorations, wordsChanged } = useNoteHighlights(segments, timelineNotes);
+  const [editingNote, setEditingNote] = useState<EditingNote | null>(null);
+  // The editor shows only while its note is a saved one in the list.
+  const shownEditor =
+    editingNote !== null &&
+    (timelineNotes ?? []).some((note) => note.id === editingNote.noteId && isSavedNote(note))
+      ? editingNote
+      : null;
+  // An editor still open holds typed text or a write, so another note's marks
+  // or pencil never replace it; one left as it opened has already closed on
+  // the press (`NoteOnSelectionPopover`).
+  const openNoteEditor = (next: EditingNote) =>
+    setEditingNote((open) => (open !== null && open === shownEditor ? open : next));
+  const canEditNote = (note: TimelineNote | InlineNote) =>
+    onEditNote !== undefined && isSavedNote(note) && note.revision !== undefined;
+  // A click on a note's marked words edits the note, unless it ended a
+  // drag that selected text, which is for a new note or a copy.
+  const editNoteFromText = (event: MouseEvent<HTMLDivElement>) => {
+    const mark =
+      event.target instanceof Element ? event.target.closest<HTMLElement>("mark[data-note-id]") : null;
+    const noteId = mark?.dataset.noteId;
+    if (!mark || !noteId || !onEditNote) return;
+    if (window.getSelection()?.isCollapsed === false) return;
+    openNoteEditor({ noteId, anchor: mark });
+  };
   const renderNote = (note: TimelineNote | InlineNote) => {
     const key = "key" in note ? note.key : note.id;
     return (
@@ -232,6 +266,12 @@ export default function TranscriptView({
           noteId={note.id}
           body={note.body}
           quote={note.kind === "selection" ? note.quoted_text : null}
+          wordsChanged={note.kind === "selection" ? wordsChanged(note.id) : null}
+          onEdit={
+            canEditNote(note)
+              ? (trigger) => openNoteEditor({ noteId: note.id, anchor: trigger })
+              : undefined
+          }
           timeLabel={formatTime(
             (note.kind === "selection" ? (note.start_ms ?? 0) : (note.anchor_ms ?? 0)) / 1000,
           )}
@@ -335,6 +375,7 @@ export default function TranscriptView({
         data-testid="transcript-scroll-region"
         className="space-y-4 px-2 md:px-4 pt-3 pb-clear-floating-3 overflow-y-auto flex-1 min-h-0"
         onScroll={updateScrollAnchor}
+        onClick={editNoteFromText}
       >
         {trackGroups.length === 0 ? (
           <div className="flex h-full min-h-[220px] items-center justify-center px-4">
@@ -380,6 +421,7 @@ export default function TranscriptView({
                   )}
                   recentLineKeys={lineKeys(group.items, isRecentlyUpdatedSegment)}
                   searchDecorations={search.searchDecorations}
+                  noteDecorations={noteDecorations}
                   editingSpeakerLineId={editing.editingSpeakerLineId}
                   editingTextId={editing.editingTextId}
                   activePopover={editing.activePopover}
@@ -399,6 +441,15 @@ export default function TranscriptView({
         ]}
       </div>
       <TranscriptSelectionNotes root={scrollContainerRef} onAddNote={onAddNote ? addNote : undefined} />
+      {onEditNote ? (
+        <TranscriptNoteEditor
+          editing={shownEditor}
+          notes={timelineNotes}
+          onEditNote={onEditNote}
+          onDeleteNote={onDeleteNote}
+          onClose={() => setEditingNote(null)}
+        />
+      ) : null}
     </div>
   );
 }

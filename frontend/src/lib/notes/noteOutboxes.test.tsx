@@ -16,6 +16,7 @@ import { EMPTY_DRAFT } from "./noteOutbox";
 import {
   forgetNoteOutboxes,
   forgetRecordingNotes,
+  holdPendingNoteWrite,
   noteOutboxesHere,
   noteOutboxFor,
 } from "./noteOutboxes";
@@ -213,6 +214,20 @@ describe("one outbox per recording", () => {
 
     expect(useSessionStore.getState().heldBy).toEqual(["capture"]);
     expect(useSessionStore.getState().heldInPlace).toBe(true);
+  });
+
+  it("holds the page and sign-in while an edit of a saved note is unconfirmed, until each hold lets go", () => {
+    const edit = holdPendingNoteWrite();
+    const remove = holdPendingNoteWrite();
+    expect(leave()).toBe(true);
+    expect(useSessionStore.getState().heldBy).toEqual(["notes"]);
+
+    edit();
+    edit();
+    expect(leave()).toBe(true);
+    remove();
+    expect(leave()).toBe(false);
+    expect(useSessionStore.getState().heldBy).toEqual([]);
   });
 });
 
