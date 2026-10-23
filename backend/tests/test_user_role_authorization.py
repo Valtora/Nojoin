@@ -23,6 +23,9 @@ class _Result:
     def scalars(self):
         return SimpleNamespace(all=lambda: list(self._scalars_all))
 
+    def all(self):
+        return []
+
 
 class _FakeSession:
     """Minimal async session: serves users by id and records mutations."""

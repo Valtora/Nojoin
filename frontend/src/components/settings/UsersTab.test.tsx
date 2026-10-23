@@ -186,10 +186,11 @@ describe("UsersTab", () => {
   });
 
   it("shows the API's refusal of the setup account's edit", async () => {
-    await renderAs({ isSuperuser: true, role: UserRole.OWNER });
+    // A setup account that is an Admin, deactivating the only Owner.
+    await renderAs({ isSuperuser: true, role: UserRole.ADMIN });
     updateUser.mockRejectedValue(refusal(LAST_OWNER));
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit me.example" }));
+    fireEvent.click(screen.getByRole("button", { name: "Edit alice.example" }));
     fireEvent.click(await screen.findByLabelText("Active account"));
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 
@@ -216,5 +217,22 @@ describe("UsersTab", () => {
         type: "error",
       }),
     );
+  });
+
+  it("does not offer to deactivate the account signed in", async () => {
+    // The API refuses it: the setup account would lock everyone out of the
+    // superuser's pages.
+    await renderAs({ isSuperuser: true, role: UserRole.OWNER });
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit me.example" }));
+    const active = await screen.findByLabelText("Active account");
+    expect(active).toBeDisabled();
+    expect(active).toHaveAccessibleDescription(
+      "You cannot deactivate the account you are signed in with.",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    fireEvent.click(screen.getByRole("button", { name: "Edit bob.example" }));
+    expect(await screen.findByLabelText("Active account")).toBeEnabled();
   });
 });

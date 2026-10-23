@@ -1,9 +1,10 @@
-"""Two requests at once cannot take the last Owner away, on PostgreSQL (#634).
+"""Two requests at once cannot take the last Owner or superuser away, on PostgreSQL.
 
-The users routes lock every active Owner's row before they count them. Here two
-Owners demote, or delete, each other at the same moment through the real routes
-and the real locks: one change goes through and the other is refused, so one
-Owner is left. Skips unless NOJOIN_TEST_POSTGRES_URL names a server.
+The users routes lock every active Owner's and superuser's row before they count
+them (#634, #640). Here two accounts demote, delete or take the rights of each
+other at the same moment through the real routes and the real locks: one change
+goes through and the other is refused, so one is left. Skips unless
+NOJOIN_TEST_POSTGRES_URL names a server.
 """
 
 from __future__ import annotations
@@ -22,9 +23,9 @@ from sqlmodel import Session, SQLModel, select
 
 from backend.api.v1.endpoints import users
 from backend.core.db import driver_urls
-from backend.models.user import User, UserRole
+from backend.models.user import User, UserRole, UserUpdate
 
-SCHEMA = "last_owner_guard_test"
+SCHEMA = "privileged_accounts_guard_test"
 
 
 @pytest.fixture
@@ -105,11 +106,18 @@ async def _as(db: AsyncSession, user_id: int) -> User:
     return user
 
 
-def _outcomes(results: list[object]) -> list[str]:
+def _superusers(engine) -> list[int]:
+    with Session(engine) as session:
+        return sorted(session.exec(select(User.id).where(User.is_superuser)).all())
+
+
+def _outcomes(
+    results: list[object], detail: str = users.LAST_OWNER_DETAIL
+) -> list[str]:
     outcomes = []
     for result in results:
         if isinstance(result, HTTPException):
-            assert result.detail == users.LAST_OWNER_DETAIL
+            assert result.detail == detail
             outcomes.append(f"refused {result.status_code}")
         elif isinstance(result, BaseException):
             raise result
@@ -173,10 +181,8 @@ async def test_a_demotion_waits_for_one_in_flight(
 
         # The first request holds the Owner locks and has demoted Alice, but
         # has not committed yet.
-        assert await users.lock_active_owner_ids(first) == {
-            two_owners.alice,
-            two_owners.bob,
-        }
+        accounts = await users.lock_privileged_accounts(first)
+        assert accounts.owner_ids == {two_owners.alice, two_owners.bob}
         alice = await _as(first, two_owners.alice)
         alice.role = UserRole.ADMIN
         first.add(alice)
@@ -196,3 +202,40 @@ async def test_a_demotion_waits_for_one_in_flight(
 
     assert exc_info.value.status_code == 409
     assert _owners(engine) == [two_owners.bob]
+
+
+@pytest.mark.anyio
+async def test_two_superusers_taking_each_others_rights_leave_one(
+    engine, two_owners, postgres_test_url
+) -> None:
+    with Session(engine) as session:
+        for user_id in (two_owners.alice, two_owners.bob):
+            account = session.get(User, user_id)
+            account.is_superuser = True
+            session.add(account)
+        session.commit()
+
+    async with _two_sessions(postgres_test_url) as (first, second):
+        alice = await _as(first, two_owners.alice)
+        bob = await _as(second, two_owners.bob)
+        await first.commit()
+        await second.commit()
+
+        results = await asyncio.gather(
+            users.update_user(
+                db=first,
+                user_id=two_owners.bob,
+                user_in=UserUpdate(is_superuser=False),
+                current_user=alice,
+            ),
+            users.update_user(
+                db=second,
+                user_id=two_owners.alice,
+                user_in=UserUpdate(is_superuser=False),
+                current_user=bob,
+            ),
+            return_exceptions=True,
+        )
+
+    assert _outcomes(results, users.LAST_SUPERUSER_DETAIL) == ["done", "refused 409"]
+    assert len(_superusers(engine)) == 1

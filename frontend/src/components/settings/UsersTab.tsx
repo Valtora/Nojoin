@@ -249,6 +249,8 @@ export default function UsersTab() {
   // their role.
   const roleLocked =
     editingUser !== null && !canManageAccount(viewerRole, editingUser);
+  // The API refuses to deactivate the account making the request.
+  const editingSelf = editingUser !== null && editingUser.id === currentUserId;
 
   const roleLabel = (role: string) => role.charAt(0).toUpperCase() + role.slice(1);
   const roleTone = (role: string) =>
@@ -568,22 +570,31 @@ export default function UsersTab() {
               }
             />
 
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="is_active"
-                checked={editForm.is_active || false}
-                onChange={(e) =>
-                  setEditForm({ ...editForm, is_active: e.target.checked })
-                }
-                className="rounded border-control-border accent-action focus-visible:outline-focus-ring"
-              />
-              <label
-                htmlFor="is_active"
-                className="text-sm font-medium text-contrast-muted"
-              >
-                Active account
-              </label>
+            <div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="is_active"
+                  checked={editForm.is_active || false}
+                  onChange={(e) =>
+                    setEditForm({ ...editForm, is_active: e.target.checked })
+                  }
+                  disabled={editingSelf}
+                  aria-describedby={editingSelf ? "is_active-message" : undefined}
+                  className="rounded border-control-border accent-action focus-visible:outline-focus-ring disabled:cursor-not-allowed disabled:opacity-60"
+                />
+                <label
+                  htmlFor="is_active"
+                  className="text-sm font-medium text-contrast-muted"
+                >
+                  Active account
+                </label>
+              </div>
+              {editingSelf && (
+                <p id="is_active-message" className="mt-1.5 text-xs text-contrast-helper">
+                  You cannot deactivate the account you are signed in with.
+                </p>
+              )}
             </div>
           </form>
         ) : (
