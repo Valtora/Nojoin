@@ -5,10 +5,12 @@ import { getMatchScore } from "@/lib/searchUtils";
 
 import type { Settings } from "@/types";
 
-import type {
-  SettingsAccess,
-  SettingsCategoryId,
-  SettingsScope,
+import {
+  canViewSettings,
+  type SettingsAccess,
+  type SettingsCategoryId,
+  type SettingsScope,
+  type SettingsViewer,
 } from "./settingsCategories";
 
 /**
@@ -58,7 +60,10 @@ export interface SettingsRegistryEntry {
   label: string;
   description?: string;
   category: SettingsCategoryId;
-  /** "admin" hides the entry from non-admins, independently of the Advanced gate. */
+  /**
+   * "admin" hides the entry from non-admins and "superuser" from everyone but
+   * the superuser, independently of the Advanced gate.
+   */
   access: SettingsAccess;
   /**
    * Present when the setting is not per account: "everyone" for one value the
@@ -692,7 +697,7 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
     label: "Back up",
     description: "Download a zip of everything on this installation, to restore later.",
     category: "backup",
-    access: "admin",
+    access: "superuser",
     keywords: ["back up", "back up now", "backup", "export", "archive", "download", "snapshot", "save"],
   },
   {
@@ -700,7 +705,7 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
     label: "Restore",
     description: "Bring this installation back from a backup zip.",
     category: "backup",
-    access: "admin",
+    access: "superuser",
     keywords: ["restore", "import", "recovery", "recover", "rollback", "upload"],
   },
 
@@ -729,7 +734,8 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
     label: "Logs",
     description: "Live output from the Nojoin services.",
     category: "system",
-    access: "admin",
+    // The log download and stream require the superuser; health does not.
+    access: "superuser",
     keywords: ["live logs", "logs", "system", "operations", "docker", "worker", "redis", "infrastructure", "debug", "errors"],
   },
 
@@ -787,10 +793,10 @@ const REGISTRY_BY_CATEGORY = SETTINGS_REGISTRY.reduce<
 
 export function getRegistryEntriesForCategory(
   category: SettingsCategoryId,
-  { isAdmin }: { isAdmin: boolean },
+  viewer: SettingsViewer,
 ): SettingsRegistryEntry[] {
   const entries = REGISTRY_BY_CATEGORY[category] ?? [];
-  return entries.filter((entry) => entry.access === "all" || isAdmin);
+  return entries.filter((entry) => canViewSettings(entry.access, viewer));
 }
 
 const REGISTRY_BY_ID = new Map(SETTINGS_REGISTRY.map((entry) => [entry.id, entry]));
@@ -811,9 +817,9 @@ export function getSettingsScope(id: string | undefined): SettingsScope | undefi
  */
 export function categoryUsesAdvancedGate(
   category: SettingsCategoryId,
-  { isAdmin }: { isAdmin: boolean },
+  viewer: SettingsViewer,
 ): boolean {
-  const entries = getRegistryEntriesForCategory(category, { isAdmin });
+  const entries = getRegistryEntriesForCategory(category, viewer);
   const gated = entries.filter((entry) => entry.advanced);
 
   return gated.length > 0 && gated.length < entries.length;
@@ -821,11 +827,11 @@ export function categoryUsesAdvancedGate(
 
 export function partitionByAdvanced(
   category: SettingsCategoryId,
-  { isAdmin }: { isAdmin: boolean },
+  viewer: SettingsViewer,
 ): { standard: SettingsRegistryEntry[]; advanced: SettingsRegistryEntry[] } {
-  const entries = getRegistryEntriesForCategory(category, { isAdmin });
+  const entries = getRegistryEntriesForCategory(category, viewer);
 
-  if (!categoryUsesAdvancedGate(category, { isAdmin })) {
+  if (!categoryUsesAdvancedGate(category, viewer)) {
     return { standard: entries, advanced: [] };
   }
 
@@ -843,9 +849,9 @@ export function partitionByAdvanced(
 export function countChangedAdvanced(
   category: SettingsCategoryId,
   values: Record<string, unknown>,
-  { isAdmin }: { isAdmin: boolean },
+  viewer: SettingsViewer,
 ): number {
-  const { advanced } = partitionByAdvanced(category, { isAdmin });
+  const { advanced } = partitionByAdvanced(category, viewer);
 
   return advanced.filter((entry) => {
     if (entry.defaultValue === undefined || !entry.settingsKeys?.length) {
@@ -863,9 +869,9 @@ export function countChangedAdvanced(
 export function countAttentionAdvanced(
   category: SettingsCategoryId,
   settings: Settings,
-  { isAdmin }: { isAdmin: boolean },
+  viewer: SettingsViewer,
 ): number {
-  const { advanced } = partitionByAdvanced(category, { isAdmin });
+  const { advanced } = partitionByAdvanced(category, viewer);
   return advanced.filter((entry) => entry.needsAttention?.(settings)).length;
 }
 
@@ -885,7 +891,7 @@ const SEARCH_SCORE_CEILING = 0.6;
  */
 export function searchSettingsRegistry(
   query: string,
-  { isAdmin }: { isAdmin: boolean },
+  viewer: SettingsViewer,
   limit = 12,
 ): SettingsSearchResult[] {
   const trimmed = query.trim();
@@ -893,8 +899,8 @@ export function searchSettingsRegistry(
     return [];
   }
 
-  return SETTINGS_REGISTRY.filter(
-    (entry) => entry.access === "all" || isAdmin,
+  return SETTINGS_REGISTRY.filter((entry) =>
+    canViewSettings(entry.access, viewer),
   )
     .map((entry) => ({
       entry,
@@ -912,10 +918,10 @@ export function searchSettingsRegistry(
 /** Category ids that a query matches, for highlighting in the navigation. */
 export function getMatchingSettingsCategories(
   query: string,
-  options: { isAdmin: boolean },
+  viewer: SettingsViewer,
 ): Set<SettingsCategoryId> {
   return new Set(
-    searchSettingsRegistry(query, options, SETTINGS_REGISTRY.length).map(
+    searchSettingsRegistry(query, viewer, SETTINGS_REGISTRY.length).map(
       (result) => result.entry.category,
     ),
   );

@@ -1,5 +1,11 @@
 import { useState, useEffect } from "react";
-import { getUsers, createUser, deleteUser, updateUser } from "@/lib/api";
+import {
+  getUsers,
+  createUser,
+  deleteUser,
+  updateUser,
+  updateUserRole,
+} from "@/lib/api";
 import { getErrorMessage } from "@/lib/errors";
 import {
   Loader2,
@@ -17,6 +23,7 @@ import Input from "../ui/Input";
 import Modal from "../ui/Modal";
 import Select from "../ui/Select";
 import { User, UserRole } from "@/types";
+import { canGrantOwner, canManageAccount } from "@/lib/roles";
 import { trimString } from "@/lib/validation";
 import { cn } from "@/lib/cn";
 import SettingsBlock from "./SettingsBlock";
@@ -45,8 +52,30 @@ const EMPTY_NEW_USER: NewUserFormState = {
   role: "user",
 };
 
+/** The roles a select offers; Owner only to an Owner, as the API allows. */
+function RoleOptions({ includeOwner }: { includeOwner: boolean }) {
+  return (
+    <>
+      <option value={UserRole.USER}>User</option>
+      <option value={UserRole.ADMIN}>Admin</option>
+      {includeOwner && <option value={UserRole.OWNER}>Owner</option>}
+    </>
+  );
+}
+
+/**
+ * The users table. What it offers follows the API: any Owner or Admin may
+ * create, delete and change the role of accounts (an Owner's only if they are
+ * an Owner themselves), while editing an account's other details is for the
+ * superuser alone, so everyone else gets a role-only dialog.
+ */
 export default function UsersTab() {
-  const { userId: currentUserId } = useSettingsContext();
+  const {
+    userId: currentUserId,
+    isSuperuser,
+    role: viewerRole,
+  } = useSettingsContext();
+  const includeOwner = canGrantOwner(viewerRole);
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const { addNotification } = useNotificationStore();
@@ -185,13 +214,22 @@ export default function UsersTab() {
     if (!editingUser) return;
 
     try {
-      const updates: Partial<User> & { password?: string } = { ...editForm };
-      if (updates.username) updates.username = trimString(updates.username);
-      // Only send password if it's not empty
-      if (!updates.password || updates.password.trim() === "") {
-        delete updates.password;
+      if (isSuperuser) {
+        const updates: Partial<User> & { password?: string } = { ...editForm };
+        if (updates.username) updates.username = trimString(updates.username);
+        // Only send password if it's not empty
+        if (!updates.password || updates.password.trim() === "") {
+          delete updates.password;
+        }
+        // The API refuses a role on an Owner's account from anyone but an
+        // Owner, even an unchanged one, so it is sent only when it changed.
+        if (updates.role === editingUser.role) {
+          delete updates.role;
+        }
+        await updateUser(editingUser.id, updates);
+      } else if (editForm.role && editForm.role !== editingUser.role) {
+        await updateUserRole(editingUser.id, editForm.role);
       }
-      await updateUser(editingUser.id, updates);
       addNotification({
         message: "User updated successfully",
         type: "success",
@@ -206,6 +244,11 @@ export default function UsersTab() {
       });
     }
   };
+
+  // A superuser who is not an Owner can edit an Owner's other details but not
+  // their role.
+  const roleLocked =
+    editingUser !== null && !canManageAccount(viewerRole, editingUser);
 
   const roleLabel = (role: string) => role.charAt(0).toUpperCase() + role.slice(1);
   const roleTone = (role: string) =>
@@ -282,9 +325,7 @@ export default function UsersTab() {
                 }
                 className={SETTINGS_SELECT_CLASS}
               >
-                <option value="user">User</option>
-                <option value="admin">Admin</option>
-                <option value="owner">Owner</option>
+                <RoleOptions includeOwner={includeOwner} />
               </select>
             </div>
             <div className="flex justify-end gap-2 @min-[40rem]:col-span-3">
@@ -357,6 +398,7 @@ export default function UsersTab() {
             ) : (
               users.map((user) => {
                 const isSelf = user.id === currentUserId;
+                const canManage = canManageAccount(viewerRole, user);
                 return (
                   <tr key={user.id}>
                     <td className="py-3 pr-4 font-medium">
@@ -379,16 +421,22 @@ export default function UsersTab() {
                     </td>
                     <td className="py-3">
                       <div className="flex justify-end gap-2">
-                        <button
-                          type="button"
-                          onClick={() => startEdit(user)}
-                          aria-label={`Edit ${user.username}`}
-                          title="Edit"
-                          className={ICON_BUTTON}
-                        >
-                          <Edit2 className="h-4 w-4" aria-hidden="true" />
-                        </button>
-                        {!isSelf && (
+                        {(isSuperuser || canManage) && (
+                          <button
+                            type="button"
+                            onClick={() => startEdit(user)}
+                            aria-label={
+                              isSuperuser
+                                ? `Edit ${user.username}`
+                                : `Change the role of ${user.username}`
+                            }
+                            title={isSuperuser ? "Edit" : "Change role"}
+                            className={ICON_BUTTON}
+                          >
+                            <Edit2 className="h-4 w-4" aria-hidden="true" />
+                          </button>
+                        )}
+                        {!isSelf && canManage && (
                           <button
                             type="button"
                             onClick={() => handleDeleteUser(user.id)}
@@ -442,7 +490,7 @@ export default function UsersTab() {
         open={editModalOpen}
         onClose={() => setEditModalOpen(false)}
         size="sm"
-        title="Edit user"
+        title={isSuperuser ? "Edit user" : "Change role"}
         footer={
           <>
             <Button variant="ghost" onClick={() => setEditModalOpen(false)}>
@@ -454,86 +502,104 @@ export default function UsersTab() {
           </>
         }
       >
-        <form id="edit-user-form" onSubmit={saveEdit} className="space-y-4">
-          <Input
-            label="Username"
-            value={editForm.username || ""}
-            onChange={(e) => setEditForm({ ...editForm, username: e.target.value })}
-          />
-
-          <Input
-            label={
-              <>
-                New Password{" "}
-                <span className="font-normal text-contrast-helper">
-                  (Leave blank to keep current)
-                </span>
-              </>
-            }
-            name="edit-user-password"
-            type="password"
-            value={editForm.password || ""}
-            onChange={(e) =>
-              setEditForm((prev) => ({ ...prev, password: e.target.value }))
-            }
-            placeholder="Enter new password"
-            autoComplete="new-password"
-            minLength={8}
-            hint="Saving one signs them out everywhere and disconnects their connected apps, such as Claude and Codex."
-          />
-
-          <Select
-            label="Role"
-            value={editForm.role || "user"}
-            onChange={(e) =>
-              setEditForm({ ...editForm, role: e.target.value as UserRole })
-            }
-          >
-            <option value="user">User</option>
-            <option value="admin">Admin</option>
-            <option value="owner">Owner</option>
-          </Select>
-
-          <Input
-            label={
-              <>
-                Daily AI analysis limit{" "}
-                <span className="font-normal text-contrast-helper">
-                  (blank for the installation default, 0 for no cap)
-                </span>
-              </>
-            }
-            type="number"
-            min={0}
-            step={1}
-            value={editForm.ai_analysis_daily_limit ?? ""}
-            onChange={(e) =>
-              setEditForm({
-                ...editForm,
-                ai_analysis_daily_limit:
-                  e.target.value === "" ? null : Number(e.target.value),
-              })
-            }
-          />
-
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="is_active"
-              checked={editForm.is_active || false}
-              onChange={(e) =>
-                setEditForm({ ...editForm, is_active: e.target.checked })
-              }
-              className="rounded border-control-border accent-action focus-visible:outline-focus-ring"
+        {isSuperuser ? (
+          <form id="edit-user-form" onSubmit={saveEdit} className="space-y-4">
+            <Input
+              label="Username"
+              value={editForm.username || ""}
+              onChange={(e) => setEditForm({ ...editForm, username: e.target.value })}
             />
-            <label
-              htmlFor="is_active"
-              className="text-sm font-medium text-contrast-muted"
+
+            <Input
+              label={
+                <>
+                  New Password{" "}
+                  <span className="font-normal text-contrast-helper">
+                    (Leave blank to keep current)
+                  </span>
+                </>
+              }
+              name="edit-user-password"
+              type="password"
+              value={editForm.password || ""}
+              onChange={(e) =>
+                setEditForm((prev) => ({ ...prev, password: e.target.value }))
+              }
+              placeholder="Enter new password"
+              autoComplete="new-password"
+              minLength={8}
+              hint="Saving one signs them out everywhere and disconnects their connected apps, such as Claude and Codex."
+            />
+
+            <Select
+              label="Role"
+              value={editForm.role || "user"}
+              onChange={(e) =>
+                setEditForm({ ...editForm, role: e.target.value as UserRole })
+              }
+              disabled={roleLocked}
             >
-              Active account
-            </label>
-          </div>
-        </form>
+              {roleLocked ? (
+                <option value={UserRole.OWNER}>Owner</option>
+              ) : (
+                <RoleOptions includeOwner={includeOwner} />
+              )}
+            </Select>
+
+            <Input
+              label={
+                <>
+                  Daily AI analysis limit{" "}
+                  <span className="font-normal text-contrast-helper">
+                    (blank for the installation default, 0 for no cap)
+                  </span>
+                </>
+              }
+              type="number"
+              min={0}
+              step={1}
+              value={editForm.ai_analysis_daily_limit ?? ""}
+              onChange={(e) =>
+                setEditForm({
+                  ...editForm,
+                  ai_analysis_daily_limit:
+                    e.target.value === "" ? null : Number(e.target.value),
+                })
+              }
+            />
+
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="is_active"
+                checked={editForm.is_active || false}
+                onChange={(e) =>
+                  setEditForm({ ...editForm, is_active: e.target.checked })
+                }
+                className="rounded border-control-border accent-action focus-visible:outline-focus-ring"
+              />
+              <label
+                htmlFor="is_active"
+                className="text-sm font-medium text-contrast-muted"
+              >
+                Active account
+              </label>
+            </div>
+          </form>
+        ) : (
+          <form id="edit-user-form" onSubmit={saveEdit} className="space-y-4">
+            <Select
+              label="Role"
+              value={editForm.role || "user"}
+              onChange={(e) =>
+                setEditForm({ ...editForm, role: e.target.value as UserRole })
+              }
+              hint="Only the account that set up this installation can change a username or password, deactivate an account or set its analysis limit."
+            >
+              <RoleOptions includeOwner={includeOwner} />
+            </Select>
+          </form>
+        )}
       </Modal>
 
       <ConfirmationModal
