@@ -1,6 +1,6 @@
 "use client";
 
-import { memo } from "react";
+import { memo, useMemo } from "react";
 
 import { getColorByKey } from "@/lib/constants";
 import type { OutboxDraft } from "@/lib/notes/noteOutbox";
@@ -50,6 +50,8 @@ type TranscriptLineProps = Pick<IndexedTranscriptSegment, "segment" | "index" | 
   /** Revised in the last 15 s, as of the view's last render. */
   isRecentlyUpdated: boolean;
   decorations: readonly TextDecoration[];
+  /** The marks of the words selection notes are on. */
+  noteDecorations: readonly TextDecoration[];
   /** This line's speaker is being renamed. */
   isEditingSpeaker: boolean;
   /** This line's text is open in the editor. */
@@ -88,6 +90,7 @@ function TranscriptLine({
   hasPendingRemoteUpdate,
   isRecentlyUpdated,
   decorations,
+  noteDecorations,
   isEditingSpeaker,
   isEditingText,
   popoverAnchor,
@@ -96,6 +99,15 @@ function TranscriptLine({
   onPlayFrom,
   editor,
 }: TranscriptLineProps) {
+  const textDecorations = useMemo(
+    () =>
+      noteDecorations.length === 0
+        ? decorations
+        : decorations.length === 0
+          ? noteDecorations
+          : [...decorations, ...noteDecorations],
+    [decorations, noteDecorations],
+  );
   const isProvisional = segment.provisional === true;
   const isSegmentReadOnly = readOnly || (isProvisional && !allowProvisionalEdits);
   const speakerName = segmentSpeakerDisplayName(speakerMap, segment.speaker);
@@ -225,7 +237,7 @@ function TranscriptLine({
             segmentId={segmentId}
             startMs={segmentStartMs(segment)}
             endMs={segmentEndMs(segment)}
-            decorations={decorations}
+            decorations={textDecorations}
             className="leading-relaxed whitespace-pre-wrap text-contrast-muted"
           />
         )}

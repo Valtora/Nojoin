@@ -71,6 +71,8 @@ interface TranscriptGroupProps {
   /** Keys of this group's lines revised in the last 15 s, one per line. */
   recentLineKeys: string;
   searchDecorations: (segmentId: string) => readonly TextDecoration[];
+  /** Each line's marks of the words selection notes are on. */
+  noteDecorations: (segmentId: string) => readonly TextDecoration[];
   /** The line whose speaker rename is open. */
   editingSpeakerLineId: string | null;
   editingTextId: string | null;
@@ -100,6 +102,7 @@ function TranscriptGroup({
   activeLineKeys,
   recentLineKeys,
   searchDecorations,
+  noteDecorations,
   editingSpeakerLineId,
   editingTextId,
   activePopover,
@@ -136,6 +139,7 @@ function TranscriptGroup({
         }
         isRecentlyUpdated={recentKeys.includes(segmentId)}
         decorations={searchDecorations(segmentId)}
+        noteDecorations={noteDecorations(segmentId)}
         isEditingSpeaker={isEditingSpeaker}
         isEditingText={isEditingText}
         popoverAnchor={activePopover?.segmentId === segmentId ? activePopover.anchor : null}
@@ -255,11 +259,11 @@ function TranscriptGroup({
 }
 
 /**
- * Every prop by identity, except three that are rebuilt more often than they
+ * Every prop by identity, except four that are rebuilt more often than they
  * change: the group, which grouping makes anew whenever any line changes; the
  * speaker order, which only matters for this group's speakers; and the search
- * decorations, a function that is new whenever any line's matches change.
- * Those compare by what this group would draw from them.
+ * and note decorations, functions that are new whenever any line's marks
+ * change. Those compare by what this group would draw from them.
  */
 function sameGroupProps(previous: TranscriptGroupProps, next: TranscriptGroupProps): boolean {
   const keys = Object.keys(next) as (keyof TranscriptGroupProps)[];
@@ -275,11 +279,9 @@ function sameGroupProps(previous: TranscriptGroupProps, next: TranscriptGroupPro
               previous.speakerDisplayOrder.get(speaker) === next.speakerDisplayOrder.get(speaker),
           );
         case "searchDecorations":
+        case "noteDecorations":
           return next.group.items.every(({ segmentId }) =>
-            sameDecorations(
-              previous.searchDecorations(segmentId),
-              next.searchDecorations(segmentId),
-            ),
+            sameDecorations(previous[key](segmentId), next[key](segmentId)),
           );
         default:
           return Object.is(previous[key], next[key]);

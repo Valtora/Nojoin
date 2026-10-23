@@ -94,7 +94,7 @@ export default function TranscriptLineMenu({
       />
       {noteAnchor && selection && onAddNote ? (
         <NoteOnSelectionPopover
-          selection={selection}
+          quote={selection.quotedText}
           title={`Note on the line at ${formatTime(segment.start)}`}
           anchor={noteAnchor}
           onSubmit={(body) => onAddNote({ kind: "selection", body, anchorMs: null, selection })}

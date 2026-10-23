@@ -6,6 +6,7 @@ import { AlertCircle } from "lucide-react";
 import TranscriptView from "@/components/TranscriptView";
 import RecordingUnsavedNotes from "@/components/notes/RecordingUnsavedNotes";
 import { inlineNotes, type OutboxDraft } from "@/lib/notes/noteOutbox";
+import { useNoteEdits, type EditableNote } from "@/lib/notes/useNoteEdits";
 import { useNoteOutbox } from "@/lib/notes/useNoteOutbox";
 import {
   RecordingStatus,
@@ -96,14 +97,19 @@ export default function TranscriptSection({
     saved: outboxSaved,
     discarded: outboxDiscarded,
   } = outboxState;
+  // Edits and deletes made here show at once: a finished recording's list
+  // is not fetched again.
+  const { apply: applyEdits, edit: editNote, remove: removeNote } = useNoteEdits(recording.id);
   const notes = useMemo(
     () =>
-      inlineNotes(
-        timelineNotes,
-        { entries: outboxEntries, saved: outboxSaved, discarded: outboxDiscarded },
-        SELECTION_NOTES,
+      applyEdits(
+        inlineNotes(
+          timelineNotes,
+          { entries: outboxEntries, saved: outboxSaved, discarded: outboxDiscarded },
+          SELECTION_NOTES,
+        ),
       ),
-    [timelineNotes, outboxEntries, outboxSaved, outboxDiscarded],
+    [applyEdits, timelineNotes, outboxEntries, outboxSaved, outboxDiscarded],
   );
   const sectionRef = useRef<HTMLDivElement>(null);
   const durationSeconds = recording.duration_seconds;
@@ -119,6 +125,14 @@ export default function TranscriptSection({
       focusSection();
     },
     [outbox, focusSection],
+  );
+  const deleteNote = useCallback(
+    async (note: EditableNote) => {
+      const refusal = await removeNote(note);
+      if (refusal === null) focusSection();
+      return refusal;
+    },
+    [removeNote, focusSection],
   );
   // A failed transcription is reported, never shown as an empty transcript,
   // which would let a crashed ASR run pass for a silent meeting.
@@ -193,6 +207,8 @@ export default function TranscriptSection({
             onAddNote={addNote}
             onRetryNote={outbox.retry}
             onDiscardNote={discardNote}
+            onEditNote={editNote}
+            onDeleteNote={deleteNote}
           />
         </div>
       ) : (

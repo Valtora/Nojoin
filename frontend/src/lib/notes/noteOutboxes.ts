@@ -16,7 +16,8 @@ import {
  * the browser where it can be (`persistNoteOutbox`), which covers a crash, a
  * killed tab or an ended session, never a page the user chose to leave.
  *
- * While any of them holds something unsent, the page asks before it closes,
+ * While any of them holds something unsent, or an edit of a saved note is
+ * unconfirmed (`holdPendingNoteWrite`), the page asks before it closes,
  * whatever the browser has stored, and it holds sign-in in place as a capture
  * does (`@/lib/session`): an ended session opens the sign-in dialog rather
  * than reloading to the sign-in page, and the notes are sent once the owner
@@ -25,7 +26,29 @@ import {
 
 const outboxes = new Map<RecordingId, { outbox: NoteOutbox; stop: () => Promise<void> }>();
 
-const anyUnsaved = () => [...outboxes.values()].some(({ outbox }) => outbox.hasUnsaved());
+/**
+ * Edits and deletes of saved notes not confirmed yet: each from the moment
+ * it is sent until it is saved or the user gives it up. Held in memory only;
+ * nothing sends them again.
+ */
+const pendingWrites = new Set<symbol>();
+
+const anyUnsaved = () =>
+  pendingWrites.size > 0 || [...outboxes.values()].some(({ outbox }) => outbox.hasUnsaved());
+
+/**
+ * Holds the page, as an unsent note does, while an edit or delete of a saved
+ * note is on its way or refused and still open. Returns the release, which
+ * is safe to call more than once.
+ */
+export const holdPendingNoteWrite = (): (() => void) => {
+  const write = Symbol("note write");
+  pendingWrites.add(write);
+  changed();
+  return () => {
+    if (pendingWrites.delete(write)) changed();
+  };
+};
 
 const warnBeforeUnload = (event: BeforeUnloadEvent) => {
   if (!anyUnsaved()) return;
@@ -148,5 +171,6 @@ export const forgetRecordingNotes = async (recordingId: RecordingId): Promise<vo
 export const forgetNoteOutboxes = (): void => {
   for (const { stop } of outboxes.values()) void stop();
   outboxes.clear();
+  pendingWrites.clear();
   changed();
 };
