@@ -97,6 +97,9 @@ def run_vad_stage(
     muted = muted_stages(ctx.merged_config)
     # An engine may read exact zeros as VAD silence only in the file it reads.
     ctx.merged_config[VAD_MUTED_INPUT] = muted.transcription
+    # Only this stage names the detection file, never a stored setting: with
+    # VAD off the key stays unset.
+    ctx.merged_config.pop(LANGUAGE_DETECTION_AUDIO, None)
 
     if enable_vad:
         ctx.task.update_state(state="PROCESSING", meta={"progress": 30, "stage": "VAD"})

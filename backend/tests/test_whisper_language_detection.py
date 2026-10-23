@@ -254,6 +254,10 @@ def test_the_vad_stage_hands_asr_the_muted_file_for_detection(
 
 
 def test_with_vad_off_the_vad_stage_hands_asr_no_detection_audio(monkeypatch):
-    config = _detection_audio_handed_to_asr(monkeypatch, enable_vad=False)
+    """Only the VAD stage names the file: a value stored in the settings, as a
+    restored backup could carry, never reaches the engine."""
+    config = _detection_audio_handed_to_asr(
+        monkeypatch, enable_vad=False, **{LANGUAGE_DETECTION_AUDIO: "/etc/hostname"}
+    )
 
     assert LANGUAGE_DETECTION_AUDIO not in config
