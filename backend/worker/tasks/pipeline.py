@@ -5,6 +5,7 @@ from backend.processing.engines.errors import (
     transcription_error_from,
 )
 from backend.utils.import_audio import KEEPING_AUDIO_STEP
+from backend.utils.transcription_models import known_engine_override
 
 from .constants import *
 from .final_asr import (
@@ -280,8 +281,7 @@ def _run_final_asr_stage(
     session.commit()
 
     if engine_override:
-        merged_config.update(engine_override)
-        logger.info("Reprocess: engine override applied: %s", engine_override)
+        merged_config.update(known_engine_override(engine_override))
 
     with pipeline_metric_timer(
         stage="final_asr_invocation",

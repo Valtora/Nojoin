@@ -34,6 +34,7 @@ from backend.utils.import_audio_probe import (
     track_end,
     track_span,
 )
+from backend.utils.media_commands import FFMPEG
 
 logger = logging.getLogger(__name__)
 
@@ -342,7 +343,7 @@ def _write_audio_track(
         The new file is removed in every case.
     """
     target = str(Path(work_dir) / f"{uuid4()}{plan.suffix}")
-    cmd = ["ffmpeg", "-nostdin", "-y", "-v", "error", "-i", source_path]
+    cmd = [*FFMPEG, "-nostdin", "-y", "-v", "error", "-i", source_path]
     cmd += ["-map", f"0:{track['index']}", *plan.codec_arguments]
     if (seconds(track.get("start_time")) or 0.0) > 0:
         cmd += ["-avoid_negative_ts", "make_zero"]
