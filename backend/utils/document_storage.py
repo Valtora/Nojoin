@@ -6,6 +6,10 @@ them behind. Each delete path, a restore in Overwrite mode included, collects it
 documents' paths before the rows go and removes the files once the delete has
 committed. An upload writes its file before inserting
 its row, and removes the file again if that insert fails or is cancelled.
+
+The restore imports this module in the workers, whose images do not install
+FastAPI, so nothing here may import it (#660). An upload whose recording has
+gone raises RecordingGoneError, and the endpoint answers it with the 404.
 """
 
 from __future__ import annotations
@@ -16,8 +20,7 @@ from collections.abc import Iterable, Sequence
 from functools import partial
 from pathlib import Path
 
-from fastapi import HTTPException
-from fastapi.concurrency import run_in_threadpool
+import anyio.to_thread
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col, select
@@ -32,6 +35,10 @@ from backend.utils.recording_storage import (
 
 # PostgreSQL's SQLSTATE for a foreign key violation.
 _FOREIGN_KEY_VIOLATION = "23503"
+
+
+class RecordingGoneError(LookupError):
+    """A new document's recording was deleted before its row went in."""
 
 
 def documents_root_dir() -> Path:
@@ -134,10 +141,12 @@ async def delete_document_files(
     the job would then never run; so a cancelled call unlinks on the event loop
     before the cancellation propagates. If the thread had already started, the
     files are unlinked twice, which is harmless: a missing file is not an error.
+    The thread comes from anyio's pool, as FastAPI's ``run_in_threadpool`` would
+    take it, without importing FastAPI.
     """
     unlink = partial(unlink_document_files, list(file_paths), logger=logger)
     try:
-        await run_in_threadpool(unlink)
+        await anyio.to_thread.run_sync(unlink)
     except asyncio.CancelledError:
         unlink()
         raise
@@ -151,11 +160,12 @@ async def insert_document_or_remove_file(
     If the insert fails or is cancelled, nothing would ever reference the file,
     so it is removed before the error propagates. A recording deleted during the
     upload is the usual failure: the insert waits on the delete's lock, then
-    fails its foreign key, and that becomes the 404 a missing recording gets
-    everywhere else. Only the insert is guarded. A commit that raises may still
-    have landed, so its file stays.
+    fails its foreign key, and raises RecordingGoneError, which the endpoint
+    turns into the 404 a missing recording gets everywhere else. Only the insert
+    is guarded. A commit that raises may still have landed, so its file stays.
     """
     file_path = document.file_path
+    recording_id = document.recording_id
     db.add(document)
     try:
         await db.flush()
@@ -170,7 +180,5 @@ async def insert_document_or_remove_file(
             isinstance(error, IntegrityError)
             and getattr(error.orig, "sqlstate", None) == _FOREIGN_KEY_VIOLATION
         ):
-            raise HTTPException(
-                status_code=404, detail="Recording not found"
-            ) from error
+            raise RecordingGoneError(recording_id) from error
         raise
