@@ -52,7 +52,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "babel-plugin-react-compiler": "1.0.0",
-    "baseline-browser-mapping": "^2.11.29",
+    "baseline-browser-mapping": "^2.11.30",
     "eslint": "^9",
     "eslint-config-next": "16.4.2",
     "fake-indexeddb": "^6.2.6",
