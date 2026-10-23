@@ -223,6 +223,7 @@ _PIPELINE_TEMP_SUFFIXES = (
     "_vad.wav",
     "_vad_processed.wav",
     "_vad_processed.mp3",
+    "_vad_union.wav",
     "_preprocessed.wav",
 )
 

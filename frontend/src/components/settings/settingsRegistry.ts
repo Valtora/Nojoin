@@ -364,7 +364,7 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
     id: "recording-vad-mute-transcription",
     label: "Mute non-speech for transcription",
     description:
-      "Off lets transcription hear everything: it can recover distant speech but can add words from noise.",
+      "On mutes only audio that neither voice activity detection nor speaker separation heard as speech. Off lets transcription hear everything: it can recover distant speech but can add words from noise.",
     category: "recording",
     access: "all",
     advanced: "safe-default",

@@ -13,7 +13,8 @@ from .final_asr import (
 )
 from .final_segments import combine_and_consolidate_segments, drop_unheard_words
 from .speaker_assignment import assign_and_identify_speakers
-from .vad_stage import run_vad_stage
+from .stage_vram import release_asr_vram, release_diarization_vram
+from .vad_stage import run_vad_stage, transcription_audio_after_diarization
 
 # ---------------------------------------------------------------------------
 # process_recording_task orchestration stages
@@ -165,10 +166,10 @@ def _run_final_asr_stage(
     recording_id = ctx.recording_id
 
     ctx.task.update_state(
-        state="PROCESSING", meta={"progress": 50, "stage": "Transcription"}
+        state="PROCESSING", meta={"progress": 70, "stage": "Transcription"}
     )
     recording.processing_step = f"Transcribing audio...{ctx.device_suffix}"
-    recording.processing_progress = 50
+    recording.processing_progress = 70
     session.add(recording)
     session.commit()
 
@@ -238,10 +239,10 @@ def _run_final_diarization_stage(
 
     if enable_diarization:
         ctx.task.update_state(
-            state="PROCESSING", meta={"progress": 70, "stage": "Diarization"}
+            state="PROCESSING", meta={"progress": 50, "stage": "Diarization"}
         )
         recording.processing_step = f"Determining who said what...{ctx.device_suffix}"
-        recording.processing_progress = 70
+        recording.processing_progress = 50
         session.add(recording)
         session.commit()
 
@@ -442,35 +443,6 @@ def _finalize_transcript_and_notes(
     )
 
 
-def _release_asr_vram() -> None:
-    """Free the ASR models once transcription is done, before diarization runs.
-
-    Only on a GPU host, where VRAM is the contended resource. ONNX Runtime's arena
-    grows with the transcription window and never shrinks, so on a small card a
-    finished ASR session can leave diarization with nothing left to allocate. The
-    engines reload lazily on the next task.
-    """
-    from backend.processing.onnx_providers import gpu_is_present
-
-    if not gpu_is_present():
-        return
-
-    import gc
-
-    import torch
-
-    try:
-        from backend.processing.transcribe import release_model_cache
-
-        release_model_cache()
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        logger.info("Released ASR VRAM before diarization.")
-    except Exception as e:  # noqa: BLE001 -- boundary: VRAM release is best-effort
-        logger.error("Error releasing ASR VRAM: %s", e)
-
-
 def _release_pipeline_vram() -> None:
     """Best-effort release of cached ML models / VRAM after the task.
 
@@ -535,10 +507,10 @@ def process_recording_task(
     engine_override: dict | None = None,
 ):
     """
-    Full processing pipeline: VAD -> Transcribe -> Diarize -> Save
+    Full processing pipeline: VAD -> Diarize -> Transcribe -> Save
 
     The body is a slim orchestrator: it sets up the run context, then drives the
-    explicit stages (resolve audio -> VAD -> ASR -> diarization -> combine/persist
+    explicit stages (resolve audio -> VAD -> diarization -> ASR -> combine/persist
     -> speaker assignment -> finalize/notes). The surrounding try/except/finally
     owns Celery retry and error semantics, temp-file cleanup, and VRAM release.
     """
@@ -621,19 +593,21 @@ def process_recording_task(
         # Cache for the speaker-assignment stage.
         ctx.diarization_audio_path = vad_result.diarization_audio_path
 
-        # --- Stage: transcription (ASR) ---
-        transcription_result = _run_final_asr_stage(
-            ctx, recording, vad_result.transcription_audio_path, engine_override
-        )
-
-        # Hand the card back before diarization asks for it.
-        _release_asr_vram()
-
-        # --- Stage: diarization ---
+        # --- Stage: diarization, first: its turns open what ASR hears (#670) ---
         diarization_result = _run_final_diarization_stage(
             ctx, recording, vad_result.diarization_audio_path
         )
         enable_diarization = merged_config.get("enable_diarization", True)
+        release_diarization_vram()
+
+        # --- Stage: transcription (ASR) ---
+        transcription_result = _run_final_asr_stage(
+            ctx,
+            recording,
+            transcription_audio_after_diarization(ctx, vad_result, diarization_result),
+            engine_override,
+        )
+        release_asr_vram()
 
         # --- Stage: merge & save ---
         self.update_state(state="PROCESSING", meta={"progress": 85, "stage": "Saving"})

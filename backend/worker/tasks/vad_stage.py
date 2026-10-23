@@ -12,7 +12,12 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from backend.processing.engines.base import VAD_MUTED_INPUT
-from backend.processing.vad_muting import muted_stages
+from backend.processing.engines.errors import is_task_interruption
+from backend.processing.vad_muting import (
+    diarised_turns,
+    muted_stages,
+    write_union_muted_audio,
+)
 
 from .constants import *  # noqa: F403
 from .final_asr import mark_transcript_without_speech
@@ -25,15 +30,18 @@ if TYPE_CHECKING:
 class VadStageResult:
     """Outcome of the VAD/preprocess stage.
 
-    ``transcription_audio_path`` feeds ASR; ``diarization_audio_path`` feeds
-    diarisation, the phantom filter and voiceprints. Each is the muted or the
-    unmuted file, on one time base. ``finished`` signals the "no speech
-    detected" short-circuit: an empty transcript has been persisted and the
-    recording marked PROCESSED, so the orchestrator returns ``None``.
+    ``transcription_audio_path`` feeds ASR, unless diarisation then opens it
+    (``transcription_audio_after_diarization``); ``diarization_audio_path``
+    feeds diarisation, the phantom filter and voiceprints. Each is the muted or
+    the unmuted file (``unmuted_audio_path``), on one time base. ``finished``
+    signals the "no speech detected" short-circuit: an empty transcript has
+    been persisted and the recording marked PROCESSED, so the orchestrator
+    returns ``None``.
     """
 
     transcription_audio_path: str | None
     diarization_audio_path: str | None = None
+    unmuted_audio_path: str | None = None
     finished: bool = False
 
 
@@ -130,6 +138,7 @@ def run_vad_stage(
             vad_output_path if muted.transcription else vad_input_path
         ),
         diarization_audio_path=vad_output_path if muted.diarization else vad_input_path,
+        unmuted_audio_path=vad_input_path,
     )
     logger.info(
         f"Transcribing {result.transcription_audio_path}; "
@@ -139,3 +148,42 @@ def run_vad_stage(
         if not os.path.exists(path):
             raise FileNotFoundError(f"Processed audio file missing: {path}")
     return result
+
+
+def transcription_audio_after_diarization(
+    ctx: "_PipelineRunContext", vad_result: VadStageResult, diarization
+) -> str:
+    """The audio ASR reads, once diarisation has run (#670).
+
+    Muted transcription hears the muted file with the unmuted audio put back
+    inside every diarised turn, so it mutes only where neither VAD nor
+    diarisation heard speech. The file keeps VAD's zeros everywhere else, so
+    ``VAD_MUTED_INPUT`` still holds for it. Unmuted transcription, and muted
+    transcription with no turns (diarisation off, failed or empty), read the
+    file the VAD stage picked. If the union cannot be written, ASR reads the
+    VAD-muted file, as it did before.
+    """
+    muted_path = vad_result.transcription_audio_path
+    if not ctx.merged_config.get(VAD_MUTED_INPUT) or diarization is None:
+        return muted_path
+    unmuted_path = vad_result.unmuted_audio_path
+    union_path = f"{os.path.splitext(unmuted_path)[0]}_union.wav"
+    try:
+        turns = diarised_turns(diarization)
+        if not turns:
+            return muted_path
+        ctx.temp_files.append(union_path)
+        restored_s = write_union_muted_audio(
+            unmuted_path, muted_path, union_path, turns
+        )
+    except Exception as exc:  # noqa: BLE001 -- boundary: the VAD-muted file still transcribes; the warning says why the union was skipped
+        if is_task_interruption(exc):
+            raise
+        logger.warning("Transcribing the VAD-muted file; no union: %s", exc)
+        return muted_path
+    logger.info(
+        "Transcribing %s: VAD speech plus %.1f s of diarised speech VAD muted",
+        union_path,
+        restored_s,
+    )
+    return union_path

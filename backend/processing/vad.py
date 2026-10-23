@@ -12,6 +12,7 @@ from backend.processing.processing_tuning import (
     VAD_THRESHOLD_KEY,
     normalise_tuning_value,
 )
+from backend.processing.vad_muting import VAD_EDGE_MUTE_MS
 from backend.utils.audio import load_audio
 
 # silero_vad calls torch.set_num_threads(1) when it is first imported, which
@@ -66,8 +67,8 @@ def mute_non_speech_segments(
     min_silence_duration_ms: int | None = None,
     fade_duration_ms: int | None = None,
     silence_method: str | None = None,  # "mute" or "fade"
-    start_mute_ms: int = 1000,  # Mute first X ms to remove recording artifacts
-    end_mute_ms: int = 1000,  # Mute last X ms to remove recording artifacts
+    start_mute_ms: int = VAD_EDGE_MUTE_MS,  # Mute first X ms: recording artifacts
+    end_mute_ms: int = VAD_EDGE_MUTE_MS,  # Mute last X ms: recording artifacts
     config: Mapping[str, Any] | None = None,
 ) -> Tuple[bool, float]:
     """
