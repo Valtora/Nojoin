@@ -21,6 +21,7 @@ from backend.models.speaker import RecordingSpeaker
 from backend.models.transcript import Transcript
 from backend.services.recording_identity_service import get_recording_by_public_id
 from backend.utils.config_manager import config_manager
+from backend.utils.live_speaker_labels import speaker_display_name
 
 logger = logging.getLogger(__name__)
 
@@ -214,7 +215,7 @@ def _format_transcript_text(segments, speaker_map: dict) -> str:
     lines = []
     for seg in segments:
         speaker_label = seg.get("speaker", "Unknown")
-        speaker_name = speaker_map.get(speaker_label, speaker_label)
+        speaker_name = speaker_display_name(speaker_label, speaker_map)
         start = seg.get("start", 0)
         minutes = int(start // 60)
         seconds = int(start % 60)

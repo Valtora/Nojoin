@@ -5,8 +5,10 @@ ends, and the API image has no SciPy or torch.
 
 The state sits in the recording's ``live/`` directory beside the lane's
 ``state.json``. It holds speaker centroids and turn embeddings, so it is
-removed when the capture is finalised rather than left for the temp-directory
-cleanup.
+removed when the capture is finalised, or its master cannot be built, rather
+than left for the temp-directory cleanup. Deleting or discarding a recording
+removes the whole temp directory, and the label step removes the state itself
+when it finds the capture over.
 """
 
 from __future__ import annotations
@@ -21,7 +23,15 @@ BANK_FILENAME = "speaker_labels.bank"
 DISABLED_FILENAME = "speaker_labels.off"
 # flock target that keeps two label steps of one recording from overlapping.
 LOCK_FILENAME = "speaker_labels.lock"
-LIVE_LABEL_FILENAMES = (STATE_FILENAME, BANK_FILENAME, DISABLED_FILENAME, LOCK_FILENAME)
+# The state is written here first, then renamed over STATE_FILENAME.
+STATE_TMP_FILENAME = "speaker_labels.tmp"
+LIVE_LABEL_FILENAMES = (
+    STATE_FILENAME,
+    STATE_TMP_FILENAME,
+    BANK_FILENAME,
+    DISABLED_FILENAME,
+    LOCK_FILENAME,
+)
 
 
 def remove_live_label_state(live_dir: Path) -> None:

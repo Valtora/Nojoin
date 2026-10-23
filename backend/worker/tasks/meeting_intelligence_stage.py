@@ -11,6 +11,7 @@ import logging
 
 from backend.services.timeline_note_service import RecordingTimelineNotes
 from backend.utils.context_window import ContextWindowExceededError
+from backend.utils.live_speaker_labels import speaker_display_name
 from backend.utils.meeting_notes import append_user_notes_section
 from backend.utils.timeline_notes import render_timeline_for_llm
 from backend.worker.tasks.constants import *  # noqa: F401,F403 -- shared task surface
@@ -36,7 +37,7 @@ def _build_automatic_meeting_intelligence_transcript_impl(
         display_name = (
             speaker_label
             if speaker_label in unresolved_labels
-            else speaker_map.get(speaker_label, speaker_label)
+            else speaker_display_name(speaker_label, speaker_map)
         )
 
         overlapping_names = []
@@ -46,7 +47,7 @@ def _build_automatic_meeting_intelligence_transcript_impl(
                 overlapping_names.append(normalized_label)
             else:
                 overlapping_names.append(
-                    speaker_map.get(normalized_label, normalized_label)
+                    speaker_display_name(normalized_label, speaker_map)
                 )
 
         overlapping_suffix = (

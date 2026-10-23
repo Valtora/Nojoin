@@ -25,7 +25,7 @@ def test_a_line_takes_the_label_holding_most_of_its_speech():
 
     decision = timeline.label_line(0.0, 4.0)
 
-    assert decision.speaker == "LIVE_5"
+    assert decision.speaker == "LIVE_PROVISIONAL_5"
     assert decision.share == 0.75
     assert decision.locked is False
 
@@ -49,7 +49,7 @@ def test_a_line_split_evenly_between_two_voices_stays_unlabelled():
 def test_only_the_part_of_a_piece_inside_the_line_counts():
     timeline = _timeline([(0.0, 10.0, 0, False), (10.0, 12.0, 1, False)])
 
-    assert timeline.label_line(9.0, 12.0).speaker == "LIVE_2"
+    assert timeline.label_line(9.0, 12.0).speaker == "LIVE_PROVISIONAL_2"
 
 
 def test_a_line_locks_only_when_every_piece_is_locked_and_emitted():
@@ -65,13 +65,22 @@ def test_a_line_locks_only_when_every_piece_is_locked_and_emitted():
     assert mixed.label_line(0.0, 4.0).locked is False
 
 
-def test_a_line_with_held_speech_never_locks_until_it_is_labelled():
-    timeline = _timeline([(0.0, 3.0, 1, True), (3.0, 3.5, -1, True)])
+def test_a_line_with_held_speech_locks_only_once_the_held_unit_locks():
+    held = _timeline([(0.0, 3.0, 1, True), (3.0, 3.5, -1, False)])
 
-    decision = timeline.label_line(0.0, 3.5)
+    decision = held.label_line(0.0, 3.5)
 
-    assert decision.speaker == "LIVE_2"
+    assert decision.speaker == "LIVE_PROVISIONAL_2"
     assert decision.locked is False
+
+    # Every slot taken: the re-cluster found the held voice no label, and its
+    # unit aged out. The line settles rather than waiting forever.
+    aged = _timeline([(0.0, 1.0, 1, True), (1.0, 3.5, -1, True)])
+
+    decision = aged.label_line(0.0, 3.5)
+
+    assert decision.speaker == "UNKNOWN"
+    assert decision.locked is True
 
 
 def test_a_line_with_no_speech_found_settles_unlabelled_once_emitted():

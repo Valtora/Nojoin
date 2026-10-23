@@ -76,6 +76,7 @@ files = [
     "backend/processing/unheard_words.py",
     "backend/processing/live_diarization",
     "backend/utils/canonical_pipeline/live_labels.py",
+    "backend/utils/live_speaker_labels.py",
     "backend/utils/word_text.py",
 ]
 
