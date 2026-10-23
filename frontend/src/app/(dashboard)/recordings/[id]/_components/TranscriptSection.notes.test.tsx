@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { forgetNoteOutboxes } from "@/lib/notes/noteOutboxes";
+import { forgetNoteOutboxes, noteOutboxFor } from "@/lib/notes/noteOutboxes";
 import { RecordingStatus, type Recording, type TranscriptSegment } from "@/types";
 
 import TranscriptSection from "./TranscriptSection";
@@ -40,13 +40,13 @@ const RECORDING = {
   speakers: [],
 } as unknown as Recording;
 
-const renderSection = () =>
+const renderSection = (transcriptSegments: TranscriptSegment[] = SEGMENTS) =>
   render(
     <TranscriptSection
       active
       recording={RECORDING}
       timelineNotes={[]}
-      transcriptSegments={SEGMENTS}
+      transcriptSegments={transcriptSegments}
       currentTime={-1}
       isPlaying={false}
       speakerMap={{ SPEAKER_0: "Alex", SPEAKER_1: "Blair" }}
@@ -130,5 +130,21 @@ describe("a note on a line of the processed transcript", () => {
     await waitFor(() => expect(screen.queryByTestId("timeline-note")).toBeNull());
     expect(document.activeElement).not.toBe(document.body);
     expect(document.activeElement).toContainElement(screen.getByText("Forty thousand for the venue"));
+  });
+
+  it("is listed above the transcript, with Retry, when there are no lines to show it on", async () => {
+    createTimelineNote.mockRejectedValueOnce(NO_ANSWER);
+    noteOutboxFor("rec-1").submit({
+      kind: "selection",
+      body: "Check the figure",
+      anchorMs: null,
+      selection: { startMs: 65_000, endMs: 67_500, quotedText: "Forty thousand for the venue" },
+    });
+    renderSection([]);
+
+    const listed = await screen.findByTestId("unsaved-note");
+    await within(listed).findByText("Not saved: no answer from Nojoin.");
+    expect(listed).toHaveTextContent("Check the figure");
+    expect(within(listed).getByRole("button", { name: /^Retry note/ })).toBeInTheDocument();
   });
 });
