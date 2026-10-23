@@ -13,7 +13,7 @@ tests can stub those modules per test.
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from backend.processing.engines.base import VAD_MUTED_INPUT
+from backend.processing.engines.base import LANGUAGE_DETECTION_AUDIO, VAD_MUTED_INPUT
 from backend.processing.vad_muting import (
     diarised_turns,
     muted_stages,
@@ -97,6 +97,9 @@ def run_vad_stage(
     muted = muted_stages(ctx.merged_config)
     # An engine may read exact zeros as VAD silence only in the file it reads.
     ctx.merged_config[VAD_MUTED_INPUT] = muted.transcription
+    # Only this stage names the detection file, never a stored setting: with
+    # VAD off the key stays unset.
+    ctx.merged_config.pop(LANGUAGE_DETECTION_AUDIO, None)
 
     if enable_vad:
         ctx.task.update_state(state="PROCESSING", meta={"progress": 30, "stage": "VAD"})
@@ -118,6 +121,7 @@ def run_vad_stage(
         if not vad_success:
             raise RuntimeError("VAD execution failed")
         temp_files.append(vad_output_path)
+        ctx.merged_config[LANGUAGE_DETECTION_AUDIO] = vad_output_path
 
         if speech_duration < 1.0:
             logger.warning(

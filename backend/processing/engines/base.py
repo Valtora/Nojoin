@@ -7,6 +7,12 @@ from abc import ABC, abstractmethod
 # when it is set; the live lane never sets it.
 VAD_MUTED_INPUT = "vad_muted_input"
 
+# Config key the finalize pipeline sets when VAD ran: the path of the VAD-muted
+# file, where every sample outside speech is an exact zero. An engine may detect
+# an automatic language on this file's speech rather than on the start of the
+# file it reads (#671). Unset with VAD off and in the live lane.
+LANGUAGE_DETECTION_AUDIO = "language_detection_audio"
+
 
 class TranscriptionEngine(ABC):
     """Base of a pluggable transcription engine.
