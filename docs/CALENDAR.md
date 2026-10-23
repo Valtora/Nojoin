@@ -85,7 +85,7 @@ When a recording finishes processing, Nojoin links it to the calendar event it c
 
 ## Sync Behaviour
 
-Nojoin keeps events from 12 months back to 12 months ahead. Every 15 minutes the worker syncs each connected account with at least one selected calendar, fetching only what changed since the last run. When the provider's change cursor cannot be used, for example once a month when the 12-month range moves on, Nojoin fetches the calendar in full and updates each stored event in place, so linked recordings stay linked. An account showing **Reconnect required** is skipped until you reconnect it.
+Nojoin keeps events from 12 months back to 12 months ahead. Every 15 minutes the worker syncs each connected account with at least one selected calendar, fetching only what changed since the last run. When the provider's change cursor cannot be used, for example once a month when the 12-month range moves on, Nojoin fetches the calendar in full and updates each stored event in place, so linked recordings stay linked. An account shows **Reconnect required** when the provider refuses Nojoin's stored sign-in, for example because access was revoked, the password changed or the sign-in expired. Nojoin then skips the account, live sync included, until you reconnect it: select **Connect** again and sign in to the same account.
 
 Deleting an event at the provider, removing a calendar from the account, or disconnecting the account removes those events from Nojoin and unlinks their recordings. An event that has only fallen out of the 12-month range is kept for as long as a recording links to it.
 
@@ -101,7 +101,7 @@ An Owner or Admin turns it on per provider with the **Live sync** switch in **Se
   - `<public-origin>/api/v1/calendar/webhooks/google`
   - `<public-origin>/api/v1/calendar/webhooks/microsoft`
 
-An account with live sync running shows a **Live sync** badge in **Settings > Integrations > Calendars**. If Nojoin cannot set up a subscription, it records the failure, retries no more than every 30 minutes, and carries on with the 15-minute sync.
+An account with live sync running shows a **Live sync** badge in **Settings > Integrations > Calendars**. If Nojoin cannot set up a subscription, it logs the provider's reason and carries on with the 15-minute sync. It tries again after 30 minutes when the provider could not be reached, had a server error or asked Nojoin to slow down, and after 6 hours when the provider refused the request.
 
 ## Troubleshooting
 
@@ -129,6 +129,8 @@ The tenant blocks user consent for the delegated permissions. A tenant administr
 
 While the Google app is in testing mode, only listed test users can connect. Add the account as a test user or publish the consent screen.
 
+Testing mode also ends each sign-in after seven days, so the account then shows **Reconnect required**. Publishing the consent screen stops this.
+
 ### Calendars Disconnect After the Encryption Key Changes
 
 If the database outlives its encryption key, for example because `DATA_ENCRYPTION_KEY` changed or was never set and the data directory was replaced, Nojoin can no longer read the stored secrets. It removes the saved provider credentials, falling back to the environment variables, and removes each user's connection, so users must connect their calendars again. A Nojoin backup restores onto a different key without this problem ([BACKUP_RESTORE.md](BACKUP_RESTORE.md)).
@@ -136,6 +138,10 @@ If the database outlives its encryption key, for example because `DATA_ENCRYPTIO
 ### Live Sync Not Activating
 
 If an account never shows the **Live sync** badge, check each requirement under [Enabling Live Sync](#enabling-live-sync), starting with the provider's **Live sync** switch. Calendars still refresh every 15 minutes.
+
+A CDN or web application firewall in front of Nojoin must let Microsoft and Google `POST` to the two webhook paths. Microsoft checks the address while creating a subscription and refuses it when that request is blocked.
+
+The `worker-io` log records each failed attempt with the HTTP status and the provider's own error code and message.
 
 ## Related Docs
 

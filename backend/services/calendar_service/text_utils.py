@@ -1,8 +1,9 @@
 """Low-level shared helpers: text/URL normalisation, error classification,
 time, the sync window, and the generic JSON HTTP request wrapper.
 
-Pure helpers with no calendar-domain state. Depends only on ``constants`` so it
-can sit beneath ``oauth`` and ``providers`` in the import graph.
+Pure helpers with no calendar-domain state. Depends only on the ``constants``
+and ``models_dto`` leaves, so it can sit beneath ``oauth`` and ``providers`` in
+the import graph.
 """
 
 from __future__ import annotations
@@ -21,6 +22,8 @@ from backend.utils.time import utc_now
 from .constants import (
     HREF_URL_PATTERN,
     MEETING_URL_HOST_PRIORITY,
+    OAUTH_RECONNECT_ERROR_CODES,
+    OAUTH_RECONNECT_STATUS_CODES,
     PLAIN_URL_PATTERN,
     SYNC_WINDOW_MONTHS_BACK,
     SYNC_WINDOW_MONTHS_FORWARD,
@@ -28,6 +31,7 @@ from .constants import (
     TRUSTED_MEETING_HOST_SUFFIXES,
     TRUSTED_MEETING_HOSTS,
 )
+from .models_dto import CalendarReauthorisationRequired
 
 
 def _utc_now() -> datetime:
@@ -237,13 +241,34 @@ def _extract_http_error_text(exc: httpx.HTTPStatusError) -> str:
     return f"Provider returned HTTP {response.status_code}"
 
 
+def _oauth_reconnect_error_code(exc: httpx.HTTPStatusError) -> str | None:
+    """Return the OAuth ``error`` code when a token endpoint refused the grant.
+
+    Reads the code, never the description: Google answers a revoked or expired
+    refresh token with ``invalid_grant`` and a description as vague as "Bad
+    Request". Returns None for any other answer, including ``invalid_client``,
+    which an administrator fixes in the app credentials rather than the user by
+    reconnecting.
+    """
+    if exc.response.status_code not in OAUTH_RECONNECT_STATUS_CODES:
+        return None
+    try:
+        payload = exc.response.json()
+    except ValueError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    code = payload.get("error")
+    if not isinstance(code, str):
+        return None
+    code = code.strip().lower()
+    return code if code in OAUTH_RECONNECT_ERROR_CODES else None
+
+
 def _classify_sync_failure(exc: Exception) -> tuple[str, str]:
     default_message = _clean_error_text(str(exc)) or "Calendar sync failed"
-    lower_message = default_message.lower()
 
-    if isinstance(exc, ValueError) and (
-        "reauthorisation" in lower_message or "reauthorization" in lower_message
-    ):
+    if isinstance(exc, CalendarReauthorisationRequired):
         return (
             CalendarSyncStatus.REAUTHORISATION_REQUIRED.value,
             "This calendar account needs to be reconnected before it can sync again.",
@@ -269,8 +294,10 @@ def _classify_sync_failure(exc: Exception) -> tuple[str, str]:
             "reauthorisation",
             "reauthorization",
         )
-        is_auth_error = status_code == 401 or any(
-            hint in lower_http_message for hint in auth_hints
+        is_auth_error = (
+            status_code == 401
+            or _oauth_reconnect_error_code(exc) is not None
+            or any(hint in lower_http_message for hint in auth_hints)
         )
         if status_code == 403 and any(
             hint in lower_http_message

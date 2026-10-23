@@ -558,6 +558,41 @@ CREATE TABLE calendar_sources (
 )
 """
 
+CALENDAR_PROVIDER_CONFIGS_SCHEMA = """
+CREATE TABLE calendar_provider_configs (
+    id INTEGER PRIMARY KEY,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    provider VARCHAR(32) NOT NULL UNIQUE,
+    client_id VARCHAR(512),
+    client_secret_encrypted TEXT,
+    tenant_id VARCHAR(255),
+    enabled BOOLEAN NOT NULL,
+    push_enabled BOOLEAN NOT NULL DEFAULT 0
+)
+"""
+
+CALENDAR_PUSH_CHANNELS_SCHEMA = """
+CREATE TABLE calendar_push_channels (
+    id INTEGER PRIMARY KEY,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    connection_id INTEGER NOT NULL
+        REFERENCES calendar_connections(id) ON DELETE CASCADE,
+    calendar_id INTEGER NOT NULL
+        REFERENCES calendar_sources(id) ON DELETE CASCADE,
+    provider VARCHAR(32) NOT NULL,
+    provider_channel_id VARCHAR(512),
+    resource_id VARCHAR(512),
+    secret_encrypted TEXT,
+    notification_url VARCHAR(2048),
+    expiration DATETIME,
+    status VARCHAR(32) NOT NULL,
+    last_error VARCHAR(512),
+    UNIQUE(calendar_id, provider)
+)
+"""
+
 CALENDAR_EVENTS_SCHEMA = """
 CREATE TABLE calendar_events (
     id INTEGER PRIMARY KEY,

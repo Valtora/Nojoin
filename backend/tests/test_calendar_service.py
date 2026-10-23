@@ -1,11 +1,14 @@
+import asyncio
 from datetime import UTC, date, datetime
 from types import SimpleNamespace
 
 import httpx
+import pytest
 
 from backend.core.encryption import decrypt_secret, encrypt_secret
 from backend.models.calendar import CalendarSyncStatus
 from backend.services.calendar_service import (
+    CalendarReauthorisationRequired,
     _build_google_events_query_params,
     _build_microsoft_delta_url,
     _build_sync_window,
@@ -334,7 +337,7 @@ def test_normalise_cancelled_microsoft_event_returns_none() -> None:
 
 def test_classify_sync_failure_marks_reauthorisation_for_refresh_token_errors() -> None:
     status, message = _classify_sync_failure(
-        ValueError("Calendar connection requires reauthorisation")
+        CalendarReauthorisationRequired("Calendar connection requires reauthorisation")
     )
 
     assert status == CalendarSyncStatus.REAUTHORISATION_REQUIRED.value
@@ -365,3 +368,167 @@ def test_classify_sync_failure_marks_admin_consent_errors_as_reauthorisation_req
 
     assert status == CalendarSyncStatus.REAUTHORISATION_REQUIRED.value
     assert "admin approval" in message.lower() or "consent" in message.lower()
+
+
+# Token endpoint answers, as Google and Microsoft send them, for a refresh token
+# that only signing in again can replace.
+GOOGLE_INVALID_GRANT_BAD_REQUEST = {
+    "error": "invalid_grant",
+    "error_description": "Bad Request",
+}
+GOOGLE_INVALID_GRANT_EXPIRED_OR_REVOKED = {
+    "error": "invalid_grant",
+    "error_description": "Token has been expired or revoked.",
+}
+MICROSOFT_AADSTS_INVALID_GRANT = {
+    "error": "invalid_grant",
+    "error_description": (
+        "AADSTS700082: The refresh token has expired due to inactivity. The "
+        "token was issued on 2026-07-01T09:00:00.0000000Z and was inactive for "
+        "90.00:00:00. Trace ID: 00000000-0000-0000-0000-000000000001 "
+        "Correlation ID: 00000000-0000-0000-0000-000000000002 Timestamp: "
+        "2026-10-23 09:00:00Z"
+    ),
+    "error_codes": [700082],
+    "timestamp": "2026-10-23 09:00:00Z",
+    "trace_id": "00000000-0000-0000-0000-000000000001",
+    "correlation_id": "00000000-0000-0000-0000-000000000002",
+    "error_uri": "https://login.microsoftonline.com/error?code=700082",
+}
+MICROSOFT_AADSTS_INTERACTION_REQUIRED = {
+    "error": "interaction_required",
+    "error_description": (
+        "AADSTS50076: Due to a configuration change made by your administrator, "
+        "or because you moved to a new location, you must use multi-factor "
+        "authentication to access the resource."
+    ),
+    "error_codes": [50076],
+    "suberror": "basic_action",
+}
+RECONNECT_MESSAGE = (
+    "This calendar account needs to be reconnected before it can sync again."
+)
+
+
+def _token_endpoint_error(
+    provider: str, status_code: int, body: dict | str
+) -> httpx.HTTPStatusError:
+    url = (
+        "https://oauth2.googleapis.com/token"
+        if provider == "google"
+        else "https://login.microsoftonline.com/common/oauth2/v2.0/token"
+    )
+    request = httpx.Request("POST", url)
+    if isinstance(body, dict):
+        response = httpx.Response(status_code, json=body, request=request)
+    else:
+        response = httpx.Response(status_code, text=body, request=request)
+    return httpx.HTTPStatusError(
+        f"Client error '{status_code}' for url '{url}'",
+        request=request,
+        response=response,
+    )
+
+
+def _refresh_with(monkeypatch, provider: str, error: httpx.HTTPStatusError):
+    """Run the access-token lookup against a token endpoint that answers ``error``."""
+    from backend.services.calendar_service import oauth as oauth_mod
+
+    async def _refuse(_runtime_config, _refresh_token):
+        raise error
+
+    monkeypatch.setattr(oauth_mod, "_refresh_google_access_token", _refuse)
+    monkeypatch.setattr(oauth_mod, "_refresh_microsoft_access_token", _refuse)
+    connection = SimpleNamespace(
+        provider=provider,
+        access_token_encrypted=None,
+        refresh_token_encrypted=encrypt_secret("stored-refresh-token"),
+        token_expires_at=None,
+    )
+    return asyncio.run(
+        oauth_mod._get_access_token_for_connection(None, connection, None)
+    )
+
+
+@pytest.mark.parametrize(
+    ("provider", "status_code", "body"),
+    [
+        ("google", 400, GOOGLE_INVALID_GRANT_BAD_REQUEST),
+        ("google", 400, GOOGLE_INVALID_GRANT_EXPIRED_OR_REVOKED),
+        ("microsoft", 400, MICROSOFT_AADSTS_INVALID_GRANT),
+        ("microsoft", 400, MICROSOFT_AADSTS_INTERACTION_REQUIRED),
+        ("google", 401, {"error": "login_required"}),
+        ("microsoft", 400, {"error": "consent_required"}),
+    ],
+)
+def test_refused_refresh_token_requires_reconnect(
+    monkeypatch, provider, status_code, body
+) -> None:
+    error = _token_endpoint_error(provider, status_code, body)
+
+    with pytest.raises(CalendarReauthorisationRequired) as raised:
+        _refresh_with(monkeypatch, provider, error)
+
+    assert raised.value.__cause__ is error
+    assert body["error"] in str(raised.value)
+    status, message = _classify_sync_failure(raised.value)
+    assert status == CalendarSyncStatus.REAUTHORISATION_REQUIRED.value
+    assert message == RECONNECT_MESSAGE
+
+
+@pytest.mark.parametrize(
+    ("provider", "status_code", "body"),
+    [
+        (
+            "microsoft",
+            400,
+            {
+                "error": "invalid_client",
+                "error_description": (
+                    "AADSTS7000215: Invalid client secret provided. Ensure the "
+                    "secret being sent in the request is the client secret value."
+                ),
+            },
+        ),
+        ("google", 400, {"error": "invalid_request", "error_description": "Bad"}),
+        ("google", 503, "<html>Service Unavailable</html>"),
+        ("microsoft", 500, {"error": "invalid_grant", "error_description": "x"}),
+    ],
+)
+def test_other_token_endpoint_failures_are_not_a_refusal(
+    monkeypatch, provider, status_code, body
+) -> None:
+    """Only a refused grant asks the user to reconnect. A bad client secret is
+    fixed by an administrator, and an outage passes; both keep syncing."""
+    error = _token_endpoint_error(provider, status_code, body)
+
+    with pytest.raises(httpx.HTTPStatusError) as raised:
+        _refresh_with(monkeypatch, provider, error)
+
+    assert raised.value is error
+    status, _message = _classify_sync_failure(error)
+    assert status == CalendarSyncStatus.ERROR.value
+
+
+def test_classify_sync_failure_reads_the_oauth_code_not_the_description() -> None:
+    """Google's description can be just "Bad Request", which names nothing."""
+    error = _token_endpoint_error("google", 400, GOOGLE_INVALID_GRANT_BAD_REQUEST)
+
+    status, message = _classify_sync_failure(error)
+
+    assert status == CalendarSyncStatus.REAUTHORISATION_REQUIRED.value
+    assert message == RECONNECT_MESSAGE
+
+
+def test_missing_refresh_token_requires_reconnect() -> None:
+    from backend.services.calendar_service import oauth as oauth_mod
+
+    connection = SimpleNamespace(
+        provider="google",
+        access_token_encrypted=None,
+        refresh_token_encrypted=None,
+        token_expires_at=None,
+    )
+
+    with pytest.raises(CalendarReauthorisationRequired):
+        asyncio.run(oauth_mod._get_access_token_for_connection(None, connection, None))

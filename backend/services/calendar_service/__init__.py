@@ -55,6 +55,7 @@ from .dashboard import (
     get_dashboard_summary,
 )
 from .models_dto import (
+    CalendarReauthorisationRequired,
     IncrementalSyncResetRequired,
     ProviderCalendarRecord,
     ProviderEventRecord,
@@ -133,6 +134,7 @@ from .text_utils import (
     _meeting_url_rank,
     _normalise_colour_value,
     _normalise_text,
+    _oauth_reconnect_error_code,
     _parse_iso_datetime,
     _pick_preferred_meeting_url,
     _request_json,
