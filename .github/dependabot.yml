@@ -52,15 +52,6 @@ updates:
       # fails a 2.x pin. Remove when fastembed allows 2.x.
       - dependency-name: "huggingface-hub"
         versions: [">=2.0.0"]
-      # PyMuPDF 2.0 breaks Table.extract() cell text: spaces vanish and "-",
-      # "," and "." move to a trailing line (pymupdf/PyMuPDF#5198). It also
-      # loads its ONNX layout model on every import, about 0.6 s and 90 MB per
-      # process, and runs that model in find_tables() by default
-      # (pymupdf/PyMuPDF#5196). Only 2.0 itself is skipped: a later release
-      # still arrives for review, and the table test in
-      # backend/tests/test_document_parsing.py fails it while #5198 stands.
-      - dependency-name: "pymupdf"
-        versions: ["==2.0"]
 
   # --- Frontend npm dependencies ---
   - package-ecosystem: npm
