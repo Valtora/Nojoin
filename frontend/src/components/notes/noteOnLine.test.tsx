@@ -57,6 +57,7 @@ describe("the live view's ⋯ menu", () => {
       error: null,
     };
     render(<LiveTranscriptPanel segments={SEGMENTS} hasLoaded notes={[note]} />);
+    fireEvent.click(screen.getByRole("button", { name: "1 note on the line at 00:12" }));
 
     const line = screen.getByTestId("timeline-note");
     expect(within(line).getByTestId("timeline-note-quote")).toHaveTextContent("“Forty thousand”");
