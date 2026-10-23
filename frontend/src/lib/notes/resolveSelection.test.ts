@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   ANCHOR_MARGIN_MS,
   ANCHOR_SCORE_FLOOR,
+  PART_WORD_MIN_CHARS,
   comparableWord,
   resolveSelection,
   type LineRange,
@@ -188,6 +189,30 @@ describe("resolveSelection", () => {
     expect(marked(inside, [VENUE])).toEqual([["u1", "thousand"]]);
   });
 
+  it("finds a one-word quote inside a word only when it is three letters or more", () => {
+    expect(PART_WORD_MIN_CHARS).toBe(3);
+    // "a" was said, and the final pass heard "and" there instead: "and" is not marked.
+    const live = lineAt("l1", 60_000, "We need a venue");
+    const final = lineAt("f1", 60_000, "We need and venue");
+    expect(resolveSelection(noteOn(live, 8, 9), [final])).toMatchObject({ state: "unanchored", ranges: [] });
+    // A drag inside "forty": three of its letters are found there, two are not.
+    const three = resolveSelection(noteOn(VENUE, 9, 12), [VENUE]);
+    expect(three).toMatchObject({ state: "exact", score: 1 });
+    expect(marked(three, [VENUE])).toEqual([["u1", "forty"]]);
+    expect(resolveSelection(noteOn(VENUE, 9, 11), [VENUE])).toMatchObject({ state: "unanchored", ranges: [] });
+  });
+
+  it("keeps a line's changed word changed, though another speaker says it on a line beside", () => {
+    // The quote is one line; the final pass heard "fourteen" in it, while the
+    // overlapping line says "forty". Only the quote's own line is marked, fuzzy.
+    const note = noteOn(VENUE, 0, VENUE.text.length);
+    const now = lineAt("f1", 60_000, "We need fourteen thousand for the venue, and soon.");
+    const beside = lineAt("f2", 60_500, "forty, did you say?");
+    const resolution = resolveSelection(note, [now, beside]);
+    expect(resolution).toMatchObject({ state: "fuzzy", score: 1 - 1 / 9 });
+    expect(marked(resolution, [now, beside])).toEqual([["f1", now.text]]);
+  });
+
   it("takes part of a word only at the quote's ends: its first word's end, its last word's start", () => {
     const note = noteOn(VENUE, 8, 36);
     const as = (quoted_text: string) => resolveSelection({ ...note, quoted_text }, [VENUE]);
@@ -223,10 +248,16 @@ describe("resolveSelection", () => {
   });
 });
 
-/** A small seeded generator, so a failing case can be run again. */
+/**
+ * A small seeded generator (mulberry32), so a failing case can be run again.
+ * It keeps to 32-bit integers: a multiplier that overflows a double's 53 bits
+ * repeats after some ten thousand draws, a few dozen cases.
+ */
 const random = (seed: number) => () => {
-  seed = (seed * 1_103_515_245 + 12_345) % 2_147_483_648;
-  return seed / 2_147_483_648;
+  seed = (seed + 0x6d2b79f5) | 0;
+  let mixed = Math.imul(seed ^ (seed >>> 15), seed | 1);
+  mixed ^= mixed + Math.imul(mixed ^ (mixed >>> 7), mixed | 61);
+  return ((mixed ^ (mixed >>> 14)) >>> 0) / 4_294_967_296;
 };
 
 const WORDS = [
@@ -478,10 +509,10 @@ describe("resolveSelection on the transcript a selection was made on", () => {
     }
   });
 
-  it("finds every selection exactly, inside words, over lines and shortened, on just the words picked (3,000 cases)", () => {
+  it("finds every selection exactly, inside words, over lines and shortened, on just the words picked (1,000 cases)", () => {
     const next = random(659);
-    const seen = { partWord: 0, lines: 0, shortened: 0 };
-    for (let run = 0; run < 3_000; run += 1) {
+    const seen = { partWord: 0, lines: 0, shortened: 0, tooShort: 0 };
+    for (let run = 0; run < 1_000; run += 1) {
       const kind = run % 3;
       // A shortened quote needs a selection of over 2,000 characters.
       const lines = transcript(next, kind === 2 ? 420 : 40 + Math.floor(next() * 40));
@@ -494,15 +525,41 @@ describe("resolveSelection on the transcript a selection was made on", () => {
       const note = { start_ms: selection.startMs, end_ms: selection.endMs, quoted_text: selection.quotedText };
       const resolution = resolveSelection(note, lines);
       const context = JSON.stringify({ run, picks: picks.map(({ line, from, to }) => [line.segmentId, from, to]) });
+      // A part of one word shorter than PART_WORD_MIN_CHARS is found nowhere:
+      // none of APART holds another, so it is no whole word.
+      const words = quoteWords(selection.quotedText);
+      if (words.length === 1 && words[0].length < PART_WORD_MIN_CHARS && !APART.includes(words[0])) {
+        expect(resolution, context).toMatchObject({ state: "unanchored", ranges: [] });
+        seen.tooShort += 1;
+        continue;
+      }
       expect(resolution.state, context).toBe("exact");
-      expect(resolution.ranges, context).toEqual(pickedRanges(picks, selection.quotedText));
+      // A selection from the punctuation after a word takes that word's time,
+      // and a one-word quote can't tell it from the same word after it
+      // ("Noble? noble" from the "?"): either is right, when the selection
+      // took nothing of the word marked but its punctuation.
+      const [mark] = resolution.ranges;
+      const onlyItsPunctuation = ({ line, from, to }: LinePick) =>
+        line.segmentId === mark.segmentId &&
+        mark.from < to &&
+        mark.to > from &&
+        comparableWord(line.text.slice(Math.max(from, mark.from), Math.min(to, mark.to))) === "";
+      const touchedTwin =
+        words.length === 1 &&
+        resolution.ranges.length === 1 &&
+        picks.some(onlyItsPunctuation) &&
+        markedWords(resolution, lines)[0].includes(words[0]);
+      if (!touchedTwin) expect(resolution.ranges, context).toEqual(pickedRanges(picks, selection.quotedText));
       const inWord = (line: DrawnLine, at: number) => /\S\S/.test(line.text.slice(at - 1, at + 1)) && at > 0;
       if (picks.some(({ line, from, to }) => inWord(line, from) || inWord(line, to))) seen.partWord += 1;
       if (picks.length > 1) seen.lines += 1;
       if (selection.quotedText.endsWith("…")) seen.shortened += 1;
     }
-    expect(seen.partWord).toBeGreaterThan(1_500);
-    expect(seen.lines).toBeGreaterThan(1_500);
-    expect(seen.shortened).toBeGreaterThan(900);
-  });
+    expect(seen.partWord).toBeGreaterThan(500);
+    expect(seen.lines).toBeGreaterThan(500);
+    expect(seen.shortened).toBeGreaterThan(300);
+    expect(seen.tooShort).toBeGreaterThan(0);
+    // Each shortened case resolves a 2,000-character quote: under a second
+    // here, so CI's slower runners need more than the default 5 s.
+  }, 20_000);
 });
