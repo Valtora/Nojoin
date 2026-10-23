@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import { getRecording, getUserMe } from "@/lib/api";
 import { getErrorStatus } from "@/lib/errors";
+import { forgetRecordingNotes } from "@/lib/notes/noteOutboxes";
 import type { NewNotification } from "@/lib/notificationStore";
 import { noteSignedIn, useSessionStore } from "@/lib/session";
 import type { RecordingId } from "@/types";
@@ -116,6 +117,8 @@ export function useRecordingNotFound(
           );
           if (!current()) return;
           if (status === 404) {
+            // Gone for its owner: the notes kept for it can't be saved.
+            void forgetRecordingNotes(recordingId);
             addNotification({ type: "info", message: RECORDING_REMOVED_MESSAGE });
             leave();
             return;
