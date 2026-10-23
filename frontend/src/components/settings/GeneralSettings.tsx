@@ -405,7 +405,7 @@ export default function GeneralSettings({
             labelId="recording-vad-mute-transcription-label"
             descriptionId="recording-vad-mute-transcription-help"
             label="Mute non-speech for transcription"
-            description="Off lets transcription hear everything, which can recover distant speech but can add words from noise and be less accurate on close microphones. With speaker separation muted too, some recovered words stay unattributed and hidden in the transcript."
+            description="On mutes only audio that neither voice activity detection nor unmuted speaker separation heard as speech. Off lets transcription hear everything, which can recover distant speech but can add words from noise and be less accurate on close microphones. With speaker separation muted too, some recovered words stay unattributed and hidden in the transcript."
             controlClassName={SETTINGS_CONTROL_END}
           >
             <Switch
