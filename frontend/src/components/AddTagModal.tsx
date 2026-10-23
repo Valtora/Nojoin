@@ -18,6 +18,7 @@ import Button from "./ui/Button";
 import IconButton from "./ui/IconButton";
 import Input from "./ui/Input";
 import Modal from "./ui/Modal";
+import { loadingButtonProps } from "@/components/ui/loadingButton";
 
 interface AddTagModalProps {
   isOpen: boolean;
@@ -277,15 +278,14 @@ export default function AddTagModal({
               ) : (
                 <button
                   className={`flex-1 text-left ${isSelected ? "text-action-tint-fg font-medium" : "text-contrast-muted"}`}
-                  onClick={() => {
+                  {...loadingButtonProps(isProcessing, undefined, () => {
                     if (isProcessing) return;
                     if (isSelected) {
                       handleRemoveTag(node.name);
                     } else {
                       handleAddTag(node.name);
                     }
-                  }}
-                  disabled={isProcessing}
+                  })}
                 >
                   {node.name}
                 </button>

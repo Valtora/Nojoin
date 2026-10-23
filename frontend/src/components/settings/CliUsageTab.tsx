@@ -18,6 +18,7 @@ import {
   SETTINGS_BUTTON_SECONDARY,
   SETTINGS_INPUT_CLASS,
 } from "./settingsControls";
+import { loadingButtonProps } from "@/components/ui/loadingButton";
 
 const PAGE_SIZE = 10;
 
@@ -140,8 +141,7 @@ export default function CliUsageTab() {
         </div>
         <button
           type="button"
-          onClick={fetchUsage}
-          disabled={loading}
+          {...loadingButtonProps(loading, undefined, fetchUsage)}
           className={SETTINGS_BUTTON_SECONDARY}
         >
           <RefreshCw

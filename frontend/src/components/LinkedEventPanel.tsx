@@ -7,6 +7,7 @@ import {
   getRecordingCalendarEventCandidates,
   linkRecordingCalendarEvent,
 } from '@/lib/api';
+import { loadingButtonProps } from '@/components/ui/loadingButton';
 
 interface LinkedEventPanelProps {
   recordingId: RecordingId;
@@ -106,10 +107,9 @@ export default function LinkedEventPanel({
             Change
           </button>
           <button
-            onClick={() => handleSelect(null)}
-            disabled={isSubmitting}
+            {...loadingButtonProps(isSubmitting, undefined, () => handleSelect(null))}
             title="Unlink calendar event"
-            className="inline-flex items-center justify-center w-4 h-4 rounded-full hover:bg-surface-inset focus:outline-none disabled:opacity-40"
+            className="inline-flex items-center justify-center w-4 h-4 rounded-full hover:bg-surface-inset focus:outline-none disabled:opacity-40 aria-disabled:opacity-40"
           >
             <X className="w-3 h-3" />
           </button>
@@ -140,9 +140,8 @@ export default function LinkedEventPanel({
               {candidates.map((candidate) => (
                 <li key={candidate.id}>
                   <button
-                    onClick={() => handleSelect(candidate.id)}
-                    disabled={isSubmitting}
-                    className="w-full text-left px-3 py-2 hover:bg-surface-inset focus:outline-none disabled:opacity-40"
+                    {...loadingButtonProps(isSubmitting, undefined, () => handleSelect(candidate.id))}
+                    className="w-full text-left px-3 py-2 hover:bg-surface-inset focus:outline-none disabled:opacity-40 aria-disabled:opacity-40"
                   >
                     <span className="block text-sm font-medium text-foreground truncate">
                       {candidate.title}

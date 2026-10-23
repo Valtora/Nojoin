@@ -31,6 +31,7 @@ import {
 } from "@/lib/api";
 import { getErrorMessage } from "@/lib/errors";
 import { passwordChangePath } from "@/lib/passwordChangeReturn";
+import { loadingButtonProps } from "@/components/ui/loadingButton";
 
 // Known connector clients get a real product mark on the consent screen;
 // anything else falls back to a neutral plug badge.
@@ -338,8 +339,8 @@ function AuthorizeContent() {
                     </div>
                     <button
                       type="submit"
-                      disabled={signingIn}
-                      className="w-full inline-flex items-center justify-center gap-2 py-3 px-4 rounded-lg text-sm font-semibold text-action-on bg-action hover:bg-action-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:opacity-60 transition-colors"
+                      {...loadingButtonProps(signingIn)}
+                      className="w-full inline-flex items-center justify-center gap-2 py-3 px-4 rounded-lg text-sm font-semibold text-action-on bg-action hover:bg-action-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:opacity-60 transition-colors aria-disabled:opacity-60"
                     >
                       {signingIn && (
                         <Loader2 className="h-4 w-4 animate-spin" />
@@ -363,17 +364,15 @@ function AuthorizeContent() {
                     <div className="flex gap-3">
                       <button
                         type="button"
-                        disabled={submitting}
-                        onClick={() => handleDecision(false)}
-                        className="flex-1 py-3 px-4 rounded-lg text-sm font-semibold text-foreground border border-control-border hover:bg-surface-inset focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:opacity-60 transition-colors"
+                        {...loadingButtonProps(submitting, undefined, () => handleDecision(false))}
+                        className="flex-1 py-3 px-4 rounded-lg text-sm font-semibold text-foreground border border-control-border hover:bg-surface-inset focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:opacity-60 transition-colors aria-disabled:opacity-60"
                       >
                         Deny
                       </button>
                       <button
                         type="button"
-                        disabled={submitting}
-                        onClick={() => handleDecision(true)}
-                        className="flex-1 inline-flex items-center justify-center gap-2 py-3 px-4 rounded-lg text-sm font-semibold text-action-on bg-action hover:bg-action-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:opacity-60 transition-colors"
+                        {...loadingButtonProps(submitting, undefined, () => handleDecision(true))}
+                        className="flex-1 inline-flex items-center justify-center gap-2 py-3 px-4 rounded-lg text-sm font-semibold text-action-on bg-action hover:bg-action-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:opacity-60 transition-colors aria-disabled:opacity-60"
                       >
                         {submitting && (
                           <Loader2 className="h-4 w-4 animate-spin" />

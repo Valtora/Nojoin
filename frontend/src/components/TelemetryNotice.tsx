@@ -10,6 +10,7 @@ import {
 } from "@/lib/api";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { useServiceStatusStore } from "@/lib/serviceStatusStore";
+import { loadingButtonProps } from "@/components/ui/loadingButton";
 
 /**
  * One-time admin notice for installs that were upgraded into telemetry.
@@ -105,17 +106,15 @@ export default function TelemetryNotice() {
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <button
               type="button"
-              disabled={busy}
-              onClick={() => void decide(true)}
-              className="rounded-lg bg-action px-3 py-1.5 text-sm font-medium text-action-on transition-colors hover:bg-action-hover disabled:opacity-60"
+              {...loadingButtonProps(busy, undefined, () => void decide(true))}
+              className="rounded-lg bg-action px-3 py-1.5 text-sm font-medium text-action-on transition-colors hover:bg-action-hover disabled:opacity-60 aria-disabled:opacity-60"
             >
               Keep diagnostics on
             </button>
             <button
               type="button"
-              disabled={busy}
-              onClick={() => void decide(false)}
-              className="rounded-lg border border-control-border bg-surface-card px-3 py-1.5 text-sm font-medium text-contrast-muted transition-colors hover:bg-surface-inset disabled:opacity-60"
+              {...loadingButtonProps(busy, undefined, () => void decide(false))}
+              className="rounded-lg border border-control-border bg-surface-card px-3 py-1.5 text-sm font-medium text-contrast-muted transition-colors hover:bg-surface-inset disabled:opacity-60 aria-disabled:opacity-60"
             >
               Turn diagnostics off
             </button>
