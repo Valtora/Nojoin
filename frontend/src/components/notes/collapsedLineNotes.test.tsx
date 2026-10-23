@@ -94,48 +94,66 @@ describe("a line's notes, folded", () => {
     expect(notesShown()).toEqual([]);
   });
 
-  it("puts no chip on a line without notes", () => {
+  it("shows a line's single note as it is, with no chip", () => {
     renderFinished([saved("n1", "Check the figure", 13_000)]);
+    expect(screen.queryByTestId("line-notes-chip")).not.toBeInTheDocument();
+    expect(notesShown()).toHaveLength(1);
+    expect(notesShown()[0]).toContain("Check the figure");
+  });
+
+  it("puts no chip on a line without notes", () => {
+    renderFinished(TWO_ON_THE_VENUE);
     expect(screen.getAllByTestId("line-notes-chip")).toHaveLength(1);
-    expect(screen.getByRole("button", { name: "1 note on the line at 00:12" })).toBeInTheDocument();
   });
 
   it("never folds a note still sending or refused, and counts only the saved ones", () => {
-    const [first, second] = TWO_ON_THE_VENUE;
-    const sending = saved("n3", "Still on its way", 15_000);
+    const refused = saved("n3", "Refused by the server", 14_500);
+    const sending = saved("n4", "Still on its way", 15_000);
     render(
       <LiveTranscriptPanel
         segments={SEGMENTS}
         hasLoaded
-        notes={[inline(first), inline(second, "failed"), inline(sending, "saving")]}
+        notes={[...TWO_ON_THE_VENUE.map((note) => inline(note)), inline(refused, "failed"), inline(sending, "saving")]}
         onRetryNote={vi.fn()}
         onDiscardNote={vi.fn()}
       />,
     );
 
-    expect(screen.getByRole("button", { name: "1 note on the line at 00:12" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "2 notes on the line at 00:12" })).toBeInTheDocument();
     expect(notesShown()).toHaveLength(2);
-    expect(notesShown().join(" ")).toContain("Ask about catering");
+    expect(notesShown().join(" ")).toContain("Refused by the server");
     expect(notesShown().join(" ")).toContain("Still on its way");
     expect(screen.getByRole("button", { name: /^Retry note/ })).toBeInTheDocument();
   });
 
   it("puts no chip on notes that are all unsaved", () => {
-    const [first] = TWO_ON_THE_VENUE;
-    render(<LiveTranscriptPanel segments={SEGMENTS} hasLoaded notes={[inline(first, "saving")]} />);
+    render(
+      <LiveTranscriptPanel
+        segments={SEGMENTS}
+        hasLoaded
+        notes={TWO_ON_THE_VENUE.map((note) => inline(note, "saving"))}
+      />,
+    );
     expect(screen.queryByTestId("line-notes-chip")).not.toBeInTheDocument();
-    expect(notesShown()).toHaveLength(1);
+    expect(notesShown()).toHaveLength(2);
   });
 
   it("keeps a note written here in full once it saves", () => {
-    const [first] = TWO_ON_THE_VENUE;
+    const writtenHere = saved("n0", "Written on this page", 12_500);
     const { rerender } = render(
-      <LiveTranscriptPanel segments={SEGMENTS} hasLoaded notes={[inline(first, "saving")]} />,
+      <LiveTranscriptPanel segments={SEGMENTS} hasLoaded notes={[inline(writtenHere, "saving")]} />,
     );
-    rerender(<LiveTranscriptPanel segments={SEGMENTS} hasLoaded notes={[inline(first)]} />);
+    rerender(
+      <LiveTranscriptPanel
+        segments={SEGMENTS}
+        hasLoaded
+        notes={[writtenHere, ...TWO_ON_THE_VENUE].map((note) => inline(note))}
+      />,
+    );
 
-    expect(screen.queryByTestId("line-notes-chip")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "2 notes on the line at 00:12" })).toBeInTheDocument();
     expect(notesShown()).toHaveLength(1);
+    expect(notesShown()[0]).toContain("Written on this page");
   });
 
   it("is an item of the live view's list, so the list stays a list", () => {

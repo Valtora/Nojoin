@@ -12,7 +12,7 @@ import { NOTE_TIME_COLUMN } from "./TimelineNoteLine";
 interface CollapsedLineNotesProps<Note extends { id: string }> {
   /** The notes after one line, in the order they show. */
   notes: readonly Note[];
-  /** Saved notes fold behind the chip; any other always shows in full. */
+  /** Saved notes fold behind the chip, two or more of them; any other always shows in full. */
   isSaved: (note: Note) => boolean;
   renderNote: (note: Note) => ReactNode;
   /**
@@ -31,7 +31,7 @@ interface CollapsedLineNotesProps<Note extends { id: string }> {
  * The notes after a transcript line, folded behind a chip with their count
  * ("2 notes") that shows them on a click, a tap or Enter.
  *
- * Only notes that arrive saved fold. One still sending, refused, or kept to
+ * They fold only when two or more of them can. Only notes that arrive saved fold. One still sending, refused, or kept to
  * retry always shows in full, so nothing unsaved hides behind the chip; and
  * one written here stays in full once it saves, rather than folding away from
  * under the person who just wrote it.
@@ -57,9 +57,10 @@ export default function CollapsedLineNotes<Note extends { id: string }>({
 
   const folds = (note: Note) => isSaved(note) && !writtenHere.has(note.id);
   const folded = notes.filter(folds).length;
-  if (folded === 0) return <>{notes.map(renderNote)}</>;
+  // A single note shows as it is: a chip in its place would save no room.
+  if (folded < 2) return <>{notes.map(renderNote)}</>;
 
-  const count = folded === 1 ? "1 note" : `${folded} notes`;
+  const count = `${folded} notes`;
   const time = lineTime();
   return (
     <>
