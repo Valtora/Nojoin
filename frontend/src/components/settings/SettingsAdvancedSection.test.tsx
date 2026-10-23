@@ -2,7 +2,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 
 vi.mock("./SettingsProvider", () => ({
-  useSettingsContext: () => ({ settings: {}, isAdmin: true }),
+  useSettingsContext: () => ({
+    settings: {},
+    isAdmin: true,
+    viewer: { isAdmin: true, isSuperuser: true },
+  }),
 }));
 
 import SettingsAdvancedSection from "./SettingsAdvancedSection";

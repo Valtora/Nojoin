@@ -12,10 +12,12 @@ import {
 
 import { getSettings, getUserMe, updateSettings } from "@/lib/api";
 import { validateProcessingTuning } from "@/lib/processingTuning";
+import { isAdministrator } from "@/lib/roles";
 import { isValidUrl } from "@/lib/validation";
 import { isValidTimeZone, setCachedUserTimeZone } from "@/lib/timezone";
 import { Settings, UserRole } from "@/types";
 
+import type { SettingsViewer } from "./settingsCategories";
 import SettingsAutosaveState, {
   type SettingsAutosaveSnapshot,
 } from "./SettingsAutosaveState";
@@ -40,7 +42,17 @@ interface SettingsContextValue {
   updateSetting: (next: Settings) => void;
   /** Immediate save for discrete controls: selects, switches, radios. */
   persistNow: (next: Settings) => Promise<void>;
+  /** An Owner, an Admin or the superuser. */
   isAdmin: boolean;
+  /**
+   * The account created at first-run setup, the only one the API lets edit
+   * other accounts, back up and restore, and read the logs.
+   */
+  isSuperuser: boolean;
+  /** The signed-in account's role, null until it has loaded. */
+  role: UserRole | null;
+  /** `isAdmin` and `isSuperuser` together, for the category and registry filters. */
+  viewer: SettingsViewer;
   userId: number | null;
   username: string | null;
   setUsername: (username: string) => void;
@@ -103,6 +115,8 @@ export default function SettingsProvider({ children }: { children: ReactNode }) 
   const [settings, setSettings] = useState<Settings>({});
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isSuperuser, setIsSuperuser] = useState(false);
+  const [role, setRole] = useState<UserRole | null>(null);
   const [userId, setUserId] = useState<number | null>(null);
   const [username, setUsername] = useState<string | null>(null);
   const [forcePasswordChange, setForcePasswordChange] = useState(false);
@@ -149,11 +163,9 @@ export default function SettingsProvider({ children }: { children: ReactNode }) 
       try {
         const userData = await getUserMe();
         setUsername(userData.username);
-        setIsAdmin(
-          userData.is_superuser ||
-            userData.role === UserRole.OWNER ||
-            userData.role === UserRole.ADMIN,
-        );
+        setIsAdmin(isAdministrator(userData));
+        setIsSuperuser(userData.is_superuser);
+        setRole(userData.role);
         setUserId(userData.id);
 
         if (userData.force_password_change) {
@@ -190,6 +202,11 @@ export default function SettingsProvider({ children }: { children: ReactNode }) 
     [forcePasswordChange, saveNow],
   );
 
+  const viewer = useMemo<SettingsViewer>(
+    () => ({ isAdmin, isSuperuser }),
+    [isAdmin, isSuperuser],
+  );
+
   const value = useMemo<SettingsContextValue>(() => {
     const autosave: SettingsAutosaveSnapshot = forcePasswordChange
       ? { status: "blocked" }
@@ -204,6 +221,9 @@ export default function SettingsProvider({ children }: { children: ReactNode }) 
       updateSetting: setSettings,
       persistNow,
       isAdmin,
+      isSuperuser,
+      role,
+      viewer,
       userId,
       username,
       setUsername,
@@ -219,12 +239,15 @@ export default function SettingsProvider({ children }: { children: ReactNode }) 
     drafts,
     forcePasswordChange,
     isAdmin,
+    isSuperuser,
     loading,
     persistNow,
+    role,
     setDraftDirty,
     settings,
     userId,
     username,
+    viewer,
   ]);
 
   return (

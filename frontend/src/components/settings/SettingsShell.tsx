@@ -5,8 +5,11 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import { Loader2 } from "lucide-react";
 
 import {
+  SETTINGS_CATEGORIES,
   SETTINGS_ROOT,
+  canViewSettings,
   getSettingsNavGroups,
+  isSettingsCategoryId,
   settingsCategoryHref,
   type SettingsCategoryId,
 } from "./settingsCategories";
@@ -28,21 +31,36 @@ import VersionTag from "./VersionTag";
 export default function SettingsShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { isAdmin, loading, forcePasswordChange } = useSettingsContext();
+  const { viewer, loading, forcePasswordChange } = useSettingsContext();
   const [searchQuery, setSearchQuery] = useState("");
 
   const groups = useMemo(
-    () => getSettingsNavGroups({ isAdmin, forcePasswordChange }),
-    [forcePasswordChange, isAdmin],
+    () => getSettingsNavGroups({ ...viewer, forcePasswordChange }),
+    [forcePasswordChange, viewer],
   );
 
   const matching = useMemo<Set<SettingsCategoryId>>(
     () =>
       searchQuery
-        ? getMatchingSettingsCategories(searchQuery, { isAdmin })
+        ? getMatchingSettingsCategories(searchQuery, viewer)
         : new Set<SettingsCategoryId>(),
-    [isAdmin, searchQuery],
+    [searchQuery, viewer],
   );
+
+  // A category the account cannot see is one whose every action the API
+  // refuses, so a bookmark or typed address to it goes to the index instead.
+  const routeCategory = pathname.slice(SETTINGS_ROOT.length + 1).split("/")[0];
+  const routeHidden =
+    !loading &&
+    !forcePasswordChange &&
+    isSettingsCategoryId(routeCategory) &&
+    !canViewSettings(SETTINGS_CATEGORIES[routeCategory].access, viewer);
+
+  useEffect(() => {
+    if (routeHidden) {
+      router.replace(SETTINGS_ROOT);
+    }
+  }, [routeHidden, router]);
 
   // A forced password change locks the whole area to Profile. Enforced here
   // rather than per page so no route, and no stale bookmark, can slip past it.
@@ -81,7 +99,7 @@ export default function SettingsShell({ children }: { children: ReactNode }) {
           {!forcePasswordChange && (
             <div className="border-b p-4 contrast-border">
               <SettingsSearch
-                isAdmin={isAdmin}
+                viewer={viewer}
                 onQueryChange={handleQueryChange}
               />
             </div>
@@ -109,13 +127,15 @@ export default function SettingsShell({ children }: { children: ReactNode }) {
               {isIndex && !forcePasswordChange && (
                 <div className="space-y-3 border-b p-4 contrast-border lg:hidden">
                   <SettingsSearch
-                    isAdmin={isAdmin}
+                    viewer={viewer}
                     onQueryChange={handleQueryChange}
                   />
                   <SettingsAutosaveFooter />
                 </div>
               )}
-              {children}
+              {/* Not rendered on its way out, so it sends no request the
+                  API would refuse. */}
+              {!routeHidden && children}
             </>
           )}
         </div>

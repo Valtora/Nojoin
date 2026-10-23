@@ -369,5 +369,5 @@ When a newer release is out, owners and administrators get a persistent notifica
 
 - For capture problems, such as missing remote participants, a missing microphone or an unsupported browser, see [CAPTURE.md](CAPTURE.md#troubleshooting).
 - A paused or interrupted recording blocks new capture until you resume it, stop and process it, or discard it.
-- A recording that failed shows its reason on its transcript tab. Fix the cause and use **Retry Processing**; an administrator can check the logs in **Settings > System and logs**.
+- A recording that failed shows its reason on its transcript tab. Fix the cause and use **Retry Processing**; the account that set up Nojoin can check the logs in **Settings > System and logs**.
 - For calendar sync problems, see [CALENDAR.md](CALENDAR.md#troubleshooting).

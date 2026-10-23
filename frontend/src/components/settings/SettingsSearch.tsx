@@ -11,13 +11,14 @@ import {
   SETTINGS_CATEGORIES,
   settingsCategoryHref,
   type SettingsCategoryId,
+  type SettingsViewer,
 } from "./settingsCategories";
 import { SettingsScopeText } from "./SettingsScopeBadge";
 import { searchSettingsRegistry } from "./settingsRegistry";
 import { SETTINGS_INPUT_CLASS } from "./settingsControls";
 
 interface SettingsSearchProps {
-  isAdmin: boolean;
+  viewer: SettingsViewer;
   /** Lets the shell dot-mark matching categories in the navigation. */
   onQueryChange?: (query: string) => void;
   onNavigate?: () => void;
@@ -35,7 +36,7 @@ interface SettingsSearchProps {
  * per-character routing would fill the browser history with dead entries.
  */
 export default function SettingsSearch({
-  isAdmin,
+  viewer,
   onQueryChange,
   onNavigate,
 }: SettingsSearchProps) {
@@ -46,8 +47,8 @@ export default function SettingsSearch({
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   const results = useMemo(
-    () => searchSettingsRegistry(query, { isAdmin }),
-    [isAdmin, query],
+    () => searchSettingsRegistry(query, viewer),
+    [query, viewer],
   );
 
   useEffect(() => {

@@ -10,7 +10,7 @@ This guide is for Owners and Admins of a self-hosted Nojoin installation. [USAGE
 | Admin | Users, invitations, and the administrator settings. |
 | User | Their own recordings, tags, People library, settings and connected services. |
 
-Some actions also need superuser rights, which only the account created at first-run setup has: editing an existing user (username, role, password reset, deactivation, AI analysis limit), backup and restore, and viewing or downloading logs. Other Owners and Admins can open those pages, but the server refuses the action.
+Some actions also need superuser rights, which only the account created at first-run setup (the setup account) has: editing an existing user's username, password, active status or AI analysis limit, backup and restore, and viewing or downloading logs. Settings shows these to the setup account alone. Other Owners and Admins can still create and delete accounts and change roles in the users table, within the Owner limits above.
 
 ## Users and Invitations
 
@@ -18,13 +18,13 @@ Registration is by invitation only. **Settings > Users and access** has three pa
 
 - **Invitations** creates a sign-up link for the User or Admin role, valid for 1 to 365 days (default 7) and 1 to 100 uses (default 1). Revoking a link stops it working and keeps it listed; a revoked link can then be deleted. People who join through a link choose their own password.
 - **Users** creates an account directly with a temporary password. The new user must change it at first sign-in, and until then can only view their profile, change the password and sign out. Resetting someone's password applies the same rule, signs them out everywhere and disconnects their connected apps, such as Claude and Codex. Deactivating an account disconnects them too.
-- **AI analysis** caps the meeting analyses each person can start per day, counted from midnight UTC. Each analysis is one long call against that person's AI provider quota. Leave it blank or 0 for no cap. To give one person a different cap, edit them in the users table: blank uses the installation's cap, 0 means none.
+- **AI analysis** caps the meeting analyses each person can start per day, counted from midnight UTC. Each analysis is one long call against that person's AI provider quota. Leave it blank or 0 for no cap. To give one person a different cap, the setup account edits them in the users table: blank uses the installation's cap, 0 means none.
 
 Passwords need at least 8 characters, and one made entirely of whitespace is refused. Passwords set before this rule keep working until they are next changed or reset.
 
 ## Settings Structure
 
-Settings is grouped by subject. Administrators see fourteen categories and everyone else sees nine.
+Settings is grouped by subject. The setup account sees fourteen categories, other Owners and Admins thirteen, and everyone else nine. A link to a category the account cannot see opens the settings index instead.
 
 | Group | Category | Who sees it |
 | --- | --- | --- |
@@ -37,9 +37,9 @@ Settings is grouped by subject. Administrators see fourteen categories and every
 | | Notes and live assistance | Everyone |
 | | Your AI | Everyone |
 | | AI providers | Administrators |
-| Data | Backup and restore | Administrators |
+| Data | Backup and restore | The setup account |
 | | Privacy | Administrators |
-| | System and logs | Administrators |
+| | System and logs | Administrators (the logs: the setup account) |
 | About | Updates | Everyone |
 | | Help | Everyone |
 
@@ -94,14 +94,14 @@ The transcription engine and model, under **Advanced** in **Settings > Transcrip
 
 ### Backup and Restore
 
-**Settings > Backup and restore** exports and restores the whole installation. Read [BACKUP_RESTORE.md](BACKUP_RESTORE.md) first: an archive holds every user's password hash and calendar credentials, so treat it as a secret.
+**Settings > Backup and restore** exports and restores the whole installation, and only the setup account sees it. Read [BACKUP_RESTORE.md](BACKUP_RESTORE.md) first: an archive holds every user's password hash and calendar credentials, so treat it as a secret.
 
 ### System and Logs
 
 **Settings > System and logs** shows:
 
 - Service health, refreshed every 30 seconds: database, queue, worker, FFmpeg, storage, transcription model, speaker separation, processing device and AI. The AI check reads **Configured** when the default provider has a credential and a model, **No model selected** when it has a credential but no model, **Fallback only** when only the fallback can answer, and **Not configured** when there is no provider.
-- Live logs from one service or all of them, filtered by text, regular expression or level, and downloadable per service.
+- Live logs from one service or all of them, filtered by text, regular expression or level, and downloadable per service. Only the setup account sees these.
 
 ### Updates
 
