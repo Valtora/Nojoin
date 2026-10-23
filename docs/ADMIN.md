@@ -12,6 +12,8 @@ This guide is for Owners and Admins of a self-hosted Nojoin installation. [USAGE
 
 Some actions also need superuser rights, which only the account created at first-run setup (the setup account) has: editing an existing user's username, password, active status or AI analysis limit, backup and restore, and viewing or downloading logs. Settings shows these to the setup account alone. Other Owners and Admins can still create and delete accounts and change roles in the users table, within the Owner limits above.
 
+An installation always keeps at least one active Owner, since only an Owner can make another. Nojoin refuses to change the role of, deactivate or delete the last one and says why, so make another account an Owner first. This holds when two Owners demote or delete each other at the same moment: one change goes through and the other is refused.
+
 ## Users and Invitations
 
 Registration is by invitation only. **Settings > Users and access** has three parts:
@@ -101,7 +103,7 @@ The transcription engine and model, under **Advanced** in **Settings > Transcrip
 **Settings > System and logs** shows:
 
 - Service health, refreshed every 30 seconds: database, queue, worker, FFmpeg, storage, transcription model, speaker separation, processing device and AI. The AI check reads **Configured** when the default provider has a credential and a model, **No model selected** when it has a credential but no model, **Fallback only** when only the fallback can answer, and **Not configured** when there is no provider.
-- Live logs from one service or all of them, filtered by text, regular expression or level, and downloadable per service. Only the setup account sees these.
+- Live logs from one service or all of them, filtered by text, regular expression or level. Only the setup account sees these. **Download** saves the chosen service's whole log, or with **All services** the newest 10,000 lines of each service in one file, in time order and marked with the service's name as in the live view.
 
 ### Updates
 

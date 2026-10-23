@@ -56,6 +56,50 @@ def resolve_created_user_privileges(
     return requested_role, bool(user_in.is_superuser and current_user.is_superuser)
 
 
+LAST_OWNER_DETAIL = (
+    "Nojoin needs at least one active Owner. Make another account an Owner "
+    "before changing or removing this one."
+)
+
+
+async def lock_active_owner_ids(db: AsyncSession) -> set[int]:
+    """Lock every active Owner's row and return their ids.
+
+    Every change that can take the Owner role or an active account from an
+    Owner takes these locks before it reads its target, in id order, so two
+    such changes run one after the other and the second counts what the first
+    left: two Owners demoting or deleting each other at once cannot both
+    succeed. FOR NO KEY UPDATE, so an insert that references an Owner, such as
+    a new recording, does not wait on it.
+    """
+    result = await db.execute(
+        select(User.id)
+        .where(User.role == UserRole.OWNER, User.is_active == True)
+        .order_by(User.id)
+        .with_for_update(key_share=True)
+    )
+    return set(result.scalars().all())
+
+
+def refuse_removing_last_owner(owner_ids: set[int], user_id: int) -> None:
+    """Refuse a change that would leave the installation without an Owner.
+
+    Granting the Owner role takes an Owner, so once none is left only a
+    database edit could bring the role back.
+    """
+    if owner_ids == {user_id}:
+        raise HTTPException(status_code=409, detail=LAST_OWNER_DETAIL)
+
+
+def authorize_role_change(current_user: User, user: User, role: str) -> None:
+    # Authorization: only an owner may change an owner's role.
+    if user.role == UserRole.OWNER and current_user.role != UserRole.OWNER:
+        raise HTTPException(status_code=403, detail="Cannot modify the owner")
+    # Authorization: only an owner may promote a user to the owner role.
+    if role == UserRole.OWNER and current_user.role != UserRole.OWNER:
+        raise HTTPException(status_code=403, detail="Cannot promote to owner")
+
+
 @router.post("/register", response_model=UserRead)
 async def register_user(
     *,
@@ -245,12 +289,15 @@ async def delete_user(
     ):
         raise HTTPException(status_code=403, detail="Not authorized")
 
+    # The Owners first, as in every change that can remove one.
+    owner_ids = await lock_active_owner_ids(db)
+
     # Locked, as delete_recording locks its recording, before the document
     # paths are read below. An upload creating a recording for this user waits
     # on the lock, so no recording, nor any document of one, can be added that
     # the read misses and the cascade deletes, leaving its file behind. Locked
     # in the read itself, so a user deleted meanwhile is a 404.
-    user = await db.get(User, user_id, with_for_update=True)
+    user = await db.get(User, user_id, with_for_update=True, populate_existing=True)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
@@ -260,6 +307,8 @@ async def delete_user(
     # Authorization: only an owner may delete an owner account.
     if user.role == UserRole.OWNER and current_user.role != UserRole.OWNER:
         raise HTTPException(status_code=403, detail="Cannot delete the owner")
+
+    refuse_removing_last_owner(owner_ids, user.id)
 
     if user.is_superuser:
         query = select(func.count(User.id)).where(User.is_superuser == True)
@@ -330,20 +379,20 @@ async def update_user_role(
     ):
         raise HTTPException(status_code=403, detail="Not authorized")
 
-    user = await db.get(User, user_id)
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-
     if role not in [UserRole.ADMIN, UserRole.USER, UserRole.OWNER]:
         raise HTTPException(status_code=400, detail="Invalid role")
 
-    # Authorization: only an owner may change an owner's role.
-    if user.role == UserRole.OWNER and current_user.role != UserRole.OWNER:
-        raise HTTPException(status_code=403, detail="Cannot modify the owner")
+    removes_owner = role != UserRole.OWNER
+    owner_ids = await lock_active_owner_ids(db) if removes_owner else set()
 
-    # Authorization: only an owner may promote a user to the owner role.
-    if role == UserRole.OWNER and current_user.role != UserRole.OWNER:
-        raise HTTPException(status_code=403, detail="Cannot promote to owner")
+    # Read after the lock, so a change another request just committed counts.
+    user = await db.get(User, user_id, populate_existing=True)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    authorize_role_change(current_user, user, role)
+    if removes_owner:
+        refuse_removing_last_owner(owner_ids, user.id)
 
     user.role = role
     db.add(user)
@@ -421,7 +470,13 @@ async def update_user(
     """
     Update a user. Only for superusers.
     """
-    user = await db.get(User, user_id)
+    removes_owner = user_in.is_active is False or (
+        user_in.role is not None and user_in.role != UserRole.OWNER
+    )
+    owner_ids = await lock_active_owner_ids(db) if removes_owner else set()
+
+    # Read after the lock, so a change another request just committed counts.
+    user = await db.get(User, user_id, populate_existing=True)
     if not user:
         raise HTTPException(
             status_code=404,
@@ -455,13 +510,10 @@ async def update_user(
         # Explicit null clears the override back to the install default.
         user.ai_analysis_daily_limit = user_in.ai_analysis_daily_limit
     if user_in.role is not None:
-        # Authorization: only an owner may change an owner's role.
-        if user.role == UserRole.OWNER and current_user.role != UserRole.OWNER:
-            raise HTTPException(status_code=403, detail="Cannot modify the owner")
-        # Authorization: only an owner may promote a user to the owner role.
-        if user_in.role == UserRole.OWNER and current_user.role != UserRole.OWNER:
-            raise HTTPException(status_code=403, detail="Cannot promote to owner")
+        authorize_role_change(current_user, user, user_in.role)
         user.role = user_in.role
+    if removes_owner:
+        refuse_removing_last_owner(owner_ids, user.id)
 
     db.add(user)
     if bump_required:
