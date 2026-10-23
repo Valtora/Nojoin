@@ -1,4 +1,4 @@
-import { cleanup, render } from "@testing-library/react";
+import { cleanup, fireEvent, render } from "@testing-library/react";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import LiveTranscriptPanel from "@/components/LiveTranscriptPanel";
@@ -51,14 +51,18 @@ const toInline = (notes: TimelineNote[]): InlineNote[] =>
       error: null,
     }));
 
-/** `line:i` and `note:id` in document order. */
-const renderedOrder = (container: HTMLElement, lineAttribute: string) =>
-  Array.from(container.querySelectorAll<HTMLElement>(`[${lineAttribute}], [data-testid="timeline-note"]`)).map(
+/** `line:i` and `note:id` in document order, with every line's folded notes shown. */
+const renderedOrder = (container: HTMLElement, lineAttribute: string) => {
+  container
+    .querySelectorAll<HTMLButtonElement>('[data-testid="line-notes-chip"] button[aria-expanded="false"]')
+    .forEach((chip) => fireEvent.click(chip));
+  return Array.from(container.querySelectorAll<HTMLElement>(`[${lineAttribute}], [data-testid="timeline-note"]`)).map(
     (element) =>
       element.dataset.testid === "timeline-note"
         ? `note:${element.dataset.noteId}`
         : `line:${element.getAttribute(lineAttribute)}`,
   );
+};
 
 const liveOrder = (golden: PlacementCase) => {
   const { container } = render(

@@ -22,6 +22,7 @@ import { liveSpeakerDisplayName } from "@/lib/recordingSpeakerUtils";
 import { getTranscriptSegmentKey } from "@/lib/transcriptSegments";
 import { CaptureSourceChannel, TranscriptSegment } from "@/types";
 
+import CollapsedLineNotes from "./notes/CollapsedLineNotes";
 import TimelineNoteLine from "./notes/TimelineNoteLine";
 import LiveLineMenu from "./transcript/LiveLineMenu";
 import TranscriptSelectionNotes from "./transcript/TranscriptSelectionToolbar";
@@ -94,6 +95,7 @@ interface LiveTranscriptPanelProps {
 }
 
 const NO_NOTES: readonly InlineNote[] = [];
+const isSavedNote = (note: InlineNote) => note.status === "saved";
 
 const noteTimeMs = (note: InlineNote) =>
   note.kind === "selection" ? (note.start_ms ?? 0) : (note.anchor_ms ?? 0);
@@ -335,7 +337,14 @@ export default function LiveTranscriptPanel({
                         ) : null}
                       </div>
                     </li>,
-                    ...(notesAmongLines.afterLine.get(index) ?? []).map(renderNote),
+                    <CollapsedLineNotes
+                      key={`${key}-notes`}
+                      as="li"
+                      notes={notesAmongLines.afterLine.get(index) ?? NO_NOTES}
+                      isSaved={isSavedNote}
+                      renderNote={renderNote}
+                      lineTime={() => formatElapsed(segment.start)}
+                    />,
                   ])}
                 </ol>
               )}

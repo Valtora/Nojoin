@@ -25,6 +25,9 @@ interface TimelineNoteLineProps {
   timeColumnClassName?: string;
 }
 
+/** The time column of the live view, which a note's own time sits in by default. */
+export const NOTE_TIME_COLUMN = "shrink-0 pt-0.5 font-mono text-xs tabular-nums text-contrast-icon-muted";
+
 /**
  * A note in the transcript, on its own line after the line it follows. The
  * same line in the live view and the finished one, so a note reads the same
@@ -39,7 +42,7 @@ export default function TimelineNoteLine({
   error = null,
   onRetry,
   onDiscard,
-  timeColumnClassName = "shrink-0 pt-0.5 font-mono text-xs tabular-nums text-contrast-icon-muted",
+  timeColumnClassName = NOTE_TIME_COLUMN,
 }: TimelineNoteLineProps) {
   const lineRef = useRef<HTMLDivElement>(null);
   const name = `at ${timeLabel}, “${noteSnippet(body)}”`;
