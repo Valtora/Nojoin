@@ -22,6 +22,8 @@ from backend.processing.engines.base import LANGUAGE_DETECTION_AUDIO, VAD_MUTED_
 from backend.processing.engines.whisper_engine import WhisperEngine
 from backend.tests.test_pipeline_stages import (
     _MUTED,
+    _UNION,
+    _capture_stage_audio,
     _FakeRecording,
     _FakeSession,
     _FakeTranscript,
@@ -262,6 +264,31 @@ def test_the_vad_stage_hands_asr_the_muted_file_for_detection(
 
     assert config[LANGUAGE_DETECTION_AUDIO] == _MUTED
     assert config[VAD_MUTED_INPUT] is mute_transcription
+
+
+def test_detection_reads_vad_speech_while_asr_reads_the_union(monkeypatch):
+    """Muted ASR reads the union file once diarisation found turns (#670), but
+    detection still reads the VAD-muted file: VAD's own speech."""
+    recording = _FakeRecording(732)
+    session = _FakeSession(recording, _FakeTranscript(732))
+    _install_happy_path_modules(monkeypatch)
+    _capture_stage_audio(monkeypatch)
+    seen: dict = {}
+
+    def _asr(path, config=None):
+        seen["asr"], seen["config"] = path, dict(config)
+        return {"text": "hello", "language": "en", "segments": []}
+
+    _install(
+        monkeypatch,
+        "backend.processing.transcribe",
+        transcribe_audio=_asr,
+        release_model_cache=lambda: None,
+    )
+    _run_task(monkeypatch, session, recording_id=732, llm_config=_tuned_llm_config())
+
+    assert seen["asr"] == _UNION
+    assert seen["config"][LANGUAGE_DETECTION_AUDIO] == _MUTED
 
 
 def test_with_vad_off_the_vad_stage_hands_asr_no_detection_audio(monkeypatch):
