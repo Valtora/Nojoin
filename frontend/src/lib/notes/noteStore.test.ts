@@ -6,6 +6,7 @@ import { noteSignedIn, resetSessionForTests } from "@/lib/session";
 import {
   CLEAR_ON_SIGN_OUT_MS,
   clearStoredNotes,
+  forgetStoredRecording,
   IndexedDbNoteStore,
   MemoryNoteStore,
   NOTE_RECORD_VERSION,
@@ -233,6 +234,34 @@ describe("the page's note store", () => {
 
     await vi.waitFor(async () => expect(await store.get(ALICE, "rec-1")).toBeUndefined());
     expect(await store.get(BOB, "rec-2")).toEqual(record(BOB, "rec-2"));
+    stop();
+  });
+
+  it("removes a recording deleted for good from the signed-in account's notes, and tells the other tabs", async () => {
+    noteSignedIn({ username: "alice", force_password_change: false, id: ALICE });
+    const store = new MemoryNoteStore();
+    setNoteStoreForTests(store);
+    const { heard } = otherTab();
+    await store.put(record(ALICE, "rec-1"));
+    await store.put(record(ALICE, "rec-2"));
+
+    await forgetStoredRecording("rec-1");
+
+    expect(await store.recordingsOf(ALICE)).toEqual(["rec-2"]);
+    await vi.waitFor(() => expect(heard).toEqual([{ kind: "forgot", recordingId: "rec-1" }]));
+  });
+
+  it("hears another tab forget a recording", async () => {
+    setNoteStoreForTests(new MemoryNoteStore());
+    const events: StoreEvent[] = [];
+    const stop = subscribeStoreEvents((event) => events.push(event));
+    const { channel } = otherTab();
+
+    channel.postMessage({ kind: "forgot", recordingId: "" });
+    channel.postMessage({ kind: "forgot", recordingId: 7 });
+    channel.postMessage({ kind: "forgot", recordingId: "rec-1" });
+
+    await vi.waitFor(() => expect(events).toEqual([{ kind: "forgot", recordingId: "rec-1" }]));
     stop();
   });
 

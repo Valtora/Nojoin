@@ -2,6 +2,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, renderHook, waitFor } from "@testing-library/react";
 
 import {
+  MemoryNoteStore,
+  NOTE_RECORD_VERSION,
+  setNoteStoreForTests,
+} from "@/lib/notes/noteStore";
+import { noteSignedIn, resetSessionForTests } from "@/lib/session";
+
+import {
   RECORDING_ACTION_IDS,
   useRecordingActions,
 } from "./useRecordingActions";
@@ -188,6 +195,43 @@ describe("useRecordingActions", () => {
     expect(api.softDeleteRecording).toHaveBeenCalledWith("rec-1");
     expect(api.permanentlyDeleteRecording).toHaveBeenCalledWith("rec-1");
     expect(onSuccess).toHaveBeenCalledTimes(5);
+  });
+
+  it("forgets the notes kept in the browser for a recording it deletes for good or discards", async () => {
+    const store = new MemoryNoteStore();
+    setNoteStoreForTests(store);
+    noteSignedIn({ username: "alice", force_password_change: false, id: 1 });
+    const kept = (recordingId: string) => ({
+      version: NOTE_RECORD_VERSION,
+      account: 1,
+      recordingId,
+      notes: [],
+      draft: { text: "Half a thought", mode: "typing", typingStartMs: null },
+      discards: [],
+    });
+    try {
+      for (const id of ["rec-1", "rec-2", "rec-3", "rec-4"]) await store.put(kept(id));
+      const { result } = renderHook(() => useRecordingActions());
+
+      await act(async () => {
+        await result.current.permanentDelete("rec-1");
+        await result.current.discard("rec-2");
+      });
+      await waitFor(async () =>
+        expect(await store.recordingsOf(1)).toEqual(["rec-3", "rec-4"]),
+      );
+
+      // Kept when the server refuses, and when the recording only goes to the bin.
+      api.permanentlyDeleteRecording.mockRejectedValueOnce(new Error("offline"));
+      await act(async () => {
+        await result.current.permanentDelete("rec-3");
+        await result.current.softDelete("rec-4");
+      });
+      expect(await store.recordingsOf(1)).toEqual(["rec-3", "rec-4"]);
+    } finally {
+      setNoteStoreForTests(null);
+      resetSessionForTests();
+    }
   });
 
   it("exports audio and says what went wrong when there is no file to save", async () => {
