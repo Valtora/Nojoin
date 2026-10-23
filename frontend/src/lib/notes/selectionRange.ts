@@ -67,23 +67,16 @@ export const pickSpan = ({ line, from, to }: LinePick) => {
 };
 
 /**
- * The spans of the picks that take words, in time order, which is not always
- * page order (side-by-side lanes of overlapping speech): by first word, then
- * as given.
- */
-export const pickSpansInTimeOrder = (picks: readonly LinePick[]) =>
-  picks
-    .map((pick, index) => ({ span: pickSpan(pick), pick, index }))
-    .flatMap(({ span, pick, index }) => (span ? [{ ...span, pick, index }] : []))
-    .sort((left, right) => left.startMs - right.startMs || left.index - right.index);
-
-/**
  * The note a selection makes: from the earliest start of the lines it takes
- * to the latest end, quoting their text in time order. Null when it takes no
+ * to the latest end, quoting their text in time order, which is not always
+ * page order (side-by-side lanes of overlapping speech). Null when it takes no
  * words, or the words have no span to put a note on.
  */
 export const selectionFromPicks = (picks: readonly LinePick[]): NoteSelection | null => {
-  const spans = pickSpansInTimeOrder(picks);
+  const spans = picks
+    .map((pick, index) => ({ span: pickSpan(pick), index }))
+    .flatMap(({ span, index }) => (span ? [{ ...span, index }] : []))
+    .sort((left, right) => left.startMs - right.startMs || left.index - right.index);
   if (spans.length === 0) return null;
   return selectionOf({
     startMs: Math.min(...spans.map((span) => span.startMs)),
