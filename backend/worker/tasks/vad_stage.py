@@ -5,8 +5,9 @@ VAD on, the stage keeps two files of the same length and rate, the normalised
 16 kHz mono file and a copy with non-speech set to exact zeros, and hands each
 later stage the one its setting asks for (``backend/processing/vad_muting.py``,
 #486). Once diarisation has run, muted transcription may read a third file
-instead: the muted one opened inside every diarised turn (#670). The heavy imports stay inside the function, as they were in the
-pipeline, so the stage tests can stub those modules per test.
+instead: the muted one opened inside every diarised turn (#670). The heavy
+imports stay inside the function, as they were in the pipeline, so the stage
+tests can stub those modules per test.
 """
 
 from dataclasses import dataclass
