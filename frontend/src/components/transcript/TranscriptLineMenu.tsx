@@ -80,6 +80,7 @@ export default function TranscriptLineMenu({
     view: "finished",
     canNote: onAddNote !== null && selection !== null,
     canEdit: !isSegmentReadOnly,
+    provisional: segment.provisional === true,
     canPlay: onPlayFrom !== null,
   }).map((action) => ({ ...action, onSelect: run[action.id] }));
 
@@ -94,6 +95,7 @@ export default function TranscriptLineMenu({
       {noteAnchor && selection && onAddNote ? (
         <NoteOnSelectionPopover
           selection={selection}
+          title={`Note on the line at ${formatTime(segment.start)}`}
           anchor={noteAnchor}
           onSubmit={(body) => onAddNote({ kind: "selection", body, anchorMs: null, selection })}
           onClose={() => setNoteAnchor(null)}

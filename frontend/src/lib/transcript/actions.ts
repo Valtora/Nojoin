@@ -10,6 +10,12 @@ export interface LineActionContext {
   canNote: boolean;
   /** The line's text and speaker can be changed. */
   canEdit: boolean;
+  /**
+   * The line is still live (provisional). Its text isn't offered for editing:
+   * the final pass replaces live lines, and keeps an edit only on a line
+   * whose span it reproduces exactly.
+   */
+  provisional: boolean;
   /** The recording's audio can be played from the line. */
   canPlay: boolean;
 }
@@ -23,9 +29,10 @@ export interface LineAction {
 
 /**
  * Every line action, in menu order. The live view has only notes: it has no
- * editing and no playback. The finished view's other actions repeat the
- * line's own gestures (click the text, click the speaker, the play button),
- * so each also has a keyboard path from one place.
+ * editing and no playback. In the finished view, Edit text is the only way
+ * into a line's editor (a click on the text selects it), and Change speaker
+ * and Play from here repeat the speaker button and the play button, so each
+ * also has a keyboard path from one place.
  */
 export const LINE_ACTIONS: readonly LineAction[] = [
   {
@@ -38,7 +45,7 @@ export const LINE_ACTIONS: readonly LineAction[] = [
     id: "editText",
     label: "Edit text",
     icon: Pencil,
-    when: ({ view, canEdit }) => view === "finished" && canEdit,
+    when: ({ view, canEdit, provisional }) => view === "finished" && canEdit && !provisional,
   },
   {
     id: "changeSpeaker",

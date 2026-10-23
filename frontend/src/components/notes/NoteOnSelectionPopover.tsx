@@ -5,7 +5,6 @@ import { createPortal } from "react-dom";
 
 import { stripNote } from "@/lib/notes/headNoteSync";
 import type { NoteSelection } from "@/lib/notes/noteOutbox";
-import { formatTimelineMs } from "@/lib/notes/placement";
 
 import Button from "../ui/Button";
 import { useAnchoredPanel } from "../ui/useAnchoredPanel";
@@ -14,11 +13,16 @@ import { NOTE_BUTTON_TOUCH } from "./noteButtons";
 
 interface NoteOnSelectionPopoverProps {
   selection: NoteSelection;
+  /** Names the popover: "Note on the line at 01:05". */
+  title: string;
   /**
-   * What it sits against: the ⋯ button of the line, which stays mounted
-   * while it is open. Focus goes back there when it closes.
+   * What it sits against, which stays mounted while it is open: a line's ⋯
+   * button, or the place of a text selection. Focus goes back there when it
+   * closes, unless `returnFocus` puts it somewhere else.
    */
   anchor: HTMLElement;
+  /** Puts focus back when it closes, for an anchor that can't take focus. */
+  returnFocus?: () => void;
   /** Queues the note; returns why it was refused, or null once it is on its way. */
   onSubmit: (body: string) => string | null;
   onClose: () => void;
@@ -32,7 +36,9 @@ interface NoteOnSelectionPopoverProps {
  */
 export default function NoteOnSelectionPopover({
   selection,
+  title,
   anchor,
+  returnFocus,
   onSubmit,
   onClose,
 }: NoteOnSelectionPopoverProps) {
@@ -45,11 +51,11 @@ export default function NoteOnSelectionPopover({
   const titleId = useId();
   const errorId = useId();
   const isBlank = stripNote(text) === "";
-  const where = formatTimelineMs(selection.startMs);
 
   const close = () => {
     onClose();
-    anchor.focus();
+    if (returnFocus) returnFocus();
+    else anchor.focus();
   };
 
   // The box takes focus once the popover is placed: before that it is
@@ -120,12 +126,14 @@ export default function NoteOnSelectionPopover({
       aria-labelledby={titleId}
       style={panelStyle}
       data-testid="note-on-selection"
+      // A press in here keeps the text selection it is a note on.
+      data-selection-ui
       className="z-[var(--z-dropdown)] w-80 max-w-[calc(100vw-1rem)] rounded-lg border border-surface-border bg-surface-card p-3 shadow-float"
       onClick={(event) => event.stopPropagation()}
       onKeyDown={handlePanelKeyDown}
     >
       <p id={titleId} className="text-xs font-semibold text-contrast-helper">
-        Note on the line at {where}
+        {title}
       </p>
       <blockquote className="mt-1 line-clamp-3 border-l-2 border-action-border pl-2 text-sm italic leading-5 text-contrast-muted">
         {selection.quotedText}
