@@ -41,18 +41,29 @@ import { formatTimelineMs } from "./placement";
 /** How long a create may go unanswered before the note offers Retry and Discard. */
 export const SLOW_SAVE_MS = 8_000;
 
-export const OUTBOX_KINDS = ["point", "head", "tail"] as const;
+export const OUTBOX_KINDS = ["point", "selection", "head", "tail"] as const;
 export type OutboxKind = (typeof OUTBOX_KINDS)[number];
 
 export const NOTE_INSERT_MODES = ["typing", "send", "head", "tail"] as const;
-/** Where the note box puts a note. */
+/** Where the note box puts a note that is not on chosen text. */
 export type NoteInsertMode = (typeof NOTE_INSERT_MODES)[number];
 
-/** What the box hands over: the text as typed, and a point note's anchor. */
+/** The words a selection note quotes, and their span on the audio timeline. */
+export interface NoteSelection {
+  startMs: number;
+  endMs: number;
+  quotedText: string;
+}
+
+/**
+ * What the box hands over: the text as typed, a point note's anchor, and a
+ * selection note's span and quote.
+ */
 export interface OutboxDraft {
   kind: OutboxKind;
   body: string;
   anchorMs: number | null;
+  selection?: NoteSelection | null;
 }
 
 /** The text in the note box, kept here so it outlives the box. */
@@ -61,19 +72,29 @@ export interface ComposerDraft {
   mode: NoteInsertMode;
   /** Where the recording was when the first character went into the empty box. */
   typingStartMs: number | null;
+  /**
+   * The text the next note is on, chosen from a line's menu. While set, the
+   * note is a selection note whatever the mode; sending or clearing it brings
+   * the mode back.
+   */
+  selection?: NoteSelection | null;
 }
 
 export const EMPTY_DRAFT: ComposerDraft = { text: "", mode: "typing", typingStartMs: null };
 
 /**
- * The note a draft makes: "at typing start" anchors it where the box's first
- * character went in, "at send" where the recording is now.
+ * The note a draft makes: on the chosen text when there is some; else "at
+ * typing start" anchors it where the box's first character went in, "at
+ * send" where the recording is now.
  */
 export const noteFromDraft = (
   draft: ComposerDraft,
   readAudioNow: () => number,
 ): OutboxDraft => {
-  const { mode } = draft;
+  const { mode, selection } = draft;
+  if (selection) {
+    return { kind: "selection", body: draft.text, anchorMs: null, selection };
+  }
   if (mode === "head" || mode === "tail") {
     return { kind: mode, body: draft.text, anchorMs: null };
   }
@@ -92,6 +113,8 @@ export interface OutboxEntry {
   /** The text as the API stores it. */
   body: string;
   anchorMs: number | null;
+  /** A selection note's span and quote; absent or null for every other kind. */
+  selection?: NoteSelection | null;
   /** When it was sent; stands in for the server's creation time until listed. */
   createdAt: string;
   status: "saving" | "failed";
@@ -101,7 +124,7 @@ export interface OutboxEntry {
 /** A note not saved yet, as a stored copy of the outbox keeps it (`noteStore`). */
 export type RestoredNote = Pick<
   OutboxEntry,
-  "id" | "writeToken" | "kind" | "body" | "anchorMs" | "createdAt"
+  "id" | "writeToken" | "kind" | "body" | "anchorMs" | "selection" | "createdAt"
 >;
 
 /** What a stored copy of an outbox hands back after a reload. */
@@ -131,6 +154,26 @@ export interface OutboxSnapshot {
 }
 
 export const NOTE_TOO_LONG_ERROR = `A note can be at most ${NOTE_BODY_MAX_CHARS.toLocaleString()} characters.`;
+
+/** The longest quote a selection note keeps (`TIMELINE_NOTE_QUOTE_MAX_CHARS`). */
+export const NOTE_QUOTE_MAX_CHARS = 2_000;
+export const NOTE_QUOTE_TOO_LONG_ERROR = `A note can quote at most ${NOTE_QUOTE_MAX_CHARS.toLocaleString()} characters.`;
+
+/**
+ * A selection as the API takes it: whole ms, a span that ends after it
+ * starts, and a quote with its outer whitespace trimmed; null when there is
+ * no such span or nothing to quote.
+ */
+export const selectionOf = (selection: NoteSelection | null | undefined): NoteSelection | null => {
+  if (!selection) return null;
+  const startMs = Math.round(selection.startMs);
+  const endMs = Math.round(selection.endMs);
+  const quotedText = selection.quotedText.trim();
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || startMs < 0 || endMs <= startMs) {
+    return null;
+  }
+  return quotedText ? { startMs, endMs, quotedText } : null;
+};
 const NO_ANSWER_ERROR = "Not saved: no answer from Nojoin.";
 const NO_ANSWER_YET_ERROR = "No answer from Nojoin yet.";
 const RECORDING_GONE_ERROR = "Not saved: this recording no longer exists.";
@@ -181,12 +224,14 @@ const FAILURE_ERRORS: Record<"unknown" | "idInUse" | "recordingGone" | "refused"
 };
 
 /** Where a note goes, as a phrase: "at 1:02:03", "before the transcript". */
-export const notePlace = (entry: Pick<OutboxEntry, "kind" | "anchorMs">): string =>
+export const notePlace = (
+  entry: Pick<OutboxEntry, "kind" | "anchorMs"> & { selection?: NoteSelection | null },
+): string =>
   entry.kind === "head"
     ? "before the transcript"
     : entry.kind === "tail"
       ? "after the transcript"
-      : `at ${formatTimelineMs(entry.anchorMs ?? 0)}`;
+      : `at ${formatTimelineMs((entry.kind === "selection" ? entry.selection?.startMs : entry.anchorMs) ?? 0)}`;
 
 /** The start of a note's text, to tell one note's buttons from another's. */
 export const noteSnippet = (body: string, maxChars = 40): string => {
@@ -201,6 +246,13 @@ const createOf = (entry: OutboxEntry): TimelineNoteCreate => ({
   body: entry.body,
   ...(entry.kind === "point" && entry.anchorMs !== null
     ? { anchor_ms: entry.anchorMs }
+    : {}),
+  ...(entry.kind === "selection" && entry.selection
+    ? {
+        start_ms: entry.selection.startMs,
+        end_ms: entry.selection.endMs,
+        quoted_text: entry.selection.quotedText,
+      }
     : {}),
 });
 
@@ -243,14 +295,17 @@ export const shownNotes = (
   return notes;
 };
 
+const BODY_KINDS: readonly InlineNote["kind"][] = ["point", "selection"];
+
 /**
- * The point and selection notes to place among a live transcript's lines:
- * the saved ones (`shownNotes`) and those still on their way. Head and tail
- * notes belong to the Notes box, which lists its own.
+ * The point and selection notes to place among a transcript's lines: the
+ * saved ones (`shownNotes`) and those still on their way, of `entryKinds`.
+ * Head and tail notes belong to the Notes box, which lists its own.
  */
 export const inlineNotes = (
   listed: readonly TimelineNote[] | null | undefined,
   outbox: Pick<OutboxSnapshot, "entries" | "saved" | "discarded">,
+  entryKinds: readonly InlineNote["kind"][] = BODY_KINDS,
 ): InlineNote[] => {
   const notes: InlineNote[] = [];
   const shown = new Set<string>();
@@ -260,13 +315,17 @@ export const inlineNotes = (
     notes.push({ ...note, kind: note.kind, key: note.id, status: "saved", error: null });
   }
   for (const entry of outbox.entries) {
-    if (entry.kind !== "point" || shown.has(entry.id)) continue;
+    if (entry.kind !== "point" && entry.kind !== "selection") continue;
+    if (!entryKinds.includes(entry.kind) || shown.has(entry.id)) continue;
     notes.push({
       key: entry.key,
       id: entry.id,
-      kind: "point",
+      kind: entry.kind,
       body: entry.body,
       anchor_ms: entry.anchorMs,
+      start_ms: entry.selection?.startMs ?? null,
+      end_ms: entry.selection?.endMs ?? null,
+      quoted_text: entry.selection?.quotedText ?? null,
       created_at: entry.createdAt,
       status: entry.status,
       error: entry.error,
@@ -348,6 +407,13 @@ export class NoteOutbox {
     if (draft.kind === "point" && (draft.anchorMs === null || draft.anchorMs < 0)) {
       return "There is no point in the recording to anchor this note to yet.";
     }
+    const selection = draft.kind === "selection" ? selectionOf(draft.selection) : null;
+    if (draft.kind === "selection" && !selection) {
+      return "There is no text to put this note on.";
+    }
+    if (selection && noteLength(selection.quotedText) > NOTE_QUOTE_MAX_CHARS) {
+      return NOTE_QUOTE_TOO_LONG_ERROR;
+    }
     // The key starts as the id, so the line keeps its identity once saved.
     const id = newNoteId();
     const entry: OutboxEntry = {
@@ -357,6 +423,7 @@ export class NoteOutbox {
       kind: draft.kind,
       body,
       anchorMs: draft.kind === "point" ? Math.round(draft.anchorMs ?? 0) : null,
+      ...(selection ? { selection } : {}),
       createdAt: new Date().toISOString(),
       status: "saving",
       error: null,

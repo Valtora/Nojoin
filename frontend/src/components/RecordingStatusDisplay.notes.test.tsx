@@ -351,6 +351,35 @@ describe("RecordingStatusDisplay live notes", () => {
     ).toBeNull();
   });
 
+  it("puts a note on a line from its menu, and keeps a failed one with the lines, not the Notes box", async () => {
+    createTimelineNote.mockRejectedValueOnce(NO_ANSWER);
+    const { show } = renderLive();
+    await screen.findByText("Legal signs off Friday.");
+
+    fireEvent.click(screen.getByRole("button", { name: "Actions for the line at 01:00" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Note on this line" }));
+    expect(box()).toHaveFocus();
+    expect(screen.getByTestId("note-selection-chip")).toHaveTextContent("Legal signs off Friday.");
+    addNote("Who signs?");
+
+    await waitFor(() => expect(createTimelineNote).toHaveBeenCalledTimes(1));
+    expect(createTimelineNote.mock.calls[0][1]).toMatchObject({
+      kind: "selection",
+      body: "Who signs?",
+      start_ms: 60_000,
+      end_ms: 66_000,
+      quoted_text: "Legal signs off Friday.",
+    });
+    const note = await screen.findByTestId("live-transcript-note");
+    expect(note).toHaveTextContent("Not saved: no answer from Nojoin.");
+    expect(within(note).getByTestId("timeline-note-quote")).toHaveTextContent("Legal signs off Friday.");
+    expect(screen.queryByTestId("notes-box-pending")).toBeNull();
+
+    await show(stopped());
+    expect(screen.getByTestId("unsaved-note")).toHaveTextContent("Who signs?");
+    expect(screen.queryByTestId("notes-box-pending")).toBeNull();
+  });
+
   it("holds the Notes box back until the recording's notes have loaded", async () => {
     renderLive(buildRecording(), null);
     await screen.findByText("We need the budget.");

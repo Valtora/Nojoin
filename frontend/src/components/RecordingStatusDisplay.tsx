@@ -5,7 +5,7 @@ import { ArrowLeft, Loader2, Mic, Pause, Trash2, Upload } from "lucide-react";
 
 import { isLiveCaptureInProgress } from "@/lib/liveCapture";
 import type { AudioClock } from "@/lib/notes/audioClock";
-import { inlineNotes } from "@/lib/notes/noteOutbox";
+import { inlineNotes, type NoteSelection } from "@/lib/notes/noteOutbox";
 import { segmentStartMs } from "@/lib/notes/placement";
 import { useNoteOutbox } from "@/lib/notes/useNoteOutbox";
 import { ClientStatus, Recording, RecordingStatus, type TimelineNote } from "@/types";
@@ -79,7 +79,7 @@ interface RecordingStatusDisplayProps {
 }
 
 const NO_TIMELINE_NOTES: readonly TimelineNote[] = [];
-const POINT_NOTES = ["point"] as const;
+const BODY_NOTES = ["point", "selection"] as const;
 
 export default function RecordingStatusDisplay({
   recording,
@@ -113,7 +113,7 @@ export default function RecordingStatusDisplay({
     [timelineNotes, outboxEntries, outboxSaved, outboxDiscarded],
   );
   const pendingMeetingNotes = useMemo(
-    () => outboxEntries.filter((entry) => entry.kind !== "point"),
+    () => outboxEntries.filter((entry) => entry.kind === "head" || entry.kind === "tail"),
     [outboxEntries],
   );
   const liveSegments = liveTranscript.segments;
@@ -141,6 +141,15 @@ export default function RecordingStatusDisplay({
   const discardInlineNote = useCallback(
     (key: string) => {
       outbox.discard(key);
+      composerBoxRef.current?.focus();
+    },
+    [outbox],
+  );
+  // "Note on this line": the box's next note goes on the line, and the box
+  // takes focus to write it.
+  const noteOnLine = useCallback(
+    (selection: NoteSelection) => {
+      outbox.setDraft({ ...outbox.getSnapshot().draft, selection });
       composerBoxRef.current?.focus();
     },
     [outbox],
@@ -388,6 +397,7 @@ export default function RecordingStatusDisplay({
                 notes={liveNotes}
                 onRetryNote={outbox.retry}
                 onDiscardNote={discardInlineNote}
+                onNoteOnLine={noteOnLine}
                 footer={
                   <LiveNoteComposer
                     readAudioNow={readAudioNow}
@@ -457,7 +467,7 @@ export default function RecordingStatusDisplay({
                     discarded. Meeting-wide notes are with the Notes box. */}
                 <RecordingUnsavedNotes
                   recordingId={recording.id}
-                  kinds={POINT_NOTES}
+                  kinds={BODY_NOTES}
                   readEndMs={readEndMs}
                   onEmptied={focusNoteHome}
                   className="mt-4 border-t border-surface-divider pt-3"
