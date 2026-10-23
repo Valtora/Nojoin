@@ -3,12 +3,19 @@ import { describe, expect, it } from "vitest";
 import {
   ANCHOR_MARGIN_MS,
   ANCHOR_SCORE_FLOOR,
+  PART_WORD_MIN_CHARS,
   comparableWord,
   resolveSelection,
   type LineRange,
   type Resolution,
 } from "./resolveSelection";
-import { interpolatedTokens, selectionFromPicks, type DrawnLine, type LinePick } from "./selectionRange";
+import {
+  interpolatedTokens,
+  pickSpansInTimeOrder,
+  selectionFromPicks,
+  type DrawnLine,
+  type LinePick,
+} from "./selectionRange";
 
 /** A line from `startMs`, 100 ms a character, so a word's time is easy to read off. */
 const lineAt = (segmentId: string, startMs: number, text: string): DrawnLine => ({
@@ -188,6 +195,19 @@ describe("resolveSelection", () => {
     expect(marked(inside, [VENUE])).toEqual([["u1", "thousand"]]);
   });
 
+  it("finds a one-word quote inside a word only when it is three letters or more", () => {
+    expect(PART_WORD_MIN_CHARS).toBe(3);
+    // "a" was said, and the final pass heard "and" there instead: "and" is not marked.
+    const live = lineAt("l1", 60_000, "We need a venue");
+    const final = lineAt("f1", 60_000, "We need and venue");
+    expect(resolveSelection(noteOn(live, 8, 9), [final])).toMatchObject({ state: "unanchored", ranges: [] });
+    // A drag inside "forty": three of its letters are found there, two are not.
+    const three = resolveSelection(noteOn(VENUE, 9, 12), [VENUE]);
+    expect(three).toMatchObject({ state: "exact", score: 1 });
+    expect(marked(three, [VENUE])).toEqual([["u1", "forty"]]);
+    expect(resolveSelection(noteOn(VENUE, 9, 11), [VENUE])).toMatchObject({ state: "unanchored", ranges: [] });
+  });
+
   it("takes part of a word only at the quote's ends: its first word's end, its last word's start", () => {
     const note = noteOn(VENUE, 8, 36);
     const as = (quoted_text: string) => resolveSelection({ ...note, quoted_text }, [VENUE]);
@@ -211,6 +231,42 @@ describe("resolveSelection", () => {
     expect(marked(twoWords, [two])).toEqual([["f2", "the venue"]]);
   });
 
+  it("finds a drag from inside one speaker's line into an overlapping one as exact, on the words dragged over", () => {
+    // Side-by-side lanes: "Friday" is said after the other speaker starts, so
+    // the quote (time order, #616) puts "No, the" first.
+    const ship: DrawnLine = { segmentId: "a", text: "Ship it on Friday", startMs: 12_000, endMs: 14_000 };
+    const week: DrawnLine = { segmentId: "b", text: "No, the week after", startMs: 13_000, endMs: 15_000 };
+    const selection = selectionFromPicks([
+      { line: ship, from: 11, to: ship.text.length },
+      { line: week, from: 0, to: 7 },
+    ])!;
+    expect(selection.quotedText).toBe("No, the Friday");
+    const note = { start_ms: selection.startMs, end_ms: selection.endMs, quoted_text: selection.quotedText };
+    for (const lines of [[ship, week], [week, ship]]) {
+      const resolution = resolveSelection(note, lines);
+      expect(resolution).toMatchObject({ state: "exact", score: 1 });
+      expect(marked(resolution, lines)).toEqual([
+        ["b", "No, the"],
+        ["a", "Friday"],
+      ]);
+    }
+    // From inside a word of the later speaker's line into the start of the earlier one's.
+    const inWord = selectionFromPicks([
+      { line: week, from: 10, to: week.text.length },
+      { line: ship, from: 0, to: 6 },
+    ])!;
+    expect(inWord.quotedText).toBe("Ship i ek after");
+    const resolution = resolveSelection(
+      { start_ms: inWord.startMs, end_ms: inWord.endMs, quoted_text: inWord.quotedText },
+      [ship, week],
+    );
+    expect(resolution).toMatchObject({ state: "exact", score: 1 });
+    expect(marked(resolution, [ship, week])).toEqual([
+      ["a", "Ship it"],
+      ["b", "week after"],
+    ]);
+  });
+
   it("follows the floor and margin it is given", () => {
     const quote = noteOn(VENUE, 8, 36);
     const twoChanged = lineAt("f1", 60_000, "We need forty grand for a venue, and soon.");
@@ -223,10 +279,16 @@ describe("resolveSelection", () => {
   });
 });
 
-/** A small seeded generator, so a failing case can be run again. */
+/**
+ * A small seeded generator (mulberry32), so a failing case can be run again.
+ * It keeps to 32-bit integers: a multiplier that overflows a double's 53 bits
+ * repeats after some ten thousand draws, a few dozen cases.
+ */
 const random = (seed: number) => () => {
-  seed = (seed * 1_103_515_245 + 12_345) % 2_147_483_648;
-  return seed / 2_147_483_648;
+  seed = (seed + 0x6d2b79f5) | 0;
+  let mixed = Math.imul(seed ^ (seed >>> 15), seed | 1);
+  mixed ^= mixed + Math.imul(mixed ^ (mixed >>> 7), mixed | 61);
+  return ((mixed ^ (mixed >>> 14)) >>> 0) / 4_294_967_296;
 };
 
 const WORDS = [
@@ -414,14 +476,14 @@ const APART = [
 
 describe("resolveSelection on the transcript a selection was made on", () => {
   /** Lines of `count` words, cased and punctuated at random, a word every 300-500 ms. */
-  const transcript = (next: () => number, count: number): DrawnLine[] => {
+  const transcript = (next: () => number, count: number, vocabulary: readonly string[] = APART): DrawnLine[] => {
     const pick = <T,>(list: readonly T[]) => list[Math.floor(next() * list.length)];
     const lines: DrawnLine[] = [];
     let at = 1_000 + Math.floor(next() * 5_000);
     for (let left = count; left > 0; ) {
       const size = Math.min(left, 3 + Math.floor(next() * 8));
       const words = Array.from({ length: size }, () => {
-        const word = pick(APART);
+        const word = pick(vocabulary);
         const cased = next() < 0.2 ? word.toUpperCase() : next() < 0.2 ? word[0].toUpperCase() + word.slice(1) : word;
         return cased + pick(PUNCTUATION);
       });
@@ -480,7 +542,7 @@ describe("resolveSelection on the transcript a selection was made on", () => {
 
   it("finds every selection exactly, inside words, over lines and shortened, on just the words picked (3,000 cases)", () => {
     const next = random(659);
-    const seen = { partWord: 0, lines: 0, shortened: 0 };
+    const seen = { partWord: 0, lines: 0, shortened: 0, tooShort: 0 };
     for (let run = 0; run < 3_000; run += 1) {
       const kind = run % 3;
       // A shortened quote needs a selection of over 2,000 characters.
@@ -494,8 +556,26 @@ describe("resolveSelection on the transcript a selection was made on", () => {
       const note = { start_ms: selection.startMs, end_ms: selection.endMs, quoted_text: selection.quotedText };
       const resolution = resolveSelection(note, lines);
       const context = JSON.stringify({ run, picks: picks.map(({ line, from, to }) => [line.segmentId, from, to]) });
+      // A part of one word shorter than PART_WORD_MIN_CHARS is found nowhere:
+      // none of APART holds another, so it is no whole word.
+      const words = quoteWords(selection.quotedText);
+      if (words.length === 1 && words[0].length < PART_WORD_MIN_CHARS && !APART.includes(words[0])) {
+        expect(resolution, context).toMatchObject({ state: "unanchored", ranges: [] });
+        seen.tooShort += 1;
+        continue;
+      }
       expect(resolution.state, context).toBe("exact");
-      expect(resolution.ranges, context).toEqual(pickedRanges(picks, selection.quotedText));
+      const picked = pickedRanges(picks, selection.quotedText);
+      // A selection from the punctuation after a word takes that word's time,
+      // and a one-word quote can't tell it from the same word after it
+      // ("Noble? noble" from the "?"): either is right.
+      const [mark] = resolution.ranges;
+      const touchedTwin =
+        words.length === 1 &&
+        resolution.ranges.length === 1 &&
+        picks.some(({ line, from, to }) => line.segmentId === mark.segmentId && mark.from < to && mark.to > from) &&
+        markedWords(resolution, lines)[0].includes(words[0]);
+      if (!touchedTwin) expect(resolution.ranges, context).toEqual(picked);
       const inWord = (line: DrawnLine, at: number) => /\S\S/.test(line.text.slice(at - 1, at + 1)) && at > 0;
       if (picks.some(({ line, from, to }) => inWord(line, from) || inWord(line, to))) seen.partWord += 1;
       if (picks.length > 1) seen.lines += 1;
@@ -504,5 +584,70 @@ describe("resolveSelection on the transcript a selection was made on", () => {
     expect(seen.partWord).toBeGreaterThan(1_500);
     expect(seen.lines).toBeGreaterThan(1_500);
     expect(seen.shortened).toBeGreaterThan(900);
+    expect(seen.tooShort).toBeGreaterThan(0);
+  });
+
+  /**
+   * Three hundred six-letter words: none is part of another, and few repeat
+   * near each other, so a word a drag picks at the start or end of a line is
+   * seldom said on the line beside it too, where it would be found as well.
+   */
+  const MANY = (() => {
+    const next = random(42);
+    const words = new Set<string>();
+    while (words.size < 300) {
+      words.add(Array.from({ length: 6 }, () => String.fromCharCode(97 + Math.floor(next() * 26))).join(""));
+    }
+    return [...words];
+  })();
+
+  it("finds every drag over two speakers' side-by-side lanes exactly, on just the words picked (2,000 cases)", () => {
+    const next = random(616);
+    const seen = { drags: 0, onThePicks: 0, outOfPageOrder: 0 };
+    for (let run = 0; run < 2_000; run += 1) {
+      // Two speakers talking over each other. The page draws each run of lines
+      // that overlap in time as a group, one speaker's lane and then the other's.
+      const lines = [0, 1]
+        .flatMap((speaker) =>
+          transcript(next, 10 + Math.floor(next() * 20), MANY).map((line, index) => ({
+            ...line,
+            segmentId: `${speaker}-${index}`,
+          })),
+        )
+        .sort((left, right) => left.startMs - right.startMs);
+      const groups: DrawnLine[][] = [];
+      let groupEndMs = -Infinity;
+      for (const line of lines) {
+        if (line.startMs < groupEndMs) {
+          groups[groups.length - 1].push(line);
+          groupEndMs = Math.max(groupEndMs, line.endMs);
+        } else {
+          groups.push([line]);
+          groupEndMs = line.endMs;
+        }
+      }
+      const page = groups.flatMap((group) =>
+        [0, 1].flatMap((speaker) => group.filter((line) => line.segmentId.startsWith(`${speaker}-`))),
+      );
+      const first = Math.floor(next() * page.length);
+      const picks = drag(page, first, Math.min(page.length - 1, first + 1 + Math.floor(next() * 6)), next);
+      const selection = selectionFromPicks(picks);
+      if (!selection || quoteWords(selection.quotedText).length < 2) continue;
+      const note = { start_ms: selection.startMs, end_ms: selection.endMs, quoted_text: selection.quotedText };
+      const resolution = resolveSelection(note, page);
+      const context = JSON.stringify({ run, picks: picks.map(({ line, from, to }) => [line.segmentId, from, to]) });
+      expect(resolution.state, context).toBe("exact");
+      // The quote's order (#616), which is the order of the words marked.
+      const inTimeOrder = pickSpansInTimeOrder(picks).map(({ pick }) => pick);
+      seen.drags += 1;
+      if (JSON.stringify(resolution.ranges) === JSON.stringify(pickedRanges(inTimeOrder, selection.quotedText))) {
+        seen.onThePicks += 1;
+      }
+      if (inTimeOrder.some((pick, at) => pick !== picks[at])) seen.outOfPageOrder += 1;
+    }
+    expect(seen.outOfPageOrder).toBeGreaterThan(500);
+    // A letter or two a drag cuts at the edge of a line may also start or end
+    // a word of a line beside it, where it is as exact: elsewhere, the words picked.
+    expect(seen.onThePicks / seen.drags).toBeGreaterThan(0.97);
   });
 });
