@@ -1,6 +1,6 @@
 """The reader's timeline notes in an exported transcript (B5, #488).
 
-Notes sit in the transcript section where the transcript view shows them: notes
+Notes sit in the transcript section where they fall, as in My notes: notes
 before the transcript first, each note at a time after the line it follows,
 notes after the transcript last. Every format sets them apart as a quote, and
 plain text quotes each of their lines, so none can pass for a line of speech.

@@ -706,7 +706,9 @@ async def append_meeting_notes(
         recording_id: The recording's string id from list_recordings.
         text: The note text to append.
         at_seconds: Optional. Seconds from the start of the recording, as
-            get_transcript's ``start`` gives them, to place the note at.
+            get_transcript_utterances' ``start`` gives them (or a [MM:SS]
+            stamp from get_transcript, converted to seconds), to place the
+            note at.
     """
     from fastapi import HTTPException, Response
 
