@@ -20,6 +20,7 @@ const routerRefresh = vi.fn();
 const addNotification = vi.fn();
 const setActivePanel = vi.fn();
 const exportAudio = vi.fn();
+const exportContent = vi.fn();
 
 const getRecording = vi.fn();
 const getSettings = vi.fn();
@@ -30,10 +31,13 @@ const generateNotes = vi.fn();
 const updateSpeaker = vi.fn();
 const updateTranscriptUtteranceText = vi.fn();
 const listTimelineNotes = vi.fn();
+const updateTimelineNote = vi.fn();
 const getCurrentUser = vi.fn();
 const getUserMe = vi.fn();
 
 let activePanel = "transcript";
+// Both side panels collapsed unless a test opens them, so desktop shows the rail.
+let sidePanelsCollapsed = true;
 
 // Stable across renders, like Next's own router: the page's load callback
 // depends on it, and a fresh object per render would reload in a loop.
@@ -61,13 +65,25 @@ vi.mock("@/lib/capture/CaptureProvider", () => ({
   }),
 }));
 
+const setSideTab = vi.fn();
+const setSpeakerPanelCollapsed = vi.fn();
+
 vi.mock("@/lib/store", () => ({
-  useNavigationStore: () => ({
-    chatPanelHeight: 30,
-    setChatPanelHeight: vi.fn(),
-    activePanel,
-    setActivePanel,
-  }),
+  useNavigationStore: (select?: (state: Record<string, unknown>) => unknown) => {
+    const state = {
+      chatPanelHeight: 30,
+      setChatPanelHeight: vi.fn(),
+      activePanel,
+      setActivePanel,
+      isSpeakerPanelCollapsed: sidePanelsCollapsed,
+      isChatPanelCollapsed: sidePanelsCollapsed,
+      setSpeakerPanelCollapsed,
+      setChatPanelCollapsed: vi.fn(),
+      sideTab: "my-notes",
+      setSideTab,
+    };
+    return select ? select(state) : state;
+  },
 }));
 
 vi.mock("@/lib/api", () => ({
@@ -89,10 +105,11 @@ vi.mock("@/lib/api", () => ({
   generateNotes: (...args: unknown[]) => generateNotes(...args),
   updateNotes: vi.fn(),
   updateMeetingEdgeFocus: vi.fn(),
-  exportContent: vi.fn(),
+  exportContent: (...args: unknown[]) => exportContent(...args),
   exportAudio: (...args: unknown[]) => exportAudio(...args),
   listTimelineNotes: (...args: unknown[]) => listTimelineNotes(...args),
   createTimelineNote: vi.fn(),
+  updateTimelineNote: (...args: unknown[]) => updateTimelineNote(...args),
   deleteTimelineNote: vi.fn(),
 }));
 
@@ -117,15 +134,20 @@ vi.mock("@/components/TranscriptView", () => ({
     onUpdateSegmentText,
     onUndo,
     canUndo,
+    timelineNotes,
   }: {
     segments: TranscriptSegment[];
     onRenameSpeaker: (label: string, newName: string) => void;
     onUpdateSegmentText: (segment: TranscriptSegment, text: string) => void;
     onUndo: () => void;
     canUndo: boolean;
+    timelineNotes?: readonly { body: string }[] | null;
   }) => (
     <div data-testid="transcript-view" data-can-undo={String(canUndo)}>
       segments:{segments.length}
+      <span data-testid="transcript-notes">
+        {(timelineNotes ?? []).map((note) => note.body).join(" | ")}
+      </span>
       <button type="button" onClick={() => onRenameSpeaker("SPEAKER_00", "Dana")}>
         Rename speaker
       </button>
@@ -170,13 +192,30 @@ vi.mock("@/components/ExportModal", () => ({
     onExport,
   }: {
     hasAudio: boolean;
-    onExport: (selection: { kind: "audio" }) => void;
+    onExport: (selection: Record<string, unknown>) => void;
   }) => (
-    <button
-      data-testid="export-modal"
-      data-has-audio={String(hasAudio)}
-      onClick={() => onExport({ kind: "audio" })}
-    />
+    <>
+      <button
+        data-testid="export-modal"
+        data-has-audio={String(hasAudio)}
+        onClick={() => onExport({ kind: "audio" })}
+      />
+      <button
+        data-testid="export-transcript-without-notes"
+        onClick={() =>
+          onExport({ kind: "document", sections: ["transcript"], format: "txt", includeNotes: false })
+        }
+      />
+    </>
+  ),
+}));
+vi.mock("./_components/AnalyticsSection", () => ({
+  default: ({ onReviewSpeakers }: { onReviewSpeakers?: () => void }) => (
+    <div role="tabpanel" id="panel-analytics" aria-labelledby="tab-analytics">
+      <button type="button" onClick={onReviewSpeakers}>
+        Review speakers
+      </button>
+    </div>
   ),
 }));
 vi.mock("@/components/RecordingTagEditor", () => ({
@@ -253,11 +292,15 @@ const renderPage = () =>
 describe("RecordingPage (detail)", () => {
   beforeEach(() => {
     activePanel = "transcript";
+    sidePanelsCollapsed = true;
     routerPush.mockReset();
     routerRefresh.mockReset();
     addNotification.mockReset();
     setActivePanel.mockReset();
+    setSideTab.mockReset();
+    setSpeakerPanelCollapsed.mockReset();
     exportAudio.mockReset();
+    exportContent.mockReset().mockResolvedValue(undefined);
     getRecording.mockReset();
     getSettings.mockReset();
     getGlobalSpeakers.mockReset();
@@ -267,6 +310,7 @@ describe("RecordingPage (detail)", () => {
     updateSpeaker.mockReset().mockResolvedValue([]);
     updateTranscriptUtteranceText.mockReset().mockResolvedValue(undefined);
     listTimelineNotes.mockReset().mockResolvedValue([]);
+    updateTimelineNote.mockReset();
 
     getRecording.mockResolvedValue(buildRecording());
     getSettings.mockResolvedValue({
@@ -563,6 +607,15 @@ describe("RecordingPage (detail)", () => {
     expect(exportAudio).toHaveBeenCalledWith("rec-1", "Quarterly sync");
   });
 
+  it("passes the dialog's choice to leave the reader's notes out on to the export", async () => {
+    renderPage();
+
+    fireEvent.click(await screen.findByTestId("export-transcript-without-notes"));
+
+    await waitFor(() => expect(exportContent).toHaveBeenCalledTimes(1));
+    expect(exportContent).toHaveBeenCalledWith("rec-1", ["transcript"], "txt", expect.any(Object), false);
+  });
+
   it("renders the notes panel when notes is the active tab", async () => {
     activePanel = "notes";
     renderPage();
@@ -598,12 +651,13 @@ describe("RecordingPage (detail)", () => {
 
   // On a phone the speaker panel opens in the tab area, so it has a tab of its
   // own: with none, no tab shows as current and nothing leads back (#650).
-  it("gives the speaker panel a fifth tab on a phone, current while it is open", async () => {
+  // My notes, in the desktop side column too, has one after Notes.
+  it("gives the speaker panel and My notes tabs on a phone, Speakers current while it is open", async () => {
     activePanel = "speakers";
     const tablist = await openTabs(360);
 
     expect(tabLabels(tablist)).toEqual([
-      "Transcript", "Notes", "Documents", "Analytics", "Speakers",
+      "Transcript", "Notes", "My notes", "Documents", "Analytics", "Speakers",
     ]);
     expect(within(tablist).getAllByRole("tab", { selected: true })).toEqual([
       within(tablist).getByRole("tab", { name: "Speakers" }),
@@ -689,6 +743,105 @@ describe("RecordingPage (detail)", () => {
     expect(screen.queryByRole("button", { name: "Speakers" })).toBeNull();
   });
 
+  it("opens the transcript from a note in My notes on a phone, and focus goes with it", async () => {
+    activePanel = "my-notes";
+    listTimelineNotes.mockResolvedValue([
+      {
+        id: "n-1",
+        recording_id: "rec-1",
+        kind: "point",
+        body: "Ask about catering",
+        anchor_ms: 2_500,
+        revision: 1,
+        created_at: "2026-10-23T10:00:00",
+        updated_at: "2026-10-23T10:00:00",
+      },
+    ]);
+    await openTabs(360);
+    const panel = document.getElementById("panel-my-notes")!;
+
+    fireEvent.click(
+      await within(panel).findByRole("button", { name: /^Show in the transcript: the note at 00:02/ }),
+    );
+
+    expect(setActivePanel).toHaveBeenLastCalledWith("transcript");
+    await waitFor(() => expect(document.activeElement).toBe(document.getElementById("panel-transcript")));
+  });
+
+  describe("on desktop, with the side column open", () => {
+    const POINT = {
+      id: "n-1",
+      recording_id: "rec-1",
+      kind: "point",
+      body: "Ask about catering",
+      anchor_ms: 2_500,
+      revision: 1,
+      created_at: "2026-10-23T10:00:00",
+      updated_at: "2026-10-23T10:00:00",
+    };
+    const sideNotes = async () => {
+      const panel = document.getElementById("side-panel-my-notes")!;
+      await within(panel).findByRole("button", { name: /^Edit note at 00:02/ });
+      return panel;
+    };
+
+    beforeEach(() => {
+      sidePanelsCollapsed = false;
+      listTimelineNotes.mockResolvedValue([POINT]);
+    });
+
+    it("opens the transcript from a note in the side column's My notes", async () => {
+      activePanel = "notes";
+      await openTabs(1440);
+      const panel = await sideNotes();
+
+      fireEvent.click(
+        within(panel).getByRole("button", { name: /^Show in the transcript: the note at 00:02/ }),
+      );
+
+      expect(setActivePanel).toHaveBeenLastCalledWith("transcript");
+    });
+
+    it("shows an edit made in the side column's My notes in the transcript", async () => {
+      updateTimelineNote.mockResolvedValue({ ...POINT, body: "Ask about lunch", revision: 2 });
+      await openTabs(1440);
+      const panel = await sideNotes();
+      expect(screen.getByTestId("transcript-notes")).toHaveTextContent("Ask about catering");
+
+      fireEvent.click(within(panel).getByRole("button", { name: /^Edit note at 00:02/ }));
+      const editor = screen.getByRole("dialog");
+      fireEvent.change(within(editor).getByRole("textbox"), { target: { value: "Ask about lunch" } });
+      fireEvent.click(within(editor).getByRole("button", { name: "Save note" }));
+
+      await waitFor(() =>
+        expect(screen.getByTestId("transcript-notes")).toHaveTextContent("Ask about lunch"),
+      );
+      expect(updateTimelineNote).toHaveBeenCalledWith("rec-1", "n-1", {
+        expected_revision: 1,
+        body: "Ask about lunch",
+      });
+    });
+  });
+
+  it.each(["speakers", "my-notes"])(
+    "falls back to the transcript on desktop from the phone's %s panel",
+    async (panel) => {
+      activePanel = panel;
+      await openTabs(1440);
+
+      await waitFor(() => expect(setActivePanel).toHaveBeenCalledWith("transcript"));
+    },
+  );
+
+  it("opens Speakers in the side column from Analytics' link on desktop", async () => {
+    await openTabs(1440);
+
+    fireEvent.click(screen.getByRole("button", { name: "Review speakers" }));
+
+    expect(setSideTab).toHaveBeenCalledWith("speakers");
+    expect(setSpeakerPanelCollapsed).toHaveBeenCalledWith(false);
+  });
+
   it("keeps four tabs on desktop, where the speaker panel is in the side column", async () => {
     const tablist = await openTabs(1440);
 
@@ -716,6 +869,8 @@ describe("RecordingPage (detail)", () => {
     [360, "speakers", "speakers"],
     [1440, "notes", "notes"],
     [1440, "speakers", "transcript"],
+    [360, "my-notes", "my-notes"],
+    [1440, "my-notes", "transcript"],
   ])("at %i px with %s open, only the %s tab is in the Tab order", async (width, open, focusable) => {
     activePanel = open;
     const tablist = await openTabs(width);
@@ -732,6 +887,9 @@ describe("RecordingPage (detail)", () => {
     [360, "analytics", "Home", "transcript"],
     [360, "notes", "End", "speakers"],
     [1440, "speakers", "ArrowRight", "notes"],
+    [360, "notes", "ArrowRight", "my-notes"],
+    [360, "documents", "ArrowLeft", "my-notes"],
+    [360, "my-notes", "ArrowRight", "documents"],
   ])("at %i px from %s, %s opens %s and focuses its tab", async (width, from, key, to) => {
     activePanel = from;
     const tablist = await openTabs(width);

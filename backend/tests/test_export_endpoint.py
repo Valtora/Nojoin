@@ -24,6 +24,7 @@ from backend.api.v1.endpoints.transcripts import routes_analytics, routes_export
 from backend.api.v1.endpoints.transcripts.router import router
 from backend.models.recording import Recording
 from backend.models.speaker import RecordingSpeaker
+from backend.models.timeline_note import TimelineNote
 from backend.models.transcript import Transcript
 from backend.models.user import User
 from backend.tests.export_fixtures import NOTES_WITH_TABLES, analytics_payload
@@ -32,6 +33,7 @@ from backend.tests.sqlite_schemas import (
     RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA,
     RECORDING_SPEAKERS_SCHEMA,
     RECORDINGS_SCHEMA,
+    TIMELINE_NOTES_SCHEMA,
     TRANSCRIPTS_SCHEMA,
     USERS_SCHEMA,
 )
@@ -98,6 +100,7 @@ def api(monkeypatch):
                 GLOBAL_SPEAKERS_SCHEMA,
                 RECORDING_SPEAKERS_SCHEMA,
                 RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA,
+                TIMELINE_NOTES_SCHEMA,
             ):
                 await conn.execute(text(schema))
         state.user = User(
@@ -136,6 +139,15 @@ def api(monkeypatch):
                     notes=notes,
                     analytics_status="pending",
                     analytics_payload={},
+                )
+            )
+            session.add(
+                TimelineNote(
+                    recording_id=7,
+                    created_by_user_id=1,
+                    kind="point",
+                    body="Check the budget",
+                    anchor_ms=6_000,
                 )
             )
             await session.commit()
@@ -250,3 +262,18 @@ def test_an_unknown_section_is_rejected(api) -> None:
     response = _run(api, sections=["audio"])
 
     assert response.status_code == 422
+
+
+def test_the_transcript_carries_the_readers_notes_unless_left_out(api) -> None:
+    with_notes = _run(api, sections=["transcript"], export_format="txt")
+    without = _run(
+        api, sections=["transcript"], export_format="txt", include_notes="false"
+    )
+
+    assert with_notes.status_code == 200, with_notes.text
+    assert (
+        "[00:05] Anna: Agreed.\n\n> [00:06] Note: Check the budget" in with_notes.text
+    )
+    assert without.status_code == 200, without.text
+    assert "Check the budget" not in without.text
+    assert "[00:00] Peter: Let us begin.\n[00:05] Anna: Agreed." in without.text

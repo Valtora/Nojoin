@@ -56,9 +56,11 @@ const otherFailure = (error: unknown): string => {
  *
  * A note's last known state is held here, over the listed notes (`apply`),
  * since a finished recording isn't polled and its list isn't fetched again: a
- * listing at a later revision wins, and a deleted note stays hidden.
+ * listing at a later revision wins, and a deleted note stays hidden. The
+ * recording page holds one, which its transcript and its My notes list share,
+ * so an edit made in either shows in both.
  */
-export function useNoteEdits(recordingId: RecordingId) {
+export function useNoteEdits(recordingId: RecordingId | null) {
   const [held, setHeld] = useState<ReadonlyMap<string, TimelineNote | null>>(() => new Map());
   const hold = useCallback(
     (id: string, note: TimelineNote | null) => setHeld((previous) => new Map(previous).set(id, note)),
@@ -80,7 +82,7 @@ export function useNoteEdits(recordingId: RecordingId) {
   const edit = useCallback(
     async (note: EditableNote, text: string): Promise<NoteEditRefusal> => {
       const body = stripNote(text);
-      if (note.revision === undefined) return NOT_SAVED_YET;
+      if (note.revision === undefined || recordingId === null) return NOT_SAVED_YET;
       if (noteLength(body) > NOTE_BODY_MAX_CHARS) return NOTE_TOO_LONG_ERROR;
       if (body === note.body) return null;
       try {
@@ -103,7 +105,7 @@ export function useNoteEdits(recordingId: RecordingId) {
 
   const remove = useCallback(
     async (note: EditableNote): Promise<NoteEditRefusal> => {
-      if (note.revision === undefined) return NOT_SAVED_YET;
+      if (note.revision === undefined || recordingId === null) return NOT_SAVED_YET;
       try {
         await deleteTimelineNote(recordingId, note.id, { expectedRevision: note.revision });
       } catch (error) {
@@ -123,3 +125,6 @@ export function useNoteEdits(recordingId: RecordingId) {
 
   return { apply, edit, remove };
 }
+
+/** A recording's note edits, shared by the views that show its notes. */
+export type NoteEdits = ReturnType<typeof useNoteEdits>;

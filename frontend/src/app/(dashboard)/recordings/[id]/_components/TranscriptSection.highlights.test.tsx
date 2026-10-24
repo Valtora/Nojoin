@@ -10,7 +10,7 @@ import {
   type TranscriptSegment,
 } from "@/types";
 
-import TranscriptSection from "./TranscriptSection";
+import TranscriptSection from "@/test/TranscriptSectionWithEdits";
 
 const createTimelineNote = vi.fn();
 const updateTimelineNote = vi.fn();

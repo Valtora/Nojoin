@@ -1,25 +1,20 @@
 "use client";
 
-import {
-  ArrowLeft,
-  ChevronDown,
-  ChevronUp,
-  MessageSquare,
-  Users,
-} from "lucide-react";
+import { ArrowLeft, MessageSquare } from "lucide-react";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 
 import ChatPanel from "@/components/ChatPanel";
 import SpeakerPanel from "@/components/SpeakerPanel";
+import MyNotesList from "@/components/notes/MyNotesList";
 import RecordingStatusDisplay from "@/components/RecordingStatusDisplay";
 import ExportModal from "@/components/ExportModal";
 import { RecordingStatus } from "@/types";
-import IconButton from "@/components/ui/IconButton";
 import { useNavigationStore } from "@/lib/store";
 
 import { useRecordingDetail } from "./_hooks/useRecordingDetail";
 import { getAutoSpeakerReplacementName } from "./_hooks/recordingDetailUtils";
 import RecordingMainContent from "./_components/RecordingMainContent";
+import RecordingSideColumn, { RecordingSideRail } from "./_components/RecordingSideColumn";
 
 export const dynamic = "force-dynamic";
 
@@ -32,14 +27,8 @@ export default function RecordingPage({ params }: PageProps) {
   const isSpeakerPanelCollapsed = useNavigationStore(
     (state) => state.isSpeakerPanelCollapsed,
   );
-  const setSpeakerPanelCollapsed = useNavigationStore(
-    (state) => state.setSpeakerPanelCollapsed,
-  );
   const isChatPanelCollapsed = useNavigationStore(
     (state) => state.isChatPanelCollapsed,
-  );
-  const setChatPanelCollapsed = useNavigationStore(
-    (state) => state.setChatPanelCollapsed,
   );
 
   const {
@@ -47,6 +36,7 @@ export default function RecordingPage({ params }: PageProps) {
     setRecording,
     audioClock,
     timelineNotes,
+    noteEdits,
     globalSpeakers,
     loading,
     meetingEdgeEnabled,
@@ -136,6 +126,7 @@ export default function RecordingPage({ params }: PageProps) {
     <RecordingMainContent
       recording={recording}
       timelineNotes={timelineNotes}
+      noteEdits={noteEdits}
       isMobile={isMobile}
       activePanel={activePanel}
       setActivePanel={setActivePanel}
@@ -278,132 +269,46 @@ export default function RecordingPage({ params }: PageProps) {
                     defaultSize={isCompact ? 22 : 25}
                     minSize={18}
                   >
-                    {isSpeakerPanelCollapsed ? (
-                      <div className="flex h-full flex-col">
-                        <button
-                          onClick={() => setSpeakerPanelCollapsed(false)}
-                          className="flex h-9 w-full shrink-0 items-center gap-2 border-b border-surface-border bg-surface-card px-3 text-xs font-medium text-contrast-helper transition-colors hover:bg-surface-inset hover:text-foreground"
-                          aria-expanded={false}
-                          aria-controls="speaker-panel"
-                        >
-                          <Users className="h-3.5 w-3.5" />
-                          Speakers
-                          <ChevronDown className="ml-auto h-3.5 w-3.5" />
-                        </button>
-                        <div className="min-h-0 flex-1">
-                          <ChatPanel
-                            onNotesUpdate={fetchRecording}
-                            onCollapse={() => setChatPanelCollapsed(true)}
-                          />
-                        </div>
-                      </div>
-                    ) : isChatPanelCollapsed ? (
-                      <div className="flex h-full flex-col">
-                        <div className="min-h-0 flex-1">
-                          <SpeakerPanel
-                            speakers={recording.speakers || []}
-                            segments={transcriptSegments}
-                            onPlaySegment={handlePlaySegment}
-                            recordingId={recording.id}
-                            speakerColors={speakerColors}
-                            onColorChange={handleColorChange}
-                            currentTime={currentTime}
-                            isPlaying={isPlaying}
-                            onPause={handlePause}
-                            onResume={handleResume}
-                            onRefresh={refreshRecordingView}
-                            globalSpeakers={globalSpeakers}
-                            onSpeakerRenamed={handleSpeakerRenamed}
-                            onCollapse={() => setSpeakerPanelCollapsed(true)}
-                          />
-                        </div>
-                        <button
-                          onClick={() => setChatPanelCollapsed(false)}
-                          className="flex h-9 w-full shrink-0 items-center gap-2 border-t border-surface-border bg-surface-card px-3 text-xs font-medium text-contrast-helper transition-colors hover:bg-surface-inset hover:text-foreground"
-                          aria-expanded={false}
-                          aria-controls="meeting-chat"
-                        >
-                          <MessageSquare className="h-3.5 w-3.5" />
-                          Chat
-                          <ChevronUp className="ml-auto h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    ) : (
-                      <PanelGroup
-                        direction="vertical"
-                        onLayout={(sizes) => {
-                          if (sizes.length === 2) {
-                            setChatPanelHeight(sizes[1]);
-                          }
-                        }}
-                      >
-                        <Panel
-                          id="side-speakers"
-                          order={1}
-                          defaultSize={100 - compactChatPanelHeight}
-                          minSize={20}
-                        >
-                          <SpeakerPanel
-                            speakers={recording.speakers || []}
-                            segments={transcriptSegments}
-                            onPlaySegment={handlePlaySegment}
-                            recordingId={recording.id}
-                            speakerColors={speakerColors}
-                            onColorChange={handleColorChange}
-                            currentTime={currentTime}
-                            isPlaying={isPlaying}
-                            onPause={handlePause}
-                            onResume={handleResume}
-                            onRefresh={refreshRecordingView}
-                            globalSpeakers={globalSpeakers}
-                            onSpeakerRenamed={handleSpeakerRenamed}
-                            onCollapse={() => setSpeakerPanelCollapsed(true)}
-                          />
-                        </Panel>
-
-                        <PanelResizeHandle
-                          className="bg-surface-inset border-t border-control-border h-2 hover:bg-action transition-colors flex items-center justify-center group"
-                          onDragging={setIsPanelResizing}
-                        >
-                          <div className="w-8 h-1 bg-surface-card rounded-full group-hover:bg-surface-card transition-colors" />
-                        </PanelResizeHandle>
-
-                        <Panel
-                          id="side-chat"
-                          order={2}
-                          defaultSize={compactChatPanelHeight}
-                          minSize={18}
-                        >
-                          <ChatPanel
-                            onNotesUpdate={fetchRecording}
-                            onCollapse={() => setChatPanelCollapsed(true)}
-                          />
-                        </Panel>
-                      </PanelGroup>
-                    )}
+                    <RecordingSideColumn
+                      speakers={
+                        <SpeakerPanel
+                          speakers={recording.speakers || []}
+                          segments={transcriptSegments}
+                          onPlaySegment={handlePlaySegment}
+                          recordingId={recording.id}
+                          speakerColors={speakerColors}
+                          onColorChange={handleColorChange}
+                          currentTime={currentTime}
+                          isPlaying={isPlaying}
+                          onPause={handlePause}
+                          onResume={handleResume}
+                          onRefresh={refreshRecordingView}
+                          globalSpeakers={globalSpeakers}
+                          onSpeakerRenamed={handleSpeakerRenamed}
+                        />
+                      }
+                      myNotes={
+                        <MyNotesList
+                          recordingId={recording.id}
+                          timelineNotes={timelineNotes}
+                          segments={transcriptSegments}
+                          noteEdits={noteEdits}
+                          onPlay={handlePlaySegment}
+                          onShowTranscript={() => setActivePanel("transcript")}
+                          className="h-full bg-surface-inset"
+                        />
+                      }
+                      chatPanelHeight={compactChatPanelHeight}
+                      onChatPanelHeightChange={setChatPanelHeight}
+                      onNotesUpdate={fetchRecording}
+                      onResizeDragging={setIsPanelResizing}
+                    />
                   </Panel>
                 </>
               )}
             </PanelGroup>
 
-            {isSpeakerPanelCollapsed && isChatPanelCollapsed && (
-              <div className="flex h-full w-12 shrink-0 flex-col items-center gap-1 border-l border-surface-border bg-surface-inset py-2">
-                <IconButton
-                  size="sm"
-                  icon={<Users />}
-                  aria-label="Show speakers panel"
-                  title="Show speakers panel"
-                  onClick={() => setSpeakerPanelCollapsed(false)}
-                />
-                <IconButton
-                  size="sm"
-                  icon={<MessageSquare />}
-                  aria-label="Show meeting chat panel"
-                  title="Show meeting chat panel"
-                  onClick={() => setChatPanelCollapsed(false)}
-                />
-              </div>
-            )}
+            {isSpeakerPanelCollapsed && isChatPanelCollapsed && <RecordingSideRail />}
           </div>
         )}
       </div>
@@ -413,6 +318,7 @@ export default function RecordingPage({ params }: PageProps) {
         onClose={() => setShowExportModal(false)}
         onExport={handleExport}
         hasNotes={!!recording?.transcript?.notes}
+        hasTimelineNotes={(timelineNotes?.length ?? 0) > 0}
         hasAnalytics={recording?.status === RecordingStatus.PROCESSED}
         hasAudio={recording?.has_audio !== false}
       />

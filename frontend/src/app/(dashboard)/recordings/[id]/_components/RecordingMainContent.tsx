@@ -18,6 +18,8 @@ import {
 } from "@/types";
 
 import SpeakerPanel from "@/components/SpeakerPanel";
+import MyNotesList from "@/components/notes/MyNotesList";
+import type { NoteEdits } from "@/lib/notes/useNoteEdits";
 
 import RecordingHeader from "./RecordingHeader";
 import LanguageNoticeBanner from "./LanguageNoticeBanner";
@@ -31,6 +33,8 @@ interface RecordingMainContentProps {
   recording: Recording;
   /** The recording's notes as last listed; null while they load. */
   timelineNotes: readonly TimelineNote[] | null;
+  /** The page's note edits, shared by the transcript and My notes. */
+  noteEdits: NoteEdits;
   isMobile: boolean;
   activePanel: ActivePanel;
   setActivePanel: (panel: ActivePanel) => void;
@@ -101,14 +105,19 @@ const tabClassName = (active: boolean, isMobile: boolean) =>
       : "border-transparent text-contrast-helper hover:text-foreground hover:bg-surface-inset"
   }`;
 
-// On desktop the speaker panel lives in the side column, so it has no tab.
+// On desktop Speakers and My notes live in the side column, so they have no tab.
 const TABS: { panel: ActivePanel; label: string }[] = [
   { panel: "transcript", label: "Transcript" },
   { panel: "notes", label: "Notes" },
   { panel: "documents", label: "Documents" },
   { panel: "analytics", label: "Analytics" },
 ];
-const MOBILE_TABS = [...TABS, { panel: "speakers" as const, label: "Speakers" }];
+const MOBILE_TABS: { panel: ActivePanel; label: string }[] = [
+  ...TABS.slice(0, 2),
+  { panel: "my-notes", label: "My notes" },
+  ...TABS.slice(2),
+  { panel: "speakers", label: "Speakers" },
+];
 
 // Marks a side of the mobile tab row with tabs scrolled out of view. Decorative:
 // the tabs themselves stay reachable, and a tap passes through to the one below.
@@ -133,6 +142,7 @@ function MoreTabsHint({ side }: { side: "left" | "right" }) {
 export default function RecordingMainContent({
   recording,
   timelineNotes,
+  noteEdits,
   isMobile,
   activePanel,
   setActivePanel,
@@ -182,6 +192,7 @@ export default function RecordingMainContent({
   const setSpeakerPanelCollapsed = useNavigationStore(
     (state) => state.setSpeakerPanelCollapsed,
   );
+  const setSideTab = useNavigationStore((state) => state.setSideTab);
   const tablistRef = useRef<HTMLDivElement>(null);
   const tabsOutOfView = useScrollEdges(tablistRef, isMobile);
   const tabs = isMobile ? MOBILE_TABS : TABS;
@@ -207,6 +218,15 @@ export default function RecordingMainContent({
     const { panel } = tabs[(targets[event.key] + tabs.length) % tabs.length];
     setActivePanel(panel);
     tablistRef.current?.querySelector<HTMLElement>(`#tab-${panel}`)?.focus();
+  };
+
+  // A jump from My notes opens the transcript, and focus goes with it once
+  // it shows: the list's row is hidden from then on.
+  const showTranscript = () => {
+    setActivePanel("transcript");
+    requestAnimationFrame(() =>
+      document.getElementById("panel-transcript")?.focus({ preventScroll: true }),
+    );
   };
 
   // A tab chosen other than by a tap on the row (the page reopening on the
@@ -251,8 +271,8 @@ export default function RecordingMainContent({
         }
       />
 
-      {/* Panel Tabs. On mobile, Speakers is a fifth tab and the row scrolls
-          sideways; on desktop the speaker panel lives in the side column. */}
+      {/* Panel Tabs. On mobile, My notes and Speakers have tabs too and the
+          row scrolls sideways; on desktop both live in the side column. */}
       <div className="relative shrink-0 bg-surface-inset">
         {tabsOutOfView.left && <MoreTabsHint side="left" />}
         {tabsOutOfView.right && <MoreTabsHint side="right" />}
@@ -287,6 +307,7 @@ export default function RecordingMainContent({
           active={activePanel === "transcript"}
           recording={recording}
           timelineNotes={timelineNotes}
+          noteEdits={noteEdits}
           transcriptSegments={transcriptSegments}
           currentTime={currentTime}
           isPlaying={isPlaying}
@@ -338,9 +359,31 @@ export default function RecordingMainContent({
           onReviewSpeakers={
             isMobile
               ? () => setActivePanel("speakers")
-              : () => setSpeakerPanelCollapsed(false)
+              : () => {
+                  setSideTab("speakers");
+                  setSpeakerPanelCollapsed(false);
+                }
           }
         />
+
+        {isMobile && (
+          <div
+            role="tabpanel"
+            id="panel-my-notes"
+            aria-labelledby="tab-my-notes"
+            className={`absolute inset-0 flex flex-col ${activePanel === "my-notes" ? "z-10 visible" : "z-0 invisible"}`}
+          >
+            <MyNotesList
+              recordingId={recording.id}
+              timelineNotes={timelineNotes}
+              segments={transcriptSegments}
+              noteEdits={noteEdits}
+              onPlay={onPlaySegment}
+              onShowTranscript={showTranscript}
+              className="flex-1"
+            />
+          </div>
+        )}
 
         {isMobile && (
           <div

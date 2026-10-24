@@ -19,6 +19,7 @@ grant's scopes refuse with reconnect instructions.
 """
 
 import logging
+import math
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Any, Callable, Optional
@@ -543,9 +544,9 @@ async def get_meeting_notes(recording_id: str) -> dict[str, Any]:
     ``timeline_notes`` are the user's notes in timeline order. ``kind`` is
     "head" (about the whole meeting, before the transcript), "point" (written
     at one moment), "selection" (about the words in ``quoted_text``) or "tail"
-    (added after the transcript, as append_meeting_notes does). ``at_ms`` and
-    ``at`` (MM:SS) give the moment in the recording for point and selection
-    notes, and are null for the others.
+    (added after the transcript, as append_meeting_notes does without a time).
+    ``at_ms`` and ``at`` (MM:SS) give the moment in the recording for point
+    and selection notes, and are null for the others.
 
     Args:
         recording_id: The recording's string id from list_recordings.
@@ -690,28 +691,39 @@ async def get_documents(recording_id: str) -> list[dict[str, Any]]:
 
 
 @mcp_tool(scope=MCP_WRITE_SCOPE)
-async def append_meeting_notes(recording_id: str, text: str) -> dict[str, Any]:
+async def append_meeting_notes(
+    recording_id: str, text: str, at_seconds: float | None = None
+) -> dict[str, Any]:
     """Append a note to a recording's user notes.
 
-    Adds a "tail" note after the transcript, one per call, so earlier notes
-    are never changed; the AI-generated meeting notes are never modified.
+    Adds one note per call, so earlier notes are never changed; the
+    AI-generated meeting notes are never modified. Without ``at_seconds`` it
+    is a "tail" note, after the transcript. With it, it is a "point" note at
+    that moment, which the transcript shows after the line spoken then.
     Requires the mcp:write scope.
 
     Args:
         recording_id: The recording's string id from list_recordings.
         text: The note text to append.
+        at_seconds: Optional. Seconds from the start of the recording, as
+            get_transcript_utterances' ``start`` gives them (or a [MM:SS]
+            stamp from get_transcript, converted to seconds), to place the
+            note at. A time past the end of a finished recording is refused.
     """
     from fastapi import HTTPException, Response
 
+    from backend.api.v1.endpoints.transcripts.helpers import _get_owned_recording
     from backend.api.v1.endpoints.transcripts.routes_timeline_notes import (
         create_timeline_note,
     )
     from backend.core.db import async_session_maker
     from backend.models.timeline_note import TimelineNoteKind
     from backend.models.timeline_note_public import (
+        TIMELINE_MS_MAX,
         TIMELINE_NOTE_BODY_MAX_CHARS,
         TimelineNoteCreate,
     )
+    from backend.utils.timeline_notes import format_timeline_ms
 
     user = get_current_mcp_user()
     _require_write_scope("note editing")
@@ -722,12 +734,38 @@ async def append_meeting_notes(recording_id: str, text: str) -> dict[str, Any]:
         raise ToolError(
             f"text must be at most {TIMELINE_NOTE_BODY_MAX_CHARS} characters."
         )
+    if at_seconds is None:
+        create = TimelineNoteCreate(kind=TimelineNoteKind.TAIL, body=addition)
+    else:
+        if (
+            not math.isfinite(at_seconds)
+            or at_seconds < 0
+            or at_seconds * 1000 > TIMELINE_MS_MAX
+        ):
+            raise ToolError("at_seconds must be a time in the recording, 0 or more.")
+        create = TimelineNoteCreate(
+            kind=TimelineNoteKind.POINT,
+            body=addition,
+            anchor_ms=round(at_seconds * 1000),
+        )
 
     async with async_session_maker() as db:
         try:
+            if at_seconds is not None:
+                # The length is known once the recording has finished; while
+                # it records there is no end to check against. Its last
+                # second counts in whole, so a time read off the last line
+                # is not refused over a fraction.
+                recording = await _get_owned_recording(db, recording_id, user.id)
+                duration = recording.duration_seconds
+                if duration and at_seconds > math.ceil(duration):
+                    raise ToolError(
+                        "at_seconds is past the end of the recording "
+                        f"({format_timeline_ms(round(duration * 1000))})."
+                    )
             note = await create_timeline_note(
                 recording_id,
-                TimelineNoteCreate(kind=TimelineNoteKind.TAIL, body=addition),
+                create,
                 Response(),
                 db=db,
                 current_user=user,
@@ -742,7 +780,18 @@ async def append_meeting_notes(recording_id: str, text: str) -> dict[str, Any]:
             ) from error
     return {
         "recording_id": recording_id,
-        "note": {"id": note.id, "kind": note.kind.value, "body": note.body},
+        "note": {
+            "id": note.id,
+            "kind": note.kind.value,
+            "body": note.body,
+            # As get_meeting_notes gives them: null for a tail note.
+            "at_ms": note.anchor_ms,
+            "at": (
+                format_timeline_ms(note.anchor_ms)
+                if note.anchor_ms is not None
+                else None
+            ),
+        },
     }
 
 

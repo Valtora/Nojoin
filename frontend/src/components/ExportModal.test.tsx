@@ -6,9 +6,15 @@ import ExportModal from "./ExportModal";
 
 const renderModal = ({
   hasNotes = true,
+  hasTimelineNotes = true,
   hasAnalytics = true,
   hasAudio = true,
-}: { hasNotes?: boolean; hasAnalytics?: boolean; hasAudio?: boolean } = {}) => {
+}: {
+  hasNotes?: boolean;
+  hasTimelineNotes?: boolean;
+  hasAnalytics?: boolean;
+  hasAudio?: boolean;
+} = {}) => {
   const onExport = vi.fn();
   const onClose = vi.fn();
   renderWithProviders(
@@ -17,6 +23,7 @@ const renderModal = ({
       onClose={onClose}
       onExport={onExport}
       hasNotes={hasNotes}
+      hasTimelineNotes={hasTimelineNotes}
       hasAnalytics={hasAnalytics}
       hasAudio={hasAudio}
     />,
@@ -38,6 +45,7 @@ describe("ExportModal sections", () => {
       kind: "document",
       sections: ["notes"],
       format: "pdf",
+      includeNotes: true,
     });
   });
 
@@ -64,7 +72,63 @@ describe("ExportModal sections", () => {
       kind: "document",
       sections: ["notes", "analytics", "transcript"],
       format: "docx",
+      includeNotes: true,
     });
+  });
+
+  it("puts the reader's notes in the transcript unless unticked, which needs the transcript", () => {
+    const { onExport } = renderModal();
+    const myNotes = section("My notes in the transcript");
+
+    expect(myNotes).toBeDisabled();
+    fireEvent.click(section("Transcript"));
+    expect(myNotes).toBeEnabled();
+    expect(myNotes).toBeChecked();
+    fireEvent.click(myNotes);
+    expect(myNotes).not.toBeChecked();
+    fireEvent.click(exportButton());
+
+    expect(onExport).toHaveBeenCalledWith(
+      expect.objectContaining({ sections: ["notes", "transcript"], includeNotes: false }),
+    );
+  });
+
+  it("offers no notes tick on a recording without notes of the reader's", () => {
+    const { onExport } = renderModal({ hasTimelineNotes: false });
+
+    expect(section("Transcript")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("checkbox", { name: "My notes in the transcript" }),
+    ).not.toBeInTheDocument();
+    fireEvent.click(section("Transcript"));
+    fireEvent.click(exportButton());
+
+    expect(onExport).toHaveBeenCalledWith(
+      expect.objectContaining({ sections: ["notes", "transcript"], includeNotes: true }),
+    );
+  });
+
+  it("puts the notes tick back on each time it opens", () => {
+    const onExport = vi.fn();
+    const modal = (isOpen: boolean) => (
+      <ExportModal
+        isOpen={isOpen}
+        onClose={vi.fn()}
+        onExport={onExport}
+        hasNotes={false}
+        hasTimelineNotes
+        hasAnalytics
+        hasAudio
+      />
+    );
+    const { rerender } = renderWithProviders(modal(true));
+    fireEvent.click(section("My notes in the transcript"));
+    expect(section("My notes in the transcript")).not.toBeChecked();
+
+    rerender(modal(false));
+    rerender(modal(true));
+
+    expect(section("My notes in the transcript")).toBeChecked();
   });
 
   it("cannot export nothing", () => {

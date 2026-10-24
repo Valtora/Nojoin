@@ -64,6 +64,7 @@ import {
 } from "@/lib/transcriptState";
 import { useDragSelectionLock } from "@/lib/useDragSelectionLock";
 import { AudioClock } from "@/lib/notes/audioClock";
+import { useNoteEdits } from "@/lib/notes/useNoteEdits";
 import { useRecordingNotes } from "@/lib/notes/useNoteOutbox";
 import { useViewportDensity } from "@/components/ViewportDensityProvider";
 import { useRecordingActions } from "@/components/recordings/_hooks/useRecordingActions";
@@ -100,6 +101,8 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
     recording,
     recording ? shouldPollRecordingUpdates(recording) : false,
   );
+  // Edits and deletes of saved notes, shared by the transcript and My notes.
+  const noteEdits = useNoteEdits(recording?.id ?? null);
   const [globalSpeakers, setGlobalSpeakers] = useState<GlobalSpeaker[]>([]);
   const [meetingEdgeEnabled, setMeetingEdgeEnabled] = useState(true);
   const [meetingEdgeContextLevel, setMeetingEdgeContextLevel] = useState(
@@ -415,12 +418,12 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
     }
   }, [isMobile]);
 
-  // The "speakers" panel exists only on mobile, where it has a tab; desktop
-  // shows the speaker panel in the side column. Leaving mobile
-  // while it is active would blank the main content, so fall back to the
+  // The "speakers" and "my-notes" panels exist only on mobile, where they
+  // have tabs; desktop shows them in the side column. Leaving mobile while
+  // one is active would blank the main content, so fall back to the
   // transcript.
   useEffect(() => {
-    if (!isMobile && activePanel === "speakers") {
+    if (!isMobile && (activePanel === "speakers" || activePanel === "my-notes")) {
       setActivePanel("transcript");
     }
   }, [isMobile, activePanel, setActivePanel]);
@@ -1140,6 +1143,7 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
         selection.sections,
         selection.format,
         speakerColors,
+        selection.includeNotes,
       );
     } catch (error: unknown) {
       console.error("Export failed:", error);
@@ -1160,6 +1164,7 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
     setRecording,
     audioClock,
     timelineNotes,
+    noteEdits,
     globalSpeakers,
     loading,
     meetingEdgeEnabled,

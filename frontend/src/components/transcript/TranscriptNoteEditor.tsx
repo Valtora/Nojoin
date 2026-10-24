@@ -31,6 +31,14 @@ interface TranscriptNoteEditorProps extends NoteEditHandlers {
   onClose: () => void;
 }
 
+/** Where a note is, for its editor's name: "at 01:05", or on the whole meeting. */
+export const noteWhere = (note: TimelineNote | InlineNote): string => {
+  if (note.kind === "head") return "before the transcript";
+  if (note.kind === "tail") return "after the transcript";
+  const startMs = note.kind === "selection" ? note.start_ms : note.anchor_ms;
+  return `at ${formatTime((startMs ?? 0) / 1000)}`;
+};
+
 /**
  * Where focus goes back to: the Edit button pressed, or for marked words,
  * which take no focus, their line's ⋯ button.
@@ -63,11 +71,10 @@ function Editor({
     release.current ??= holdPendingNoteWrite();
     return write();
   };
-  const startMs = note.kind === "selection" ? note.start_ms : note.anchor_ms;
   return (
     <NoteOnSelectionPopover
       quote={note.kind === "selection" ? (note.quoted_text ?? null) : null}
-      title={`Edit the note at ${formatTime((startMs ?? 0) / 1000)}`}
+      title={`Edit the note ${noteWhere(note)}`}
       initialText={note.body}
       anchor={anchor}
       returnFocus={() => {
@@ -90,7 +97,8 @@ function Editor({
 
 /**
  * The editor of a saved note in the finished view, opened from its note
- * line's Edit button or a click on its marked words: its text to change, and
+ * line's Edit button, a click on its marked words, or its row in My notes:
+ * its text to change, and
  * Delete. Writes go against the revision shown now, so a change made
  * elsewhere meanwhile is refused rather than overwritten.
  */

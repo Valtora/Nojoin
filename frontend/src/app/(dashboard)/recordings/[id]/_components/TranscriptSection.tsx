@@ -6,7 +6,7 @@ import { AlertCircle } from "lucide-react";
 import TranscriptView from "@/components/TranscriptView";
 import RecordingUnsavedNotes from "@/components/notes/RecordingUnsavedNotes";
 import { inlineNotes, type OutboxDraft } from "@/lib/notes/noteOutbox";
-import { useNoteEdits, type EditableNote } from "@/lib/notes/useNoteEdits";
+import type { EditableNote, NoteEdits } from "@/lib/notes/useNoteEdits";
 import { useNoteOutbox } from "@/lib/notes/useNoteOutbox";
 import {
   RecordingStatus,
@@ -29,6 +29,8 @@ interface TranscriptSectionProps {
   recording: Recording;
   /** The recording's notes as last listed; null while they load. */
   timelineNotes?: readonly TimelineNote[] | null;
+  /** The page's note edits, which My notes shares. */
+  noteEdits: NoteEdits;
   transcriptSegments: TranscriptSegment[];
   currentTime: number;
   isPlaying: boolean;
@@ -65,6 +67,7 @@ export default function TranscriptSection({
   active,
   recording,
   timelineNotes,
+  noteEdits,
   transcriptSegments,
   currentTime,
   isPlaying,
@@ -97,9 +100,9 @@ export default function TranscriptSection({
     saved: outboxSaved,
     discarded: outboxDiscarded,
   } = outboxState;
-  // Edits and deletes made here show at once: a finished recording's list
-  // is not fetched again.
-  const { apply: applyEdits, edit: editNote, remove: removeNote } = useNoteEdits(recording.id);
+  // Edits and deletes made here or in My notes show at once: a finished
+  // recording's list is not fetched again.
+  const { apply: applyEdits, edit: editNote, remove: removeNote } = noteEdits;
   const notes = useMemo(
     () =>
       applyEdits(

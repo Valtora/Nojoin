@@ -9,6 +9,7 @@ import {
   FileText,
   FileType,
   Music,
+  NotebookPen,
   ScrollText,
   StickyNote,
 } from "lucide-react";
@@ -21,6 +22,8 @@ interface ExportModalProps {
   onClose: () => void;
   onExport: (selection: ExportSelection) => void;
   hasNotes: boolean;
+  /** Whether the reader has saved notes on the timeline; without any, there is nothing to tick. */
+  hasTimelineNotes: boolean;
   /** False until the meeting has been processed, which is when analytics exist. */
   hasAnalytics: boolean;
   /** False when the recording's audio is gone, so there is nothing to export. */
@@ -125,6 +128,7 @@ export default function ExportModal({
   onClose,
   onExport,
   hasNotes,
+  hasTimelineNotes,
   hasAnalytics,
   hasAudio,
 }: ExportModalProps) {
@@ -132,10 +136,15 @@ export default function ExportModal({
     defaultSections(hasNotes),
   );
   const [format, setFormat] = useState<ExportFormat>("pdf");
+  const [includeNotes, setIncludeNotes] = useState(true);
+  const hasTranscript = sections.includes("transcript");
 
   // Start each opening from what this recording can actually export.
   useOnDepsChange([isOpen], () => {
-    if (isOpen) setSections(defaultSections(hasNotes));
+    if (isOpen) {
+      setSections(defaultSections(hasNotes));
+      setIncludeNotes(true);
+    }
   });
 
   const toggle = (section: ExportSection) =>
@@ -146,7 +155,7 @@ export default function ExportModal({
     );
 
   const handleExport = () => {
-    onExport({ kind: "document", sections, format });
+    onExport({ kind: "document", sections, format, includeNotes });
     onClose();
   };
 
@@ -219,6 +228,22 @@ export default function ExportModal({
             label="Transcript"
             description="The diarized transcript with timestamps"
           />
+          {hasTimelineNotes ? (
+            <OptionCard
+              type="checkbox"
+              name="exportTimelineNotes"
+              checked={hasTranscript && includeNotes}
+              disabled={!hasTranscript}
+              onChange={() => setIncludeNotes((current) => !current)}
+              icon={<NotebookPen className="h-5 w-5" />}
+              label="My notes in the transcript"
+              description={
+                hasTranscript
+                  ? "Your notes, each where it falls in the transcript"
+                  : "Tick Transcript to include them"
+              }
+            />
+          ) : null}
         </fieldset>
 
         <fieldset className="space-y-2 border-t border-surface-border pt-4">

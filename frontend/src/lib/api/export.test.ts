@@ -115,5 +115,14 @@ describe("exportContent", () => {
     expect(JSON.parse(url.searchParams.get("speaker_colors") ?? "{}")).toEqual({
       SPEAKER_00: "blue",
     });
+    expect(url.searchParams.get("include_notes")).toBe("true");
+
+    await exportContent("rec-1", ["transcript"], "txt", {}, false);
+    const second = fetchMock.mock.calls[1][0];
+    const secondUrl = new URL(
+      second instanceof Request ? second.url : String(second),
+      "http://localhost",
+    );
+    expect(secondUrl.searchParams.get("include_notes")).toBe("false");
   });
 });
