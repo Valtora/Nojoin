@@ -78,7 +78,7 @@ def test_delete_recording_artifacts_removes_path_manager_audio(
     path_manager_root: Path,
 ) -> None:
     audio_path = path_manager_root / "restored.wav"
-    proxy_path = storage_root / "restored.mp3"
+    proxy_path = path_manager_root / "restored.mp3"
     audio_path.write_bytes(b"wav")
     proxy_path.write_bytes(b"mp3")
 
