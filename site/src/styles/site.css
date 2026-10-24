@@ -263,14 +263,22 @@ button:focus-visible {
 /* Because that header is sticky, a hash link lands its target underneath it:
    the browser scrolls the element to y=0, where the header already is. Every
    in-page anchor therefore reserves the header's height plus a little air.
-   The two values track the header's own breakpoint -- it is 114px tall while
-   the nav is wrapped and 57px once it fits on one line -- and the mobile value
-   is the larger one, which is the opposite of the usual direction. */
+   The values track the header's own wrapping. The nav sits under the brand
+   in three rows at 320px (145px tall), two on other phones (114px) and one on
+   a tablet (83px), and fits beside the brand from about 52rem (57px). The
+   narrow values are the larger ones, which is the opposite of the usual
+   direction. */
 section[id] {
   scroll-margin-top: 8.5rem;
 }
 
-@media (min-width: 48rem) {
+@media (max-width: 21rem) {
+  section[id] {
+    scroll-margin-top: 10.5rem;
+  }
+}
+
+@media (min-width: 54rem) {
   section[id] {
     scroll-margin-top: 5rem;
   }
@@ -316,6 +324,14 @@ section[id] {
   align-items: center;
   gap: 0.625rem 1.375rem;
   font-size: 0.875rem;
+}
+
+/* Keeps the nav to two rows from 340px up. At the full gap a 360px phone
+   needs three. */
+@media (max-width: 24rem) {
+  .site-nav {
+    column-gap: 0.75rem;
+  }
 }
 
 .site-nav a {
