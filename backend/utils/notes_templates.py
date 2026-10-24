@@ -411,6 +411,10 @@ def load_attached_documents(
 ) -> list[AttachedDocument]:
     """Parsed text of a recording's READY documents, oldest first.
 
+    Attached documents always come in. A capture comes in only while its notes
+    switch is on (``backend.utils.captures``), and carries its time so the
+    model can say when it was taken.
+
     Read from ``document_pages`` rather than from the RAG chunks: chunks exist
     to be searched, and reassembling them repeats content at every boundary.
 
@@ -422,11 +426,13 @@ def load_attached_documents(
     """
     from backend.models.document import Document, DocumentStatus
     from backend.models.document_page import DocumentPage
+    from backend.utils.captures import feeds_notes_clause, is_capture
 
     documents = session.exec(
         select(Document)
         .where(Document.recording_id == recording_id)
         .where(Document.status == DocumentStatus.READY)
+        .where(feeds_notes_clause())
         .order_by(Document.created_at)
     ).all()
 
@@ -459,6 +465,7 @@ def load_attached_documents(
                 title=document.title,
                 text="\n\n".join(sections),
                 extracted_by=_describe_extraction(modes),
+                captured_at_ms=document.capture_ms if is_capture(document) else None,
             )
         )
     return attached

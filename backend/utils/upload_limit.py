@@ -19,6 +19,11 @@ UPLOAD_LIMIT_LEGACY_RECORDING = int(
 # defence.
 UPLOAD_LIMIT_DOCUMENT = int(os.getenv("UPLOAD_LIMIT_DOCUMENT", 250 * 1024 * 1024))
 
+# A capture is one image: a frame of a shared screen, which the browser keeps
+# under 4 MB, or a pasted image. Far larger than either needs, far smaller than
+# a document may be.
+UPLOAD_LIMIT_CAPTURE = int(os.getenv("UPLOAD_LIMIT_CAPTURE", 20 * 1024 * 1024))
+
 # Above this, the client warns about parse duration and provider cost before
 # confirming. Not a limit -- purely the threshold for an informed choice.
 DOCUMENT_SIZE_WARNING_BYTES = int(

@@ -30,7 +30,9 @@ async def search_context(  # noqa: PLR0913 - each parameter is a documented tool
     Embeds the query and ranks the user's indexed content by similarity,
     so it finds passages that match in meaning, not just wording. Results
     carry provenance: the recording, timestamps for transcript passages,
-    and document title and page for document passages. Results labelled
+    and document title and page for document passages; a passage read
+    from a capture, an image the user took during the meeting, also has
+    capture_at_seconds. Results labelled
     "notes" are passages of the meeting's AI notes; only "transcript"
     results carry timestamps. Coverage depends on what has been indexed:
     a recording can be fully processed yet have no indexed passages, so
@@ -137,6 +139,9 @@ async def search_context(  # noqa: PLR0913 - each parameter is a documented tool
             item["document_title"] = meta.get("document_title")
             item["page_number"] = meta.get("page_number")
             item["page_title"] = meta.get("page_title")
+            # A capture's hit says when in the meeting it was taken.
+            if meta.get("capture_ms") is not None:
+                item["capture_at_seconds"] = meta["capture_ms"] / 1000
         item["content"] = content
         results.append(item)
 

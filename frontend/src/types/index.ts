@@ -575,6 +575,8 @@ export interface Recording extends Omit<BaseDBModel, "id"> {
    * only.
    */
   timeline_notes_list_signature?: string | null;
+  /** Changes whenever the recording's captures list (`getCaptures`) would. Detail only. */
+  captures_signature?: string | null;
   /**
    * A live capture that has uploaded nothing for two minutes, so its tab is
    * gone or cut off. Judged by the server, whose clock is the one that counts.

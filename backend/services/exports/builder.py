@@ -5,8 +5,9 @@ transcript. Notes are what most readers came for, analytics qualify how the
 meeting went, and the transcript is the evidence for both. The reader's own
 timeline notes sit in the transcript: notes on the whole meeting first and
 last, the rest after the line they fall on. Generated notes also end with them,
-under ``## User Notes``. A file exported without the reader's notes leaves out
-both.
+under ``## User Notes``. The reader's captures sit in the transcript too, each
+placed as a note at its time would be. A file exported without the reader's
+notes leaves out all three.
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from datetime import datetime
 from typing import Any
 
 from backend.models.timeline_note import TimelineNoteKind
+from backend.utils.capture_images import RenderedImage
 from backend.utils.live_speaker_labels import speaker_display_name
 from backend.utils.meeting_notes import split_user_notes_section
 from backend.utils.timeline_notes import (
@@ -40,6 +42,7 @@ from .model import (
     Block,
     Callout,
     ExportDocument,
+    ImageBlock,
     MetaItem,
     Paragraph,
     Section,
@@ -54,6 +57,28 @@ SECTION_TITLES = {
     "analytics": "Analytics",
     "transcript": "Transcript",
 }
+
+
+@dataclass(frozen=True)
+class ExportCapture:
+    """A capture as the transcript places it: a point note at its time.
+
+    It has the shape ``place_timeline_notes`` reads, so captures and notes are
+    placed by one rule and interleaved by time. ``image`` is the picture at
+    print size, or None when its file is gone or cannot be read.
+    """
+
+    public_id: str
+    anchor_ms: int
+    created_at: datetime
+    title: str
+    image: RenderedImage | None
+    kind: str = TimelineNoteKind.POINT.value
+    body: str = ""
+    start_ms: int | None = None
+    end_ms: int | None = None
+    quoted_text: str | None = None
+    created_by_user_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -75,9 +100,11 @@ class MeetingParts:
     analytics_colors: Mapping[str, str] = field(default_factory=dict)
     # The reader's timeline notes, placed among the transcript's lines.
     timeline_notes: Sequence[TimelineNoteLike] = ()
+    # The reader's captures, placed among the lines as notes are.
+    captures: Sequence[ExportCapture] = ()
     # False leaves the reader's own notes out of the whole file: the timeline
-    # notes above and the ``## User Notes`` section that ends generated notes.
-    # The stored notes are not changed.
+    # notes and captures above and the ``## User Notes`` section that ends
+    # generated notes. The stored notes are not changed.
     include_user_notes: bool = True
 
 
@@ -156,6 +183,40 @@ def _note_block(placement: NotePlacement[TimelineNoteLike]) -> Paragraph:
     return Paragraph(tuple(spans), tone="quote")
 
 
+def _capture_block(capture: ExportCapture) -> Block:
+    """A capture as a picture under a stamped caption, like a note at a time.
+
+    Plain text says where the picture was, since it cannot show it.
+    """
+    caption: tuple[Span, ...] = (
+        Span(format_transcript_time(capture.anchor_ms / 1000) + " "),
+        Span("Capture", bold=True),
+    )
+    if capture.image is None:
+        return Paragraph(
+            (*caption, Span(": the image could not be read")), tone="quote"
+        )
+    return ImageBlock(
+        caption=caption,
+        data=capture.image.data,
+        width_px=capture.image.width_px,
+        height_px=capture.image.height_px,
+        alt_text=capture.title,
+        fallback=(
+            Paragraph(
+                (*caption, Span(": an image, in the PDF and Word exports")),
+                tone="quote",
+            ),
+        ),
+    )
+
+
+def _timeline_block(placement: NotePlacement[Any]) -> Block:
+    if isinstance(placement.note, ExportCapture):
+        return _capture_block(placement.note)
+    return _note_block(placement)
+
+
 def _transcript_section(parts: MeetingParts) -> Section:
     lines = tuple(
         TranscriptLine(
@@ -169,11 +230,12 @@ def _transcript_section(parts: MeetingParts) -> Section:
     )
     # Placed on the same lines as the transcript view, so each note follows
     # the line it follows there.
-    placements = place_timeline_notes(
-        parts.segments, parts.timeline_notes if parts.include_user_notes else ()
+    placed: list[Any] = (
+        [*parts.timeline_notes, *parts.captures] if parts.include_user_notes else []
     )
+    placements = place_timeline_notes(parts.segments, placed)
     blocks: tuple[Block, ...] = tuple(
-        lines[item] if isinstance(item, int) else _note_block(item)
+        lines[item] if isinstance(item, int) else _timeline_block(item)
         for item in iter_timeline(len(lines), placements)
     )
     if not lines:

@@ -36,6 +36,7 @@ from backend.processing.documents import (
 from backend.processing.documents.ocr import ocr_images, ocr_is_available
 from backend.processing.documents.vision import merge_page_content, transcribe_page
 from backend.processing.text_embedding_version import TEXT_EMBEDDING_VERSION
+from backend.utils.captures import feeds_notes, is_capture
 from backend.utils.vision import VisionUnsupportedError
 
 from .constants import *  # noqa: F403 - shared task imports, matching sibling modules
@@ -226,6 +227,12 @@ def _index_page(session, document: Document, page: DocumentPage) -> int:
                     "parse_mode": page.parse_mode.value
                     if hasattr(page.parse_mode, "value")
                     else str(page.parse_mode),
+                    # A capture's time, so a search hit can say when it was taken.
+                    **(
+                        {"capture_ms": document.capture_ms}
+                        if is_capture(document)
+                        else {}
+                    ),
                 },
             )
         )
@@ -482,11 +489,17 @@ class _PageWriter:
 def _flag_notes_stale(session, document: Document) -> None:
     """Mark existing notes as not reflecting this document.
 
-    Only when notes already exist. Documents feed notes generation now, so one
-    that finishes parsing afterwards leaves the notes incomplete -- but
-    regenerating spends the user's quota and overwrites their edits, so this
-    raises a prompt rather than acting.
+    Only when notes already exist, and only for a document notes generation
+    reads: every attached document, and a capture whose notes switch is on. A
+    document that finishes parsing afterwards leaves the notes incomplete --
+    but regenerating spends the user's quota and overwrites their edits, so
+    this raises a prompt rather than acting. A capture left out of the notes
+    changes nothing they would say.
     """
+    # Read again: the switch may have been turned while the parse ran.
+    session.refresh(document)
+    if not feeds_notes(document):
+        return
     transcript = session.exec(
         select(Transcript).where(  # noqa: F405
             Transcript.recording_id == document.recording_id  # noqa: F405

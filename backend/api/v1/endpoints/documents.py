@@ -13,6 +13,7 @@ from backend.api.error_handling import sanitized_http_exception
 from backend.core.task_dispatch import dispatch_task
 from backend.models.document import (
     Document,
+    DocumentKind,
     DocumentParseMode,
     DocumentStatus,
     parse_looks_stalled,
@@ -127,7 +128,7 @@ async def list_documents(
     current_user: User = Depends(get_current_user),
 ):
     """
-    List all documents associated with a recording.
+    List the documents attached to a recording. Captures are listed apart.
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
 
@@ -137,6 +138,8 @@ async def list_documents(
     stmt = (
         select(Document)
         .where(Document.recording_id == recording.id)
+        # Captures have a list of their own, in timeline order (captures.py).
+        .where(Document.kind == DocumentKind.DOCUMENT.value)
         .order_by(Document.created_at, Document.id)
     )
     result = await db.execute(stmt)

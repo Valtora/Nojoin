@@ -20,8 +20,11 @@ import {
 } from "@/lib/notes/placement";
 import { liveSpeakerDisplayName } from "@/lib/recordingSpeakerUtils";
 import { getTranscriptSegmentKey } from "@/lib/transcriptSegments";
+import type { Capture } from "@/lib/api";
 import { CaptureSourceChannel, TranscriptSegment } from "@/types";
 
+import CaptureMarker from "./captures/CaptureMarker";
+import { capturesAmongLines, type CaptureItem } from "./captures/captureItems";
 import CollapsedLineNotes from "./notes/CollapsedLineNotes";
 import TimelineNoteLine from "./notes/TimelineNoteLine";
 import LiveLineMenu from "./transcript/LiveLineMenu";
@@ -92,9 +95,15 @@ interface LiveTranscriptPanelProps {
    * lines have no menu and a selection no toolbar.
    */
   onNoteOnLine?: (selection: NoteSelection) => void;
+  /** Captures, each after the line in progress when it was taken, as a note is. */
+  captures?: readonly CaptureItem[];
+  onOpenCapture?: (capture: Capture) => void;
+  onRetryCapture?: (key: string) => void;
+  onDiscardCapture?: (key: string) => void;
 }
 
 const NO_NOTES: readonly InlineNote[] = [];
+const NO_CAPTURES: readonly CaptureItem[] = [];
 const isSavedNote = (note: InlineNote) => note.status === "saved";
 
 const noteTimeMs = (note: InlineNote) =>
@@ -123,6 +132,10 @@ export default function LiveTranscriptPanel({
   onDiscardNote,
   footer,
   onNoteOnLine,
+  captures = NO_CAPTURES,
+  onOpenCapture,
+  onRetryCapture,
+  onDiscardCapture,
 }: LiveTranscriptPanelProps) {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [isPinnedToBottom, setIsPinnedToBottom] = useState(true);
@@ -165,6 +178,22 @@ export default function LiveTranscriptPanel({
     [segments, notes],
   );
 
+  const capturesAmong = useMemo(
+    () => capturesAmongLines(segments, captures, segments.map((_, index) => index)),
+    [segments, captures],
+  );
+  const captureLine = (item: CaptureItem) => (
+    <li key={item.key} data-testid="live-transcript-capture">
+      <CaptureMarker
+        item={item}
+        timeLabel={formatTimelineMs(item.captureMs)}
+        onOpen={(capture) => onOpenCapture?.(capture)}
+        onRetry={onRetryCapture}
+        onDiscard={onDiscardCapture}
+      />
+    </li>
+  );
+
   const scrollToBottom = useCallback(() => {
     const container = scrollContainerRef.current;
     if (container) {
@@ -200,14 +229,14 @@ export default function LiveTranscriptPanel({
     if (isPinnedToBottom) {
       scrollToBottom();
     }
-  }, [lines, notesAmongLines, isPinnedToBottom, scrollToBottom]);
+  }, [lines, notesAmongLines, capturesAmong, isPinnedToBottom, scrollToBottom]);
 
   const jumpToLatest = useCallback(() => {
     setIsPinnedToBottom(true);
     scrollToBottom();
   }, [scrollToBottom]);
 
-  const isEmpty = lines.length === 0 && notes.length === 0;
+  const isEmpty = lines.length === 0 && notes.length === 0 && captures.length === 0;
 
   const renderNote = (note: InlineNote) => (
     <li key={note.key} data-testid="live-transcript-note">
@@ -292,6 +321,7 @@ export default function LiveTranscriptPanel({
               ) : (
                 <ol className="space-y-3">
                   {notesAmongLines.opening.map(renderNote)}
+                  {capturesAmong.opening.map(captureLine)}
                   {lines.map(({ segment, key, sourceChannel, showSourceLabel, speaker, speakerLocked }, index) => [
                     <li
                       key={key}
@@ -345,6 +375,7 @@ export default function LiveTranscriptPanel({
                       renderNote={renderNote}
                       lineTime={() => formatElapsed(segment.start)}
                     />,
+                    ...(capturesAmong.afterLine.get(index) ?? NO_CAPTURES).map(captureLine),
                   ])}
                 </ol>
               )}

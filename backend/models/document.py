@@ -2,7 +2,15 @@ from datetime import timedelta
 from enum import Enum
 from typing import TYPE_CHECKING, List, Optional
 
-from sqlalchemy import BigInteger, Column, ForeignKey, Text
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    CheckConstraint,
+    Column,
+    ForeignKey,
+    String,
+    Text,
+)
 from sqlmodel import Field, Relationship
 
 from backend.utils.time import utc_now
@@ -43,8 +51,38 @@ class DocumentParseMode(str, Enum):
     STRUCTURAL = "STRUCTURAL"
 
 
+class DocumentKind(str, Enum):
+    """What put the file on the meeting.
+
+    ``DOCUMENT`` is a file someone attached, which every notes run reads.
+    ``CAPTURE`` is an image taken during the meeting, a frame of the shared
+    screen or a pasted image, at ``capture_ms`` on the recording's audio
+    timeline. A capture is parsed and indexed like any image, but notes
+    generation reads it only while ``use_in_notes`` is on.
+    """
+
+    DOCUMENT = "document"
+    CAPTURE = "capture"
+
+
+DOCUMENT_KIND_CHECK = "kind IN ('document', 'capture')"
+
+# A capture has a time and may be used in notes; a document has neither, so a
+# document can never be switched out of the notes by a stray flag.
+DOCUMENT_CAPTURE_SHAPE_CHECK = (
+    "(kind = 'capture' AND capture_ms IS NOT NULL AND capture_ms >= 0)"
+    " OR (kind = 'document' AND capture_ms IS NULL AND use_in_notes = false)"
+)
+
+
 class Document(BaseDBModel, table=True):
     __tablename__ = "documents"
+    __table_args__ = (
+        CheckConstraint(DOCUMENT_KIND_CHECK, name="ck_documents_kind"),
+        CheckConstraint(
+            DOCUMENT_CAPTURE_SHAPE_CHECK, name="ck_documents_capture_shape"
+        ),
+    )
 
     recording_id: int = Field(
         sa_column=Column(
@@ -69,6 +107,30 @@ class Document(BaseDBModel, table=True):
     # Non-fatal degradation, surfaced on the document card. A document with a
     # warning is still READY and still searchable.
     parse_warning: Optional[str] = Field(default=None, sa_column=Column(Text))
+
+    # A string checked by a constraint rather than a native enum, as
+    # timeline_notes.kind is, so a new kind is a constraint swap.
+    kind: str = Field(
+        default=DocumentKind.DOCUMENT.value,
+        sa_column=Column(
+            String(16),
+            nullable=False,
+            default=DocumentKind.DOCUMENT.value,
+            server_default=DocumentKind.DOCUMENT.value,
+        ),
+    )
+    # Captures only: milliseconds into the recording's audio, paused time left
+    # out, the clock timeline notes and utterances run on.
+    capture_ms: Optional[int] = Field(
+        default=None, sa_column=Column(BigInteger, nullable=True)
+    )
+    # Captures only, off by default: whether notes generation reads it.
+    use_in_notes: bool = Field(
+        default=False,
+        sa_column=Column(
+            Boolean, nullable=False, default=False, server_default="false"
+        ),
+    )
 
     # Progress, so a long parse reports something better than a spinner.
     # `page_count` is None until the format has been opened and counted.

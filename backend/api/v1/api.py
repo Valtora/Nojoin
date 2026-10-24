@@ -6,6 +6,7 @@ from backend.api.v1.endpoints import (
     api_docs,
     backup,
     calendar,
+    captures,
     cli_oauth,
     documents,
     invitations,
@@ -184,6 +185,9 @@ api_router.include_router(
 )
 api_router.include_router(
     documents.router, tags=["documents"], dependencies=[Depends(get_current_user)]
+)
+api_router.include_router(
+    captures.router, tags=["captures"], dependencies=[Depends(get_current_user)]
 )
 api_router.include_router(
     calendar.router,

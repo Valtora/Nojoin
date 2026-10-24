@@ -18,7 +18,12 @@ import {
 } from "@/types";
 
 import SpeakerPanel from "@/components/SpeakerPanel";
+import CapturesList from "@/components/captures/CapturesList";
+import { scrollTranscriptToCapture } from "@/components/captures/captureJump";
+import type { CaptureItem } from "@/components/captures/captureItems";
 import MyNotesList from "@/components/notes/MyNotesList";
+import type { Capture } from "@/lib/api";
+import type { CapturesState } from "@/lib/captures/useCaptures";
 import type { NoteEdits } from "@/lib/notes/useNoteEdits";
 
 import RecordingHeader from "./RecordingHeader";
@@ -35,6 +40,10 @@ interface RecordingMainContentProps {
   timelineNotes: readonly TimelineNote[] | null;
   /** The page's note edits, shared by the transcript and My notes. */
   noteEdits: NoteEdits;
+  /** The recording's captures, for the transcript's markers and the phone's tab. */
+  captures: CapturesState;
+  captureItems: readonly CaptureItem[];
+  onOpenCapture: (capture: Capture) => void;
   isMobile: boolean;
   activePanel: ActivePanel;
   setActivePanel: (panel: ActivePanel) => void;
@@ -115,6 +124,7 @@ const TABS: { panel: ActivePanel; label: string }[] = [
 const MOBILE_TABS: { panel: ActivePanel; label: string }[] = [
   ...TABS.slice(0, 2),
   { panel: "my-notes", label: "My notes" },
+  { panel: "captures", label: "Captures" },
   ...TABS.slice(2),
   { panel: "speakers", label: "Speakers" },
 ];
@@ -143,6 +153,9 @@ export default function RecordingMainContent({
   recording,
   timelineNotes,
   noteEdits,
+  captures,
+  captureItems,
+  onOpenCapture,
   isMobile,
   activePanel,
   setActivePanel,
@@ -229,6 +242,12 @@ export default function RecordingMainContent({
     );
   };
 
+  // A capture's time in the phone's list opens the transcript at its marker.
+  const showCaptureInTranscript = (capture: Capture) => {
+    setActivePanel("transcript");
+    requestAnimationFrame(() => scrollTranscriptToCapture(capture.id));
+  };
+
   // A tab chosen other than by a tap on the row (the page reopening on the
   // panel last used, Analytics' link to the speakers) may sit past its edge.
   useEffect(() => {
@@ -308,6 +327,9 @@ export default function RecordingMainContent({
           recording={recording}
           timelineNotes={timelineNotes}
           noteEdits={noteEdits}
+          captures={captures}
+          captureItems={captureItems}
+          onOpenCapture={onOpenCapture}
           transcriptSegments={transcriptSegments}
           currentTime={currentTime}
           isPlaying={isPlaying}
@@ -381,6 +403,23 @@ export default function RecordingMainContent({
               noteEdits={noteEdits}
               onPlay={onPlaySegment}
               onShowTranscript={showTranscript}
+              className="flex-1"
+            />
+          </div>
+        )}
+
+        {isMobile && (
+          <div
+            role="tabpanel"
+            id="panel-captures"
+            aria-labelledby="tab-captures"
+            className={`absolute inset-0 flex flex-col ${activePanel === "captures" ? "z-10 visible" : "z-0 invisible"}`}
+          >
+            <CapturesList
+              state={captures}
+              onOpen={onOpenCapture}
+              onPlay={onPlaySegment}
+              onShowInTranscript={showCaptureInTranscript}
               className="flex-1"
             />
           </div>

@@ -63,7 +63,7 @@ The **People** page is your speaker library: the people Nojoin can recognise acr
 
 **Start Meeting** on the dashboard begins a recording. Desktop Chromium browsers record the shared tab, window or screen audio together with your microphone, and Chrome on Android and iOS records the phone microphone only. [CAPTURE.md](CAPTURE.md) covers supported browsers, choosing what to share, and the **Pause**, **Resume**, **Stop** and **Discard** controls.
 
-While recording, the page shows the recording controls, a live waveform, the live transcript, your notes and Meeting Edge. **Attach Docs** in the toolbar attaches documents while the meeting runs or is processing. After **Stop**, the page shows processing progress.
+While recording, the page shows the recording controls, a live waveform, the live transcript, your notes and Meeting Edge. **Attach Docs** in the toolbar attaches documents while the meeting runs or is processing, and [Captures](#captures) save what the shared screen shows. After **Stop**, the page shows processing progress.
 
 Your notes save as you type and can be edited until notes generation starts. The AI reads them with the transcript, and the generated notes end with them under **User Notes**. A note holds up to 50,000 characters: a count appears near the limit, and longer text is not saved until you shorten it. Notes added on another device or by a connected assistant ([MCP.md](MCP.md)) are listed read-only under **Other notes**. Once the meeting is processed, **My notes** lists every note and edits any of them ([Transcript And Playback](#transcript-and-playback)).
 
@@ -95,6 +95,20 @@ A note that could not be saved stays where you wrote it, marked with the reason,
 
 The recordings list marks a recording **Unsent notes** while this browser holds notes or text in the box for it that are not saved yet, or a discarded note that Nojoin has not yet confirmed as removed. Open the recording to send them; a note that fails again is listed there with **Retry** and **Discard**. The recording you have open shows no mark, since it lists its unsaved notes itself. The list reads what the browser kept when the page loads and follows this tab's own notes after that, so a change made in another tab shows after a reload. Deleting a recording permanently, or discarding it, in this browser removes the notes kept for it, in every tab. A recording deleted permanently or discarded on another device gets no mark. Its notes are removed the next time Nojoin is opened or reloaded in this browser, once the recordings list has loaded, or sooner if a page of the recording open here finds it gone. Moving a recording to the bin keeps them, since it can be restored.
 
+### Captures
+
+A capture saves a still of the shared screen, such as a slide, at its moment in the meeting.
+
+- While you record with a tab, window or screen shared, the camera button beside the note box, **Capture the shared screen**, saves what it shows at full size. So does **Alt+Shift+C** (**Option+Shift+C** on a Mac), while Nojoin's tab is the one in front: the browser sends keys only to the tab you are in, not to the meeting you shared.
+- Pasting an image into the note box saves it as a capture too, for example a screenshot you took yourself. This works on any device with the recording open, such as a phone taking notes beside the laptop that records. Text you paste stays text.
+- A recording without a shared screen, such as one from a phone, has no Capture button, but pasting still works.
+
+A capture takes the recording's time when you ask for it, on the clock notes use, and shows in the live transcript after the line being spoken then, with its picture. It uploads at once and is read as an attached image is ([Visual Analysis](#visual-analysis), or local OCR without an AI model), so its words are searchable, and Meeting Chat can draw on it, as soon as reading finishes. One that cannot be saved stays where it was taken with **Retry** and **Discard**, and Nojoin asks before you close the page while any is unsaved. It is held in the tab until then, so closing the tab anyway loses it.
+
+**Use in notes** is off for every capture until you turn it on, in its picture or in the **Captures** tab. Only captures switched on reach the AI meeting notes, which mention one by its time, as in "(capture at 12:34)", rather than show it. Attached documents always reach the notes, as before. Turning a capture on or off after the notes were written shows the banner that offers to regenerate them.
+
+A capture holds whatever the shared screen showed, faces included. Nojoin reads the shared video only when you ask for a capture, and keeps no video otherwise.
+
 ### Meeting Edge
 
 Meeting Edge offers live guidance under **Questions to Ask**, **Points to Raise** and **Technical Context**. It works from the recent transcript, your notes, the linked calendar event and the [glossary](#glossary). Write a goal in **Guide Meeting Edge** to steer it. The **Technical Context** slider, on the recording page or in **Settings > Notes and live assistance**, sets whether it explains fewer or more terms.
@@ -117,7 +131,7 @@ If transcription fails, the recording is marked **Error**, a notification says s
 
 ## Transcript And Playback
 
-A processed meeting has **Transcript**, **Notes**, **Documents** and **Analytics** tabs. On desktop a resizable column beside them holds **Speakers** and **My notes** as tabs, above **Chat**; on a phone, **My notes** is a tab after **Notes**, and **Speakers** is the last tab. The header also holds the meeting's tags and its linked calendar event. The panels and the recordings list collapse from their headers and stay as you left them.
+A processed meeting has **Transcript**, **Notes**, **Documents** and **Analytics** tabs. On desktop a resizable column beside them holds **Speakers**, **My notes** and **Captures** as tabs, above **Chat**; on a phone, **My notes** and **Captures** are tabs after **Notes**, and **Speakers** is the last tab. The header also holds the meeting's tags and its linked calendar event. The panels and the recordings list collapse from their headers and stay as you left them.
 
 In the transcript:
 
@@ -132,6 +146,8 @@ In the transcript:
 - The words a note is on are underlined in the transcript, on a light tint. After processing or a reprocess the words may read a little differently: Nojoin looks for them again near the note's time, and words found with changes are underlined with dots instead, the original words shown when you point at them. When they can no longer be found, nothing is marked, and the note shows its quote struck through, says the words changed, and quotes what the transcript says at that time now.
 - Click underlined words, or the pencil beside a saved note, to edit the note or delete it. An edit you have started typing stays open until you save or cancel it. If the note was changed on another device meanwhile, Nojoin shows its new text and keeps yours in the box: save again to replace it. From **Save note** or **Confirm delete** until the change is saved or you cancel it, Nojoin asks before you close the page.
 - A note you placed at a moment can move to another line. Its arrows, **Move up** and **Move down**, move it after the line above or below, and keep focus so you can press again. With a mouse, you can also drag it by the grip before **Note** and drop it on a line, or on a note after that line; Escape cancels the drag. A moved note follows its new line and takes that line's start as its time, in **My notes** too. A note on selected words stays with them, and notes on the whole meeting have no place among the lines, so neither moves. If the note was changed on another device meanwhile, it goes back, or to where that device put it, shows how it reads now and says so: move it again if you still want it there.
+- A [capture](#captures) shows after the line being spoken when it was taken, with its picture, marked **Used in notes** when its switch is on. Click or tap the picture for the full image, its **Use in notes** switch, **Download**, **Play from** its time and **Delete**.
+- **Captures** lists every capture by time, each with its **Use in notes** switch. Its time scrolls the transcript to it, on a phone switching to the **Transcript** tab, and its play button plays from that time.
 - **My notes** lists every saved note in the transcript's order: notes before the transcript first, then the rest by time, then notes after it. Click or tap a note with a time to scroll the transcript to it, on a phone switching to the **Transcript** tab, and its play button plays from that time. Its pencil edits or deletes it as on its line, with the same check for a change made elsewhere, and the change shows in both places. Notes not saved yet stay listed above the transcript.
 
 **Export** saves the notes, analytics and transcript as one PDF, Word or text file, or the audio as MP3 ([Exporting A Meeting](#exporting-a-meeting)).
@@ -147,7 +163,7 @@ A recording made by a much older version can refuse transcript and speaker edits
 - **Speakers keep their colours** in charts and the transcript. A colour too light to read as text, such as yellow, is printed in a darker shade.
 - **Text files** keep the notes as Markdown, with table columns padded to line up, and list a chart's figures in place of the chart.
 
-Every exported transcript line carries a `[MM:SS]` timestamp and the speaker's name, in all three formats. Your own notes sit in the transcript, each set apart as a quote: notes on the whole meeting first and last, the rest after the line they fall on, with their `[MM:SS]` time. The generated meeting notes also end with them under **User Notes**, as they were when the notes were generated. When the recording has saved notes of yours, untick **Include my notes** to leave them out of both, say when you share the file. Only the file changes: the notes in Nojoin keep their **User Notes**. An administrator can turn the Nojoin branding off ([Exported Files](ADMIN.md#exported-files)).
+Every exported transcript line carries a `[MM:SS]` timestamp and the speaker's name, in all three formats. Your own notes sit in the transcript, each set apart as a quote: notes on the whole meeting first and last, the rest after the line they fall on, with their `[MM:SS]` time. The generated meeting notes also end with them under **User Notes**, as they were when the notes were generated. Your captures sit in the transcript where a note at their time would: PDF and Word files show each picture under its `[MM:SS] Capture` caption, and a text file has that caption on its own line in place of the picture. When the recording has saved notes or captures of yours, untick **Include my notes** (**Include my notes and captures**, or **Include my captures**) to leave them out, say when you share the file. Only the file changes: the notes in Nojoin keep their **User Notes**. An administrator can turn the Nojoin branding off ([Exported Files](ADMIN.md#exported-files)).
 
 ### Who Edited A Line
 
@@ -224,7 +240,7 @@ A voiceprint that cannot be rebuilt, because its meeting's audio was removed or 
 
 - **Notes** holds the AI meeting notes, which you can edit. **Generate Notes** (or **Regenerate Notes**) writes them again when AI is configured, overwriting your edits. Notes you type during the meeting are fed into the generated notes and kept when you reprocess.
 - **Meeting Chat** answers questions from the transcript, with your edits and speaker names, the notes and the meeting's documents. **Context** in the chat header adds meetings with the tags you choose.
-- **Documents** holds files attached to the meeting, which the notes and Meeting Chat draw on.
+- **Documents** holds files attached to the meeting, which the notes and Meeting Chat draw on. Captures have their own tab ([Captures](#captures)): search and Meeting Chat read them as they read documents, and the notes only those switched on.
 - **Analytics** reports how the conversation went, measured from the transcript and audio, with an optional AI reading of what was discussed.
 - **Search** in the recordings list and **Search** and **Find & Replace** in the transcript are covered under [Recordings List](#recordings-list) and [Transcript And Playback](#transcript-and-playback).
 

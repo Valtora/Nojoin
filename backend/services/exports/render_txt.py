@@ -21,6 +21,7 @@ from .model import (
     CodeBlock,
     ExportDocument,
     Heading,
+    ImageBlock,
     Inline,
     ListBlock,
     Paragraph,
@@ -135,6 +136,10 @@ def _chart(block: ChartBlock) -> str:
     return render_blocks(block.fallback)
 
 
+def _image(block: ImageBlock) -> str:
+    return render_blocks(block.fallback)
+
+
 def _code(block: CodeBlock) -> str:
     return _indent(block.text, "    ")
 
@@ -157,6 +162,7 @@ _RENDERERS: dict[type, Callable[..., str]] = {
     StatRow: _stats,
     Callout: _callout,
     ChartBlock: _chart,
+    ImageBlock: _image,
     CodeBlock: _code,
     Rule: _rule,
 }

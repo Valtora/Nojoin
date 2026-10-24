@@ -155,6 +155,37 @@ class TranscriptLine:
     text: str
 
 
+# The tallest a picture is printed, in points, so a portrait screenshot leaves
+# room on its page for the lines around it.
+IMAGE_MAX_HEIGHT_PT = 360.0
+# Pixels are read at 96 to the inch, the size a screen shows them at.
+_POINTS_PER_PIXEL = 72 / 96
+
+
+@dataclass(frozen=True)
+class ImageBlock:
+    """A picture with its caption, as a capture sits in the transcript.
+
+    ``data`` is a JPEG already scaled for print. PDF and DOCX draw the caption
+    and the picture together; plain text cannot hold a picture, so it prints
+    ``fallback`` instead.
+    """
+
+    caption: Inline
+    data: bytes
+    width_px: int
+    height_px: int
+    alt_text: str
+    fallback: tuple["Block", ...]
+
+    def size_pt(self, max_width_pt: float) -> tuple[float, float]:
+        """Its printed size: as a screen shows it, shrunk to fit the column."""
+        width = self.width_px * _POINTS_PER_PIXEL
+        height = self.height_px * _POINTS_PER_PIXEL
+        scale = min(1.0, max_width_pt / width, IMAGE_MAX_HEIGHT_PT / height)
+        return width * scale, height * scale
+
+
 Block = Union[
     Heading,
     Paragraph,
@@ -166,6 +197,7 @@ Block = Union[
     Callout,
     ChartBlock,
     TranscriptLine,
+    ImageBlock,
 ]
 
 

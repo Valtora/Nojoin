@@ -418,12 +418,15 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
     }
   }, [isMobile]);
 
-  // The "speakers" and "my-notes" panels exist only on mobile, where they
-  // have tabs; desktop shows them in the side column. Leaving mobile while
-  // one is active would blank the main content, so fall back to the
-  // transcript.
+  // The "speakers", "my-notes" and "captures" panels exist only on mobile,
+  // where they have tabs; desktop shows them in the side column. Leaving
+  // mobile while one is active would blank the main content, so fall back to
+  // the transcript.
   useEffect(() => {
-    if (!isMobile && (activePanel === "speakers" || activePanel === "my-notes")) {
+    if (
+      !isMobile &&
+      (activePanel === "speakers" || activePanel === "my-notes" || activePanel === "captures")
+    ) {
       setActivePanel("transcript");
     }
   }, [isMobile, activePanel, setActivePanel]);

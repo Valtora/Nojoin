@@ -161,6 +161,16 @@ UPDATE timeline_notes SET last_write_token = 'mc-token-1' WHERE public_id = 'mc-
 INSERT INTO timeline_note_tombstones (public_id, recording_id, deleted_write_token, deleted_at)
 VALUES ('mc-tt1', 900001, 'mc-token-2', now())
 ON CONFLICT (public_id) DO NOTHING;
+
+-- A document and a capture switched into the notes: rolling the captures
+-- migration back has to keep both rows, as ordinary documents.
+INSERT INTO documents (created_at, updated_at, recording_id, title, file_path,
+                       file_type, status, parse_mode, pages_parsed, kind,
+                       capture_ms, use_in_notes)
+VALUES
+  (now(), now(), 900001, 'mc-doc', '/mc-doc.pdf', 'application/pdf', 'READY', 'VISUAL', 0, 'document', NULL, false),
+  (now(), now(), 900001, 'mc-capture', '/mc-capture.png', 'image/png', 'READY', 'VISUAL', 0, 'capture', 0, true)
+ON CONFLICT (file_path) DO NOTHING;
 """
 
 

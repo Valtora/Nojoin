@@ -34,6 +34,7 @@ from backend.tests.export_fixtures import (
     exported_text,
 )
 from backend.tests.sqlite_schemas import (
+    DOCUMENTS_SCHEMA,
     GLOBAL_SPEAKERS_SCHEMA,
     RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA,
     RECORDING_SPEAKERS_SCHEMA,
@@ -65,7 +66,7 @@ def api(monkeypatch):
         async with maker() as session:
             yield session
 
-    state = SimpleNamespace(user=None, analytics_reads=0, recording=None)
+    state = SimpleNamespace(user=None, analytics_reads=0, recording=None, maker=maker)
     app.dependency_overrides[get_db] = override_db
     app.dependency_overrides[get_current_user] = lambda: state.user
 
@@ -106,6 +107,7 @@ def api(monkeypatch):
                 RECORDING_SPEAKERS_SCHEMA,
                 RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA,
                 TIMELINE_NOTES_SCHEMA,
+                DOCUMENTS_SCHEMA,
             ):
                 await conn.execute(text(schema))
         state.user = User(
@@ -306,3 +308,52 @@ def test_leaving_the_readers_notes_out_drops_them_from_the_notes_too(
     assert "Peter books the venue." in left_out, left_out
     assert "User Notes" not in left_out, left_out
     assert "Ask about catering" not in left_out, left_out
+
+
+def test_the_transcript_carries_the_readers_captures_unless_left_out(
+    api, tmp_path
+) -> None:
+    from PIL import Image
+
+    from backend.models.document import Document, DocumentStatus
+
+    frame = tmp_path / "frame.png"
+    Image.new("RGB", (320, 180), (240, 240, 240)).save(frame, format="PNG")
+
+    async def go():
+        recording = await api.setup()
+        async with api.state.maker() as session:
+            session.add(
+                Document(
+                    recording_id=recording.id,
+                    kind="capture",
+                    capture_ms=7_000,
+                    title="Capture at 00:07",
+                    file_path=str(frame),
+                    file_type="image/png",
+                    status=DocumentStatus.READY,
+                )
+            )
+            await session.commit()
+        kept = await api.export(recording, sections=["transcript"], export_format="txt")
+        left_out = await api.export(
+            recording,
+            sections=["transcript"],
+            export_format="txt",
+            include_notes="false",
+        )
+        docx = await api.export(
+            recording, sections=["transcript"], export_format="docx"
+        )
+        return kept, left_out, docx
+
+    kept, left_out, docx = asyncio.run(go())
+
+    assert kept.status_code == 200, kept.text
+    assert (
+        "> [00:06] Note: Check the budget\n\n"
+        "> [00:07] Capture: an image, in the PDF and Word exports"
+    ) in kept.text
+    assert "Capture" not in left_out.text
+    assert docx.status_code == 200, docx.text
+    assert "[00:07] Capture" in exported_text(docx.content, "docx")

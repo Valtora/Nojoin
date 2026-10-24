@@ -245,7 +245,10 @@ SCHEMA_STATEMENTS = [
         parse_warning TEXT,
         page_count INTEGER,
         pages_parsed INTEGER NOT NULL DEFAULT 0,
-        parse_stage VARCHAR(64)
+        parse_stage VARCHAR(64),
+        kind VARCHAR(16) NOT NULL DEFAULT 'document',
+        capture_ms INTEGER,
+        use_in_notes BOOLEAN NOT NULL DEFAULT 0
     )
     """,
     """
@@ -1336,6 +1339,43 @@ async def test_get_documents_truncates_long_text(
     # and the first nine characters of the body.
     assert docs[0]["text"] == "[Page 1]\n012345678"
     assert docs[0]["text_truncated"] is True
+
+
+@pytest.mark.anyio
+async def test_get_documents_lists_captures_with_their_time_and_switch(
+    session_maker, test_user: User, mcp_context
+):
+    bind_mcp_identity(test_user)
+    public_id = await seed_recording_with_speakers(session_maker, user_id=test_user.id)
+    await seed_document(
+        session_maker, document_id=5, recording_id=1, title="Agenda", pages=["One."]
+    )
+    await seed_document(
+        session_maker,
+        document_id=6,
+        recording_id=1,
+        title="Capture at 01:05",
+        pages=["Quarterly plan, Alice Example"],
+    )
+    async with session_maker() as session:
+        await session.execute(
+            text(
+                "UPDATE documents SET kind = 'capture', capture_ms = 65400,"
+                " use_in_notes = 1 WHERE id = 6"
+            )
+        )
+        await session.commit()
+
+    docs = await get_documents(public_id)
+
+    by_title = {doc["title"]: doc for doc in docs}
+    assert by_title["Agenda"]["kind"] == "document"
+    assert "at_seconds" not in by_title["Agenda"]
+    capture = by_title["Capture at 01:05"]
+    assert capture["kind"] == "capture"
+    assert capture["at_seconds"] == 65.4
+    assert capture["use_in_notes"] is True
+    assert capture["text"] == "[Page 1]\nQuarterly plan, Alice Example"
 
 
 @pytest.mark.anyio

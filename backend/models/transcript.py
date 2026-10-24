@@ -57,8 +57,9 @@ class Transcript(BaseDBModel, table=True):
     notes_status: str = Field(
         default="pending"
     )  # pending, generating, completed, error
-    # Set when a document finishes parsing after the notes were generated, so
-    # the notes no longer reflect everything attached to the meeting. Only a
+    # Set when a document finishes parsing after the notes were generated, or
+    # a capture's notes switch changes, so the notes no longer reflect what
+    # notes generation would read. Only a
     # prompt to regenerate: regenerating costs a real LLM call on the user's
     # own quota and overwrites any hand edits, so it is never automatic.
     notes_stale_documents: bool = Field(default=False)

@@ -746,7 +746,8 @@ def _feature_flags(session: Any, cutoff: datetime) -> dict[str, Any]:
         "calendar_connected": any_row(CalendarConnection),
         "mcp_in_use": any_row(OAuthRefreshToken),
         "chat_used_28d": any_row(ChatMessage, ChatMessage.created_at >= cutoff),
-        "documents_used": any_row(Document),
+        # Attached documents only: a capture is a feature of its own.
+        "documents_used": any_row(Document, Document.kind == "document"),
         "tasks_used": any_row(UserTask),
         "people_library_used": any_row(GlobalSpeaker),
     }

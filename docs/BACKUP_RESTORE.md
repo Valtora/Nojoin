@@ -4,7 +4,7 @@
 
 ## What a Backup Contains
 
-- Recordings with their transcripts, notes, speakers, tags, chat history and attached documents (records and files).
+- Recordings with their transcripts, notes, speakers, tags, chat history, attached documents and captures (records and files, with each capture's time and notes switch).
 - Tasks, with their tags and recording links.
 - People records and voiceprints.
 - User accounts with their password hashes and settings, and the shared notes structures.

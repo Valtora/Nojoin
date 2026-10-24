@@ -22,6 +22,8 @@ Browsers that cannot record can still play recordings, edit transcripts, manage 
 
 Nojoin records two channels: the shared tab, window or screen audio, and your microphone. It uploads them as you record, in two-second lossless segments, using about 0.15 Mbit/s while one source carries sound and 0.3 Mbit/s while both do. The finished recording is a FLAC file exactly as long as the audio captured.
 
+Nojoin keeps none of the shared video. While you record, it reads one still from it only when you ask for a [capture](USAGE.md#captures), with the camera button beside the note box or Alt+Shift+C (Option+Shift+C on a Mac).
+
 If you do not share tab audio, the shared channel is silent and everyone in the room is recorded through the microphone. On a phone, remote participants are recorded only if the phone's microphone can hear them.
 
 While you record, the recording page shows a live waveform and a **Live Transcript** panel a few seconds behind the conversation ([USAGE.md](USAGE.md#live-transcription)).
@@ -222,7 +224,7 @@ If the browser is already supported, check the address. Browsers allow capture o
 
 ## Privacy Notes
 
-The browser decides what Nojoin receives: on desktop, the tab, window or screen you pick and the microphone you allow; on a phone, the microphone only. To end capture, stop the meeting in Nojoin or stop sharing from the browser's indicator.
+The browser decides what Nojoin receives: on desktop, the tab, window or screen you pick and the microphone you allow; on a phone, the microphone only. Of the shared video, Nojoin saves only the stills you ask for as captures. To end capture, stop the meeting in Nojoin or stop sharing from the browser's indicator.
 
 ## Related Docs
 

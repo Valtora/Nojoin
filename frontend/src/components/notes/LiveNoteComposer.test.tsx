@@ -188,3 +188,74 @@ describe("LiveNoteComposer", () => {
     expect(status).toHaveTextContent("Placed at 00:00, where you started typing.");
   });
 });
+
+describe("LiveNoteComposer and captures", () => {
+  const clipboard = (text: string, files: File[]) => ({
+    getData: (format: string) => (format === "text/plain" ? text : ""),
+    items: files.map((file) => ({ kind: "file", type: file.type, getAsFile: () => file })),
+  });
+  const screenshot = new File([new Uint8Array(8)], "image.png", { type: "image/png" });
+
+  it("takes a pasted image as a capture, leaving the note's text alone", () => {
+    const onPasteImage = vi.fn();
+    render(
+      <LiveNoteComposer readAudioNow={readAudioNow} onSubmit={onSubmit} onPasteImage={onPasteImage} />,
+    );
+    const box = screen.getByRole("textbox", { name: "New note" }) as HTMLTextAreaElement;
+    type(box, "Slide on hiring");
+
+    const pasted = fireEvent.paste(box, { clipboardData: clipboard("", [screenshot]) });
+
+    expect(onPasteImage).toHaveBeenCalledWith(screenshot);
+    // Handled, so the browser inserts nothing.
+    expect(pasted).toBe(false);
+    expect(box.value).toBe("Slide on hiring");
+  });
+
+  it("pastes text as text, even with a picture of it on the clipboard", () => {
+    const onPasteImage = vi.fn();
+    render(
+      <LiveNoteComposer readAudioNow={readAudioNow} onSubmit={onSubmit} onPasteImage={onPasteImage} />,
+    );
+    const box = screen.getByRole("textbox", { name: "New note" });
+
+    const pasted = fireEvent.paste(box, { clipboardData: clipboard("Quarterly plan", [screenshot]) });
+
+    expect(onPasteImage).not.toHaveBeenCalled();
+    expect(pasted).toBe(true);
+  });
+
+  it("offers Capture only where the screen is shared, naming its keys", () => {
+    const onCapture = vi.fn();
+    const { rerender } = render(<LiveNoteComposer readAudioNow={readAudioNow} onSubmit={onSubmit} />);
+    expect(screen.queryByRole("button", { name: "Capture the shared screen" })).toBeNull();
+
+    rerender(
+      <LiveNoteComposer
+        readAudioNow={readAudioNow}
+        onSubmit={onSubmit}
+        onCapture={onCapture}
+        captureShortcut="Alt+Shift+C"
+      />,
+    );
+    const button = screen.getByRole("button", { name: "Capture the shared screen" });
+    expect(button).toHaveAttribute("title", "Capture the shared screen (Alt+Shift+C)");
+    fireEvent.click(button);
+
+    expect(onCapture).toHaveBeenCalledTimes(1);
+  });
+
+  it("says a capture's news in the status line", () => {
+    const { rerender } = render(<LiveNoteComposer readAudioNow={readAudioNow} onSubmit={onSubmit} />);
+
+    rerender(
+      <LiveNoteComposer
+        readAudioNow={readAudioNow}
+        onSubmit={onSubmit}
+        captureMessage={{ text: "Capture taken at 01:05.", tone: "info", seq: 1 }}
+      />,
+    );
+
+    expect(screen.getByTestId("live-note-status")).toHaveTextContent("Capture taken at 01:05.");
+  });
+});

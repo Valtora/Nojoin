@@ -4,6 +4,9 @@ import { useCallback, useMemo, useRef } from "react";
 import { AlertCircle } from "lucide-react";
 
 import TranscriptView from "@/components/TranscriptView";
+import type { CaptureItem } from "@/components/captures/captureItems";
+import type { Capture } from "@/lib/api";
+import type { CapturesState } from "@/lib/captures/useCaptures";
 import RecordingUnsavedNotes from "@/components/notes/RecordingUnsavedNotes";
 import { inlineNotes, type OutboxDraft } from "@/lib/notes/noteOutbox";
 import type { EditableNote, NoteEdits } from "@/lib/notes/useNoteEdits";
@@ -33,6 +36,10 @@ interface TranscriptSectionProps {
   timelineNotes?: readonly TimelineNote[] | null;
   /** The page's note edits, which My notes shares. */
   noteEdits: NoteEdits;
+  /** The recording's captures; their markers show among the lines. */
+  captures?: CapturesState;
+  captureItems?: readonly CaptureItem[];
+  onOpenCapture?: (capture: Capture) => void;
   transcriptSegments: TranscriptSegment[];
   currentTime: number;
   isPlaying: boolean;
@@ -72,6 +79,9 @@ export default function TranscriptSection({
   recording,
   timelineNotes,
   noteEdits,
+  captures,
+  captureItems,
+  onOpenCapture,
   transcriptSegments,
   currentTime,
   isPlaying,
@@ -136,6 +146,13 @@ export default function TranscriptSection({
       focusSection();
     },
     [outbox, focusSection],
+  );
+  const discardCapture = useCallback(
+    (key: string) => {
+      captures?.discard(key);
+      focusSection();
+    },
+    [captures, focusSection],
   );
   const deleteNote = useCallback(
     async (note: EditableNote) => {
@@ -222,6 +239,10 @@ export default function TranscriptSection({
             onEditNote={editNote}
             onDeleteNote={deleteNote}
             onMoveNote={moveNote}
+            captures={captureItems}
+            onOpenCapture={onOpenCapture}
+            onRetryCapture={captures?.retry}
+            onDiscardCapture={discardCapture}
           />
         </div>
       ) : (

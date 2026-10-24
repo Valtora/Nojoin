@@ -101,7 +101,24 @@ CREATE TABLE documents (
     parse_warning TEXT,
     page_count INTEGER,
     pages_parsed INTEGER NOT NULL,
-    parse_stage VARCHAR
+    parse_stage VARCHAR,
+    kind VARCHAR(16) NOT NULL DEFAULT 'document',
+    capture_ms INTEGER,
+    use_in_notes BOOLEAN NOT NULL DEFAULT 0
+)
+"""
+
+DOCUMENT_PAGES_SCHEMA = """
+CREATE TABLE document_pages (
+    id INTEGER PRIMARY KEY,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    document_id INTEGER NOT NULL,
+    page_number INTEGER NOT NULL,
+    title VARCHAR(512),
+    content TEXT NOT NULL DEFAULT '',
+    parse_mode VARCHAR(32) NOT NULL DEFAULT 'STRUCTURAL',
+    error_message TEXT
 )
 """
 

@@ -1603,6 +1603,68 @@ async def test_documents_round_trip_with_their_files(
 
 
 @pytest.mark.anyio
+async def test_captures_round_trip_with_their_time_and_switch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A capture is a document of its own kind: its image travels as a document
+    # file does, and its time and notes switch travel on its row.
+    source_context = build_test_context(tmp_path / "source")
+    patch_backup_manager(monkeypatch, source_context)
+    monkeypatch.setenv("DATA_ENCRYPTION_KEY", "source-encryption-key")
+
+    frame = source_context.path_manager.documents_directory / "frame.png"
+    frame.write_bytes(b"\x89PNG\r\n\x1a\n frame")
+
+    await seed_source_data(
+        source_context.async_session_maker,
+        recording_meeting_uid="meeting-uid-captures",
+        recording_proxy_path=None,
+    )
+    async with source_context.async_session_maker() as session:
+        session.add(
+            TestDocument(
+                id=1,
+                recording_id=40,
+                title="Capture at 01:05",
+                file_path=str(frame),
+                file_type="image/png",
+                kind="capture",
+                capture_ms=65_000,
+                use_in_notes=True,
+            )
+        )
+        await session.commit()
+
+    zip_path, _warnings = await BackupManager.create_backup(include_audio=False)
+
+    target_context = build_test_context(tmp_path / "target")
+    patch_backup_manager(monkeypatch, target_context)
+    monkeypatch.setenv("DATA_ENCRYPTION_KEY", "target-encryption-key")
+    job_id = "captures-round-trip-job"
+    BackupManager.restore_jobs[job_id] = {
+        "status": "pending",
+        "progress": "Queued",
+        "error": None,
+    }
+
+    await BackupManager.restore_backup(job_id, zip_path)
+
+    assert BackupManager.restore_jobs[job_id]["status"] == "completed"
+    with Session(target_context.sync_engine) as session:
+        restored = session.exec(select(TestDocument)).one()
+    assert (restored.kind, restored.capture_ms, restored.use_in_notes) == (
+        "capture",
+        65_000,
+        True,
+    )
+    assert Path(restored.file_path).read_bytes() == b"\x89PNG\r\n\x1a\n frame"
+
+    await source_context.async_engine.dispose()
+    await target_context.async_engine.dispose()
+
+
+@pytest.mark.anyio
 async def test_documents_directory_follows_the_data_directory(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

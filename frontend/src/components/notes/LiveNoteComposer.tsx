@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
   type ChangeEvent,
+  type ClipboardEvent,
   type FormEvent,
   type KeyboardEvent,
   type RefObject,
@@ -13,6 +14,7 @@ import {
 import {
   ArrowDownToLine,
   ArrowUpToLine,
+  Camera,
   ChevronDown,
   CornerDownLeft,
   SendHorizontal,
@@ -33,8 +35,10 @@ import {
   type OutboxDraft,
   type OutboxNotice,
 } from "@/lib/notes/noteOutbox";
+import { pastedImage } from "@/lib/captures/frameImage";
 import { formatTimelineMs } from "@/lib/notes/placement";
 import { useKeyboardInset } from "@/lib/useKeyboardInset";
+import { useOnDepsChange } from "@/lib/useOnDepsChange";
 
 import IconButton from "../ui/IconButton";
 
@@ -70,6 +74,16 @@ interface LiveNoteComposerProps {
   notice?: OutboxNotice | null;
   /** The text box, for a caller that moves focus to it. */
   boxRef?: RefObject<HTMLTextAreaElement | null>;
+  /** Takes a still of the shared screen; without it, no Capture button. */
+  onCapture?: () => void;
+  /** A capture is being taken, so the button waits. */
+  capturing?: boolean;
+  /** The keys that capture too, for the button's tooltip. */
+  captureShortcut?: string;
+  /** Stores an image pasted into the box as a capture; without it, an image paste does nothing. */
+  onPasteImage?: (image: File) => void;
+  /** The latest word on a capture, said in the status line; a new `seq` says it again. */
+  captureMessage?: { text: string; tone: "info" | "error"; seq: number } | null;
 }
 
 interface Message {
@@ -129,6 +143,11 @@ export default function LiveNoteComposer({
   onDraftChange,
   notice = null,
   boxRef,
+  onCapture,
+  capturing = false,
+  captureShortcut,
+  onPasteImage,
+  captureMessage = null,
 }: LiveNoteComposerProps) {
   const [ownDraft, setOwnDraft] = useState<ComposerDraft>(EMPTY_DRAFT);
   const draft = controlledDraft ?? ownDraft;
@@ -158,6 +177,23 @@ export default function LiveNoteComposer({
 
   const say = (text: string, tone: Message["tone"]) =>
     setMessage({ text, tone, noticeSeq: latestNoticeSeq });
+
+  // A capture's news replaces the line, as a note's does.
+  useOnDepsChange([captureMessage?.seq], () => {
+    if (captureMessage) {
+      setMessage({ text: captureMessage.text, tone: captureMessage.tone, noticeSeq: latestNoticeSeq });
+    }
+  });
+
+  // An image pasted into the box becomes a capture at the recording's time
+  // now; text, even text that came with a picture, pastes as text.
+  const handlePaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
+    if (!onPasteImage) return;
+    const image = pastedImage(event.clipboardData);
+    if (!image) return;
+    event.preventDefault();
+    onPasteImage(image);
+  };
 
   const handleChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
     const text = event.target.value;
@@ -282,12 +318,30 @@ export default function LiveNoteComposer({
           value={draft.text}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
           aria-label="New note"
           aria-describedby={hintId}
           aria-invalid={message?.tone === "error" && !showNotice ? true : undefined}
           placeholder="Add a note…"
           className="density-surface-panel max-h-[160px] min-h-[44px] w-full min-w-0 flex-1 resize-none overflow-y-auto border border-control-border bg-control-bg px-3 py-2.5 text-sm leading-5 text-contrast-muted outline-none transition focus:border-action focus:ring-2 focus:ring-action @min-[54rem]:max-h-[80px]"
         />
+        {onCapture ? (
+          <IconButton
+            variant="secondary"
+            aria-label="Capture the shared screen"
+            title={
+              captureShortcut
+                ? `Capture the shared screen (${captureShortcut})`
+                : "Capture the shared screen"
+            }
+            aria-keyshortcuts={captureShortcut ? "Alt+Shift+C" : undefined}
+            loading={capturing}
+            onClick={onCapture}
+            icon={<Camera aria-hidden="true" />}
+            data-testid="capture-button"
+            className="h-[44px] w-[44px] shrink-0"
+          />
+        ) : null}
         <IconButton
           type="submit"
           variant="primary"

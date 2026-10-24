@@ -315,6 +315,7 @@ Capture code lives in `frontend/src/lib/capture/`. After a capture change, check
 - A discard elsewhere: pause a capture, choose **Discard recording** for it in another browser's resume-or-discard dialog, then select **Resume** in the first tab. It stops with the message that the recording was discarded and releases the microphone and shared tab. With a second account signed in from another tab of the first browser instead, the first tab keeps recording and asks for its owner's sign-in.
 - A stop elsewhere: pause a capture, choose **Stop and process** for it in another browser's resume-or-discard dialog, then select **Resume** in the first tab. It stops with the message that the recording was already stopped, releases the microphone and shared tab, and shows no recording controls. Any audio that tab had not uploaded is then gone from its IndexedDB queue (`nojoin-capture`) and offered as a download, and the downloaded FLAC plays back that stretch.
 - Focus moving to another tab, window or application, which must not pause capture.
+- Captures: with a screen shared, the camera button beside the note box and Alt+Shift+C each save a still with the recording's time, which shows in the live transcript; an image pasted into the note box does the same; a microphone-only capture offers no button. Ending the share still stops the recording, so taking a still must never stop the video track.
 
 ```bash
 cd frontend

@@ -55,6 +55,12 @@ export interface Document {
   created_at: string;
   /** Bumped on every parse write, which is how a stalled parse is detected. */
   updated_at: string;
+  /** "capture" for an image taken during the meeting; see `Capture`. */
+  kind?: "document" | "capture";
+  /** A capture's time on the audio timeline, in ms; null for a document. */
+  capture_ms?: number | null;
+  /** A capture's notes switch. Documents always reach the notes. */
+  use_in_notes?: boolean;
 }
 
 export interface VisionSupport {

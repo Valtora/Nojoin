@@ -36,6 +36,9 @@ import type { InlineNote, OutboxDraft } from "@/lib/notes/noteOutbox";
 import type { SpeakerNameDecision } from "@/lib/speakerNameReview";
 import CollapsedLineNotes from "./notes/CollapsedLineNotes";
 import TimelineNoteLine from "./notes/TimelineNoteLine";
+import CaptureMarker from "./captures/CaptureMarker";
+import { capturesAmongLines, type CaptureItem } from "./captures/captureItems";
+import type { Capture } from "@/lib/api";
 
 interface TranscriptViewProps {
   recordingId: RecordingId;
@@ -101,7 +104,14 @@ interface TranscriptViewProps {
   onDeleteNote?: NoteEditHandlers["onDeleteNote"];
   /** Moves a saved point note to a line's start; without it, notes stay put. */
   onMoveNote?: MoveNoteHandler;
+  /** The recording's captures, each shown after the line in progress when it was taken. */
+  captures?: readonly CaptureItem[];
+  onOpenCapture?: (capture: Capture) => void;
+  onRetryCapture?: (key: string) => void;
+  onDiscardCapture?: (key: string) => void;
 }
+
+const NO_CAPTURES: readonly CaptureItem[] = [];
 
 // One empty list for every render, so the memoised lines it reaches hold.
 const NO_PENDING_UPDATES: readonly string[] = [];
@@ -150,6 +160,10 @@ export default function TranscriptView({
   onEditNote,
   onDeleteNote,
   onMoveNote,
+  captures = NO_CAPTURES,
+  onOpenCapture,
+  onRetryCapture,
+  onDiscardCapture,
 }: TranscriptViewProps) {
   // Find & Replace toolbar visibility (search match state lives in the hook)
   const [showSearch, setShowSearch] = useState(false);
@@ -255,6 +269,23 @@ export default function TranscriptView({
     () => bodyNotesAmongLines(notePlacements, visibleIndexes),
     [notePlacements, visibleIndexes],
   );
+  // Captures follow the same rule, and end a group as a note does.
+  const capturesAmong = useMemo(
+    () => capturesAmongLines(segments, captures, visibleIndexes),
+    [segments, captures, visibleIndexes],
+  );
+  const renderCapture = (item: CaptureItem) => (
+    <div key={item.key} className="px-2">
+      <CaptureMarker
+        item={item}
+        timeLabel={formatTime(item.captureMs / 1000)}
+        timeColumnClassName={NOTE_TIME_COLUMN}
+        onOpen={(capture) => onOpenCapture?.(capture)}
+        onRetry={onRetryCapture}
+        onDiscard={onDiscardCapture}
+      />
+    </div>
+  );
   const moves = useNoteMoves({
     segments,
     visibleIndexes,
@@ -322,9 +353,9 @@ export default function TranscriptView({
     () =>
       buildTranscriptGroups(
         displaySegments,
-        new Set(notesAmongLines.afterLine.keys()),
+        new Set([...notesAmongLines.afterLine.keys(), ...capturesAmong.afterLine.keys()]),
       ),
-    [displaySegments, notesAmongLines],
+    [displaySegments, notesAmongLines, capturesAmong],
   );
 
   // Groups and lines are memoised: everything handed to them is a value, or
@@ -444,6 +475,7 @@ export default function TranscriptView({
           </div>
         ) : [
           ...notesAmongLines.opening.map(renderNote),
+          ...capturesAmong.opening.map(renderCapture),
           ...trackGroups.map((group, groupIndex) => {
             const groupKey = group.items.map((item) => item.segmentId).join("|");
             const notesAfterGroup =
@@ -485,6 +517,9 @@ export default function TranscriptView({
                   timeColumnClassName={NOTE_TIME_COLUMN}
                   className="px-2"
                 />
+                {(
+                  capturesAmong.afterLine.get(group.items[group.items.length - 1].index) ?? []
+                ).map(renderCapture)}
               </Fragment>
             );
           }),

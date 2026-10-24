@@ -627,8 +627,11 @@ _DOCUMENT_TEXT_CHAR_LIMIT = 20000
 async def get_documents(recording_id: str) -> list[dict[str, Any]]:
     """Get the documents attached to a recording, with their extracted text.
 
-    These are the files uploaded to a meeting to ground its chat and notes.
-    Text is assembled from the document's parsed pages and is truncated per
+    These are the files uploaded to a meeting to ground its chat and notes,
+    and its captures: images the user took during the meeting, each with
+    ``kind`` "capture", its time in the recording as ``at_seconds`` and
+    ``use_in_notes``, which says whether notes generation reads it. Text is
+    assembled from the document's parsed pages and is truncated per
     document beyond a size limit.
 
     Args:
@@ -645,7 +648,7 @@ async def get_documents(recording_id: str) -> list[dict[str, Any]]:
         docs_result = await db.execute(
             select(Document)
             .where(Document.recording_id == recording.id)
-            .order_by(Document.created_at)
+            .order_by(Document.created_at, Document.id)
         )
         documents = docs_result.scalars().all()
 
@@ -685,9 +688,21 @@ async def get_documents(recording_id: str) -> list[dict[str, Any]]:
                     "parse_warning": document.parse_warning,
                     "text": text[:_DOCUMENT_TEXT_CHAR_LIMIT],
                     "text_truncated": truncated,
+                    **_capture_fields(document),
                 }
             )
     return payload
+
+
+def _capture_fields(document: Any) -> dict[str, Any]:
+    """What a capture carries beyond a document; a document only says its kind."""
+    if document.kind != "capture":
+        return {"kind": "document"}
+    return {
+        "kind": "capture",
+        "at_seconds": (document.capture_ms or 0) / 1000,
+        "use_in_notes": bool(document.use_in_notes),
+    }
 
 
 @mcp_tool(scope=MCP_WRITE_SCOPE)

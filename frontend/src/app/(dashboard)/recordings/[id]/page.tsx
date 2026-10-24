@@ -5,10 +5,14 @@ import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 
 import ChatPanel from "@/components/ChatPanel";
 import SpeakerPanel from "@/components/SpeakerPanel";
+import CapturesList from "@/components/captures/CapturesList";
+import { scrollTranscriptToCapture } from "@/components/captures/captureJump";
+import { useCaptureView } from "@/components/captures/useCaptureView";
 import MyNotesList from "@/components/notes/MyNotesList";
 import RecordingStatusDisplay from "@/components/RecordingStatusDisplay";
 import ExportModal from "@/components/ExportModal";
 import { RecordingStatus } from "@/types";
+import { useCaptures } from "@/lib/captures/useCaptures";
 import { useNavigationStore } from "@/lib/store";
 
 import { useRecordingDetail } from "./_hooks/useRecordingDetail";
@@ -30,6 +34,12 @@ export default function RecordingPage({ params }: PageProps) {
   const isChatPanelCollapsed = useNavigationStore(
     (state) => state.isChatPanelCollapsed,
   );
+  // Every view of the recording shares one list of its captures.
+  const captures = useCaptures(
+    detail.recording?.id ?? null,
+    detail.recording?.captures_signature,
+  );
+  const captureView = useCaptureView(captures, { onPlay: detail.handlePlaySegment });
 
   const {
     recording,
@@ -127,6 +137,9 @@ export default function RecordingPage({ params }: PageProps) {
       recording={recording}
       timelineNotes={timelineNotes}
       noteEdits={noteEdits}
+      captures={captures}
+      captureItems={captureView.items}
+      onOpenCapture={captureView.open}
       isMobile={isMobile}
       activePanel={activePanel}
       setActivePanel={setActivePanel}
@@ -195,6 +208,7 @@ export default function RecordingPage({ params }: PageProps) {
               showMobileBackButton={isMobile}
               audioClock={audioClock}
               timelineNotes={timelineNotes}
+              captures={captures}
             />
           </div>
         ) : isMobile ? (
@@ -298,6 +312,18 @@ export default function RecordingPage({ params }: PageProps) {
                           className="h-full bg-surface-inset"
                         />
                       }
+                      captures={
+                        <CapturesList
+                          state={captures}
+                          onOpen={captureView.open}
+                          onPlay={handlePlaySegment}
+                          onShowInTranscript={(capture) => {
+                            setActivePanel("transcript");
+                            requestAnimationFrame(() => scrollTranscriptToCapture(capture.id));
+                          }}
+                          className="h-full bg-surface-inset"
+                        />
+                      }
                       chatPanelHeight={compactChatPanelHeight}
                       onChatPanelHeightChange={setChatPanelHeight}
                       onNotesUpdate={fetchRecording}
@@ -313,12 +339,15 @@ export default function RecordingPage({ params }: PageProps) {
         )}
       </div>
 
+      {isInFlightRecording ? null : captureView.viewer}
+
       <ExportModal
         isOpen={showExportModal}
         onClose={() => setShowExportModal(false)}
         onExport={handleExport}
         hasNotes={!!recording?.transcript?.notes}
         hasTimelineNotes={(timelineNotes?.length ?? 0) > 0}
+        hasCaptures={(captures.captures?.length ?? 0) > 0}
         hasAnalytics={recording?.status === RecordingStatus.PROCESSED}
         hasAudio={recording?.has_audio !== false}
       />

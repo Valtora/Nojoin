@@ -131,8 +131,9 @@ class TranscriptPublicRead(PublicModel):
         default_factory=list
     )
     notes_status: str = "pending"
-    # True when a document finished parsing after these notes were written,
-    # so they no longer reflect everything attached to the meeting.
+    # True when a document finished parsing after these notes were written, or
+    # a capture's notes switch changed since, so they no longer reflect what
+    # notes generation would read now.
     notes_stale_documents: bool = False
     transcript_status: str = "pending"
     error_message: Optional[str] = None
@@ -173,6 +174,12 @@ class DocumentPublicRead(PublicModel):
     # that timestamp carries no timezone, so a browser outside UTC misreads its
     # age by the whole offset and shows every running parse as stalled.
     is_stalled: bool = False
+    # "document" for an attached file, "capture" for an image taken during the
+    # meeting. A capture has its time on the audio timeline, and reaches the
+    # notes only while use_in_notes is on.
+    kind: str = "document"
+    capture_ms: Optional[int] = None
+    use_in_notes: bool = False
 
 
 class CalendarEventLinkRead(PublicModel):
@@ -252,6 +259,9 @@ class RecordingPublicRead(PublicModel):
     # rather than receiving every note on every poll. Only the detail endpoint
     # fills it; None elsewhere.
     timeline_notes_list_signature: Optional[str] = None
+    # Changes whenever the recording's captures list (GET .../captures) would,
+    # parse state and the notes switch included. Detail endpoint only.
+    captures_signature: Optional[str] = None
     is_archived: bool = False
     is_deleted: bool = False
     last_activity_at: Optional[datetime] = None
@@ -397,6 +407,9 @@ def serialize_document(
         pages_parsed=document.pages_parsed,
         parse_stage=document.parse_stage,
         is_stalled=parse_looks_stalled(document),
+        kind=document.kind,
+        capture_ms=document.capture_ms,
+        use_in_notes=bool(document.use_in_notes),
     )
 
 
@@ -419,6 +432,7 @@ def serialize_recording(
     captured_audio_seconds: Optional[float] = None,
     live_audio_ms: Optional[int] = None,
     timeline_notes_list_signature: Optional[str] = None,
+    captures_signature: Optional[str] = None,
 ) -> RecordingPublicRead:
     transcript = None
     notice = None
@@ -486,6 +500,7 @@ def serialize_recording(
         captured_audio_seconds=captured_audio_seconds,
         live_audio_ms=live_audio_ms,
         timeline_notes_list_signature=timeline_notes_list_signature,
+        captures_signature=captures_signature,
         is_archived=recording.is_archived,
         is_deleted=recording.is_deleted,
         last_activity_at=recording.last_activity_at,
