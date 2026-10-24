@@ -14,6 +14,9 @@ const importAudio = vi.fn();
 vi.mock("@/lib/api", () => ({
   importAudio: (...args: unknown[]) => importAudio(...args),
   getSupportedAudioFormats: () => [".wav", ".mp3"],
+  // The dialog's language field; pending, so the field stays hidden.
+  getLanguageOptions: () => new Promise(() => {}),
+  getSettings: () => new Promise(() => {}),
 }));
 
 vi.mock("@/lib/capture/CaptureProvider", () => ({

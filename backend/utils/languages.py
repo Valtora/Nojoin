@@ -57,6 +57,8 @@ LANGUAGE_OPTIONS: tuple[LanguageOption, ...] = (
 )
 
 LANGUAGE_OPTIONS_BY_CODE = {option.code: option for option in LANGUAGE_OPTIONS}
+# The language Canary transcribes in when none is set (onnx-asr's default prompt).
+CANARY_DEFAULT_LANGUAGE = "en"
 NOTES_LANGUAGE_VALUES = frozenset(
     {
         DEFAULT_NOTES_LANGUAGE,
@@ -131,6 +133,22 @@ def validate_language_settings(settings: Mapping[str, Any]) -> None:
         )
 
 
+def apply_recording_language(
+    settings: Mapping[str, Any] | None, recording: Any
+) -> dict[str, Any]:
+    """``settings`` with the recording's transcription language over the owner's.
+
+    The language resolves recording first, then the owner's setting, then
+    ``auto`` (#671): a recording with no language of its own (NULL) follows
+    the setting. Returns a copy; ``settings`` is not changed.
+    """
+    resolved = dict(settings or {})
+    language = getattr(recording, "transcription_language", None)
+    if language:
+        resolved["transcription_language"] = language
+    return resolved
+
+
 def resolve_transcription_language_code(
     settings: Mapping[str, Any] | None,
     transcription_backend: str | None = None,
@@ -142,9 +160,6 @@ def resolve_transcription_language_code(
             or AUTO_TRANSCRIPTION_LANGUAGE
         )
     )
-    if selected == AUTO_TRANSCRIPTION_LANGUAGE:
-        return None
-
     backend = str(
         transcription_backend
         or normalized_settings.get("transcription_backend")
@@ -153,7 +168,13 @@ def resolve_transcription_language_code(
     if backend == "parakeet":
         return None
     if backend == "canary":
+        # Canary can't detect a language: without one, onnx-asr prompts it with
+        # English. Name that, so the result and the ASR hash say English.
+        if selected == AUTO_TRANSCRIPTION_LANGUAGE:
+            selected = CANARY_DEFAULT_LANGUAGE
         return LANGUAGE_OPTIONS_BY_CODE[selected].canary_language
+    if selected == AUTO_TRANSCRIPTION_LANGUAGE:
+        return None
     return selected
 
 
@@ -279,14 +300,20 @@ def get_language_registry_payload() -> dict[str, Any]:
         "engine_capabilities": {
             "whisper": {
                 "forced_language": True,
+                "auto_detect": True,
                 "guidance": "Whisper supports auto-detection or a forced language.",
             },
             "canary": {
                 "forced_language": True,
-                "guidance": "Canary supports the listed forced languages.",
+                "auto_detect": False,
+                "guidance": (
+                    "Canary can't detect a language, so it needs one set. Until you "
+                    "choose one, it transcribes as English."
+                ),
             },
             "parakeet": {
                 "forced_language": False,
+                "auto_detect": True,
                 "guidance": (
                     "Parakeet uses multilingual auto-detection; forced language selection "
                     "is not available for this engine."

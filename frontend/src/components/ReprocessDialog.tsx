@@ -7,6 +7,7 @@ import Button from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
 import Select from "@/components/ui/Select";
 import SpeakerCapField from "@/components/SpeakerCapField";
+import RecordingLanguageField from "@/components/RecordingLanguageField";
 import { reprocessRecording } from "@/lib/api";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { Recording, RecordingId, ReprocessRequest } from "@/types";
@@ -34,6 +35,8 @@ interface ReprocessDialogProps {
   defaultBackend?: TranscriptionBackend;
   /** The recording's current speaker cap, so the field opens showing it. */
   currentMaxSpeakers?: number | null;
+  /** The recording's language (null: the owner's setting), so the field opens showing it. */
+  currentTranscriptionLanguage?: string | null;
 }
 
 export default function ReprocessDialog({
@@ -43,6 +46,7 @@ export default function ReprocessDialog({
   onReprocessed,
   defaultBackend = "whisper",
   currentMaxSpeakers = null,
+  currentTranscriptionLanguage = null,
 }: ReprocessDialogProps) {
   const [backend, setBackend] = useState<TranscriptionBackend>(defaultBackend);
   const [whisperModelSize, setWhisperModelSize] = useState<string>(
@@ -51,17 +55,24 @@ export default function ReprocessDialog({
   const [maxSpeakers, setMaxSpeakers] = useState<number | null>(
     currentMaxSpeakers,
   );
+  const [language, setLanguage] = useState<string | null>(
+    currentTranscriptionLanguage,
+  );
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const { addNotification } = useNotificationStore();
 
-  useOnDepsChange([isOpen, defaultBackend, currentMaxSpeakers], () => {
-    if (isOpen) {
-      setBackend(defaultBackend);
-      setWhisperModelSize(DEFAULT_WHISPER_MODEL_SIZE);
-      setMaxSpeakers(currentMaxSpeakers);
-      setIsSubmitting(false);
-    }
-  });
+  useOnDepsChange(
+    [isOpen, defaultBackend, currentMaxSpeakers, currentTranscriptionLanguage],
+    () => {
+      if (isOpen) {
+        setBackend(defaultBackend);
+        setWhisperModelSize(DEFAULT_WHISPER_MODEL_SIZE);
+        setMaxSpeakers(currentMaxSpeakers);
+        setLanguage(currentTranscriptionLanguage);
+        setIsSubmitting(false);
+      }
+    },
+  );
 
   if (!isOpen) return null;
 
@@ -89,6 +100,9 @@ export default function ReprocessDialog({
     // Always sent, so clearing the field genuinely clears the cap rather than
     // leaving the previous one in place.
     body.max_speakers = maxSpeakers;
+    // Sent the same way, so "Your default" returns the recording to the
+    // owner's setting. Parakeet takes no language, so the recording keeps its.
+    if (backend !== "parakeet") body.transcription_language = language;
 
     try {
       const updatedRecording = await reprocessRecording(recordingId, body);
@@ -178,6 +192,14 @@ export default function ReprocessDialog({
             </div>
           </div>
         )}
+
+        <RecordingLanguageField
+          value={language}
+          onChange={setLanguage}
+          backend={backend}
+          disabled={isSubmitting}
+          idPrefix="reprocess-language"
+        />
 
         <SpeakerCapField
           value={maxSpeakers}

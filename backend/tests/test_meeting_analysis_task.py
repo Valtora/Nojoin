@@ -459,3 +459,35 @@ def test_a_missing_recording_is_skipped_quietly(
     )
 
     assert result == {"status": "skipped", "reason": "recording_not_found"}
+
+
+def test_the_analysis_is_written_in_the_recordings_language(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With notes "Same as transcription", the analysis follows the recording's
+    own language over the owner's (#671)."""
+    from types import SimpleNamespace
+
+    config = ResolvedLLMConfig(
+        provider="openai",
+        api_key="key",
+        model="model",
+        api_url=None,
+        merged_config={
+            "notes_language": "same_as_transcription",
+            "transcription_language": "de",
+        },
+    )
+    monkeypatch.setattr(
+        "backend.utils.llm_config.resolve_llm_config", lambda *a, **k: config
+    )
+    monkeypatch.setattr(
+        "backend.processing.llm_services.get_llm_backend_with_secondary",
+        lambda *a, **k: object(),
+    )
+    recording = SimpleNamespace(user_id=None, transcription_language="fr")
+
+    _, instruction, missing = analytics_ai._resolve_backend(None, recording)
+
+    assert missing is None
+    assert "in French." in instruction

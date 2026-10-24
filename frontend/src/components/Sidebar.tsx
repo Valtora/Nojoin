@@ -1122,6 +1122,10 @@ export default function Sidebar() {
             recordings.find((r) => r.id === reprocessRecordingId)?.max_speakers ??
             null
           }
+          currentTranscriptionLanguage={
+            recordings.find((r) => r.id === reprocessRecordingId)
+              ?.transcription_language ?? null
+          }
           isOpen={!!reprocessRecordingId}
           onClose={() => setReprocessRecordingId(null)}
           onReprocessed={(updatedRecording) => {

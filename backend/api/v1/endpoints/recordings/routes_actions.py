@@ -1,7 +1,7 @@
 import logging
 
 from fastapi import Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import backend.api.v1.endpoints.recordings as recordings_module
@@ -20,6 +20,7 @@ from backend.utils.document_storage import (
     delete_document_files,
     recording_document_paths,
 )
+from backend.utils.languages import validate_transcription_language
 from backend.utils.recording_storage import delete_recording_artifacts_after_commit
 
 from .helpers import (
@@ -88,6 +89,8 @@ async def update_recording(
 
     if recording_update.name is not None:
         recording.name = recording_update.name
+    if "transcription_language" in recording_update.model_fields_set:
+        recording.transcription_language = recording_update.transcription_language
 
     db.add(recording)
     await db.commit()
@@ -135,6 +138,15 @@ class ReprocessRequest(BaseModel):
     max_speakers: int | None = Field(
         default=None, ge=MIN_SPEAKER_CAP, le=MAX_SPEAKER_CAP
     )
+    # The same three states for the recording's language: absent keeps it,
+    # null returns it to the owner's setting, "auto" or a listed code sets it.
+    # Written to the recording, so later runs keep it.
+    transcription_language: str | None = None
+
+    @field_validator("transcription_language")
+    @classmethod
+    def _validate_transcription_language(cls, value: str | None) -> str | None:
+        return None if value is None else validate_transcription_language(value)
 
 
 @router.post("/{recording_id}/reprocess", response_model=RecordingPublicRead)
@@ -197,6 +209,9 @@ async def reprocess_recording(
 
     if "max_speakers" in body.model_fields_set:
         recording.max_speakers = normalize_speaker_cap(body.max_speakers)
+        db.add(recording)
+    if "transcription_language" in body.model_fields_set:
+        recording.transcription_language = body.transcription_language
         db.add(recording)
 
     queued_step = f"Queued for reprocessing with {body.transcription_backend}..."

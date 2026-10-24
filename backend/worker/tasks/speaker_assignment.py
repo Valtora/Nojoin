@@ -22,6 +22,33 @@ from backend.utils.speaker_assignment import remap_overlapping_speakers
 from .constants import *  # noqa: F403
 
 
+def _is_unresolved_speaker_label(label: object) -> bool:
+    return str(label or "").strip().upper() in {"", "UNKNOWN"}
+
+
+def _collect_ordered_final_speaker_labels(final_segments: Sequence[dict]) -> list[str]:
+    ordered_speakers: list[str] = []
+    seen_speakers: set[str] = set()
+    for seg in final_segments:
+        speaker_label = str(seg.get("speaker") or "UNKNOWN")
+        if (
+            not _is_unresolved_speaker_label(speaker_label)
+            and speaker_label not in seen_speakers
+        ):
+            ordered_speakers.append(speaker_label)
+            seen_speakers.add(speaker_label)
+        for overlapping_spk in seg.get("overlapping_speakers", []):
+            overlapping_label = str(overlapping_spk or "UNKNOWN")
+            if (
+                _is_unresolved_speaker_label(overlapping_label)
+                or overlapping_label in seen_speakers
+            ):
+                continue
+            ordered_speakers.append(overlapping_label)
+            seen_speakers.add(overlapping_label)
+    return ordered_speakers
+
+
 @dataclass
 class _ResolvedIdentity:
     """Outcome of resolving one diarization label to a name and person.
@@ -457,10 +484,6 @@ def assign_and_identify_speakers(
     diarization_result,
 ) -> None:
     """Resolve diarization labels to speakers, persisting RecordingSpeaker rows."""
-    # Imported here rather than at module scope: pipeline.py imports this module
-    # at load time, so a module-level import back into it would cycle.
-    from backend.worker.tasks.pipeline import _collect_ordered_final_speaker_labels
-
     session = ctx.session
 
     # Processed in order of appearance so the sequential fallback names read as
@@ -529,4 +552,7 @@ def assign_and_identify_speakers(
     _run_duplicate_merge_pass(ctx, recording, final_segments, diarization_result)
 
 
-__all__ = ["assign_and_identify_speakers"]
+__all__ = [
+    "assign_and_identify_speakers",
+    "_collect_ordered_final_speaker_labels",
+]

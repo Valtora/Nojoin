@@ -52,6 +52,8 @@ BEFORE = "7ff0bbdadad8"
 # it, so the old archive can be made, and is dropped again before the upgrade.
 COLUMNS_ADDED_AFTER_BEFORE = {
     ("recordings", "capture_epoch"): "INTEGER NOT NULL DEFAULT 0",
+    ("recordings", "transcription_language"): "VARCHAR(16)",
+    ("transcripts", "language_detection"): "JSONB",
 }
 
 

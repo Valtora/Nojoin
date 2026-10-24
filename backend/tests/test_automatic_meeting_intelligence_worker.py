@@ -60,6 +60,7 @@ CREATE TABLE recordings (
     is_deleted BOOLEAN NOT NULL,
     last_activity_at DATETIME,
     capture_epoch INTEGER NOT NULL DEFAULT 0,
+    transcription_language VARCHAR(16),
     user_id INTEGER,
     calendar_event_id INTEGER
 );
@@ -71,6 +72,7 @@ CREATE TABLE transcripts (
     recording_id INTEGER NOT NULL UNIQUE,
     text TEXT,
     segments JSON NOT NULL,
+    language_detection JSON,
     notes TEXT,
     meeting_edge_focus TEXT,
     meeting_edge_payload JSON,
@@ -813,3 +815,55 @@ def test_auto_apply_links_exact_global_match_and_respects_voiceprint_lock(
         assert suggestions[0]["resolution_reason"] == "auto_applied"
     finally:
         engine.dispose()
+
+
+def test_the_stage_writes_notes_in_the_recordings_language(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ "Same as transcription" follows the recording's own language over the
+    owner's (#671). The pipeline and the IO lane both run this stage."""
+    engine = _create_worker_ai_database(tmp_path)
+    with engine.begin() as connection:
+        connection.execute(
+            text("UPDATE recordings SET transcription_language = 'fr' WHERE id = 1")
+        )
+    captured: dict[str, Any] = {}
+
+    class FakeLLM:
+        def generate_meeting_intelligence(self, request, timeout: int = 60):
+            captured["request"] = request
+            return AutomaticMeetingIntelligenceResult(
+                speaker_mapping={}, title="Revue", notes_markdown="## Résumé\nNotes."
+            )
+
+    monkeypatch.setattr(
+        tasks_module, "_llm_backend_from_config", lambda config: FakeLLM()
+    )
+    config = _sample_llm_config()
+    config.merged_config.update(
+        {"notes_language": "same_as_transcription", "transcription_language": "de"}
+    )
+
+    try:
+        with Session(engine) as session:
+            tasks_module._run_automatic_meeting_intelligence_stage(
+                session=session,
+                task=None,
+                recording=session.get(Recording, 1),
+                transcript=session.exec(
+                    select(Transcript).where(Transcript.recording_id == 1)
+                ).first(),
+                speakers=[],
+                transcript_text="[00:00:00 - 00:00:04] SPEAKER_00: Bonjour.",
+                unresolved_speakers=(),
+                llm_config=config,
+                prefer_short_titles=False,
+                device_suffix="",
+                timeline_notes=RecordingTimelineNotes(notes=[]),
+                detected_transcription_language="de",
+            )
+    finally:
+        engine.dispose()
+
+    assert "in French." in captured["request"].output_language_instruction
