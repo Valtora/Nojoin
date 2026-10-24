@@ -3,7 +3,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 
 import { RecordingStatus, type Recording, type TranscriptSegment } from "@/types";
 
-import TranscriptSection from "./TranscriptSection";
+import TranscriptSection from "@/test/TranscriptSectionWithEdits";
 
 const confirmSpeakerName = vi.fn();
 const dismissSpeakerName = vi.fn();
