@@ -69,6 +69,7 @@ CREATE TABLE recordings (
     is_deleted BOOLEAN NOT NULL,
     last_activity_at DATETIME,
     capture_epoch INTEGER NOT NULL DEFAULT 0,
+    transcription_language VARCHAR(16),
     user_id INTEGER,
     calendar_event_id INTEGER
 );
@@ -80,6 +81,7 @@ CREATE TABLE transcripts (
     recording_id INTEGER NOT NULL UNIQUE,
     text TEXT,
     segments JSON NOT NULL,
+    language_detection JSON,
     notes TEXT,
     meeting_edge_focus TEXT,
     meeting_edge_payload JSON,
@@ -632,3 +634,42 @@ def test_notes_task_skips_a_recording_whose_transcription_failed(
     _run_generate_notes_task(engine)
 
     assert _transcript_status_and_error(engine) == ("pending", "error", _ASR_FAILURE)
+
+
+def test_regenerated_notes_follow_the_recordings_language(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ "Same as transcription" follows the recording's own language over the
+    owner's when notes are generated again (#671)."""
+    monkeypatch.setattr(tasks_module.config_manager, "get_all", lambda: {})
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-valid")
+    engine = _create_notes_task_database(
+        tmp_path,
+        owner_settings={
+            "llm_provider": "anthropic",
+            "anthropic_model": "claude-test",
+            "notes_language": "same_as_transcription",
+            "transcription_language": "de",
+        },
+    )
+    with engine.begin() as connection:
+        connection.execute(
+            text("UPDATE recordings SET transcription_language = 'fr' WHERE id = 1")
+        )
+    captured: dict[str, Any] = {}
+
+    class FakeLLM:
+        def generate_meeting_notes(self, transcript, speaker_mapping, **kwargs) -> str:
+            captured["instruction"] = kwargs["output_language_instruction"]
+            return "# Notes\n\n## Résumé\nNotes."
+
+    monkeypatch.setattr(tasks_module, "get_sync_session", lambda: Session(engine))
+    monkeypatch.setattr(
+        "backend.processing.llm_backends.factory.get_llm_backend",
+        lambda *a, **k: FakeLLM(),
+    )
+
+    _run_generate_notes_task(engine)
+
+    assert "in French." in captured["instruction"]

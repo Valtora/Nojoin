@@ -101,7 +101,7 @@ def generate_notes_task(self, recording_id: int, notes_template_id: int | None =
 
         llm = _llm_backend_from_config(llm_config)
         language_preferences = resolve_language_preferences(
-            llm_config.merged_config,
+            apply_recording_language(llm_config.merged_config, recording),
             transcription_backend=llm_config.merged_config.get("transcription_backend"),
         )
         notes_context, resolved_template = build_notes_prompt_context(

@@ -6,6 +6,7 @@ from backend.processing.llm_services import LLMBackend
 from backend.utils.asr_config import build_asr_config_hash
 from backend.utils.config_manager import get_default_user_settings
 from backend.utils.languages import (
+    apply_recording_language,
     get_language_registry_payload,
     resolve_language_preferences,
     resolve_transcription_language_code,
@@ -40,6 +41,72 @@ def test_resolve_transcription_language_respects_engine_capability() -> None:
     assert resolve_transcription_language_code(settings, "whisper") == "fr"
     assert resolve_transcription_language_code(settings, "canary") == "fr"
     assert resolve_transcription_language_code(settings, "parakeet") is None
+
+
+@pytest.mark.parametrize("settings", [{"transcription_language": "auto"}, {}])
+def test_canary_on_auto_resolves_to_english(settings: dict[str, str]) -> None:
+    # onnx-asr prompts Canary with English when no language is passed.
+    assert resolve_transcription_language_code(settings, "canary") == "en"
+
+
+@pytest.mark.parametrize("settings", [{"transcription_language": "auto"}, {}])
+def test_whisper_and_parakeet_on_auto_still_detect(settings: dict[str, str]) -> None:
+    assert resolve_transcription_language_code(settings, "whisper") is None
+    assert resolve_transcription_language_code(settings, "parakeet") is None
+
+
+def test_registry_says_only_canary_cannot_auto_detect() -> None:
+    capabilities = get_language_registry_payload()["engine_capabilities"]
+
+    assert capabilities["canary"]["auto_detect"] is False
+    assert capabilities["whisper"]["auto_detect"] is True
+    assert capabilities["parakeet"]["auto_detect"] is True
+
+
+def test_canary_on_auto_notes_follow_english() -> None:
+    resolved = resolve_language_preferences(
+        {"transcription_language": "auto", "notes_language": "same_as_transcription"},
+        transcription_backend="canary",
+    )
+
+    assert resolved.notes_language_label == "Same as transcription (English)"
+
+
+def test_canary_hash_records_auto_as_english() -> None:
+    base = {"transcription_backend": "canary", "canary_model": "nemo-canary-1b-v2"}
+
+    automatic = build_asr_config_hash({**base, "transcription_language": "auto"})
+    english = build_asr_config_hash({**base, "transcription_language": "en"})
+
+    assert automatic == english
+
+
+class _Recording:
+    def __init__(self, transcription_language: str | None) -> None:
+        self.transcription_language = transcription_language
+
+
+@pytest.mark.parametrize(
+    ("recording_language", "user_language", "expected"),
+    [
+        ("fr", "de", "fr"),  # the recording's own language comes first
+        ("auto", "de", None),  # ...even when it is auto: Whisper detects
+        (None, "de", "de"),  # NULL follows the owner's setting
+        (None, None, None),  # and with neither, auto
+    ],
+)
+def test_the_recordings_language_resolves_before_the_owners(
+    recording_language: str | None, user_language: str | None, expected: str | None
+) -> None:
+    settings = {"transcription_backend": "whisper"}
+    if user_language:
+        settings["transcription_language"] = user_language
+
+    resolved = apply_recording_language(settings, _Recording(recording_language))
+
+    assert resolve_transcription_language_code(resolved, "whisper") == expected
+    # A copy: the owner's settings themselves are left alone.
+    assert settings.get("transcription_language") == user_language
 
 
 def test_british_english_notes_instruction_is_explicit() -> None:

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { importAudio } from "@/lib/api";
+import { getLanguageOptions, getSettings, importAudio } from "@/lib/api";
+import type { LanguageRegistry, Settings } from "@/types";
 
 import { fireEvent, renderWithProviders, screen } from "@/test/renderWithProviders";
 
@@ -13,6 +14,9 @@ vi.mock("@/lib/notificationStore", () => ({
 vi.mock("@/lib/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api")>()),
   importAudio: vi.fn(),
+  // Pending unless a test answers them: the language field stays hidden.
+  getLanguageOptions: vi.fn(() => new Promise(() => {})),
+  getSettings: vi.fn(() => new Promise(() => {})),
 }));
 
 import ImportAudioModal from "./ImportAudioModal";
@@ -84,5 +88,38 @@ describe("ImportAudioModal", () => {
       expect.objectContaining({ type: "error" }),
     );
     expect(screen.queryByText("slides.pptx")).not.toBeInTheDocument();
+  });
+
+  it("imports in the language chosen for the recording", async () => {
+    const registry: LanguageRegistry = {
+      transcription_languages: [
+        { code: "auto", label: "Auto-detect", forced_engines: [] },
+        { code: "fr", label: "French", forced_engines: ["whisper", "canary"] },
+      ],
+      notes_languages: [],
+      custom_instruction_max_length: 300,
+      engine_capabilities: {
+        whisper: { forced_language: true, auto_detect: true, guidance: "" },
+        canary: { forced_language: true, auto_detect: false, guidance: "" },
+        parakeet: { forced_language: false, auto_detect: true, guidance: "" },
+      },
+    };
+    vi.mocked(getLanguageOptions).mockResolvedValue(registry);
+    vi.mocked(getSettings).mockResolvedValue({
+      transcription_backend: "whisper",
+    } as Settings);
+    vi.mocked(importAudio).mockResolvedValue({ id: "rec-1" } as never);
+    renderWithProviders(<ImportAudioModal isOpen onClose={vi.fn()} />);
+    selectFile("board.mp3");
+
+    fireEvent.change(await screen.findByLabelText("Language"), {
+      target: { value: "fr" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Import Audio" }));
+
+    await screen.findByText(/success/i);
+    expect(vi.mocked(importAudio).mock.calls[0][1]).toMatchObject({
+      transcriptionLanguage: "fr",
+    });
   });
 });

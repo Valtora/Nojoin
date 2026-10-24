@@ -26,6 +26,14 @@ export default function AiLanguageSection({
         ? "parakeet"
         : "whisper";
   const capability = languageRegistry?.engine_capabilities[backend];
+  // An engine that can't detect (Canary) transcribes "auto" as English, so show
+  // that. The stored "auto" is kept: switching back to Whisper detects again.
+  const canAutoDetect = capability?.auto_detect !== false;
+  const stored = settings.transcription_language || "auto";
+  const shown = !canAutoDetect && stored === "auto" ? "en" : stored;
+  const languages = languageRegistry?.transcription_languages.filter(
+    (language) => canAutoDetect || language.code !== "auto",
+  );
 
   return (
     <SettingsCard
@@ -41,7 +49,7 @@ export default function AiLanguageSection({
         <select
           id="transcription-language-select"
           aria-describedby="transcription-language-select-help"
-          value={settings.transcription_language || "auto"}
+          value={shown}
           onChange={(event) =>
             onPersist({ ...settings, transcription_language: event.target.value })
           }
@@ -49,7 +57,7 @@ export default function AiLanguageSection({
           className={SETTINGS_SELECT_CLASS}
         >
           {!languageRegistry && <option value="auto">Loading languages...</option>}
-          {languageRegistry?.transcription_languages.map((language) => (
+          {languages?.map((language) => (
             <option key={language.code} value={language.code}>
               {language.label}
             </option>

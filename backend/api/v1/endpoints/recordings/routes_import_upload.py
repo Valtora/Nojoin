@@ -4,11 +4,12 @@ import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Annotated, Optional
 from uuid import uuid4
 
 import aiofiles
 from fastapi import Depends, File, HTTPException, Query, Request, UploadFile
+from pydantic import AfterValidator
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -27,6 +28,7 @@ from backend.processing.speaker_cap import (
 )
 from backend.utils.audio import concatenate_binary_files, get_audio_duration
 from backend.utils.import_audio import KEEPING_AUDIO_STEP, MEDIA_CONTAINER_SUFFIXES
+from backend.utils.languages import validate_transcription_language
 from backend.utils.rate_limit import enforce_upload_concurrency
 from backend.utils.stored_paths import require_recording_path
 from backend.utils.time import utc_now
@@ -84,6 +86,10 @@ async def _queue_imported_audio(db: AsyncSession, recording: Recording) -> None:
     await register_task_ownership(db, task.id, recording.user_id)
 
 
+def _optional_transcription_language(value: Optional[str]) -> Optional[str]:
+    return None if value is None else validate_transcription_language(value)
+
+
 @dataclass
 class ImportOptions:
     """Shared query parameters for the import routes.
@@ -105,6 +111,17 @@ class ImportOptions:
             "auto-detect, which is the default."
         ),
     )
+    # Validated like PATCH and reprocess, so a refusal is the same 422.
+    transcription_language: Annotated[
+        Optional[str],
+        Query(
+            description=(
+                "The language to transcribe in: auto or a listed code. Omit to "
+                "follow the owner's setting, which is the default."
+            ),
+        ),
+        AfterValidator(_optional_transcription_language),
+    ] = None
 
 
 @router.post("/import", response_model=RecordingPublicRead)
@@ -171,6 +188,7 @@ async def import_audio(
         status=RecordingStatus.QUEUED,
         processing_step=KEEPING_AUDIO_STEP,
         max_speakers=normalize_speaker_cap(options.max_speakers),
+        transcription_language=options.transcription_language,
         user_id=current_user.id,
     )
 
@@ -230,6 +248,7 @@ async def init_chunked_import(
         audio_path=file_path,
         status=RecordingStatus.UPLOADING,
         max_speakers=normalize_speaker_cap(options.max_speakers),
+        transcription_language=options.transcription_language,
         user_id=current_user.id,
         # Moved on by every part, so an import whose page went away can be told
         # from one still uploading (import_looks_stalled, issue #569).

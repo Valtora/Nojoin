@@ -257,7 +257,7 @@ def _run_automatic_meeting_intelligence_stage_impl(
         return None
 
     language_preferences = resolve_language_preferences(
-        llm_config.merged_config,
+        apply_recording_language(llm_config.merged_config, recording),
         transcription_backend=llm_config.merged_config.get("transcription_backend"),
         detected_transcription_language=detected_transcription_language,
     )

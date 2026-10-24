@@ -10,7 +10,7 @@ sources were recorded, shown as it always was.
 Downgrade drops both.
 
 Revision ID: 0f3b502561a6
-Revises: fb5a849e7f5b
+Revises: b13e4912f23a
 Create Date: 2026-10-23 12:00:00.000000
 
 """
@@ -23,7 +23,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision: str = "0f3b502561a6"
-down_revision: Union[str, Sequence[str], None] = "fb5a849e7f5b"
+down_revision: Union[str, Sequence[str], None] = "b13e4912f23a"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

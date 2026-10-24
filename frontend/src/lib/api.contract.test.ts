@@ -179,6 +179,7 @@ describe("api public surface", () => {
         "revokeInvitation",
         "scanMatches",
         "seedDemoData",
+        "setRecordingTranscriptionLanguage",
         "setupSystem",
         "softDeleteRecording",
         "splitLocalSpeaker",
