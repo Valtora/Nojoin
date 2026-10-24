@@ -84,7 +84,7 @@ Two write tools spend your AI provider quota, which undoing their result does no
 | `get_meeting_notes` | `mcp:read` | The AI meeting notes plus your own notes, in timeline order, each with its time in the recording where it has one. |
 | `get_documents` | `mcp:read` | The documents attached to a recording, with their extracted text. |
 | `get_meeting_analytics` | `mcp:read` | Speaking dynamics for a processed meeting, matching its Analytics tab: talk-time share, turns, response behaviour at speaker changes, a talk-share timeline, silence, and measured overlapping speech (there are no interruption counts). Adds measured delivery (pace, pitch, loudness, pausing, and each linked person's usual figures) where it has been generated, and `ai_analysis` (topics, sentiment read from the words, questions and answers, decision ownership, each claim with timestamped quotes) where the meeting has been analysed. Everything except `ai_analysis` is measured, not inferred by a model, and delivery describes how someone spoke, not their mood. `attribution_warnings` flags unreliable speaker attribution. |
-| `get_speakers` | `mcp:read` | The speakers in a recording, with links to their People records. |
+| `get_speakers` | `mcp:read` | The speakers in a recording, with links to their People records. `name_pending` marks a suggested name nobody has confirmed yet, which the app shows as `Alice?`. |
 | `list_tags` | `mcp:read` | Your tags, usable as search terms. |
 | `list_people` | `mcp:read` | Your People library: names, contact details, notes and tags. |
 | `get_person` | `mcp:read` | One person, with the meetings they appear in. |

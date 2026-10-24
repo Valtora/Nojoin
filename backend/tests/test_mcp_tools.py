@@ -1063,6 +1063,29 @@ async def test_get_speakers_resolves_names_and_person_links(
 
 
 @pytest.mark.anyio
+async def test_get_speakers_says_which_names_await_confirmation(
+    session_maker, test_user: User, mcp_context
+):
+    bind_mcp_identity(test_user)
+    await seed_person(session_maker, person_id=11, name="Dana", user_id=test_user.id)
+    public_id = await seed_recording_with_speakers(session_maker, user_id=test_user.id)
+    async with session_maker() as session:
+        await session.execute(
+            text(
+                "UPDATE recording_speakers SET name_source = 'llm', "
+                "identity_locked = 0 WHERE diarization_label = 'SPEAKER_01'"
+            )
+        )
+        await session.commit()
+
+    result = await get_speakers(public_id)
+
+    by_label = {s["diarization_label"]: s for s in result["speakers"]}
+    assert by_label["SPEAKER_00"]["name_pending"] is False
+    assert by_label["SPEAKER_01"]["name_pending"] is True
+
+
+@pytest.mark.anyio
 async def test_get_speakers_rejects_other_users_recording(
     session_maker, test_user: User, mcp_context
 ):
