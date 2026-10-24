@@ -386,7 +386,7 @@ describe("Dragging a point note by its grip", () => {
   const grip = (id: string) => noteLine(id)!.querySelector<HTMLElement>("[data-note-grip]")!;
   const dragOver = (element: Element | null) => {
     under = element;
-    fireEvent.pointerMove(window, { clientX: 20, clientY: 40 });
+    fireEvent.pointerMove(window, { clientX: 20, clientY: 40, buttons: 1 });
   };
 
   it("drops it after the line it is let go over, anchored at that line's start", async () => {
@@ -479,6 +479,22 @@ describe("Dragging a point note by its grip", () => {
     expect(screen.getByTestId("note-drop-bar")).toBeInTheDocument();
     fireEvent.keyDown(window, { key: "Escape" });
     expect(noteLine("n-point")).not.toHaveClass("opacity-50");
+    fireEvent.pointerUp(window);
+
+    expect(updateTimelineNote).not.toHaveBeenCalled();
+    expect(transcriptOrder()).toEqual(["line:0", "line:1", "note:n-point", "line:2", "line:3"]);
+  });
+
+  it("ends a drag whose button was let go unheard, so the next click drops nothing", () => {
+    render(<Page notes={[POINT]} />);
+
+    fireEvent.pointerDown(grip("n-point"), { pointerType: "mouse", button: 0 });
+    dragOver(line(2));
+    // Back from another window with the button up: the first move ends the drag.
+    under = line(3);
+    fireEvent.pointerMove(window, { clientX: 20, clientY: 40, buttons: 0 });
+    expect(noteLine("n-point")).not.toHaveClass("opacity-50");
+    expect(screen.queryByTestId("note-drop-bar")).toBeNull();
     fireEvent.pointerUp(window);
 
     expect(updateTimelineNote).not.toHaveBeenCalled();

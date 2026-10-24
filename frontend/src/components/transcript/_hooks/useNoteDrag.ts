@@ -96,6 +96,12 @@ export function useNoteDrag({ regionRef, targetAfter, onDrop }: UseNoteDragOptio
       frame = requestAnimationFrame(scroll);
     };
     const onMove = (moved: PointerEvent) => {
+      // Let go where this page heard no pointerup, as when the window lost
+      // focus mid-drag: nothing is dropped, or the next click would drop it.
+      if ((moved.buttons & 1) === 0) {
+        end(false);
+        return;
+      }
       point = { x: moved.clientX, y: moved.clientY };
       locate();
       if (!frame) frame = requestAnimationFrame(scroll);
