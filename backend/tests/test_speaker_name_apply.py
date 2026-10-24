@@ -291,6 +291,23 @@ def test_an_owner_who_takes_names_as_given_gets_them_confirmed(session) -> None:
     assert [(e["source"], e["authority"]) for e in _events(session)] == [("auto", 35)]
 
 
+def test_a_pending_name_keeps_the_speaker_n_the_run_gave(session) -> None:
+    from backend.utils.canonical_pipeline.unmerge import placeholder_speaker_name
+
+    # The run numbers only speakers it could not identify: SPEAKER_00 is a
+    # voice match, so SPEAKER_01 read "Speaker 1", not its label's "Speaker 2".
+    first = session.get(RecordingSpeaker, 1)
+    first.name, first.name_source = "Dana", "voiceprint"
+    second = session.get(RecordingSpeaker, 2)
+    second.name = "Speaker 1"
+    session.commit()
+
+    _apply(session, _suggestion("Sam", 2))
+
+    assert (second.local_name, second.name) == ("Sam", "Speaker 1")
+    assert placeholder_speaker_name(second, [first, second]) == "Speaker 1"
+
+
 def _speaker(label: str, **fields: Any) -> SimpleNamespace:
     values = {
         "diarization_label": label,

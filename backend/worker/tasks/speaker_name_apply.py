@@ -155,6 +155,7 @@ def apply_inferred_names(
         # offered. Taken as given: an exact People name links that person.
         person = _suggested_person(session, suggestion) if confirm else None
         source = SOURCE_AUTO if confirm else suggestion_source(suggestion)
+        placeholder = speaker.name
         apply_recording_speaker_identity_fields(
             session,
             speaker,
@@ -166,6 +167,10 @@ def apply_inferred_names(
         )
         if confirm:
             _mark_auto_applied(suggestion)
+        else:
+            # The row keeps the "Speaker N" this run gave it, which Not
+            # {name} gives back (``placeholder_speaker_name``).
+            speaker.name = placeholder
         _record_event(session, speaker, suggestion, source, lines)
         applied.append(suggestion)
     return applied
