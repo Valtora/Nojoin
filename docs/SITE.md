@@ -33,8 +33,8 @@ arguing that nothing leaves your server does not fetch fonts from a CDN.
 
 Change these only by the site owner's decision.
 
-- **Hero.** A centred stack: headline, lede, two CTAs (Get started, Star on GitHub), then the
-  full-app dashboard screenshot.
+- **Hero.** A centred stack: headline, lede, three CTAs (Get started, Try the live demo, Star on
+  GitHub), then the full-app dashboard screenshot.
 - **Headline.** "Open-Source Meeting Notes on a Server You Own". Above 48rem it breaks before
   "on", and the Open Graph card breaks in the same place. Changing it means regenerating the
   card (see [The Open Graph card](#the-open-graph-card)).
@@ -74,11 +74,19 @@ Change these only by the site owner's decision.
   `--glow-inset`), the hero wash (`--hero-wash`), the band wash (`--band-wash`), card lift
   (`--lift`, `--lift-strong`) and the frame edge (`--frame-accent`). Add no others.
 - **Nav.** Home, Quick start (`/#quick-start`, absolute because the section exists only on the
-  landing page), Pricing (`/managed/`), Compare, Docs (`docs/README.md` on GitHub), then the
-  star badge and the theme toggle. There is no menu button: the header wraps to a second row
-  down to 320px. Revisit only if the nav stops fitting.
+  landing page), Pricing (`/managed/`), Compare, Docs (`docs/README.md` on GitHub), Live demo,
+  then the star badge and the theme toggle. There is no menu button. Below about 52rem the nav
+  wraps under the brand: one row on a tablet, two on a phone from 340px, three at 320px. Below
+  24rem the gap between links narrows so a 360px phone keeps two rows. Add a menu button if
+  another entry would push a 360px phone to a third row.
+- **Live demo.** `demo.nojoin.co.uk` is linked from the hero, as a secondary button, and from
+  the nav, beside Docs and the star badge, the other links that leave the site. Both open in
+  the same tab, like every external link on the site. The site says nothing about what the demo
+  holds: [demo/README.md](../demo/README.md) owns that, and a second description here would
+  drift from it.
 - **Sticky header** with a solid fill and no `backdrop-filter`. `section[id]` reserves its
-  height with `scroll-margin-top`: 8.5rem below 48rem, where the nav wraps, and 5rem above.
+  height with `scroll-margin-top`: 10.5rem up to 21rem, where the nav takes three rows, 8.5rem
+  up to 54rem, while it wraps, and 5rem above.
 - **Selective highlight.** At most one `<mark class="hl">` per page, on a flat `--action-tint`.
   A page with nothing that earns it gets none.
 
