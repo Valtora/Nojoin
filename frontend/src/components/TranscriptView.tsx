@@ -30,6 +30,7 @@ import TranscriptNoteEditor, {
   type NoteEditHandlers,
 } from "./transcript/TranscriptNoteEditor";
 import { isSavedNote, useNoteHighlights } from "./transcript/_hooks/useNoteHighlights";
+import { useNoteMoves, type MoveNoteHandler } from "./transcript/_hooks/useNoteMoves";
 import { bodyNotesAmongLines, placeTimelineNotes } from "@/lib/notes/placement";
 import type { InlineNote, OutboxDraft } from "@/lib/notes/noteOutbox";
 import type { SpeakerNameDecision } from "@/lib/speakerNameReview";
@@ -98,6 +99,8 @@ interface TranscriptViewProps {
   onEditNote?: NoteEditHandlers["onEditNote"];
   /** Deletes a saved note: the caller moves focus somewhere that stays. */
   onDeleteNote?: NoteEditHandlers["onDeleteNote"];
+  /** Moves a saved point note to a line's start; without it, notes stay put. */
+  onMoveNote?: MoveNoteHandler;
 }
 
 // One empty list for every render, so the memoised lines it reaches hold.
@@ -146,6 +149,7 @@ export default function TranscriptView({
   onDiscardNote,
   onEditNote,
   onDeleteNote,
+  onMoveNote,
 }: TranscriptViewProps) {
   // Find & Replace toolbar visibility (search match state lives in the hook)
   const [showSearch, setShowSearch] = useState(false);
@@ -246,14 +250,18 @@ export default function TranscriptView({
     () => placeTimelineNotes(segments, timelineNotes ?? []),
     [segments, timelineNotes],
   );
+  const visibleIndexes = useMemo(() => displaySegments.map((item) => item.index), [displaySegments]);
   const notesAmongLines = useMemo(
-    () =>
-      bodyNotesAmongLines(
-        notePlacements,
-        displaySegments.map((item) => item.index),
-      ),
-    [notePlacements, displaySegments],
+    () => bodyNotesAmongLines(notePlacements, visibleIndexes),
+    [notePlacements, visibleIndexes],
   );
+  const moves = useNoteMoves({
+    segments,
+    visibleIndexes,
+    placements: notePlacements,
+    regionRef: scrollContainerRef,
+    onMoveNote,
+  });
   // Each saved selection note's words, found in the lines as they read now.
   const { noteDecorations, wordsChanged } = useNoteHighlights(segments, timelineNotes);
   const [editingNote, setEditingNote] = useState<EditingNote | null>(null);
@@ -283,7 +291,7 @@ export default function TranscriptView({
   const renderNote = (note: TimelineNote | InlineNote) => {
     const key = "key" in note ? note.key : note.id;
     return (
-      <div key={key} className="px-2">
+      <div key={key} className="px-2" data-note-gap={moves.gapOf(note.id)}>
         <TimelineNoteLine
           noteId={note.id}
           body={note.body}
@@ -302,6 +310,8 @@ export default function TranscriptView({
           error={"error" in note ? note.error : null}
           onRetry={onRetryNote ? () => onRetryNote(key) : undefined}
           onDiscard={onDiscardNote ? () => onDiscardNote(key) : undefined}
+          // Not while its editor is open: a move would take the pencil it sits against.
+          move={moves.controlsFor(note, canEditNote(note) && shownEditor?.noteId !== note.id)}
         />
       </div>
     );
@@ -403,10 +413,19 @@ export default function TranscriptView({
       <div
         ref={scrollContainerRef}
         data-testid="transcript-scroll-region"
-        className="space-y-4 px-2 md:px-4 pt-3 pb-clear-floating-3 overflow-y-auto flex-1 min-h-0"
+        className="relative space-y-4 px-2 md:px-4 pt-3 pb-clear-floating-3 overflow-y-auto flex-1 min-h-0"
         onScroll={updateScrollAnchor}
         onClick={editNoteFromText}
       >
+        {/* First, so the region's spacing between the lines stays as it is. */}
+        {moves.drag?.bar ? (
+          <div
+            aria-hidden="true"
+            data-testid="note-drop-bar"
+            className="pointer-events-none absolute h-0.5 rounded-pill bg-action"
+            style={{ top: moves.drag.bar.top, left: moves.drag.bar.left, width: moves.drag.bar.width }}
+          />
+        ) : null}
         {trackGroups.length === 0 ? (
           <div className="flex h-full min-h-[220px] items-center justify-center px-4">
             <div className="flex max-w-sm flex-col items-center text-center">
@@ -460,7 +479,7 @@ export default function TranscriptView({
                 />
                 <CollapsedLineNotes
                   notes={notesAfterGroup}
-                  isSaved={isSavedNote}
+                  isSaved={(note) => isSavedNote(note) && !moves.wasMoved(note.id)}
                   renderNote={renderNote}
                   lineTime={() => formatTime(group.items[group.items.length - 1].segment.start)}
                   timeColumnClassName={NOTE_TIME_COLUMN}
@@ -471,6 +490,9 @@ export default function TranscriptView({
           }),
         ]}
       </div>
+      <p role="status" className="sr-only">
+        {moves.announcement}
+      </p>
       <TranscriptSelectionNotes root={scrollContainerRef} onAddNote={onAddNote ? addNote : undefined} />
       {onEditNote ? (
         <TranscriptNoteEditor

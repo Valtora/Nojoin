@@ -169,6 +169,15 @@ class AnchorIndex {
   }
 }
 
+/**
+ * The index of the line a body note at a time follows, -1 before the first:
+ * the rule `placeTimelineNotes` places by, for a caller asking of many times.
+ */
+export const lineFollowedAt = (segments: readonly PlacementSegment[]): ((atMs: number) => number) => {
+  const anchors = new AnchorIndex(segments);
+  return (atMs) => anchors.afterIndex(atMs);
+};
+
 /** Every note with its slot, in timeline order: head, body, tail. */
 export function placeTimelineNotes<N extends PlacementNote>(
   segments: readonly PlacementSegment[],
@@ -202,6 +211,15 @@ export interface NotesAmongLines<N> {
 }
 
 /**
+ * The shown line a note after line `afterIndex` shows after: the last of
+ * `visibleIndexes` (ascending) at or before it, or -1 before every one.
+ */
+export const shownLineAt = (visibleIndexes: readonly number[], afterIndex: number): number => {
+  const position = bisectRight(visibleIndexes, afterIndex) - 1;
+  return position < 0 ? -1 : visibleIndexes[position];
+};
+
+/**
  * The body notes a view shows among the lines it shows.
  *
  * `visibleIndexes` are the list indexes (into the list the notes were placed
@@ -217,12 +235,11 @@ export function bodyNotesAmongLines<N extends PlacementNote>(
   const afterLine = new Map<number, N[]>();
   for (const placement of placements) {
     if (placement.slot !== "body") continue;
-    const position = bisectRight(visibleIndexes, placement.afterIndex) - 1;
-    if (position < 0) {
+    const lineIndex = shownLineAt(visibleIndexes, placement.afterIndex);
+    if (lineIndex < 0) {
       opening.push(placement.note);
       continue;
     }
-    const lineIndex = visibleIndexes[position];
     const bucket = afterLine.get(lineIndex);
     if (bucket) bucket.push(placement.note);
     else afterLine.set(lineIndex, [placement.note]);
