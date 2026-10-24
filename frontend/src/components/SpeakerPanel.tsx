@@ -37,6 +37,7 @@ import {
 } from "./speakers/_hooks/useSpeakerPanelActions";
 import { useMergedSpeakerClusters } from "./speakers/_hooks/useMergedSpeakerClusters";
 import { DISABLED_LOOK, loadingButtonProps } from "@/components/ui/loadingButton";
+import { TOUCH_TARGET_HEIGHT } from "@/components/ui/touchTarget";
 
 interface SpeakerPanelProps {
   speakers: RecordingSpeaker[];
@@ -183,7 +184,7 @@ export default function SpeakerPanel({
           <div className="flex justify-end">
             <button
               type="button"
-              className={`rounded px-2 py-1 text-xs font-medium bg-action text-action-on hover:bg-action-hover ${DISABLED_LOOK}`}
+              className={`rounded px-2 py-1 text-xs font-medium bg-action text-action-on hover:bg-action-hover ${TOUCH_TARGET_HEIGHT} ${DISABLED_LOOK}`}
               {...loadingButtonProps(isReviewingName, undefined, () =>
                 handleConfirmAllNames(pendingEntries),
               )}
@@ -318,7 +319,7 @@ export default function SpeakerPanel({
                       ) : (
                         <>
                           <p
-                            className="text-sm font-medium text-foreground truncate cursor-pointer hover:text-status-info-fg"
+                            className="flex min-w-0 text-sm font-medium text-foreground cursor-pointer hover:text-status-info-fg"
                             title={
                               entry.pendingName
                                 ? "Suggested name, not confirmed yet. Double-click to rename"
@@ -326,8 +327,10 @@ export default function SpeakerPanel({
                             }
                             onDoubleClick={() => handleRenameStart(entry)}
                           >
-                            {entry.displayName}
-                            {entry.pendingName && "?"}
+                            <span className="truncate">{entry.displayName}</span>
+                            {/* Outside the truncated name, so a long one
+                                never hides that it is a suggestion. */}
+                            {entry.pendingName && <span className="shrink-0">?</span>}
                           </p>
                           {/* A rename relabels every line this speaker holds,
                               so it is disclosed once here rather than on each
@@ -394,7 +397,7 @@ export default function SpeakerPanel({
                       <button
                         type="button"
                         aria-label={`Confirm ${entry.displayName}`}
-                        className={`rounded px-2 py-1 text-xs font-medium bg-action text-action-on hover:bg-action-hover ${DISABLED_LOOK}`}
+                        className={`rounded px-2 py-1 text-xs font-medium bg-action text-action-on hover:bg-action-hover ${TOUCH_TARGET_HEIGHT} ${DISABLED_LOOK}`}
                         {...loadingButtonProps(isReviewingName, undefined, () =>
                           handleReviewName(entry, "confirm"),
                         )}
@@ -403,7 +406,7 @@ export default function SpeakerPanel({
                       </button>
                       <button
                         type="button"
-                        className={`max-w-[10rem] truncate rounded border border-control-border bg-surface-card px-2 py-1 text-xs font-medium text-foreground hover:bg-surface-inset ${DISABLED_LOOK}`}
+                        className={`max-w-[10rem] truncate rounded border border-control-border bg-surface-card px-2 py-1 text-xs font-medium text-foreground hover:bg-surface-inset ${TOUCH_TARGET_HEIGHT} ${DISABLED_LOOK}`}
                         {...loadingButtonProps(isReviewingName, undefined, () =>
                           handleReviewName(entry, "dismiss"),
                         )}

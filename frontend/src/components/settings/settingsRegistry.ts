@@ -560,7 +560,7 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
     id: "notes-confirm-suggested-names",
     label: "Confirm suggested names automatically",
     description:
-      "Take the speaker names the AI, a self-introduction or a voiceprint suggests as given, instead of confirming each one.",
+      "Take the speaker names the AI, a self-introduction or a voiceprint suggests as given, instead of confirming each one, for meetings processed from now on.",
     category: "notes",
     access: "all",
     settingsKeys: ["confirm_suggested_names"],

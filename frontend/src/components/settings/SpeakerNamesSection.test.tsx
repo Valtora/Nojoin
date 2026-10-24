@@ -3,17 +3,17 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { Settings } from "@/types";
 
-import AiAutomaticEnhancementSection from "./AiAutomaticEnhancementSection";
+import SpeakerNamesSection from "./SpeakerNamesSection";
 
 const NAME = "Confirm suggested names automatically";
 
 const renderSection = (settings: Settings) => {
   const onPersist = vi.fn();
-  render(<AiAutomaticEnhancementSection settings={settings} onPersist={onPersist} />);
+  render(<SpeakerNamesSection settings={settings} onPersist={onPersist} />);
   return { onPersist };
 };
 
-describe("AiAutomaticEnhancementSection suggested names", () => {
+describe("SpeakerNamesSection suggested names", () => {
   it("is off until the user turns it on", () => {
     renderSection({});
 
@@ -42,7 +42,7 @@ describe("AiAutomaticEnhancementSection suggested names", () => {
 
 const LEARNING = "Learn voiceprints from unconfirmed names";
 
-describe("AiAutomaticEnhancementSection voiceprint learning", () => {
+describe("SpeakerNamesSection voiceprint learning", () => {
   it("is off, learning only from confirmed names, until turned on", () => {
     renderSection({});
 

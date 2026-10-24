@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useId, useRef, useState, type FocusEvent, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 
 import type { SpeakerNameDecision } from "@/lib/speakerNameReview";
@@ -18,18 +18,22 @@ interface SpeakerNameReviewPopoverProps {
   /** Why the name was suggested, or null. */
   reason: string | null;
   onReview: (label: string, name: string, decision: SpeakerNameDecision) => Promise<void>;
+  /** Where focus goes after a decision, which removes the "?" itself. */
+  focusAfterDecision: () => void;
 }
 
 /**
  * The "?" after a suggested speaker name on a transcript line, and the small
  * popover it opens with Confirm and Not {name}. The button ignores clicks
  * while its decision is sent; the line drops it once the name is settled.
+ * The popover closes on Escape, a press outside it, or focus leaving it.
  */
 export default function SpeakerNameReviewPopover({
   label,
   name,
   reason,
   onReview,
+  focusAfterDecision,
 }: SpeakerNameReviewPopoverProps) {
   const [open, setOpen] = useState(false);
   const [sending, setSending] = useState(false);
@@ -62,13 +66,22 @@ export default function SpeakerNameReviewPopover({
   };
 
   const decide = async (decision: SpeakerNameDecision) => {
-    close();
+    setOpen(false);
+    focusAfterDecision();
     setSending(true);
     try {
       await onReview(label, name, decision);
     } finally {
       setSending(false);
     }
+  };
+
+  // Tab past the last button, or Shift+Tab before the first, leaves the
+  // popover; it closes then rather than stay open behind the focus.
+  const onPanelBlur = (event: FocusEvent<HTMLDivElement>) => {
+    const next = event.relatedTarget as Node | null;
+    if (next && (panelRef.current?.contains(next) || triggerRef.current?.contains(next))) return;
+    setOpen(false);
   };
 
   const onPanelKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -112,10 +125,13 @@ export default function SpeakerNameReviewPopover({
               ref={panelRef}
               id={panelId}
               role="dialog"
-              aria-label={`The name ${name}`}
+              // Focusable, so a press on its text keeps focus inside it.
+              tabIndex={-1}
+              aria-label={`Suggested name ${name}`}
               onKeyDown={onPanelKeyDown}
+              onBlur={onPanelBlur}
               style={panelStyle}
-              className="z-[var(--z-dropdown)] flex min-w-44 max-w-64 flex-col gap-2 rounded-lg border border-surface-border bg-surface-card p-2 shadow-float"
+              className="z-[var(--z-dropdown)] flex min-w-44 max-w-64 flex-col gap-2 rounded-lg border border-surface-border bg-surface-card p-2 shadow-float outline-none"
             >
               {reason && <p className="text-xs text-contrast-helper">{reason}</p>}
               <div className="flex gap-1.5">

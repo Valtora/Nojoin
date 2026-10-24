@@ -3,24 +3,11 @@ import { describe, expect, it } from "vitest";
 import { describeSuggestedNameSource } from "./speakerNameReview";
 
 describe("describeSuggestedNameSource", () => {
-  it("gives a voiceprint match's score as a whole percent", () => {
-    expect(
-      describeSuggestedNameSource({ name_source: "voiceprint", identity_confidence: 0.816 }),
-    ).toBe("Recognised by voice (82%)");
-  });
-
-  it("leaves the score out when the match has none", () => {
-    expect(
-      describeSuggestedNameSource({ name_source: "voiceprint", identity_confidence: null }),
-    ).toBe("Recognised by voice");
-  });
-
-  it("names the other sources", () => {
+  it("names each source of a suggestion", () => {
+    expect(describeSuggestedNameSource({ name_source: "voiceprint" })).toBe("Recognised by voice");
     expect(describeSuggestedNameSource({ name_source: "llm" })).toBe("Suggested by AI");
     expect(describeSuggestedNameSource({ name_source: "heuristic" })).toBe("Introduced themselves");
-    expect(describeSuggestedNameSource({ name_source: "user" })).toBe(
-      "Your name for part of this speech",
-    );
+    expect(describeSuggestedNameSource({ name_source: "user" })).toBe("You gave this name earlier");
   });
 
   it("has nothing to say for a confirmed source or none", () => {

@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useMemo } from "react";
+import { memo, useMemo, useRef } from "react";
 
 import { getColorByKey } from "@/lib/constants";
 import type { OutboxDraft } from "@/lib/notes/noteOutbox";
@@ -55,6 +55,11 @@ type TranscriptLineProps = Pick<IndexedTranscriptSegment, "segment" | "index" | 
   onReviewSpeakerName:
     | ((label: string, name: string, decision: SpeakerNameDecision) => Promise<void>)
     | null;
+  /**
+   * The first line of its speaker among those shown, the one that offers a
+   * suggested name's "?": once per speaker, not on every line.
+   */
+  isSpeakersFirstLine: boolean;
   hasPendingRemoteUpdate: boolean;
   /** Revised in the last 15 s, as of the view's last render. */
   isRecentlyUpdated: boolean;
@@ -97,6 +102,7 @@ function TranscriptLine({
   speakerColors,
   onUpdateSegmentSpeaker,
   onReviewSpeakerName,
+  isSpeakersFirstLine,
   hasPendingRemoteUpdate,
   isRecentlyUpdated,
   decorations,
@@ -137,7 +143,10 @@ function TranscriptLine({
   );
   // A provisional line's speaker may yet change, so its name is reviewed
   // once the line is final.
-  const canReviewName = !isSegmentReadOnly && !isProvisional && !isEditingSpeaker;
+  const canReviewName =
+    isSpeakersFirstLine && !isSegmentReadOnly && !isProvisional && !isEditingSpeaker;
+  // A decision drops the "?", so focus goes to the speaker's name beside it.
+  const speakerButtonRef = useRef<HTMLButtonElement>(null);
   const speakerColor = getColorByKey(speakerColors[segment.speaker] || "gray");
   const bubbleColor = isActive
     ? "border-2 border-status-success-border bg-status-success-bg"
@@ -169,6 +178,7 @@ function TranscriptLine({
         ) : (
           <div className="relative">
             <button
+              ref={speakerButtonRef}
               onClick={(e) => {
                 e.stopPropagation();
                 if (isSegmentReadOnly) return;
@@ -221,6 +231,7 @@ function TranscriptLine({
             name={speakerName}
             reason={describeSuggestedNameSource(pendingSpeaker)}
             onReview={onReviewSpeakerName}
+            focusAfterDecision={() => speakerButtonRef.current?.focus()}
           />
         )}
 

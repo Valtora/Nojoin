@@ -70,6 +70,8 @@ interface TranscriptGroupProps {
   disableSegmentPlayback: boolean;
   /** Where each speaker first appears among the shown lines. */
   speakerDisplayOrder: ReadonlyMap<string, number>;
+  /** Each speaker's first shown line, by key. */
+  speakerFirstLines: ReadonlyMap<string, string>;
   lineShared: TranscriptLineShared;
   /** Keys of this group's lines that playback is inside, one per line. */
   activeLineKeys: string;
@@ -103,6 +105,7 @@ function TranscriptGroup({
   onResume,
   disableSegmentPlayback,
   speakerDisplayOrder,
+  speakerFirstLines,
   lineShared,
   activeLineKeys,
   recentLineKeys,
@@ -139,6 +142,7 @@ function TranscriptGroup({
         speakerColors={speakerColors}
         onUpdateSegmentSpeaker={lineShared.onUpdateSegmentSpeaker}
         onReviewSpeakerName={lineShared.onReviewSpeakerName}
+        isSpeakersFirstLine={speakerFirstLines.get(segment.speaker) === segmentId}
         hasPendingRemoteUpdate={
           typeof segment.id === "string" &&
           lineShared.pendingRemoteUtteranceIds.has(segment.id)
@@ -283,6 +287,12 @@ function sameGroupProps(previous: TranscriptGroupProps, next: TranscriptGroupPro
           return [...next.group.involved].every(
             (speaker) =>
               previous.speakerDisplayOrder.get(speaker) === next.speakerDisplayOrder.get(speaker),
+          );
+        case "speakerFirstLines":
+          return next.group.items.every(
+            ({ segment, segmentId }) =>
+              (previous.speakerFirstLines.get(segment.speaker) === segmentId) ===
+              (next.speakerFirstLines.get(segment.speaker) === segmentId),
           );
         case "searchDecorations":
         case "noteDecorations":

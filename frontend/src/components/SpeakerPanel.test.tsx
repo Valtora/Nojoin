@@ -394,10 +394,13 @@ describe("suggested names", () => {
   it("marks only a pending name with a question mark and says why it was suggested", () => {
     renderPanel({ speakers: [pendingAlice, bob] });
 
-    expect(screen.getByText("Alice?")).toBeInTheDocument();
-    expect(screen.getByText("Recognised by voice (82%)")).toBeInTheDocument();
-    expect(screen.getByText("Bob")).toBeInTheDocument();
-    expect(screen.queryByText("Bob?")).not.toBeInTheDocument();
+    // The "?" sits outside the name, which may be truncated.
+    expect(screen.getByText("Alice").parentElement).toHaveTextContent(/^Alice\?$/);
+    expect(screen.getByText("Alice")).toHaveClass("truncate");
+    expect(screen.getByText("?")).not.toHaveClass("truncate");
+    expect(screen.getByText("Recognised by voice")).toBeInTheDocument();
+    expect(screen.getByText("Bob").parentElement).toHaveTextContent(/^Bob$/);
+    expect(screen.getAllByText("?")).toHaveLength(1);
     expect(screen.queryByText("Suggested by AI")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Confirm Alice" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Confirm Bob" })).not.toBeInTheDocument();

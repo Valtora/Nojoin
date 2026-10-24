@@ -227,6 +227,17 @@ export default function TranscriptView({
     return order;
   }, [displaySegments]);
 
+  // Each speaker's first final line, the one that offers a suggested name's
+  // "?" (a provisional line offers none).
+  const speakerFirstLines = useMemo(() => {
+    const firstLines = new Map<string, string>();
+    for (const { segment, segmentId } of displaySegments) {
+      if (segment.provisional === true || firstLines.has(segment.speaker)) continue;
+      firstLines.set(segment.speaker, segmentId);
+    }
+    return firstLines;
+  }, [displaySegments]);
+
   // Notes are placed on every line, hidden ones included, and each shows after
   // the visible line at or before the one it follows, so hiding a line never
   // hides a note. A note ends the group of the line it follows. Placed once
@@ -433,6 +444,7 @@ export default function TranscriptView({
                   onResume={resume}
                   disableSegmentPlayback={disableSegmentPlayback}
                   speakerDisplayOrder={speakerDisplayOrder}
+                  speakerFirstLines={speakerFirstLines}
                   lineShared={lineShared}
                   activeLineKeys={lineKeys(
                     group.items,

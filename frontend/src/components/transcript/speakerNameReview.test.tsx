@@ -74,11 +74,17 @@ const reviewButtons = () => screen.queryAllByRole("button", { name: /^Confirm or
 const lineOf = (element: Element) => element.closest("[data-order-index]")?.getAttribute("data-segment-id");
 
 describe("suggested names on transcript lines", () => {
-  it("puts a ? on every line of the speaker whose name is pending, and no other", () => {
+  it("puts a ? on the first line of the speaker whose name is pending, and no other", () => {
     renderView();
 
-    expect(reviewButtons().map(lineOf)).toEqual(["u0", "u2"]);
+    expect(reviewButtons().map(lineOf)).toEqual(["u0"]);
     expect(reviewButtons()[0]).toHaveAccessibleName("Confirm or dismiss the name Alex");
+  });
+
+  it("moves the ? to the speaker's next line when the first is hidden", () => {
+    renderView({ segments: [SEGMENTS[1], SEGMENTS[2]] });
+
+    expect(reviewButtons().map(lineOf)).toEqual(["u2"]);
   });
 
   it("offers nothing on a read-only transcript", () => {
@@ -113,8 +119,8 @@ describe("suggested names on transcript lines", () => {
   it("confirms the line's speaker from the ?'s popover", async () => {
     const { onReviewSpeakerName } = renderView();
 
-    fireEvent.click(reviewButtons()[1]);
-    const popover = screen.getByRole("dialog", { name: "The name Alex" });
+    fireEvent.click(reviewButtons()[0]);
+    const popover = screen.getByRole("dialog", { name: "Suggested name Alex" });
     expect(within(popover).getByText("Suggested by AI")).toBeInTheDocument();
     fireEvent.click(within(popover).getByRole("button", { name: "Confirm" }));
     await act(async () => {});
@@ -148,5 +154,46 @@ describe("suggested names on transcript lines", () => {
     await act(async () => finish());
     expect(reviewButtons()[0]).not.toHaveAttribute("aria-busy");
     expect(onReviewSpeakerName).toHaveBeenCalledTimes(1);
+  });
+
+  it("gives focus to the line's speaker name once the name is decided", async () => {
+    renderView();
+
+    fireEvent.click(reviewButtons()[0]);
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    await act(async () => {});
+
+    const line = document.querySelector('[data-segment-id="u0"]') as HTMLElement;
+    expect(within(line).getByRole("button", { name: "Alex" })).toHaveFocus();
+  });
+
+  it("closes when focus leaves the popover, and not while it stays inside", () => {
+    renderView();
+
+    fireEvent.click(reviewButtons()[0]);
+    const popover = screen.getByRole("dialog", { name: "Suggested name Alex" });
+    const confirm = within(popover).getByRole("button", { name: "Confirm" });
+    const notAlex = within(popover).getByRole("button", { name: "Not Alex" });
+    fireEvent.focusOut(confirm, { relatedTarget: notAlex });
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+    fireEvent.focusOut(notAlex, { relatedTarget: document.body });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("shows only the buttons when the source has no reason to give", () => {
+    renderView({
+      speakers: [speaker({ local_name: "Alex", name_source: null, name_pending: true })],
+    });
+
+    fireEvent.click(reviewButtons()[0]);
+    const popover = screen.getByRole("dialog", { name: "Suggested name Alex" });
+
+    expect(within(popover).queryByRole("paragraph")).not.toBeInTheDocument();
+    expect(popover.querySelectorAll("p")).toHaveLength(0);
+    expect(within(popover).getAllByRole("button").map((b) => b.textContent)).toEqual([
+      "Confirm",
+      "Not Alex",
+    ]);
   });
 });
