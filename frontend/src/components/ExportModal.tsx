@@ -22,6 +22,8 @@ interface ExportModalProps {
   onClose: () => void;
   onExport: (selection: ExportSelection) => void;
   hasNotes: boolean;
+  /** Whether the reader has saved notes on the timeline; without any, there is nothing to tick. */
+  hasTimelineNotes: boolean;
   /** False until the meeting has been processed, which is when analytics exist. */
   hasAnalytics: boolean;
   /** False when the recording's audio is gone, so there is nothing to export. */
@@ -126,6 +128,7 @@ export default function ExportModal({
   onClose,
   onExport,
   hasNotes,
+  hasTimelineNotes,
   hasAnalytics,
   hasAudio,
 }: ExportModalProps) {
@@ -225,20 +228,22 @@ export default function ExportModal({
             label="Transcript"
             description="The diarized transcript with timestamps"
           />
-          <OptionCard
-            type="checkbox"
-            name="exportSections"
-            checked={hasTranscript && includeNotes}
-            disabled={!hasTranscript}
-            onChange={() => setIncludeNotes((current) => !current)}
-            icon={<NotebookPen className="h-5 w-5" />}
-            label="My notes in the transcript"
-            description={
-              hasTranscript
-                ? "Your notes, each where it falls in the transcript"
-                : "Tick Transcript to include them"
-            }
-          />
+          {hasTimelineNotes ? (
+            <OptionCard
+              type="checkbox"
+              name="exportTimelineNotes"
+              checked={hasTranscript && includeNotes}
+              disabled={!hasTranscript}
+              onChange={() => setIncludeNotes((current) => !current)}
+              icon={<NotebookPen className="h-5 w-5" />}
+              label="My notes in the transcript"
+              description={
+                hasTranscript
+                  ? "Your notes, each where it falls in the transcript"
+                  : "Tick Transcript to include them"
+              }
+            />
+          ) : null}
         </fieldset>
 
         <fieldset className="space-y-2 border-t border-surface-border pt-4">

@@ -318,6 +318,7 @@ export default function RecordingPage({ params }: PageProps) {
         onClose={() => setShowExportModal(false)}
         onExport={handleExport}
         hasNotes={!!recording?.transcript?.notes}
+        hasTimelineNotes={(timelineNotes?.length ?? 0) > 0}
         hasAnalytics={recording?.status === RecordingStatus.PROCESSED}
         hasAudio={recording?.has_audio !== false}
       />

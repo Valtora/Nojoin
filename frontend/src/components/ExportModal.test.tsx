@@ -6,9 +6,15 @@ import ExportModal from "./ExportModal";
 
 const renderModal = ({
   hasNotes = true,
+  hasTimelineNotes = true,
   hasAnalytics = true,
   hasAudio = true,
-}: { hasNotes?: boolean; hasAnalytics?: boolean; hasAudio?: boolean } = {}) => {
+}: {
+  hasNotes?: boolean;
+  hasTimelineNotes?: boolean;
+  hasAnalytics?: boolean;
+  hasAudio?: boolean;
+} = {}) => {
   const onExport = vi.fn();
   const onClose = vi.fn();
   renderWithProviders(
@@ -17,6 +23,7 @@ const renderModal = ({
       onClose={onClose}
       onExport={onExport}
       hasNotes={hasNotes}
+      hasTimelineNotes={hasTimelineNotes}
       hasAnalytics={hasAnalytics}
       hasAudio={hasAudio}
     />,
@@ -86,6 +93,31 @@ describe("ExportModal sections", () => {
     );
   });
 
+  it("offers no notes tick on a recording without notes of the reader's", () => {
+    const { onExport } = renderModal({ hasTimelineNotes: false });
+
+    expect(section("Transcript")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("checkbox", { name: "My notes in the transcript" }),
+    ).not.toBeInTheDocument();
+    fireEvent.click(section("Transcript"));
+    fireEvent.click(exportButton());
+
+    expect(onExport).toHaveBeenCalledWith(
+      expect.objectContaining({ sections: ["notes", "transcript"] }),
+    );
+  });
+
+  it("names the notes tick apart from the sections it qualifies", () => {
+    renderModal();
+
+    expect(section("Transcript")).toHaveAttribute("name", "exportSections");
+    expect(section("My notes in the transcript")).not.toHaveAttribute(
+      "name",
+      "exportSections",
+    );
+  });
+
   it("puts the notes tick back on each time it opens", () => {
     const onExport = vi.fn();
     const modal = (isOpen: boolean) => (
@@ -94,6 +126,7 @@ describe("ExportModal sections", () => {
         onClose={vi.fn()}
         onExport={onExport}
         hasNotes={false}
+        hasTimelineNotes
         hasAnalytics
         hasAudio
       />
