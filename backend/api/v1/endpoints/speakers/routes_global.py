@@ -51,6 +51,7 @@ from backend.utils.canonical_pipeline import (
 )
 from backend.utils.embedding_audio import select_recording_audio_for_embedding
 from backend.utils.speaker_names.preferences import library_learns_automatically
+from backend.utils.speaker_names.review import link_voice_match
 
 from .helpers import (
     MEASURED_EXTRACTION_TASK,
@@ -290,6 +291,7 @@ async def merge_speakers(
                         actor_user_id=current_user.id,
                         merge_global_embedding_alpha=None,
                         source="api",
+                        confirm=False,
                     )
                 )
             else:
@@ -966,9 +968,10 @@ async def scan_for_matches(
         if (score - runner_up_score) < MARGIN_OF_VICTORY:
             continue
 
-        cand.global_speaker_id = speaker.id
-        cand.name = speaker.name
-        db.add(cand)
+        if not await db.run_sync(
+            lambda session: link_voice_match(session, cand, speaker, score)
+        ):
+            continue
         matches_found += 1
         recordings_updated.add(cand.recording_id)
 

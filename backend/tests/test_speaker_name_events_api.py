@@ -578,6 +578,103 @@ async def test_add_to_people_on_the_legacy_path_is_the_users(
     )
 
 
+async def test_merging_people_moves_a_voice_match_but_leaves_it_pending(
+    client, session_maker
+) -> None:
+    await _seed(
+        session_maker, people=[{"id": 7, "name": "Bob"}, {"id": 8, "name": "Robert"}]
+    )
+    await _offer(session_maker, 2, "Bob", source="voiceprint", person=7)
+
+    response = await client.post(
+        "/api/v1/speakers/merge", json={"source_speaker_id": 7, "target_speaker_id": 8}
+    )
+
+    assert response.status_code == 200, response.text
+    speaker = await _speaker(session_maker, 2)
+    assert (
+        speaker["global_speaker_id"],
+        speaker["name_source"],
+        speaker["identity_locked"],
+        speaker["identity_confidence"],
+    ) == (8, "voiceprint", False, 0.8)
+    # Merging people names nobody: no user row for the final pass to carry.
+    assert await _events(session_maker) == []
+
+
+async def test_scan_for_matches_links_as_a_voice_match_the_user_may_still_refuse(
+    client, session_maker
+) -> None:
+    await _seed(session_maker, people=[{"id": 8, "name": "Bob"}])
+    await _set(
+        session_maker,
+        "UPDATE global_speakers SET embedding = '[1.0, 0.0]' WHERE id = 8",
+    )
+    # Speaker 1 has a pending AI name, which a voice match outranks; speaker 2
+    # was dismissed as Bob before.
+    await _offer(session_maker, 1, "Alex")
+    await _set(
+        session_maker,
+        "UPDATE recording_speakers SET embedding = '[0.96, 0.28]' WHERE id IN (1, 2)",
+    )
+    await _set(
+        session_maker,
+        "INSERT INTO speaker_name_events (id, created_at, updated_at, public_id, "
+        "recording_id, kind, name, source, authority, anchor_start_ms, "
+        "anchor_end_ms, recording_speaker_id) VALUES (1, :now, :now, 'ev-1', 1, "
+        "'dismiss', 'bob', 'user', 40, 8000, 10000, 2)",
+        now=NOW,
+    )
+
+    response = await client.post("/api/v1/speakers/8/scan-matches")
+
+    assert response.status_code == 200, response.text
+    assert response.json()["matches_found"] == 1
+    linked = await _speaker(session_maker, 1)
+    assert (
+        linked["global_speaker_id"],
+        linked["local_name"],
+        linked["name_source"],
+        linked["identity_locked"],
+    ) == (8, None, "voiceprint", False)
+    assert linked["identity_confidence"] == pytest.approx(0.96)
+    assert (await _speaker(session_maker, 2))["global_speaker_id"] is None
+
+
+async def test_confirm_keeps_a_voice_match_and_makes_it_the_users(
+    client, session_maker
+) -> None:
+    await _seed(session_maker, people=[{"id": 8, "name": "Bob"}])
+    await _offer(session_maker, 2, "Bob", source="voiceprint", person=8)
+
+    response = await _review(client, "SPEAKER_01", "accept")
+
+    assert response.status_code == 200, response.text
+    speaker = await _speaker(session_maker, 2)
+    assert (
+        speaker["global_speaker_id"],
+        speaker["name_source"],
+        speaker["identity_locked"],
+    ) == (8, "user", True)
+    assert _named(await _events(session_maker)) == [("name", "Bob", 8, "user")]
+
+
+@pytest.mark.parametrize("answer", ["accept", "reject"])
+async def test_another_users_recording_cannot_be_answered(
+    client, session_maker, answer
+) -> None:
+    await _seed(session_maker)
+    await _offer(session_maker, 1, "Alex")
+    await _set(session_maker, "UPDATE recordings SET user_id = 2")
+
+    response = await _review(client, "SPEAKER_00", answer)
+
+    assert response.status_code == 404
+    speaker = await _speaker(session_maker, 1)
+    assert (speaker["local_name"], speaker["name_source"]) == ("Alex", "llm")
+    assert await _events(session_maker) == []
+
+
 async def test_not_name_gives_back_the_speakers_own_number(
     client, session_maker
 ) -> None:

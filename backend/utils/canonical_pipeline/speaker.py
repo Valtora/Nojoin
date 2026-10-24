@@ -722,8 +722,13 @@ def update_recording_speaker_identity(
     merge_global_embedding_alpha: float | None = None,
     event_type: SpeakerCorrectionEventType | None = None,
     source: str = "api",
+    confirm: bool = True,
 ) -> dict[int, LibraryVoiceprintUpdate]:
     """Rename or link a recording speaker everywhere in its recording.
+
+    ``confirm`` makes the name the user's: locked, ``name_source`` user and a
+    user name event. Merging people passes False, so a match nobody confirmed
+    moves to the person it now names and stays pending.
 
     Returns, per recording speaker id, what happened to the linked person's
     library voiceprint; speakers whose voiceprint was not offered are absent.
@@ -777,8 +782,8 @@ def update_recording_speaker_identity(
             new_speaker_name=new_speaker_name,
             target_global_speaker=target_global_speaker,
             merge_global_embedding_alpha=merge_global_embedding_alpha,
-            identity_confidence=1.0,
-            identity_locked=True,
+            identity_confidence=1.0 if confirm else None,
+            identity_locked=True if confirm else None,
             # A rename or promote is the user's link, and takes the same lock
             # rule as the legacy rename path (``lock_blocks_user_link``).
             user_link=True,
@@ -786,7 +791,8 @@ def update_recording_speaker_identity(
         if library_update is not None and recording_speaker.id is not None:
             library_updates[recording_speaker.id] = library_update
         recording_speaker.name_last_edit_source = source
-        recording_speaker.name_source = SOURCE_USER
+        if confirm:
+            recording_speaker.name_source = SOURCE_USER
 
     effective_event_type = event_type or (
         SpeakerCorrectionEventType.LINK_GLOBAL_SPEAKER
@@ -821,12 +827,15 @@ def update_recording_speaker_identity(
         },
     )
 
-    record_user_name_events(
-        session,
-        recording_id,
-        matching_speakers,
-        UserNameAct(resolved_new_name, target_global_speaker_id, actor_user_id, source),
-    )
+    if confirm:
+        record_user_name_events(
+            session,
+            recording_id,
+            matching_speakers,
+            UserNameAct(
+                resolved_new_name, target_global_speaker_id, actor_user_id, source
+            ),
+        )
     if list_active_utterances(session, recording_id):
         refresh_transcript_projection_from_canonical(session, recording_id)
 

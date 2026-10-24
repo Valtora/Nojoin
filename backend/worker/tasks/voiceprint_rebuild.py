@@ -360,7 +360,8 @@ def _rebuild_people(
         if is_stale and outcome is _PersonRebuild.HELD_BACK:
             logger.info(
                 "Keeping stale voiceprint for person %s (%s): no current-version "
-                "speaker of theirs may found one (too little speech, or refused)",
+                "speaker of theirs may found one (too little speech, refused by "
+                "the drift guard, or a link nobody has confirmed)",
                 global_speaker.id,
                 global_speaker.name,
             )

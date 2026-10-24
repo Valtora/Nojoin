@@ -3,6 +3,8 @@
 Confirm needs nothing of its own: it is the rename the name already reads as
 (``apply_recording_speaker_update``), which links People by exact name, locks
 the speaker, offers its voiceprint and writes the user's event.
+
+Also the People scan's link, which a dismissal refuses (``link_voice_match``).
 """
 
 from __future__ import annotations
@@ -16,7 +18,13 @@ from backend.models.speaker_name_event import SpeakerNameEvent
 
 from .anchors import longest_turn
 from .events import add_event, speaker_lines
-from .sources import AUTHORITY, KIND_DISMISS, SOURCE_USER
+from .sources import (
+    AUTHORITY,
+    KIND_DISMISS,
+    SOURCE_USER,
+    SOURCE_VOICEPRINT,
+    inferred_name_may_be_replaced,
+)
 
 
 def shown_name(speaker: RecordingSpeaker) -> str:
@@ -109,3 +117,28 @@ def dismiss_pending_name(
         session, recording_id=recording_id, old_names=[dismissed], new_name=speaker.name
     )
     return speaker.name
+
+
+def link_voice_match(
+    session: Any, speaker: RecordingSpeaker, person: Any, score: float
+) -> bool:
+    """Link ``speaker`` to ``person`` on a People scan's voice match.
+
+    The link is a voiceprint match like the final pass's: pending until
+    confirmed, with its cosine as the confidence, so under ``confirmed``
+    learning it teaches nothing yet. A pending self-introduction or AI name
+    ranks below it and gives way; a name the user gave keeps its source and
+    lock. Returns False, linking nobody, when the user said this speaker is
+    not that person.
+    """
+    if str(person.name).strip().casefold() in dismissed_names(session, speaker.id):
+        return False
+    if inferred_name_may_be_replaced(speaker):
+        speaker.local_name = None
+    speaker.global_speaker_id = person.id
+    speaker.name = person.name
+    if not speaker.identity_locked and speaker.name_source != SOURCE_USER:
+        speaker.name_source = SOURCE_VOICEPRINT
+        speaker.identity_confidence = score
+    session.add(speaker)
+    return True
