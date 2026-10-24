@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
@@ -171,7 +171,9 @@ describe("suggested names on transcript lines", () => {
     expect(onReviewSpeakerName.mock.calls).toEqual([["SPEAKER_A", "Alex", "dismiss"]]);
     expect(onUpdateSegmentSpeaker).not.toHaveBeenCalled();
     expect(screen.queryByRole("button", { name: "Not Alex" })).not.toBeInTheDocument();
-    expect(alexName).toHaveFocus();
+    await waitFor(() =>
+      expect(within(alexLine).getByRole("button", { name: "Alex" })).toHaveFocus(),
+    );
   });
 
   it("ignores the ? while its decision is sent", async () => {
