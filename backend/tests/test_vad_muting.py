@@ -195,3 +195,11 @@ def test_turns_are_read_from_a_pyannote_annotation():
 
     assert sorted(diarised_turns(annotation)) == [(1.5, 2.25), (2.0, 4.0)]
     assert diarised_turns(Annotation()) == []
+
+    # Left out by key (#678): another track with the same bounds is kept.
+    annotation[Segment(1.5, 2.25), "c"] = "SPEAKER_02"
+    left_out = [(Segment(1.5, 2.25), "_")]
+    assert sorted(diarised_turns(annotation, excluding=left_out)) == [
+        (1.5, 2.25),
+        (2.0, 4.0),
+    ]
