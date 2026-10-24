@@ -3,6 +3,8 @@
 Notes sit in the transcript section: notes on the whole meeting first and
 last, the rest after the line they fall on. Every format sets them apart as a quote, and
 plain text quotes each of their lines, so none can pass for a line of speech.
+A file exported without them also drops the ``## User Notes`` section that
+ends the generated notes (#686).
 """
 
 from __future__ import annotations
@@ -19,7 +21,11 @@ from docx import Document
 from backend.models.timeline_note import TimelineNote
 from backend.services.exports import build_document, render
 from backend.services.exports.model import Paragraph
-from backend.tests.export_fixtures import meeting_parts
+from backend.tests.export_fixtures import (
+    NOTES_WITH_USER_NOTES,
+    exported_text,
+    meeting_parts,
+)
 
 SEGMENTS = (
     {"speaker": "SPEAKER_00", "start": 2.0, "end": 4.0, "text": "Let us begin."},
@@ -145,6 +151,41 @@ def test_pdf_and_docx_carry_every_note_in_order(export_format: str) -> None:
     positions = [text.find(fragment) for fragment in order]
     assert -1 not in positions, text
     assert positions == sorted(positions)
+
+
+@pytest.mark.parametrize("export_format", ["txt", "pdf", "docx"])
+def test_a_file_without_the_readers_notes_has_none_of_them_anywhere(
+    export_format: str,
+) -> None:
+    def export(include_user_notes: bool) -> str:
+        parts = meeting_parts(
+            notes=NOTES_WITH_USER_NOTES,
+            segments=SEGMENTS,
+            timeline_notes=(HEAD, POINT),
+            include_user_notes=include_user_notes,
+        )
+        document = build_document(parts, ["notes", "transcript"])
+        return exported_text(render(document, export_format), export_format)
+
+    kept = export(True)
+    left_out = export(False)
+
+    assert "User Notes" in kept and "Ask about catering" in kept, kept
+    for text in (kept, left_out):
+        assert "Peter books the venue." in text and "Let us begin." in text, text
+    assert "User Notes" not in left_out, left_out
+    assert "Agenda: budget" not in left_out, left_out
+    assert "Ask about catering" not in left_out, left_out
+
+
+def test_notes_that_were_only_the_readers_read_as_no_notes_without_them() -> None:
+    parts = meeting_parts(
+        notes="\n\n## User Notes\n- [User] Mine", include_user_notes=False
+    )
+    section = build_document(parts, ["notes"]).sections[0]
+
+    assert [type(block).__name__ for block in section.blocks] == ["Callout"]
+    assert section.markdown_source is None
 
 
 GOLDEN = json.loads(
