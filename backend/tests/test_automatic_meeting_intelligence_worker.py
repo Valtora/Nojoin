@@ -15,7 +15,12 @@ from backend.models.speaker import RecordingSpeaker
 from backend.models.timeline_note import TimelineNote
 from backend.models.transcript import Transcript
 from backend.services.timeline_note_service import RecordingTimelineNotes
-from backend.tests.sqlite_schemas import RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA
+from backend.tests.sqlite_schemas import (
+    RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA,
+    SPEAKER_NAME_EVENTS_SCHEMA,
+    TRANSCRIPT_UTTERANCES_SCHEMA,
+    USERS_SCHEMA,
+)
 from backend.utils.context_window import ContextWindowExceededError
 from backend.utils.llm_config import ResolvedLLMConfig
 from backend.utils.meeting_intelligence import AutomaticMeetingIntelligenceResult
@@ -145,7 +150,8 @@ CREATE TABLE recording_speakers (
     last_seen_ms INTEGER,
     identity_confidence FLOAT,
     identity_locked BOOLEAN NOT NULL DEFAULT 0,
-    name_last_edit_source VARCHAR(32)
+    name_last_edit_source VARCHAR(32),
+    name_source VARCHAR(16)
 );
 
 CREATE TABLE recording_speaker_aliases (
@@ -187,6 +193,12 @@ def _create_worker_ai_database(tmp_path: Path) -> Any:
         for statement in BASE_SCHEMA.strip().split(";\n\n"):
             connection.execute(text(statement))
         connection.execute(text(RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA))
+        for schema in (
+            USERS_SCHEMA,
+            TRANSCRIPT_UTTERANCES_SCHEMA,
+            SPEAKER_NAME_EVENTS_SCHEMA,
+        ):
+            connection.execute(text(schema))
 
         connection.execute(
             text(
@@ -456,13 +468,14 @@ def test_run_automatic_meeting_intelligence_stage_persists_suggestions_title_and
 
         assert result is not None
         assert local_names_by_label["SPEAKER_00"] == "Alex"
-        assert names_by_label["SPEAKER_00"] is None
+        # The pending name shows; the row keeps its "Speaker N" for Not {name}.
+        assert names_by_label["SPEAKER_00"] == "Speaker 1"
         assert names_by_label["SPEAKER_01"] == "Dana"
         assert len(suggestions) == 1
         assert suggestions[0]["diarization_label"] == "SPEAKER_00"
         assert suggestions[0]["suggested_name"] == "Alex"
-        assert suggestions[0]["status"] == "accepted"
-        assert suggestions[0]["resolution_reason"] == "auto_applied"
+        assert suggestions[0]["status"] == "pending"
+        assert suggestions[0]["resolution_reason"] is None
         assert suggestions[0]["origin"] == "automatic_meeting_intelligence"
         assert recording.name == "Launch Readiness Review"
         assert recording.status == "PROCESSED"
@@ -614,7 +627,7 @@ def test_no_llm_final_processing_applies_only_real_self_introductions(
         applied_names = [
             item["suggested_name"]
             for item in transcript.speaker_name_suggestions or []
-            if item["status"] == "accepted"
+            if item["status"] == "pending"
         ]
         assert applied_names == ([expected_local_name] if expected_local_name else [])
     finally:
@@ -739,13 +752,33 @@ def test_a_meeting_too_long_for_one_call_gets_its_notes_in_parts(
         engine.dispose()
 
 
-def test_auto_apply_links_exact_global_match_and_respects_voiceprint_lock(
+def _set_owner_settings(connection: Any, settings: dict[str, Any]) -> None:
+    connection.execute(
+        text(
+            """
+            INSERT INTO users (
+                id, created_at, updated_at, username, hashed_password, is_active,
+                is_superuser, force_password_change, role, token_version, settings,
+                has_seen_demo_recording
+            ) VALUES (1, :now, :now, 'owner', 'hash', 1, 1, 0, 'owner', 0, :settings, 0)
+            """
+        ),
+        {"now": _utc_now_naive(), "settings": json.dumps(settings)},
+    )
+
+
+@pytest.mark.parametrize("confirm_suggested_names", [False, True])
+def test_an_exact_people_name_links_only_when_names_are_confirmed_at_the_end(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    confirm_suggested_names: bool,
 ) -> None:
     engine = _create_worker_ai_database(tmp_path)
 
     with engine.begin() as connection:
+        _set_owner_settings(
+            connection, {"confirm_suggested_names": confirm_suggested_names}
+        )
         connection.execute(
             text("UPDATE recording_speakers SET embedding = :embedding WHERE id = 1"),
             {"embedding": json.dumps([0.0, 1.0, 0.0])},
@@ -793,7 +826,7 @@ def test_auto_apply_links_exact_global_match_and_respects_voiceprint_lock(
         with Session(engine) as verification_session:
             speaker_row = verification_session.exec(
                 text(
-                    "SELECT global_speaker_id, local_name FROM recording_speakers WHERE id = 1"
+                    "SELECT global_speaker_id, local_name, name_source FROM recording_speakers WHERE id = 1"
                 )
             ).one()
             global_embedding = verification_session.exec(
@@ -804,15 +837,19 @@ def test_auto_apply_links_exact_global_match_and_respects_voiceprint_lock(
             ).first()
             suggestions = transcript.speaker_name_suggestions
 
-        # Exact global name match links the speaker instead of setting a
-        # local name, and the locked voiceprint is left untouched.
-        assert speaker_row[0] == 11
-        assert speaker_row[1] is None
+        # Either way the locked voiceprint is left untouched.
         assert json.loads(global_embedding) == [1.0, 0.0, 0.0]
         assert len(suggestions) == 1
         assert suggestions[0]["suggested_global_speaker_id"] == 11
-        assert suggestions[0]["status"] == "accepted"
-        assert suggestions[0]["resolution_reason"] == "auto_applied"
+        if confirm_suggested_names:
+            # Taken as given: the exact People name links that person.
+            assert tuple(speaker_row) == (11, None, "auto")
+            assert suggestions[0]["status"] == "accepted"
+            assert suggestions[0]["resolution_reason"] == "auto_applied"
+        else:
+            # Pending: the name shows, and nobody in People is linked.
+            assert tuple(speaker_row) == (None, "Dana", "llm")
+            assert suggestions[0]["status"] == "pending"
     finally:
         engine.dispose()
 

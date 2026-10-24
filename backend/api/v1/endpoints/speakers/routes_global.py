@@ -50,6 +50,8 @@ from backend.utils.canonical_pipeline import (
     update_recording_speaker_identity,
 )
 from backend.utils.embedding_audio import select_recording_audio_for_embedding
+from backend.utils.speaker_names.preferences import library_learns_automatically
+from backend.utils.speaker_names.review import link_voice_match
 
 from .helpers import (
     MEASURED_EXTRACTION_TASK,
@@ -289,6 +291,10 @@ async def merge_speakers(
                         actor_user_id=current_user.id,
                         merge_global_embedding_alpha=None,
                         source="api",
+                        # A confirmed speaker's name now names the target,
+                        # so a later run carries it there; a pending match
+                        # moves without being confirmed.
+                        confirm=bool(rs.identity_locked),
                     )
                 )
             else:
@@ -880,7 +886,10 @@ async def split_speaker(
     original_update = apply_split_to_original(
         original_speaker,
         original_speaker_voiceprints,
-        other_recording_voiceprints(list(other_links)),
+        other_recording_voiceprints(
+            list(other_links),
+            include_unconfirmed=library_learns_automatically(current_user.settings),
+        ),
     )
     db.add(original_speaker)
 
@@ -962,9 +971,10 @@ async def scan_for_matches(
         if (score - runner_up_score) < MARGIN_OF_VICTORY:
             continue
 
-        cand.global_speaker_id = speaker.id
-        cand.name = speaker.name
-        db.add(cand)
+        if not await db.run_sync(
+            lambda session: link_voice_match(session, cand, speaker, score)
+        ):
+            continue
         matches_found += 1
         recordings_updated.add(cand.recording_id)
 

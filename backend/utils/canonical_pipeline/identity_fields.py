@@ -31,6 +31,7 @@ def apply_recording_speaker_identity_fields(
     identity_confidence: float | None = None,
     identity_locked: bool | None = None,
     user_link: bool = False,
+    name_source: str | None = None,
 ) -> LibraryVoiceprintUpdate | None:
     """Mutate one recording speaker's identity fields in place.
 
@@ -42,7 +43,8 @@ def apply_recording_speaker_identity_fields(
     Either way a link the lock keeps out is still judged against the
     person's voiceprint. ``identity_confidence`` and ``identity_locked`` are
     written only when a value is provided, so callers control whether the
-    identity is asserted as human-confirmed.
+    identity is asserted as human-confirmed; so is ``name_source``, the source
+    that gave the name (``backend/utils/speaker_names/sources.py``).
 
     Returns what happened to the person's library voiceprint, or None when no
     voiceprint was offered to it (no person, no merge weight, or no recording
@@ -80,6 +82,8 @@ def apply_recording_speaker_identity_fields(
         recording_speaker.identity_confidence = identity_confidence
     if identity_locked is not None:
         recording_speaker.identity_locked = identity_locked
+    if name_source is not None:
+        recording_speaker.name_source = name_source
     ensure_recording_speaker_aliases_for_speaker(session, recording_speaker)
     session.add(recording_speaker)
     return library_update

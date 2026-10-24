@@ -6,6 +6,7 @@ import { Pause, Play } from "lucide-react";
 import { getColorByKey } from "@/lib/constants";
 import type { OutboxDraft } from "@/lib/notes/noteOutbox";
 import { segmentSpeakerDisplayName } from "@/lib/recordingSpeakerUtils";
+import type { SpeakerNameDecision } from "@/lib/speakerNameReview";
 import {
   GlobalSpeaker,
   RecordingSpeaker,
@@ -43,6 +44,10 @@ export interface TranscriptLineShared {
     segment: TranscriptSegment,
     assignment: TranscriptSpeakerAssignment,
   ) => void | Promise<void>;
+  /** Confirms or dismisses a suggested speaker name; null where names can't be reviewed. */
+  onReviewSpeakerName:
+    | ((label: string, name: string, decision: SpeakerNameDecision) => Promise<void>)
+    | null;
   pendingRemoteUtteranceIds: ReadonlySet<string>;
   actions: TranscriptLineActions;
   /** Queues a note on a line; null where notes can't be added. */
@@ -65,6 +70,8 @@ interface TranscriptGroupProps {
   disableSegmentPlayback: boolean;
   /** Where each speaker first appears among the shown lines. */
   speakerDisplayOrder: ReadonlyMap<string, number>;
+  /** Each speaker's first shown line, by key. */
+  speakerFirstLines: ReadonlyMap<string, string>;
   lineShared: TranscriptLineShared;
   /** Keys of this group's lines that playback is inside, one per line. */
   activeLineKeys: string;
@@ -98,6 +105,7 @@ function TranscriptGroup({
   onResume,
   disableSegmentPlayback,
   speakerDisplayOrder,
+  speakerFirstLines,
   lineShared,
   activeLineKeys,
   recentLineKeys,
@@ -133,6 +141,8 @@ function TranscriptGroup({
         globalSpeakers={lineShared.globalSpeakers}
         speakerColors={speakerColors}
         onUpdateSegmentSpeaker={lineShared.onUpdateSegmentSpeaker}
+        onReviewSpeakerName={lineShared.onReviewSpeakerName}
+        isSpeakersFirstLine={speakerFirstLines.get(segment.speaker) === segmentId}
         hasPendingRemoteUpdate={
           typeof segment.id === "string" &&
           lineShared.pendingRemoteUtteranceIds.has(segment.id)
@@ -277,6 +287,12 @@ function sameGroupProps(previous: TranscriptGroupProps, next: TranscriptGroupPro
           return [...next.group.involved].every(
             (speaker) =>
               previous.speakerDisplayOrder.get(speaker) === next.speakerDisplayOrder.get(speaker),
+          );
+        case "speakerFirstLines":
+          return next.group.items.every(
+            ({ segment, segmentId }) =>
+              (previous.speakerFirstLines.get(segment.speaker) === segmentId) ===
+              (next.speakerFirstLines.get(segment.speaker) === segmentId),
           );
         case "searchDecorations":
         case "noteDecorations":

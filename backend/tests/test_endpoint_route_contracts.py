@@ -164,6 +164,18 @@ SPEAKERS_ROUTE_CONTRACT = [
         "List",
     ),
     (
+        "/recordings/{recording_id}/speakers/{diarization_label}/suggestions/accept",
+        ("POST",),
+        "confirm_speaker_name",
+        "List",
+    ),
+    (
+        "/recordings/{recording_id}/speakers/{diarization_label}/suggestions/reject",
+        ("POST",),
+        "dismiss_speaker_name",
+        "List",
+    ),
+    (
         "/recordings/{recording_id}/speakers/{diarization_label}/unmerge",
         ("POST",),
         "unmerge_merged_recording_speaker",

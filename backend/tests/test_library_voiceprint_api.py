@@ -41,9 +41,11 @@ from backend.tests.sqlite_schemas import (
     RECORDING_SPEAKERS_SCHEMA,
     RECORDINGS_SCHEMA,
     SPEAKER_CORRECTION_EVENTS_SCHEMA,
+    SPEAKER_NAME_EVENTS_SCHEMA,
     TRANSCRIPT_UTTERANCE_EVENTS_SCHEMA,
     TRANSCRIPT_UTTERANCES_SCHEMA,
     TRANSCRIPTS_SCHEMA,
+    USERS_SCHEMA,
 )
 
 PERSON = [1.0, 0.0]
@@ -77,6 +79,7 @@ async def session_maker():
     )
     async with engine.begin() as connection:
         for schema in (
+            USERS_SCHEMA,
             RECORDINGS_SCHEMA,
             TRANSCRIPTS_SCHEMA,
             GLOBAL_SPEAKERS_SCHEMA,
@@ -90,6 +93,7 @@ async def session_maker():
             TRANSCRIPT_UTTERANCE_EVENTS_SCHEMA,
             RECORDING_SPEAKER_ALIASES_SCHEMA,
             SPEAKER_CORRECTION_EVENTS_SCHEMA,
+            SPEAKER_NAME_EVENTS_SCHEMA,
             PEOPLE_TAGS_SCHEMA,
             P_TAGS_SCHEMA,
         ):
@@ -2460,10 +2464,10 @@ async def _seed_split_with_other_recordings(
                         id, created_at, updated_at, public_id, recording_id,
                         global_speaker_id, diarization_label, name, embedding,
                         embedding_version, embedding_speech_seconds,
-                        speaker_status, speaker_kind, identity_locked
+                        speaker_status, speaker_kind, identity_locked, name_source
                     ) VALUES (:id, :now, :now, :public_id, :id, 7, 'SPEAKER_00',
                               'Dana', :embedding, :version, :seconds,
-                              'active', 'automated', 0)
+                              'active', 'automated', 0, :source)
                     """
                 ),
                 {
@@ -2473,6 +2477,7 @@ async def _seed_split_with_other_recordings(
                     "embedding": json.dumps(other["embedding"]),
                     "version": other.get("version", 2),
                     "seconds": other.get("seconds"),
+                    "source": other.get("name_source"),
                 },
             )
             await _insert_refusals(session, offset, other.get("refused_for"))
@@ -2516,13 +2521,19 @@ async def test_a_split_rebuilds_the_original_from_their_other_recordings(
 
     Her voiceprint is rebuilt from the other recordings that qualify, pooled
     as a recalibration pools them, rather than cleared. A refused link, a
-    short one and a stale one don't qualify. The lock stays as it was.
+    short one, a stale one and a voice match nobody confirmed don't qualify.
+    The lock stays as it was.
     """
     elsewhere = _at_cosine(0.9)
     await _seed_split_with_other_recordings(
         session_maker,
         [
             {"embedding": elsewhere, "seconds": 30.0},
+            {
+                "embedding": _at_cosine(0.1),
+                "seconds": 30.0,
+                "name_source": "voiceprint",
+            },
             {"embedding": _at_cosine(0.1), "seconds": 30.0, "refused_for": 7},
             {"embedding": _at_cosine(0.1), "seconds": 12.0},
             {"embedding": _at_cosine(0.1), "seconds": 30.0, "version": 1},

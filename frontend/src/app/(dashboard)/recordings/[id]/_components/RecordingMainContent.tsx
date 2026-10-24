@@ -321,6 +321,7 @@ export default function RecordingMainContent({
           onPause={onPause}
           onResume={onResume}
           onRenameSpeaker={onRenameSpeaker}
+          onRefresh={onRefresh}
           onUpdateSegmentSpeaker={onUpdateSegmentSpeaker}
           onUpdateSegmentText={onUpdateSegmentText}
           onFindAndReplace={onFindAndReplace}

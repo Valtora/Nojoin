@@ -193,6 +193,10 @@ class RecordingSpeaker(BaseDBModel, table=True):
     name_last_edit_source: Optional[str] = Field(
         default=None, sa_column=Column(String(32))
     )
+    # Which source gave the name the speaker shows: heuristic, llm, voiceprint,
+    # auto (confirmed by the setting) or user. NULL on rows from before it was
+    # recorded, and on "Speaker N". See backend/utils/speaker_names/sources.py.
+    name_source: Optional[str] = Field(default=None, sa_column=Column(String(16)))
 
     # Optional snippet for identification
     snippet_start: Optional[float] = None

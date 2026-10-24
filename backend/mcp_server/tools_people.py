@@ -19,6 +19,7 @@ from sqlmodel import select
 from backend.core.security import MCP_WRITE_SCOPE
 from backend.mcp_server.auth import get_current_mcp_user
 from backend.mcp_server.server import _require_write_scope, mcp_tool
+from backend.utils.speaker_names.sources import name_is_pending
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,8 @@ def _compact_speaker(speaker: Any) -> dict[str, Any]:
         "display_name": display_name,
         "diarization_label": speaker.diarization_label,
         "person": person,
+        # A suggested name nobody has confirmed, shown in the app as "Alex?".
+        "name_pending": name_is_pending(speaker),
     }
 
 

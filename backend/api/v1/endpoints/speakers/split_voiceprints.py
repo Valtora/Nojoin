@@ -24,6 +24,7 @@ from backend.processing.embedding import (
     update_library_voiceprint,
 )
 from backend.processing.embedding_version import EMBEDDING_METHOD_VERSION
+from backend.utils.speaker_names.sources import link_teaches_library
 
 # The weight the moved clips fold into an existing person's voiceprint with.
 SPLIT_FOLD_ALPHA = 0.1
@@ -71,11 +72,15 @@ def apply_split_to_original_speaker(
     speaker.embedding_speech_seconds = voiceprint.speech_seconds
 
 
-def other_recording_voiceprints(links: List[Any]) -> List[RecordingVoiceprint]:
+def other_recording_voiceprints(
+    links: List[Any], *, include_unconfirmed: bool
+) -> List[RecordingVoiceprint]:
     """The voiceprints of the original's links outside the split recordings.
 
     Only current-version voiceprints can be pooled with each other, and a link
-    the drift guard refused for the person stays out, as in the rebuild.
+    the drift guard refused for the person stays out, as in the rebuild. So
+    does a link nobody confirmed (a voice match still shown "Dana?"), unless
+    the owner lets unconfirmed matches teach voiceprints.
     """
     return [
         RecordingVoiceprint.of_speaker(link)
@@ -83,6 +88,7 @@ def other_recording_voiceprints(links: List[Any]) -> List[RecordingVoiceprint]:
         if link.embedding
         and embedding_version_of(link) == EMBEDDING_METHOD_VERSION
         and not is_drift_refused(link)
+        and (include_unconfirmed or link_teaches_library(link))
     ]
 
 

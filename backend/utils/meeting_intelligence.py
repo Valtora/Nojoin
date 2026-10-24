@@ -22,6 +22,7 @@ from backend.utils.meeting_notes import (
     strip_leading_title_heading,
 )
 from backend.utils.prompt_blocks import render_prompt_blocks
+from backend.utils.speaker_names.sources import inferred_name_may_be_replaced
 
 JSON_FENCE_PATTERN = re.compile(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", re.IGNORECASE)
 
@@ -245,6 +246,9 @@ def get_speakers_eligible_for_llm_renaming(
         if not label:
             continue
         if getattr(speaker, "merged_into_id", None):
+            continue
+        if inferred_name_may_be_replaced(speaker):
+            labels.append(label)
             continue
         if getattr(speaker, "local_name", None):
             continue

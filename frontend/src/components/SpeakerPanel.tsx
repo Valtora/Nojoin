@@ -33,7 +33,8 @@ import {
   useSpeakerPanelActions,
 } from "./speakers/_hooks/useSpeakerPanelActions";
 import { useMergedSpeakerClusters } from "./speakers/_hooks/useMergedSpeakerClusters";
-import { loadingButtonProps } from "@/components/ui/loadingButton";
+import { DISABLED_LOOK, loadingButtonProps } from "@/components/ui/loadingButton";
+import { TOUCH_TARGET_HEIGHT } from "@/components/ui/touchTarget";
 
 interface SpeakerPanelProps {
   speakers: RecordingSpeaker[];
@@ -131,8 +132,13 @@ export default function SpeakerPanel({
     createVoiceprint: handleCreateVoiceprint,
     promoteToGlobal: handlePromoteToGlobal,
     undoMerge: handleUndoMerge,
+    isReviewingName,
+    reviewName: handleReviewName,
+    confirmAllNames: handleConfirmAllNames,
     isSubmitting,
   } = actions;
+
+  const pendingEntries = speakerEntries.filter((entry) => entry.pendingName);
 
   const handleContextMenu = (
     e: React.MouseEvent,
@@ -152,6 +158,19 @@ export default function SpeakerPanel({
       className="@container flex h-full min-w-0 flex-col bg-surface-inset"
     >
       <div className="min-h-0 flex-1 overflow-y-auto p-2 pb-clear-floating-2 space-y-2">
+        {pendingEntries.length >= 2 && (
+          <div className="flex justify-end">
+            <button
+              type="button"
+              className={`rounded px-2 py-1 text-xs font-medium bg-action text-action-on hover:bg-action-hover ${TOUCH_TARGET_HEIGHT} ${DISABLED_LOOK}`}
+              {...loadingButtonProps(isReviewingName, undefined, () =>
+                handleConfirmAllNames(pendingEntries),
+              )}
+            >
+              Confirm all ({pendingEntries.length})
+            </button>
+          </div>
+        )}
         {speakerEntries.length === 0 ? (
           <div className="p-4 text-sm text-contrast-helper text-center italic">
             No speakers detected.
@@ -278,11 +297,18 @@ export default function SpeakerPanel({
                       ) : (
                         <>
                           <p
-                            className="text-sm font-medium text-foreground truncate cursor-pointer hover:text-status-info-fg"
-                            title="Double-click to rename"
+                            className="flex min-w-0 text-sm font-medium text-foreground cursor-pointer hover:text-status-info-fg"
+                            title={
+                              entry.pendingName
+                                ? "Suggested name, not confirmed yet. Double-click to rename"
+                                : "Double-click to rename"
+                            }
                             onDoubleClick={() => handleRenameStart(entry)}
                           >
-                            {entry.displayName}
+                            <span className="truncate">{entry.displayName}</span>
+                            {/* Outside the truncated name, so a long one
+                                never hides that it is a suggestion. */}
+                            {entry.pendingName && <span className="shrink-0">?</span>}
                           </p>
                           {/* A rename relabels every line this speaker holds,
                               so it is disclosed once here rather than on each
@@ -336,6 +362,40 @@ export default function SpeakerPanel({
                   )}
                   </div>
                 </div>
+                {/* A suggested name shows at once but links nobody to People
+                    until it is confirmed here or on a transcript line. */}
+                {entry.pendingName && !isRenaming && (
+                  <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1.5 rounded-md border border-status-warning-border bg-status-warning-bg px-2 py-1.5">
+                    {entry.pendingName.reason && (
+                      <p className="min-w-[8rem] flex-1 text-xs text-status-warning-fg">
+                        {entry.pendingName.reason}
+                      </p>
+                    )}
+                    {/* The reason wraps above the buttons in a narrow
+                        column, and a long Not {name} truncates inside it. */}
+                    <div className="ml-auto flex min-w-0 max-w-full items-center gap-1.5">
+                      <button
+                        type="button"
+                        aria-label={`Confirm ${entry.displayName}`}
+                        className={`shrink-0 rounded px-2 py-1 text-xs font-medium bg-action text-action-on hover:bg-action-hover ${TOUCH_TARGET_HEIGHT} ${DISABLED_LOOK}`}
+                        {...loadingButtonProps(isReviewingName, undefined, () =>
+                          handleReviewName(entry, "confirm"),
+                        )}
+                      >
+                        Confirm
+                      </button>
+                      <button
+                        type="button"
+                        className={`min-w-0 max-w-[10rem] truncate rounded border border-control-border bg-surface-card px-2 py-1 text-xs font-medium text-foreground hover:bg-surface-inset ${TOUCH_TARGET_HEIGHT} ${DISABLED_LOOK}`}
+                        {...loadingButtonProps(isReviewingName, undefined, () =>
+                          handleReviewName(entry, "dismiss"),
+                        )}
+                      >
+                        Not {entry.displayName}
+                      </button>
+                    </div>
+                  </div>
+                )}
                 {/* Clusters processing merged into this speaker. Each can be
                     given back its own lines; a merge made by hand is not
                     listed, since its lines carry the person's lock. */}

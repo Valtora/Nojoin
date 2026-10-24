@@ -18,6 +18,7 @@ from backend.models.pipeline import ProcessingRunKind, TranscriptUtteranceState
 from backend.models.transcript import Transcript
 from backend.tests.sqlite_schemas import (
     RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA,
+    SPEAKER_NAME_EVENTS_SCHEMA,
     TIMELINE_NOTES_SCHEMA,
 )
 from backend.utils.canonical_pipeline import (
@@ -161,7 +162,8 @@ CREATE TABLE recording_speakers (
     last_seen_ms INTEGER,
     identity_confidence FLOAT,
     identity_locked BOOLEAN NOT NULL,
-    name_last_edit_source VARCHAR(32)
+    name_last_edit_source VARCHAR(32),
+    name_source VARCHAR(16)
 )
 """
 
@@ -393,6 +395,7 @@ async def test_session_maker() -> sessionmaker:
         await connection.execute(text(TRANSCRIPT_UTTERANCE_EVENTS_SCHEMA))
         await connection.execute(text(RECORDING_SPEAKER_ALIASES_SCHEMA))
         await connection.execute(text(SPEAKER_CORRECTION_EVENTS_SCHEMA))
+        await connection.execute(text(SPEAKER_NAME_EVENTS_SCHEMA))
         await connection.execute(text(PEOPLE_TAGS_SCHEMA))
         await connection.execute(text(TIMELINE_NOTES_SCHEMA))
 
