@@ -7,7 +7,13 @@ export type ExportFormat = "txt" | "pdf" | "docx";
 
 /** What the export dialog asks for: a document of some sections, or the audio. */
 export type ExportSelection =
-  | { kind: "document"; sections: ExportSection[]; format: ExportFormat }
+  | {
+      kind: "document";
+      sections: ExportSection[];
+      format: ExportFormat;
+      /** The reader's own notes, where they fall in the transcript section. */
+      includeNotes: boolean;
+    }
   | { kind: "audio" };
 
 export const exportAudio = async (
@@ -56,6 +62,7 @@ export const exportContent = async (
   sections: ExportSection[],
   format: ExportFormat = "pdf",
   speakerColors: Record<string, string> = {},
+  includeNotes = true,
 ): Promise<void> => {
   try {
     const response = await api.get(`/transcripts/${recordingId}/export`, {
@@ -63,6 +70,7 @@ export const exportContent = async (
         sections,
         export_format: format,
         speaker_colors: JSON.stringify(speakerColors),
+        include_notes: includeNotes,
       },
       // Repeated keys (sections=notes&sections=analytics), which is how
       // FastAPI reads a list, rather than axios's default sections[]=notes.

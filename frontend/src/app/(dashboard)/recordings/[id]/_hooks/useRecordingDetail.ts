@@ -1143,6 +1143,7 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
         selection.sections,
         selection.format,
         speakerColors,
+        selection.includeNotes,
       );
     } catch (error: unknown) {
       console.error("Export failed:", error);

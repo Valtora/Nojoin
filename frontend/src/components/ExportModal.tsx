@@ -9,6 +9,7 @@ import {
   FileText,
   FileType,
   Music,
+  NotebookPen,
   ScrollText,
   StickyNote,
 } from "lucide-react";
@@ -132,10 +133,15 @@ export default function ExportModal({
     defaultSections(hasNotes),
   );
   const [format, setFormat] = useState<ExportFormat>("pdf");
+  const [includeNotes, setIncludeNotes] = useState(true);
+  const hasTranscript = sections.includes("transcript");
 
   // Start each opening from what this recording can actually export.
   useOnDepsChange([isOpen], () => {
-    if (isOpen) setSections(defaultSections(hasNotes));
+    if (isOpen) {
+      setSections(defaultSections(hasNotes));
+      setIncludeNotes(true);
+    }
   });
 
   const toggle = (section: ExportSection) =>
@@ -146,7 +152,7 @@ export default function ExportModal({
     );
 
   const handleExport = () => {
-    onExport({ kind: "document", sections, format });
+    onExport({ kind: "document", sections, format, includeNotes });
     onClose();
   };
 
@@ -218,6 +224,20 @@ export default function ExportModal({
             icon={<ScrollText className="h-5 w-5" />}
             label="Transcript"
             description="The diarized transcript with timestamps"
+          />
+          <OptionCard
+            type="checkbox"
+            name="exportSections"
+            checked={hasTranscript && includeNotes}
+            disabled={!hasTranscript}
+            onChange={() => setIncludeNotes((current) => !current)}
+            icon={<NotebookPen className="h-5 w-5" />}
+            label="My notes in the transcript"
+            description={
+              hasTranscript
+                ? "Your notes, each where it falls in the transcript"
+                : "Tick Transcript to include them"
+            }
           />
         </fieldset>
 

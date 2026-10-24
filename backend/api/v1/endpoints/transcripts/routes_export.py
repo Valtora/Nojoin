@@ -25,6 +25,9 @@ from backend.services.exports.speaker_colors import (
     parse_client_colors,
     resolve_label_colors,
 )
+from backend.services.timeline_note_service import (
+    load_recording_timeline_notes_async,
+)
 from backend.utils.canonical_pipeline import build_transcript_segments_for_read
 from backend.utils.config_manager import EXPORT_BRANDING_KEY, config_manager
 from backend.utils.timezones import get_user_timezone_name
@@ -56,6 +59,9 @@ class ExportQuery(BaseModel):
     # JSON object of diarisation label (or speaker name) to palette key, so the
     # file uses the colours the reader sees in the app. See speaker_colors.py.
     speaker_colors: str | None = Field(default=None, max_length=16_384)
+    # The reader's timeline notes in the transcript section; off for a
+    # transcript shared without them.
+    include_notes: bool = True
 
     def requested_sections(self) -> tuple[str, ...]:
         if self.sections:
@@ -117,6 +123,11 @@ async def _meeting_parts(
         if "analytics" in sections
         else None
     )
+    timeline_notes = (
+        (await load_recording_timeline_notes_async(db, recording.id)).notes
+        if query.include_notes and "transcript" in sections
+        else ()
+    )
     speakers = recording.speakers or []
     label_colors = resolve_label_colors(
         [str(segment.get("speaker") or "Unknown") for segment in segments]
@@ -140,6 +151,7 @@ async def _meeting_parts(
             if analytics
             else {}
         ),
+        timeline_notes=timeline_notes,
     )
 
 

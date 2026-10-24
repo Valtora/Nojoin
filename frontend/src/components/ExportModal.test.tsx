@@ -38,6 +38,7 @@ describe("ExportModal sections", () => {
       kind: "document",
       sections: ["notes"],
       format: "pdf",
+      includeNotes: true,
     });
   });
 
@@ -64,7 +65,47 @@ describe("ExportModal sections", () => {
       kind: "document",
       sections: ["notes", "analytics", "transcript"],
       format: "docx",
+      includeNotes: true,
     });
+  });
+
+  it("puts the reader's notes in the transcript unless unticked, which needs the transcript", () => {
+    const { onExport } = renderModal();
+    const myNotes = section("My notes in the transcript");
+
+    expect(myNotes).toBeDisabled();
+    fireEvent.click(section("Transcript"));
+    expect(myNotes).toBeEnabled();
+    expect(myNotes).toBeChecked();
+    fireEvent.click(myNotes);
+    expect(myNotes).not.toBeChecked();
+    fireEvent.click(exportButton());
+
+    expect(onExport).toHaveBeenCalledWith(
+      expect.objectContaining({ sections: ["notes", "transcript"], includeNotes: false }),
+    );
+  });
+
+  it("puts the notes tick back on each time it opens", () => {
+    const onExport = vi.fn();
+    const modal = (isOpen: boolean) => (
+      <ExportModal
+        isOpen={isOpen}
+        onClose={vi.fn()}
+        onExport={onExport}
+        hasNotes={false}
+        hasAnalytics
+        hasAudio
+      />
+    );
+    const { rerender } = renderWithProviders(modal(true));
+    fireEvent.click(section("My notes in the transcript"));
+    expect(section("My notes in the transcript")).not.toBeChecked();
+
+    rerender(modal(false));
+    rerender(modal(true));
+
+    expect(section("My notes in the transcript")).toBeChecked();
   });
 
   it("cannot export nothing", () => {

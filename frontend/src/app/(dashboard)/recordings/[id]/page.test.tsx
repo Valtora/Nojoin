@@ -20,6 +20,7 @@ const routerRefresh = vi.fn();
 const addNotification = vi.fn();
 const setActivePanel = vi.fn();
 const exportAudio = vi.fn();
+const exportContent = vi.fn();
 
 const getRecording = vi.fn();
 const getSettings = vi.fn();
@@ -102,7 +103,7 @@ vi.mock("@/lib/api", () => ({
   generateNotes: (...args: unknown[]) => generateNotes(...args),
   updateNotes: vi.fn(),
   updateMeetingEdgeFocus: vi.fn(),
-  exportContent: vi.fn(),
+  exportContent: (...args: unknown[]) => exportContent(...args),
   exportAudio: (...args: unknown[]) => exportAudio(...args),
   listTimelineNotes: (...args: unknown[]) => listTimelineNotes(...args),
   createTimelineNote: vi.fn(),
@@ -183,13 +184,21 @@ vi.mock("@/components/ExportModal", () => ({
     onExport,
   }: {
     hasAudio: boolean;
-    onExport: (selection: { kind: "audio" }) => void;
+    onExport: (selection: Record<string, unknown>) => void;
   }) => (
-    <button
-      data-testid="export-modal"
-      data-has-audio={String(hasAudio)}
-      onClick={() => onExport({ kind: "audio" })}
-    />
+    <>
+      <button
+        data-testid="export-modal"
+        data-has-audio={String(hasAudio)}
+        onClick={() => onExport({ kind: "audio" })}
+      />
+      <button
+        data-testid="export-transcript-without-notes"
+        onClick={() =>
+          onExport({ kind: "document", sections: ["transcript"], format: "txt", includeNotes: false })
+        }
+      />
+    </>
   ),
 }));
 vi.mock("./_components/AnalyticsSection", () => ({
@@ -282,6 +291,7 @@ describe("RecordingPage (detail)", () => {
     setSideTab.mockReset();
     setSpeakerPanelCollapsed.mockReset();
     exportAudio.mockReset();
+    exportContent.mockReset().mockResolvedValue(undefined);
     getRecording.mockReset();
     getSettings.mockReset();
     getGlobalSpeakers.mockReset();
@@ -585,6 +595,15 @@ describe("RecordingPage (detail)", () => {
       });
     });
     expect(exportAudio).toHaveBeenCalledWith("rec-1", "Quarterly sync");
+  });
+
+  it("passes the dialog's choice to leave the reader's notes out on to the export", async () => {
+    renderPage();
+
+    fireEvent.click(await screen.findByTestId("export-transcript-without-notes"));
+
+    await waitFor(() => expect(exportContent).toHaveBeenCalledTimes(1));
+    expect(exportContent).toHaveBeenCalledWith("rec-1", ["transcript"], "txt", expect.any(Object), false);
   });
 
   it("renders the notes panel when notes is the active tab", async () => {
