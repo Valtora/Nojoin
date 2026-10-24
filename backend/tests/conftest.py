@@ -1,6 +1,17 @@
 import os
+
+# No test downloads a model (#689). Offline mode makes huggingface_hub refuse
+# every request at once, and fastembed too. Without it, fastembed downloaded
+# the text embedding model when the host had network and retried for 78 s when
+# it had none. Set ahead of the imports below, because huggingface_hub reads it
+# once, on import.
+os.environ["HF_HUB_OFFLINE"] = "1"
+
 import sqlite3
+import sys
 import tempfile
+import traceback
+import types
 from datetime import UTC, date, datetime
 from pathlib import Path
 
@@ -13,8 +24,10 @@ import redis.connection
 # the registry earlier.
 import backend.models.registry  # noqa: F401
 from backend.celery_app import celery_app
+from backend.processing.text_embedding_version import TEXT_EMBEDDING_DIMENSIONS
 from backend.tests.postgres_setup import POSTGRES_TEST_URL_ENV, drop_session_objects
 from backend.tests.redis_guard import (
+    app_frames,
     harden_celery_retry_policies,
     record_and_refuse,
     transcripts_route_modules,
@@ -192,6 +205,83 @@ def fake_single_flight(monkeypatch):
 
     fake = FakeSingleFlightRedis()
     monkeypatch.setattr(single_flight_module, "_open_client", lambda: fake)
+    return fake
+
+
+@pytest.fixture(autouse=True)
+def text_embedding_model_guard(request, monkeypatch):
+    """Fail any test that loads the real text embedding model.
+
+    Offline mode, set at the top of this file, stops fastembed downloading the
+    model, but every caller of the embedding service catches the failure and
+    carries on with nothing indexed. A test that forgets a stub still passes,
+    on the failure path. So fastembed is replaced for the test by a module
+    whose ``TextEmbedding`` records the call and raises, and the test fails in
+    teardown, where the caller's ``except Exception`` cannot reach it.
+
+    Take ``stub_text_embedding`` for vectors. Tests of ``TextEmbeddingService``
+    install their own fastembed over this one. A test that means to load the
+    real model from the model cache takes ``@pytest.mark.real_text_embedding``;
+    offline mode still holds, so nothing is downloaded.
+    """
+    if request.node.get_closest_marker("real_text_embedding"):
+        yield []
+        return
+
+    attempts: list[str] = []
+
+    def _refuse(*args, **kwargs):
+        attempts.append(app_frames(traceback.format_stack()[:-1]))
+        raise RuntimeError(
+            "A test tried to load the real text embedding model. Take the "
+            "stub_text_embedding fixture instead."
+        )
+
+    guard = types.ModuleType("fastembed")
+    guard.TextEmbedding = _refuse
+    monkeypatch.setitem(sys.modules, "fastembed", guard)
+
+    yield attempts
+
+    if attempts:
+        pytest.fail(
+            "Test loaded the real text embedding model "
+            f"({len(attempts)} attempt(s)). Take the stub_text_embedding "
+            "fixture, or mark the test real_text_embedding to load it from the "
+            f"model cache. Last call site:\n\n{attempts[-1]}",
+            pytrace=False,
+        )
+
+
+class FakeTextEmbeddingService:
+    """The text embedding service's ``embed``, with one fixed vector per text.
+
+    The vector has the model's width, so it fits ``context_chunks.embedding``
+    on Postgres too, and unit length, so a cosine distance to it is defined.
+    ``calls`` holds the texts of each call.
+    """
+
+    def __init__(self) -> None:
+        self.calls: list[list[str]] = []
+
+    def embed(self, texts: str | list[str]) -> list[list[float]]:
+        batch = [texts] if isinstance(texts, str) else list(texts)
+        self.calls.append(batch)
+        return [[1.0] + [0.0] * (TEXT_EMBEDDING_DIMENSIONS - 1) for _ in batch]
+
+
+@pytest.fixture
+def stub_text_embedding(monkeypatch):
+    """Give every caller of the text embedding service a fake one.
+
+    Each caller imports ``get_text_embedding_service`` from its module when it
+    runs, so patching the module attribute reaches them all. Returns the fake,
+    so a test can read what was embedded.
+    """
+    from backend.processing import text_embedding
+
+    fake = FakeTextEmbeddingService()
+    monkeypatch.setattr(text_embedding, "get_text_embedding_service", lambda: fake)
     return fake
 
 
