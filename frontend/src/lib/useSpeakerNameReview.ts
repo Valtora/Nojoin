@@ -6,14 +6,16 @@ import { confirmSpeakerName, dismissSpeakerName } from "@/lib/api";
 import { getErrorMessage } from "@/lib/errors";
 import { libraryVoiceprintNotices } from "@/lib/libraryVoiceprint";
 import { useNotificationStore } from "@/lib/notificationStore";
-import { getRecordingSpeakerDisplayName } from "@/lib/recordingSpeakerUtils";
 import type { SpeakerNameDecision } from "@/lib/speakerNameReview";
-import type { GlobalSpeaker, RecordingId, RecordingSpeaker } from "@/types";
+import type { RecordingId, RecordingSpeaker } from "@/types";
 
 /** A speaker whose suggested name is waiting for a decision. */
 export interface PendingSpeakerName {
-  /** The diarization label the decision is sent for. */
-  label: string;
+  /**
+   * The diarization labels the decision is sent for: one for a transcript
+   * line, every pending member of a grouped panel row.
+   */
+  labels: readonly string[];
   /** The suggested name, as the view shows it. */
   name: string;
 }
@@ -21,8 +23,6 @@ export interface PendingSpeakerName {
 export interface UseSpeakerNameReviewOptions {
   recordingId: RecordingId;
   onRefresh: () => void;
-  /** Carries a name change into the notes and title, as a rename does. */
-  onSpeakerRenamed?: (oldName: string, newName: string) => Promise<void> | void;
 }
 
 export interface SpeakerNameReview {
@@ -33,25 +33,18 @@ export interface SpeakerNameReview {
   confirmAll: (pending: readonly PendingSpeakerName[]) => Promise<void>;
 }
 
-// The response's speaker is named locally once its suggestion is dropped, so
-// no library lookup is needed to read its name.
-const NO_GLOBAL_SPEAKERS = new Map<number, GlobalSpeaker>();
-
-const nameAfter = (speakers: RecordingSpeaker[], pending: PendingSpeakerName) => {
-  const speaker = speakers.find((candidate) => candidate.diarization_label === pending.label);
-  return speaker ? getRecordingSpeakerDisplayName(speaker, NO_GLOBAL_SPEAKERS) : pending.label;
-};
-
 const describeNameCount = (count: number) => (count === 1 ? "1 name" : `${count} names`);
 
 /**
  * Confirm and dismiss for suggested speaker names, shared by the speakers
  * panel and the transcript, with their notifications and the refresh after.
+ *
+ * A dismissal edits no text here: the server puts back "Speaker N" and
+ * carries it into the notes, whole words only, as a rename does.
  */
 export function useSpeakerNameReview({
   recordingId,
   onRefresh,
-  onSpeakerRenamed,
 }: UseSpeakerNameReviewOptions): SpeakerNameReview {
   const { addNotification } = useNotificationStore();
   const [isReviewing, setIsReviewing] = useState(false);
@@ -62,23 +55,29 @@ export function useSpeakerNameReview({
     }
   };
 
+  /** Sends the decision for every label in turn; the first failure stops it. */
+  const decide = async (pending: PendingSpeakerName, decision: SpeakerNameDecision) => {
+    const send = decision === "confirm" ? confirmSpeakerName : dismissSpeakerName;
+    const speakers: RecordingSpeaker[] = [];
+    for (const label of pending.labels) {
+      speakers.push(...(await send(recordingId, label)));
+    }
+    return speakers;
+  };
+
   const review = async (pending: PendingSpeakerName, decision: SpeakerNameDecision) => {
     if (isReviewing) return;
     setIsReviewing(true);
     try {
-      if (decision === "confirm") {
-        const speakers = await confirmSpeakerName(recordingId, pending.label);
-        addNotification({ type: "success", message: `Confirmed ${pending.name}.` });
-        notifyVoiceprints(speakers);
-      } else {
-        const speakers = await dismissSpeakerName(recordingId, pending.label);
-        const newName = nameAfter(speakers, pending);
-        if (newName !== pending.name) {
-          await onSpeakerRenamed?.(pending.name, newName);
-        }
-        addNotification({ type: "success", message: `Removed the name ${pending.name}.` });
-        notifyVoiceprints(speakers);
-      }
+      const speakers = await decide(pending, decision);
+      addNotification({
+        type: "success",
+        message:
+          decision === "confirm"
+            ? `Confirmed ${pending.name}.`
+            : `Removed the name ${pending.name}.`,
+      });
+      notifyVoiceprints(speakers);
     } catch (e: unknown) {
       console.error(`Failed to ${decision} the speaker name`, e);
       addNotification({
@@ -105,7 +104,7 @@ export function useSpeakerNameReview({
     let failures = 0;
     for (const name of pending) {
       try {
-        confirmed.push(...(await confirmSpeakerName(recordingId, name.label)));
+        confirmed.push(...(await decide(name, "confirm")));
       } catch (e: unknown) {
         console.error(`Failed to confirm the speaker name ${name.name}`, e);
         failures += 1;

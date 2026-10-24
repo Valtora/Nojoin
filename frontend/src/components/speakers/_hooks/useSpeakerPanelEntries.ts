@@ -31,8 +31,8 @@ export interface SpeakerPanelEntry {
 }
 
 export interface SpeakerPanelPendingName {
-  /** The member whose suggestion Confirm and Not {name} decide. */
-  label: string;
+  /** Every member with a pending name: Confirm and Not {name} decide them all. */
+  labels: string[];
   /** Why the name was suggested ("Suggested by AI"), or null. */
   reason: string | null;
 }
@@ -122,11 +122,11 @@ export function useSpeakerPanelEntries(
           sortedMembers.find((speaker) => getResolvedGlobalSpeakerId(speaker)) ||
           sortedMembers[0];
         const globalSpeakerId = getResolvedGlobalSpeakerId(representative);
-        // Members of a group share one identity, so one decision settles the
-        // row: the representative's, unless only another member is pending.
-        const pendingMember = representative.name_pending
-          ? representative
-          : sortedMembers.find((speaker) => speaker.name_pending);
+        // Members of a group share one identity, so the row's decision
+        // settles every pending member. Its reason is the representative's,
+        // unless only other members are pending.
+        const pendingMembers = sortedMembers.filter((speaker) => speaker.name_pending);
+        const reasonMember = representative.name_pending ? representative : pendingMembers[0];
         const hasVoiceprint =
           sortedMembers.some((speaker) => speaker.has_voiceprint) ||
           !!(globalSpeakerId && globalSpeakerById.get(globalSpeakerId)?.has_voiceprint);
@@ -143,10 +143,10 @@ export function useSpeakerPanelEntries(
           namedByAssistant: sortedMembers.some(
             (speaker) => speaker.name_last_edit_source === "mcp",
           ),
-          pendingName: pendingMember
+          pendingName: reasonMember
             ? {
-                label: pendingMember.diarization_label,
-                reason: describeSuggestedNameSource(pendingMember),
+                labels: pendingMembers.map((speaker) => speaker.diarization_label),
+                reason: describeSuggestedNameSource(reasonMember),
               }
             : null,
         } satisfies SpeakerPanelEntry;

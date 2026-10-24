@@ -126,7 +126,7 @@ export function useSpeakerPanelActions(
   const [batchVoiceprintResults, setBatchVoiceprintResults] =
     useState<BatchVoiceprintResponse | null>(null);
 
-  const nameReview = useSpeakerNameReview({ recordingId, onRefresh, onSpeakerRenamed });
+  const nameReview = useSpeakerNameReview({ recordingId, onRefresh });
 
   const [splitModalOpen, setSplitModalOpen] = useState(false);
   const [speakerToSplit, setSpeakerToSplit] =
@@ -313,7 +313,7 @@ export function useSpeakerPanelActions(
   };
 
   const pendingNameOf = (entry: SpeakerPanelEntry) =>
-    entry.pendingName ? { label: entry.pendingName.label, name: entry.displayName } : null;
+    entry.pendingName ? { labels: entry.pendingName.labels, name: entry.displayName } : null;
 
   const reviewName = async (entry: SpeakerPanelEntry, decision: SpeakerNameDecision) => {
     const pending = pendingNameOf(entry);

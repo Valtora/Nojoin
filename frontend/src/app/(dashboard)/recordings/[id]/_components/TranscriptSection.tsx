@@ -46,8 +46,6 @@ interface TranscriptSectionProps {
   onRenameSpeaker: (label: string, newName: string) => void | Promise<void>;
   /** Reloads the recording, after a line confirms or dismisses a suggested name. */
   onRefresh: () => void;
-  /** Carries a dismissed name's replacement into the notes, as the speakers panel does. */
-  onSpeakerRenamed?: (oldName: string, newName: string) => Promise<void> | void;
   onUpdateSegmentSpeaker: (
     segment: TranscriptSegment,
     assignment: TranscriptSpeakerAssignment,
@@ -85,7 +83,6 @@ export default function TranscriptSection({
   onResume,
   onRenameSpeaker,
   onRefresh,
-  onSpeakerRenamed,
   onUpdateSegmentSpeaker,
   onUpdateSegmentText,
   onFindAndReplace,
@@ -94,13 +91,9 @@ export default function TranscriptSection({
   onExport,
   onActiveEditUtteranceChange,
 }: TranscriptSectionProps) {
-  const nameReview = useSpeakerNameReview({
-    recordingId: recording.id,
-    onRefresh,
-    onSpeakerRenamed,
-  });
+  const nameReview = useSpeakerNameReview({ recordingId: recording.id, onRefresh });
   const reviewSpeakerName = (label: string, name: string, decision: SpeakerNameDecision) =>
-    nameReview.review({ label, name }, decision);
+    nameReview.review({ labels: [label], name }, decision);
   const transcriptStatus = recording.transcript?.transcript_status;
   // The listed notes and those saved from this page since, less any it
   // discarded: the outbox outlives the live view, and its notes land here.

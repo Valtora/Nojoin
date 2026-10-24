@@ -415,9 +415,17 @@ describe("suggested names", () => {
     expect(addNotification).toHaveBeenCalledWith({ type: "success", message: "Confirmed Alice." });
   });
 
-  it("dismisses the name, carries the new one into the notes, and refreshes", async () => {
+  it("dismisses the name and refreshes, leaving the transcript's words alone", async () => {
+    // The server puts back "Speaker 1" and carries it into the notes, whole
+    // words only. A find-and-replace here would also turn "Thanks, Alice"
+    // into "Thanks, Speaker 1" and "Alicester" into "Speaker 1ster".
+    // As the API sends it: the cleared local name is null, not absent.
     dismissSpeakerName.mockResolvedValue([
-      buildSpeaker({ diarization_label: "SPEAKER_00", local_name: "Speaker 1" }),
+      {
+        ...buildSpeaker({ diarization_label: "SPEAKER_00", name: "Speaker 1", name_pending: false }),
+        local_name: null,
+        name_source: null,
+      },
     ]);
     const onSpeakerRenamed = vi.fn();
     const { onRefresh } = renderPanel({ speakers: [pendingAlice, bob], onSpeakerRenamed });
@@ -426,8 +434,18 @@ describe("suggested names", () => {
 
     await waitFor(() => expect(onRefresh).toHaveBeenCalledTimes(1));
     expect(dismissSpeakerName).toHaveBeenCalledWith("rec-1", "SPEAKER_00");
-    expect(onSpeakerRenamed).toHaveBeenCalledWith("Alice", "Speaker 1");
+    expect(onSpeakerRenamed).not.toHaveBeenCalled();
     expect(confirmSpeakerName).not.toHaveBeenCalled();
+  });
+
+  it("shows Confirm and Not with no reason when the source has none to give", () => {
+    renderPanel({
+      speakers: [buildSpeaker({ ...pendingAlice, name_source: "auto", name_pending: true })],
+    });
+
+    expect(screen.getByRole("button", { name: "Confirm Alice" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Not Alice" })).toBeInTheDocument();
+    expect(screen.queryByText("Recognised by voice")).not.toBeInTheDocument();
   });
 
   it("ignores a second click while a decision is in flight", async () => {
@@ -446,6 +464,84 @@ describe("suggested names", () => {
     await waitFor(() => expect(onRefresh).toHaveBeenCalledTimes(1));
     expect(confirmSpeakerName).toHaveBeenCalledTimes(1);
     expect(dismissSpeakerName).not.toHaveBeenCalled();
+  });
+
+  const groupedAlex = () => {
+    const alex = { id: 7, name: "Alex" } as GlobalSpeaker;
+    const member = (label: string, id: number) =>
+      buildSpeaker({
+        diarization_label: label,
+        id,
+        global_speaker_id: 7,
+        global_speaker: alex,
+        name_source: "voiceprint",
+        name_pending: true,
+      });
+    return {
+      speakers: [member("SPEAKER_00", 1), member("SPEAKER_03", 4)],
+      segments: [
+        buildSegment({ speaker: "SPEAKER_00", start: 0, end: 2 }),
+        buildSegment({ speaker: "SPEAKER_03", start: 4, end: 6 }),
+      ],
+      globalSpeakers: [alex],
+    };
+  };
+
+  it("confirms every pending member of a grouped row, with one notification", async () => {
+    const { onRefresh } = renderPanel(groupedAlex());
+
+    // One row, so no Confirm all; its Confirm settles both members.
+    expect(screen.queryByRole("button", { name: /Confirm all/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Confirm Alex" }));
+
+    await waitFor(() => expect(onRefresh).toHaveBeenCalledTimes(1));
+    expect(confirmSpeakerName.mock.calls).toEqual([
+      ["rec-1", "SPEAKER_00"],
+      ["rec-1", "SPEAKER_03"],
+    ]);
+    expect(addNotification.mock.calls).toEqual([
+      [{ type: "success", message: "Confirmed Alex." }],
+    ]);
+  });
+
+  it("dismisses every pending member of a grouped row", async () => {
+    const { onRefresh } = renderPanel(groupedAlex());
+
+    fireEvent.click(screen.getByRole("button", { name: "Not Alex" }));
+
+    await waitFor(() => expect(onRefresh).toHaveBeenCalledTimes(1));
+    expect(dismissSpeakerName.mock.calls).toEqual([
+      ["rec-1", "SPEAKER_00"],
+      ["rec-1", "SPEAKER_03"],
+    ]);
+  });
+
+  it("confirms each pending member of every row with Confirm all", async () => {
+    const grouped = groupedAlex();
+    const pendingBob = buildSpeaker({
+      diarization_label: "SPEAKER_01",
+      local_name: "Bob",
+      id: 2,
+      name_source: "llm",
+      name_pending: true,
+    });
+    const { onRefresh } = renderPanel({
+      ...grouped,
+      speakers: [...grouped.speakers, pendingBob],
+      segments: [...grouped.segments, buildSegment({ speaker: "SPEAKER_01", start: 8, end: 9 })],
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Confirm all (2)" }));
+
+    await waitFor(() => expect(onRefresh).toHaveBeenCalledTimes(1));
+    expect(confirmSpeakerName.mock.calls.map(([, label]) => label).sort()).toEqual([
+      "SPEAKER_00",
+      "SPEAKER_01",
+      "SPEAKER_03",
+    ]);
+    expect(addNotification.mock.calls).toEqual([
+      [{ type: "success", message: "Confirmed 2 names." }],
+    ]);
   });
 
   it("sends the pending member's label for a grouped row whose representative is settled", async () => {

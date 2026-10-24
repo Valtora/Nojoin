@@ -28,6 +28,7 @@ afterAll(() => {
 
 const SEGMENTS: TranscriptSegment[] = [
   { id: "u0", speaker: "SPEAKER_0", start: 0, end: 2, text: "Hi, I'm Alex." },
+  { id: "u1", speaker: "SPEAKER_1", start: 2, end: 4, text: "Thanks, Alex. Alexander sends his best." },
 ];
 
 const RECORDING = {
@@ -49,7 +50,7 @@ const RECORDING = {
 
 const renderSection = () => {
   const onRefresh = vi.fn();
-  const onSpeakerRenamed = vi.fn();
+  const onFindAndReplace = vi.fn();
   render(
     <TranscriptSection
       active
@@ -58,7 +59,7 @@ const renderSection = () => {
       transcriptSegments={SEGMENTS}
       currentTime={-1}
       isPlaying={false}
-      speakerMap={{ SPEAKER_0: "Alex" }}
+      speakerMap={{ SPEAKER_0: "Alex", SPEAKER_1: "Speaker 2" }}
       speakerColors={{}}
       globalSpeakers={[]}
       canUndo={false}
@@ -69,17 +70,16 @@ const renderSection = () => {
       onResume={vi.fn()}
       onRenameSpeaker={vi.fn()}
       onRefresh={onRefresh}
-      onSpeakerRenamed={onSpeakerRenamed}
       onUpdateSegmentSpeaker={vi.fn()}
       onUpdateSegmentText={vi.fn()}
-      onFindAndReplace={vi.fn()}
+      onFindAndReplace={onFindAndReplace}
       onUndo={vi.fn()}
       onRedo={vi.fn()}
       onExport={vi.fn()}
       onActiveEditUtteranceChange={vi.fn()}
     />,
   );
-  return { onRefresh, onSpeakerRenamed };
+  return { onRefresh, onFindAndReplace };
 };
 
 const openReview = () =>
@@ -103,24 +103,37 @@ describe("TranscriptSection suggested names", () => {
     expect(addNotification).toHaveBeenCalledWith({ type: "success", message: "Confirmed Alex." });
   });
 
-  it("dismisses it and carries the speaker's new name into the notes", async () => {
+  it("dismisses it and leaves the words of the transcript alone", async () => {
+    // The server puts back "Speaker 1" and carries it into the notes itself.
     dismissSpeakerName.mockResolvedValue([
-      { id: 1, recording_id: "rec-1", diarization_label: "SPEAKER_0", local_name: "Speaker 1" },
+      {
+        id: 1,
+        recording_id: "rec-1",
+        diarization_label: "SPEAKER_0",
+        local_name: null,
+        name: "Speaker 1",
+        name_source: null,
+        name_pending: false,
+      },
     ]);
-    const { onRefresh, onSpeakerRenamed } = renderSection();
+    const { onRefresh, onFindAndReplace } = renderSection();
 
     openReview();
     fireEvent.click(screen.getByRole("button", { name: "Not Alex" }));
 
     await waitFor(() => expect(onRefresh).toHaveBeenCalledTimes(1));
     expect(dismissSpeakerName).toHaveBeenCalledWith("rec-1", "SPEAKER_0");
-    expect(onSpeakerRenamed).toHaveBeenCalledWith("Alex", "Speaker 1");
+    expect(onFindAndReplace).not.toHaveBeenCalled();
+    expect(addNotification).toHaveBeenCalledWith({
+      type: "success",
+      message: "Removed the name Alex.",
+    });
   });
 
   it("reports a refused decision and still reloads, so the view catches up", async () => {
     confirmSpeakerName.mockRejectedValue({
       isAxiosError: true,
-      response: { status: 409, data: { detail: "This speaker has no suggested name to confirm." } },
+      response: { status: 409, data: { detail: "This speaker has no name awaiting confirmation" } },
     });
     const { onRefresh } = renderSection();
 
@@ -130,7 +143,7 @@ describe("TranscriptSection suggested names", () => {
     await waitFor(() => expect(onRefresh).toHaveBeenCalledTimes(1));
     expect(addNotification).toHaveBeenCalledWith({
       type: "error",
-      message: "This speaker has no suggested name to confirm.",
+      message: "This speaker has no name awaiting confirmation",
     });
   });
 });
