@@ -17,7 +17,7 @@ from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import create_engine, text
-from sqlmodel import Session, SQLModel, select
+from sqlmodel import Session, select
 
 from backend.core.backup import export as backup_export
 from backend.core.backup import runtime
@@ -28,6 +28,7 @@ from backend.models.speaker import GlobalSpeaker
 from backend.models.timeline_note import TimelineNote
 from backend.models.transcript import Transcript
 from backend.models.user import User
+from backend.tests.postgres_setup import fresh_schema
 from backend.utils.time import utc_now
 
 SCHEMA = "backup_fingerprint_test"
@@ -41,10 +42,8 @@ def engine(postgres_test_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPat
         connect_args={"options": f"-csearch_path={SCHEMA},public"},
     )
     with engine.begin() as connection:
-        connection.execute(text(f"DROP SCHEMA IF EXISTS {SCHEMA} CASCADE"))
         connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-        connection.execute(text(f"CREATE SCHEMA {SCHEMA}"))
-    SQLModel.metadata.create_all(engine)
+    fresh_schema(engine, SCHEMA)
 
     (tmp_path / "recordings").mkdir()
     (tmp_path / "documents").mkdir()
@@ -62,8 +61,6 @@ def engine(postgres_test_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPat
     try:
         yield engine
     finally:
-        with engine.begin() as connection:
-            connection.execute(text(f"DROP SCHEMA IF EXISTS {SCHEMA} CASCADE"))
         engine.dispose()
 
 

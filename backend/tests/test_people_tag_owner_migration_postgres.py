@@ -22,6 +22,8 @@ import psycopg
 import pytest
 from sqlalchemy.engine import make_url
 
+from backend.tests.postgres_setup import migrate_empty_database
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BEFORE = "7cee4b4388a7"
 TAG_OWNERS = "f704bbd87f98"
@@ -168,7 +170,7 @@ def _state(conn: psycopg.Connection) -> tuple[dict, dict, dict]:
 
 
 def test_every_people_tag_gets_the_owner_who_uses_it(scratch_database: str) -> None:
-    _alembic(scratch_database, "upgrade", BEFORE)
+    migrate_empty_database(scratch_database, BEFORE)
     with psycopg.connect(scratch_database) as conn:
         _seed_before(conn)
 

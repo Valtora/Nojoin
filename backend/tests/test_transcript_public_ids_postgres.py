@@ -15,12 +15,13 @@ import importlib
 
 import pytest
 from sqlalchemy import create_engine, text
-from sqlmodel import Session, SQLModel
+from sqlmodel import Session
 
 from backend.core.db import driver_urls
 from backend.models.recording import Recording
 from backend.models.transcript import Transcript
 from backend.models.user import User
+from backend.tests.postgres_setup import fresh_schema
 from backend.tests.test_transcript_utils import (
     WORDLESS_SEGMENT_TURNS,
     FakeDiarization,
@@ -45,13 +46,9 @@ def pg_engine(postgres_test_url: str):
     )
     try:
         with engine.begin() as connection:
-            connection.execute(text(f"DROP SCHEMA IF EXISTS {SCHEMA} CASCADE"))
             connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-            connection.execute(text(f"CREATE SCHEMA {SCHEMA}"))
-        SQLModel.metadata.create_all(engine)
+        fresh_schema(engine, SCHEMA)
         yield engine
-        with engine.begin() as connection:
-            connection.execute(text(f"DROP SCHEMA IF EXISTS {SCHEMA} CASCADE"))
     finally:
         engine.dispose()
 

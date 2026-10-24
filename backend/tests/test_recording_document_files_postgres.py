@@ -29,7 +29,7 @@ from sqlalchemy import create_engine, event, func, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
-from sqlmodel import Session, SQLModel, select
+from sqlmodel import Session, select
 
 from backend.api.deps import get_current_recording_client_user, get_current_user, get_db
 from backend.api.v1.api import api_router
@@ -39,6 +39,7 @@ from backend.models.document import Document, DocumentStatus
 from backend.models.document_page import DocumentPage
 from backend.models.recording import Recording, RecordingStatus
 from backend.models.user import User, UserRead, UserRole
+from backend.tests.postgres_setup import fresh_schema
 from backend.utils import rate_limit
 from backend.worker.tasks import documents as document_tasks
 
@@ -58,10 +59,8 @@ def harness(postgres_test_url, tmp_path, monkeypatch, stub_celery_dispatch):
         sync_url, connect_args={"options": f"-csearch_path={SCHEMA},public"}
     )
     with sync_engine.begin() as connection:
-        connection.execute(text(f"DROP SCHEMA IF EXISTS {SCHEMA} CASCADE"))
         connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-        connection.execute(text(f"CREATE SCHEMA {SCHEMA}"))
-    SQLModel.metadata.create_all(sync_engine)
+    fresh_schema(sync_engine, SCHEMA)
 
     # NullPool: the parse test drives the API from more than one event loop.
     async_engine = create_async_engine(
@@ -122,8 +121,6 @@ def harness(postgres_test_url, tmp_path, monkeypatch, stub_celery_dispatch):
             tmp_path=tmp_path,
         )
     finally:
-        with sync_engine.begin() as connection:
-            connection.execute(text(f"DROP SCHEMA IF EXISTS {SCHEMA} CASCADE"))
         sync_engine.dispose()
 
 
