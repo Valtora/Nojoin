@@ -153,14 +153,22 @@ def delete_recording_artifacts(
 ) -> None:
     """Remove a recording's audio and proxy, and with an id its upload temp directory.
 
-    Only files inside ``root`` are removed, :func:`recordings_root_dir` when it is
-    not given. The restore passes its own recordings directory.
+    Only files inside ``root`` are removed when it is given. Otherwise, either
+    directory from :func:`stored_paths.recording_roots` is allowed. The restore
+    passes its own recordings directory.
     """
-    recordings_root = root if root is not None else recordings_root_dir(create=False)
+    # Import locally because stored_paths uses this module's path resolvers.
+    from backend.utils.stored_paths import recording_roots
+
+    roots = (root,) if root is not None else recording_roots()
     seen: set[Path] = set()
 
     for raw_path in (audio_path, proxy_path):
-        resolved = resolve_path_within_root(raw_path, recordings_root)
+        resolved = None
+        for recordings_root in roots:
+            resolved = resolve_path_within_root(raw_path, recordings_root)
+            if resolved is not None:
+                break
         if resolved is None or resolved in seen:
             continue
 

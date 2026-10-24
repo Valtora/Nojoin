@@ -3,13 +3,16 @@ from __future__ import annotations
 import logging
 import os
 import time
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import text
 from sqlmodel import Session, create_engine
 
+from backend.utils import stored_paths
 from backend.utils.recording_storage import (
     cleanup_recording_audio_chunks,
     cleanup_stale_recording_artifacts,
@@ -50,6 +53,74 @@ def storage_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     root.mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv("RECORDINGS_DIR", str(root))
     return root
+
+
+@pytest.fixture
+def path_manager_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    stored_files_may_live_in_temp: tuple[Callable[[], tuple[Path, ...]], ...],
+) -> Path:
+    root = tmp_path / "restored-recordings"
+    root.mkdir()
+    monkeypatch.setattr(
+        stored_paths, "PathManager", lambda: SimpleNamespace(recordings_directory=root)
+    )
+    # Undo the suite's /tmp allowance so paths outside both roots are refused.
+    monkeypatch.setattr(
+        stored_paths, "recording_roots", stored_files_may_live_in_temp[0]
+    )
+    return root
+
+
+def test_delete_recording_artifacts_removes_path_manager_audio(
+    storage_root: Path,
+    path_manager_root: Path,
+) -> None:
+    audio_path = path_manager_root / "restored.wav"
+    proxy_path = storage_root / "restored.mp3"
+    audio_path.write_bytes(b"wav")
+    proxy_path.write_bytes(b"mp3")
+
+    delete_recording_artifacts(
+        recording_id=700,
+        audio_path=str(audio_path),
+        proxy_path=str(proxy_path),
+        logger=logging.getLogger(__name__),
+    )
+
+    assert not audio_path.exists()
+    assert not proxy_path.exists()
+
+
+@pytest.mark.parametrize(
+    "route", ["absolute", "upload-parent", "restore-parent", "symlink"]
+)
+def test_delete_recording_artifacts_keeps_paths_outside_both_roots(
+    storage_root: Path,
+    path_manager_root: Path,
+    tmp_path: Path,
+    route: str,
+) -> None:
+    outside = tmp_path / "unrelated.wav"
+    outside.write_bytes(b"keep")
+    linked = path_manager_root / "linked.wav"
+    linked.symlink_to(outside)
+    paths = {
+        "absolute": outside,
+        "upload-parent": storage_root / ".." / outside.name,
+        "restore-parent": path_manager_root / ".." / outside.name,
+        "symlink": linked,
+    }
+
+    delete_recording_artifacts(
+        recording_id=701,
+        audio_path=str(paths[route]),
+        proxy_path=None,
+        logger=logging.getLogger(__name__),
+    )
+
+    assert outside.read_bytes() == b"keep"
 
 
 def test_delete_recording_artifacts_removes_distinct_audio_proxy_and_temp_dir(
