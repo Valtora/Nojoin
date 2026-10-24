@@ -64,6 +64,11 @@ from .router import router
 
 logger = logging.getLogger(__name__)
 
+# A name that reads like a fallback label: never a person's name.
+PLACEHOLDER_NAME_PATTERN = re.compile(
+    r"^(SPEAKER_\d+|Speaker \d+|Unknown)$", re.IGNORECASE
+)
+
 
 @router.put(
     "/recordings/{recording_id}", response_model=List[RecordingSpeakerPublicRead]
@@ -399,10 +404,7 @@ async def promote_speaker_to_global(
         or recording_speaker.diarization_label
     )
 
-    placeholder_pattern = re.compile(
-        r"^(SPEAKER_\d+|Speaker \d+|Unknown)$", re.IGNORECASE
-    )
-    if placeholder_pattern.match(speaker_name):
+    if PLACEHOLDER_NAME_PATTERN.match(speaker_name):
         raise HTTPException(
             status_code=400,
             detail="Cannot promote a speaker with a placeholder name. Please rename them first.",

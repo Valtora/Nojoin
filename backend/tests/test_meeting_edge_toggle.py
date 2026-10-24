@@ -41,6 +41,10 @@ class _FakeSession:
             return _ExecResult(first_value=self.transcript)
         return _ExecResult(all_values=[])
 
+    def execute(self, statement):
+        # The live speaker names: none given.
+        return _ExecResult(all_values=[])
+
     def add(self, obj):
         self.added.append(obj)
 

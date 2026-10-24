@@ -9,6 +9,7 @@ contextvars the auth middleware sets.
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime
 
@@ -71,6 +72,7 @@ from backend.models.transcript import Transcript
 from backend.models.user import User
 from backend.tests.sqlite_schemas import (
     RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA,
+    SPEAKER_NAME_EVENTS_SCHEMA,
     TIMELINE_NOTES_SCHEMA,
 )
 
@@ -484,6 +486,7 @@ async def session_maker():
         for stmt in SCHEMA_STATEMENTS:
             await conn.execute(text(stmt))
         await conn.execute(text(RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA))
+        await conn.execute(text(SPEAKER_NAME_EVENTS_SCHEMA))
     factory = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     yield factory
     await engine.dispose()
@@ -2804,3 +2807,43 @@ async def test_get_transcript_utterances_names_a_live_label_as_the_panel_does(
 
     speakers = {u["id"]: u["speaker"] for u in result["utterances"]}
     assert speakers == {"u-1": "SPEAKER_00", "u-2": "Speaker 4"}
+
+
+@pytest.mark.anyio
+async def test_both_transcript_tools_show_the_name_a_live_label_was_given(
+    session_maker, test_user: User, mcp_context
+):
+    from backend.mcp_server.server import get_transcript
+
+    bind_mcp_identity(test_user)
+    public_id = await seed_recording_with_speakers(session_maker, user_id=test_user.id)
+    await seed_canonical_transcript(session_maker)
+    async with session_maker() as session:
+        await session.execute(
+            text(
+                "UPDATE transcript_utterances SET speaker_label = 'LIVE_PROVISIONAL_4', "
+                "recording_speaker_id = NULL WHERE public_id = 'u-2'"
+            )
+        )
+        # As naming the live speaker during capture records it.
+        await session.execute(
+            text(
+                "INSERT INTO speaker_name_events (created_at, updated_at, public_id, "
+                "recording_id, kind, name, source, authority, surface, "
+                "anchor_start_ms, anchor_end_ms, anchor_label) VALUES (:now, :now, "
+                "'ev-live', 1, 'name', 'Alex', 'user', 40, 'live', 1500, 3000, "
+                "'LIVE_PROVISIONAL_4')"
+            ),
+            {"now": TEST_TIMESTAMP},
+        )
+        await session.commit()
+
+    utterances = await get_transcript_utterances(public_id)
+    transcript = await get_transcript(public_id)
+
+    speakers = {u["id"]: u["speaker"] for u in utterances["utterances"]}
+    assert speakers == {"u-1": "SPEAKER_00", "u-2": "Alex"}
+    # No raw live label reaches the assistant, in the names map or anywhere.
+    assert "LIVE_PROVISIONAL" not in json.dumps(utterances, default=str)
+    assert "Alex:" in transcript["transcript"]
+    assert "Speaker 4" not in transcript["transcript"]
