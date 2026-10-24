@@ -13,6 +13,9 @@ import backend.worker.tasks as tasks_module
 from backend.tests.sqlite_schemas import TIMELINE_NOTES_SCHEMA
 from backend.utils.context_window import ContextWindowExceededError
 
+# Generated notes are indexed for search, which embeds them (#689).
+pytestmark = pytest.mark.usefixtures("stub_text_embedding")
+
 BASE_SCHEMA = """
 CREATE TABLE invitations (
     id INTEGER PRIMARY KEY,
@@ -258,6 +261,7 @@ def _run_generate_notes_task(engine: Any) -> None:
 def test_generate_notes_task_completes_with_saved_provider_config(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    stub_text_embedding,
 ) -> None:
     monkeypatch.setattr(tasks_module.config_manager, "get_all", lambda: {})
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-valid")
@@ -320,6 +324,9 @@ def test_generate_notes_task_completes_with_saved_provider_config(
                     "SELECT notes, notes_status, error_message, processing_step, processing_progress FROM transcripts JOIN recordings ON transcripts.recording_id = recordings.id WHERE transcripts.id = 1"
                 )
             ).one()
+            chunks = session.exec(
+                text("SELECT content, meta FROM context_chunks ORDER BY id")
+            ).all()
 
         # The user's own notes follow the generated ones, in timeline order.
         assert row[0] == (
@@ -345,6 +352,12 @@ def test_generate_notes_task_completes_with_saved_provider_config(
         assert "Remember the launch date" in captured["user_notes"]
         assert "Ask about QA" not in captured["user_notes"]
         assert "English" in captured["output_language_instruction"]
+        # The generated notes, without the user's own, are indexed for search.
+        generated = "# Meeting Notes\n\n## Summary\nGenerated notes."
+        assert stub_text_embedding.calls == [[generated]]
+        assert [(chunk[0], json.loads(chunk[1])["source"]) for chunk in chunks] == [
+            (generated, "notes")
+        ]
     finally:
         verification_engine.dispose()
 

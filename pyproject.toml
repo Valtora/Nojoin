@@ -12,7 +12,8 @@ testpaths = [
   "backend/tests"
 ]
 markers = [
-  "pipeline_baseline: marker for pipeline baseline evaluation metrics"
+  "pipeline_baseline: marker for pipeline baseline evaluation metrics",
+  "real_text_embedding: load the real text embedding model from the model cache instead of failing (conftest.py's text_embedding_model_guard)"
 ]
 
 [tool.mypy]
