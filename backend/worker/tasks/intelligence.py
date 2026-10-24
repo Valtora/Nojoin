@@ -1,8 +1,10 @@
 from backend.models.transcript import TRANSCRIPTION_FAILED_NOTES_MESSAGE
 from backend.utils.context_window import ContextWindowExceededError
 from backend.utils.live_speaker_labels import speaker_display_name
+from backend.utils.speaker_names.sources import inferred_name_may_be_replaced
 
 from .constants import *
+from .speaker_name_apply import apply_inferred_names
 
 
 @celery_app.task(
@@ -611,7 +613,12 @@ def _build_persisted_speaker_name_suggestions(
         speaker = speakers_by_label.get(suggestion.diarization_label)
         if speaker is None:
             continue
-        if speaker.merged_into_id or speaker.local_name or speaker.global_speaker_id:
+        # A pending self-introduction or LLM name may be replaced; a name the
+        # user gave, a voiceprint match and a merge may not.
+        trusted = bool(speaker.local_name or speaker.global_speaker_id)
+        if speaker.merged_into_id or (
+            trusted and not inferred_name_may_be_replaced(speaker)
+        ):
             logger.info(
                 "Skipping speaker suggestion for trusted or merged label %s",
                 suggestion.diarization_label,
@@ -631,82 +638,6 @@ def _build_persisted_speaker_name_suggestions(
         )
 
     return persisted
-
-
-def _auto_apply_persisted_speaker_name_suggestions(
-    session,
-    *,
-    recording: Recording,
-    speakers: Sequence[RecordingSpeaker],
-    persisted: list[dict[str, object]],
-) -> list[dict[str, object]]:
-    """Apply inferred speaker names immediately instead of holding them for review.
-
-    Mirrors the manual rename endpoint: an exact global speaker match links the
-    recording speaker to the global library entry (merging voiceprint
-    embeddings), otherwise the suggested name becomes the local name. Returns
-    the suggestion dicts that were applied (mutated in place to status
-    "accepted" with resolution reason "auto_applied"). A suggestion that
-    matches no live recording speaker is skipped and omitted from the result,
-    so no unresolvable "pending" entry is persisted now that the accept/reject
-    review flow is gone.
-    """
-    speakers_by_id = {speaker.id: speaker for speaker in speakers}
-    timestamp = datetime.now(UTC).isoformat()
-    applied: list[dict[str, object]] = []
-    for suggestion in persisted:
-        suggested_name = str(suggestion.get("suggested_name") or "").strip()
-        speaker = speakers_by_id.get(suggestion.get("recording_speaker_id"))
-        if speaker is None or not suggested_name:
-            continue
-
-        raw_global_speaker_id = suggestion.get("suggested_global_speaker_id")
-        # Global speaker ids are integer PKs; bool is an int subclass and
-        # floats (incl. nan/inf) would break int(), so accept plain ints only.
-        global_speaker = (
-            session.get(GlobalSpeaker, raw_global_speaker_id)
-            if isinstance(raw_global_speaker_id, int)
-            and not isinstance(raw_global_speaker_id, bool)
-            else None
-        )
-        raw_confidence = suggestion.get("confidence")
-        # No per-speaker error recovery: the inputs are already validated
-        # (global_speaker is a fetched row, so its FK is valid; local_name has
-        # no constraints), so this does not raise in normal operation. A real
-        # failure here is systemic (DB unavailable) or a genuine bug (e.g.
-        # mismatched embedding dimensions) and should fail the task loudly
-        # rather than be silently skipped; the stage-level handler then marks
-        # notes as errored while the transcript and diarisation already
-        # persisted in earlier stages remain intact. identity_locked stays
-        # untouched: locking is reserved for human-confirmed identity, so
-        # auto-applied names remain overridable by future signals.
-        apply_recording_speaker_identity_fields(
-            session,
-            speaker,
-            new_speaker_name=suggested_name,
-            target_global_speaker=global_speaker,
-            merge_global_embedding_alpha=0.3 if global_speaker is not None else None,
-            identity_confidence=(
-                float(raw_confidence)
-                if isinstance(raw_confidence, (int, float))
-                else None
-            ),
-        )
-
-        suggestion["status"] = SPEAKER_SUGGESTION_STATUS_ACCEPTED
-        suggestion["updated_at"] = timestamp
-        suggestion["resolved_at"] = timestamp
-        suggestion["resolution_reason"] = "auto_applied"
-        # No human actor for auto-applied names; set explicitly so the audit
-        # trail is consistent with the accepted/rejected/superseded paths.
-        suggestion["resolution_actor_user_id"] = None
-        applied.append(suggestion)
-
-    # No metric emitted here: it would fire before the caller's commit and
-    # report a phantom success if that commit fails. The post-commit
-    # "speaker_name_suggestions_generated" metric already reports the persisted
-    # (== applied) count honestly.
-    return applied
 
 
 def _persist_generated_speaker_name_suggestions_impl(
@@ -745,16 +676,10 @@ def _persist_generated_speaker_name_suggestions_impl(
         return 0
 
     # Apply before persisting: persist_transcript_speaker_suggestions copies
-    # the dicts, so resolution fields must already be set on them. Only the
-    # applied suggestions are persisted, as an audit trail; a suggestion that
-    # matched no live speaker is dropped rather than written as a "pending"
-    # entry nothing can resolve.
-    applied = _auto_apply_persisted_speaker_name_suggestions(
-        session,
-        recording=recording,
-        speakers=speakers,
-        persisted=persisted,
-    )
+    # the dicts, so resolution fields must already be set on them. A pending
+    # name's suggestion is persisted "pending" until the user confirms or
+    # dismisses it; a suggestion that matched no live speaker is dropped.
+    applied = apply_inferred_names(session, recording, speakers, persisted)
     if not applied:
         return 0
     persist_transcript_speaker_suggestions(

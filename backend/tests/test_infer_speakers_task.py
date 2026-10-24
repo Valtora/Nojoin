@@ -13,7 +13,9 @@ import backend.utils.llm_config as llm_config_module
 import backend.worker.tasks as tasks_module
 from backend.tests.sqlite_schemas import (
     RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA,
+    SPEAKER_NAME_EVENTS_SCHEMA,
     TIMELINE_NOTES_SCHEMA,
+    TRANSCRIPT_UTTERANCES_SCHEMA,
 )
 from backend.utils.meeting_notes import MeetingEventContext
 from backend.utils.speaker_name_suggestions import (
@@ -127,7 +129,8 @@ CREATE TABLE recording_speakers (
     last_seen_ms INTEGER,
     identity_confidence FLOAT,
     identity_locked BOOLEAN NOT NULL DEFAULT 0,
-    name_last_edit_source VARCHAR(32)
+    name_last_edit_source VARCHAR(32),
+    name_source VARCHAR(16)
 );
 
 CREATE TABLE recording_speaker_aliases (
@@ -174,6 +177,8 @@ def _create_infer_speakers_task_database(
         for statement in BASE_SCHEMA.strip().split(";\n\n"):
             connection.execute(text(statement))
         connection.execute(text(RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA))
+        connection.execute(text(TRANSCRIPT_UTTERANCES_SCHEMA))
+        connection.execute(text(SPEAKER_NAME_EVENTS_SCHEMA))
 
         connection.execute(
             text(
@@ -501,6 +506,13 @@ def test_infer_speakers_task_updates_speakers_and_restores_recording_state(
                     "SELECT diarization_label, local_name, name, identity_confidence, identity_locked FROM recording_speakers WHERE recording_id = 1 ORDER BY diarization_label"
                 )
             ).all()
+            name_sources = dict(
+                session.exec(
+                    text(
+                        "SELECT diarization_label, name_source FROM recording_speakers WHERE recording_id = 1"
+                    )
+                ).all()
+            )
             raw_suggestions = session.exec(
                 text(
                     "SELECT speaker_name_suggestions FROM transcripts WHERE recording_id = 1"
@@ -518,20 +530,23 @@ def test_infer_speakers_task_updates_speakers_and_restores_recording_state(
         assert {
             label: (local_name, name) for label, local_name, name, _, _ in speaker_rows
         } == {
-            "SPEAKER_00": ("Alex", None),
+            # Pending: the row keeps its "Speaker N" for Not {name}.
+            "SPEAKER_00": ("Alex", "Speaker 1"),
             "SPEAKER_01": (None, "Dana"),
         }
         confidence_by_label = {
             label: (identity_confidence, bool(identity_locked))
             for label, _, _, identity_confidence, identity_locked in speaker_rows
         }
-        # Auto-apply records the model confidence but never locks identity.
+        # The pending name records the model confidence and never locks.
         assert confidence_by_label["SPEAKER_00"] == (0.92, False)
+        assert name_sources == {"SPEAKER_00": "llm", "SPEAKER_01": None}
         assert len(suggestions) == 1
         assert suggestions[0]["diarization_label"] == "SPEAKER_00"
         assert suggestions[0]["suggested_name"] == "Alex"
-        assert suggestions[0]["status"] == "accepted"
-        assert suggestions[0]["resolution_reason"] == "auto_applied"
+        # The name shows at once but waits for the user's confirmation.
+        assert suggestions[0]["status"] == "pending"
+        assert suggestions[0]["resolution_reason"] is None
         assert "SPEAKER_00 - Hello team." in captured["transcript"]
         assert "SPEAKER_01 - The rollout is on Friday." in captured["transcript"]
         # This transcript carries no notes, so the section lists them all.
@@ -624,8 +639,9 @@ def test_infer_speakers_task_uses_llm_for_self_intro_labels_when_configured(
         assert suggestions[0]["suggested_name"] == "Alex"
         assert suggestions[0]["source"] == "llm"
         assert suggestions[0]["provider"] == "openai"
-        assert suggestions[0]["status"] == "accepted"
-        assert suggestions[0]["resolution_reason"] == "auto_applied"
+        # The name shows at once but waits for the user's confirmation.
+        assert suggestions[0]["status"] == "pending"
+        assert suggestions[0]["resolution_reason"] is None
     finally:
         verification_engine.dispose()
 
@@ -879,8 +895,9 @@ def test_infer_speakers_task_persists_rule_based_self_intro_without_llm(
         assert suggestions[0]["diarization_label"] == "SPEAKER_00"
         assert suggestions[0]["suggested_name"] == "Alex"
         assert suggestions[0]["source"] == "deterministic_rule"
-        assert suggestions[0]["status"] == "accepted"
-        assert suggestions[0]["resolution_reason"] == "auto_applied"
+        # The name shows at once but waits for the user's confirmation.
+        assert suggestions[0]["status"] == "pending"
+        assert suggestions[0]["resolution_reason"] is None
         assert suggestions[0]["evidence_spans"][0]["reason"] == "self_introduction"
     finally:
         verification_engine.dispose()
@@ -975,7 +992,8 @@ def test_infer_speakers_task_uses_canonical_segments_when_projection_is_empty(
         assert {
             label: (local_name, name) for label, local_name, name in speaker_rows
         } == {
-            "SPEAKER_00": ("Alex", None),
+            # Pending: the row keeps its "Speaker N" for Not {name}.
+            "SPEAKER_00": ("Alex", "Speaker 1"),
             "SPEAKER_01": (None, "Dana"),
         }
         assert len(suggestions) == 1

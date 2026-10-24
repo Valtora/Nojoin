@@ -29,6 +29,7 @@ from backend.processing.embedding import (
     VoiceprintStatus,
 )
 from backend.utils.language_notice import language_notice
+from backend.utils.speaker_names.sources import name_is_pending
 
 
 class PublicModel(BaseModel):
@@ -72,6 +73,12 @@ class RecordingSpeakerPublicRead(PublicModel):
     # "api" for the web app, "mcp" for a connected assistant, None where the
     # name came from the pipeline or predates provenance being recorded.
     name_last_edit_source: Optional[str] = None
+    # The source that gave the name: heuristic, llm, voiceprint, auto (confirmed
+    # by the setting) or user. None on "Speaker N" and on older rows.
+    name_source: Optional[str] = None
+    # A name nobody has confirmed yet, shown as "Alex?" with Confirm and Dismiss
+    # (backend/utils/speaker_names/sources.py, name_is_pending).
+    name_pending: bool = False
     global_speaker: Optional[GlobalSpeakerRead] = None
     # Set only on the rename and promote responses, and only when the speaker's
     # voiceprint was offered to a person's library voiceprint.
@@ -300,6 +307,9 @@ def serialize_recording_speaker(
         last_seen_ms=speaker.last_seen_ms,
         identity_confidence=speaker.identity_confidence,
         identity_locked=speaker.identity_locked,
+        name_last_edit_source=speaker.name_last_edit_source,
+        name_source=speaker.name_source,
+        name_pending=name_is_pending(speaker),
         global_speaker=(
             GlobalSpeakerRead.model_validate(speaker.global_speaker)
             if speaker.global_speaker is not None

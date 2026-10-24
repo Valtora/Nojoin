@@ -8,6 +8,8 @@ import RecordingUnsavedNotes from "@/components/notes/RecordingUnsavedNotes";
 import { inlineNotes, type OutboxDraft } from "@/lib/notes/noteOutbox";
 import type { EditableNote, NoteEdits } from "@/lib/notes/useNoteEdits";
 import { useNoteOutbox } from "@/lib/notes/useNoteOutbox";
+import type { SpeakerNameDecision } from "@/lib/speakerNameReview";
+import { useSpeakerNameReview } from "@/lib/useSpeakerNameReview";
 import {
   RecordingStatus,
   type GlobalSpeaker,
@@ -44,6 +46,8 @@ interface TranscriptSectionProps {
   onPause: () => void;
   onResume: () => void;
   onRenameSpeaker: (label: string, newName: string) => void | Promise<void>;
+  /** Reloads the recording, after a line confirms or dismisses a suggested name. */
+  onRefresh: () => void;
   onUpdateSegmentSpeaker: (
     segment: TranscriptSegment,
     assignment: TranscriptSpeakerAssignment,
@@ -81,6 +85,7 @@ export default function TranscriptSection({
   onPause,
   onResume,
   onRenameSpeaker,
+  onRefresh,
   onUpdateSegmentSpeaker,
   onUpdateSegmentText,
   onFindAndReplace,
@@ -89,6 +94,9 @@ export default function TranscriptSection({
   onExport,
   onActiveEditUtteranceChange,
 }: TranscriptSectionProps) {
+  const nameReview = useSpeakerNameReview({ recordingId: recording.id, onRefresh });
+  const reviewSpeakerName = (label: string, name: string, decision: SpeakerNameDecision) =>
+    nameReview.review({ labels: [label], name }, decision);
   const transcriptStatus = recording.transcript?.transcript_status;
   // The listed notes and those saved from this page since, less any it
   // discarded: the outbox outlives the live view, and its notes land here.
@@ -196,6 +204,7 @@ export default function TranscriptSection({
             globalSpeakers={globalSpeakers}
             onRenameSpeaker={onRenameSpeaker}
             onUpdateSegmentSpeaker={onUpdateSegmentSpeaker}
+            onReviewSpeakerName={reviewSpeakerName}
             onUpdateSegmentText={onUpdateSegmentText}
             onFindAndReplace={onFindAndReplace}
             speakerColors={speakerColors}

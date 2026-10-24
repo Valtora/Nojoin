@@ -1,6 +1,7 @@
 "use client";
 
 import AiAutomaticEnhancementSection from "@/components/settings/AiAutomaticEnhancementSection";
+import SpeakerNamesSection from "@/components/settings/SpeakerNamesSection";
 import MeetingEdgeSection from "@/components/settings/MeetingEdgeSection";
 import NotesLanguageSection from "@/components/settings/NotesLanguageSection";
 import NotesTemplatesSection from "@/components/settings/NotesTemplatesSection";
@@ -9,8 +10,9 @@ import { useSettingsContext } from "@/components/settings/SettingsProvider";
 
 /**
  * Everything the AI writes for you: the notes and their language, what happens
- * once a meeting is processed, and how Meeting Edge explains terms while it
- * runs. Whether Meeting Edge runs, and on which model, is under AI providers.
+ * once a meeting is processed, how its speakers' suggested names are settled,
+ * and how Meeting Edge explains terms while it runs. Whether Meeting Edge
+ * runs, and on which model, is under AI providers.
  */
 export default function NotesSettingsPage() {
   const { settings, updateSetting, persistNow, isAdmin } = useSettingsContext();
@@ -30,6 +32,8 @@ export default function NotesSettingsPage() {
       />
 
       <AiAutomaticEnhancementSection settings={settings} onPersist={persistNow} />
+
+      <SpeakerNamesSection settings={settings} onPersist={persistNow} />
 
       <MeetingEdgeSection
         settings={settings}

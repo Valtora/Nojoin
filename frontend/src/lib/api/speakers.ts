@@ -84,6 +84,28 @@ export const updateSpeaker = async (
   return response.data;
 };
 
+/** Confirms a speaker's suggested name; answers like a rename. */
+export const confirmSpeakerName = async (
+  recordingId: RecordingId,
+  diarizationLabel: string,
+): Promise<RecordingSpeaker[]> => {
+  const response = await api.post<RecordingSpeaker[]>(
+    `/speakers/recordings/${recordingId}/speakers/${encodeURIComponent(diarizationLabel)}/suggestions/accept`,
+  );
+  return response.data;
+};
+
+/** Drops a speaker's suggested name, so they are "Speaker N" again. */
+export const dismissSpeakerName = async (
+  recordingId: RecordingId,
+  diarizationLabel: string,
+): Promise<RecordingSpeaker[]> => {
+  const response = await api.post<RecordingSpeaker[]>(
+    `/speakers/recordings/${recordingId}/speakers/${encodeURIComponent(diarizationLabel)}/suggestions/reject`,
+  );
+  return response.data;
+};
+
 export const updateSpeakerColor = async (
   recordingId: RecordingId,
   label: string,

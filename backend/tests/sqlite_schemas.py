@@ -212,7 +212,8 @@ CREATE TABLE recording_speakers (
     last_seen_ms INTEGER,
     identity_confidence FLOAT,
     identity_locked BOOLEAN NOT NULL,
-    name_last_edit_source VARCHAR(32)
+    name_last_edit_source VARCHAR(32),
+    name_source VARCHAR(16)
 )
 """
 
@@ -375,6 +376,31 @@ CREATE TABLE speaker_correction_events (
     scope VARCHAR(64) NOT NULL,
     effective_from_ms INTEGER,
     payload JSON
+)
+"""
+
+SPEAKER_NAME_EVENTS_SCHEMA = """
+CREATE TABLE speaker_name_events (
+    id INTEGER PRIMARY KEY,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    public_id VARCHAR(36) NOT NULL UNIQUE,
+    recording_id INTEGER NOT NULL,
+    kind VARCHAR(16) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    global_speaker_id INTEGER,
+    source VARCHAR(16) NOT NULL,
+    authority SMALLINT NOT NULL,
+    surface VARCHAR(16),
+    anchor_start_ms INTEGER NOT NULL,
+    anchor_end_ms INTEGER NOT NULL,
+    anchor_label VARCHAR(255),
+    recording_speaker_id INTEGER,
+    supersedes_event_id INTEGER,
+    confidence FLOAT,
+    evidence JSON,
+    created_by_user_id INTEGER,
+    CHECK (anchor_end_ms > anchor_start_ms)
 )
 """
 

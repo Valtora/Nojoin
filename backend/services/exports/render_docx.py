@@ -9,9 +9,11 @@ on machines that do not have it.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Sequence
+from dataclasses import fields, is_dataclass, replace
 from io import BytesIO
-from typing import Any
+from typing import Any, cast
 
 from docx import Document as new_document
 from docx.enum.section import WD_SECTION
@@ -55,6 +57,33 @@ _MAX_HEADING_LEVEL = 9
 # every Word install has rather than to whatever the reader's machine picks.
 _CODE_FONT = "Courier New"
 _TEMPLATE_HEADER_STOPS = (Twips(4680), Twips(9360))
+# Everything outside XML 1.0's Char production: the C0 controls other than tab,
+# newline and carriage return, lone surrogates, U+FFFE and U+FFFF. lxml refuses
+# a string holding any of them, so one in a transcript line or a speaker's name
+# would fail the whole export (#685).
+_XML_INVALID = re.compile(r"[^\t\n\r\x20-\ud7ff\ue000-\ufffd\U00010000-\U0010ffff]")
+
+
+def xml_safe(text: str) -> str:
+    """The text without the characters a Word document cannot hold."""
+    return _XML_INVALID.sub("", text)
+
+
+def _xml_safe_fields(value: Any) -> Any:
+    """The value with every string in it made safe, at any depth."""
+    if isinstance(value, str):
+        return xml_safe(value)
+    if isinstance(value, tuple):
+        return tuple(_xml_safe_fields(item) for item in value)
+    if is_dataclass(value) and not isinstance(value, type):
+        return replace(
+            value,
+            **{
+                item.name: _xml_safe_fields(getattr(value, item.name))
+                for item in fields(value)
+            },
+        )
+    return value
 
 
 def _rgb(value: str) -> RGBColor:
@@ -451,6 +480,9 @@ def _write_sections(doc: Any, writer: _BodyWriter, sections: Sequence[Section]) 
 
 
 def render_docx(document: ExportDocument) -> bytes:
+    # Cleaned once here rather than where each string reaches python-docx, so
+    # no write path (core properties, headers, transcript runs) can miss it.
+    document = cast(ExportDocument, _xml_safe_fields(document))
     doc = new_document()
     accent = theme.accent(document.branded)
     _configure_styles(doc)

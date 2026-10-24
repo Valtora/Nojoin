@@ -14,6 +14,7 @@ import {
   getRecordingSpeakerGroupKey,
   getResolvedGlobalSpeakerId,
 } from "@/lib/recordingSpeakerUtils";
+import { describeSuggestedNameSource } from "@/lib/speakerNameReview";
 
 /** A grouped speaker row rendered by the speaker panel. */
 export interface SpeakerPanelEntry {
@@ -25,6 +26,15 @@ export interface SpeakerPanelEntry {
   hasVoiceprint: boolean;
   /** True when a connected assistant, rather than the web app, named this speaker. */
   namedByAssistant: boolean;
+  /** The suggested name nobody has confirmed yet, or null when the name stands. */
+  pendingName: SpeakerPanelPendingName | null;
+}
+
+export interface SpeakerPanelPendingName {
+  /** Every member with a pending name: Confirm and Not {name} decide them all. */
+  labels: string[];
+  /** Why the name was suggested ("Suggested by AI"), or null. */
+  reason: string | null;
 }
 
 export interface UseSpeakerPanelEntriesResult {
@@ -112,6 +122,11 @@ export function useSpeakerPanelEntries(
           sortedMembers.find((speaker) => getResolvedGlobalSpeakerId(speaker)) ||
           sortedMembers[0];
         const globalSpeakerId = getResolvedGlobalSpeakerId(representative);
+        // Members of a group share one identity, so the row's decision
+        // settles every pending member. Its reason is the representative's,
+        // unless only other members are pending.
+        const pendingMembers = sortedMembers.filter((speaker) => speaker.name_pending);
+        const reasonMember = representative.name_pending ? representative : pendingMembers[0];
         const hasVoiceprint =
           sortedMembers.some((speaker) => speaker.has_voiceprint) ||
           !!(globalSpeakerId && globalSpeakerById.get(globalSpeakerId)?.has_voiceprint);
@@ -128,6 +143,12 @@ export function useSpeakerPanelEntries(
           namedByAssistant: sortedMembers.some(
             (speaker) => speaker.name_last_edit_source === "mcp",
           ),
+          pendingName: reasonMember
+            ? {
+                labels: pendingMembers.map((speaker) => speaker.diarization_label),
+                reason: describeSuggestedNameSource(reasonMember),
+              }
+            : null,
         } satisfies SpeakerPanelEntry;
       })
       .sort((left, right) => {

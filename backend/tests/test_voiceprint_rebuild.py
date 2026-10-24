@@ -1176,3 +1176,71 @@ def test_a_current_person_none_of_whose_speakers_changed_is_left_alone(
 
     assert summary["people_rebuilt"] == 0
     assert _person_row(engine, 5) == (pytest.approx(own), EMBEDDING_METHOD_VERSION)
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        # Only the confirmed link is averaged; the "Bob?" match stays out.
+        pytest.param(("{}", True, "rebuilt", [[0.6, 0.8, 0.0]]), id="confirmed-only"),
+        pytest.param(
+            (
+                '{"voiceprint_learning": "automatic"}',
+                True,
+                "rebuilt",
+                [[0.6, 0.8, 0.0], [0.0, 0.8, 0.6]],
+            ),
+            id="automatic-takes-both",
+        ),
+        # With no confirmed link, nothing may found the voiceprint.
+        pytest.param(("{}", False, "held_back", None), id="only-unconfirmed"),
+    ],
+)
+def test_a_rebuild_averages_only_confirmed_links_by_default(
+    tmp_path: Path, case
+) -> None:
+    from backend.models.speaker import GlobalSpeaker
+    from backend.worker.tasks.voiceprint_rebuild import _rebuild_global_speaker
+
+    settings, with_confirmed, outcome, averaged = case
+    engine = _make_engine(tmp_path, "confirmed-links")
+    with engine.begin() as connection:
+        _add_user(connection, 1)
+        connection.execute(text("UPDATE users SET settings = :s"), {"s": settings})
+        _add_person(connection, 5, 1, embedding=STALE_VECTOR, embedding_version=1)
+        _add_recording(connection, 10, 1)
+        links = [(101, [0.0, 0.8, 0.6], "voiceprint", 0)]
+        if with_confirmed:
+            links.append((100, [0.6, 0.8, 0.0], "user", 1))
+        for speaker_id, vector, source, locked in links:
+            _add_speaker(
+                connection,
+                _current(
+                    speaker_id,
+                    10,
+                    global_speaker_id=5,
+                    embedding_speech_seconds=25.0,
+                ),
+            )
+            connection.execute(
+                text(
+                    "UPDATE recording_speakers SET embedding = :e, name_source = :s, "
+                    "identity_locked = :l WHERE id = :id"
+                ),
+                {"e": json.dumps(vector), "s": source, "l": locked, "id": speaker_id},
+            )
+
+    with Session(engine) as session:
+        result = _rebuild_global_speaker(
+            session, session.get(GlobalSpeaker, 5), EMBEDDING_METHOD_VERSION
+        )
+        session.commit()
+
+    assert result.value == outcome
+    embedding, _version = _person_row(engine, 5)
+    if averaged is None:
+        assert embedding == pytest.approx(STALE_VECTOR)
+    else:
+        mean = [sum(values) for values in zip(*averaged)]
+        norm = sum(x * x for x in mean) ** 0.5
+        assert embedding == pytest.approx([x / norm for x in mean])

@@ -59,6 +59,7 @@ const renderSection = (transcriptSegments: TranscriptSegment[] = SEGMENTS) =>
       onPause={vi.fn()}
       onResume={vi.fn()}
       onRenameSpeaker={vi.fn()}
+      onRefresh={vi.fn()}
       onUpdateSegmentSpeaker={vi.fn()}
       onUpdateSegmentText={vi.fn()}
       onFindAndReplace={vi.fn()}

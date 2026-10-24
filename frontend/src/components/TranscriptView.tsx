@@ -32,6 +32,7 @@ import TranscriptNoteEditor, {
 import { isSavedNote, useNoteHighlights } from "./transcript/_hooks/useNoteHighlights";
 import { bodyNotesAmongLines, placeTimelineNotes } from "@/lib/notes/placement";
 import type { InlineNote, OutboxDraft } from "@/lib/notes/noteOutbox";
+import type { SpeakerNameDecision } from "@/lib/speakerNameReview";
 import CollapsedLineNotes from "./notes/CollapsedLineNotes";
 import TimelineNoteLine from "./notes/TimelineNoteLine";
 
@@ -52,6 +53,15 @@ interface TranscriptViewProps {
     segment: TranscriptSegment,
     assignment: TranscriptSpeakerAssignment,
   ) => void | Promise<void>;
+  /**
+   * Confirms or dismisses a speaker's suggested name; without it, lines show
+   * no "?" for one.
+   */
+  onReviewSpeakerName?: (
+    label: string,
+    name: string,
+    decision: SpeakerNameDecision,
+  ) => Promise<void>;
   onUpdateSegmentText: (
     segment: TranscriptSegment,
     text: string,
@@ -114,6 +124,7 @@ export default function TranscriptView({
   globalSpeakers: globalSpeakersProp,
   onRenameSpeaker,
   onUpdateSegmentSpeaker,
+  onReviewSpeakerName,
   onUpdateSegmentText,
   onFindAndReplace,
   speakerColors: speakerColorsProp,
@@ -216,6 +227,17 @@ export default function TranscriptView({
     return order;
   }, [displaySegments]);
 
+  // Each speaker's first final line, the one that offers a suggested name's
+  // "?" (a provisional line offers none).
+  const speakerFirstLines = useMemo(() => {
+    const firstLines = new Map<string, string>();
+    for (const { segment, segmentId } of displaySegments) {
+      if (segment.provisional === true || firstLines.has(segment.speaker)) continue;
+      firstLines.set(segment.speaker, segmentId);
+    }
+    return firstLines;
+  }, [displaySegments]);
+
   // Notes are placed on every line, hidden ones included, and each shows after
   // the visible line at or before the one it follows, so hiding a line never
   // hides a note. A note ends the group of the line it follows. Placed once
@@ -303,6 +325,11 @@ export default function TranscriptView({
   const pause = useStableCallback(onPause);
   const resume = useStableCallback(onResume);
   const updateSegmentSpeaker = useStableCallback(onUpdateSegmentSpeaker);
+  const canReviewSpeakerName = onReviewSpeakerName !== undefined;
+  const reviewSpeakerName = useStableCallback(
+    async (label: string, name: string, decision: SpeakerNameDecision) =>
+      onReviewSpeakerName?.(label, name, decision),
+  );
   // "Play from here" on a line plays on, rather than to the group's end.
   const playFrom = useStableCallback((startSeconds: number) => onPlaySegment(startSeconds));
   const canAddNote = onAddNote !== undefined;
@@ -316,6 +343,7 @@ export default function TranscriptView({
       globalSpeakers,
       speakerColors,
       onUpdateSegmentSpeaker: updateSegmentSpeaker,
+      onReviewSpeakerName: canReviewSpeakerName ? reviewSpeakerName : null,
       pendingRemoteUtteranceIds: pendingRemoteUtteranceIdSet,
       actions: editing.lineActions,
       onAddNote: canAddNote ? addNote : null,
@@ -329,6 +357,8 @@ export default function TranscriptView({
       globalSpeakers,
       speakerColors,
       updateSegmentSpeaker,
+      canReviewSpeakerName,
+      reviewSpeakerName,
       pendingRemoteUtteranceIdSet,
       editing.lineActions,
       canAddNote,
@@ -414,6 +444,7 @@ export default function TranscriptView({
                   onResume={resume}
                   disableSegmentPlayback={disableSegmentPlayback}
                   speakerDisplayOrder={speakerDisplayOrder}
+                  speakerFirstLines={speakerFirstLines}
                   lineShared={lineShared}
                   activeLineKeys={lineKeys(
                     group.items,

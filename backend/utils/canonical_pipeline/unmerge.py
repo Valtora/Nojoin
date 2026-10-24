@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from .constants import *
 from .speaker import (
     _append_speaker_correction_event,
+    _generic_display_aliases_for_label,
     _resolve_active_recording_speaker,
     ensure_recording_speaker_aliases_for_speaker,
     refresh_recording_speaker_usage_state,
@@ -40,11 +41,16 @@ def _restorable_utterances(
     ]
 
 
-def _placeholder_name_for_restored_speaker(
+def placeholder_speaker_name(
     restored: RecordingSpeaker,
     speakers: Sequence[RecordingSpeaker],
 ) -> str:
-    """Keep the row's own "Speaker N" when no other speaker shows it."""
+    """Keep the row's own "Speaker N" when no other speaker shows it.
+
+    The row's own is its name, or else the number of its label (``SPEAKER_02``
+    reads "Speaker 3"), since a name given since cleared it. Used by an
+    unmerge, and by dismissing a pending name.
+    """
     taken: set[str] = set()
     highest = 0
     for speaker in speakers:
@@ -57,8 +63,11 @@ def _placeholder_name_for_restored_speaker(
                 taken.add(text.casefold())
                 highest = max(highest, int(match.group(1)))
     own = str(restored.name or "").strip()
-    if _PLACEHOLDER_SPEAKER_NUMBER.match(own) and own.casefold() not in taken:
-        return own
+    candidates = [own] if _PLACEHOLDER_SPEAKER_NUMBER.match(own) else []
+    candidates += sorted(_generic_display_aliases_for_label(restored.diarization_label))
+    for candidate in candidates:
+        if candidate.casefold() not in taken:
+            return candidate
     return f"Speaker {highest + 1}"
 
 
@@ -119,7 +128,8 @@ def _restore_merged_speaker_row(
     restored.identity_confidence = None
     restored.identity_locked = False
     restored.name_last_edit_source = None
-    restored.name = _placeholder_name_for_restored_speaker(restored, speakers)
+    restored.name_source = None
+    restored.name = placeholder_speaker_name(restored, speakers)
     restored.first_seen_ms = min(utterance.start_ms for utterance in moving)
     restored.last_seen_ms = max(utterance.end_ms for utterance in moving)
     session.add(restored)

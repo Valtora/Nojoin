@@ -33,6 +33,9 @@ from backend.tests.sqlite_schemas import (
     RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA,
     RECORDING_SPEAKERS_SCHEMA,
     RECORDINGS_SCHEMA,
+    SPEAKER_NAME_EVENTS_SCHEMA,
+    TRANSCRIPT_UTTERANCES_SCHEMA,
+    USERS_SCHEMA,
 )
 
 PERSON = [1.0, 0.0]
@@ -147,11 +150,12 @@ def test_an_unrecognised_extraction_result_is_an_error_not_a_voiceprint() -> Non
 
 
 class _FakeSession:
-    def __init__(self, recording, speaker, person):
+    def __init__(self, recording, speaker, person, owner=None):
         self._rows = {
             "Recording": recording,
             "RecordingSpeaker": speaker,
             "GlobalSpeaker": person,
+            "User": owner,
         }
 
     def get(self, model, identity):
@@ -167,14 +171,19 @@ class _FakeSession:
         raise AssertionError("the update must not fail")
 
 
-def _learn_segment(monkeypatch, tmp_path, person, incoming, seconds):
-    """Move a segment onto a recording speaker linked to ``person``; returns the speaker."""
+def _learn_segment(monkeypatch, tmp_path, person, incoming, seconds, **link):
+    """Move a segment onto a recording speaker linked to ``person``; returns the speaker.
+
+    ``link`` sets the link's ``name_source`` and ``identity_locked``, and
+    ``owner_settings`` the recording owner's settings.
+    """
     from backend.processing.embedding import RecordingVoiceprint
     from backend.worker.tasks.embeddings import update_speaker_embedding_task
 
     audio = tmp_path / "meeting.wav"
     audio.write_bytes(b"wav")
-    recording = SimpleNamespace(id=1, audio_path=str(audio), proxy_path=None)
+    recording = SimpleNamespace(id=1, audio_path=str(audio), proxy_path=None, user_id=1)
+    owner = SimpleNamespace(settings=link.pop("owner_settings", {}))
     speaker = SimpleNamespace(
         id=9,
         diarization_label="SPEAKER_00",
@@ -183,6 +192,7 @@ def _learn_segment(monkeypatch, tmp_path, person, incoming, seconds):
         embedding_speech_seconds=10.0,
         global_speaker_id=7,
         drift_refusals=[],
+        **link,
     )
     monkeypatch.setattr(
         embedding_core,
@@ -190,7 +200,9 @@ def _learn_segment(monkeypatch, tmp_path, person, incoming, seconds):
         lambda *a, **k: RecordingVoiceprint(embedding=incoming, speech_seconds=seconds),
     )
 
-    update_speaker_embedding_task._session = _FakeSession(recording, speaker, person)
+    update_speaker_embedding_task._session = _FakeSession(
+        recording, speaker, person, owner
+    )
     try:
         update_speaker_embedding_task.run(1, 0.0, 30.0, 9)
     finally:
@@ -227,6 +239,47 @@ def test_segment_learning_applies_the_floor_and_the_drift_guard(
     else:
         assert person.embedding == pytest.approx(person_after)
     assert speaker.embedding_speech_seconds == speaker_after
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        # A voiceprint match nobody confirmed ("Bob?") teaches nothing...
+        ({"name_source": "voiceprint", "identity_locked": False}, {}, False),
+        ({"name_source": "auto", "identity_locked": False}, {}, False),
+        # ...unless the owner lets unconfirmed matches teach voiceprints.
+        (
+            {"name_source": "voiceprint", "identity_locked": False},
+            {"voiceprint_learning": "automatic"},
+            True,
+        ),
+        # A link the user made or confirmed, or one from before sources were
+        # recorded, teaches as it always did.
+        ({"name_source": "user", "identity_locked": True}, {}, True),
+        ({"name_source": "voiceprint", "identity_locked": True}, {}, True),
+        ({"name_source": None, "identity_locked": False}, {}, True),
+    ],
+)
+def test_a_moved_segment_teaches_only_a_confirmed_link_by_default(
+    monkeypatch, tmp_path, case
+) -> None:
+    link, settings, teaches = case
+    person = SimpleNamespace(
+        id=7, embedding=list(PERSON), embedding_version=2, is_voiceprint_locked=False
+    )
+
+    _learn_segment(
+        monkeypatch,
+        tmp_path,
+        person,
+        _at_cosine(0.9),
+        25.0,
+        owner_settings=settings,
+        **link,
+    )
+
+    expected = _blend(PERSON, _at_cosine(0.9), 0.5) if teaches else PERSON
+    assert person.embedding == pytest.approx(expected)
 
 
 @pytest.mark.parametrize(
@@ -425,6 +478,9 @@ def session():
             RECORDING_SPEAKER_ALIASES_SCHEMA,
             PEOPLE_TAGS_SCHEMA,
             P_TAGS_SCHEMA,
+            USERS_SCHEMA,
+            TRANSCRIPT_UTTERANCES_SCHEMA,
+            SPEAKER_NAME_EVENTS_SCHEMA,
         ):
             connection.execute(text(schema))
         connection.execute(
@@ -491,13 +547,48 @@ def _add_speaker(db, speaker_id: int, embedding, seconds) -> None:
     )
 
 
+def _apply_suggestions(
+    db,
+    speaker_ids: tuple[int, ...],
+    persisted: list[dict[str, Any]],
+    *,
+    confirm: bool,
+    learning: str = "confirmed",
+) -> list[dict[str, Any]]:
+    """Run the worker's apply step with the owner's confirm-at-end and
+    voiceprint learning settings."""
+    from backend.worker.tasks.speaker_name_apply import apply_inferred_names
+
+    db.execute(
+        text(
+            """
+            INSERT INTO users (
+                id, created_at, updated_at, username, hashed_password, is_active,
+                is_superuser, force_password_change, role, token_version, settings,
+                has_seen_demo_recording
+            ) VALUES (1, :now, :now, 'owner', 'hash', 1, 1, 0, 'owner', 0, :settings, 0)
+            """
+        ),
+        {
+            "now": _now(),
+            "settings": json.dumps(
+                {"confirm_suggested_names": confirm, "voiceprint_learning": learning}
+            ),
+        },
+    )
+    applied = apply_inferred_names(
+        db,
+        db.get(Recording, 1),
+        [db.get(RecordingSpeaker, i) for i in speaker_ids],
+        persisted,
+    )
+    db.commit()
+    return applied
+
+
 def test_auto_applied_name_suggestions_found_and_fold_under_the_same_rules(
     session,
 ) -> None:
-    from backend.worker.tasks.intelligence import (
-        _auto_apply_persisted_speaker_name_suggestions,
-    )
-
     voice, far = _at_cosine(0.9), _at_cosine(0.65)
     for person_id, embedding in ((7, None), (8, None), (9, PERSON)):
         _add_person(session, person_id, embedding)
@@ -508,13 +599,11 @@ def test_auto_applied_name_suggestions_found_and_fold_under_the_same_rules(
     ):
         _add_speaker(session, speaker_id, embedding, seconds)
     session.commit()
-    speakers = [session.get(RecordingSpeaker, i) for i in (1, 2, 3)]
 
-    applied = _auto_apply_persisted_speaker_name_suggestions(
+    applied = _apply_suggestions(
         session,
-        recording=session.get(Recording, 1),
-        speakers=speakers,
-        persisted=[
+        (1, 2, 3),
+        [
             {
                 "suggested_name": f"Person {person_id}",
                 "recording_speaker_id": speaker_id,
@@ -523,8 +612,9 @@ def test_auto_applied_name_suggestions_found_and_fold_under_the_same_rules(
             }
             for speaker_id, person_id in ((1, 7), (2, 8), (3, 9))
         ],
+        confirm=True,
+        learning="automatic",
     )
-    session.commit()
 
     assert len(applied) == 3
     people = {i: session.get(GlobalSpeaker, i).embedding for i in (7, 8, 9)}
@@ -543,21 +633,16 @@ def test_an_auto_applied_name_suggestion_never_changes_a_locked_voiceprint(
     speech and however close the voice. The floor's helper took over that
     decision, so this keeps it from being lost.
     """
-    from backend.worker.tasks.intelligence import (
-        _auto_apply_persisted_speaker_name_suggestions,
-    )
-
     _add_person(session, 7, PERSON, locked=True)
     _add_person(session, 8, None, locked=True)
     _add_speaker(session, 1, _at_cosine(0.95), 40.0)
     _add_speaker(session, 2, _at_cosine(0.95), 40.0)
     session.commit()
 
-    _auto_apply_persisted_speaker_name_suggestions(
+    _apply_suggestions(
         session,
-        recording=session.get(Recording, 1),
-        speakers=[session.get(RecordingSpeaker, i) for i in (1, 2)],
-        persisted=[
+        (1, 2),
+        [
             {
                 "suggested_name": f"Person {person_id}",
                 "recording_speaker_id": speaker_id,
@@ -566,8 +651,8 @@ def test_an_auto_applied_name_suggestion_never_changes_a_locked_voiceprint(
             }
             for speaker_id, person_id in ((1, 7), (2, 8))
         ],
+        confirm=True,
     )
-    session.commit()
 
     assert session.get(GlobalSpeaker, 7).embedding == PERSON
     assert session.get(GlobalSpeaker, 8).embedding is None
@@ -579,20 +664,15 @@ def test_an_auto_applied_name_into_a_locked_person_is_still_judged(session) -> N
     judges the link against it: speaker 1, unlike them, is refused, so a
     rebuild of their voiceprint from links leaves it out. Speaker 2, like
     them, gains no refusal."""
-    from backend.worker.tasks.intelligence import (
-        _auto_apply_persisted_speaker_name_suggestions,
-    )
-
     _add_person(session, 7, PERSON, locked=True)
     _add_speaker(session, 1, _at_cosine(0.1), 40.0)
     _add_speaker(session, 2, _at_cosine(0.95), 40.0)
     session.commit()
 
-    _auto_apply_persisted_speaker_name_suggestions(
+    _apply_suggestions(
         session,
-        recording=session.get(Recording, 1),
-        speakers=[session.get(RecordingSpeaker, i) for i in (1, 2)],
-        persisted=[
+        (1, 2),
+        [
             {
                 "suggested_name": "Person 7",
                 "recording_speaker_id": speaker_id,
@@ -601,8 +681,9 @@ def test_an_auto_applied_name_into_a_locked_person_is_still_judged(session) -> N
             }
             for speaker_id in (1, 2)
         ],
+        confirm=True,
+        learning="automatic",
     )
-    session.commit()
 
     refused = session.execute(
         text(
@@ -612,6 +693,79 @@ def test_an_auto_applied_name_into_a_locked_person_is_still_judged(session) -> N
     ).all()
     assert [tuple(row) for row in refused] == [(1, 7)]
     assert session.get(GlobalSpeaker, 7).embedding == PERSON
+
+
+def test_a_name_taken_as_given_links_but_teaches_no_voiceprint_by_default(
+    session,
+) -> None:
+    """With names confirmed at the end, an exact People name links that person,
+    but nobody confirmed it, so their voiceprint learns nothing from it unless
+    the owner lets unconfirmed matches teach voiceprints."""
+    _add_person(session, 7, PERSON)
+    _add_person(session, 8, None)
+    _add_speaker(session, 1, _at_cosine(0.9), 40.0)
+    _add_speaker(session, 2, _at_cosine(0.9), 40.0)
+    session.commit()
+
+    _apply_suggestions(
+        session,
+        (1, 2),
+        [
+            {
+                "suggested_name": f"Person {person_id}",
+                "recording_speaker_id": speaker_id,
+                "suggested_global_speaker_id": person_id,
+                "confidence": 0.9,
+            }
+            for speaker_id, person_id in ((1, 7), (2, 8))
+        ],
+        confirm=True,
+    )
+
+    linked = [session.get(RecordingSpeaker, i).global_speaker_id for i in (1, 2)]
+    assert linked == [7, 8]
+    assert session.get(GlobalSpeaker, 7).embedding == PERSON
+    assert session.get(GlobalSpeaker, 8).embedding is None
+
+
+def test_a_pending_name_links_no_one_and_teaches_no_voiceprint(session) -> None:
+    """By default an inferred name waits for the user: the exact People name
+    is shown, but no person is linked, folded into or given a first voiceprint,
+    and nothing is judged against one."""
+    _add_person(session, 7, PERSON)
+    _add_person(session, 8, None)
+    _add_speaker(session, 1, _at_cosine(0.95), 40.0)
+    _add_speaker(session, 2, _at_cosine(0.1), 40.0)
+    session.commit()
+
+    applied = _apply_suggestions(
+        session,
+        (1, 2),
+        [
+            {
+                "suggested_name": f"Person {person_id}",
+                "recording_speaker_id": speaker_id,
+                "suggested_global_speaker_id": person_id,
+                "confidence": 0.9,
+                "source": "llm",
+            }
+            for speaker_id, person_id in ((1, 7), (2, 8))
+        ],
+        confirm=False,
+    )
+
+    assert len(applied) == 2
+    speakers = [session.get(RecordingSpeaker, i) for i in (1, 2)]
+    assert [(s.global_speaker_id, s.local_name, s.name_source) for s in speakers] == [
+        (None, "Person 7", "llm"),
+        (None, "Person 8", "llm"),
+    ]
+    assert session.get(GlobalSpeaker, 7).embedding == PERSON
+    assert session.get(GlobalSpeaker, 8).embedding is None
+    refused = session.execute(
+        text("SELECT COUNT(*) FROM recording_speaker_drift_refusals")
+    ).scalar_one()
+    assert refused == 0
 
 
 def test_the_pipeline_records_the_speech_behind_each_voiceprint(session) -> None:

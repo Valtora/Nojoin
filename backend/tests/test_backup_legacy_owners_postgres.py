@@ -55,6 +55,7 @@ COLUMNS_ADDED_AFTER_BEFORE = {
     ("recordings", "capture_epoch"): "INTEGER NOT NULL DEFAULT 0",
     ("recordings", "transcription_language"): "VARCHAR(16)",
     ("transcripts", "language_detection"): "JSONB",
+    ("recording_speakers", "name_source"): "VARCHAR(16)",
 }
 
 

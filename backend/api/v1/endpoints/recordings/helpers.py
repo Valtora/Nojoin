@@ -34,6 +34,7 @@ from backend.models.recording import (
     live_capture_clause,
 )
 from backend.models.speaker import RecordingSpeaker
+from backend.models.speaker_name_event import SpeakerNameEvent
 from backend.models.transcript import Transcript
 from backend.services.recording_identity_service import get_recording_by_public_id
 from backend.utils.browser_capture_audio import BROWSER_MASTER_SUFFIX
@@ -679,6 +680,9 @@ async def _reset_generated_recording_state(db: AsyncSession, recording_id: int) 
         delete(SpeakerCorrectionEvent).where(
             SpeakerCorrectionEvent.recording_id == recording_id
         )
+    )
+    await db.execute(
+        delete(SpeakerNameEvent).where(SpeakerNameEvent.recording_id == recording_id)
     )
     await db.execute(
         delete(DiarizationWindowResult).where(

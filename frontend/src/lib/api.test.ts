@@ -89,6 +89,32 @@ describe("transcript speaker API", () => {
     );
   });
 
+  it("confirms a suggested speaker name by its encoded label and returns the speakers", async () => {
+    const confirmed = [{ diarization_label: "SPEAKER 0/1", local_name: "Alex" }];
+    post.mockResolvedValueOnce({ data: confirmed });
+    const { confirmSpeakerName } = await import("./api");
+
+    const result = await confirmSpeakerName("rec-1", "SPEAKER 0/1");
+
+    expect(post).toHaveBeenCalledWith(
+      "/speakers/recordings/rec-1/speakers/SPEAKER%200%2F1/suggestions/accept",
+    );
+    expect(result).toEqual(confirmed);
+  });
+
+  it("dismisses a suggested speaker name by its encoded label and returns the speakers", async () => {
+    const dismissed = [{ diarization_label: "SPEAKER 0/1", local_name: "Speaker 2" }];
+    post.mockResolvedValueOnce({ data: dismissed });
+    const { dismissSpeakerName } = await import("./api");
+
+    const result = await dismissSpeakerName("rec-1", "SPEAKER 0/1");
+
+    expect(post).toHaveBeenCalledWith(
+      "/speakers/recordings/rec-1/speakers/SPEAKER%200%2F1/suggestions/reject",
+    );
+    expect(result).toEqual(dismissed);
+  });
+
   it("fetches the admin health dashboard payload", async () => {
     get.mockResolvedValueOnce({
       data: {

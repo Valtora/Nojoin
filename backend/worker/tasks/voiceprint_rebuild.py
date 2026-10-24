@@ -167,7 +167,10 @@ def _rebuild_global_speaker(
     ``LIBRARY_VOICEPRINT_MIN_SPEECH_S``, since a mean of short voiceprints is
     not what that floor measured (an unmeasured one is grandfathered). And a
     link the drift guard refused when it was offered to this person stays out
-    (``is_drift_refused``). The guard is not run again here: in a rebuild after
+    (``is_drift_refused``). Unless the owner lets unconfirmed matches teach
+    voiceprints (``voiceprint_learning``), a link nobody confirmed, such as a
+    voiceprint match still shown "Bob?", stays out too
+    (``link_teaches_library``). The guard is not run again here: in a rebuild after
     a method change the person's voiceprint is of the old version, so a cosine
     against it says nothing, and a poor voiceprint used as the reference would
     keep the person's genuine recordings out for good. The person is changed
@@ -185,17 +188,26 @@ def _rebuild_global_speaker(
         is_drift_refused,
         meets_library_evidence_floor,
     )
+    from backend.utils.speaker_names.preferences import (
+        library_learns_automatically,
+        owner_settings,
+    )
+    from backend.utils.speaker_names.sources import link_teaches_library
 
     current = [
         s for s in linked if s.embedding and embedding_version_of(s) == method_version
     ]
     if not _unit_vectors(current):
         return _PersonRebuild.NOTHING_CURRENT
+    learns_automatically = library_learns_automatically(
+        owner_settings(session, global_speaker.user_id)
+    )
     units = _unit_vectors(
         s
         for s in current
         if not is_drift_refused(s)
         and meets_library_evidence_floor(s.embedding_speech_seconds)
+        and (learns_automatically or link_teaches_library(s))
     )
     mean = _unit_mean(units) if units else None
     if mean is None:
@@ -348,7 +360,8 @@ def _rebuild_people(
         if is_stale and outcome is _PersonRebuild.HELD_BACK:
             logger.info(
                 "Keeping stale voiceprint for person %s (%s): no current-version "
-                "speaker of theirs may found one (too little speech, or refused)",
+                "speaker of theirs may found one (too little speech, refused by "
+                "the drift guard, or a link nobody has confirmed)",
                 global_speaker.id,
                 global_speaker.name,
             )

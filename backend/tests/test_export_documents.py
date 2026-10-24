@@ -15,7 +15,9 @@ from zipfile import ZipFile
 import pdfplumber
 from docx import Document
 
+from backend.models.timeline_note import TimelineNote
 from backend.services.exports import build_document, render, theme
+from backend.services.exports.charts import Scene, TextShape
 from backend.services.exports.delivery_readings import (
     build_delivery_readings,
     pace_band,
@@ -29,6 +31,8 @@ from backend.services.exports.formatting import (
     format_timestamp,
 )
 from backend.services.exports.markdown_blocks import realign_markdown_tables
+from backend.services.exports.paint import paint_png
+from backend.services.exports.render_docx import xml_safe
 from backend.services.exports.speaker_colors import (
     analytics_speaker_colors,
     parse_client_colors,
@@ -266,6 +270,60 @@ def test_charts_render_in_pdf_and_docx() -> None:
     assert "Peter" in pdf_text and "60%" in pdf_text
     # Three charts plus the logo in the two headers.
     assert len(images) >= 4
+
+
+# -- characters Word cannot hold -------------------------------------------------------
+
+
+def test_docx_text_drops_only_what_xml_cannot_hold() -> None:
+    kept = "tab\tnewline\nreturn\r \u00e9 \x7f\x85 \ufffd \U0001d11e"
+
+    assert xml_safe(kept) == kept
+    assert xml_safe("a\x00\x01\x08\x0b\x0c\x1f\ud800\udfff\ufffe\uffffb") == "ab"
+
+
+def test_a_png_chart_label_survives_a_paragraph_separator() -> None:
+    label = TextShape(0, 12, "Pe\rter\x85Anna\u2029Jon", 8.5, theme.FOREGROUND)
+
+    assert paint_png(Scene(80, 20, (label,), "")).startswith(b"\x89PNG")
+
+
+def test_a_docx_export_drops_control_characters_from_every_section() -> None:
+    # Issue #685: one of these anywhere in a meeting failed the export with a 500.
+    bad = "\x01\x08\ufffe"
+    analytics = analytics_payload()
+    # The carriage return reaches a chart label, which Pillow lays out.
+    analytics["speakers"][0]["name"] = f"Pe{bad}\rter"
+    analytics["ai"]["topics"][0]["title"] = f"Database{bad} choice"
+    parts = meeting_parts(
+        title=f"Architecture{bad} Review",
+        speaker_names=(f"Pe{bad}ter", "Anna"),
+        speaker_names_by_label={"SPEAKER_00": f"Pe{bad}ter", "SPEAKER_01": "Anna"},
+        notes=f"## Key{bad} Decisions\n\n| ID | Decision |\n| --- | --- |\n"
+        f"| DEC{bad}-001 | Use{bad} Postgres |\n",
+        segments=(
+            {"speaker": "SPEAKER_00", "start": 0.0, "end": 4.0, "text": f"Let{bad} us"},
+        ),
+        timeline_notes=(
+            TimelineNote(
+                recording_id=7, kind="point", body=f"Check{bad} it", anchor_ms=1_000
+            ),
+        ),
+        analytics=analytics,
+    )
+
+    document = Document(BytesIO(render(build_document(parts, ALL_SECTIONS), "docx")))
+
+    body = "\n".join(paragraph.text for paragraph in document.paragraphs)
+    cells = {cell.text for table in document.tables for cell in table._cells}
+    assert document.core_properties.title == "Architecture Review"
+    assert "Architecture Review" in document.sections[0].header.paragraphs[0].text
+    assert "Speakers  Peter, Anna" in body
+    assert "Key Decisions" in body
+    assert {"DEC-001", "Use Postgres"} <= cells
+    assert "Database choice" in body
+    assert "[00:00]\tPeter: Let us" in body
+    assert "[00:01] Note: Check it" in body
 
 
 # -- parity with the Analytics tab ---------------------------------------------------

@@ -47,7 +47,9 @@ def update_speaker_embedding_task(
             )
             session.add(target_recording_speaker)
 
-            if gs:
+            if gs and _segment_teaches_person(
+                session, recording, target_recording_speaker
+            ):
                 _learn_person_voiceprint(gs, voiceprint)
                 session.add(gs)
 
@@ -61,6 +63,20 @@ def update_speaker_embedding_task(
     except Exception as e:
         logger.error(f"Failed to update speaker embedding: {e}", exc_info=True)
         session.rollback()
+
+
+def _segment_teaches_person(session, recording, speaker) -> bool:
+    """A link nobody confirmed ("Bob?") teaches the person's voiceprint only
+    when the owner lets unconfirmed matches teach it."""
+    from backend.utils.speaker_names.preferences import (
+        library_learns_automatically,
+        owner_settings,
+    )
+    from backend.utils.speaker_names.sources import link_teaches_library
+
+    return link_teaches_library(speaker) or library_learns_automatically(
+        owner_settings(session, recording.user_id)
+    )
 
 
 def _learn_recording_speaker_voiceprint(row, voiceprint, person) -> None:
