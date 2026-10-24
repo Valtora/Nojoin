@@ -108,9 +108,9 @@ export default function TranscriptSection({
     saved: outboxSaved,
     discarded: outboxDiscarded,
   } = outboxState;
-  // Edits and deletes made here or in My notes show at once: a finished
+  // Edits, moves and deletes made here or in My notes show at once: a finished
   // recording's list is not fetched again.
-  const { apply: applyEdits, edit: editNote, remove: removeNote } = noteEdits;
+  const { apply: applyEdits, edit: editNote, remove: removeNote, move: moveNote } = noteEdits;
   const notes = useMemo(
     () =>
       applyEdits(
@@ -221,6 +221,7 @@ export default function TranscriptSection({
             onDiscardNote={discardNote}
             onEditNote={editNote}
             onDeleteNote={deleteNote}
+            onMoveNote={moveNote}
           />
         </div>
       ) : (
