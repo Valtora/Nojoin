@@ -99,6 +99,8 @@ class Release:
     dry_run: bool
     # Config digest of each image as built, scanned and smoke tested.
     configs: dict[str, str] = field(default_factory=dict)
+    # Whether this run's builder may still exist, from create until remove_builder.
+    builder: bool = False
 
     @property
     def tag(self) -> str:
@@ -332,40 +334,52 @@ def prepare_worktree(release: Release) -> None:
 
 
 def ensure_builder(release: Release) -> None:
-    """Run the release builder on the BuildKit image pinned in the release commit."""
+    """Create the release builder on the BuildKit image pinned in the release commit.
+
+    The builder runs a privileged container, so it should not outlive the build:
+    each run creates its own and remove_builder takes it down after the last bake.
+    """
     pin = (release.src / "docker" / "Dockerfile.buildkit").read_text()
     match = re.search(r"^FROM\s+(\S+)", pin, re.MULTILINE)
     if not match:
         raise ReleaseError("docker/Dockerfile.buildkit has no FROM line.")
     image = match.group(1)
-    exists = (
-        subprocess.run(
-            ["docker", "buildx", "inspect", BUILDER], capture_output=True
-        ).returncode
-        == 0
+    leftover = subprocess.run(
+        ["docker", "buildx", "inspect", BUILDER], capture_output=True
     )
-    current = subprocess.run(
-        [
-            "docker",
-            "inspect",
-            f"buildx_buildkit_{BUILDER}0",
-            "--format",
-            "{{.Config.Image}}",
-        ],
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
-    if exists and current == image:
-        return
-    if exists:
-        print(f"   replacing builder running {current or 'nothing'} with {image}")
+    if leftover.returncode == 0:
+        print(f"   removing the {BUILDER} builder an earlier run left behind")
         run(["docker", "buildx", "rm", BUILDER])
+    # Marked before the create, which can leave a builder behind if bootstrap fails.
+    release.builder = True
     run(
         [
             "docker", "buildx", "create", "--name", BUILDER, "--driver", "docker-container",
             "--driver-opt", f"image={image}", "--bootstrap",
         ]
     )  # fmt: skip
+
+
+def remove_builder(release: Release) -> None:
+    """Remove this run's builder, once.
+
+    A failure only warns, so it cannot mask the release's own result or error.
+    """
+    if not release.builder:
+        return
+    release.builder = False
+    removed = subprocess.run(
+        ["docker", "buildx", "rm", BUILDER], capture_output=True, text=True
+    )
+    if removed.returncode != 0:
+        detail = (removed.stderr or removed.stdout).strip()
+        print(
+            f"   warning: could not remove the {BUILDER} builder; remove it with "
+            f"docker buildx rm {BUILDER}\n   {detail}",
+            file=sys.stderr,
+        )
+        return
+    print(f"   removed the {BUILDER} builder")
 
 
 def bake(release: Release, name: str, *args: str) -> None:
@@ -572,6 +586,9 @@ def load_and_smoke(release: Release) -> None:
         arg for target in TARGETS for arg in ("--set", f"{target}.output=type=docker")
     ]
     bake(release, "load", *outputs)
+    if release.dry_run:
+        # A dry run pushes nothing, so this was its last bake.
+        remove_builder(release)
     for target in TARGETS:
         loaded = run(
             ["docker", "image", "inspect", release.image(target), "--format", "{{.Id}}"]
@@ -668,6 +685,8 @@ def verify_pushed(release: Release, target: str) -> None:
 
 def push(release: Release) -> None:
     bake(release, "push", "--push", "--provenance=mode=max", "--sbom=true")
+    # The last bake. Reading the pushed images back needs no builder.
+    remove_builder(release)
     for target in TARGETS:
         verify_pushed(release, target)
     print("   pushed images match the scanned ones")
@@ -764,16 +783,21 @@ def release_flow(args: argparse.Namespace, timings: list[tuple[str, float]]) -> 
             if not args.dry_run:
                 raise
             print(f"   note: {error}\n   Ignored for a dry run.")
-    with step("Build from a clean worktree, no cache", timings):
-        prepare_worktree(release)
-        ensure_builder(release)
-        build_layouts(release)
-    with step("Gates: Trivy, smoke, CLI advisories", timings):
-        run_gates(release)
-    if args.dry_run:
-        return release
-    with step("Push with provenance and SBOM", timings):
-        push(release)
+    try:
+        with step("Build from a clean worktree, no cache", timings):
+            prepare_worktree(release)
+            ensure_builder(release)
+            build_layouts(release)
+        with step("Gates: Trivy, smoke, CLI advisories", timings):
+            run_gates(release)
+        if args.dry_run:
+            return release
+        with step("Push with provenance and SBOM", timings):
+            push(release)
+    finally:
+        # The last bake has already removed it, unless a step failed or was
+        # interrupted before then.
+        remove_builder(release)
     with step(f"Tag {release.tag} and publish", timings):
         tag_and_publish(release, wait=not args.no_wait)
     return release

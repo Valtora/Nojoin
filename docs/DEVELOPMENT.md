@@ -425,7 +425,7 @@ One tag, `vX.Y.Z`, releases the API, worker, worker-io and frontend images toget
 **What the script does**, stopping at the first failure:
 
 1. Checks that `docs/VERSION` at `origin/main` is the new version and newer than the previous tag, that the tag is not on `origin`, and that every first-parent commit since the previous tag has a green `CI gate`, waiting up to 20 minutes for CI still running. CI on `main` runs only the jobs whose paths a push touched, so a version bump's own run covers little.
-2. Builds the four images from a clean worktree of that commit, with no layer cache, in its `nojoin-release` BuildKit builder, using [docker/release.hcl](../docker/release.hcl). worker-io layers onto the worker built in the same run.
+2. Builds the four images from a clean worktree of that commit, with no layer cache, in a `nojoin-release` BuildKit builder created for the run, using [docker/release.hcl](../docker/release.hcl). worker-io layers onto the worker built in the same run.
 3. Runs the [Release Gates](#release-gates).
 4. Builds again from cache with provenance and SBOM attestations, pushes the immutable version and `sha-<commit>` tags, and checks that each pushed image config is the one it scanned.
 5. Pushes the tag.
@@ -448,7 +448,7 @@ python3 scripts/release.py 0.6.0 --dry-run --ref HEAD
 
 The scan downloads a fresh vulnerability database on every run, so a release that passed last week can fail today with no code change. Dry-run before bumping the version when the base images or the unpinned SDKs may have moved.
 
-**Release host requirements.** Docker with a current Buildx (the script uses bake target contexts and the `fs.write` entitlement), [Trivy](https://trivy.dev) on `PATH`, `gh` authenticated for this repository, Python 3.12 or later, and about 25 GB free on the disk holding `~/.cache` and Docker's data. The script creates the `nojoin-release` builder on the BuildKit image pinned in [docker/Dockerfile.buildkit](../docker/Dockerfile.buildkit) and replaces it when the pin moves. To install Trivy into `~/.local/bin` without sudo:
+**Release host requirements.** Docker with a current Buildx (the script uses bake target contexts and the `fs.write` entitlement), [Trivy](https://trivy.dev) on `PATH`, `gh` authenticated for this repository, Python 3.12 or later, and about 25 GB free on the disk holding `~/.cache` and Docker's data. Each run creates the `nojoin-release` builder on the BuildKit image pinned in [docker/Dockerfile.buildkit](../docker/Dockerfile.buildkit), first removing any builder an earlier run left behind. The builder runs a privileged container, so it exists only during the build: the script removes it after the push build, or on a dry run after the images load for the smoke, and also when a run fails or is interrupted. To install Trivy into `~/.local/bin` without sudo:
 
 ```bash
 curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b "$HOME/.local/bin"
