@@ -273,7 +273,10 @@
   --surface-card: #202020;
   --surface-card-border: rgba(75, 85, 99, 0.38);
   --surface-divider: rgba(75, 85, 99, 0.25);
-  --surface-card-shadow: none;
+  /* No resting shadow in dark, written as a transparent zero shadow rather
+     than none. Tailwind puts shadow-card and ring-* in one box-shadow list,
+     and none inside a list voids the whole declaration, ring included. */
+  --surface-card-shadow: 0 0 #0000;
   --surface-inset: rgba(255, 255, 255, 0.03);
   --foreground: #ededed;
   --contrast-muted: #e5e7eb;
