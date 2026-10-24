@@ -1498,6 +1498,78 @@ async def test_append_meeting_notes_preserves_existing(
 
 
 @pytest.mark.anyio
+async def test_append_meeting_notes_at_a_moment_adds_a_point_note(
+    session_maker, test_user: User, mcp_context, no_meeting_edge_dispatch
+):
+    bind_mcp_identity(test_user)
+    public_id = await seed_recording_with_speakers(session_maker, user_id=test_user.id)
+
+    result = await append_meeting_notes(
+        public_id, "Decision made here.", at_seconds=754.9996
+    )
+
+    assert result["note"] | {"id": None} == {
+        "id": None,
+        "kind": "point",
+        "body": "Decision made here.",
+        "at_ms": 755_000,
+        "at": "12:35",
+    }
+    async with session_maker() as session:
+        note = (await session.execute(select(TimelineNote))).scalars().one()
+    assert (note.kind, note.anchor_ms, note.public_id) == (
+        "point",
+        755_000,
+        result["note"]["id"],
+    )
+    # get_meeting_notes reads it back at that moment.
+    listed = (await get_meeting_notes(public_id))["timeline_notes"]
+    assert [(item["kind"], item["at"]) for item in listed] == [("point", "12:35")]
+
+
+@pytest.mark.anyio
+async def test_append_meeting_notes_without_a_moment_still_adds_a_tail_note(
+    session_maker, test_user: User, mcp_context, no_meeting_edge_dispatch
+):
+    bind_mcp_identity(test_user)
+    public_id = await seed_recording_with_speakers(session_maker, user_id=test_user.id)
+
+    result = await append_meeting_notes(public_id, "Afterwards.")
+
+    assert (result["note"]["kind"], result["note"]["at_ms"], result["note"]["at"]) == (
+        "tail",
+        None,
+        None,
+    )
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("at_seconds", [-0.5, float("nan"), float("inf")])
+async def test_append_meeting_notes_refuses_a_moment_outside_the_recording(
+    session_maker, test_user: User, mcp_context, no_meeting_edge_dispatch, at_seconds
+):
+    bind_mcp_identity(test_user)
+    public_id = await seed_recording_with_speakers(session_maker, user_id=test_user.id)
+
+    with pytest.raises(ToolError, match="at_seconds must be a time in the recording"):
+        await append_meeting_notes(public_id, "Too early.", at_seconds=at_seconds)
+
+    assert await stored_notes(session_maker) == []
+
+
+@pytest.mark.anyio
+async def test_append_meeting_notes_at_zero_is_the_recording_start(
+    session_maker, test_user: User, mcp_context, no_meeting_edge_dispatch
+):
+    bind_mcp_identity(test_user)
+    public_id = await seed_recording_with_speakers(session_maker, user_id=test_user.id)
+
+    result = await append_meeting_notes(public_id, "At the start.", at_seconds=0)
+
+    assert (result["note"]["kind"], result["note"]["at_ms"]) == ("point", 0)
+
+
+@pytest.mark.anyio
 async def test_get_meeting_notes_lists_the_notes_in_timeline_order(
     session_maker, test_user: User, mcp_context, no_meeting_edge_dispatch
 ):

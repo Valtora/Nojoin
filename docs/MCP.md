@@ -104,7 +104,7 @@ Two write tools spend your AI provider quota, which undoing their result does no
 | `create_task` / `update_task` | `mcp:write` | Create, edit, complete, archive or restore tasks, with links to recordings and tags. Deleting a task is web-app only. |
 | `import_people` | `mcp:write` | Create or update People records, matching existing people by exact name. Never touches voiceprints or removes data. |
 | `set_speaker_name` | `mcp:write` | Name a meeting's speaker, linking them to the person of that exact name if one exists. The name reaches the transcript and the AI notes, and the speaker panel marks it `AI named`. |
-| `append_meeting_notes` | `mcp:write` | Add a note after the end of a meeting's transcript. |
+| `append_meeting_notes` | `mcp:write` | Add a note after the end of a meeting's transcript, or, with `at_seconds`, at that moment of the recording, where the transcript shows it after the line spoken then. |
 
 A connection keeps the scopes it was granted. One authorised before `mcp:write` existed stays read-only, and its write tools reply with an instruction to reconnect. Remove and re-add the connector to grant the wider scope.
 

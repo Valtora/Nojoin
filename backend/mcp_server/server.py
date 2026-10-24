@@ -19,6 +19,7 @@ grant's scopes refuse with reconnect instructions.
 """
 
 import logging
+import math
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Any, Callable, Optional
@@ -543,9 +544,9 @@ async def get_meeting_notes(recording_id: str) -> dict[str, Any]:
     ``timeline_notes`` are the user's notes in timeline order. ``kind`` is
     "head" (about the whole meeting, before the transcript), "point" (written
     at one moment), "selection" (about the words in ``quoted_text``) or "tail"
-    (added after the transcript, as append_meeting_notes does). ``at_ms`` and
-    ``at`` (MM:SS) give the moment in the recording for point and selection
-    notes, and are null for the others.
+    (added after the transcript, as append_meeting_notes does without a time).
+    ``at_ms`` and ``at`` (MM:SS) give the moment in the recording for point
+    and selection notes, and are null for the others.
 
     Args:
         recording_id: The recording's string id from list_recordings.
@@ -690,16 +691,22 @@ async def get_documents(recording_id: str) -> list[dict[str, Any]]:
 
 
 @mcp_tool(scope=MCP_WRITE_SCOPE)
-async def append_meeting_notes(recording_id: str, text: str) -> dict[str, Any]:
+async def append_meeting_notes(
+    recording_id: str, text: str, at_seconds: float | None = None
+) -> dict[str, Any]:
     """Append a note to a recording's user notes.
 
-    Adds a "tail" note after the transcript, one per call, so earlier notes
-    are never changed; the AI-generated meeting notes are never modified.
+    Adds one note per call, so earlier notes are never changed; the
+    AI-generated meeting notes are never modified. Without ``at_seconds`` it
+    is a "tail" note, after the transcript. With it, it is a "point" note at
+    that moment, which the transcript shows after the line spoken then.
     Requires the mcp:write scope.
 
     Args:
         recording_id: The recording's string id from list_recordings.
         text: The note text to append.
+        at_seconds: Optional. Seconds from the start of the recording, as
+            get_transcript's ``start`` gives them, to place the note at.
     """
     from fastapi import HTTPException, Response
 
@@ -712,6 +719,7 @@ async def append_meeting_notes(recording_id: str, text: str) -> dict[str, Any]:
         TIMELINE_NOTE_BODY_MAX_CHARS,
         TimelineNoteCreate,
     )
+    from backend.utils.timeline_notes import format_timeline_ms
 
     user = get_current_mcp_user()
     _require_write_scope("note editing")
@@ -722,12 +730,22 @@ async def append_meeting_notes(recording_id: str, text: str) -> dict[str, Any]:
         raise ToolError(
             f"text must be at most {TIMELINE_NOTE_BODY_MAX_CHARS} characters."
         )
+    if at_seconds is None:
+        create = TimelineNoteCreate(kind=TimelineNoteKind.TAIL, body=addition)
+    else:
+        if not math.isfinite(at_seconds) or at_seconds < 0:
+            raise ToolError("at_seconds must be a time in the recording, 0 or more.")
+        create = TimelineNoteCreate(
+            kind=TimelineNoteKind.POINT,
+            body=addition,
+            anchor_ms=round(at_seconds * 1000),
+        )
 
     async with async_session_maker() as db:
         try:
             note = await create_timeline_note(
                 recording_id,
-                TimelineNoteCreate(kind=TimelineNoteKind.TAIL, body=addition),
+                create,
                 Response(),
                 db=db,
                 current_user=user,
@@ -742,7 +760,18 @@ async def append_meeting_notes(recording_id: str, text: str) -> dict[str, Any]:
             ) from error
     return {
         "recording_id": recording_id,
-        "note": {"id": note.id, "kind": note.kind.value, "body": note.body},
+        "note": {
+            "id": note.id,
+            "kind": note.kind.value,
+            "body": note.body,
+            # As get_meeting_notes gives them: null for a tail note.
+            "at_ms": note.anchor_ms,
+            "at": (
+                format_timeline_ms(note.anchor_ms)
+                if note.anchor_ms is not None
+                else None
+            ),
+        },
     }
 
 
