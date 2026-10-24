@@ -307,6 +307,7 @@ def serialize_recording_speaker(
         last_seen_ms=speaker.last_seen_ms,
         identity_confidence=speaker.identity_confidence,
         identity_locked=speaker.identity_locked,
+        name_last_edit_source=speaker.name_last_edit_source,
         name_source=speaker.name_source,
         name_pending=name_is_pending(speaker),
         global_speaker=(
