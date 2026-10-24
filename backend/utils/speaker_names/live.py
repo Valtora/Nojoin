@@ -114,9 +114,11 @@ def record_live_speaker_name(
 
 
 def live_speaker_names(session: Any, recording_id: int) -> dict[str, str]:
-    """Live label -> the newest name the user gave it.
+    """Live label -> the newest name the user gave it, while a line carries it.
 
     Only the naming route writes ``live`` rows, each a name for a live label.
+    Once the final pass has replaced the live lines no current line carries a
+    live label, so the map is empty and no read shows one.
     """
     rows = session.execute(
         select(SpeakerNameEvent.anchor_label, SpeakerNameEvent.name)
@@ -124,7 +126,20 @@ def live_speaker_names(session: Any, recording_id: int) -> dict[str, str]:
         .where(SpeakerNameEvent.surface == SURFACE_LIVE)
         .order_by(col(SpeakerNameEvent.id))
     ).all()
-    return {str(label): str(name) for label, name in rows}
+    if not rows:
+        return {}
+    from backend.utils.canonical_pipeline.constants import ACTIVE_UTTERANCE_STATES
+
+    heard = set(
+        session.execute(
+            select(TranscriptUtterance.speaker_label)
+            .where(TranscriptUtterance.recording_id == recording_id)
+            .where(col(TranscriptUtterance.state).in_(ACTIVE_UTTERANCE_STATES))
+            .where(col(TranscriptUtterance.speaker_label).in_({r[0] for r in rows}))
+            .distinct()
+        ).scalars()
+    )
+    return {str(label): str(name) for label, name in rows if label in heard}
 
 
 def with_live_speaker_names(

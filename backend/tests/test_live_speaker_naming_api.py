@@ -300,6 +300,29 @@ async def test_a_second_name_supersedes_the_first_and_the_live_read_shows_it(
     assert delta.json()["live_speaker_names"] == {ONE: "Alexis", TWO: "Blair"}
 
 
+async def test_live_names_leave_the_read_with_the_live_lines(
+    client, session_maker
+) -> None:
+    await _seed(session_maker)
+    assert (await _name(client, ONE, "Alex")).status_code == 200
+    assert (await _name(client, TWO, "Blair")).status_code == 200
+
+    async def replace(where: str) -> dict:
+        async with session_maker() as session:
+            await session.execute(
+                text(f"UPDATE transcript_utterances SET state = 'superseded' {where}")
+            )
+            await session.commit()
+        return (await client.get(f"/api/v1/transcripts/{REC}/utterances")).json()
+
+    # Only Speaker 2 still has lines.
+    read = await replace(f"WHERE speaker_label = '{ONE}'")
+    assert read["live_speaker_names"] == {TWO: "Blair"}
+    # The final pass has replaced every live line: no live label is left.
+    read = await replace("")
+    assert read["live_speaker_names"] == {}
+
+
 async def test_a_persons_exact_name_links_them_and_nothing_creates_a_person(
     client, session_maker
 ) -> None:

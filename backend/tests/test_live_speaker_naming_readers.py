@@ -122,7 +122,23 @@ def session():
 
 
 def test_only_live_labels_have_live_names(session) -> None:
-    # A row a rename wrote for a final speaker is not a live name.
+    # A row a rename wrote for a final speaker is not a live name, even while
+    # a current line carries that speaker's label.
+    session.execute(
+        text(
+            """
+            INSERT INTO transcript_utterances (
+                created_at, updated_at, public_id, recording_id, sort_key,
+                start_ms, end_ms, text, speaker_label, state, source_kind,
+                revision, overlap_rank, manual_text_locked, manual_speaker_locked,
+                speaker_assignment_source, speaker_assignment_authority
+            ) VALUES (:now, :now, 'final-1', 1, 'zzzz', 40000, 41000, 'Done.',
+                      'SPEAKER_00', 'finalized', 'final', 1, 0, 0, 0, 'final',
+                      'final')
+            """
+        ),
+        {"now": _now()},
+    )
     session.execute(
         text(
             """

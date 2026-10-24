@@ -3,7 +3,7 @@
 Both read a transcript that may still be made of live lines: notes generated
 on a recording whose processing failed, and the index rebuilt when a document
 is attached during capture. The database is ``test_generate_notes_task``'s,
-with its one line given to the live label ``LIVE_PROVISIONAL_2``.
+with its one line given to the live label ``LIVE_PROVISIONAL_2``, still current.
 """
 
 from __future__ import annotations
@@ -17,6 +17,7 @@ from sqlalchemy import text
 from sqlmodel import Session
 
 import backend.worker.tasks as tasks_module
+from backend.tests.sqlite_schemas import TRANSCRIPT_UTTERANCES_SCHEMA
 from backend.tests.test_generate_notes_task import (
     _create_notes_task_database,
     _run_generate_notes_task,
@@ -41,6 +42,21 @@ def _database(tmp_path: Path) -> Any:
         transcript_segments=[LIVE_LINE],
     )
     with engine.begin() as connection:
+        # The live line itself, still current: processing has not replaced it.
+        connection.execute(text(TRANSCRIPT_UTTERANCES_SCHEMA))
+        connection.execute(
+            text(
+                "INSERT INTO transcript_utterances (id, created_at, updated_at, "
+                "public_id, recording_id, sort_key, start_ms, end_ms, text, "
+                "speaker_label, state, source_kind, revision, overlap_rank, "
+                "manual_text_locked, manual_speaker_locked, "
+                "speaker_assignment_source, speaker_assignment_authority) VALUES "
+                "(1, :now, :now, 'live-1', 1, '000000000000', 0, 1500, "
+                "'Hello team.', 'LIVE_PROVISIONAL_2', 'provisional', 'live', 1, 0, "
+                "0, 0, 'live', 'provisional')"
+            ),
+            {"now": _utc_now_naive()},
+        )
         connection.execute(
             text(
                 "INSERT INTO speaker_name_events (created_at, updated_at, public_id, "
