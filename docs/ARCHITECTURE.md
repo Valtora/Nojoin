@@ -137,6 +137,7 @@ Sentiment is read from the words alone and never combined with delivery. The tie
 - One renderer per format draws the blocks: ReportLab for PDF, python-docx for Word, and plain text. `charts.py` lays charts out once, painted as vectors in the PDF and as a PNG in Word. Rendering runs in a threadpool, off the event loop.
 - Automatic speaker colours exist only in the browser, so the export dialog sends the colour map it shows; `speaker_colors.py` falls back to saved colours, then chart slots.
 - The DOCX embeds Geist Regular and Bold as obfuscated font parts so Word does not substitute them. The fonts and their licence are in `backend/services/exports/assets/fonts/`.
+- A Word document is XML, which cannot hold the C0 control characters other than tab, newline and carriage return, a lone surrogate, U+FFFE or U+FFFF, and python-docx refuses any string with one. `render_docx` drops them from the whole document before it writes anything. Pillow, which paints the DOCX charts, fails on a paragraph separator such as a carriage return, so a chart label draws one as a space. PDF and plain text keep these characters.
 
 ### Web Client
 
