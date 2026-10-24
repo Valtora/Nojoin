@@ -1544,7 +1544,7 @@ async def test_append_meeting_notes_without_a_moment_still_adds_a_tail_note(
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("at_seconds", [-0.5, float("nan"), float("inf")])
+@pytest.mark.parametrize("at_seconds", [-0.5, float("nan"), float("inf"), 1e300])
 async def test_append_meeting_notes_refuses_a_moment_outside_the_recording(
     session_maker, test_user: User, mcp_context, no_meeting_edge_dispatch, at_seconds
 ):
@@ -1555,6 +1555,28 @@ async def test_append_meeting_notes_refuses_a_moment_outside_the_recording(
         await append_meeting_notes(public_id, "Too early.", at_seconds=at_seconds)
 
     assert await stored_notes(session_maker) == []
+
+
+@pytest.mark.anyio
+async def test_append_meeting_notes_refuses_a_moment_past_the_end(
+    session_maker, test_user: User, mcp_context, no_meeting_edge_dispatch
+):
+    bind_mcp_identity(test_user)
+    public_id = await seed_recording_with_speakers(session_maker, user_id=test_user.id)
+    async with session_maker() as session:
+        await session.execute(
+            text("UPDATE recordings SET duration_seconds = 600.4 WHERE id = 1")
+        )
+        await session.commit()
+
+    # Milliseconds passed as seconds, say.
+    with pytest.raises(ToolError, match=r"past the end of the recording \(10:00\)"):
+        await append_meeting_notes(public_id, "Too late.", at_seconds=754_000)
+    assert await stored_notes(session_maker) == []
+
+    # The last whole second still counts as in the recording.
+    result = await append_meeting_notes(public_id, "At the end.", at_seconds=601)
+    assert (result["note"]["kind"], result["note"]["at"]) == ("point", "10:01")
 
 
 @pytest.mark.anyio

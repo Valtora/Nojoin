@@ -708,16 +708,18 @@ async def append_meeting_notes(
         at_seconds: Optional. Seconds from the start of the recording, as
             get_transcript_utterances' ``start`` gives them (or a [MM:SS]
             stamp from get_transcript, converted to seconds), to place the
-            note at.
+            note at. A time past the end of a finished recording is refused.
     """
     from fastapi import HTTPException, Response
 
+    from backend.api.v1.endpoints.transcripts.helpers import _get_owned_recording
     from backend.api.v1.endpoints.transcripts.routes_timeline_notes import (
         create_timeline_note,
     )
     from backend.core.db import async_session_maker
     from backend.models.timeline_note import TimelineNoteKind
     from backend.models.timeline_note_public import (
+        TIMELINE_MS_MAX,
         TIMELINE_NOTE_BODY_MAX_CHARS,
         TimelineNoteCreate,
     )
@@ -735,7 +737,11 @@ async def append_meeting_notes(
     if at_seconds is None:
         create = TimelineNoteCreate(kind=TimelineNoteKind.TAIL, body=addition)
     else:
-        if not math.isfinite(at_seconds) or at_seconds < 0:
+        if (
+            not math.isfinite(at_seconds)
+            or at_seconds < 0
+            or at_seconds * 1000 > TIMELINE_MS_MAX
+        ):
             raise ToolError("at_seconds must be a time in the recording, 0 or more.")
         create = TimelineNoteCreate(
             kind=TimelineNoteKind.POINT,
@@ -745,6 +751,18 @@ async def append_meeting_notes(
 
     async with async_session_maker() as db:
         try:
+            if at_seconds is not None:
+                # The length is known once the recording has finished; while
+                # it records there is no end to check against. Its last
+                # second counts in whole, so a time read off the last line
+                # is not refused over a fraction.
+                recording = await _get_owned_recording(db, recording_id, user.id)
+                duration = recording.duration_seconds
+                if duration and at_seconds > math.ceil(duration):
+                    raise ToolError(
+                        "at_seconds is past the end of the recording "
+                        f"({format_timeline_ms(round(duration * 1000))})."
+                    )
             note = await create_timeline_note(
                 recording_id,
                 create,
