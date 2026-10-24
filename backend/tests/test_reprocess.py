@@ -1296,28 +1296,45 @@ async def test_a_chunked_import_records_its_language(
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("chunked", [False, True])
 async def test_an_import_in_an_unlisted_language_is_refused_before_saving(
     client: AsyncClient,
     test_session_maker: sessionmaker,
     monkeypatch,
     tmp_path: Path,
+    chunked: bool,
 ) -> None:
     calls = _patch_delay(monkeypatch, _KEEP_AUDIO_TASK)
     monkeypatch.setenv("RECORDINGS_DIR", str(tmp_path))
-
-    response = await client.post(
-        "/api/v1/recordings/import?transcription_language=he",
-        files={"file": ("import.wav", b"RIFF....fakewavdata", "audio/wav")},
+    await _insert_recording(test_session_maker, recording_id=214, public_id="rec-214")
+    patch = await client.patch(
+        "/api/v1/recordings/rec-214", json={"transcription_language": "he"}
     )
 
+    if chunked:
+        response = await client.post(
+            "/api/v1/recordings/import/chunked/init?filename=a.wav"
+            "&transcription_language=he"
+        )
+    else:
+        response = await client.post(
+            "/api/v1/recordings/import?transcription_language=he",
+            files={"file": ("import.wav", b"RIFF....fakewavdata", "audio/wav")},
+        )
+
     assert response.status_code == 422
+    # The same body as PATCH's refusal, bar where the value came from.
+    [error] = response.json()["detail"]
+    [patch_error] = patch.json()["detail"]
+    assert error["loc"] == ["query", "transcription_language"]
+    assert {**error, "loc": None} == {**patch_error, "loc": None}
     assert calls == []
     assert not any(tmp_path.rglob("*.wav"))
     async with test_session_maker() as session:
         count = (
             await session.execute(text("SELECT count(*) FROM recordings"))
         ).scalar_one()
-    assert count == 0
+    assert count == 1  # only the one PATCH refused to change
 
 
 @pytest.mark.anyio
