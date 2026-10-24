@@ -17,9 +17,10 @@ from typing import Any
 import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.pool import StaticPool
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from backend.models.recording import Recording
+from backend.models.speaker import RecordingSpeaker
 from backend.tests.sqlite_schemas import (
     GLOBAL_SPEAKERS_SCHEMA,
     P_TAGS_SCHEMA,
@@ -31,6 +32,7 @@ from backend.tests.sqlite_schemas import (
     SPEAKER_NAME_EVENTS_SCHEMA,
     USERS_SCHEMA,
 )
+from backend.utils.speaker_names.sources import link_teaches_library, name_is_pending
 from backend.worker.tasks import speaker_assignment
 
 PERSON = [1.0, 0.0]
@@ -454,7 +456,7 @@ def test_an_event_that_lands_nowhere_changes_nothing(session, monkeypatch) -> No
 @pytest.mark.parametrize(
     "case",
     [
-        pytest.param(({}, "voiceprint", 30), id="pending-until-confirmed"),
+        pytest.param(({}, "voiceprint", 30), id="unconfirmed-voiceprint"),
         pytest.param(
             ({"confirm_suggested_names": True}, "auto", 35), id="taken-as-given"
         ),
@@ -493,9 +495,55 @@ def test_a_voiceprint_match_is_recorded_with_its_score(
 
 
 @pytest.mark.parametrize(
+    "scores",
+    [(0.86, 0.84), (0.85, 0.84996)],
+    ids=["above-and-below", "raw-boundary"],
+)
+def test_strong_voice_matches_skip_pending_and_preserve_auto_confirmation(
+    session: Session, monkeypatch: pytest.MonkeyPatch, scores: tuple[float, float]
+) -> None:
+    high, low = scores
+    _add_person(session, 5, "Bob", PERSON)
+    _add_person(session, 6, "Dana", [0.0, 1.0])
+    voiceprints = {
+        "SPEAKER_00": _at_cosine(high),
+        "SPEAKER_01": list(reversed(_at_cosine(low))),
+    }
+
+    _run(session, monkeypatch, _two_speakers(), voiceprints)
+
+    speakers = session.exec(
+        select(RecordingSpeaker).order_by(RecordingSpeaker.diarization_label)
+    ).all()
+    # Both identification decisions were accepted; only the stronger is plain.
+    assert [s.global_speaker_id for s in speakers] == [5, 6]
+    assert [s.identity_confidence for s in speakers] == pytest.approx([high, low])
+    assert [name_is_pending(s) for s in speakers] == [False, True]
+    assert all(
+        s.name_source == "voiceprint" and not s.identity_locked for s in speakers
+    )
+
+    _run(
+        session,
+        monkeypatch,
+        _two_speakers(),
+        voiceprints,
+        {"confirm_suggested_names": True},
+    )
+
+    session.expire_all()
+    assert [s.name_source for s in speakers] == ["auto", "auto"]
+    assert [name_is_pending(s) for s in speakers] == [False, False]
+    assert all(not s.identity_locked for s in speakers)
+
+
+@pytest.mark.parametrize(
     "case",
     [
-        pytest.param(({}, False), id="learns-only-once-confirmed"),
+        pytest.param(
+            ({"voiceprint_learning": "confirmed"}, False),
+            id="learns-only-once-confirmed",
+        ),
         pytest.param(({"voiceprint_learning": "automatic"}, True), id="automatic"),
     ],
 )
@@ -521,5 +569,14 @@ def test_a_confident_voiceprint_match_teaches_the_person_only_when_allowed(
     _run(session, monkeypatch, _two_speakers(), {"SPEAKER_01": _at_cosine(0.95)})
 
     assert _speakers(session)["SPEAKER_01"]["person"] == 5
+    speaker = session.exec(
+        select(RecordingSpeaker).where(
+            RecordingSpeaker.diarization_label == "SPEAKER_01"
+        )
+    ).one()
+    # A plain name is still unconfirmed; display never grants learning authority.
+    assert not name_is_pending(speaker)
+    assert speaker.name_source == "voiceprint" and not speaker.identity_locked
+    assert not link_teaches_library(speaker)
     unchanged = _person_embedding(session, 5) == pytest.approx(PERSON)
     assert unchanged is not learns

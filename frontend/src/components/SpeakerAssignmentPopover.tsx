@@ -17,6 +17,8 @@ import {
   getRecordingSpeakerGroupKey,
   getResolvedGlobalSpeakerId,
 } from "@/lib/recordingSpeakerUtils";
+import { DISABLED_LOOK, loadingButtonProps } from "@/components/ui/loadingButton";
+import { TOUCH_TARGET_HEIGHT } from "@/components/ui/touchTarget";
 
 interface RecordingSpeakerOption {
   key: string;
@@ -34,6 +36,9 @@ interface SpeakerAssignmentPopoverProps {
   onClose: () => void;
   speakerColors: Record<string, string>;
   targetElement: HTMLElement | null;
+  /** A plain voiceprint name that can be rejected without confirming it. */
+  dismissibleName?: string;
+  onDismissName?: () => Promise<void>;
 }
 
 const POPOVER_MARGIN = 8;
@@ -61,8 +66,11 @@ export default function SpeakerAssignmentPopover({
   onClose,
   speakerColors,
   targetElement,
+  dismissibleName,
+  onDismissName,
 }: SpeakerAssignmentPopoverProps) {
   const [search, setSearch] = useState("");
+  const [dismissingName, setDismissingName] = useState(false);
   const [position, setPosition] = useState<PopoverPosition>({
     top: POPOVER_MARGIN,
     left: POPOVER_MARGIN,
@@ -243,6 +251,18 @@ export default function SpeakerAssignmentPopover({
     }
   };
 
+  const dismissCurrentName = async () => {
+    if (!onDismissName || dismissingName) return;
+    setDismissingName(true);
+    try {
+      await onDismissName();
+      onClose();
+      targetElement?.focus();
+    } finally {
+      setDismissingName(false);
+    }
+  };
+
   const scopeOptions: Array<{
     value: SpeakerCorrectionScope;
     label: string;
@@ -286,6 +306,18 @@ export default function SpeakerAssignmentPopover({
           />
         </div>
       </div>
+
+      {dismissibleName && onDismissName && (
+        <div className="border-b border-surface-divider p-2">
+          <button
+            type="button"
+            className={`w-full truncate rounded px-2 py-1.5 text-left text-sm text-contrast-muted hover:bg-surface-inset ${TOUCH_TARGET_HEIGHT} ${DISABLED_LOOK}`}
+            {...loadingButtonProps(dismissingName, undefined, dismissCurrentName)}
+          >
+            Not {dismissibleName}
+          </button>
+        </div>
+      )}
 
       {/* Below 21rem the popover has been clamped to a narrow viewport and
           "Whole transcript" no longer fits beside its twin, so the scope

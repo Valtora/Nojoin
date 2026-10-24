@@ -14,7 +14,7 @@ import {
   getRecordingSpeakerGroupKey,
   getResolvedGlobalSpeakerId,
 } from "@/lib/recordingSpeakerUtils";
-import { describeSuggestedNameSource } from "@/lib/speakerNameReview";
+import { describeSuggestedNameSource, nameCanBeDismissed } from "@/lib/speakerNameReview";
 
 /** A grouped speaker row rendered by the speaker panel. */
 export interface SpeakerPanelEntry {
@@ -28,10 +28,12 @@ export interface SpeakerPanelEntry {
   namedByAssistant: boolean;
   /** The suggested name nobody has confirmed yet, or null when the name stands. */
   pendingName: SpeakerPanelPendingName | null;
+  /** Pending names and unlocked voice matches: Not {name} decides these members. */
+  dismissibleNameLabels: string[];
 }
 
 export interface SpeakerPanelPendingName {
-  /** Every member with a pending name: Confirm and Not {name} decide them all. */
+  /** Every pending member: Confirm settles these; Not may dismiss strong matches too. */
   labels: string[];
   /** Why the name was suggested ("Suggested by AI"), or null. */
   reason: string | null;
@@ -149,6 +151,9 @@ export function useSpeakerPanelEntries(
                 reason: describeSuggestedNameSource(reasonMember),
               }
             : null,
+          dismissibleNameLabels: sortedMembers
+            .filter(nameCanBeDismissed)
+            .map((speaker) => speaker.diarization_label),
         } satisfies SpeakerPanelEntry;
       })
       .sort((left, right) => {

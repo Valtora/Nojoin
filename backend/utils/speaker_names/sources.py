@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from backend.processing.embedding import PLAIN_NAME_MATCH_SCORE
+
 SOURCE_HEURISTIC = "heuristic"
 SOURCE_LLM = "llm"
 SOURCE_VOICEPRINT = "voiceprint"
@@ -61,14 +63,22 @@ def inferred_name_may_be_replaced(speaker: Any) -> bool:
 
 
 def name_is_pending(speaker: Any) -> bool:
-    """True for a name nobody has confirmed: shown with "?" and a Confirm.
+    """True for a name shown with "?" and a Confirm.
 
-    A name with a source and no lock is pending. NULL is a name from before
-    sources were recorded, and ``auto`` one the confirm-at-end setting took as
-    given; both show as they always did.
+    A name with a source and no lock is pending, except a strong voice match.
+    That match still teaches nothing under confirmed-only learning. NULL is a
+    name from before sources were recorded, and ``auto`` one the confirm-at-end
+    setting took as given; both show as they always did.
     """
     source = getattr(speaker, "name_source", None)
     if source is None or source == SOURCE_AUTO:
+        return False
+    score = getattr(speaker, "identity_confidence", None)
+    if (
+        source == SOURCE_VOICEPRINT
+        and score is not None
+        and score >= PLAIN_NAME_MATCH_SCORE
+    ):
         return False
     return not bool(getattr(speaker, "identity_locked", False))
 

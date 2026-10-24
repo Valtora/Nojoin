@@ -124,10 +124,10 @@ def link_voice_match(
 ) -> bool:
     """Link ``speaker`` to ``person`` on a People scan's voice match.
 
-    The link is a voiceprint match like the final pass's: pending until
-    confirmed, with its cosine as the confidence, so under ``confirmed``
-    learning it teaches nothing yet. A pending self-introduction or AI name
-    ranks below it and gives way.
+    The link is a voiceprint match like the final pass's: unconfirmed, with
+    its cosine as the confidence. Strong matches show plain names, but under
+    ``confirmed`` learning still teach nothing. A pending self-introduction or
+    AI name ranks below it and gives way.
 
     Returns False, linking nobody, when the user said this speaker is not that
     person, or when the speaker keeps a name of its own: the user's (once the

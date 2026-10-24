@@ -3,6 +3,13 @@ import type { RecordingSpeaker } from "@/types";
 /** What a person decides about a suggested speaker name. */
 export type SpeakerNameDecision = "confirm" | "dismiss";
 
+/** Pending names and unlocked voice matches can be rejected without confirming them. */
+export function nameCanBeDismissed(
+  speaker: Pick<RecordingSpeaker, "name_pending" | "name_source" | "identity_locked">,
+): boolean {
+  return !!speaker.name_pending || (speaker.name_source === "voiceprint" && !speaker.identity_locked);
+}
+
 /**
  * Why a speaker carries a suggested name, shown beside Confirm and Not
  * {name}: "Recognised by voice", "Suggested by AI". Null for a source with
