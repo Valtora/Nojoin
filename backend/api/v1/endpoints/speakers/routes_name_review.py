@@ -1,10 +1,10 @@
-"""Confirm or dismiss a pending speaker name.
+"""Confirm a pending speaker name, or dismiss an unconfirmed name.
 
 A pending name (``name_is_pending``) shows as "Alex?". Confirm is the rename
 the name already reads as, so it does what a rename does: links People by
 exact name, locks the speaker, offers the voiceprint and writes the user's
-name event. Dismiss writes a dismissal and puts the speaker back to
-"Speaker N".
+name event. Dismiss also accepts an unlocked voiceprint name, writes a
+dismissal and puts the speaker back to "Speaker N".
 """
 
 import logging
@@ -28,7 +28,7 @@ from backend.utils.speaker_name_suggestions import (
     resolve_pending_transcript_speaker_suggestion,
 )
 from backend.utils.speaker_names.review import dismiss_pending_name, shown_name
-from backend.utils.speaker_names.sources import name_is_pending
+from backend.utils.speaker_names.sources import SOURCE_VOICEPRINT, name_is_pending
 
 from .helpers import (
     SpeakerUpdate,
@@ -44,7 +44,11 @@ logger = logging.getLogger(__name__)
 
 
 async def _pending_speaker(
-    db: AsyncSession, recording: Recording, diarization_label: str
+    db: AsyncSession,
+    recording: Recording,
+    diarization_label: str,
+    *,
+    allow_unlocked_voiceprint: bool = False,
 ) -> RecordingSpeaker:
     speaker = (
         await db.execute(
@@ -59,7 +63,11 @@ async def _pending_speaker(
         raise HTTPException(
             status_code=404, detail="Speaker not found in this recording"
         )
-    if not name_is_pending(speaker):
+    if not name_is_pending(speaker) and not (
+        allow_unlocked_voiceprint
+        and speaker.name_source == SOURCE_VOICEPRINT
+        and not speaker.identity_locked
+    ):
         raise HTTPException(
             status_code=409, detail="This speaker has no name awaiting confirmation"
         )
@@ -152,10 +160,12 @@ async def dismiss_speaker_name(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Dismiss a pending name ("Not Alex"); the speaker reads "Speaker N" again."""
+    """Dismiss an unconfirmed name ("Not Alex"); put back "Speaker N"."""
     recording = await _get_owned_recording(db, recording_id, current_user.id)
     _require_recording_speaker_mutations_supported(recording)
-    speaker = await _pending_speaker(db, recording, diarization_label)
+    speaker = await _pending_speaker(
+        db, recording, diarization_label, allow_unlocked_voiceprint=True
+    )
     source = speaker.name_source
     await _resolve_suggestion(
         db,

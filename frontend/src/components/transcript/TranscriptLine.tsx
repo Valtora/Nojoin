@@ -11,6 +11,7 @@ import {
 } from "@/lib/recordingSpeakerUtils";
 import {
   describeSuggestedNameSource,
+  nameCanBeDismissed,
   type SpeakerNameDecision,
 } from "@/lib/speakerNameReview";
 import {
@@ -130,17 +131,19 @@ function TranscriptLine({
   // A live label is no speaker of the recording yet, so it has no name to
   // change; the line can still be assigned to a speaker.
   const canRenameSpeaker = liveSpeakerDisplayName(segment.speaker) === null;
-  // The line's speaker, while its name is a suggestion nobody has confirmed.
-  const pendingSpeaker = useMemo(
+  const recordingSpeaker = useMemo(
     () =>
       speakers.find(
         (speaker) =>
           speaker.diarization_label === segment.speaker &&
-          !speaker.merged_into_id &&
-          speaker.name_pending === true,
+          !speaker.merged_into_id,
       ) ?? null,
     [speakers, segment.speaker],
   );
+  const pendingSpeaker = recordingSpeaker?.name_pending ? recordingSpeaker : null;
+  const canDismissPlainName =
+    !isProvisional && !!onReviewSpeakerName && !!recordingSpeaker &&
+    !recordingSpeaker.name_pending && nameCanBeDismissed(recordingSpeaker);
   // A provisional line's speaker may yet change, so its name is reviewed
   // once the line is final.
   const canReviewName =
@@ -215,6 +218,10 @@ function TranscriptLine({
                 currentSpeakerLabel={segment.speaker}
                 speakerColors={speakerColors}
                 targetElement={popoverAnchor}
+                dismissibleName={canDismissPlainName ? speakerName : undefined}
+                onDismissName={canDismissPlainName && onReviewSpeakerName
+                  ? () => onReviewSpeakerName(segment.speaker, speakerName, "dismiss")
+                  : undefined}
                 onSelect={(assignment) => {
                   onUpdateSegmentSpeaker(segment, assignment);
                   actions.closeSpeakerPopover();

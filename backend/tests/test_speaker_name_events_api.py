@@ -41,6 +41,7 @@ from backend.tests.sqlite_schemas import (
     TRANSCRIPT_UTTERANCES_SCHEMA,
     TRANSCRIPTS_SCHEMA,
 )
+from backend.utils.speaker_names.sources import name_is_pending
 
 pytestmark = pytest.mark.anyio
 
@@ -428,6 +429,35 @@ async def test_not_name_puts_back_speaker_n_and_drops_a_voice_match(
         (e["kind"], e["name"], e["global_speaker_id"], e["source"], e["anchor_end_ms"])
         for e in events
     ] == [("dismiss", "Bob", 8, "user", 10000)]
+    assert (await _suggestions(session_maker))[0]["status"] == "rejected"
+
+
+async def test_a_plain_voiceprint_name_can_be_dismissed_but_not_confirmed(
+    client: AsyncClient, session_maker: Any
+) -> None:
+    await _seed(session_maker, people=[{"id": 8, "name": "Bob"}])
+    await _offer(session_maker, 2, "Bob", source="voiceprint", person=8)
+    await _set(
+        session_maker,
+        "UPDATE recording_speakers SET identity_confidence = 0.86 WHERE id = 2",
+    )
+    before = await _speaker(session_maker, 2)
+    assert not name_is_pending(SimpleNamespace(**before))
+    assert (before["name_source"], before["identity_locked"]) == ("voiceprint", False)
+
+    confirm = await _review(client, "SPEAKER_01", "accept")
+    assert confirm.status_code == 409, confirm.text
+    response = await _review(client, "SPEAKER_01", "reject")
+
+    assert response.status_code == 200, response.text
+    body = response.json()[0]
+    assert (body["name"], body["global_speaker_id"], body["name_pending"]) == (
+        "Speaker 2",
+        None,
+        False,
+    )
+    assert await _name_source(session_maker, 2) == (None, False)
+    assert _named(await _events(session_maker)) == [("dismiss", "Bob", 8, "user")]
     assert (await _suggestions(session_maker))[0]["status"] == "rejected"
 
 
