@@ -133,6 +133,10 @@ export default function LiveSpeakerChip({
           aria-label={`Name ${name}`}
           enterKeyHint="done"
           autoComplete="off"
+          // The shown name starts selected, so typing replaces "Speaker 3"
+          // instead of running on from it ("Speaker 3Dana" passes the
+          // server's placeholder check).
+          onFocus={(event) => event.currentTarget.select()}
           onChange={(event) => setDraft({ ...draft, text: event.target.value })}
           onBlur={() => void save()}
           onKeyDown={(event) => {

@@ -348,6 +348,15 @@ describe("LiveTranscriptPanel", () => {
       expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
     });
 
+    it("opens with the shown name selected, so typing replaces it", async () => {
+      renderNaming();
+
+      const input = (await openRename(1)) as HTMLInputElement;
+
+      expect(input).toHaveValue("Speaker 2");
+      expect([input.selectionStart, input.selectionEnd]).toEqual([0, "Speaker 2".length]);
+    });
+
     it("sends nothing for Escape, a blank name or the name it already has", async () => {
       const { onRename } = renderNaming({ names: { LIVE_PROVISIONAL_2: "Blair" } });
 
