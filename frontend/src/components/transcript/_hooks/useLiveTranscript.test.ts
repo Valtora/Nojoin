@@ -375,4 +375,26 @@ describe("useLiveTranscript", () => {
     await advanceOnePoll();
     expect(result.current.liveSpeakerNames).toEqual({ LIVE_PROVISIONAL_1: "Alexis" });
   });
+
+  it("clears the live names when a later poll returns an empty map", async () => {
+    getTranscriptUtterances
+      .mockResolvedValueOnce({
+        ...buildDelta(4, []),
+        live_speaker_names: { LIVE_PROVISIONAL_1: "Alex" },
+      })
+      .mockResolvedValueOnce({
+        ...buildDelta(4, []),
+        live_speaker_names: {},
+      });
+
+    const { result } = renderHook(() => useLiveTranscript(buildRecording()));
+    const empty = result.current.liveSpeakerNames;
+
+    await flushPendingRequests();
+    expect(result.current.liveSpeakerNames).toEqual({ LIVE_PROVISIONAL_1: "Alex" });
+
+    await advanceOnePoll();
+    expect(result.current.liveSpeakerNames).toEqual({});
+    expect(result.current.liveSpeakerNames).toBe(empty);
+  });
 });

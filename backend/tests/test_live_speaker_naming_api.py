@@ -208,6 +208,26 @@ async def test_a_name_is_the_users_event_on_the_labels_locked_turn(
     assert await _count(session_maker, "recording_speakers") == 0
 
 
+async def test_a_locked_turn_wins_the_anchor_however_short(
+    client, session_maker
+) -> None:
+    await _seed(
+        session_maker,
+        lines=[
+            (0.0, 1.5, ONE, True),
+            (1.5, 2.0, TWO, False),
+            (2.0, 14.0, ONE, False),
+        ],
+    )
+
+    response = await _name(client, ONE, "Alex")
+
+    assert response.status_code == 200, response.text
+    (event,) = await _events(session_maker)
+    # a long unlocked turn can hold mixed voices, which is why locked wins.
+    assert (event["anchor_start_ms"], event["anchor_end_ms"]) == (0, 1500)
+
+
 @pytest.mark.parametrize(
     ("label", "span"),
     [
