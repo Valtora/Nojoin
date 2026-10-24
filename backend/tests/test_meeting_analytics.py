@@ -442,6 +442,7 @@ class TestUnattributedLines:
         monkeypatch.setattr(
             query, "_build_speaker_directory", lambda session, rid: directory
         )
+        monkeypatch.setattr(query, "live_speaker_names", lambda session, rid: {})
         recording = SimpleNamespace(id=1, duration_seconds=60.0, max_speakers=2)
         return query.compute_recording_analytics(None, recording)
 
