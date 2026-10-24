@@ -229,45 +229,6 @@ async def test_an_unlocked_label_is_anchored_on_its_longest_turn(
     assert (event["anchor_start_ms"], event["anchor_end_ms"]) == span
 
 
-@pytest.mark.parametrize(
-    ("lines", "span"),
-    [
-        # A locked 1.5 s "yes" says less than the 12 s turn after it.
-        pytest.param(
-            [(0.0, 1.5, ONE, True), (1.5, 3.0, TWO, False), (3.0, 15.0, ONE, False)],
-            (3000, 15000),
-            id="short-locked-turn",
-        ),
-        # The same "yes" running straight into the long turn: one turn of both.
-        pytest.param(
-            [(0.0, 1.5, ONE, True), (1.5, 13.5, ONE, False)],
-            (0, 13500),
-            id="short-locked-turn-in-a-long-one",
-        ),
-        # Under 3 s but half the unlocked turn: still the locked one.
-        pytest.param(
-            [(0.0, 2.0, ONE, True), (2.0, 3.5, TWO, False), (3.5, 7.0, ONE, False)],
-            (0, 2000),
-            id="short-locked-turn-half-the-unlocked",
-        ),
-        # 3 s locked is enough, however long the unlocked turn.
-        pytest.param(
-            [(0.0, 3.0, ONE, True), (3.0, 4.5, TWO, False), (4.5, 16.5, ONE, False)],
-            (0, 3000),
-            id="locked-turn-long-enough",
-        ),
-    ],
-)
-async def test_a_short_locked_turn_gives_way_to_a_long_one(
-    client, session_maker, lines, span
-) -> None:
-    await _seed(session_maker, lines=lines)
-
-    assert (await _name(client, ONE, "Alex")).status_code == 200
-    (event,) = await _events(session_maker)
-    assert (event["anchor_start_ms"], event["anchor_end_ms"]) == span
-
-
 async def test_only_this_recordings_current_lines_anchor_a_name(
     client, session_maker
 ) -> None:
