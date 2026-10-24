@@ -13,7 +13,11 @@ export interface DropBar {
 
 export interface NoteDrag {
   noteId: string;
-  /** Where a drop now would move the note; null over anywhere it can't go. */
+  /**
+   * Where a drop now would move the note: null outside the transcript, over
+   * the note's own place or before any line; in the margins between lines,
+   * the last target.
+   */
   target: MoveTarget | null;
   bar: DropBar | null;
 }
@@ -42,8 +46,9 @@ const barUnder = (region: HTMLElement, lineIndex: number): DropBar | null => {
 /**
  * A point note dragged by its grip with a mouse or pen, onto the gap after a
  * line. Over a line, or a note already after it, a drop moves the note after
- * that line; anywhere else, or on Escape, it stays. Near the region's top or
- * bottom the transcript scrolls. Touch is left to scroll the page: on a touch
+ * that line. In the margins between lines it keeps the last target. Outside
+ * the transcript, over the note's own place, or on Escape, it stays. Near the
+ * region's top or bottom the transcript scrolls. Touch is left to scroll the page: on a touch
  * screen the note's Move up and Move down buttons move it.
  */
 export function useNoteDrag({ regionRef, targetAfter, onDrop }: UseNoteDragOptions) {
