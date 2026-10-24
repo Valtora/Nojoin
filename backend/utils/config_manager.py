@@ -291,6 +291,7 @@ DEFAULT_USER_SETTINGS = {
     "secondary_anthropic_api_key": None,
     "enable_auto_voiceprints": True,  # Automatically extract speaker voiceprints during processing
     "confirm_suggested_names": False,  # Take suggested speaker names as given, unasked
+    "voiceprint_learning": "confirmed",  # Or "automatic": unconfirmed matches teach too
     "prefer_short_titles": True,  # Prefer short (3-5 words) meeting titles
     "transcription_language": AUTO_TRANSCRIPTION_LANGUAGE,
     "notes_language": DEFAULT_NOTES_LANGUAGE,

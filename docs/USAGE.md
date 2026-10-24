@@ -163,6 +163,8 @@ When processing finishes, Nojoin suggests names for speakers that have no name y
 
 A suggested name shows at once with a question mark, such as **Alice?**, and says where it came from: **Suggested by AI**, **Introduced themselves** or **Recognised by voice (82%)**. Choose **Confirm** in the speaker panel, or on the **?** beside one of the speaker's lines, and the name is yours, as if you had renamed the speaker: it links the person in People with that name and offers them the speaker's voiceprint. **Not Alice** removes the name, the speaker reads `Speaker N` again, and that name is not suggested for the speaker again. **Confirm all** confirms every suggestion in the panel. Until you confirm it, a name from the AI or a self-introduction links nobody in People; a voice match stays linked to the person it matched. To take every suggestion as given instead, turn on **Confirm suggested names automatically** under **Settings > Notes and live assistance**.
 
+A person's voiceprint learns only from names you give or confirm: a voice match, or a name taken as given, links the speaker but leaves the voiceprint as it is until you confirm it. To let those update voiceprints too, as earlier versions did, turn on **Learn voiceprints from unconfirmed names** in the same place.
+
 Renaming a speaker updates the transcript and the AI meeting notes; your own notes are left alone. The notes change wherever the old name appears as a whole word, so if the old name was an ordinary phrase, regenerate the notes after renaming.
 
 ### Undoing An Automatic Merge

@@ -647,6 +647,12 @@ export interface Settings {
   auto_analyse_meetings?: boolean;
   /** Take suggested speaker names as given when processing finishes, rather than asking to confirm each. */
   confirm_suggested_names?: boolean;
+  /**
+   * "confirmed" (the default): a person's library voiceprint learns only from
+   * names the user gave or confirmed. "automatic": also from voiceprint matches
+   * and names nobody confirmed.
+   */
+  voiceprint_learning?: "confirmed" | "automatic";
   /** Install-wide cap on AI analysis runs per user per UTC day; null or 0 is no cap. Admin only. */
   ai_analysis_daily_limit?: number | null;
   /** Install-wide: exported files carry the Nojoin letterhead and footer line. Admin only. */

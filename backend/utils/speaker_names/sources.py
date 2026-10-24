@@ -64,3 +64,14 @@ def name_is_pending(speaker: Any) -> bool:
     if source is None or source == SOURCE_AUTO:
         return False
     return not bool(getattr(speaker, "identity_locked", False))
+
+
+def link_teaches_library(speaker: Any) -> bool:
+    """A link a person's library voiceprint may learn from when it learns only
+    from confirmed names: one the user made or confirmed, which every rename,
+    link and Confirm locks, or one from before sources were recorded (NULL).
+    """
+    return (
+        bool(getattr(speaker, "identity_locked", False))
+        or getattr(speaker, "name_source", None) is None
+    )

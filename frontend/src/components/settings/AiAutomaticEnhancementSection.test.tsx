@@ -39,3 +39,33 @@ describe("AiAutomaticEnhancementSection suggested names", () => {
     expect(onPersist).toHaveBeenCalledWith({ confirm_suggested_names: false });
   });
 });
+
+const LEARNING = "Learn voiceprints from unconfirmed names";
+
+describe("AiAutomaticEnhancementSection voiceprint learning", () => {
+  it("is off, learning only from confirmed names, until turned on", () => {
+    renderSection({});
+
+    expect(screen.getByRole("switch", { name: LEARNING })).toHaveAttribute("aria-checked", "false");
+  });
+
+  it("saves automatic when turned on and confirmed when turned off", () => {
+    const { onPersist } = renderSection({ voiceprint_learning: "automatic" });
+
+    expect(screen.getByRole("switch", { name: LEARNING })).toHaveAttribute("aria-checked", "true");
+    fireEvent.click(screen.getByRole("switch", { name: LEARNING }));
+
+    expect(onPersist).toHaveBeenCalledWith({ voiceprint_learning: "confirmed" });
+  });
+
+  it("saves automatic, keeping the other settings", () => {
+    const { onPersist } = renderSection({ confirm_suggested_names: true });
+
+    fireEvent.click(screen.getByRole("switch", { name: LEARNING }));
+
+    expect(onPersist).toHaveBeenCalledWith({
+      confirm_suggested_names: true,
+      voiceprint_learning: "automatic",
+    });
+  });
+});

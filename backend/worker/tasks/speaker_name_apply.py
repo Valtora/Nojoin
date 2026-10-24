@@ -23,14 +23,17 @@ from typing import Any, Sequence
 
 from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
 from backend.models.speaker_name_event import SpeakerNameEvent
-from backend.models.user import User
 from backend.utils.canonical_pipeline.identity_fields import (
     apply_recording_speaker_identity_fields,
 )
 from backend.utils.speaker_name_suggestions import SPEAKER_SUGGESTION_STATUS_ACCEPTED
 from backend.utils.speaker_names.anchors import Line, longest_turn, turn_nearest
 from backend.utils.speaker_names.events import add_event, speaker_lines
-from backend.utils.speaker_names.preferences import confirm_suggested_names_enabled
+from backend.utils.speaker_names.preferences import (
+    confirm_suggested_names_enabled,
+    library_learns_automatically,
+    owner_settings,
+)
 from backend.utils.speaker_names.review import dismissed_names
 from backend.utils.speaker_names.sources import (
     AUTHORITY,
@@ -41,13 +44,6 @@ from backend.utils.speaker_names.sources import (
 )
 
 logger = logging.getLogger(__name__)
-
-
-def _owner_settings(session: Any, recording: Any) -> dict[str, Any]:
-    if not recording.user_id:
-        return {}
-    owner = session.get(User, recording.user_id)
-    return dict(owner.settings or {}) if owner is not None else {}
 
 
 def _suggested_person(session: Any, suggestion: dict[str, Any]) -> GlobalSpeaker | None:
@@ -135,7 +131,11 @@ def apply_inferred_names(
     persisted: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     """Apply each suggestion to its speaker; return those applied."""
-    confirm = confirm_suggested_names_enabled(_owner_settings(session, recording))
+    settings = owner_settings(session, recording.user_id)
+    confirm = confirm_suggested_names_enabled(settings)
+    # A name taken as given is no confirmation: it teaches the person's
+    # voiceprint only when the owner lets unconfirmed matches teach it.
+    fold_alpha = 0.3 if library_learns_automatically(settings) else None
     lines = speaker_lines(session, recording.id)
     speakers_by_id = {speaker.id: speaker for speaker in speakers}
     applied: list[dict[str, Any]] = []
@@ -160,7 +160,7 @@ def apply_inferred_names(
             speaker,
             new_speaker_name=name,
             target_global_speaker=person,
-            merge_global_embedding_alpha=0.3 if person is not None else None,
+            merge_global_embedding_alpha=fold_alpha if person is not None else None,
             identity_confidence=_confidence(suggestion),
             name_source=source,
         )

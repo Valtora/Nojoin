@@ -568,6 +568,17 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
     keywords: ["speaker names", "suggested names", "confirm names", "speakers", "voiceprint", "introduction", "identify", "automatic"],
   },
   {
+    id: "notes-voiceprint-learning",
+    label: "Learn voiceprints from unconfirmed names",
+    description:
+      "Let a voice match or a name taken as given update the person's voiceprint before you confirm it.",
+    category: "notes",
+    access: "all",
+    settingsKeys: ["voiceprint_learning"],
+    defaultValue: "confirmed",
+    keywords: ["voiceprint", "learning", "voice match", "people", "speakers", "confirm", "automatic"],
+  },
+  {
     id: "notes-meeting-edge-context",
     label: "Technical context",
     description: "How strict or detailed Meeting Edge explanations of terms are.",

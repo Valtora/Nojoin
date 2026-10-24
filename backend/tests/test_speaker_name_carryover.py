@@ -29,6 +29,7 @@ from backend.tests.sqlite_schemas import (
     RECORDING_SPEAKERS_SCHEMA,
     RECORDINGS_SCHEMA,
     SPEAKER_NAME_EVENTS_SCHEMA,
+    USERS_SCHEMA,
 )
 from backend.worker.tasks import speaker_assignment
 
@@ -50,6 +51,7 @@ def session():
     )
     with engine.begin() as connection:
         for schema in (
+            USERS_SCHEMA,
             RECORDINGS_SCHEMA,
             GLOBAL_SPEAKERS_SCHEMA,
             RECORDING_SPEAKERS_SCHEMA,
@@ -488,3 +490,36 @@ def test_a_voiceprint_match_is_recorded_with_its_score(
     assert [tuple(row) for row in rows] == [
         ("name", "Bob", 5, source, authority, 10000, 20000, pytest.approx(0.9))
     ]
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        pytest.param(({}, False), id="learns-only-once-confirmed"),
+        pytest.param(({"voiceprint_learning": "automatic"}, True), id="automatic"),
+    ],
+)
+def test_a_confident_voiceprint_match_teaches_the_person_only_when_allowed(
+    session, monkeypatch, case
+) -> None:
+    settings, learns = case
+    session.execute(
+        text(
+            """
+            INSERT INTO users (
+                id, created_at, updated_at, username, hashed_password, is_active,
+                is_superuser, force_password_change, role, token_version, settings,
+                has_seen_demo_recording
+            ) VALUES (1, :now, :now, 'owner', 'hash', 1, 1, 0, 'owner', 0,
+                      :settings, 0)
+            """
+        ),
+        {"now": _now(), "settings": json.dumps(settings)},
+    )
+    _add_person(session, 5, "Bob", PERSON)
+
+    _run(session, monkeypatch, _two_speakers(), {"SPEAKER_01": _at_cosine(0.95)})
+
+    assert _speakers(session)["SPEAKER_01"]["person"] == 5
+    unchanged = _person_embedding(session, 5) == pytest.approx(PERSON)
+    assert unchanged is not learns

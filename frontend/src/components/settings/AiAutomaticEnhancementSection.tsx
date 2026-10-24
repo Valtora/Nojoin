@@ -74,6 +74,27 @@ export default function AiAutomaticEnhancementSection({
           }
         />
       </SettingsRow>
+
+      <SettingsRow
+        id="notes-voiceprint-learning"
+        label="Learn voiceprints from unconfirmed names"
+        labelId="notes-voiceprint-learning-label"
+        descriptionId="notes-voiceprint-learning-help"
+        description="Let a voice match, or a name taken as given, update the person's voiceprint before you confirm it. Off by default: voiceprints learn only from names you give or confirm."
+        controlClassName={SETTINGS_CONTROL_END}
+      >
+        <Switch
+          checked={settings.voiceprint_learning === "automatic"}
+          aria-labelledby="notes-voiceprint-learning-label"
+          aria-describedby="notes-voiceprint-learning-help"
+          onCheckedChange={(checked) =>
+            onPersist({
+              ...settings,
+              voiceprint_learning: checked ? "automatic" : "confirmed",
+            })
+          }
+        />
+      </SettingsRow>
     </SettingsCard>
   );
 }

@@ -50,6 +50,7 @@ from backend.utils.canonical_pipeline import (
     update_recording_speaker_identity,
 )
 from backend.utils.embedding_audio import select_recording_audio_for_embedding
+from backend.utils.speaker_names.preferences import library_learns_automatically
 
 from .helpers import (
     MEASURED_EXTRACTION_TASK,
@@ -880,7 +881,10 @@ async def split_speaker(
     original_update = apply_split_to_original(
         original_speaker,
         original_speaker_voiceprints,
-        other_recording_voiceprints(list(other_links)),
+        other_recording_voiceprints(
+            list(other_links),
+            include_unconfirmed=library_learns_automatically(current_user.settings),
+        ),
     )
     db.add(original_speaker)
 

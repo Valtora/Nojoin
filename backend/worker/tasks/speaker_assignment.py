@@ -21,7 +21,11 @@ from backend.models.speaker_name_event import SpeakerNameEvent
 from backend.utils.speaker_assignment import remap_overlapping_speakers
 from backend.utils.speaker_names.anchors import first_turn, lines_from_final_segments
 from backend.utils.speaker_names.events import add_event
-from backend.utils.speaker_names.preferences import confirm_suggested_names_enabled
+from backend.utils.speaker_names.preferences import (
+    confirm_suggested_names_enabled,
+    library_learns_automatically,
+    owner_settings,
+)
 from backend.utils.speaker_names.sources import (
     AUTHORITY,
     KIND_NAME,
@@ -318,7 +322,10 @@ def _identity_from_voiceprint(
         return None
 
     logger.info(f"Identified {label} as {best_match.name} (Score: {best_score:.2f})")
-    _learn_from_confident_match(session, best_match, embedding, best_score)
+    # The match is the name nobody has confirmed yet ("Bob?"), so by default it
+    # teaches the person's voiceprint nothing until the user confirms it.
+    if library_learns_automatically(owner_settings(session, recording.user_id)):
+        _learn_from_confident_match(session, best_match, embedding, best_score)
     return _ResolvedIdentity(
         name=best_match.name,
         global_speaker_id=best_match.id,

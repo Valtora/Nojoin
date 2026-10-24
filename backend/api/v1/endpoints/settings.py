@@ -50,6 +50,7 @@ from backend.utils.ollama_url_policy import (
     validate_ollama_api_url,
 )
 from backend.utils.primary_owner import get_primary_owner_async
+from backend.utils.speaker_names.preferences import VOICEPRINT_LEARNING_CHOICES
 from backend.utils.timezones import validate_timezone_name
 
 router = APIRouter()
@@ -109,6 +110,7 @@ class SettingsUpdate(BaseModel):
     secondary_anthropic_api_key: Optional[str] = None
     enable_auto_voiceprints: Optional[bool] = None
     confirm_suggested_names: Optional[bool] = None
+    voiceprint_learning: Optional[str] = None
     prefer_short_titles: Optional[bool] = None
     # Notes structure and vocabulary (issue #137). The install_* keys are
     # admin-only and are dropped for everyone else by _build_settings_update_data.
@@ -197,6 +199,15 @@ class SettingsUpdate(BaseModel):
             return validate_glossary(value)
         except NotesTemplateError as exc:
             raise ValueError(str(exc)) from exc
+
+    @field_validator("voiceprint_learning")
+    @classmethod
+    def validate_voiceprint_learning(cls, value: Optional[str]) -> Optional[str]:
+        if value is not None and value not in VOICEPRINT_LEARNING_CHOICES:
+            raise ValueError(
+                f"Invalid voiceprint_learning. Must be one of {list(VOICEPRINT_LEARNING_CHOICES)}"
+            )
+        return value
 
     @field_validator("theme")
     @classmethod
