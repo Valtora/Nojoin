@@ -10,15 +10,12 @@ import {
   Play,
   Pause,
   ArrowRightToLine,
-  ChevronsRight,
   User,
   UserCheck,
-  Users,
   Loader2,
   Sparkles,
 } from "lucide-react";
 import { useState } from "react";
-import IconButton from "./ui/IconButton";
 import ContextMenu from "./ContextMenu";
 import ConfirmationModal from "./ConfirmationModal";
 import VoiceprintModal from "./VoiceprintModal";
@@ -53,8 +50,6 @@ interface SpeakerPanelProps {
   onRefresh: () => void;
   globalSpeakers: GlobalSpeaker[];
   onSpeakerRenamed?: (oldName: string, newName: string) => Promise<void> | void;
-  /** Desktop side-column collapse; the mobile Speakers tab omits it. */
-  onCollapse?: () => void;
 }
 
 export default function SpeakerPanel({
@@ -71,7 +66,6 @@ export default function SpeakerPanel({
   onRefresh,
   globalSpeakers,
   onSpeakerRenamed,
-  onCollapse,
 }: SpeakerPanelProps) {
   const { addNotification } = useNotificationStore();
   const [contextMenu, setContextMenu] = useState<{
@@ -163,22 +157,6 @@ export default function SpeakerPanel({
       id="speaker-panel"
       className="@container flex h-full min-w-0 flex-col bg-surface-inset"
     >
-      {onCollapse && (
-        <div className="flex shrink-0 items-center justify-between border-b border-surface-border bg-surface-card py-1 pl-4 pr-2">
-          <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
-            <Users className="h-4 w-4 text-action-text" />
-            Speakers
-          </h2>
-          <IconButton
-            size="sm"
-            icon={<ChevronsRight />}
-            aria-label="Collapse speakers panel"
-            title="Collapse speakers panel"
-            onClick={onCollapse}
-          />
-        </div>
-      )}
-
       <div className="min-h-0 flex-1 overflow-y-auto p-2 pb-clear-floating-2 space-y-2">
         {pendingEntries.length >= 2 && (
           <div className="flex justify-end">

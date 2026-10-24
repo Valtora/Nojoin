@@ -8,9 +8,13 @@ export type ActivePanel =
   | "notes"
   | "documents"
   | "analytics"
-  // Mobile only, where it is a tab. On desktop the speaker panel lives in the
-  // side column.
+  // Mobile only, where they are tabs. On desktop both live in the side
+  // column's tabs (`SideTab`).
+  | "my-notes"
   | "speakers";
+
+/** The tab open in the top of the recording page's desktop side column. */
+export type SideTab = "speakers" | "my-notes";
 
 interface NavigationState {
   // View State
@@ -67,6 +71,8 @@ interface NavigationState {
   setSpeakerPanelCollapsed: (collapsed: boolean) => void;
   isChatPanelCollapsed: boolean;
   setChatPanelCollapsed: (collapsed: boolean) => void;
+  sideTab: SideTab;
+  setSideTab: (tab: SideTab) => void;
 
   // Log Settings
   logShowTimestamps: boolean;
@@ -181,6 +187,8 @@ export const useNavigationStore = create<NavigationState>()(
       isChatPanelCollapsed: false,
       setChatPanelCollapsed: (collapsed) =>
         set({ isChatPanelCollapsed: collapsed }),
+      sideTab: "speakers",
+      setSideTab: (tab) => set({ sideTab: tab }),
 
       // Log Settings
       logShowTimestamps: true,
@@ -208,6 +216,7 @@ export const useNavigationStore = create<NavigationState>()(
         chatPanelHeight: state.chatPanelHeight,
         isSpeakerPanelCollapsed: state.isSpeakerPanelCollapsed,
         isChatPanelCollapsed: state.isChatPanelCollapsed,
+        sideTab: state.sideTab,
         logShowTimestamps: state.logShowTimestamps,
         logWordWrap: state.logWordWrap,
         activePanel: state.activePanel,

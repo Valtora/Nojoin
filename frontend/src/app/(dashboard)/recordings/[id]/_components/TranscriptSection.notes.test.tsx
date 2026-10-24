@@ -4,7 +4,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { forgetNoteOutboxes, noteOutboxFor } from "@/lib/notes/noteOutboxes";
 import { RecordingStatus, type Recording, type TranscriptSegment } from "@/types";
 
-import TranscriptSection from "./TranscriptSection";
+import TranscriptSection from "@/test/TranscriptSectionWithEdits";
 
 const createTimelineNote = vi.fn();
 
