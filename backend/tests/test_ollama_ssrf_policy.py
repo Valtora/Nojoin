@@ -165,6 +165,21 @@ async def test_authenticated_llm_models_route_rejects_ollama_override(
             "http://host.docker.internal:11434" if key == "ollama_api_url" else default
         ),
     )
+    # A public address, so the override is refused for differing from the
+    # installation's URL, not for a lookup that fails without network (#689).
+    monkeypatch.setattr(
+        socket,
+        "getaddrinfo",
+        lambda *args, **kwargs: [
+            (
+                socket.AF_INET,
+                socket.SOCK_STREAM,
+                socket.IPPROTO_TCP,
+                "",
+                ("1.1.1.1", 0),
+            )
+        ],
+    )
 
     async with AsyncClient(
         transport=ASGITransport(app=app),
