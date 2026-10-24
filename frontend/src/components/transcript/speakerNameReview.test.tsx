@@ -181,6 +181,22 @@ describe("suggested names on transcript lines", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
+  it("stays open on a blur with nowhere to go, which a press outside closes instead", () => {
+    // Safari blurs to nothing on a press of a button; closing then would let
+    // that press of the "?" open the popover again.
+    renderView();
+
+    fireEvent.click(reviewButtons()[0]);
+    const popover = screen.getByRole("dialog", { name: "Suggested name Alex" });
+    fireEvent.focusOut(within(popover).getByRole("button", { name: "Confirm" }), {
+      relatedTarget: null,
+    });
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+    fireEvent.pointerDown(document.body);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
   it("shows only the buttons when the source has no reason to give", () => {
     renderView({
       speakers: [speaker({ local_name: "Alex", name_source: null, name_pending: true })],

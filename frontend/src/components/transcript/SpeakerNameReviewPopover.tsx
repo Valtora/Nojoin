@@ -77,10 +77,12 @@ export default function SpeakerNameReviewPopover({
   };
 
   // Tab past the last button, or Shift+Tab before the first, leaves the
-  // popover; it closes then rather than stay open behind the focus.
+  // popover; it closes then rather than stay open behind the focus. A blur
+  // with nowhere to go (Safari, on a press of the "?") is left to the
+  // outside-press handler: closing here would let the press reopen it.
   const onPanelBlur = (event: FocusEvent<HTMLDivElement>) => {
     const next = event.relatedTarget as Node | null;
-    if (next && (panelRef.current?.contains(next) || triggerRef.current?.contains(next))) return;
+    if (!next || panelRef.current?.contains(next) || triggerRef.current?.contains(next)) return;
     setOpen(false);
   };
 
