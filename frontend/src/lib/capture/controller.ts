@@ -496,6 +496,22 @@ export class CaptureController {
 
   getState = () => this.state;
 
+  /**
+   * The shared tab, window or screen's video track while this tab captures
+   * `recordingId`, for taking a still of it (Captures, #653). Null for a
+   * microphone-only capture, another recording, or once media is released.
+   * A caller must never stop it: ending the track ends the share, and that
+   * stops the recording.
+   */
+  displayVideoTrack = (recordingId: RecordingId): MediaStreamTrack | null => {
+    const runtime = this.runtime;
+    if (!runtime || runtime.recordingId !== recordingId || runtime.mediaReleased) {
+      return null;
+    }
+    const track = runtime.sources.displayStream?.getVideoTracks?.()[0];
+    return track && track.readyState === "live" ? track : null;
+  };
+
   subscribe = (listener: StateListener) => {
     this.listeners.add(listener);
     return () => {

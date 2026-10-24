@@ -62,6 +62,28 @@ class TimelineNoteAuthorRead(BaseModel):
     username: str
 
 
+class NoteAttachmentRead(BaseModel):
+    """The file a note holds. ``id`` is its document's, for download and preview."""
+
+    id: int
+    title: str
+    file_type: str
+    file_size_bytes: Optional[int] = None
+    # The document's parse status: PENDING until it is first switched on.
+    status: str
+    error_message: Optional[str] = None
+    parse_warning: Optional[str] = None
+    use_in_notes: bool
+    # Whether GET /documents/{id}/preview draws it.
+    is_image: bool
+
+
+class NoteAttachmentUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    use_in_notes: bool
+
+
 class TimelineNoteRead(BaseModel):
     id: str
     recording_id: str
@@ -75,6 +97,7 @@ class TimelineNoteRead(BaseModel):
     revision: int
     # The token of the write that made this revision, if it named one.
     last_write_token: Optional[str] = None
+    attachment: Optional[NoteAttachmentRead] = None
     created_at: datetime
     updated_at: datetime
 

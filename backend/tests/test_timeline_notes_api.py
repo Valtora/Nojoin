@@ -28,6 +28,7 @@ from backend.models.timeline_note_public import TimelineNoteErrorCode
 from backend.models.user import User
 from backend.services.timeline_note_service import load_recording_timeline_notes_async
 from backend.tests.sqlite_schemas import (
+    DOCUMENTS_SCHEMA,
     GLOBAL_SPEAKERS_SCHEMA,
     RECORDING_AUDIO_CHUNKS_SCHEMA,
     RECORDING_SPEAKERS_SCHEMA,
@@ -128,6 +129,7 @@ async def session_maker():
             TRANSCRIPTS_SCHEMA,
             TIMELINE_NOTES_SCHEMA,
             TIMELINE_NOTE_TOMBSTONES_SCHEMA,
+            DOCUMENTS_SCHEMA,
         ):
             await connection.execute(text(schema))
     maker = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)

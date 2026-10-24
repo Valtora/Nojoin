@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from typing import Any, Iterable, Mapping, Optional, Sequence
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 from backend.models.notes_template import NotesTemplate, NotesTemplateScope
 from backend.utils.meeting_notes import (
@@ -411,6 +411,10 @@ def load_attached_documents(
 ) -> list[AttachedDocument]:
     """Parsed text of a recording's READY documents, oldest first.
 
+    Documents attached to the meeting always come in. A note's file comes in
+    only while its switch is on (``backend.utils.note_attachments``), with its
+    note's time so the model can say when it was added.
+
     Read from ``document_pages`` rather than from the RAG chunks: chunks exist
     to be searched, and reassembling them repeats content at every boundary.
 
@@ -422,13 +426,26 @@ def load_attached_documents(
     """
     from backend.models.document import Document, DocumentStatus
     from backend.models.document_page import DocumentPage
+    from backend.models.timeline_note import TimelineNote
+    from backend.utils.note_attachments import feeds_notes_clause
+    from backend.utils.timeline_notes import note_time_ms
 
     documents = session.exec(
         select(Document)
         .where(Document.recording_id == recording_id)
         .where(Document.status == DocumentStatus.READY)
+        .where(feeds_notes_clause())
         .order_by(Document.created_at)
     ).all()
+    note_ids = [document.note_id for document in documents if document.note_id]
+    notes = {
+        note.id: note
+        for note in (
+            session.exec(select(TimelineNote).where(col(TimelineNote.id).in_(note_ids)))
+            if note_ids
+            else ()
+        )
+    }
 
     attached: list[AttachedDocument] = []
     for document in documents:
@@ -459,6 +476,13 @@ def load_attached_documents(
                 title=document.title,
                 text="\n\n".join(sections),
                 extracted_by=_describe_extraction(modes),
+                attached_to_note=document.note_id is not None,
+                note_at_ms=(
+                    note_time_ms(note)
+                    if (note := notes.get(document.note_id or 0))
+                    and note.kind in ("point", "selection")
+                    else None
+                ),
             )
         )
     return attached

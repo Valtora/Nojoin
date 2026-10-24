@@ -5,7 +5,9 @@ import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 
 import ChatPanel from "@/components/ChatPanel";
 import SpeakerPanel from "@/components/SpeakerPanel";
+import CapturesGallery from "@/components/notes/CapturesGallery";
 import MyNotesList from "@/components/notes/MyNotesList";
+import { NoteFilesProvider } from "@/components/notes/NoteFiles";
 import RecordingStatusDisplay from "@/components/RecordingStatusDisplay";
 import ExportModal from "@/components/ExportModal";
 import { RecordingStatus } from "@/types";
@@ -178,6 +180,13 @@ export default function RecordingPage({ params }: PageProps) {
   );
 
   return (
+    // Notes' files open one viewer, from a note's line or the Captures tab.
+    <NoteFilesProvider
+      recordingId={recording.id}
+      notes={timelineNotes}
+      onPlay={isInFlightRecording ? undefined : (seconds) => handlePlaySegment(seconds)}
+      onChanged={fetchRecording}
+    >
     <div className="h-full flex flex-col overflow-hidden">
       <div className="flex-1 flex min-h-0 overflow-hidden">
         {isInFlightRecording ? (
@@ -298,6 +307,16 @@ export default function RecordingPage({ params }: PageProps) {
                           className="h-full bg-surface-inset"
                         />
                       }
+                      captures={
+                        <CapturesGallery
+                          recordingId={recording.id}
+                          timelineNotes={timelineNotes}
+                          segments={transcriptSegments}
+                          noteEdits={noteEdits}
+                          onShowTranscript={() => setActivePanel("transcript")}
+                          className="h-full bg-surface-inset"
+                        />
+                      }
                       chatPanelHeight={compactChatPanelHeight}
                       onChatPanelHeightChange={setChatPanelHeight}
                       onNotesUpdate={fetchRecording}
@@ -323,5 +342,6 @@ export default function RecordingPage({ params }: PageProps) {
         hasAudio={recording?.has_audio !== false}
       />
     </div>
+    </NoteFilesProvider>
   );
 }

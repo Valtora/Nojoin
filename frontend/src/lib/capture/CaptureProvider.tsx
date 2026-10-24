@@ -90,6 +90,7 @@ export function useCapture() {
     discardEmptyInterruptedRecording: controller.discardEmptyInterruptedRecording,
     updateSettings: controller.updateSettings,
     dismissCoverageWarning: controller.dismissCoverageWarning,
+    displayVideoTrack: controller.displayVideoTrack,
     status: state.status,
     levels: state.levels,
     error: state.error,

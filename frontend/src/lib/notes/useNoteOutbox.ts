@@ -15,6 +15,8 @@ const EMPTY_SNAPSHOT: OutboxSnapshot = {
   saved: [],
   discarded: new Set(),
   draft: EMPTY_DRAFT,
+  draftFile: null,
+  uploads: new Map(),
   notice: null,
 };
 const subscribeToNothing = () => () => undefined;

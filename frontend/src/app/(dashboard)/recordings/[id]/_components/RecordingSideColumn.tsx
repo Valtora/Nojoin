@@ -5,6 +5,7 @@ import {
   ChevronDown,
   ChevronsRight,
   ChevronUp,
+  Images,
   MessageSquare,
   StickyNote,
   Users,
@@ -20,6 +21,7 @@ import { useNavigationStore, type SideTab } from "@/lib/store";
 const SIDE_TABS: { tab: SideTab; label: string; icon: LucideIcon }[] = [
   { tab: "speakers", label: "Speakers", icon: Users },
   { tab: "my-notes", label: "My notes", icon: StickyNote },
+  { tab: "captures", label: "Captures", icon: Images },
 ];
 
 interface RecordingSideColumnProps {
@@ -27,6 +29,8 @@ interface RecordingSideColumnProps {
   speakers: ReactNode;
   /** The My notes list, as the page builds it. */
   myNotes: ReactNode;
+  /** The Captures list, as the page builds it. */
+  captures: ReactNode;
   /** Chat's percentage of the column's height. */
   chatPanelHeight: number;
   onChatPanelHeightChange: (height: number) => void;
@@ -35,23 +39,31 @@ interface RecordingSideColumnProps {
 }
 
 /**
- * The top of the side column: Speakers and My notes as tabs (the WAI-ARIA
- * tabs pattern), and the button that collapses it. Both panels stay mounted,
- * so switching tabs keeps a rename or an edit where it was.
+ * The top of the side column: Speakers, My notes and Captures as tabs (the
+ * WAI-ARIA tabs pattern), and the button that collapses it. Every panel stays
+ * mounted, so switching tabs keeps a rename or an edit where it was.
  *
- * A narrow column keeps what fits. Under 13.25rem, where both labels and the
- * button no longer fit, the open tab shows its icon and label and the other
- * only its icon; under 10.75rem both are icons. A hidden label stays for
- * screen readers, and every tab has its label as a tooltip.
+ * A narrow column keeps what fits. Under 18.5rem, where the three labels and
+ * the button no longer fit, the open tab shows its icon and label and the
+ * others only their icons; under 12rem all are icons. A hidden label stays
+ * for screen readers, and every tab has its label as a tooltip.
  */
-function SideTabs({ speakers, myNotes }: { speakers: ReactNode; myNotes: ReactNode }) {
+function SideTabs({
+  speakers,
+  myNotes,
+  captures,
+}: {
+  speakers: ReactNode;
+  myNotes: ReactNode;
+  captures: ReactNode;
+}) {
   const sideTab = useNavigationStore((state) => state.sideTab);
   const setSideTab = useNavigationStore((state) => state.setSideTab);
   const setSpeakerPanelCollapsed = useNavigationStore(
     (state) => state.setSpeakerPanelCollapsed,
   );
   const tablistRef = useRef<HTMLDivElement>(null);
-  const panels: Record<SideTab, ReactNode> = { speakers, "my-notes": myNotes };
+  const panels: Record<SideTab, ReactNode> = { speakers, "my-notes": myNotes, captures };
 
   // Arrow keys move between the tabs and open them, wrapping; Home and End
   // jump to the first and last.
@@ -94,17 +106,17 @@ function SideTabs({ speakers, myNotes }: { speakers: ReactNode; myNotes: ReactNo
                 onClick={() => setSideTab(tab)}
                 onKeyDown={onKeyDown}
                 className={cn(
-                  "flex min-w-0 items-center gap-1 border-b-2 px-2.5 py-2.5 text-sm font-semibold transition-colors outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-action @max-[10.75rem]:px-1",
+                  "flex min-w-0 items-center gap-1 border-b-2 px-2.5 py-2.5 text-sm font-semibold transition-colors outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-action @max-[12rem]:px-1",
                   open
-                    ? "border-action text-action-text @max-[13.25rem]:px-2"
-                    : "shrink-0 border-transparent text-contrast-helper hover:text-foreground @max-[13.25rem]:px-1.5",
+                    ? "border-action text-action-text @max-[18.5rem]:px-2"
+                    : "shrink-0 border-transparent text-contrast-helper hover:text-foreground @max-[18.5rem]:px-1.5",
                 )}
               >
-                <Icon aria-hidden="true" className="hidden h-4 w-4 shrink-0 @max-[13.25rem]:block" />
+                <Icon aria-hidden="true" className="hidden h-4 w-4 shrink-0 @max-[18.5rem]:block" />
                 <span
                   className={cn(
                     "min-w-0 truncate",
-                    open ? "@max-[10.75rem]:sr-only" : "@max-[13.25rem]:sr-only",
+                    open ? "@max-[12rem]:sr-only" : "@max-[18.5rem]:sr-only",
                   )}
                 >
                   {label}
@@ -119,7 +131,7 @@ function SideTabs({ speakers, myNotes }: { speakers: ReactNode; myNotes: ReactNo
           aria-label="Collapse speakers and notes panel"
           title="Collapse speakers and notes panel"
           onClick={() => setSpeakerPanelCollapsed(true)}
-          className="@max-[13.25rem]:w-8"
+          className="@max-[18.5rem]:w-8"
         />
       </div>
       {SIDE_TABS.map(({ tab }) => (
@@ -139,13 +151,14 @@ function SideTabs({ speakers, myNotes }: { speakers: ReactNode; myNotes: ReactNo
 }
 
 /**
- * The desktop side column beside a processed meeting: Speakers and My notes
- * as tabs on top, and Chat below, each part collapsible, with a handle
+ * The desktop side column beside a processed meeting: Speakers, My notes and
+ * Captures as tabs on top, and Chat below, each part collapsible, with a handle
  * between them while both are open.
  */
 export default function RecordingSideColumn({
   speakers,
   myNotes,
+  captures,
   chatPanelHeight,
   onChatPanelHeightChange,
   onNotesUpdate,
@@ -174,7 +187,7 @@ export default function RecordingSideColumn({
           aria-controls="side-tabs"
         >
           <Users className="h-3.5 w-3.5" />
-          Speakers and My notes
+          Speakers, My notes and Captures
           <ChevronDown className="ml-auto h-3.5 w-3.5" />
         </button>
         <div className="min-h-0 flex-1">
@@ -191,7 +204,7 @@ export default function RecordingSideColumn({
     return (
       <div className="flex h-full flex-col">
         <div className="min-h-0 flex-1">
-          <SideTabs speakers={speakers} myNotes={myNotes} />
+          <SideTabs speakers={speakers} myNotes={myNotes} captures={captures} />
         </div>
         <button
           onClick={() => setChatPanelCollapsed(false)}
@@ -222,7 +235,7 @@ export default function RecordingSideColumn({
         defaultSize={100 - chatPanelHeight}
         minSize={20}
       >
-        <SideTabs speakers={speakers} myNotes={myNotes} />
+        <SideTabs speakers={speakers} myNotes={myNotes} captures={captures} />
       </Panel>
 
       <PanelResizeHandle
@@ -275,6 +288,13 @@ export function RecordingSideRail() {
         aria-label="Show my notes"
         title="Show my notes"
         onClick={() => show("my-notes")}
+      />
+      <IconButton
+        size="sm"
+        icon={<Images />}
+        aria-label="Show captures"
+        title="Show captures"
+        onClick={() => show("captures")}
       />
       <IconButton
         size="sm"

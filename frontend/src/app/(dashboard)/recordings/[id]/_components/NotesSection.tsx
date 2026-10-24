@@ -57,8 +57,9 @@ export default function NotesSection({
         <div className="flex items-start gap-3 border-b border-status-warning-border bg-status-warning-bg px-4 py-3">
           <FileText className="mt-0.5 h-4 w-4 flex-shrink-0 text-status-warning-fg" />
           <p className="min-w-0 flex-1 text-sm text-status-warning-fg">
-            A document was added after these notes were written, so they do not
-            reflect it yet. Regenerating will overwrite any edits you have made.
+            A document was added, or a note&apos;s file turned on or off for the
+            notes, after these notes were written, so they do not reflect it yet.
+            Regenerating will overwrite any edits you have made.
           </p>
           <button
             type="button"

@@ -393,6 +393,26 @@ export interface TimelineNoteAuthor {
 }
 
 /** A user's note on a recording, anchored in ms on its audio timeline. */
+/**
+ * The file a timeline note holds: a still of the shared screen, or a file
+ * pasted or dropped into the note box. It takes its time from its note.
+ */
+export interface NoteAttachment {
+  /** Its document's id, for download and preview. */
+  id: number;
+  title: string;
+  file_type: string;
+  file_size_bytes?: number | null;
+  /** PENDING until it is first switched on and read. */
+  status: "PENDING" | "PROCESSING" | "READY" | "ERROR";
+  error_message?: string | null;
+  parse_warning?: string | null;
+  /** Off by default: only while it is on do notes, chat and search read it. */
+  use_in_notes: boolean;
+  /** Whether it has a preview to draw. */
+  is_image: boolean;
+}
+
 export interface TimelineNote {
   id: string;
   recording_id: RecordingId;
@@ -408,6 +428,7 @@ export interface TimelineNote {
   revision: number;
   /** The `write_token` of the write that made this revision, if it named one. */
   last_write_token?: string | null;
+  attachment?: NoteAttachment | null;
   created_at: string;
   updated_at: string;
 }

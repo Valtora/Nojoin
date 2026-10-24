@@ -8,13 +8,14 @@ export type ActivePanel =
   | "notes"
   | "documents"
   | "analytics"
-  // Mobile only, where they are tabs. On desktop both live in the side
+  // Mobile only, where they are tabs. On desktop they live in the side
   // column's tabs (`SideTab`).
   | "my-notes"
+  | "captures"
   | "speakers";
 
 /** The tab open in the top of the recording page's desktop side column. */
-export type SideTab = "speakers" | "my-notes";
+export type SideTab = "speakers" | "my-notes" | "captures";
 
 interface NavigationState {
   // View State

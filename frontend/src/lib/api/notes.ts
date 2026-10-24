@@ -1,10 +1,11 @@
 import type {
+  NoteAttachment,
   RecordingId,
   TimelineNote,
   TimelineNoteCreate,
   TimelineNoteUpdate,
 } from "@/types";
-import api from "./client";
+import api, { API_BASE_URL } from "./client";
 
 export const getNotes = async (
   recordingId: RecordingId,
@@ -93,6 +94,42 @@ export const deleteTimelineNote = async (
     },
   });
 };
+
+/** Stores a file on a saved note, switched off. A note holds one: a second is a 409. */
+export const attachFileToNote = async (
+  recordingId: RecordingId,
+  noteId: string,
+  file: File,
+): Promise<NoteAttachment> => {
+  const formData = new FormData();
+  formData.append("file", file, file.name);
+  const response = await api.post<NoteAttachment>(
+    `${timelineNotesPath(recordingId)}/${noteId}/attachment`,
+    formData,
+    { headers: { "Content-Type": "multipart/form-data" } },
+  );
+  return response.data;
+};
+
+/** Turns a note's file on for the AI, which reads it then, or off. */
+export const setNoteFileUseInNotes = async (
+  recordingId: RecordingId,
+  noteId: string,
+  useInNotes: boolean,
+): Promise<NoteAttachment> => {
+  const response = await api.patch<NoteAttachment>(
+    `${timelineNotesPath(recordingId)}/${noteId}/attachment`,
+    { use_in_notes: useInNotes },
+  );
+  return response.data;
+};
+
+/** Where an `<img>` reads a document from; the browser sends the session cookie. */
+export const documentPreviewUrl = (documentId: number): string =>
+  `${API_BASE_URL}/documents/${documentId}/preview`;
+
+export const documentFileUrl = (documentId: number): string =>
+  `${API_BASE_URL}/documents/${documentId}/download`;
 
 export const updateMeetingEdgeFocus = async (
   recordingId: RecordingId,

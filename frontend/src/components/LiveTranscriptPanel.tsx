@@ -233,6 +233,7 @@ export default function LiveTranscriptPanel({
         error={note.error}
         onRetry={onRetryNote ? () => onRetryNote(note.key) : undefined}
         onDiscard={onDiscardNote ? () => onDiscardNote(note.key) : undefined}
+        attachment={note.attachment}
       />
     </li>
   );

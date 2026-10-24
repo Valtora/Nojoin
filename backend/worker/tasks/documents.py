@@ -36,6 +36,7 @@ from backend.processing.documents import (
 from backend.processing.documents.ocr import ocr_images, ocr_is_available
 from backend.processing.documents.vision import merge_page_content, transcribe_page
 from backend.processing.text_embedding_version import TEXT_EMBEDDING_VERSION
+from backend.utils.note_attachments import feeds_notes
 from backend.utils.vision import VisionUnsupportedError
 
 from .constants import *  # noqa: F403 - shared task imports, matching sibling modules
@@ -266,6 +267,13 @@ def process_document_task(self, document_id: int, force_reparse: bool = False):
     if not document:
         logger.error("Document %s not found.", document_id)
         return
+    if not feeds_notes(document):
+        # A note's file switched off before its parse began: nothing reads it,
+        # so no vision call is spent on it. Switching it on queues it again.
+        document.parse_stage = None
+        session.add(document)
+        session.commit()
+        return
 
     try:
         document.status = DocumentStatus.PROCESSING
@@ -482,11 +490,15 @@ class _PageWriter:
 def _flag_notes_stale(session, document: Document) -> None:
     """Mark existing notes as not reflecting this document.
 
-    Only when notes already exist. Documents feed notes generation now, so one
-    that finishes parsing afterwards leaves the notes incomplete -- but
-    regenerating spends the user's quota and overwrites their edits, so this
-    raises a prompt rather than acting.
+    Only when notes already exist, and only for a document notes generation
+    reads. One that finishes parsing afterwards leaves the notes incomplete --
+    but regenerating spends the user's quota and overwrites their edits, so
+    this raises a prompt rather than acting.
     """
+    # Read again: a note's file may have been switched off while it parsed.
+    session.refresh(document)
+    if not feeds_notes(document):
+        return
     transcript = session.exec(
         select(Transcript).where(  # noqa: F405
             Transcript.recording_id == document.recording_id  # noqa: F405
@@ -631,6 +643,9 @@ def rebuild_recording_index_task(self, recording_id: int):
         ).all()
 
         if not pages:
+            if not feeds_notes(document):
+                # A note's file switched off was never parsed: nothing to embed.
+                continue
             # Parsed before pages were stored, so there is no text to re-embed.
             # Structural only: a silent re-run of visual parsing on upgrade
             # would spend the user's provider quota without being asked.

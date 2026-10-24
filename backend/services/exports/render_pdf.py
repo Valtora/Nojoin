@@ -30,12 +30,15 @@ from reportlab.platypus import (
     Flowable,
     Frame,
     HRFlowable,
+    Indenter,
+    KeepTogether,
     NextPageTemplate,
     PageBreak,
     PageTemplate,
     Spacer,
     TableStyle,
 )
+from reportlab.platypus import Image as RLImage
 from reportlab.platypus import Paragraph as RLParagraph
 from reportlab.platypus import Table as RLTable
 
@@ -49,6 +52,7 @@ from .model import (
     CodeBlock,
     ExportDocument,
     Heading,
+    ImageBlock,
     Inline,
     ListBlock,
     Paragraph,
@@ -321,6 +325,7 @@ class _StoryBuilder:
             Callout: self._callout,
             ChartBlock: self._chart,
             TranscriptLine: self._transcript,
+            ImageBlock: self._image,
         }
 
     def flowables(self, blocks: Sequence[Block]) -> list[Flowable]:
@@ -483,6 +488,42 @@ class _StoryBuilder:
 
     def _chart(self, block: ChartBlock) -> list[Flowable]:
         return [Spacer(1, 2), ChartFlowable(block.chart), Spacer(1, 12)]
+
+    def _image(self, block: ImageBlock) -> list[Flowable]:
+        # Under its caption's indent, in a hairline frame so a white slide
+        # keeps its edge on the page. The caption stays on the picture's page,
+        # so a note's picture never starts a page whose note is on the
+        # page before.
+        indent = self.styles.quote.leftIndent
+        width, height = block.size_pt(FRAME_WIDTH - indent)
+        framed = RLTable(
+            [[RLImage(BytesIO(block.data), width=width, height=height)]],
+            colWidths=[width],
+            rowHeights=[height],
+        )
+        framed.setStyle(
+            TableStyle(
+                [
+                    ("BOX", (0, 0), (-1, -1), 0.6, _hex(theme.RULE)),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                    ("TOPPADDING", (0, 0), (-1, -1), 0),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+                ]
+            )
+        )
+        framed.hAlign = "LEFT"
+        return [
+            KeepTogether(
+                [
+                    self._para(block.caption, self.styles.quote),
+                    Indenter(left=indent),
+                    framed,
+                    Indenter(left=-indent),
+                    Spacer(1, 10),
+                ]
+            )
+        ]
 
     def _transcript(self, block: TranscriptLine) -> list[Flowable]:
         stamp = (

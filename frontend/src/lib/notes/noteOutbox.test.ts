@@ -7,6 +7,7 @@ import {
   useSessionStore,
 } from "@/lib/session";
 import {
+  attachFileToNote,
   coded,
   createTimelineNote,
   deleteTimelineNote,
@@ -752,5 +753,106 @@ describe("NoteOutbox: notes on chosen text", () => {
     expect(
       notePlace({ kind: "selection", anchorMs: null, selection: { ...ON_LINE, startMs: 75_000 } }),
     ).toBe("at 01:15");
+  });
+});
+
+describe("NoteOutbox: a note's file", () => {
+  const still = () => new File([new Uint8Array(8)], "screen-capture.png", { type: "image/png" });
+
+  beforeEach(() => {
+    forgetNoteOutboxes();
+    server.notes.clear();
+    server.files.clear();
+    server.uploadFailures = [];
+    attachFileToNote.mockClear();
+  });
+
+  it("uploads once its note saves, holding the page until then", async () => {
+    const outbox = new NoteOutbox(RECORDING);
+
+    outbox.submit({ kind: "point", body: "Screen capture", anchorMs: 65_000 }, { file: still() });
+    const [entry] = outbox.getSnapshot().entries;
+    expect(outbox.getSnapshot().uploads.get(entry.id)).toMatchObject({
+      fileName: "screen-capture.png",
+      place: "at 01:05",
+    });
+    expect(outbox.hasUnsaved()).toBe(true);
+    await vi.waitFor(() => expect(outbox.getSnapshot().uploads.size).toBe(0));
+
+    expect(attachFileToNote).toHaveBeenCalledTimes(1);
+    expect(server.files.get(entry.id)).toBe("screen-capture.png");
+    expect(outbox.hasUnsaved()).toBe(false);
+  });
+
+  it("waits with Retry and Discard after a failed upload, never sending it again unasked", async () => {
+    const outbox = new NoteOutbox(RECORDING);
+    server.uploadFailures.push(NO_ANSWER, NO_ANSWER);
+
+    outbox.submit({ kind: "point", body: "Slide", anchorMs: 1_000 }, { file: still() });
+    const [entry] = outbox.getSnapshot().entries;
+    await vi.waitFor(() =>
+      expect(outbox.getSnapshot().uploads.get(entry.id)?.status).toBe("failed"),
+    );
+    const failed = outbox.getSnapshot().uploads.get(entry.id)!;
+    await settle();
+
+    expect(attachFileToNote).toHaveBeenCalledTimes(1);
+    expect(failed.error).toBe("Not uploaded: no answer from Nojoin.");
+    expect(outbox.getSnapshot().notice?.text).toBe("File for the note at 00:01 not uploaded.");
+    expect(server.notes.has(entry.id)).toBe(true);
+
+    outbox.retryUpload(failed.key);
+    await vi.waitFor(() =>
+      expect(outbox.getSnapshot().uploads.get(entry.id)?.status).toBe("failed"),
+    );
+    outbox.discardUpload(failed.key);
+
+    expect(attachFileToNote).toHaveBeenCalledTimes(2);
+    expect(outbox.getSnapshot().uploads.size).toBe(0);
+    expect(server.notes.has(entry.id)).toBe(true);
+    expect(outbox.hasUnsaved()).toBe(false);
+  });
+
+  it("counts an upload whose answer was lost as done when Retry finds it landed", async () => {
+    const outbox = new NoteOutbox(RECORDING);
+    server.uploadFailures.push(NO_ANSWER);
+
+    outbox.submit({ kind: "point", body: "Slide", anchorMs: 1_000 }, { file: still() });
+    const [entry] = outbox.getSnapshot().entries;
+    await vi.waitFor(() =>
+      expect(outbox.getSnapshot().uploads.get(entry.id)?.status).toBe("failed"),
+    );
+    server.files.set(entry.id, "screen-capture.png");
+    outbox.retryUpload(outbox.getSnapshot().uploads.get(entry.id)!.key);
+
+    await vi.waitFor(() => expect(outbox.getSnapshot().uploads.size).toBe(0));
+  });
+
+  it("sends the box's file with the next note, captioned with its name when the box has no text", async () => {
+    const outbox = new NoteOutbox(RECORDING);
+    outbox.setDraftFile(still());
+    expect(outbox.hasUnsaved()).toBe(true);
+
+    outbox.submit({ kind: "point", body: "  ", anchorMs: 5_000 }, { clearDraft: true });
+
+    const [entry] = outbox.getSnapshot().entries;
+    expect(outbox.getSnapshot().draftFile).toBeNull();
+    expect(entry.body).toBe("screen-capture.png");
+    await vi.waitFor(() => expect(server.files.get(entry.id)).toBe("screen-capture.png"));
+  });
+
+  it("drops a failed file whose note was deleted elsewhere", async () => {
+    const outbox = new NoteOutbox(RECORDING);
+    server.uploadFailures.push(NO_ANSWER);
+    outbox.submit({ kind: "point", body: "Slide", anchorMs: 1_000 }, { file: still() });
+    const [entry] = outbox.getSnapshot().entries;
+    await vi.waitFor(() =>
+      expect(outbox.getSnapshot().uploads.get(entry.id)?.status).toBe("failed"),
+    );
+    outbox.ingest([server.notes.get(entry.id)!]);
+
+    outbox.ingest([]);
+
+    expect(outbox.getSnapshot().uploads.size).toBe(0);
   });
 });
