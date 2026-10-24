@@ -8,6 +8,7 @@ import {
   MessageSquare,
   StickyNote,
   Users,
+  type LucideIcon,
 } from "lucide-react";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 
@@ -15,9 +16,9 @@ import ChatPanel from "@/components/ChatPanel";
 import IconButton from "@/components/ui/IconButton";
 import { useNavigationStore, type SideTab } from "@/lib/store";
 
-const SIDE_TABS: { tab: SideTab; label: string }[] = [
-  { tab: "speakers", label: "Speakers" },
-  { tab: "my-notes", label: "My notes" },
+const SIDE_TABS: { tab: SideTab; label: string; icon: LucideIcon }[] = [
+  { tab: "speakers", label: "Speakers", icon: Users },
+  { tab: "my-notes", label: "My notes", icon: StickyNote },
 ];
 
 interface RecordingSideColumnProps {
@@ -35,7 +36,9 @@ interface RecordingSideColumnProps {
 /**
  * The top of the side column: Speakers and My notes as tabs (the WAI-ARIA
  * tabs pattern), and the button that collapses it. Both panels stay mounted,
- * so switching tabs keeps a rename or an edit where it was.
+ * so switching tabs keeps a rename or an edit where it was. Under 13.25rem,
+ * where both labels and the button no longer fit, each tab is its icon, named
+ * by the label kept for screen readers and by its tooltip.
  */
 function SideTabs({ speakers, myNotes }: { speakers: ReactNode; myNotes: ReactNode }) {
   const sideTab = useNavigationStore((state) => state.sideTab);
@@ -64,10 +67,15 @@ function SideTabs({ speakers, myNotes }: { speakers: ReactNode; myNotes: ReactNo
   };
 
   return (
-    <div id="side-tabs" className="flex h-full flex-col">
+    <div id="side-tabs" className="@container flex h-full flex-col">
       <div className="flex shrink-0 items-center justify-between border-b border-surface-border bg-surface-card pr-1">
-        <div ref={tablistRef} role="tablist" aria-label="Side panels" className="flex min-w-0 overflow-hidden">
-          {SIDE_TABS.map(({ tab, label }) => (
+        <div
+          ref={tablistRef}
+          role="tablist"
+          aria-label="Side panels"
+          className="flex min-w-0 overflow-hidden @max-[13.25rem]:flex-1"
+        >
+          {SIDE_TABS.map(({ tab, label, icon: Icon }) => (
             <button
               key={tab}
               type="button"
@@ -76,15 +84,17 @@ function SideTabs({ speakers, myNotes }: { speakers: ReactNode; myNotes: ReactNo
               aria-selected={sideTab === tab}
               aria-controls={`side-panel-${tab}`}
               tabIndex={sideTab === tab ? 0 : -1}
+              title={label}
               onClick={() => setSideTab(tab)}
               onKeyDown={onKeyDown}
-              className={`min-w-0 whitespace-nowrap border-b-2 px-2.5 py-2.5 text-sm font-semibold transition-colors outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-action ${
+              className={`flex min-w-0 items-center border-b-2 px-2.5 py-2.5 text-sm font-semibold transition-colors outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-action @max-[13.25rem]:flex-1 @max-[13.25rem]:justify-center @max-[13.25rem]:px-1 ${
                 sideTab === tab
                   ? "border-action text-action-text"
                   : "border-transparent text-contrast-helper hover:text-foreground"
               }`}
             >
-              {label}
+              <Icon aria-hidden="true" className="hidden h-4 w-4 shrink-0 @max-[13.25rem]:block" />
+              <span className="truncate @max-[13.25rem]:sr-only">{label}</span>
             </button>
           ))}
         </div>
@@ -94,6 +104,7 @@ function SideTabs({ speakers, myNotes }: { speakers: ReactNode; myNotes: ReactNo
           aria-label="Collapse speakers and notes panel"
           title="Collapse speakers and notes panel"
           onClick={() => setSpeakerPanelCollapsed(true)}
+          className="@max-[13.25rem]:w-8"
         />
       </div>
       {SIDE_TABS.map(({ tab }) => (

@@ -109,15 +109,17 @@ export default function MyNotesList({
             className="absolute inset-0 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-action"
           />
         ) : null}
-        <div className="flex items-center gap-1">
+        {/* In a narrow column the buttons wrap under the time, and each
+            other, rather than leave the column. */}
+        <div className="flex min-w-0 flex-wrap items-center gap-x-1">
           {time ? (
-            <span className="font-mono text-xs tabular-nums text-contrast-icon-muted">{time}</span>
+            <span className="grow basis-0 font-mono text-xs tabular-nums text-contrast-icon-muted">{time}</span>
           ) : (
-            <span className="text-xs font-medium text-contrast-helper">
+            <span className="grow basis-0 text-xs font-medium text-contrast-helper">
               {note.kind === "head" ? "Before the transcript" : "After the transcript"}
             </span>
           )}
-          <div className="relative ml-auto flex shrink-0 items-center">
+          <div className="relative ml-auto flex min-w-0 flex-wrap items-center justify-end">
             {time ? (
               <IconButton
                 size="sm"
