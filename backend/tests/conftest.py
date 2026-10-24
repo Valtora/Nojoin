@@ -25,6 +25,7 @@ import redis.connection
 import backend.models.registry  # noqa: F401
 from backend.celery_app import celery_app
 from backend.processing.text_embedding_version import TEXT_EMBEDDING_DIMENSIONS
+from backend.tests.network_guard import NetworkGuard, server_hostnames
 from backend.tests.postgres_setup import POSTGRES_TEST_URL_ENV, drop_session_objects
 from backend.tests.redis_guard import (
     app_frames,
@@ -91,6 +92,32 @@ def redis_contact_guard(monkeypatch):
             f"{attempts[-1]}",
             pytrace=False,
         )
+
+
+@pytest.fixture(autouse=True)
+def network_contact_guard(monkeypatch):
+    """Fail any test that resolves or connects to a host outside the suite.
+
+    A test may reach loopback, a Unix socket and the hosts in the suite's
+    server URLs (``NOJOIN_TEST_POSTGRES_URL``). Anything else is refused: a
+    real LLM server, a calendar or telemetry endpoint, a public name looked up
+    in DNS. A test written against a real Ollama URL then fails on every
+    network, instead of calling the server when one answers and passing on the
+    unreachable path when none does. The callers catch their own failures, so
+    the attempt is recorded and the test fails in teardown.
+
+    Yields the guard. A test of the guard reads ``guard.hosts`` and calls
+    ``guard.clear()`` to acknowledge what it caused. ``network_guard.py`` has
+    the seams and what they cannot see.
+    """
+    guard = NetworkGuard(server_hostnames())
+    guard.install(monkeypatch.setattr)
+
+    yield guard
+
+    message = guard.failure_message()
+    if message:
+        pytest.fail(message, pytrace=False)
 
 
 @pytest.fixture(autouse=True)
