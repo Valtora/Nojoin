@@ -10,7 +10,10 @@ from sqlalchemy import create_engine, text
 from sqlmodel import Session
 
 import backend.worker.tasks as tasks_module
-from backend.tests.sqlite_schemas import TIMELINE_NOTES_SCHEMA
+from backend.tests.sqlite_schemas import (
+    SPEAKER_NAME_EVENTS_SCHEMA,
+    TIMELINE_NOTES_SCHEMA,
+)
 from backend.utils.context_window import ContextWindowExceededError
 
 BASE_SCHEMA = """
@@ -146,7 +149,10 @@ CREATE TABLE context_chunks (
     embedding_version INTEGER
 );
 
-""" + TIMELINE_NOTES_SCHEMA.strip().rstrip(";")
+""" + ";\n\n".join(
+    schema.strip().rstrip(";")
+    for schema in (TIMELINE_NOTES_SCHEMA, SPEAKER_NAME_EVENTS_SCHEMA)
+)
 
 
 def _utc_now_naive() -> datetime:

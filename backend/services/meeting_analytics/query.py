@@ -15,6 +15,7 @@ from backend.models.pipeline import TranscriptUtterance, TranscriptUtteranceStat
 from backend.models.speaker import GlobalSpeaker, RecordingSpeaker
 from backend.utils.canonical_pipeline import UNKNOWN_SPEAKER, list_active_utterances
 from backend.utils.live_speaker_labels import live_speaker_display_name
+from backend.utils.speaker_names.live import live_speaker_names
 
 from .metrics import UtteranceRow, compute_deterministic_metrics
 from .warnings import build_attribution_warning
@@ -106,18 +107,24 @@ def _build_speaker_directory(session, recording_id: int) -> dict[str, dict[str, 
     return directory
 
 
-def _describe_unlisted_key(speaker_key: str) -> dict[str, Any]:
-    """Identity for a key with no recording_speakers row behind it."""
+def _describe_unlisted_key(
+    speaker_key: str, live_names: dict[str, str] | None = None
+) -> dict[str, Any]:
+    """Identity for a key with no recording_speakers row behind it.
+
+    A live label shows the name the user gave it during capture, if any.
+    """
     if speaker_key.startswith("label:"):
         label = speaker_key.split(":", 1)[1]
+        live_name = (live_names or {}).get(label)
         return {
             "speaker_key": speaker_key,
             "public_id": None,
-            "name": live_speaker_display_name(label) or label,
+            "name": live_name or live_speaker_display_name(label) or label,
             "diarization_label": label,
             "color": None,
             "global_speaker_id": None,
-            "is_named": False,
+            "is_named": live_name is not None,
         }
     return {
         "speaker_key": speaker_key,
@@ -159,8 +166,9 @@ def compute_recording_analytics(session, recording) -> dict[str, Any]:
     }
 
     directory = _build_speaker_directory(session, recording.id)
+    live_names = live_speaker_names(session, recording.id)
     speakers = [
-        directory.get(speaker_key) or _describe_unlisted_key(speaker_key)
+        directory.get(speaker_key) or _describe_unlisted_key(speaker_key, live_names)
         for speaker_key in sorted(
             metrics["talk_time"],
             key=lambda key: metrics["talk_time"][key]["speech_ms"],

@@ -26,6 +26,7 @@ from backend.tests.sqlite_schemas import (
     RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA,
     RECORDING_SPEAKERS_SCHEMA,
     RECORDINGS_SCHEMA,
+    SPEAKER_NAME_EVENTS_SCHEMA,
     TRANSCRIPT_UTTERANCE_EVENTS_SCHEMA,
     TRANSCRIPT_UTTERANCES_SCHEMA,
     TRANSCRIPTS_SCHEMA,
@@ -131,6 +132,7 @@ def _make_engine(tmp_path: Path, name: str) -> Any:
             RECORDING_SPEAKERS_SCHEMA,
             RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA,
             GLOBAL_SPEAKERS_SCHEMA,
+            SPEAKER_NAME_EVENTS_SCHEMA,
         ):
             connection.execute(text(schema))
     return engine

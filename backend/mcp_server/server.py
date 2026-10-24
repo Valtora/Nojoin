@@ -429,6 +429,7 @@ async def get_transcript(recording_id: str) -> dict[str, Any]:
     from backend.models.recording import Recording
     from backend.models.speaker import RecordingSpeaker
     from backend.utils.canonical_pipeline import build_transcript_segments_for_read
+    from backend.utils.speaker_names.live import with_live_speaker_names
 
     user = get_current_mcp_user()
     async with async_session_maker() as db:
@@ -445,12 +446,14 @@ async def get_transcript(recording_id: str) -> dict[str, Any]:
         active_speakers = [
             speaker for speaker in recording.speakers if not speaker.merged_into_id
         ]
-        segments = await db.run_sync(
-            lambda sync_session: build_transcript_segments_for_read(
-                sync_session, recording.id
+        segments, speaker_map = await db.run_sync(
+            lambda sync_session: (
+                build_transcript_segments_for_read(sync_session, recording.id),
+                with_live_speaker_names(
+                    sync_session, recording.id, _build_speaker_map(active_speakers)
+                ),
             )
         )
-        speaker_map = _build_speaker_map(active_speakers)
         transcript_text = _format_transcript_text(segments, speaker_map)
 
     return {
@@ -525,11 +528,14 @@ async def get_transcript_utterances(
 
     result = payload.model_dump()
     utterances = result["utterances"]
+    live_names = result.get("live_speaker_names") or {}
     for utterance in utterances:
-        # A live label, as the live panel shows it.
-        live_name = live_speaker_display_name(utterance.get("speaker"))
+        # A live label, as the live panel shows it: the name the user gave it,
+        # else "Speaker <n>".
+        label = utterance.get("speaker")
+        live_name = live_speaker_display_name(label)
         if live_name is not None:
-            utterance["speaker"] = live_name
+            utterance["speaker"] = live_names.get(label) or live_name
     page_end = offset + limit
     result["utterances"] = utterances[offset:page_end]
     result["total_utterances"] = len(utterances)

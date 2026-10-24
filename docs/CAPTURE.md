@@ -88,6 +88,10 @@ Notes typed under the live transcript ([Live Notes](USAGE.md#live-notes)) are pl
 
 To take notes on a second device, such as a phone while a laptop records, sign in there and open the recording from the recordings list. That device shows the live transcript and the note box too, places notes on the same clock, and each device shows the other's notes within a couple of seconds. Taking notes never affects what is captured.
 
+## Naming Speakers During Capture
+
+With live speaker labels on, a speaker's label in the live transcript can be renamed while the recording runs or is paused ([USAGE.md](USAGE.md#live-transcription)), from any device showing the live view. The name is kept with the stretch of the meeting it was given for, the label's longest settled turn so far, and processing gives it to the speaker who holds that stretch, so it survives the processed transcript numbering speakers afresh. A name given before a pause lands as well as one given after it, since paused time is not on the recording's clock. Naming closes at **Stop**: a name sent as the recording stops is refused with a message, and the speaker is then renamed on the processed transcript. Naming never affects what is captured.
+
 ## Paused Recording Lock
 
 Each user can run one browser capture at a time. While a paused recording exists, the **Start Meeting** button reads **Paused recording needs attention** and imports are blocked until you choose in the dialog. An interrupted recording, one whose tab closed without pausing it, holds the same lock, and the button reads **Interrupted recording needs attention**. A file import never holds it, even one that did not finish ([Importing Recordings](USAGE.md#importing-recordings)). The dialog offers:

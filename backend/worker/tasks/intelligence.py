@@ -1,6 +1,7 @@
 from backend.models.transcript import TRANSCRIPTION_FAILED_NOTES_MESSAGE
 from backend.utils.context_window import ContextWindowExceededError
 from backend.utils.live_speaker_labels import speaker_display_name
+from backend.utils.speaker_names.live import with_live_speaker_names
 from backend.utils.speaker_names.sources import inferred_name_may_be_replaced
 
 from .constants import *
@@ -89,7 +90,9 @@ def generate_notes_task(self, recording_id: int, notes_template_id: int | None =
                 RecordingSpeaker.recording_id == recording_id
             )
         ).all()
-        speaker_map = build_recording_speaker_map(speakers)
+        speaker_map = with_live_speaker_names(
+            session, recording_id, build_recording_speaker_map(speakers)
+        )
         timeline_notes = load_recording_timeline_notes(session, recording_id)
         transcript_text = render_timeline_for_llm(
             segments,
@@ -412,7 +415,9 @@ def index_transcript_task(self, recording_id: int):
     speakers = session.exec(
         select(RecordingSpeaker).where(RecordingSpeaker.recording_id == recording_id)
     ).all()
-    speaker_map = build_recording_speaker_map(speakers)
+    speaker_map = with_live_speaker_names(
+        session, recording_id, build_recording_speaker_map(speakers)
+    )
 
     try:
         # Replace this recording's transcript chunks; document and notes chunks stay.

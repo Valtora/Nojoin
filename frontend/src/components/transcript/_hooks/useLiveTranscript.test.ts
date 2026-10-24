@@ -317,4 +317,36 @@ describe("useLiveTranscript", () => {
 
     expect(getTranscriptUtterances.mock.calls.length).toBe(callsWhileLive);
   });
+
+  it("shows the live names every read carries, and a rename's at once", async () => {
+    getTranscriptUtterances
+      .mockResolvedValueOnce({
+        ...buildDelta(4, [buildUtterance("a", 0, "first line", 4)]),
+        live_speaker_names: { LIVE_PROVISIONAL_1: "Alex" },
+      })
+      // A delta with no new line still carries the names whole.
+      .mockResolvedValueOnce({
+        ...buildDelta(4, []),
+        live_speaker_names: { LIVE_PROVISIONAL_1: "Alexis", LIVE_PROVISIONAL_2: "Blair" },
+      });
+
+    const { result } = renderHook(() => useLiveTranscript(buildRecording()));
+
+    await flushPendingRequests();
+    expect(result.current.liveSpeakerNames).toEqual({ LIVE_PROVISIONAL_1: "Alex" });
+
+    act(() => {
+      result.current.applyLiveSpeakerNames({ LIVE_PROVISIONAL_1: "Alexis" });
+    });
+    expect(result.current.liveSpeakerNames).toEqual({ LIVE_PROVISIONAL_1: "Alexis" });
+
+    await advanceOnePoll();
+    expect(result.current.liveSpeakerNames).toEqual({
+      LIVE_PROVISIONAL_1: "Alexis",
+      LIVE_PROVISIONAL_2: "Blair",
+    });
+    expect(result.current.segments.map((segment) => segment.text)).toEqual([
+      "first line",
+    ]);
+  });
 });

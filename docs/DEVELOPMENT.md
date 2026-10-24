@@ -314,6 +314,7 @@ Capture code lives in `frontend/src/lib/capture/`. After a capture change, check
 - A discard elsewhere: pause a capture, choose **Discard recording** for it in another browser's resume-or-discard dialog, then select **Resume** in the first tab. It stops with the message that the recording was discarded and releases the microphone and shared tab. With a second account signed in from another tab of the first browser instead, the first tab keeps recording and asks for its owner's sign-in.
 - A stop elsewhere: pause a capture, choose **Stop and process** for it in another browser's resume-or-discard dialog, then select **Resume** in the first tab. It stops with the message that the recording was already stopped, releases the microphone and shared tab, and shows no recording controls. Any audio that tab had not uploaded is then gone from its IndexedDB queue (`nojoin-capture`) and offered as a download, and the downloaded FLAC plays back that stretch.
 - Focus moving to another tab, window or application, which must not pause capture.
+- With live speaker labels on: rename a label from its chip during capture, and again while paused (pause first, name, then resume), on desktop and on a phone. The name shows on every line of that label and in Meeting Edge; after **Stop** the processed transcript gives it to the speaker holding that speech, and a rename sent after **Stop** is refused with a notice.
 
 ```bash
 cd frontend

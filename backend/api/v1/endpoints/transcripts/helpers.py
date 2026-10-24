@@ -181,6 +181,9 @@ class TranscriptUtteranceListRead(BaseModel):
     utterances: List[TranscriptUtteranceRead]
     tombstones: List[str] = []
     speakers: List[RecordingSpeakerPublicRead] = []
+    # Live label -> the name the user gave it during capture. Sent whole on every
+    # read, delta or not: naming a live speaker changes no utterance.
+    live_speaker_names: dict[str, str] = {}
 
 
 class NotesUpdate(BaseModel):

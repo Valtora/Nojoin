@@ -81,6 +81,7 @@ files = [
     "backend/processing/live_diarization",
     "backend/utils/canonical_pipeline/live_labels.py",
     "backend/utils/live_speaker_labels.py",
+    "backend/utils/speaker_names/live.py",
     "backend/utils/word_text.py",
 ]
 
