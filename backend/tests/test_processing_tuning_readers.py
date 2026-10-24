@@ -360,6 +360,39 @@ def test_raised_phantom_merge_threshold_retains_the_brief_speaker(monkeypatch):
     assert _labels(result) == {"SPEAKER_00", "SPEAKER_01"}
 
 
+@pytest.mark.parametrize(
+    ("cosine", "labels", "non_speech"),
+    [
+        (0.2, {"SPEAKER_00"}, [(12.0, 13.0)]),
+        (0.65, {"SPEAKER_00"}, []),
+        (0.5, {"SPEAKER_00", "SPEAKER_01"}, []),
+    ],
+    ids=["non-speech", "merged", "retained"],
+)
+def test_the_filter_reports_only_the_turns_it_confirmed_as_non_speech(
+    monkeypatch, cosine, labels, non_speech
+):
+    """A cluster below the floor is relabelled, not dropped, so its turn stays
+    in the result under the nearest speaker; the filter reports it so muted
+    transcription can leave it muted (#678). A merged or a retained cluster
+    sounds like speech and is not reported."""
+    from backend.processing.phantom_filter import filter_phantom_speakers
+
+    _install_phantom_model(monkeypatch, _PhantomModel(cosine=cosine))
+    reported: list = []
+
+    result = filter_phantom_speakers(
+        _phantom_diarization(),
+        "audio.wav",
+        config={"processing_device": "cpu"},
+        non_speech_turns=reported,
+    )
+
+    assert _labels(result) == labels
+    assert [(turn.start, turn.end) for turn, _track in reported] == non_speech
+    assert set(reported) <= set(result.itertracks())
+
+
 def _filter_with_an_unloaded_model(monkeypatch, tuning: dict):
     """Run the filter with an empty model cache, recording loads and crops."""
     from backend.processing import embedding_core

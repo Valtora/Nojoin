@@ -15,7 +15,11 @@ from .final_asr import (
 from .final_segments import combine_and_consolidate_segments, drop_unheard_words
 from .speaker_assignment import assign_and_identify_speakers
 from .stage_vram import release_asr_vram, release_diarization_vram
-from .vad_stage import run_vad_stage, transcription_audio_after_diarization
+from .vad_stage import (
+    run_phantom_filter,
+    run_vad_stage,
+    transcription_audio_after_diarization,
+)
 
 # ---------------------------------------------------------------------------
 # process_recording_task orchestration stages
@@ -49,6 +53,9 @@ class _PipelineRunContext:
     # Set once the VAD stage picks the diarisation side's (16k mono) audio;
     # consumed by the speaker-assignment stage for voiceprints.
     diarization_audio_path: str | None = None
+    # (segment, track) of each turn the phantom filter confirmed as non-speech;
+    # the union file transcription reads keeps them muted (#678).
+    non_speech_turns: tuple = ()
 
 
 @dataclass
@@ -271,16 +278,7 @@ def _run_final_diarization_stage(
             session.add(recording)
             session.commit()
         else:
-            from backend.processing.phantom_filter import filter_phantom_speakers
-
-            try:
-                diarization_result = filter_phantom_speakers(
-                    diarization_result, audio_path, config=merged_config
-                )
-            except Exception as e:  # noqa: BLE001 -- boundary: phantom filter is best-effort
-                logger.warning(
-                    f"Phantom speaker filter failed, continuing with unfiltered result: {e}"
-                )
+            diarization_result = run_phantom_filter(ctx, diarization_result, audio_path)
 
             # How much speech each cluster actually holds. This is what shows
             # whether an unexpected extra speaker is a negligible fragment or a

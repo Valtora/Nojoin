@@ -9,7 +9,7 @@ Uses a two-stage approach:
 """
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Hashable, List, Optional, Tuple
 
 import numpy as np
 from pyannote.core import Annotation, Segment
@@ -124,6 +124,8 @@ def filter_phantom_speakers(
     max_segments: Optional[int] = None,
     embedding_floor: Optional[float] = None,
     merge_threshold: Optional[float] = None,
+    *,
+    non_speech_turns: Optional[List[Tuple[Segment, Hashable]]] = None,
 ) -> Annotation:
     """
     Detect and reassign phantom speaker segments in a diarization result.
@@ -147,6 +149,13 @@ def filter_phantom_speakers(
         embedding_floor: Cosine similarity floor for non-speech confirmation.
         merge_threshold: Cosine similarity above which a phantom is merged
                          into the matched real speaker.
+        non_speech_turns: When given, receives the ``(segment, track)`` of
+                         every turn of a cluster confirmed as non-speech, as
+                         the returned Annotation holds it. Those turns stay in
+                         the result, relabelled to the nearest speaker so the
+                         words in them keep one, but heard no speech: muted
+                         transcription leaves them muted (#678). A merged or
+                         retained cluster is speech and is never listed.
 
     Each threshold left as None comes from ``config``, else the module default.
     When the floor is not below the merge threshold, each of the two that came
@@ -250,6 +259,7 @@ def filter_phantom_speakers(
 
     # Maps candidate label -> target label (reassign/merge destination)
     reassignment_map: Dict[str, str] = {}
+    non_speech_labels: set[str] = set()
 
     for label in candidates:
         # Extract embedding from the candidate's longest segment
@@ -282,6 +292,7 @@ def filter_phantom_speakers(
             nearest = _find_nearest_speaker(longest_seg, diarization, candidates)
             target = nearest if nearest else best_match_label
             reassignment_map[label] = target
+            non_speech_labels.add(label)
             logger.info(
                 f"[PhantomFilter] {label} confirmed as non-speech "
                 f"(best similarity={best_score:.3f} < floor={embedding_floor}). "
@@ -316,6 +327,8 @@ def filter_phantom_speakers(
             new_label = reassignment_map[label]
             filtered[segment, track] = new_label
             reassigned_count += 1
+            if label in non_speech_labels and non_speech_turns is not None:
+                non_speech_turns.append((segment, track))
         else:
             filtered[segment, track] = label
 

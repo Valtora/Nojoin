@@ -1469,7 +1469,13 @@ def _one_turn(start: float, end: float) -> Annotation:
     return annotation
 
 
-def _install_real_vad_files(monkeypatch, tmp_path, *, diarization) -> dict:
+def _keep_every_cluster(diarization, *args, **kwargs):
+    return diarization
+
+
+def _install_real_vad_files(
+    monkeypatch, tmp_path, *, diarization, phantom=_keep_every_cluster
+) -> dict:
     """Real unmuted and muted files (VAD kept 1-3 s), a diarisation stub, and an
     ASR stub that hears "Morning." in VAD speech and "Over here." at 10 s.
     Returns what each stage saw, in the order the stages ran."""
@@ -1519,7 +1525,7 @@ def _install_real_vad_files(monkeypatch, tmp_path, *, diarization) -> dict:
     _install(
         monkeypatch,
         "backend.processing.phantom_filter",
-        filter_phantom_speakers=lambda diarization, *a, **k: diarization,
+        filter_phantom_speakers=phantom,
     )
     _install(
         monkeypatch,
@@ -1567,6 +1573,44 @@ def test_muted_transcription_hears_the_turns_diarisation_found(
     assert seen["vad_muted_input"] is (reads != "unmuted")
     assert (union in seen["cleaned"]) is (reads == "union")
     assert transcript.text.strip() == text
+
+
+def test_turns_the_phantom_filter_confirmed_as_non_speech_stay_muted(
+    monkeypatch, tmp_path
+):
+    """The filter relabels a noise cluster rather than dropping it, so its
+    turns reach the union (#678). They open nothing: the word ASR places in one
+    goes with the zero-run drop, VAD speech inside one is still heard, and the
+    other speaker's turn still opens."""
+    recording = _FakeRecording(736)
+    transcript = _FakeTranscript(736)
+    session = _FakeSession(recording, transcript)
+    _install_happy_path_modules(monkeypatch)
+    diarization = _one_turn(13.0, 17.0)
+    diarization[Segment(1.2, 2.5)] = "SPEAKER_01"
+    diarization[Segment(9.8, 11.0)] = "SPEAKER_01"
+
+    def _phantom(diarization, *a, non_speech_turns, **k):
+        non_speech_turns.extend(
+            (turn, track)
+            for turn, track, label in diarization.itertracks(yield_label=True)
+            if label == "SPEAKER_01"
+        )
+        return diarization
+
+    seen = _install_real_vad_files(
+        monkeypatch, tmp_path, diarization=diarization, phantom=_phantom
+    )
+
+    _run_task(monkeypatch, session, recording_id=736)
+
+    union = str(tmp_path / "recording_vad_union.wav")
+    heard, rate = soundfile.read(union)
+    assert seen["asr"] == union
+    assert heard[round(15.0 * rate)] != 0
+    assert heard[round(2.0 * rate)] != 0
+    assert not heard[round(3.0 * rate) : round(13.0 * rate)].any()
+    assert transcript.text.strip() == "Morning."
 
 
 def test_diarisation_runs_before_asr_and_each_frees_the_card_after(
