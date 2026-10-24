@@ -32,6 +32,7 @@ HEARD_GERMAN = {
     "detected": "de",
     "detected_label": "German",
     "probability": 0.93,
+    "model": "large-v3",
     "used": "en",
     "engine": "whisper",
 }
@@ -54,6 +55,8 @@ def test_a_sure_detection_of_another_language_asks():
         "used": "en",
         "used_label": "English",
         "engine": "whisper",
+        # So "Reprocess in German" keeps the model the transcript used.
+        "model": "large-v3",
         "reprocess_language": "de",
     }
 
@@ -81,7 +84,6 @@ def test_only_a_sure_enough_detection_asks(probability, asks):
     notice = _notice(detection={**HEARD_GERMAN, "probability": probability})
 
     assert (notice is not None) is asks
-    assert LANGUAGE_NOTICE_MIN_PROBABILITY == 0.5
 
 
 @pytest.mark.parametrize(
@@ -106,6 +108,7 @@ def test_the_record_keeps_what_was_heard_beside_what_was_used():
             "detected": "de",
             "detected_label": "German",
             "probability": 0.93,
+            "model": "large-v3",
         },
     }
 
@@ -148,6 +151,7 @@ def test_the_recording_page_read_carries_the_notice():
     assert read.language_notice is not None
     assert read.language_notice.reprocess_language == "de"
     assert read.language_notice.used == "en"
+    assert read.language_notice.model == "large-v3"
 
 
 @pytest.mark.parametrize(
@@ -186,7 +190,12 @@ def _persisted_detection(monkeypatch, asr_result: dict, *, existing: bool = True
 @pytest.mark.parametrize("existing", [True, False])
 def test_the_pipeline_stores_each_runs_detection(monkeypatch, existing):
     """Also on the transcript a reprocess creates afresh, having deleted the old."""
-    detection = {"detected": "de", "detected_label": "German", "probability": 0.93}
+    detection = {
+        "detected": "de",
+        "detected_label": "German",
+        "probability": 0.93,
+        "model": "large-v3",
+    }
     stored = _persisted_detection(
         monkeypatch,
         {

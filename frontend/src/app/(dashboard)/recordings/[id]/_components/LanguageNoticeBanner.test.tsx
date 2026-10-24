@@ -22,15 +22,26 @@ const hebrew: LanguageNotice = {
   used: "en",
   used_label: "English",
   engine: "whisper",
+  model: "large-v3",
   reprocess_language: "auto",
 };
 
-const renderBanner = (notice: LanguageNotice | null) =>
-  renderWithProviders(
-    <LanguageNoticeBanner
-      recording={{ id: "rec-1", language_notice: notice } as Recording}
-    />,
-  );
+const german: LanguageNotice = {
+  ...hebrew,
+  detected: "de",
+  detected_label: "German",
+  reprocess_language: "de",
+};
+
+const banner = (notice: LanguageNotice | null, onAnswered?: () => void) => (
+  <LanguageNoticeBanner
+    recording={{ id: "rec-1", language_notice: notice } as Recording}
+    onAnswered={onAnswered}
+  />
+);
+
+const renderBanner = (notice: LanguageNotice | null, onAnswered?: () => void) =>
+  renderWithProviders(banner(notice, onAnswered));
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -73,13 +84,66 @@ describe("LanguageNoticeBanner", () => {
     expect(actions.reprocessInLanguage).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Reprocess" }));
 
-    // Hebrew can't be set, so it reprocesses on auto, with the engine that heard it.
+    // The notice itself: its language, and the engine and model that heard it.
     expect(actions.reprocessInLanguage).toHaveBeenCalledWith(
       "rec-1",
-      "auto",
-      "whisper",
+      hebrew,
       expect.anything(),
     );
+  });
+
+  it("says an unlisted language is reprocessed on Auto-detect", () => {
+    renderBanner(hebrew);
+
+    fireEvent.click(screen.getByRole("button", { name: "Reprocess in Hebrew" }));
+
+    expect(
+      screen.getByText(/Hebrew isn't in the language list, so this reprocesses on Auto-detect/),
+    ).toBeTruthy();
+  });
+
+  it("says nothing of Auto-detect for a listed language", () => {
+    renderBanner(german);
+
+    fireEvent.click(screen.getByRole("button", { name: "Reprocess in German" }));
+
+    expect(screen.getByText(/^Reprocessing replaces the transcript/)).toBeTruthy();
+    expect(screen.queryByText(/Auto-detect/)).toBeNull();
+  });
+
+  it("announces only the message, not the buttons", () => {
+    renderBanner(hebrew);
+
+    const status = screen.getByRole("status");
+    expect(status.textContent).toBe(
+      "Language detection heard Hebrew, but this transcript is in English.",
+    );
+    expect(status.querySelector("button")).toBeNull();
+  });
+
+  it("hands focus to the page once an answer hides the notice", () => {
+    actions.setTranscriptionLanguage.mockImplementation(
+      (_id, _language, callbacks) => callbacks.onSuccess(),
+    );
+    const onAnswered = vi.fn();
+    const { rerender } = renderBanner(hebrew, onAnswered);
+    const keep = screen.getByRole("button", { name: "Keep English" });
+    keep.focus();
+
+    fireEvent.click(keep);
+    expect(onAnswered).not.toHaveBeenCalled(); // the notice is still showing
+
+    rerender(banner(null, onAnswered));
+    expect(onAnswered).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves focus alone when the notice goes without an answer here", () => {
+    const onAnswered = vi.fn();
+    const { rerender } = renderBanner(hebrew, onAnswered);
+
+    rerender(banner(null, onAnswered));
+
+    expect(onAnswered).not.toHaveBeenCalled();
   });
 
   it("tells the page and the list to refresh once an answer is saved", () => {

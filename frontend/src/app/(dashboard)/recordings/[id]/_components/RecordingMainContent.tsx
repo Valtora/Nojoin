@@ -244,7 +244,12 @@ export default function RecordingMainContent({
 
       {/* Above the tabs, so it is in view from every panel: the language
           affects the notes as well as the transcript. */}
-      <LanguageNoticeBanner recording={recording} />
+      <LanguageNoticeBanner
+        recording={recording}
+        onAnswered={() =>
+          tablistRef.current?.querySelector<HTMLElement>(`#tab-${current}`)?.focus()
+        }
+      />
 
       {/* Panel Tabs. On mobile, Speakers is a fifth tab and the row scrolls
           sideways; on desktop the speaker panel lives in the side column. */}

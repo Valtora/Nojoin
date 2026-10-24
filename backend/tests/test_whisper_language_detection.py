@@ -19,6 +19,7 @@ import whisper
 
 from backend.processing.engines import whisper_engine
 from backend.processing.engines.base import LANGUAGE_DETECTION_AUDIO, VAD_MUTED_INPUT
+from backend.processing.engines.errors import TranscriptionError
 from backend.processing.engines.whisper_engine import WhisperEngine
 from backend.tests.test_pipeline_stages import (
     _MUTED,
@@ -180,6 +181,53 @@ def test_a_failed_detection_leaves_the_language_to_whisper(model, files):
     assert "language_detection" not in result
 
 
+def _set_french(files) -> dict:
+    return {**_auto(files, muted=False), "transcription_language": "fr"}
+
+
+@pytest.mark.parametrize(
+    "error",
+    [KeyError("probs"), TypeError("bad checkpoint")],
+    ids=["KeyError", "TypeError"],
+)
+def test_with_a_language_set_any_detection_failure_still_transcribes_in_it(
+    model, files, error
+):
+    """Detection only checks a set language: whatever it raises, the run goes
+    ahead in that language, as it did before detection checked it."""
+    model.detection_error = error
+
+    result = WhisperEngine().transcribe(files["unmuted"], _set_french(files))
+
+    assert len(model.detected_on) == 1
+    assert model.transcribed[0][1]["language"] == "fr"
+    assert result["language"] == "fr"
+    assert "language_detection" not in result
+    assert list(whisper_engine._model_cache.values()) == [model]
+
+
+def test_with_a_language_set_a_stopped_task_still_stops(model, files):
+    from celery.exceptions import SoftTimeLimitExceeded
+
+    model.detection_error = SoftTimeLimitExceeded()
+
+    with pytest.raises(SoftTimeLimitExceeded):
+        WhisperEngine().transcribe(files["unmuted"], _set_french(files))
+
+    assert model.transcribed == []
+
+
+def test_on_auto_an_unexpected_detection_failure_still_fails_the_run(model, files):
+    """On auto, detection picks the language: only its own expected errors fall
+    back to Whisper detecting on its input (#673), as before."""
+    model.detection_error = TypeError("bad checkpoint")
+
+    with pytest.raises(TranscriptionError):
+        WhisperEngine().transcribe(files["unmuted"], _auto(files, muted=False))
+
+    assert model.transcribed == []
+
+
 def test_a_muted_file_with_no_speech_leaves_the_language_to_whisper(model, tmp_path):
     """VAD can count speech in the first and last second, which the mute step
     always zeroes. A window of only pauses is not detected on."""
@@ -219,6 +267,7 @@ def test_a_set_language_is_still_checked_by_detection(model, files):
     on the speech, so the recording page can say when they differ (#671)."""
     config = {
         "transcription_language": "fr",
+        "whisper_model_size": "large-v3",
         VAD_MUTED_INPUT: False,
         LANGUAGE_DETECTION_AUDIO: files["muted"],
     }
@@ -234,6 +283,8 @@ def test_a_set_language_is_still_checked_by_detection(model, files):
         "detected": "en",
         "detected_label": "English",
         "probability": 0.9,
+        # The model that ran, so "Reprocess in English" keeps it.
+        "model": "large-v3",
     }
 
 

@@ -75,6 +75,8 @@ def language_notice(
         "used": used,
         "used_label": language_label(used),
         "engine": detection.get("engine") or "whisper",
+        # The Whisper model that heard it, which a reprocess keeps.
+        "model": detection.get("model"),
         "reprocess_language": (
             detected
             if detected in LANGUAGE_OPTIONS_BY_CODE

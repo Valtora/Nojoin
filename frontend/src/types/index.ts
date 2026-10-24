@@ -499,6 +499,8 @@ export interface LanguageNotice {
   used: string;
   used_label: string;
   engine: "whisper" | "parakeet" | "canary";
+  /** The Whisper model the transcript used, which "Reprocess in <detected>" keeps. */
+  model?: string | null;
   /** What "Reprocess in <detected>" sets: the detected code, or "auto" when it isn't listed. */
   reprocess_language: string;
 }

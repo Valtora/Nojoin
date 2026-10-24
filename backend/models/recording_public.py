@@ -184,6 +184,8 @@ class LanguageNoticeRead(PublicModel):
     used: str
     used_label: str
     engine: str
+    # The Whisper model the transcript used, or None when the record names none.
+    model: Optional[str] = None
     # What "Reprocess in <detected>" sets: the detected code when it is listed,
     # otherwise "auto", on which Whisper detects it again.
     reprocess_language: str

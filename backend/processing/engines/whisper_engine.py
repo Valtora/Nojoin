@@ -161,8 +161,20 @@ def _choose_language(
     language is still the one transcribed in, and on automatic the detected
     one is.
     """
-    detection = _detect_language_on_speech(model, config)
     language = resolve_transcription_language_code(config, engine)
+    try:
+        detection = _detect_language_on_speech(model, config)
+    except Exception as e:  # noqa: BLE001 -- boundary: with a language set, detection only checks it
+        # On automatic it picks the language, so its own narrower catch stands
+        # and anything else still fails the run, as it did before the check.
+        if not language or is_task_interruption(e):
+            raise
+        logger.warning(
+            "Language detection failed (%s); transcribing in the set language %s",
+            e,
+            language,
+        )
+        detection = None
     if detection is None:
         return language, None
     code, probability = detection
@@ -426,7 +438,8 @@ class WhisperEngine(TranscriptionEngine):
 
             result = _transcribe_seeded(model, audio_path, device, **transcribe_kwargs)
             if detection:
-                result["language_detection"] = detection
+                # The model too, so "Reprocess in <language>" keeps it.
+                result["language_detection"] = {**detection, "model": model_size}
 
             logger.info(
                 f"Transcription completed for {audio_path}. Detected language: {result.get('language')}"

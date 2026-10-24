@@ -289,9 +289,11 @@ describe("useRecordingActions", () => {
 
     await act(async () => {
       // The engine is the notice's, passed through as it is.
-      await result.current.reprocessInLanguage("rec-1", "auto", "canary", {
-        onSuccess,
-      });
+      await result.current.reprocessInLanguage(
+        "rec-1",
+        { reprocess_language: "auto", engine: "canary", model: null },
+        { onSuccess },
+      );
     });
 
     expect(api.reprocessRecording).toHaveBeenCalledWith("rec-1", {
@@ -299,6 +301,24 @@ describe("useRecordingActions", () => {
       transcription_language: "auto",
     });
     expect(onSuccess).toHaveBeenCalledTimes(1);
+  });
+
+  it("reprocesses with the Whisper model that made the transcript", async () => {
+    const { result } = renderHook(() => useRecordingActions());
+
+    await act(async () => {
+      await result.current.reprocessInLanguage("rec-1", {
+        reprocess_language: "de",
+        engine: "whisper",
+        model: "large-v3",
+      });
+    });
+
+    expect(api.reprocessRecording).toHaveBeenCalledWith("rec-1", {
+      transcription_backend: "whisper",
+      transcription_language: "de",
+      whisper_model_size: "large-v3",
+    });
   });
 
   it.each(["setTranscriptionLanguage", "reprocessInLanguage"] as const)(
@@ -317,10 +337,11 @@ describe("useRecordingActions", () => {
             onError,
           });
         } else {
-          await result.current.reprocessInLanguage("rec-1", "de", "whisper", {
-            onSuccess,
-            onError,
-          });
+          await result.current.reprocessInLanguage(
+            "rec-1",
+            { reprocess_language: "de", engine: "whisper" },
+            { onSuccess, onError },
+          );
         }
       });
 

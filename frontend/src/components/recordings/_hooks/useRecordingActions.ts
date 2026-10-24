@@ -110,11 +110,13 @@ export interface RecordingActions {
     language: string | null,
     callbacks?: RecordingActionCallbacks,
   ) => Promise<void>;
-  /** Reprocesses with `engine`, setting the recording's language first. */
+  /**
+   * Reprocesses in the notice's language, with the engine and Whisper model
+   * that produced the transcript, setting the recording's language first.
+   */
   reprocessInLanguage: (
     id: RecordingId,
-    language: string,
-    engine: LanguageNotice["engine"],
+    notice: Pick<LanguageNotice, "reprocess_language" | "engine" | "model">,
     callbacks?: RecordingActionCallbacks,
   ) => Promise<void>;
 }
@@ -295,11 +297,12 @@ export function useRecordingActions(): RecordingActions {
         }
       },
 
-      reprocessInLanguage: async (id, language, engine, callbacks) => {
+      reprocessInLanguage: async (id, notice, callbacks) => {
         try {
           await reprocessRecording(id, {
-            transcription_backend: engine,
-            transcription_language: language,
+            transcription_backend: notice.engine,
+            transcription_language: notice.reprocess_language,
+            whisper_model_size: notice.model ?? undefined,
           });
           addNotification({
             message: "Recording reprocessing started.",
