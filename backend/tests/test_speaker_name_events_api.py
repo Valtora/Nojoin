@@ -576,3 +576,17 @@ async def test_add_to_people_on_the_legacy_path_is_the_users(
         body["global_speaker_id"],
         True,
     )
+
+
+async def test_not_name_gives_back_the_speakers_own_number(
+    client, session_maker
+) -> None:
+    await _seed(session_maker)
+    await _offer(session_maker, 1, "Alex")
+
+    response = await _review(client, "SPEAKER_00", "reject")
+
+    assert response.status_code == 200, response.text
+    # Speaker 2 keeps "Speaker 2"; SPEAKER_00 is "Speaker 1" again, not the
+    # next free number.
+    assert response.json()[0]["name"] == "Speaker 1"

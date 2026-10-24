@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from .constants import *
 from .speaker import (
     _append_speaker_correction_event,
+    _generic_display_aliases_for_label,
     _resolve_active_recording_speaker,
     ensure_recording_speaker_aliases_for_speaker,
     refresh_recording_speaker_usage_state,
@@ -46,7 +47,9 @@ def placeholder_speaker_name(
 ) -> str:
     """Keep the row's own "Speaker N" when no other speaker shows it.
 
-    Used by an unmerge, and by dismissing a pending name.
+    The row's own is its name, or else the number of its label (``SPEAKER_02``
+    reads "Speaker 3"), since a name given since cleared it. Used by an
+    unmerge, and by dismissing a pending name.
     """
     taken: set[str] = set()
     highest = 0
@@ -60,8 +63,11 @@ def placeholder_speaker_name(
                 taken.add(text.casefold())
                 highest = max(highest, int(match.group(1)))
     own = str(restored.name or "").strip()
-    if _PLACEHOLDER_SPEAKER_NUMBER.match(own) and own.casefold() not in taken:
-        return own
+    candidates = [own] if _PLACEHOLDER_SPEAKER_NUMBER.match(own) else []
+    candidates += sorted(_generic_display_aliases_for_label(restored.diarization_label))
+    for candidate in candidates:
+        if candidate.casefold() not in taken:
+            return candidate
     return f"Speaker {highest + 1}"
 
 
