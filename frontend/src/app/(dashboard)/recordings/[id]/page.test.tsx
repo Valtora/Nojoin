@@ -31,10 +31,13 @@ const generateNotes = vi.fn();
 const updateSpeaker = vi.fn();
 const updateTranscriptUtteranceText = vi.fn();
 const listTimelineNotes = vi.fn();
+const updateTimelineNote = vi.fn();
 const getCurrentUser = vi.fn();
 const getUserMe = vi.fn();
 
 let activePanel = "transcript";
+// Both side panels collapsed unless a test opens them, so desktop shows the rail.
+let sidePanelsCollapsed = true;
 
 // Stable across renders, like Next's own router: the page's load callback
 // depends on it, and a fresh object per render would reload in a loop.
@@ -65,7 +68,6 @@ vi.mock("@/lib/capture/CaptureProvider", () => ({
 const setSideTab = vi.fn();
 const setSpeakerPanelCollapsed = vi.fn();
 
-// Both side panels collapsed, so desktop shows the rail.
 vi.mock("@/lib/store", () => ({
   useNavigationStore: (select?: (state: Record<string, unknown>) => unknown) => {
     const state = {
@@ -73,8 +75,8 @@ vi.mock("@/lib/store", () => ({
       setChatPanelHeight: vi.fn(),
       activePanel,
       setActivePanel,
-      isSpeakerPanelCollapsed: true,
-      isChatPanelCollapsed: true,
+      isSpeakerPanelCollapsed: sidePanelsCollapsed,
+      isChatPanelCollapsed: sidePanelsCollapsed,
       setSpeakerPanelCollapsed,
       setChatPanelCollapsed: vi.fn(),
       sideTab: "my-notes",
@@ -107,6 +109,7 @@ vi.mock("@/lib/api", () => ({
   exportAudio: (...args: unknown[]) => exportAudio(...args),
   listTimelineNotes: (...args: unknown[]) => listTimelineNotes(...args),
   createTimelineNote: vi.fn(),
+  updateTimelineNote: (...args: unknown[]) => updateTimelineNote(...args),
   deleteTimelineNote: vi.fn(),
 }));
 
@@ -131,15 +134,20 @@ vi.mock("@/components/TranscriptView", () => ({
     onUpdateSegmentText,
     onUndo,
     canUndo,
+    timelineNotes,
   }: {
     segments: TranscriptSegment[];
     onRenameSpeaker: (label: string, newName: string) => void;
     onUpdateSegmentText: (segment: TranscriptSegment, text: string) => void;
     onUndo: () => void;
     canUndo: boolean;
+    timelineNotes?: readonly { body: string }[] | null;
   }) => (
     <div data-testid="transcript-view" data-can-undo={String(canUndo)}>
       segments:{segments.length}
+      <span data-testid="transcript-notes">
+        {(timelineNotes ?? []).map((note) => note.body).join(" | ")}
+      </span>
       <button type="button" onClick={() => onRenameSpeaker("SPEAKER_00", "Dana")}>
         Rename speaker
       </button>
@@ -284,6 +292,7 @@ const renderPage = () =>
 describe("RecordingPage (detail)", () => {
   beforeEach(() => {
     activePanel = "transcript";
+    sidePanelsCollapsed = true;
     routerPush.mockReset();
     routerRefresh.mockReset();
     addNotification.mockReset();
@@ -301,6 +310,7 @@ describe("RecordingPage (detail)", () => {
     updateSpeaker.mockReset().mockResolvedValue([]);
     updateTranscriptUtteranceText.mockReset().mockResolvedValue(undefined);
     listTimelineNotes.mockReset().mockResolvedValue([]);
+    updateTimelineNote.mockReset();
 
     getRecording.mockResolvedValue(buildRecording());
     getSettings.mockResolvedValue({
@@ -756,6 +766,61 @@ describe("RecordingPage (detail)", () => {
 
     expect(setActivePanel).toHaveBeenLastCalledWith("transcript");
     await waitFor(() => expect(document.activeElement).toBe(document.getElementById("panel-transcript")));
+  });
+
+  describe("on desktop, with the side column open", () => {
+    const POINT = {
+      id: "n-1",
+      recording_id: "rec-1",
+      kind: "point",
+      body: "Ask about catering",
+      anchor_ms: 2_500,
+      revision: 1,
+      created_at: "2026-10-23T10:00:00",
+      updated_at: "2026-10-23T10:00:00",
+    };
+    const sideNotes = async () => {
+      const panel = document.getElementById("side-panel-my-notes")!;
+      await within(panel).findByRole("button", { name: /^Edit note at 00:02/ });
+      return panel;
+    };
+
+    beforeEach(() => {
+      sidePanelsCollapsed = false;
+      listTimelineNotes.mockResolvedValue([POINT]);
+    });
+
+    it("opens the transcript from a note in the side column's My notes", async () => {
+      activePanel = "notes";
+      await openTabs(1440);
+      const panel = await sideNotes();
+
+      fireEvent.click(
+        within(panel).getByRole("button", { name: /^Show in the transcript: the note at 00:02/ }),
+      );
+
+      expect(setActivePanel).toHaveBeenLastCalledWith("transcript");
+    });
+
+    it("shows an edit made in the side column's My notes in the transcript", async () => {
+      updateTimelineNote.mockResolvedValue({ ...POINT, body: "Ask about lunch", revision: 2 });
+      await openTabs(1440);
+      const panel = await sideNotes();
+      expect(screen.getByTestId("transcript-notes")).toHaveTextContent("Ask about catering");
+
+      fireEvent.click(within(panel).getByRole("button", { name: /^Edit note at 00:02/ }));
+      const editor = screen.getByRole("dialog");
+      fireEvent.change(within(editor).getByRole("textbox"), { target: { value: "Ask about lunch" } });
+      fireEvent.click(within(editor).getByRole("button", { name: "Save note" }));
+
+      await waitFor(() =>
+        expect(screen.getByTestId("transcript-notes")).toHaveTextContent("Ask about lunch"),
+      );
+      expect(updateTimelineNote).toHaveBeenCalledWith("rec-1", "n-1", {
+        expected_revision: 1,
+        body: "Ask about lunch",
+      });
+    });
   });
 
   it.each(["speakers", "my-notes"])(
