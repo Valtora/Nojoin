@@ -127,18 +127,25 @@ def link_voice_match(
     The link is a voiceprint match like the final pass's: pending until
     confirmed, with its cosine as the confidence, so under ``confirmed``
     learning it teaches nothing yet. A pending self-introduction or AI name
-    ranks below it and gives way; a name the user gave keeps its source and
-    lock. Returns False, linking nobody, when the user said this speaker is
-    not that person.
+    ranks below it and gives way.
+
+    Returns False, linking nobody, when the user said this speaker is not that
+    person, or when the speaker keeps a name of its own: the user's (once the
+    user names a speaker, voice detection stops for it), or one from before
+    sources were recorded or taken as given, which the match would show as
+    "Carol?" while linking Bob.
     """
+    if speaker.identity_locked:
+        return False
     if str(person.name).strip().casefold() in dismissed_names(session, speaker.id):
         return False
     if inferred_name_may_be_replaced(speaker):
         speaker.local_name = None
+    if speaker.local_name:
+        return False
     speaker.global_speaker_id = person.id
     speaker.name = person.name
-    if not speaker.identity_locked and speaker.name_source != SOURCE_USER:
-        speaker.name_source = SOURCE_VOICEPRINT
-        speaker.identity_confidence = score
+    speaker.name_source = SOURCE_VOICEPRINT
+    speaker.identity_confidence = score
     session.add(speaker)
     return True

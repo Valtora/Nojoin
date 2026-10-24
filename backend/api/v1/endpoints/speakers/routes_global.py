@@ -291,7 +291,10 @@ async def merge_speakers(
                         actor_user_id=current_user.id,
                         merge_global_embedding_alpha=None,
                         source="api",
-                        confirm=False,
+                        # A confirmed speaker's name now names the target,
+                        # so a later run carries it there; a pending match
+                        # moves without being confirmed.
+                        confirm=bool(rs.identity_locked),
                     )
                 )
             else:

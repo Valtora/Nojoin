@@ -641,11 +641,33 @@ async def test_scan_for_matches_links_as_a_voice_match_the_user_may_still_refuse
     assert (await _speaker(session_maker, 2))["global_speaker_id"] is None
 
 
-async def test_scan_for_matches_keeps_the_users_own_name_as_theirs(
-    client, session_maker
+@pytest.mark.parametrize(
+    "named",
+    [
+        # Named by the user: once a user names a speaker, voice detection
+        # stops for it.
+        {"rename": "Bobby"},
+        # A name from before sources were recorded, or one taken as given:
+        # linked, it would read "Carol?" beside Bob.
+        {"local_name": "Carol", "name_source": None},
+        {"local_name": "Carol", "name_source": "auto"},
+    ],
+)
+async def test_scan_for_matches_skips_a_speaker_with_a_name_of_its_own(
+    client, session_maker, named
 ) -> None:
     await _seed(session_maker, people=[{"id": 8, "name": "Bob"}])
-    await _rename(client, "SPEAKER_00", "Bobby")
+    if "rename" in named:
+        await _rename(client, "SPEAKER_00", named["rename"])
+    else:
+        await _set(
+            session_maker,
+            "UPDATE recording_speakers SET local_name = :local, name = NULL, "
+            "name_source = :source WHERE id = 1",
+            local=named["local_name"],
+            source=named["name_source"],
+        )
+    before = await _speaker(session_maker, 1)
     await _set(
         session_maker,
         "UPDATE global_speakers SET embedding = '[1.0, 0.0]' WHERE id = 8",
@@ -658,14 +680,62 @@ async def test_scan_for_matches_keeps_the_users_own_name_as_theirs(
     response = await client.post("/api/v1/speakers/8/scan-matches")
 
     assert response.status_code == 200, response.text
+    assert response.json()["matches_found"] == 0
+    assert await _speaker(session_maker, 1) == before
+
+
+async def test_a_confirmed_speaker_merged_into_another_person_follows_them(
+    client, session_maker
+) -> None:
+    from backend.utils.speaker_names.anchors import lines_from_final_segments
+    from backend.utils.speaker_names.resolve import NameEvent, resolve_names
+
+    await _seed(
+        session_maker, people=[{"id": 7, "name": "Bob"}, {"id": 8, "name": "Robert"}]
+    )
+    await _rename(client, "SPEAKER_00", "Bob")
+
+    response = await client.post(
+        "/api/v1/speakers/merge", json={"source_speaker_id": 7, "target_speaker_id": 8}
+    )
+
+    assert response.status_code == 200, response.text
+    # Deleting the source sets its events' person to NULL, as Postgres does.
+    await _set(
+        session_maker,
+        "UPDATE speaker_name_events SET global_speaker_id = NULL "
+        "WHERE global_speaker_id = 7",
+    )
+    events = await _events(session_maker)
+    resolved, _ = resolve_names(
+        [
+            NameEvent(
+                event_id=e["id"],
+                kind=e["kind"],
+                name=e["name"],
+                global_speaker_id=e["global_speaker_id"],
+                source=e["source"],
+                authority=e["authority"],
+                anchor_start_ms=e["anchor_start_ms"],
+                anchor_end_ms=e["anchor_end_ms"],
+                supersedes_event_id=e["supersedes_event_id"],
+            )
+            for e in events
+        ],
+        lines_from_final_segments(
+            [
+                {"speaker": label, "start": start, "end": end}
+                for label, start, end in LINES
+            ]
+        ),
+    )
+    # A later run carries the user's name to the person it now names.
+    assert (resolved["SPEAKER_00"].name, resolved["SPEAKER_00"].global_speaker_id) == (
+        "Robert",
+        8,
+    )
     speaker = await _speaker(session_maker, 1)
-    # Linked, as before, but the name stays the user's: not a pending match.
-    assert (
-        speaker["global_speaker_id"],
-        speaker["local_name"],
-        speaker["name_source"],
-        speaker["identity_locked"],
-    ) == (8, "Bobby", "user", True)
+    assert (speaker["global_speaker_id"], speaker["identity_locked"]) == (8, True)
 
 
 async def test_confirm_keeps_a_voice_match_and_makes_it_the_users(
