@@ -27,6 +27,7 @@ from backend.models.speaker_name_event import SpeakerNameEvent
 
 from .anchors import Line, Span, longest_turn
 from .events import UserNameAct
+from .resolve import MIN_COVERED_MS
 from .sources import AUTHORITY, KIND_NAME, SOURCE_USER
 
 SURFACE_LIVE = "live"
@@ -46,8 +47,9 @@ def live_label_anchor(session: Any, recording_id: int, label: str) -> Span | Non
     """The label's longest turn so far, from the lines whose label has locked.
 
     A locked line keeps its label, so its turn is the voice the user meant; an
-    unlocked one may still move to another label. With no locked line, the
-    longest turn of any. Unlabelled lines end a turn, as another voice's do.
+    unlocked one may still move to another label. With no locked line, or none
+    lasting ``MIN_COVERED_MS`` (a shorter span names nobody at the final pass),
+    the longest turn of any. Unlabelled lines end a turn, as another voice's do.
     """
     from backend.utils.canonical_pipeline.constants import ACTIVE_UTTERANCE_STATES
 
@@ -73,8 +75,10 @@ def live_label_anchor(session: Any, recording_id: int, label: str) -> Span | Non
         else:
             unlocked.append(line)
     if locked:
-        return longest_turn([*others, *locked], label)
-    return longest_turn([*others, *unlocked], label)
+        turn = longest_turn([*others, *locked], label)
+        if turn is not None and turn[1] - turn[0] >= MIN_COVERED_MS:
+            return turn
+    return longest_turn([*others, *locked, *unlocked], label)
 
 
 def record_live_speaker_name(

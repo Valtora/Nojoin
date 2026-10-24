@@ -90,7 +90,7 @@ To take notes on a second device, such as a phone while a laptop records, sign i
 
 ## Naming Speakers During Capture
 
-With live speaker labels on, a speaker's label in the live transcript can be renamed while the recording runs or is paused ([USAGE.md](USAGE.md#live-transcription)), from any device showing the live view. The name is kept with the stretch of the meeting it was given for, the label's longest locked turn, or its longest turn when none is locked, and processing gives it to the speaker who holds that stretch, so it survives the processed transcript numbering speakers afresh. A name given before a pause lands as well as one given after it, since paused time is not on the recording's clock. Naming closes at **Stop**: a name sent as the recording stops is refused with a message, and the speaker is then renamed on the processed transcript. Naming never affects what is captured.
+With live speaker labels on, a speaker's label in the live transcript can be renamed while the recording runs or is paused ([USAGE.md](USAGE.md#live-transcription)), from any device showing the live view. The name is kept with the stretch of the meeting it was given for, the label's longest locked turn, or its longest turn when none is locked or the locked one is under a second, and processing gives it to the speaker who holds that stretch, so it survives the processed transcript numbering speakers afresh. A name given before a pause lands as well as one given after it, since paused time is not on the recording's clock. Naming closes at **Stop**: a name sent as the recording stops is refused with a message, and the speaker is then renamed on the processed transcript. Naming never affects what is captured.
 
 ## Paused Recording Lock
 
