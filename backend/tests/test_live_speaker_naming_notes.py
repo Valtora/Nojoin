@@ -23,6 +23,9 @@ from backend.tests.test_generate_notes_task import (
     _utc_now_naive,
 )
 
+# Notes and the index both embed text (#689).
+pytestmark = pytest.mark.usefixtures("stub_text_embedding")
+
 LIVE_LINE = {
     "start": 0.0,
     "end": 1.5,
@@ -74,21 +77,7 @@ def test_notes_name_the_live_speaker(tmp_path, monkeypatch) -> None:
     assert "[00:00 - 00:01] Alex: Hello team." in transcript.splitlines()
 
 
-@pytest.fixture
-def stub_embeddings(monkeypatch):
-    class _Service:
-        def embed(self, chunks):
-            return [[0.0, 1.0] for _ in chunks]
-
-    monkeypatch.setattr(
-        "backend.processing.text_embedding.get_text_embedding_service",
-        lambda: _Service(),
-    )
-
-
-def test_the_search_index_names_the_live_speaker(
-    tmp_path, monkeypatch, stub_embeddings
-) -> None:
+def test_the_search_index_names_the_live_speaker(tmp_path, monkeypatch) -> None:
     engine = _database(tmp_path)
     url = str(engine.url)
     monkeypatch.setattr(tasks_module, "get_sync_session", lambda: Session(engine))
