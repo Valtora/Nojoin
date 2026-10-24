@@ -8,6 +8,7 @@ image does not carry, whereas Pillow is already there.
 
 from __future__ import annotations
 
+import re
 from functools import cache
 from io import BytesIO
 from typing import Any
@@ -101,6 +102,10 @@ def _canvas_text(canvas: Any, shape: TextShape, height: float) -> None:
 # -- Pillow ----------------------------------------------------------------------
 
 _PIL_ANCHORS = {"start": "ls", "middle": "ms", "end": "rs"}
+# Pillow's raqm layout takes one paragraph and fails outright on a paragraph
+# separator, so a speaker's name holding a carriage return would fail the Word
+# export. A label is laid out as one line, so each separator draws as a space.
+_PARAGRAPH_BREAKS = re.compile("[\n\r\x1c-\x1e\x85\u2029]")
 
 
 @cache
@@ -157,7 +162,7 @@ def _pil_text(draw: Any, shape: TextShape, scale: float) -> None:
     font = _pil_font(shape.font, max(1, round(shape.size * scale)))
     draw.text(
         (shape.x * scale, shape.y * scale),
-        shape.text,
+        _PARAGRAPH_BREAKS.sub(" ", shape.text),
         fill=shape.color,
         font=font,
         anchor=_PIL_ANCHORS[shape.anchor],
