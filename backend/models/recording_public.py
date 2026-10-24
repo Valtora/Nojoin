@@ -76,8 +76,8 @@ class RecordingSpeakerPublicRead(PublicModel):
     # The source that gave the name: heuristic, llm, voiceprint, auto (confirmed
     # by the setting) or user. None on "Speaker N" and on older rows.
     name_source: Optional[str] = None
-    # A name nobody has confirmed yet, shown as "Alex?" with Confirm and Dismiss
-    # (backend/utils/speaker_names/sources.py, name_is_pending).
+    # A name shown as "Alex?" with Confirm and Dismiss; strong voice matches
+    # aren't pending (backend/utils/speaker_names/sources.py, name_is_pending).
     name_pending: bool = False
     global_speaker: Optional[GlobalSpeakerRead] = None
     # Set only on the rename and promote responses, and only when the speaker's

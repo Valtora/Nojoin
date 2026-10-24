@@ -132,8 +132,9 @@ export interface RecordingSpeaker extends BaseDBModel {
   identity_confidence?: number | null;
   /**
    * The name was suggested (by a self-introduction, the AI or a voiceprint)
-   * and nobody has confirmed it yet. Worked out by the backend; the views
-   * show it with a "?" and offer Confirm and Not {name}.
+   * and nobody has confirmed it yet. Strong voice matches are not pending.
+   * Worked out by the backend; the views show it with a "?" and offer
+   * Confirm and Not {name}.
    */
   name_pending?: boolean;
   /**

@@ -316,8 +316,8 @@ export function useSpeakerPanelActions(
     entry.pendingName ? { labels: entry.pendingName.labels, name: entry.displayName } : null;
 
   const reviewName = async (entry: SpeakerPanelEntry, decision: SpeakerNameDecision) => {
-    const pending = pendingNameOf(entry);
-    if (pending) await nameReview.review(pending, decision);
+    const labels = decision === "confirm" ? entry.pendingName?.labels : entry.dismissibleNameLabels;
+    if (labels?.length) await nameReview.review({ labels, name: entry.displayName }, decision);
   };
 
   const confirmAllNames = (entries: readonly SpeakerPanelEntry[]) =>

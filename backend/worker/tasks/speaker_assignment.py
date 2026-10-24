@@ -322,8 +322,8 @@ def _identity_from_voiceprint(
         return None
 
     logger.info(f"Identified {label} as {best_match.name} (Score: {best_score:.2f})")
-    # The match is the name nobody has confirmed yet ("Bob?"), so by default it
-    # teaches the person's voiceprint nothing until the user confirms it.
+    # Nobody has confirmed the match, even when it is strong enough to show
+    # a plain name, so by default it teaches the person's voiceprint nothing.
     if library_learns_automatically(owner_settings(session, recording.user_id)):
         _learn_from_confident_match(session, best_match, embedding, best_score)
     return _ResolvedIdentity(
@@ -331,7 +331,7 @@ def _identity_from_voiceprint(
         global_speaker_id=best_match.id,
         is_identified=True,
         name_source=SOURCE_VOICEPRINT,
-        confidence=round(float(best_score), 4),
+        confidence=float(best_score),
     )
 
 
@@ -509,8 +509,8 @@ def _record_voiceprint_match(
 ) -> None:
     """Record a voiceprint match as a name event on the cluster's first turn.
 
-    The match keeps its provisional link, shown "Bob?" until the user confirms
-    it, unless the owner asked for suggested names to be taken as given.
+    The match keeps its provisional link, with a plain name for a strong match
+    or "Bob?" otherwise, unless the owner takes suggested names as given.
     """
     identity = work.identity
     if identity.name_source != SOURCE_VOICEPRINT or speaker_id is None:

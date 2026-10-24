@@ -46,6 +46,8 @@ DUPLICATE_SPEAKER_MERGE_THRESHOLD = 0.70
 # voiceprints scored above 0.55, while the same person's sat at a median of
 # 0.87 with 5% below 0.73.
 IDENTIFIED_MERGE_VOICEPRINT_FLOOR = 0.60
+# Plain names use 0.85, near the same-person median of 0.87 measured above.
+PLAIN_NAME_MATCH_SCORE = 0.85
 # Least speech a person's library voiceprint may be created from: the time
 # covered by the crops _select_voiceprint_crops picked for the recording
 # voiceprint it is created from. Measured on AMI meetings and a House of Lords

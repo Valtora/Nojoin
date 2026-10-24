@@ -440,6 +440,12 @@ export default function SpeakerPanel({
               label: "Rename / Assign",
               onClick: () => handleRenameStart(contextMenu.speaker),
             },
+            ...(!contextMenu.speaker.pendingName && contextMenu.speaker.dismissibleNameLabels.length > 0
+              ? [{
+                  label: `Not ${contextMenu.speaker.displayName}`,
+                  onClick: () => handleReviewName(contextMenu.speaker, "dismiss"),
+                }]
+              : []),
             {
               label: "Merge into...",
               onClick: () => handleMergeStart(contextMenu.speaker),
