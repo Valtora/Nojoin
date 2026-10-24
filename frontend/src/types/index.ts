@@ -121,12 +121,21 @@ export interface RecordingSpeaker extends BaseDBModel {
    */
   name_last_edit_source?: string | null;
   /**
+   * The source that gave the name: "heuristic" (a self-introduction), "llm",
+   * "voiceprint", "auto" (confirmed by the setting) or "user". Null on
+   * "Speaker N" and on speakers from before sources were recorded.
+   */
+  name_source?: SpeakerNameSource | null;
+  /**
    * What linking this speaker did to the person's library voiceprint. Only the
    * rename and promote responses carry it, and only when the speaker's
    * voiceprint was offered to a person.
    */
   library_voiceprint?: LibraryVoiceprintOutcome | null;
 }
+
+/** Mirrors `backend/utils/speaker_names/sources.py`. */
+export type SpeakerNameSource = "heuristic" | "llm" | "voiceprint" | "auto" | "user";
 
 /**
  * What happened to a person's library voiceprint when a recording speaker was

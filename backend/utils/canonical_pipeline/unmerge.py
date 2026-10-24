@@ -119,6 +119,7 @@ def _restore_merged_speaker_row(
     restored.identity_confidence = None
     restored.identity_locked = False
     restored.name_last_edit_source = None
+    restored.name_source = None
     restored.name = _placeholder_name_for_restored_speaker(restored, speakers)
     restored.first_seen_ms = min(utterance.start_ms for utterance in moving)
     restored.last_seen_ms = max(utterance.end_ms for utterance in moving)

@@ -14,7 +14,10 @@ from sqlalchemy.pool import StaticPool
 
 from backend.api.deps import get_current_user, get_db
 from backend.api.v1.api import api_router
-from backend.tests.sqlite_schemas import TIMELINE_NOTES_SCHEMA
+from backend.tests.sqlite_schemas import (
+    SPEAKER_NAME_EVENTS_SCHEMA,
+    TIMELINE_NOTES_SCHEMA,
+)
 
 RECORDINGS_SCHEMA = """
 CREATE TABLE recordings (
@@ -131,7 +134,8 @@ CREATE TABLE recording_speakers (
     last_seen_ms INTEGER,
     identity_confidence FLOAT,
     identity_locked BOOLEAN NOT NULL,
-    name_last_edit_source VARCHAR(32)
+    name_last_edit_source VARCHAR(32),
+    name_source VARCHAR(16)
 )
 """
 
@@ -381,6 +385,7 @@ async def test_session_maker() -> sessionmaker:
         await connection.execute(text(TRANSCRIPT_UTTERANCE_EVENTS_SCHEMA))
         await connection.execute(text(RECORDING_SPEAKER_ALIASES_SCHEMA))
         await connection.execute(text(SPEAKER_CORRECTION_EVENTS_SCHEMA))
+        await connection.execute(text(SPEAKER_NAME_EVENTS_SCHEMA))
         await connection.execute(text(TIMELINE_NOTES_SCHEMA))
 
     try:
@@ -1193,6 +1198,7 @@ async def test_reprocess_resets_and_rebuilds_pipeline_state(
         TranscriptUtteranceState,
     )
     from backend.models.speaker import RecordingSpeaker
+    from backend.models.speaker_name_event import SpeakerNameEvent
     from backend.models.timeline_note import TimelineNote
     from backend.models.transcript import Transcript
 
@@ -1251,6 +1257,18 @@ async def test_reprocess_resets_and_rebuilds_pipeline_state(
                 recording_id=201,
                 event_type=SpeakerCorrectionEventType.ASSIGN_UTTERANCE,
                 scope=SpeakerCorrectionScope.UTTERANCE_ONLY,
+            )
+        )
+        session.add(
+            SpeakerNameEvent(
+                recording_id=201,
+                kind="name",
+                name="Alex",
+                source="user",
+                authority=40,
+                anchor_start_ms=0,
+                anchor_end_ms=1000,
+                recording_speaker_id=2010,
             )
         )
         session.add(
@@ -1331,6 +1349,12 @@ async def test_reprocess_resets_and_rebuilds_pipeline_state(
             text(
                 "SELECT COUNT(*) FROM diarization_window_results WHERE recording_id = 201"
             )
+        )
+        assert res.scalar() == 0
+
+        # Naming acts go with the speakers they named, as correction events do.
+        res = await session.execute(
+            text("SELECT COUNT(*) FROM speaker_name_events WHERE recording_id = 201")
         )
         assert res.scalar() == 0
 

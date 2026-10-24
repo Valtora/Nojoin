@@ -204,12 +204,12 @@ Each segment becomes a `recording_audio_chunks` row with an offset on the record
 3. **Diarisation** with pyannote (`enable_diarization`), on the unmuted file unless `vad_mute_diarization` is set, bounded by the recording's `max_speakers` when set. Phantom speaker filtering then takes clusters within `phantom_max_duration_s` and `phantom_max_segments`: one below `phantom_embedding_floor` against every main speaker is treated as noise and reassigned, one above `phantom_merge_threshold` merges into the speaker it matches, and one in between is kept. The turns of a cluster treated as noise stay muted for transcription. A diarisation that fails leaves one speaker, and transcription still runs.
 4. **Transcription** through an engine in [backend/processing/engines/](../backend/processing/engines/) (see [ASR Engines](#asr-engines)), less the words it placed in digital silence (see [Words In Digital Silence](#words-in-digital-silence)). It runs after diarisation so that muted transcription can hear the speech diarisation found (see [Muted Audio Per Stage](#muted-audio-per-stage)).
 5. **Merge and consolidation** (see [Word Timestamps In The Merge](#word-timestamps-in-the-merge)).
-6. **Speaker assignment.** Voiceprint extraction, identification against the People library, and the duplicate-merge pass (see [Speakers And Voiceprints](#speakers-and-voiceprints)).
+6. **Speaker assignment.** Voiceprint extraction, names carried from earlier naming acts, identification against the People library, and the duplicate-merge pass (see [Speakers And Voiceprints](#speakers-and-voiceprints) and [Speaker Names](#speaker-names)).
 7. **Canonical finalise**, when `enable_canonical_transcript_writes` is on (the default). `finalize_utterances_from_segments` in [backend/utils/canonical_pipeline/core.py](../backend/utils/canonical_pipeline/core.py) writes the merged segments as finalised utterances, supersedes every other active utterance (the live lane's included) while keeping the user's locked text and speakers on lines it matches, and rebuilds the transcript projection. This is committed before step 8, so a later failure cannot undo it. With the setting off, the segments stay in the transcript's JSON only.
 8. **Meeting intelligence**, when a provider and model are configured: title, Markdown notes, and speaker names applied to unresolved speakers and kept on the transcript as an audit trail. Local Ollama runs inline; any other provider is handed to the IO lane (`generate_meeting_intelligence_task`). Without AI the recording still completes, and **Generate Notes** and **Retry Speaker Inference** work once AI is configured.
 9. **Completion.** Auto-link to a calendar event, then queue the follow-ups in [backend/worker/tasks/followups.py](../backend/worker/tasks/followups.py): transcript indexing (IO), delivery (CPU), overlap (GPU) and, if the owner opted in, AI analysis (IO).
 
-The playback proxy is built by `generate_proxy_task` on the CPU lane, queued alongside processing. `POST /recordings/{id}/reprocess` deletes the generated transcript, utterances, speakers, chat and index rows (keeping the user's notes) and requeues the pipeline, optionally with a different engine and model (`engine_override`).
+The playback proxy is built by `generate_proxy_task` on the CPU lane, queued alongside processing. `POST /recordings/{id}/reprocess` deletes the generated transcript, utterances, speakers, name events, chat and index rows (keeping the user's notes) and requeues the pipeline, optionally with a different engine and model (`engine_override`).
 
 ### ASR Engines
 
@@ -324,11 +324,24 @@ Every link of a recording speaker to a person offers its voiceprint through `upd
 
 A speaker correction (a rename across the recording or from an utterance forward, a merge, a library link or promotion) changes only the utterances its scope selects, or the speaker's identity. It never re-derives other utterances from `diarization_window_results` or `diarization_window_turns`, which hold data only for live captures finalised by v1.0.0 to v1.2.0.
 
-Three `pipeline_metric` stages make diarisation quality readable from a worker log:
+Four `pipeline_metric` stages make diarisation quality readable from a worker log:
 
 - `final_diarization_speaker_stats`: per-cluster speech duration, segment count and share, overlapped speech, and whether the cap bound.
 - `speaker_identification`: each cluster's three closest people with cosine scores, and which matched.
 - `speaker_merge_pass`, emitted on every run, including runs that merge or score nothing (with a reason): pair scores, why a pair over the threshold was refused, each merged group with its survivor and scores, and each absorbed cluster's score against the person's library voiceprint.
+- `speaker_name_resolution`, one per standing name event: the speaker holding its span, the share held, whether it was applied, offered as pending or left unresolved, and the floor score of a linked person.
+
+#### Speaker Names
+
+Every naming act on a recording's speakers is a row in `speaker_name_events` ([backend/models/speaker_name_event.py](../backend/models/speaker_name_event.py)), owned by the recording and only ever added to. A row holds the name, the person if any, the source, its authority and the span of the meeting the name was given for (`anchor_start_ms`, `anchor_end_ms`). Sources rank a self-introduction (`heuristic`, 10) below the LLM (20), a voiceprint match (30), a name confirmed by the confirm-at-end setting (`auto`, 35) and the user (40). A later act on the same speaker supersedes the earlier row (`supersedes_event_id`), so the table is the audit trail of how each speaker got its name. `recording_speakers.name_source` records which source gave the name a speaker shows; NULL is a name from before sources were recorded, or "Speaker N".
+
+- **User acts.** A rename, a link to a person and **Add to People**, on the web app or through MCP, write a `user` row anchored on the speaker's longest turn so far: consecutive lines with one speaker, gaps under 1.5 s ([backend/utils/speaker_names/anchors.py](../backend/utils/speaker_names/anchors.py)). A speaker with no lines gets no row. Each also keeps writing its `speaker_correction_events` row.
+- **At the final pass**, before identification, the machine rows of any earlier run are dropped (this run derives its own) and every standing row goes to the final speaker holding at least 60% of the attributed speech in its span (`resolve_names` in [backend/utils/speaker_names/resolve.py](../backend/utils/speaker_names/resolve.py), pure). A span with under 1 s of attributed speech names nobody. Each speaker takes the highest-authority name among the rows it holds; within that authority, a name needs 60% of the summed overlap.
+- **Stop rule and floor.** A held user name stops identification for its speaker, which is locked as a rename leaves it. A user name for a person applies only if the cluster scores at least `IDENTIFIED_MERGE_VOICEPRINT_FLOOR` (0.60) against that person's library voiceprint; when either side has no voiceprint of the same version, the user's word stands. The carry-over teaches no library voiceprint: the act that wrote the row already offered the voiceprint when it was made.
+- **Pending.** A span no speaker clearly holds, two names too close to call, and a person the floor refused are offered as pending names, applied after the merge pass and only to a speaker still unnamed and unlinked, so they never block a merge, trigger merge-by-name or override a voiceprint match.
+- With no rows, speaker assignment is as before. Finalise reads name events, never live labels.
+
+In this release a final pass meets user rows only on a run that does not reset the recording, such as one requeued after an interrupted worker; reprocessing deletes every row, as it deletes correction events.
 
 ### AI Calls
 
@@ -505,7 +518,7 @@ Tables are SQLModel classes in [backend/models/](../backend/models/). The canoni
 | --- | --- |
 | Recordings | `recordings` (status, `audio_path`, `proxy_path`, `max_speakers`, `pipeline_generation`, `capture_epoch`, `calendar_event_id`), `transcripts` (one per recording: the segment projection, notes, statuses, `analytics_payload`), `timeline_notes` and `timeline_note_tombstones` (the user's notes) |
 | Canonical transcript | `transcript_utterances` (state, revision, manual locks, `diarization_label`, `recording_speaker_id`), `transcript_utterance_events`, `processing_runs`, `speaker_correction_events`, `recording_speaker_aliases` |
-| Speakers | `recording_speakers` (per recording, optionally linked to a person), `global_speakers` (the People library and its voiceprints), `recording_speaker_drift_refusals` (the people the drift guard refused each speaker for), `p_tags` and `people_tags` |
+| Speakers | `recording_speakers` (per recording, optionally linked to a person; `name_source`), `speaker_name_events` (every naming act, with its source and time span), `global_speakers` (the People library and its voiceprints), `recording_speaker_drift_refusals` (the people the drift guard refused each speaker for), `p_tags` and `people_tags` |
 | Live capture | `recording_audio_chunks`, `recording_audio_chunk_cursors`, `recording_audio_window_manifests`; `diarization_window_results` and `diarization_window_turns` hold legacy data only |
 | Documents and search | `documents`, `document_pages`, `context_chunks` (text embeddings for search and chat), `chat_messages` |
 | Organisation | `tags`, `recording_tags`, `user_tasks`, `user_task_tags`, `user_task_recordings`, `notes_templates` |

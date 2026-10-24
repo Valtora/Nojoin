@@ -1,3 +1,6 @@
+from backend.utils.speaker_names.events import UserNameAct, record_user_name_events
+from backend.utils.speaker_names.sources import SOURCE_USER
+
 from .constants import *
 from .identity_fields import apply_recording_speaker_identity_fields
 from .notes_propagation import propagate_speaker_rename_to_notes
@@ -783,6 +786,7 @@ def update_recording_speaker_identity(
         if library_update is not None and recording_speaker.id is not None:
             library_updates[recording_speaker.id] = library_update
         recording_speaker.name_last_edit_source = source
+        recording_speaker.name_source = SOURCE_USER
 
     effective_event_type = event_type or (
         SpeakerCorrectionEventType.LINK_GLOBAL_SPEAKER
@@ -817,6 +821,12 @@ def update_recording_speaker_identity(
         },
     )
 
+    record_user_name_events(
+        session,
+        recording_id,
+        matching_speakers,
+        UserNameAct(resolved_new_name, target_global_speaker_id, actor_user_id, source),
+    )
     if list_active_utterances(session, recording_id):
         refresh_transcript_projection_from_canonical(session, recording_id)
 

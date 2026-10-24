@@ -1,6 +1,7 @@
 from backend.models.transcript import TRANSCRIPTION_FAILED_NOTES_MESSAGE
 from backend.utils.context_window import ContextWindowExceededError
 from backend.utils.live_speaker_labels import speaker_display_name
+from backend.utils.speaker_names.sources import suggestion_source
 
 from .constants import *
 
@@ -686,6 +687,7 @@ def _auto_apply_persisted_speaker_name_suggestions(
             new_speaker_name=suggested_name,
             target_global_speaker=global_speaker,
             merge_global_embedding_alpha=0.3 if global_speaker is not None else None,
+            name_source=suggestion_source(suggestion),
             identity_confidence=(
                 float(raw_confidence)
                 if isinstance(raw_confidence, (int, float))

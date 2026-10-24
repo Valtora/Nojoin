@@ -18,8 +18,14 @@ Two load-bearing invariants run through the whole stage:
 from dataclasses import dataclass
 
 from backend.utils.speaker_assignment import remap_overlapping_speakers
+from backend.utils.speaker_names.sources import SOURCE_VOICEPRINT
 
 from .constants import *  # noqa: F403
+from .speaker_name_carryover import (
+    CarriedNames,
+    apply_pending_names,
+    carry_names_to_final_speakers,
+)
 
 
 @dataclass
@@ -34,6 +40,12 @@ class _ResolvedIdentity:
     name: str
     global_speaker_id: int | None = None
     is_identified: bool = False
+    # Which source gave the name (backend/utils/speaker_names/sources.py);
+    # None leaves the row's own as it is.
+    name_source: str | None = None
+    # A user's name carried to this run: kept as the row's local name (when it
+    # links no one) and locked, as a rename leaves it.
+    user_confirmed: bool = False
 
 
 @dataclass
@@ -273,6 +285,7 @@ def _identity_from_voiceprint(
         name=best_match.name,
         global_speaker_id=best_match.id,
         is_identified=True,
+        name_source=SOURCE_VOICEPRINT,
     )
 
 
@@ -333,6 +346,17 @@ def _absorb_into_existing_name(
     _rewrite_segment_labels(final_segments, work.label, target_label)
 
 
+def _apply_name_provenance(row: RecordingSpeaker, identity: _ResolvedIdentity) -> None:
+    """Record where the name came from, as the act that gave it would have."""
+    if identity.name_source is None:
+        return
+    row.name_source = identity.name_source
+    if identity.user_confirmed:
+        row.local_name = identity.name if identity.global_speaker_id is None else None
+        row.identity_locked = True
+        row.identity_confidence = 1.0
+
+
 def _persist_speaker(session, work: _LabelWork) -> int | None:
     """Create or update the RecordingSpeaker row for one label."""
     from backend.processing.embedding_core import EMBEDDING_METHOD_VERSION
@@ -349,6 +373,7 @@ def _persist_speaker(session, work: _LabelWork) -> int | None:
             embedding_speech_seconds=work.speech_seconds,
             global_speaker_id=work.identity.global_speaker_id,
         )
+        _apply_name_provenance(rec_speaker, work.identity)
         session.add(rec_speaker)
         session.flush()
         return rec_speaker.id
@@ -367,8 +392,10 @@ def _persist_speaker(session, work: _LabelWork) -> int | None:
     if (
         work.identity.global_speaker_id is not None
         or work.existing_speaker.global_speaker_id is None
+        or work.identity.user_confirmed
     ):
         work.existing_speaker.global_speaker_id = work.identity.global_speaker_id
+    _apply_name_provenance(work.existing_speaker, work.identity)
     if work.embedding is not None:
         from backend.processing.embedding import judge_drift
 
@@ -429,6 +456,25 @@ def _run_duplicate_merge_pass(
         )
 
 
+def _identity_from_carried_name(
+    carried: CarriedNames, label: str, existing_speaker: RecordingSpeaker | None
+) -> _ResolvedIdentity | None:
+    """A name a user gave for this label's speech, unless a hand merge decided it."""
+    name = carried.held.get(label)
+    if name is None or (
+        existing_speaker is not None and existing_speaker.merged_into_id
+    ):
+        return None
+    logger.info("Carrying %s's name for %s from a naming act", name.name, label)
+    return _ResolvedIdentity(
+        name=name.name,
+        global_speaker_id=name.global_speaker_id,
+        is_identified=True,
+        name_source=name.source,
+        user_confirmed=True,
+    )
+
+
 def _resolve_identity(
     session,
     *,
@@ -473,6 +519,9 @@ def assign_and_identify_speakers(
     speaker_voiceprints = _extract_speaker_voiceprints(
         ctx, recording, diarization_result
     )
+    carried = carry_names_to_final_speakers(
+        session, recording, final_segments, speaker_voiceprints
+    )
 
     speaker_counter = 1
     # name -> {'id': recording_speaker_id, 'label': diarization_label}
@@ -487,7 +536,11 @@ def assign_and_identify_speakers(
 
         voiceprint = speaker_voiceprints.get(label)
         embedding = voiceprint.embedding if voiceprint is not None else None
-        identity = _resolve_identity(
+        # A user's name for this speech outranks the row's own name and any
+        # voiceprint match; only a merge decided by hand comes before it.
+        identity = _identity_from_carried_name(
+            carried, label, existing_speaker
+        ) or _resolve_identity(
             session,
             recording=recording,
             label=label,
@@ -527,6 +580,7 @@ def assign_and_identify_speakers(
             resolved_names_map[identity.name] = {"id": speaker_id, "label": label}
 
     _run_duplicate_merge_pass(ctx, recording, final_segments, diarization_result)
+    apply_pending_names(session, recording, carried.pending)
 
 
 __all__ = ["assign_and_identify_speakers"]
