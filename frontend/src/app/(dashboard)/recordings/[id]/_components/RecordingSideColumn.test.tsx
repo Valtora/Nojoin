@@ -79,6 +79,26 @@ describe("the side column's Speakers and My notes tabs", () => {
     expect(within(tablist()).getAllByRole("tab").filter((each) => each.tabIndex === 0)).toEqual([tab(to)]);
   });
 
+  // jsdom has no container queries, so this reads the rules a browser applies:
+  // a label hides under 13.25rem on the other tab, and only under 10.75rem on
+  // the open one, where both are icons.
+  it("keeps the open tab's label longest in a narrow column, the other tab its icon", () => {
+    renderColumn();
+    const label = (name: string) => tab(name).querySelector("span")!;
+    const hidesBelow = (name: string) =>
+      ["10.75rem", "13.25rem"].filter((width) => label(name).classList.contains(`@max-[${width}]:sr-only`));
+
+    expect(hidesBelow("Speakers")).toEqual(["10.75rem"]);
+    expect(hidesBelow("My notes")).toEqual(["13.25rem"]);
+    fireEvent.click(tab("My notes"));
+    expect(hidesBelow("Speakers")).toEqual(["13.25rem"]);
+    expect(hidesBelow("My notes")).toEqual(["10.75rem"]);
+    for (const name of ["Speakers", "My notes"]) {
+      expect(tab(name)).toHaveAttribute("title", name);
+      expect(tab(name).querySelector("svg")).toHaveAttribute("aria-hidden", "true");
+    }
+  });
+
   it("collapses both tabs together, and the bar left brings them back", () => {
     renderColumn();
 

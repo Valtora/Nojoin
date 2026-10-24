@@ -14,6 +14,7 @@ import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 
 import ChatPanel from "@/components/ChatPanel";
 import IconButton from "@/components/ui/IconButton";
+import { cn } from "@/lib/cn";
 import { useNavigationStore, type SideTab } from "@/lib/store";
 
 const SIDE_TABS: { tab: SideTab; label: string; icon: LucideIcon }[] = [
@@ -36,9 +37,12 @@ interface RecordingSideColumnProps {
 /**
  * The top of the side column: Speakers and My notes as tabs (the WAI-ARIA
  * tabs pattern), and the button that collapses it. Both panels stay mounted,
- * so switching tabs keeps a rename or an edit where it was. Under 13.25rem,
- * where both labels and the button no longer fit, each tab is its icon, named
- * by the label kept for screen readers and by its tooltip.
+ * so switching tabs keeps a rename or an edit where it was.
+ *
+ * A narrow column keeps what fits. Under 13.25rem, where both labels and the
+ * button no longer fit, the open tab shows its icon and label and the other
+ * only its icon; under 10.75rem both are icons. A hidden label stays for
+ * screen readers, and every tab has its label as a tooltip.
  */
 function SideTabs({ speakers, myNotes }: { speakers: ReactNode; myNotes: ReactNode }) {
   const sideTab = useNavigationStore((state) => state.sideTab);
@@ -73,30 +77,41 @@ function SideTabs({ speakers, myNotes }: { speakers: ReactNode; myNotes: ReactNo
           ref={tablistRef}
           role="tablist"
           aria-label="Side panels"
-          className="flex min-w-0 overflow-hidden @max-[13.25rem]:flex-1"
+          className="flex min-w-0 overflow-hidden"
         >
-          {SIDE_TABS.map(({ tab, label, icon: Icon }) => (
-            <button
-              key={tab}
-              type="button"
-              role="tab"
-              id={`side-tab-${tab}`}
-              aria-selected={sideTab === tab}
-              aria-controls={`side-panel-${tab}`}
-              tabIndex={sideTab === tab ? 0 : -1}
-              title={label}
-              onClick={() => setSideTab(tab)}
-              onKeyDown={onKeyDown}
-              className={`flex min-w-0 items-center border-b-2 px-2.5 py-2.5 text-sm font-semibold transition-colors outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-action @max-[13.25rem]:flex-1 @max-[13.25rem]:justify-center @max-[13.25rem]:px-1 ${
-                sideTab === tab
-                  ? "border-action text-action-text"
-                  : "border-transparent text-contrast-helper hover:text-foreground"
-              }`}
-            >
-              <Icon aria-hidden="true" className="hidden h-4 w-4 shrink-0 @max-[13.25rem]:block" />
-              <span className="truncate @max-[13.25rem]:sr-only">{label}</span>
-            </button>
-          ))}
+          {SIDE_TABS.map(({ tab, label, icon: Icon }) => {
+            const open = sideTab === tab;
+            return (
+              <button
+                key={tab}
+                type="button"
+                role="tab"
+                id={`side-tab-${tab}`}
+                aria-selected={open}
+                aria-controls={`side-panel-${tab}`}
+                tabIndex={open ? 0 : -1}
+                title={label}
+                onClick={() => setSideTab(tab)}
+                onKeyDown={onKeyDown}
+                className={cn(
+                  "flex min-w-0 items-center gap-1 border-b-2 px-2.5 py-2.5 text-sm font-semibold transition-colors outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-action @max-[10.75rem]:px-1",
+                  open
+                    ? "border-action text-action-text @max-[13.25rem]:px-2"
+                    : "shrink-0 border-transparent text-contrast-helper hover:text-foreground @max-[13.25rem]:px-1.5",
+                )}
+              >
+                <Icon aria-hidden="true" className="hidden h-4 w-4 shrink-0 @max-[13.25rem]:block" />
+                <span
+                  className={cn(
+                    "min-w-0 truncate",
+                    open ? "@max-[10.75rem]:sr-only" : "@max-[13.25rem]:sr-only",
+                  )}
+                >
+                  {label}
+                </span>
+              </button>
+            );
+          })}
         </div>
         <IconButton
           size="sm"
