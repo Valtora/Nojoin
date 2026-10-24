@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import SpeakerPanel from "./SpeakerPanel";
@@ -85,6 +85,7 @@ function buildSpeaker(
     name_source: overrides.name_source,
     name_pending: overrides.name_pending,
     identity_confidence: overrides.identity_confidence,
+    identity_locked: overrides.identity_locked,
   } as RecordingSpeaker;
 }
 
@@ -418,6 +419,30 @@ describe("suggested names", () => {
     expect(addNotification).toHaveBeenCalledWith({ type: "success", message: "Confirmed Alice." });
   });
 
+  it("shows a strong voice match plainly and dismisses it from the name menu", async () => {
+    const { onRefresh } = renderPanel({
+      speakers: [buildSpeaker({
+        ...pendingAlice,
+        name_pending: false,
+        identity_confidence: 0.86,
+        identity_locked: false,
+      }), bob],
+    });
+
+    expect(screen.getByText("Alice").parentElement).toHaveTextContent(/^Alice$/);
+    expect(screen.queryByText("?")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Confirm Alice" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Recognised by voice")).not.toBeInTheDocument();
+    fireEvent.contextMenu(screen.getByText("Alice"));
+    const dismiss = lastMenuItems.find((item) => item.label === "Not Alice");
+    expect(dismiss).toBeDefined();
+    await act(async () => { await dismiss?.onClick(); });
+
+    await waitFor(() => expect(onRefresh).toHaveBeenCalledTimes(1));
+    expect(dismissSpeakerName.mock.calls).toEqual([["rec-1", "SPEAKER_00"]]);
+    expect(confirmSpeakerName).not.toHaveBeenCalled();
+  });
+
   it("dismisses the name and refreshes, leaving the transcript's words alone", async () => {
     // The server puts back "Speaker 1" and carries it into the notes, whole
     // words only. A find-and-replace here would also turn "Thanks, Alice"
@@ -516,6 +541,47 @@ describe("suggested names", () => {
     expect(dismissSpeakerName.mock.calls).toEqual([
       ["rec-1", "SPEAKER_00"],
       ["rec-1", "SPEAKER_03"],
+    ]);
+  });
+
+  it("confirms only pending members and dismisses strong matches too in a mixed grouped row", async () => {
+    const alex = { id: 7, name: "Alex" } as GlobalSpeaker;
+    const member = (label: string, id: number, fields: Partial<RecordingSpeaker>) =>
+      buildSpeaker({
+        diarization_label: label,
+        id,
+        global_speaker_id: 7,
+        global_speaker: alex,
+        ...fields,
+      });
+    const { onRefresh } = renderPanel({
+      speakers: [
+        member("SPEAKER_00", 1, { name_source: "voiceprint", name_pending: true }),
+        member("SPEAKER_03", 4, {
+          name_source: "voiceprint", name_pending: false, identity_locked: false,
+          identity_confidence: 0.86,
+        }),
+        member("SPEAKER_04", 5, {
+          name_source: "voiceprint", name_pending: false, identity_locked: true,
+        }),
+        member("SPEAKER_05", 6, { name_source: "auto", name_pending: false }),
+      ],
+      segments: [
+        buildSegment({ speaker: "SPEAKER_00", start: 0, end: 2 }),
+        buildSegment({ speaker: "SPEAKER_03", start: 4, end: 6 }),
+        buildSegment({ speaker: "SPEAKER_03", start: 8, end: 10 }),
+      ],
+      globalSpeakers: [alex],
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Confirm Alex" }));
+    await waitFor(() => expect(onRefresh).toHaveBeenCalledTimes(1));
+    expect(confirmSpeakerName.mock.calls).toEqual([["rec-1", "SPEAKER_00"]]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Not Alex" }));
+    await waitFor(() => expect(onRefresh).toHaveBeenCalledTimes(2));
+    expect(dismissSpeakerName.mock.calls.map(([, label]) => label).sort()).toEqual([
+      "SPEAKER_00", "SPEAKER_03",
     ]);
   });
 

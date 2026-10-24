@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 
 
 def _compact_speaker(speaker: Any) -> dict[str, Any]:
+    """The displayed name and person; a strong voice match isn't pending."""
     display_name = (
         speaker.local_name
         or (speaker.global_speaker.name if speaker.global_speaker else None)
@@ -43,7 +44,7 @@ def _compact_speaker(speaker: Any) -> dict[str, Any]:
         "display_name": display_name,
         "diarization_label": speaker.diarization_label,
         "person": person,
-        # A suggested name nobody has confirmed, shown in the app as "Alex?".
+        # A name shown in the app as "Alex?"; strong voice matches are plain.
         "name_pending": name_is_pending(speaker),
     }
 

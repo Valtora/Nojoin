@@ -139,6 +139,41 @@ describe("suggested names on transcript lines", () => {
     expect(onReviewSpeakerName.mock.calls).toEqual([["SPEAKER_A", "Alex", "dismiss"]]);
   });
 
+  it("shows a strong voice match plainly and dismisses it from the speaker name menu", async () => {
+    const onUpdateSegmentSpeaker = vi.fn();
+    const { onReviewSpeakerName } = renderView({
+      speakers: [
+        speaker({
+          local_name: "Alex", name_source: "voiceprint", name_pending: false,
+          identity_confidence: 0.86, identity_locked: false,
+        }),
+        speaker({
+          id: 2, diarization_label: "SPEAKER_B", local_name: "Blair",
+          name_source: "voiceprint", name_pending: false, identity_locked: true,
+        }),
+      ],
+      onUpdateSegmentSpeaker,
+    });
+
+    expect(reviewButtons()).toEqual([]);
+    expect(screen.queryByText("?")).not.toBeInTheDocument();
+    const blairLine = document.querySelector('[data-segment-id="u1"]') as HTMLElement;
+    fireEvent.click(within(blairLine).getByRole("button", { name: "Blair" }));
+    expect(screen.queryByRole("button", { name: "Not Blair" })).not.toBeInTheDocument();
+
+    const alexLine = document.querySelector('[data-segment-id="u0"]') as HTMLElement;
+    const alexName = within(alexLine).getByRole("button", { name: "Alex" });
+    fireEvent.click(alexName);
+    expect(screen.queryByRole("button", { name: "Confirm" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Not Alex" }));
+    await act(async () => {});
+
+    expect(onReviewSpeakerName.mock.calls).toEqual([["SPEAKER_A", "Alex", "dismiss"]]);
+    expect(onUpdateSegmentSpeaker).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "Not Alex" })).not.toBeInTheDocument();
+    expect(alexName).toHaveFocus();
+  });
+
   it("ignores the ? while its decision is sent", async () => {
     let finish = () => {};
     const onReviewSpeakerName = vi.fn(() => new Promise<void>((resolve) => (finish = resolve)));
