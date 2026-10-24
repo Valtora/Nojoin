@@ -26,6 +26,7 @@ from backend.models.document import Document
 from backend.models.pipeline import RecordingAudioChunk
 from backend.models.recording import Recording, RecordingStatus
 from backend.models.user import User
+from backend.tests.postgres_setup import fresh_schema
 from backend.utils import storage_hygiene
 from backend.utils.path_manager import PathManager
 from backend.utils.storage_hygiene import (
@@ -144,15 +145,11 @@ def postgres_engine(url: str) -> Iterator[Engine]:
         connect_args={"options": f"-csearch_path={POSTGRES_SCHEMA},public"},
     )
     with engine.begin() as connection:
-        connection.execute(text(f"DROP SCHEMA IF EXISTS {POSTGRES_SCHEMA} CASCADE"))
         connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-        connection.execute(text(f"CREATE SCHEMA {POSTGRES_SCHEMA}"))
-    SQLModel.metadata.create_all(engine)
+    fresh_schema(engine, POSTGRES_SCHEMA)
     try:
         yield engine
     finally:
-        with engine.begin() as connection:
-            connection.execute(text(f"DROP SCHEMA IF EXISTS {POSTGRES_SCHEMA} CASCADE"))
         engine.dispose()
 
 

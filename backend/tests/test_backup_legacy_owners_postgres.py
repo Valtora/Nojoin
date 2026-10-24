@@ -34,6 +34,7 @@ import backend.core.backup.restore.stages as backup_stages
 from backend.core.backup import BackupManager, runtime
 from backend.core.backup import export as backup_export
 from backend.core.db import driver_urls
+from backend.tests.postgres_setup import migrate_empty_database
 from backend.tests.test_backup_legacy_owners import (
     PEOPLE,
     PEOPLE_TAGS,
@@ -88,10 +89,10 @@ def databases(postgres_test_url: str) -> Iterator[SimpleNamespace]:
         admin.execute(f'CREATE DATABASE "{names["src"]}"')
         admin.execute(f'CREATE DATABASE "{names["old"]}"')
     try:
-        _alembic(url(names["old"]), "upgrade", "head")
+        migrate_empty_database(url(names["old"]), "head")
         with psycopg.connect(admin_url, autocommit=True) as admin:
             admin.execute(f'CREATE DATABASE "{names["new"]}" TEMPLATE "{names["old"]}"')
-        _alembic(url(names["src"]), "upgrade", BEFORE)
+        migrate_empty_database(url(names["src"]), BEFORE)
         yield SimpleNamespace(**{role: url(name) for role, name in names.items()})
     finally:
         with psycopg.connect(admin_url, autocommit=True) as admin:

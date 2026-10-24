@@ -19,6 +19,8 @@ import psycopg
 import pytest
 from sqlalchemy.engine import make_url
 
+from backend.tests.postgres_setup import migrate_empty_database
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BEFORE = "7c3e5a91d2f4"
 TIMELINE_NOTES = "63005cac6492"
@@ -106,7 +108,7 @@ def _add_note(
 def test_user_notes_become_a_head_note_and_fold_back_on_downgrade(
     scratch_database: str,
 ) -> None:
-    _alembic(scratch_database, "upgrade", BEFORE)
+    migrate_empty_database(scratch_database, BEFORE)
     with psycopg.connect(scratch_database) as conn:
         _seed_before(conn)
 

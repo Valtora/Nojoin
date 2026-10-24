@@ -20,7 +20,7 @@ from types import SimpleNamespace
 import pytest
 from sqlalchemy import create_engine, exc, text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-from sqlmodel import Session, SQLModel, select
+from sqlmodel import Session, select
 
 from backend.core.db import driver_urls
 from backend.models.recording import Recording
@@ -32,6 +32,7 @@ from backend.models.speaker import (
 from backend.models.user import User
 from backend.processing.embedding import VoiceprintStatus, offer_linked_voiceprint
 from backend.processing.embedding_version import EMBEDDING_METHOD_VERSION
+from backend.tests.postgres_setup import fresh_schema
 
 SCHEMA = "drift_refusals_test"
 
@@ -44,15 +45,11 @@ def engine(postgres_test_url: str):
         connect_args={"options": f"-csearch_path={SCHEMA},public"},
     )
     with engine.begin() as connection:
-        connection.execute(text(f"DROP SCHEMA IF EXISTS {SCHEMA} CASCADE"))
         connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-        connection.execute(text(f"CREATE SCHEMA {SCHEMA}"))
-    SQLModel.metadata.create_all(engine)
+    fresh_schema(engine, SCHEMA)
     try:
         yield engine
     finally:
-        with engine.begin() as connection:
-            connection.execute(text(f"DROP SCHEMA IF EXISTS {SCHEMA} CASCADE"))
         engine.dispose()
 
 

@@ -16,9 +16,8 @@ import asyncio
 import importlib
 
 import pytest
-from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlmodel import SQLModel, select
+from sqlmodel import select
 
 from backend.api.services import oauth_service
 from backend.core import security
@@ -27,6 +26,7 @@ from backend.models.invitation import Invitation
 from backend.models.oauth import OAuthClient, OAuthRefreshToken
 from backend.models.user import User
 from backend.services.jwt_revocation_service import bump_user_token_version
+from backend.tests.postgres_setup import fresh_schema
 
 SCHEMA = "oauth_refresh_lock_test"
 CLIENT_ID = "client-under-test"
@@ -61,11 +61,10 @@ async def sessions(postgres_test_url: str):
         connect_args={"server_settings": {"search_path": SCHEMA}},
     )
     async with engine.begin() as connection:
-        await connection.execute(text(f"DROP SCHEMA IF EXISTS {SCHEMA} CASCADE"))
-        await connection.execute(text(f"CREATE SCHEMA {SCHEMA}"))
         await connection.run_sync(
-            lambda sync: SQLModel.metadata.create_all(
+            lambda sync: fresh_schema(
                 sync,
+                SCHEMA,
                 tables=[
                     User.__table__,
                     Invitation.__table__,
@@ -75,8 +74,6 @@ async def sessions(postgres_test_url: str):
             )
         )
     yield async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-    async with engine.begin() as connection:
-        await connection.execute(text(f"DROP SCHEMA IF EXISTS {SCHEMA} CASCADE"))
     await engine.dispose()
 
 
