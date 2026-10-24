@@ -1,6 +1,7 @@
 """A user's rename, link or promote is recorded as a name event, anchored on
 the speaker's longest turn, so a later final pass can carry it to whichever
-speaker holds that speech.
+speaker holds that speech. Confirm and Not {name} answer a pending name the
+same way.
 
 The transcript gives SPEAKER_00 lines at 0-5 s and 5-8 s (one turn) and a
 1 s line at 20 s; SPEAKER_01 holds 8-10 s between them.
@@ -326,3 +327,132 @@ async def test_a_rename_on_the_legacy_path_is_still_the_users(
     # No canonical lines to anchor on, so no row; the name is still the user's.
     assert await _events(session_maker) == []
     assert await _name_source(session_maker, 1) == ("user", True)
+
+
+# Confirm and Not {name} on a pending name.
+
+
+async def _offer(session_maker, speaker_id: int, name: str, **fields: Any) -> None:
+    """Give a speaker a pending name, as inference leaves it, and its suggestion."""
+    label = f"SPEAKER_{speaker_id - 1:02d}"
+    async with session_maker() as session:
+        await session.execute(
+            text(
+                "UPDATE recording_speakers SET local_name = :local, name = NULL, "
+                "name_source = :source, global_speaker_id = :person, "
+                "identity_confidence = 0.8 WHERE id = :id"
+            ),
+            {
+                "id": speaker_id,
+                "local": None if fields.get("person") else name,
+                "source": fields.get("source", "llm"),
+                "person": fields.get("person"),
+            },
+        )
+        suggestion = {
+            "diarization_label": label,
+            "suggested_name": name,
+            "status": "pending",
+            "resolution_reason": None,
+            "resolution_actor_user_id": None,
+        }
+        await session.execute(
+            text(
+                "UPDATE transcripts SET speaker_name_suggestions = :suggestions "
+                "WHERE recording_id = 1"
+            ),
+            {"suggestions": json.dumps([suggestion])},
+        )
+        await session.commit()
+
+
+async def _suggestions(session_maker) -> list[dict[str, Any]]:
+    async with session_maker() as session:
+        raw = (
+            await session.execute(
+                text("SELECT speaker_name_suggestions FROM transcripts")
+            )
+        ).scalar_one()
+    return json.loads(raw) if isinstance(raw, str) else raw
+
+
+async def _review(client, label: str, answer: str):
+    return await client.post(
+        f"/api/v1/speakers/recordings/{REC}/speakers/{label}/suggestions/{answer}"
+    )
+
+
+async def test_confirm_makes_a_suggested_name_the_users(client, session_maker) -> None:
+    await _seed(session_maker, people=[{"id": 7, "name": "Alex"}])
+    await _offer(session_maker, 1, "Alex")
+
+    response = await _review(client, "SPEAKER_00", "accept")
+
+    assert response.status_code == 200, response.text
+    body = response.json()[0]
+    assert (body["global_speaker_id"], body["name_source"], body["name_pending"]) == (
+        7,
+        "user",
+        False,
+    )
+    assert await _name_source(session_maker, 1) == ("user", True)
+    events = await _events(session_maker)
+    assert [
+        (e["kind"], e["name"], e["global_speaker_id"], e["source"]) for e in events
+    ] == [("name", "Alex", 7, "user")]
+    suggestion = (await _suggestions(session_maker))[0]
+    assert (suggestion["status"], suggestion["resolution_actor_user_id"]) == (
+        "accepted",
+        1,
+    )
+
+
+async def test_not_name_puts_back_speaker_n_and_drops_a_voice_match(
+    client, session_maker
+) -> None:
+    await _seed(session_maker, people=[{"id": 8, "name": "Bob"}])
+    await _offer(session_maker, 2, "Bob", source="voiceprint", person=8)
+
+    response = await _review(client, "SPEAKER_01", "reject")
+
+    assert response.status_code == 200, response.text
+    body = response.json()[0]
+    assert (body["name"], body["global_speaker_id"], body["name_pending"]) == (
+        "Speaker 2",
+        None,
+        False,
+    )
+    assert await _name_source(session_maker, 2) == (None, False)
+    events = await _events(session_maker)
+    assert [
+        (e["kind"], e["name"], e["global_speaker_id"], e["source"], e["anchor_end_ms"])
+        for e in events
+    ] == [("dismiss", "Bob", 8, "user", 10000)]
+    assert (await _suggestions(session_maker))[0]["status"] == "rejected"
+
+
+@pytest.mark.parametrize("answer", ["accept", "reject"])
+async def test_only_a_pending_name_can_be_answered(
+    client, session_maker, answer
+) -> None:
+    await _seed(session_maker)
+    await _rename(client, "SPEAKER_00", "Alex")
+    unnamed = await _review(client, "SPEAKER_01", answer)
+    confirmed = await _review(client, "SPEAKER_00", answer)
+    unknown = await _review(client, "SPEAKER_09", answer)
+    # A speaker merged into another is answered through the one it joined.
+    await _offer(session_maker, 2, "Sam")
+    async with session_maker() as session:
+        await session.execute(
+            text("UPDATE recording_speakers SET merged_into_id = 1 WHERE id = 2")
+        )
+        await session.commit()
+    merged = await _review(client, "SPEAKER_01", answer)
+
+    assert [r.status_code for r in (unnamed, confirmed, unknown, merged)] == [
+        409,
+        409,
+        404,
+        404,
+    ]
+    assert len(await _events(session_maker)) == 1

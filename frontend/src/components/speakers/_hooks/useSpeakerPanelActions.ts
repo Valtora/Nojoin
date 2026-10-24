@@ -19,6 +19,8 @@ import {
 import { useNotificationStore } from "@/lib/notificationStore";
 import { getErrorMessage } from "@/lib/errors";
 import { libraryVoiceprintNotices } from "@/lib/libraryVoiceprint";
+import type { SpeakerNameDecision } from "@/lib/speakerNameReview";
+import { useSpeakerNameReview } from "@/lib/useSpeakerNameReview";
 
 import type { SpeakerPanelEntry } from "./useSpeakerPanelEntries";
 
@@ -74,6 +76,13 @@ export interface SpeakerPanelActions {
   /** Give a cluster processing merged into this speaker back its own lines. */
   undoMerge: (cluster: MergedRecordingSpeaker) => Promise<void>;
 
+  // Suggested names
+  /** A confirm or dismiss of a suggested name is in flight. */
+  isReviewingName: boolean;
+  reviewName: (entry: SpeakerPanelEntry, decision: SpeakerNameDecision) => Promise<void>;
+  /** Confirms every entry's suggested name, with one notification. */
+  confirmAllNames: (entries: readonly SpeakerPanelEntry[]) => Promise<void>;
+
   isSubmitting: boolean;
 
   /** Clears the active context menu before opening an inline editor/modal. */
@@ -82,9 +91,9 @@ export interface SpeakerPanelActions {
 
 /**
  * Owns the speaker mutation state and handlers for {@link SpeakerPanel}:
- * rename, merge, delete, split, voiceprint extraction, and promotion to the
- * global library, along with their notifications and the `recording-updated`
- * dispatch.
+ * rename, merge, delete, split, voiceprint extraction, promotion to the
+ * global library, and confirming or dismissing suggested names, along with
+ * their notifications and the `recording-updated` dispatch.
  *
  * The caller supplies `closeContextMenu` so the menu-driven actions clear the
  * menu before opening their editor or modal.
@@ -116,6 +125,8 @@ export function useSpeakerPanelActions(
     useState<VoiceprintExtractResult | null>(null);
   const [batchVoiceprintResults, setBatchVoiceprintResults] =
     useState<BatchVoiceprintResponse | null>(null);
+
+  const nameReview = useSpeakerNameReview({ recordingId, onRefresh, onSpeakerRenamed });
 
   const [splitModalOpen, setSplitModalOpen] = useState(false);
   const [speakerToSplit, setSpeakerToSplit] =
@@ -301,6 +312,22 @@ export function useSpeakerPanelActions(
     }
   };
 
+  const pendingNameOf = (entry: SpeakerPanelEntry) =>
+    entry.pendingName ? { label: entry.pendingName.label, name: entry.displayName } : null;
+
+  const reviewName = async (entry: SpeakerPanelEntry, decision: SpeakerNameDecision) => {
+    const pending = pendingNameOf(entry);
+    if (pending) await nameReview.review(pending, decision);
+  };
+
+  const confirmAllNames = (entries: readonly SpeakerPanelEntry[]) =>
+    nameReview.confirmAll(
+      entries.flatMap((entry) => {
+        const pending = pendingNameOf(entry);
+        return pending ? [pending] : [];
+      }),
+    );
+
   return {
     renamingSpeaker,
     setRenamingSpeaker,
@@ -339,6 +366,10 @@ export function useSpeakerPanelActions(
     promoteToGlobal,
 
     undoMerge,
+
+    isReviewingName: nameReview.isReviewing,
+    reviewName,
+    confirmAllNames,
 
     isSubmitting,
 

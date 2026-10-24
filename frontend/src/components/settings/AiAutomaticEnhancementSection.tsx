@@ -56,6 +56,24 @@ export default function AiAutomaticEnhancementSection({
           }
         />
       </SettingsRow>
+
+      <SettingsRow
+        id="notes-confirm-suggested-names"
+        label="Confirm suggested names automatically"
+        labelId="notes-confirm-suggested-names-label"
+        descriptionId="notes-confirm-suggested-names-help"
+        description="Take the names the AI, a self-introduction or a voiceprint suggests as given when processing finishes, instead of asking you to confirm each one. Off by default."
+        controlClassName={SETTINGS_CONTROL_END}
+      >
+        <Switch
+          checked={settings.confirm_suggested_names === true}
+          aria-labelledby="notes-confirm-suggested-names-label"
+          aria-describedby="notes-confirm-suggested-names-help"
+          onCheckedChange={(checked) =>
+            onPersist({ ...settings, confirm_suggested_names: checked })
+          }
+        />
+      </SettingsRow>
     </SettingsCard>
   );
 }

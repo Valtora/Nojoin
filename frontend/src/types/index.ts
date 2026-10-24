@@ -126,6 +126,16 @@ export interface RecordingSpeaker extends BaseDBModel {
    * "Speaker N" and on speakers from before sources were recorded.
    */
   name_source?: SpeakerNameSource | null;
+  /** A person confirmed who this speaker is; processing leaves the name alone. */
+  identity_locked?: boolean;
+  /** How sure the identity is, from 0 to 1: a voiceprint match's score, or 1 once a person confirmed it. */
+  identity_confidence?: number | null;
+  /**
+   * The name was suggested (by a self-introduction, the AI or a voiceprint)
+   * and nobody has confirmed it yet. Worked out by the backend; the views
+   * show it with a "?" and offer Confirm and Not {name}.
+   */
+  name_pending?: boolean;
   /**
    * What linking this speaker did to the person's library voiceprint. Only the
    * rename and promote responses carry it, and only when the speaker's
@@ -635,6 +645,8 @@ export interface Settings {
   auto_remeasure_delivery?: boolean;
   /** Queue the AI analysis of each meeting when it finishes processing, within the daily budget. */
   auto_analyse_meetings?: boolean;
+  /** Take suggested speaker names as given when processing finishes, rather than asking to confirm each. */
+  confirm_suggested_names?: boolean;
   /** Install-wide cap on AI analysis runs per user per UTC day; null or 0 is no cap. Admin only. */
   ai_analysis_daily_limit?: number | null;
   /** Install-wide: exported files carry the Nojoin letterhead and footer line. Admin only. */

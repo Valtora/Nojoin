@@ -40,11 +40,14 @@ def _restorable_utterances(
     ]
 
 
-def _placeholder_name_for_restored_speaker(
+def placeholder_speaker_name(
     restored: RecordingSpeaker,
     speakers: Sequence[RecordingSpeaker],
 ) -> str:
-    """Keep the row's own "Speaker N" when no other speaker shows it."""
+    """Keep the row's own "Speaker N" when no other speaker shows it.
+
+    Used by an unmerge, and by dismissing a pending name.
+    """
     taken: set[str] = set()
     highest = 0
     for speaker in speakers:
@@ -120,7 +123,7 @@ def _restore_merged_speaker_row(
     restored.identity_locked = False
     restored.name_last_edit_source = None
     restored.name_source = None
-    restored.name = _placeholder_name_for_restored_speaker(restored, speakers)
+    restored.name = placeholder_speaker_name(restored, speakers)
     restored.first_seen_ms = min(utterance.start_ms for utterance in moving)
     restored.last_seen_ms = max(utterance.end_ms for utterance in moving)
     session.add(restored)

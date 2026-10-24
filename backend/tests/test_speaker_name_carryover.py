@@ -147,6 +147,7 @@ def _add_speaker(db, speaker_id: int, label: str, **fields: Any) -> None:
         "local_name": fields.get("local_name"),
         "merged_into_id": fields.get("merged_into_id"),
         "name_source": fields.get("name_source"),
+        "locked": int(fields.get("locked", False)),
     }
     db.execute(
         text(
@@ -156,7 +157,7 @@ def _add_speaker(db, speaker_id: int, label: str, **fields: Any) -> None:
                 diarization_label, name, local_name, merged_into_id, name_source,
                 speaker_status, speaker_kind, identity_locked
             ) VALUES (:id, :now, :now, :public_id, 1, :label, :name, :local_name,
-                      :merged_into_id, :name_source, 'active', 'automated', 0)
+                      :merged_into_id, :name_source, 'active', 'automated', :locked)
             """
         ),
         values,
@@ -170,7 +171,13 @@ def _segments(*spans: tuple[str, float, float]) -> list[dict[str, Any]]:
     ]
 
 
-def _run(db, monkeypatch, segments, voiceprints: dict[str, list[float]] | None = None):
+def _run(
+    db,
+    monkeypatch,
+    segments,
+    voiceprints: dict[str, list[float]] | None = None,
+    config: dict[str, Any] | None = None,
+):
     monkeypatch.setattr(
         speaker_assignment,
         "_extract_speaker_voiceprints",
@@ -183,7 +190,7 @@ def _run(db, monkeypatch, segments, voiceprints: dict[str, list[float]] | None =
         speaker_assignment, "_run_duplicate_merge_pass", lambda *args, **kwargs: None
     )
     db.commit()
-    ctx = SimpleNamespace(session=db, merged_config={}, recording_id=1)
+    ctx = SimpleNamespace(session=db, merged_config=config or {}, recording_id=1)
     speaker_assignment.assign_and_identify_speakers(
         ctx, db.get(Recording, 1), segments, None
     )
@@ -384,7 +391,9 @@ def test_a_user_name_for_no_one_drops_an_earlier_runs_voiceprint_link(
 
 
 def test_a_merge_made_by_hand_still_wins(session, monkeypatch) -> None:
-    _add_speaker(session, 1, "SPEAKER_00", local_name="Sam", name_source="user")
+    _add_speaker(
+        session, 1, "SPEAKER_00", local_name="Sam", name_source="user", locked=True
+    )
     _add_speaker(session, 2, "SPEAKER_01", name="Sam", merged_into_id=1)
     _add_event(session, 1, "Alex", (10000, 20000))
 
@@ -432,9 +441,50 @@ def test_an_event_that_lands_nowhere_changes_nothing(session, monkeypatch) -> No
     )
 
     # Named on speech the final pass has nowhere.
-    _add_event(session, 1, "Alex", (100000, 110000))
+    _add_event(session, 101, "Alex", (100000, 110000))
     with_event = copy.deepcopy(segments)
     _run(session, monkeypatch, with_event, voiceprints)
 
     assert _speakers(session) == before
     assert with_event == without
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        pytest.param(({}, "voiceprint", 30), id="pending-until-confirmed"),
+        pytest.param(
+            ({"confirm_suggested_names": True}, "auto", 35), id="taken-as-given"
+        ),
+    ],
+)
+def test_a_voiceprint_match_is_recorded_with_its_score(
+    session, monkeypatch, case
+) -> None:
+    config, source, authority = case
+    _add_person(session, 5, "Bob", PERSON)
+
+    _run(session, monkeypatch, _two_speakers(), {"SPEAKER_01": _at_cosine(0.9)}, config)
+
+    speaker = _speakers(session)["SPEAKER_01"]
+    assert (speaker["person"], speaker["source"], speaker["locked"]) == (
+        5,
+        source,
+        False,
+    )
+    confidence = session.execute(
+        text(
+            "SELECT identity_confidence FROM recording_speakers "
+            "WHERE diarization_label = 'SPEAKER_01'"
+        )
+    ).scalar_one()
+    assert confidence == pytest.approx(0.9)
+    rows = session.execute(
+        text(
+            "SELECT kind, name, global_speaker_id, source, authority, "
+            "anchor_start_ms, anchor_end_ms, confidence FROM speaker_name_events"
+        )
+    ).all()
+    assert [tuple(row) for row in rows] == [
+        ("name", "Bob", 5, source, authority, 10000, 20000, pytest.approx(0.9))
+    ]

@@ -33,6 +33,9 @@ from backend.tests.sqlite_schemas import (
     RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA,
     RECORDING_SPEAKERS_SCHEMA,
     RECORDINGS_SCHEMA,
+    SPEAKER_NAME_EVENTS_SCHEMA,
+    TRANSCRIPT_UTTERANCES_SCHEMA,
+    USERS_SCHEMA,
 )
 
 PERSON = [1.0, 0.0]
@@ -425,6 +428,9 @@ def session():
             RECORDING_SPEAKER_ALIASES_SCHEMA,
             PEOPLE_TAGS_SCHEMA,
             P_TAGS_SCHEMA,
+            USERS_SCHEMA,
+            TRANSCRIPT_UTTERANCES_SCHEMA,
+            SPEAKER_NAME_EVENTS_SCHEMA,
         ):
             connection.execute(text(schema))
         connection.execute(
@@ -491,13 +497,37 @@ def _add_speaker(db, speaker_id: int, embedding, seconds) -> None:
     )
 
 
+def _apply_suggestions(
+    db, speaker_ids: tuple[int, ...], persisted: list[dict[str, Any]], *, confirm: bool
+) -> list[dict[str, Any]]:
+    """Run the worker's apply step with the owner's confirm-at-end setting."""
+    from backend.worker.tasks.speaker_name_apply import apply_inferred_names
+
+    db.execute(
+        text(
+            """
+            INSERT INTO users (
+                id, created_at, updated_at, username, hashed_password, is_active,
+                is_superuser, force_password_change, role, token_version, settings,
+                has_seen_demo_recording
+            ) VALUES (1, :now, :now, 'owner', 'hash', 1, 1, 0, 'owner', 0, :settings, 0)
+            """
+        ),
+        {"now": _now(), "settings": json.dumps({"confirm_suggested_names": confirm})},
+    )
+    applied = apply_inferred_names(
+        db,
+        db.get(Recording, 1),
+        [db.get(RecordingSpeaker, i) for i in speaker_ids],
+        persisted,
+    )
+    db.commit()
+    return applied
+
+
 def test_auto_applied_name_suggestions_found_and_fold_under_the_same_rules(
     session,
 ) -> None:
-    from backend.worker.tasks.intelligence import (
-        _auto_apply_persisted_speaker_name_suggestions,
-    )
-
     voice, far = _at_cosine(0.9), _at_cosine(0.65)
     for person_id, embedding in ((7, None), (8, None), (9, PERSON)):
         _add_person(session, person_id, embedding)
@@ -508,13 +538,11 @@ def test_auto_applied_name_suggestions_found_and_fold_under_the_same_rules(
     ):
         _add_speaker(session, speaker_id, embedding, seconds)
     session.commit()
-    speakers = [session.get(RecordingSpeaker, i) for i in (1, 2, 3)]
 
-    applied = _auto_apply_persisted_speaker_name_suggestions(
+    applied = _apply_suggestions(
         session,
-        recording=session.get(Recording, 1),
-        speakers=speakers,
-        persisted=[
+        (1, 2, 3),
+        [
             {
                 "suggested_name": f"Person {person_id}",
                 "recording_speaker_id": speaker_id,
@@ -523,8 +551,8 @@ def test_auto_applied_name_suggestions_found_and_fold_under_the_same_rules(
             }
             for speaker_id, person_id in ((1, 7), (2, 8), (3, 9))
         ],
+        confirm=True,
     )
-    session.commit()
 
     assert len(applied) == 3
     people = {i: session.get(GlobalSpeaker, i).embedding for i in (7, 8, 9)}
@@ -543,21 +571,16 @@ def test_an_auto_applied_name_suggestion_never_changes_a_locked_voiceprint(
     speech and however close the voice. The floor's helper took over that
     decision, so this keeps it from being lost.
     """
-    from backend.worker.tasks.intelligence import (
-        _auto_apply_persisted_speaker_name_suggestions,
-    )
-
     _add_person(session, 7, PERSON, locked=True)
     _add_person(session, 8, None, locked=True)
     _add_speaker(session, 1, _at_cosine(0.95), 40.0)
     _add_speaker(session, 2, _at_cosine(0.95), 40.0)
     session.commit()
 
-    _auto_apply_persisted_speaker_name_suggestions(
+    _apply_suggestions(
         session,
-        recording=session.get(Recording, 1),
-        speakers=[session.get(RecordingSpeaker, i) for i in (1, 2)],
-        persisted=[
+        (1, 2),
+        [
             {
                 "suggested_name": f"Person {person_id}",
                 "recording_speaker_id": speaker_id,
@@ -566,8 +589,8 @@ def test_an_auto_applied_name_suggestion_never_changes_a_locked_voiceprint(
             }
             for speaker_id, person_id in ((1, 7), (2, 8))
         ],
+        confirm=True,
     )
-    session.commit()
 
     assert session.get(GlobalSpeaker, 7).embedding == PERSON
     assert session.get(GlobalSpeaker, 8).embedding is None
@@ -579,20 +602,15 @@ def test_an_auto_applied_name_into_a_locked_person_is_still_judged(session) -> N
     judges the link against it: speaker 1, unlike them, is refused, so a
     rebuild of their voiceprint from links leaves it out. Speaker 2, like
     them, gains no refusal."""
-    from backend.worker.tasks.intelligence import (
-        _auto_apply_persisted_speaker_name_suggestions,
-    )
-
     _add_person(session, 7, PERSON, locked=True)
     _add_speaker(session, 1, _at_cosine(0.1), 40.0)
     _add_speaker(session, 2, _at_cosine(0.95), 40.0)
     session.commit()
 
-    _auto_apply_persisted_speaker_name_suggestions(
+    _apply_suggestions(
         session,
-        recording=session.get(Recording, 1),
-        speakers=[session.get(RecordingSpeaker, i) for i in (1, 2)],
-        persisted=[
+        (1, 2),
+        [
             {
                 "suggested_name": "Person 7",
                 "recording_speaker_id": speaker_id,
@@ -601,8 +619,8 @@ def test_an_auto_applied_name_into_a_locked_person_is_still_judged(session) -> N
             }
             for speaker_id in (1, 2)
         ],
+        confirm=True,
     )
-    session.commit()
 
     refused = session.execute(
         text(
@@ -612,6 +630,46 @@ def test_an_auto_applied_name_into_a_locked_person_is_still_judged(session) -> N
     ).all()
     assert [tuple(row) for row in refused] == [(1, 7)]
     assert session.get(GlobalSpeaker, 7).embedding == PERSON
+
+
+def test_a_pending_name_links_no_one_and_teaches_no_voiceprint(session) -> None:
+    """By default an inferred name waits for the user: the exact People name
+    is shown, but no person is linked, folded into or given a first voiceprint,
+    and nothing is judged against one."""
+    _add_person(session, 7, PERSON)
+    _add_person(session, 8, None)
+    _add_speaker(session, 1, _at_cosine(0.95), 40.0)
+    _add_speaker(session, 2, _at_cosine(0.1), 40.0)
+    session.commit()
+
+    applied = _apply_suggestions(
+        session,
+        (1, 2),
+        [
+            {
+                "suggested_name": f"Person {person_id}",
+                "recording_speaker_id": speaker_id,
+                "suggested_global_speaker_id": person_id,
+                "confidence": 0.9,
+                "source": "llm",
+            }
+            for speaker_id, person_id in ((1, 7), (2, 8))
+        ],
+        confirm=False,
+    )
+
+    assert len(applied) == 2
+    speakers = [session.get(RecordingSpeaker, i) for i in (1, 2)]
+    assert [(s.global_speaker_id, s.local_name, s.name_source) for s in speakers] == [
+        (None, "Person 7", "llm"),
+        (None, "Person 8", "llm"),
+    ]
+    assert session.get(GlobalSpeaker, 7).embedding == PERSON
+    assert session.get(GlobalSpeaker, 8).embedding is None
+    refused = session.execute(
+        text("SELECT COUNT(*) FROM recording_speaker_drift_refusals")
+    ).scalar_one()
+    assert refused == 0
 
 
 def test_the_pipeline_records_the_speech_behind_each_voiceprint(session) -> None:

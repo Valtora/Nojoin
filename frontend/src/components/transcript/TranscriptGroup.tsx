@@ -6,6 +6,7 @@ import { Pause, Play } from "lucide-react";
 import { getColorByKey } from "@/lib/constants";
 import type { OutboxDraft } from "@/lib/notes/noteOutbox";
 import { segmentSpeakerDisplayName } from "@/lib/recordingSpeakerUtils";
+import type { SpeakerNameDecision } from "@/lib/speakerNameReview";
 import {
   GlobalSpeaker,
   RecordingSpeaker,
@@ -43,6 +44,10 @@ export interface TranscriptLineShared {
     segment: TranscriptSegment,
     assignment: TranscriptSpeakerAssignment,
   ) => void | Promise<void>;
+  /** Confirms or dismisses a suggested speaker name; null where names can't be reviewed. */
+  onReviewSpeakerName:
+    | ((label: string, name: string, decision: SpeakerNameDecision) => Promise<void>)
+    | null;
   pendingRemoteUtteranceIds: ReadonlySet<string>;
   actions: TranscriptLineActions;
   /** Queues a note on a line; null where notes can't be added. */
@@ -133,6 +138,7 @@ function TranscriptGroup({
         globalSpeakers={lineShared.globalSpeakers}
         speakerColors={speakerColors}
         onUpdateSegmentSpeaker={lineShared.onUpdateSegmentSpeaker}
+        onReviewSpeakerName={lineShared.onReviewSpeakerName}
         hasPendingRemoteUpdate={
           typeof segment.id === "string" &&
           lineShared.pendingRemoteUtteranceIds.has(segment.id)

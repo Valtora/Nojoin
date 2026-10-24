@@ -14,6 +14,7 @@ import {
   getRecordingSpeakerGroupKey,
   getResolvedGlobalSpeakerId,
 } from "@/lib/recordingSpeakerUtils";
+import { describeSuggestedNameSource } from "@/lib/speakerNameReview";
 
 /** A grouped speaker row rendered by the speaker panel. */
 export interface SpeakerPanelEntry {
@@ -25,6 +26,15 @@ export interface SpeakerPanelEntry {
   hasVoiceprint: boolean;
   /** True when a connected assistant, rather than the web app, named this speaker. */
   namedByAssistant: boolean;
+  /** The suggested name nobody has confirmed yet, or null when the name stands. */
+  pendingName: SpeakerPanelPendingName | null;
+}
+
+export interface SpeakerPanelPendingName {
+  /** The member whose suggestion Confirm and Not {name} decide. */
+  label: string;
+  /** Why the name was suggested ("Suggested by AI"), or null. */
+  reason: string | null;
 }
 
 export interface UseSpeakerPanelEntriesResult {
@@ -112,6 +122,11 @@ export function useSpeakerPanelEntries(
           sortedMembers.find((speaker) => getResolvedGlobalSpeakerId(speaker)) ||
           sortedMembers[0];
         const globalSpeakerId = getResolvedGlobalSpeakerId(representative);
+        // Members of a group share one identity, so one decision settles the
+        // row: the representative's, unless only another member is pending.
+        const pendingMember = representative.name_pending
+          ? representative
+          : sortedMembers.find((speaker) => speaker.name_pending);
         const hasVoiceprint =
           sortedMembers.some((speaker) => speaker.has_voiceprint) ||
           !!(globalSpeakerId && globalSpeakerById.get(globalSpeakerId)?.has_voiceprint);
@@ -128,6 +143,12 @@ export function useSpeakerPanelEntries(
           namedByAssistant: sortedMembers.some(
             (speaker) => speaker.name_last_edit_source === "mcp",
           ),
+          pendingName: pendingMember
+            ? {
+                label: pendingMember.diarization_label,
+                reason: describeSuggestedNameSource(pendingMember),
+              }
+            : null,
         } satisfies SpeakerPanelEntry;
       })
       .sort((left, right) => {

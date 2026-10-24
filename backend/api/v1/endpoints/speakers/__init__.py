@@ -5,7 +5,7 @@ from backend.utils.canonical_pipeline import recording_ready_for_canonical_backf
 from backend.utils.config_manager import config_manager
 
 # Import submodules to ensure routes are registered on the router
-from . import routes_global, routes_recording, routes_voiceprint
+from . import routes_global, routes_name_review, routes_recording, routes_voiceprint
 
 # Re-exported for tests that import or patch helpers through the package.
 from .helpers import (

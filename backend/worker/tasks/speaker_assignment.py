@@ -17,8 +17,17 @@ Two load-bearing invariants run through the whole stage:
 
 from dataclasses import dataclass
 
+from backend.models.speaker_name_event import SpeakerNameEvent
 from backend.utils.speaker_assignment import remap_overlapping_speakers
-from backend.utils.speaker_names.sources import SOURCE_VOICEPRINT
+from backend.utils.speaker_names.anchors import first_turn, lines_from_final_segments
+from backend.utils.speaker_names.events import add_event
+from backend.utils.speaker_names.preferences import confirm_suggested_names_enabled
+from backend.utils.speaker_names.sources import (
+    AUTHORITY,
+    KIND_NAME,
+    SOURCE_AUTO,
+    SOURCE_VOICEPRINT,
+)
 
 from .constants import *  # noqa: F403
 from .speaker_name_carryover import (
@@ -73,6 +82,8 @@ class _ResolvedIdentity:
     # A user's name carried to this run: kept as the row's local name (when it
     # links no one) and locked, as a rename leaves it.
     user_confirmed: bool = False
+    # A voiceprint match's cosine to the person.
+    confidence: float | None = None
 
 
 @dataclass
@@ -313,6 +324,7 @@ def _identity_from_voiceprint(
         global_speaker_id=best_match.id,
         is_identified=True,
         name_source=SOURCE_VOICEPRINT,
+        confidence=round(float(best_score), 4),
     )
 
 
@@ -378,6 +390,8 @@ def _apply_name_provenance(row: RecordingSpeaker, identity: _ResolvedIdentity) -
     if identity.name_source is None:
         return
     row.name_source = identity.name_source
+    if identity.confidence is not None:
+        row.identity_confidence = identity.confidence
     if identity.user_confirmed:
         row.local_name = identity.name if identity.global_speaker_id is None else None
         row.identity_locked = True
@@ -483,6 +497,45 @@ def _run_duplicate_merge_pass(
         )
 
 
+def _record_voiceprint_match(
+    session, work: _LabelWork, speaker_id: int | None, lines, confirm: bool
+) -> None:
+    """Record a voiceprint match as a name event on the cluster's first turn.
+
+    The match keeps its provisional link, shown "Bob?" until the user confirms
+    it, unless the owner asked for suggested names to be taken as given.
+    """
+    identity = work.identity
+    if identity.name_source != SOURCE_VOICEPRINT or speaker_id is None:
+        return
+    row = session.get(RecordingSpeaker, speaker_id)
+    if row is None:
+        return
+    source = SOURCE_AUTO if confirm else SOURCE_VOICEPRINT
+    row.name_source = source
+    session.add(row)
+    anchor = first_turn(lines, work.label)
+    if anchor is None:
+        return
+    add_event(
+        session,
+        row,
+        SpeakerNameEvent(
+            recording_id=row.recording_id,
+            kind=KIND_NAME,
+            name=identity.name,
+            global_speaker_id=identity.global_speaker_id,
+            source=source,
+            authority=AUTHORITY[source],
+            surface="worker",
+            anchor_start_ms=anchor[0],
+            anchor_end_ms=anchor[1],
+            confidence=identity.confidence,
+            evidence={"score": identity.confidence, "matched": "voiceprint"},
+        ),
+    )
+
+
 def _identity_from_carried_name(
     carried: CarriedNames, label: str, existing_speaker: RecordingSpeaker | None
 ) -> _ResolvedIdentity | None:
@@ -545,6 +598,8 @@ def assign_and_identify_speakers(
     carried = carry_names_to_final_speakers(
         session, recording, final_segments, speaker_voiceprints
     )
+    lines = lines_from_final_segments(final_segments)
+    confirm = confirm_suggested_names_enabled(ctx.merged_config)
 
     speaker_counter = 1
     # name -> {'id': recording_speaker_id, 'label': diarization_label}
@@ -599,6 +654,7 @@ def assign_and_identify_speakers(
 
         logger.info("Mapped %s -> %s", label, identity.name)
         speaker_id = _persist_speaker(session, work)
+        _record_voiceprint_match(session, work, speaker_id, lines, confirm)
         if identity.name and speaker_id:
             resolved_names_map[identity.name] = {"id": speaker_id, "label": label}
 

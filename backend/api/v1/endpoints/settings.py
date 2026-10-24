@@ -108,6 +108,7 @@ class SettingsUpdate(BaseModel):
     secondary_openai_api_key: Optional[str] = None
     secondary_anthropic_api_key: Optional[str] = None
     enable_auto_voiceprints: Optional[bool] = None
+    confirm_suggested_names: Optional[bool] = None
     prefer_short_titles: Optional[bool] = None
     # Notes structure and vocabulary (issue #137). The install_* keys are
     # admin-only and are dropped for everyone else by _build_settings_update_data.

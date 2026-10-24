@@ -10,6 +10,10 @@ import {
   segmentSpeakerDisplayName,
 } from "@/lib/recordingSpeakerUtils";
 import {
+  describeSuggestedNameSource,
+  type SpeakerNameDecision,
+} from "@/lib/speakerNameReview";
+import {
   GlobalSpeaker,
   RecordingSpeaker,
   TranscriptSegment,
@@ -24,6 +28,7 @@ import type {
 } from "./_hooks/useTranscriptEditing";
 import type { TextDecoration } from "./textDecorations";
 import type { IndexedTranscriptSegment } from "./transcriptGroups";
+import SpeakerNameReviewPopover from "./SpeakerNameReviewPopover";
 import TranscriptLineBadges from "./TranscriptLineBadges";
 import TranscriptLineMenu from "./TranscriptLineMenu";
 import TranscriptLineText from "./TranscriptLineText";
@@ -46,6 +51,10 @@ type TranscriptLineProps = Pick<IndexedTranscriptSegment, "segment" | "index" | 
     segment: TranscriptSegment,
     assignment: TranscriptSpeakerAssignment,
   ) => void | Promise<void>;
+  /** Confirms or dismisses a suggested speaker name; null where names can't be reviewed. */
+  onReviewSpeakerName:
+    | ((label: string, name: string, decision: SpeakerNameDecision) => Promise<void>)
+    | null;
   hasPendingRemoteUpdate: boolean;
   /** Revised in the last 15 s, as of the view's last render. */
   isRecentlyUpdated: boolean;
@@ -87,6 +96,7 @@ function TranscriptLine({
   globalSpeakers,
   speakerColors,
   onUpdateSegmentSpeaker,
+  onReviewSpeakerName,
   hasPendingRemoteUpdate,
   isRecentlyUpdated,
   decorations,
@@ -114,6 +124,20 @@ function TranscriptLine({
   // A live label is no speaker of the recording yet, so it has no name to
   // change; the line can still be assigned to a speaker.
   const canRenameSpeaker = liveSpeakerDisplayName(segment.speaker) === null;
+  // The line's speaker, while its name is a suggestion nobody has confirmed.
+  const pendingSpeaker = useMemo(
+    () =>
+      speakers.find(
+        (speaker) =>
+          speaker.diarization_label === segment.speaker &&
+          !speaker.merged_into_id &&
+          speaker.name_pending === true,
+      ) ?? null,
+    [speakers, segment.speaker],
+  );
+  // A provisional line's speaker may yet change, so its name is reviewed
+  // once the line is final.
+  const canReviewName = !isSegmentReadOnly && !isProvisional && !isEditingSpeaker;
   const speakerColor = getColorByKey(speakerColors[segment.speaker] || "gray");
   const bubbleColor = isActive
     ? "border-2 border-status-success-border bg-status-success-bg"
@@ -189,6 +213,15 @@ function TranscriptLine({
               />
             )}
           </div>
+        )}
+
+        {pendingSpeaker && onReviewSpeakerName && canReviewName && (
+          <SpeakerNameReviewPopover
+            label={segment.speaker}
+            name={speakerName}
+            reason={describeSuggestedNameSource(pendingSpeaker)}
+            onReview={onReviewSpeakerName}
+          />
         )}
 
         <TranscriptLineBadges

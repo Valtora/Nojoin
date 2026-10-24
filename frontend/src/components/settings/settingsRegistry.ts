@@ -557,6 +557,17 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
     keywords: ["analytics", "analyse", "analysis", "automatic", "budget", "quota", "topics", "decisions"],
   },
   {
+    id: "notes-confirm-suggested-names",
+    label: "Confirm suggested names automatically",
+    description:
+      "Take the speaker names the AI, a self-introduction or a voiceprint suggests as given, instead of confirming each one.",
+    category: "notes",
+    access: "all",
+    settingsKeys: ["confirm_suggested_names"],
+    defaultValue: false,
+    keywords: ["speaker names", "suggested names", "confirm names", "speakers", "voiceprint", "introduction", "identify", "automatic"],
+  },
+  {
     id: "notes-meeting-edge-context",
     label: "Technical context",
     description: "How strict or detailed Meeting Edge explanations of terms are.",

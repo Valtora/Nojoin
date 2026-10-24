@@ -41,6 +41,18 @@ def suggestion_source(suggestion: dict[str, Any]) -> str:
     return SOURCE_LLM
 
 
+def inferred_name_may_be_replaced(speaker: Any) -> bool:
+    """A pending self-introduction or LLM name, which a new inference may replace.
+
+    The LLM ranks at or above both. A voiceprint match ranks above it and a
+    user's name above everything, so neither is offered to it.
+    """
+    return name_is_pending(speaker) and getattr(speaker, "name_source", None) in (
+        SOURCE_HEURISTIC,
+        SOURCE_LLM,
+    )
+
+
 def name_is_pending(speaker: Any) -> bool:
     """True for a name nobody has confirmed: shown with "?" and a Confirm.
 
