@@ -9,14 +9,11 @@ const capture = {
 vi.mock("@/lib/capture/CaptureProvider", () => ({ useCapture: () => capture }));
 
 const grabDisplayFrame = vi.fn(async () => new Blob(["png"], { type: "image/png" }));
-const imageForCapture = vi.fn(async (image: Blob) => image);
 vi.mock("./frameImage", () => ({
   grabDisplayFrame: (...args: unknown[]) => grabDisplayFrame(...(args as [])),
-  imageForCapture: (image: Blob) => imageForCapture(image),
 }));
 
-const add = vi.fn();
-vi.mock("./captureOutbox", () => ({ captureOutbox: { add: (...args: unknown[]) => add(...args) } }));
+const add = vi.fn<(file: File, atMs: number) => string | null>(() => null);
 
 const { isCaptureShortcut, useCaptureActions } = await import("./useCaptureActions");
 
@@ -45,7 +42,7 @@ describe("taking captures during a recording", () => {
   });
 
   it("takes a still on Alt+Shift+C, at the time the keys were pressed", async () => {
-    const { result } = renderHook(() => useCaptureActions("rec-1", readAudioNow));
+    const { result } = renderHook(() => useCaptureActions("rec-1", readAudioNow, add));
     expect(result.current.canCaptureScreen).toBe(true);
 
     await act(async () => {
@@ -54,13 +51,14 @@ describe("taking captures during a recording", () => {
     });
 
     expect(grabDisplayFrame).toHaveBeenCalledWith(track);
-    expect(add).toHaveBeenCalledWith("rec-1", expect.any(Blob), 65_000);
-    expect(result.current.message).toMatchObject({ text: "Capture taken at 01:05.", tone: "info" });
+    expect(add).toHaveBeenCalledWith(expect.any(File), 65_000);
+    expect(add.mock.calls[0][0].name).toBe("screen-capture.png");
+    expect(result.current.message).toMatchObject({ text: "Screen captured at 01:05.", tone: "info" });
   });
 
   it("offers nothing, and listens for nothing, without a shared screen", async () => {
     capture.displayVideoTrack.mockImplementation(() => null);
-    const { result } = renderHook(() => useCaptureActions("rec-1", readAudioNow));
+    const { result } = renderHook(() => useCaptureActions("rec-1", readAudioNow, add));
 
     await act(async () => {
       press({ code: "KeyC", altKey: true, shiftKey: true });
@@ -70,19 +68,21 @@ describe("taking captures during a recording", () => {
     expect(grabDisplayFrame).not.toHaveBeenCalled();
   });
 
-  it("stores a pasted image even without a shared screen", async () => {
-    capture.runtimeActive = false;
-    const { result } = renderHook(() => useCaptureActions("rec-1", readAudioNow));
-    const image = new Blob(["jpeg"], { type: "image/jpeg" });
+  it("says why the note for a still was refused", async () => {
+    add.mockReturnValueOnce("There is no point in the recording to anchor this note to yet.");
+    const { result } = renderHook(() => useCaptureActions("rec-1", readAudioNow, add));
 
-    await act(() => result.current.addImage(image));
+    await act(() => result.current.captureScreen());
 
-    expect(add).toHaveBeenCalledWith("rec-1", image, 65_000);
+    expect(result.current.message).toMatchObject({
+      text: "There is no point in the recording to anchor this note to yet.",
+      tone: "error",
+    });
   });
 
   it("says why a still could not be taken", async () => {
     grabDisplayFrame.mockRejectedValueOnce(new Error("The shared screen sent no picture."));
-    const { result } = renderHook(() => useCaptureActions("rec-1", readAudioNow));
+    const { result } = renderHook(() => useCaptureActions("rec-1", readAudioNow, add));
 
     await act(() => result.current.captureScreen());
 

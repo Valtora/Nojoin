@@ -229,8 +229,7 @@ CREATE TABLE documents (
     content_type VARCHAR(255),
     size_bytes INTEGER,
     status VARCHAR(32),
-    kind VARCHAR(16) NOT NULL DEFAULT 'document',
-    capture_ms INTEGER,
+    note_id INTEGER,
     use_in_notes BOOLEAN NOT NULL DEFAULT 0
 )
 """

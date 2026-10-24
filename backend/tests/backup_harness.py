@@ -369,9 +369,8 @@ class TestDocument(TestBase, table=True):
     file_type: str = "text/plain"
     status: str = "READY"
     error_message: Optional[str] = None
-    # A capture's kind, time and notes switch, as on documents.
-    kind: str = "document"
-    capture_ms: Optional[int] = None
+    # A note's file: its note and its switch, as on documents.
+    note_id: Optional[int] = None
     use_in_notes: bool = False
 
 

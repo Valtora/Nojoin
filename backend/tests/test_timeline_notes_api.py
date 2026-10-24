@@ -129,6 +129,7 @@ async def session_maker():
             TRANSCRIPTS_SCHEMA,
             TIMELINE_NOTES_SCHEMA,
             TIMELINE_NOTE_TOMBSTONES_SCHEMA,
+            DOCUMENTS_SCHEMA,
         ):
             await connection.execute(text(schema))
     maker = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
@@ -447,7 +448,6 @@ async def _add_detail_tables(session_maker) -> None:
             GLOBAL_SPEAKERS_SCHEMA,
             TAGS_SCHEMA,
             RECORDING_TAGS_SCHEMA,
-            DOCUMENTS_SCHEMA,
         ):
             await session.execute(text(schema))
         await session.commit()

@@ -56,8 +56,7 @@ COLUMNS_ADDED_AFTER_BEFORE = {
     ("recordings", "transcription_language"): "VARCHAR(16)",
     ("transcripts", "language_detection"): "JSONB",
     ("recording_speakers", "name_source"): "VARCHAR(16)",
-    ("documents", "kind"): "VARCHAR(16) NOT NULL DEFAULT 'document'",
-    ("documents", "capture_ms"): "BIGINT",
+    ("documents", "note_id"): "BIGINT",
     ("documents", "use_in_notes"): "BOOLEAN NOT NULL DEFAULT false",
 }
 

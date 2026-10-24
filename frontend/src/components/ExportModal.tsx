@@ -24,8 +24,6 @@ interface ExportModalProps {
   hasNotes: boolean;
   /** Whether the reader has saved notes on the timeline; without any, there is nothing to tick. */
   hasTimelineNotes: boolean;
-  /** Whether the recording has captures, which the same tick governs. */
-  hasCaptures?: boolean;
   /** False until the meeting has been processed, which is when analytics exist. */
   hasAnalytics: boolean;
   /** False when the recording's audio is gone, so there is nothing to export. */
@@ -135,45 +133,12 @@ const myNotesDescription = (notes: boolean, transcript: boolean): string => {
   return "Tick Meeting notes or Transcript to include them";
 };
 
-/** The tick's label and where it puts things, with captures in the mix. */
-const myNotesOption = (
-  hasNotes: boolean,
-  hasCaptures: boolean,
-  notesSection: boolean,
-  transcript: boolean,
-): { label: string; description: string } => {
-  if (!hasCaptures) {
-    return {
-      label: "Include my notes",
-      description: myNotesDescription(notesSection, transcript),
-    };
-  }
-  // Captures go in the transcript only.
-  if (!hasNotes) {
-    return {
-      label: "Include my captures",
-      description: transcript
-        ? "Your captures, each where it falls in the transcript"
-        : "Tick Transcript to include them",
-    };
-  }
-  return {
-    label: "Include my notes and captures",
-    description: transcript
-      ? notesSection
-        ? "Your notes and captures in the transcript, and the User Notes that end the meeting notes"
-        : "Your notes and captures, each where it falls in the transcript"
-      : myNotesDescription(notesSection, transcript),
-  };
-};
-
 export default function ExportModal({
   isOpen,
   onClose,
   onExport,
   hasNotes,
   hasTimelineNotes,
-  hasCaptures = false,
   hasAnalytics,
   hasAudio,
 }: ExportModalProps) {
@@ -186,10 +151,7 @@ export default function ExportModal({
   const hasTranscript = sections.includes("transcript");
   // The reader's notes sit in the transcript, and generated notes end with
   // them under User Notes, so the tick governs both.
-  // Captures sit in the transcript alone.
-  const carriesMyNotes =
-    (hasTimelineNotes && hasNotesSection) || ((hasTimelineNotes || hasCaptures) && hasTranscript);
-  const myNotes = myNotesOption(hasTimelineNotes, hasCaptures, hasNotesSection, hasTranscript);
+  const carriesMyNotes = hasNotesSection || hasTranscript;
 
   // Start each opening from what this recording can actually export.
   useOnDepsChange([isOpen], () => {
@@ -280,7 +242,7 @@ export default function ExportModal({
             label="Transcript"
             description="The diarized transcript with timestamps"
           />
-          {hasTimelineNotes || hasCaptures ? (
+          {hasTimelineNotes ? (
             <OptionCard
               type="checkbox"
               name="exportTimelineNotes"
@@ -288,8 +250,8 @@ export default function ExportModal({
               disabled={!carriesMyNotes}
               onChange={() => setIncludeNotes((current) => !current)}
               icon={<NotebookPen className="h-5 w-5" />}
-              label={myNotes.label}
-              description={myNotes.description}
+              label="Include my notes"
+              description={myNotesDescription(hasNotesSection, hasTranscript)}
             />
           ) : null}
         </fieldset>

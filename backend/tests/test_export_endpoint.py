@@ -312,12 +312,17 @@ def test_leaving_the_readers_notes_out_drops_them_from_the_notes_too(
     assert "Ask about catering" not in left_out, left_out
 
 
-def test_the_transcript_carries_the_readers_captures_unless_left_out(
+def test_a_notes_file_follows_its_note_unless_my_notes_are_left_out(
     api, tmp_path
 ) -> None:
+    import io
+
+    from docx import Document as WordDocument
     from PIL import Image
+    from sqlmodel import select
 
     from backend.models.document import Document, DocumentStatus
+    from backend.models.timeline_note import TimelineNote
 
     frame = tmp_path / "frame.png"
     Image.new("RGB", (320, 180), (240, 240, 240)).save(frame, format="PNG")
@@ -325,15 +330,15 @@ def test_the_transcript_carries_the_readers_captures_unless_left_out(
     async def go():
         recording = await api.setup()
         async with api.state.maker() as session:
+            note = (await session.execute(select(TimelineNote))).scalar_one()
             session.add(
                 Document(
                     recording_id=recording.id,
-                    kind="capture",
-                    capture_ms=7_000,
-                    title="Capture at 00:07",
+                    note_id=note.id,
+                    title="capture.png",
                     file_path=str(frame),
                     file_type="image/png",
-                    status=DocumentStatus.READY,
+                    status=DocumentStatus.PENDING,
                 )
             )
             await session.commit()
@@ -352,10 +357,9 @@ def test_the_transcript_carries_the_readers_captures_unless_left_out(
     kept, left_out, docx = asyncio.run(go())
 
     assert kept.status_code == 200, kept.text
-    assert (
-        "> [00:06] Note: Check the budget\n\n"
-        "> [00:07] Capture: an image, in the PDF and Word exports"
-    ) in kept.text
-    assert "Capture" not in left_out.text
+    assert "> [00:06] Note: Check the budget (attached: capture.png)" in kept.text
+    assert "capture.png" not in left_out.text
     assert docx.status_code == 200, docx.text
-    assert "[00:07] Capture" in exported_text(docx.content, "docx")
+    word = WordDocument(io.BytesIO(docx.content))
+    assert len(word.inline_shapes) == 1
+    assert "[00:06] Note: Check the budget" in exported_text(docx.content, "docx")

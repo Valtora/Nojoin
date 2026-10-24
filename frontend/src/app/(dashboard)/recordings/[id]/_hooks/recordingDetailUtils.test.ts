@@ -91,16 +91,6 @@ describe("noticing a change to the notes in a poll", () => {
     ).toBe(true);
   });
 
-  it("sees a new captures signature, which the page then fetches the captures for", () => {
-    const before = recordingWith({ captures_signature: "0:aaaa" });
-    expect(
-      hasPolledRecordingChanged(before, recordingWith({ captures_signature: "0:aaaa" })),
-    ).toBe(false);
-    expect(
-      hasPolledRecordingChanged(before, recordingWith({ captures_signature: "1:bbbb" })),
-    ).toBe(true);
-  });
-
   it("ignores the live audio clock, which moves on every poll", () => {
     const before = recordingWith({ live_audio_ms: 1_000 });
     expect(

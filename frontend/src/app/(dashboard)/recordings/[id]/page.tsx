@@ -5,14 +5,12 @@ import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 
 import ChatPanel from "@/components/ChatPanel";
 import SpeakerPanel from "@/components/SpeakerPanel";
-import CapturesList from "@/components/captures/CapturesList";
-import { scrollTranscriptToCapture } from "@/components/captures/captureJump";
-import { useCaptureView } from "@/components/captures/useCaptureView";
+import CapturesGallery from "@/components/notes/CapturesGallery";
 import MyNotesList from "@/components/notes/MyNotesList";
+import { NoteFilesProvider } from "@/components/notes/NoteFiles";
 import RecordingStatusDisplay from "@/components/RecordingStatusDisplay";
 import ExportModal from "@/components/ExportModal";
 import { RecordingStatus } from "@/types";
-import { useCaptures } from "@/lib/captures/useCaptures";
 import { useNavigationStore } from "@/lib/store";
 
 import { useRecordingDetail } from "./_hooks/useRecordingDetail";
@@ -34,12 +32,6 @@ export default function RecordingPage({ params }: PageProps) {
   const isChatPanelCollapsed = useNavigationStore(
     (state) => state.isChatPanelCollapsed,
   );
-  // Every view of the recording shares one list of its captures.
-  const captures = useCaptures(
-    detail.recording?.id ?? null,
-    detail.recording?.captures_signature,
-  );
-  const captureView = useCaptureView(captures, { onPlay: detail.handlePlaySegment });
 
   const {
     recording,
@@ -137,9 +129,6 @@ export default function RecordingPage({ params }: PageProps) {
       recording={recording}
       timelineNotes={timelineNotes}
       noteEdits={noteEdits}
-      captures={captures}
-      captureItems={captureView.items}
-      onOpenCapture={captureView.open}
       isMobile={isMobile}
       activePanel={activePanel}
       setActivePanel={setActivePanel}
@@ -191,6 +180,13 @@ export default function RecordingPage({ params }: PageProps) {
   );
 
   return (
+    // Notes' files open one viewer, from a note's line or the Captures tab.
+    <NoteFilesProvider
+      recordingId={recording.id}
+      notes={timelineNotes}
+      onPlay={isInFlightRecording ? undefined : (seconds) => handlePlaySegment(seconds)}
+      onChanged={fetchRecording}
+    >
     <div className="h-full flex flex-col overflow-hidden">
       <div className="flex-1 flex min-h-0 overflow-hidden">
         {isInFlightRecording ? (
@@ -208,7 +204,6 @@ export default function RecordingPage({ params }: PageProps) {
               showMobileBackButton={isMobile}
               audioClock={audioClock}
               timelineNotes={timelineNotes}
-              captures={captures}
             />
           </div>
         ) : isMobile ? (
@@ -313,14 +308,12 @@ export default function RecordingPage({ params }: PageProps) {
                         />
                       }
                       captures={
-                        <CapturesList
-                          state={captures}
-                          onOpen={captureView.open}
-                          onPlay={handlePlaySegment}
-                          onShowInTranscript={(capture) => {
-                            setActivePanel("transcript");
-                            requestAnimationFrame(() => scrollTranscriptToCapture(capture.id));
-                          }}
+                        <CapturesGallery
+                          recordingId={recording.id}
+                          timelineNotes={timelineNotes}
+                          segments={transcriptSegments}
+                          noteEdits={noteEdits}
+                          onShowTranscript={() => setActivePanel("transcript")}
                           className="h-full bg-surface-inset"
                         />
                       }
@@ -339,18 +332,16 @@ export default function RecordingPage({ params }: PageProps) {
         )}
       </div>
 
-      {isInFlightRecording ? null : captureView.viewer}
-
       <ExportModal
         isOpen={showExportModal}
         onClose={() => setShowExportModal(false)}
         onExport={handleExport}
         hasNotes={!!recording?.transcript?.notes}
         hasTimelineNotes={(timelineNotes?.length ?? 0) > 0}
-        hasCaptures={(captures.captures?.length ?? 0) > 0}
         hasAnalytics={recording?.status === RecordingStatus.PROCESSED}
         hasAudio={recording?.has_audio !== false}
       />
     </div>
+    </NoteFilesProvider>
   );
 }

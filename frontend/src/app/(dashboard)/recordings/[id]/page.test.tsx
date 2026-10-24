@@ -111,14 +111,11 @@ vi.mock("@/lib/api", () => ({
   createTimelineNote: vi.fn(),
   updateTimelineNote: (...args: unknown[]) => updateTimelineNote(...args),
   deleteTimelineNote: vi.fn(),
-  getCaptures: vi.fn(async () => []),
-  uploadCapture: vi.fn(),
-  setCaptureUseInNotes: vi.fn(),
-  deleteDocument: vi.fn(),
+  attachFileToNote: vi.fn(),
+  setNoteFileUseInNotes: vi.fn(),
   downloadDocument: vi.fn(),
-  reparseDocument: vi.fn(),
-  capturePreviewUrl: (id: number) => `/api/v1/documents/${id}/preview`,
-  captureImageUrl: (id: number) => `/api/v1/documents/${id}/download`,
+  documentPreviewUrl: (id: number) => `/api/v1/documents/${id}/preview`,
+  documentFileUrl: (id: number) => `/api/v1/documents/${id}/download`,
 }));
 
 // Heavy child components are stubbed so the tests pin the page's own

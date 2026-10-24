@@ -7,6 +7,7 @@ import {
   useState,
   type ChangeEvent,
   type ClipboardEvent,
+  type DragEvent,
   type FormEvent,
   type KeyboardEvent,
   type RefObject,
@@ -17,6 +18,7 @@ import {
   Camera,
   ChevronDown,
   CornerDownLeft,
+  Paperclip,
   SendHorizontal,
   TextCursorInput,
   TextQuote,
@@ -35,7 +37,7 @@ import {
   type OutboxDraft,
   type OutboxNotice,
 } from "@/lib/notes/noteOutbox";
-import { pastedImage } from "@/lib/captures/frameImage";
+import { fileForNote, transferredFile } from "@/lib/captures/frameImage";
 import { formatTimelineMs } from "@/lib/notes/placement";
 import { useKeyboardInset } from "@/lib/useKeyboardInset";
 import { useOnDepsChange } from "@/lib/useOnDepsChange";
@@ -80,8 +82,10 @@ interface LiveNoteComposerProps {
   capturing?: boolean;
   /** The keys that capture too, for the button's tooltip. */
   captureShortcut?: string;
-  /** Stores an image pasted into the box as a capture; without it, an image paste does nothing. */
-  onPasteImage?: (image: File) => void;
+  /** The file pasted or dropped into the box, which the next note takes. */
+  draftFile?: File | null;
+  /** Holds or clears that file; without it, a file pasted or dropped does nothing. */
+  onDraftFileChange?: (file: File | null) => void;
   /** The latest word on a capture, said in the status line; a new `seq` says it again. */
   captureMessage?: { text: string; tone: "info" | "error"; seq: number } | null;
 }
@@ -131,6 +135,10 @@ const modeHint = (draft: ComposerDraft) => {
  * chosen text" until the note is sent or the quote removed, when the mode
  * before it comes back.
  *
+ * A file pasted or dropped into the box goes with the note being typed, whose
+ * text captions it; the note saves first, then the file uploads. The camera
+ * button, where this tab shares a screen, makes a note of its own.
+ *
  * One row, so it costs the transcript window as little height as it can: the
  * mode is an icon-sized select (its options say the modes in full), and the
  * status line under it says where the note will go. That line is a polite
@@ -146,7 +154,8 @@ export default function LiveNoteComposer({
   onCapture,
   capturing = false,
   captureShortcut,
-  onPasteImage,
+  draftFile = null,
+  onDraftFileChange,
   captureMessage = null,
 }: LiveNoteComposerProps) {
   const [ownDraft, setOwnDraft] = useState<ComposerDraft>(EMPTY_DRAFT);
@@ -185,21 +194,44 @@ export default function LiveNoteComposer({
     }
   });
 
-  // An image pasted into the box becomes a capture at the recording's time
-  // now; text, even text that came with a picture, pastes as text.
+  // A file pasted or dropped into the box goes with the note being typed, and
+  // starts it as a first character would; text, even text that came with a
+  // picture, pastes as text.
+  const attach = async (file: File | null) => {
+    if (!file || !onDraftFileChange) return;
+    // Anchored now, before an image is redrawn, while the draft is current.
+    if (draft.typingStartMs === null) setDraft({ ...draft, typingStartMs: readAudioNow() });
+    const usable = await fileForNote(file).catch(() => null);
+    if (!usable) {
+      say("Nojoin can't attach a file of this type to a note.", "error");
+      return;
+    }
+    onDraftFileChange(usable);
+    say(`${usable.name} goes with this note. Add text to caption it, then Enter.`, "info");
+  };
+
   const handlePaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
-    if (!onPasteImage) return;
-    const image = pastedImage(event.clipboardData);
-    if (!image) return;
+    const file = onDraftFileChange ? transferredFile(event.clipboardData) : null;
+    if (!file) return;
     event.preventDefault();
-    onPasteImage(image);
+    void attach(file);
+  };
+
+  const handleDrop = (event: DragEvent<HTMLFormElement>) => {
+    const file = onDraftFileChange ? transferredFile(event.dataTransfer) : null;
+    if (!file) return;
+    event.preventDefault();
+    void attach(file);
   };
 
   const handleChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
     const text = event.target.value;
+    // With a file in the box the note has begun, so its anchor holds.
     const typingStartMs = isBlank(text)
-      ? null
-      : isBlank(draft.text) || draft.typingStartMs === null
+      ? draftFile
+        ? draft.typingStartMs
+        : null
+      : (isBlank(draft.text) && !draftFile) || draft.typingStartMs === null
         ? readAudioNow()
         : draft.typingStartMs;
     setDraft({ ...draft, text, typingStartMs });
@@ -207,8 +239,10 @@ export default function LiveNoteComposer({
     setDismissedNoticeSeq(latestNoticeSeq);
   };
 
+  const empty = isBlank(draft.text) && !draftFile;
+
   const submit = () => {
-    if (isBlank(draft.text)) return;
+    if (empty) return;
     const note = noteFromDraft(draft, readAudioNow);
     const refusal = onSubmit(note);
     if (refusal) {
@@ -248,6 +282,10 @@ export default function LiveNoteComposer({
   return (
     <form
       onSubmit={handleSubmit}
+      onDragOver={(event) => {
+        if (onDraftFileChange && event.dataTransfer.types.includes("Files")) event.preventDefault();
+      }}
+      onDrop={handleDrop}
       aria-label="Add a note"
       data-testid="live-note-composer"
       // Sticky against the page while the layout is stacked and the page
@@ -272,6 +310,27 @@ export default function LiveNoteComposer({
             title="Don't put the note on this text"
             onClick={() => {
               setDraft({ ...draft, selection: null });
+              setMessage(null);
+              box.current?.focus();
+            }}
+            className="h-7 w-7 text-action-tint-fg hover:bg-action-tint-hover hover:text-action-tint-fg pointer-coarse:h-[44px] pointer-coarse:w-[44px] pointer-coarse:-my-2"
+            icon={<X aria-hidden="true" />}
+          />
+        </div>
+      ) : null}
+      {draftFile && onDraftFileChange ? (
+        <div
+          data-testid="note-draft-file"
+          className="mb-1.5 flex items-center gap-2 rounded-lg bg-action-tint py-0.5 pl-2 text-xs text-action-tint-fg"
+        >
+          <Paperclip aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+          <span className="min-w-0 flex-1 truncate">{draftFile.name}</span>
+          <IconButton
+            size="sm"
+            aria-label={`Don't attach ${draftFile.name}`}
+            title="Don't attach this file"
+            onClick={() => {
+              onDraftFileChange(null);
               setMessage(null);
               box.current?.focus();
             }}
@@ -347,7 +406,7 @@ export default function LiveNoteComposer({
           variant="primary"
           aria-label="Add note"
           title="Add note (Enter)"
-          disabled={isBlank(draft.text)}
+          disabled={empty}
           icon={<SendHorizontal aria-hidden="true" />}
           // 44 px in every density, level with the box beside it.
           className="h-[44px] w-[44px]"

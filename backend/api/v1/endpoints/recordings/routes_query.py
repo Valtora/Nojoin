@@ -42,7 +42,6 @@ from backend.utils.canonical_pipeline import (
     build_transcript_segments_for_read,
     build_transcript_text_for_read,
 )
-from backend.utils.captures import load_captures_signature_async
 from backend.utils.live_audio_clock import (
     capture_is_advancing,
     estimate_live_audio_ms,
@@ -425,9 +424,6 @@ async def get_recording(
     timeline_notes_list_signature = await load_timeline_notes_list_signature_async(
         db, recording.id
     )
-    # Likewise for captures, which another device can add or switch, and whose
-    # parse ends on a worker.
-    captures_signature = await load_captures_signature_async(db, recording.id)
 
     transcript_segments_override: list[dict] | None = None
     transcript_text_override: str | None = None
@@ -477,7 +473,6 @@ async def get_recording(
         captured_audio_seconds=captured_audio_seconds,
         live_audio_ms=live_audio_ms,
         timeline_notes_list_signature=timeline_notes_list_signature,
-        captures_signature=captures_signature,
     )
 
 

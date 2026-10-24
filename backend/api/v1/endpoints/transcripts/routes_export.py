@@ -1,5 +1,5 @@
 import logging
-from typing import Annotated, Any, Literal
+from typing import Annotated, Literal
 
 from fastapi import Depends, HTTPException, Query, Response
 from fastapi.concurrency import run_in_threadpool
@@ -20,19 +20,19 @@ from backend.services.exports import (
     ordered_sections,
     render,
 )
-from backend.services.exports.builder import ExportCapture
+from backend.services.exports.builder import NoteFile
 from backend.services.exports.speaker_colors import (
     analytics_speaker_colors,
     parse_client_colors,
     resolve_label_colors,
 )
 from backend.services.timeline_note_service import (
+    RecordingTimelineNotes,
     load_recording_timeline_notes_async,
 )
 from backend.utils.canonical_pipeline import build_transcript_segments_for_read
-from backend.utils.capture_images import render_for_export
-from backend.utils.captures import captures_statement
 from backend.utils.config_manager import EXPORT_BRANDING_KEY, config_manager
+from backend.utils.note_attachments import is_image, render_for_export
 from backend.utils.speaker_names.live import with_live_speaker_names
 from backend.utils.stored_paths import confined_document_path
 from backend.utils.timezones import get_user_timezone_name
@@ -64,9 +64,9 @@ class ExportQuery(BaseModel):
     # JSON object of diarisation label (or speaker name) to palette key, so the
     # file uses the colours the reader sees in the app. See speaker_colors.py.
     speaker_colors: str | None = Field(default=None, max_length=16_384)
-    # The reader's own notes and captures: in the transcript section, and the
-    # ``## User Notes`` section that ends the generated notes. Off for a file
-    # shared without them.
+    # The reader's own notes: in the transcript section, and the ``## User
+    # Notes`` section that ends the generated notes. Off for a file shared
+    # without them.
     include_notes: bool = True
 
     def requested_sections(self) -> tuple[str, ...]:
@@ -111,27 +111,17 @@ async def _load_recording(db: AsyncSession, recording_id: str, user: User) -> Re
     return recording
 
 
-def _export_capture(document: Any) -> ExportCapture:
-    """A capture with its picture at print size. Blocking: reads and scales the file."""
-    path = confined_document_path(document.file_path)
-    return ExportCapture(
-        public_id=f"capture-{document.id}",
-        anchor_ms=int(document.capture_ms or 0),
-        created_at=document.created_at,
-        title=document.title,
-        image=render_for_export(path) if path else None,
-    )
-
-
-async def _load_captures(db: AsyncSession, recording_id: int) -> list[ExportCapture]:
-    documents = (await db.execute(captures_statement(recording_id))).scalars().all()
-    if not documents:
-        return []
-    # Scaling a screen-sized image takes a fraction of a second, so the whole
-    # set is scaled off the event loop.
-    return await run_in_threadpool(
-        lambda: [_export_capture(document) for document in documents]
-    )
+def _note_files(loaded: RecordingTimelineNotes) -> dict[str, NoteFile]:
+    """Each note's file by the note's public id, images drawn at print size."""
+    files: dict[str, NoteFile] = {}
+    for note in loaded.notes:
+        document = loaded.attachments.get(note.id)
+        if document is None:
+            continue
+        path = confined_document_path(document.file_path)
+        image = render_for_export(path) if path and is_image(document) else None
+        files[note.public_id] = NoteFile(title=document.title, image=image)
+    return files
 
 
 async def _meeting_parts(
@@ -156,13 +146,16 @@ async def _meeting_parts(
         if "analytics" in sections
         else None
     )
-    carries_my_notes = query.include_notes and "transcript" in sections
-    timeline_notes = (
-        (await load_recording_timeline_notes_async(db, recording.id)).notes
-        if carries_my_notes
-        else ()
+    loaded = (
+        await load_recording_timeline_notes_async(db, recording.id, with_files=True)
+        if query.include_notes and "transcript" in sections
+        else None
     )
-    captures = await _load_captures(db, recording.id) if carries_my_notes else []
+    # Scaling a screen-sized image takes a fraction of a second, so the files
+    # are drawn off the event loop.
+    note_files = (
+        await run_in_threadpool(_note_files, loaded) if loaded is not None else {}
+    )
     label_colors = resolve_label_colors(
         [str(segment.get("speaker") or "Unknown") for segment in segments]
         + [speaker.diarization_label for speaker in speakers],
@@ -185,8 +178,8 @@ async def _meeting_parts(
             if analytics
             else {}
         ),
-        timeline_notes=timeline_notes,
-        captures=captures,
+        timeline_notes=loaded.notes if loaded is not None else (),
+        note_files=note_files,
         include_user_notes=query.include_notes,
     )
 

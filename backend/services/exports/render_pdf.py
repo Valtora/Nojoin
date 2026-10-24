@@ -492,7 +492,7 @@ class _StoryBuilder:
     def _image(self, block: ImageBlock) -> list[Flowable]:
         # Under its caption's indent, in a hairline frame so a white slide
         # keeps its edge on the page. The caption stays on the picture's page,
-        # so a capture never starts a page with a picture whose time is on the
+        # so a note's picture never starts a page whose note is on the
         # page before.
         indent = self.styles.quote.leftIndent
         width, height = block.size_pt(FRAME_WIDTH - indent)

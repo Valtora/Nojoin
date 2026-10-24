@@ -308,7 +308,7 @@ Not in `.env.example` and not passed by the shipped compose file. Set them in th
 
 ### Custom Frontend Build Value
 
-`NEXT_PUBLIC_API_URL` is a frontend build argument. Set it only when building your own frontend image whose API is not at the same-origin `/api` path. The app's Content-Security-Policy then allows that URL's origin for API requests and recording playback.
+`NEXT_PUBLIC_API_URL` is a frontend build argument. Set it only when building your own frontend image whose API is not at the same-origin `/api` path. The app's Content-Security-Policy then allows that URL's origin for API requests, recording playback and the images of notes' files.
 
 ## Stall Detection
 
@@ -608,7 +608,7 @@ These run on the first start after the upgrade and need no action unless a note 
 
 #### Unreleased Changes on Main
 
-- **Captures (#653).** Alembic revision `c4d81e6a2f90` adds `documents.kind`, `documents.capture_ms` and `documents.use_in_notes`, with two check constraints. Every existing row becomes kind `document`, so attached documents behave as before. A downgrade drops the three columns, and captures stay on their meetings as ordinary documents, read by every notes run from then on. Captures are capped at 20 MB each (`UPLOAD_LIMIT_CAPTURE`). A newer worker fails on the missing columns until the API has migrated, so upgrade the API and the workers together.
+- **Files on notes (#653).** Alembic revision `c4d81e6a2f90` adds `documents.note_id`, unique, a foreign key to `timeline_notes` with `ON DELETE CASCADE`, and `documents.use_in_notes`, `false` by default. Every existing row keeps `note_id` empty, so attached documents behave as before. A downgrade drops both columns, and files on notes stay on their meetings as ordinary documents, read by every notes run from then on. A newer worker fails on the missing columns until the API has migrated, so upgrade the API and the workers together.
 - **Speaker names with sources (#487).** Alembic revision `0f3b502561a6` adds the table `speaker_name_events` and the nullable column `recording_speakers.name_source`, with no backfill: names given before the upgrade show as they did, with no "?", and their links to People still teach voiceprints. A downgrade drops both, and backups leave the table out ([BACKUP_RESTORE.md](BACKUP_RESTORE.md#what-is-not-included)). Every user starts with `voiceprint_learning` at `confirmed` and `confirm_suggested_names` off, so from the first run after the upgrade, a suggested name waits for **Confirm** and only confirmed names update a person's voiceprint ([USAGE.md](USAGE.md#speaker-management)). A newer worker fails on the missing column until the API has migrated, so upgrade the API and the workers together.
 - **Language detection notice (#671).** Alembic revision `b13e4912f23a` adds the nullable column `transcripts.language_detection`, with no backfill, so recordings processed earlier never show the notice. A downgrade drops it. With Whisper and VAD on, every run now detects a language, also when one is set: one more `detect_language` call per recording, about 0.14 s on a GPU and a few seconds on a CPU. As with the next note, upgrade the API and the workers together.
 - **A language per recording (#671).** Alembic revision `76243f67da02` adds the nullable column `recordings.transcription_language`, with no backfill: every existing recording follows its owner's transcription language as before. A downgrade drops it. A newer worker fails on the missing column until the API has migrated, so upgrade the API and the workers together.

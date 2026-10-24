@@ -102,8 +102,7 @@ CREATE TABLE documents (
     page_count INTEGER,
     pages_parsed INTEGER NOT NULL,
     parse_stage VARCHAR,
-    kind VARCHAR(16) NOT NULL DEFAULT 'document',
-    capture_ms INTEGER,
+    note_id INTEGER UNIQUE,
     use_in_notes BOOLEAN NOT NULL DEFAULT 0
 )
 """

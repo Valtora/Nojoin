@@ -728,7 +728,7 @@ def _cuda_available() -> bool:
 
 def _feature_flags(session: Any, cutoff: datetime) -> dict[str, Any]:
     from sqlalchemy import func
-    from sqlmodel import select
+    from sqlmodel import col, select
 
     from backend.models.calendar import CalendarConnection
     from backend.models.chat import ChatMessage
@@ -746,8 +746,8 @@ def _feature_flags(session: Any, cutoff: datetime) -> dict[str, Any]:
         "calendar_connected": any_row(CalendarConnection),
         "mcp_in_use": any_row(OAuthRefreshToken),
         "chat_used_28d": any_row(ChatMessage, ChatMessage.created_at >= cutoff),
-        # Attached documents only: a capture is a feature of its own.
-        "documents_used": any_row(Document, Document.kind == "document"),
+        # Documents of a meeting; a note's file is a note feature.
+        "documents_used": any_row(Document, col(Document.note_id).is_(None)),
         "tasks_used": any_row(UserTask),
         "people_library_used": any_row(GlobalSpeaker),
     }

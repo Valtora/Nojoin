@@ -143,8 +143,6 @@ export const hasPolledRecordingChanged = (current: Recording, polled: Recording)
   polled.transcript?.notes !== current.transcript?.notes ||
   // Changes with the notes list, which the page then fetches.
   polled.timeline_notes_list_signature !== current.timeline_notes_list_signature ||
-  // Changes with the captures list, which the page then fetches.
-  polled.captures_signature !== current.captures_signature ||
   meetingEdgeSignature(polled) !== meetingEdgeSignature(current) ||
   JSON.stringify(polled.speakers) !== JSON.stringify(current.speakers);
 

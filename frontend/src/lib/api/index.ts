@@ -25,7 +25,6 @@ export * from "./oauth";
 export * from "./system";
 export * from "./users";
 export * from "./documents";
-export * from "./captures";
 export * from "./chat";
 export * from "./analytics";
 export * from "./backup";

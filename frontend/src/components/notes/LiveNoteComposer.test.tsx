@@ -189,39 +189,79 @@ describe("LiveNoteComposer", () => {
   });
 });
 
-describe("LiveNoteComposer and captures", () => {
+describe("LiveNoteComposer and files", () => {
   const clipboard = (text: string, files: File[]) => ({
     getData: (format: string) => (format === "text/plain" ? text : ""),
-    items: files.map((file) => ({ kind: "file", type: file.type, getAsFile: () => file })),
+    files,
   });
   const screenshot = new File([new Uint8Array(8)], "image.png", { type: "image/png" });
 
-  it("takes a pasted image as a capture, leaving the note's text alone", () => {
-    const onPasteImage = vi.fn();
+  it("attaches a pasted file to the note being typed, leaving its text alone", async () => {
+    const onDraftFileChange = vi.fn();
     render(
-      <LiveNoteComposer readAudioNow={readAudioNow} onSubmit={onSubmit} onPasteImage={onPasteImage} />,
+      <LiveNoteComposer
+        readAudioNow={readAudioNow}
+        onSubmit={onSubmit}
+        onDraftFileChange={onDraftFileChange}
+      />,
     );
     const box = screen.getByRole("textbox", { name: "New note" }) as HTMLTextAreaElement;
     type(box, "Slide on hiring");
 
     const pasted = fireEvent.paste(box, { clipboardData: clipboard("", [screenshot]) });
 
-    expect(onPasteImage).toHaveBeenCalledWith(screenshot);
     // Handled, so the browser inserts nothing.
     expect(pasted).toBe(false);
+    await vi.waitFor(() => expect(onDraftFileChange).toHaveBeenCalledWith(screenshot));
     expect(box.value).toBe("Slide on hiring");
   });
 
+  it("sends a note that holds only a file, and says why another file can't go", async () => {
+    const onDraftFileChange = vi.fn();
+    const { rerender } = render(
+      <LiveNoteComposer
+        readAudioNow={readAudioNow}
+        onSubmit={onSubmit}
+        onDraftFileChange={onDraftFileChange}
+      />,
+    );
+    const script = new File([new Uint8Array(8)], "run.sh", { type: "text/x-sh" });
+    const box = screen.getByRole("textbox", { name: "New note" });
+
+    fireEvent.paste(box, { clipboardData: clipboard("", [script]) });
+    await vi.waitFor(() =>
+      expect(screen.getByTestId("live-note-status")).toHaveTextContent(
+        "Nojoin can't attach a file of this type to a note.",
+      ),
+    );
+    rerender(
+      <LiveNoteComposer
+        readAudioNow={readAudioNow}
+        onSubmit={onSubmit}
+        draftFile={screenshot}
+        onDraftFileChange={onDraftFileChange}
+      />,
+    );
+    expect(screen.getByTestId("note-draft-file")).toHaveTextContent("image.png");
+    fireEvent.click(screen.getByRole("button", { name: "Add note" }));
+
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ kind: "point", body: "" }));
+  });
+
   it("pastes text as text, even with a picture of it on the clipboard", () => {
-    const onPasteImage = vi.fn();
+    const onDraftFileChange = vi.fn();
     render(
-      <LiveNoteComposer readAudioNow={readAudioNow} onSubmit={onSubmit} onPasteImage={onPasteImage} />,
+      <LiveNoteComposer
+        readAudioNow={readAudioNow}
+        onSubmit={onSubmit}
+        onDraftFileChange={onDraftFileChange}
+      />,
     );
     const box = screen.getByRole("textbox", { name: "New note" });
 
     const pasted = fireEvent.paste(box, { clipboardData: clipboard("Quarterly plan", [screenshot]) });
 
-    expect(onPasteImage).not.toHaveBeenCalled();
+    expect(onDraftFileChange).not.toHaveBeenCalled();
     expect(pasted).toBe(true);
   });
 
@@ -252,10 +292,10 @@ describe("LiveNoteComposer and captures", () => {
       <LiveNoteComposer
         readAudioNow={readAudioNow}
         onSubmit={onSubmit}
-        captureMessage={{ text: "Capture taken at 01:05.", tone: "info", seq: 1 }}
+        captureMessage={{ text: "Screen captured at 01:05.", tone: "info", seq: 1 }}
       />,
     );
 
-    expect(screen.getByTestId("live-note-status")).toHaveTextContent("Capture taken at 01:05.");
+    expect(screen.getByTestId("live-note-status")).toHaveTextContent("Screen captured at 01:05.");
   });
 });

@@ -36,7 +36,7 @@ from backend.processing.documents import (
 from backend.processing.documents.ocr import ocr_images, ocr_is_available
 from backend.processing.documents.vision import merge_page_content, transcribe_page
 from backend.processing.text_embedding_version import TEXT_EMBEDDING_VERSION
-from backend.utils.captures import feeds_notes, is_capture
+from backend.utils.note_attachments import feeds_notes
 from backend.utils.vision import VisionUnsupportedError
 
 from .constants import *  # noqa: F403 - shared task imports, matching sibling modules
@@ -227,12 +227,6 @@ def _index_page(session, document: Document, page: DocumentPage) -> int:
                     "parse_mode": page.parse_mode.value
                     if hasattr(page.parse_mode, "value")
                     else str(page.parse_mode),
-                    # A capture's time, so a search hit can say when it was taken.
-                    **(
-                        {"capture_ms": document.capture_ms}
-                        if is_capture(document)
-                        else {}
-                    ),
                 },
             )
         )
@@ -272,6 +266,13 @@ def process_document_task(self, document_id: int, force_reparse: bool = False):
     document = session.get(Document, document_id)
     if not document:
         logger.error("Document %s not found.", document_id)
+        return
+    if not feeds_notes(document):
+        # A note's file switched off before its parse began: nothing reads it,
+        # so no vision call is spent on it. Switching it on queues it again.
+        document.parse_stage = None
+        session.add(document)
+        session.commit()
         return
 
     try:
@@ -490,13 +491,11 @@ def _flag_notes_stale(session, document: Document) -> None:
     """Mark existing notes as not reflecting this document.
 
     Only when notes already exist, and only for a document notes generation
-    reads: every attached document, and a capture whose notes switch is on. A
-    document that finishes parsing afterwards leaves the notes incomplete --
+    reads. One that finishes parsing afterwards leaves the notes incomplete --
     but regenerating spends the user's quota and overwrites their edits, so
-    this raises a prompt rather than acting. A capture left out of the notes
-    changes nothing they would say.
+    this raises a prompt rather than acting.
     """
-    # Read again: the switch may have been turned while the parse ran.
+    # Read again: a note's file may have been switched off while it parsed.
     session.refresh(document)
     if not feeds_notes(document):
         return
@@ -644,6 +643,9 @@ def rebuild_recording_index_task(self, recording_id: int):
         ).all()
 
         if not pages:
+            if not feeds_notes(document):
+                # A note's file switched off was never parsed: nothing to embed.
+                continue
             # Parsed before pages were stored, so there is no text to re-embed.
             # Structural only: a silent re-run of visual parsing on upgrade
             # would spend the user's provider quota without being asked.

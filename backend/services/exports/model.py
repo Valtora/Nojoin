@@ -164,7 +164,7 @@ _POINTS_PER_PIXEL = 72 / 96
 
 @dataclass(frozen=True)
 class ImageBlock:
-    """A picture with its caption, as a capture sits in the transcript.
+    """A picture under its caption, as a note's image sits in the transcript.
 
     ``data`` is a JPEG already scaled for print. PDF and DOCX draw the caption
     and the picture together; plain text cannot hold a picture, so it prints

@@ -58,7 +58,7 @@ class Transcript(BaseDBModel, table=True):
         default="pending"
     )  # pending, generating, completed, error
     # Set when a document finishes parsing after the notes were generated, or
-    # a capture's notes switch changes, so the notes no longer reflect what
+    # a note's file is switched on or off, so the notes no longer reflect what
     # notes generation would read. Only a
     # prompt to regenerate: regenerating costs a real LLM call on the user's
     # own quota and overwrites any hand edits, so it is never automatic.

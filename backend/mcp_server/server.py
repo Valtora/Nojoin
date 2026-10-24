@@ -30,7 +30,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import CallToolResult, Icon, TextContent
 from sqlalchemy.orm import selectinload
-from sqlmodel import select
+from sqlmodel import col, select
 from starlette.applications import Starlette
 from starlette.types import ASGIApp
 
@@ -553,7 +553,9 @@ async def get_meeting_notes(recording_id: str) -> dict[str, Any]:
     at one moment), "selection" (about the words in ``quoted_text``) or "tail"
     (added after the transcript, as append_meeting_notes does without a time).
     ``at_ms`` and ``at`` (MM:SS) give the moment in the recording for point
-    and selection notes, and are null for the others.
+    and selection notes, and are null for the others. ``attachment`` is the
+    file the note holds, such as a still of the shared screen, or null; its
+    ``document_id`` is the one get_documents lists it under.
 
     Args:
         recording_id: The recording's string id from list_recordings.
@@ -573,7 +575,9 @@ async def get_meeting_notes(recording_id: str) -> dict[str, Any]:
             select(Transcript).where(Transcript.recording_id == recording.id)
         )
         transcript = result.scalar_one_or_none()
-        timeline_notes = await load_recording_timeline_notes_async(db, recording.id)
+        timeline_notes = await load_recording_timeline_notes_async(
+            db, recording.id, with_files=True
+        )
 
     return {
         "recording_id": recording_id,
@@ -592,9 +596,22 @@ async def get_meeting_notes(recording_id: str) -> dict[str, Any]:
                 "body": placement.note.body,
                 "quoted_text": placement.note.quoted_text,
                 "author": note_author_name(placement.note, timeline_notes.author_names),
+                "attachment": _note_file(
+                    timeline_notes.attachments.get(placement.note.id)
+                ),
             }
             for placement in timeline_notes.in_timeline_order()
         ],
+    }
+
+
+def _note_file(document: Any) -> dict[str, Any] | None:
+    if document is None:
+        return None
+    return {
+        "document_id": document.id,
+        "title": document.title,
+        "use_in_notes": bool(document.use_in_notes),
     }
 
 
@@ -635,11 +652,11 @@ async def get_documents(recording_id: str) -> list[dict[str, Any]]:
     """Get the documents attached to a recording, with their extracted text.
 
     These are the files uploaded to a meeting to ground its chat and notes,
-    and its captures: images the user took during the meeting, each with
-    ``kind`` "capture", its time in the recording as ``at_seconds`` and
-    ``use_in_notes``, which says whether notes generation reads it. Text is
-    assembled from the document's parsed pages and is truncated per
-    document beyond a size limit.
+    and the files attached to the user's notes, which carry ``note_id`` (see
+    get_meeting_notes) and ``use_in_notes``. A note's file is read only while
+    ``use_in_notes`` is on; until then it has no text. Text is assembled from
+    the document's parsed pages and is truncated per document beyond a size
+    limit.
 
     Args:
         recording_id: The recording's string id from list_recordings.
@@ -648,6 +665,8 @@ async def get_documents(recording_id: str) -> list[dict[str, Any]]:
     from backend.core.db import async_session_maker
     from backend.models.document import Document
     from backend.models.document_page import DocumentPage
+    from backend.models.timeline_note import TimelineNote
+    from backend.utils.note_attachments import feeds_notes
 
     user = get_current_mcp_user()
     async with async_session_maker() as db:
@@ -655,9 +674,21 @@ async def get_documents(recording_id: str) -> list[dict[str, Any]]:
         docs_result = await db.execute(
             select(Document)
             .where(Document.recording_id == recording.id)
-            .order_by(Document.created_at, Document.id)
+            .order_by(Document.created_at)
         )
         documents = docs_result.scalars().all()
+        note_pks = [document.note_id for document in documents if document.note_id]
+        notes_by_pk = dict(
+            (
+                await db.execute(
+                    select(TimelineNote.id, TimelineNote.public_id).where(
+                        col(TimelineNote.id).in_(note_pks)
+                    )
+                )
+            ).all()
+            if note_pks
+            else []
+        )
 
         payload: list[dict[str, Any]] = []
         for document in documents:
@@ -679,7 +710,7 @@ async def get_documents(recording_id: str) -> list[dict[str, Any]]:
                 if title:
                     heading = f"[Page {page_number}: {title}]"
                 sections.append(f"{heading}\n{content}")
-            text = "\n\n".join(sections)
+            text = "\n\n".join(sections) if feeds_notes(document) else ""
             truncated = len(text) > _DOCUMENT_TEXT_CHAR_LIMIT
             payload.append(
                 {
@@ -695,21 +726,11 @@ async def get_documents(recording_id: str) -> list[dict[str, Any]]:
                     "parse_warning": document.parse_warning,
                     "text": text[:_DOCUMENT_TEXT_CHAR_LIMIT],
                     "text_truncated": truncated,
-                    **_capture_fields(document),
+                    "note_id": notes_by_pk.get(document.note_id),
+                    "use_in_notes": feeds_notes(document),
                 }
             )
     return payload
-
-
-def _capture_fields(document: Any) -> dict[str, Any]:
-    """What a capture carries beyond a document; a document only says its kind."""
-    if document.kind != "capture":
-        return {"kind": "document"}
-    return {
-        "kind": "capture",
-        "at_seconds": (document.capture_ms or 0) / 1000,
-        "use_in_notes": bool(document.use_in_notes),
-    }
 
 
 @mcp_tool(scope=MCP_WRITE_SCOPE)

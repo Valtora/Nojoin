@@ -3,8 +3,9 @@ import { describe, expect, it, vi } from "vitest";
 import {
   FRAME_MAX_BYTES,
   encodeWithinLimit,
-  pastedImage,
+  fileForNote,
   scaledSize,
+  transferredFile,
   type ImageEncoder,
 } from "./frameImage";
 
@@ -60,24 +61,27 @@ const clipboard = ({
 }: { text?: string; files?: File[] }): DataTransfer =>
   ({
     getData: (format: string) => (format === "text/plain" ? text : ""),
-    items: files.map((file) => ({ kind: "file", type: file.type, getAsFile: () => file })),
+    files,
   }) as unknown as DataTransfer;
 
-describe("an image pasted into the note box", () => {
+describe("a file pasted or dropped into the note box", () => {
   const screenshot = new File([new Uint8Array(10)], "image.png", { type: "image/png" });
+  const pdf = new File([new Uint8Array(10)], "plan.pdf", { type: "application/pdf" });
 
-  it("is taken from the clipboard", () => {
-    expect(pastedImage(clipboard({ files: [screenshot] }))).toBe(screenshot);
+  it("is the first file on the clipboard, whatever its kind", () => {
+    expect(transferredFile(clipboard({ files: [pdf, screenshot] }))).toBe(pdf);
+    expect(transferredFile(null)).toBeNull();
   });
 
   it("gives way to text copied with a picture of it", () => {
-    expect(pastedImage(clipboard({ text: "Quarterly plan", files: [screenshot] }))).toBeNull();
+    expect(transferredFile(clipboard({ text: "Quarterly plan", files: [screenshot] }))).toBeNull();
   });
 
-  it("is not a file of another kind", () => {
-    const pdf = new File([new Uint8Array(10)], "plan.pdf", { type: "application/pdf" });
+  it("is kept as it is when a document may be one, and refused when not", async () => {
+    const script = new File([new Uint8Array(10)], "run.sh", { type: "text/x-sh" });
 
-    expect(pastedImage(clipboard({ files: [pdf] }))).toBeNull();
-    expect(pastedImage(null)).toBeNull();
+    await expect(fileForNote(screenshot)).resolves.toBe(screenshot);
+    await expect(fileForNote(pdf)).resolves.toBe(pdf);
+    await expect(fileForNote(script)).resolves.toBeNull();
   });
 });

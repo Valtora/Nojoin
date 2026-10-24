@@ -1,6 +1,6 @@
 import { vi } from "vitest";
 
-import type { TimelineNote, TimelineNoteCreate } from "@/types";
+import type { NoteAttachment, TimelineNote, TimelineNoteCreate } from "@/types";
 
 /**
  * A fake of the notes routes as the note outbox meets them: a create under a
@@ -23,6 +23,9 @@ export const server = {
   creates: [] as TimelineNoteCreate[],
   loseNextAnswer: false,
   failures: [] as unknown[],
+  /** Each note's file, by note id; and refusals for the next uploads only. */
+  files: new Map<string, string>(),
+  uploadFailures: [] as unknown[],
   /** Another device deletes a note it can see. */
   deleteElsewhere(id: string) {
     this.notes.delete(id);
@@ -82,7 +85,27 @@ export const deleteTimelineNote = vi.fn<
   server.tombstones.set(id, conditions?.writeToken);
 });
 
+export const attachFileToNote = vi.fn(
+  async (_recording: string, noteId: string, file: File): Promise<NoteAttachment> => {
+    const failure = server.uploadFailures.shift();
+    if (failure) throw failure;
+    if (!server.notes.has(noteId)) throw coded(404, "note_not_found");
+    if (server.files.has(noteId)) throw coded(409, "attachment_exists");
+    server.files.set(noteId, file.name);
+    return {
+      id: server.files.size,
+      title: file.name,
+      file_type: file.type,
+      status: "PENDING",
+      use_in_notes: false,
+      is_image: file.type.startsWith("image/"),
+    };
+  },
+);
+
 export const fakeNotesApi = {
+  attachFileToNote: (recording: string, noteId: string, file: File) =>
+    attachFileToNote(recording, noteId, file),
   createTimelineNote: (recording: string, payload: TimelineNoteCreate) =>
     createTimelineNote(recording, payload),
   deleteTimelineNote: (recording: string, id: string, conditions?: { writeToken?: string }) =>
@@ -96,6 +119,9 @@ export const resetNotesServer = (): void => {
   server.creates = [];
   server.loseNextAnswer = false;
   server.failures = [];
+  server.files.clear();
+  server.uploadFailures = [];
   createTimelineNote.mockClear();
   deleteTimelineNote.mockClear();
+  attachFileToNote.mockClear();
 };

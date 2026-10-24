@@ -4,9 +4,6 @@ import { useCallback, useMemo, useRef } from "react";
 import { AlertCircle } from "lucide-react";
 
 import TranscriptView from "@/components/TranscriptView";
-import type { CaptureItem } from "@/components/captures/captureItems";
-import type { Capture } from "@/lib/api";
-import type { CapturesState } from "@/lib/captures/useCaptures";
 import RecordingUnsavedNotes from "@/components/notes/RecordingUnsavedNotes";
 import { inlineNotes, type OutboxDraft } from "@/lib/notes/noteOutbox";
 import type { EditableNote, NoteEdits } from "@/lib/notes/useNoteEdits";
@@ -36,10 +33,6 @@ interface TranscriptSectionProps {
   timelineNotes?: readonly TimelineNote[] | null;
   /** The page's note edits, which My notes shares. */
   noteEdits: NoteEdits;
-  /** The recording's captures; their markers show among the lines. */
-  captures?: CapturesState;
-  captureItems?: readonly CaptureItem[];
-  onOpenCapture?: (capture: Capture) => void;
   transcriptSegments: TranscriptSegment[];
   currentTime: number;
   isPlaying: boolean;
@@ -79,9 +72,6 @@ export default function TranscriptSection({
   recording,
   timelineNotes,
   noteEdits,
-  captures,
-  captureItems,
-  onOpenCapture,
   transcriptSegments,
   currentTime,
   isPlaying,
@@ -147,13 +137,6 @@ export default function TranscriptSection({
     },
     [outbox, focusSection],
   );
-  const discardCapture = useCallback(
-    (key: string) => {
-      captures?.discard(key);
-      focusSection();
-    },
-    [captures, focusSection],
-  );
   const deleteNote = useCallback(
     async (note: EditableNote) => {
       const refusal = await removeNote(note);
@@ -202,6 +185,8 @@ export default function TranscriptSection({
         recordingId={recording.id}
         // With no lines to show a note on its line, every kind is listed here.
         kinds={transcriptSegments.length > 0 ? LISTED_NOTES : undefined}
+        // Files show on their notes' lines, where there are lines.
+        listUploads={transcriptSegments.length === 0}
         readEndMs={readEndMs}
         onEmptied={focusSection}
         className="mx-4 mt-4 max-h-[40%] shrink-0 overflow-y-auto border-b border-surface-divider pb-3"
@@ -239,10 +224,6 @@ export default function TranscriptSection({
             onEditNote={editNote}
             onDeleteNote={deleteNote}
             onMoveNote={moveNote}
-            captures={captureItems}
-            onOpenCapture={onOpenCapture}
-            onRetryCapture={captures?.retry}
-            onDiscardCapture={discardCapture}
           />
         </div>
       ) : (

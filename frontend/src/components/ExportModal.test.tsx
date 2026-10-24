@@ -7,13 +7,11 @@ import ExportModal from "./ExportModal";
 const renderModal = ({
   hasNotes = true,
   hasTimelineNotes = true,
-  hasCaptures = false,
   hasAnalytics = true,
   hasAudio = true,
 }: {
   hasNotes?: boolean;
   hasTimelineNotes?: boolean;
-  hasCaptures?: boolean;
   hasAnalytics?: boolean;
   hasAudio?: boolean;
 } = {}) => {
@@ -26,7 +24,6 @@ const renderModal = ({
       onExport={onExport}
       hasNotes={hasNotes}
       hasTimelineNotes={hasTimelineNotes}
-      hasCaptures={hasCaptures}
       hasAnalytics={hasAnalytics}
       hasAudio={hasAudio}
     />,
@@ -177,37 +174,6 @@ describe("ExportModal sections", () => {
     expect(
       screen.getByText("Available once the meeting has finished processing"),
     ).toBeInTheDocument();
-  });
-});
-
-describe("ExportModal captures", () => {
-  it("leaves the captures out with the notes, under one tick", () => {
-    const { onExport } = renderModal({ hasCaptures: true });
-
-    fireEvent.click(section("Transcript"));
-    const tick = section("Include my notes and captures");
-    expect(tick).toBeChecked();
-    expect(
-      screen.getByText(
-        "Your notes and captures in the transcript, and the User Notes that end the meeting notes",
-      ),
-    ).toBeInTheDocument();
-    fireEvent.click(tick);
-    fireEvent.click(exportButton());
-
-    expect(onExport).toHaveBeenCalledWith(expect.objectContaining({ includeNotes: false }));
-  });
-
-  it("offers the tick for captures alone, with the transcript", () => {
-    renderModal({ hasTimelineNotes: false, hasCaptures: true });
-
-    // Captures sit in the transcript only, and the dialog opens on the notes.
-    expect(section("Include my captures")).toBeDisabled();
-    expect(screen.getByText("Tick Transcript to include them")).toBeInTheDocument();
-    fireEvent.click(section("Transcript"));
-
-    expect(section("Include my captures")).toBeEnabled();
-    expect(section("Include my captures")).toBeChecked();
   });
 });
 

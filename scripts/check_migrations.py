@@ -162,14 +162,17 @@ INSERT INTO timeline_note_tombstones (public_id, recording_id, deleted_write_tok
 VALUES ('mc-tt1', 900001, 'mc-token-2', now())
 ON CONFLICT (public_id) DO NOTHING;
 
--- A document and a capture switched into the notes: rolling the captures
--- migration back has to keep both rows, as ordinary documents.
+-- A document and a note's file switched on: rolling the note files migration
+-- back has to keep both rows, as documents of the meeting.
 INSERT INTO documents (created_at, updated_at, recording_id, title, file_path,
-                       file_type, status, parse_mode, pages_parsed, kind,
-                       capture_ms, use_in_notes)
-VALUES
-  (now(), now(), 900001, 'mc-doc', '/mc-doc.pdf', 'application/pdf', 'READY', 'VISUAL', 0, 'document', NULL, false),
-  (now(), now(), 900001, 'mc-capture', '/mc-capture.png', 'image/png', 'READY', 'VISUAL', 0, 'capture', 0, true)
+                       file_type, status, parse_mode, pages_parsed, note_id,
+                       use_in_notes)
+SELECT now(), now(), 900001, 'mc-doc', '/mc-doc.pdf', 'application/pdf',
+       'READY'::documentstatus, 'VISUAL'::documentparsemode, 0, NULL, false
+UNION ALL
+SELECT now(), now(), 900001, 'mc-still', '/mc-still.png', 'image/png',
+       'READY'::documentstatus, 'VISUAL'::documentparsemode, 0, id, true
+FROM timeline_notes WHERE public_id = 'mc-tn2'
 ON CONFLICT (file_path) DO NOTHING;
 """
 

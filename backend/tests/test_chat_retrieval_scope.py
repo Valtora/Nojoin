@@ -29,7 +29,10 @@ CHUNKS = (
     (3, 2, None),  # a tagged meeting's transcript
     (4, 2, 20),  # a tagged meeting's attached document
     (5, 3, None),  # another user's transcript
+    (6, 1, 30),  # this meeting's note file, switched off
 )
+# (document id, note id, use_in_notes): 30 is a file on a note, switched off.
+DOCUMENTS = ((10, None, 0), (20, None, 0), (30, 7, 0))
 
 
 def _matching_chunk_ids(tag_ids: list[int]) -> tuple[list[int] | None, list[int]]:
@@ -42,6 +45,17 @@ def _matching_chunk_ids(tag_ids: list[int]) -> tuple[list[int] | None, list[int]
                     "recording_id INTEGER NOT NULL, document_id INTEGER)"
                 )
             )
+            await connection.execute(
+                text(
+                    "CREATE TABLE documents (id INTEGER PRIMARY KEY, "
+                    "note_id INTEGER, use_in_notes BOOLEAN NOT NULL)"
+                )
+            )
+            for document_id, note_id, use_in_notes in DOCUMENTS:
+                await connection.execute(
+                    text("INSERT INTO documents VALUES (:id, :note, :on)"),
+                    {"id": document_id, "note": note_id, "on": use_in_notes},
+                )
             for chunk_id, recording_id, document_id in CHUNKS:
                 await connection.execute(
                     text("INSERT INTO context_chunks VALUES (:id, :rec, :doc)"),

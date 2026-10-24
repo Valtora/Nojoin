@@ -1,7 +1,7 @@
-import { createTimelineNote, deleteTimelineNote } from "@/lib/api";
+import { attachFileToNote, createTimelineNote, deleteTimelineNote } from "@/lib/api";
 import { getErrorStatus, isRecord } from "@/lib/errors";
 import { useSessionStore, waitForSignInAfter } from "@/lib/session";
-import type { RecordingId, TimelineNote, TimelineNoteCreate } from "@/types";
+import type { NoteAttachment, RecordingId, TimelineNote, TimelineNoteCreate } from "@/types";
 
 import { NOTE_BODY_MAX_CHARS, newNoteId, noteLength, stripNote } from "./headNoteSync";
 import { formatTimelineMs } from "./placement";
@@ -36,6 +36,13 @@ import { formatTimelineMs } from "./placement";
  * | discarded | delete gets no answer | sent again whenever a listing still has the note, which stays hidden meanwhile |
  * | any | a listing has the entry's id | its create landed: entry gone |
  * | stored (`noteStore`) | the page reloads and the recording opens | `saving`; the same create again |
+ *
+ * A note may carry a file (`submit`'s `file`, or the box's `draftFile`), held
+ * in memory only, never in the kept copy. It is uploaded once, when its note
+ * saves; a failed upload waits with Retry and Discard (`retryUpload`,
+ * `discardUpload`), and the note stays saved whichever is chosen. A 409 means
+ * an earlier upload landed, and a 404 or 410 that the note is gone: either
+ * way there is nothing left to send.
  */
 
 /** How long a create may go unanswered before the note offers Retry and Discard. */
@@ -142,6 +149,17 @@ export interface OutboxNotice {
   tone: "error" | "info";
 }
 
+/** A note's file not on the server yet, by the note's id. */
+export interface NoteUpload {
+  /** The outbox entry's key, which `retryUpload` and `discardUpload` take. */
+  key: string;
+  fileName: string;
+  /** Where its note goes, as a phrase. */
+  place: string;
+  status: "waiting" | "uploading" | "failed";
+  error: string | null;
+}
+
 export interface OutboxSnapshot {
   /** Notes not yet known to be saved, in the order they were sent. */
   entries: readonly OutboxEntry[];
@@ -150,6 +168,10 @@ export interface OutboxSnapshot {
   /** Ids discarded here: a listing still having one shows a delete in transit. */
   discarded: ReadonlySet<string>;
   draft: ComposerDraft;
+  /** A file pasted or dropped into the box, which the next note sent takes. */
+  draftFile: File | null;
+  /** Files on their way to their notes, by note id. */
+  uploads: ReadonlyMap<string, NoteUpload>;
   notice: OutboxNotice | null;
 }
 
@@ -275,6 +297,7 @@ export interface InlineNote {
   created_at: string;
   /** A saved note's revision, which an edit names; absent while it is on its way. */
   revision?: number;
+  attachment?: NoteAttachment | null;
   status: "saved" | "saving" | "failed";
   error: string | null;
 }
@@ -338,6 +361,22 @@ export const inlineNotes = (
 
 const isBlankDraft = (draft: ComposerDraft) => stripNote(draft.text) === "";
 
+interface Upload {
+  noteId: string;
+  file: File;
+  place: string;
+  status: NoteUpload["status"];
+  error: string | null;
+}
+
+const uploadError = (error: unknown): string => {
+  const status = getErrorStatus(error);
+  if (status === null || status >= 500) return "Not uploaded: no answer from Nojoin.";
+  if (status === 413) return "Not uploaded: the file is too large.";
+  if (status === 400) return "Not uploaded: Nojoin can't read this type of file.";
+  return "Not uploaded: Nojoin refused this file.";
+};
+
 export class NoteOutbox {
   private entries: OutboxEntry[] = [];
   private saved: TimelineNote[] = [];
@@ -348,12 +387,17 @@ export class NoteOutbox {
   /** Each entry's latest attempt: only its outcome sets the entry's state. */
   private readonly attempts = new Map<string, number>();
   private draft: ComposerDraft = EMPTY_DRAFT;
+  private draftFile: File | null = null;
+  /** Files on their way, by entry key. */
+  private readonly uploads = new Map<string, Upload>();
   private notice: OutboxNotice | null = null;
   private snapshot: OutboxSnapshot = {
     entries: [],
     saved: [],
     discarded: new Set(),
     draft: EMPTY_DRAFT,
+    draftFile: null,
+    uploads: new Map(),
     notice: null,
   };
   private readonly listeners = new Set<() => void>();
@@ -378,12 +422,24 @@ export class NoteOutbox {
   getSnapshot = (): OutboxSnapshot => this.snapshot;
 
   /** Whether leaving the page now would lose a note or the box's text. */
-  hasUnsaved = (): boolean => this.entries.length > 0 || !isBlankDraft(this.draft);
+  hasUnsaved = (): boolean =>
+    this.entries.length > 0 ||
+    !isBlankDraft(this.draft) ||
+    this.draftFile !== null ||
+    this.uploads.size > 0;
 
   setDraft = (draft: ComposerDraft): void => {
     this.draft = draft;
     this.publish();
   };
+
+  setDraftFile = (file: File | null): void => {
+    this.draftFile = file;
+    this.publish();
+  };
+
+  /** Asks the page for its notes again, as after a write, when nothing polls. */
+  notesChanged = (): void => this.wrote();
 
   /**
    * Waits, before a note goes out under a new id, until a kept copy of the
@@ -400,10 +456,15 @@ export class NoteOutbox {
    * Queues a note and sends it. Returns why it was refused before sending (too
    * long, or empty), or null once it is on its way. With `clearDraft`, the box's
    * text is emptied in the same change, so no kept copy of the outbox ever
-   * holds both the note and the text it was sent from.
+   * holds both the note and the text it was sent from, and the box's file goes
+   * with the note. A note with a file and no text is captioned with its name.
    */
-  submit = (draft: OutboxDraft, options: { clearDraft?: boolean } = {}): string | null => {
-    const body = stripNote(draft.body);
+  submit = (
+    draft: OutboxDraft,
+    options: { clearDraft?: boolean; file?: File | null } = {},
+  ): string | null => {
+    const file = options.file ?? (options.clearDraft ? this.draftFile : null);
+    const body = stripNote(draft.body) || (file?.name ?? "");
     if (!body) return "Type a note first.";
     if (noteLength(body) > NOTE_BODY_MAX_CHARS) return NOTE_TOO_LONG_ERROR;
     if (draft.kind === "point" && (draft.anchorMs === null || draft.anchorMs < 0)) {
@@ -431,7 +492,14 @@ export class NoteOutbox {
       error: null,
     };
     this.entries = [...this.entries, entry];
-    if (options.clearDraft) this.draft = { ...EMPTY_DRAFT, mode: this.draft.mode };
+    if (file) {
+      const place = notePlace(entry);
+      this.uploads.set(id, { noteId: id, file, place, status: "waiting", error: null });
+    }
+    if (options.clearDraft) {
+      this.draft = { ...EMPTY_DRAFT, mode: this.draft.mode };
+      this.draftFile = null;
+    }
     this.publish();
     void this.send(entry.key);
     return null;
@@ -451,6 +519,7 @@ export class NoteOutbox {
     this.entries = this.entries.filter((candidate) => candidate.key !== key);
     this.attempts.delete(key);
     this.unkeptIds.delete(key);
+    this.uploads.delete(key);
     this.discards.set(entry.id, { token: entry.writeToken, inFlight: false });
     this.discardedIds = new Set(this.discards.keys());
     this.publish();
@@ -459,13 +528,24 @@ export class NoteOutbox {
 
   /** Takes the recording's notes as last listed. */
   ingest = (notes: readonly TimelineNote[] | null | undefined): void => {
+    const before = this.listed;
     this.listed = new Set((notes ?? []).map((note) => note.id));
     const entries = this.entries.filter((entry) => !this.listed.has(entry.id));
     const saved = this.saved.filter((note) => !this.listed.has(note.id));
-    const changed =
+    let changed =
       entries.length !== this.entries.length || saved.length !== this.saved.length;
+    // A note listed since its create's answer was lost has saved: its file goes.
+    const landed = this.entries.filter((entry) => this.listed.has(entry.id));
     this.entries = entries;
     this.saved = saved;
+    for (const entry of landed) void this.upload(entry.key);
+    // A failed file whose note was listed and is gone has nothing to go to.
+    for (const [key, upload] of this.uploads) {
+      if (upload.status === "failed" && before.has(upload.noteId) && !this.listed.has(upload.noteId)) {
+        this.uploads.delete(key);
+        changed = true;
+      }
+    }
     for (const [id, discard] of this.discards) {
       if (this.listed.has(id) && !discard.inFlight) void this.sendDiscard(id);
     }
@@ -500,6 +580,18 @@ export class NoteOutbox {
     for (const { id } of discards) void this.sendDiscard(id);
   };
 
+  /** Sends a failed file again, to the note it was for. */
+  retryUpload = (key: string): void => {
+    if (this.uploads.get(key)?.status === "failed") void this.upload(key);
+  };
+
+  /** Drops a failed file; its note stays as it was saved. */
+  discardUpload = (key: string): void => {
+    if (this.uploads.get(key)?.status !== "failed") return;
+    this.uploads.delete(key);
+    this.publish();
+  };
+
   /** The discards whose delete the server has not confirmed yet. */
   pendingDiscards = (): { id: string; writeToken: string }[] =>
     [...this.discards].map(([id, discard]) => ({ id, writeToken: discard.token }));
@@ -532,6 +624,7 @@ export class NoteOutbox {
     this.entries = this.entries.filter((entry) => entry.key !== key);
     this.attempts.delete(key);
     this.unkeptIds.delete(key);
+    this.uploads.delete(key);
     if (notice) this.notice = { seq: (this.notice?.seq ?? 0) + 1, text: notice, tone: "info" };
     this.publish();
   }
@@ -581,7 +674,10 @@ export class NoteOutbox {
       if (!isLatest()) return;
       const failure = failureOf(error);
       if (failure === "idInUse" && freshIdsLeft > 0) {
-        this.patch(key, { id: newNoteId(), writeToken: newNoteId() });
+        const id = newNoteId();
+        const upload = this.uploads.get(key);
+        if (upload) upload.noteId = id;
+        this.patch(key, { id, writeToken: newNoteId() });
         this.unkeptIds.add(key);
         await this.send(key, freshIdsLeft - 1);
         return;
@@ -613,6 +709,35 @@ export class NoteOutbox {
     this.unkeptIds.delete(key);
     const known = this.listed.has(note.id) || this.saved.some((saved) => saved.id === note.id);
     if (!known) this.saved = [...this.saved, note];
+    this.publish();
+    this.wrote();
+    void this.upload(key);
+  }
+
+  /** Uploads a saved note's file, once: a failure waits for Retry or Discard. */
+  private async upload(key: string): Promise<void> {
+    const upload = this.uploads.get(key);
+    if (!upload || upload.status === "uploading") return;
+    upload.status = "uploading";
+    upload.error = null;
+    this.publish();
+    try {
+      await attachFileToNote(this.recordingId, upload.noteId, upload.file);
+    } catch (error) {
+      const status = getErrorStatus(error);
+      if (status !== 409 && status !== 404 && status !== 410) {
+        upload.status = "failed";
+        upload.error = uploadError(error);
+        this.notice = {
+          seq: (this.notice?.seq ?? 0) + 1,
+          text: `File for the note ${upload.place} not uploaded.`,
+          tone: "error",
+        };
+        this.publish();
+        return;
+      }
+    }
+    this.uploads.delete(key);
     this.publish();
     this.wrote();
   }
@@ -657,6 +782,13 @@ export class NoteOutbox {
       saved: this.saved,
       discarded: this.discardedIds,
       draft: this.draft,
+      draftFile: this.draftFile,
+      uploads: new Map(
+        [...this.uploads].map(([key, { noteId, file, place, status, error }]) => [
+          noteId,
+          { key, fileName: file.name, place, status, error },
+        ]),
+      ),
       notice: this.notice,
     };
     for (const listener of this.listeners) listener();

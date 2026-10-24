@@ -1,13 +1,15 @@
 /**
- * Turning the shared screen, or a pasted image, into the file a capture is.
+ * Turning the shared screen, or a pasted or dropped file, into a note's file.
  *
  * A frame is taken at the share's own resolution and stored as PNG, which
  * keeps text on a slide sharp for the vision model and for OCR. Only a frame
  * whose PNG would pass `FRAME_MAX_BYTES` (a busy 4K screen, a photo) is stored
- * as JPEG instead, small enough for every vision provider to take. The server
- * accepts PNG and JPEG only, so a pasted image of any other type is drawn
- * again as one of those.
+ * as JPEG instead, small enough for every vision provider to take. A note
+ * takes any file a document can be; an image of another type than PNG or
+ * JPEG is drawn again as one of those.
  */
+
+import { SUPPORTED_DOCUMENT_FORMATS } from "@/lib/api/documents";
 
 /**
  * Well under the tightest per-image limit a vision provider sets: the Claude
@@ -18,7 +20,7 @@ export const FRAME_MAX_BYTES = 4 * 1024 * 1024;
 /** An 8K screen fits; anything larger is scaled down to this on its long edge. */
 export const FRAME_MAX_EDGE_PX = 7680;
 
-/** How long to wait for the share to deliver a frame before trying another way. */
+/** How long to wait for the share to deliver a frame. */
 const GRAB_TIMEOUT_MS = 3_000;
 
 /** The JPEG qualities tried in turn once PNG is too large. */
@@ -41,8 +43,8 @@ export const scaledSize = (
 
 /**
  * PNG when it fits under `maxBytes`, else the best JPEG that does. The last
- * JPEG tried is returned even past the limit: the server takes up to 20 MB,
- * so a capture is never lost for being large.
+ * JPEG tried is returned even past the limit, so a capture is never lost
+ * for being large.
  */
 export const encodeWithinLimit = async (
   encode: ImageEncoder,
@@ -69,7 +71,7 @@ const canvasEncoder =
       );
     });
 
-type Drawable = ImageBitmap | HTMLVideoElement | HTMLImageElement;
+type Drawable = ImageBitmap | HTMLVideoElement;
 
 const sizeOf = (source: Drawable) =>
   source instanceof HTMLVideoElement
@@ -90,123 +92,70 @@ export const encodeImage = async (source: Drawable, maxEdge = FRAME_MAX_EDGE_PX)
   return encodeWithinLimit(canvasEncoder(canvas));
 };
 
-/** What Chrome's ImageCapture offers; not in TypeScript's DOM library. */
-interface FrameGrabber {
-  grabFrame(): Promise<ImageBitmap>;
-}
-
-type FrameGrabberConstructor = new (track: MediaStreamTrack) => FrameGrabber;
-
-const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> =>
-  new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error("The shared screen sent no picture.")), ms);
-    promise.then(
-      (value) => {
-        clearTimeout(timer);
-        resolve(value);
-      },
-      (error: unknown) => {
-        clearTimeout(timer);
-        reject(error);
-      },
-    );
-  });
-
 /**
- * The frame on screen now, drawn through a muted, unattached video element.
- * The element gets the share's latest frame as soon as it attaches, even when
- * the shared surface is still and sends no new ones.
+ * One still of the shared screen at its full resolution, as PNG or JPEG,
+ * drawn through a muted, unattached video element. The element gets the
+ * share's latest frame as soon as it attaches, even when the shared surface
+ * is still and sends no new ones, where ImageCapture's grabFrame can wait.
+ * Never stops `track`: that would end the share and the recording with it.
  */
-const grabThroughVideo = async (track: MediaStreamTrack): Promise<Blob> => {
+export const grabDisplayFrame = async (track: MediaStreamTrack): Promise<Blob> => {
   const video = document.createElement("video");
   video.muted = true;
   video.playsInline = true;
   video.srcObject = new MediaStream([track]);
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    await withTimeout(
-      new Promise<void>((resolve, reject) => {
-        video.onloadeddata = () => resolve();
-        video.onerror = () => reject(new Error("The shared screen could not be read."));
-        void video.play().catch(reject);
-      }),
-      GRAB_TIMEOUT_MS,
-    );
+    await new Promise<void>((resolve, reject) => {
+      timer = setTimeout(() => reject(new Error("The shared screen sent no picture.")), GRAB_TIMEOUT_MS);
+      video.onloadeddata = () => resolve();
+      video.onerror = () => reject(new Error("The shared screen could not be read."));
+      void video.play().catch(reject);
+    });
     return await encodeImage(video);
   } finally {
+    clearTimeout(timer);
     // Detach only. The track belongs to the recording.
     video.pause();
     video.srcObject = null;
   }
 };
 
-/**
- * One still of the shared screen at its full resolution, as PNG or JPEG.
- * Never stops `track`: that would end the share and the recording with it.
- */
-export const grabDisplayFrame = async (track: MediaStreamTrack): Promise<Blob> => {
-  const Grabber = (globalThis as { ImageCapture?: FrameGrabberConstructor }).ImageCapture;
-  if (Grabber) {
-    try {
-      const bitmap = await withTimeout(new Grabber(track).grabFrame(), GRAB_TIMEOUT_MS);
-      try {
-        return await encodeImage(bitmap);
-      } finally {
-        bitmap.close();
-      }
-    } catch {
-      // A still surface can leave grabFrame waiting; the video element does not.
-    }
-  }
-  return grabThroughVideo(track);
-};
-
-/** Whether a pasted file can be stored as it is. */
+/** Whether a pasted image can be kept as it is. */
 const storableAsIs = (image: Blob) =>
   (image.type === "image/png" || image.type === "image/jpeg") && image.size <= FRAME_MAX_BYTES;
 
-/**
- * A pasted image as a capture's file: kept as it is when it is a PNG or JPEG
- * under the size limit, drawn again otherwise.
- */
-export const imageForCapture = async (image: Blob): Promise<Blob> => {
-  if (storableAsIs(image)) return image;
-  const bitmap = await createImageBitmap(image);
-  try {
-    return await encodeImage(bitmap);
-  } finally {
-    bitmap.close();
-  }
+const extensionOf = (name: string) => {
+  const dot = name.lastIndexOf(".");
+  return dot < 0 ? "" : name.slice(dot).toLowerCase();
 };
 
-/** A small JPEG of the image as a data URL, to show while it uploads. */
-export const previewDataUrl = async (image: Blob, maxEdge = 320): Promise<string | null> => {
-  try {
-    const bitmap = await createImageBitmap(image);
+/**
+ * A pasted or dropped file as a note can hold it: an image redrawn as PNG or
+ * JPEG unless it is one under the size limit, any other file as it is. Null
+ * for a file no document can be, which the server would refuse.
+ */
+export const fileForNote = async (file: File): Promise<File | null> => {
+  if (file.type.startsWith("image/") && !storableAsIs(file)) {
+    const bitmap = await createImageBitmap(file);
     try {
-      const { width, height } = scaledSize(bitmap.width, bitmap.height, maxEdge);
-      const canvas = document.createElement("canvas");
-      canvas.width = width;
-      canvas.height = height;
-      canvas.getContext("2d")?.drawImage(bitmap, 0, 0, width, height);
-      return canvas.toDataURL("image/jpeg", 0.7);
+      const image = await encodeImage(bitmap);
+      const stem = file.name.replace(/\.[^.]*$/, "") || "image";
+      return new File([image], `${stem}.${image.type === "image/jpeg" ? "jpg" : "png"}`, {
+        type: image.type,
+      });
     } finally {
       bitmap.close();
     }
-  } catch {
-    return null;
   }
+  const supported: readonly string[] = SUPPORTED_DOCUMENT_FORMATS;
+  return supported.includes(extensionOf(file.name)) ? file : null;
 };
 
-/** The first image on a clipboard paste, unless it also carries text to paste. */
-export const pastedImage = (data: DataTransfer | null): File | null => {
+/** The first file on a paste or a drop, unless a paste also carries text. */
+export const transferredFile = (data: DataTransfer | null): File | null => {
   if (!data) return null;
   // Text copied from a page can come with a picture of it; the text wins.
   if (data.getData("text/plain")) return null;
-  for (const item of Array.from(data.items ?? [])) {
-    if (item.kind === "file" && item.type.startsWith("image/")) {
-      const file = item.getAsFile();
-      if (file) return file;
-    }
-  }
-  return null;
+  return data.files?.[0] ?? null;
 };
