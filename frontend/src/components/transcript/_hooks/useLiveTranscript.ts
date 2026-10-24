@@ -56,6 +56,22 @@ export interface LiveTranscript {
 const NO_NAMES: Readonly<Record<string, string>> = {};
 
 /**
+ * `next`, or `previous` when it holds the same names: every poll answers with
+ * a new object, and a new one would re-render the panel each time.
+ */
+function sameOrNext(
+  previous: Readonly<Record<string, string>>,
+  next: Readonly<Record<string, string>> | undefined,
+): Readonly<Record<string, string>> {
+  const entries = Object.entries(next ?? {});
+  if (entries.length === 0) return NO_NAMES;
+  const unchanged =
+    entries.length === Object.keys(previous).length &&
+    entries.every(([label, name]) => previous[label] === name);
+  return unchanged ? previous : (next as Readonly<Record<string, string>>);
+}
+
+/**
  * Live transcript feed for the in-flight recording view.
  *
  * Owns its own revision cursor and transcript state rather than sharing the
@@ -141,7 +157,9 @@ export function useLiveTranscript(
 
       stateRef.current = nextState;
       setSegments(nextState.segments);
-      setLiveSpeakerNames(delta.live_speaker_names ?? NO_NAMES);
+      setLiveSpeakerNames((previous) =>
+        sameOrNext(previous, delta.live_speaker_names),
+      );
       setHasLoaded(true);
     };
 
@@ -178,7 +196,8 @@ export function useLiveTranscript(
   }, [recordingId, isLive]);
 
   const applyLiveSpeakerNames = useCallback(
-    (names: Record<string, string>) => setLiveSpeakerNames(names),
+    (names: Record<string, string>) =>
+      setLiveSpeakerNames((previous) => sameOrNext(previous, names)),
     [],
   );
 

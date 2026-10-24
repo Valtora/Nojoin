@@ -35,6 +35,7 @@ from backend.utils.speaker_names.live import (
 
 from .helpers import _get_owned_recording
 from .router import router
+from .routes_recording import PLACEHOLDER_NAME_PATTERN
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +45,9 @@ NAMING_CLOSED_DETAIL = (
     "Rename the speaker once processing finishes."
 )
 LIVE_SPEAKER_NOT_FOUND_DETAIL = "Live speaker not found in this recording"
+# "Speaker 2" as a name would merge this voice into the final pass's own
+# "Speaker 2", another voice.
+PLACEHOLDER_NAME_DETAIL = "Pick a real name, or rename them to the right person"
 
 
 class LiveSpeakerNameUpdate(BaseModel):
@@ -71,6 +75,8 @@ async def name_live_speaker(
     name = update.name.strip()
     if not name:
         raise HTTPException(status_code=422, detail="Enter a name")
+    if PLACEHOLDER_NAME_PATTERN.match(name):
+        raise HTTPException(status_code=422, detail=PLACEHOLDER_NAME_DETAIL)
     if live_speaker_display_name(label) is None:
         raise HTTPException(status_code=404, detail=LIVE_SPEAKER_NOT_FOUND_DETAIL)
 

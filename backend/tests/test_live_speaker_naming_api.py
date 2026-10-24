@@ -21,7 +21,13 @@ from sqlalchemy.pool import StaticPool
 
 from backend.api.deps import get_current_user, get_db
 from backend.api.v1.api import api_router
-from backend.tests.live_naming_fixtures import ONE, THREE, TWO, seed_live_lines
+from backend.tests.live_naming_fixtures import (
+    LIVE_LINES,
+    ONE,
+    THREE,
+    TWO,
+    seed_live_lines,
+)
 from backend.tests.sqlite_schemas import (
     GLOBAL_SPEAKERS_SCHEMA,
     PROCESSING_RUNS_SCHEMA,
@@ -96,6 +102,7 @@ async def _seed(
     status: str = "UPLOADING",
     owner: int = 1,
     people: tuple[tuple[int, int, str], ...] = (),
+    lines: list[tuple[float, float, str, bool]] = LIVE_LINES,
 ) -> None:
     async with session_maker() as session:
         await session.execute(
@@ -137,7 +144,7 @@ async def _seed(
                 {"id": person_id, "now": NOW, "user_id": user_id, "name": name},
             )
         await session.commit()
-        await session.run_sync(seed_live_lines)
+        await session.run_sync(lambda sync: seed_live_lines(sync, 1, lines))
         # The lines are written while capturing; the status is the case's.
         await session.execute(
             text("UPDATE recordings SET status = :status"), {"status": status}
@@ -218,6 +225,45 @@ async def test_an_unlocked_label_is_anchored_on_its_longest_turn(
     response = await _name(client, label, "Blair")
 
     assert response.status_code == 200, response.text
+    (event,) = await _events(session_maker)
+    assert (event["anchor_start_ms"], event["anchor_end_ms"]) == span
+
+
+@pytest.mark.parametrize(
+    ("lines", "span"),
+    [
+        # A locked 1.5 s "yes" says less than the 12 s turn after it.
+        pytest.param(
+            [(0.0, 1.5, ONE, True), (1.5, 3.0, TWO, False), (3.0, 15.0, ONE, False)],
+            (3000, 15000),
+            id="short-locked-turn",
+        ),
+        # The same "yes" running straight into the long turn: one turn of both.
+        pytest.param(
+            [(0.0, 1.5, ONE, True), (1.5, 13.5, ONE, False)],
+            (0, 13500),
+            id="short-locked-turn-in-a-long-one",
+        ),
+        # Under 3 s but half the unlocked turn: still the locked one.
+        pytest.param(
+            [(0.0, 2.0, ONE, True), (2.0, 3.5, TWO, False), (3.5, 7.0, ONE, False)],
+            (0, 2000),
+            id="short-locked-turn-half-the-unlocked",
+        ),
+        # 3 s locked is enough, however long the unlocked turn.
+        pytest.param(
+            [(0.0, 3.0, ONE, True), (3.0, 4.5, TWO, False), (4.5, 16.5, ONE, False)],
+            (0, 3000),
+            id="locked-turn-long-enough",
+        ),
+    ],
+)
+async def test_a_short_locked_turn_gives_way_to_a_long_one(
+    client, session_maker, lines, span
+) -> None:
+    await _seed(session_maker, lines=lines)
+
+    assert (await _name(client, ONE, "Alex")).status_code == 200
     (event,) = await _events(session_maker)
     assert (event["anchor_start_ms"], event["anchor_end_ms"]) == span
 
@@ -364,6 +410,7 @@ async def test_names_are_taken_only_while_capturing_or_paused(
 
 
 NOT_FOUND = (404, "Live speaker not found in this recording")
+PLACEHOLDER = (422, "Pick a real name, or rename them to the right person")
 
 
 @pytest.mark.parametrize(
@@ -376,6 +423,10 @@ NOT_FOUND = (404, "Live speaker not found in this recording")
         # Unlabelled lines are nobody's: a name for them would name them all.
         pytest.param("UNKNOWN", "Alex", NOT_FOUND, id="unlabelled-lines"),
         pytest.param(ONE, "   ", (422, "Enter a name"), id="blank-name"),
+        # The final pass names unnamed speakers "Speaker <n>" and merges
+        # speakers that share a name, so this one would take in another voice.
+        pytest.param(ONE, "Speaker 2", PLACEHOLDER, id="placeholder-name"),
+        pytest.param(ONE, "speaker_01", PLACEHOLDER, id="placeholder-label"),
     ],
 )
 async def test_a_name_for_no_live_speaker_is_refused(

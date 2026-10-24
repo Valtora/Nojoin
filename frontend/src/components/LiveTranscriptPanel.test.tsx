@@ -366,6 +366,59 @@ describe("LiveTranscriptPanel", () => {
       expect(onRename).not.toHaveBeenCalled();
     });
 
+    it("saves to the label it opened on, though the line moves to another meanwhile", async () => {
+      const onRename = vi.fn(async () => {});
+      const panel = (segments: typeof LIVE_LINES) => (
+        <LiveTranscriptPanel
+          segments={segments}
+          hasLoaded
+          liveSpeakerNames={{}}
+          onRenameLiveSpeaker={onRename}
+          loadPeopleNames={vi.fn(async () => [])}
+        />
+      );
+      const { rerender } = render(panel(LIVE_LINES));
+
+      const input = await openRename(0);
+      fireEvent.change(input, { target: { value: "Alex" } });
+      // The next read relabels the provisional first line.
+      rerender(
+        panel([{ ...LIVE_LINES[0], speaker: "LIVE_PROVISIONAL_3" }, ...LIVE_LINES.slice(1)]),
+      );
+      fireEvent.keyDown(screen.getByRole("combobox"), { key: "Enter" });
+
+      expect(onRename).toHaveBeenCalledTimes(1);
+      expect(onRename).toHaveBeenCalledWith("LIVE_PROVISIONAL_1", "Alex");
+    });
+
+    it("gives focus back to the chip after Enter", async () => {
+      renderNaming();
+
+      const input = await openRename(1);
+      fireEvent.change(input, { target: { value: "Blair" } });
+      await act(async () => {
+        fireEvent.keyDown(input, { key: "Enter" });
+      });
+
+      expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+      expect(document.activeElement).toBe(chips()[1]);
+    });
+
+    it("cancels on Escape without saving, though the box then blurs, and gives focus back", async () => {
+      const { onRename } = renderNaming();
+
+      const input = await openRename(1);
+      fireEvent.change(input, { target: { value: "Someone" } });
+      // A blur that lands before the box closes, as a browser may send one.
+      await act(async () => {
+        fireEvent.keyDown(input, { key: "Escape" });
+        fireEvent.blur(input);
+      });
+
+      expect(onRename).not.toHaveBeenCalled();
+      expect(document.activeElement).toBe(chips()[1]);
+    });
+
     it("offers People's names while typing, read only once a rename opens", async () => {
       const { loadPeopleNames } = renderNaming();
       expect(loadPeopleNames).not.toHaveBeenCalled();

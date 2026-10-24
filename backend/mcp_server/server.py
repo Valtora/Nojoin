@@ -528,7 +528,8 @@ async def get_transcript_utterances(
 
     result = payload.model_dump()
     utterances = result["utterances"]
-    live_names = result.get("live_speaker_names") or {}
+    # Applied below and dropped: its keys are raw live labels.
+    live_names = result.pop("live_speaker_names", None) or {}
     for utterance in utterances:
         # A live label, as the live panel shows it: the name the user gave it,
         # else "Speaker <n>".

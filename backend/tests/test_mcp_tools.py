@@ -9,6 +9,7 @@ contextvars the auth middleware sets.
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime
 
@@ -2842,5 +2843,7 @@ async def test_both_transcript_tools_show_the_name_a_live_label_was_given(
 
     speakers = {u["id"]: u["speaker"] for u in utterances["utterances"]}
     assert speakers == {"u-1": "SPEAKER_00", "u-2": "Alex"}
+    # No raw live label reaches the assistant, in the names map or anywhere.
+    assert "LIVE_PROVISIONAL" not in json.dumps(utterances, default=str)
     assert "Alex:" in transcript["transcript"]
     assert "Speaker 4" not in transcript["transcript"]

@@ -349,4 +349,30 @@ describe("useLiveTranscript", () => {
       "first line",
     ]);
   });
+
+  it("keeps the same names object across idle polls, so the panel does not re-render", async () => {
+    // Every answer is a new object, as from the network.
+    let names: Record<string, string> = {};
+    getTranscriptUtterances.mockImplementation(async () => ({
+      ...buildDelta(4, []),
+      live_speaker_names: { ...names },
+    }));
+
+    const { result } = renderHook(() => useLiveTranscript(buildRecording()));
+    await flushPendingRequests();
+    const empty = result.current.liveSpeakerNames;
+    await advanceOnePoll();
+    expect(result.current.liveSpeakerNames).toBe(empty);
+
+    names = { LIVE_PROVISIONAL_1: "Alex" };
+    await advanceOnePoll();
+    const named = result.current.liveSpeakerNames;
+    expect(named).toEqual({ LIVE_PROVISIONAL_1: "Alex" });
+    await advanceOnePoll();
+    expect(result.current.liveSpeakerNames).toBe(named);
+
+    names = { LIVE_PROVISIONAL_1: "Alexis" };
+    await advanceOnePoll();
+    expect(result.current.liveSpeakerNames).toEqual({ LIVE_PROVISIONAL_1: "Alexis" });
+  });
 });

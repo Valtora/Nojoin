@@ -43,10 +43,21 @@ export default function LiveSpeakerChip({
   onRename,
   loadPeopleNames,
 }: LiveSpeakerChipProps) {
-  const [draft, setDraft] = useState<string | null>(null);
+  // The label is kept from when the box opened: a provisional line can move
+  // to another label while the name is typed, and the name is for this one.
+  const [draft, setDraft] = useState<{
+    label: string;
+    opened: string;
+    text: string;
+  } | null>(null);
   const [peopleNames, setPeopleNames] = useState<readonly string[]>([]);
   // Enter saves and the box then blurs as it closes: one request, not two.
   const savingRef = useRef(false);
+  // Escape closes the box without saving, whatever blur follows.
+  const cancelledRef = useRef(false);
+  // After Enter or Escape, focus goes back to the chip.
+  const refocusRef = useRef(false);
+  const buttonRef = useRef<HTMLButtonElement>(null);
   const listId = useId();
   const textStyle = locked ? TEXT_STYLE.locked : TEXT_STYLE.provisional;
 
@@ -66,6 +77,12 @@ export default function LiveSpeakerChip({
     };
   }, [isEditing, loadPeopleNames]);
 
+  useEffect(() => {
+    if (isEditing || !refocusRef.current) return;
+    refocusRef.current = false;
+    buttonRef.current?.focus();
+  }, [isEditing]);
+
   if (!onRename) {
     return (
       <div
@@ -82,16 +99,22 @@ export default function LiveSpeakerChip({
     setDraft(null);
   };
 
+  const cancel = () => {
+    cancelledRef.current = true;
+    refocusRef.current = true;
+    close();
+  };
+
   const save = async () => {
-    if (draft === null || savingRef.current) return;
-    const next = draft.trim();
-    if (!next || next === name) {
+    if (draft === null || savingRef.current || cancelledRef.current) return;
+    const next = draft.text.trim();
+    if (!next || next === draft.opened) {
       close();
       return;
     }
     savingRef.current = true;
     try {
-      await onRename(label, next);
+      await onRename(draft.label, next);
     } finally {
       savingRef.current = false;
       close();
@@ -104,20 +127,21 @@ export default function LiveSpeakerChip({
         <input
           autoFocus
           type="text"
-          value={draft}
+          value={draft.text}
           list={listId}
           maxLength={255}
           aria-label={`Name ${name}`}
           enterKeyHint="done"
           autoComplete="off"
-          onChange={(event) => setDraft(event.target.value)}
+          onChange={(event) => setDraft({ ...draft, text: event.target.value })}
           onBlur={() => void save()}
           onKeyDown={(event) => {
             if (event.key === "Enter") {
               event.preventDefault();
+              refocusRef.current = true;
               void save();
             }
-            if (event.key === "Escape") close();
+            if (event.key === "Escape") cancel();
           }}
           className={`w-full max-w-[16rem] rounded border border-status-info-border bg-surface-card px-1.5 py-0.5 text-sm font-semibold text-status-info-fg focus:outline-none focus:ring-2 focus:ring-status-info-border ${TOUCH_TARGET_HEIGHT}`}
         />
@@ -136,12 +160,16 @@ export default function LiveSpeakerChip({
     // line down.
     <div className="mb-1">
       <button
+        ref={buttonRef}
         type="button"
         data-testid="live-transcript-speaker"
         data-locked={locked ? "true" : "false"}
         title="Rename this speaker"
         aria-label={`Rename ${name}`}
-        onClick={() => setDraft(name)}
+        onClick={() => {
+          cancelledRef.current = false;
+          setDraft({ label, opened: name, text: name });
+        }}
         className={`group/chip inline-flex items-center gap-1 rounded text-left text-xs transition-colors hover:text-action-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-action-border pointer-coarse:-my-2.5 ${TOUCH_TARGET_HEIGHT} ${textStyle}`}
       >
         {name}

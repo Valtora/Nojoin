@@ -30,6 +30,10 @@ from .events import UserNameAct
 from .sources import AUTHORITY, KIND_NAME, SOURCE_USER
 
 SURFACE_LIVE = "live"
+# A locked turn shorter than this anchors a name only when it is at least half
+# the longest unlocked turn: a locked "yes" says less about the voice than a
+# long turn whose label may still move.
+MIN_LOCKED_ANCHOR_MS = 3000
 _UNLABELLED = "UNKNOWN"
 
 
@@ -43,11 +47,13 @@ def _live_label_locked(payload: dict[str, Any] | None) -> bool:
 
 
 def live_label_anchor(session: Any, recording_id: int, label: str) -> Span | None:
-    """The label's longest turn so far, from the lines whose label has locked.
+    """The label's longest turn so far, preferring the lines whose label has locked.
 
     A locked line keeps its label, so its turn is the voice the user meant; an
-    unlocked one may still move to another label. With no locked line, the
-    longest turn of any. Unlabelled lines end a turn, as another voice's do.
+    unlocked one may still move to another label. The longest locked turn is
+    taken when it lasts ``MIN_LOCKED_ANCHOR_MS`` or at least half the longest
+    unlocked turn; otherwise, and with no locked line, the longest turn of
+    any. Unlabelled lines end a turn, as another voice's do.
     """
     from backend.utils.canonical_pipeline.constants import ACTIVE_UTTERANCE_STATES
 
@@ -72,9 +78,15 @@ def live_label_anchor(session: Any, recording_id: int, label: str) -> Span | Non
             locked.append(line)
         else:
             unlocked.append(line)
-    if locked:
-        return longest_turn([*others, *locked], label)
-    return longest_turn([*others, *unlocked], label)
+    locked_turn = longest_turn([*others, *locked], label)
+    unlocked_turn = longest_turn([*others, *unlocked], label)
+    if locked_turn is None or unlocked_turn is None:
+        return locked_turn or unlocked_turn
+    locked_ms = locked_turn[1] - locked_turn[0]
+    unlocked_ms = unlocked_turn[1] - unlocked_turn[0]
+    if locked_ms >= MIN_LOCKED_ANCHOR_MS or 2 * locked_ms >= unlocked_ms:
+        return locked_turn
+    return longest_turn([*others, *locked, *unlocked], label)
 
 
 def record_live_speaker_name(
