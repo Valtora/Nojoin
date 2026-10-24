@@ -314,6 +314,36 @@ describe("A refused move", () => {
     expect(transcriptOrder()).toEqual(["line:0", "line:1", "line:2", "note:n-point", "line:3"]);
   });
 
+  it("drops a press queued behind a refused move, which stepped from a place the note never reached", async () => {
+    const answer = deferred<TimelineNote>();
+    updateTimelineNote.mockReturnValueOnce(answer.promise);
+    render(<Page notes={[POINT]} />);
+
+    fireEvent.click(moveButton("n-point", "down"));
+    fireEvent.click(moveButton("n-point", "down"));
+    expect(transcriptOrder()).toEqual(["line:0", "line:1", "line:2", "line:3", "note:n-point"]);
+
+    updateTimelineNote.mockImplementation(async (_recording, _id, update) => moved(update.anchor_ms, 4));
+    const current = { ...POINT, body: "Ask about catering and drinks", revision: 3 };
+    await act(async () => answer.reject(conflict(current)));
+
+    expect(updateTimelineNote).toHaveBeenCalledTimes(1);
+    expect(transcriptOrder()).toEqual(["line:0", "line:1", "note:n-point", "line:2", "line:3"]);
+    expect(within(noteLine("n-point")!).getByTestId("timeline-note-move-refused")).toHaveTextContent(
+      /^This note was changed elsewhere/,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent(/^Note not moved\./);
+
+    // A press made once the refusal shows goes ahead.
+    fireEvent.click(moveButton("n-point", "down"));
+    await waitFor(() =>
+      expect(updateTimelineNote).toHaveBeenLastCalledWith("rec-1", "n-point", {
+        expected_revision: 3,
+        anchor_ms: 130_000,
+      }),
+    );
+  });
+
   it("follows another device's move that the 409 carries", async () => {
     updateTimelineNote.mockRejectedValueOnce(conflict({ ...POINT, anchor_ms: 200_500, revision: 3 }));
     render(<Page notes={[POINT]} />);

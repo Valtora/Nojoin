@@ -71,7 +71,9 @@ const otherFailure = (error: unknown): string => {
  * A move of a point note (`move`) shows at once and settles on what Nojoin
  * answers: the moved note, or on a 409 the note as it is now, which puts it
  * back where it was unless another device moved it. Moves of one note go one
- * at a time, each against the revision the last one made.
+ * at a time, each against the revision the last one made. A refused move
+ * takes the moves queued behind it with it, since they stepped on from a
+ * place the note never reached.
  */
 export function useNoteEdits(recordingId: RecordingId | null) {
   const [held, setHeld] = useState<ReadonlyMap<string, TimelineNote | null>>(() => new Map());
@@ -85,6 +87,8 @@ export function useNoteEdits(recordingId: RecordingId | null) {
   const moveQueue = useRef(new Map<string, Promise<unknown>>());
   const answeredRevision = useRef(new Map<string, number>());
   const moveSeq = useRef(0);
+  // Per note: the last refusal, and the last move asked for when it came.
+  const refusedMove = useRef(new Map<string, { through: number; refusal: string }>());
 
   const known = useCallback(
     <N extends EditableNote>(note: N): N[] => {
@@ -162,7 +166,14 @@ export function useNoteEdits(recordingId: RecordingId | null) {
           answeredRevision.current.set(note.id, answer.revision);
           hold(note.id, answer);
         };
+        const refuse = (refusal: string) => {
+          refusedMove.current.set(note.id, { through: moveSeq.current, refusal });
+          return refusal;
+        };
         try {
+          // Asked for before an earlier move was refused: it goes with that one.
+          const refused = refusedMove.current.get(note.id);
+          if (refused && seq <= refused.through) return refused.refusal;
           settle(await updateTimelineNote(recordingId, note.id, {
             expected_revision: expected,
             anchor_ms: anchorMs,
@@ -172,9 +183,9 @@ export function useNoteEdits(recordingId: RecordingId | null) {
           const current = conflictNote(error);
           if (current) {
             settle(current);
-            return current.anchor_ms === anchorMs ? null : changedElsewhere(current, "Move it again if you still want it there.");
+            return current.anchor_ms === anchorMs ? null : refuse(changedElsewhere(current, "Move it again if you still want it there."));
           }
-          return isGone(error) ? DELETED_ELSEWHERE : otherFailure(error);
+          return refuse(isGone(error) ? DELETED_ELSEWHERE : otherFailure(error));
         } finally {
           setMoving((previous) => {
             if (previous.get(note.id)?.seq !== seq) return previous;
