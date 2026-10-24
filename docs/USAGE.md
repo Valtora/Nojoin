@@ -65,7 +65,7 @@ The **People** page is your speaker library: the people Nojoin can recognise acr
 
 While recording, the page shows the recording controls, a live waveform, the live transcript, your notes and Meeting Edge. **Attach Docs** in the toolbar attaches documents while the meeting runs or is processing. After **Stop**, the page shows processing progress.
 
-Your notes save as you type and can be edited until notes generation starts. The AI reads them with the transcript, and the generated notes end with them under **User Notes**. A note holds up to 50,000 characters: a count appears near the limit, and longer text is not saved until you shorten it. Notes added on another device or by a connected assistant ([MCP.md](MCP.md)) are listed read-only under **Other notes**.
+Your notes save as you type and can be edited until notes generation starts. The AI reads them with the transcript, and the generated notes end with them under **User Notes**. A note holds up to 50,000 characters: a count appears near the limit, and longer text is not saved until you shorten it. Notes added on another device or by a connected assistant ([MCP.md](MCP.md)) are listed read-only under **Other notes**. Once the meeting is processed, **My notes** lists every note and edits any of them ([Transcript And Playback](#transcript-and-playback)).
 
 If the notes change on another device while you are editing them, nothing is saved over the other version until you choose **Keep mine** or **Use theirs** (**Discard mine** if they were deleted there). A change made offline is lost if you leave the recording before reconnecting.
 
@@ -117,7 +117,7 @@ If transcription fails, the recording is marked **Error**, a notification says s
 
 ## Transcript And Playback
 
-A processed meeting has **Transcript**, **Notes**, **Documents** and **Analytics** tabs. On desktop the **Speakers** and **Chat** panels share a resizable column beside them; on a phone, **Speakers** is a fifth tab. The header also holds the meeting's tags and its linked calendar event. The panels and the recordings list collapse from their headers and stay as you left them.
+A processed meeting has **Transcript**, **Notes**, **Documents** and **Analytics** tabs. On desktop a resizable column beside them holds **Speakers** and **My notes** as tabs, above **Chat**; on a phone, **My notes** is a tab after **Notes**, and **Speakers** is the last tab. The header also holds the meeting's tags and its linked calendar event. The panels and the recordings list collapse from their headers and stay as you left them.
 
 In the transcript:
 
@@ -131,6 +131,7 @@ In the transcript:
 - Select some text, in one line or across several, for a bar with **Add note** and **Copy**. A note on selected text quotes those words, and its time runs from the first word you touched to the last, estimated from the line's start and end. Escape or a click elsewhere puts the bar away. A note you have started typing stays open, whatever you click or select, until you save or cancel it.
 - The words a note is on are underlined in the transcript, on a light tint. After processing or a reprocess the words may read a little differently: Nojoin looks for them again near the note's time, and words found with changes are underlined with dots instead, the original words shown when you point at them. When they can no longer be found, nothing is marked, and the note shows its quote struck through, says the words changed, and quotes what the transcript says at that time now.
 - Click underlined words, or the pencil beside a saved note, to edit the note or delete it. An edit you have started typing stays open until you save or cancel it. If the note was changed on another device meanwhile, Nojoin shows its new text and keeps yours in the box: save again to replace it. From **Save note** or **Confirm delete** until the change is saved or you cancel it, Nojoin asks before you close the page.
+- **My notes** lists every saved note in the transcript's order: notes before the transcript first, then the rest by time, then notes after it. Click or tap a note to scroll the transcript to it, on a phone switching to the **Transcript** tab, and its play button plays from its time. Its pencil edits or deletes it as on its line, with the same check for a change made elsewhere, and the change shows in both places. Notes not saved yet stay listed above the transcript.
 
 **Export** saves the notes, analytics and transcript as one PDF, Word or text file, or the audio as MP3 ([Exporting A Meeting](#exporting-a-meeting)).
 

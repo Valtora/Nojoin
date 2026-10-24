@@ -598,12 +598,13 @@ describe("RecordingPage (detail)", () => {
 
   // On a phone the speaker panel opens in the tab area, so it has a tab of its
   // own: with none, no tab shows as current and nothing leads back (#650).
-  it("gives the speaker panel a fifth tab on a phone, current while it is open", async () => {
+  // My notes, in the desktop side column too, has one after Notes.
+  it("gives the speaker panel and My notes tabs on a phone, Speakers current while it is open", async () => {
     activePanel = "speakers";
     const tablist = await openTabs(360);
 
     expect(tabLabels(tablist)).toEqual([
-      "Transcript", "Notes", "Documents", "Analytics", "Speakers",
+      "Transcript", "Notes", "My notes", "Documents", "Analytics", "Speakers",
     ]);
     expect(within(tablist).getAllByRole("tab", { selected: true })).toEqual([
       within(tablist).getByRole("tab", { name: "Speakers" }),
@@ -689,6 +690,31 @@ describe("RecordingPage (detail)", () => {
     expect(screen.queryByRole("button", { name: "Speakers" })).toBeNull();
   });
 
+  it("opens the transcript from a note in My notes on a phone, and focus goes with it", async () => {
+    activePanel = "my-notes";
+    listTimelineNotes.mockResolvedValue([
+      {
+        id: "n-1",
+        recording_id: "rec-1",
+        kind: "point",
+        body: "Ask about catering",
+        anchor_ms: 2_500,
+        revision: 1,
+        created_at: "2026-10-23T10:00:00",
+        updated_at: "2026-10-23T10:00:00",
+      },
+    ]);
+    await openTabs(360);
+    const panel = document.getElementById("panel-my-notes")!;
+
+    fireEvent.click(
+      await within(panel).findByRole("button", { name: /^Show in the transcript: the note at 00:02/ }),
+    );
+
+    expect(setActivePanel).toHaveBeenLastCalledWith("transcript");
+    await waitFor(() => expect(document.activeElement).toBe(document.getElementById("panel-transcript")));
+  });
+
   it("keeps four tabs on desktop, where the speaker panel is in the side column", async () => {
     const tablist = await openTabs(1440);
 
@@ -716,6 +742,8 @@ describe("RecordingPage (detail)", () => {
     [360, "speakers", "speakers"],
     [1440, "notes", "notes"],
     [1440, "speakers", "transcript"],
+    [360, "my-notes", "my-notes"],
+    [1440, "my-notes", "transcript"],
   ])("at %i px with %s open, only the %s tab is in the Tab order", async (width, open, focusable) => {
     activePanel = open;
     const tablist = await openTabs(width);
@@ -732,6 +760,9 @@ describe("RecordingPage (detail)", () => {
     [360, "analytics", "Home", "transcript"],
     [360, "notes", "End", "speakers"],
     [1440, "speakers", "ArrowRight", "notes"],
+    [360, "notes", "ArrowRight", "my-notes"],
+    [360, "documents", "ArrowLeft", "my-notes"],
+    [360, "my-notes", "ArrowRight", "documents"],
   ])("at %i px from %s, %s opens %s and focuses its tab", async (width, from, key, to) => {
     activePanel = from;
     const tablist = await openTabs(width);

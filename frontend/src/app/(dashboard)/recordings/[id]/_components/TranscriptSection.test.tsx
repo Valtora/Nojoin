@@ -19,7 +19,7 @@ vi.mock("@/lib/api", async (importOriginal) => ({
   createTimelineNote: (...args: unknown[]) => createTimelineNote(...args),
 }));
 
-import TranscriptSection from "./TranscriptSection";
+import TranscriptSection from "@/test/TranscriptSectionWithEdits";
 
 const OOM_MESSAGE =
   "Transcription failed: the GPU ran out of memory (CUDA out of memory) while running parakeet.";

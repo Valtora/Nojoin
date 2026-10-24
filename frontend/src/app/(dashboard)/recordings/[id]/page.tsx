@@ -5,6 +5,7 @@ import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 
 import ChatPanel from "@/components/ChatPanel";
 import SpeakerPanel from "@/components/SpeakerPanel";
+import MyNotesList from "@/components/notes/MyNotesList";
 import RecordingStatusDisplay from "@/components/RecordingStatusDisplay";
 import ExportModal from "@/components/ExportModal";
 import { RecordingStatus } from "@/types";
@@ -26,9 +27,6 @@ export default function RecordingPage({ params }: PageProps) {
   const isSpeakerPanelCollapsed = useNavigationStore(
     (state) => state.isSpeakerPanelCollapsed,
   );
-  const setSpeakerPanelCollapsed = useNavigationStore(
-    (state) => state.setSpeakerPanelCollapsed,
-  );
   const isChatPanelCollapsed = useNavigationStore(
     (state) => state.isChatPanelCollapsed,
   );
@@ -38,6 +36,7 @@ export default function RecordingPage({ params }: PageProps) {
     setRecording,
     audioClock,
     timelineNotes,
+    noteEdits,
     globalSpeakers,
     loading,
     meetingEdgeEnabled,
@@ -127,6 +126,7 @@ export default function RecordingPage({ params }: PageProps) {
     <RecordingMainContent
       recording={recording}
       timelineNotes={timelineNotes}
+      noteEdits={noteEdits}
       isMobile={isMobile}
       activePanel={activePanel}
       setActivePanel={setActivePanel}
@@ -285,7 +285,17 @@ export default function RecordingPage({ params }: PageProps) {
                           onRefresh={refreshRecordingView}
                           globalSpeakers={globalSpeakers}
                           onSpeakerRenamed={handleSpeakerRenamed}
-                          onCollapse={() => setSpeakerPanelCollapsed(true)}
+                        />
+                      }
+                      myNotes={
+                        <MyNotesList
+                          recordingId={recording.id}
+                          timelineNotes={timelineNotes}
+                          segments={transcriptSegments}
+                          noteEdits={noteEdits}
+                          onPlay={handlePlaySegment}
+                          onShowTranscript={() => setActivePanel("transcript")}
+                          className="h-full bg-surface-inset"
                         />
                       }
                       chatPanelHeight={compactChatPanelHeight}
