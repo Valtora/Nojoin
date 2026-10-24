@@ -468,7 +468,8 @@ def test_run_automatic_meeting_intelligence_stage_persists_suggestions_title_and
 
         assert result is not None
         assert local_names_by_label["SPEAKER_00"] == "Alex"
-        assert names_by_label["SPEAKER_00"] is None
+        # The pending name shows; the row keeps its "Speaker N" for Not {name}.
+        assert names_by_label["SPEAKER_00"] == "Speaker 1"
         assert names_by_label["SPEAKER_01"] == "Dana"
         assert len(suggestions) == 1
         assert suggestions[0]["diarization_label"] == "SPEAKER_00"

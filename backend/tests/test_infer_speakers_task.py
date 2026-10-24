@@ -530,7 +530,8 @@ def test_infer_speakers_task_updates_speakers_and_restores_recording_state(
         assert {
             label: (local_name, name) for label, local_name, name, _, _ in speaker_rows
         } == {
-            "SPEAKER_00": ("Alex", None),
+            # Pending: the row keeps its "Speaker N" for Not {name}.
+            "SPEAKER_00": ("Alex", "Speaker 1"),
             "SPEAKER_01": (None, "Dana"),
         }
         confidence_by_label = {
@@ -991,7 +992,8 @@ def test_infer_speakers_task_uses_canonical_segments_when_projection_is_empty(
         assert {
             label: (local_name, name) for label, local_name, name in speaker_rows
         } == {
-            "SPEAKER_00": ("Alex", None),
+            # Pending: the row keeps its "Speaker N" for Not {name}.
+            "SPEAKER_00": ("Alex", "Speaker 1"),
             "SPEAKER_01": (None, "Dana"),
         }
         assert len(suggestions) == 1
