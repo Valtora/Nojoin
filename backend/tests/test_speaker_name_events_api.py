@@ -641,6 +641,32 @@ async def test_scan_for_matches_links_as_a_voice_match_the_user_may_still_refuse
     assert (await _speaker(session_maker, 2))["global_speaker_id"] is None
 
 
+async def test_scan_for_matches_keeps_the_users_own_name_as_theirs(
+    client, session_maker
+) -> None:
+    await _seed(session_maker, people=[{"id": 8, "name": "Bob"}])
+    await _rename(client, "SPEAKER_00", "Bobby")
+    await _set(
+        session_maker, "UPDATE global_speakers SET embedding = '[1.0, 0.0]' WHERE id = 8"
+    )
+    await _set(
+        session_maker,
+        "UPDATE recording_speakers SET embedding = '[0.96, 0.28]' WHERE id = 1",
+    )
+
+    response = await client.post("/api/v1/speakers/8/scan-matches")
+
+    assert response.status_code == 200, response.text
+    speaker = await _speaker(session_maker, 1)
+    # Linked, as before, but the name stays the user's: not a pending match.
+    assert (
+        speaker["global_speaker_id"],
+        speaker["local_name"],
+        speaker["name_source"],
+        speaker["identity_locked"],
+    ) == (8, "Bobby", "user", True)
+
+
 async def test_confirm_keeps_a_voice_match_and_makes_it_the_users(
     client, session_maker
 ) -> None:
