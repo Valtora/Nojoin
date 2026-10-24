@@ -136,7 +136,7 @@ html[data-palette="classic"]:not(.dark) {
   --surface-inset: #f4f3ee;
   --surface-float: #ffffff;
   --surface-float-border: #808080;
-  --surface-card-shadow: none;
+  --surface-card-shadow: 0 0 #0000; /* not none: see .dark in tokens.css */
   --foreground: #000000;
   --contrast-muted: #1e1e1e;
   --contrast-helper: #404040;
