@@ -1,3 +1,5 @@
+// @vitest-environment node
+
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 

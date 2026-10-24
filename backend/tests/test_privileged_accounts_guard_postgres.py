@@ -19,11 +19,12 @@ import pytest
 from fastapi import HTTPException
 from sqlalchemy import create_engine, text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-from sqlmodel import Session, SQLModel, select
+from sqlmodel import Session, select
 
 from backend.api.v1.endpoints import users
 from backend.core.db import driver_urls
 from backend.models.user import User, UserRole, UserUpdate
+from backend.tests.postgres_setup import fresh_schema
 
 SCHEMA = "privileged_accounts_guard_test"
 
@@ -36,15 +37,11 @@ def engine(postgres_test_url: str):
         connect_args={"options": f"-csearch_path={SCHEMA},public"},
     )
     with engine.begin() as connection:
-        connection.execute(text(f"DROP SCHEMA IF EXISTS {SCHEMA} CASCADE"))
         connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-        connection.execute(text(f"CREATE SCHEMA {SCHEMA}"))
-    SQLModel.metadata.create_all(engine)
+    fresh_schema(engine, SCHEMA)
     try:
         yield engine
     finally:
-        with engine.begin() as connection:
-            connection.execute(text(f"DROP SCHEMA IF EXISTS {SCHEMA} CASCADE"))
         engine.dispose()
 
 

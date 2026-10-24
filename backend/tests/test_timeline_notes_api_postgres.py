@@ -25,8 +25,9 @@ import backend.api.v1.endpoints.transcripts.routes_timeline_notes as notes_route
 from backend.api.deps import get_current_user, get_db
 from backend.api.v1.api import api_router
 from backend.models.recording import Recording
+from backend.tests.postgres_setup import migrate_empty_database
 from backend.tests.test_timeline_notes_api import OWNER_ID, _session_user
-from backend.tests.test_timeline_notes_migration_postgres import _alembic, _psycopg_url
+from backend.tests.test_timeline_notes_migration_postgres import _psycopg_url
 
 REC = "rec-pg"
 OTHER_REC = "rec-pg-other"
@@ -61,7 +62,7 @@ def database(postgres_test_url: str) -> Iterator[str]:
         admin.execute(f'CREATE DATABASE "{name}"')
     url = make_url(admin_url).set(database=name).render_as_string(hide_password=False)
     try:
-        _alembic(url, "upgrade", "head")
+        migrate_empty_database(url, "head")
         _seed(url)
         yield url
     finally:

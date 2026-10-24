@@ -13,6 +13,7 @@ import redis.connection
 # the registry earlier.
 import backend.models.registry  # noqa: F401
 from backend.celery_app import celery_app
+from backend.tests.postgres_setup import POSTGRES_TEST_URL_ENV, drop_session_objects
 from backend.tests.redis_guard import (
     harden_celery_retry_policies,
     record_and_refuse,
@@ -220,9 +221,6 @@ def model_cache_env(monkeypatch, tmp_path_factory):
     return home
 
 
-POSTGRES_TEST_URL_ENV = "NOJOIN_TEST_POSTGRES_URL"
-
-
 @pytest.fixture(scope="session")
 def postgres_test_url() -> str:
     """URL of a real PostgreSQL to run driver-specific tests against.
@@ -243,3 +241,8 @@ def postgres_test_url() -> str:
             f"{POSTGRES_TEST_URL_ENV} is not set; skipping PostgreSQL-specific test"
         )
     return url
+
+
+def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
+    """Drop the schemas and template databases the Postgres tests shared."""
+    drop_session_objects()

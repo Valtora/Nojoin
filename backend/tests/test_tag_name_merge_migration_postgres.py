@@ -21,6 +21,8 @@ import psycopg
 import pytest
 from sqlalchemy.engine import make_url
 
+from backend.tests.postgres_setup import migrate_empty_database
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BEFORE = "f704bbd87f98"
 NAMES_ONCE = "edb5059e5d68"
@@ -222,7 +224,7 @@ EXPECTED = {
 
 
 def test_repeated_names_merge_into_the_oldest_tag(scratch_database: str) -> None:
-    _alembic(scratch_database, "upgrade", BEFORE)
+    migrate_empty_database(scratch_database, BEFORE)
     with psycopg.connect(scratch_database) as conn:
         _seed_before(conn)
 
@@ -240,7 +242,7 @@ def test_repeated_names_merge_into_the_oldest_tag(scratch_database: str) -> None
 def test_the_index_refuses_a_second_copy_for_one_user_only(
     scratch_database: str, table: str
 ) -> None:
-    _alembic(scratch_database, "upgrade", BEFORE)
+    migrate_empty_database(scratch_database, BEFORE)
     with psycopg.connect(scratch_database) as conn:
         _seed_before(conn)
     _alembic(scratch_database, "upgrade", NAMES_ONCE)
@@ -262,7 +264,7 @@ def test_the_index_refuses_a_second_copy_for_one_user_only(
 def test_downgrade_keeps_the_merge_and_a_second_upgrade_merges_again(
     scratch_database: str,
 ) -> None:
-    _alembic(scratch_database, "upgrade", BEFORE)
+    migrate_empty_database(scratch_database, BEFORE)
     with psycopg.connect(scratch_database) as conn:
         _seed_before(conn)
     _alembic(scratch_database, "upgrade", NAMES_ONCE)
