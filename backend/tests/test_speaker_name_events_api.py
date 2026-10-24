@@ -647,7 +647,8 @@ async def test_scan_for_matches_keeps_the_users_own_name_as_theirs(
     await _seed(session_maker, people=[{"id": 8, "name": "Bob"}])
     await _rename(client, "SPEAKER_00", "Bobby")
     await _set(
-        session_maker, "UPDATE global_speakers SET embedding = '[1.0, 0.0]' WHERE id = 8"
+        session_maker,
+        "UPDATE global_speakers SET embedding = '[1.0, 0.0]' WHERE id = 8",
     )
     await _set(
         session_maker,
