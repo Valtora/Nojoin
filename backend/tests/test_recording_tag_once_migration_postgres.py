@@ -18,6 +18,8 @@ import psycopg
 import pytest
 from sqlalchemy.engine import make_url
 
+from backend.tests.postgres_setup import migrate_empty_database
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BEFORE = "8f7a09a9d7f3"
 LINKS_ONCE = "fb5a849e7f5b"
@@ -128,7 +130,7 @@ def _links(conn: psycopg.Connection) -> dict[int, tuple]:
 
 
 def _upgraded(scratch_database: str) -> str:
-    _alembic(scratch_database, "upgrade", BEFORE)
+    migrate_empty_database(scratch_database, BEFORE)
     with psycopg.connect(scratch_database) as conn:
         _seed_before(conn)
     return _alembic(scratch_database, "upgrade", LINKS_ONCE)

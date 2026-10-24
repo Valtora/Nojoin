@@ -9,6 +9,8 @@ export default defineConfig({
     },
   },
   test: {
+    // The default for every file. One whose code and imports read no browser
+    // global opts out with `// @vitest-environment node` on its first line.
     environment: "jsdom",
     setupFiles: ["./src/test-setup.ts"],
     include: ["src/**/*.test.{ts,tsx}"],

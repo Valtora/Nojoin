@@ -27,7 +27,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
-from sqlmodel import Session, SQLModel, col, select
+from sqlmodel import Session, col, select
 
 from backend.api.deps import get_current_user, get_db
 from backend.api.v1.api import api_router
@@ -41,6 +41,7 @@ from backend.models.recording import Recording
 from backend.models.transcript import Transcript
 from backend.models.user import User
 from backend.processing.live_transcribe import _build_live_utterance_public_id
+from backend.tests.postgres_setup import fresh_schema
 from backend.tests.test_transcript_utils import FakeDiarization
 from backend.utils.canonical_pipeline.core import (
     finalize_utterances_from_segments,
@@ -91,14 +92,10 @@ def session(postgres_test_url: str) -> Iterator[Session]:
     )
     try:
         with engine.begin() as connection:
-            connection.execute(text(f"DROP SCHEMA IF EXISTS {SCHEMA} CASCADE"))
             connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-            connection.execute(text(f"CREATE SCHEMA {SCHEMA}"))
-        SQLModel.metadata.create_all(engine)
+        fresh_schema(engine, SCHEMA)
         with Session(engine) as db_session:
             yield db_session
-        with engine.begin() as connection:
-            connection.execute(text(f"DROP SCHEMA IF EXISTS {SCHEMA} CASCADE"))
     finally:
         engine.dispose()
 
