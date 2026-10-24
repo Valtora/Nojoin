@@ -11,7 +11,10 @@ export type ExportSelection =
       kind: "document";
       sections: ExportSection[];
       format: ExportFormat;
-      /** The reader's own notes, where they fall in the transcript section. */
+      /**
+       * The reader's own notes: where they fall in the transcript, and the
+       * User Notes section that ends the generated notes.
+       */
       includeNotes: boolean;
     }
   | { kind: "audio" };

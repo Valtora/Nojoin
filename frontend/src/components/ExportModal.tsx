@@ -123,6 +123,16 @@ const FORMATS: { value: ExportFormat; label: string; description: string }[] = [
 const defaultSections = (hasNotes: boolean): ExportSection[] =>
   hasNotes ? ["notes"] : ["transcript"];
 
+/** Where the reader's notes would go in a file of these sections. */
+const myNotesDescription = (notes: boolean, transcript: boolean): string => {
+  if (notes && transcript) {
+    return "Your notes in the transcript, and the User Notes that end the meeting notes";
+  }
+  if (transcript) return "Your notes, each where it falls in the transcript";
+  if (notes) return "The User Notes that end the meeting notes";
+  return "Tick Meeting notes or Transcript to include them";
+};
+
 export default function ExportModal({
   isOpen,
   onClose,
@@ -137,7 +147,11 @@ export default function ExportModal({
   );
   const [format, setFormat] = useState<ExportFormat>("pdf");
   const [includeNotes, setIncludeNotes] = useState(true);
+  const hasNotesSection = sections.includes("notes");
   const hasTranscript = sections.includes("transcript");
+  // The reader's notes sit in the transcript, and generated notes end with
+  // them under User Notes, so the tick governs both.
+  const carriesMyNotes = hasNotesSection || hasTranscript;
 
   // Start each opening from what this recording can actually export.
   useOnDepsChange([isOpen], () => {
@@ -232,16 +246,12 @@ export default function ExportModal({
             <OptionCard
               type="checkbox"
               name="exportTimelineNotes"
-              checked={hasTranscript && includeNotes}
-              disabled={!hasTranscript}
+              checked={carriesMyNotes && includeNotes}
+              disabled={!carriesMyNotes}
               onChange={() => setIncludeNotes((current) => !current)}
               icon={<NotebookPen className="h-5 w-5" />}
-              label="My notes in the transcript"
-              description={
-                hasTranscript
-                  ? "Your notes, each where it falls in the transcript"
-                  : "Tick Transcript to include them"
-              }
+              label="Include my notes"
+              description={myNotesDescription(hasNotesSection, hasTranscript)}
             />
           ) : null}
         </fieldset>

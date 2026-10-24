@@ -4,7 +4,9 @@ The order is fixed whatever the reader ticked: notes, then analytics, then the
 transcript. Notes are what most readers came for, analytics qualify how the
 meeting went, and the transcript is the evidence for both. The reader's own
 timeline notes sit in the transcript: notes on the whole meeting first and
-last, the rest after the line they fall on.
+last, the rest after the line they fall on. Generated notes also end with them,
+under ``## User Notes``. A file exported without the reader's notes leaves out
+both.
 """
 
 from __future__ import annotations
@@ -16,6 +18,7 @@ from typing import Any
 
 from backend.models.timeline_note import TimelineNoteKind
 from backend.utils.live_speaker_labels import speaker_display_name
+from backend.utils.meeting_notes import split_user_notes_section
 from backend.utils.timeline_notes import (
     NotePlacement,
     TimelineNoteLike,
@@ -72,6 +75,10 @@ class MeetingParts:
     analytics_colors: Mapping[str, str] = field(default_factory=dict)
     # The reader's timeline notes, placed among the transcript's lines.
     timeline_notes: Sequence[TimelineNoteLike] = ()
+    # False leaves the reader's own notes out of the whole file: the timeline
+    # notes above and the ``## User Notes`` section that ends generated notes.
+    # The stored notes are not changed.
+    include_user_notes: bool = True
 
 
 def ordered_sections(requested: Sequence[str]) -> tuple[str, ...]:
@@ -84,7 +91,10 @@ def _absent(text: str) -> tuple[Block, ...]:
 
 
 def _notes_section(parts: MeetingParts) -> Section:
-    if not parts.notes or not parts.notes.strip():
+    notes = parts.notes or ""
+    if not parts.include_user_notes:
+        notes = split_user_notes_section(notes)[0].rstrip()
+    if not notes.strip():
         return Section(
             "notes",
             SECTION_TITLES["notes"],
@@ -93,8 +103,8 @@ def _notes_section(parts: MeetingParts) -> Section:
     return Section(
         "notes",
         SECTION_TITLES["notes"],
-        notes_to_blocks(parts.notes),
-        markdown_source=parts.notes,
+        notes_to_blocks(notes),
+        markdown_source=notes,
     )
 
 
@@ -159,7 +169,9 @@ def _transcript_section(parts: MeetingParts) -> Section:
     )
     # Placed on the same lines as the transcript view, so each note follows
     # the line it follows there.
-    placements = place_timeline_notes(parts.segments, parts.timeline_notes)
+    placements = place_timeline_notes(
+        parts.segments, parts.timeline_notes if parts.include_user_notes else ()
+    )
     blocks: tuple[Block, ...] = tuple(
         lines[item] if isinstance(item, int) else _note_block(item)
         for item in iter_timeline(len(lines), placements)

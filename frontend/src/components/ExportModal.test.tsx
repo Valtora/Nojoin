@@ -76,14 +76,22 @@ describe("ExportModal sections", () => {
     });
   });
 
-  it("puts the reader's notes in the transcript unless unticked, which needs the transcript", () => {
+  it("includes the reader's notes unless unticked, in the notes and the transcript alike", () => {
     const { onExport } = renderModal();
-    const myNotes = section("My notes in the transcript");
+    const myNotes = section("Include my notes");
 
-    expect(myNotes).toBeDisabled();
-    fireEvent.click(section("Transcript"));
+    // The meeting notes end with the reader's notes, so the tick applies to them.
     expect(myNotes).toBeEnabled();
     expect(myNotes).toBeChecked();
+    expect(
+      screen.getByText("The User Notes that end the meeting notes"),
+    ).toBeInTheDocument();
+    fireEvent.click(section("Transcript"));
+    expect(
+      screen.getByText(
+        "Your notes in the transcript, and the User Notes that end the meeting notes",
+      ),
+    ).toBeInTheDocument();
     fireEvent.click(myNotes);
     expect(myNotes).not.toBeChecked();
     fireEvent.click(exportButton());
@@ -93,12 +101,30 @@ describe("ExportModal sections", () => {
     );
   });
 
+  it("leaves the notes tick off a file of analytics alone, which has nowhere to put them", () => {
+    renderModal();
+
+    fireEvent.click(section("Analytics"));
+    fireEvent.click(section("Meeting notes"));
+
+    expect(section("Include my notes")).toBeDisabled();
+    expect(section("Include my notes")).not.toBeChecked();
+    expect(
+      screen.getByText("Tick Meeting notes or Transcript to include them"),
+    ).toBeInTheDocument();
+    fireEvent.click(section("Transcript"));
+    expect(section("Include my notes")).toBeChecked();
+    expect(
+      screen.getByText("Your notes, each where it falls in the transcript"),
+    ).toBeInTheDocument();
+  });
+
   it("offers no notes tick on a recording without notes of the reader's", () => {
     const { onExport } = renderModal({ hasTimelineNotes: false });
 
     expect(section("Transcript")).toBeInTheDocument();
     expect(
-      screen.queryByRole("checkbox", { name: "My notes in the transcript" }),
+      screen.queryByRole("checkbox", { name: "Include my notes" }),
     ).not.toBeInTheDocument();
     fireEvent.click(section("Transcript"));
     fireEvent.click(exportButton());
@@ -122,13 +148,13 @@ describe("ExportModal sections", () => {
       />
     );
     const { rerender } = renderWithProviders(modal(true));
-    fireEvent.click(section("My notes in the transcript"));
-    expect(section("My notes in the transcript")).not.toBeChecked();
+    fireEvent.click(section("Include my notes"));
+    expect(section("Include my notes")).not.toBeChecked();
 
     rerender(modal(false));
     rerender(modal(true));
 
-    expect(section("My notes in the transcript")).toBeChecked();
+    expect(section("Include my notes")).toBeChecked();
   });
 
   it("cannot export nothing", () => {
