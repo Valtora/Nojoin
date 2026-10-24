@@ -60,7 +60,7 @@ The `CI` workflow in [ci.yml](../.github/workflows/ci.yml) runs on pull requests
 
 | Check | Runs when these changed |
 | --- | --- |
-| `Backend tests` | `backend/**`, `requirements/**`, `pyproject.toml`, `frontend/src/lib/processingTuning.json` |
+| `Backend tests` | `backend/**`, `requirements/**`, `pyproject.toml`, `frontend/src/lib/processingTuning.json`, `scripts/dev/**` |
 | `Migrations (Postgres)` | `backend/alembic/**`, `backend/models/**`, `scripts/check_migrations.py` |
 | `Python quality` (Ruff lint and format check, file-size and blind-except gates, mypy) | the `Backend tests` paths, or `scripts/**` |
 | `Frontend lint` (ESLint and the contrast gate) | `frontend/**` |
@@ -241,6 +241,32 @@ NEXT_PUBLIC_API_URL=/api npm run dev -- --hostname 0.0.0.0
 
 To run other code on the host against containerised services, start only the services you need, such as `db` and `redis`. The template publishes neither PostgreSQL nor Redis, so add `ports` entries for them in your `docker-compose.yml`.
 
+### Throwaway Stacks and the Fake LLM Server
+
+A stack started for a browser or end-to-end test puts every container on one internal Docker network: Postgres, Redis, the API, the workers, Nginx and the browser that drives it. An internal network reaches its own containers and nothing else. Publish no port, and never use `--network host`, which reaches every service on the host and on its LAN. Give the stack its own data directory, and name each container with one prefix and its role (`agent-e2e-pg`, `agent-e2e-api`, `agent-e2e-fakellm`), so that one filter finds the whole stack when it comes down.
+
+Notes, Meeting Chat, Meeting Edge, AI analytics and document image parsing call [scripts/dev/fake_llm_server.py](../scripts/dev/fake_llm_server.py) on that network in place of a model. It answers the Ollama API calls Nojoin makes (`GET /api/tags`, `POST /api/show` and `POST /api/chat`, streamed or not) with canned answers that are the same on every run, and logs each request's task and size but never its text. It lists two models: `fake-llm` accepts images and `fake-text` refuses them, which exercises the downgrade to a structural parse. Its context window behaves as Ollama's does, at four bytes a token, so `OLLAMA_CONTEXT_WINDOW=4096` sends a long meeting through the notes-in-parts path.
+
+The server needs only Python's standard library, and runs in the backend test image, `nojoin-dev-tests:local` (the worker image with the test and lint requirements added):
+
+```bash
+docker network create --internal agent-e2e-net
+docker run -d --rm --name agent-e2e-fakellm --network agent-e2e-net \
+  --memory 256m --memory-swap 256m --user "$(id -u):$(id -g)" \
+  --cap-drop ALL --security-opt no-new-privileges \
+  -v "$PWD/scripts/dev:/fake:ro" --entrypoint python \
+  nojoin-dev-tests:local /fake/fake_llm_server.py --host 0.0.0.0 --port 11434
+```
+
+Point the stack's API and workers at it in their environment, then choose `fake-llm` as the model in the setup wizard or **Settings > AI providers**:
+
+```bash
+LLM_PROVIDER=ollama
+OLLAMA_API_URL=http://agent-e2e-fakellm:11434
+```
+
+A URL set in the environment is the install's configured Ollama URL, which the URL check accepts on a private network. `docker logs agent-e2e-fakellm` lists every call the stack made. To tear down, stop `agent-e2e-fakellm` and the stack's other containers, then run `docker network rm agent-e2e-net`.
+
 ## Backend Development Notes
 
 ```bash
@@ -291,6 +317,7 @@ NOJOIN_TEST_POSTGRES_URL=postgresql://postgres:postgres@localhost:55432/nojoin_t
 - **Durations.** `pyproject.toml` sets `--durations=15`, so every `pytest` run lists the fifteen slowest tests. If a test you touched is near the top, trim its fixtures or narrow it. A slow test worth keeping gets a tracking issue with the `slow-test` label.
 - **Flaky tests.** Report a test that passes and fails with no code change as described in [CONTRIBUTING.md](../.github/CONTRIBUTING.md#reporting-issues); triage adds the `flaky` label. Fix it by removing the nondeterminism (timing, ordering, shared state, network), not by re-running it. A skip or `xfail` needs a linked issue and a stated condition for removing it.
 - **No Redis.** `backend/tests/conftest.py` fails any test that opens a Redis connection, printing `Test opened a real Redis connection` and the call site. Take the `stub_celery_dispatch` fixture for a Celery dispatch, `stub_meeting_edge_dispatch` for transcript mutations, or stub the client the code uses. Stub an attribute on a shared object (`celery_app.send_task`) or a function in its defining module; a stub on a package that re-exports a helper misses callers that imported the name earlier.
+- **No outside network.** `conftest.py` fails any test that resolves or connects to a host other than loopback, a Unix socket or the host in `NOJOIN_TEST_POSTGRES_URL`, printing `Test reached outside the suite's network`, the host and the call site. A lookup counts as much as a connection, so a URL check that resolves `ollama.example.com` trips it too. Stub the client, or `socket.getaddrinfo` for a URL check as [test_ollama_ssrf_policy.py](../backend/tests/test_ollama_ssrf_policy.py) does. The guard sees Python's socket calls only: a connection made from C (libpq, behind psycopg) shows at its name lookup, and a subprocess not at all. Run the suite on a network with no way out, `--network none` or an internal Docker network beside a Postgres container, to cover those. A test that needs a model talks to the [fake LLM server](#throwaway-stacks-and-the-fake-llm-server) on loopback, as [test_fake_llm_server.py](../backend/tests/test_fake_llm_server.py) does.
 - **No model downloads.** `conftest.py` sets `HF_HUB_OFFLINE=1`, so huggingface_hub, and fastembed through it, fail at once instead of downloading a model, and the suite passes the same with or without network. It also fails any test that loads the real text embedding model, printing `Test loaded the real text embedding model` and the call site, because every caller of the embedding service swallows the error. Take the `stub_text_embedding` fixture, which returns one fixed vector per text. A test that means to use the real model from the model cache takes `@pytest.mark.real_text_embedding`.
 - **Model registry.** `conftest.py` imports `backend.models.registry`, so a test module behaves the same alone as in the full suite. `test_api_mapper_configuration.py` checks that each real entry point registers every model.
 - **Postgres setup.** A test that needs the models' tables on Postgres calls `fresh_schema` from [postgres_setup.py](../backend/tests/postgres_setup.py) in a schema of its own. The schema is built once per session and emptied for each test after that, and built again if a test changed its objects. A migration test brings its empty scratch database to the revision before the one it tests with `migrate_empty_database`, which runs Alembic once per revision in a session and copies the result.
