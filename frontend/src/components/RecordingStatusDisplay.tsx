@@ -22,6 +22,7 @@ import LiveNoteComposer from "./notes/LiveNoteComposer";
 import RecordingUnsavedNotes from "./notes/RecordingUnsavedNotes";
 import { useRecordingActions } from "./recordings/_hooks/useRecordingActions";
 import { useLiveDocuments } from "./useLiveDocuments";
+import { useLiveSpeakerNaming } from "./transcript/_hooks/useLiveSpeakerNaming";
 import { useLiveTranscript } from "./transcript/_hooks/useLiveTranscript";
 
 const DISCARD_CONFIRM_MESSAGE =
@@ -97,6 +98,10 @@ export default function RecordingStatusDisplay({
   const [isDiscarding, setIsDiscarding] = useState(false);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const liveTranscript = useLiveTranscript(recording);
+  const liveNaming = useLiveSpeakerNaming(
+    recording.id,
+    liveTranscript.applyLiveSpeakerNames,
+  );
   const { documents, refresh: refreshDocuments } = useLiveDocuments(recording.id);
   // The recording's outbox, which the page keeps (`useRecordingNotes`): a
   // note still on its way, and the box's text, outlive Stop.
@@ -398,6 +403,9 @@ export default function RecordingStatusDisplay({
                 onRetryNote={outbox.retry}
                 onDiscardNote={discardInlineNote}
                 onNoteOnLine={noteOnLine}
+                liveSpeakerNames={liveTranscript.liveSpeakerNames}
+                onRenameLiveSpeaker={liveNaming.renameLiveSpeaker}
+                loadPeopleNames={liveNaming.loadPeopleNames}
                 footer={
                   <LiveNoteComposer
                     readAudioNow={readAudioNow}

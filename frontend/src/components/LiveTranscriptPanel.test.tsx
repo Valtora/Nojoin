@@ -1,5 +1,5 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 
 import LiveTranscriptPanel from "./LiveTranscriptPanel";
 import { CaptureSourceChannel, TranscriptSegment } from "@/types";
@@ -280,5 +280,182 @@ describe("LiveTranscriptPanel", () => {
     // Stacked: a clipping card is a scroll container, which a sticky note box
     // inside it would stick to instead of the page.
     expect(cardClasses).not.toContain("overflow-hidden");
+  });
+
+  describe("naming a live speaker", () => {
+    const LIVE_LINES = [
+      buildSegment({ id: "a", start: 0, text: "opening", speaker: "LIVE_PROVISIONAL_1" }),
+      buildSegment({ id: "b", start: 2, text: "a reply", speaker: "LIVE_PROVISIONAL_2" }),
+      buildSegment({ id: "c", start: 4, text: "me again", speaker: "LIVE_PROVISIONAL_1" }),
+    ];
+
+    const renderNaming = ({
+      names = {},
+      onRename = vi.fn(async () => {}),
+      loadPeopleNames = vi.fn(async () => ["Dana Whitfield", "Erin"]),
+    }: {
+      names?: Record<string, string>;
+      onRename?: (label: string, name: string) => Promise<void>;
+      loadPeopleNames?: () => Promise<readonly string[]>;
+    } = {}) => {
+      render(
+        <LiveTranscriptPanel
+          segments={LIVE_LINES}
+          hasLoaded
+          liveSpeakerNames={names}
+          onRenameLiveSpeaker={onRename}
+          loadPeopleNames={loadPeopleNames}
+        />,
+      );
+      return { onRename, loadPeopleNames };
+    };
+
+    const chips = () => screen.getAllByTestId("live-transcript-speaker");
+    const openRename = async (index: number) => {
+      fireEvent.click(chips()[index]);
+      await act(async () => {});
+      return screen.getByRole("combobox", { name: /^Name / });
+    };
+
+    it("shows the given name on every run of that label, and Speaker N on the others", () => {
+      renderNaming({ names: { LIVE_PROVISIONAL_1: "Alex" } });
+
+      expect(chips().map((chip) => chip.textContent)).toEqual([
+        "Alex",
+        "Speaker 2",
+        "Alex",
+      ]);
+    });
+
+    it("renames from the chip with one request, though the box blurs as it saves", async () => {
+      let finish = () => {};
+      const onRename = vi.fn(
+        () => new Promise<void>((resolve) => (finish = resolve)),
+      );
+      renderNaming({ onRename });
+
+      const input = await openRename(2);
+      expect(input).toHaveValue("Speaker 1");
+      expect(document.activeElement).toBe(input);
+
+      fireEvent.change(input, { target: { value: "  Alex " } });
+      fireEvent.keyDown(input, { key: "Enter" });
+      fireEvent.blur(input);
+
+      expect(onRename).toHaveBeenCalledTimes(1);
+      expect(onRename).toHaveBeenCalledWith("LIVE_PROVISIONAL_1", "Alex");
+      await act(async () => finish());
+      expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+    });
+
+    it("opens with the shown name selected, so typing replaces it", async () => {
+      renderNaming();
+
+      const input = (await openRename(1)) as HTMLInputElement;
+
+      expect(input).toHaveValue("Speaker 2");
+      expect([input.selectionStart, input.selectionEnd]).toEqual([0, "Speaker 2".length]);
+    });
+
+    it("sends nothing for Escape, a blank name or the name it already has", async () => {
+      const { onRename } = renderNaming({ names: { LIVE_PROVISIONAL_2: "Blair" } });
+
+      let input = await openRename(1);
+      fireEvent.change(input, { target: { value: "Someone" } });
+      fireEvent.keyDown(input, { key: "Escape" });
+      expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+
+      input = await openRename(1);
+      fireEvent.change(input, { target: { value: "   " } });
+      fireEvent.keyDown(input, { key: "Enter" });
+
+      input = await openRename(1);
+      fireEvent.blur(input);
+
+      expect(onRename).not.toHaveBeenCalled();
+    });
+
+    it("saves to the label it opened on, though the line moves to another meanwhile", async () => {
+      const onRename = vi.fn(async () => {});
+      const panel = (segments: typeof LIVE_LINES) => (
+        <LiveTranscriptPanel
+          segments={segments}
+          hasLoaded
+          liveSpeakerNames={{}}
+          onRenameLiveSpeaker={onRename}
+          loadPeopleNames={vi.fn(async () => [])}
+        />
+      );
+      const { rerender } = render(panel(LIVE_LINES));
+
+      const input = await openRename(0);
+      fireEvent.change(input, { target: { value: "Alex" } });
+      // The next read relabels the provisional first line.
+      rerender(
+        panel([{ ...LIVE_LINES[0], speaker: "LIVE_PROVISIONAL_3" }, ...LIVE_LINES.slice(1)]),
+      );
+      fireEvent.keyDown(screen.getByRole("combobox"), { key: "Enter" });
+
+      expect(onRename).toHaveBeenCalledTimes(1);
+      expect(onRename).toHaveBeenCalledWith("LIVE_PROVISIONAL_1", "Alex");
+    });
+
+    it("gives focus back to the chip after Enter", async () => {
+      renderNaming();
+
+      const input = await openRename(1);
+      fireEvent.change(input, { target: { value: "Blair" } });
+      await act(async () => {
+        fireEvent.keyDown(input, { key: "Enter" });
+      });
+
+      expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+      expect(document.activeElement).toBe(chips()[1]);
+    });
+
+    it("cancels on Escape without saving, though the box then blurs, and gives focus back", async () => {
+      const { onRename } = renderNaming();
+
+      const input = await openRename(1);
+      fireEvent.change(input, { target: { value: "Someone" } });
+      // A blur that lands before the box closes, as a browser may send one.
+      await act(async () => {
+        fireEvent.keyDown(input, { key: "Escape" });
+        fireEvent.blur(input);
+      });
+
+      expect(onRename).not.toHaveBeenCalled();
+      expect(document.activeElement).toBe(chips()[1]);
+    });
+
+    it("offers People's names while typing, read only once a rename opens", async () => {
+      const { loadPeopleNames } = renderNaming();
+      expect(loadPeopleNames).not.toHaveBeenCalled();
+
+      const input = await openRename(0);
+
+      expect(loadPeopleNames).toHaveBeenCalledTimes(1);
+      const listId = input.getAttribute("list");
+      const options = document.getElementById(listId!)?.querySelectorAll("option");
+      expect(Array.from(options ?? []).map((option) => option.value)).toEqual([
+        "Dana Whitfield",
+        "Erin",
+      ]);
+    });
+
+    it("is a full touch target on a phone", () => {
+      renderNaming();
+
+      expect(chips()[0].tagName).toBe("BUTTON");
+      expect(chips()[0]).toHaveAccessibleName("Rename Speaker 1");
+      expect(chips()[0].className).toContain("pointer-coarse:h-[44px]");
+    });
+
+    it("is plain text where the speaker cannot be named", () => {
+      renderPanel(LIVE_LINES);
+
+      expect(chips()[0].tagName).toBe("DIV");
+      expect(screen.queryByRole("button", { name: /^Rename / })).not.toBeInTheDocument();
+    });
   });
 });

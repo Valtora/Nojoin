@@ -33,6 +33,7 @@ from backend.utils.meeting_notes import (
     build_recording_speaker_map,
     format_segments_for_llm,
 )
+from backend.utils.speaker_names.live import with_live_speaker_names
 from backend.utils.timeline_notes import iter_timeline, render_note_line
 
 # Opens a transcript that carries notes, so the model reads them as the user's.
@@ -76,8 +77,10 @@ def _chat_timeline(
 ) -> _ChatTimeline:
     # The loader fetches each speaker's global speaker up front; name
     # resolution reads it, and a lazy load costs a query per speaker.
-    speaker_map = build_recording_speaker_map(
-        _load_recording_speakers(session, recording_id)
+    speaker_map = with_live_speaker_names(
+        session,
+        recording_id,
+        build_recording_speaker_map(_load_recording_speakers(session, recording_id)),
     )
     notes = load_recording_timeline_notes(session, recording_id)
     hide_unknown = _view_hides_unknown(segments)

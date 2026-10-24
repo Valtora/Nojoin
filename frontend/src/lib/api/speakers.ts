@@ -1,6 +1,7 @@
 import type {
   GlobalSpeaker,
   GlobalSpeakerUpdate,
+  LiveSpeakerNames,
   MergedRecordingSpeaker,
   RecalibrateResult,
   Recording,
@@ -104,6 +105,23 @@ export const dismissSpeakerName = async (
     `/speakers/recordings/${recordingId}/speakers/${encodeURIComponent(diarizationLabel)}/suggestions/reject`,
   );
   return response.data;
+};
+
+/**
+ * Names live speaker `label` ("Speaker 3") while the meeting is recorded or
+ * paused. A person's exact name links them; the name reaches the processed
+ * speaker who holds that speech. Answers with every live name.
+ */
+export const nameLiveSpeaker = async (
+  recordingId: RecordingId,
+  label: string,
+  name: string,
+): Promise<Record<string, string>> => {
+  const response = await api.put<LiveSpeakerNames>(
+    `/speakers/recordings/${recordingId}/live/${encodeURIComponent(label)}`,
+    { name },
+  );
+  return response.data.live_speaker_names;
 };
 
 export const updateSpeakerColor = async (

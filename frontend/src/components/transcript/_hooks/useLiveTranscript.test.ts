@@ -317,4 +317,84 @@ describe("useLiveTranscript", () => {
 
     expect(getTranscriptUtterances.mock.calls.length).toBe(callsWhileLive);
   });
+
+  it("shows the live names every read carries, and a rename's at once", async () => {
+    getTranscriptUtterances
+      .mockResolvedValueOnce({
+        ...buildDelta(4, [buildUtterance("a", 0, "first line", 4)]),
+        live_speaker_names: { LIVE_PROVISIONAL_1: "Alex" },
+      })
+      // A delta with no new line still carries the names whole.
+      .mockResolvedValueOnce({
+        ...buildDelta(4, []),
+        live_speaker_names: { LIVE_PROVISIONAL_1: "Alexis", LIVE_PROVISIONAL_2: "Blair" },
+      });
+
+    const { result } = renderHook(() => useLiveTranscript(buildRecording()));
+
+    await flushPendingRequests();
+    expect(result.current.liveSpeakerNames).toEqual({ LIVE_PROVISIONAL_1: "Alex" });
+
+    act(() => {
+      result.current.applyLiveSpeakerNames({ LIVE_PROVISIONAL_1: "Alexis" });
+    });
+    expect(result.current.liveSpeakerNames).toEqual({ LIVE_PROVISIONAL_1: "Alexis" });
+
+    await advanceOnePoll();
+    expect(result.current.liveSpeakerNames).toEqual({
+      LIVE_PROVISIONAL_1: "Alexis",
+      LIVE_PROVISIONAL_2: "Blair",
+    });
+    expect(result.current.segments.map((segment) => segment.text)).toEqual([
+      "first line",
+    ]);
+  });
+
+  it("keeps the same names object across idle polls, so the panel does not re-render", async () => {
+    // Every answer is a new object, as from the network.
+    let names: Record<string, string> = {};
+    getTranscriptUtterances.mockImplementation(async () => ({
+      ...buildDelta(4, []),
+      live_speaker_names: { ...names },
+    }));
+
+    const { result } = renderHook(() => useLiveTranscript(buildRecording()));
+    await flushPendingRequests();
+    const empty = result.current.liveSpeakerNames;
+    await advanceOnePoll();
+    expect(result.current.liveSpeakerNames).toBe(empty);
+
+    names = { LIVE_PROVISIONAL_1: "Alex" };
+    await advanceOnePoll();
+    const named = result.current.liveSpeakerNames;
+    expect(named).toEqual({ LIVE_PROVISIONAL_1: "Alex" });
+    await advanceOnePoll();
+    expect(result.current.liveSpeakerNames).toBe(named);
+
+    names = { LIVE_PROVISIONAL_1: "Alexis" };
+    await advanceOnePoll();
+    expect(result.current.liveSpeakerNames).toEqual({ LIVE_PROVISIONAL_1: "Alexis" });
+  });
+
+  it("clears the live names when a later poll returns an empty map", async () => {
+    getTranscriptUtterances
+      .mockResolvedValueOnce({
+        ...buildDelta(4, []),
+        live_speaker_names: { LIVE_PROVISIONAL_1: "Alex" },
+      })
+      .mockResolvedValueOnce({
+        ...buildDelta(4, []),
+        live_speaker_names: {},
+      });
+
+    const { result } = renderHook(() => useLiveTranscript(buildRecording()));
+    const empty = result.current.liveSpeakerNames;
+
+    await flushPendingRequests();
+    expect(result.current.liveSpeakerNames).toEqual({ LIVE_PROVISIONAL_1: "Alex" });
+
+    await advanceOnePoll();
+    expect(result.current.liveSpeakerNames).toEqual({});
+    expect(result.current.liveSpeakerNames).toBe(empty);
+  });
 });
