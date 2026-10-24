@@ -923,33 +923,6 @@ def _llm_backend_from_config_impl(llm_config: ResolvedLLMConfig):
     return get_llm_backend_with_secondary(llm_config)
 
 
-def _is_unresolved_speaker_label(label: object) -> bool:
-    return str(label or "").strip().upper() in {"", "UNKNOWN"}
-
-
-def _collect_ordered_final_speaker_labels(final_segments: Sequence[dict]) -> list[str]:
-    ordered_speakers: list[str] = []
-    seen_speakers: set[str] = set()
-    for seg in final_segments:
-        speaker_label = str(seg.get("speaker") or "UNKNOWN")
-        if (
-            not _is_unresolved_speaker_label(speaker_label)
-            and speaker_label not in seen_speakers
-        ):
-            ordered_speakers.append(speaker_label)
-            seen_speakers.add(speaker_label)
-        for overlapping_spk in seg.get("overlapping_speakers", []):
-            overlapping_label = str(overlapping_spk or "UNKNOWN")
-            if (
-                _is_unresolved_speaker_label(overlapping_label)
-                or overlapping_label in seen_speakers
-            ):
-                continue
-            ordered_speakers.append(overlapping_label)
-            seen_speakers.add(overlapping_label)
-    return ordered_speakers
-
-
 # Providers that run on the user's own hardware. Their meeting-intelligence
 # generation stays inline on the GPU worker. Every other provider (cloud APIs,
 # CLI OAuth subscriptions) is network-bound, needs no GPU, and — for CLI OAuth —
