@@ -496,6 +496,7 @@ All three carry the user's `token_version` and are checked against the `revoked_
 - **PostgreSQL** with pgvector holds metadata, transcripts, speakers, embeddings and settings. Migrations are Alembic, in `backend/alembic/`.
 - **Redis** is the Celery broker and result backend and holds short-lived guards and send markers.
 - **`./data`**, mounted at `/app/data`, holds `config.json` (install-wide settings), `recordings/`, `documents/`, logs and the install id.
+- **Recordings.** Uploads use `recordings_root_dir()` (`RECORDINGS_DIR` or working-directory-relative `data/recordings`); restores and the demo seed use `PathManager().recordings_directory`, which follows `NOJOIN_DATA_DIR`. Ordinary deletion accepts either root through `stored_paths.recording_roots()`, with symlinks and `..` resolved before checking containment. Restore overwrite deletion stays confined to its explicit recordings directory.
 - **Secrets.** Calendar OAuth client secrets and tokens, push-channel secrets and CLI OAuth credentials are encrypted with `DATA_ENCRYPTION_KEY` (`backend/core/encryption.py`).
 - **Backups** are built by `create_backup_task` on the CPU lane and restored by `restore_backup_task` on the IO lane (`backend/core/backup/`); see [BACKUP_RESTORE.md](BACKUP_RESTORE.md).
 
