@@ -78,97 +78,100 @@ export default function TimelineNoteLine({
       ref={lineRef}
       // Focus lands here when Retry, which hides its own button, is pressed.
       tabIndex={status === "saved" ? undefined : -1}
-      className={`flex flex-wrap gap-x-3 outline-none focus-visible:ring-2 focus-visible:ring-action ${
+      className={`flex flex-wrap outline-none focus-visible:ring-2 focus-visible:ring-action ${
         move?.dragging ? "opacity-50" : ""
       }`}
       data-testid="timeline-note"
       data-note-id={noteId}
       data-note-status={status}
     >
-      <span className={timeColumnClassName}>{timeLabel}</span>
-      <div className="min-w-[min(100%,14rem)] flex-1 border-l-2 border-action-border pl-3">
-        <div className="flex flex-wrap items-center gap-x-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-action-text">
-          {move ? (
-            // A mouse's drag handle; the keyboard and touch have Move up and Move down.
-            <span
-              aria-hidden="true"
-              data-note-grip
-              title="Drag to move this note"
-              onPointerDown={move.onGripPointerDown}
-              className="-my-1 -ml-1 hidden cursor-grab rounded-sm p-1 text-contrast-icon-muted hover:bg-surface-inset hover:text-action-text pointer-fine:inline-flex"
-            >
-              <GripVertical className="h-3.5 w-3.5" />
-            </span>
-          ) : null}
-          <span className="inline-flex items-center gap-1.5">
-            <StickyNote className="h-3.5 w-3.5" aria-hidden="true" />
-            <span className="sr-only">Your note at {timeLabel}:</span>
-            <span aria-hidden="true">Note</span>
-          </span>
-          {status === "saving" ? (
-            <span className="font-normal normal-case tracking-normal text-contrast-helper">
-              Saving…
-            </span>
-          ) : null}
-        </div>
-        {quote ? (
-          <blockquote
-            data-testid="timeline-note-quote"
-            className={`mt-0.5 line-clamp-2 break-words text-sm italic leading-6 text-contrast-helper ${
-              wordsChanged ? "line-through" : ""
-            }`}
-          >
-            <span className="sr-only">On the words: </span>“{quote}”
-          </blockquote>
-        ) : null}
-        {quote && wordsChanged ? (
-          <p data-testid="timeline-note-words-changed" className="text-xs leading-5 text-contrast-helper">
-            Words changed since this note.
-            {wordsChanged.nowReads ? ` Here it now reads “${noteSnippet(wordsChanged.nowReads, 120)}”.` : null}
-          </p>
-        ) : null}
-        <p className="mt-0.5 whitespace-pre-wrap break-words text-sm leading-6 text-foreground">
-          {body}
-        </p>
-        {move?.refusal ? (
-          <p data-testid="timeline-note-move-refused" className="mt-1 text-xs text-status-danger-fg">
-            {move.refusal}
-          </p>
-        ) : null}
-        {status === "failed" ? (
-          <p className="mt-1 text-xs text-status-danger-fg">{error ?? "Not saved."}</p>
-        ) : null}
-        {status === "failed" && (onRetry || onDiscard) ? (
-          <div className="mt-1.5 flex flex-wrap items-center gap-2">
-            {onRetry ? (
-              <Button
-                size="sm"
-                aria-label={`Retry note ${name}`}
-                onClick={() => {
-                  lineRef.current?.focus();
-                  onRetry();
-                }}
-                className={NOTE_BUTTON_TOUCH}
+      {/* The time and the note never wrap apart; only the buttons go under them where they don't fit beside. */}
+      <div className="flex min-w-0 grow basis-64 gap-3">
+        <span className={timeColumnClassName}>{timeLabel}</span>
+        <div className="min-w-0 flex-1 border-l-2 border-action-border pl-3">
+          <div className="flex flex-wrap items-center gap-x-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-action-text">
+            {move ? (
+              // A mouse's drag handle; the keyboard and touch have Move up and Move down.
+              <span
+                aria-hidden="true"
+                data-note-grip
+                title="Drag to move this note"
+                onPointerDown={move.onGripPointerDown}
+                className="-my-1 -ml-1 hidden cursor-grab rounded-sm p-1 text-contrast-icon-muted hover:bg-surface-inset hover:text-action-text pointer-fine:inline-flex"
               >
-                Retry
-              </Button>
+                <GripVertical className="h-3.5 w-3.5" />
+              </span>
             ) : null}
-            {onDiscard ? (
-              <Button
-                size="sm"
-                aria-label={`Discard note ${name}`}
-                onClick={onDiscard}
-                className={NOTE_BUTTON_TOUCH}
-              >
-                Discard
-              </Button>
+            <span className="inline-flex items-center gap-1.5">
+              <StickyNote className="h-3.5 w-3.5" aria-hidden="true" />
+              <span className="sr-only">Your note at {timeLabel}:</span>
+              <span aria-hidden="true">Note</span>
+            </span>
+            {status === "saving" ? (
+              <span className="font-normal normal-case tracking-normal text-contrast-helper">
+                Saving…
+              </span>
             ) : null}
           </div>
-        ) : null}
+          {quote ? (
+            <blockquote
+              data-testid="timeline-note-quote"
+              className={`mt-0.5 line-clamp-2 break-words text-sm italic leading-6 text-contrast-helper ${
+                wordsChanged ? "line-through" : ""
+              }`}
+            >
+              <span className="sr-only">On the words: </span>“{quote}”
+            </blockquote>
+          ) : null}
+          {quote && wordsChanged ? (
+            <p data-testid="timeline-note-words-changed" className="text-xs leading-5 text-contrast-helper">
+              Words changed since this note.
+              {wordsChanged.nowReads ? ` Here it now reads “${noteSnippet(wordsChanged.nowReads, 120)}”.` : null}
+            </p>
+          ) : null}
+          <p className="mt-0.5 whitespace-pre-wrap break-words text-sm leading-6 text-foreground">
+            {body}
+          </p>
+          {move?.refusal ? (
+            <p data-testid="timeline-note-move-refused" className="mt-1 text-xs text-status-danger-fg">
+              {move.refusal}
+            </p>
+          ) : null}
+          {status === "failed" ? (
+            <p className="mt-1 text-xs text-status-danger-fg">{error ?? "Not saved."}</p>
+          ) : null}
+          {status === "failed" && (onRetry || onDiscard) ? (
+            <div className="mt-1.5 flex flex-wrap items-center gap-2">
+              {onRetry ? (
+                <Button
+                  size="sm"
+                  aria-label={`Retry note ${name}`}
+                  onClick={() => {
+                    lineRef.current?.focus();
+                    onRetry();
+                  }}
+                  className={NOTE_BUTTON_TOUCH}
+                >
+                  Retry
+                </Button>
+              ) : null}
+              {onDiscard ? (
+                <Button
+                  size="sm"
+                  aria-label={`Discard note ${name}`}
+                  onClick={onDiscard}
+                  className={NOTE_BUTTON_TOUCH}
+                >
+                  Discard
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
       </div>
       {/* Beside the note, or under it where they would leave it too narrow, as on a phone. */}
       {move || (onEdit && status === "saved") ? (
-        <div className="ml-auto flex shrink-0 items-start">
+        <div className="ml-auto flex shrink-0 items-start pl-3">
           {move ? (
             <>
               <IconButton

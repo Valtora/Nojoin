@@ -310,7 +310,8 @@ export default function TranscriptView({
           error={"error" in note ? note.error : null}
           onRetry={onRetryNote ? () => onRetryNote(key) : undefined}
           onDiscard={onDiscardNote ? () => onDiscardNote(key) : undefined}
-          move={moves.controlsFor(note, canEditNote(note))}
+          // Not while its editor is open: a move would take the pencil it sits against.
+          move={moves.controlsFor(note, canEditNote(note) && shownEditor?.noteId !== note.id)}
         />
       </div>
     );

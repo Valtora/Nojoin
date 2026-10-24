@@ -255,6 +255,18 @@ describe("Moving a point note with Move up and Move down", () => {
     expect(myNotesTime("n-point")).toBe("01:06");
   });
 
+  it("offers no move while the note's editor is open", () => {
+    render(<Page notes={[POINT]} />);
+
+    fireEvent.click(within(noteLine("n-point")!).getByRole("button", { name: /^Edit note at 01:06/ }));
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(within(noteLine("n-point")!).queryByRole("button", { name: /^Move note/ })).toBeNull();
+    expect(noteLine("n-point")!.querySelector("[data-note-grip]")).toBeNull();
+
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Cancel" }));
+    expect(moveButton("n-point", "down")).toBeInTheDocument();
+  });
+
   it("offers no move for a selection note, whose words fix its place", () => {
     render(<Page notes={[POINT, SELECTION]} />);
 
@@ -369,6 +381,38 @@ describe("Dragging a point note by its grip", () => {
     expect(transcriptOrder()).toEqual(["line:0", "line:1", "line:2", "line:3", "note:n-point"]);
     await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Note moved after the line at 03:20."));
     expect(myNotesTime("n-point")).toBe("03:20");
+  });
+
+  it("keeps its target over the margin under a line, where the drop line is, and a group's time column", async () => {
+    updateTimelineNote.mockImplementation(async (_recording, _id, update) => moved(update.anchor_ms));
+    render(<Page notes={[POINT]} />);
+
+    fireEvent.pointerDown(grip("n-point"), { pointerType: "mouse", button: 0 });
+    dragOver(line(2));
+    // Between the rows: the line's group, then the region itself.
+    dragOver(line(2).parentElement);
+    dragOver(scrollRegion());
+    expect(screen.getByTestId("note-drop-bar")).toBeInTheDocument();
+    fireEvent.pointerUp(window);
+
+    await waitFor(() =>
+      expect(updateTimelineNote).toHaveBeenCalledWith("rec-1", "n-point", {
+        expected_revision: 2,
+        anchor_ms: 130_000,
+      }),
+    );
+  });
+
+  it("drops its target when the pointer leaves the transcript", () => {
+    render(<Page notes={[POINT]} />);
+
+    fireEvent.pointerDown(grip("n-point"), { pointerType: "mouse", button: 0 });
+    dragOver(line(2));
+    dragOver(screen.getByTestId("my-notes"));
+    expect(screen.queryByTestId("note-drop-bar")).toBeNull();
+    fireEvent.pointerUp(window);
+
+    expect(transcriptOrder()).toEqual(["line:0", "line:1", "note:n-point", "line:2", "line:3"]);
   });
 
   it("drops it after a line when let go over a note already after that line", async () => {

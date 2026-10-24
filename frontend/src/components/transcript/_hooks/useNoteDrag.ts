@@ -61,12 +61,24 @@ export function useNoteDrag({ regionRef, targetAfter, onDrop }: UseNoteDragOptio
     let over: MoveTarget | null = null;
     let frame = 0;
 
+    // Redraws only when the target changes, not on every pointer move.
+    const aim = (target: MoveTarget | null) => {
+      if (target?.afterIndex === over?.afterIndex) return;
+      over = target;
+      setDrag({ noteId, target, bar: target ? barUnder(region, target.afterIndex) : null });
+    };
     const locate = () => {
       const hit = document.elementFromPoint(point.x, point.y);
-      const host = hit?.closest<HTMLElement>("[data-order-index], [data-note-gap]");
-      const index = host && region.contains(host) ? Number(host.dataset.orderIndex ?? host.dataset.noteGap) : NaN;
-      over = Number.isNaN(index) || index === shownAfter ? null : targetAfter(index);
-      setDrag({ noteId, target: over, bar: over ? barUnder(region, over.afterIndex) : null });
+      if (!hit || !region.contains(hit)) {
+        aim(null);
+        return;
+      }
+      // Between the rows, in the margin under a line where the drop line is
+      // drawn or a group's time column, the target stays as it was.
+      const host = hit.closest<HTMLElement>("[data-order-index], [data-note-gap]");
+      if (!host || !region.contains(host)) return;
+      const index = Number(host.dataset.orderIndex ?? host.dataset.noteGap);
+      aim(index === shownAfter ? null : targetAfter(index));
     };
     const scroll = () => {
       frame = 0;
