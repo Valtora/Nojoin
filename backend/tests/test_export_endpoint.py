@@ -27,7 +27,12 @@ from backend.models.speaker import RecordingSpeaker
 from backend.models.timeline_note import TimelineNote
 from backend.models.transcript import Transcript
 from backend.models.user import User
-from backend.tests.export_fixtures import NOTES_WITH_TABLES, analytics_payload
+from backend.tests.export_fixtures import (
+    NOTES_WITH_TABLES,
+    NOTES_WITH_USER_NOTES,
+    analytics_payload,
+    exported_text,
+)
 from backend.tests.sqlite_schemas import (
     GLOBAL_SPEAKERS_SCHEMA,
     RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA,
@@ -277,3 +282,27 @@ def test_the_transcript_carries_the_readers_notes_unless_left_out(api) -> None:
     assert without.status_code == 200, without.text
     assert "Check the budget" not in without.text
     assert "[00:00] Peter: Let us begin.\n[00:05] Anna: Agreed." in without.text
+
+
+@pytest.mark.parametrize("export_format", ["txt", "pdf", "docx"])
+def test_leaving_the_readers_notes_out_drops_them_from_the_notes_too(
+    api, export_format: str
+) -> None:
+    def export(**params) -> str:
+        response = _run(
+            api,
+            notes=NOTES_WITH_USER_NOTES,
+            sections=["notes"],
+            export_format=export_format,
+            **params,
+        )
+        assert response.status_code == 200, response.text
+        return exported_text(response.content, export_format)
+
+    kept = export()
+    left_out = export(include_notes="false")
+
+    assert "User Notes" in kept and "Ask about catering" in kept, kept
+    assert "Peter books the venue." in left_out, left_out
+    assert "User Notes" not in left_out, left_out
+    assert "Ask about catering" not in left_out, left_out

@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 from datetime import datetime
+from io import BytesIO
 from typing import Any
 
+import pdfplumber
+from docx import Document
+
 from backend.services.exports import MeetingParts
+from backend.utils.meeting_notes import append_user_notes_section
 
 NOTES_WITH_TABLES = """## Key Decisions
 
@@ -19,6 +24,12 @@ NOTES_WITH_TABLES = """## Key Decisions
 | --- | --- | --- | --- | --- | --- |
 | ACT-001 | Prepare the architecture diagram | Peter | Anna, Jon | 2026-08-01 | ENG-1421 |
 """
+
+# Generated notes as the notes task stores them, ending with the reader's notes.
+NOTES_WITH_USER_NOTES = append_user_notes_section(
+    "## Summary\nThe venue was agreed.\n\n## Action Items\n- Peter books the venue.",
+    ["Agenda: budget", "00:31 Ask about catering"],
+)
 
 SPEAKERS = (
     ("k1", "SPEAKER_00", "Peter"),
@@ -198,3 +209,15 @@ def meeting_parts(**overrides: Any) -> MeetingParts:
     }
     values.update(overrides)
     return MeetingParts(**values)
+
+
+def exported_text(payload: bytes, export_format: str) -> str:
+    """The text a reader sees in an exported file, in reading order."""
+    if export_format == "pdf":
+        with pdfplumber.open(BytesIO(payload)) as document:
+            return "\n".join(page.extract_text() for page in document.pages)
+    if export_format == "docx":
+        return "\n".join(
+            paragraph.text for paragraph in Document(BytesIO(payload)).paragraphs
+        )
+    return payload.decode("utf-8")

@@ -59,8 +59,9 @@ class ExportQuery(BaseModel):
     # JSON object of diarisation label (or speaker name) to palette key, so the
     # file uses the colours the reader sees in the app. See speaker_colors.py.
     speaker_colors: str | None = Field(default=None, max_length=16_384)
-    # The reader's timeline notes in the transcript section; off for a
-    # transcript shared without them.
+    # The reader's own notes: in the transcript section, and the ``## User
+    # Notes`` section that ends the generated notes. Off for a file shared
+    # without them.
     include_notes: bool = True
 
     def requested_sections(self) -> tuple[str, ...]:
@@ -152,6 +153,7 @@ async def _meeting_parts(
             else {}
         ),
         timeline_notes=timeline_notes,
+        include_user_notes=query.include_notes,
     )
 
 
