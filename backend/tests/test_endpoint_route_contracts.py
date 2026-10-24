@@ -134,6 +134,12 @@ SPEAKERS_ROUTE_CONTRACT = [
     ("/merge", ("POST",), "merge_speakers", "GlobalSpeaker"),
     ("/recordings/{recording_id}", ("PUT",), "update_recording_speaker", "List"),
     (
+        "/recordings/{recording_id}/live/{label}",
+        ("PUT",),
+        "name_live_speaker",
+        "LiveSpeakerNamesRead",
+    ),
+    (
         "/recordings/{recording_id}/merge",
         ("POST",),
         "merge_recording_speakers",

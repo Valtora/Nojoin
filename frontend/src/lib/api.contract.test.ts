@@ -161,6 +161,7 @@ describe("api public surface", () => {
         "markTelemetryNoticeShown",
         "mergeRecordingSpeakers",
         "mergeSpeakers",
+        "nameLiveSpeaker",
         "pauseRecordingCapture",
         "permanentlyDeleteRecording",
         "prepareModels",

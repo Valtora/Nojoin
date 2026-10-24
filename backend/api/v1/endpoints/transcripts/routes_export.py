@@ -30,6 +30,7 @@ from backend.services.timeline_note_service import (
 )
 from backend.utils.canonical_pipeline import build_transcript_segments_for_read
 from backend.utils.config_manager import EXPORT_BRANDING_KEY, config_manager
+from backend.utils.speaker_names.live import with_live_speaker_names
 from backend.utils.timezones import get_user_timezone_name
 
 from .helpers import _build_speaker_map, _get_owned_recording, _sanitize_filename
@@ -114,9 +115,13 @@ async def _meeting_parts(
     user: User,
 ) -> MeetingParts:
     sections = query.requested_sections()
-    segments = await db.run_sync(
-        lambda sync_session: build_transcript_segments_for_read(
-            sync_session, recording.id
+    speakers = recording.speakers or []
+    segments, speaker_names_by_label = await db.run_sync(
+        lambda sync_session: (
+            build_transcript_segments_for_read(sync_session, recording.id),
+            with_live_speaker_names(
+                sync_session, recording.id, _build_speaker_map(speakers)
+            ),
         )
     )
     analytics = (
@@ -129,7 +134,6 @@ async def _meeting_parts(
         if query.include_notes and "transcript" in sections
         else ()
     )
-    speakers = recording.speakers or []
     label_colors = resolve_label_colors(
         [str(segment.get("speaker") or "Unknown") for segment in segments]
         + [speaker.diarization_label for speaker in speakers],
@@ -144,7 +148,7 @@ async def _meeting_parts(
         speaker_names=tuple(_speaker_name(speaker) for speaker in speakers),
         notes=transcript.notes,
         segments=segments,
-        speaker_names_by_label=_build_speaker_map(speakers),
+        speaker_names_by_label=speaker_names_by_label,
         speaker_colors_by_label=label_colors,
         analytics=analytics,
         analytics_colors=(
