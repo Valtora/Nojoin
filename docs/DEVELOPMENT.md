@@ -247,7 +247,7 @@ A stack started for a browser or end-to-end test puts every container on one int
 
 Notes, Meeting Chat, Meeting Edge, AI analytics and document image parsing call [scripts/dev/fake_llm_server.py](../scripts/dev/fake_llm_server.py) on that network in place of a model. It answers the Ollama API calls Nojoin makes (`GET /api/tags`, `POST /api/show` and `POST /api/chat`, streamed or not) with canned answers that are the same on every run, and logs each request's task and size but never its text. It lists two models: `fake-llm` accepts images and `fake-text` refuses them, which exercises the downgrade to a structural parse. Its context window behaves as Ollama's does, at four bytes a token, so `OLLAMA_CONTEXT_WINDOW=4096` sends a long meeting through the notes-in-parts path.
 
-The server needs only Python's standard library, and runs in the backend test image, `nojoin-dev-tests:local` (the worker image with the test and lint requirements added):
+The server needs only Python's standard library, so it runs in the worker image that `docker compose build worker-gpu` produces, `nojoin-worker:local`:
 
 ```bash
 docker network create --internal agent-e2e-net
@@ -255,7 +255,7 @@ docker run -d --rm --name agent-e2e-fakellm --network agent-e2e-net \
   --memory 256m --memory-swap 256m --user "$(id -u):$(id -g)" \
   --cap-drop ALL --security-opt no-new-privileges \
   -v "$PWD/scripts/dev:/fake:ro" --entrypoint python \
-  nojoin-dev-tests:local /fake/fake_llm_server.py --host 0.0.0.0 --port 11434
+  nojoin-worker:local /fake/fake_llm_server.py --host 0.0.0.0 --port 11434
 ```
 
 Point the stack's API and workers at it in their environment, then choose `fake-llm` as the model in the setup wizard or **Settings > AI providers**:
