@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, List, Optional
+from typing import Any, List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -28,6 +28,7 @@ from backend.processing.embedding import (
     LibraryVoiceprintUpdate,
     VoiceprintStatus,
 )
+from backend.utils.language_notice import language_notice
 
 
 class PublicModel(BaseModel):
@@ -174,6 +175,22 @@ class CalendarEventLinkRead(PublicModel):
     ends_at: Optional[datetime] = None
 
 
+class LanguageNoticeRead(PublicModel):
+    """Language detection heard another language than the transcript used (#671)."""
+
+    kind: Literal["mismatch"] = "mismatch"
+    detected: str
+    detected_label: str
+    used: str
+    used_label: str
+    engine: str
+    # The Whisper model the transcript used, or None when the record names none.
+    model: Optional[str] = None
+    # What "Reprocess in <detected>" sets: the detected code when it is listed,
+    # otherwise "auto", on which Whisper detects it again.
+    reprocess_language: str
+
+
 class RecordingPublicRead(PublicModel):
     id: str
     created_at: datetime
@@ -199,6 +216,8 @@ class RecordingPublicRead(PublicModel):
     processing_eta_learning: bool = False
     processing_eta_sample_size: int = 0
     max_speakers: Optional[int] = None
+    # "auto" or a listed code; None means the owner's setting (#671).
+    transcription_language: Optional[str] = None
     # How much audio the server actually holds, summed from the transcoded
     # segments. The live view compares this against its own wall clock to tell
     # whether capture is keeping up; it cannot derive the figure itself, because
@@ -237,6 +256,10 @@ class RecordingPublicRead(PublicModel):
     # A file import that has received no part for STALLED_IMPORT_AFTER: the page
     # sending it went away. The client offers to import it again or discard it.
     import_stalled: bool = False
+    # Computed server-side when the detail read includes the transcript: shown
+    # once processing is complete, until the recording has a language of its
+    # own (backend/utils/language_notice.py).
+    language_notice: Optional[LanguageNoticeRead] = None
     transcript: Optional[TranscriptPublicRead] = None
     speakers: list[RecordingSpeakerPublicRead] = Field(default_factory=list)
     tags: list[TagRead] = Field(default_factory=list)
@@ -388,7 +411,13 @@ def serialize_recording(
     timeline_notes_list_signature: Optional[str] = None,
 ) -> RecordingPublicRead:
     transcript = None
+    notice = None
     if include_transcript and recording.transcript is not None:
+        notice = language_notice(
+            processed=recording.status == RecordingStatus.PROCESSED,
+            recording_language=getattr(recording, "transcription_language", None),
+            detection=recording.transcript.language_detection,
+        )
         transcript = serialize_transcript(
             recording.transcript,
             recording_public_id=recording.public_id,
@@ -443,6 +472,7 @@ def serialize_recording(
         processing_eta_learning=processing_eta_learning,
         processing_eta_sample_size=processing_eta_sample_size,
         max_speakers=getattr(recording, "max_speakers", None),
+        transcription_language=getattr(recording, "transcription_language", None),
         captured_audio_seconds=captured_audio_seconds,
         live_audio_ms=live_audio_ms,
         timeline_notes_list_signature=timeline_notes_list_signature,
@@ -451,6 +481,7 @@ def serialize_recording(
         last_activity_at=recording.last_activity_at,
         capture_stalled=capture_looks_stalled(recording),
         import_stalled=import_looks_stalled(recording),
+        language_notice=LanguageNoticeRead(**notice) if notice else None,
         transcript=transcript,
         speakers=speakers,
         tags=tags,

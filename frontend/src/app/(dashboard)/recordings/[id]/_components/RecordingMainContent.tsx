@@ -22,6 +22,7 @@ import MyNotesList from "@/components/notes/MyNotesList";
 import type { NoteEdits } from "@/lib/notes/useNoteEdits";
 
 import RecordingHeader from "./RecordingHeader";
+import LanguageNoticeBanner from "./LanguageNoticeBanner";
 import TranscriptSection from "./TranscriptSection";
 import NotesSection from "./NotesSection";
 import DocumentsSection from "./DocumentsSection";
@@ -259,6 +260,15 @@ export default function RecordingMainContent({
         onTimeUpdate={onTimeUpdate}
         onPlay={() => setIsPlaying(true)}
         onPause={() => setIsPlaying(false)}
+      />
+
+      {/* Above the tabs, so it is in view from every panel: the language
+          affects the notes as well as the transcript. */}
+      <LanguageNoticeBanner
+        recording={recording}
+        onAnswered={() =>
+          tablistRef.current?.querySelector<HTMLElement>(`#tab-${current}`)?.focus()
+        }
       />
 
       {/* Panel Tabs. On mobile, My notes and Speakers have tabs too and the

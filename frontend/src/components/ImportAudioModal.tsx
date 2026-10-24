@@ -9,6 +9,7 @@ import Modal from '@/components/ui/Modal';
 import ModernDatePicker from '@/components/ui/ModernDatePicker';
 import { importAudio, getSupportedAudioFormats } from '@/lib/api';
 import SpeakerCapField from '@/components/SpeakerCapField';
+import RecordingLanguageField from '@/components/RecordingLanguageField';
 import { useNotificationStore } from '@/lib/notificationStore';
 
 interface ImportAudioModalProps {
@@ -39,6 +40,7 @@ export default function ImportAudioModal({ isOpen, onClose, onSuccess }: ImportA
   const [recordedAt, setRecordedAt] = useState<Date | null>(null);
   // null means auto-detect, the default.
   const [maxSpeakers, setMaxSpeakers] = useState<number | null>(null);
+  const [language, setLanguage] = useState<string | null>(null);
   const [uploadState, setUploadState] = useState<UploadState>('idle');
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
@@ -54,6 +56,7 @@ export default function ImportAudioModal({ isOpen, onClose, onSuccess }: ImportA
     setMeetingName('');
     setRecordedAt(null);
     setMaxSpeakers(null);
+    setLanguage(null);
     setUploadState('idle');
     setUploadProgress(0);
     setIsDragging(false);
@@ -153,6 +156,7 @@ export default function ImportAudioModal({ isOpen, onClose, onSuccess }: ImportA
         name: meetingName || undefined,
         recordedAt: recordedAt || undefined,
         maxSpeakers,
+        transcriptionLanguage: language,
         onUploadProgress: setUploadProgress,
       });
 
@@ -346,6 +350,13 @@ export default function ImportAudioModal({ isOpen, onClose, onSuccess }: ImportA
                 If not set, the current time will be used.
               </p>
             </div>
+
+            <RecordingLanguageField
+              value={language}
+              onChange={setLanguage}
+              disabled={uploadState === 'uploading'}
+              idPrefix="import-language"
+            />
 
             <SpeakerCapField
               value={maxSpeakers}

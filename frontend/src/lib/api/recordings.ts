@@ -101,6 +101,17 @@ export const renameRecording = async (
   return response.data;
 };
 
+/** Sets the recording's language; null returns it to the owner's setting. */
+export const setRecordingTranscriptionLanguage = async (
+  id: RecordingId,
+  transcriptionLanguage: string | null,
+): Promise<Recording> => {
+  const response = await api.patch<Recording>(`/recordings/${id}`, {
+    transcription_language: transcriptionLanguage,
+  });
+  return response.data;
+};
+
 export const reprocessRecording = async (
   id: RecordingId,
   body: ReprocessRequest,
@@ -147,6 +158,8 @@ export interface ImportAudioOptions {
   recordedAt?: Date;
   /** Optional upper bound on speakers. Omit for auto-detect (the default). */
   maxSpeakers?: number | null;
+  /** "auto" or a listed code. Omit to follow the owner's setting (the default). */
+  transcriptionLanguage?: string | null;
   onUploadProgress?: (progress: number) => void;
 }
 
@@ -165,6 +178,8 @@ export const importAudio = async (
     initParams.append("recorded_at", options.recordedAt.toISOString());
   if (options?.maxSpeakers != null)
     initParams.append("max_speakers", String(options.maxSpeakers));
+  if (options?.transcriptionLanguage != null)
+    initParams.append("transcription_language", options.transcriptionLanguage);
 
   const initResponse = await api.post<Recording>(
     `/recordings/import/chunked/init?${initParams.toString()}`,

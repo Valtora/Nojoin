@@ -487,6 +487,24 @@ export interface CalendarEventLink {
   ends_at: string | null;
 }
 
+/**
+ * Language detection heard another language than the transcript used. The
+ * server sends it once processing is complete, until the recording has a
+ * language of its own.
+ */
+export interface LanguageNotice {
+  kind: "mismatch";
+  detected: string;
+  detected_label: string;
+  used: string;
+  used_label: string;
+  engine: "whisper" | "parakeet" | "canary";
+  /** The Whisper model the transcript used, which "Reprocess in <detected>" keeps. */
+  model?: string | null;
+  /** What "Reprocess in <detected>" sets: the detected code, or "auto" when it isn't listed. */
+  reprocess_language: string;
+}
+
 export interface Recording extends Omit<BaseDBModel, "id"> {
   id: RecordingId;
   name: string;
@@ -510,6 +528,11 @@ export interface Recording extends Omit<BaseDBModel, "id"> {
   processing_eta_sample_size?: number;
   /** Optional upper bound on diarized speakers. null means auto-detect. */
   max_speakers?: number | null;
+  /**
+   * The language this recording is transcribed in: "auto" or a listed code.
+   * null means the owner's setting.
+   */
+  transcription_language?: string | null;
   /**
    * Seconds of audio the server actually holds, summed from the transcoded
    * segments. Present only while capture is open; the detail endpoint omits it
@@ -545,6 +568,8 @@ export interface Recording extends Omit<BaseDBModel, "id"> {
    * imported again or discarded.
    */
   import_stalled?: boolean;
+  /** Detail read only; null when there is nothing to ask. */
+  language_notice?: LanguageNotice | null;
   is_archived: boolean;
   is_deleted: boolean;
   transcript?: Transcript;
@@ -755,6 +780,8 @@ export interface LanguageChoice {
 
 export interface TranscriptionEngineLanguageCapability {
   forced_language: boolean;
+  /** False when the engine can't detect a language (Canary transcribes "auto" as English). */
+  auto_detect: boolean;
   guidance: string;
 }
 
@@ -1187,6 +1214,11 @@ export interface ReprocessRequest {
    * auto-detect; a number sets it.
    */
   max_speakers?: number | null;
+  /**
+   * Omit to keep the recording's language; null returns it to the owner's
+   * setting; "auto" or a listed code sets it.
+   */
+  transcription_language?: string | null;
 }
 
 export interface AudioFileMetadata {

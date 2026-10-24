@@ -103,7 +103,7 @@ An administrator can turn Meeting Edge off for the installation, or give it its 
 
 ## Importing Recordings
 
-**Import Audio** at the top of the **Recordings** list imports an existing file, with an optional meeting name, date and **Max Speakers**. It is unavailable while a paused or interrupted recording is waiting for you to resume, stop or discard it.
+**Import Audio** at the top of the **Recordings** list imports an existing file, with an optional meeting name, date, **Language** and **Max Speakers**. It is unavailable while a paused or interrupted recording is waiting for you to resume, stop or discard it.
 
 Keep the page open until the import finishes. Closing or reloading it during the upload makes the browser ask first. An import whose page closes or loses its connection before the whole file arrives cannot carry on, since the file is on your device. The recordings list marks it, and 15 minutes after the last of it arrived Nojoin says the import did not finish, in a notification that stays until you choose: **Import again** discards it and opens **Import Audio** so you can choose the file again, and **Discard** deletes what arrived. Closing the notification leaves the import until you next open or reload a page. An import that fails while the dialog is open is discarded at once, so trying again leaves nothing behind. An unfinished import never stops you starting a meeting.
 
@@ -111,7 +111,7 @@ Nojoin accepts WAV, MP3, M4A, AAC, WebM, OGG, FLAC, MP4, WMA and OPUS, and the m
 
 ### Retry Processing
 
-**Retry Processing**, in a recording's right-click menu in the recordings list, opens **Reprocess at higher quality**. Choose the transcription engine for this recording (Whisper, Parakeet or Canary), the Whisper model size if you chose Whisper, and optionally a new **Max Speakers**. Reprocessing replaces the transcript, the speaker labels and the AI meeting notes, so manual edits to those are lost. Your own notes, tags and documents are kept.
+**Retry Processing**, in a recording's right-click menu in the recordings list, opens **Reprocess at higher quality**. Choose the transcription engine for this recording (Whisper, Parakeet or Canary), the Whisper model size if you chose Whisper, the recording's **Language**, and optionally a new **Max Speakers**. Reprocessing replaces the transcript, the speaker labels and the AI meeting notes, so manual edits to those are lost. Your own notes, tags and documents are kept.
 
 If transcription fails, the recording is marked **Error**, a notification says so, and the transcript tab shows the reason. When the GPU or the server ran out of memory, free some memory or retry with a smaller model. Notes cannot be generated until the recording is reprocessed. A meeting in which nobody spoke finishes normally, and its transcript tab says no speech was detected.
 
@@ -347,8 +347,12 @@ Most settings belong to your account. One marked **This browser** is kept in the
 
 Two per-user settings:
 
-- **Transcription language**, under **Settings > Transcription**, is the language spoken in your recordings. The default is **Auto-detect**. Whisper can detect a language or be forced to one, Canary takes the listed forced languages, and Parakeet always detects.
+- **Transcription language**, under **Settings > Transcription**, is the language spoken in your recordings. The default is **Auto-detect**. Whisper can detect a language or be forced to one, and Parakeet always detects. Canary can't detect a language, so it needs one set: with Canary the setting shows **English** until you choose another, and recordings are transcribed as English.
 - **Notes language**, under **Settings > Notes and live assistance**, is the language of generated titles, headings, summaries, notes and action items, and of the AI meeting analysis. The default is English. Choose British or American English, the transcription language, another listed language, or **Custom** with your own instruction for language, conventions, tone and heading style.
+
+A recording can have its own language, set under **Language** when you import it or reprocess it. **Your default**, which every recording starts with, follows your transcription language setting. Another choice is kept for that recording, through later reprocesses, until you choose **Your default** again. Its notes follow it when the notes language is **Same as transcription**. Parakeet takes no language, so the field is hidden for it.
+
+With Whisper and VAD on, Nojoin also listens for the language on the first 30 seconds of speech, even when a language is set. When it is fairly sure the meeting is in another language than its transcript, the recording page says so above the tabs, once processing is complete. **Reprocess in** that language sets it as the recording's language and reprocesses with the same Whisper model, after you confirm; a language Nojoin doesn't list, such as Hebrew, is set to **Auto-detect**, which finds it again. **Keep** sets the transcript's language as the recording's. Either answer is kept, so the notice doesn't come back for that recording until you choose **Your default** for it again. Nothing is detected with VAD off, or with Parakeet or Canary.
 
 Changes apply to new work. Reprocess a recording to transcribe it in a new language, and generate its notes again to change their language; saved notes are not translated. Neither setting translates the interface, Meeting Edge or chat.
 
