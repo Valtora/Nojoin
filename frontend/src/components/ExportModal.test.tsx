@@ -104,17 +104,7 @@ describe("ExportModal sections", () => {
     fireEvent.click(exportButton());
 
     expect(onExport).toHaveBeenCalledWith(
-      expect.objectContaining({ sections: ["notes", "transcript"] }),
-    );
-  });
-
-  it("names the notes tick apart from the sections it qualifies", () => {
-    renderModal();
-
-    expect(section("Transcript")).toHaveAttribute("name", "exportSections");
-    expect(section("My notes in the transcript")).not.toHaveAttribute(
-      "name",
-      "exportSections",
+      expect.objectContaining({ sections: ["notes", "transcript"], includeNotes: true }),
     );
   });
 

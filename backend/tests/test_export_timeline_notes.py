@@ -1,8 +1,7 @@
 """The reader's timeline notes in an exported transcript (B5, #488).
 
-Notes sit in the transcript section where they fall, as in My notes: notes
-before the transcript first, each note at a time after the line it follows,
-notes after the transcript last. Every format sets them apart as a quote, and
+Notes sit in the transcript section: notes on the whole meeting first and
+last, the rest after the line they fall on. Every format sets them apart as a quote, and
 plain text quotes each of their lines, so none can pass for a line of speech.
 """
 

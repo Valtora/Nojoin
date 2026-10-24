@@ -146,7 +146,7 @@ A recording made by a much older version can refuse transcript and speaker edits
 - **Speakers keep their colours** in charts and the transcript. A colour too light to read as text, such as yellow, is printed in a darker shade.
 - **Text files** keep the notes as Markdown, with table columns padded to line up, and list a chart's figures in place of the chart.
 
-Every exported transcript line carries a `[MM:SS]` timestamp and the speaker's name, in all three formats. Your own notes sit in the transcript where they fall, as in My notes: notes before and after the transcript first and last, and each note at a time after its line, set apart as a quote with its `[MM:SS]` time. Untick **My notes in the transcript** to leave them out, say when you share the transcript. The generated meeting notes still end with your notes as they were when the notes were generated. An administrator can turn the Nojoin branding off ([Exported Files](ADMIN.md#exported-files)).
+Every exported transcript line carries a `[MM:SS]` timestamp and the speaker's name, in all three formats. Your own notes sit in the transcript, each set apart as a quote: notes on the whole meeting first and last, the rest after the line they fall on, with their `[MM:SS]` time. When the recording has saved notes of yours, untick **My notes in the transcript** to leave them out, say when you share the transcript. The generated meeting notes still end with your notes as they were when the notes were generated. An administrator can turn the Nojoin branding off ([Exported Files](ADMIN.md#exported-files)).
 
 ### Who Edited A Line
 

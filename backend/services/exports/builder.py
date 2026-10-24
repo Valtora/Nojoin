@@ -3,7 +3,8 @@
 The order is fixed whatever the reader ticked: notes, then analytics, then the
 transcript. Notes are what most readers came for, analytics qualify how the
 meeting went, and the transcript is the evidence for both. The reader's own
-timeline notes sit in the transcript where they fall, as in My notes.
+timeline notes sit in the transcript: notes on the whole meeting first and
+last, the rest after the line they fall on.
 """
 
 from __future__ import annotations
