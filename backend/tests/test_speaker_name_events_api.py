@@ -456,3 +456,123 @@ async def test_only_a_pending_name_can_be_answered(
         404,
     ]
     assert len(await _events(session_maker)) == 1
+
+
+async def _speaker(session_maker, speaker_id: int) -> dict[str, Any]:
+    async with session_maker() as session:
+        row = (
+            await session.execute(
+                text(
+                    "SELECT global_speaker_id, local_name, name, name_source, "
+                    "identity_locked, identity_confidence FROM recording_speakers "
+                    "WHERE id = :id"
+                ),
+                {"id": speaker_id},
+            )
+        ).one()
+    values = dict(row._mapping)
+    values["identity_locked"] = bool(values["identity_locked"])
+    return values
+
+
+async def _set(session_maker, sql: str, **params: Any) -> None:
+    async with session_maker() as session:
+        await session.execute(text(sql), params)
+        await session.commit()
+
+
+def _named(events: list[dict[str, Any]]) -> list[tuple[Any, ...]]:
+    return [(e["kind"], e["name"], e["global_speaker_id"], e["source"]) for e in events]
+
+
+# A link the user makes outside a rename is the user's too. Left with the
+# inferred name's source and no lock, it would read as pending: Retry Speaker
+# Inference would replace the name and drop the link, and Confirm would rename
+# the speaker back to the inferred name.
+
+
+@pytest.mark.parametrize(
+    "action",
+    [
+        {"action": "link_existing", "global_speaker_id": 8},
+        {"action": "force_link", "global_speaker_id": 8},
+        {"action": "create_new", "new_speaker_name": "Bob"},
+    ],
+)
+async def test_the_voiceprint_dialogs_link_is_the_users(
+    client, session_maker, action
+) -> None:
+    people = [{"id": 8, "name": "Bob"}] if "global_speaker_id" in action else []
+    await _seed(session_maker, people=people)
+    # A rename of the other speaker gives the recording its canonical lines,
+    # which a processed meeting has, for the link's row to be anchored on.
+    await _rename(client, "SPEAKER_01", "Sam")
+    await _offer(session_maker, 1, "Alex")
+    await _set(
+        session_maker,
+        "UPDATE recording_speakers SET embedding = '[1.0, 0.0]' WHERE id = 1",
+    )
+
+    response = await client.post(
+        f"/api/v1/speakers/recordings/{REC}/speakers/SPEAKER_00/voiceprint/apply",
+        json=action,
+    )
+
+    assert response.status_code == 200, response.text
+    person = response.json()["matched_speaker"]["id"]
+    speaker = await _speaker(session_maker, 1)
+    assert (
+        speaker["global_speaker_id"],
+        speaker["local_name"],
+        speaker["name_source"],
+        speaker["identity_locked"],
+    ) == (person, None, "user", True)
+    events = [e for e in await _events(session_maker) if e["recording_speaker_id"] == 1]
+    assert _named(events) == [("name", "Bob", person, "user")]
+    assert (events[0]["anchor_start_ms"], events[0]["anchor_end_ms"]) == (0, 8000)
+    # Nothing is pending, so Confirm can't rename the speaker back to "Alex".
+    assert (await _review(client, "SPEAKER_00", "accept")).status_code == 409
+    assert (await _speaker(session_maker, 1))["global_speaker_id"] == person
+
+
+async def test_a_line_moved_to_a_person_adopts_their_speaker_as_the_users(
+    client, session_maker, legacy_writes, stub_celery_dispatch
+) -> None:
+    await _seed(session_maker, people=[{"id": 7, "name": "Alex"}])
+    await _offer(session_maker, 1, "Alex")
+
+    # SPEAKER_01's line, moved to the person Alex: SPEAKER_00 already reads
+    # "Alex", so it becomes theirs.
+    response = await client.put(
+        f"/api/v1/transcripts/{REC}/segments/2",
+        json={"new_speaker_name": "Alex", "global_speaker_id": 7},
+    )
+
+    assert response.status_code == 200, response.text
+    speaker = await _speaker(session_maker, 1)
+    assert (
+        speaker["global_speaker_id"],
+        speaker["local_name"],
+        speaker["name_source"],
+        speaker["identity_locked"],
+    ) == (7, None, "user", True)
+
+
+async def test_add_to_people_on_the_legacy_path_is_the_users(
+    client, session_maker, legacy_writes
+) -> None:
+    await _seed(session_maker)
+    await _offer(session_maker, 2, "Sam", source="heuristic")
+
+    response = await client.post(
+        f"/api/v1/speakers/recordings/{REC}/speakers/SPEAKER_01/promote"
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert (body["name_source"], body["name_pending"]) == ("user", False)
+    speaker = await _speaker(session_maker, 2)
+    assert (speaker["global_speaker_id"], speaker["identity_locked"]) == (
+        body["global_speaker_id"],
+        True,
+    )

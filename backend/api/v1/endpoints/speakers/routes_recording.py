@@ -38,7 +38,11 @@ from backend.utils.canonical_pipeline.notes_propagation import (
 from backend.utils.speaker_name_suggestions import (
     supersede_pending_transcript_speaker_suggestions,
 )
-from backend.utils.speaker_names.events import UserNameAct, record_user_name_events
+from backend.utils.speaker_names.events import (
+    UserNameAct,
+    record_user_link,
+    record_user_name_events,
+)
 from backend.utils.speaker_names.sources import SOURCE_USER
 
 from .helpers import (
@@ -480,9 +484,9 @@ async def promote_speaker_to_global(
         )
 
     recording_speaker.global_speaker_id = target_global_speaker_id
-    recording_speaker.local_name = None
     recording_speaker.name = None
-    db.add(recording_speaker)
+    act = UserNameAct(speaker_name, target_global_speaker_id, current_user.id, "api")
+    await db.run_sync(lambda session: record_user_link(session, recording_speaker, act))
 
     transcript = (
         await db.execute(

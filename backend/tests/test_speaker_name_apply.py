@@ -323,6 +323,9 @@ def test_inference_may_replace_only_its_own_pending_names() -> None:
         _speaker("CARRIED", local_name="Hal", name_source="user"),
         _speaker("OLD", local_name="Fay"),
         _speaker("MERGED", local_name="Gus", name_source="llm", merged_into_id=1),
+        # An AI name beside a link made some other way, as the voiceprint
+        # dialog left one before it marked its links the user's.
+        _speaker("LINKED", local_name="Ivy", name_source="llm", global_speaker_id=6),
     ]
 
     assert get_speakers_eligible_for_llm_renaming(speakers) == ("LLM", "INTRO", "NEW")
@@ -367,6 +370,44 @@ def test_a_new_inference_replaces_a_pending_name_but_not_a_voice_match(
     )
 
     assert [item["suggested_name"] for item in persisted] == ["Alexander"]
+
+
+def test_a_new_inference_keeps_a_link_beside_a_pending_name(session) -> None:
+    from backend.worker.tasks.intelligence import (
+        _build_persisted_speaker_name_suggestions,
+    )
+
+    session.execute(
+        text(
+            """
+            INSERT INTO global_speakers (
+                id, created_at, updated_at, user_id, name, is_voiceprint_locked
+            ) VALUES (5, :now, :now, 1, 'Bob', 0)
+            """
+        ),
+        {"now": _now()},
+    )
+    first = session.get(RecordingSpeaker, 1)
+    first.local_name, first.name, first.name_source = "Alex", None, "llm"
+    first.global_speaker_id = 5
+    session.commit()
+    recording = session.get(Recording, 1)
+    speakers = [first, session.get(RecordingSpeaker, 2)]
+
+    persisted = _build_persisted_speaker_name_suggestions(
+        session,
+        recording=recording,
+        speakers=speakers,
+        inference_result=SpeakerInferenceResult(
+            suggestions=(SpeakerInferenceSuggestion("SPEAKER_00", "Alexander", 0.9),)
+        ),
+        origin="speaker_inference",
+        provider="openai",
+    )
+    apply_inferred_names(session, recording, speakers, persisted)
+
+    assert persisted == []
+    assert (first.global_speaker_id, first.local_name) == (5, "Alex")
 
 
 @pytest.mark.parametrize(

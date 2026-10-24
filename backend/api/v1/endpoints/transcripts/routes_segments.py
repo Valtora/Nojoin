@@ -37,6 +37,7 @@ from backend.utils.speaker_assignment import (
     reconcile_segment_assignment,
     segment_references_label,
 )
+from backend.utils.speaker_names.events import UserNameAct, record_user_link
 
 from .helpers import (
     FindReplaceRequest,
@@ -294,10 +295,17 @@ async def update_segment_speaker(
             )
 
             if target_recording_speaker:
-                target_recording_speaker.global_speaker_id = global_speaker.id
-                target_recording_speaker.local_name = None
-                target_recording_speaker.name = None
-                db.add(target_recording_speaker)
+                adopted = target_recording_speaker
+                adopted.global_speaker_id = global_speaker.id
+                adopted.name = None
+                # Moving a line to the person adopts the speaker of that name:
+                # the user's link, as a rename's is.
+                act = UserNameAct(
+                    global_speaker.name, global_speaker.id, current_user.id, "api"
+                )
+                await db.run_sync(
+                    lambda session: record_user_link(session, adopted, act)
+                )
                 await db.flush()
                 target_label = target_recording_speaker.diarization_label
                 target_speaker_id = target_recording_speaker.id

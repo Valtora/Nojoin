@@ -45,8 +45,15 @@ def inferred_name_may_be_replaced(speaker: Any) -> bool:
     """A pending self-introduction or LLM name, which a new inference may replace.
 
     The LLM ranks at or above both. A voiceprint match ranks above it and a
-    user's name above everything, so neither is offered to it.
+    user's name above everything, so neither is offered to it. Nor is a
+    speaker linked to a person: a pending inferred name never links anyone
+    (``apply_inferred_names`` links only names taken as given, which are
+    ``auto``), so a link beside one was made some other way and must stay.
     """
+    if getattr(speaker, "global_speaker_id", None) or getattr(
+        speaker, "global_speaker", None
+    ):
+        return False
     return name_is_pending(speaker) and getattr(speaker, "name_source", None) in (
         SOURCE_HEURISTIC,
         SOURCE_LLM,

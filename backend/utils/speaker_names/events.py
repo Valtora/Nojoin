@@ -128,3 +128,22 @@ def record_user_name_events(
         )
         written.append(add_event(session, speaker, row))
     return written
+
+
+def record_user_link(
+    session: Any,
+    speaker: RecordingSpeaker,
+    act: UserNameAct,
+) -> None:
+    """Mark a link the user made outside a rename as the user's, as a rename does.
+
+    The voiceprint dialog, a line moved to a person and the legacy Add to
+    People set the link themselves. Without this the speaker would keep a
+    machine source and no lock: it would still read as pending, and the next
+    inference could replace the name and drop the link.
+    """
+    speaker.local_name = None
+    speaker.name_source = SOURCE_USER
+    speaker.identity_locked = True
+    session.add(speaker)
+    record_user_name_events(session, speaker.recording_id, [speaker], act)

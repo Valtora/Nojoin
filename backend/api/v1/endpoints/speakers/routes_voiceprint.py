@@ -25,6 +25,7 @@ from backend.processing.embedding import (
 )
 from backend.processing.embedding_version import EMBEDDING_METHOD_VERSION
 from backend.utils.embedding_audio import select_recording_audio_for_embedding
+from backend.utils.speaker_names.events import UserNameAct, record_user_link
 
 from .helpers import (
     MEASURED_EXTRACTION_TASK,
@@ -215,6 +216,14 @@ async def extract_voiceprint(
     }
 
 
+async def _record_dialog_link(
+    db: AsyncSession, speaker: RecordingSpeaker, person: GlobalSpeaker, actor_id: int
+) -> None:
+    """The dialog's link is the user's, as a rename's is (``record_user_link``)."""
+    act = UserNameAct(person.name, person.id, actor_id, "api")
+    await db.run_sync(lambda session: record_user_link(session, speaker, act))
+
+
 @router.post("/recordings/{recording_id}/speakers/{diarization_label}/voiceprint/apply")
 async def apply_voiceprint_action(
     recording_id: str,
@@ -279,7 +288,7 @@ async def apply_voiceprint_action(
 
         rec_speaker.global_speaker_id = new_gs.id
         rec_speaker.name = new_gs.name
-        db.add(rec_speaker)
+        await _record_dialog_link(db, rec_speaker, new_gs, current_user.id)
         await db.commit()
 
         return VoiceprintResult(
@@ -312,7 +321,7 @@ async def apply_voiceprint_action(
 
         rec_speaker.global_speaker_id = gs.id
         rec_speaker.name = gs.name
-        db.add(rec_speaker)
+        await _record_dialog_link(db, rec_speaker, gs, current_user.id)
         await db.commit()
 
         action_verb = "Force-linked" if action.action == "force_link" else "Linked"
