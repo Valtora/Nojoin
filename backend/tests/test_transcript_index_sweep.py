@@ -31,11 +31,11 @@ CREATE TABLE recordings (
     client_status VARCHAR(32), upload_progress INTEGER NOT NULL, processing_progress INTEGER NOT NULL,
     processing_step VARCHAR(255), processing_started_at TIMESTAMP, processing_completed_at TIMESTAMP,
     pipeline_generation VARCHAR(32) DEFAULT 'unified', is_archived BOOLEAN NOT NULL,
-    is_deleted BOOLEAN NOT NULL, last_activity_at TIMESTAMP, capture_epoch INTEGER NOT NULL DEFAULT 0, user_id INTEGER, calendar_event_id INTEGER
+    is_deleted BOOLEAN NOT NULL, last_activity_at TIMESTAMP, capture_epoch INTEGER NOT NULL DEFAULT 0, transcription_language VARCHAR(16), user_id INTEGER, calendar_event_id INTEGER
 );
 CREATE TABLE transcripts (
     id INTEGER PRIMARY KEY, created_at TIMESTAMP NOT NULL, updated_at TIMESTAMP NOT NULL,
-    recording_id INTEGER NOT NULL UNIQUE, text TEXT, segments JSON, notes TEXT,
+    recording_id INTEGER NOT NULL UNIQUE, text TEXT, segments JSON, language_detection JSON, notes TEXT,
     meeting_edge_focus TEXT, meeting_edge_payload JSON,
     meeting_edge_status VARCHAR DEFAULT 'idle', meeting_edge_error_message TEXT,
     meeting_edge_source_signature TEXT, speaker_name_suggestions JSON,

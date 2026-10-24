@@ -4,6 +4,7 @@ from backend.processing.engines.errors import (
     transcription_error_from,
 )
 from backend.utils.import_audio import KEEPING_AUDIO_STEP
+from backend.utils.language_notice import language_detection_record
 from backend.utils.transcription_models import known_engine_override
 
 from .constants import *
@@ -14,7 +15,11 @@ from .final_asr import (
 from .final_segments import combine_and_consolidate_segments, drop_unheard_words
 from .speaker_assignment import assign_and_identify_speakers
 from .stage_vram import release_asr_vram, release_diarization_vram
-from .vad_stage import run_vad_stage, transcription_audio_after_diarization
+from .vad_stage import (
+    run_phantom_filter,
+    run_vad_stage,
+    transcription_audio_after_diarization,
+)
 
 # ---------------------------------------------------------------------------
 # process_recording_task orchestration stages
@@ -48,6 +53,9 @@ class _PipelineRunContext:
     # Set once the VAD stage picks the diarisation side's (16k mono) audio;
     # consumed by the speaker-assignment stage for voiceprints.
     diarization_audio_path: str | None = None
+    # (segment, track) of each turn the phantom filter confirmed as non-speech;
+    # the union file transcription reads keeps them muted (#678).
+    non_speech_turns: tuple = ()
 
 
 @dataclass
@@ -270,16 +278,7 @@ def _run_final_diarization_stage(
             session.add(recording)
             session.commit()
         else:
-            from backend.processing.phantom_filter import filter_phantom_speakers
-
-            try:
-                diarization_result = filter_phantom_speakers(
-                    diarization_result, audio_path, config=merged_config
-                )
-            except Exception as e:  # noqa: BLE001 -- boundary: phantom filter is best-effort
-                logger.warning(
-                    f"Phantom speaker filter failed, continuing with unfiltered result: {e}"
-                )
+            diarization_result = run_phantom_filter(ctx, diarization_result, audio_path)
 
             # How much speech each cluster actually holds. This is what shows
             # whether an unexpected extra speaker is a negligible fragment or a
@@ -319,10 +318,12 @@ def _persist_final_transcript(
     ).first()
 
     full_text = transcription_result.get("text", "")
+    detection = language_detection_record(transcription_result, ctx.merged_config)
 
     if transcript:
         transcript.text = full_text
         transcript.segments = final_segments
+        transcript.language_detection = detection
         transcript.complete_transcription()
         transcript.set_notes_error_message(None)
         if transcript.notes_status == "error":
@@ -333,6 +334,7 @@ def _persist_final_transcript(
             recording_id=recording.id,
             text=full_text,
             segments=final_segments,
+            language_detection=detection,
             transcript_status="completed",
         )
         session.add(transcript)
@@ -542,6 +544,9 @@ def process_recording_task(
 
     llm_config = resolve_llm_config(session, user_settings, user_id=recording.user_id)
     merged_config = llm_config.merged_config
+    # The recording's language over the owner's (#671). In place, like the
+    # engine override: the notes stage reads this same dict.
+    merged_config.update(apply_recording_language(merged_config, recording))
 
     # Platform/Device detection for UX
     import torch
@@ -914,33 +919,6 @@ def _llm_backend_from_config_impl(llm_config: ResolvedLLMConfig):
     from backend.processing.llm_services import get_llm_backend_with_secondary
 
     return get_llm_backend_with_secondary(llm_config)
-
-
-def _is_unresolved_speaker_label(label: object) -> bool:
-    return str(label or "").strip().upper() in {"", "UNKNOWN"}
-
-
-def _collect_ordered_final_speaker_labels(final_segments: Sequence[dict]) -> list[str]:
-    ordered_speakers: list[str] = []
-    seen_speakers: set[str] = set()
-    for seg in final_segments:
-        speaker_label = str(seg.get("speaker") or "UNKNOWN")
-        if (
-            not _is_unresolved_speaker_label(speaker_label)
-            and speaker_label not in seen_speakers
-        ):
-            ordered_speakers.append(speaker_label)
-            seen_speakers.add(speaker_label)
-        for overlapping_spk in seg.get("overlapping_speakers", []):
-            overlapping_label = str(overlapping_spk or "UNKNOWN")
-            if (
-                _is_unresolved_speaker_label(overlapping_label)
-                or overlapping_label in seen_speakers
-            ):
-                continue
-            ordered_speakers.append(overlapping_label)
-            seen_speakers.add(overlapping_label)
-    return ordered_speakers
 
 
 # Providers that run on the user's own hardware. Their meeting-intelligence

@@ -173,7 +173,10 @@ def _resolve_backend(session, recording):
     """The provider chain for this recording's owner, or a reason there is none."""
     from backend.models.user import User
     from backend.processing.llm_services import get_llm_backend_with_secondary
-    from backend.utils.languages import resolve_language_preferences
+    from backend.utils.languages import (
+        apply_recording_language,
+        resolve_language_preferences,
+    )
     from backend.utils.llm_config import resolve_llm_config
 
     user_settings: dict[str, Any] = {}
@@ -188,7 +191,7 @@ def _resolve_backend(session, recording):
         return None, None, missing
 
     preferences = resolve_language_preferences(
-        llm_config.merged_config,
+        apply_recording_language(llm_config.merged_config, recording),
         transcription_backend=llm_config.merged_config.get("transcription_backend"),
     )
     return (

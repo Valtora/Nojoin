@@ -63,7 +63,10 @@ from backend.utils.config_manager import (
     get_meeting_edge_context_level,
     is_meeting_edge_enabled,
 )
-from backend.utils.languages import resolve_language_preferences
+from backend.utils.languages import (
+    apply_recording_language,
+    resolve_language_preferences,
+)
 from backend.utils.llm_config import (
     LLM_PURPOSE_MEETING_EDGE,
     ResolvedLLMConfig,
