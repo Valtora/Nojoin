@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useOnDepsChange } from "@/lib/useOnDepsChange";
 
 import { getTranscriptUtterances } from "@/lib/api/transcript";
@@ -47,6 +47,28 @@ export interface LiveTranscript {
   segments: TranscriptSegment[];
   /** False until the first fetch resolves, so callers can tell empty from unknown. */
   hasLoaded: boolean;
+  /** Live label -> the name the user gave it, as the last read or rename said. */
+  liveSpeakerNames: Readonly<Record<string, string>>;
+  /** Shows the names a rename answered with, ahead of the next read. */
+  applyLiveSpeakerNames: (names: Record<string, string>) => void;
+}
+
+const NO_NAMES: Readonly<Record<string, string>> = {};
+
+/**
+ * `next`, or `previous` when it holds the same names: every poll answers with
+ * a new object, and a new one would re-render the panel each time.
+ */
+function sameOrNext(
+  previous: Readonly<Record<string, string>>,
+  next: Readonly<Record<string, string>> | undefined,
+): Readonly<Record<string, string>> {
+  const entries = Object.entries(next ?? {});
+  if (entries.length === 0) return NO_NAMES;
+  const unchanged =
+    entries.length === Object.keys(previous).length &&
+    entries.every(([label, name]) => previous[label] === name);
+  return unchanged ? previous : (next as Readonly<Record<string, string>>);
 }
 
 /**
@@ -62,7 +84,8 @@ export interface LiveTranscript {
  * leaves the editor's undo history untouched.
  *
  * Read-only by construction: nothing here writes to the server or to any state
- * outside the hook.
+ * outside the hook. A rename made elsewhere hands its answer to
+ * `applyLiveSpeakerNames`, so the new name shows before the next read.
  */
 export function useLiveTranscript(
   recording: Recording | null | undefined,
@@ -72,6 +95,8 @@ export function useLiveTranscript(
 
   const [segments, setSegments] = useState<TranscriptSegment[]>([]);
   const [hasLoaded, setHasLoaded] = useState(false);
+  const [liveSpeakerNames, setLiveSpeakerNames] =
+    useState<Readonly<Record<string, string>>>(NO_NAMES);
   const stateRef = useRef<LocalTranscriptState | null>(null);
 
   // A feed that starts, or restarts for another recording, shows nothing until
@@ -80,6 +105,7 @@ export function useLiveTranscript(
     if (recordingId && isLive) {
       setSegments([]);
       setHasLoaded(false);
+      setLiveSpeakerNames(NO_NAMES);
     }
   });
 
@@ -131,6 +157,9 @@ export function useLiveTranscript(
 
       stateRef.current = nextState;
       setSegments(nextState.segments);
+      setLiveSpeakerNames((previous) =>
+        sameOrNext(previous, delta.live_speaker_names),
+      );
       setHasLoaded(true);
     };
 
@@ -166,5 +195,11 @@ export function useLiveTranscript(
     };
   }, [recordingId, isLive]);
 
-  return { segments, hasLoaded };
+  const applyLiveSpeakerNames = useCallback(
+    (names: Record<string, string>) =>
+      setLiveSpeakerNames((previous) => sameOrNext(previous, names)),
+    [],
+  );
+
+  return { segments, hasLoaded, liveSpeakerNames, applyLiveSpeakerNames };
 }

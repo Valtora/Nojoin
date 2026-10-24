@@ -28,6 +28,7 @@ import { capturesAmongLines, type CaptureItem } from "./captures/captureItems";
 import CollapsedLineNotes from "./notes/CollapsedLineNotes";
 import TimelineNoteLine from "./notes/TimelineNoteLine";
 import LiveLineMenu from "./transcript/LiveLineMenu";
+import LiveSpeakerChip from "./transcript/LiveSpeakerChip";
 import TranscriptSelectionNotes from "./transcript/TranscriptSelectionToolbar";
 import TranscriptLineText from "./transcript/TranscriptLineText";
 
@@ -73,12 +74,14 @@ const sourceChannelOf = (
 };
 
 /**
- * "Speaker 3" for a line the live lane labelled `LIVE_PROVISIONAL_3`, else null.
- * These are not the final pass's speakers, which are named when the recording
- * is processed.
+ * The line's live label (`LIVE_PROVISIONAL_3`), else null. These are not the
+ * final pass's speakers: a name given to one reaches the processed speaker who
+ * holds that speech.
  */
-const liveSpeakerOf = (segment: TranscriptSegment): string | null =>
-  liveSpeakerDisplayName(segment.speaker);
+const liveLabelOf = (segment: TranscriptSegment): string | null =>
+  liveSpeakerDisplayName(segment.speaker) === null ? null : segment.speaker;
+
+const NO_NAMES: Readonly<Record<string, string>> = {};
 
 interface LiveTranscriptPanelProps {
   segments: TranscriptSegment[];
@@ -100,6 +103,12 @@ interface LiveTranscriptPanelProps {
   onOpenCapture?: (capture: Capture) => void;
   onRetryCapture?: (key: string) => void;
   onDiscardCapture?: (key: string) => void;
+  /** Live label -> the name the user gave it; others read "Speaker <n>". */
+  liveSpeakerNames?: Readonly<Record<string, string>>;
+  /** Names a live speaker from its label chip; without it the chip is text. */
+  onRenameLiveSpeaker?: (label: string, name: string) => Promise<void>;
+  /** The People names the rename offers while typing. */
+  loadPeopleNames?: () => Promise<readonly string[]>;
 }
 
 const NO_NOTES: readonly InlineNote[] = [];
@@ -117,11 +126,12 @@ const noteTimeMs = (note: InlineNote) =>
  * (`placeTimelineNotes`, the rule every view and prompt shares). Not a second
  * transcript editor: there is nothing to edit and no playback, because neither
  * is meaningful before the recording exists as a file. A line's ⋯ menu only
- * puts the note box's next note on that line. Names are deliberately absent: identity is decided at finalize. When
- * live speaker labels are on, a line may carry a provisional label ("Speaker
- * 3") from the live lane's clustering. It is italic and muted until the label
- * locks, so the cue does not rest on colour alone. Which capture channel
- * carried the audio is shown as well.
+ * puts the note box's next note on that line. When live speaker labels are
+ * on, a line may carry a provisional label ("Speaker 3") from the live lane's
+ * clustering. It is italic and muted until the label locks, so the cue does not
+ * rest on colour alone. Its chip renames the live speaker; the name stands in
+ * for "Speaker 3" here and is carried to the processed speaker holding that
+ * speech. Which capture channel carried the audio is shown as well.
  */
 export default function LiveTranscriptPanel({
   segments,
@@ -136,6 +146,9 @@ export default function LiveTranscriptPanel({
   onOpenCapture,
   onRetryCapture,
   onDiscardCapture,
+  liveSpeakerNames = NO_NAMES,
+  onRenameLiveSpeaker,
+  loadPeopleNames,
 }: LiveTranscriptPanelProps) {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [isPinnedToBottom, setIsPinnedToBottom] = useState(true);
@@ -149,7 +162,7 @@ export default function LiveTranscriptPanel({
         const sourceChannel = sourceChannelOf(segment);
         const previous = index > 0 ? segments[index - 1] : undefined;
         const previousChannel = previous ? sourceChannelOf(previous) : undefined;
-        const speaker = liveSpeakerOf(segment);
+        const speakerLabel = liveLabelOf(segment);
 
         return {
           segment,
@@ -157,10 +170,10 @@ export default function LiveTranscriptPanel({
           sourceChannel,
           showSourceLabel:
             sourceChannel !== null && sourceChannel !== previousChannel,
-          speaker:
-            speaker !== null &&
-            (previous === undefined || speaker !== liveSpeakerOf(previous))
-              ? speaker
+          speakerLabel:
+            speakerLabel !== null &&
+            (previous === undefined || speakerLabel !== liveLabelOf(previous))
+              ? speakerLabel
               : null,
           speakerLocked: segment.speaker_state === "stable",
         };
@@ -322,7 +335,7 @@ export default function LiveTranscriptPanel({
                 <ol className="space-y-3">
                   {notesAmongLines.opening.map(renderNote)}
                   {capturesAmong.opening.map(captureLine)}
-                  {lines.map(({ segment, key, sourceChannel, showSourceLabel, speaker, speakerLocked }, index) => [
+                  {lines.map(({ segment, key, sourceChannel, showSourceLabel, speakerLabel, speakerLocked }, index) => [
                     <li
                       key={key}
                       data-testid="live-transcript-line"
@@ -330,18 +343,18 @@ export default function LiveTranscriptPanel({
                       data-line-actions
                       className="group/line"
                     >
-                      {speaker ? (
-                        <div
-                          data-testid="live-transcript-speaker"
-                          data-locked={speakerLocked ? "true" : "false"}
-                          className={
-                            speakerLocked
-                              ? "mb-1 text-xs font-semibold text-contrast-muted"
-                              : "mb-1 text-xs italic text-contrast-helper"
+                      {speakerLabel ? (
+                        <LiveSpeakerChip
+                          label={speakerLabel}
+                          name={
+                            liveSpeakerNames[speakerLabel] ??
+                            liveSpeakerDisplayName(speakerLabel) ??
+                            speakerLabel
                           }
-                        >
-                          {speaker}
-                        </div>
+                          locked={speakerLocked}
+                          onRename={onRenameLiveSpeaker}
+                          loadPeopleNames={loadPeopleNames}
+                        />
                       ) : null}
                       {showSourceLabel && sourceChannel ? (
                         <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-action-text">

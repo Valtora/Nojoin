@@ -15,7 +15,11 @@ from sqlalchemy import create_engine, event, text
 from sqlmodel import Session
 
 from backend.processing.llm_backends.base import LLMBackend
-from backend.tests.sqlite_schemas import TIMELINE_NOTES_SCHEMA, USERS_SCHEMA
+from backend.tests.sqlite_schemas import (
+    SPEAKER_NAME_EVENTS_SCHEMA,
+    TIMELINE_NOTES_SCHEMA,
+    USERS_SCHEMA,
+)
 from backend.tests.test_canonical_transcript_phase1 import (
     GLOBAL_SPEAKERS_SCHEMA,
     PEOPLE_TAGS_SCHEMA,
@@ -45,6 +49,7 @@ def engine(tmp_path, monkeypatch):
             TRANSCRIPT_UTTERANCES_SCHEMA,
             USERS_SCHEMA,
             TIMELINE_NOTES_SCHEMA,
+            SPEAKER_NAME_EVENTS_SCHEMA,
         ):
             connection.execute(text(schema))
         connection.execute(

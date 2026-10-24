@@ -39,6 +39,7 @@ from backend.tests.sqlite_schemas import (
     RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA,
     RECORDING_SPEAKERS_SCHEMA,
     RECORDINGS_SCHEMA,
+    SPEAKER_NAME_EVENTS_SCHEMA,
     TIMELINE_NOTES_SCHEMA,
     TRANSCRIPTS_SCHEMA,
     USERS_SCHEMA,
@@ -108,6 +109,7 @@ def api(monkeypatch):
                 RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA,
                 TIMELINE_NOTES_SCHEMA,
                 DOCUMENTS_SCHEMA,
+                SPEAKER_NAME_EVENTS_SCHEMA,
             ):
                 await conn.execute(text(schema))
         state.user = User(

@@ -32,6 +32,7 @@ from backend.utils.canonical_pipeline import (
     update_utterance_text as update_canonical_utterance_text,
 )
 from backend.utils.config_manager import is_meeting_edge_enabled
+from backend.utils.speaker_names.live import live_speaker_names
 
 from .helpers import (
     TranscriptSegmentSpeakerUpdate,
@@ -100,16 +101,16 @@ async def get_transcript_utterances(
             ],
         )
 
-    revision, utterances, tombstones = await db.run_sync(
-        lambda sync_session: (
-            ensure_canonical_backfill(sync_session, recording.id),
-            serialize_canonical_delta(
-                sync_session,
-                recording.id,
-                after_revision=after_revision,
-            ),
-        )[1]
-    )
+    def _read_delta(sync_session):
+        ensure_canonical_backfill(sync_session, recording.id)
+        delta = serialize_canonical_delta(
+            sync_session,
+            recording.id,
+            after_revision=after_revision,
+        )
+        return delta, live_speaker_names(sync_session, recording.id)
+
+    (revision, utterances, tombstones), live_names = await db.run_sync(_read_delta)
     await db.commit()
     await db.refresh(transcript)
 
@@ -147,6 +148,7 @@ async def get_transcript_utterances(
             )
             for speaker in speakers
         ],
+        live_speaker_names=live_names,
     )
 
 

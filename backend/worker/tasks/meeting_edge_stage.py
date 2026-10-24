@@ -13,6 +13,7 @@ from backend.services.timeline_note_service import (
     load_recording_timeline_notes,
 )
 from backend.utils.meeting_edge import normalize_meeting_edge_items
+from backend.utils.speaker_names.live import with_live_speaker_names
 from backend.utils.timeline_notes import (
     iter_timeline,
     render_note_line,
@@ -377,7 +378,9 @@ def _refresh_meeting_edge(self, recording_id: int):
                 RecordingSpeaker.recording_id == recording_id
             )
         ).all()
-        speaker_map = build_recording_speaker_map(speakers)
+        speaker_map = with_live_speaker_names(
+            session, recording_id, build_recording_speaker_map(speakers)
+        )
         recent_transcript = _build_recent_meeting_edge_transcript(
             segments, speaker_map, timeline_notes
         )

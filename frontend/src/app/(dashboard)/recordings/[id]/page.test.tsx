@@ -138,6 +138,7 @@ vi.mock("@/components/SpeakerPanel", () => ({
 vi.mock("@/components/TranscriptView", () => ({
   default: ({
     segments,
+    speakerMap,
     onRenameSpeaker,
     onUpdateSegmentText,
     onUndo,
@@ -145,13 +146,18 @@ vi.mock("@/components/TranscriptView", () => ({
     timelineNotes,
   }: {
     segments: TranscriptSegment[];
+    speakerMap: Record<string, string>;
     onRenameSpeaker: (label: string, newName: string) => void;
     onUpdateSegmentText: (segment: TranscriptSegment, text: string) => void;
     onUndo: () => void;
     canUndo: boolean;
     timelineNotes?: readonly { body: string }[] | null;
   }) => (
-    <div data-testid="transcript-view" data-can-undo={String(canUndo)}>
+    <div
+      data-testid="transcript-view"
+      data-can-undo={String(canUndo)}
+      data-speaker-map={JSON.stringify(speakerMap)}
+    >
       segments:{segments.length}
       <span data-testid="transcript-notes">
         {(timelineNotes ?? []).map((note) => note.body).join(" | ")}
@@ -437,6 +443,32 @@ describe("RecordingPage (detail)", () => {
 
     await waitFor(() => {
       expect(getTranscriptUtterances).toHaveBeenCalledWith("rec-1", undefined);
+    });
+  });
+
+  it("names live labels as they were named during capture, when processing kept the live lines", async () => {
+    getRecording.mockResolvedValue(
+      buildRecording({
+        status: RecordingStatus.ERROR,
+        speakers: [],
+        transcript: {
+          ...buildRecording().transcript!,
+          segments: [
+            { start: 0, end: 2, text: "Hello there", speaker: "LIVE_PROVISIONAL_3" },
+          ],
+        },
+      }),
+    );
+    getTranscriptUtterances.mockResolvedValue(
+      buildUtteranceList({ live_speaker_names: { LIVE_PROVISIONAL_3: "Alex" } }),
+    );
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(
+        JSON.parse(screen.getByTestId("transcript-view").dataset.speakerMap ?? "{}"),
+      ).toEqual({ LIVE_PROVISIONAL_3: "Alex" });
     });
   });
 

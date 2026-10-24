@@ -303,6 +303,16 @@ export interface TranscriptUtteranceList {
   utterances: TranscriptUtterance[];
   tombstones: string[];
   speakers: RecordingSpeaker[];
+  /**
+   * Live label (`LIVE_PROVISIONAL_<n>`) -> the name the user gave it during
+   * capture. Whole on every read, delta or not: naming changes no utterance.
+   */
+  live_speaker_names?: Record<string, string>;
+}
+
+/** The answer to naming a live speaker: every live name, as the live read gives it. */
+export interface LiveSpeakerNames {
+  live_speaker_names: Record<string, string>;
 }
 
 export interface TranscriptSegment {

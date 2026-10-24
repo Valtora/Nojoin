@@ -120,6 +120,12 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
   const [history, setHistory] = useState<TranscriptHistoryItem[]>([]);
   const [future, setFuture] = useState<TranscriptHistoryItem[]>([]);
   const [isUndoing, setIsUndoing] = useState(false);
+  // The names given to live labels during capture, which a transcript still
+  // made of live lines (processing, or processing failed) shows.
+  const [liveSpeakerNames, setLiveSpeakerNames] = useState<{
+    recordingId: string;
+    names: Record<string, string>;
+  } | null>(null);
   const [transcriptState, setTranscriptState] = useState<LocalTranscriptState | null>(
     null,
   );
@@ -292,6 +298,13 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
       const nextSegments = nextState.segments;
       transcriptStateRef.current = nextState;
       setTranscriptState(nextState);
+      const liveNames = transcriptDelta.live_speaker_names ?? {};
+      setLiveSpeakerNames((current) =>
+        current?.recordingId === recording.id &&
+        JSON.stringify(current.names) === JSON.stringify(liveNames)
+          ? current
+          : { recordingId: recording.id, names: liveNames },
+      );
 
       if (mode === "delta" && nextSegments.length > 0) {
         setHistory((currentHistory) =>
@@ -1158,8 +1171,12 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
   };
 
   const speakerMap = useMemo(() => {
-    return buildRecordingSpeakerDisplayMap(recording?.speakers, globalSpeakerById);
-  }, [globalSpeakerById, recording?.speakers]);
+    const speakers = buildRecordingSpeakerDisplayMap(recording?.speakers, globalSpeakerById);
+    // A live label has no speaker of the recording, so no name is replaced.
+    return liveSpeakerNames && liveSpeakerNames.recordingId === recording?.id
+      ? { ...liveSpeakerNames.names, ...speakers }
+      : speakers;
+  }, [globalSpeakerById, recording?.speakers, recording?.id, liveSpeakerNames]);
 
   return {
     // Core data
