@@ -389,15 +389,17 @@ export default function SpeakerPanel({
                 {entry.pendingName && !isRenaming && (
                   <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1.5 rounded-md border border-status-warning-border bg-status-warning-bg px-2 py-1.5">
                     {entry.pendingName.reason && (
-                      <p className="min-w-0 flex-1 text-xs text-status-warning-fg">
+                      <p className="min-w-[8rem] flex-1 text-xs text-status-warning-fg">
                         {entry.pendingName.reason}
                       </p>
                     )}
-                    <div className="ml-auto flex shrink-0 items-center gap-1.5">
+                    {/* The reason wraps above the buttons in a narrow
+                        column, and a long Not {name} truncates inside it. */}
+                    <div className="ml-auto flex min-w-0 max-w-full items-center gap-1.5">
                       <button
                         type="button"
                         aria-label={`Confirm ${entry.displayName}`}
-                        className={`rounded px-2 py-1 text-xs font-medium bg-action text-action-on hover:bg-action-hover ${TOUCH_TARGET_HEIGHT} ${DISABLED_LOOK}`}
+                        className={`shrink-0 rounded px-2 py-1 text-xs font-medium bg-action text-action-on hover:bg-action-hover ${TOUCH_TARGET_HEIGHT} ${DISABLED_LOOK}`}
                         {...loadingButtonProps(isReviewingName, undefined, () =>
                           handleReviewName(entry, "confirm"),
                         )}
@@ -406,7 +408,7 @@ export default function SpeakerPanel({
                       </button>
                       <button
                         type="button"
-                        className={`max-w-[10rem] truncate rounded border border-control-border bg-surface-card px-2 py-1 text-xs font-medium text-foreground hover:bg-surface-inset ${TOUCH_TARGET_HEIGHT} ${DISABLED_LOOK}`}
+                        className={`min-w-0 max-w-[10rem] truncate rounded border border-control-border bg-surface-card px-2 py-1 text-xs font-medium text-foreground hover:bg-surface-inset ${TOUCH_TARGET_HEIGHT} ${DISABLED_LOOK}`}
                         {...loadingButtonProps(isReviewingName, undefined, () =>
                           handleReviewName(entry, "dismiss"),
                         )}
