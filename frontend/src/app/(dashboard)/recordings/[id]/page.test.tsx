@@ -61,13 +61,26 @@ vi.mock("@/lib/capture/CaptureProvider", () => ({
   }),
 }));
 
+const setSideTab = vi.fn();
+const setSpeakerPanelCollapsed = vi.fn();
+
+// Both side panels collapsed, so desktop shows the rail.
 vi.mock("@/lib/store", () => ({
-  useNavigationStore: () => ({
-    chatPanelHeight: 30,
-    setChatPanelHeight: vi.fn(),
-    activePanel,
-    setActivePanel,
-  }),
+  useNavigationStore: (select?: (state: Record<string, unknown>) => unknown) => {
+    const state = {
+      chatPanelHeight: 30,
+      setChatPanelHeight: vi.fn(),
+      activePanel,
+      setActivePanel,
+      isSpeakerPanelCollapsed: true,
+      isChatPanelCollapsed: true,
+      setSpeakerPanelCollapsed,
+      setChatPanelCollapsed: vi.fn(),
+      sideTab: "my-notes",
+      setSideTab,
+    };
+    return select ? select(state) : state;
+  },
 }));
 
 vi.mock("@/lib/api", () => ({
@@ -179,6 +192,15 @@ vi.mock("@/components/ExportModal", () => ({
     />
   ),
 }));
+vi.mock("./_components/AnalyticsSection", () => ({
+  default: ({ onReviewSpeakers }: { onReviewSpeakers?: () => void }) => (
+    <div role="tabpanel" id="panel-analytics" aria-labelledby="tab-analytics">
+      <button type="button" onClick={onReviewSpeakers}>
+        Review speakers
+      </button>
+    </div>
+  ),
+}));
 vi.mock("@/components/RecordingTagEditor", () => ({
   default: () => <div data-testid="recording-tag-editor" />,
 }));
@@ -257,6 +279,8 @@ describe("RecordingPage (detail)", () => {
     routerRefresh.mockReset();
     addNotification.mockReset();
     setActivePanel.mockReset();
+    setSideTab.mockReset();
+    setSpeakerPanelCollapsed.mockReset();
     exportAudio.mockReset();
     getRecording.mockReset();
     getSettings.mockReset();
@@ -713,6 +737,25 @@ describe("RecordingPage (detail)", () => {
 
     expect(setActivePanel).toHaveBeenLastCalledWith("transcript");
     await waitFor(() => expect(document.activeElement).toBe(document.getElementById("panel-transcript")));
+  });
+
+  it.each(["speakers", "my-notes"])(
+    "falls back to the transcript on desktop from the phone's %s panel",
+    async (panel) => {
+      activePanel = panel;
+      await openTabs(1440);
+
+      await waitFor(() => expect(setActivePanel).toHaveBeenCalledWith("transcript"));
+    },
+  );
+
+  it("opens Speakers in the side column from Analytics' link on desktop", async () => {
+    await openTabs(1440);
+
+    fireEvent.click(screen.getByRole("button", { name: "Review speakers" }));
+
+    expect(setSideTab).toHaveBeenCalledWith("speakers");
+    expect(setSpeakerPanelCollapsed).toHaveBeenCalledWith(false);
   });
 
   it("keeps four tabs on desktop, where the speaker panel is in the side column", async () => {
