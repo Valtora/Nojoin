@@ -16,7 +16,7 @@ translucent glass and no `backdrop-filter`. The brand gradient appears only in t
    inside a card, such as meters and consoles. No card contains another card; see
    [Surface nesting](#surface-nesting).
 2. **Light separates by shadow, dark by lightness.** `--surface-card-shadow` is a 4% shadow in
-   light mode and `none` in dark.
+   light mode and a transparent zero shadow (`0 0 #0000`) in dark, which draws nothing.
 3. **Floats are the exception.** Modals, dropdowns, popovers, tooltips and toasts use
    `--surface-float` and carry `--float-shadow` in both themes. In dark mode the float surface is
    lighter than a card, since a scrim cannot darken a page that is already dark. A float does not
@@ -159,7 +159,7 @@ Use these instead of raw Tailwind greys for body-adjacent text and borders.
 | `--surface-card` | `#ffffff` | `#202020` |
 | `--surface-card-border` | `rgba(203, 213, 225, 0.58)` | `rgba(75, 85, 99, 0.38)` |
 | `--surface-divider` | `rgba(203, 213, 225, 0.42)` | `rgba(75, 85, 99, 0.25)` |
-| `--surface-card-shadow` | `0 1px 2px 0 rgb(15 23 42 / 0.04)` | `none` |
+| `--surface-card-shadow` | `0 1px 2px 0 rgb(15 23 42 / 0.04)` | `0 0 #0000` |
 | `--surface-inset` | `rgba(241, 245, 249, 0.75)` | `rgba(255, 255, 255, 0.03)` |
 | `--surface-float` | `#ffffff` | `#2a2a2a` |
 | `--surface-float-border` | `rgba(203, 213, 225, 0.9)` | `rgba(148, 163, 184, 0.22)` |
@@ -168,6 +168,11 @@ The hairlines sit close to the 1.15:1 house floor in both themes on purpose; in 
 shadow, not the border, lifts a card. Against the dark card `--action` clears the 3:1 a resting
 fill owes by only 3.15:1, so the dark page, card and float move together: lightening the card
 alone fails the audit.
+
+**A shadow token is never `none`**, in any theme or palette. Tailwind writes `shadow-card` and
+`ring-*` into one `box-shadow` list, and `none` inside a list makes the whole declaration
+invalid, so an element with both would draw no ring. Write "no shadow" as `0 0 #0000`, which
+composes and draws nothing; `shadowTokens.test.ts` fails on a `none`.
 
 ### Controls
 
