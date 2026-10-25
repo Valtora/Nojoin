@@ -1,3 +1,4 @@
+import { ButtonBase, InputBase } from '@/components/ui/nativeBases';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { updatePasswordMe, updateUserMe } from '@/lib/api';
@@ -186,7 +187,7 @@ export default function AccountSettings({
             label="Username"
             controlId="account-username"
           >
-            <input
+            <InputBase
               id="account-username"
               name="account-username"
               type="text"
@@ -241,7 +242,7 @@ export default function AccountSettings({
                 label="Current password"
                 controlId="account-current-password"
               >
-                <input
+                <InputBase
                   id="account-current-password"
                   name="account-current-password"
                   type="password"
@@ -260,7 +261,7 @@ export default function AccountSettings({
                 controlId="account-new-password"
                 description="At least 8 characters."
               >
-                <input
+                <InputBase
                   id="account-new-password"
                   name="account-new-password"
                   type="password"
@@ -280,7 +281,7 @@ export default function AccountSettings({
                 label="Confirm new password"
                 controlId="account-confirm-password"
               >
-                <input
+                <InputBase
                   id="account-confirm-password"
                   name="account-confirm-password"
                   type="password"
@@ -296,7 +297,8 @@ export default function AccountSettings({
               </SettingsRow>
 
               <SettingsBlock className="flex justify-end">
-                <button
+                <ButtonBase
+                  chrome="action"
                   type="submit"
                   {...loadingButtonProps(passwordLoading)}
                   className={SETTINGS_BUTTON_PRIMARY}
@@ -305,7 +307,7 @@ export default function AccountSettings({
                     <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
                   )}
                   Update password
-                </button>
+                </ButtonBase>
               </SettingsBlock>
             </form>
           )}

@@ -4,6 +4,7 @@ import { isSameDay } from 'date-fns';
 import { Calendar } from 'lucide-react';
 
 import { cn } from '@/lib/cn';
+import { ButtonBase } from './nativeBases';
 
 interface ModernDatePickerProps extends Omit<DatePickerProps, 'onChange' | 'selectsRange' | 'selectsMultiple'> {
   onChange: (date: Date | null) => void;
@@ -20,7 +21,8 @@ interface CustomInputProps extends React.DetailedHTMLProps<React.ButtonHTMLAttri
 
 const CustomInput = forwardRef<HTMLButtonElement, CustomInputProps>(
   ({ value, onClick, className, placeholder }, ref) => (
-    <button
+    <ButtonBase
+      data-ui-field="date"
       type="button"
       onClick={onClick}
       ref={ref}
@@ -34,7 +36,7 @@ const CustomInput = forwardRef<HTMLButtonElement, CustomInputProps>(
     >
       <span className="truncate">{value || placeholder || "Select date"}</span>
       <Calendar aria-hidden="true" className="ml-2 h-4 w-4 text-contrast-icon-muted" />
-    </button>
+    </ButtonBase>
   )
 );
 

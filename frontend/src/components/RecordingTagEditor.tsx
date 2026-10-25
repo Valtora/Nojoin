@@ -1,5 +1,6 @@
 'use client';
 
+import { ButtonBase } from '@/components/ui/nativeBases';
 import { useState } from 'react';
 import { RecordingId, Tag } from '@/types';
 import { X, Plus } from 'lucide-react';
@@ -50,24 +51,24 @@ export default function RecordingTagEditor({ recordingId, tags, onTagsUpdated, c
               <span className={`w-2 h-2 rounded-full mr-2 ${color.dot}`} />
               {parentName && <span className="opacity-60 mr-1">{parentName} &gt;</span>}
               {tag.name}
-              <button
+              <ButtonBase
                 onClick={() => handleRemoveTag(tag.name)}
                 className="ml-2 inline-flex items-center justify-center w-4 h-4 rounded-full hover:bg-surface-inset focus:outline-none"
               >
                 <X className="w-3 h-3" />
-              </button>
+              </ButtonBase>
             </span>
           );
         })}
 
 
-        <button
+        <ButtonBase chrome="action"
           onClick={() => setIsModalOpen(true)}
           className={`inline-flex items-center rounded-pill border border-dashed text-contrast-helper transition-colors hover:border-action-border hover:text-contrast-muted dark:hover:border-action-border ${compact ? "px-2.5 py-1 text-xs font-medium" : "px-3 py-1 text-sm font-medium border-control-border"}`}
         >
           <Plus className={`${compact ? "mr-1 h-3.5 w-3.5" : "mr-1.5 h-4 w-4"}`} />
           Add Tag
-        </button>
+        </ButtonBase>
       </div>
 
       <AddTagModal

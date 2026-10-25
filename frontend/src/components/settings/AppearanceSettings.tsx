@@ -1,3 +1,4 @@
+import { SelectBase } from "@/components/ui/nativeBases";
 import type { ChangeEvent } from "react";
 
 import { useViewportDensity } from "@/components/ViewportDensityProvider";
@@ -49,7 +50,7 @@ export default function AppearanceSettings() {
       description="How Nojoin looks in this browser. Each choice is saved in this browser only, not with your account."
     >
       <SettingsRow label="Theme">
-        <select
+        <SelectBase
           aria-label="Theme"
           value={theme}
           onChange={(event: ChangeEvent<HTMLSelectElement>) =>
@@ -60,7 +61,7 @@ export default function AppearanceSettings() {
           <option value="system">System default</option>
           <option value="light">Light</option>
           <option value="dark">Dark</option>
-        </select>
+        </SelectBase>
       </SettingsRow>
 
       <SettingsRow
@@ -68,7 +69,7 @@ export default function AppearanceSettings() {
         description="The accent colour and the tint of the page, cards and navigation. Status colours keep their meaning in every palette."
         badge={<PaletteSwatch />}
       >
-        <select
+        <SelectBase
           aria-label="Colour palette"
           value={palette}
           onChange={(event: ChangeEvent<HTMLSelectElement>) =>
@@ -81,14 +82,14 @@ export default function AppearanceSettings() {
               {PALETTE_LABELS[option]}
             </option>
           ))}
-        </select>
+        </SelectBase>
       </SettingsRow>
 
       <SettingsRow
         label="Corner style"
         description="How rounded cards, buttons and fields are. Avatars and status dots stay round."
       >
-        <select
+        <SelectBase
           aria-label="Corner style"
           value={cornerStyle}
           onChange={(event: ChangeEvent<HTMLSelectElement>) =>
@@ -101,14 +102,14 @@ export default function AppearanceSettings() {
               {CORNER_STYLE_LABELS[option]}
             </option>
           ))}
-        </select>
+        </SelectBase>
       </SettingsRow>
 
       <SettingsRow
         label="Density"
         description="Automatic uses compact spacing on desktop windows up to 1920 by 1080 and comfortable spacing everywhere else. Dense is tighter still for mouse and keyboard; on a touch screen it keeps compact-sized controls."
       >
-        <select
+        <SelectBase
           aria-label="Density"
           value={densityPreference}
           onChange={(event: ChangeEvent<HTMLSelectElement>) =>
@@ -121,7 +122,7 @@ export default function AppearanceSettings() {
               {DENSITY_PREFERENCE_LABELS[option]}
             </option>
           ))}
-        </select>
+        </SelectBase>
       </SettingsRow>
     </SettingsCard>
   );

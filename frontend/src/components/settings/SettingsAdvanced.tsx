@@ -1,5 +1,6 @@
 "use client";
 
+import { ButtonBase } from "@/components/ui/nativeBases";
 import { useId, useState, type ReactNode } from "react";
 import { useOnDepsChange } from "@/lib/useOnDepsChange";
 import { AlertTriangle, ChevronRight } from "lucide-react";
@@ -52,7 +53,8 @@ export default function SettingsAdvanced({
     // rather than wrapping them, so opening Advanced never produces a card
     // inside a card.
     <section className={cn("space-y-4", className)}>
-      <button
+      <ButtonBase
+        data-ui-surface="card"
         type="button"
         onClick={() => setOpen((previous) => !previous)}
         aria-expanded={open}
@@ -87,7 +89,7 @@ export default function SettingsAdvanced({
             )}
           </span>
         )}
-      </button>
+      </ButtonBase>
 
       {open && (
         <div id={contentId} className="space-y-4">

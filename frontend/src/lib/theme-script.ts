@@ -13,9 +13,11 @@ import {
   CORNER_STYLES,
   DEFAULT_CORNER_STYLE,
   DEFAULT_PALETTE,
+  DEFAULT_UI_STYLE,
   DENSITY_PREFERENCES,
   PALETTES,
   THEMES,
+  UI_STYLES,
 } from "./appearance";
 import {
   COMPACT_DESKTOP_MAX_HEIGHT,
@@ -60,6 +62,9 @@ export const themeScript = `
   if (corners && corners !== ${JSON.stringify(DEFAULT_CORNER_STYLE)}) {
     root.setAttribute('data-corners', corners);
   }
+
+  var style = read(keys.style, ${JSON.stringify(UI_STYLES)}) || ${JSON.stringify(DEFAULT_UI_STYLE)};
+  root.setAttribute('data-style', style);
 
   var density = read(keys.density, ${JSON.stringify(DENSITY_PREFERENCES)}) || 'auto';
   if (density === 'auto') {

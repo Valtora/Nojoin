@@ -1,5 +1,7 @@
 "use client";
 
+import { ButtonBase } from '@/components/ui/nativeBases';
+import { SurfaceBase } from '@/components/ui/SurfaceBase';
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
   FileText,
@@ -268,19 +270,19 @@ export default function DocumentsView({ recordingId }: DocumentsViewProps) {
   };
 
   return (
-    <div className="flex flex-col h-full bg-surface-card relative">
+    <SurfaceBase kind="pane" className="flex flex-col h-full bg-surface-card relative">
       <div className="p-4 border-b border-surface-border flex justify-between items-center">
         <h3 className="font-semibold text-foreground flex items-center gap-2">
           <FileText className="w-4 h-4 text-action-text" />
           Attached Documents
         </h3>
-        <button
+        <ButtonBase chrome="action"
           onClick={() => setIsUploadModalOpen(true)}
           className="flex items-center gap-2 px-3 py-1.5 bg-action text-action-on text-sm rounded-lg hover:bg-action-hover transition-colors"
         >
           <Upload className="w-4 h-4" />
           Upload
-        </button>
+        </ButtonBase>
       </div>
 
       <div className="flex-1 overflow-y-auto pb-clear-floating-0">
@@ -295,12 +297,12 @@ export default function DocumentsView({ recordingId }: DocumentsViewProps) {
             <p className="text-base font-medium text-contrast-helper">
               Documents are temporarily unavailable
             </p>
-            <button
+            <ButtonBase chrome="action"
               onClick={() => void fetchDocuments()}
               className="mt-4 rounded-lg border border-control-border px-4 py-2 text-sm font-medium text-contrast-muted transition-colors hover:border-action-border hover:text-action-text"
             >
               Try again
-            </button>
+            </ButtonBase>
           </div>
         ) : documents.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-contrast-icon-muted">
@@ -311,13 +313,13 @@ export default function DocumentsView({ recordingId }: DocumentsViewProps) {
             <p className="text-sm mt-1 mb-6">
               Upload a PDF, deck, document, spreadsheet, or image for context.
             </p>
-            <button
+            <ButtonBase chrome="action"
               onClick={() => setIsUploadModalOpen(true)}
               className="flex items-center gap-2 px-4 py-2 bg-action text-action-on font-medium rounded-lg hover:bg-action-hover transition-colors shadow-card"
             >
               <Upload className="w-4 h-4" />
               Upload Document
-            </button>
+            </ButtonBase>
           </div>
         ) : (
           // Wide content scrolls inside its own container so the panel never
@@ -379,7 +381,7 @@ export default function DocumentsView({ recordingId }: DocumentsViewProps) {
                     </td>
                     <td className="px-2 py-3">
                       <div className="flex justify-end gap-0.5 opacity-100 transition-opacity lg:opacity-0 lg:group-hover:opacity-100 lg:focus-within:opacity-100">
-                        <button
+                        <ButtonBase
                           onClick={() => handleDownload(doc)}
                           disabled={downloadingId === doc.id}
                           className="rounded-lg p-1.5 text-contrast-icon-muted transition-colors hover:bg-surface-inset hover:text-contrast-muted disabled:opacity-40"
@@ -390,8 +392,8 @@ export default function DocumentsView({ recordingId }: DocumentsViewProps) {
                           ) : (
                             <Download className="h-4 w-4" />
                           )}
-                        </button>
-                        <button
+                        </ButtonBase>
+                        <ButtonBase
                           {...loadingButtonProps(reparsingId === doc.id, isBusy(doc) && !looksStalled(doc), () => handleReparse(doc))}
                           className="rounded-lg p-1.5 text-contrast-icon-muted transition-colors hover:bg-action-tint hover:text-action-text disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-contrast-icon-muted aria-disabled:opacity-40 aria-disabled:hover:bg-transparent aria-disabled:hover:text-contrast-icon-muted"
                           title="Parse again with visual analysis"
@@ -401,14 +403,14 @@ export default function DocumentsView({ recordingId }: DocumentsViewProps) {
                           ) : (
                             <RefreshCw className="h-4 w-4" />
                           )}
-                        </button>
-                        <button
+                        </ButtonBase>
+                        <ButtonBase
                           onClick={() => setDocumentToDelete(doc)}
                           className="rounded-lg p-1.5 text-contrast-icon-muted transition-colors hover:bg-status-danger-bg hover:text-status-danger-fg"
                           title="Delete document"
                         >
                           <Trash2 className="h-4 w-4" />
-                        </button>
+                        </ButtonBase>
                       </div>
                     </td>
                   </tr>
@@ -456,6 +458,6 @@ export default function DocumentsView({ recordingId }: DocumentsViewProps) {
         confirmText="Delete"
         isDangerous={true}
       />
-    </div>
+    </SurfaceBase>
   );
 }

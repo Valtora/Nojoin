@@ -1,5 +1,7 @@
 "use client";
 
+import { ButtonBase, InputBase, TextareaBase } from '@/components/ui/nativeBases';
+import { SurfaceBase } from '@/components/ui/SurfaceBase';
 import {
   Brain,
   ChevronDown,
@@ -71,7 +73,7 @@ function EdgeSection({
         tone === "tint" ? "border border-action-border bg-action-tint" : "bg-surface-inset"
       }`}
     >
-      <button
+      <ButtonBase
         type="button"
         onClick={setIsOpen}
         aria-expanded={isOpen}
@@ -86,7 +88,7 @@ function EdgeSection({
             isOpen ? "" : "-rotate-90"
           }`}
         />
-      </button>
+      </ButtonBase>
       {isOpen ? <div className="px-4 pb-4">{children}</div> : null}
     </div>
   );
@@ -260,7 +262,7 @@ function MeetingEdgePanel({
           : "Autosaves";
 
   return (
-    <section className="@container density-surface flex h-full min-h-0 flex-col border border-surface-border bg-surface-card shadow-card">
+    <SurfaceBase as="section" kind="card" className="@container density-surface flex h-full min-h-0 flex-col border border-surface-border bg-surface-card shadow-card">
       <div className="flex items-center justify-between gap-3">
         <div className="inline-flex items-center gap-2 rounded-pill border border-action-border bg-action-tint px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-action-text">
           {status === "updating" ? (
@@ -406,7 +408,7 @@ function MeetingEdgePanel({
           <p className="mt-2 text-sm leading-6 text-contrast-helper">
             Add a short goal, concern, or angle you want this guidance to optimize for.
           </p>
-          <textarea
+          <TextareaBase
             value={draftFocus}
             onChange={handleChange}
             onBlur={handleBlur}
@@ -428,7 +430,7 @@ function MeetingEdgePanel({
                 Adjust how readily live guidance explains technical language on this recording page.
               </p>
 
-              <input
+              <InputBase
                 type="range"
                 min={1}
                 max={5}
@@ -466,7 +468,7 @@ function MeetingEdgePanel({
           </div>
         ) : null}
       </div>
-    </section>
+    </SurfaceBase>
   );
 }
 

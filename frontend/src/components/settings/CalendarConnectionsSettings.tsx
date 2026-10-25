@@ -1,5 +1,6 @@
 "use client";
 
+import { ButtonBase } from "@/components/ui/nativeBases";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import ColorPicker from "@/components/ColorPicker";
@@ -327,13 +328,13 @@ export default function CalendarConnectionsSettings() {
               {connectFailure.reasonText && (
                 <p className="mt-2 text-xs">{connectFailure.reasonText}</p>
               )}
-              <button
+              <ButtonBase
                 type="button"
                 onClick={() => setConnectFailure(null)}
                 className="mt-2 font-semibold underline underline-offset-2"
               >
                 Dismiss
-              </button>
+              </ButtonBase>
             </SettingsCallout>
           </div>
         </SettingsBlock>
@@ -363,7 +364,8 @@ export default function CalendarConnectionsSettings() {
                 }
                 controlClassName={SETTINGS_CONTROL_END}
               >
-                <button
+                <ButtonBase
+                  chrome="action"
                   type="button"
                   {...loadingButtonProps(isConnecting, !provider.configured, () => handleConnect(provider.provider))}
                   className={SETTINGS_BUTTON_PRIMARY}
@@ -374,7 +376,7 @@ export default function CalendarConnectionsSettings() {
                     <ExternalLink className="h-4 w-4" aria-hidden="true" />
                   )}
                   Connect
-                </button>
+                </ButtonBase>
               </SettingsRow>
             );
           })}
@@ -427,7 +429,8 @@ export default function CalendarConnectionsSettings() {
                     description={`${STATUS_LABELS[connection.sync_status]}. ${connection.selected_calendar_count} calendar${connection.selected_calendar_count === 1 ? "" : "s"} selected.`}
                     aside={
                       <div className="flex flex-wrap gap-2">
-                        <button
+                        <ButtonBase
+                          chrome="action"
                           type="button"
                           {...loadingButtonProps(busyKey === `sync:${connection.id}`, isBusy, () => handleManualSync(connection.id))}
                           className={SETTINGS_BUTTON_SECONDARY}
@@ -438,8 +441,9 @@ export default function CalendarConnectionsSettings() {
                             <RefreshCw className="h-4 w-4" aria-hidden="true" />
                           )}
                           Sync now
-                        </button>
-                        <button
+                        </ButtonBase>
+                        <ButtonBase
+                          chrome="action"
                           type="button"
                           {...loadingButtonProps(busyKey === `disconnect:${connection.id}`, isBusy, () => handleDisconnect(connection.id))}
                           className={SETTINGS_BUTTON_DANGER}
@@ -450,7 +454,7 @@ export default function CalendarConnectionsSettings() {
                             <Trash2 className="h-4 w-4" aria-hidden="true" />
                           )}
                           Disconnect
-                        </button>
+                        </ButtonBase>
                       </div>
                     }
                   >
@@ -513,7 +517,8 @@ export default function CalendarConnectionsSettings() {
                                     return (
                                       // A button, so the picker the wrapper opens
                                       // on click is reachable from the keyboard.
-                                      <button
+                                      <ButtonBase
+                                        chrome="action"
                                         type="button"
                                         className={cn(SETTINGS_BUTTON_SECONDARY, "px-3")}
                                         aria-label={`Colour for ${calendar.name}`}
@@ -524,14 +529,15 @@ export default function CalendarConnectionsSettings() {
                                           style={indicator.style}
                                         />
                                         {calendar.custom_colour ? "Custom colour" : "Calendar colour"}
-                                      </button>
+                                      </ButtonBase>
                                     );
                                   })()}
                                 />
                               )}
 
                               {calendar.custom_colour && busyKey !== `colour:${calendar.id}` && (
-                                <button
+                                <ButtonBase
+                                  chrome="action"
                                   type="button"
                                   onClick={() =>
                                     void handleCalendarColourChange(
@@ -543,7 +549,7 @@ export default function CalendarConnectionsSettings() {
                                   className={SETTINGS_BUTTON_SECONDARY}
                                 >
                                   Reset colour
-                                </button>
+                                </ButtonBase>
                               )}
 
                               <Switch

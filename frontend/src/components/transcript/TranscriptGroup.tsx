@@ -1,5 +1,6 @@
 "use client";
 
+import { SurfaceBase } from '@/components/ui/SurfaceBase';
 import { memo } from "react";
 import { Pause, Play } from "lucide-react";
 
@@ -230,7 +231,7 @@ function TranscriptGroup({
                 ? Math.max(7, speakerItems.length * 4.5)
                 : undefined;
               return (
-                <div
+                <SurfaceBase kind="card"
                   key={speaker}
                   data-testid={`overlap-lane-${speaker}`}
                   className={`min-w-0 flex flex-col rounded-xl border ${laneColor.border} bg-surface-card`}
@@ -246,15 +247,15 @@ function TranscriptGroup({
                     {speakerItems.length > 0 ? (
                       speakerItems.map(renderLine)
                     ) : (
-                      <div className="h-full w-full min-h-[50px] flex items-center justify-center border border-dashed border-control-border rounded-xl bg-surface-card">
+                      <SurfaceBase kind="card" className="h-full w-full min-h-[50px] flex items-center justify-center border border-dashed border-control-border rounded-xl bg-surface-card">
                         <div className="flex flex-col items-center gap-0.5 opacity-60">
                           <div className="font-semibold text-contrast-helper text-sm">{segmentSpeakerDisplayName(speakerMap, speaker)}</div>
                           <div className="text-[11px] uppercase tracking-wider">(overlapping speech)</div>
                         </div>
-                      </div>
+                      </SurfaceBase>
                     )}
                   </div>
-                </div>
+                </SurfaceBase>
               );
             })}
           </div>

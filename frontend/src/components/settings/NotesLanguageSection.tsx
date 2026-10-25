@@ -1,3 +1,4 @@
+import { InputBase, SelectBase } from "@/components/ui/nativeBases";
 import { useEffect, useState } from "react";
 
 import { LanguageRegistry, Settings } from "@/types";
@@ -39,7 +40,7 @@ export default function NotesLanguageSection({
         controlId="notes-language-select"
         description="Covers titles, headings, summaries, notes and action items."
       >
-        <select
+        <SelectBase
           id="notes-language-select"
           aria-describedby="notes-language-select-help"
           value={language}
@@ -55,7 +56,7 @@ export default function NotesLanguageSection({
               {option.label}
             </option>
           ))}
-        </select>
+        </SelectBase>
       </SettingsRow>
 
       {language === "custom" && (
@@ -64,7 +65,7 @@ export default function NotesLanguageSection({
           controlId="notes-language-custom"
           description="Needed for Custom. Set the language, regional conventions, tone and heading style."
         >
-          <input
+          <InputBase
             id="notes-language-custom"
             aria-describedby="notes-language-custom-help"
             type="text"

@@ -1,5 +1,7 @@
 "use client";
 
+import { ButtonBase, InputBase, TextareaBase } from '@/components/ui/nativeBases';
+import { SurfaceBase } from '@/components/ui/SurfaceBase';
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -137,7 +139,7 @@ function TagSelector({
         const isSelected = selected.has(tag.id);
 
         return (
-          <button
+          <ButtonBase
             key={tag.id}
             type="button"
             onClick={() => {
@@ -155,7 +157,7 @@ function TagSelector({
           >
             <span className={`h-2 w-2 rounded-full ${color.dot}`} />
             {tag.name}
-          </button>
+          </ButtonBase>
         );
       })}
     </div>
@@ -182,12 +184,12 @@ function RecordingSelector({
   }
 
   return (
-    <div className="max-h-32 space-y-2 overflow-y-auto rounded-2xl border border-surface-border bg-surface-card p-2">
+    <SurfaceBase kind="card" className="max-h-32 space-y-2 overflow-y-auto rounded-2xl border border-surface-border bg-surface-card p-2">
       {recordings.map((recording) => {
         const isSelected = selected.has(recording.id);
 
         return (
-          <button
+          <ButtonBase
             key={recording.id}
             type="button"
             onClick={() => {
@@ -205,10 +207,10 @@ function RecordingSelector({
           >
             <FileAudio className="h-3.5 w-3.5 shrink-0" />
             <span className="truncate">{recording.name}</span>
-          </button>
+          </ButtonBase>
         );
       })}
-    </div>
+    </SurfaceBase>
   );
 }
 
@@ -223,7 +225,7 @@ function DeadlinePickerButton({
 
   return (
     <div className="flex items-center gap-3">
-      <button
+      <ButtonBase chrome="action"
         type="button"
         onClick={onClick}
         className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-action-border bg-surface-card text-action-text outline-none transition-colors hover:border-action-border hover:bg-action-tint hover:text-action-text-hover focus:border-action focus:ring-2 focus:ring-action"
@@ -231,7 +233,7 @@ function DeadlinePickerButton({
         title={formatted ? `Edit deadline: ${formatted}` : "Set deadline"}
       >
         <Calendar className="block h-4 w-4 shrink-0" />
-      </button>
+      </ButtonBase>
       {formatted && (
         <span className="min-w-0 truncate text-sm font-semibold text-contrast-muted">
           {formatted}
@@ -472,7 +474,7 @@ export default function TasksWorkspace() {
       contentClassName="workspace-shell workspace-shell-wide"
       paddingClassName="workspace-pad-y"
     >
-      <section className="density-surface density-surface-lg border border-surface-border bg-surface-card shadow-card">
+      <SurfaceBase as="section" kind="card" className="density-surface density-surface-lg border border-surface-border bg-surface-card shadow-card">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <h1 className="density-heading-page text-4xl font-semibold tracking-tight text-foreground">
@@ -488,9 +490,9 @@ export default function TasksWorkspace() {
               would collapse it. With no query container at lg the @min falls
               back to the viewport, which is always past the threshold there. */}
           <div className="max-lg:@container flex flex-col gap-3 sm:flex-row sm:items-center">
-            <div className="grid gap-2 @min-[23rem]:grid-cols-3 rounded-2xl border border-surface-border bg-surface-inset p-1">
+            <div data-ui="surface" data-ui-surface="inset" className="grid gap-2 @min-[23rem]:grid-cols-3 rounded-2xl border border-surface-border bg-surface-inset p-1">
               {(["open", "completed", "archived"] as TaskView[]).map((item) => (
-                <button
+                <ButtonBase
                   key={item}
                   type="button"
                   onClick={() => setView(item)}
@@ -501,18 +503,18 @@ export default function TasksWorkspace() {
                   }`}
                 >
                   {item}
-                </button>
+                </ButtonBase>
               ))}
             </div>
             {!isCreateOpen && (
-              <button
+              <ButtonBase chrome="action"
                 type="button"
                 onClick={() => setIsCreateOpen(true)}
                 className="density-control-lg inline-flex h-[var(--control-height-lg)] items-center justify-center gap-2 whitespace-nowrap rounded-2xl bg-action px-5 text-sm font-semibold text-action-on transition-colors hover:bg-action-hover"
               >
                 <Plus className="h-4 w-4" />
                 Create Task
-              </button>
+              </ButtonBase>
             )}
           </div>
         </div>
@@ -523,7 +525,7 @@ export default function TasksWorkspace() {
             className="density-surface-subtle mt-8 grid items-stretch gap-4 border border-action-border bg-action-tint p-4 lg:grid-cols-[minmax(0,1fr)_minmax(16rem,0.42fr)]"
           >
             <div className="flex flex-col gap-3">
-              <input
+              <InputBase
                 value={draft.title}
                 onChange={(event) =>
                   setDraft((current) => ({ ...current, title: event.target.value }))
@@ -531,7 +533,7 @@ export default function TasksWorkspace() {
                 placeholder="Task title"
                 className="h-12 w-full rounded-2xl border border-action-border bg-surface-card px-4 text-sm font-semibold text-foreground outline-none transition-colors placeholder:text-contrast-icon-muted focus:border-action focus:ring-2 focus:ring-action"
               />
-              <textarea
+              <TextareaBase
                 value={draft.body}
                 onChange={(event) =>
                   setDraft((current) => ({ ...current, body: event.target.value }))
@@ -561,7 +563,7 @@ export default function TasksWorkspace() {
                 }
               />
               <div className="mt-auto flex gap-2">
-                <button
+                <ButtonBase chrome="action"
                   type="button"
                   onClick={() => {
                     setDraft(EMPTY_DRAFT);
@@ -572,8 +574,8 @@ export default function TasksWorkspace() {
                   aria-label="Cancel task creation"
                 >
                   <X className="h-4 w-4" />
-                </button>
-                <button
+                </ButtonBase>
+                <ButtonBase chrome="action"
                   type="submit"
                   {...loadingButtonProps(submitting)}
                   className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-action px-4 py-3 text-sm font-semibold text-action-on transition-colors hover:bg-action-hover disabled:cursor-not-allowed disabled:opacity-60 aria-disabled:cursor-not-allowed aria-disabled:opacity-60"
@@ -584,23 +586,23 @@ export default function TasksWorkspace() {
                     <Plus className="h-4 w-4" />
                   )}
                   Add task
-                </button>
+                </ButtonBase>
               </div>
             </div>
           </form>
         )}
-      </section>
+      </SurfaceBase>
 
       <section className="grid gap-4">
         {loading ? (
-          <div className="density-surface-subtle border border-surface-border bg-surface-card p-6 text-sm text-contrast-helper shadow-card">
+          <SurfaceBase kind="card" className="density-surface-subtle border border-surface-border bg-surface-card p-6 text-sm text-contrast-helper shadow-card">
             <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
             Loading tasks...
-          </div>
+          </SurfaceBase>
         ) : visibleTasks.length === 0 ? (
-          <div className="density-surface-subtle border border-dashed border-control-border bg-surface-card p-8 text-center text-sm text-contrast-helper">
+          <SurfaceBase kind="card" className="density-surface-subtle border border-dashed border-control-border bg-surface-card p-8 text-center text-sm text-contrast-helper">
             No {view} tasks.
-          </div>
+          </SurfaceBase>
         ) : (
           visibleTasks.map((task) => {
             const isEditing = editingTaskId === task.id;
@@ -609,14 +611,14 @@ export default function TasksWorkspace() {
             const archivedLabel = formatTaskDate(task.archived_at);
 
             return (
-              <article
+              <SurfaceBase as="article" kind="card"
                 key={task.id}
                 className="density-surface-subtle border border-surface-border bg-surface-card p-5 shadow-card"
               >
                 {isEditing ? (
                   <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(17rem,0.45fr)]">
                     <div className="space-y-3">
-                      <input
+                      <InputBase
                         value={editDraft.title}
                         onChange={(event) =>
                           setEditDraft((current) => ({
@@ -626,7 +628,7 @@ export default function TasksWorkspace() {
                         }
                         className="h-11 w-full rounded-2xl border border-action-border bg-surface-card px-4 text-sm font-semibold text-foreground outline-none focus:border-action focus:ring-2 focus:ring-action"
                       />
-                      <textarea
+                      <TextareaBase
                         value={editDraft.body}
                         onChange={(event) =>
                           setEditDraft((current) => ({
@@ -661,21 +663,21 @@ export default function TasksWorkspace() {
                         }
                       />
                       <div className="flex gap-2">
-                        <button
+                        <ButtonBase chrome="action"
                           type="button"
                           {...loadingButtonProps(isBusy, undefined, () => void saveEdit(task))}
                           className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-action px-4 py-2.5 text-sm font-semibold text-action-on hover:bg-action-hover disabled:opacity-60 aria-disabled:opacity-60"
                         >
                           {isBusy && <Loader2 className="h-4 w-4 animate-spin" />}
                           Save
-                        </button>
-                        <button
+                        </ButtonBase>
+                        <ButtonBase chrome="action"
                           type="button"
                           onClick={cancelEdit}
                           className="inline-flex items-center justify-center rounded-2xl border border-surface-border px-4 py-2.5 text-sm font-semibold text-contrast-muted hover:border-control-border"
                         >
                           <X className="h-4 w-4" />
-                        </button>
+                        </ButtonBase>
                       </div>
                     </div>
                   </div>
@@ -743,7 +745,7 @@ export default function TasksWorkspace() {
                     </div>
 
                     <div className="flex flex-wrap gap-2">
-                      <button
+                      <ButtonBase chrome="action"
                         type="button"
                         onClick={() => beginEdit(task)}
                         disabled={isBusy}
@@ -751,9 +753,9 @@ export default function TasksWorkspace() {
                       >
                         <Pencil className="h-4 w-4" />
                         Edit
-                      </button>
+                      </ButtonBase>
                       {!task.archived_at && (
-                        <button
+                        <ButtonBase chrome="action"
                           type="button"
                           {...loadingButtonProps(isBusy, undefined, () =>
                             void handleTaskUpdate(
@@ -772,9 +774,9 @@ export default function TasksWorkspace() {
                             <Check className="h-4 w-4" />
                           )}
                           {task.completed_at ? "Reopen" : "Complete"}
-                        </button>
+                        </ButtonBase>
                       )}
-                      <button
+                      <ButtonBase chrome="action"
                         type="button"
                         {...loadingButtonProps(isBusy, undefined, () =>
                           void handleTaskUpdate(
@@ -793,8 +795,8 @@ export default function TasksWorkspace() {
                           <Archive className="h-4 w-4" />
                         )}
                         {task.archived_at ? "Restore" : "Archive"}
-                      </button>
-                      <button
+                      </ButtonBase>
+                      <ButtonBase chrome="action"
                         type="button"
                         {...loadingButtonProps(isBusy, undefined, () => void handleDeleteTask(task))}
                         className="inline-flex items-center gap-2 rounded-2xl border border-surface-border bg-surface-card px-3 py-2.5 text-sm font-semibold text-contrast-muted hover:border-status-danger-border hover:text-status-danger-fg disabled:opacity-60 aria-disabled:opacity-60"
@@ -805,11 +807,11 @@ export default function TasksWorkspace() {
                           <Trash2 className="h-4 w-4" />
                         )}
                         Delete
-                      </button>
+                      </ButtonBase>
                     </div>
                   </div>
                 )}
-              </article>
+              </SurfaceBase>
             );
           })
         )}

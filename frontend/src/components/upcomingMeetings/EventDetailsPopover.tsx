@@ -1,3 +1,4 @@
+import { SurfaceBase } from '@/components/ui/SurfaceBase';
 import Link from "next/link";
 import { ArrowRight, ExternalLink, MapPin, Video } from "lucide-react";
 
@@ -33,7 +34,7 @@ export function EventDetailsPopoverContent({
   const locationHost = getUrlHost(locationText);
 
   return (
-    <div className="w-72 rounded-surface-panel border border-surface-float-border bg-surface-float p-4 text-left shadow-float sm:w-80">
+    <SurfaceBase kind="float" className="w-72 rounded-surface-panel border border-surface-float-border bg-surface-float p-4 text-left shadow-float sm:w-80">
       <div className="flex items-start justify-between gap-3">
         <div className="text-sm font-semibold text-foreground">
           {event.title}
@@ -111,6 +112,6 @@ export function EventDetailsPopoverContent({
           </div>
         </div>
       )}
-    </div>
+    </SurfaceBase>
   );
 }

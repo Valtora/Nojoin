@@ -1,5 +1,6 @@
 "use client";
 
+import { SurfaceBase } from '@/components/ui/SurfaceBase';
 import Link from "next/link";
 import { Mic } from "lucide-react";
 
@@ -31,7 +32,7 @@ export default function RecentRecordingsCard({
   timeZone,
 }: RecentRecordingsCardProps) {
   return (
-    <div className="density-surface flex h-full min-h-0 flex-col border border-surface-border bg-surface-card shadow-card">
+    <SurfaceBase kind="card" className="density-surface flex h-full min-h-0 flex-col border border-surface-border bg-surface-card shadow-card">
       <div className="flex items-center gap-3">
         <Mic className="h-5 w-5 shrink-0 text-action-text" />
         <h2 className="text-base font-semibold text-foreground">Recent Meetings</h2>
@@ -70,6 +71,6 @@ export default function RecentRecordingsCard({
           );
         })}
       </ul>
-    </div>
+    </SurfaceBase>
   );
 }

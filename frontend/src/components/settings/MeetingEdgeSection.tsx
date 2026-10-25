@@ -1,3 +1,4 @@
+import { InputBase } from "@/components/ui/nativeBases";
 import Link from "next/link";
 
 import { Settings } from "@/types";
@@ -69,7 +70,7 @@ export default function MeetingEdgeSection({
         description={selected.description}
       >
         <div className="space-y-1">
-          <input
+          <InputBase
             id="meeting-edge-context-level"
             aria-describedby="meeting-edge-context-level-help"
             aria-valuetext={selected.description}

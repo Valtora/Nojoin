@@ -1,3 +1,4 @@
+import { InputBase } from '@/components/ui/nativeBases';
 import { ArrowLeft, ArrowRight } from "lucide-react";
 
 import Button from "@/components/ui/Button";
@@ -108,7 +109,7 @@ export default function AccountStep({
         htmlFor="setup-include-demo-recording"
         className="flex items-start gap-3 p-3 rounded-lg border border-surface-border bg-surface-inset/40 cursor-pointer"
       >
-        <input
+        <InputBase
           id="setup-include-demo-recording"
           type="checkbox"
           name="setup-include-demo-recording"

@@ -1,3 +1,4 @@
+import { InputBase } from "@/components/ui/nativeBases";
 import { Settings } from "@/types";
 import { listModels } from "@/lib/api";
 import { getSecondaryProviderGap } from "@/lib/aiAvailability";
@@ -158,7 +159,7 @@ export default function SecondaryProviderSection({
         controlClassName={SETTINGS_CONTROL_COLUMN_WIDE}
             description="Where the fallback's Ollama server listens."
           >
-            <input
+            <InputBase
               id="ai-fallback-ollama-url"
               aria-describedby="ai-fallback-ollama-url-help"
               type="url"
@@ -182,7 +183,7 @@ export default function SecondaryProviderSection({
         controlClassName={SETTINGS_CONTROL_COLUMN_WIDE}
             description={<ContextWindowHelp tokens={contextWindow} />}
           >
-            <input
+            <InputBase
               id="ai-fallback-context-window"
               aria-describedby="ai-fallback-context-window-help"
               type="number"

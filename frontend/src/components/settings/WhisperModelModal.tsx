@@ -1,3 +1,4 @@
+import { SurfaceBase } from "@/components/ui/SurfaceBase";
 import { useState, useEffect } from "react";
 import {
   X,
@@ -158,7 +159,8 @@ export default function WhisperModelModal({
         </Select>
 
         {/* Status & Actions */}
-        <div className="rounded-lg border border-surface-border bg-surface-inset p-5">
+        <SurfaceBase
+          kind="inset" className="rounded-lg border border-surface-border bg-surface-inset p-5">
           <div className="mb-4 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium text-contrast-muted">
@@ -200,7 +202,7 @@ export default function WhisperModelModal({
               asks whether to download it once you use this size.
             </p>
           )}
-        </div>
+        </SurfaceBase>
       </div>
     </Modal>
   );

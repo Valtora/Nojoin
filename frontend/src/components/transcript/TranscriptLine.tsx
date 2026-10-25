@@ -1,5 +1,6 @@
 "use client";
 
+import { ButtonBase, InputBase, TextareaBase } from '@/components/ui/nativeBases';
 import { memo, useMemo, useRef } from "react";
 
 import { getColorByKey } from "@/lib/constants";
@@ -165,7 +166,7 @@ function TranscriptLine({
       {/* Speaker Label */}
       <div className="flex flex-wrap items-baseline gap-2 mb-1">
         {isEditingSpeaker && editor ? (
-          <input
+          <InputBase
             autoFocus
             type="text"
             value={editor.value}
@@ -180,7 +181,7 @@ function TranscriptLine({
           />
         ) : (
           <div className="relative">
-            <button
+            <ButtonBase
               ref={speakerButtonRef}
               onClick={(e) => {
                 e.stopPropagation();
@@ -209,7 +210,7 @@ function TranscriptLine({
               }
             >
               {speakerName}
-            </button>
+            </ButtonBase>
 
             {popoverAnchor && !isSegmentReadOnly && (
               <SpeakerAssignmentPopover
@@ -273,7 +274,7 @@ function TranscriptLine({
         }`}
       >
         {isEditingText && editor ? (
-          <textarea
+          <TextareaBase
             autoFocus
             value={editor.value}
             onChange={(e) => editor.setValue(e.target.value)}

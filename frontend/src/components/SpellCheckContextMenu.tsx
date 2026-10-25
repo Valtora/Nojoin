@@ -1,5 +1,7 @@
 "use client";
 
+import { ButtonBase } from '@/components/ui/nativeBases';
+import { SurfaceBase } from '@/components/ui/SurfaceBase';
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -68,7 +70,7 @@ export default function SpellCheckContextMenu({
   const hasSuggestions = suggestions.length > 0;
 
   return createPortal(
-    <div
+    <SurfaceBase kind="float"
       ref={menuRef}
       className="fixed z-[var(--z-popover)] w-48 bg-surface-float rounded-lg shadow-float border border-surface-float-border py-1 overflow-visible"
       style={style}
@@ -78,7 +80,7 @@ export default function SpellCheckContextMenu({
         onMouseEnter={handleSuggestionsEnter}
         onMouseLeave={handleSuggestionsLeave}
       >
-        <button
+        <ButtonBase
           onClick={() => setShowSuggestions(!showSuggestions)}
           disabled={!hasSuggestions}
           className={`w-full text-left px-4 py-2.5 text-sm transition-colors flex items-center justify-between border-b border-surface-divider ${
@@ -93,17 +95,17 @@ export default function SpellCheckContextMenu({
               <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
             </svg>
           )}
-        </button>
+        </ButtonBase>
 
         {/* Suggestion submenu flyout */}
         {showSuggestions && hasSuggestions && (
-          <div
+          <SurfaceBase kind="float"
             className="absolute left-full top-0 ml-1 w-44 bg-surface-float rounded-lg shadow-float border border-surface-float-border py-1 z-[var(--z-popover)]"
             onMouseEnter={handleSuggestionsEnter}
             onMouseLeave={handleSuggestionsLeave}
           >
             {suggestions.map((suggestion, index) => (
-              <button
+              <ButtonBase
                 key={index}
                 onClick={() => {
                   onCorrect(suggestion);
@@ -116,14 +118,14 @@ export default function SpellCheckContextMenu({
                 }`}
               >
                 {suggestion}
-              </button>
+              </ButtonBase>
             ))}
-          </div>
+          </SurfaceBase>
         )}
       </div>
 
       {/* Add to Dictionary */}
-      <button
+      <ButtonBase
         onClick={() => {
           onAddToDictionary();
           onClose();
@@ -131,10 +133,10 @@ export default function SpellCheckContextMenu({
         className="w-full text-left px-4 py-2.5 text-sm text-contrast-muted hover:bg-surface-inset active:bg-action-tint transition-colors border-b border-surface-divider"
       >
         Add to Dictionary
-      </button>
+      </ButtonBase>
 
       {/* Ignore */}
-      <button
+      <ButtonBase
         onClick={() => {
           onIgnore();
           onClose();
@@ -142,8 +144,8 @@ export default function SpellCheckContextMenu({
         className="w-full text-left px-4 py-2.5 text-sm text-contrast-muted hover:bg-surface-inset active:bg-action-tint transition-colors"
       >
         Ignore
-      </button>
-    </div>,
+      </ButtonBase>
+    </SurfaceBase>,
     document.body,
   );
 }

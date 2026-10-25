@@ -1,5 +1,6 @@
 "use client";
 
+import { SurfaceBase } from "@/components/ui/SurfaceBase";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo } from "react";
@@ -71,7 +72,8 @@ export default function SettingsIndex() {
               {group.label}
             </h2>
 
-            <ul className="settings-card settings-card-body overflow-hidden">
+            <SurfaceBase
+              as="ul" kind="card" className="settings-card settings-card-body overflow-hidden">
               {group.items.map((category) => {
                 const Icon = category.icon;
 
@@ -101,7 +103,7 @@ export default function SettingsIndex() {
                   </li>
                 );
               })}
-            </ul>
+            </SurfaceBase>
           </div>
         ))}
       </div>

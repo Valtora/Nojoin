@@ -1,5 +1,7 @@
 "use client";
 
+import { ButtonBase, InputBase } from '@/components/ui/nativeBases';
+import { SurfaceBase } from '@/components/ui/SurfaceBase';
 import {
   GlobalSpeaker,
   RecordingSpeaker,
@@ -283,7 +285,7 @@ export default function SpeakerAssignmentPopover({
   if (!targetElement) return null;
 
   return createPortal(
-    <div
+    <SurfaceBase kind="float"
       ref={containerRef}
       className="@container fixed z-[var(--z-popover)] flex flex-col overflow-hidden rounded-lg border border-surface-float-border bg-surface-float shadow-float animate-in fade-in zoom-in-95 duration-100"
       style={{
@@ -296,7 +298,7 @@ export default function SpeakerAssignmentPopover({
       <div className="p-2 border-b border-surface-divider">
         <div className="relative">
           <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-contrast-icon-muted" />
-          <input
+          <InputBase
             ref={inputRef}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -309,13 +311,13 @@ export default function SpeakerAssignmentPopover({
 
       {dismissibleName && onDismissName && (
         <div className="border-b border-surface-divider p-2">
-          <button
+          <ButtonBase
             type="button"
             className={`w-full truncate rounded px-2 py-1.5 text-left text-sm text-contrast-muted hover:bg-surface-inset ${TOUCH_TARGET_HEIGHT} ${DISABLED_LOOK}`}
             {...loadingButtonProps(dismissingName, undefined, dismissCurrentName)}
           >
             Not {dismissibleName}
-          </button>
+          </ButtonBase>
         </div>
       )}
 
@@ -327,7 +329,7 @@ export default function SpeakerAssignmentPopover({
           const isSelected = selectedScope === value;
 
           return (
-            <button
+            <ButtonBase
               key={value}
               type="button"
               aria-pressed={isSelected}
@@ -340,7 +342,7 @@ export default function SpeakerAssignmentPopover({
             >
               <Icon className="h-3.5 w-3.5 shrink-0" />
               <span className="truncate">{label}</span>
-            </button>
+            </ButtonBase>
           );
         })}
       </div>
@@ -361,7 +363,7 @@ export default function SpeakerAssignmentPopover({
               const colorOption = getColorByKey(colorKey);
 
               return (
-                <button
+                <ButtonBase
                   key={option.key}
                   type="button"
                   onClick={() =>
@@ -382,7 +384,7 @@ export default function SpeakerAssignmentPopover({
                         : "Recording only"}
                     </div>
                   </div>
-                </button>
+                </ButtonBase>
               );
             })}
           </div>
@@ -395,7 +397,7 @@ export default function SpeakerAssignmentPopover({
               Global Library
             </div>
             {filteredGlobal.map((s) => (
-              <button
+              <ButtonBase
                 key={s.id}
                 type="button"
                 onClick={() =>
@@ -409,7 +411,7 @@ export default function SpeakerAssignmentPopover({
               >
                 <User className="h-3 w-3 text-contrast-icon-muted" />
                 <span className="truncate">{s.name}</span>
-              </button>
+              </ButtonBase>
             ))}
           </div>
         )}
@@ -424,7 +426,7 @@ export default function SpeakerAssignmentPopover({
             (s) => s.name.toLowerCase() === search.trim().toLowerCase(),
           ) && (
             <div className="px-2 py-1 border-t border-surface-divider mt-1 pt-2">
-              <button
+              <ButtonBase
                 onClick={() =>
                   onSelect({
                     name: search.trim(),
@@ -435,7 +437,7 @@ export default function SpeakerAssignmentPopover({
               >
                 <Plus className="w-3 h-3" />
                 <span className="truncate">Create local &quot;{search}&quot;</span>
-              </button>
+              </ButtonBase>
             </div>
           )}
 
@@ -447,7 +449,7 @@ export default function SpeakerAssignmentPopover({
             </div>
           )}
       </div>
-    </div>,
+    </SurfaceBase>,
     document.body,
   );
 }

@@ -1,5 +1,6 @@
 'use client';
 
+import { ButtonBase } from '@/components/ui/nativeBases';
 import { useState, useEffect, useCallback } from 'react';
 import { useOnDepsChange } from '@/lib/useOnDepsChange';
 import { Plus, Check } from 'lucide-react';
@@ -113,7 +114,7 @@ export default function BatchTagModal({ isOpen, onClose, onApply, count, mode }:
         {filteredTags.map(tag => {
           const color = getColorByKey(tag.color);
           return (
-            <button
+            <ButtonBase
               key={tag.id}
               onClick={() => setSelectedTag(tag.name)}
               className={`group flex w-full items-center justify-between px-3 py-2 text-left text-sm transition-colors ${
@@ -129,18 +130,18 @@ export default function BatchTagModal({ isOpen, onClose, onApply, count, mode }:
               {selectedTag === tag.name && (
                 <Check aria-hidden="true" className="w-4 h-4 text-action-text" />
               )}
-            </button>
+            </ButtonBase>
           );
         })}
 
         {mode === 'add' && inputValue && !filteredTags.some(t => t.name.toLowerCase() === inputValue.toLowerCase()) && (
-          <button
+          <ButtonBase
             onClick={handleCreateTag}
             className="flex w-full items-center gap-2 border-t border-surface-divider px-3 py-2 text-left text-sm font-medium text-action-text hover:bg-surface-inset"
           >
             <Plus aria-hidden="true" className="w-4 h-4" />
             Create &quot;{inputValue}&quot;
-          </button>
+          </ButtonBase>
         )}
 
         {filteredTags.length === 0 && !inputValue && (

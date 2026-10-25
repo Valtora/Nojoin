@@ -1,5 +1,7 @@
 "use client";
 
+import { ButtonBase, InputBase, SelectBase } from '@/components/ui/nativeBases';
+import { SurfaceBase } from '@/components/ui/SurfaceBase';
 import {
   RecordingSpeaker,
   RecordingId,
@@ -160,7 +162,7 @@ export default function SpeakerPanel({
       <div className="min-h-0 flex-1 overflow-y-auto p-2 pb-clear-floating-2 space-y-2">
         {pendingEntries.length >= 2 && (
           <div className="flex justify-end">
-            <button
+            <ButtonBase chrome="action"
               type="button"
               className={`rounded px-2 py-1 text-xs font-medium bg-action text-action-on hover:bg-action-hover ${TOUCH_TARGET_HEIGHT} ${DISABLED_LOOK}`}
               {...loadingButtonProps(isReviewingName, undefined, () =>
@@ -168,7 +170,7 @@ export default function SpeakerPanel({
               )}
             >
               Confirm all ({pendingEntries.length})
-            </button>
+            </ButtonBase>
           </div>
         )}
         {speakerEntries.length === 0 ? (
@@ -195,7 +197,7 @@ export default function SpeakerPanel({
                   <p className="text-xs font-semibold text-action-text mb-2">
                     Merge {entry.displayName} into:
                   </p>
-                  <select
+                  <SelectBase
                     className="w-full text-sm p-1 mb-2 rounded border border-control-border bg-surface-card"
                     value={mergeTargetLabel}
                     onChange={(e) => setMergeTargetLabel(e.target.value)}
@@ -209,21 +211,21 @@ export default function SpeakerPanel({
                         {candidate.displayName}
                       </option>
                     ))}
-                  </select>
+                  </SelectBase>
                   <div className="flex gap-2">
-                    <button
+                    <ButtonBase chrome="action"
                       onClick={handleMergeSubmit}
                       disabled={!mergeTargetLabel}
                       className="flex-1 px-2 py-1 bg-action text-action-on text-xs rounded hover:bg-action-hover disabled:opacity-50"
                     >
                       Confirm
-                    </button>
-                    <button
+                    </ButtonBase>
+                    <ButtonBase
                       onClick={() => setMergingSpeaker(null)}
                       className="px-2 py-1 bg-surface-inset text-contrast-muted text-xs rounded hover:bg-surface-card"
                     >
                       Cancel
-                    </button>
+                    </ButtonBase>
                   </div>
                 </div>
               );
@@ -246,7 +248,7 @@ export default function SpeakerPanel({
             );
 
             return (
-              <div
+              <SurfaceBase kind="card"
                 key={entry.key}
                 className="relative group p-2.5 @min-[18rem]:p-3 rounded-lg bg-surface-card border border-control-border hover:border-status-info-border transition-colors shadow-card"
                 onContextMenu={(e) => handleContextMenu(e, entry)}
@@ -282,7 +284,7 @@ export default function SpeakerPanel({
                     </div>
                     <div className="min-w-0 flex-1">
                       {isRenaming ? (
-                        <input
+                        <InputBase
                           autoFocus
                           type="text"
                           value={renameValue}
@@ -332,7 +334,7 @@ export default function SpeakerPanel({
                     </div>
                   </div>
                   <div className="flex items-center gap-1 shrink-0 self-start">
-                  <button
+                  <ButtonBase
                     className={`p-1.5 rounded-full transition-colors ${
                       isSpeakerActive && isPlaying
                         ? "text-status-info-fg bg-status-info-bg"
@@ -350,15 +352,15 @@ export default function SpeakerPanel({
                     ) : (
                       <Play className="w-3 h-3 fill-current" />
                     )}
-                  </button>
+                  </ButtonBase>
                   {isSpeakerActive && isPlaying && (
-                    <button
+                    <ButtonBase
                       className="p-1.5 text-contrast-icon-muted hover:text-status-info-fg hover:bg-status-info-bg rounded-full transition-colors"
                       title="Next Snippet"
                       onClick={() => handleNextSnippet(entry.labels)}
                     >
                       <ArrowRightToLine className="w-3 h-3 fill-current" />
-                    </button>
+                    </ButtonBase>
                   )}
                   </div>
                 </div>
@@ -374,7 +376,7 @@ export default function SpeakerPanel({
                     {/* The reason wraps above the buttons in a narrow
                         column, and a long Not {name} truncates inside it. */}
                     <div className="ml-auto flex min-w-0 max-w-full items-center gap-1.5">
-                      <button
+                      <ButtonBase chrome="action"
                         type="button"
                         aria-label={`Confirm ${entry.displayName}`}
                         className={`shrink-0 rounded px-2 py-1 text-xs font-medium bg-action text-action-on hover:bg-action-hover ${TOUCH_TARGET_HEIGHT} ${DISABLED_LOOK}`}
@@ -383,8 +385,8 @@ export default function SpeakerPanel({
                         )}
                       >
                         Confirm
-                      </button>
-                      <button
+                      </ButtonBase>
+                      <ButtonBase chrome="action"
                         type="button"
                         className={`min-w-0 max-w-[10rem] truncate rounded border border-control-border bg-surface-card px-2 py-1 text-xs font-medium text-foreground hover:bg-surface-inset ${TOUCH_TARGET_HEIGHT} ${DISABLED_LOOK}`}
                         {...loadingButtonProps(isReviewingName, undefined, () =>
@@ -392,7 +394,7 @@ export default function SpeakerPanel({
                         )}
                       >
                         Not {entry.displayName}
-                      </button>
+                      </ButtonBase>
                     </div>
                   </div>
                 )}
@@ -413,19 +415,19 @@ export default function SpeakerPanel({
                           Merged in: {cluster.diarization_label},{" "}
                           {describeLineCount(cluster.restorable_utterance_count)}
                         </span>
-                        <button
+                        <ButtonBase
                           type="button"
                           className="shrink-0 rounded px-2 py-0.5 text-xs font-medium text-action-text hover:bg-action-tint disabled:opacity-50 aria-disabled:opacity-50"
                           title="Give these lines back to a speaker of their own"
                           {...loadingButtonProps(isSubmitting, undefined, () => handleUndoMerge(cluster))}
                         >
                           Undo merge
-                        </button>
+                        </ButtonBase>
                       </li>
                     ))}
                   </ul>
                 )}
-              </div>
+              </SurfaceBase>
             );
           })
         )}

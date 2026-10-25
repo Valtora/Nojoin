@@ -1,5 +1,6 @@
 "use client";
 
+import { ButtonBase } from '@/components/ui/nativeBases';
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { BarChart3 } from "lucide-react";
 
@@ -128,13 +129,13 @@ export default function AnalyticsView({
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
         <p className="text-sm text-contrast-helper">{error}</p>
-        <button
+        <ButtonBase
           type="button"
           onClick={() => void load()}
           className="text-sm font-medium text-action-text hover:text-action-text-hover"
         >
           Try again
-        </button>
+        </ButtonBase>
       </div>
     );
   }

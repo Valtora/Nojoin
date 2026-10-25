@@ -1,5 +1,6 @@
 'use client';
 
+import { SurfaceBase } from '@/components/ui/SurfaceBase';
 import { Trash2, Bell } from 'lucide-react';
 import { useNotificationStore } from '@/lib/notificationStore';
 import { format } from 'date-fns';
@@ -59,7 +60,7 @@ export default function NotificationHistoryModal({ isOpen, onClose }: Notificati
           </div>
         ) : (
           history.map((notification) => (
-            <div
+            <SurfaceBase kind="card"
               key={notification.id}
               className="rounded-lg border border-surface-border bg-surface-card p-3"
             >
@@ -78,7 +79,7 @@ export default function NotificationHistoryModal({ isOpen, onClose }: Notificati
                   </p>
                 </div>
               </div>
-            </div>
+            </SurfaceBase>
           ))
         )}
       </div>

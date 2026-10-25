@@ -1,5 +1,7 @@
 "use client";
 
+import { ButtonBase, InputBase } from "@/components/ui/nativeBases";
+import { SurfaceBase } from "@/components/ui/SurfaceBase";
 import React, { useState, useEffect } from "react";
 import { Tag as TagIcon, Fingerprint, ArrowRight } from "lucide-react";
 import Button from "@/components/ui/Button";
@@ -160,34 +162,36 @@ export function BatchEditModal({
             <label className="flex items-center gap-2 text-sm font-medium text-contrast-muted">
               <TagIcon aria-hidden="true" className="w-4 h-4" /> Tags
             </label>
-            <div className="flex rounded-lg bg-surface-inset p-1">
-              <button
+            <SurfaceBase
+              kind="inset" className="flex rounded-lg bg-surface-inset p-1">
+              <ButtonBase
                 type="button"
                 onClick={() => setTagAction("add")}
                 className={tagModeClass(tagAction === "add")}
               >
                 Add
-              </button>
-              <button
+              </ButtonBase>
+              <ButtonBase
                 type="button"
                 onClick={() => setTagAction("remove")}
                 className={tagModeClass(tagAction === "remove")}
               >
                 Remove
-              </button>
-              <button
+              </ButtonBase>
+              <ButtonBase
                 type="button"
                 onClick={() => setTagAction("set")}
                 className={tagModeClass(tagAction === "set")}
               >
                 Set (Replace)
-              </button>
-            </div>
+              </ButtonBase>
+            </SurfaceBase>
           </div>
 
-          <div className="flex min-h-[60px] flex-wrap gap-2 rounded-lg border border-surface-border bg-surface-inset p-3">
+          <SurfaceBase
+            kind="inset" className="flex min-h-[60px] flex-wrap gap-2 rounded-lg border border-surface-border bg-surface-inset p-3">
             {allTags.map((tag) => (
-              <button
+              <ButtonBase
                 key={tag.id}
                 type="button"
                 onClick={() => toggleTag(tag.id)}
@@ -200,20 +204,20 @@ export function BatchEditModal({
                 }`}
               >
                 {tag.name}
-              </button>
+              </ButtonBase>
             ))}
             {allTags.length === 0 && (
               <span className="text-xs italic text-contrast-icon-muted">
                 No tags available
               </span>
             )}
-          </div>
+          </SurfaceBase>
         </div>
 
         {/* Voiceprints */}
         <div className="border-t border-surface-divider pt-4">
           <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-surface-border p-3 transition-colors hover:bg-surface-inset">
-            <input
+            <InputBase
               type="checkbox"
               className="h-4 w-4 rounded border-control-border accent-danger"
               checked={updates.deleteVoiceprints || false}

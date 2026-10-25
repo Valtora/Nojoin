@@ -1,5 +1,6 @@
 "use client";
 
+import { SurfaceBase } from '@/components/ui/SurfaceBase';
 import {
   Area,
   AreaChart,
@@ -40,7 +41,7 @@ const ChartTooltip = ({
   const speaking = payload.filter((entry) => entry.value > 0);
   if (!speaking.length) return null;
   return (
-    <div className="rounded-lg border border-surface-float-border bg-surface-float p-2 text-xs shadow-float">
+    <SurfaceBase kind="float" className="rounded-lg border border-surface-float-border bg-surface-float p-2 text-xs shadow-float">
       <p className="mb-1 font-medium text-foreground">
         From {formatTimestamp(label ?? 0)}
       </p>
@@ -64,7 +65,7 @@ const ChartTooltip = ({
           </li>
         ))}
       </ul>
-    </div>
+    </SurfaceBase>
   );
 };
 

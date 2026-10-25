@@ -1,5 +1,6 @@
 "use client";
 
+import { InputBase } from "@/components/ui/nativeBases";
 import SettingsCard from "./SettingsCard";
 import { useSettingsContext } from "./SettingsProvider";
 import SettingsRow from "./SettingsRow";
@@ -23,7 +24,7 @@ export default function AiAnalysisLimitSection() {
         controlId="ai-analysis-daily-limit"
         description="Each analysis is one long call against that person's AI provider quota, counted from midnight UTC. Leave it blank or at 0 for no limit. To change one person's limit, edit them in the table above."
       >
-        <input
+        <InputBase
           id="ai-analysis-daily-limit"
           aria-describedby="ai-analysis-daily-limit-help"
           type="number"

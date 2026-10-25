@@ -1,5 +1,6 @@
 "use client";
 
+import { ButtonBase } from '@/components/ui/nativeBases';
 import type { AnalyticsMetrics, AnalyticsSpeaker } from "@/types";
 
 import { Note } from "./Section";
@@ -89,7 +90,7 @@ export default function TurnsPanel({
                     className="py-2 text-right tabular-nums"
                   >
                     {structure && onPlaySegment ? (
-                      <button
+                      <ButtonBase
                         type="button"
                         onClick={() =>
                           onPlaySegment(structure.longest_turn_start_ms)
@@ -98,7 +99,7 @@ export default function TurnsPanel({
                         title={`Play from ${formatTimestamp(structure.longest_turn_start_ms)}`}
                       >
                         {formatDuration(structure.longest_turn_ms)}
-                      </button>
+                      </ButtonBase>
                     ) : (
                       <span className="text-contrast-muted">
                         {formatDuration(structure?.longest_turn_ms ?? 0)}

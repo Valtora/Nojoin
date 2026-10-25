@@ -1,5 +1,7 @@
 "use client";
 
+import { ButtonBase } from '@/components/ui/nativeBases';
+import { SurfaceBase } from '@/components/ui/SurfaceBase';
 import { Mic } from "lucide-react";
 import { useRouter } from "next/navigation";
 import type { ReactNode } from "react";
@@ -183,7 +185,7 @@ export default function MeetingControls({
 
   if (variant === "dashboard") {
     return (
-      <div className="density-surface border border-action-border bg-surface-card shadow-card">
+      <SurfaceBase kind="card" className="density-surface border border-action-border bg-surface-card shadow-card">
         <div className="flex flex-col gap-4">
           <div className="flex items-center gap-3">
             <Mic className="h-5 w-5 shrink-0 text-action-text" />
@@ -212,7 +214,7 @@ export default function MeetingControls({
             // grid, and the icon is sized in `em` so it tracks the label
             // instead of needing its own scale.
             <div className="@container">
-              <button
+              <ButtonBase chrome="action"
                 type="button"
                 onClick={handlePrimaryAction}
                 disabled={meetingSurfaceState.buttonDisabled}
@@ -222,13 +224,13 @@ export default function MeetingControls({
               >
                 <Mic className="h-[1.15em] w-[1.15em] shrink-0" />
                 {meetingSurfaceState.buttonLabel}
-              </button>
+              </ButtonBase>
             </div>
           ) : (
             <LiveMeetingControls size="full" onMeetingEnd={onMeetingEnd} />
           )}
         </div>
-      </div>
+      </SurfaceBase>
     );
   }
 
@@ -260,7 +262,7 @@ export default function MeetingControls({
                   : "basis-full"
               }
             >
-              <button
+              <ButtonBase chrome="action"
                 type="button"
                 onClick={handlePrimaryAction}
                 disabled={meetingSurfaceState.buttonDisabled}
@@ -270,7 +272,7 @@ export default function MeetingControls({
               >
                 <Mic className="h-4 w-4" />
                 {meetingSurfaceState.buttonLabel}
-              </button>
+              </ButtonBase>
             </div>
             {pairedAction ? (
               <div className="flex min-w-fit grow basis-0">{pairedAction}</div>

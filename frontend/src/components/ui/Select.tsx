@@ -3,6 +3,7 @@ import { ChevronDown } from "lucide-react";
 
 import { cn } from "@/lib/cn";
 import { fieldChrome, type FieldSize } from "./Input";
+import { SelectBase } from "./nativeBases";
 
 interface SelectProps extends Omit<SelectHTMLAttributes<HTMLSelectElement>, "size"> {
   label?: ReactNode;
@@ -34,7 +35,7 @@ const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select(
         </label>
       )}
       <div className="relative">
-        <select
+        <SelectBase
           ref={ref}
           id={selectId}
           aria-invalid={error ? true : undefined}
@@ -47,7 +48,7 @@ const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select(
           {...rest}
         >
           {children}
-        </select>
+        </SelectBase>
         <ChevronDown
           aria-hidden="true"
           className="pointer-events-none absolute inset-y-0 right-3 my-auto h-4 w-4 text-contrast-icon-muted"

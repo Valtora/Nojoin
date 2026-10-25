@@ -1,3 +1,4 @@
+import { ButtonBase, InputBase } from '@/components/ui/nativeBases';
 import { Archive, Calendar, Check, Loader2, Trash2 } from "lucide-react";
 
 import { UserTask } from "@/types";
@@ -55,22 +56,22 @@ function TaskActionButtons({
 }) {
   return (
     <div className={wrapperClassName}>
-      <button
+      <ButtonBase
         type="button"
         {...loadingButtonProps(isBusy, undefined, () => void handleArchiveTask(task))}
         className="inline-flex h-12 w-12 items-center justify-center rounded-l-2xl text-contrast-helper transition-colors hover:bg-status-warning-bg hover:text-status-warning-fg"
         aria-label={`Archive ${task.title}`}
       >
         <Archive className="h-5 w-5" />
-      </button>
-      <button
+      </ButtonBase>
+      <ButtonBase
         type="button"
         {...loadingButtonProps(isBusy, undefined, () => void handleDeleteTask(task.id))}
         className="inline-flex h-12 w-12 items-center justify-center rounded-r-2xl text-contrast-helper transition-colors hover:bg-status-danger-bg hover:text-status-danger-fg"
         aria-label={`Delete ${task.title}`}
       >
         <Trash2 className="h-5 w-5" />
-      </button>
+      </ButtonBase>
     </div>
   );
 }
@@ -103,7 +104,7 @@ function TaskEditForm({
       }}
       className="relative"
     >
-      <input
+      <InputBase
         ref={editingInputRef}
         type="text"
         value={editingTitle}
@@ -149,7 +150,7 @@ export default function TaskRow(props: TaskRowProps) {
 
     return (
       <div className="density-surface-subtle group grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-4 gap-y-3 bg-surface-inset px-4 py-4 transition-colors hover:bg-action-tint sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:gap-4">
-        <button
+        <ButtonBase chrome="action"
           type="button"
           {...loadingButtonProps(isBusy, undefined, () => void handleToggleTask(task))}
           className="inline-flex h-8 w-8 shrink-0 self-center items-center justify-center rounded-full border border-control-border bg-surface-card text-contrast-icon-muted transition-colors hover:border-action-border hover:bg-action-tint hover:text-action-text"
@@ -160,7 +161,7 @@ export default function TaskRow(props: TaskRowProps) {
           ) : (
             <Check className="h-4 w-4" />
           )}
-        </button>
+        </ButtonBase>
 
         <div className="min-w-0 flex-1">
           {isEditing ? (
@@ -193,7 +194,7 @@ export default function TaskRow(props: TaskRowProps) {
               </span>
             )}
 
-            <button
+            <ButtonBase
               type="button"
               ref={(node) => {
                 registerDeadlineTrigger(task.id, node);
@@ -214,7 +215,7 @@ export default function TaskRow(props: TaskRowProps) {
                 {getDeadlineTriggerLabel(deadline, timeZone)}
               </span>
               <Calendar className="h-4 w-4 shrink-0 opacity-60" />
-            </button>
+            </ButtonBase>
           </div>
         </div>
 
@@ -231,7 +232,7 @@ export default function TaskRow(props: TaskRowProps) {
 
   return (
     <div className="density-surface-subtle grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-4 gap-y-3 bg-surface-inset px-4 py-4 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:gap-4">
-      <button
+      <ButtonBase chrome="action"
         type="button"
         {...loadingButtonProps(isBusy, undefined, () => void handleToggleTask(task))}
         className="inline-flex h-8 w-8 shrink-0 self-center items-center justify-center rounded-full border border-status-success-border bg-status-success-bg text-status-success-fg transition-colors hover:border-status-success-border"
@@ -242,7 +243,7 @@ export default function TaskRow(props: TaskRowProps) {
         ) : (
           <Check className="h-4 w-4" />
         )}
-      </button>
+      </ButtonBase>
 
       <div className="min-w-0 flex-1">
         {isEditing ? (
@@ -268,7 +269,7 @@ export default function TaskRow(props: TaskRowProps) {
 
         {deadline && (
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <button
+            <ButtonBase
               type="button"
               ref={(node) => {
                 registerDeadlineTrigger(task.id, node);
@@ -284,7 +285,7 @@ export default function TaskRow(props: TaskRowProps) {
                 {getDeadlineTriggerLabel(deadline, timeZone)}
               </span>
               <Calendar className="h-4 w-4 shrink-0 opacity-60" />
-            </button>
+            </ButtonBase>
           </div>
         )}
       </div>

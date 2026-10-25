@@ -1,5 +1,7 @@
 "use client";
 
+import { ButtonBase, InputBase } from '@/components/ui/nativeBases';
+import { SurfaceBase } from '@/components/ui/SurfaceBase';
 import React, { useState, useEffect } from "react";
 import { useHydrated } from "@/lib/useHydrated";
 import { useRouter, usePathname } from "next/navigation";
@@ -267,7 +269,7 @@ export default function MainNav() {
         />
       )}
 
-      <aside
+      <SurfaceBase as="aside" kind={isDesktop ? "pane" : "float"}
         id="main-nav"
         className={`shrink-0 border-r border-rail-border bg-rail flex h-[calc(100dvh-1rem)] flex-col overflow-hidden z-[var(--z-modal)] transition-all duration-300 lg:sticky lg:top-0 lg:h-[calc(100dvh_-_var(--demo-banner-h,0px))] ${
           isMobileNavOpen
@@ -396,7 +398,7 @@ export default function MainNav() {
                   Tags
                 </span>
                 <div className="flex items-center gap-1">
-                  <button
+                  <ButtonBase
                     onClick={(e) => {
                       e.stopPropagation();
                       handleExpandAllTags();
@@ -405,8 +407,8 @@ export default function MainNav() {
                     title="Expand All"
                   >
                     <ChevronsDown className="w-3 h-3" />
-                  </button>
-                  <button
+                  </ButtonBase>
+                  <ButtonBase
                     onClick={(e) => {
                       e.stopPropagation();
                       setExpandedTagIds([]);
@@ -415,8 +417,8 @@ export default function MainNav() {
                     title="Collapse All"
                   >
                     <ChevronsUp className="w-3 h-3" />
-                  </button>
-                  <button
+                  </ButtonBase>
+                  <ButtonBase
                     onClick={(e) => {
                       e.stopPropagation();
                       setIsAddingTag(true);
@@ -425,7 +427,7 @@ export default function MainNav() {
                     title="Add tag"
                   >
                     <Plus className="w-3 h-3" />
-                  </button>
+                  </ButtonBase>
                 </div>
               </div>
             )}
@@ -439,7 +441,7 @@ export default function MainNav() {
             {/* Add Tag Input */}
             {isAddingTag && !collapsed && (
               <div className="px-2 pb-2">
-                <input
+                <InputBase
                   type="text"
                   value={newTagName}
                   onChange={(e) => setNewTagName(e.target.value)}
@@ -565,7 +567,7 @@ export default function MainNav() {
             <div className="absolute top-1/2 right-0 -translate-y-1/2 w-1 h-12 bg-rail-border group-hover:bg-action transition-colors" />
           </div>
         )}
-      </aside>
+      </SurfaceBase>
 
       {/* Modals */}
       <NotificationHistoryModal

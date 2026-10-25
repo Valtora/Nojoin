@@ -1,6 +1,6 @@
 /**
  * Per-browser appearance preferences: colour palette, corner style and
- * density. They sit beside the light/dark theme and follow the same rules: the
+ * density and style. They sit beside the light/dark theme and follow the same rules: the
  * choice lives in local storage, the inline script in theme-script.ts stamps it
  * on <html> before first paint, and the React providers keep it in sync after
  * that. Every default is the product's original look, so an untouched browser
@@ -26,18 +26,24 @@ export type Palette = (typeof PALETTES)[number];
 export const CORNER_STYLES = ["rounded", "subtle", "square"] as const;
 export type CornerStyle = (typeof CORNER_STYLES)[number];
 
+// Only the existing look is available while the shared chrome is migrated.
+export const UI_STYLES = ["default"] as const;
+export type UiStyle = (typeof UI_STYLES)[number];
+
 export const DENSITY_PREFERENCES = ["auto", "comfortable", "compact", "dense"] as const;
 export type DensityPreference = (typeof DENSITY_PREFERENCES)[number];
 
 export const DEFAULT_THEME: Theme = "system";
 export const DEFAULT_PALETTE: Palette = "default";
 export const DEFAULT_CORNER_STYLE: CornerStyle = "rounded";
+export const DEFAULT_UI_STYLE: UiStyle = "default";
 export const DEFAULT_DENSITY_PREFERENCE: DensityPreference = "auto";
 
 export const APPEARANCE_STORAGE_KEYS = {
   theme: "nojoin-theme",
   palette: "nojoin-palette",
   corners: "nojoin-corners",
+  style: "nojoin-style",
   density: "nojoin-density",
 } as const;
 
@@ -109,6 +115,10 @@ export function readStoredCornerStyle(): CornerStyle {
   return readStored(APPEARANCE_STORAGE_KEYS.corners, CORNER_STYLES, DEFAULT_CORNER_STYLE);
 }
 
+export function readStoredUiStyle(): UiStyle {
+  return readStored(APPEARANCE_STORAGE_KEYS.style, UI_STYLES, DEFAULT_UI_STYLE);
+}
+
 export function readStoredDensityPreference(): DensityPreference {
   return readStored(
     APPEARANCE_STORAGE_KEYS.density,
@@ -123,6 +133,15 @@ export function storePalette(palette: Palette) {
 
 export function storeCornerStyle(corners: CornerStyle) {
   writeStored(APPEARANCE_STORAGE_KEYS.corners, corners, corners === DEFAULT_CORNER_STYLE);
+}
+
+export function storeUiStyle(style: UiStyle) {
+  writeStored(APPEARANCE_STORAGE_KEYS.style, style, style === DEFAULT_UI_STYLE);
+}
+
+/** The style seam is explicit even before any alternative look is available. */
+export function applyUiStyle(style: UiStyle, root: HTMLElement = document.documentElement) {
+  root.dataset.style = style;
 }
 
 export function storeDensityPreference(preference: DensityPreference) {
