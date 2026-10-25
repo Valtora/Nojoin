@@ -4,11 +4,13 @@ import { useRef, type PointerEvent as ReactPointerEvent } from "react";
 import { ChevronDown, ChevronUp, GripVertical, Pencil, StickyNote } from "lucide-react";
 
 import { noteSnippet } from "@/lib/notes/noteOutbox";
+import type { NoteAttachment } from "@/types";
 
 import Button from "../ui/Button";
 import IconButton from "../ui/IconButton";
 import { TOUCH_TARGET_SQUARE } from "../ui/touchTarget";
 
+import { NoteFile } from "./NoteFiles";
 import { NOTE_BUTTON_TOUCH } from "./noteButtons";
 
 /** Moving a saved point note in the finished view. */
@@ -47,6 +49,8 @@ interface TimelineNoteLineProps {
   timeColumnClassName?: string;
   /** Move up, Move down and a grip to drag; without it, the note stays put. */
   move?: NoteLineMove;
+  /** The note's file, shown under its text; one on its way shows from the outbox. */
+  attachment?: NoteAttachment | null;
 }
 
 /** The time column of the live view, which a note's own time sits in by default. */
@@ -70,6 +74,7 @@ export default function TimelineNoteLine({
   onDiscard,
   timeColumnClassName = NOTE_TIME_COLUMN,
   move,
+  attachment = null,
 }: TimelineNoteLineProps) {
   const lineRef = useRef<HTMLDivElement>(null);
   const name = `at ${timeLabel}, “${noteSnippet(body)}”`;
@@ -132,6 +137,7 @@ export default function TimelineNoteLine({
           <p className="mt-0.5 whitespace-pre-wrap break-words text-sm leading-6 text-foreground">
             {body}
           </p>
+          <NoteFile noteId={noteId} attachment={attachment} />
           {move?.refusal ? (
             <p data-testid="timeline-note-move-refused" className="mt-1 text-xs text-status-danger-fg">
               {move.refusal}

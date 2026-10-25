@@ -247,7 +247,9 @@ SCHEMA_STATEMENTS = [
         parse_warning TEXT,
         page_count INTEGER,
         pages_parsed INTEGER NOT NULL DEFAULT 0,
-        parse_stage VARCHAR(64)
+        parse_stage VARCHAR(64),
+        note_id INTEGER,
+        use_in_notes BOOLEAN NOT NULL DEFAULT 0
     )
     """,
     """
@@ -1339,6 +1341,63 @@ async def test_get_documents_truncates_long_text(
     # and the first nine characters of the body.
     assert docs[0]["text"] == "[Page 1]\n012345678"
     assert docs[0]["text_truncated"] is True
+
+
+@pytest.mark.anyio
+async def test_a_notes_file_is_listed_with_its_note_and_read_only_when_on(
+    session_maker, test_user: User, mcp_context
+):
+    bind_mcp_identity(test_user)
+    public_id = await seed_recording_with_speakers(session_maker, user_id=test_user.id)
+    async with session_maker() as session:
+        note = TimelineNote(
+            recording_id=1,
+            created_by_user_id=test_user.id,
+            kind="point",
+            body="Screen capture",
+            anchor_ms=65_400,
+        )
+        session.add(note)
+        await session.commit()
+        await session.refresh(note)
+        note_pk, note_public_id = note.id, note.public_id
+    await seed_document(
+        session_maker, document_id=5, recording_id=1, title="Agenda", pages=["One."]
+    )
+    await seed_document(
+        session_maker,
+        document_id=6,
+        recording_id=1,
+        title="capture.png",
+        pages=["Quarterly plan, Alice Example"],
+    )
+    async with session_maker() as session:
+        await session.execute(
+            text("UPDATE documents SET note_id = :note WHERE id = 6"), {"note": note_pk}
+        )
+        await session.commit()
+
+    off = {doc["title"]: doc for doc in await get_documents(public_id)}
+    async with session_maker() as session:
+        await session.execute(
+            text("UPDATE documents SET use_in_notes = 1 WHERE id = 6")
+        )
+        await session.commit()
+    on = {doc["title"]: doc for doc in await get_documents(public_id)}
+    notes = await get_meeting_notes(public_id)
+
+    assert (off["Agenda"]["note_id"], off["Agenda"]["use_in_notes"]) == (None, True)
+    assert off["capture.png"]["note_id"] == note_public_id
+    assert (off["capture.png"]["use_in_notes"], off["capture.png"]["text"]) == (
+        False,
+        "",
+    )
+    assert on["capture.png"]["text"] == "[Page 1]\nQuarterly plan, Alice Example"
+    assert notes["timeline_notes"][0]["attachment"] == {
+        "document_id": 6,
+        "title": "capture.png",
+        "use_in_notes": True,
+    }
 
 
 @pytest.mark.anyio

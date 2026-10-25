@@ -156,7 +156,11 @@ RESTORE_FOREIGN_KEYS: Dict[str, Tuple[_ForeignKeySpec, ...]] = {
         _enrich("created_by_user_id", "users"),
     ),
     "chat_messages": (_own("recording_id", "recordings"), _own("user_id", "users")),
-    "documents": (_own("recording_id", "recordings"),),
+    # A note's file whose note is not restored stays as a document of its meeting.
+    "documents": (
+        _own("recording_id", "recordings"),
+        _enrich("note_id", "timeline_notes"),
+    ),
     "document_pages": (_own("document_id", "documents"),),
 }
 

@@ -18,6 +18,7 @@ import {
 } from "@/types";
 
 import SpeakerPanel from "@/components/SpeakerPanel";
+import CapturesGallery from "@/components/notes/CapturesGallery";
 import MyNotesList from "@/components/notes/MyNotesList";
 import type { NoteEdits } from "@/lib/notes/useNoteEdits";
 
@@ -115,6 +116,7 @@ const TABS: { panel: ActivePanel; label: string }[] = [
 const MOBILE_TABS: { panel: ActivePanel; label: string }[] = [
   ...TABS.slice(0, 2),
   { panel: "my-notes", label: "My notes" },
+  { panel: "captures", label: "Captures" },
   ...TABS.slice(2),
   { panel: "speakers", label: "Speakers" },
 ];
@@ -380,6 +382,24 @@ export default function RecordingMainContent({
               segments={transcriptSegments}
               noteEdits={noteEdits}
               onPlay={onPlaySegment}
+              onShowTranscript={showTranscript}
+              className="flex-1"
+            />
+          </div>
+        )}
+
+        {isMobile && (
+          <div
+            role="tabpanel"
+            id="panel-captures"
+            aria-labelledby="tab-captures"
+            className={`absolute inset-0 flex flex-col ${activePanel === "captures" ? "z-10 visible" : "z-0 invisible"}`}
+          >
+            <CapturesGallery
+              recordingId={recording.id}
+              timelineNotes={timelineNotes}
+              segments={transcriptSegments}
+              noteEdits={noteEdits}
               onShowTranscript={showTranscript}
               className="flex-1"
             />

@@ -33,6 +33,7 @@ from .model import (
     CodeBlock,
     ExportDocument,
     Heading,
+    ImageBlock,
     Inline,
     ListBlock,
     Paragraph,
@@ -258,6 +259,7 @@ class _BodyWriter:
             Callout: self._callout,
             ChartBlock: self._chart,
             TranscriptLine: self._transcript,
+            ImageBlock: self._image,
         }
 
     def write(self, container: Any, blocks: Sequence[Block]) -> None:
@@ -417,6 +419,18 @@ class _BodyWriter:
             BytesIO(paint_png(scene)), width=Pt(scene.width)
         )
         paragraph.paragraph_format.space_after = Pt(10)
+
+    def _image(self, container: Any, block: ImageBlock) -> None:
+        caption = container.add_paragraph(style="Quote")
+        add_spans(caption, block.caption, color=theme.MUTED)
+        # The caption stays on the picture's page.
+        caption.paragraph_format.keep_with_next = True
+        width, _height = block.size_pt(TEXT_WIDTH_PT)
+        paragraph = container.add_paragraph()
+        paragraph.add_run().add_picture(BytesIO(block.data), width=Pt(width))
+        docx_parts.picture_alt_text(paragraph, block.alt_text)
+        docx_parts.picture_outline(paragraph, theme.RULE)
+        paragraph.paragraph_format.space_after = Pt(8)
 
     def _transcript(self, container: Any, block: TranscriptLine) -> None:
         paragraph = container.add_paragraph()

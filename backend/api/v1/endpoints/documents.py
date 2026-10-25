@@ -4,9 +4,10 @@ from typing import List, NewType
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import FileResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel import select
+from sqlmodel import col, select
 
 from backend.api.deps import get_current_user, get_db
 from backend.api.error_handling import sanitized_http_exception
@@ -26,6 +27,14 @@ from backend.utils.document_storage import (
     RecordingGoneError,
     delete_document_files,
     insert_document_or_remove_file,
+)
+from backend.utils.note_attachments import (
+    PREVIEW_MAX_EDGE_PX,
+    ImageUnreadable,
+    is_image,
+    render_image,
+    served_media_type,
+    stored_extension,
 )
 from backend.utils.path_manager import PathManager
 from backend.utils.rate_limit import enforce_upload_concurrency
@@ -127,7 +136,7 @@ async def list_documents(
     current_user: User = Depends(get_current_user),
 ):
     """
-    List all documents associated with a recording.
+    List the documents attached to a recording. A note's file is listed with its note.
     """
     recording = await _get_owned_recording(db, recording_id, current_user.id)
 
@@ -137,6 +146,7 @@ async def list_documents(
     stmt = (
         select(Document)
         .where(Document.recording_id == recording.id)
+        .where(col(Document.note_id).is_(None))
         .order_by(Document.created_at, Document.id)
     )
     result = await db.execute(stmt)
@@ -178,11 +188,13 @@ async def download_document(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Return the original uploaded file.
+    """Return the original uploaded file, always as a download.
 
     Serves the stored file under its original title rather than the UUID it is
     saved as, so a download is recognisable. Ownership is checked through the
-    recording, exactly as delete and re-parse do.
+    recording, exactly as delete and re-parse do. Only an image is served as
+    its own type, for the viewer's picture; every other file, a note's ZIP or
+    SVG among them, is bytes with ``nosniff``, so the browser never renders it.
     """
     document = await db.get(Document, document_id)
     if not document:
@@ -205,7 +217,9 @@ async def download_document(
         # Sanitised: the title is user-supplied and ends up in a
         # Content-Disposition header, where a quote or newline could inject one.
         filename=_safe_download_name(document.title, document.file_path),
-        media_type=document.file_type or "application/octet-stream",
+        media_type=served_media_type(document),
+        content_disposition_type="attachment",
+        headers={"X-Content-Type-Options": "nosniff"},
     )
 
 
@@ -227,6 +241,65 @@ def _content_length(request: Request) -> int | None:
         return int(raw) if raw else None
     except ValueError:
         return None
+
+
+async def store_upload(
+    request: Request,
+    file: UploadFile,
+    *,
+    user_id: int,
+    recording: Recording,
+    any_format: bool = False,
+) -> tuple[str, int]:
+    """Check an upload's type and room for it, then stream it to a file of its own.
+
+    Returns the stored path and size. Shared by document uploads, which take
+    the formats the parser reads, and the files on timeline notes, which take
+    any (``any_format``) under a plain extension (``stored_extension``).
+    """
+    file_ext = (
+        stored_extension(file.filename)
+        if any_format
+        else os.path.splitext(file.filename or "")[1].lower()
+    )
+    if not any_format and file_ext not in SUPPORTED_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Unsupported file type. Supported formats: "
+                + ", ".join(
+                    sorted(ext.lstrip(".").upper() for ext in SUPPORTED_EXTENSIONS)
+                )
+                + "."
+            ),
+        )
+
+    # Refuse before writing anything if the volume cannot take it. The size cap
+    # alone is not enough: many uploads under the cap can still fill a disk.
+    ensure_disk_headroom(DOCUMENTS_DIR, _content_length(request))
+
+    unique_filename = f"{uuid4()}{file_ext}"
+    file_path = os.path.join(DOCUMENTS_DIR, unique_filename)
+
+    async with enforce_upload_concurrency(request, "upload_document", str(user_id), 2):
+        try:
+            size_bytes = await stream_and_validate_upload(
+                file=file,
+                dest_path=file_path,
+                max_size=UPLOAD_LIMIT_DOCUMENT,
+            )
+        except HTTPException:
+            raise
+        except Exception as e:  # noqa: BLE001 -- boundary: any failure to store the file becomes one sanitised 500
+            raise sanitized_http_exception(
+                logger=logger,
+                status_code=500,
+                client_message="Failed to save the uploaded document.",
+                log_message=f"Failed to persist uploaded document '{file.filename}' for recording {recording.public_id}.",
+                exc=e,
+            )
+
+    return file_path, size_bytes
 
 
 @router.post("/recordings/{recording_id}/documents", response_model=DocumentPublicRead)
@@ -251,45 +324,9 @@ async def upload_document(  # noqa: PLR0913 - FastAPI dependencies are parameter
     started_at = utc_now()
     recording = await _get_owned_recording(db, recording_id, current_user.id)
 
-    file_ext = os.path.splitext(file.filename or "")[1].lower()
-    if file_ext not in SUPPORTED_EXTENSIONS:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "Unsupported file type. Supported formats: "
-                + ", ".join(
-                    sorted(ext.lstrip(".").upper() for ext in SUPPORTED_EXTENSIONS)
-                )
-                + "."
-            ),
-        )
-
-    # Refuse before writing anything if the volume cannot take it. The size cap
-    # alone is not enough: many uploads under the cap can still fill a disk.
-    ensure_disk_headroom(DOCUMENTS_DIR, _content_length(request))
-
-    unique_filename = f"{uuid4()}{file_ext}"
-    file_path = os.path.join(DOCUMENTS_DIR, unique_filename)
-
-    async with enforce_upload_concurrency(
-        request, "upload_document", str(current_user.id), 2
-    ):
-        try:
-            size_bytes = await stream_and_validate_upload(
-                file=file,
-                dest_path=file_path,
-                max_size=UPLOAD_LIMIT_DOCUMENT,
-            )
-        except HTTPException:
-            raise
-        except Exception as e:  # noqa: BLE001 -- boundary: any failure to store the file becomes one sanitised 500
-            raise sanitized_http_exception(
-                logger=logger,
-                status_code=500,
-                client_message="Failed to save the uploaded document.",
-                log_message=f"Failed to persist uploaded document '{file.filename}' for recording {recording.public_id}.",
-                exc=e,
-            )
+    file_path, size_bytes = await store_upload(
+        request, file, user_id=current_user.id, recording=recording
+    )
 
     document = Document(
         recording_id=recording.id,
@@ -408,3 +445,35 @@ async def delete_document(
     await delete_document_files([file_path], logger=logger)
 
     return {"status": "success"}
+
+
+@router.get("/documents/{document_id}/preview")
+async def preview_document(
+    document_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """A small JPEG of an image document, for the Captures tab and a note's line."""
+    document = await db.get(Document, document_id)
+    recording = await db.get(Recording, document.recording_id) if document else None
+    if not document or not recording or recording.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Document not found")
+    file_path = confined_document_path(document.file_path)
+    if file_path is None or not is_image(document):
+        raise HTTPException(status_code=404, detail="This document has no preview.")
+    if not os.path.exists(file_path):
+        raise HTTPException(
+            status_code=410, detail="The original file is no longer available."
+        )
+    try:
+        image = await run_in_threadpool(
+            render_image, file_path, PREVIEW_MAX_EDGE_PX, quality=80
+        )
+    except ImageUnreadable as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    # A file is written once, so its preview never changes.
+    return Response(
+        content=image.data,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "private, max-age=86400"},
+    )

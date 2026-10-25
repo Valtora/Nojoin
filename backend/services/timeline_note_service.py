@@ -13,9 +13,15 @@ from typing import Iterable, Mapping, Optional, Sequence
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import Session, col, select
 
+from backend.models.document import Document
 from backend.models.timeline_note import TimelineNote
-from backend.models.timeline_note_public import TimelineNoteAuthorRead, TimelineNoteRead
+from backend.models.timeline_note_public import (
+    NoteAttachmentRead,
+    TimelineNoteAuthorRead,
+    TimelineNoteRead,
+)
 from backend.models.user import User
+from backend.utils.note_attachments import is_image, is_readable
 from backend.utils.timeline_notes import (
     NotePlacement,
     place_timeline_notes,
@@ -43,12 +49,21 @@ def _authors_statement(notes: Iterable[TimelineNote]):
     return select(User.id, User.username).where(col(User.id).in_(author_ids))
 
 
+def _attachments_statement(notes: Iterable[TimelineNote]):
+    note_ids = [note.id for note in notes]
+    if not note_ids:
+        return None
+    return select(Document).where(col(Document.note_id).in_(note_ids))
+
+
 @dataclass(frozen=True)
 class RecordingTimelineNotes:
     """One recording's notes and their authors' names, ready to place."""
 
     notes: Sequence[TimelineNote] = ()
     author_names: Mapping[int, str] = field(default_factory=dict)
+    # Each note's file by the note's row id, when loaded with them.
+    attachments: Mapping[int, Document] = field(default_factory=dict)
 
     def place(self, segments: Sequence[Mapping]) -> list[NotePlacement[TimelineNote]]:
         return place_timeline_notes(segments, self.notes)
@@ -88,26 +103,70 @@ async def load_author_names_async(
     return dict((await db.execute(statement)).all()) if statement is not None else {}
 
 
+async def load_attachments_async(
+    db: AsyncSession, notes: Iterable[TimelineNote]
+) -> dict[int, Document]:
+    statement = _attachments_statement(notes)
+    if statement is None:
+        return {}
+    documents = (await db.execute(statement)).scalars().all()
+    return {document.note_id: document for document in documents}
+
+
 async def load_recording_timeline_notes_async(
-    db: AsyncSession, recording_id: int
+    db: AsyncSession, recording_id: int, *, with_files: bool = False
 ) -> RecordingTimelineNotes:
-    """Load a recording's notes with an async session."""
+    """Load a recording's notes with an async session, and their files if asked.
+
+    The prompts never need the files: notes generation reads a note's file as
+    an attached document (``load_attached_documents``).
+    """
     notes = list((await db.execute(_notes_statement(recording_id))).scalars().all())
     return RecordingTimelineNotes(
-        notes=notes, author_names=await load_author_names_async(db, notes)
+        notes=notes,
+        author_names=await load_author_names_async(db, notes),
+        attachments=await load_attachments_async(db, notes) if with_files else {},
     )
 
 
 async def load_timeline_notes_list_signature_async(
     db: AsyncSession, recording_id: int
 ) -> str:
-    """The signature of a recording's notes list, reading ids and revisions only."""
+    """The signature of a recording's notes list, from ids, revisions and files.
+
+    A note's file counts too: its parse ends on a worker and its switch turns
+    without a new revision of the note.
+    """
     rows = await db.execute(
-        select(TimelineNote.public_id, TimelineNote.revision).where(
-            TimelineNote.recording_id == recording_id
+        select(
+            TimelineNote.public_id,
+            TimelineNote.revision,
+            Document.id,
+            Document.status,
+            Document.use_in_notes,
         )
+        .outerjoin(Document, col(Document.note_id) == col(TimelineNote.id))
+        .where(TimelineNote.recording_id == recording_id)
     )
-    return timeline_notes_list_signature(rows.all())
+    return timeline_notes_list_signature(
+        (note_id, revision, *([] if file_id is None else [file_id, status, on]))
+        for note_id, revision, file_id, status, on in rows.all()
+    )
+
+
+def serialize_attachment(document: Document) -> NoteAttachmentRead:
+    return NoteAttachmentRead(
+        id=document.id,
+        title=document.title,
+        file_type=document.file_type,
+        file_size_bytes=document.file_size_bytes,
+        status=getattr(document.status, "value", str(document.status)),
+        error_message=document.error_message,
+        parse_warning=document.parse_warning,
+        use_in_notes=bool(document.use_in_notes),
+        readable=is_readable(document),
+        is_image=is_image(document),
+    )
 
 
 def serialize_timeline_note(
@@ -115,6 +174,7 @@ def serialize_timeline_note(
     *,
     recording_public_id: str,
     author_names: Mapping[int, str],
+    attachment: Optional[Document] = None,
 ) -> TimelineNoteRead:
     author_id = note.created_by_user_id
     author_name = author_names.get(author_id) if author_id is not None else None
@@ -134,6 +194,7 @@ def serialize_timeline_note(
         ),
         revision=note.revision,
         last_write_token=note.last_write_token,
+        attachment=serialize_attachment(attachment) if attachment else None,
         created_at=note.created_at,
         updated_at=note.updated_at,
     )
@@ -148,6 +209,7 @@ def serialize_recording_timeline_notes(
             placement.note,
             recording_public_id=recording_public_id,
             author_names=loaded.author_names,
+            attachment=loaded.attachments.get(placement.note.id),
         )
         for placement in loaded.in_timeline_order()
     ]

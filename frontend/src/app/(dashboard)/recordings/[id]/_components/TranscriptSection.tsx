@@ -185,6 +185,8 @@ export default function TranscriptSection({
         recordingId={recording.id}
         // With no lines to show a note on its line, every kind is listed here.
         kinds={transcriptSegments.length > 0 ? LISTED_NOTES : undefined}
+        // Files show on their notes' lines, where there are lines.
+        listUploads={transcriptSegments.length === 0}
         readEndMs={readEndMs}
         onEmptied={focusSection}
         className="mx-4 mt-4 max-h-[40%] shrink-0 overflow-y-auto border-b border-surface-divider pb-3"

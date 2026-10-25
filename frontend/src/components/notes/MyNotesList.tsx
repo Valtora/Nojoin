@@ -19,6 +19,7 @@ import { formatTime } from "../transcript/transcriptDisplay";
 import IconButton from "../ui/IconButton";
 import { TOUCH_TARGET_SQUARE } from "../ui/touchTarget";
 
+import { NoteFile } from "./NoteFiles";
 import { scrollTranscriptToNote } from "./transcriptJump";
 
 interface MyNotesListProps {
@@ -156,6 +157,10 @@ export default function MyNotesList({
         <p className="line-clamp-4 whitespace-pre-wrap break-words pr-1 text-sm leading-6 text-foreground">
           {note.body}
         </p>
+        {/* Above the row's jump button, as the row's own buttons are. */}
+        <div className="relative">
+          <NoteFile noteId={note.id} attachment={note.attachment} />
+        </div>
       </li>
     );
   };

@@ -2,12 +2,13 @@
 
 import { describe, expect, it } from "vitest";
 
-import { RecordingStatus, type Recording } from "@/types";
+import { RecordingStatus, type Recording, type TimelineNote } from "@/types";
 
 import {
   AUDIO_RECHECK_INTERVAL_MS,
   AUDIO_RECHECK_WINDOW_MS,
   hasPolledRecordingChanged,
+  noteFilesBeingRead,
   pollFailureMeansRemoved,
   notFoundMeans,
   recordingPollIntervalMs,
@@ -157,5 +158,21 @@ describe("pollFailureMeansRemoved", () => {
   it("ignores other failures", () => {
     expect(pollFailureMeansRemoved(401, true)).toBe(false);
     expect(pollFailureMeansRemoved(null, true)).toBe(false);
+  });
+});
+
+describe("polling while a note's file is read", () => {
+  const withFile = (status: string, useInNotes: boolean) =>
+    [{ id: "n1", attachment: { status, use_in_notes: useInNotes } }] as unknown as TimelineNote[];
+
+  it("reads the recording again until a file switched on has been read", () => {
+    const processed = recordingWith({ has_audio: true, has_proxy: true });
+    expect(recordingPollIntervalMs(processed)).toBeNull();
+
+    expect(noteFilesBeingRead(withFile("PROCESSING", true))).toBe(true);
+    expect(noteFilesBeingRead(withFile("PENDING", false))).toBe(false);
+    expect(noteFilesBeingRead(withFile("READY", true))).toBe(false);
+    expect(noteFilesBeingRead(null)).toBe(false);
+    expect(recordingPollIntervalMs(processed, 0, true)).toBe(3000);
   });
 });

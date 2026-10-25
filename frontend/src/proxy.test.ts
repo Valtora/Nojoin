@@ -60,7 +60,7 @@ describe("proxy", () => {
     }
   });
 
-  it("allows an absolute API origin for fetches and recording streams", () => {
+  it("allows an absolute API origin for fetches, recording streams and capture images", () => {
     vi.stubEnv("NEXT_PUBLIC_API_URL", "https://api.example.com/api");
     const directives = cspDirectives();
 
@@ -70,6 +70,6 @@ describe("proxy", () => {
     expect(directives.get("media-src")).toBe(
       "'self' https://api.example.com blob:",
     );
-    expect(directives.get("img-src")).toBe("'self' data:");
+    expect(directives.get("img-src")).toBe("'self' data: https://api.example.com");
   });
 });

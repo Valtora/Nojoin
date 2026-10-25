@@ -398,17 +398,21 @@ def timeline_notes_signature(notes: Iterable[TimelineNoteLike]) -> str:
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
-def timeline_notes_list_signature(versions: Iterable[tuple[str, int]]) -> str:
+def timeline_notes_list_signature(versions: Iterable[Sequence]) -> str:
     """Changes whenever the notes list the API serves would change.
 
     Built from each note's id and revision, which together change on every
     create, delete and edit: an edit always makes a new revision, and so does
     a write with a token that changes nothing, which the list shows as a new
-    revision and write token. Unlike ``timeline_notes_signature`` this needs no
-    note bodies, so the recording detail read can carry it on every poll for
-    the price of one narrow query. ``count:hash``.
+    revision and write token. Anything after them in a row, such as the state
+    of a note's file, counts too. Unlike ``timeline_notes_signature`` this
+    needs no note bodies, so the recording detail read can carry it on every
+    poll for the price of one narrow query. ``count:hash``.
     """
-    pairs = sorted((str(note_id), int(revision)) for note_id, revision in versions)
+    pairs = sorted(
+        [str(note_id), int(revision), *(str(getattr(v, "value", v)) for v in rest)]
+        for note_id, revision, *rest in versions
+    )
     encoded = json.dumps(pairs, separators=(",", ":"))
     digest = hashlib.sha256(encoded.encode("utf-8")).hexdigest()[:16]
     return f"{len(pairs)}:{digest}"

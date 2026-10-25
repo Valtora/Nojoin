@@ -312,6 +312,7 @@ export default function TranscriptView({
           onDiscard={onDiscardNote ? () => onDiscardNote(key) : undefined}
           // Not while its editor is open: a move would take the pencil it sits against.
           move={moves.controlsFor(note, canEditNote(note) && shownEditor?.noteId !== note.id)}
+          attachment={note.attachment}
         />
       </div>
     );

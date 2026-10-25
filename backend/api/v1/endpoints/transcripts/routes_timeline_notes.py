@@ -23,6 +23,7 @@ has the detail ``{code, message}``, the ``code`` stable
 whose detail is a list.
 """
 
+import logging
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any, NoReturn
@@ -35,6 +36,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col, select
 
 from backend.api.deps import get_current_user, get_db
+from backend.models.document import Document
 from backend.models.recording import Recording
 from backend.models.timeline_note import (
     TimelineNote,
@@ -49,16 +51,20 @@ from backend.models.timeline_note_public import (
 )
 from backend.models.user import User
 from backend.services.timeline_note_service import (
+    load_attachments_async,
     load_author_names_async,
     load_recording_timeline_notes_async,
     serialize_recording_timeline_notes,
     serialize_timeline_note,
 )
 from backend.utils.config_manager import is_meeting_edge_enabled
+from backend.utils.document_storage import delete_document_files
 from backend.utils.time import utc_now
 
 from .helpers import _dispatch_meeting_edge_refresh, _get_owned_recording
 from .router import router
+
+logger = logging.getLogger(__name__)
 
 RECORDING_NOT_FOUND_DETAIL = "Recording not found"
 NOTE_NOT_FOUND_DETAIL = "Note not found"
@@ -122,6 +128,7 @@ async def _read(
         note,
         recording_public_id=recording_public_id,
         author_names=await load_author_names_async(db, [note]),
+        attachment=(await load_attachments_async(db, [note])).get(note.id),
     )
 
 
@@ -376,7 +383,7 @@ async def list_timeline_notes(
     """Every note on the recording, in timeline order."""
     recording = await _owned_recording(db, recording_id, current_user.id)
     return serialize_recording_timeline_notes(
-        await load_recording_timeline_notes_async(db, recording.id),
+        await load_recording_timeline_notes_async(db, recording.id, with_files=True),
         recording_public_id=recording.public_id,
     )
 
@@ -566,7 +573,15 @@ async def delete_timeline_note(
             deleted_write_token=token,
         )
     )
+    # The note's file goes with it: its row (pages and chunks cascade) here,
+    # its file once committed.
+    note_files = col(Document.note_id) == note.id
+    file_paths = list(
+        (await db.execute(select(Document.file_path).where(note_files))).scalars()
+    )
+    await db.execute(delete(Document).where(note_files))
     await db.delete(note)
     await db.commit()
+    await delete_document_files(file_paths, logger=logger)
     await _dispatch_meeting_edge_refresh(recording_pk, enabled=edge_enabled)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

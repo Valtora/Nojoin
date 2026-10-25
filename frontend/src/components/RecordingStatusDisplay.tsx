@@ -3,6 +3,11 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Loader2, Mic, Pause, Trash2, Upload } from "lucide-react";
 
+import {
+  CAPTURE_NOTE_BODY,
+  captureShortcutLabel,
+  useCaptureActions,
+} from "@/lib/captures/useCaptureActions";
 import { isLiveCaptureInProgress } from "@/lib/liveCapture";
 import type { AudioClock } from "@/lib/notes/audioClock";
 import { inlineNotes, type NoteSelection } from "@/lib/notes/noteOutbox";
@@ -136,6 +141,17 @@ export default function RecordingStatusDisplay({
   const readEndMs = useCallback(
     () => audioClock?.audioNow(recording.id) ?? Math.round((durationSeconds ?? 0) * 1000),
     [audioClock, recording.id, durationSeconds],
+  );
+  // The Capture button and its shortcut while this tab shares a screen: each
+  // still is a point note of its own, holding the frame.
+  const captureActions = useCaptureActions(
+    recording.id,
+    readAudioNow,
+    useCallback(
+      (file: File, atMs: number) =>
+        outbox.submit({ kind: "point", body: CAPTURE_NOTE_BODY, anchorMs: atMs }, { file }),
+      [outbox],
+    ),
   );
   // Where focus goes when a note's Discard removes the button pressed.
   const composerBoxRef = useRef<HTMLTextAreaElement>(null);
@@ -414,6 +430,16 @@ export default function RecordingStatusDisplay({
                     onDraftChange={outbox.setDraft}
                     notice={outboxState.notice}
                     boxRef={composerBoxRef}
+                    onCapture={
+                      captureActions.canCaptureScreen
+                        ? () => void captureActions.captureScreen()
+                        : undefined
+                    }
+                    capturing={captureActions.busy}
+                    captureShortcut={captureShortcutLabel()}
+                    captureMessage={captureActions.message}
+                    draftFile={outboxState.draftFile}
+                    onDraftFileChange={outbox.setDraftFile}
                   />
                 }
               />
@@ -476,6 +502,7 @@ export default function RecordingStatusDisplay({
                 <RecordingUnsavedNotes
                   recordingId={recording.id}
                   kinds={BODY_NOTES}
+                  listUploads
                   readEndMs={readEndMs}
                   onEmptied={focusNoteHome}
                   className="mt-4 border-t border-surface-divider pt-3"
