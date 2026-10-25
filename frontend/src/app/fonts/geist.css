@@ -1,0 +1,29 @@
+/* The rest of the font setup in geist.ts. next/font sizes a fallback by measuring
+   the font file, which gives different figures from the ones it used for Geist
+   from Google Fonts, so the fallbacks are declared here with Google's values:
+   Arial resized and re-spaced to Geist's metrics, so text barely moves when the
+   webfont replaces it. body carries the two variables, as the next/font class
+   on <body> did; globals.css maps them to --font-sans and --font-mono. */
+
+@font-face {
+  font-family: "Geist Fallback";
+  src: local("Arial");
+  ascent-override: 95.94%;
+  descent-override: 28.16%;
+  line-gap-override: 0.0%;
+  size-adjust: 104.76%;
+}
+
+@font-face {
+  font-family: "Geist Mono Fallback";
+  src: local("Arial");
+  ascent-override: 74.67%;
+  descent-override: 21.92%;
+  line-gap-override: 0.0%;
+  size-adjust: 134.59%;
+}
+
+body {
+  --font-geist-sans: "Geist", "Geist Fallback";
+  --font-geist-mono: "Geist Mono", "Geist Mono Fallback";
+}

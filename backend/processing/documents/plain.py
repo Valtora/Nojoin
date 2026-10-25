@@ -41,6 +41,10 @@ def open_image(path: str, *, want_images: bool) -> DocumentSource:
     orchestrator reports as an error rather than as an empty success. That
     distinction is the whole reason `want_images` is not consulted here -- the
     image is always attached, and the caller decides what to do about it.
+
+    The page carries the file as uploaded, at any size. The vision tier sends
+    the model a copy fitted to the providers' limits (`vision_input`), and OCR
+    reads the original.
     """
     extension = os.path.splitext(path)[1].lower()
     media_type = _IMAGE_MEDIA_TYPES.get(extension, "image/png")
