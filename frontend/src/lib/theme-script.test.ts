@@ -102,15 +102,23 @@ describe("themeScript appearance preferences", () => {
     stubPrefersDark(false);
   });
 
-  it.each([null, "default", "classic", "depth", "unrecognised", '\"><script>'])(
-    "applies only Default before paint with stored style %s",
-    (stored) => {
+  it.each([
+    [null, "default"],
+    ["default", "default"],
+    ["classic", "classic"],
+    ["depth", "depth"],
+    ["unrecognised", "default"],
+    ["Classic", "default"],
+    ['\"><script>', "default"],
+  ])(
+    "applies %s as %s before paint",
+    (stored, expected) => {
       if (stored !== null) localStorage.setItem("nojoin-style", stored);
       root.dataset.style = "stale";
 
       runScript();
 
-      expect(root.dataset.style).toBe("default");
+      expect(root.dataset.style).toBe(expected);
     },
   );
 

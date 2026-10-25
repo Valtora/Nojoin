@@ -29,12 +29,14 @@ const read = (file: string) => readFileSync(file, "utf8");
 const TOKEN_FILES = [
   path.join(APP, "tokens.css"),
   path.join(APP, "palettes.css"),
+  path.join(APP, "styles.css"),
   path.join(SITE_STYLES, "site-tokens.css"),
 ];
 
 /** Stylesheets that draw a box-shadow from a token. */
 const CONSUMER_FILES = [
   path.join(APP, "globals.css"),
+  path.join(APP, "styles.css"),
   path.join(APP, "driver-theme.css"),
   path.join(SITE_STYLES, "site.css"),
 ];

@@ -178,6 +178,15 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
     ],
   },
   {
+    id: "appearance-style",
+    label: "Style",
+    description: "Bevels and layered elevation, saved in this browser. Classic looks best with Square corners.",
+    category: "appearance",
+    access: "all",
+    scope: "browser",
+    keywords: ["style", "bevel", "elevation", "classic", "depth"],
+  },
+  {
     id: "appearance-timezone",
     label: "Timezone",
     description: "The timezone used across the dashboard, calendars, and task deadlines.",

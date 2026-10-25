@@ -9,9 +9,12 @@ import {
   DENSITY_PREFERENCE_LABELS,
   PALETTES,
   PALETTE_LABELS,
+  UI_STYLES,
+  UI_STYLE_LABELS,
   type CornerStyle,
   type DensityPreference,
   type Palette,
+  type UiStyle,
 } from "@/lib/appearance";
 import { useTheme, type Theme } from "@/lib/ThemeProvider";
 
@@ -39,7 +42,7 @@ function PaletteSwatch() {
  * moment it changes and never reaches the autosave.
  */
 export default function AppearanceSettings() {
-  const { theme, setTheme, palette, setPalette, cornerStyle, setCornerStyle } =
+  const { theme, setTheme, palette, setPalette, cornerStyle, setCornerStyle, uiStyle, setUiStyle } =
     useTheme();
   const { densityPreference, setDensityPreference } = useViewportDensity();
 
@@ -80,6 +83,29 @@ export default function AppearanceSettings() {
           {PALETTES.map((option) => (
             <option key={option} value={option}>
               {PALETTE_LABELS[option]}
+            </option>
+          ))}
+        </SelectBase>
+      </SettingsRow>
+
+      <SettingsRow
+        id="appearance-style"
+        label="Style"
+        controlId="appearance-style-select"
+        description="The shape and depth of controls and panels. Classic looks best with Square corners."
+      >
+        <SelectBase
+          id="appearance-style-select"
+          aria-describedby="appearance-style-select-help"
+          value={uiStyle}
+          onChange={(event: ChangeEvent<HTMLSelectElement>) =>
+            setUiStyle(event.target.value as UiStyle)
+          }
+          className={SETTINGS_SELECT_CLASS}
+        >
+          {UI_STYLES.map((option) => (
+            <option key={option} value={option}>
+              {UI_STYLE_LABELS[option]}
             </option>
           ))}
         </SelectBase>

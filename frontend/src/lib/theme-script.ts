@@ -1,6 +1,6 @@
 // Inline script that applies the stored appearance before React hydrates, so
-// the first paint is already in the right theme, palette, corner style and
-// density instead of flashing the defaults.
+// the first paint is already in the right theme, palette, corners, density and
+// style instead of flashing the defaults.
 //
 // The string is shipped to the browser verbatim and never compiled, so it must
 // stay plain JavaScript: a TypeScript annotation in here is a syntax error that

@@ -1,0 +1,70 @@
+/* Classic directional facets. Existing borders supply the outer pixel;
+   borderless hosts paint both pixels inside without changing box geometry. */
+html[data-style="classic"] :is(
+  [data-ui-chrome="action"], [data-ui-surface="card"], [data-ui-surface="float"]:not([role="tooltip"])
+) {
+  border-color: var(--classic-outer-highlight) var(--classic-outer-dark)
+    var(--classic-outer-dark) var(--classic-outer-highlight);
+}
+
+html[data-style="classic"] :is(
+  [data-ui-input="field"], [data-ui="select"], [data-ui="textarea"], [data-ui-field],
+  [data-ui-surface="inset"], [data-ui-surface="pane"]
+):not([aria-invalid="true"], [data-ui-field]:has([aria-invalid="true"])) {
+  border-color: var(--classic-outer-dark) var(--classic-outer-highlight)
+    var(--classic-outer-highlight) var(--classic-outer-dark);
+}
+
+html[data-style="classic"]
+  [data-ui-chrome="action"]:not(:disabled):not([aria-disabled="true"]):is(:active, [aria-pressed="true"]) {
+  border-color: var(--classic-outer-dark) var(--classic-outer-highlight)
+    var(--classic-outer-highlight) var(--classic-outer-dark);
+}
+
+/* Reading surfaces retain their inner bevel without an outer shaded facet. */
+html[data-style="classic"] [data-ui-surface="card"]:not([role="tooltip"]) {
+  border-color: var(--classic-outer-highlight) transparent transparent var(--classic-outer-highlight);
+}
+
+html[data-style="classic"] [data-ui-surface="pane"]:not([aria-invalid="true"]) {
+  border-color: transparent var(--classic-outer-highlight) var(--classic-outer-highlight) transparent;
+}
+
+/* Some actions lack borders and panes have one-sided borders. Keep those
+   dimensions, painting the complete bevel in the existing shadow slot. */
+html[data-style="classic"] :is(
+  [data-ui-chrome="action"], [data-ui-surface="card"], [data-ui-surface="float"]:not([role="tooltip"])
+):not(.border, .settings-card) {
+  border-color: transparent;
+  --style-chrome-shadow: var(--classic-raised-borderless);
+}
+
+html[data-style="classic"] :is(
+  [data-ui-surface="pane"], [data-ui-surface="inset"], [data-ui-input="field"],
+  [data-ui="select"], [data-ui="textarea"], [data-ui-field]
+):not(.border, .settings-card):not([aria-invalid="true"]) {
+  border-color: transparent;
+  --style-chrome-shadow: var(--classic-sunken-borderless);
+}
+
+html[data-style="classic"]
+  [data-ui-chrome="action"]:not(.border, .settings-card):not(:disabled):not([aria-disabled="true"]):is(
+    :active, [aria-pressed="true"]
+  ) {
+  --style-chrome-shadow: var(--classic-sunken-borderless);
+}
+
+html[data-style="classic"]
+  [data-ui-surface="card"]:not(.border, .settings-card):not([role="tooltip"]) {
+  --style-chrome-shadow: var(--classic-reading-raised);
+}
+
+html[data-style="classic"]
+  [data-ui-surface="pane"]:not(.border, .settings-card):not([aria-invalid="true"]) {
+  --style-chrome-shadow: var(--classic-reading-sunken);
+}
+
+html[data-style="classic"]
+  [data-ui-surface="float"]:not(.border, .settings-card):not([role="tooltip"]) {
+  --style-chrome-shadow: var(--classic-raised-borderless), var(--style-elevation-3);
+}
