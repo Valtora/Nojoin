@@ -81,13 +81,9 @@ export default function SpeakerAssignmentPopover({
   });
   const [selectedScope, setSelectedScope] =
     useState<SpeakerCorrectionScope>("utterance_only");
-  const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // Focus input after a short delay to ensure render
-    setTimeout(() => inputRef.current?.focus(), 50);
-
     const handleClickOutside = (event: MouseEvent) => {
       if (
         containerRef.current &&
@@ -299,7 +295,7 @@ export default function SpeakerAssignmentPopover({
         <div className="relative">
           <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-contrast-icon-muted" />
           <InputBase
-            ref={inputRef}
+            autoFocus
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             onKeyDown={handleKeyDown}
