@@ -15,7 +15,7 @@ vi.mock("@/lib/api", async (importOriginal) => ({
 }));
 
 const { default: CapturesGallery } = await import("./CapturesGallery");
-const { NoteFile, NoteFilesProvider } = await import("./NoteFiles");
+const { NoteFile, NoteFilesProvider, useOpenNoteFile } = await import("./NoteFiles");
 const { default: RecordingUnsavedNotes } = await import("./RecordingUnsavedNotes");
 
 const RECORDING = "rec-1";
@@ -26,6 +26,7 @@ const file = (overrides: Partial<NoteAttachment> = {}): NoteAttachment => ({
   file_type: "image/png",
   status: "PENDING",
   use_in_notes: false,
+  readable: true,
   is_image: true,
   ...overrides,
 });
@@ -59,7 +60,12 @@ describe("a note's file", () => {
       note("early", 65_000, file()),
     ];
     render(
-      <NoteFilesProvider recordingId={RECORDING} notes={notes} onChanged={onChanged}>
+      <NoteFilesProvider
+        recordingId={RECORDING}
+        notes={notes}
+        noteEdits={noteEdits}
+        onChanged={onChanged}
+      >
         <CapturesGallery
           recordingId={RECORDING}
           timelineNotes={notes}
@@ -106,7 +112,7 @@ describe("a note's file", () => {
     expect(screen.queryByTestId("note-file")).toBeNull();
 
     rerender(
-      <NoteFilesProvider recordingId={RECORDING} notes={[]}>
+      <NoteFilesProvider recordingId={RECORDING} notes={[]} noteEdits={noteEdits}>
         <NoteFile noteId="n1" attachment={file({ use_in_notes: true })} />
       </NoteFilesProvider>,
     );
@@ -114,5 +120,52 @@ describe("a note's file", () => {
     const shown = screen.getByTestId("note-file");
     expect(shown.querySelector("img")?.getAttribute("src")).toContain("/documents/7/preview");
     expect(shown).toHaveTextContent("In notes");
+  });
+
+  it("shows a note as moved or edited on this page, and plays from where it is now", async () => {
+    const onPlay = vi.fn();
+    const listed = note("moved", 65_000, file());
+    // The page's overlay: the note was moved to 01:30 and recaptioned here.
+    const edits = {
+      apply: <N,>(notes: readonly N[]) =>
+        notes.map((n) => ({ ...n, anchor_ms: 90_000, body: "Budget slide" })),
+    } as unknown as NoteEdits;
+    const Opener = () => {
+      const open = useOpenNoteFile();
+      return <button onClick={() => open?.("moved")}>Open</button>;
+    };
+    render(
+      <NoteFilesProvider recordingId={RECORDING} notes={[listed]} noteEdits={edits} onPlay={onPlay}>
+        <Opener />
+      </NoteFilesProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Open" }));
+    const viewer = await screen.findByRole("dialog");
+    expect(viewer).toHaveTextContent("Note at 01:30: Budget slide");
+    fireEvent.click(within(viewer).getByRole("button", { name: "Play from 01:30" }));
+
+    expect(onPlay).toHaveBeenCalledWith(90);
+  });
+
+  it("keeps a file Nojoin can't read to download, its switch off with the reason", async () => {
+    const Opener = () => {
+      const open = useOpenNoteFile();
+      return <button onClick={() => open?.("zip")}>Open</button>;
+    };
+    const archive = file({ title: "slides.zip", readable: false, is_image: false });
+    render(
+      <NoteFilesProvider recordingId={RECORDING} notes={[note("zip", 5_000, archive)]} noteEdits={noteEdits}>
+        <Opener />
+      </NoteFilesProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Open" }));
+    const viewer = await screen.findByRole("dialog");
+
+    expect(within(viewer).getByRole("switch")).toBeDisabled();
+    expect(viewer).toHaveTextContent("Nojoin can't read this kind of file");
+    expect(viewer.querySelector("img")).toBeNull();
+    expect(within(viewer).getByRole("button", { name: "Download" })).toBeEnabled();
   });
 });

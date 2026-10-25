@@ -216,7 +216,7 @@ describe("LiveNoteComposer and files", () => {
     expect(box.value).toBe("Slide on hiring");
   });
 
-  it("sends a note that holds only a file, and says why another file can't go", async () => {
+  it("takes a file of any type, and sends a note that holds only a file", async () => {
     const onDraftFileChange = vi.fn();
     const { rerender } = render(
       <LiveNoteComposer
@@ -225,15 +225,11 @@ describe("LiveNoteComposer and files", () => {
         onDraftFileChange={onDraftFileChange}
       />,
     );
-    const script = new File([new Uint8Array(8)], "run.sh", { type: "text/x-sh" });
+    const archive = new File([new Uint8Array(8)], "slides.zip", { type: "application/zip" });
     const box = screen.getByRole("textbox", { name: "New note" });
 
-    fireEvent.paste(box, { clipboardData: clipboard("", [script]) });
-    await vi.waitFor(() =>
-      expect(screen.getByTestId("live-note-status")).toHaveTextContent(
-        "Nojoin can't attach a file of this type to a note.",
-      ),
-    );
+    fireEvent.paste(box, { clipboardData: clipboard("", [archive]) });
+    await vi.waitFor(() => expect(onDraftFileChange).toHaveBeenCalledWith(archive));
     rerender(
       <LiveNoteComposer
         readAudioNow={readAudioNow}

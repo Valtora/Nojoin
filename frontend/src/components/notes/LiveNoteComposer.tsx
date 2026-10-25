@@ -201,11 +201,7 @@ export default function LiveNoteComposer({
     if (!file || !onDraftFileChange) return;
     // Anchored now, before an image is redrawn, while the draft is current.
     if (draft.typingStartMs === null) setDraft({ ...draft, typingStartMs: readAudioNow() });
-    const usable = await fileForNote(file).catch(() => null);
-    if (!usable) {
-      say("Nojoin can't attach a file of this type to a note.", "error");
-      return;
-    }
+    const usable = await fileForNote(file);
     onDraftFileChange(usable);
     say(`${usable.name} goes with this note. Add text to caption it, then Enter.`, "info");
   };

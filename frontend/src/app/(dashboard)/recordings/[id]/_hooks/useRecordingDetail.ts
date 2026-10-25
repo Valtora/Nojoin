@@ -74,6 +74,7 @@ import {
   hasPolledRecordingChanged,
   isAudioUnavailable,
   isRecordingInFlight,
+  noteFilesBeingRead,
   pollFailureMeansRemoved,
   recordingPollIntervalMs,
   shouldPollRecordingUpdates,
@@ -103,6 +104,8 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
   );
   // Edits and deletes of saved notes, shared by the transcript and My notes.
   const noteEdits = useNoteEdits(recording?.id ?? null);
+  // A note's file switched on keeps the recording polled until it is read.
+  const filesBeingRead = noteFilesBeingRead(timelineNotes);
   const [globalSpeakers, setGlobalSpeakers] = useState<GlobalSpeaker[]>([]);
   const [meetingEdgeEnabled, setMeetingEdgeEnabled] = useState(true);
   const [meetingEdgeContextLevel, setMeetingEdgeContextLevel] = useState(
@@ -458,6 +461,7 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
         audioUnavailableSinceRef.current === null
           ? 0
           : Date.now() - audioUnavailableSinceRef.current,
+        filesBeingRead,
       );
 
     const pollIntervalMs = currentPollIntervalMs();
@@ -498,7 +502,7 @@ export function useRecordingDetail({ params }: UseRecordingDetailParams) {
     }, pollIntervalMs);
 
     return () => clearInterval(interval);
-  }, [params, recording, isEditingTitle, audioClock, recordingNotFound]);
+  }, [params, recording, isEditingTitle, audioClock, recordingNotFound, filesBeingRead]);
 
   useEffect(() => {
     if (!recording || isInFlightRecording || !shouldPollRecordingUpdates(recording)) {

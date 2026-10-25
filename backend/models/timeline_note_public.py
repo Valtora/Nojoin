@@ -74,6 +74,9 @@ class NoteAttachmentRead(BaseModel):
     error_message: Optional[str] = None
     parse_warning: Optional[str] = None
     use_in_notes: bool
+    # Whether the parser reads its format, so it can be switched on. Any other
+    # file is kept to download only.
+    readable: bool
     # Whether GET /documents/{id}/preview draws it.
     is_image: bool
 

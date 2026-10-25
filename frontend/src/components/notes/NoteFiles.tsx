@@ -2,9 +2,7 @@
 
 import {
   createContext,
-  useCallback,
   useContext,
-  useEffect,
   useId,
   useMemo,
   useState,
@@ -22,6 +20,7 @@ import { shownNotes, type NoteOutbox, type NoteUpload } from "@/lib/notes/noteOu
 import { formatTimelineMs } from "@/lib/notes/placement";
 import { useNoteOutbox } from "@/lib/notes/useNoteOutbox";
 import { notifyRequestError } from "@/lib/notifyRequestError";
+import type { NoteEdits } from "@/lib/notes/useNoteEdits";
 import type { NoteAttachment, RecordingId, TimelineNote } from "@/types";
 
 import Button from "../ui/Button";
@@ -29,9 +28,6 @@ import Modal from "../ui/Modal";
 import { Switch } from "../ui/Switch";
 
 import { NOTE_BUTTON_TOUCH } from "./noteButtons";
-
-/** How often an open viewer asks again while its file is being read. */
-const READING_POLL_MS = 3_000;
 
 interface NoteFilesValue {
   recordingId: RecordingId;
@@ -52,6 +48,7 @@ export const noteFileTimeMs = (note: Pick<TimelineNote, "kind" | "anchor_ms" | "
       : null;
 
 const readState = (file: NoteAttachment): string => {
+  if (!file.readable) return "Download only: Nojoin can't read this kind of file.";
   if (!file.use_in_notes) return "Off: the AI notes, Meeting Chat and search leave it out.";
   if (file.status === "PENDING" || file.status === "PROCESSING") {
     return "Being read. The AI notes, Meeting Chat and search draw on it once that finishes.";
@@ -66,6 +63,8 @@ interface NoteFilesProviderProps {
   recordingId: RecordingId;
   /** The recording's notes as last listed; null while they load. */
   notes: readonly TimelineNote[] | null;
+  /** The page's note edits, so the viewer shows a note as moved or edited here. */
+  noteEdits: Pick<NoteEdits, "apply">;
   /** Plays the recording from a time in seconds; without it, no Play button. */
   onPlay?: (seconds: number) => void;
   /** Called after the switch turns, for the stale notes banner. */
@@ -80,18 +79,20 @@ interface NoteFilesProviderProps {
 export function NoteFilesProvider({
   recordingId,
   notes,
+  noteEdits,
   onPlay,
   onChanged,
   children,
 }: NoteFilesProviderProps) {
   const [openId, setOpenId] = useState<string | null>(null);
   const { outbox, snapshot } = useNoteOutbox(recordingId);
+  const { apply } = noteEdits;
   const note = useMemo(
-    () => shownNotes(notes, snapshot).find((candidate) => candidate.id === openId) ?? null,
-    [notes, snapshot, openId],
+    () =>
+      apply(shownNotes(notes, snapshot)).find((candidate) => candidate.id === openId) ?? null,
+    [apply, notes, snapshot, openId],
   );
   const value = useMemo(() => ({ recordingId, open: setOpenId }), [recordingId]);
-  const refresh = useCallback(() => outbox.notesChanged(), [outbox]);
   return (
     <NoteFilesContext.Provider value={value}>
       {children}
@@ -100,9 +101,9 @@ export function NoteFilesProvider({
         note={note?.attachment ? note : null}
         onClose={() => setOpenId(null)}
         onPlay={onPlay}
-        onRefresh={refresh}
         onChanged={() => {
-          refresh();
+          // The page then polls until a file switched on has been read.
+          outbox.notesChanged();
           onChanged?.();
         }}
       />
@@ -217,7 +218,6 @@ interface NoteFileViewerProps {
   note: TimelineNote | null;
   onClose: () => void;
   onPlay?: (seconds: number) => void;
-  onRefresh: () => void;
   onChanged: () => void;
 }
 
@@ -226,21 +226,12 @@ function NoteFileViewer({
   note,
   onClose,
   onPlay,
-  onRefresh,
   onChanged,
 }: NoteFileViewerProps) {
   const switchLabelId = useId();
   const switchHelpId = useId();
   const [busy, setBusy] = useState(false);
   const file = note?.attachment ?? null;
-  // While it is read, ask again now and then, so the viewer says when it is done.
-  const reading =
-    !!file?.use_in_notes && (file.status === "PENDING" || file.status === "PROCESSING");
-  useEffect(() => {
-    if (!reading) return;
-    const timer = setInterval(onRefresh, READING_POLL_MS);
-    return () => clearInterval(timer);
-  }, [reading, onRefresh]);
 
   if (!note || !file) return <Modal open={false} onClose={onClose}>{null}</Modal>;
   const atMs = noteFileTimeMs(note);
@@ -329,13 +320,14 @@ function NoteFileViewer({
               Use in notes
             </p>
             <p id={switchHelpId} className="mt-0.5 text-sm text-contrast-helper">
-              Off by default. On, Nojoin reads the file, and the AI notes, Meeting Chat and
-              search use it. Turning it either way marks notes already written to regenerate.
+              {file.readable
+                ? "Off by default. On, Nojoin reads the file, and the AI notes, Meeting Chat and search use it. Turning it either way marks notes already written to regenerate."
+                : "Unavailable: Nojoin can't read this kind of file, so it stays here to download."}
             </p>
           </div>
           <Switch
             checked={file.use_in_notes}
-            disabled={busy}
+            disabled={busy || !file.readable}
             onCheckedChange={(checked) => void toggle(checked)}
             aria-labelledby={switchLabelId}
             aria-describedby={switchHelpId}

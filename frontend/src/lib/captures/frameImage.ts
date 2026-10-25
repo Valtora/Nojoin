@@ -5,11 +5,10 @@
  * keeps text on a slide sharp for the vision model and for OCR. Only a frame
  * whose PNG would pass `FRAME_MAX_BYTES` (a busy 4K screen, a photo) is stored
  * as JPEG instead, small enough for every vision provider to take. A note
- * takes any file a document can be; an image of another type than PNG or
- * JPEG is drawn again as one of those.
+ * takes a file of any type; a picture of another type than PNG or JPEG is
+ * drawn again as one of those.
  */
 
-import { SUPPORTED_DOCUMENT_FORMATS } from "@/lib/api/documents";
 
 /**
  * Well under the tightest per-image limit a vision provider sets: the Claude
@@ -121,22 +120,21 @@ export const grabDisplayFrame = async (track: MediaStreamTrack): Promise<Blob> =
   }
 };
 
-/** Whether a pasted image can be kept as it is. */
-const storableAsIs = (image: Blob) =>
-  (image.type === "image/png" || image.type === "image/jpeg") && image.size <= FRAME_MAX_BYTES;
-
-const extensionOf = (name: string) => {
-  const dot = name.lastIndexOf(".");
-  return dot < 0 ? "" : name.slice(dot).toLowerCase();
-};
+/** A picture of another type than PNG or JPEG, or past the size limit, to draw again. */
+const redrawable = (file: File) =>
+  file.type.startsWith("image/") &&
+  // SVG is markup, kept as a file to download and never drawn.
+  file.type !== "image/svg+xml" &&
+  !((file.type === "image/png" || file.type === "image/jpeg") && file.size <= FRAME_MAX_BYTES);
 
 /**
- * A pasted or dropped file as a note can hold it: an image redrawn as PNG or
- * JPEG unless it is one under the size limit, any other file as it is. Null
- * for a file no document can be, which the server would refuse.
+ * A pasted or dropped file as its note holds it. A note takes a file of any
+ * type: a picture the browser can draw is drawn again as PNG or JPEG, so it
+ * is shown and can be read, and every other file is kept as it is.
  */
-export const fileForNote = async (file: File): Promise<File | null> => {
-  if (file.type.startsWith("image/") && !storableAsIs(file)) {
+export const fileForNote = async (file: File): Promise<File> => {
+  if (!redrawable(file)) return file;
+  try {
     const bitmap = await createImageBitmap(file);
     try {
       const image = await encodeImage(bitmap);
@@ -147,9 +145,9 @@ export const fileForNote = async (file: File): Promise<File | null> => {
     } finally {
       bitmap.close();
     }
+  } catch {
+    return file;
   }
-  const supported: readonly string[] = SUPPORTED_DOCUMENT_FORMATS;
-  return supported.includes(extensionOf(file.name)) ? file : null;
 };
 
 /** The first file on a paste or a drop, unless a paste also carries text. */

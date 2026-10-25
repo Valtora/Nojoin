@@ -98,6 +98,7 @@ export const attachFileToNote = vi.fn(
       file_type: file.type,
       status: "PENDING",
       use_in_notes: false,
+      readable: true,
       is_image: file.type.startsWith("image/"),
     };
   },

@@ -77,11 +77,17 @@ describe("a file pasted or dropped into the note box", () => {
     expect(transferredFile(clipboard({ text: "Quarterly plan", files: [screenshot] }))).toBeNull();
   });
 
-  it("is kept as it is when a document may be one, and refused when not", async () => {
-    const script = new File([new Uint8Array(10)], "run.sh", { type: "text/x-sh" });
+  it("is kept as it is whatever its type, and an SVG is never drawn", async () => {
+    const archive = new File([new Uint8Array(10)], "slides.zip", { type: "application/zip" });
+    const markup = new File(["<svg/>"], "logo.svg", { type: "image/svg+xml" });
+    const drawn = vi.fn();
+    vi.stubGlobal("createImageBitmap", drawn);
 
     await expect(fileForNote(screenshot)).resolves.toBe(screenshot);
     await expect(fileForNote(pdf)).resolves.toBe(pdf);
-    await expect(fileForNote(script)).resolves.toBeNull();
+    await expect(fileForNote(archive)).resolves.toBe(archive);
+    await expect(fileForNote(markup)).resolves.toBe(markup);
+    expect(drawn).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
   });
 });

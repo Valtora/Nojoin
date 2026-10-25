@@ -21,7 +21,7 @@ from backend.models.timeline_note_public import (
     TimelineNoteRead,
 )
 from backend.models.user import User
-from backend.utils.note_attachments import is_image
+from backend.utils.note_attachments import is_image, is_readable
 from backend.utils.timeline_notes import (
     NotePlacement,
     place_timeline_notes,
@@ -164,6 +164,7 @@ def serialize_attachment(document: Document) -> NoteAttachmentRead:
         error_message=document.error_message,
         parse_warning=document.parse_warning,
         use_in_notes=bool(document.use_in_notes),
+        readable=is_readable(document),
         is_image=is_image(document),
     )
 

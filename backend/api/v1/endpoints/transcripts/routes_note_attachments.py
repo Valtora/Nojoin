@@ -1,11 +1,12 @@
 """The file a timeline note holds, such as a still of the shared screen (#653).
 
-A note holds one file, stored as a document with ``note_id`` set
+A note holds one file of any type, stored as a document with ``note_id`` set
 (``backend.utils.note_attachments``), so download, backup and deletion work as
 they do for any document, and the file takes its time from its note. The
 client uploads it once the note is saved. The file is not parsed until its
-switch is turned on, and turning the switch either way marks notes already
-written as stale. Deleting the note deletes the file (``routes_timeline_notes``).
+switch is turned on, which only a readable format allows, and turning the
+switch either way marks notes already written as stale. Deleting the note
+deletes the file (``routes_timeline_notes``).
 """
 
 from fastapi import Depends, File, HTTPException, Request, UploadFile, status
@@ -26,6 +27,7 @@ from backend.models.timeline_note_public import (
 from backend.models.transcript import Transcript
 from backend.models.user import User
 from backend.services.timeline_note_service import serialize_attachment
+from backend.utils.note_attachments import clean_title, is_readable, media_type_for
 
 from .. import documents as documents_ep
 from .router import router
@@ -33,6 +35,7 @@ from .routes_timeline_notes import NOTE_NOT_FOUND_DETAIL, _owned_recording, _ref
 
 ATTACHMENT_EXISTS_DETAIL = "This note already holds a file."
 NO_ATTACHMENT_DETAIL = "This note holds no file."
+UNREADABLE_DETAIL = "Nojoin can't read this kind of file, so it can't be used in notes."
 
 
 async def _note(db: AsyncSession, recording: Recording, note_id: str) -> TimelineNote:
@@ -67,22 +70,24 @@ async def attach_file_to_note(  # noqa: PLR0913 - FastAPI dependencies are param
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Store a file on a note, switched off and unread. A second file is a 409."""
+    """Store a file of any type on a note, switched off and unread. A second is a 409."""
     user_id = current_user.id
     recording = await _owned_recording(db, recording_id, user_id)
     note = await _note(db, recording, note_id)
     if await _attachment(db, note) is not None:
         raise HTTPException(status_code=409, detail=ATTACHMENT_EXISTS_DETAIL)
     file_path, size_bytes = await documents_ep.store_upload(
-        request, file, user_id=user_id, recording=recording
+        request, file, user_id=user_id, recording=recording, any_format=True
     )
+    title = clean_title(file.filename)
     document = Document(
         recording_id=recording.id,
         note_id=note.id,
         use_in_notes=False,
-        title=file.filename or "Attachment",
+        title=title,
         file_path=file_path,
-        file_type=file.content_type or "application/octet-stream",
+        # From the name, never the browser's word, which a download would echo.
+        file_type=media_type_for(title),
         file_size_bytes=size_bytes,
         status=DocumentStatus.PENDING,
         parse_mode=DocumentParseMode.VISUAL,
@@ -122,6 +127,8 @@ async def set_note_file_use_in_notes(
         raise HTTPException(status_code=404, detail=NO_ATTACHMENT_DETAIL)
     if bool(document.use_in_notes) == payload.use_in_notes:
         return serialize_attachment(document)
+    if payload.use_in_notes and not is_readable(document):
+        raise HTTPException(status_code=409, detail=UNREADABLE_DETAIL)
     document.use_in_notes = payload.use_in_notes
     reparse = document.status == DocumentStatus.ERROR
     parse = payload.use_in_notes and (

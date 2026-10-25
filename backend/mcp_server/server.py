@@ -654,7 +654,9 @@ async def get_documents(recording_id: str) -> list[dict[str, Any]]:
     These are the files uploaded to a meeting to ground its chat and notes,
     and the files attached to the user's notes, which carry ``note_id`` (see
     get_meeting_notes) and ``use_in_notes``. A note's file is read only while
-    ``use_in_notes`` is on; until then it has no text. Text is assembled from
+    ``use_in_notes`` is on; until then it has no text. A note's file may be of
+    any type, and one whose format Nojoin cannot read (``readable`` false)
+    never has text. Text is assembled from
     the document's parsed pages and is truncated per document beyond a size
     limit.
 
@@ -666,7 +668,7 @@ async def get_documents(recording_id: str) -> list[dict[str, Any]]:
     from backend.models.document import Document
     from backend.models.document_page import DocumentPage
     from backend.models.timeline_note import TimelineNote
-    from backend.utils.note_attachments import feeds_notes
+    from backend.utils.note_attachments import feeds_notes, is_readable
 
     user = get_current_mcp_user()
     async with async_session_maker() as db:
@@ -728,6 +730,7 @@ async def get_documents(recording_id: str) -> list[dict[str, Any]]:
                     "text_truncated": truncated,
                     "note_id": notes_by_pk.get(document.note_id),
                     "use_in_notes": feeds_notes(document),
+                    "readable": is_readable(document),
                 }
             )
     return payload

@@ -394,8 +394,8 @@ export interface TimelineNoteAuthor {
 
 /** A user's note on a recording, anchored in ms on its audio timeline. */
 /**
- * The file a timeline note holds: a still of the shared screen, or a file
- * pasted or dropped into the note box. It takes its time from its note.
+ * The file a timeline note holds: a still of the shared screen, or a file of
+ * any type pasted or dropped into the note box. It takes its time from its note.
  */
 export interface NoteAttachment {
   /** Its document's id, for download and preview. */
@@ -409,6 +409,8 @@ export interface NoteAttachment {
   parse_warning?: string | null;
   /** Off by default: only while it is on do notes, chat and search read it. */
   use_in_notes: boolean;
+  /** Whether Nojoin reads its format; any other file is kept to download only. */
+  readable: boolean;
   /** Whether it has a preview to draw. */
   is_image: boolean;
 }

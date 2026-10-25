@@ -357,7 +357,7 @@ def test_a_notes_file_follows_its_note_unless_my_notes_are_left_out(
     kept, left_out, docx = asyncio.run(go())
 
     assert kept.status_code == 200, kept.text
-    assert "> [00:06] Note: Check the budget (attached: capture.png)" in kept.text
+    assert "> [00:06] Note: Check the budget\n> Attached: capture.png" in kept.text
     assert "capture.png" not in left_out.text
     assert docx.status_code == 200, docx.text
     word = WordDocument(io.BytesIO(docx.content))

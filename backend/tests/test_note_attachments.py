@@ -120,7 +120,7 @@ async def test_a_file_is_stored_on_its_note_unread_and_listed_with_it(
 
 
 @pytest.mark.anyio
-async def test_a_file_is_refused_on_an_unknown_note_or_in_an_unsupported_format(
+async def test_a_file_is_refused_on_an_unknown_note_or_another_users(
     client: AsyncClient, uploads: list[tuple]
 ) -> None:
     note = await _note(client)
@@ -130,11 +130,59 @@ async def test_a_file_is_refused_on_an_unknown_note_or_in_an_unsupported_format(
         f"/api/v1/transcripts/{notes_api.FOREIGN_REC}/timeline-notes/{note['id']}/attachment",
         files={"file": ("capture.png", _png(), "image/png")},
     )
-    script = await _attach(client, note["id"], name="run.sh", data=b"echo hi")
 
     assert unknown.status_code == 404
     assert foreign.status_code == 404
-    assert script.status_code == 400
+
+
+@pytest.mark.anyio
+async def test_any_file_attaches_but_one_nojoin_cannot_read_stays_download_only(
+    client: AsyncClient, uploads: list[tuple], tmp_path: Path
+) -> None:
+    zipped = await _note(client, anchor_ms=1_000)
+    page = await _note(client, anchor_ms=2_000)
+
+    archive = (
+        await _attach(client, zipped["id"], name="slides.zip", data=b"PK\x03\x04")
+    ).json()
+    markup = await _attach(
+        client,
+        page["id"],
+        name="../../\u202eevil.svg",
+        data=b'<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>',
+    )
+    switched = await client.patch(
+        f"{BASE}/{zipped['id']}/attachment", json={"use_in_notes": True}
+    )
+    served = await client.get(f"/api/v1/documents/{markup.json()['id']}/download")
+    preview = await client.get(f"/api/v1/documents/{markup.json()['id']}/preview")
+
+    assert (archive["readable"], archive["file_type"]) == (
+        False,
+        "application/octet-stream",
+    )
+    assert sorted(path.suffix for path in tmp_path.iterdir()) == [".svg", ".zip"]
+    assert markup.json()["title"] == "evil.svg"
+    assert markup.json()["readable"] is False
+    assert switched.status_code == 409
+    assert uploads == []
+    assert served.headers["content-type"] == "application/octet-stream"
+    assert served.headers["content-disposition"].startswith("attachment;")
+    assert served.headers["x-content-type-options"] == "nosniff"
+    assert preview.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_an_image_downloads_as_an_image_for_the_viewer(
+    client: AsyncClient, uploads: list[tuple]
+) -> None:
+    still = (await _attach(client, (await _note(client))["id"])).json()
+
+    served = await client.get(f"/api/v1/documents/{still['id']}/download")
+
+    assert (still["readable"], still["is_image"]) == (True, True)
+    assert served.headers["content-type"] == "image/png"
+    assert served.headers["x-content-type-options"] == "nosniff"
 
 
 @pytest.mark.anyio

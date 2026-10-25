@@ -6,7 +6,7 @@ meeting went, and the transcript is the evidence for both. The reader's own
 timeline notes sit in the transcript: notes on the whole meeting first and
 last, the rest after the line they fall on. Generated notes also end with them,
 under ``## User Notes``. A note's file follows its note: a picture in PDF and
-Word, its name in plain text. A file exported without the reader's notes
+Word, else a line naming it. A file exported without the reader's notes
 leaves out all of them.
 """
 
@@ -133,11 +133,11 @@ def _quote(text: str | None) -> str:
 
 
 def _with_file(paragraph: Paragraph, file: NoteFile | None) -> Block:
-    """A note followed by its file: the picture under it, or the file's name."""
+    """A note followed by its file: the picture under it, or a line naming it."""
     if file is None:
         return paragraph
     named = Paragraph(
-        (*paragraph.text, Span(f" (attached: {file.title})")), tone="quote"
+        (*paragraph.text, LINE_BREAK, Span(f"Attached: {file.title}")), tone="quote"
     )
     if file.image is None:
         return named

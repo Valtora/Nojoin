@@ -184,6 +184,7 @@ export default function RecordingPage({ params }: PageProps) {
     <NoteFilesProvider
       recordingId={recording.id}
       notes={timelineNotes}
+      noteEdits={noteEdits}
       onPlay={isInFlightRecording ? undefined : (seconds) => handlePlaySegment(seconds)}
       onChanged={fetchRecording}
     >
