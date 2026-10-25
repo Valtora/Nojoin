@@ -11,8 +11,11 @@
 @import "tailwindcss";
 
 /* Geist, self-hosted. A font CDN request from a page whose pitch is "nothing
-   leaves your server" would undercut the point; the latin variable subsets
-   are 40KB together. */
+   leaves your server" would undercut the point. The files are copies of the
+   app's latin subsets in frontend/src/app/fonts/, both variable from weight 100
+   to 900 and 52KB together, with their licence beside them (docs/SITE.md,
+   "Fonts"). No unicode-range: latin is the only subset served, so the face
+   covers every character the file has. */
 @font-face {
   font-family: "Geist";
   font-style: normal;
