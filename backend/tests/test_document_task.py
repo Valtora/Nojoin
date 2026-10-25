@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import pytest
 
+from backend.models.document_page import PageParseMode
 from backend.processing.documents.types import PageSource
 from backend.processing.llm_backends.base import (
     LLMBackend,
@@ -362,7 +363,9 @@ def _progress_writer(monkeypatch, *, use_vision, transcriptions=None, ocr=None):
     monkeypatch.setattr(documents_task, "ocr_images", lambda _images: ocr)
     if transcriptions is not None:
 
-        def _fake_batch(backend, pages, *, is_rendered, on_page_done=None):
+        def _fake_batch(
+            backend, pages, *, is_rendered, on_page_done=None, on_page_failed=None
+        ):
             # Mirror the real contract: settle one page at a time, by number.
             for page in pages:
                 if on_page_done is not None:
@@ -455,3 +458,200 @@ def test_progress_accumulates_across_batches(monkeypatch):
 
     assert first == 2
     assert writer._document.pages_parsed == 4
+
+
+# ---------------------------------------------------------------------------
+# Image size limits (#698)
+# ---------------------------------------------------------------------------
+
+
+class _ClaudeLikeBackend:
+    """Refuses an image as the Claude API does: past 5 MB of base64, or past
+    8000 px a side. Records the size of every image it accepts."""
+
+    BASE64_LIMIT = 5 * 1024 * 1024
+
+    def __init__(self, result="A photo of a whiteboard."):
+        self.result = result
+        self.seen: list[tuple[int, int, int, str]] = []
+
+    def generate_text_from_images(self, prompt, images, timeout=120, max_tokens=8192):
+        import io
+
+        from PIL import Image
+
+        for image in images:
+            with Image.open(io.BytesIO(image.data)) as picture:
+                width, height = picture.size
+            if len(image.to_base64()) > self.BASE64_LIMIT or max(width, height) > 8000:
+                raise RuntimeError(
+                    "400 invalid_request_error: image exceeds 5 MB maximum"
+                )
+            self.seen.append((width, height, len(image.data), image.media_type))
+        if isinstance(self.result, Exception):
+            raise self.result
+        return self.result
+
+
+def _large_photo(path) -> bytes:
+    """An 11 MB PNG of noise, 2700 x 1400 px: past every provider's limit."""
+    import io
+    import os
+
+    from PIL import Image
+
+    buffer = io.BytesIO()
+    Image.frombytes("RGB", (2700, 1400), os.urandom(2700 * 1400 * 3)).save(
+        buffer, format="PNG", compress_level=1
+    )
+    path.write_bytes(buffer.getvalue())
+    return buffer.getvalue()
+
+
+@pytest.fixture
+def image_parse(monkeypatch, tmp_path):
+    """Parses one PNG through the real orchestrator on SQLite, with a stub
+    model and stub OCR. Returns (run, session); run(backend, ocr) parses."""
+    from sqlalchemy import text
+    from sqlmodel import Session, create_engine
+
+    import backend.worker.tasks.documents as documents_task
+    from backend.models.document import Document, DocumentStatus
+    from backend.tests.sqlite_schemas import DOCUMENT_PAGES_SCHEMA, DOCUMENTS_SCHEMA
+
+    engine = create_engine("sqlite://")
+    with engine.begin() as connection:
+        for schema in (DOCUMENTS_SCHEMA, DOCUMENT_PAGES_SCHEMA):
+            connection.execute(text(schema))
+    session = Session(engine)
+    path = tmp_path / "whiteboard.png"
+    original = _large_photo(path)
+    document = Document(
+        id=1,
+        recording_id=10,
+        title="whiteboard.png",
+        file_path=str(path),
+        file_type="image/png",
+        status=DocumentStatus.PROCESSING,
+    )
+    session.add(document)
+    session.commit()
+    monkeypatch.setattr(documents_task, "_index_page", lambda *_args: 0)
+    monkeypatch.setattr(documents_task, "_flag_notes_stale", lambda *_args: None)
+
+    def run(backend, *, ocr=None, ocr_installed=True):
+        monkeypatch.setattr(
+            documents_task, "_resolve_vision", lambda *_args: (backend, True, None)
+        )
+        monkeypatch.setattr(documents_task, "ocr_images", lambda _images: ocr)
+        monkeypatch.setattr(documents_task, "ocr_is_available", lambda: ocr_installed)
+        documents_task._parse_document(session, document, str(path))
+        assert path.read_bytes() == original, "the stored file must never change"
+        return document
+
+    yield run, session
+    session.close()
+
+
+def test_a_large_image_is_read_by_the_model_not_dropped_to_ocr(image_parse):
+    """Regression for #698: the upload went to the model as it was, the Claude
+    API refused it, and the page fell back to OCR with no word on the card."""
+    from backend.models.document import DocumentStatus
+    from backend.models.document_page import DocumentPage
+
+    run, session = image_parse
+    backend = _ClaudeLikeBackend()
+
+    document = run(backend, ocr="OCR text that must not be used")
+
+    assert document.status == DocumentStatus.READY
+    assert document.parse_warning is None
+    page = session.get(DocumentPage, 1)
+    assert (page.parse_mode, page.content) == (
+        PageParseMode.VISUAL,
+        "A photo of a whiteboard.",
+    )
+    ((width, height, size_bytes, _media_type),) = backend.seen
+    assert max(width, height) <= 2576
+    assert size_bytes <= 3_500_000
+
+
+def test_a_failed_vision_call_is_reported_on_the_card(image_parse):
+    from backend.models.document import DocumentStatus
+
+    run, _session = image_parse
+
+    document = run(
+        _ClaudeLikeBackend(result=RuntimeError("503 overloaded")),
+        ocr="Text recovered by local OCR from the whiteboard.",
+    )
+
+    assert document.status == DocumentStatus.READY
+    assert document.parse_warning.startswith("Visual analysis failed, so this file")
+    assert "local OCR" in document.parse_warning
+
+
+def test_an_image_whose_vision_call_failed_says_so_in_its_error(image_parse):
+    """It used to say no vision-capable model was available, which sends the
+    user to settings that were never wrong."""
+    run, _session = image_parse
+
+    with pytest.raises(RuntimeError) as raised:
+        run(
+            _ClaudeLikeBackend(result=RuntimeError("503 overloaded")),
+            ocr_installed=False,
+        )
+
+    assert "visual analysis by the AI model failed" in str(raised.value)
+    assert "no vision-capable" not in str(raised.value)
+
+
+def test_a_document_counts_the_pages_whose_vision_call_failed(monkeypatch):
+    import backend.worker.tasks.documents as documents_task
+
+    def _batch(backend, pages, *, is_rendered, on_page_done=None, on_page_failed=None):
+        for page in pages:
+            if page.page_number in (2, 5):
+                on_page_failed(page.page_number)
+        return {page.page_number: "described" for page in pages}
+
+    writer, _session = _progress_writer(monkeypatch, use_vision=True)
+    monkeypatch.setattr(documents_task, "_transcribe_batch", _batch)
+    writer.flush([_page(n) for n in range(1, 7)])
+
+    assert writer.vision_failures == 2
+    warning = documents_task._parse_warning(None, writer, 9)
+    assert warning.startswith("Visual analysis failed on 2 of 9 pages, so those pages")
+    writer.vision_failures = 1
+    assert "1 of 9 pages, so that page holds" in documents_task._parse_warning(
+        None, writer, 9
+    )
+
+
+def test_a_failing_page_is_reported_to_the_caller():
+    failed: list[int] = []
+    backend = _Backend({2: RuntimeError("provider hiccup")})
+
+    _transcribe_batch(
+        backend,
+        [_page(1), _page(2), _page(3)],
+        is_rendered=True,
+        on_page_failed=failed.append,
+    )
+
+    assert failed == [2]
+
+
+def test_the_model_gets_a_fitted_copy_and_the_page_keeps_its_original(tmp_path):
+    from backend.processing.documents.vision import transcribe_page
+
+    original = _large_photo(tmp_path / "photo.png")
+    page = PageSource(
+        page_number=1,
+        images=[VisionImage(data=original, media_type="image/png")],
+    )
+    backend = _ClaudeLikeBackend()
+
+    assert transcribe_page(backend, page, is_rendered_page=True)
+    assert page.images[0].data == original
+    assert backend.seen[0][3] == "image/jpeg"
