@@ -36,6 +36,8 @@ _PICTURE_MEDIA_TYPES = {
     "webp": "image/webp",
 }
 
+_SVG = "image/svg+xml"
+
 
 # --------------------------------------------------------------------------
 # PowerPoint
@@ -234,7 +236,11 @@ def _docx_images(document, *, want_images: bool) -> List[VisionImage]:
     Attached to the first section rather than positioned: Word's relationship
     model does not make it cheap to say which heading an inline shape falls
     under, and an image the model sees under the wrong heading is still far
-    better than one it never sees.
+    better than one it never sees. The vision pass splits them into as many
+    calls as the providers' request limits need.
+
+    An SVG is skipped: Word stores a PNG of every SVG picture beside it, as
+    the picture's own image, and that copy is the one sent.
     """
     if not want_images:
         return []
@@ -245,7 +251,7 @@ def _docx_images(document, *, want_images: bool) -> List[VisionImage]:
                 continue
             part = rel.target_part
             content_type = getattr(part, "content_type", "") or "image/png"
-            if not content_type.startswith("image/"):
+            if not content_type.startswith("image/") or content_type == _SVG:
                 continue
             images.append(VisionImage(data=part.blob, media_type=content_type))
     except Exception as e:  # noqa: BLE001 -- boundary: python-docx raises assorted errors on broken image parts; the text is still parsed

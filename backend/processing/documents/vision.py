@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import logging
-from typing import Optional
+from dataclasses import dataclass
+from typing import List, Optional
 
 from backend.utils.vision import VisionImage, VisionUnsupportedError
 
 from .types import PageSource
-from .vision_input import fit_images_for_vision
+from .vision_input import fit_images_for_vision, vision_batches
 
 logger = logging.getLogger(__name__)
 
@@ -83,31 +84,74 @@ def build_figure_prompt(page: PageSource) -> str:
     return _FIGURE_PROMPT.format(location=location)
 
 
+@dataclass(frozen=True)
+class PageTranscription:
+    """What visual analysis made of one page's images.
+
+    ``left_out`` counts pictures Pillow cannot open, which no model was sent.
+    ``failed`` counts pictures whose call failed; when every call failed,
+    ``text`` is None and the page as a whole failed.
+    """
+
+    text: Optional[str] = None
+    left_out: int = 0
+    failed: int = 0
+
+    @property
+    def page_failed(self) -> bool:
+        return self.text is None and self.failed > 0
+
+
 def transcribe_page(
     backend,
     page: PageSource,
     *,
     is_rendered_page: bool,
     timeout: int = 180,
-) -> Optional[str]:
-    """Markdown for one page's images, or None if the model returned nothing.
+) -> PageTranscription:
+    """Markdown for one page's images, from one call or several.
+
+    The pictures go in order, as many to a call as the providers' request
+    limits allow (``vision_batches``), and the answers are joined in that
+    order. A failed call costs only its own pictures: the page keeps what the
+    other calls described, and the page fails only when every call did.
 
     ``VisionUnsupportedError`` is deliberately allowed to propagate: it means
     the model will never do this, so the orchestrator downgrades the whole
-    document once rather than failing every page in turn. Any other exception
-    is a per-page problem and is handled by the caller.
+    document once rather than failing every page in turn. Any other exception,
+    such as ``VisionImageTooLarge``, fails the page and is handled by the caller.
 
     The model gets copies fitted to the providers' limits; ``page.images``
     keeps the originals for OCR.
     """
     if not page.images:
-        return None
+        return PageTranscription()
 
     prompt = build_page_prompt(page) if is_rendered_page else build_figure_prompt(page)
-    images = fit_images_for_vision(page.images)
-    text = backend.generate_text_from_images(prompt, images, timeout=timeout)
-    text = _strip_code_fence((text or "").strip())
-    return text or None
+    images, left_out = fit_images_for_vision(page.images)
+    answers: List[str] = []
+    failed = 0
+    for batch in vision_batches(images):
+        try:
+            text = backend.generate_text_from_images(prompt, batch, timeout=timeout)
+        except VisionUnsupportedError:
+            raise
+        except Exception as e:  # noqa: BLE001 -- boundary: one failed call loses only its own pictures, and the page's warning counts them
+            failed += len(batch)
+            logger.warning(
+                "Vision call failed for %s of %s pictures on page %s: %s",
+                len(batch),
+                len(images),
+                page.page_number,
+                e,
+            )
+            continue
+        text = _strip_code_fence((text or "").strip())
+        if text:
+            answers.append(text)
+    return PageTranscription(
+        text="\n\n".join(answers) or None, left_out=left_out, failed=failed
+    )
 
 
 def _strip_code_fence(text: str) -> str:
@@ -151,6 +195,7 @@ def merge_page_content(
 
 
 __all__ = [
+    "PageTranscription",
     "VisionUnsupportedError",
     "VisionImage",
     "build_figure_prompt",
