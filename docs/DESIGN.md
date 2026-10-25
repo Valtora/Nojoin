@@ -57,7 +57,7 @@ selectors for those parts with tokens, so they win on order without `!important`
 
 ### Appearance preferences
 
-Theme, colour palette, corner style and density are per-browser preferences in
+Theme, colour palette, style, corner style and density are per-browser preferences in
 **Settings > Appearance**. `lib/appearance.ts` owns their allowed values and local storage keys.
 `lib/theme-script.ts` applies the stored choice to `<html>` before first paint, and
 `ThemeProvider` and `ViewportDensityProvider` keep it in sync afterwards. The script ships as an
@@ -69,15 +69,76 @@ uncompiled string, so it must stay plain JavaScript; `theme-script.test.ts` exec
 | Palette | `data-palette` = `graphite`, `classic`, `ultraviolet` or `marigold` | no attribute (the `:root` / `.dark` tokens) |
 | Corner style | `data-corners` = `subtle` or `square` | no attribute (rounded) |
 | Density | `data-ui-density` = `comfortable`, `compact` or `dense` | resolved from the viewport (never `dense`) |
-| Style seam | `data-style` = `default` | always Default; no settings control yet |
+| Style | `data-style` = `default`, `classic` or `depth` | Default |
 
 A new preference must keep the same property: its default leaves the product exactly as it looks
 without the preference.
 
-The style vocabulary currently contains only `default`. `nojoin-style` is validated by the
-same storage helpers as the other preferences; Default removes the key. The pre-paint script
-and runtime storage listener always apply `data-style="default"`, including with invalid or
-blocked storage. This reserves a separate appearance axis without changing the flat canon.
+`nojoin-style` is validated by the same storage helpers as the other preferences; Default
+removes the key. The pre-paint script applies the validated style before first paint, and
+`ThemeProvider` keeps the controls and root attribute in sync across tabs. Invalid or blocked
+storage falls back to Default. These choices change immediately and never reach server settings.
+
+### Style
+
+[styles.css](../frontend/src/app/styles.css), [classic.css](../frontend/src/app/classic.css)
+and [depth-dark.css](../frontend/src/app/depth-dark.css)
+are app-only and import after the palettes. Every rule is scoped to Classic or Depth, so
+Default retains the flat canon above. Style changes
+shape and elevation and derives dark Depth's lighter fills and contrast support from the
+palette. Palette supplies the colours, Corners owns radii, and Density owns workspace spacing.
+The new Style row is the intentional addition to the Appearance page under every style.
+
+- **Default** preserves the existing controls and surfaces.
+- **Classic** uses a two-pixel bevel: a directional outer border and an inset inner facet on
+  actions, fields and floats. Reading cards and panes omit the shaded outer facet to keep
+  long passages quiet. Light mode mixes the dark facets towards the palette card fill at
+  67% shade strength; dark mode keeps the palette control border as its lit identifying edge
+  and mixes charcoal shade towards the card fill. Borderless and one-sided hosts paint both
+  pixels inside their existing boxes. Enabled actions press in while active or toggled on;
+  disabled and busy actions do not. Fine pointers get tighter vertical field padding; actions
+  keep their own spacing, and field icon gutters and touch targets keep their existing dimensions.
+  Classic looks best with **Square**
+  corners, which remains a separate choice.
+- **Depth** gives inset, card, pane and floating surfaces increasing separation, with a slight
+  lift for enabled action buttons and a supplemental focus halo. Transcript bubbles and speaker
+  cards use Card elevation; the speaker panel, meeting tab strip and chat use Pane elevation.
+  Fields and floating calendar headers are Inset; popovers and floating calendars are Float.
+  The inline deadline calendar and its header stay transparent over their Inset container.
+  In dark mode, raised surfaces mix their own palette fill towards the palette's lighter
+  foreground tone in Oklab: Inset 0%, Card 3%, Pane 6% and Float 9%. Transparent surfaces keep
+  their backdrop; speaker colours and coloured action fills remain unchanged. Neutral actions
+  follow Card at rest, Pane during eligible hover and Inset while pressed. Dark shadows retain
+  narrow inset highlights. Rows and individual tabs
+  do not lift. Reduced motion disables the lift and its transitions. Dark action and danger
+  labels use their palette hover text colours; control borders and disabled labels use the
+  muted-icon token. Filled actions and selected calendar cells gain a local palette focus
+  perimeter. These control borders also remain identifiable on the coloured person-merge pane.
+
+| Tokens | Readers |
+| --- | --- |
+| `--classic-outer-highlight`, `--classic-inner-highlight`, `--classic-outer-dark`, `--classic-inner-dark` | Classic directional borders and inner facets; light highlights are `#fff` / `#dfdfdf`, dark highlights are `--control-border` / `#3a3a3a` |
+| `--classic-base-dark` | Light outer shade: mixes `--foreground` at 84% with `--surface-card`, then mixes that shade at 67% with `--surface-card`; inner shade mixes `#808080` at 67% with the card fill |
+| `--style-raised-shadow`, `--style-sunken-shadow`, `--style-pressed-shadow`, `--style-etched-shadow` | Classic action chrome, text/custom fields, reading panes and card groups; Depth fields use its separate sunken recipe |
+| `--classic-raised-borderless`, `--classic-sunken-borderless`, `--classic-reading-raised`, `--classic-reading-sunken` | Two inset pixels for Classic borderless controls/floats and quieter reading cards/panes, without changing geometry |
+| `--style-elevation-1`, `--style-elevation-2`, `--style-elevation-3` | Depth Card/actions/bubbles, Pane/eligible hover, Float; Classic uses only its smaller float cast shadow |
+| `--depth-mix-inset`, `--depth-mix-card`, `--depth-mix-pane`, `--depth-mix-float` | Dark Depth mixes eligible palette fills towards `--foreground` in Oklab at 0%, 3%, 6% and 9% respectively |
+| `--depth-fill-base`, `--depth-role-mix` | Element-local palette fill and role strength; reset on each eligible host so nested surfaces keep their own fill |
+| `--depth-filled-edge` → `--focus-ring` | Local inset identifying perimeter on dark Depth's filled actions and selected calendar cells; preserves all five Tailwind shadow/ring slots |
+| `--style-focus-edge` → `--focus-ring`, `--style-glow-colour` | Exterior focus outline and Depth's supplemental halo |
+| `--float-shadow` | Style float recipe, also consumed by vendor calendar popovers |
+
+Effects use `data-ui-chrome="action"`, field markers and `data-ui-surface` roles. Native
+checkboxes, radios, files and ranges retain their platform rendering, switches remain round,
+and inverse tooltips retain their own colours. Shadow recipes compose with all five Tailwind
+shadow and ring slots so selection and focus rings survive. Classic's 2px dotted exterior focus
+outline and Depth's 2px solid outline use the palette focus token; the glow is never the only
+focus indicator. The contrast gate measures identifying edges and exterior focus at 3:1 on
+their page, card, inset, float, rail and control backdrops; decorative bevels are supplemental.
+It resolves Classic's nested palette mixes before measuring the rendered identifying facet and
+audits Depth's effective dark role mixes, nested controls, callouts and coloured merge pane
+alongside the unchanged light treatment in every palette. Each style has one recipe, selected
+only through `data-style`; the dark Depth treatment follows `.dark` without a separate switch.
 
 ### Palettes
 
@@ -479,7 +540,7 @@ The `data-ui` markers are inert under Default. Buttons distinguish `data-ui-chro
 from `plain` rows, tabs and text controls. Text and date/time inputs use `data-ui-input="field"`;
 checkbox, radio, range, file, color, hidden and button-like inputs use `data-ui-input="native"`.
 Surfaces expose `data-ui-surface`; Modal and custom widgets mark their existing host nodes
-without replacing Headless UI or vendor DOM. Future style CSS can target these markers under
+without replacing Headless UI or vendor DOM. Style CSS targets these markers under
 an explicit `html[data-style="…"]` selector while continuing to consume palette, radius,
 density and shadow tokens. Do not style all buttons indiscriminately, change native controls
 into text fields, or use a shadow declaration that erases selection rings. Default must remain
@@ -576,10 +637,12 @@ A heading that must fit its own content, such as the meeting title, uses `FitTex
 
 The contrast target is WCAG 2.2 AA, enforced by
 [frontend/scripts/check-contrast.mjs](../frontend/scripts/check-contrast.mjs). It parses the token
-blocks in `tokens.css`, `palettes.css` and the marketing site's `site-tokens.css`, resolves
-`var()`, composites translucent values over their backdrop stack, and measures a declared list of
-pairings across twelve themes: the app's light and dark, each palette's light and dark, and the
-site's light and dark. It runs as `npm run check:contrast` in the `Frontend lint` CI job and as
+blocks in `tokens.css`, `palettes.css`, `styles.css`, `depth-dark.css` and the
+marketing site's `site-tokens.css`. It resolves `var()`, Classic's nested sRGB colour mixes
+and Depth's effective dark Oklab role mixes, composites translucent values over their backdrop
+stack, and measures a declared list of
+pairings across 32 themes: five palettes × two modes × three styles in the app, and the
+site's unchanged light and dark. It runs as `npm run check:contrast` in the `Frontend lint` CI job and as
 `node frontend/scripts/check-contrast.mjs` in the `Site build` job.
 
 **A new token used as a foreground or background needs its pairings added to the script.** A
