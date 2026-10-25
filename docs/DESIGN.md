@@ -527,13 +527,38 @@ settings off the `Settings` object, and checks that every scoped entry is render
 
 ## Typography
 
-`Geist` and `Geist_Mono` are loaded in [frontend/src/app/layout.tsx](../frontend/src/app/layout.tsx)
-as `--font-geist-sans` and `--font-geist-mono`, which `@theme inline` maps to Tailwind's
+Geist and Geist Mono are served from files in the repository, so a build downloads nothing.
+[frontend/src/app/fonts/geist.ts](../frontend/src/app/fonts/geist.ts) declares them with
+`next/font/local`, and [geist.css](../frontend/src/app/fonts/geist.css) beside it sets
+`--font-geist-sans` and `--font-geist-mono` on `body`, which `@theme inline` maps to Tailwind's
 `--font-sans` and `--font-mono`. Geist Sans is set once on `body` in `globals.css`, so an element
 needs `font-sans` only to override something back to the default. Apply Geist Mono with
 `font-mono`.
 
 Lucide is the only icon set.
+
+### Font files
+
+The files in `frontend/src/app/fonts/` are Google Fonts' build of Geist 1.800 and Geist Mono
+1.701: the variable font (`wght` 100 to 900), split into Google's subsets. Both families have
+latin, latin-ext, cyrillic, cyrillic-ext and vietnamese, and Geist Mono adds symbols2 for box
+drawing. They are byte for byte the files `next/font/google` downloaded into the frontend image
+before the app served its own, so the app renders as it did.
+
+- **One `@font-face` per subset**, carrying Google's `unicode-range`, so a browser fetches a
+  subset only when the page uses a character from it. Keep Google's order: where two ranges
+  overlap, the face declared last wins, and that is latin.
+- **Only latin is preloaded.**
+- **The fallbacks are fixed values.** `geist.css` declares Arial with the metric overrides
+  `next/font/google` generated for these families. `next/font/local` would measure the files
+  instead and arrive at slightly different figures.
+- **To update them**, request `https://fonts.googleapis.com/css2?family=Geist:wght@100..900`
+  (and `Geist+Mono`) with a browser's user agent, so the response lists woff2 files, then replace
+  one file per subset and copy each `unicode-range` into its call. `selfHostedFonts.test.ts` fails
+  on a file that is not declared, a subset out of order and any import of `next/font/google`.
+
+Geist is under the SIL Open Font License 1.1, in `OFL.txt` beside the files. The marketing site
+serves its own latin files from `site/public/fonts/`.
 
 ### The heading scale
 
