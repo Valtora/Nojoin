@@ -1,6 +1,7 @@
 import { forwardRef, type HTMLAttributes } from "react";
 
 import { cn } from "@/lib/cn";
+import { SurfaceBase } from "./SurfaceBase";
 
 export type CardPadding = "none" | "sm" | "md" | "lg";
 
@@ -31,7 +32,8 @@ const Card = forwardRef<HTMLDivElement, CardProps>(function Card(
   ref,
 ) {
   return (
-    <div
+    <SurfaceBase
+      kind="card"
       ref={ref}
       className={cn(
         "rounded-surface-panel border border-surface-border bg-surface-card shadow-card",
@@ -45,7 +47,7 @@ const Card = forwardRef<HTMLDivElement, CardProps>(function Card(
       {...rest}
     >
       {children}
-    </div>
+    </SurfaceBase>
   );
 });
 

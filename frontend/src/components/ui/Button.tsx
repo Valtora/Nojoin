@@ -3,6 +3,7 @@ import { Loader2 } from "lucide-react";
 
 import { cn } from "@/lib/cn";
 import { DISABLED_LOOK, loadingButtonProps } from "./loadingButton";
+import { ButtonBase } from "./nativeBases";
 
 export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
 export type ButtonSize = "sm" | "md" | "lg";
@@ -64,11 +65,12 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
   ref,
 ) {
   return (
-    <button
+    <ButtonBase
       ref={ref}
       type={type}
       {...rest}
       {...loadingButtonProps(loading, disabled, onClick)}
+      chrome={variant === "ghost" ? "plain" : "action"}
       className={cn(
         "inline-flex items-center justify-center rounded-lg font-semibold whitespace-nowrap",
         "transition-colors duration-150",
@@ -87,7 +89,7 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
       )}
       {children}
       {loading ? null : iconRight}
-    </button>
+    </ButtonBase>
   );
 });
 
