@@ -6,9 +6,11 @@ import {
   APPEARANCE_STORAGE_KEYS,
   applyCornerStyle,
   applyPalette,
+  applyUiStyle,
   readStoredCornerStyle,
   readStoredPalette,
   readStoredTheme,
+  readStoredUiStyle,
   storeCornerStyle,
   storePalette,
   storeTheme,
@@ -68,6 +70,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   // falls back to System rather than reaching the select or the class list.
   useEffect(() => {
     const initialTheme = readStoredTheme();
+    applyUiStyle(readStoredUiStyle());
     // eslint-disable-next-line react-hooks/set-state-in-effect -- storage is read after hydration so the server and the client render the same tree; the theme control shows this value
     setThemeState(initialTheme);
     const resolved = resolveTheme(initialTheme);
@@ -117,6 +120,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         const nextCorners = readStoredCornerStyle();
         setCornerStyleState(nextCorners);
         applyCornerStyle(nextCorners);
+      }
+      if (event.key === null || event.key === keys.style) {
+        applyUiStyle(readStoredUiStyle());
       }
     };
 

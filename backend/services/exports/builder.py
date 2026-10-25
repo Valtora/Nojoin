@@ -5,8 +5,9 @@ transcript. Notes are what most readers came for, analytics qualify how the
 meeting went, and the transcript is the evidence for both. The reader's own
 timeline notes sit in the transcript: notes on the whole meeting first and
 last, the rest after the line they fall on. Generated notes also end with them,
-under ``## User Notes``. A file exported without the reader's notes leaves out
-both.
+under ``## User Notes``. A note's file follows its note: a picture in PDF and
+Word, else a line naming it. A file exported without the reader's notes
+leaves out all of them.
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from typing import Any
 from backend.models.timeline_note import TimelineNoteKind
 from backend.utils.live_speaker_labels import speaker_display_name
 from backend.utils.meeting_notes import split_user_notes_section
+from backend.utils.note_attachments import RenderedImage
 from backend.utils.timeline_notes import (
     NotePlacement,
     TimelineNoteLike,
@@ -40,6 +42,7 @@ from .model import (
     Block,
     Callout,
     ExportDocument,
+    ImageBlock,
     MetaItem,
     Paragraph,
     Section,
@@ -54,6 +57,14 @@ SECTION_TITLES = {
     "analytics": "Analytics",
     "transcript": "Transcript",
 }
+
+
+@dataclass(frozen=True)
+class NoteFile:
+    """A note's file: its name, and its picture at print size if it is an image."""
+
+    title: str
+    image: RenderedImage | None = None
 
 
 @dataclass(frozen=True)
@@ -75,6 +86,8 @@ class MeetingParts:
     analytics_colors: Mapping[str, str] = field(default_factory=dict)
     # The reader's timeline notes, placed among the transcript's lines.
     timeline_notes: Sequence[TimelineNoteLike] = ()
+    # Each note's file, by the note's public id.
+    note_files: Mapping[str, NoteFile] = field(default_factory=dict)
     # False leaves the reader's own notes out of the whole file: the timeline
     # notes above and the ``## User Notes`` section that ends generated notes.
     # The stored notes are not changed.
@@ -117,6 +130,25 @@ def _quote(text: str | None) -> str:
     if len(quote) > QUOTE_MAX_CHARS:
         return quote[: QUOTE_MAX_CHARS - 1].rstrip() + "…"
     return quote
+
+
+def _with_file(paragraph: Paragraph, file: NoteFile | None) -> Block:
+    """A note followed by its file: the picture under it, or a line naming it."""
+    if file is None:
+        return paragraph
+    named = Paragraph(
+        (*paragraph.text, LINE_BREAK, Span(f"Attached: {file.title}")), tone="quote"
+    )
+    if file.image is None:
+        return named
+    return ImageBlock(
+        caption=paragraph.text,
+        data=file.image.data,
+        width_px=file.image.width_px,
+        height_px=file.image.height_px,
+        alt_text=file.title,
+        fallback=(named,),
+    )
 
 
 def _note_block(placement: NotePlacement[TimelineNoteLike]) -> Paragraph:
@@ -173,7 +205,9 @@ def _transcript_section(parts: MeetingParts) -> Section:
         parts.segments, parts.timeline_notes if parts.include_user_notes else ()
     )
     blocks: tuple[Block, ...] = tuple(
-        lines[item] if isinstance(item, int) else _note_block(item)
+        lines[item]
+        if isinstance(item, int)
+        else _with_file(_note_block(item), parts.note_files.get(item.note.public_id))
         for item in iter_timeline(len(lines), placements)
     )
     if not lines:

@@ -2,6 +2,8 @@
 
 import * as React from 'react';
 import { X, Check, ChevronDown } from 'lucide-react';
+import { ButtonBase } from './nativeBases';
+import { SurfaceBase } from './SurfaceBase';
 
 export interface Option {
     value: number | string;
@@ -56,6 +58,8 @@ export default function MultiSelect({
     return (
         <div className={`relative ${className}`} ref={containerRef}>
             <div
+                data-ui="multiselect-trigger"
+                data-ui-field="custom"
                 className="flex min-h-[42px] w-full cursor-pointer flex-wrap items-center gap-2 rounded-lg border border-control-border bg-control-bg px-3 py-2 text-sm text-foreground hover:border-action focus-within:outline-2 focus-within:outline-offset-0 focus-within:outline-focus-ring"
                 onClick={() => setIsOpen(!isOpen)}
             >
@@ -70,14 +74,14 @@ export default function MultiSelect({
                             style={{ backgroundColor: option.color || 'var(--action)' }}
                         >
                             {option.label}
-                            <button
+                            <ButtonBase
                                 type="button"
                                 aria-label={`Remove ${option.label}`}
                                 className="ml-0.5 rounded-full p-0.5 hover:bg-white/20"
                                 onClick={(e) => removeSelect(e, option.value)}
                             >
                                 <X className="h-3.5 w-3.5" />
-                            </button>
+                            </ButtonBase>
                         </span>
                     ))
                 ) : (
@@ -89,7 +93,7 @@ export default function MultiSelect({
             </div>
 
             {isOpen && (
-                <div className="absolute z-[var(--z-dropdown)] mt-1 max-h-60 w-full overflow-auto rounded-lg border border-surface-float-border bg-surface-float p-1 shadow-float">
+                <SurfaceBase kind="float" className="absolute z-[var(--z-dropdown)] mt-1 max-h-60 w-full overflow-auto rounded-lg border border-surface-float-border bg-surface-float p-1 shadow-float">
                     {options.length === 0 ? (
                         <div className="p-2 text-center text-sm text-contrast-helper">No options available</div>
                     ) : (
@@ -98,6 +102,7 @@ export default function MultiSelect({
                             return (
                                 <div
                                     key={option.value}
+                                    data-ui="multiselect-option"
                                     className={`relative flex cursor-pointer select-none items-center rounded-lg px-2 py-2 text-sm outline-none transition-colors ${isSelected
                                             ? 'bg-action-tint text-action-tint-fg'
                                             : 'text-foreground hover:bg-surface-inset'
@@ -115,7 +120,7 @@ export default function MultiSelect({
                             );
                         })
                     )}
-                </div>
+                </SurfaceBase>
             )}
         </div>
     );

@@ -1,5 +1,7 @@
 "use client";
 
+import { ButtonBase } from '@/components/ui/nativeBases';
+import { SurfaceBase } from '@/components/ui/SurfaceBase';
 import {
   addMonths,
   eachDayOfInterval,
@@ -35,27 +37,27 @@ export default function MonthCalendar({
   });
 
   return (
-    <div className="rounded-lg border border-control-border bg-surface-card p-2">
+    <SurfaceBase kind="card" className="rounded-lg border border-control-border bg-surface-card p-2">
       <div className="flex items-center justify-between mb-2">
-        <button
+        <ButtonBase
           type="button"
           onClick={() => onMonthChange(startOfMonth(addMonths(month, -1)))}
           className="p-1 rounded hover:bg-surface-inset text-contrast-helper"
           aria-label="Previous month"
         >
           <ChevronLeft className="h-4 w-4" />
-        </button>
+        </ButtonBase>
         <span className="text-xs font-medium text-contrast-muted">
           {format(month, "MMMM yyyy")}
         </span>
-        <button
+        <ButtonBase
           type="button"
           onClick={() => onMonthChange(startOfMonth(addMonths(month, 1)))}
           className="p-1 rounded hover:bg-surface-inset text-contrast-helper"
           aria-label="Next month"
         >
           <ChevronRight className="h-4 w-4" />
-        </button>
+        </ButtonBase>
       </div>
 
       <div className="grid grid-cols-7 gap-0.5">
@@ -75,7 +77,7 @@ export default function MonthCalendar({
           const isSelected = selectedDay === dayKey;
 
           return (
-            <button
+            <ButtonBase
               key={dayKey}
               type="button"
               onClick={() => onSelectDay(dayKey)}
@@ -95,10 +97,10 @@ export default function MonthCalendar({
                   }`}
                 />
               )}
-            </button>
+            </ButtonBase>
           );
         })}
       </div>
-    </div>
+    </SurfaceBase>
   );
 }

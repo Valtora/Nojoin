@@ -1,5 +1,7 @@
 "use client";
 
+import { ButtonBase, InputBase } from '@/components/ui/nativeBases';
+import { SurfaceBase } from '@/components/ui/SurfaceBase';
 import { Recording, RecordingStatus } from "@/types";
 import { getRecordingStreamUrl } from "@/lib/api";
 import {
@@ -159,9 +161,9 @@ export default function AudioPlayer({
   const compactMockContent = (
     <div className="flex flex-col gap-2 opacity-30 pointer-events-none filter blur-[1px]">
       <div className="flex items-center justify-between gap-3">
-        <button className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-card text-foreground shadow-card">
+        <ButtonBase className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-card text-foreground shadow-card">
           <Play className="ml-0.5 h-5 w-5 fill-current" />
-        </button>
+        </ButtonBase>
         <div className="h-5 w-5 rounded-full bg-surface-inset" />
       </div>
       <div className="min-w-0">
@@ -178,23 +180,23 @@ export default function AudioPlayer({
   // Render the "processing" disabled state if proxy is unavailable
   if (proxyUnavailable) {
     return (
-      <div
+      <SurfaceBase kind="card"
         id="audio-player"
         className={`${shellClassName} relative overflow-hidden`}
       >
-        <div className="absolute inset-0 bg-surface-card z-10 flex items-center justify-center">
+        <SurfaceBase kind="pane" className="absolute inset-0 bg-surface-card z-10 flex items-center justify-center">
           <span className={`flex items-center gap-2 rounded-pill border border-status-info-border bg-status-info-bg px-3 py-1 font-medium text-status-info-fg ${compact ? "text-xs" : "text-sm"}`}>
             <Loader2 className="w-4 h-4 animate-spin" />
             Audio is being processed, please wait...
           </span>
-        </div>
+        </SurfaceBase>
 
         {compact ? compactMockContent : (
         <div className="flex items-center gap-x-3 gap-y-2 w-full opacity-30 pointer-events-none filter blur-[1px] flex-wrap md:flex-nowrap">
           {/* Mock Play Button */}
-          <button className="w-9 h-9 md:w-10 md:h-10 flex items-center justify-center rounded-full bg-surface-card text-foreground shadow-card shrink-0 order-1">
+          <ButtonBase className="w-9 h-9 md:w-10 md:h-10 flex items-center justify-center rounded-full bg-surface-card text-foreground shadow-card shrink-0 order-1">
             <Play className="w-5 h-5 fill-current ml-0.5" />
-          </button>
+          </ButtonBase>
           {/* Mock Timeline */}
           <div className="w-full md:w-auto md:flex-1 flex flex-col justify-center gap-1 order-3 md:order-2 mt-1 md:mt-0">
             <div className="w-full h-2.5 bg-surface-inset rounded-full"></div>
@@ -206,18 +208,18 @@ export default function AudioPlayer({
           </div>
         </div>
         )}
-      </div>
+      </SurfaceBase>
     );
   }
 
   if (hasError || isDemo || audioMissing) {
     return (
-      <div
+      <SurfaceBase kind="card"
         id="audio-player"
         className={`${shellClassName} relative overflow-hidden`}
       >
         {/* Blurred background visual effect */}
-        <div className="absolute inset-0 bg-surface-card z-10 flex items-center justify-center">
+        <SurfaceBase kind="pane" className="absolute inset-0 bg-surface-card z-10 flex items-center justify-center">
           <span className={`flex items-center gap-2 rounded-pill border border-action-border bg-action-tint px-3 py-1 font-medium text-action-tint-fg ${compact ? "text-xs" : "text-sm"}`}>
             <VolumeX className="w-4 h-4" />
             {isDemo
@@ -226,15 +228,15 @@ export default function AudioPlayer({
                 ? "This recording's audio is not available"
                 : "This recording's audio could not be loaded"}
           </span>
-        </div>
+        </SurfaceBase>
 
         {/* Disabled UI underneath for visual context */}
         {compact ? compactMockContent : (
         <div className="flex items-center gap-x-3 gap-y-2 w-full opacity-30 pointer-events-none filter blur-[1px] flex-wrap md:flex-nowrap">
           {/* Mock Play Button */}
-          <button className="w-9 h-9 md:w-10 md:h-10 flex items-center justify-center rounded-full bg-surface-card text-foreground shadow-card shrink-0 order-1">
+          <ButtonBase className="w-9 h-9 md:w-10 md:h-10 flex items-center justify-center rounded-full bg-surface-card text-foreground shadow-card shrink-0 order-1">
             <Play className="w-5 h-5 fill-current ml-0.5" />
-          </button>
+          </ButtonBase>
           {/* Mock Timeline */}
           <div className="w-full md:w-auto md:flex-1 flex flex-col justify-center gap-1 order-3 md:order-2 mt-1 md:mt-0">
             <div className="w-full h-2.5 bg-surface-inset rounded-full"></div>
@@ -255,12 +257,12 @@ export default function AudioPlayer({
             className="hidden"
           />
         )}
-      </div>
+      </SurfaceBase>
     );
   }
 
   return (
-    <div
+    <SurfaceBase kind="card"
       id="audio-player"
       className={shellClassName}
     >
@@ -273,7 +275,7 @@ export default function AudioPlayer({
       {compact ? (
         <div className="flex flex-col gap-2">
           <div className="flex items-center justify-between gap-3">
-            <button
+            <ButtonBase chrome="action"
               onClick={togglePlay}
               className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-action text-action-on shadow-card transition-colors hover:bg-action-hover"
             >
@@ -282,9 +284,9 @@ export default function AudioPlayer({
               ) : (
                 <Play className="ml-0.5 h-5 w-5 fill-current" />
               )}
-            </button>
+            </ButtonBase>
 
-            <button
+            <ButtonBase
               onClick={toggleMute}
               className="shrink-0 text-contrast-helper hover:text-contrast-muted"
               title={isMuted || volume === 0 ? "Unmute" : "Mute"}
@@ -294,13 +296,13 @@ export default function AudioPlayer({
               ) : (
                 <Volume2 className="h-5 w-5" />
               )}
-            </button>
+            </ButtonBase>
           </div>
 
           <div className="min-w-0">
             <div className="flex items-center gap-2 text-[11px] font-medium text-contrast-helper">
               <span className="w-9 shrink-0 text-left">{formatTime(currentTime)}</span>
-              <input
+              <InputBase
                 type="range"
                 min={0}
                 max={duration || 100}
@@ -309,20 +311,20 @@ export default function AudioPlayer({
                 className="h-2 min-w-0 flex-1 cursor-pointer appearance-none rounded-full bg-surface-inset accent-action"
               />
               <span className="w-9 shrink-0 text-right">{formatTime(duration)}</span>
-              <button
+              <ButtonBase
                 onClick={changePlaybackRate}
                 className="w-8 shrink-0 text-right text-xs font-bold text-contrast-helper hover:text-action-text"
                 title="Playback Speed"
               >
                 {playbackRate}x
-              </button>
+              </ButtonBase>
             </div>
           </div>
         </div>
       ) : (
         <>
           {/* Play/Pause Button */}
-          <button
+          <ButtonBase chrome="action"
             onClick={togglePlay}
             className="w-9 h-9 md:w-10 md:h-10 flex items-center justify-center rounded-full bg-action text-action-on hover:bg-action-hover transition-colors shadow-card shrink-0 order-1"
           >
@@ -331,7 +333,7 @@ export default function AudioPlayer({
             ) : (
               <Play className="w-5 h-5 fill-current ml-0.5" />
             )}
-          </button>
+          </ButtonBase>
 
           {/* Time & Progress */}
           <div className="w-full md:w-auto md:flex-1 flex flex-col justify-center gap-1 order-3 md:order-2 mt-1 md:mt-0">
@@ -340,7 +342,7 @@ export default function AudioPlayer({
               <span>{formatTime(duration)}</span>
             </div>
             <div className="w-full">
-              <input
+              <InputBase
                 type="range"
                 min={0}
                 max={duration || 100}
@@ -354,17 +356,17 @@ export default function AudioPlayer({
           {/* Controls Group */}
           <div className="flex items-center gap-2 md:gap-3 ml-auto md:ml-0 pl-0 md:pl-2 border-l-0 md:border-l border-surface-border order-2 md:order-3">
             {/* Speed Toggle */}
-            <button
+            <ButtonBase
               onClick={changePlaybackRate}
               className="text-xs font-bold text-contrast-helper hover:text-action-text w-8 text-center"
               title="Playback Speed"
             >
               {playbackRate}x
-            </button>
+            </ButtonBase>
 
             {/* Volume */}
             <div className="flex items-center gap-2 group relative">
-              <button
+              <ButtonBase
                 onClick={toggleMute}
                 className="text-contrast-helper hover:text-contrast-muted"
               >
@@ -373,9 +375,9 @@ export default function AudioPlayer({
                 ) : (
                   <Volume2 className="w-5 h-5" />
                 )}
-              </button>
+              </ButtonBase>
               <div className="w-0 overflow-hidden group-hover:w-20 transition-all duration-300 ease-in-out">
-                <input
+                <InputBase
                   type="range"
                   min={0}
                   max={1}
@@ -389,6 +391,6 @@ export default function AudioPlayer({
           </div>
         </>
       )}
-    </div>
+    </SurfaceBase>
   );
 }

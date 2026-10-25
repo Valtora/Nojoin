@@ -1,5 +1,6 @@
 "use client";
 
+import { SurfaceBase } from '@/components/ui/SurfaceBase';
 import Link from "next/link";
 import { LifeBuoy, Waves } from "lucide-react";
 
@@ -39,7 +40,7 @@ export default function RecordingsLanding() {
       contentClassName="workspace-shell workspace-shell-feature"
       paddingClassName="workspace-pad-y"
     >
-      <section
+      <SurfaceBase as="section" kind="card"
         id="recordings-landing-panel"
         className="density-surface density-surface-lg border border-surface-border bg-surface-card shadow-card"
       >
@@ -68,7 +69,7 @@ export default function RecordingsLanding() {
             </Link>
           </div>
         </div>
-      </section>
+      </SurfaceBase>
     </Workspace>
   );
 }

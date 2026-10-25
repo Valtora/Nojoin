@@ -1,3 +1,4 @@
+import { ButtonBase, InputBase, SelectBase } from "@/components/ui/nativeBases";
 import { useState, useEffect } from "react";
 import {
   getUsers,
@@ -263,7 +264,8 @@ export default function UsersTab() {
       title="Users"
       description="Each person's role and whether their account is active."
       headerAside={
-        <button
+        <ButtonBase
+          chrome="action"
           type="button"
           onClick={toggleCreateForm}
           aria-expanded={isCreating}
@@ -271,7 +273,7 @@ export default function UsersTab() {
         >
           <UserPlus className="h-4 w-4" aria-hidden="true" />
           Add user
-        </button>
+        </ButtonBase>
       }
     >
       {isCreating && (
@@ -285,7 +287,7 @@ export default function UsersTab() {
               <label htmlFor="new-user-username" className="mb-1 block text-sm font-medium text-foreground">
                 Username
               </label>
-              <input
+              <InputBase
                 id="new-user-username"
                 name="new-user-username"
                 value={newUser.username}
@@ -301,7 +303,7 @@ export default function UsersTab() {
               <label htmlFor="new-user-password" className="mb-1 block text-sm font-medium text-foreground">
                 Temporary password
               </label>
-              <input
+              <InputBase
                 id="new-user-password"
                 name="new-user-password"
                 type="password"
@@ -319,7 +321,7 @@ export default function UsersTab() {
               <label htmlFor="new-user-role" className="mb-1 block text-sm font-medium text-foreground">
                 Role
               </label>
-              <select
+              <SelectBase
                 id="new-user-role"
                 value={newUser.role}
                 onChange={(e) =>
@@ -328,10 +330,11 @@ export default function UsersTab() {
                 className={SETTINGS_SELECT_CLASS}
               >
                 <RoleOptions includeOwner={includeOwner} />
-              </select>
+              </SelectBase>
             </div>
             <div className="flex justify-end gap-2 @min-[40rem]:col-span-3">
-              <button
+              <ButtonBase
+                chrome="action"
                 type="button"
                 onClick={() => {
                   setIsCreating(false);
@@ -340,10 +343,11 @@ export default function UsersTab() {
                 className={SETTINGS_BUTTON_SECONDARY}
               >
                 Cancel
-              </button>
-              <button type="submit" className={SETTINGS_BUTTON_PRIMARY}>
+              </ButtonBase>
+              <ButtonBase
+                chrome="action" type="submit" className={SETTINGS_BUTTON_PRIMARY}>
                 Create user
-              </button>
+              </ButtonBase>
             </div>
           </form>
         </SettingsBlock>
@@ -355,7 +359,7 @@ export default function UsersTab() {
             className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 contrast-icon-muted"
             aria-hidden="true"
           />
-          <input
+          <InputBase
             type="search"
             aria-label="Search users"
             value={search}
@@ -424,7 +428,8 @@ export default function UsersTab() {
                     <td className="py-3">
                       <div className="flex justify-end gap-2">
                         {(isSuperuser || canManage) && (
-                          <button
+                          <ButtonBase
+                            chrome="action"
                             type="button"
                             onClick={() => startEdit(user)}
                             aria-label={
@@ -436,10 +441,11 @@ export default function UsersTab() {
                             className={ICON_BUTTON}
                           >
                             <Edit2 className="h-4 w-4" aria-hidden="true" />
-                          </button>
+                          </ButtonBase>
                         )}
                         {!isSelf && canManage && (
-                          <button
+                          <ButtonBase
+                            chrome="action"
                             type="button"
                             onClick={() => handleDeleteUser(user.id)}
                             aria-label={`Delete ${user.username}`}
@@ -447,7 +453,7 @@ export default function UsersTab() {
                             className={cn(ICON_BUTTON, "text-danger-text")}
                           >
                             <Trash2 className="h-4 w-4" aria-hidden="true" />
-                          </button>
+                          </ButtonBase>
                         )}
                       </div>
                     </td>
@@ -465,7 +471,8 @@ export default function UsersTab() {
               : `${(page - 1) * limit + 1} to ${Math.min(page * limit, total)} of ${total}`}
           </p>
           <div className="flex gap-2">
-            <button
+            <ButtonBase
+              chrome="action"
               type="button"
               onClick={() => setPage((p) => Math.max(1, p - 1))}
               disabled={page === 1}
@@ -473,8 +480,9 @@ export default function UsersTab() {
               className={ICON_BUTTON}
             >
               <ChevronLeft className="h-4 w-4" aria-hidden="true" />
-            </button>
-            <button
+            </ButtonBase>
+            <ButtonBase
+              chrome="action"
               type="button"
               onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
               disabled={page >= totalPages}
@@ -482,7 +490,7 @@ export default function UsersTab() {
               className={ICON_BUTTON}
             >
               <ChevronRight className="h-4 w-4" aria-hidden="true" />
-            </button>
+            </ButtonBase>
           </div>
         </div>
       </SettingsBlock>
@@ -572,7 +580,7 @@ export default function UsersTab() {
 
             <div>
               <div className="flex items-center gap-2">
-                <input
+                <InputBase
                   type="checkbox"
                   id="is_active"
                   checked={editForm.is_active || false}

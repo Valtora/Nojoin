@@ -1,5 +1,7 @@
 "use client";
 
+import { ButtonBase, InputBase } from '@/components/ui/nativeBases';
+import { SurfaceBase } from '@/components/ui/SurfaceBase';
 import axios from "axios";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
@@ -83,7 +85,7 @@ export default function LoginPage() {
     // page-shell: this route owns its scroll; <body> is overflow-hidden. See
     // the note on .page-shell in globals.css.
     <div className="page-shell flex flex-col items-center bg-surface-page px-4 py-8 sm:px-6 lg:px-8">
-      <div className="my-auto max-w-md w-full space-y-8 p-10 bg-surface-card rounded-surface border border-surface-border shadow-card">
+      <SurfaceBase kind="card" className="my-auto max-w-md w-full space-y-8 p-10 bg-surface-card rounded-surface border border-surface-border shadow-card">
         <div className="flex flex-col items-center justify-center">
           <div className="flex flex-col items-center gap-4 mb-2">
             <Image
@@ -112,13 +114,13 @@ export default function LoginPage() {
                 {error}
               </div>
             )}
-            <button
+            <ButtonBase chrome="action"
               type="button"
               {...loadingButtonProps(loading, undefined, () => void signIn(DEMO_USERNAME, DEMO_PASSWORD))}
               className="w-full flex justify-center py-3 px-4 border border-transparent text-sm font-semibold rounded-lg text-action-on bg-action hover:bg-action-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:opacity-60 disabled:cursor-not-allowed transition-colors aria-disabled:opacity-60 aria-disabled:cursor-not-allowed"
             >
               {loading ? "Opening the demo..." : "Enter the demo"}
-            </button>
+            </ButtonBase>
           </div>
         ) : (
           <form
@@ -137,7 +139,7 @@ export default function LoginPage() {
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                   <User className="h-5 w-5 text-contrast-icon-muted" />
                 </div>
-                <input
+                <InputBase
                   id="login-username"
                   name="username"
                   type="text"
@@ -161,7 +163,7 @@ export default function LoginPage() {
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                   <Lock className="h-5 w-5 text-contrast-icon-muted" />
                 </div>
-                <input
+                <InputBase
                   id="login-current-password"
                   name="password"
                   type="password"
@@ -189,17 +191,17 @@ export default function LoginPage() {
             )}
 
             <div>
-              <button
+              <ButtonBase chrome="action"
                 type="submit"
                 {...loadingButtonProps(loading)}
                 className="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-semibold rounded-lg text-action-on bg-action hover:bg-action-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:opacity-60 disabled:cursor-not-allowed transition-colors aria-disabled:opacity-60 aria-disabled:cursor-not-allowed"
               >
                 {loading ? "Signing in..." : "Sign in"}
-              </button>
+              </ButtonBase>
             </div>
           </form>
         )}
-      </div>
+      </SurfaceBase>
     </div>
   );
 }

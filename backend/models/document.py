@@ -2,7 +2,7 @@ from datetime import timedelta
 from enum import Enum
 from typing import TYPE_CHECKING, List, Optional
 
-from sqlalchemy import BigInteger, Column, ForeignKey, Text
+from sqlalchemy import BigInteger, Boolean, Column, ForeignKey, Text
 from sqlmodel import Field, Relationship
 
 from backend.utils.time import utc_now
@@ -69,6 +69,27 @@ class Document(BaseDBModel, table=True):
     # Non-fatal degradation, surfaced on the document card. A document with a
     # warning is still READY and still searchable.
     parse_warning: Optional[str] = Field(default=None, sa_column=Column(Text))
+
+    # Set on a file attached to a timeline note (a capture is one), which takes
+    # its time from the note and goes with it. Unique: a note holds one file.
+    note_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(
+            BigInteger,
+            ForeignKey("timeline_notes.id", ondelete="CASCADE"),
+            nullable=True,
+            unique=True,
+        ),
+    )
+    # An attachment's switch, off by default: only while it is on is the file
+    # parsed and read by notes, Meeting Chat and search. A document with no
+    # note ignores it and is always read (backend.utils.note_attachments).
+    use_in_notes: bool = Field(
+        default=False,
+        sa_column=Column(
+            Boolean, nullable=False, default=False, server_default="false"
+        ),
+    )
 
     # Progress, so a long parse reports something better than a spinner.
     # `page_count` is None until the format has been opened and counted.

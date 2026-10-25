@@ -1,5 +1,7 @@
 "use client";
 
+import { ButtonBase, InputBase } from '@/components/ui/nativeBases';
+import { SurfaceBase } from '@/components/ui/SurfaceBase';
 import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -93,7 +95,7 @@ function RegisterForm() {
     // page-shell: this route owns its scroll; <body> is overflow-hidden. See
     // the note on .page-shell in globals.css.
     <div className="page-shell flex flex-col items-center bg-surface-page px-4 py-8 sm:px-6 lg:px-8">
-      <div className="my-auto max-w-md w-full space-y-8 p-10 bg-surface-card rounded-surface border border-surface-border shadow-card">
+      <SurfaceBase kind="card" className="my-auto max-w-md w-full space-y-8 p-10 bg-surface-card rounded-surface border border-surface-border shadow-card">
         <div className="flex flex-col items-center justify-center">
           <div className="flex flex-col items-center gap-4 mb-2">
             <Image
@@ -135,7 +137,7 @@ function RegisterForm() {
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                 <User className="h-5 w-5 text-contrast-icon-muted" />
               </div>
-              <input
+              <InputBase
                 id="register-username"
                 name="register-username"
                 type="text"
@@ -162,7 +164,7 @@ function RegisterForm() {
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                 <Lock className="h-5 w-5 text-contrast-icon-muted" />
               </div>
-              <input
+              <InputBase
                 id="register-new-password"
                 name="register-new-password"
                 type="password"
@@ -187,7 +189,7 @@ function RegisterForm() {
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                 <Lock className="h-5 w-5 text-contrast-icon-muted" />
               </div>
-              <input
+              <InputBase
                 id="register-confirm-password"
                 name="register-confirm-password"
                 type="password"
@@ -215,7 +217,7 @@ function RegisterForm() {
               >
                 Invite Code
               </label>
-              <input
+              <InputBase
                 id="invite-code"
                 name="register-invite-code"
                 type="text"
@@ -245,7 +247,7 @@ function RegisterForm() {
           )}
 
           <div>
-            <button
+            <ButtonBase chrome="action"
               type="submit"
               {...loadingButtonProps(loading)}
               className="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-lg text-action-on bg-action hover:bg-action-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:opacity-60 disabled:cursor-not-allowed transition-colors aria-disabled:opacity-60 aria-disabled:cursor-not-allowed"
@@ -255,10 +257,10 @@ function RegisterForm() {
               ) : (
                 "Register"
               )}
-            </button>
+            </ButtonBase>
           </div>
         </form>
-      </div>
+      </SurfaceBase>
     </div>
   );
 }

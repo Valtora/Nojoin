@@ -1,3 +1,4 @@
+import { ButtonBase, InputBase, SelectBase } from "@/components/ui/nativeBases";
 import {
   useState,
   useEffect,
@@ -382,7 +383,7 @@ export default function SystemLogs() {
           <label htmlFor="logs-service" className="mb-1 block text-xs font-medium contrast-helper">
             Service
           </label>
-          <select
+          <SelectBase
             id="logs-service"
             value={selectedContainer}
             onChange={(e) => setSelectedContainer(e.target.value)}
@@ -393,13 +394,13 @@ export default function SystemLogs() {
                 {c === "all" ? "All services" : c}
               </option>
             ))}
-          </select>
+          </SelectBase>
         </div>
         <div>
           <label htmlFor="logs-level" className="mb-1 block text-xs font-medium contrast-helper">
             Level
           </label>
-          <select
+          <SelectBase
             id="logs-level"
             value={logLevel}
             onChange={(e) => setLogLevel(e.target.value)}
@@ -410,13 +411,13 @@ export default function SystemLogs() {
                 {l === "ALL" ? "All levels" : l}
               </option>
             ))}
-          </select>
+          </SelectBase>
         </div>
         <div>
           <label htmlFor="logs-filter" className="mb-1 block text-xs font-medium contrast-helper">
             Filter
           </label>
-          <input
+          <InputBase
             id="logs-filter"
             type="text"
             placeholder="A regular expression"
@@ -426,7 +427,8 @@ export default function SystemLogs() {
           />
         </div>
         <div className="flex flex-wrap items-end gap-2">
-          <button
+          <ButtonBase
+            chrome="action"
             type="button"
             onClick={() => setAutoScroll(!autoScroll)}
             aria-pressed={!autoScroll}
@@ -438,8 +440,9 @@ export default function SystemLogs() {
               <Play className="h-4 w-4" aria-hidden="true" />
             )}
             {autoScroll ? "Pause" : "Follow"}
-          </button>
-          <button
+          </ButtonBase>
+          <ButtonBase
+            chrome="action"
             type="button"
             onClick={() => setLogs([])}
             aria-label="Clear the console"
@@ -447,7 +450,7 @@ export default function SystemLogs() {
             className={cn(SETTINGS_BUTTON_SECONDARY, "w-10 px-0")}
           >
             <Trash2 className="h-4 w-4" aria-hidden="true" />
-          </button>
+          </ButtonBase>
           <Popover className="relative">
             <Popover.Button
               aria-label="Display options"
@@ -465,8 +468,8 @@ export default function SystemLogs() {
               leaveFrom="opacity-100"
               leaveTo="opacity-0"
             >
-              <Popover.Panel className="absolute right-0 z-[var(--z-dropdown)] mt-2 w-56 rounded-lg border border-surface-float-border bg-surface-float p-1 shadow-float">
-                <button
+              <Popover.Panel data-ui="surface" data-ui-surface="float" className="absolute right-0 z-[var(--z-dropdown)] mt-2 w-56 rounded-lg border border-surface-float-border bg-surface-float p-1 shadow-float">
+                <ButtonBase
                   type="button"
                   aria-pressed={logShowTimestamps}
                   onClick={toggleLogShowTimestamps}
@@ -474,8 +477,8 @@ export default function SystemLogs() {
                 >
                   <span>Show times</span>
                   {logShowTimestamps && <Check className="h-4 w-4 text-action-text" aria-hidden="true" />}
-                </button>
-                <button
+                </ButtonBase>
+                <ButtonBase
                   type="button"
                   aria-pressed={logWordWrap}
                   onClick={toggleLogWordWrap}
@@ -483,18 +486,19 @@ export default function SystemLogs() {
                 >
                   <span>Wrap long lines</span>
                   {logWordWrap && <Check className="h-4 w-4 text-action-text" aria-hidden="true" />}
-                </button>
+                </ButtonBase>
               </Popover.Panel>
             </Transition>
           </Popover>
-          <button
+          <ButtonBase
+            chrome="action"
             type="button"
             onClick={handleDownloadLogs}
             className={SETTINGS_BUTTON_SECONDARY}
           >
             <Download className="h-4 w-4" aria-hidden="true" />
             Download
-          </button>
+          </ButtonBase>
         </div>
       </SettingsBlock>
 

@@ -1,3 +1,4 @@
+import { ButtonBase } from "@/components/ui/nativeBases";
 import { useEffect, useId, useState, type ReactNode } from "react";
 import { format, formatDistanceToNow } from "date-fns";
 import { ChevronRight, ExternalLink, RefreshCw } from "lucide-react";
@@ -94,7 +95,7 @@ function Disclosure({
 
   return (
     <div className={className}>
-      <button
+      <ButtonBase
         type="button"
         aria-expanded={open}
         aria-controls={contentId}
@@ -109,7 +110,7 @@ function Disclosure({
           aria-hidden="true"
         />
         {summary}
-      </button>
+      </ButtonBase>
       {open && (
         <div id={contentId} className="mt-3 pl-6">
           {children}
@@ -199,7 +200,8 @@ export default function UpdatesSettings() {
   }, []);
 
   const refreshButton = (
-    <button
+    <ButtonBase
+      chrome="action"
       type="button"
       {...loadingButtonProps(refreshing, undefined, () => void loadVersionInfo(true))}
       className={SETTINGS_BUTTON_SECONDARY}
@@ -209,7 +211,7 @@ export default function UpdatesSettings() {
         aria-hidden="true"
       />
       {refreshing ? "Checking..." : "Check for updates"}
-    </button>
+    </ButtonBase>
   );
 
   if (loading) {

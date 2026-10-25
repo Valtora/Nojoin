@@ -1,3 +1,4 @@
+import { ButtonBase } from '@/components/ui/nativeBases';
 import React from "react";
 
 interface NavItemProps {
@@ -20,7 +21,7 @@ export default function NavItem({
   id,
 }: NavItemProps) {
   return (
-    <button
+    <ButtonBase
       id={id}
       onClick={onClick}
       title={collapsed ? label : undefined}
@@ -48,6 +49,6 @@ export default function NavItem({
           )}
         </>
       )}
-    </button>
+    </ButtonBase>
   );
 }

@@ -1,5 +1,7 @@
 'use client';
 
+import { ButtonBase } from '@/components/ui/nativeBases';
+import { SurfaceBase } from '@/components/ui/SurfaceBase';
 import { useState, useRef, useEffect } from 'react';
 import { Check } from 'lucide-react';
 import { COLOR_PALETTE, ColorOption } from '@/lib/constants';
@@ -63,7 +65,7 @@ export default function ColorPicker({
           {trigger}
         </div>
       ) : (
-        <button
+        <ButtonBase chrome="action"
           type="button"
           onClick={() => setIsOpen(!isOpen)}
           className="flex items-center gap-2 px-3 py-2 bg-surface-card border border-control-border rounded-lg hover:bg-surface-inset transition-colors"
@@ -72,18 +74,18 @@ export default function ColorPicker({
           <span className="text-sm text-contrast-muted">
             {selectedColorOption?.name || 'Select color'}
           </span>
-        </button>
+        </ButtonBase>
       )}
 
       {isOpen && (
-        <div
+        <SurfaceBase kind="float"
           ref={panelRef}
           style={panelStyle}
           className="z-[var(--z-dropdown)] overflow-y-auto p-3 bg-surface-card rounded-xl shadow-float border border-surface-border min-w-[280px]"
         >
           <div className="grid grid-cols-6 gap-2">
             {COLOR_PALETTE.map((color) => (
-              <button
+              <ButtonBase
                 key={color.key}
                 type="button"
                 onClick={() => handleColorClick(color)}
@@ -99,10 +101,10 @@ export default function ColorPicker({
                 {selectedColor === color.key && (
                   <Check className="w-4 h-4 text-foreground drop-shadow-md" />
                 )}
-              </button>
+              </ButtonBase>
             ))}
           </div>
-        </div>
+        </SurfaceBase>
       )}
     </div>
   );
@@ -141,7 +143,7 @@ export function InlineColorPicker({ selectedColor, onColorSelect }: InlineColorP
 
   return (
     <div ref={containerRef} className="relative inline-block">
-      <button
+      <ButtonBase
         type="button"
         onClick={(e) => {
           e.stopPropagation();
@@ -152,7 +154,7 @@ export function InlineColorPicker({ selectedColor, onColorSelect }: InlineColorP
       />
 
       {isOpen && (
-        <div
+        <SurfaceBase kind="float"
           ref={panelRef}
           style={panelStyle}
           className="z-[var(--z-dropdown)] overflow-y-auto p-2 bg-surface-card rounded-lg shadow-float border border-surface-border min-w-max"
@@ -160,7 +162,7 @@ export function InlineColorPicker({ selectedColor, onColorSelect }: InlineColorP
         >
           <div className="grid grid-cols-6 gap-2">
             {COLOR_PALETTE.map((color) => (
-              <button
+              <ButtonBase
                 key={color.key}
                 type="button"
                 onClick={(e) => {
@@ -179,10 +181,10 @@ export function InlineColorPicker({ selectedColor, onColorSelect }: InlineColorP
                 {selectedColor === color.key && (
                   <Check className="w-3 h-3 text-foreground drop-shadow-md" />
                 )}
-              </button>
+              </ButtonBase>
             ))}
           </div>
-        </div>
+        </SurfaceBase>
       )}
     </div>
   );

@@ -30,6 +30,7 @@ from backend.utils.chat_prompt import TranscriptExcerpts
 from backend.utils.context_window import ContextWindowExceededError
 from backend.utils.llm_config import CLI_PROVIDER, resolve_llm_config_async
 from backend.utils.meeting_notes import escape_prompt_attribute
+from backend.utils.note_attachments import unread_attachment_ids
 
 from .helpers import ChatRequest, _build_speaker_map, _get_owned_recording
 from .router import router
@@ -123,7 +124,11 @@ def _chat_retrieval_filters(recording_id: int, tag_ids: list[int], user_id: int)
     this meeting and from those. A meeting too long to send whole is the
     exception, handled by ``_transcript_excerpts``.
     """
-    is_document = ContextChunk.document_id.is_not(None)
+    # A note's file switched off is not read, even if it was parsed while on.
+    is_document = and_(
+        ContextChunk.document_id.is_not(None),
+        ContextChunk.document_id.not_in(unread_attachment_ids()),
+    )
     if not tag_ids:
         return None, and_(ContextChunk.recording_id == recording_id, is_document)
 

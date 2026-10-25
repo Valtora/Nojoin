@@ -11,6 +11,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal, Optional, Sequence
 
+from sqlalchemy import or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
@@ -18,6 +19,7 @@ from backend.models.context_chunk import ContextChunk
 from backend.models.recording import Recording
 from backend.models.tag import RecordingTag
 from backend.processing.text_embedding_version import TEXT_EMBEDDING_VERSION
+from backend.utils.note_attachments import unread_attachment_ids
 
 SearchSources = Literal["all", "transcripts", "documents"]
 
@@ -90,6 +92,13 @@ async def search_context_chunks(  # noqa: PLR0913 - keyword-only search filters
             )
         )
         .where(ContextChunk.embedding_version == TEXT_EMBEDDING_VERSION)
+        # A note's file switched off is not read, even if it was parsed while on.
+        .where(
+            or_(
+                ContextChunk.document_id.is_(None),
+                ContextChunk.document_id.not_in(unread_attachment_ids()),
+            )
+        )
     )
     if sources == "transcripts":
         # A null document_id alone is not "transcript": indexed AI notes

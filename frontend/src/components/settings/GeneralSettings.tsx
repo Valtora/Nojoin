@@ -1,3 +1,4 @@
+import { ButtonBase, InputBase, SelectBase } from "@/components/ui/nativeBases";
 import { Fragment, useMemo, useState } from "react";
 import { Popover, Transition } from "@headlessui/react";
 import { fuzzyMatch } from "@/lib/searchUtils";
@@ -246,11 +247,11 @@ export default function GeneralSettings({
                         leaveFrom="transform opacity-100 scale-100"
                         leaveTo="transform opacity-0 scale-95"
                       >
-                        <Popover.Panel className="absolute left-0 z-[var(--z-dropdown)] mt-2 w-full overflow-hidden rounded-lg border border-surface-float-border bg-surface-float shadow-float">
+                        <Popover.Panel data-ui="surface" data-ui-surface="float" className="absolute left-0 z-[var(--z-dropdown)] mt-2 w-full overflow-hidden rounded-lg border border-surface-float-border bg-surface-float shadow-float">
                           <div className="border-b border-surface-float-border p-3">
                             <div className="relative">
                               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-contrast-icon-muted" />
-                              <input
+                              <InputBase
                                 type="text"
                                 value={timezoneSearch}
                                 onChange={(event) =>
@@ -283,7 +284,7 @@ export default function GeneralSettings({
                                         : "border-transparent hover:bg-surface-inset"
                                     }`}
                                   >
-                                    <input
+                                    <InputBase
                                       type="radio"
                                       name="general-settings-timezone"
                                       value={timeZone}
@@ -341,7 +342,7 @@ export default function GeneralSettings({
           <SettingsRow
             label="Language"
           >
-            <select
+            <SelectBase
               value={settings.spellcheck_language || "en-GB"}
               onChange={(e) => handleLanguageChange(e.target.value)}
               className={SETTINGS_SELECT_CLASS}
@@ -352,7 +353,7 @@ export default function GeneralSettings({
                   {meta.label}
                 </option>
               ))}
-            </select>
+            </SelectBase>
           </SettingsRow>
 
           <SettingsRow
@@ -360,13 +361,14 @@ export default function GeneralSettings({
             description="Words you have taught Nojoin to accept."
             controlClassName={SETTINGS_CONTROL_END}
           >
-            <button
+            <ButtonBase
+              chrome="action"
               type="button"
               onClick={() => setIsDictionaryModalOpen(true)}
               className={SETTINGS_BUTTON_SECONDARY}
             >
               Manage dictionary
-            </button>
+            </ButtonBase>
           </SettingsRow>
         </SettingsCard>
       )}

@@ -1,5 +1,7 @@
 "use client";
 
+import { ButtonBase, InputBase } from "@/components/ui/nativeBases";
+import { SurfaceBase } from "@/components/ui/SurfaceBase";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useOnDepsChange } from "@/lib/useOnDepsChange";
@@ -119,7 +121,7 @@ export default function SettingsSearch({
         className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 contrast-icon-muted"
         aria-hidden="true"
       />
-      <input
+      <InputBase
         type="search"
         role="combobox"
         aria-expanded={showResults}
@@ -138,7 +140,8 @@ export default function SettingsSearch({
       />
 
       {showResults && (
-        <div
+        <SurfaceBase
+          kind="float"
           id="settings-search-results"
           role="listbox"
           className="settings-card absolute left-0 right-0 top-full z-[var(--z-dropdown)] mt-2 max-h-80 min-w-72 overflow-y-auto p-1"
@@ -152,7 +155,7 @@ export default function SettingsSearch({
               const category = SETTINGS_CATEGORIES[result.entry.category];
 
               return (
-                <button
+                <ButtonBase
                   key={result.entry.id}
                   type="button"
                   role="option"
@@ -177,11 +180,11 @@ export default function SettingsSearch({
                     </span>
                     {result.entry.scope && <SettingsScopeText scope={result.entry.scope} />}
                   </span>
-                </button>
+                </ButtonBase>
               );
             })
           )}
-        </div>
+        </SurfaceBase>
       )}
     </div>
   );

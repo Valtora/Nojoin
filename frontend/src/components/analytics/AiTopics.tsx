@@ -1,5 +1,6 @@
 "use client";
 
+import { ButtonBase } from '@/components/ui/nativeBases';
 import type { AnalyticsAiTopic, AnalyticsSpeaker } from "@/types";
 
 import { formatDuration, formatTimestamp } from "./formatDuration";
@@ -44,14 +45,14 @@ export default function AiTopics({
             <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
               {start !== null &&
                 (onPlaySegment ? (
-                  <button
+                  <ButtonBase
                     type="button"
                     onClick={() => onPlaySegment(start)}
                     className="shrink-0 tabular-nums text-xs text-action-text hover:text-action-text-hover hover:underline"
                     title={`Play from ${formatTimestamp(start)}`}
                   >
                     {formatTimestamp(start)}
-                  </button>
+                  </ButtonBase>
                 ) : (
                   <span className="shrink-0 tabular-nums text-xs text-contrast-helper">
                     {formatTimestamp(start)}

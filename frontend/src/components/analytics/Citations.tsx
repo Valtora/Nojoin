@@ -1,5 +1,6 @@
 "use client";
 
+import { ButtonBase } from '@/components/ui/nativeBases';
 import type { AnalyticsCitation } from "@/types";
 
 import { formatTimestamp } from "./formatDuration";
@@ -28,14 +29,14 @@ export default function Citations({ citations, onPlaySegment }: CitationsProps) 
           <span className="italic">&ldquo;{citation.quote}&rdquo;</span>
           {citation.start_ms !== null &&
             (onPlaySegment ? (
-              <button
+              <ButtonBase
                 type="button"
                 onClick={() => onPlaySegment(citation.start_ms as number)}
                 className="ml-1.5 tabular-nums text-action-text hover:text-action-text-hover hover:underline"
                 title={`Play from ${formatTimestamp(citation.start_ms)}`}
               >
                 {formatTimestamp(citation.start_ms)}
-              </button>
+              </ButtonBase>
             ) : (
               <span className="ml-1.5 tabular-nums">
                 {formatTimestamp(citation.start_ms)}

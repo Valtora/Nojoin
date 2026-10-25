@@ -246,3 +246,22 @@ def apply_numbering(paragraph: Any, num_id: int, level: int = 0) -> None:
     num_pr = paragraph._p.get_or_add_pPr().get_or_add_numPr()
     num_pr.get_or_add_ilvl().val = level
     num_pr.get_or_add_numId().val = num_id
+
+
+def picture_alt_text(paragraph: Any, text: str) -> None:
+    """Name the paragraph's pictures for a screen reader (Word's Alt Text)."""
+    for doc_pr in paragraph._p.iter(qn("wp:docPr")):
+        doc_pr.set("descr", text)
+
+
+def picture_outline(paragraph: Any, color: str, width_pt: float = 0.6) -> None:
+    """A hairline round the paragraph's pictures, so a white slide keeps its edge."""
+    for shape_properties in paragraph._p.iter(qn("pic:spPr")):
+        line = OxmlElement("a:ln")
+        line.set("w", str(round(width_pt * 12700)))
+        fill = OxmlElement("a:solidFill")
+        rgb = OxmlElement("a:srgbClr")
+        rgb.set("val", _hex(color))
+        fill.append(rgb)
+        line.append(fill)
+        shape_properties.append(line)

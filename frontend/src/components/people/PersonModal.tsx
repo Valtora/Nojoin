@@ -1,5 +1,7 @@
 "use client";
 
+import { ButtonBase, InputBase, TextareaBase } from "@/components/ui/nativeBases";
+import { SurfaceBase } from "@/components/ui/SurfaceBase";
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   X,
@@ -185,7 +187,7 @@ interface TagNode extends PeopleTag {
   const renderTagSelection = (nodes: TagNode[], level = 0): React.ReactNode => {
     return nodes.map((tag) => (
       <React.Fragment key={tag.id}>
-        <button
+        <ButtonBase
           type="button"
           onClick={() => toggleTag(tag.id)}
           className={`inline-flex items-center px-2.5 py-1 rounded-pill text-xs font-medium border transition-all ${
@@ -199,7 +201,7 @@ interface TagNode extends PeopleTag {
             className={`w-1.5 h-1.5 rounded-full mr-1.5 ${getColorByKey(tag.color || "gray").dot}`}
           />
           {tag.name}
-        </button>
+        </ButtonBase>
         {tag.children.length > 0 && renderTagSelection(tag.children, level + 1)}
       </React.Fragment>
     ));
@@ -363,7 +365,7 @@ interface TagNode extends PeopleTag {
                 <label className="text-sm font-medium text-contrast-muted">
                   Full Name *
                 </label>
-                <input
+                <InputBase
                   type="text"
                   required
                   value={formData.name || ""}
@@ -392,7 +394,7 @@ interface TagNode extends PeopleTag {
                 <label className="text-sm font-medium text-contrast-muted">
                   Title
                 </label>
-                <input
+                <InputBase
                   type="text"
                   value={formData.title || ""}
                   onChange={(e) =>
@@ -406,7 +408,7 @@ interface TagNode extends PeopleTag {
                 <label className="text-sm font-medium text-contrast-muted">
                   Company
                 </label>
-                <input
+                <InputBase
                   type="text"
                   value={formData.company || ""}
                   onChange={(e) =>
@@ -420,7 +422,7 @@ interface TagNode extends PeopleTag {
                 <label className="text-sm font-medium text-contrast-muted">
                   Email
                 </label>
-                <input
+                <InputBase
                   type="email"
                   value={formData.email || ""}
                   onChange={(e) =>
@@ -434,7 +436,7 @@ interface TagNode extends PeopleTag {
                 <label className="text-sm font-medium text-contrast-muted">
                   Phone
                 </label>
-                <input
+                <InputBase
                   type="tel"
                   value={formData.phone_number || ""}
                   onChange={(e) =>
@@ -459,7 +461,8 @@ interface TagNode extends PeopleTag {
                       pushing Delete out of the dialog. The status claims
                       12rem before the buttons wrap, so on a wider dialog
                       its text wraps beside them instead. */}
-                  <div className="flex flex-wrap items-center justify-between gap-3 p-3 bg-surface-inset rounded-lg border border-surface-border">
+                  <SurfaceBase
+                    kind="inset" className="flex flex-wrap items-center justify-between gap-3 p-3 bg-surface-inset rounded-lg border border-surface-border">
                     <div className="flex min-w-0 grow basis-48 items-center gap-3">
                       <div
                         className={`p-2 rounded-full ${person.has_voiceprint ? "bg-status-success-bg text-status-success-fg" : "bg-surface-inset text-contrast-icon-muted text-contrast-helper"}`}
@@ -513,30 +516,33 @@ interface TagNode extends PeopleTag {
                         </Button>
                       )}
                       {person.has_voiceprint && (
-                        <button
+                        <ButtonBase
+                          chrome="action"
                           type="button"
                           onClick={handleDeleteVoiceprint}
                           disabled={isDeletingVoiceprint}
                           className="text-danger-text hover:text-danger-text text-sm font-medium px-3 py-1.5 hover:bg-status-danger-bg rounded-md transition-colors"
                         >
                           {isDeletingVoiceprint ? "Deleting..." : "Delete"}
-                        </button>
+                        </ButtonBase>
                       )}
                     </div>
-                  </div>
+                  </SurfaceBase>
 
                   {/* Merge Action */}
                   {!showMerge ? (
-                    <button
+                    <ButtonBase
+                      chrome="action"
                       type="button"
                       onClick={() => setShowMerge(true)}
                       className="flex items-center justify-center gap-2 w-full p-2 text-sm text-contrast-helper hover:text-foreground hover:text-contrast-icon-muted hover:bg-surface-inset rounded-lg border border-dashed border-control-border transition-colors"
                     >
                       <Users className="w-4 h-4" />
                       Merge into another person...
-                    </button>
+                    </ButtonBase>
                   ) : (
-                    <div className="p-4 bg-action-tint border border-action-border rounded-lg space-y-3">
+                    <SurfaceBase
+                      kind="pane" className="p-4 bg-action-tint border border-action-border rounded-lg space-y-3">
                       <div className="flex justify-between items-start">
                         <div>
                           <h4 className="text-sm font-medium text-action-text">
@@ -551,7 +557,8 @@ interface TagNode extends PeopleTag {
                             {person.name} will be deleted.
                           </p>
                         </div>
-                        <button
+                        <ButtonBase
+                          chrome="action"
                           onClick={() => {
                             setShowMerge(false);
                             setMergeTarget(null);
@@ -559,7 +566,7 @@ interface TagNode extends PeopleTag {
                           className="text-contrast-icon-muted hover:text-contrast-helper"
                         >
                           <X className="w-4 h-4" />
-                        </button>
+                        </ButtonBase>
                       </div>
 
                       <div className="space-y-2">
@@ -568,7 +575,7 @@ interface TagNode extends PeopleTag {
                         </label>
                         {!mergeTarget ? (
                           <div className="relative" ref={speakerSearchRef}>
-                            <input
+                            <InputBase
                               type="text"
                               value={speakerSearch}
                               onChange={(e) => setSpeakerSearch(e.target.value)}
@@ -576,7 +583,8 @@ interface TagNode extends PeopleTag {
                               placeholder="Search person..."
                             />
                             {speakerSearch && (
-                              <div
+                              <SurfaceBase
+                                kind="float"
                                 ref={speakerResultsRef}
                                 style={speakerResultsStyle}
                                 className="z-10 bg-control-bg rounded-md shadow-float border border-surface-border overflow-y-auto"
@@ -587,7 +595,7 @@ interface TagNode extends PeopleTag {
                                   </div>
                                 ) : (
                                   filteredSpeakers.map((p) => (
-                                    <button
+                                    <ButtonBase
                                       key={p.id}
                                       type="button"
                                       onClick={() => {
@@ -602,10 +610,10 @@ interface TagNode extends PeopleTag {
                                           {p.company}
                                         </span>
                                       )}
-                                    </button>
+                                    </ButtonBase>
                                   ))
                                 )}
-                              </div>
+                              </SurfaceBase>
                             )}
                           </div>
                         ) : (
@@ -618,18 +626,20 @@ interface TagNode extends PeopleTag {
                                 {mergeTarget.name}
                               </span>
                             </div>
-                            <button
+                            <ButtonBase
+                              chrome="action"
                               type="button"
                               onClick={() => setMergeTarget(null)}
                               className="text-contrast-helper hover:text-danger-text"
                             >
                               <X className="w-4 h-4" />
-                            </button>
+                            </ButtonBase>
                           </div>
                         )}
                       </div>
 
-                      <button
+                      <ButtonBase
+                        chrome="action"
                         type="button"
                         onClick={handleMergeClick}
                         disabled={!mergeTarget || isSubmitting}
@@ -637,8 +647,8 @@ interface TagNode extends PeopleTag {
                       >
                         {isSubmitting ? "Merging..." : "Confirm Merge"}
                         <ArrowRight className="w-4 h-4" />
-                      </button>
-                    </div>
+                      </ButtonBase>
+                    </SurfaceBase>
                   )}
                 </div>
               </div>
@@ -672,18 +682,18 @@ interface TagNode extends PeopleTag {
                 <label className="text-sm font-medium text-contrast-muted">
                   Tags
                 </label>
-                <button
+                <ButtonBase
                   type="button"
                   onClick={() => setShowTagInput(!showTagInput)}
                   className="text-xs text-action-text hover:text-action-text-hover flex items-center gap-1"
                 >
                   <Plus className="w-3 h-3" /> New Tag
-                </button>
+                </ButtonBase>
               </div>
 
               {showTagInput && (
                 <div className="flex gap-2 mb-2">
-                  <input
+                  <InputBase
                     type="text"
                     value={newTagName}
                     onChange={(e) => setNewTagName(e.target.value)}
@@ -696,17 +706,19 @@ interface TagNode extends PeopleTag {
                       }
                     }}
                   />
-                  <button
+                  <ButtonBase
+                    chrome="action"
                     type="button"
                     onClick={handleCreateTag}
                     className="px-3 py-1.5 text-sm bg-action text-action-on rounded-md hover:bg-action-hover"
                   >
                     Add
-                  </button>
+                  </ButtonBase>
                 </div>
               )}
 
-              <div className="flex flex-wrap gap-2 p-3 border border-surface-border rounded-lg bg-surface-inset min-h-[60px]">
+              <SurfaceBase
+                kind="inset" className="flex flex-wrap gap-2 p-3 border border-surface-border rounded-lg bg-surface-inset min-h-[60px]">
                 {allTags.length > 0 ? (
                   renderTagSelection(tagTree)
                 ) : (
@@ -714,7 +726,7 @@ interface TagNode extends PeopleTag {
                     No tags created yet.
                   </p>
                 )}
-              </div>
+              </SurfaceBase>
             </div>
 
             {/* Notes */}
@@ -722,7 +734,7 @@ interface TagNode extends PeopleTag {
               <label className="text-sm font-medium text-contrast-muted">
                 Notes
               </label>
-              <textarea
+              <TextareaBase
                 value={formData.notes || ""}
                 onChange={(e) =>
                   setFormData({ ...formData, notes: e.target.value })

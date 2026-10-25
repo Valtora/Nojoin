@@ -1,5 +1,7 @@
 "use client";
 
+import { InputBase } from '@/components/ui/nativeBases';
+import { SurfaceBase } from '@/components/ui/SurfaceBase';
 import { ArrowLeft, Edit2, MoreHorizontal } from "lucide-react";
 import type { RefObject } from "react";
 
@@ -77,7 +79,7 @@ export default function RecordingHeader({
   );
 
   return (
-    <header className={`sticky top-0 z-[var(--z-sticky)] shrink-0 border-b border-surface-border bg-surface-card ${isMobile ? "space-y-3 px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]" : "space-y-3 p-4 md:p-5"}`}>
+    <header data-ui="surface" data-ui-surface="pane" className={`sticky top-0 z-[var(--z-sticky)] shrink-0 border-b border-surface-border bg-surface-card ${isMobile ? "space-y-3 px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]" : "space-y-3 p-4 md:p-5"}`}>
       {isMobile ? (
         <>
           {/* Back and actions are inline app-bar controls. A fixed overlay
@@ -121,7 +123,7 @@ export default function RecordingHeader({
             </div>
             <div className="min-w-0 px-2 pb-1">
               {isEditingTitle ? (
-                <input
+                <InputBase
                   autoFocus
                   type="text"
                   value={titleValue}
@@ -152,15 +154,15 @@ export default function RecordingHeader({
           </div>
 
           {isMobileHeaderActionsOpen && (
-            <div className="fixed right-4 top-[calc(env(safe-area-inset-top)+4rem)] z-[var(--z-dropdown)] w-[min(18rem,calc(100vw-2rem))] rounded-2xl border border-surface-float-border bg-surface-float p-2.5 shadow-float">
+            <SurfaceBase kind="float" className="fixed right-4 top-[calc(env(safe-area-inset-top)+4rem)] z-[var(--z-dropdown)] w-[min(18rem,calc(100vw-2rem))] rounded-2xl border border-surface-float-border bg-surface-float p-2.5 shadow-float">
               {renderMobileHeaderActions()}
-            </div>
+            </SurfaceBase>
           )}
         </>
       ) : (
         <div className="min-w-0">
             {isEditingTitle ? (
-              <input
+              <InputBase
                 autoFocus
                 type="text"
                 value={titleValue}

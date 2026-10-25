@@ -1,5 +1,6 @@
 "use client";
 
+import { ButtonBase } from '@/components/ui/nativeBases';
 import { useState, type ReactNode } from "react";
 import { ChevronDown, StickyNote } from "lucide-react";
 
@@ -70,7 +71,7 @@ export default function CollapsedLineNotes<Note extends { id: string }>({
           {time}
         </span>
         <div className="min-w-0 flex-1 border-l-2 border-action-border pl-3">
-          <button
+          <ButtonBase
             type="button"
             aria-expanded={open}
             aria-label={`${count} on the line at ${time}`}
@@ -86,7 +87,7 @@ export default function CollapsedLineNotes<Note extends { id: string }>({
               className={cn("h-3.5 w-3.5 transition-transform", open && "rotate-180")}
               aria-hidden="true"
             />
-          </button>
+          </ButtonBase>
         </div>
       </Row>
       {notes.filter((note) => open || !folds(note)).map(renderNote)}

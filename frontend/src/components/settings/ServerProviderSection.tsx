@@ -1,3 +1,4 @@
+import { InputBase } from "@/components/ui/nativeBases";
 import { Settings } from "@/types";
 import { listModels } from "@/lib/api";
 import { getServerProviderGap } from "@/lib/aiAvailability";
@@ -140,7 +141,7 @@ export default function ServerProviderSection({
         controlClassName={SETTINGS_CONTROL_COLUMN_WIDE}
             description={<ContextWindowHelp tokens={contextWindow} />}
           >
-            <input
+            <InputBase
               id="ai-primary-context-window"
               aria-describedby="ai-primary-context-window-help"
               type="number"

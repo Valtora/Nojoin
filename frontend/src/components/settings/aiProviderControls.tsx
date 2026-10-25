@@ -1,3 +1,4 @@
+import { ButtonBase, SelectBase } from "@/components/ui/nativeBases";
 import { Loader2, PlugZap, RefreshCw } from "lucide-react";
 
 import { estimateContextVramGiB } from "@/lib/aiProviders";
@@ -60,7 +61,7 @@ export function ModelPicker({
 }) {
   return (
     <div className="flex items-center gap-2">
-      <select
+      <SelectBase
         id={id}
         aria-describedby={`${id}-help`}
         value={value}
@@ -82,9 +83,10 @@ export function ModelPicker({
             </option>
           );
         })}
-      </select>
+      </SelectBase>
       {onRefresh && (
-        <button
+        <ButtonBase
+          chrome="action"
           type="button"
           {...loadingButtonProps(Boolean(refreshing), refreshDisabled, onRefresh)}
           aria-label={refreshLabel}
@@ -95,7 +97,7 @@ export function ModelPicker({
             className={cn("h-4 w-4", refreshing && "animate-spin")}
             aria-hidden="true"
           />
-        </button>
+        </ButtonBase>
       )}
     </div>
   );
@@ -138,7 +140,8 @@ export function TestConnection({
 
   return (
     <div className="flex flex-col gap-2 @min-[26rem]:items-end">
-      <button
+      <ButtonBase
+        chrome="action"
         id={id}
         type="button"
         {...loadingButtonProps(busy, Boolean(validating), onTest)}
@@ -151,7 +154,7 @@ export function TestConnection({
           <PlugZap className="h-4 w-4" aria-hidden="true" />
         )}
         {busy ? "Testing..." : "Test connection"}
-      </button>
+      </ButtonBase>
       <p
         role="status"
         className={cn(

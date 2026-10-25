@@ -4,6 +4,7 @@ import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import type { ButtonVariant } from "./Button";
 import { DISABLED_LOOK, loadingButtonProps } from "./loadingButton";
+import { ButtonBase } from "./nativeBases";
 
 export type IconButtonSize = "sm" | "md" | "lg";
 
@@ -55,11 +56,12 @@ const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(function IconB
   ref,
 ) {
   return (
-    <button
+    <ButtonBase
       ref={ref}
       type={type}
       {...rest}
       {...loadingButtonProps(loading, disabled, onClick)}
+      chrome={variant === "ghost" ? "plain" : "action"}
       className={cn(
         "inline-flex shrink-0 items-center justify-center rounded-lg",
         "transition-colors duration-150",
@@ -71,7 +73,7 @@ const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(function IconB
       )}
     >
       {loading ? <Loader2 aria-hidden="true" className="animate-spin" /> : icon}
-    </button>
+    </ButtonBase>
   );
 });
 

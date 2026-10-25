@@ -283,7 +283,7 @@ def test_a_document_outside_its_directory_is_not_parsed(
     from backend.worker.tasks import documents as document_tasks
 
     document = SimpleNamespace(
-        id=3, file_path=_file(dirs.elsewhere, "agenda.pdf"), status=None
+        id=3, file_path=_file(dirs.elsewhere, "agenda.pdf"), status=None, note_id=None
     )
     session = SimpleNamespace(
         get=lambda model, row_id: document, add=lambda row: None, commit=lambda: None

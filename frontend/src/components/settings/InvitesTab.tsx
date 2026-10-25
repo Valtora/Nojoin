@@ -1,5 +1,6 @@
 "use client";
 
+import { ButtonBase } from "@/components/ui/nativeBases";
 import { useState, useEffect, useCallback } from "react";
 import { Invitation, UserRole } from "@/types";
 import {
@@ -165,14 +166,15 @@ export default function InvitesTab() {
       title="Invitations"
       description="Sign-up links for new people. Revoke one to stop it working."
       headerAside={
-        <button
+        <ButtonBase
+          chrome="action"
           type="button"
           onClick={() => setShowCreateModal(true)}
           className={SETTINGS_BUTTON_PRIMARY}
         >
           <Plus className="w-4 h-4" aria-hidden="true" />
           Create invitation
-        </button>
+        </ButtonBase>
       }
     >
       {loading ? (
@@ -217,33 +219,36 @@ export default function InvitesTab() {
             >
               <div className="flex flex-wrap gap-2 @min-[26rem]:justify-end">
                 {!inv.is_revoked && (
-                  <button
+                  <ButtonBase
+                    chrome="action"
                     type="button"
                     onClick={() => copyLink(inv.link)}
                     className={SETTINGS_BUTTON_SECONDARY}
                   >
                     <Copy className="h-4 w-4" aria-hidden="true" />
                     Copy link
-                  </button>
+                  </ButtonBase>
                 )}
                 {!inv.is_revoked ? (
-                  <button
+                  <ButtonBase
+                    chrome="action"
                     type="button"
                     onClick={() => handleRevokeClick(inv.id)}
                     className={SETTINGS_BUTTON_DANGER}
                   >
                     <XCircle className="h-4 w-4" aria-hidden="true" />
                     Revoke
-                  </button>
+                  </ButtonBase>
                 ) : (
-                  <button
+                  <ButtonBase
+                    chrome="action"
                     type="button"
                     onClick={() => handleDeleteClick(inv.id)}
                     className={SETTINGS_BUTTON_DANGER}
                   >
                     <Trash2 className="h-4 w-4" aria-hidden="true" />
                     Delete
-                  </button>
+                  </ButtonBase>
                 )}
               </div>
             </SettingsRow>

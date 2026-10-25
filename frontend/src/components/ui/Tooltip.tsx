@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 
 import { cn } from '@/lib/cn';
+import { SurfaceBase } from './SurfaceBase';
 
 interface TooltipProps {
   content: React.ReactNode;
@@ -35,7 +36,8 @@ export default function Tooltip({ content, children, position = 'top' }: Tooltip
     >
       {children}
       {isVisible && (
-        <div
+        <SurfaceBase
+          kind="float"
           role="tooltip"
           className={cn(
             'pointer-events-none absolute z-[var(--z-dropdown)] w-max max-w-xs rounded-md px-3 py-2',
@@ -51,7 +53,7 @@ export default function Tooltip({ content, children, position = 'top' }: Tooltip
               arrowClasses[position],
             )}
           />
-        </div>
+        </SurfaceBase>
       )}
     </div>
   );

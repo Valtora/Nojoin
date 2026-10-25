@@ -1,3 +1,4 @@
+import { ButtonBase, InputBase } from "@/components/ui/nativeBases";
 import { useEffect, useState } from "react";
 import {
   ChevronLeft,
@@ -127,7 +128,7 @@ export default function CliUsageTab() {
             className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 contrast-icon-muted"
             aria-hidden="true"
           />
-          <input
+          <InputBase
             type="search"
             aria-label="Search people"
             value={search}
@@ -139,7 +140,8 @@ export default function CliUsageTab() {
             className={cn(SETTINGS_INPUT_CLASS, "pl-9")}
           />
         </div>
-        <button
+        <ButtonBase
+          chrome="action"
           type="button"
           {...loadingButtonProps(loading, undefined, fetchUsage)}
           className={SETTINGS_BUTTON_SECONDARY}
@@ -149,7 +151,7 @@ export default function CliUsageTab() {
             aria-hidden="true"
           />
           Refresh
-        </button>
+        </ButtonBase>
       </SettingsBlock>
 
       <SettingsBlock>
@@ -228,7 +230,8 @@ export default function CliUsageTab() {
               {`${(page - 1) * PAGE_SIZE + 1} to ${Math.min(page * PAGE_SIZE, total)} of ${total}`}
             </p>
             <div className="flex gap-2">
-              <button
+              <ButtonBase
+                chrome="action"
                 type="button"
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
                 disabled={page === 1}
@@ -236,8 +239,9 @@ export default function CliUsageTab() {
                 className={cn(SETTINGS_BUTTON_SECONDARY, "h-9 w-9 px-0")}
               >
                 <ChevronLeft className="h-4 w-4" aria-hidden="true" />
-              </button>
-              <button
+              </ButtonBase>
+              <ButtonBase
+                chrome="action"
                 type="button"
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 disabled={page >= totalPages}
@@ -245,7 +249,7 @@ export default function CliUsageTab() {
                 className={cn(SETTINGS_BUTTON_SECONDARY, "h-9 w-9 px-0")}
               >
                 <ChevronRight className="h-4 w-4" aria-hidden="true" />
-              </button>
+              </ButtonBase>
             </div>
           </div>
         )}

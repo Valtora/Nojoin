@@ -1,5 +1,6 @@
 "use client";
 
+import { SurfaceBase } from '@/components/ui/SurfaceBase';
 import { FileText, Loader2, AlertCircle, CheckCircle2 } from "lucide-react";
 
 import { Document } from "@/lib/api";
@@ -26,7 +27,7 @@ export default function LiveDocumentsPanel({
   documents,
 }: LiveDocumentsPanelProps) {
   return (
-    <section className="density-surface flex h-full min-h-0 flex-col border border-surface-border bg-surface-card shadow-card">
+    <SurfaceBase as="section" kind="card" className="density-surface flex h-full min-h-0 flex-col border border-surface-border bg-surface-card shadow-card">
       <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-2">
         <FileText className="h-5 w-5 shrink-0 text-action-text" />
         <h3 className="text-base font-semibold text-foreground">Documents</h3>
@@ -39,6 +40,8 @@ export default function LiveDocumentsPanel({
         {documents.map((doc) => (
           <li
             key={doc.id}
+            data-ui="surface"
+            data-ui-surface="inset"
             className="density-surface-panel flex items-center gap-3 bg-surface-inset px-3 py-2"
           >
             <FileText className="h-4 w-4 flex-shrink-0 text-action-text" />
@@ -72,6 +75,6 @@ export default function LiveDocumentsPanel({
           </li>
         ))}
       </ul>
-    </section>
+    </SurfaceBase>
   );
 }

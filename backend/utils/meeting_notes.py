@@ -255,6 +255,10 @@ class AttachedDocument:
     # a model reading a vision transcription does not describe the document as
     # text-only -- true of what it received, wrong about the document.
     extracted_by: Optional[str] = None
+    # A note's file: the note's time on the audio timeline, the clock of the
+    # transcript's own timestamps, or None for a note on the whole meeting.
+    note_at_ms: Optional[int] = None
+    attached_to_note: bool = False
 
 
 # Document text is untrusted input. It is uploaded by the user, but its contents
@@ -276,6 +280,19 @@ _DOCUMENT_SECTION_PREAMBLE = (
 )
 
 
+# Added only when the user switched a note's file on, so every prompt without
+# one stays as it was. The notes are Markdown text and a file is opened from
+# the app, so the model refers to it rather than embedding it.
+_NOTE_FILE_SECTION_NOTE = (
+    "A document with a note_at time is a file the user attached to the note "
+    "they wrote at that point of the transcript, such as a still of the screen "
+    'shared in the meeting; one with note_at="meeting" is on a note about the '
+    "whole meeting. Read it beside what was being said then. Where the notes "
+    "draw on one, refer to it by its time, as in (attached at 12:34); never "
+    "embed, link or describe it as a file."
+)
+
+
 def build_documents_prompt_section(
     documents: Optional[Sequence[AttachedDocument]],
 ) -> str:
@@ -289,6 +306,8 @@ def build_documents_prompt_section(
         return "No documents were attached to this meeting."
 
     blocks: List[str] = [_DOCUMENT_SECTION_PREAMBLE]
+    if any(document.attached_to_note for document in usable):
+        blocks.append(_NOTE_FILE_SECTION_NOTE)
     for document in usable:
         note = " (truncated)" if document.truncated else ""
         origin = (
@@ -296,6 +315,10 @@ def build_documents_prompt_section(
             if document.extracted_by
             else ""
         )
+        if document.attached_to_note:
+            at = document.note_at_ms
+            stamp = "meeting" if at is None else _format_prompt_timestamp(at / 1000)
+            origin += f' note_at="{stamp}"'
         blocks.append(
             f'<attached_document title="{escape_prompt_attribute(document.title)}"'
             f"{origin}{note}>\n"

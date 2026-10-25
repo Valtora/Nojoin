@@ -1,3 +1,4 @@
+import { ButtonBase, InputBase } from '@/components/ui/nativeBases';
 import { useRef, useState } from "react";
 import { useOnDepsChange } from "@/lib/useOnDepsChange";
 import { ChevronRight, Plus, X } from "lucide-react";
@@ -171,7 +172,7 @@ export default function TagItem({
 
   if (collapsed) {
     return (
-      <button
+      <ButtonBase
         onClick={onToggle}
         title={hasChildren ? `${tag.name} (${childCount})` : tag.name}
         className={`
@@ -190,7 +191,7 @@ export default function TagItem({
             </span>
           )}
         </span>
-      </button>
+      </ButtonBase>
     );
   }
 
@@ -213,7 +214,7 @@ export default function TagItem({
       {/* Reserved disclosure slot keeps colour dots aligned at every depth:
           parents get a persistent chevron, leaves get an empty spacer. */}
       {hasChildren ? (
-        <button
+        <ButtonBase
           onClick={(e: React.MouseEvent) => {
             e.stopPropagation();
             onToggleExpand();
@@ -225,7 +226,7 @@ export default function TagItem({
           <ChevronRight
             className={`w-3 h-3 transition-transform ${isExpanded ? "rotate-90" : ""}`}
           />
-        </button>
+        </ButtonBase>
       ) : (
         <span className="h-4 w-4 shrink-0" aria-hidden="true" />
       )}
@@ -234,7 +235,7 @@ export default function TagItem({
         onColorSelect={onColorChange}
       />
       {isEditing ? (
-        <input
+        <InputBase
           type="text"
           value={editValue}
           onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
@@ -265,7 +266,7 @@ export default function TagItem({
       )}
       {!isEditing && (
         <div className="flex items-center transition-opacity lg:opacity-0 lg:group-hover:opacity-100">
-          <button
+          <ButtonBase
             onClick={(e: React.MouseEvent) => {
               e.stopPropagation();
               onAddChild();
@@ -275,9 +276,9 @@ export default function TagItem({
             onPointerDown={(e) => e.stopPropagation()}
           >
             <Plus className="w-3 h-3" />
-          </button>
+          </ButtonBase>
 
-          <button
+          <ButtonBase
             onClick={(e: React.MouseEvent) => {
               e.stopPropagation();
               onDelete();
@@ -287,7 +288,7 @@ export default function TagItem({
             onPointerDown={(e) => e.stopPropagation()}
           >
             <X className="w-3 h-3" />
-          </button>
+          </ButtonBase>
         </div>
       )}
     </div>

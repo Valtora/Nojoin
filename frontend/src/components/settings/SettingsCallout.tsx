@@ -1,3 +1,4 @@
+import { SurfaceBase } from "@/components/ui/SurfaceBase";
 import type { ReactNode } from "react";
 
 import { cn } from "@/lib/cn";
@@ -40,7 +41,8 @@ export default function SettingsCallout({
   const body = children ?? message;
 
   return (
-    <div
+    <SurfaceBase
+      kind="pane"
       className={cn(
         "rounded-lg border px-4 py-3 text-sm",
         TONE_STYLES[tone],
@@ -49,6 +51,6 @@ export default function SettingsCallout({
     >
       {title && <p className="font-semibold">{title}</p>}
       {body && <div className={cn(title && "mt-1")}>{body}</div>}
-    </div>
+    </SurfaceBase>
   );
 }

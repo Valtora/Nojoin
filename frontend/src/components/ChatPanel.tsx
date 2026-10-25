@@ -1,5 +1,7 @@
 "use client";
 
+import { ButtonBase, TextareaBase } from '@/components/ui/nativeBases';
+import { SurfaceBase } from '@/components/ui/SurfaceBase';
 import { useState, useEffect, useRef, useMemo } from "react";
 import {
   MessageSquare,
@@ -235,16 +237,18 @@ export default function ChatPanel({
   return (
     <aside
       id="meeting-chat"
+      data-ui="surface"
+      data-ui-surface="pane"
       className="@container flex-1 min-w-0 bg-surface-inset h-full flex flex-col"
     >
-      <div className="py-1 pl-3 pr-2 @min-[20rem]:pl-4 border-b border-surface-border flex justify-between items-center bg-surface-card">
+      <SurfaceBase kind="pane" className="py-1 pl-3 pr-2 @min-[20rem]:pl-4 border-b border-surface-border flex justify-between items-center bg-surface-card">
         <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
           <MessageSquare className="w-4 h-4 text-action-text" />
           Chat
         </h2>
         <div className="flex items-center gap-1">
           {recordingId && (
-            <button
+            <ButtonBase
               id="chat-context-toggle"
               onClick={() => setShowTagFilter(!showTagFilter)}
               className={`flex items-center gap-1 text-xs px-2 py-1.5 rounded-lg border transition-colors ${
@@ -265,16 +269,16 @@ export default function ChatPanel({
               ) : (
                 <ChevronDown className="w-3 h-3" />
               )}
-            </button>
+            </ButtonBase>
           )}
           {recordingId && messages.length > 0 && (
-            <button
+            <ButtonBase
               onClick={handleClear}
               className="text-contrast-icon-muted hover:text-status-danger-fg transition-colors p-1"
               title="Clear Chat"
             >
               <Trash2 className="w-4 h-4" />
-            </button>
+            </ButtonBase>
           )}
           {onCollapse && (
             <IconButton
@@ -286,10 +290,10 @@ export default function ChatPanel({
             />
           )}
         </div>
-      </div>
+      </SurfaceBase>
 
       {showTagFilter && recordingId && (
-        <div className="px-4 py-3 bg-surface-card border-b border-surface-border animate-in slide-in-from-top-2">
+        <SurfaceBase kind="pane" className="px-4 py-3 bg-surface-card border-b border-surface-border animate-in slide-in-from-top-2">
           <label className="text-xs text-contrast-helper mb-1.5 block">
             Include context from related meetings with these tags:
           </label>
@@ -299,7 +303,7 @@ export default function ChatPanel({
             onChange={setSelectedTagIds}
             placeholder="Select tags..."
           />
-        </div>
+        </SurfaceBase>
       )}
 
       <div className="flex-1 overflow-y-auto p-3 space-y-3 @min-[20rem]:p-4 @min-[20rem]:space-y-4">
@@ -325,7 +329,7 @@ export default function ChatPanel({
               key={index}
               className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
             >
-              <div
+              <SurfaceBase kind="inset"
                 className={`max-w-[85%] rounded-surface-panel px-3 py-2 @min-[20rem]:px-4 @min-[20rem]:py-3 text-sm shadow-card ${
                   msg.role === "user"
                     ? "bg-action text-action-on rounded-tr-none"
@@ -351,16 +355,16 @@ export default function ChatPanel({
                     )}
                   </div>
                 )}
-              </div>
+              </SurfaceBase>
             </div>
           ))
         )}
         <div ref={messagesEndRef} />
       </div>
 
-      <div className="p-3 @min-[20rem]:p-4 border-t border-surface-border bg-surface-card relative">
+      <SurfaceBase kind="pane" className="p-3 @min-[20rem]:p-4 border-t border-surface-border bg-surface-card relative">
         {!availability.available && (
-          <div className="absolute inset-0 bg-surface-card z-20 flex items-center justify-center p-4 text-center">
+          <SurfaceBase kind="pane" className="absolute inset-0 bg-surface-card z-20 flex items-center justify-center p-4 text-center">
             <div className="text-sm text-contrast-helper font-medium">
               {availability.reason === "subscription_disconnected" ? (
                 // AI routing is per-user, so this link is right for admins and
@@ -390,10 +394,10 @@ export default function ChatPanel({
                 <p>Chat is disabled. Please contact your administrator.</p>
               )}
             </div>
-          </div>
+          </SurfaceBase>
         )}
         <div className="relative">
-          <textarea
+          <TextareaBase
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             onKeyDown={(e) => {
@@ -410,21 +414,21 @@ export default function ChatPanel({
           />
           <div className="absolute right-2 top-1/2 -translate-y-1/2">
             {isStreaming ? (
-              <button
+              <ButtonBase chrome="action"
                 onClick={handleStop}
                 className="p-2 bg-status-danger-bg text-foreground rounded-lg hover:bg-status-danger-bg transition-colors shadow-card"
                 title="Stop Generation"
               >
                 <StopCircle className="w-4 h-4" />
-              </button>
+              </ButtonBase>
             ) : (
-              <button
+              <ButtonBase chrome="action"
                 onClick={handleSend}
                 disabled={!recordingId || !inputValue.trim()}
                 className="p-2 bg-action text-action-on rounded-lg hover:bg-action-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-card"
               >
                 <Send className="w-4 h-4" />
-              </button>
+              </ButtonBase>
             )}
           </div>
         </div>
@@ -433,7 +437,7 @@ export default function ChatPanel({
             AI can make mistakes. Check important info.
           </div>
         )}
-      </div>
+      </SurfaceBase>
 
       <ConfirmationModal
         isOpen={isClearModalOpen}

@@ -102,6 +102,18 @@ TRANSCRIPTS_ROUTE_CONTRACT = [
         "TimelineNoteRead",
     ),
     (
+        "/{recording_id}/timeline-notes/{note_id}/attachment",
+        ("PATCH",),
+        "set_note_file_use_in_notes",
+        "NoteAttachmentRead",
+    ),
+    (
+        "/{recording_id}/timeline-notes/{note_id}/attachment",
+        ("POST",),
+        "attach_file_to_note",
+        "NoteAttachmentRead",
+    ),
+    (
         "/{recording_id}/utterances",
         ("GET",),
         "get_transcript_utterances",

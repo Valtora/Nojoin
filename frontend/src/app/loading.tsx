@@ -1,3 +1,4 @@
+import { SurfaceBase } from '@/components/ui/SurfaceBase';
 export default function Loading() {
   return (
     // page-shell: this route owns its scroll; <body> is overflow-hidden. Six
@@ -13,7 +14,7 @@ export default function Loading() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {[1, 2, 3, 4, 5, 6].map((i) => (
-            <div
+            <SurfaceBase kind="card"
               key={i}
               className="bg-surface-card rounded-surface-panel border border-surface-border shadow-card p-4 h-32 animate-pulse"
             >
@@ -25,7 +26,7 @@ export default function Loading() {
                 <div className="h-4 w-24 bg-surface-inset rounded"></div>
                 <div className="h-4 w-16 bg-surface-inset rounded"></div>
               </div>
-            </div>
+            </SurfaceBase>
           ))}
         </div>
       </div>

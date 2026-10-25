@@ -22,6 +22,7 @@ export function Switch({
 }: SwitchProps) {
   return (
     <button
+      data-ui="switch"
       type="button"
       role="switch"
       aria-checked={checked}

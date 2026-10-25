@@ -20,17 +20,21 @@ from backend.services.exports import (
     ordered_sections,
     render,
 )
+from backend.services.exports.builder import NoteFile
 from backend.services.exports.speaker_colors import (
     analytics_speaker_colors,
     parse_client_colors,
     resolve_label_colors,
 )
 from backend.services.timeline_note_service import (
+    RecordingTimelineNotes,
     load_recording_timeline_notes_async,
 )
 from backend.utils.canonical_pipeline import build_transcript_segments_for_read
 from backend.utils.config_manager import EXPORT_BRANDING_KEY, config_manager
+from backend.utils.note_attachments import is_image, render_for_export
 from backend.utils.speaker_names.live import with_live_speaker_names
+from backend.utils.stored_paths import confined_document_path
 from backend.utils.timezones import get_user_timezone_name
 
 from .helpers import _build_speaker_map, _get_owned_recording, _sanitize_filename
@@ -107,6 +111,19 @@ async def _load_recording(db: AsyncSession, recording_id: str, user: User) -> Re
     return recording
 
 
+def _note_files(loaded: RecordingTimelineNotes) -> dict[str, NoteFile]:
+    """Each note's file by the note's public id, images drawn at print size."""
+    files: dict[str, NoteFile] = {}
+    for note in loaded.notes:
+        document = loaded.attachments.get(note.id)
+        if document is None:
+            continue
+        path = confined_document_path(document.file_path)
+        image = render_for_export(path) if path and is_image(document) else None
+        files[note.public_id] = NoteFile(title=document.title, image=image)
+    return files
+
+
 async def _meeting_parts(
     db: AsyncSession,
     recording: Recording,
@@ -129,10 +146,15 @@ async def _meeting_parts(
         if "analytics" in sections
         else None
     )
-    timeline_notes = (
-        (await load_recording_timeline_notes_async(db, recording.id)).notes
+    loaded = (
+        await load_recording_timeline_notes_async(db, recording.id, with_files=True)
         if query.include_notes and "transcript" in sections
-        else ()
+        else None
+    )
+    # Scaling a screen-sized image takes a fraction of a second, so the files
+    # are drawn off the event loop.
+    note_files = (
+        await run_in_threadpool(_note_files, loaded) if loaded is not None else {}
     )
     label_colors = resolve_label_colors(
         [str(segment.get("speaker") or "Unknown") for segment in segments]
@@ -156,7 +178,8 @@ async def _meeting_parts(
             if analytics
             else {}
         ),
-        timeline_notes=timeline_notes,
+        timeline_notes=loaded.notes if loaded is not None else (),
+        note_files=note_files,
         include_user_notes=query.include_notes,
     )
 

@@ -7,7 +7,7 @@ utilities in `@theme inline`, and holds the app-only furniture. Components reach
 those utilities and the [primitives](#primitives). The marketing site uses the same tokens; see
 [The marketing site](#the-marketing-site).
 
-## The flat canon
+## Default: the flat canon
 
 Every resting surface is a solid fill with a 1px hairline border. There are no gradients, no
 translucent glass and no `backdrop-filter`. The brand gradient appears only in the logo.
@@ -69,9 +69,15 @@ uncompiled string, so it must stay plain JavaScript; `theme-script.test.ts` exec
 | Palette | `data-palette` = `graphite`, `classic`, `ultraviolet` or `marigold` | no attribute (the `:root` / `.dark` tokens) |
 | Corner style | `data-corners` = `subtle` or `square` | no attribute (rounded) |
 | Density | `data-ui-density` = `comfortable`, `compact` or `dense` | resolved from the viewport (never `dense`) |
+| Style seam | `data-style` = `default` | always Default; no settings control yet |
 
 A new preference must keep the same property: its default leaves the product exactly as it looks
 without the preference.
+
+The style vocabulary currently contains only `default`. `nojoin-style` is validated by the
+same storage helpers as the other preferences; Default removes the key. The pre-paint script
+and runtime storage listener always apply `data-style="default"`, including with invalid or
+blocked storage. This reserves a separate appearance axis without changing the flat canon.
 
 ### Palettes
 
@@ -452,6 +458,32 @@ only. Build a surface from these before reaching for raw elements.
 | `Switch`, `Tooltip`, `ModernDatePicker`, `MultiSelect` | Widgets on the same tokens. |
 | `useAnchoredPanel` | Positions a dropdown or popover against its trigger with `position: fixed`, flipping above when there is more room and clamping to the viewport, so a panel opened inside a modal is not clipped. |
 | `FitText` | A single line that must fit its container, such as the meeting title. Steps the font down from a designed size to a readability floor, then wraps to two clamped lines. |
+
+### Native bases and style hooks
+
+`nativeBases.tsx` supplies `ButtonBase`, `InputBase`, `SelectBase` and `TextareaBase` for controls
+that already have their own token-backed recipes. The styled primitives use these same hosts.
+The bases forward native props and refs verbatim, add no wrappers, and do not merge classes,
+invent ids or supply a button type. An omitted type keeps the browser's submit behaviour.
+Keep the existing styled primitives for new standard controls; use a base where an existing
+recipe or layout needs its native element unchanged.
+
+`SurfaceBase` preserves the original semantic tag through `as` and distinguishes `card`,
+`inset`, `float` and `pane` surfaces through `kind`. It adds no padding, border or shadow.
+`Card` and settings surfaces retain their existing token-backed recipes on this shared seam.
+A control, divider, avatar or placeholder using a card background is not itself a card.
+Linked recording cards put the same surface markers directly on Next's `Link`, retaining
+its navigation, prefetching and anchor behaviour.
+
+The `data-ui` markers are inert under Default. Buttons distinguish `data-ui-chrome="action"`
+from `plain` rows, tabs and text controls. Text and date/time inputs use `data-ui-input="field"`;
+checkbox, radio, range, file, color, hidden and button-like inputs use `data-ui-input="native"`.
+Surfaces expose `data-ui-surface`; Modal and custom widgets mark their existing host nodes
+without replacing Headless UI or vendor DOM. Future style CSS can target these markers under
+an explicit `html[data-style="…"]` selector while continuing to consume palette, radius,
+density and shadow tokens. Do not style all buttons indiscriminately, change native controls
+into text fields, or use a shadow declaration that erases selection rings. Default must remain
+pixel-identical to an unset style attribute.
 
 **A raw button busy with its own request behaves as a loading `Button` does.** Where a control
 cannot be a `Button`, such as a settings button drawn from `settingsControls.ts`, spread

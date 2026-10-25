@@ -1,5 +1,6 @@
 "use client";
 
+import { ButtonBase } from '@/components/ui/nativeBases';
 import { useEffect, useRef, useState } from "react";
 import type { RecordingId } from "@/types";
 import { useAudioWarningStore } from "@/lib/audioWarningStore";
@@ -203,14 +204,14 @@ export default function LiveAudioWaveform({
               : ACTIVITY_HINT_COPY.message}
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
-            <button
+            <ButtonBase chrome="action"
               type="button"
               onClick={() => dismissForMeeting(recordingId)}
               className="rounded-pill border border-action-border bg-surface-card px-3 py-1.5 text-xs font-medium text-action-text transition-colors hover:bg-surface-card"
             >
               Dismiss
-            </button>
-            <button
+            </ButtonBase>
+            <ButtonBase chrome="action"
               type="button"
               onClick={() => {
                 dismissForMeeting(recordingId);
@@ -219,7 +220,7 @@ export default function LiveAudioWaveform({
               className="rounded-pill border border-action-border px-3 py-1.5 text-xs font-medium text-action-text transition-colors hover:bg-action-tint"
             >
               Don&apos;t show again
-            </button>
+            </ButtonBase>
           </div>
         </div>
       ) : null}

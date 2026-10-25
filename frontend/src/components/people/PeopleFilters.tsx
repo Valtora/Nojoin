@@ -1,5 +1,6 @@
 'use client';
 
+import { InputBase } from '@/components/ui/nativeBases';
 import React, { useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 
@@ -20,7 +21,7 @@ export function PeopleFilters({ onSearch }: PeopleFiltersProps) {
   return (
     <div className="flex flex-col sm:flex-row gap-4 mb-6">
       <div className="flex-1">
-        <input
+        <InputBase
           type="text"
           placeholder="Search people by name, email, company..."
           value={search}

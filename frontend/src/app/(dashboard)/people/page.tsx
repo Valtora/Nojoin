@@ -1,5 +1,6 @@
 "use client";
 
+import { ButtonBase } from '@/components/ui/nativeBases';
 import React, { useState, useEffect, useCallback } from "react";
 import { Plus, Users, Tag as TagIcon } from "lucide-react";
 import ConfirmationModal from "@/components/ConfirmationModal";
@@ -311,7 +312,7 @@ export default function PeoplePage() {
                 </p>
               </div>
               <div className="flex items-center gap-2 self-stretch sm:self-auto">
-                <button
+                <ButtonBase chrome="action"
                   onClick={() => setIsTagDrawerOpen(true)}
                   className="lg:hidden flex items-center gap-2 px-3 py-2 bg-surface-card text-contrast-muted border border-surface-border rounded-lg hover:border-action-border transition-colors shadow-card font-medium"
                 >
@@ -322,14 +323,14 @@ export default function PeoplePage() {
                       {selectedTagIds.length}
                     </span>
                   )}
-                </button>
-                <button
+                </ButtonBase>
+                <ButtonBase chrome="action"
                   onClick={handleAddNew}
                   className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 bg-action text-action-on rounded-lg hover:bg-action-hover transition-colors shadow-card font-medium"
                 >
                   <Plus className="w-5 h-5" />
                   Add Person
-                </button>
+                </ButtonBase>
               </div>
             </div>
 
@@ -347,28 +348,28 @@ export default function PeoplePage() {
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <button
+                  <ButtonBase
                     onClick={() => setSelectedIds(new Set())}
                     className="px-3 py-1.5 text-sm text-contrast-helper hover:text-foreground hover:bg-surface-card rounded-md transition-colors"
                   >
                     Clear Selection
-                  </button>
+                  </ButtonBase>
                   <div className="h-6 w-px bg-action-tint mx-1"></div>
-                  <button
+                  <ButtonBase chrome="action"
                     onClick={() => setIsBatchEditOpen(true)}
                     className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium bg-surface-card text-contrast-muted border border-surface-border hover:border-action-border rounded-md shadow-card transition-all"
                   >
                     <Edit2 className="w-4 h-4" />
                     Edit
-                  </button>
-                  <button
+                  </ButtonBase>
+                  <ButtonBase chrome="action"
                     onClick={handleBatchDelete}
                     disabled={isBatchDeleting}
                     className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium bg-status-danger-bg text-foreground hover:bg-status-danger-bg rounded-md shadow-card transition-colors"
                   >
                     <Trash2 className="w-4 h-4" />
                     Delete
-                  </button>
+                  </ButtonBase>
                 </div>
               </div>
             )}
