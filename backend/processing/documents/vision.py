@@ -8,6 +8,7 @@ from typing import Optional
 from backend.utils.vision import VisionImage, VisionUnsupportedError
 
 from .types import PageSource
+from .vision_input import fit_images_for_vision
 
 logger = logging.getLogger(__name__)
 
@@ -95,12 +96,16 @@ def transcribe_page(
     the model will never do this, so the orchestrator downgrades the whole
     document once rather than failing every page in turn. Any other exception
     is a per-page problem and is handled by the caller.
+
+    The model gets copies fitted to the providers' limits; ``page.images``
+    keeps the originals for OCR.
     """
     if not page.images:
         return None
 
     prompt = build_page_prompt(page) if is_rendered_page else build_figure_prompt(page)
-    text = backend.generate_text_from_images(prompt, page.images, timeout=timeout)
+    images = fit_images_for_vision(page.images)
+    text = backend.generate_text_from_images(prompt, images, timeout=timeout)
     text = _strip_code_fence((text or "").strip())
     return text or None
 
