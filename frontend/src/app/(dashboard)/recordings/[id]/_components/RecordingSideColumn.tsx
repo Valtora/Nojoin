@@ -1,5 +1,7 @@
 "use client";
 
+import { ButtonBase } from "@/components/ui/nativeBases";
+import { SurfaceBase } from "@/components/ui/SurfaceBase";
 import { useRef, type KeyboardEvent, type ReactNode } from "react";
 import {
   ChevronDown,
@@ -84,7 +86,7 @@ function SideTabs({
 
   return (
     <div id="side-tabs" className="@container flex h-full flex-col">
-      <div className="flex shrink-0 items-center justify-between border-b border-surface-border bg-surface-card pr-1">
+      <SurfaceBase kind="pane" className="flex shrink-0 items-center justify-between border-b border-surface-border bg-surface-card pr-1">
         <div
           ref={tablistRef}
           role="tablist"
@@ -94,7 +96,7 @@ function SideTabs({
           {SIDE_TABS.map(({ tab, label, icon: Icon }) => {
             const open = sideTab === tab;
             return (
-              <button
+              <ButtonBase
                 key={tab}
                 type="button"
                 role="tab"
@@ -121,7 +123,7 @@ function SideTabs({
                 >
                   {label}
                 </span>
-              </button>
+              </ButtonBase>
             );
           })}
         </div>
@@ -133,7 +135,7 @@ function SideTabs({
           onClick={() => setSpeakerPanelCollapsed(true)}
           className="@max-[18.5rem]:w-8"
         />
-      </div>
+      </SurfaceBase>
       {SIDE_TABS.map(({ tab }) => (
         <div
           key={tab}
@@ -180,7 +182,7 @@ export default function RecordingSideColumn({
   if (isSpeakerPanelCollapsed) {
     return (
       <div className="flex h-full flex-col">
-        <button
+        <ButtonBase
           onClick={() => setSpeakerPanelCollapsed(false)}
           className="flex h-9 w-full shrink-0 items-center gap-2 border-b border-surface-border bg-surface-card px-3 text-xs font-medium text-contrast-helper transition-colors hover:bg-surface-inset hover:text-foreground"
           aria-expanded={false}
@@ -189,7 +191,7 @@ export default function RecordingSideColumn({
           <Users className="h-3.5 w-3.5" />
           Speakers, My notes and Captures
           <ChevronDown className="ml-auto h-3.5 w-3.5" />
-        </button>
+        </ButtonBase>
         <div className="min-h-0 flex-1">
           <ChatPanel
             onNotesUpdate={onNotesUpdate}
@@ -206,7 +208,7 @@ export default function RecordingSideColumn({
         <div className="min-h-0 flex-1">
           <SideTabs speakers={speakers} myNotes={myNotes} captures={captures} />
         </div>
-        <button
+        <ButtonBase
           onClick={() => setChatPanelCollapsed(false)}
           className="flex h-9 w-full shrink-0 items-center gap-2 border-t border-surface-border bg-surface-card px-3 text-xs font-medium text-contrast-helper transition-colors hover:bg-surface-inset hover:text-foreground"
           aria-expanded={false}
@@ -215,7 +217,7 @@ export default function RecordingSideColumn({
           <MessageSquare className="h-3.5 w-3.5" />
           Chat
           <ChevronUp className="ml-auto h-3.5 w-3.5" />
-        </button>
+        </ButtonBase>
       </div>
     );
   }

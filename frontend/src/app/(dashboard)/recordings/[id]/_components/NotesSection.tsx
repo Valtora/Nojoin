@@ -1,5 +1,6 @@
 "use client";
 
+import { ButtonBase } from "@/components/ui/nativeBases";
 import { useState } from "react";
 import { FileText, RefreshCw, X } from "lucide-react";
 
@@ -61,22 +62,22 @@ export default function NotesSection({
             notes, after these notes were written, so they do not reflect it yet.
             Regenerating will overwrite any edits you have made.
           </p>
-          <button
+          <ButtonBase
             type="button"
             onClick={() => void onGenerateNotes()}
             className="inline-flex flex-shrink-0 items-center gap-1.5 rounded-lg bg-status-warning-bg px-3 py-1.5 text-xs font-semibold text-status-warning-fg transition-colors hover:bg-status-warning-bg"
           >
             <RefreshCw className="h-3.5 w-3.5" />
             Regenerate
-          </button>
-          <button
+          </ButtonBase>
+          <ButtonBase
             type="button"
             onClick={() => setDismissed(true)}
             aria-label="Dismiss"
             className="flex-shrink-0 rounded-lg p-1 text-status-warning-fg transition-colors hover:bg-status-warning-bg"
           >
             <X className="h-4 w-4" />
-          </button>
+          </ButtonBase>
         </div>
       )}
       <NotesView
