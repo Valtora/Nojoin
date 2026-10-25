@@ -1,5 +1,6 @@
 'use client';
 
+import { SurfaceBase } from '@/components/ui/SurfaceBase';
 import { useHydrated } from '@/lib/useHydrated';
 import { X, CheckCircle, AlertTriangle, Info, AlertCircle } from 'lucide-react';
 import {
@@ -59,7 +60,7 @@ export default function NotificationToast() {
         // The status tints are translucent in dark mode, so the tint sits on
         // an opaque float surface rather than being the fill: a toast must
         // stay readable over whatever it covers.
-        <div
+        <SurfaceBase kind="float"
           key={notification.id}
           role={notification.type === 'error' ? 'alert' : undefined}
           className={`pointer-events-auto overflow-hidden rounded-lg border bg-surface-float shadow-float ${borders[notification.type]}`}
@@ -95,7 +96,7 @@ export default function NotificationToast() {
               className="-mr-2 -mt-2 flex-shrink-0"
             />
           </div>
-        </div>
+        </SurfaceBase>
       ))}
     </div>
   );

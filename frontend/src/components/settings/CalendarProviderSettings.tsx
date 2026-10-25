@@ -1,5 +1,6 @@
 "use client";
 
+import { ButtonBase, InputBase } from "@/components/ui/nativeBases";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   CalendarProvider,
@@ -268,7 +269,7 @@ export default function CalendarProviderSettings() {
               controlId={`${key}-client-id`}
               controlClassName={SETTINGS_CONTROL_COLUMN_WIDE}
             >
-              <input
+              <InputBase
                 id={`${key}-client-id`}
                 type="text"
                 value={form.client_id}
@@ -285,7 +286,7 @@ export default function CalendarProviderSettings() {
                 description="Use common for both Outlook.com and Microsoft 365 accounts, or a tenant ID to restrict sign-in to one directory."
                 controlClassName={SETTINGS_CONTROL_COLUMN_WIDE}
               >
-                <input
+                <InputBase
                   id={`${key}-tenant`}
                   aria-describedby={`${key}-tenant-help`}
                   type="text"
@@ -309,7 +310,7 @@ export default function CalendarProviderSettings() {
               controlClassName={SETTINGS_CONTROL_COLUMN_WIDE}
             >
               <div className="space-y-2">
-                <input
+                <InputBase
                   id={`${key}-client-secret`}
                   aria-describedby={`${key}-client-secret-help`}
                   type="password"
@@ -325,7 +326,7 @@ export default function CalendarProviderSettings() {
                 />
                 {provider.has_client_secret && (
                   <label className="flex items-center gap-2 text-sm text-foreground">
-                    <input
+                    <InputBase
                       type="checkbox"
                       checked={form.clear_client_secret}
                       onChange={(event) =>
@@ -379,7 +380,8 @@ export default function CalendarProviderSettings() {
               {dirty && (
                 <span className="text-sm text-status-warning-fg">Unsaved changes</span>
               )}
-              <button
+              <ButtonBase
+                chrome="action"
                 type="button"
                 {...loadingButtonProps(isSaving, !dirty, () => handleSave(key))}
                 className={SETTINGS_BUTTON_PRIMARY}
@@ -390,7 +392,7 @@ export default function CalendarProviderSettings() {
                   <Save className="h-4 w-4" aria-hidden="true" />
                 )}
                 Save {provider.display_name}
-              </button>
+              </ButtonBase>
             </SettingsBlock>
           </SettingsCard>
         );

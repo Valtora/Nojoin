@@ -1,5 +1,6 @@
 "use client";
 
+import { InputBase } from '@/components/ui/nativeBases';
 import { useState, type ReactNode } from "react";
 import { useOnDepsChange } from "@/lib/useOnDepsChange";
 import {
@@ -62,7 +63,7 @@ function OptionCard({
             : "cursor-pointer border-surface-border hover:border-control-border"
       }`}
     >
-      <input
+      <InputBase
         type={type}
         name={name}
         checked={checked}

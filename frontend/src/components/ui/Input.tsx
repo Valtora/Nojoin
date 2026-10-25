@@ -1,6 +1,7 @@
 import { forwardRef, useId, type InputHTMLAttributes, type ReactNode } from "react";
 
 import { cn } from "@/lib/cn";
+import { InputBase } from "./nativeBases";
 
 export type FieldSize = "sm" | "md" | "lg";
 
@@ -61,7 +62,7 @@ const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
             {iconLeft}
           </span>
         )}
-        <input
+        <InputBase
           ref={ref}
           id={inputId}
           aria-invalid={error ? true : undefined}

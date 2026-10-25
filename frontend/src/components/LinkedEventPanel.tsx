@@ -1,5 +1,7 @@
 'use client';
 
+import { ButtonBase } from '@/components/ui/nativeBases';
+import { SurfaceBase } from '@/components/ui/SurfaceBase';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { CalendarPlus, Calendar, X } from 'lucide-react';
 import { CalendarEventLink, RecordingId } from '@/types';
@@ -99,34 +101,34 @@ export default function LinkedEventPanel({
           {formatEventTime(linkedEvent) && (
             <span className={`opacity-60 ${compact ? "hidden" : ""}`}>{formatEventTime(linkedEvent)}</span>
           )}
-          <button
+          <ButtonBase
             onClick={openPicker}
             disabled={isSubmitting}
             className="ml-1 text-xs underline opacity-70 hover:opacity-100 focus:outline-none disabled:opacity-40"
           >
             Change
-          </button>
-          <button
+          </ButtonBase>
+          <ButtonBase
             {...loadingButtonProps(isSubmitting, undefined, () => handleSelect(null))}
             title="Unlink calendar event"
             className="inline-flex items-center justify-center w-4 h-4 rounded-full hover:bg-surface-inset focus:outline-none disabled:opacity-40 aria-disabled:opacity-40"
           >
             <X className="w-3 h-3" />
-          </button>
+          </ButtonBase>
         </div>
       ) : (
-        <button
+        <ButtonBase chrome="action"
           onClick={openPicker}
           disabled={isSubmitting}
           className={`${basePillClass} border-dashed border-control-border text-contrast-helper transition-colors hover:border-action-border hover:text-contrast-muted disabled:opacity-40 dark:hover:border-action-border`}
         >
           <CalendarPlus className={`${compact ? "mr-1 h-3.5 w-3.5" : "mr-1.5 h-4 w-4"}`} />
           Link calendar event
-        </button>
+        </ButtonBase>
       )}
 
       {isPickerOpen && (
-        <div className={`absolute z-[var(--z-dropdown)] mt-2 max-h-72 overflow-y-auto rounded-lg border border-surface-border bg-surface-float shadow-float ${dropdownWidthClass}`}>
+        <SurfaceBase kind="float" className={`absolute z-[var(--z-dropdown)] mt-2 max-h-72 overflow-y-auto rounded-lg border border-surface-border bg-surface-float shadow-float ${dropdownWidthClass}`}>
           {isLoading ? (
             <div className="px-3 py-3 text-sm text-contrast-helper">
               Loading calendar events...
@@ -139,7 +141,7 @@ export default function LinkedEventPanel({
             <ul className="py-1">
               {candidates.map((candidate) => (
                 <li key={candidate.id}>
-                  <button
+                  <ButtonBase
                     {...loadingButtonProps(isSubmitting, undefined, () => handleSelect(candidate.id))}
                     className="w-full text-left px-3 py-2 hover:bg-surface-inset focus:outline-none disabled:opacity-40 aria-disabled:opacity-40"
                   >
@@ -151,12 +153,12 @@ export default function LinkedEventPanel({
                         {formatEventTime(candidate)}
                       </span>
                     )}
-                  </button>
+                  </ButtonBase>
                 </li>
               ))}
             </ul>
           )}
-        </div>
+        </SurfaceBase>
       )}
     </div>
   );

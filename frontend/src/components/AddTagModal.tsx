@@ -1,5 +1,6 @@
 "use client";
 
+import { ButtonBase, InputBase } from '@/components/ui/nativeBases';
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { RecordingId, Tag } from "@/types";
 import { ArrowLeft, Check, MoreVertical } from "lucide-react";
@@ -263,7 +264,7 @@ export default function AddTagModal({
             <div className="flex items-center gap-2 flex-1">
               <span className={`w-2 h-2 rounded-full ${color.dot}`} />
               {isEditing ? (
-                <input
+                <InputBase
                   autoFocus
                   className="bg-control-bg text-foreground border border-control-border rounded px-1 py-0.5 text-sm w-full"
                   value={editValue}
@@ -276,7 +277,7 @@ export default function AddTagModal({
                   onClick={(e) => e.stopPropagation()}
                 />
               ) : (
-                <button
+                <ButtonBase
                   className={`flex-1 text-left ${isSelected ? "text-action-tint-fg font-medium" : "text-contrast-muted"}`}
                   {...loadingButtonProps(isProcessing, undefined, () => {
                     if (isProcessing) return;
@@ -288,7 +289,7 @@ export default function AddTagModal({
                   })}
                 >
                   {node.name}
-                </button>
+                </ButtonBase>
               )}
             </div>
             <div className="flex items-center gap-2">
@@ -393,13 +394,13 @@ export default function AddTagModal({
               !allTags.some(
                 (t) => t.name.toLowerCase() === inputValue.toLowerCase(),
               ) && (
-                <button
+                <ButtonBase
                   onClick={() => handleCreateTag(inputValue)}
                   className="w-full border-t border-surface-divider px-3 py-2 text-left text-sm font-medium text-action-text hover:bg-surface-inset"
                   disabled={processingTags.has(inputValue)}
                 >
                   + Create &quot;{inputValue}&quot;
-                </button>
+                </ButtonBase>
               )}
 
             {allTags.length === 0 && !inputValue && (

@@ -1,5 +1,6 @@
 "use client";
 
+import { ButtonBase, InputBase } from '@/components/ui/nativeBases';
 import { useEffect, useId, useRef, useState } from "react";
 import { Pencil } from "lucide-react";
 
@@ -124,7 +125,7 @@ export default function LiveSpeakerChip({
   if (isEditing) {
     return (
       <div className="mb-1">
-        <input
+        <InputBase
           autoFocus
           type="text"
           value={draft.text}
@@ -163,7 +164,7 @@ export default function LiveSpeakerChip({
     // 44 px target, and its own negative margin keeps it from pushing the
     // line down.
     <div className="mb-1">
-      <button
+      <ButtonBase
         ref={buttonRef}
         type="button"
         data-testid="live-transcript-speaker"
@@ -181,7 +182,7 @@ export default function LiveSpeakerChip({
           aria-hidden
           className="h-3 w-3 shrink-0 opacity-0 transition-opacity group-hover/chip:opacity-100 group-focus-visible/chip:opacity-100 pointer-coarse:opacity-100"
         />
-      </button>
+      </ButtonBase>
     </div>
   );
 }

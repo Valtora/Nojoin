@@ -1,5 +1,7 @@
 "use client";
 
+import { ButtonBase, InputBase } from "@/components/ui/nativeBases";
+import { SurfaceBase } from "@/components/ui/SurfaceBase";
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Split,
@@ -295,7 +297,8 @@ export default function SplitPersonModal({
                   {line}
                 </p>
               ))}
-              <button
+              <ButtonBase
+                chrome="action"
                 onClick={() => {
                   onComplete();
                   onClose();
@@ -303,7 +306,7 @@ export default function SplitPersonModal({
                 className="px-6 py-3 bg-status-info-bg hover:bg-status-info-bg text-foreground rounded-xl shadow-float transition-transform hover:scale-[1.02]"
               >
                 Done
-              </button>
+              </ButtonBase>
             </div>
           ) : isLoading ? (
             <div className="flex flex-col items-center justify-center h-64">
@@ -322,14 +325,15 @@ export default function SplitPersonModal({
           ) : (
             <>
               {/* Name Input */}
-              <div className="mb-6 bg-surface-card p-4 rounded-xl border border-surface-border shadow-card">
+              <SurfaceBase
+                kind="card" className="mb-6 bg-surface-card p-4 rounded-xl border border-surface-border shadow-card">
                 <label className="block text-sm font-medium text-contrast-muted mb-2">
                   New Speaker Name <span className="text-danger-text">*</span>
                 </label>
                 <div className="flex gap-2">
                   <div className="relative flex-1">
                     <UserPlus className="absolute left-3 top-2.5 w-5 h-5 text-contrast-icon-muted" />
-                    <input
+                    <InputBase
                       type="text"
                       className="w-full pl-10 pr-4 py-2 bg-surface-inset border border-surface-border rounded-lg focus:outline-hidden focus:ring-2 focus-visible:outline-focus-ring focus:ring-action-border focus:border-transparent transition-all"
                       placeholder="e.g. Jane Doe"
@@ -338,7 +342,7 @@ export default function SplitPersonModal({
                     />
                   </div>
                 </div>
-              </div>
+              </SurfaceBase>
 
               {/* Grid */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -347,7 +351,8 @@ export default function SplitPersonModal({
                   const isPlaying = playingIndex === idx;
 
                   return (
-                    <div
+                    <SurfaceBase
+                      kind="card"
                       key={`${seg.recording_id}-${idx}`}
                       onClick={() => toggleSegment(idx)}
                       className={`
@@ -377,7 +382,8 @@ export default function SplitPersonModal({
                       </div>
 
                       <div className="p-3 border-t border-surface-border flex items-center justify-between">
-                        <button
+                        <ButtonBase
+                          chrome="action"
                           onClick={(e) => {
                             e.stopPropagation();
                             handlePlay(idx, seg);
@@ -396,14 +402,14 @@ export default function SplitPersonModal({
                           ) : (
                             <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
                           )}
-                        </button>
+                        </ButtonBase>
                         <span
                           className={`text-xs font-medium transition-colors ${isSelected ? "text-action-text" : "text-contrast-icon-muted"}`}
                         >
                           {isSelected ? "Moving" : "Keep"}
                         </span>
                       </div>
-                    </div>
+                    </SurfaceBase>
                   );
                 })}
               </div>

@@ -1,5 +1,7 @@
 "use client";
 
+import { ButtonBase } from '@/components/ui/nativeBases';
+import { SurfaceBase } from '@/components/ui/SurfaceBase';
 import { useState } from "react";
 import {
   Table as TableIcon,
@@ -58,7 +60,7 @@ export default function TableMenu({ editor }: TableMenuProps) {
 
   return (
     <div className="relative">
-      <button
+      <ButtonBase
         onClick={() => setIsOpen(!isOpen)}
         className={`p-2 rounded hover:bg-surface-inset transition-colors ${
           isInTable || isOpen
@@ -70,12 +72,12 @@ export default function TableMenu({ editor }: TableMenuProps) {
         aria-expanded={isOpen}
       >
         <TableIcon className="w-4 h-4" />
-      </button>
+      </ButtonBase>
 
       {isOpen && (
         <>
           <div className="fixed inset-0 z-[var(--z-dropdown)]" onClick={() => setIsOpen(false)} />
-          <div className="absolute left-0 top-full mt-2 w-56 bg-surface-card rounded-lg shadow-float border border-surface-border p-2 z-[var(--z-dropdown)] flex flex-col gap-1">
+          <SurfaceBase kind="float" className="absolute left-0 top-full mt-2 w-56 bg-surface-card rounded-lg shadow-float border border-surface-border p-2 z-[var(--z-dropdown)] flex flex-col gap-1">
             <div className="text-xs font-semibold text-contrast-icon-muted px-2 py-1 border-b border-surface-border">
               {hovered
                 ? `Insert ${hovered.rows} x ${hovered.cols} table`
@@ -96,7 +98,7 @@ export default function TableMenu({ editor }: TableMenuProps) {
                 const active =
                   hovered !== null && row <= hovered.rows && col <= hovered.cols;
                 return (
-                  <button
+                  <ButtonBase chrome="action"
                     key={index}
                     onMouseEnter={() => setHovered({ rows: row, cols: col })}
                     onClick={() => insertTable(row, col)}
@@ -162,7 +164,7 @@ export default function TableMenu({ editor }: TableMenuProps) {
                 />
               </>
             )}
-          </div>
+          </SurfaceBase>
         </>
       )}
     </div>
@@ -181,7 +183,7 @@ function TableAction({
   destructive?: boolean;
 }) {
   return (
-    <button
+    <ButtonBase
       onClick={onClick}
       className={`flex items-center gap-2 px-2 py-1.5 rounded text-sm text-left hover:bg-surface-inset transition-colors ${
         destructive
@@ -191,6 +193,6 @@ function TableAction({
     >
       {icon}
       {label}
-    </button>
+    </ButtonBase>
   );
 }

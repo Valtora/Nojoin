@@ -36,6 +36,8 @@ const SIZES: Record<BadgeSize, string> = {
 export function Badge({ tone = "neutral", size = "md", icon, className, children }: BadgeProps) {
   return (
     <span
+      data-ui="badge"
+      data-ui-tone={tone}
       className={cn(
         "inline-flex items-center rounded-pill border font-semibold whitespace-nowrap",
         TONES[tone],

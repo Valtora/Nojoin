@@ -1,5 +1,7 @@
 "use client";
 
+import { ButtonBase, InputBase } from '@/components/ui/nativeBases';
+import { SurfaceBase } from '@/components/ui/SurfaceBase';
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Recording, RecordingId, RecordingStatus, Tag } from "@/types";
@@ -746,7 +748,7 @@ export default function Sidebar() {
             <span className="text-xs text-rail-fg-muted">
               {selectedRecordingIds.length} selected
             </span>
-            <button
+            <ButtonBase
               onClick={() => {
                 if (
                   selectedRecordingIds.length === filteredRecordings.length &&
@@ -763,26 +765,26 @@ export default function Sidebar() {
               filteredRecordings.length > 0
                 ? "Deselect All"
                 : "Select All"}
-            </button>
+            </ButtonBase>
           </div>
         ) : (
           <div className="space-y-2">
             <div className="flex items-center gap-1">
               <div className="relative min-w-0 flex-1">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-contrast-icon-muted" />
-                <input
+                <InputBase
                   type="text"
                   placeholder="Search..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full pl-9 pr-9 py-2 text-sm bg-control-bg border border-control-border rounded-lg text-foreground placeholder:text-control-placeholder focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-focus-ring"
                 />
-                <button
+                <ButtonBase
                   onClick={() => setShowFilters(!showFilters)}
                   className={`absolute right-2 top-1/2 transform -translate-y-1/2 p-1 rounded-md hover:bg-rail-item-hover ${showFilters ? "text-action-text" : "text-contrast-icon-muted"}`}
                 >
                   <Filter className="w-4 h-4" />
-                </button>
+                </ButtonBase>
               </div>
               <IconButton
                 onClick={toggleRecordingsSidebarCollapse}
@@ -815,56 +817,56 @@ export default function Sidebar() {
                   <span className="text-status-neutral-fg font-medium">
                     {tag.name}
                   </span>
-                  <button
+                  <ButtonBase
                     onClick={() => toggleTagFilter(tagId)}
                     className="ml-0.5 text-contrast-icon-muted hover:text-danger-text transition-colors"
                     title={`Remove ${tag.name} filter`}
                   >
                     <X className="w-3 h-3" />
-                  </button>
+                  </ButtonBase>
                 </div>
               );
             })}
-            <button
+            <ButtonBase chrome="action"
               onClick={clearTagFilters}
               className="px-2.5 py-1 rounded-pill text-xs font-medium text-danger-text hover:bg-status-danger-bg border border-status-danger-border transition-colors"
               title="Clear all tag filters"
             >
               Clear All
-            </button>
+            </ButtonBase>
           </div>
         )}
 
         {showFilters && !selectionMode && (
-          <div className="p-3 bg-surface-card rounded-lg border border-surface-border space-y-3 text-sm mt-2">
+          <SurfaceBase kind="card" className="p-3 bg-surface-card rounded-lg border border-surface-border space-y-3 text-sm mt-2">
             <div className="space-y-1">
               <label className="text-xs font-medium text-rail-fg-muted">
                 Date Filter
               </label>
               <div className="flex gap-2 mb-2">
-                <button
+                <ButtonBase
                   onClick={() => setDateMode("range")}
                   className={`text-xs px-2 py-1 rounded ${dateMode === "range" ? "bg-action-tint text-action-tint-fg" : "bg-status-neutral-bg text-status-neutral-fg"}`}
                 >
                   Range
-                </button>
-                <button
+                </ButtonBase>
+                <ButtonBase
                   onClick={() => setDateMode("after")}
                   className={`text-xs px-2 py-1 rounded ${dateMode === "after" ? "bg-action-tint text-action-tint-fg" : "bg-status-neutral-bg text-status-neutral-fg"}`}
                 >
                   After
-                </button>
-                <button
+                </ButtonBase>
+                <ButtonBase
                   onClick={() => setDateMode("before")}
                   className={`text-xs px-2 py-1 rounded ${dateMode === "before" ? "bg-action-tint text-action-tint-fg" : "bg-status-neutral-bg text-status-neutral-fg"}`}
                 >
                   Before
-                </button>
+                </ButtonBase>
               </div>
 
               <div className="flex gap-2">
                 {(dateMode === "range" || dateMode === "after") && (
-                  <input
+                  <InputBase
                     type="date"
                     value={dateRange.start}
                     onChange={(e) =>
@@ -878,7 +880,7 @@ export default function Sidebar() {
                   />
                 )}
                 {(dateMode === "range" || dateMode === "before") && (
-                  <input
+                  <InputBase
                     type="date"
                     value={dateRange.end}
                     onChange={(e) =>
@@ -909,7 +911,7 @@ export default function Sidebar() {
               </label>
               <div className="flex flex-wrap gap-1">
                 {globalSpeakers.map((speaker) => (
-                  <button
+                  <ButtonBase
                     key={speaker.id}
                     onClick={() => {
                       setSelectedSpeakers((prev) =>
@@ -925,7 +927,7 @@ export default function Sidebar() {
                     }`}
                   >
                     {speaker.name}
-                  </button>
+                  </ButtonBase>
                 ))}
                 {globalSpeakers.length === 0 && (
                   <span className="text-xs text-contrast-icon-muted">No speakers yet</span>
@@ -934,7 +936,7 @@ export default function Sidebar() {
             </div>
 
             {hasActiveFilters && (
-              <button
+              <ButtonBase
                 onClick={() => {
                   setSearchQuery("");
                   setDateRange({ start: "", end: "" });
@@ -945,9 +947,9 @@ export default function Sidebar() {
                 className="text-xs text-danger-text hover:underline flex items-center gap-1"
               >
                 <X className="w-3 h-3" /> Clear Filters
-              </button>
+              </ButtonBase>
             )}
-          </div>
+          </SurfaceBase>
         )}
       </div>
 
@@ -978,8 +980,8 @@ export default function Sidebar() {
           return (
             <div key={recording.id} className="relative group">
               {isRenaming ? (
-                <div className="p-3 rounded-lg border bg-surface-card border-action">
-                  <input
+                <SurfaceBase kind="card" className="p-3 rounded-lg border bg-surface-card border-action">
+                  <InputBase
                     autoFocus
                     type="text"
                     value={renameValue}
@@ -991,10 +993,12 @@ export default function Sidebar() {
                     }}
                     className="w-full text-sm font-semibold bg-transparent focus:outline-none"
                   />
-                </div>
+                </SurfaceBase>
               ) : (
                 <div>
                   <Link
+                    data-ui="surface"
+                    data-ui-surface="card"
                     href={`/recordings/${recording.id}`}
                     id={
                       recording.name === "Welcome to Nojoin"

@@ -1,5 +1,7 @@
 "use client";
 
+import { ButtonBase } from '@/components/ui/nativeBases';
+import { SurfaceBase } from '@/components/ui/SurfaceBase';
 import { useNavigationStore } from "@/lib/store";
 import { Archive, Trash2, RotateCcw, Tag, X } from "lucide-react";
 import { useState } from "react";
@@ -161,90 +163,90 @@ export default function BatchActionBar({
 
   return (
     <>
-      <div className="absolute bottom-4 left-4 right-4 bg-surface-card rounded-lg shadow-float border border-surface-border p-3 flex items-center justify-between z-20 animate-in slide-in-from-bottom-4 duration-200">
+      <SurfaceBase kind="float" className="absolute bottom-4 left-4 right-4 bg-surface-card rounded-lg shadow-float border border-surface-border p-3 flex items-center justify-between z-20 animate-in slide-in-from-bottom-4 duration-200">
         <div className="flex items-center gap-3">
           <span className="bg-action-tint text-action-text px-2 py-1 rounded-md text-xs font-medium">
             {selectedRecordingIds.length} selected
           </span>
-          <button
+          <ButtonBase
             onClick={clearSelection}
             className="text-contrast-helper hover:text-contrast-muted"
           >
             <X className="w-4 h-4" />
-          </button>
+          </ButtonBase>
         </div>
 
         <div className="flex items-center gap-2">
           {/* Tag Actions */}
           <div className="flex gap-1 border-r border-surface-border pr-2 mr-1">
-            <button
+            <ButtonBase
               onClick={() => setTagModal({ isOpen: true, mode: "add" })}
               className="p-2 text-contrast-helper hover:bg-surface-inset rounded-md"
               title="Add Tag"
             >
               <Tag className="w-4 h-4" />
-            </button>
+            </ButtonBase>
           </div>
 
           {/* View Specific Actions */}
           {currentView === "recordings" && (
             <>
-              <button
+              <ButtonBase
                 onClick={handleArchive}
                 className="p-2 text-contrast-helper hover:bg-surface-inset rounded-md"
                 title="Archive"
               >
                 <Archive className="w-4 h-4" />
-              </button>
-              <button
+              </ButtonBase>
+              <ButtonBase
                 onClick={handleSoftDelete}
                 className="p-2 text-status-danger-fg hover:bg-status-danger-bg rounded-md"
                 title="Delete"
               >
                 <Trash2 className="w-4 h-4" />
-              </button>
+              </ButtonBase>
             </>
           )}
 
           {currentView === "archived" && (
             <>
-              <button
+              <ButtonBase
                 onClick={handleRestore}
                 className="p-2 text-contrast-helper hover:bg-surface-inset rounded-md"
                 title="Restore"
               >
                 <RotateCcw className="w-4 h-4" />
-              </button>
-              <button
+              </ButtonBase>
+              <ButtonBase
                 onClick={handleSoftDelete}
                 className="p-2 text-status-danger-fg hover:bg-status-danger-bg rounded-md"
                 title="Delete"
               >
                 <Trash2 className="w-4 h-4" />
-              </button>
+              </ButtonBase>
             </>
           )}
 
           {currentView === "deleted" && (
             <>
-              <button
+              <ButtonBase
                 onClick={handleRestore}
                 className="p-2 text-contrast-helper hover:bg-surface-inset rounded-md"
                 title="Restore"
               >
                 <RotateCcw className="w-4 h-4" />
-              </button>
-              <button
+              </ButtonBase>
+              <ButtonBase
                 onClick={handlePermanentDelete}
                 className="p-2 text-status-danger-fg hover:bg-status-danger-bg rounded-md"
                 title="Permanently Delete"
               >
                 <Trash2 className="w-4 h-4" />
-              </button>
+              </ButtonBase>
             </>
           )}
         </div>
-      </div>
+      </SurfaceBase>
 
       <ConfirmationModal
         isOpen={confirmModal.isOpen}

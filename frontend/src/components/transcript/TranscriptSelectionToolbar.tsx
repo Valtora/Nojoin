@@ -1,5 +1,6 @@
 "use client";
 
+import { SurfaceBase } from '@/components/ui/SurfaceBase';
 import { useEffect, useLayoutEffect, useMemo, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { Copy, StickyNote } from "lucide-react";
@@ -131,7 +132,7 @@ export function TranscriptSelectionToolbar({
   return createPortal(
     <>
       <SelectionAnchor box={box} onAnchor={setAnchor} />
-      <div
+      <SurfaceBase kind="float"
         ref={panelRef}
         role="toolbar"
         aria-label="Selected text"
@@ -159,7 +160,7 @@ export function TranscriptSelectionToolbar({
         >
           Copy
         </Button>
-      </div>
+      </SurfaceBase>
     </>,
     document.body,
   );

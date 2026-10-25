@@ -1,5 +1,7 @@
 "use client";
 
+import { ButtonBase, InputBase } from "@/components/ui/nativeBases";
+import { SurfaceBase } from "@/components/ui/SurfaceBase";
 import React, { useState, useMemo, useEffect, useCallback } from "react";
 import {
   Tag as TagIcon,
@@ -201,11 +203,12 @@ export function PeopleTagSidebar({
             onClick={onMobileClose}
           />
         )}
-        <div
+        <SurfaceBase
+          kind="pane"
           className={`${SIDEBAR_SHELL} ${mobileTransform} items-center justify-center`}
         >
           <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-action"></div>
-        </div>
+        </SurfaceBase>
       </>
     );
   }
@@ -218,7 +221,8 @@ export function PeopleTagSidebar({
           onClick={onMobileClose}
         />
       )}
-      <div className={`${SIDEBAR_SHELL} ${mobileTransform}`}>
+      <SurfaceBase
+        kind="pane" className={`${SIDEBAR_SHELL} ${mobileTransform}`}>
         <div className="p-4 border-b border-surface-border space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-[11px] font-bold text-contrast-helper uppercase tracking-wider flex items-center gap-2">
@@ -226,15 +230,17 @@ export function PeopleTagSidebar({
               People Tags
             </h2>
             <div className="flex items-center gap-1">
-              <button
+              <ButtonBase
+                chrome="action"
                 onClick={onMobileClose}
                 className="lg:hidden p-1 rounded hover:bg-surface-inset transition-colors text-contrast-helper hover:text-contrast-muted"
                 title="Close"
                 aria-label="Close tag filters"
               >
                 <X className="w-4 h-4" />
-              </button>
-              <button
+              </ButtonBase>
+              <ButtonBase
+                chrome="action"
                 onClick={() => {
                   const allIds = tags.map((t) => t.id);
                   setExpandedTagIds(new Set(allIds));
@@ -243,27 +249,29 @@ export function PeopleTagSidebar({
                 title="Expand All"
               >
                 <ChevronsDown className="w-3.5 h-3.5" />
-              </button>
-              <button
+              </ButtonBase>
+              <ButtonBase
+                chrome="action"
                 onClick={() => setExpandedTagIds(new Set())}
                 className="p-1 rounded hover:bg-surface-inset transition-colors text-contrast-helper hover:text-contrast-muted"
                 title="Collapse All"
               >
                 <ChevronsUp className="w-3.5 h-3.5" />
-              </button>
-              <button
+              </ButtonBase>
+              <ButtonBase
+                chrome="action"
                 onClick={() => setIsAddingRoot(true)}
                 className="p-1 rounded hover:bg-surface-inset transition-colors text-contrast-helper hover:text-action-text"
                 title="Add Tag"
               >
                 <Plus className="w-3.5 h-3.5" />
-              </button>
+              </ButtonBase>
             </div>
           </div>
 
           <div className="relative">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-contrast-icon-muted" />
-            <input
+            <InputBase
               type="text"
               placeholder="Search tags..."
               value={searchQuery}
@@ -276,7 +284,7 @@ export function PeopleTagSidebar({
         <div className="flex-1 overflow-y-auto custom-scrollbar p-2">
           {isAddingRoot && (
             <div className="mb-2 px-2 flex items-center gap-1">
-              <input
+              <InputBase
                 autoFocus
                 className="flex-1 px-2 py-1 text-sm bg-surface-card border border-action rounded outline-none"
                 placeholder="Root tag name..."
@@ -287,12 +295,13 @@ export function PeopleTagSidebar({
                   else if (e.key === "Escape") setIsAddingRoot(false);
                 }}
               />
-              <button
+              <ButtonBase
+                chrome="action"
                 onClick={() => handleAddTag(newTagName)}
                 className="p-1.5 text-action-text hover:bg-action-tint rounded"
               >
                 <Check className="w-4 h-4" />
-              </button>
+              </ButtonBase>
             </div>
           )}
 
@@ -331,13 +340,14 @@ export function PeopleTagSidebar({
 
         {selectedTagIds.length > 0 && (
           <div className="p-2 border-t border-surface-border">
-            <button
+            <ButtonBase
+              chrome="action"
               onClick={onClearFilters}
               className="w-full px-3 py-1.5 text-xs font-medium text-action-text hover:bg-action-tint rounded-lg flex items-center justify-center gap-2 border border-action-border transition-colors"
             >
               <X className="w-3.5 h-3.5" /> Clear active filters (
               {selectedTagIds.length})
-            </button>
+            </ButtonBase>
           </div>
         )}
 
@@ -349,7 +359,7 @@ export function PeopleTagSidebar({
           message={`Are you sure you want to delete "${confirmDelete?.name}"? This will remove it from all people.`}
           isDangerous
         />
-      </div>
+      </SurfaceBase>
     </>
   );
 }
@@ -436,7 +446,7 @@ function TagNode({
             />
           </div>
           {isEditing ? (
-            <input
+            <InputBase
               autoFocus
               className="flex-1 bg-surface-card border border-action rounded px-1 py-0.5 text-sm"
               value={editValue}
@@ -466,7 +476,8 @@ function TagNode({
           // Controls stay visible on touch (no hover) but keep the clean
           // hover-reveal on desktop where a pointer is available.
           <div className="flex items-center gap-0.5 opacity-100 transition-opacity lg:opacity-0 lg:group-hover:opacity-100">
-            <button
+            <ButtonBase
+              chrome="action"
               onClick={(e) => {
                 e.stopPropagation();
                 startEdit();
@@ -476,9 +487,10 @@ function TagNode({
               aria-label={`Rename ${tag.name}`}
             >
               <Pencil className="w-3.5 h-3.5" />
-            </button>
+            </ButtonBase>
 
-            <button
+            <ButtonBase
+              chrome="action"
               onClick={(e) => {
                 e.stopPropagation();
                 startSubTag();
@@ -488,10 +500,11 @@ function TagNode({
               aria-label={`Add sub-tag to ${tag.name}`}
             >
               <Plus className="w-3.5 h-3.5" />
-            </button>
+            </ButtonBase>
 
             {hasChildren && (
-              <button
+              <ButtonBase
+                chrome="action"
                 onClick={(e) => {
                   e.stopPropagation();
                   toggleExpand(tag.id);
@@ -507,10 +520,11 @@ function TagNode({
                 ) : (
                   <ChevronRight className="w-3.5 h-3.5" />
                 )}
-              </button>
+              </ButtonBase>
             )}
 
-            <button
+            <ButtonBase
+              chrome="action"
               onClick={(e) => {
                 e.stopPropagation();
                 onDelete(tag);
@@ -520,7 +534,7 @@ function TagNode({
               aria-label={`Delete ${tag.name}`}
             >
               <X className="w-3.5 h-3.5" />
-            </button>
+            </ButtonBase>
           </div>
         )}
       </div>
@@ -530,7 +544,7 @@ function TagNode({
           className="mt-1 flex items-center gap-1"
           style={{ paddingLeft: `${(level + 1) * 12 + 20}px` }}
         >
-          <input
+          <InputBase
             autoFocus
             className="flex-1 px-2 py-0.5 text-xs bg-surface-card border border-action rounded outline-none"
             placeholder="New sub-tag..."
@@ -541,12 +555,13 @@ function TagNode({
               else if (e.key === "Escape") onAddSubStart(null);
             }}
           />
-          <button
+          <ButtonBase
+            chrome="action"
             onClick={() => void saveSubTag()}
             className="p-1 text-action-text hover:bg-action-tint rounded"
           >
             <Check className="w-3.5 h-3.5" />
-          </button>
+          </ButtonBase>
         </div>
       )}
 

@@ -1,3 +1,5 @@
+import { InputBase } from "@/components/ui/nativeBases";
+import { SurfaceBase } from "@/components/ui/SurfaceBase";
 import { useState } from "react";
 import { Download, AlertTriangle, FileAudio } from "lucide-react";
 import {
@@ -115,7 +117,8 @@ export default function BackupOptionsModal({
       }
     >
       <div className="space-y-6">
-        <div className="flex items-start gap-4 rounded-lg border border-surface-border bg-surface-inset p-4">
+        <SurfaceBase
+          kind="inset" className="flex items-start gap-4 rounded-lg border border-surface-border bg-surface-inset p-4">
           <div className="mt-1">
             <FileAudio aria-hidden="true" className="h-5 w-5 text-contrast-icon-muted" />
           </div>
@@ -137,7 +140,7 @@ export default function BackupOptionsModal({
               Adds each recording&apos;s audio, so restored meetings can be played.
             </p>
           </div>
-        </div>
+        </SurfaceBase>
 
         {includeAudio && (
           <div className="rounded-lg border border-surface-border p-4">
@@ -146,7 +149,7 @@ export default function BackupOptionsModal({
             </h3>
             <div className="space-y-3">
               <label className={qualityClass(archiveQuality === "compressed")}>
-                <input
+                <InputBase
                   type="radio"
                   name="archive_quality"
                   className="mt-1 accent-action"
@@ -165,7 +168,7 @@ export default function BackupOptionsModal({
               </label>
 
               <label className={qualityClass(archiveQuality === "original")}>
-                <input
+                <InputBase
                   type="radio"
                   name="archive_quality"
                   className="mt-1 accent-action"

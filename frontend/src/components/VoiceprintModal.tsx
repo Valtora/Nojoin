@@ -1,5 +1,6 @@
 'use client';
 
+import { ButtonBase, InputBase, SelectBase } from '@/components/ui/nativeBases';
 import { useState, useEffect } from 'react';
 import { Fingerprint, Link, Plus, HardDrive, AlertCircle, Check } from 'lucide-react';
 import Button from './ui/Button';
@@ -179,7 +180,7 @@ export default function VoiceprintModal({
     return (
       <div className="space-y-4">
         {/* Match Info */}
-        <div className="p-3 bg-surface-inset rounded-lg">
+        <div data-ui="surface" data-ui-surface="inset" className="p-3 bg-surface-inset rounded-lg">
           {renderMatchInfo(extractResult.matched_speaker)}
         </div>
 
@@ -190,7 +191,7 @@ export default function VoiceprintModal({
           {/* Link to matched speaker (if match exists) */}
           {extractResult.matched_speaker && (
             <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${selectedAction === 'link_existing' && selectedGlobalSpeakerId === extractResult.matched_speaker.id ? 'border-status-info-border bg-status-info-bg' : 'border-surface-border hover:border-status-info-border'}`}>
-              <input
+              <InputBase
                 type="radio"
                 name="action"
                 checked={selectedAction === 'link_existing' && selectedGlobalSpeakerId === extractResult.matched_speaker.id}
@@ -212,7 +213,7 @@ export default function VoiceprintModal({
 
           {/* Create new global speaker */}
           <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${selectedAction === 'create_new' ? 'border-status-info-border bg-status-info-bg' : 'border-surface-border hover:border-status-info-border'}`}>
-            <input
+            <InputBase
               type="radio"
               name="action"
               checked={selectedAction === 'create_new'}
@@ -226,7 +227,7 @@ export default function VoiceprintModal({
               </div>
               <p className="text-xs text-contrast-helper mt-1">Add this voice to your library with a new name.</p>
               {selectedAction === 'create_new' && (
-                <input
+                <InputBase
                   type="text"
                   placeholder="Enter speaker name..."
                   value={newSpeakerName}
@@ -240,7 +241,7 @@ export default function VoiceprintModal({
 
           {/* Force link to different speaker */}
           <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${selectedAction === 'force_link' ? 'border-status-info-border bg-status-info-bg' : 'border-surface-border hover:border-status-info-border'}`}>
-            <input
+            <InputBase
               type="radio"
               name="action"
               checked={selectedAction === 'force_link'}
@@ -254,7 +255,7 @@ export default function VoiceprintModal({
               </div>
               <p className="text-xs text-contrast-helper mt-1">Override the match and train the selected speaker&apos;s voice profile.</p>
               {selectedAction === 'force_link' && (
-                <select
+                <SelectBase
                   value={selectedGlobalSpeakerId ?? ''}
                   onChange={(e) => setSelectedGlobalSpeakerId(Number(e.target.value))}
                   className="mt-2 w-full px-3 py-1.5 text-sm border border-control-border rounded bg-control-bg focus:outline-none focus:ring-2 focus:ring-status-info-border"
@@ -265,14 +266,14 @@ export default function VoiceprintModal({
                       {gs.name} {gs.has_voiceprint ? '(has voiceprint)' : ''}
                     </option>
                   ))}
-                </select>
+                </SelectBase>
               )}
             </div>
           </label>
 
           {/* Keep local only */}
           <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${selectedAction === 'local_only' ? 'border-status-info-border bg-status-info-bg' : 'border-surface-border hover:border-status-info-border'}`}>
-            <input
+            <InputBase
               type="radio"
               name="action"
               checked={selectedAction === 'local_only'}
@@ -329,7 +330,7 @@ export default function VoiceprintModal({
             length, so the pair stacks below roughly two 9.5rem buttons plus
             the gap. */}
         <div className="grid gap-2 @min-[20rem]:grid-cols-2">
-          <button
+          <ButtonBase chrome="action"
             onClick={() => {
               if (currentResult.matched_speaker) {
                 updateBatchAction(currentResult.diarization_label, {
@@ -345,8 +346,8 @@ export default function VoiceprintModal({
             className="px-3 py-2 text-sm rounded-lg border border-status-success-border text-status-success-fg hover:bg-status-success-bg disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {currentResult.matched_speaker ? `Link to ${currentResult.matched_speaker.name}` : 'No match'}
-          </button>
-          <button
+          </ButtonBase>
+          <ButtonBase chrome="action"
             onClick={() => {
               updateBatchAction(currentResult.diarization_label, { action: 'local_only' });
               if (currentBatchIndex < successfulResults.length - 1) {
@@ -356,7 +357,7 @@ export default function VoiceprintModal({
             className="px-3 py-2 text-sm rounded-lg border border-control-border hover:bg-surface-inset"
           >
             Keep Local
-          </button>
+          </ButtonBase>
         </div>
 
         {/* Current selection indicator */}
@@ -373,20 +374,20 @@ export default function VoiceprintModal({
 
         {/* Navigation */}
         <div className="flex justify-between pt-2">
-          <button
+          <ButtonBase
             onClick={() => setCurrentBatchIndex(prev => Math.max(0, prev - 1))}
             disabled={currentBatchIndex === 0}
             className="px-3 py-1.5 text-sm text-contrast-helper disabled:opacity-50"
           >
             Previous
-          </button>
-          <button
+          </ButtonBase>
+          <ButtonBase
             onClick={() => setCurrentBatchIndex(prev => Math.min(successfulResults.length - 1, prev + 1))}
             disabled={currentBatchIndex === successfulResults.length - 1}
             className="px-3 py-1.5 text-sm text-contrast-helper disabled:opacity-50"
           >
             Next
-          </button>
+          </ButtonBase>
         </div>
       </div>
     );

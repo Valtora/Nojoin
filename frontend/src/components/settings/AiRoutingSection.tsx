@@ -1,3 +1,4 @@
+import { ButtonBase } from "@/components/ui/nativeBases";
 import Link from "next/link";
 import {
   useEffect,
@@ -398,7 +399,7 @@ function RoutingOption({
   description: string;
 }) {
   return (
-    <button
+    <ButtonBase
       type="button"
       role="radio"
       aria-checked={selected}
@@ -432,6 +433,6 @@ function RoutingOption({
         </span>
       </span>
       <span className="text-xs leading-5 contrast-helper">{description}</span>
-    </button>
+    </ButtonBase>
   );
 }

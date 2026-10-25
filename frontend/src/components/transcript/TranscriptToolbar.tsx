@@ -1,5 +1,6 @@
 "use client";
 
+import { InputBase } from '@/components/ui/nativeBases';
 import { useEffect, useLayoutEffect, useRef } from "react";
 import {
   ArrowRightLeft,
@@ -143,7 +144,7 @@ export default function TranscriptToolbar({
     : "Export";
 
   return (
-    <div className="z-10 flex flex-col border-b-2 border-surface-border bg-surface-inset shadow-card">
+    <div data-ui="surface" data-ui-surface="pane" className="z-10 flex flex-col border-b-2 border-surface-border bg-surface-inset shadow-card">
       {/* Row 1: Header & Global Actions */}
       {/* The 40 px buttons sit in less padding, so the row keeps its height
           from sm up. */}
@@ -222,7 +223,7 @@ export default function TranscriptToolbar({
           <div className="flex min-w-64 flex-[1_1_11rem] items-center gap-0.5 sm:flex-[1_1_14rem]">
             <div className="relative min-w-0 flex-1">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-contrast-icon-muted" />
-              <input
+              <InputBase
                 ref={findRef}
                 placeholder="Find..."
                 value={findText}
@@ -274,7 +275,7 @@ export default function TranscriptToolbar({
           {showReplace && (
             <div className="relative min-w-40 flex-[1_1_11rem] sm:min-w-48 sm:flex-[1_1_14rem]">
               <ArrowRightLeft className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-contrast-icon-muted" />
-              <input
+              <InputBase
                 placeholder="Replace..."
                 value={replaceText}
                 onChange={(e) => setReplaceText(e.target.value)}

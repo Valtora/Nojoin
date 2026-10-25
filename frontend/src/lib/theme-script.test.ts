@@ -36,7 +36,7 @@ const root = document.documentElement;
 
 function resetRoot() {
   root.className = "";
-  for (const attribute of ["data-palette", "data-corners", "data-ui-density"]) {
+  for (const attribute of ["data-palette", "data-corners", "data-ui-density", "data-style"]) {
     root.removeAttribute(attribute);
   }
 }
@@ -93,6 +93,7 @@ describe("themeScript", () => {
     expect(root.classList.contains("dark")).toBe(true);
     expect(root.dataset.palette).toBeUndefined();
     expect(root.dataset.corners).toBeUndefined();
+    expect(root.dataset.style).toBe("default");
   });
 });
 
@@ -100,6 +101,18 @@ describe("themeScript appearance preferences", () => {
   beforeEach(() => {
     stubPrefersDark(false);
   });
+
+  it.each([null, "default", "classic", "depth", "unrecognised", '\"><script>'])(
+    "applies only Default before paint with stored style %s",
+    (stored) => {
+      if (stored !== null) localStorage.setItem("nojoin-style", stored);
+      root.dataset.style = "stale";
+
+      runScript();
+
+      expect(root.dataset.style).toBe("default");
+    },
+  );
 
   it("leaves palette and corners unset by default so the original look applies", () => {
     runScript();

@@ -1,5 +1,6 @@
 "use client";
 
+import { ButtonBase, InputBase } from '@/components/ui/nativeBases';
 import { Info, Minus, Plus, Users } from "lucide-react";
 import { useState } from "react";
 import { useOnDepsChange } from "@/lib/useOnDepsChange";
@@ -133,6 +134,8 @@ export default function SpeakerCapField({
 
   const stepper = (
     <div
+      data-ui="stepper"
+      data-ui-field="custom"
       className={`flex items-stretch overflow-hidden rounded-xl border bg-control-bg transition-colors focus-within:border-action focus-within:ring-1 focus-within:ring-focus-ring ${
         compact ? "h-8" : "h-9"
         // Wide enough for the "Auto-detect" placeholder plus both step buttons;
@@ -143,7 +146,7 @@ export default function SpeakerCapField({
           : "border-control-border"
       } ${disabled ? "opacity-50" : ""}`}
     >
-      <button
+      <ButtonBase
         type="button"
         onClick={() => step(-1)}
         disabled={!canDecrement}
@@ -152,8 +155,8 @@ export default function SpeakerCapField({
         title="Decrease speaker limit"
       >
         <Minus className="h-3.5 w-3.5" />
-      </button>
-      <input
+      </ButtonBase>
+      <InputBase
         id={inputId}
         type="number"
         inputMode="numeric"
@@ -189,7 +192,7 @@ export default function SpeakerCapField({
         // the flanking buttons replace it. Arrow keys still step the value.
         className="w-full min-w-0 border-0 bg-transparent px-1 text-center text-sm text-foreground outline-none placeholder:text-contrast-icon-muted disabled:cursor-not-allowed [appearance:textfield] [&::-webkit-inner-spin-button]:m-0 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:m-0 [&::-webkit-outer-spin-button]:appearance-none"
       />
-      <button
+      <ButtonBase
         type="button"
         onClick={() => step(1)}
         disabled={!canIncrement}
@@ -198,7 +201,7 @@ export default function SpeakerCapField({
         title="Increase speaker limit"
       >
         <Plus className="h-3.5 w-3.5" />
-      </button>
+      </ButtonBase>
     </div>
   );
 

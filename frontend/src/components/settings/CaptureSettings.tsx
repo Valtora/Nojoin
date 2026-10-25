@@ -1,5 +1,6 @@
 "use client";
 
+import { ButtonBase, InputBase, SelectBase } from "@/components/ui/nativeBases";
 import { useEffect, useRef, useState } from "react";
 import { Loader2, Mic, RefreshCw } from "lucide-react";
 
@@ -43,7 +44,7 @@ const GainSlider = ({
   label: string;
 }) => (
   <div className="space-y-2">
-    <input
+    <InputBase
       type="range"
       aria-label={label}
       min={GAIN_MIN}
@@ -353,7 +354,8 @@ export default function CaptureSettings() {
           : "The microphone added to shared audio. Nojoin balances system and microphone levels while recording."
       }
       headerAside={
-        <button
+        <ButtonBase
+          chrome="action"
           type="button"
           onClick={() => void refreshDevices()}
           disabled={loadingDevices}
@@ -365,7 +367,7 @@ export default function CaptureSettings() {
             <RefreshCw className="h-4 w-4" aria-hidden="true" />
           )}
           Refresh devices
-        </button>
+        </ButtonBase>
       }
     >
       {deviceError ? (
@@ -385,7 +387,7 @@ export default function CaptureSettings() {
             : "Mixed with shared tab or system audio during capture."
         }
       >
-        <select
+        <SelectBase
           value={settings.microphoneDeviceId || ""}
           onChange={(event) =>
             updateSettings({
@@ -400,7 +402,7 @@ export default function CaptureSettings() {
               {device.label}
             </option>
           ))}
-        </select>
+        </SelectBase>
       </SettingsRow>
 
       <SettingsRow
@@ -441,7 +443,8 @@ export default function CaptureSettings() {
         label="Live microphone input test"
         description="Preview your microphone locally and raise the gain until speech lands comfortably in the meter. Shared-audio gain is best checked during a short test recording."
         aside={
-          <button
+          <ButtonBase
+            chrome="action"
             type="button"
             {...loadingButtonProps(previewLoading, undefined, () => {
               setPreviewError(null);
@@ -455,7 +458,7 @@ export default function CaptureSettings() {
               <Mic className="h-4 w-4" aria-hidden="true" />
             )}
             {previewEnabled ? "Stop input test" : "Start input test"}
-          </button>
+          </ButtonBase>
         }
         inset
         contentClassName="space-y-4"

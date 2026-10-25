@@ -1,5 +1,7 @@
 "use client";
 
+import { ButtonBase } from '@/components/ui/nativeBases';
+import { SurfaceBase } from '@/components/ui/SurfaceBase';
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -69,13 +71,13 @@ export default function ContextMenu({
     : { top: y, left: x, visibility: "hidden" as const };
 
   return createPortal(
-    <div
+    <SurfaceBase kind="float"
       ref={menuRef}
       className="fixed z-[var(--z-popover)] w-48 bg-surface-float rounded-lg shadow-float border border-surface-float-border py-1 overflow-hidden"
       style={style}
     >
       {items.map((item, index) => (
-        <button
+        <ButtonBase
           key={index}
           onClick={() => {
             item.onClick();
@@ -88,9 +90,9 @@ export default function ContextMenu({
           } ${item.className || "text-contrast-muted"}`}
         >
           {item.label}
-        </button>
+        </ButtonBase>
       ))}
-    </div>,
+    </SurfaceBase>,
     document.body,
   );
 }

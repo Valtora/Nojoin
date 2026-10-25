@@ -1,3 +1,4 @@
+import { SelectBase } from "@/components/ui/nativeBases";
 import { LanguageRegistry, Settings } from "@/types";
 import SettingsCard from "./SettingsCard";
 import SettingsRow from "./SettingsRow";
@@ -46,7 +47,7 @@ export default function AiLanguageSection({
         controlId="transcription-language-select"
         description={capability?.guidance || "Loading what this engine supports..."}
       >
-        <select
+        <SelectBase
           id="transcription-language-select"
           aria-describedby="transcription-language-select-help"
           value={shown}
@@ -62,7 +63,7 @@ export default function AiLanguageSection({
               {language.label}
             </option>
           ))}
-        </select>
+        </SelectBase>
       </SettingsRow>
     </SettingsCard>
   );

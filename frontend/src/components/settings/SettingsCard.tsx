@@ -1,3 +1,4 @@
+import { SurfaceBase } from "@/components/ui/SurfaceBase";
 import type { ReactNode } from "react";
 
 import { cn } from "@/lib/cn";
@@ -50,7 +51,8 @@ export default function SettingsCard({
   const scope = getSettingsScope(scopeId ?? id);
 
   return (
-    <section id={id} className={cn("settings-card scroll-mt-24", className)}>
+    <SurfaceBase
+      as="section" kind="card" id={id} className={cn("settings-card scroll-mt-24", className)}>
       <div className="flex flex-col gap-3 p-5 sm:flex-row sm:items-start sm:justify-between sm:gap-4 sm:p-6">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
@@ -76,6 +78,6 @@ export default function SettingsCard({
       <div className={cn("@container settings-card-body border-t settings-divider", contentClassName)}>
         <SettingsCardScope.Provider value={scope}>{children}</SettingsCardScope.Provider>
       </div>
-    </section>
+    </SurfaceBase>
   );
 }

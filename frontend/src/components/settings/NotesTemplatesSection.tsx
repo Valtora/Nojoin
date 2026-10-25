@@ -1,5 +1,6 @@
 "use client";
 
+import { ButtonBase } from "@/components/ui/nativeBases";
 import { useCallback, useEffect, useState } from "react";
 import {
   Plus,
@@ -184,7 +185,7 @@ export default function NotesTemplatesSection({
         ) : (
           <>
             <div className="space-y-2">
-              <button
+              <ButtonBase
                 type="button"
                 onClick={() => handleSelectDefault(null)}
                 className={`w-full text-left p-3 rounded-lg border transition-colors ${
@@ -209,7 +210,7 @@ export default function NotesTemplatesSection({
                     <Check className="w-4 h-4 text-action-text shrink-0" />
                   )}
                 </div>
-              </button>
+              </ButtonBase>
 
               {data?.templates.map((template) => (
                 <div
@@ -221,7 +222,7 @@ export default function NotesTemplatesSection({
                   }`}
                 >
                   <div className="flex items-start justify-between gap-3">
-                    <button
+                    <ButtonBase
                       type="button"
                       onClick={() => handleSelectDefault(template.id)}
                       className="text-left flex-1"
@@ -250,13 +251,14 @@ export default function NotesTemplatesSection({
                           The Nojoin default has improved since this was copied.
                         </p>
                       )}
-                    </button>
+                    </ButtonBase>
 
                     <div className="flex items-center gap-1 shrink-0">
                       {selectedId === template.id && (
                         <Check className="w-4 h-4 text-action-text mr-1" />
                       )}
-                      <button
+                      <ButtonBase
+                        chrome="action"
                         type="button"
                         onClick={() => setEditing(template)}
                         title={template.is_editable ? "Edit" : "View"}
@@ -264,8 +266,9 @@ export default function NotesTemplatesSection({
                         className={ICON_BUTTON}
                       >
                         <Pencil className="w-4 h-4" />
-                      </button>
-                      <button
+                      </ButtonBase>
+                      <ButtonBase
+                        chrome="action"
                         type="button"
                         onClick={() => handleCopy(template)}
                         title="Copy to my structures"
@@ -273,9 +276,10 @@ export default function NotesTemplatesSection({
                         className={ICON_BUTTON}
                       >
                         <Copy className="w-4 h-4" />
-                      </button>
+                      </ButtonBase>
                       {template.is_editable && (
-                        <button
+                        <ButtonBase
+                          chrome="action"
                           type="button"
                           onClick={() => handleDelete(template)}
                           title="Delete"
@@ -283,23 +287,23 @@ export default function NotesTemplatesSection({
                           className={ICON_BUTTON}
                         >
                           <Trash2 className="w-4 h-4" />
-                        </button>
+                        </ButtonBase>
                       )}
                     </div>
                   </div>
 
                   {template.is_stale && template.is_editable && (
-                    <button
+                    <ButtonBase
                       type="button"
                       onClick={() => handleReset(template)}
                       className="mt-2 text-xs text-action-text hover:underline"
                     >
                       Reset to the current default
-                    </button>
+                    </ButtonBase>
                   )}
 
                   {isAdmin && template.scope === "install" && (
-                    <button
+                    <ButtonBase
                       type="button"
                       disabled={savingInstallDefault}
                       onClick={() =>
@@ -312,14 +316,15 @@ export default function NotesTemplatesSection({
                       {template.is_install_default
                         ? "Stop using as the shared default"
                         : "Make the shared default"}
-                    </button>
+                    </ButtonBase>
                   )}
                 </div>
               ))}
             </div>
 
             <div className="flex flex-wrap gap-2 pt-2">
-              <button
+              <ButtonBase
+                chrome="action"
                 type="button"
                 onClick={() => {
                   setCreatingScope("personal");
@@ -329,9 +334,10 @@ export default function NotesTemplatesSection({
               >
                 <Plus className="h-4 w-4" aria-hidden="true" />
                 New structure
-              </button>
+              </ButtonBase>
               {isAdmin && (
-                <button
+                <ButtonBase
+                  chrome="action"
                   type="button"
                   onClick={() => {
                     setCreatingScope("install");
@@ -341,7 +347,7 @@ export default function NotesTemplatesSection({
                 >
                   <Plus className="h-4 w-4" aria-hidden="true" />
                   New shared structure
-                </button>
+                </ButtonBase>
               )}
             </div>
           </>

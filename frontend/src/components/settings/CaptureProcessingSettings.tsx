@@ -1,5 +1,6 @@
 "use client";
 
+import { ButtonBase } from "@/components/ui/nativeBases";
 import { useAudioWarningStore } from "@/lib/audioWarningStore";
 import { useCapture } from "@/lib/capture/CaptureProvider";
 import { useNotificationStore } from "@/lib/notificationStore";
@@ -105,7 +106,8 @@ export default function CaptureProcessingSettings() {
           {/* They are only ever turned off from the warning itself, so the
               row offers the way back and nothing while they are on. */}
           {suppressQuietAudioWarnings && (
-            <button
+            <ButtonBase
+              chrome="action"
               type="button"
               onClick={() => {
                 resetWarnings();
@@ -117,7 +119,7 @@ export default function CaptureProcessingSettings() {
               className={SETTINGS_BUTTON_SECONDARY}
             >
               Turn back on
-            </button>
+            </ButtonBase>
           )}
         </SettingsRow>
       </SettingsCard>

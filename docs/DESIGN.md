@@ -7,7 +7,7 @@ utilities in `@theme inline`, and holds the app-only furniture. Components reach
 those utilities and the [primitives](#primitives). The marketing site uses the same tokens; see
 [The marketing site](#the-marketing-site).
 
-## The flat canon
+## Default: the flat canon
 
 Every resting surface is a solid fill with a 1px hairline border. There are no gradients, no
 translucent glass and no `backdrop-filter`. The brand gradient appears only in the logo.
@@ -69,9 +69,15 @@ uncompiled string, so it must stay plain JavaScript; `theme-script.test.ts` exec
 | Palette | `data-palette` = `graphite`, `classic`, `ultraviolet` or `marigold` | no attribute (the `:root` / `.dark` tokens) |
 | Corner style | `data-corners` = `subtle` or `square` | no attribute (rounded) |
 | Density | `data-ui-density` = `comfortable`, `compact` or `dense` | resolved from the viewport (never `dense`) |
+| Style seam | `data-style` = `default` | always Default; no settings control yet |
 
 A new preference must keep the same property: its default leaves the product exactly as it looks
 without the preference.
+
+The style vocabulary currently contains only `default`. `nojoin-style` is validated by the
+same storage helpers as the other preferences; Default removes the key. The pre-paint script
+and runtime storage listener always apply `data-style="default"`, including with invalid or
+blocked storage. This reserves a separate appearance axis without changing the flat canon.
 
 ### Palettes
 
@@ -453,6 +459,32 @@ only. Build a surface from these before reaching for raw elements.
 | `useAnchoredPanel` | Positions a dropdown or popover against its trigger with `position: fixed`, flipping above when there is more room and clamping to the viewport, so a panel opened inside a modal is not clipped. |
 | `FitText` | A single line that must fit its container, such as the meeting title. Steps the font down from a designed size to a readability floor, then wraps to two clamped lines. |
 
+### Native bases and style hooks
+
+`nativeBases.tsx` supplies `ButtonBase`, `InputBase`, `SelectBase` and `TextareaBase` for controls
+that already have their own token-backed recipes. The styled primitives use these same hosts.
+The bases forward native props and refs verbatim, add no wrappers, and do not merge classes,
+invent ids or supply a button type. An omitted type keeps the browser's submit behaviour.
+Keep the existing styled primitives for new standard controls; use a base where an existing
+recipe or layout needs its native element unchanged.
+
+`SurfaceBase` preserves the original semantic tag through `as` and distinguishes `card`,
+`inset`, `float` and `pane` surfaces through `kind`. It adds no padding, border or shadow.
+`Card` and settings surfaces retain their existing token-backed recipes on this shared seam.
+A control, divider, avatar or placeholder using a card background is not itself a card.
+Linked recording cards put the same surface markers directly on Next's `Link`, retaining
+its navigation, prefetching and anchor behaviour.
+
+The `data-ui` markers are inert under Default. Buttons distinguish `data-ui-chrome="action"`
+from `plain` rows, tabs and text controls. Text and date/time inputs use `data-ui-input="field"`;
+checkbox, radio, range, file, color, hidden and button-like inputs use `data-ui-input="native"`.
+Surfaces expose `data-ui-surface`; Modal and custom widgets mark their existing host nodes
+without replacing Headless UI or vendor DOM. Future style CSS can target these markers under
+an explicit `html[data-style="…"]` selector while continuing to consume palette, radius,
+density and shadow tokens. Do not style all buttons indiscriminately, change native controls
+into text fields, or use a shadow declaration that erases selection rings. Default must remain
+pixel-identical to an unset style attribute.
+
 **A raw button busy with its own request behaves as a loading `Button` does.** Where a control
 cannot be a `Button`, such as a settings button drawn from `settingsControls.ts`, spread
 `loadingButtonProps` from `ui/loadingButton.ts` rather than setting `disabled` for the wait, and
@@ -495,13 +527,38 @@ settings off the `Settings` object, and checks that every scoped entry is render
 
 ## Typography
 
-`Geist` and `Geist_Mono` are loaded in [frontend/src/app/layout.tsx](../frontend/src/app/layout.tsx)
-as `--font-geist-sans` and `--font-geist-mono`, which `@theme inline` maps to Tailwind's
+Geist and Geist Mono are served from files in the repository, so a build downloads nothing.
+[frontend/src/app/fonts/geist.ts](../frontend/src/app/fonts/geist.ts) declares them with
+`next/font/local`, and [geist.css](../frontend/src/app/fonts/geist.css) beside it sets
+`--font-geist-sans` and `--font-geist-mono` on `body`, which `@theme inline` maps to Tailwind's
 `--font-sans` and `--font-mono`. Geist Sans is set once on `body` in `globals.css`, so an element
 needs `font-sans` only to override something back to the default. Apply Geist Mono with
 `font-mono`.
 
 Lucide is the only icon set.
+
+### Font files
+
+The files in `frontend/src/app/fonts/` are Google Fonts' build of Geist 1.800 and Geist Mono
+1.701: the variable font (`wght` 100 to 900), split into Google's subsets. Both families have
+latin, latin-ext, cyrillic, cyrillic-ext and vietnamese, and Geist Mono adds symbols2 for box
+drawing. They are byte for byte the files `next/font/google` downloaded into the frontend image
+before the app served its own, so the app renders as it did.
+
+- **One `@font-face` per subset**, carrying Google's `unicode-range`, so a browser fetches a
+  subset only when the page uses a character from it. Keep Google's order: where two ranges
+  overlap, the face declared last wins, and that is latin.
+- **Only latin is preloaded.**
+- **The fallbacks are fixed values.** `geist.css` declares Arial with the metric overrides
+  `next/font/google` generated for these families. `next/font/local` would measure the files
+  instead and arrive at slightly different figures.
+- **To update them**, request `https://fonts.googleapis.com/css2?family=Geist:wght@100..900`
+  (and `Geist+Mono`) with a browser's user agent, so the response lists woff2 files, then replace
+  one file per subset and copy each `unicode-range` into its call. `selfHostedFonts.test.ts` fails
+  on a file that is not declared, a subset out of order and any import of `next/font/google`.
+
+Geist is under the SIL Open Font License 1.1, in `OFL.txt` beside the files. The marketing site
+serves its own latin files from `site/public/fonts/`.
 
 ### The heading scale
 

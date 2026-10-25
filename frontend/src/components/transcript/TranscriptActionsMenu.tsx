@@ -1,5 +1,6 @@
 "use client";
 
+import { SurfaceBase } from '@/components/ui/SurfaceBase';
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 import { MoreHorizontal, type LucideIcon } from "lucide-react";
@@ -212,7 +213,7 @@ export default function TranscriptActionsMenu({
           playing is translucent, which makes it a stacking context, and the
           lines after it would paint over a menu inside it. */}
       {open ? createPortal(
-        <div
+        <SurfaceBase kind="float"
           ref={panelRef}
           id={menuId}
           role="menu"
@@ -244,7 +245,7 @@ export default function TranscriptActionsMenu({
               </Button>
             );
           })}
-        </div>,
+        </SurfaceBase>,
         document.body,
       ) : null}
     </>

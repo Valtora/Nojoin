@@ -1,3 +1,4 @@
+import { ButtonBase, SelectBase } from "@/components/ui/nativeBases";
 import { useState } from "react";
 
 import { Settings } from "@/types";
@@ -99,7 +100,7 @@ export default function AiTranscriptionSection({
         controlId="transcription-engine-select"
         description="Whisper handles the most languages. Parakeet is faster and slightly less accurate. Canary 1B covers a set of European languages."
       >
-        <select
+        <SelectBase
           id="transcription-engine-select"
           aria-describedby="transcription-engine-select-help"
           value={engine}
@@ -124,7 +125,7 @@ export default function AiTranscriptionSection({
           <option value="whisper">Whisper</option>
           <option value="parakeet">Parakeet (NVIDIA)</option>
           <option value="canary">Canary 1B (NVIDIA)</option>
-        </select>
+        </SelectBase>
       </SettingsRow>
 
       {engine === "whisper" ? (
@@ -135,14 +136,15 @@ export default function AiTranscriptionSection({
         >
           <div className="flex flex-wrap items-center gap-3 @min-[26rem]:justify-end">
             <p className={SETTINGS_VALUE_CLASS}>{whisper?.label || whisperSize}</p>
-            <button
+            <ButtonBase
+              chrome="action"
               type="button"
               onClick={() => setShowWhisperModal(true)}
               disabled={!isAdmin}
               className={SETTINGS_BUTTON_SECONDARY}
             >
               Change size
-            </button>
+            </ButtonBase>
           </div>
         </SettingsRow>
       ) : (

@@ -1,5 +1,7 @@
 "use client";
 
+import { ButtonBase } from "@/components/ui/nativeBases";
+import { SurfaceBase } from "@/components/ui/SurfaceBase";
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Fingerprint,
@@ -256,12 +258,12 @@ export default function RecalibrateModal({
                 )}
 
                 {/* Entry point for unmerge (split) */}
-                <button
+                <ButtonBase
                   onClick={() => setIsSplitModalOpen(true)}
                   className="text-xs font-medium text-status-info-fg hover:underline"
                 >
                   Not this person? Split into new speaker...
-                </button>
+                </ButtonBase>
               </div>
 
               <div className="flex gap-3">
@@ -300,7 +302,8 @@ export default function RecalibrateModal({
                 </p>
 
                 <div className="flex flex-col gap-3 w-full max-w-xs">
-                  <button
+                  <ButtonBase
+                    chrome="action"
                     {...loadingButtonProps(isSubmitting, undefined, async () => {
                       setIsSubmitting(true);
                       try {
@@ -331,8 +334,9 @@ export default function RecalibrateModal({
                         Scan Library for Matches
                       </>
                     )}
-                  </button>
-                  <button
+                  </ButtonBase>
+                  <ButtonBase
+                    chrome="action"
                     onClick={() => {
                       onComplete();
                       onClose();
@@ -341,7 +345,7 @@ export default function RecalibrateModal({
                     className="w-full px-4 py-3 bg-surface-card border border-surface-border text-contrast-muted rounded-xl hover:bg-surface-inset transition-colors"
                   >
                     Done
-                  </button>
+                  </ButtonBase>
                 </div>
               </div>
             ) : isLoading ? (
@@ -368,7 +372,8 @@ export default function RecalibrateModal({
                   const isPlaying = playingIndex === idx;
 
                   return (
-                    <div
+                    <SurfaceBase
+                      kind="card"
                       key={`${seg.recording_id}-${idx}`}
                       className={`
                       relative group flex flex-col rounded-xl border-2 transition-all duration-200 overflow-hidden bg-surface-card
@@ -400,9 +405,11 @@ export default function RecalibrateModal({
                       </div>
 
                       {/* Controls Footer */}
-                      <div className="p-3 bg-surface-inset/80 border-t border-surface-border flex items-center justify-between gap-2">
+                      <SurfaceBase
+                        kind="inset" className="p-3 bg-surface-inset/80 border-t border-surface-border flex items-center justify-between gap-2">
                         {/* Play Button */}
-                        <button
+                        <ButtonBase
+                          chrome="action"
                           onClick={(e) => {
                             e.stopPropagation();
                             handlePlay(idx, seg);
@@ -421,11 +428,13 @@ export default function RecalibrateModal({
                           ) : (
                             <Play className="w-4 h-4 fill-current ml-0.5" />
                           )}
-                        </button>
+                        </ButtonBase>
 
                         {/* Action Buttons */}
-                        <div className="flex items-center gap-1.5  p-1 bg-surface-card rounded-lg border border-surface-border shadow-card">
-                          <button
+                        <SurfaceBase
+                          kind="pane" className="flex items-center gap-1.5  p-1 bg-surface-card rounded-lg border border-surface-border shadow-card">
+                          <ButtonBase
+                            chrome="action"
                             onClick={(e) =>
                               handleStatusChange(idx, "rejected", e)
                             }
@@ -433,9 +442,10 @@ export default function RecalibrateModal({
                             title="Reject / Not this speaker"
                           >
                             <Ban className="w-4 h-4" />
-                          </button>
+                          </ButtonBase>
                           <div className="w-px h-4 bg-surface-inset"></div>
-                          <button
+                          <ButtonBase
+                            chrome="action"
                             onClick={(e) =>
                               handleStatusChange(idx, "approved", e)
                             }
@@ -443,10 +453,10 @@ export default function RecalibrateModal({
                             title="Verify / Approve"
                           >
                             <Check className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
+                          </ButtonBase>
+                        </SurfaceBase>
+                      </SurfaceBase>
+                    </SurfaceBase>
                   );
                 })}
               </div>

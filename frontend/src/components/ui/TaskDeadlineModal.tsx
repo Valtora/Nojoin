@@ -12,6 +12,8 @@ import { twMerge } from "tailwind-merge";
 import Button from "./Button";
 import IconButton from "./IconButton";
 import Modal from "./Modal";
+import { ButtonBase, InputBase } from "./nativeBases";
+import { SurfaceBase } from "./SurfaceBase";
 
 import {
   fromTimeZoneDate,
@@ -72,14 +74,14 @@ function TaskDeadlineTimeInput({
   timeZoneLabel,
 }: TaskDeadlineTimeInputProps) {
   return (
-    <div className="space-y-3 rounded-surface-panel border border-surface-border bg-surface-inset px-3 py-3">
+    <SurfaceBase kind="inset" className="space-y-3 rounded-surface-panel border border-surface-border bg-surface-inset px-3 py-3">
       <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-contrast-helper">
         <Clock3 className="h-3.5 w-3.5" />
         Time
       </div>
 
       <div className="flex items-center gap-2">
-        <input
+        <InputBase
           type="time"
           step={900}
           value={value}
@@ -94,7 +96,7 @@ function TaskDeadlineTimeInput({
           const isActive = value === preset.value;
 
           return (
-            <button
+            <ButtonBase
               key={preset.value}
               type="button"
               onClick={() => onChange?.(preset.value)}
@@ -106,11 +108,11 @@ function TaskDeadlineTimeInput({
               )}
             >
               {preset.label}
-            </button>
+            </ButtonBase>
           );
         })}
       </div>
-    </div>
+    </SurfaceBase>
   );
 }
 
@@ -259,7 +261,7 @@ export default function TaskDeadlineModal({
           const isActive = isSameDay(option.date, resolvedDraft);
 
           return (
-            <button
+            <ButtonBase
               key={option.label}
               type="button"
               onClick={() => setDraftValue(option.date)}
@@ -272,12 +274,12 @@ export default function TaskDeadlineModal({
               )}
             >
               {option.label}
-            </button>
+            </ButtonBase>
           );
         })}
       </div>
 
-      <div className="mt-4 rounded-surface-panel border border-surface-border bg-surface-inset p-3">
+      <SurfaceBase kind="inset" className="mt-4 rounded-surface-panel border border-surface-border bg-surface-inset p-3">
         <DatePicker
           inline
           selected={resolvedDraft}
@@ -335,7 +337,7 @@ export default function TaskDeadlineModal({
             )
           }
         />
-      </div>
+      </SurfaceBase>
     </Modal>
   );
 }

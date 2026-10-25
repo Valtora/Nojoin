@@ -1,5 +1,6 @@
 "use client";
 
+import { ButtonBase } from '@/components/ui/nativeBases';
 import { AlertTriangle, CloudUpload, Pause, Play, Square, Trash2, X } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
@@ -243,14 +244,14 @@ export default function LiveMeetingControls({
             ? "Audio is being lost because this tab is being suspended. Keep the Nojoin tab open and the device awake."
             : "Keep the Nojoin tab open and the device awake, and check your connection to the Nojoin server."}
       </span>
-      <button
+      <ButtonBase
         type="button"
         onClick={dismissCoverageWarning}
         className="-mr-1 -mt-1 shrink-0 rounded p-1 text-status-warning-fg/70 transition-colors hover:bg-status-warning-border/40 hover:text-status-warning-fg"
         aria-label="Dismiss the capture coverage warning"
       >
         <X className="h-3.5 w-3.5" />
-      </button>
+      </ButtonBase>
     </div>
   ) : null;
 
@@ -270,7 +271,7 @@ export default function LiveMeetingControls({
             </span>
           </div>
           {isRecording ? (
-            <button
+            <ButtonBase chrome="action"
               type="button"
               onClick={() => sendCommand("pause")}
               disabled={transportDisabled}
@@ -279,9 +280,9 @@ export default function LiveMeetingControls({
               aria-label="Pause recording"
             >
               <Pause className="h-4 w-4" />
-            </button>
+            </ButtonBase>
           ) : (
-            <button
+            <ButtonBase chrome="action"
               type="button"
               onClick={() => sendCommand("resume")}
               disabled={transportDisabled}
@@ -290,9 +291,9 @@ export default function LiveMeetingControls({
               aria-label="Resume recording"
             >
               <Play className="h-4 w-4" />
-            </button>
+            </ButtonBase>
           )}
-          <button
+          <ButtonBase chrome="action"
             type="button"
             onClick={handleStop}
             disabled={stopDisabled}
@@ -301,8 +302,8 @@ export default function LiveMeetingControls({
             aria-label="Stop recording"
           >
             <Square className="h-4 w-4 fill-current" />
-          </button>
-          <button
+          </ButtonBase>
+          <ButtonBase chrome="action"
             type="button"
             onClick={handleDiscard}
             disabled={stopDisabled}
@@ -311,7 +312,7 @@ export default function LiveMeetingControls({
             aria-label="Discard recording"
           >
             <Trash2 className="h-4 w-4" />
-          </button>
+          </ButtonBase>
         </div>
         {coverageBadge}
         {uploadBacklogNotice}
@@ -346,7 +347,7 @@ export default function LiveMeetingControls({
               17rem (#538). */}
           <div className="flex min-w-[min(18rem,100%)] max-w-[34rem] flex-1 flex-wrap items-center gap-2">
             {isRecording ? (
-              <button
+              <ButtonBase chrome="action"
                 type="button"
                 onClick={() => sendCommand("pause")}
                 disabled={transportDisabled}
@@ -355,9 +356,9 @@ export default function LiveMeetingControls({
               >
                 <Pause className="h-4 w-4" />
                 Pause
-              </button>
+              </ButtonBase>
             ) : (
-              <button
+              <ButtonBase chrome="action"
                 type="button"
                 onClick={() => sendCommand("resume")}
                 disabled={transportDisabled}
@@ -366,10 +367,10 @@ export default function LiveMeetingControls({
               >
                 <Play className="h-4 w-4" />
                 Resume
-              </button>
+              </ButtonBase>
             )}
 
-            <button
+            <ButtonBase chrome="action"
               type="button"
               onClick={handleStop}
               disabled={stopDisabled}
@@ -378,9 +379,9 @@ export default function LiveMeetingControls({
             >
               <Square className="h-4 w-4 fill-current" />
               Stop
-            </button>
+            </ButtonBase>
 
-            <button
+            <ButtonBase chrome="action"
               type="button"
               onClick={handleDiscard}
               disabled={stopDisabled}
@@ -389,7 +390,7 @@ export default function LiveMeetingControls({
             >
               <Trash2 className="h-4 w-4" />
               Discard
-            </button>
+            </ButtonBase>
           </div>
 
           {/* Attach Docs and the speaker cap together are wider than the card
@@ -426,7 +427,7 @@ export default function LiveMeetingControls({
 
       <div className="flex flex-wrap gap-3">
         {isRecording ? (
-          <button
+          <ButtonBase chrome="action"
             type="button"
             onClick={() => sendCommand("pause")}
             disabled={transportDisabled}
@@ -435,9 +436,9 @@ export default function LiveMeetingControls({
           >
             <Pause className="h-4 w-4" />
             Pause
-          </button>
+          </ButtonBase>
         ) : (
-          <button
+          <ButtonBase chrome="action"
             type="button"
             onClick={() => sendCommand("resume")}
             disabled={transportDisabled}
@@ -446,10 +447,10 @@ export default function LiveMeetingControls({
           >
             <Play className="h-4 w-4" />
             Resume
-          </button>
+          </ButtonBase>
         )}
 
-        <button
+        <ButtonBase chrome="action"
           type="button"
           onClick={handleStop}
           disabled={stopDisabled}
@@ -458,9 +459,9 @@ export default function LiveMeetingControls({
         >
           <Square className="h-4 w-4 fill-current" />
           Stop
-        </button>
+        </ButtonBase>
 
-        <button
+        <ButtonBase chrome="action"
           type="button"
           onClick={handleDiscard}
           disabled={stopDisabled}
@@ -469,7 +470,7 @@ export default function LiveMeetingControls({
         >
           <Trash2 className="h-4 w-4" />
           Discard
-        </button>
+        </ButtonBase>
       </div>
 
       {coverageBadge}

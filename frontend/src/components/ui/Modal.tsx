@@ -86,6 +86,8 @@ export default function Modal({
               leaveTo="opacity-0 scale-95"
             >
               <Dialog.Panel
+                data-ui="modal"
+                data-ui-surface="float"
                 className={cn(
                   "flex w-full flex-col overflow-hidden text-left align-middle",
                   "max-h-[calc(100dvh-2rem)]",
@@ -95,7 +97,7 @@ export default function Modal({
                 )}
               >
                 {(title || !hideCloseButton) && (
-                  <div className="flex items-start justify-between gap-4 border-b border-surface-divider px-5 py-4">
+                  <div data-ui="modal-header" className="flex items-start justify-between gap-4 border-b border-surface-divider px-5 py-4">
                     <div className="min-w-0">
                       {title && (
                         <Dialog.Title className="truncate text-base font-semibold text-foreground">
@@ -123,7 +125,7 @@ export default function Modal({
                 <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">{children}</div>
 
                 {footer && (
-                  <div className="flex flex-wrap items-center justify-end gap-2 border-t border-surface-divider px-5 py-4">
+                  <div data-ui="modal-footer" className="flex flex-wrap items-center justify-end gap-2 border-t border-surface-divider px-5 py-4">
                     {footer}
                   </div>
                 )}

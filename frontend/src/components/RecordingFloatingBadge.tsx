@@ -1,5 +1,7 @@
 "use client";
 
+import { ButtonBase } from '@/components/ui/nativeBases';
+import { SurfaceBase } from '@/components/ui/SurfaceBase';
 import { Pause, Play, Square, Trash2 } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 
@@ -104,8 +106,8 @@ export default function RecordingFloatingBadge() {
 
   return (
     <div className="fixed top-6 left-1/2 z-[var(--z-sticky)] -translate-x-1/2">
-      <div className="flex items-center gap-2 rounded-2xl border border-status-danger-border bg-surface-card px-4 py-2.5 shadow-float">
-        <button
+      <SurfaceBase kind="float" className="flex items-center gap-2 rounded-2xl border border-status-danger-border bg-surface-card px-4 py-2.5 shadow-float">
+        <ButtonBase
           type="button"
           onClick={handleNavigate}
           className="flex items-center gap-2"
@@ -120,12 +122,12 @@ export default function RecordingFloatingBadge() {
           <span className="ml-1 font-mono text-sm font-semibold text-foreground">
             {formatTime(elapsedSeconds)}
           </span>
-        </button>
+        </ButtonBase>
 
         <span className="mx-1 h-5 w-px bg-surface-inset" />
 
         {isRecording ? (
-          <button
+          <ButtonBase
             type="button"
             onClick={() => sendCommand("pause")}
             disabled={transportDisabled}
@@ -134,9 +136,9 @@ export default function RecordingFloatingBadge() {
             aria-label="Pause recording"
           >
             <Pause className="h-4 w-4" />
-          </button>
+          </ButtonBase>
         ) : (
-          <button
+          <ButtonBase
             type="button"
             onClick={() => sendCommand("resume")}
             disabled={transportDisabled}
@@ -145,10 +147,10 @@ export default function RecordingFloatingBadge() {
             aria-label="Resume recording"
           >
             <Play className="h-4 w-4" />
-          </button>
+          </ButtonBase>
         )}
 
-        <button
+        <ButtonBase chrome="action"
           type="button"
           onClick={() => sendCommand("stop")}
           disabled={stopDisabled}
@@ -157,9 +159,9 @@ export default function RecordingFloatingBadge() {
           aria-label="Stop recording"
         >
           <Square className="h-4 w-4 fill-current" />
-        </button>
+        </ButtonBase>
 
-        <button
+        <ButtonBase
           type="button"
           onClick={handleDiscard}
           disabled={stopDisabled}
@@ -168,8 +170,8 @@ export default function RecordingFloatingBadge() {
           aria-label="Discard recording"
         >
           <Trash2 className="h-4 w-4" />
-        </button>
-      </div>
+        </ButtonBase>
+      </SurfaceBase>
     </div>
   );
 }
