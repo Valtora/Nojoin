@@ -82,6 +82,17 @@ _OCR_USED_NOTE = (
     "searchable, but charts and diagrams are not described."
 )
 
+# For a vision call that failed on a page, where the model could take images.
+# The provider's error stays in the log: it can carry request details.
+_VISION_FAILED_WARNING = (
+    "Visual analysis failed on {failed} of {total} pages, so {pages} only the "
+    "text Nojoin could read without it. Check the server logs for the reason."
+)
+_VISION_FAILED_ONE_PAGE_WARNING = (
+    "Visual analysis failed, so this file holds only the text Nojoin could read "
+    "without it. Check the server logs for the reason."
+)
+
 
 def _resolve_backend_for_document(session, document: Document):
     """``(backend, reason)`` for this document's owner.
@@ -136,11 +147,13 @@ def _transcribe_batch(
     *,
     is_rendered: bool,
     on_page_done=None,
+    on_page_failed=None,
 ) -> dict[int, str]:
     """Vision-transcribe a batch of pages concurrently.
 
     Returns page number to Markdown for the ones that succeeded. A page that
-    fails is simply absent, and falls back to its structural text --
+    fails is absent, falls back to OCR or its structural text, and is reported
+    to ``on_page_failed`` so the document can say so --
     ``VisionUnsupportedError`` is re-raised because it condemns every remaining
     page, not just this one.
 
@@ -175,6 +188,8 @@ def _transcribe_batch(
                 logger.warning(
                     "Vision transcription failed for page %s: %s", page.page_number, e
                 )
+                if on_page_failed is not None:
+                    on_page_failed(page.page_number)
                 continue
             finally:
                 if on_page_done is not None:
@@ -376,6 +391,8 @@ class _PageWriter:
         self.use_vision = use_vision
         self.warning: Optional[str] = None
         self.used_ocr = False
+        # Pages whose vision call failed, which the document's warning counts.
+        self.vision_failures = 0
         self.stored: List[DocumentPage] = []
         # Progress within the batch in flight, counted against a baseline taken
         # before the batch begins. A set of page numbers rather than a tally:
@@ -405,6 +422,9 @@ class _PageWriter:
         self._settled.add(page_number)
         self._report_progress()
 
+    def _page_failed(self, page_number: int) -> None:
+        self.vision_failures += 1
+
     def _transcriptions(self, batch: List) -> dict[int, str]:
         if not self.use_vision:
             return {}
@@ -415,6 +435,7 @@ class _PageWriter:
                 submitted,
                 is_rendered=self._is_rendered,
                 on_page_done=self._page_settled,
+                on_page_failed=self._page_failed,
             )
         except VisionUnsupportedError as exc:
             self.use_vision = False
@@ -523,6 +544,39 @@ def _resolve_vision(session, document: Document):
     return backend, True, None
 
 
+def _unreadable_image_detail(writer: _PageWriter) -> str:
+    """Why an image yielded no text, for the error shown on its card."""
+    vision = (
+        "visual analysis by the AI model failed"
+        if writer.vision_failures
+        else "no vision-capable AI model was available"
+    )
+    if not ocr_is_available():
+        return f"{vision} and local OCR is not installed on this server."
+    return f"{vision}, and local OCR found no readable text in it."
+
+
+def _parse_warning(
+    warning: Optional[str], writer: _PageWriter, page_count: Optional[int]
+) -> Optional[str]:
+    """The warning shown on a parsed document's card, or None when all went well."""
+    parse_warning = warning or writer.warning
+    if parse_warning is None and writer.vision_failures:
+        if (page_count or 1) <= 1:
+            parse_warning = _VISION_FAILED_ONE_PAGE_WARNING
+        else:
+            parse_warning = _VISION_FAILED_WARNING.format(
+                failed=writer.vision_failures,
+                total=page_count,
+                pages="that page holds"
+                if writer.vision_failures == 1
+                else "those pages hold",
+            )
+    if parse_warning and writer.used_ocr:
+        parse_warning += _OCR_USED_NOTE
+    return parse_warning
+
+
 def _parse_document(session, document: Document, file_path: str) -> None:
     """Read ``file_path`` page by page, persist each page, then index it."""
     backend, use_vision, warning = _resolve_vision(session, document)
@@ -560,14 +614,9 @@ def _parse_document(session, document: Document, file_path: str) -> None:
     if is_vision_only_format(file_path) and not any(
         (page.content or "").strip() for page in writer.stored
     ):
-        detail = (
-            "no vision-capable AI model was available and local OCR is not "
-            "installed on this server."
-            if not ocr_is_available()
-            else "no vision-capable AI model was available, and local OCR found "
-            "no readable text in it."
+        raise RuntimeError(
+            f"This image could not be read: {_unreadable_image_detail(writer)}"
         )
-        raise RuntimeError(f"This image could not be read: {detail}")
 
     document.parse_stage = STAGE_INDEXING
     session.add(document)
@@ -579,10 +628,7 @@ def _parse_document(session, document: Document, file_path: str) -> None:
     session.commit()
 
     document.status = DocumentStatus.READY
-    parse_warning = warning or writer.warning
-    if parse_warning and writer.used_ocr:
-        parse_warning += _OCR_USED_NOTE
-    document.parse_warning = parse_warning
+    document.parse_warning = _parse_warning(warning, writer, document.page_count)
     document.parse_stage = None
     session.add(document)
     session.commit()
@@ -594,7 +640,7 @@ def _parse_document(session, document: Document, file_path: str) -> None:
         document.id,
         document.pages_parsed,
         total_chunks,
-        " (structural only)" if document.parse_warning else "",
+        " (with a warning)" if document.parse_warning else "",
     )
 
 

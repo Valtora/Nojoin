@@ -17,6 +17,7 @@ from backend.utils.vision import VisionImage
 
 from .markdown_tables import rows_to_markdown_table
 from .types import DocumentSource, PageSource
+from .vision_input import MAX_EDGE_PX
 
 logger = logging.getLogger(__name__)
 
@@ -33,12 +34,10 @@ RENDER_MIN_ZOOM = 1.5
 
 # Hard ceiling on a rendered page's long edge, whatever the floor asks for. A
 # page can be 200 inches square, and a floor-only zoom rendered that as a
-# 21,600 px bitmap (1.4 GB) that ended in an out-of-memory kill. 2576 px is the
-# largest long edge any supported provider uses: Claude's high-resolution tier
-# downscales past it, its standard tier past 1568, OpenAI's "high" detail past
-# 2048, and Gemini tiles at 768. At most 2576 x 2576, the bitmap stays under
-# 27 MB.
-RENDER_CEILING_PX = 2576
+# 21,600 px bitmap (1.4 GB) that ended in an out-of-memory kill. The ceiling is
+# the largest long edge any supported provider uses (vision_input.MAX_EDGE_PX).
+# At most 2576 x 2576, the bitmap stays under 27 MB.
+RENDER_CEILING_PX = MAX_EDGE_PX
 
 # Pillow's level 3 encodes a rendered page faster than its default 6 and, on
 # text pages, into a smaller file.
