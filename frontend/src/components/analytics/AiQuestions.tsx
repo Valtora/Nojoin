@@ -1,5 +1,6 @@
 "use client";
 
+import { ButtonBase } from '@/components/ui/nativeBases';
 import type { AnalyticsAiQuestion, AnalyticsSpeaker } from "@/types";
 
 import { buildSpeakerLookup } from "./aiTone";
@@ -60,14 +61,14 @@ export default function AiQuestions({
               Asked by {lookup.name(question.asked_by)}
               {question.asked_at_ms !== null &&
                 (onPlaySegment ? (
-                  <button
+                  <ButtonBase
                     type="button"
                     onClick={() => onPlaySegment(question.asked_at_ms as number)}
                     className="ml-1.5 tabular-nums text-action-text hover:text-action-text-hover hover:underline"
                     title={`Play from ${formatTimestamp(question.asked_at_ms)}`}
                   >
                     {formatTimestamp(question.asked_at_ms)}
-                  </button>
+                  </ButtonBase>
                 ) : (
                   <span className="ml-1.5 tabular-nums">
                     {formatTimestamp(question.asked_at_ms)}

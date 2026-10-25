@@ -1,5 +1,7 @@
 "use client";
 
+import { TextareaBase } from '@/components/ui/nativeBases';
+import { SurfaceBase } from '@/components/ui/SurfaceBase';
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 
@@ -167,7 +169,7 @@ export default function NoteOnSelectionPopover({
   // On the body, so no translucent transcript group (a stacking context)
   // keeps it under the lines after it.
   return createPortal(
-    <div
+    <SurfaceBase kind="float"
       ref={panelRef}
       role="dialog"
       aria-labelledby={titleId}
@@ -187,7 +189,7 @@ export default function NoteOnSelectionPopover({
           {quote}
         </blockquote>
       ) : null}
-      <textarea
+      <TextareaBase
         ref={boxRef}
         rows={3}
         value={text}
@@ -233,7 +235,7 @@ export default function NoteOnSelectionPopover({
           Save note
         </Button>
       </div>
-    </div>,
+    </SurfaceBase>,
     document.body,
   );
 }

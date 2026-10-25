@@ -1,5 +1,7 @@
 "use client";
 
+import { InputBase } from '@/components/ui/nativeBases';
+import { SurfaceBase } from '@/components/ui/SurfaceBase';
 import { useEffect, useId, useRef, useState } from "react";
 import { Settings } from "lucide-react";
 
@@ -75,7 +77,7 @@ export default function SearchSettingsMenu({
             className="fixed inset-0 z-[var(--z-dropdown)]"
             onClick={() => setOpen(false)}
           />
-          <div
+          <SurfaceBase kind="float"
             id={panelId}
             className="absolute right-0 top-full mt-2 w-48 bg-surface-card rounded-lg shadow-float border border-surface-border p-2 z-[var(--z-dropdown)] flex flex-col gap-1"
           >
@@ -83,7 +85,7 @@ export default function SearchSettingsMenu({
               Search Options
             </div>
             <label className="flex items-center gap-2 px-2 py-1.5 hover:bg-surface-inset rounded cursor-pointer">
-              <input
+              <InputBase
                 type="checkbox"
                 checked={caseSensitive}
                 onChange={(e) => setCaseSensitive(e.target.checked)}
@@ -92,7 +94,7 @@ export default function SearchSettingsMenu({
               <span className="text-sm text-contrast-muted">Case Sensitive</span>
             </label>
             <label className="flex items-center gap-2 px-2 py-1.5 hover:bg-surface-inset rounded cursor-pointer">
-              <input
+              <InputBase
                 type="checkbox"
                 checked={isFuzzy}
                 onChange={(e) => {
@@ -104,7 +106,7 @@ export default function SearchSettingsMenu({
               <span className="text-sm text-contrast-muted">Fuzzy Match</span>
             </label>
             <label className="flex items-center gap-2 px-2 py-1.5 hover:bg-surface-inset rounded cursor-pointer">
-              <input
+              <InputBase
                 type="checkbox"
                 checked={useRegex}
                 onChange={(e) => {
@@ -115,7 +117,7 @@ export default function SearchSettingsMenu({
               />
               <span className="text-sm text-contrast-muted">Regex</span>
             </label>
-          </div>
+          </SurfaceBase>
         </>
       )}
     </div>

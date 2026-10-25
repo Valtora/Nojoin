@@ -1,5 +1,6 @@
 "use client";
 
+import { ButtonBase } from '@/components/ui/nativeBases';
 import { ChevronRight, Loader2 } from "lucide-react";
 
 import { cn } from "@/lib/cn";
@@ -80,7 +81,7 @@ export const Note = ({
 
 /** One measured figure in the strip at the top of the tab. */
 export const StatTile = ({ label, value }: { label: string; value: string }) => (
-  <div className="rounded-surface-subtle bg-surface-inset px-3 py-2">
+  <div data-ui="surface" data-ui-surface="inset" className="rounded-surface-subtle bg-surface-inset px-3 py-2">
     <p className="text-xs text-contrast-helper">{label}</p>
     <p className="mt-0.5 text-lg font-semibold tabular-nums text-foreground">
       {value}
@@ -107,10 +108,10 @@ export const Prompt = ({
   onAction?: () => void;
   busy?: boolean;
 }) => (
-  <div className="flex flex-col items-start gap-2 rounded-surface-subtle bg-surface-inset px-3 py-3">
+  <div data-ui="surface" data-ui-surface="inset" className="flex flex-col items-start gap-2 rounded-surface-subtle bg-surface-inset px-3 py-3">
     <p className="text-xs text-contrast-helper">{message}</p>
     {actionLabel && onAction && (
-      <button
+      <ButtonBase chrome="action"
         type="button"
         {...loadingButtonProps(Boolean(busy), undefined, onAction)}
         className="inline-flex items-center gap-2 rounded-lg bg-action px-3 py-1.5 text-sm font-medium text-action-on transition-colors hover:bg-action-hover disabled:opacity-60 aria-disabled:opacity-60"
@@ -121,7 +122,7 @@ export const Prompt = ({
           actionIcon
         )}
         {actionLabel}
-      </button>
+      </ButtonBase>
     )}
   </div>
 );
@@ -152,12 +153,12 @@ export const StaleBanner = ({
 }) => (
   <p className="rounded-surface-subtle border border-status-warning-border bg-status-warning-bg px-3 py-2 text-xs text-status-warning-fg">
     {message}{" "}
-    <button
+    <ButtonBase
       type="button"
       onClick={onAction}
       className="font-medium underline underline-offset-2 hover:no-underline"
     >
       {actionLabel}
-    </button>
+    </ButtonBase>
   </p>
 );

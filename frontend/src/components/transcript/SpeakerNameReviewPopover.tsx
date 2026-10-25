@@ -1,5 +1,7 @@
 "use client";
 
+import { ButtonBase } from '@/components/ui/nativeBases';
+import { SurfaceBase } from '@/components/ui/SurfaceBase';
 import { useEffect, useId, useRef, useState, type FocusEvent, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 
@@ -96,7 +98,7 @@ export default function SpeakerNameReviewPopover({
 
   return (
     <>
-      <button
+      <ButtonBase
         ref={triggerRef}
         type="button"
         aria-label={`Confirm or dismiss the name ${name}`}
@@ -118,12 +120,12 @@ export default function SpeakerNameReviewPopover({
         >
           ?
         </span>
-      </button>
+      </ButtonBase>
       {/* On the body, as the line's menu is: a translucent group is a
           stacking context the lines after it would paint over. */}
       {open
         ? createPortal(
-            <div
+            <SurfaceBase kind="float"
               ref={panelRef}
               id={panelId}
               role="dialog"
@@ -161,7 +163,7 @@ export default function SpeakerNameReviewPopover({
                   Not {name}
                 </Button>
               </div>
-            </div>,
+            </SurfaceBase>,
             document.body,
           )
         : null}

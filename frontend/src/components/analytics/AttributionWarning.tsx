@@ -1,5 +1,6 @@
 "use client";
 
+import { ButtonBase } from '@/components/ui/nativeBases';
 import { AlertTriangle } from "lucide-react";
 
 import type { AnalyticsAttributionWarning, AnalyticsSpeaker } from "@/types";
@@ -64,13 +65,13 @@ export default function AttributionWarning({
             ))}
           </ul>
           {onReviewSpeakers && (
-            <button
+            <ButtonBase
               type="button"
               onClick={onReviewSpeakers}
               className="mt-1 font-medium underline underline-offset-2 hover:no-underline"
             >
               Review speakers
-            </button>
+            </ButtonBase>
           )}
         </div>
       </div>

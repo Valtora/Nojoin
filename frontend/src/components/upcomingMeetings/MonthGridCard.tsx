@@ -1,5 +1,7 @@
 "use client";
 
+import { ButtonBase } from '@/components/ui/nativeBases';
+import { SurfaceBase } from '@/components/ui/SurfaceBase';
 import { addMonths, format, isSameDay, isSameMonth } from "date-fns";
 import { CalendarRange, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 
@@ -39,7 +41,7 @@ export default function MonthGridCard({
   } = calendar;
 
   return (
-    <div className="density-surface flex h-full min-h-0 flex-col border border-surface-border bg-surface-card shadow-card">
+    <SurfaceBase kind="card" className="density-surface flex h-full min-h-0 flex-col border border-surface-border bg-surface-card shadow-card">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <CalendarRange className="h-5 w-5 shrink-0 text-action-text" />
         <h2 className="text-base font-semibold text-foreground">Calendar</h2>
@@ -144,7 +146,7 @@ export default function MonthGridCard({
             );
 
             return inCurrentMonth ? (
-              <button
+              <ButtonBase
                 key={day.toISOString()}
                 type="button"
                 aria-pressed={isSelectedDay}
@@ -152,7 +154,7 @@ export default function MonthGridCard({
                 className={`${dayClasses} focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring`}
               >
                 {dayContent}
-              </button>
+              </ButtonBase>
             ) : (
               // Adjacent-month days are padding: they carry no markers and are
               // not selectable, so the grid reads as one month rather than three.
@@ -163,6 +165,6 @@ export default function MonthGridCard({
           })}
         </div>
       </div>
-    </div>
+    </SurfaceBase>
   );
 }
