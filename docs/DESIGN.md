@@ -464,7 +464,7 @@ only. Build a surface from these before reaching for raw elements.
 `nativeBases.tsx` supplies `ButtonBase`, `InputBase`, `SelectBase` and `TextareaBase` for controls
 that already have their own token-backed recipes. The styled primitives use these same hosts.
 The bases forward native props and refs verbatim, add no wrappers, and do not merge classes,
-invent ids or supply a button type. An omitted type keeps the browser's submit behavior.
+invent ids or supply a button type. An omitted type keeps the browser's submit behaviour.
 Keep the existing styled primitives for new standard controls; use a base where an existing
 recipe or layout needs its native element unchanged.
 
@@ -473,7 +473,7 @@ recipe or layout needs its native element unchanged.
 `Card` and settings surfaces retain their existing token-backed recipes on this shared seam.
 A control, divider, avatar or placeholder using a card background is not itself a card.
 Linked recording cards put the same surface markers directly on Next's `Link`, retaining
-its navigation, prefetching and anchor behavior.
+its navigation, prefetching and anchor behaviour.
 
 The `data-ui` markers are inert under Default. Buttons distinguish `data-ui-chrome="action"`
 from `plain` rows, tabs and text controls. Text and date/time inputs use `data-ui-input="field"`;
