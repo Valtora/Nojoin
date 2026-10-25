@@ -244,7 +244,7 @@ export default function RecordingSideColumn({
         className="bg-surface-inset border-t border-control-border h-2 hover:bg-action transition-colors flex items-center justify-center group"
         onDragging={onResizeDragging}
       >
-        <SurfaceBase kind="pane" className="w-8 h-1 bg-surface-card rounded-full group-hover:bg-surface-card transition-colors" />
+        <div className="w-8 h-1 bg-surface-card rounded-full group-hover:bg-surface-card transition-colors" />
       </PanelResizeHandle>
 
       <Panel

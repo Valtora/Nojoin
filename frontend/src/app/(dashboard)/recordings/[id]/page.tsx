@@ -271,7 +271,7 @@ export default function RecordingPage({ params }: PageProps) {
                     className="bg-surface-inset border-l border-control-border w-2 hover:bg-action transition-colors flex items-center justify-center group"
                     onDragging={setIsPanelResizing}
                   >
-                    <SurfaceBase kind="pane" className="h-8 w-1 bg-surface-card rounded-full group-hover:bg-surface-card transition-colors" />
+                    <div className="h-8 w-1 bg-surface-card rounded-full group-hover:bg-surface-card transition-colors" />
                   </PanelResizeHandle>
 
                   {/* Sidebar: Speaker and Chat panels, each independently collapsible */}

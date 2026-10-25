@@ -354,6 +354,7 @@ export default function RecordingStatusDisplay({
                   {formatClock(Math.round(recording.duration_seconds || 0))}
                 </span>
                 <ButtonBase
+                  chrome="action"
                   type="button"
                   onClick={handleProcessingDiscard}
                   disabled={isDiscarding}
