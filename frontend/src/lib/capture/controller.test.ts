@@ -163,7 +163,7 @@ vi.mock("./shared", () => ({
     microphoneGain: 1,
     systemGain: 1,
     echoCancellation: true,
-    noiseSuppression: true,
+    noiseSuppression: false,
     autoGainControl: true,
   })),
   readPausedCaptureContext: sharedMocks.readPausedCaptureContext,
@@ -517,7 +517,7 @@ describe("capture controller", () => {
         microphoneGain: 1,
         systemGain: 1,
         echoCancellation: true,
-        noiseSuppression: true,
+        noiseSuppression: false,
         autoGainControl: true,
       },
     });

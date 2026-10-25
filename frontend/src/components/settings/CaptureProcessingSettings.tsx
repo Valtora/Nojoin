@@ -14,8 +14,8 @@ import { SETTINGS_BUTTON_SECONDARY, SETTINGS_CONTROL_END } from "./settingsContr
  * The browser-side audio processing toggles and the quiet-audio reminder reset.
  *
  * Separate from CaptureSettings because these sit behind the Advanced gate while
- * device selection and levels do not: all three ship enabled, suit almost
- * everyone, and are touched only when something sounds wrong.
+ * device selection and levels do not: the defaults suit most recordings, and
+ * these controls are touched only when something sounds wrong.
  */
 export default function CaptureProcessingSettings() {
   const { addNotification } = useNotificationStore();
@@ -57,7 +57,7 @@ export default function CaptureProcessingSettings() {
           labelId="recording-noise-suppression-label"
           descriptionId="recording-noise-suppression-help"
           label="Noise suppression"
-          description="Reduces steady background noise before the mic is mixed into the recording."
+          description="Reduces steady background noise before the mic is mixed into the recording. Off by default, because it makes speaker labels less accurate in most rooms."
           controlClassName={SETTINGS_CONTROL_END}
         >
           <Switch

@@ -369,7 +369,7 @@ class CaptureSourceReportCreate(SQLModel):
     configured_microphone_gain: float = 1.0
     configured_system_gain: float = 1.0
     configured_echo_cancellation: bool = True
-    configured_noise_suppression: bool = True
+    configured_noise_suppression: bool = False
     configured_auto_gain_control: bool = True
     failure_code: Optional[str] = None
     failure_message: Optional[str] = None

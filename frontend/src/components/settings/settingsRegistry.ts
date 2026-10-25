@@ -319,7 +319,7 @@ export const SETTINGS_REGISTRY: SettingsRegistryEntry[] = [
   {
     id: "recording-noise-suppression",
     label: "Noise suppression",
-    description: "Reduces steady background noise before the mic is mixed into the recording.",
+    description: "Reduces steady background noise before the mic is mixed into the recording. Off by default, because it makes speaker labels less accurate in most rooms.",
     category: "recording",
     access: "all",
     scope: "browser",
