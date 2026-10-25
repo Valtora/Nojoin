@@ -1,4 +1,5 @@
-"""Images fitted to the vision providers' limits before a model call (#698).
+"""Images fitted to the vision providers' limits before a model call (#698),
+and split into calls within their request limits (#714).
 
 Every image is generated here, at the size each test needs, rather than kept
 as a binary in the repository. Random noise stands in for a photo: it is the
@@ -16,18 +17,26 @@ from PIL import Image
 
 from backend.processing.documents import vision_input
 from backend.processing.documents.vision_input import (
-    MANY_IMAGES,
-    MANY_IMAGES_MAX_EDGE_PX,
+    MAX_BATCH_BYTES,
+    MAX_BATCH_IMAGES,
     MAX_EDGE_PX,
     MAX_IMAGE_BYTES,
     VisionImageTooLarge,
+    VisionImageUnreadable,
     fit_image_for_vision,
     fit_images_for_vision,
+    vision_batches,
 )
+from backend.tests.picture_fixtures import emf_drawing
 from backend.utils.vision import VisionImage
 
 # The Claude API's per-image limit, counted in base64, in its strictest reading.
 CLAUDE_BASE64_LIMIT = 5 * 1024 * 1024
+# The tightest request limit of the providers: Gemini's 20 MB of inline data,
+# read as base64 and as decimal megabytes. The Claude API takes 32 MB.
+GEMINI_REQUEST_LIMIT = 20_000_000
+# Past this many images in one request the Claude API takes 2000 px a side.
+CLAUDE_FULL_SIZE_IMAGES = 20
 
 
 def _encode(image: Image.Image, image_format: str, **options) -> bytes:
@@ -158,11 +167,40 @@ def test_a_gif_is_sent_as_png():
     assert (fitted.media_type, _opened(fitted).format) == ("image/png", "PNG")
 
 
-def test_bytes_pillow_cannot_read_go_as_they_are():
-    """A Word file's EMF drawing, say: the provider decides, as before."""
-    image = VisionImage(data=b"\x01\x00\x00\x00 not an image", media_type="image/emf")
+def _cut_short_png() -> bytes:
+    return _encode(_noise((300, 300)), "PNG")[:4000]
 
-    assert fit_image_for_vision(image) is image
+
+@pytest.mark.parametrize(
+    "make,media_type",
+    [
+        (emf_drawing, "image/x-emf"),
+        (_cut_short_png, "image/png"),
+        (lambda: b"not an image at all", "image/png"),
+    ],
+    ids=["emf", "cut-short-png", "junk"],
+)
+def test_bytes_pillow_cannot_read_are_refused(make, media_type):
+    """Sent as they were, a provider that refuses the type failed the call for
+    every picture beside them (#714)."""
+    with pytest.raises(VisionImageUnreadable):
+        fit_image_for_vision(VisionImage(data=make(), media_type=media_type))
+
+
+def test_a_page_leaves_out_what_pillow_cannot_read_and_keeps_the_order():
+    first = _encode(Image.new("RGB", (64, 64), (200, 0, 0)), "PNG")
+    second = _encode(Image.new("RGB", (64, 64), (0, 0, 200)), "PNG")
+    images = [
+        VisionImage(data=first, media_type="image/png"),
+        VisionImage(data=emf_drawing(), media_type="image/x-emf"),
+        VisionImage(data=second, media_type="image/png"),
+        VisionImage(data=b"junk", media_type="image/x-wmf"),
+    ]
+
+    fitted, left_out = fit_images_for_vision(images)
+
+    assert [image.data for image in fitted] == [first, second]
+    assert left_out == 2
 
 
 def test_an_image_past_the_pixel_cap_is_refused(monkeypatch):
@@ -173,13 +211,57 @@ def test_an_image_past_the_pixel_cap_is_refused(monkeypatch):
         fit_image_for_vision(VisionImage(data=data, media_type="image/png"))
 
 
-def test_many_images_in_one_call_fit_the_smaller_edge():
-    """The Claude API takes at most 2000 px a side past 20 images a request."""
+def test_a_page_with_many_pictures_keeps_them_at_full_size():
+    """Calls never carry more than 20 images, past which the Claude API takes
+    2000 px a side, so no picture is shrunk for having many neighbours."""
     data = _encode(Image.new("RGB", (2400, 60), (10, 10, 10)), "PNG")
-    images = [VisionImage(data=data, media_type="image/png")] * (MANY_IMAGES + 1)
+    images = [VisionImage(data=data, media_type="image/png")] * 30
 
-    fitted = fit_images_for_vision(images)
+    fitted, left_out = fit_images_for_vision(images)
 
-    assert {_opened(image).size for image in fitted} == {(MANY_IMAGES_MAX_EDGE_PX, 50)}
-    few = fit_images_for_vision(images[:MANY_IMAGES])
-    assert {_opened(image).size for image in few} == {(2400, 60)}
+    assert left_out == 0
+    assert {_opened(image).size for image in fitted} == {(2400, 60)}
+    assert MAX_BATCH_IMAGES <= CLAUDE_FULL_SIZE_IMAGES
+    assert max(len(batch) for batch in vision_batches(fitted)) <= MAX_BATCH_IMAGES
+
+
+def _sized(size_bytes: int, label: int) -> VisionImage:
+    return VisionImage(data=bytes([label]) * size_bytes, media_type="image/jpeg")
+
+
+def _base64_size(batch) -> int:
+    return sum(len(image.to_base64()) for image in batch)
+
+
+def test_ten_large_photos_go_in_calls_under_every_request_limit():
+    """Ten photos at the per-image limit are 47 MB of base64: past the Claude
+    API's 32 MB request limit in one call, which lost every one of them."""
+    photos = [_sized(MAX_IMAGE_BYTES, label) for label in range(10)]
+
+    batches = vision_batches(photos)
+
+    assert _base64_size(photos) > 32 * 1024 * 1024
+    assert [image for batch in batches for image in batch] == photos
+    assert all(_base64_size(batch) <= GEMINI_REQUEST_LIMIT for batch in batches)
+    assert all(sum(len(i.data) for i in batch) <= MAX_BATCH_BYTES for batch in batches)
+    # As large as the budget allows: four at the per-image limit to a call.
+    assert [len(batch) for batch in batches] == [4, 4, 2]
+
+
+def test_small_pictures_go_as_many_to_a_call_as_the_image_budget_allows():
+    pictures = [_sized(50_000, label) for label in range(MAX_BATCH_IMAGES * 2 + 3)]
+
+    batches = vision_batches(pictures)
+
+    assert [len(batch) for batch in batches] == [MAX_BATCH_IMAGES, MAX_BATCH_IMAGES, 3]
+    assert [image for batch in batches for image in batch] == pictures
+
+
+def test_a_picture_past_the_byte_budget_still_goes_alone():
+    """Fitting keeps every picture far below the budget; this only shows that
+    the split never drops or stalls on one that is not."""
+    huge = _sized(MAX_BATCH_BYTES + 1, 1)
+    small = _sized(10, 2)
+
+    assert vision_batches([small, huge, small]) == [[small], [huge], [small]]
+    assert vision_batches([]) == []
