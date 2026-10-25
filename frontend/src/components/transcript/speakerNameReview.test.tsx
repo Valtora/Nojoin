@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ComponentProps } from "react";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import TranscriptView from "@/components/TranscriptView";
 import type { RecordingSpeaker, TranscriptSegment } from "@/types";
@@ -15,6 +15,10 @@ beforeAll(() => {
 });
 afterAll(() => {
   Element.prototype.scrollIntoView = originalScrollIntoView;
+});
+// A test that hangs on fake timers must not leave them installed for the next one.
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 const SEGMENTS: TranscriptSegment[] = [
@@ -193,36 +197,32 @@ describe("suggested names on transcript lines", () => {
 
   it("keeps focus on the speaker when an input-focus timer is due before the close commits", async () => {
     vi.useFakeTimers();
-    try {
-      let finishReview = () => {};
-      const review = new Promise<void>((resolve) => (finishReview = resolve));
-      renderView({
-        speakers: [speaker({ local_name: "Alex", name_source: "voiceprint", name_pending: false })],
-        onReviewSpeakerName: () => review,
-      });
-      const line = document.querySelector('[data-segment-id="u0"]') as HTMLElement;
-      const alexName = within(line).getByRole("button", { name: "Alex" });
-      fireEvent.click(alexName);
-      const input = screen.getByPlaceholderText("Search or add...");
-      const restoredFocus = new Promise<void>((resolve) => {
-        alexName.addEventListener("focus", () => resolve(), { once: true });
-      });
-      fireEvent.click(screen.getByRole("button", { name: "Not Alex" }));
+    let finishReview = () => {};
+    const review = new Promise<void>((resolve) => (finishReview = resolve));
+    renderView({
+      speakers: [speaker({ local_name: "Alex", name_source: "voiceprint", name_pending: false })],
+      onReviewSpeakerName: () => review,
+    });
+    const line = document.querySelector('[data-segment-id="u0"]') as HTMLElement;
+    const alexName = within(line).getByRole("button", { name: "Alex" });
+    fireEvent.click(alexName);
+    const input = screen.getByPlaceholderText("Search or add...");
+    const restoredFocus = new Promise<void>((resolve) => {
+      alexName.addEventListener("focus", () => resolve(), { once: true });
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Not Alex" }));
 
-      await act(async () => {
-        finishReview();
-        await restoredFocus;
-        expect(alexName).toHaveFocus();
-        expect(input).toBeInTheDocument();
-        // Run due focus work after restoration, before React commits the close.
-        vi.advanceTimersByTime(50);
-      });
-
-      expect(input).not.toBeInTheDocument();
+    await act(async () => {
+      finishReview();
+      await restoredFocus;
       expect(alexName).toHaveFocus();
-    } finally {
-      vi.useRealTimers();
-    }
+      expect(input).toBeInTheDocument();
+      // Run due focus work after restoration, before React commits the close.
+      vi.advanceTimersByTime(50);
+    });
+
+    expect(input).not.toBeInTheDocument();
+    expect(alexName).toHaveFocus();
   });
 
   it("ignores the ? while its decision is sent", async () => {
