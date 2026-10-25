@@ -1,5 +1,6 @@
 'use client';
 
+import { SurfaceBase } from '@/components/ui/SurfaceBase';
 import { useEditor, EditorContent, Editor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { TableKit } from '@tiptap/extension-table';
@@ -114,8 +115,8 @@ export default function RichTextEditor({ content, onChange, editable = true, onE
     // anywhere still lands in the editor) and grows past it when long, and
     // the clearance padding is room after long notes, never extra height
     // for short ones.
-    <div className="flex h-full w-full flex-col overflow-y-auto bg-surface-card pb-clear-floating-0">
+    <SurfaceBase kind="pane" className="flex h-full w-full flex-col overflow-y-auto bg-surface-card pb-clear-floating-0">
       <EditorContent editor={editor} className="flex-1" />
-    </div>
+    </SurfaceBase>
   );
 }

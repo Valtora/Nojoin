@@ -1,5 +1,6 @@
 'use client';
 
+import { ButtonBase, InputBase } from '@/components/ui/nativeBases';
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useHydrated } from '@/lib/useHydrated';
 import { Upload, FileAudio, CheckCircle, Calendar, FileText } from 'lucide-react';
@@ -245,7 +246,7 @@ export default function ImportAudioModal({ isOpen, onClose, onSuccess }: ImportA
               ${uploadState === 'uploading' ? 'pointer-events-none opacity-75' : ''}
             `}
         >
-          <input
+          <InputBase
             ref={fileInputRef}
             type="file"
             accept={supportedFormats.join(',')}
@@ -263,12 +264,12 @@ export default function ImportAudioModal({ isOpen, onClose, onSuccess }: ImportA
                 {formatFileSize(selectedFile.size)}
               </p>
               {uploadState !== 'uploading' && (
-                <button
+                <ButtonBase
                   onClick={(e) => { e.stopPropagation(); handleRemoveFile(); }}
                   className="text-sm text-danger-text underline hover:text-danger-text-hover"
                 >
                   Remove
-                </button>
+                </ButtonBase>
               )}
             </div>
           ) : (

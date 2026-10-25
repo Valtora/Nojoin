@@ -1,5 +1,6 @@
 'use client';
 
+import { ButtonBase, InputBase } from '@/components/ui/nativeBases';
 import { useState, useRef, useCallback } from 'react';
 import {
     Upload,
@@ -370,7 +371,7 @@ export default function DocumentUploadModal({ isOpen, onClose, onSuccess, record
               ${isUploading ? 'pointer-events-none opacity-75' : ''}
             `}
                 >
-                    <input
+                    <InputBase
                         ref={fileInputRef}
                         type="file"
                         multiple
@@ -406,14 +407,14 @@ export default function DocumentUploadModal({ isOpen, onClose, onSuccess, record
                             <Sparkles aria-hidden="true" className="h-4 w-4 text-action-text" />
                             Analyse visually with AI
                         </span>
-                        <button
+                        <ButtonBase
                             type="button"
                             onClick={() => setDeepParseForAll(!allDeepParse)}
                             disabled={isUploading}
                             className="text-sm font-medium text-action-text underline disabled:cursor-not-allowed disabled:opacity-60"
                         >
                             {allDeepParse ? 'Turn off for all' : 'Turn on for all'}
-                        </button>
+                        </ButtonBase>
                     </div>
                 )}
 
@@ -464,14 +465,14 @@ export default function DocumentUploadModal({ isOpen, onClose, onSuccess, record
                                             />
                                         )}
                                         {!isUploading && item.status !== 'success' && (
-                                            <button
+                                            <ButtonBase
                                                 type="button"
                                                 onClick={() => handleRemoveFile(item.id)}
                                                 aria-label={`Remove ${item.file.name}`}
                                                 className="flex-shrink-0 text-contrast-icon-muted transition-colors hover:text-danger-text"
                                             >
                                                 <X aria-hidden="true" className="h-4 w-4" />
-                                            </button>
+                                            </ButtonBase>
                                         )}
                                     </div>
 
@@ -479,7 +480,7 @@ export default function DocumentUploadModal({ isOpen, onClose, onSuccess, record
                                         <label
                                             className={`mt-3 flex items-start gap-2 ${visionOnly || isUploading ? 'cursor-not-allowed' : 'cursor-pointer'}`}
                                         >
-                                            <input
+                                            <InputBase
                                                 type="checkbox"
                                                 checked={visionOnly ? true : item.deepParse}
                                                 disabled={visionOnly || isUploading}

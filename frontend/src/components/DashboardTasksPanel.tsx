@@ -1,5 +1,7 @@
 "use client";
 
+import { ButtonBase, InputBase } from '@/components/ui/nativeBases';
+import { SurfaceBase } from '@/components/ui/SurfaceBase';
 import { Check, Loader2 } from "lucide-react";
 
 import { UserTask } from "@/types";
@@ -81,7 +83,7 @@ export default function DashboardTasksPanel() {
   );
 
   return (
-    <div className="density-surface flex h-full min-h-0 flex-col border border-action-border bg-surface-card shadow-card">
+    <SurfaceBase kind="card" className="density-surface flex h-full min-h-0 flex-col border border-action-border bg-surface-card shadow-card">
       {/* One row: glyph, title, counts. The counts belong beside the title
           rather than under it, because they qualify it, and a stacked header
           would spend about 140px before the first task. */}
@@ -100,7 +102,7 @@ export default function DashboardTasksPanel() {
 
       {isComposerOpen ? (
         <form onSubmit={handleCreateTask} className="relative mt-6">
-          <input
+          <InputBase
             ref={titleInputRef}
             type="text"
             value={title}
@@ -116,13 +118,13 @@ export default function DashboardTasksPanel() {
           )}
         </form>
       ) : (
-        <button
+        <ButtonBase chrome="action"
           type="button"
           onClick={() => void handleOpenComposer()}
           className="mt-6 w-full border-0 border-b border-control-border px-1 py-3 text-left text-sm text-contrast-muted transition-colors hover:border-action-border hover:text-foreground"
         >
           Add a task...
-        </button>
+        </ButtonBase>
       )}
 
       {/* The list is what gives when the column is taller than this card's
@@ -131,7 +133,7 @@ export default function DashboardTasksPanel() {
           its natural height, so the header and composer never scroll away. */}
       <div className="mt-6 min-h-0 flex-1 space-y-6 overflow-y-auto">
         {loading ? (
-          <div className="density-surface-panel flex items-center gap-3 bg-surface-inset px-4 py-4 text-sm text-contrast-muted">
+          <div data-ui="surface" data-ui-surface="inset" className="density-surface-panel flex items-center gap-3 bg-surface-inset px-4 py-4 text-sm text-contrast-muted">
             <Loader2 className="h-4 w-4 animate-spin" />
             Loading your tasks...
           </div>
@@ -175,6 +177,6 @@ export default function DashboardTasksPanel() {
         onClose={handleCloseDeadlineModal}
         onSave={handleSaveDeadline}
       />
-    </div>
+    </SurfaceBase>
   );
 }

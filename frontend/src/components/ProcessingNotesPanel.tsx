@@ -1,5 +1,7 @@
 "use client";
 
+import { ButtonBase, TextareaBase } from '@/components/ui/nativeBases';
+import { SurfaceBase } from '@/components/ui/SurfaceBase';
 import {
   memo,
   useCallback,
@@ -141,22 +143,22 @@ function ConflictNotice({
       ) : null}
       <div className="mt-2 flex flex-wrap gap-2">
         {nothingToKeep ? null : (
-          <button
+          <ButtonBase chrome="action"
             type="button"
             onClick={onKeepMine}
             disabled={locked}
             className="rounded-pill border border-action-border bg-surface-card px-3 py-1 text-xs font-semibold text-action-text transition-colors hover:bg-action-tint disabled:cursor-not-allowed disabled:opacity-60"
           >
             {changed && mineIsBlank ? "Delete anyway" : "Keep mine"}
-          </button>
+          </ButtonBase>
         )}
-        <button
+        <ButtonBase chrome="action"
           type="button"
           onClick={onUseTheirs}
           className="rounded-pill border border-action-border bg-surface-card px-3 py-1 text-xs font-semibold text-action-text transition-colors hover:bg-action-tint"
         >
           {changed ? "Use theirs" : nothingToKeep ? "Dismiss" : "Discard mine"}
-        </button>
+        </ButtonBase>
       </div>
     </div>
   );
@@ -528,7 +530,7 @@ function ProcessingNotesPanel({
           : "";
 
   return (
-    <section className="density-surface flex h-full min-h-0 flex-col border border-surface-border bg-surface-card shadow-card">
+    <SurfaceBase as="section" kind="card" className="density-surface flex h-full min-h-0 flex-col border border-surface-border bg-surface-card shadow-card">
       {/* One row: title and save state. */}
       <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1">
         <h3 id={headingId} className="text-base font-semibold text-foreground">
@@ -553,7 +555,7 @@ function ProcessingNotesPanel({
         />
       ) : null}
       <div className="relative flex min-h-0 flex-1 flex-col">
-        <textarea
+        <TextareaBase
           ref={textareaRef}
           defaultValue={initialValue}
           onChange={handleChange}
@@ -570,7 +572,7 @@ function ProcessingNotesPanel({
             box from under the caret, so the reason is read out, and hands it
             back when the lock ends. Not a tab stop, since it does nothing. */}
         {disabled ? (
-          <div
+          <SurfaceBase kind="pane"
             ref={lockRef}
             role="group"
             aria-labelledby={lockTitleId}
@@ -588,7 +590,7 @@ function ProcessingNotesPanel({
                 {disabledMessage || "Your manual notes are being incorporated into the generated meeting notes."}
               </p>
             </div>
-          </div>
+          </SurfaceBase>
         ) : null}
       </div>
       {shownLength !== null ? (
@@ -643,7 +645,7 @@ function ProcessingNotesPanel({
       <p className="mt-3 text-xs text-contrast-helper">
         These notes are fed into note generation and the final notes will label them as user-authored.
       </p>
-    </section>
+    </SurfaceBase>
   );
 }
 

@@ -1,5 +1,7 @@
 "use client";
 
+import { ButtonBase, InputBase } from '@/components/ui/nativeBases';
+import { SurfaceBase } from '@/components/ui/SurfaceBase';
 import { useState, useEffect, useRef } from "react";
 
 import { DEMO_MODE } from "@/lib/demo";
@@ -399,30 +401,30 @@ export default function NotesView({
   return (
     <div id="meeting-notes" className="flex flex-col h-full relative min-h-0">
       {/* Toolbar */}
-      <div className="bg-surface-card border-b-2 border-control-border shadow-card z-10 flex flex-col">
+      <SurfaceBase kind="pane" className="bg-surface-card border-b-2 border-control-border shadow-card z-10 flex flex-col">
         {/* Row 1: Header & Global Actions */}
         <div className="px-3 md:px-6 py-3 flex flex-wrap items-center justify-between gap-2">
           {/* Formatting Toolbar */}
           <div className="flex flex-wrap items-center gap-1">
             {editor && (
               <>
-                <button
+                <ButtonBase
                   onClick={() => editor.chain().focus().toggleBold().run()}
                   disabled={!editor.can().chain().focus().toggleBold().run()}
                   className={`p-2 rounded hover:bg-surface-inset transition-colors ${editor.isActive("bold") ? "bg-surface-inset text-action-text" : "text-contrast-helper"}`}
                   title="Bold"
                 >
                   <Bold className="w-4 h-4" />
-                </button>
-                <button
+                </ButtonBase>
+                <ButtonBase
                   onClick={() => editor.chain().focus().toggleItalic().run()}
                   disabled={!editor.can().chain().focus().toggleItalic().run()}
                   className={`p-2 rounded hover:bg-surface-inset transition-colors ${editor.isActive("italic") ? "bg-surface-inset text-action-text" : "text-contrast-helper"}`}
                   title="Italic"
                 >
                   <Italic className="w-4 h-4" />
-                </button>
-                <button
+                </ButtonBase>
+                <ButtonBase
                   onClick={() => editor.chain().focus().toggleUnderline().run()}
                   disabled={
                     !editor.can().chain().focus().toggleUnderline().run()
@@ -431,9 +433,9 @@ export default function NotesView({
                   title="Underline"
                 >
                   <UnderlineIcon className="w-4 h-4" />
-                </button>
+                </ButtonBase>
                 <div className="w-px h-4 bg-surface-card mx-1" />
-                <button
+                <ButtonBase
                   onClick={() =>
                     editor.chain().focus().toggleBulletList().run()
                   }
@@ -441,8 +443,8 @@ export default function NotesView({
                   title="Bullet List"
                 >
                   <List className="w-4 h-4" />
-                </button>
-                <button
+                </ButtonBase>
+                <ButtonBase
                   onClick={() =>
                     editor.chain().focus().toggleOrderedList().run()
                   }
@@ -450,9 +452,9 @@ export default function NotesView({
                   title="Numbered List"
                 >
                   <ListOrdered className="w-4 h-4" />
-                </button>
+                </ButtonBase>
                 <div className="w-px h-4 bg-surface-card mx-1" />
-                <button
+                <ButtonBase
                   onClick={() => {
                     const previousUrl = editor.getAttributes("link").href;
                     setLinkModalUrl(previousUrl || "");
@@ -462,7 +464,7 @@ export default function NotesView({
                   title="Link"
                 >
                   <LinkIcon className="w-4 h-4" />
-                </button>
+                </ButtonBase>
                 <TableMenu editor={editor} />
               </>
             )}
@@ -473,7 +475,7 @@ export default function NotesView({
                 button's height: its icon is shorter than the button's text line,
                 so equal padding alone leaves the two a few pixels apart. */}
             <div className="flex items-stretch">
-              <button
+              <ButtonBase chrome="action"
                 {...loadingButtonProps(isGenerating, undefined, () => onGenerateNotes())}
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-action text-action-on text-sm rounded-l-md hover:bg-action-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors aria-disabled:opacity-50 aria-disabled:cursor-not-allowed"
                 title="Generate Notes with AI"
@@ -484,7 +486,7 @@ export default function NotesView({
                   <Sparkles className="w-4 h-4" />
                 )}
                 {isGenerating ? "Generating..." : generateNotesLabel}
-              </button>
+              </ButtonBase>
               {/* Structure picker: the plain button uses the default structure. */}
               <NotesTemplatePicker
                 disabled={isGenerating}
@@ -493,31 +495,31 @@ export default function NotesView({
               />
             </div>
             <div className="w-px h-4 bg-surface-card mx-1" />
-            <button
+            <ButtonBase
               onClick={onUndo}
               disabled={!canUndo}
               className="p-2 text-contrast-helper hover:text-contrast-muted rounded-md hover:bg-surface-inset transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
               title="Undo"
             >
               <Undo2 className="w-4 h-4" />
-            </button>
-            <button
+            </ButtonBase>
+            <ButtonBase
               onClick={onRedo}
               disabled={!canRedo}
               className="p-2 text-contrast-helper hover:text-contrast-muted rounded-md hover:bg-surface-inset transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
               title="Redo"
             >
               <Redo2 className="w-4 h-4" />
-            </button>
+            </ButtonBase>
             <div className="w-px h-4 bg-surface-card mx-1" />
-            <button
+            <ButtonBase
               onClick={onExport}
               className="p-2 text-contrast-helper hover:text-contrast-muted rounded-md hover:bg-surface-inset transition-colors"
               title="Export Notes"
             >
               <Download className="w-4 h-4" />
-            </button>
-            <button
+            </ButtonBase>
+            <ButtonBase
               onClick={() => {
                 const newState = !showSearch;
                 setShowSearch(newState);
@@ -527,8 +529,8 @@ export default function NotesView({
               title="Search"
             >
               <Search className="w-4 h-4" />
-            </button>
-            <button
+            </ButtonBase>
+            <ButtonBase
               onClick={() => {
                 if (showReplace) {
                   setShowReplace(false);
@@ -542,7 +544,7 @@ export default function NotesView({
               title="Find & Replace"
             >
               <ArrowRightLeft className="w-4 h-4" />
-            </button>
+            </ButtonBase>
           </div>
         </div>
 
@@ -551,7 +553,7 @@ export default function NotesView({
           <div className="px-3 md:px-6 pb-3 flex flex-wrap items-center gap-2 animate-in fade-in slide-in-from-top-2 duration-200 border-t border-control-border pt-3">
             <div className="relative min-w-40 flex-[1_1_11rem]">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-contrast-icon-muted" />
-              <input
+              <InputBase
                 placeholder="Find..."
                 value={findText}
                 onChange={(e) => setFindText(e.target.value)}
@@ -565,29 +567,29 @@ export default function NotesView({
                 autoFocus
               />
               {matches.length > 0 && (
-                <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-1 text-xs text-contrast-helper whitespace-nowrap bg-surface-card rounded px-1">
+                <SurfaceBase kind="pane" className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-1 text-xs text-contrast-helper whitespace-nowrap bg-surface-card rounded px-1">
                   <span>
                     {currentMatchIndex + 1} of {matches.length}
                   </span>
-                  <button
+                  <ButtonBase
                     onClick={prevMatch}
                     className="p-1 hover:bg-surface-inset rounded"
                   >
                     <ChevronUp className="w-3 h-3" />
-                  </button>
-                  <button
+                  </ButtonBase>
+                  <ButtonBase
                     onClick={nextMatch}
                     className="p-1 hover:bg-surface-inset rounded"
                   >
                     <ChevronDown className="w-3 h-3" />
-                  </button>
-                </div>
+                  </ButtonBase>
+                </SurfaceBase>
               )}
             </div>
             {showReplace && (
               <div className="relative min-w-40 flex-[1_1_11rem]">
                 <ArrowRightLeft className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-contrast-icon-muted" />
-                <input
+                <InputBase
                   placeholder="Replace..."
                   value={replaceText}
                   onChange={(e) => setReplaceText(e.target.value)}
@@ -599,13 +601,13 @@ export default function NotesView({
               <div className="flex flex-wrap items-center gap-2">
                 {/* Settings Toggle */}
                 <div className="relative">
-                  <button
+                  <ButtonBase
                     onClick={() => setShowSettings(!showSettings)}
                     className={`p-1.5 rounded-md transition-colors ${showSettings ? "bg-action-tint text-action-text" : "text-contrast-helper hover:bg-surface-inset hover:text-contrast-muted"}`}
                     title="Advanced Search Settings"
                   >
                     <Settings className="w-4 h-4" />
-                  </button>
+                  </ButtonBase>
 
                   {/* Settings Dropdown */}
                   {showSettings && (
@@ -614,12 +616,12 @@ export default function NotesView({
                         className="fixed inset-0 z-[var(--z-dropdown)]"
                         onClick={() => setShowSettings(false)}
                       />
-                      <div className="absolute right-0 top-full mt-2 w-48 bg-surface-card rounded-lg shadow-float border border-surface-border p-2 z-[var(--z-dropdown)] flex flex-col gap-1">
+                      <SurfaceBase kind="float" className="absolute right-0 top-full mt-2 w-48 bg-surface-card rounded-lg shadow-float border border-surface-border p-2 z-[var(--z-dropdown)] flex flex-col gap-1">
                         <div className="text-xs font-semibold text-contrast-icon-muted px-2 py-1 mb-1 border-b border-surface-border">
                           Search Options
                         </div>
                         <label className="flex items-center gap-2 px-2 py-1.5 hover:bg-surface-inset rounded cursor-pointer">
-                          <input
+                          <InputBase
                             type="checkbox"
                             checked={caseSensitive}
                             onChange={(e) => setCaseSensitive(e.target.checked)}
@@ -630,7 +632,7 @@ export default function NotesView({
                           </span>
                         </label>
                         <label className="flex items-center gap-2 px-2 py-1.5 hover:bg-surface-inset rounded cursor-pointer">
-                          <input
+                          <InputBase
                             type="checkbox"
                             checked={isFuzzy}
                             onChange={(e) => {
@@ -644,7 +646,7 @@ export default function NotesView({
                           </span>
                         </label>
                         <label className="flex items-center gap-2 px-2 py-1.5 hover:bg-surface-inset rounded cursor-pointer">
-                          <input
+                          <InputBase
                             type="checkbox"
                             checked={useRegex}
                             onChange={(e) => {
@@ -657,37 +659,37 @@ export default function NotesView({
                             Regex
                           </span>
                         </label>
-                      </div>
+                      </SurfaceBase>
                     </>
                   )}
                 </div>
 
                 <div className="w-px h-4 bg-surface-card mx-1" />
 
-                <button
+                <ButtonBase chrome="action"
                   onClick={nextMatch}
                   disabled={matches.length === 0}
                   className="px-3 py-1.5 bg-surface-inset text-contrast-muted text-sm rounded-md hover:bg-surface-inset disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap shadow-card border border-surface-border"
                 >
                   Find Next
-                </button>
-                <button
+                </ButtonBase>
+                <ButtonBase chrome="action"
                   {...loadingButtonProps(isSubmitting, matches.length === 0, handleReplaceCurrent)}
                   className="px-3 py-1.5 bg-surface-inset text-contrast-muted text-sm rounded-md hover:bg-surface-inset disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap shadow-card border border-surface-border aria-disabled:opacity-50 aria-disabled:cursor-not-allowed"
                 >
                   Replace
-                </button>
-                <button
+                </ButtonBase>
+                <ButtonBase chrome="action"
                   {...loadingButtonProps(isSubmitting, !findText, handleFindReplaceSubmit)}
                   className="px-3 py-1.5 bg-action text-action-on text-sm rounded-md hover:bg-action-hover disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap shadow-card aria-disabled:opacity-50 aria-disabled:cursor-not-allowed"
                 >
                   Replace All
-                </button>
+                </ButtonBase>
               </div>
             )}
           </div>
         )}
-      </div>
+      </SurfaceBase>
 
       {/* Notes Content */}
       <div className="flex-1 overflow-y-auto min-h-0">
@@ -709,7 +711,7 @@ export default function NotesView({
               Click &quot;Generate Notes&quot; to create AI-powered meeting
               notes from the transcript.
             </p>
-            <button
+            <ButtonBase chrome="action"
               {...loadingButtonProps(isGenerating, undefined, () => onGenerateNotes())}
               className="flex items-center gap-2 px-4 py-2 bg-action text-action-on rounded-md hover:bg-action-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors aria-disabled:opacity-50 aria-disabled:cursor-not-allowed"
             >
@@ -719,7 +721,7 @@ export default function NotesView({
                 <Sparkles className="w-4 h-4" />
               )}
               {isGenerating ? "Generating..." : generateNotesLabel}
-            </button>
+            </ButtonBase>
           </div>
         )}
       </div>
