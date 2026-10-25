@@ -1,11 +1,16 @@
 """Images fitted to every vision provider's limits, for the model call only.
 
 An uploaded image, a still or file on a timeline note, a rendered PDF page and
-a picture embedded in a slide all reach the model through here. One that is
-already a small PNG or JPEG goes as it is. Anything else is scaled down to the
-largest size any provider reads and re-encoded within the tightest per-image
-byte limit, so a large photo or screenshot is read rather than refused. The
+a picture embedded in a slide or a Word file all reach the model through here.
+One that is already a small PNG or JPEG goes as it is. Anything else is scaled
+down to the largest size any provider reads and re-encoded within the tightest
+per-image byte limit, so a large photo or screenshot is read rather than
+refused. A picture Pillow cannot open, such as an EMF drawing, is left out. The
 stored file is never touched: the copy exists only for the call.
+
+A page's pictures are then split, in order, into calls within the request
+limits below, so a Word file full of photos is read in several calls rather
+than refused as one oversized request.
 
 Pillow is imported inside the functions, as the parsers import their
 libraries, so importing this module stays cheap.
@@ -15,7 +20,7 @@ from __future__ import annotations
 
 import io
 import logging
-from typing import TYPE_CHECKING, List, Sequence
+from typing import TYPE_CHECKING, List, Sequence, Tuple
 
 from backend.utils.vision import VisionImage
 
@@ -30,10 +35,21 @@ logger = logging.getLogger(__name__)
 # no model anything more.
 MAX_EDGE_PX = 2576
 
-# The Claude API takes at most 2000 px a side once one request carries more
-# than 20 images, which a Word file's or a slide's pictures can.
-MANY_IMAGES = 20
-MANY_IMAGES_MAX_EDGE_PX = 2000
+# Pictures in one call. The answer must describe them all within the 8,192
+# output tokens a vision call asks for (``generate_text_from_images``), and a
+# dense chart or a screenshot of text can take a thousand; an answer cut off at
+# that ceiling fails the whole call. Eight pictures are also at most about
+# 38,000 input tokens on Claude's high-resolution tier (4,784 each), and a
+# local model spending a thousand or more tokens a picture still fits Nojoin's
+# default Ollama window of 32,768. Keep it at 20 or under: past 20 images in a
+# request, the Claude API takes at most 2000 px a side.
+MAX_BATCH_IMAGES = 8
+
+# Bytes of file across one call's pictures. Base64 adds a third on the wire,
+# so this is about 18.7 MB: under Gemini's 20 MB for a request's inline data,
+# the tightest of the providers (the Claude API takes 32 MB a request, OpenAI
+# 50 MB). Four pictures at MAX_IMAGE_BYTES fit, so any one picture always does.
+MAX_BATCH_BYTES = 14_000_000
 
 # Bytes of file per image. The Claude API sets the tightest per-image limit of
 # the providers and counts it in base64, a third larger than the file: 3.5 MB
@@ -60,10 +76,55 @@ class VisionImageTooLarge(RuntimeError):
     """The image has more pixels than Nojoin decodes for visual analysis."""
 
 
-def fit_images_for_vision(images: Sequence[VisionImage]) -> List[VisionImage]:
-    """Each image of one call, within every provider's limits for that call."""
-    max_edge = MANY_IMAGES_MAX_EDGE_PX if len(images) > MANY_IMAGES else MAX_EDGE_PX
-    return [fit_image_for_vision(image, max_edge_px=max_edge) for image in images]
+class VisionImageUnreadable(RuntimeError):
+    """Pillow cannot open the image, so no model is sent it."""
+
+
+def fit_images_for_vision(
+    images: Sequence[VisionImage],
+) -> Tuple[List[VisionImage], int]:
+    """A page's images fitted for the model, in order, and how many were left out.
+
+    A picture Pillow cannot open is left out rather than sent: a provider that
+    refuses its type would fail the call for every picture beside it.
+    ``VisionImageTooLarge`` still propagates.
+    """
+    fitted: List[VisionImage] = []
+    left_out = 0
+    for index, image in enumerate(images):
+        try:
+            fitted.append(fit_image_for_vision(image))
+        except VisionImageUnreadable as exc:
+            left_out += 1
+            logger.info(
+                "Picture %s (%s) left out of visual analysis: %s",
+                index + 1,
+                image.media_type,
+                exc,
+            )
+    return fitted, left_out
+
+
+def vision_batches(images: Sequence[VisionImage]) -> List[List[VisionImage]]:
+    """``images`` in order, cut into calls within the per-call budgets.
+
+    Each call takes as many of the next pictures as fit, which for an
+    in-order split is also the fewest calls, so the prompt is repeated no more
+    often than the limits force.
+    """
+    batches: List[List[VisionImage]] = []
+    current: List[VisionImage] = []
+    size = 0
+    for image in images:
+        full = len(current) >= MAX_BATCH_IMAGES
+        if current and (full or size + len(image.data) > MAX_BATCH_BYTES):
+            batches.append(current)
+            current, size = [], 0
+        current.append(image)
+        size += len(image.data)
+    if current:
+        batches.append(current)
+    return batches
 
 
 def fit_image_for_vision(
@@ -77,15 +138,18 @@ def fit_image_for_vision(
     EXIF rotation is applied and transparency laid over white, so the model
     sees the picture as a viewer shows it on a page. A PNG stays PNG while it
     fits, which keeps text sharp; a photo, or a PNG too large to fit, becomes
-    a JPEG. Raises ``VisionImageTooLarge`` past ``MAX_DECODED_PIXELS``. Bytes
-    Pillow cannot read, such as a Word file's EMF drawing, go as they are, and
-    the provider decides.
+    a JPEG. Raises ``VisionImageTooLarge`` past ``MAX_DECODED_PIXELS``, and
+    ``VisionImageUnreadable`` for bytes Pillow cannot open, such as a Word
+    file's EMF or WMF drawing.
     """
     from PIL import Image, UnidentifiedImageError
 
     try:
         with Image.open(io.BytesIO(image.data)) as source:
             if _sendable_as_is(source, len(image.data), max_edge_px, max_bytes):
+                # Decoded once, so a file cut short is left out here rather
+                # than refused by the provider along with its neighbours.
+                source.load()
                 media_type = _MEDIA_TYPES[source.format or ""]
                 if media_type == image.media_type:
                     return image
@@ -97,8 +161,9 @@ def fit_image_for_vision(
             "This image has too many pixels for visual analysis."
         ) from exc
     except (UnidentifiedImageError, OSError, SyntaxError, ValueError) as exc:
-        logger.info("Image sent as uploaded: Pillow could not read it (%s).", exc)
-        return image
+        # Pillow identifies an EMF or WMF drawing but cannot draw one off
+        # Windows, so it fails here, at the decode, as a corrupt file does.
+        raise VisionImageUnreadable(f"Pillow cannot open it ({exc}).") from exc
     logger.info(
         "Image fitted for visual analysis: %s bytes of %s to %s bytes of %s.",
         len(image.data),

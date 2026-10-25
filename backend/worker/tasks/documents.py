@@ -34,7 +34,11 @@ from backend.processing.documents import (
     open_document,
 )
 from backend.processing.documents.ocr import ocr_images, ocr_is_available
-from backend.processing.documents.vision import merge_page_content, transcribe_page
+from backend.processing.documents.vision import (
+    PageTranscription,
+    merge_page_content,
+    transcribe_page,
+)
 from backend.processing.text_embedding_version import TEXT_EMBEDDING_VERSION
 from backend.utils.note_attachments import feeds_notes
 from backend.utils.vision import VisionUnsupportedError
@@ -92,6 +96,25 @@ _VISION_FAILED_ONE_PAGE_WARNING = (
     "Visual analysis failed, so this file holds only the text Nojoin could read "
     "without it. Check the server logs for the reason."
 )
+_CHECK_THE_LOGS = " Check the server logs for the reason."
+
+# For pictures whose call failed on a page that other calls described: the
+# page keeps those descriptions, so it is not counted as a failed page.
+_PICTURE_FAILED_NOTE = "Visual analysis failed on 1 picture, so it is not described."
+_PICTURES_FAILED_NOTE = (
+    "Visual analysis failed on {count} pictures, so they are not described."
+)
+
+# For pictures Pillow cannot open, which are left out rather than sent: a
+# provider that refuses one would fail the call for the pictures beside it.
+_PICTURE_LEFT_OUT_NOTE = (
+    "Visual analysis left out 1 picture Nojoin cannot open, such as an EMF or "
+    "WMF drawing."
+)
+_PICTURES_LEFT_OUT_NOTE = (
+    "Visual analysis left out {count} pictures Nojoin cannot open, such as EMF "
+    "or WMF drawings."
+)
 
 
 def _resolve_backend_for_document(session, document: Document):
@@ -141,13 +164,14 @@ def _existing_page_numbers(session, document_id: int) -> set[int]:
     return set(rows)
 
 
-def _transcribe_batch(
+def _transcribe_batch(  # noqa: PLR0913 - one callback per thing the writer counts
     backend,
     pages,
     *,
     is_rendered: bool,
     on_page_done=None,
     on_page_failed=None,
+    on_pictures_missed=None,
 ) -> dict[int, str]:
     """Vision-transcribe a batch of pages concurrently.
 
@@ -155,7 +179,9 @@ def _transcribe_batch(
     fails is absent, falls back to OCR or its structural text, and is reported
     to ``on_page_failed`` so the document can say so --
     ``VisionUnsupportedError`` is re-raised because it condemns every remaining
-    page, not just this one.
+    page, not just this one. ``on_pictures_missed`` gets each page's pictures
+    left out as unreadable, and those lost to a failed call on a page whose
+    other calls succeeded.
 
     ``on_page_done`` is called with each page's number as its call settles,
     successfully or not, which is what makes progress granular: pages are
@@ -180,7 +206,7 @@ def _transcribe_batch(
         for future in concurrent.futures.as_completed(futures):
             page = futures[future]
             try:
-                text = future.result()
+                transcription = future.result()
             except VisionUnsupportedError as exc:
                 unsupported = exc
                 continue
@@ -194,12 +220,35 @@ def _transcribe_batch(
             finally:
                 if on_page_done is not None:
                     on_page_done(page.page_number)
-            if text:
-                results[page.page_number] = text
+            _record_transcription(
+                page.page_number,
+                transcription,
+                results,
+                on_page_failed,
+                on_pictures_missed,
+            )
 
     if unsupported is not None:
         raise unsupported
     return results
+
+
+def _record_transcription(
+    page_number: int,
+    transcription: PageTranscription,
+    results: dict[int, str],
+    on_page_failed,
+    on_pictures_missed,
+) -> None:
+    """File one page's text, and report what its calls did not describe."""
+    if transcription.text:
+        results[page_number] = transcription.text
+    elif transcription.page_failed and on_page_failed is not None:
+        on_page_failed(page_number)
+    if on_pictures_missed is not None:
+        # A failed page's pictures are counted with the page instead.
+        failed = 0 if transcription.page_failed else transcription.failed
+        on_pictures_missed(transcription.left_out, failed)
 
 
 def _index_page(session, document: Document, page: DocumentPage) -> int:
@@ -393,6 +442,10 @@ class _PageWriter:
         self.used_ocr = False
         # Pages whose vision call failed, which the document's warning counts.
         self.vision_failures = 0
+        # Pictures left out as unreadable, and pictures lost to a failed call
+        # on a page that other calls described. The warning counts both.
+        self.pictures_left_out = 0
+        self.pictures_failed = 0
         self.stored: List[DocumentPage] = []
         # Progress within the batch in flight, counted against a baseline taken
         # before the batch begins. A set of page numbers rather than a tally:
@@ -425,6 +478,10 @@ class _PageWriter:
     def _page_failed(self, page_number: int) -> None:
         self.vision_failures += 1
 
+    def _pictures_missed(self, left_out: int, failed: int) -> None:
+        self.pictures_left_out += left_out
+        self.pictures_failed += failed
+
     def _transcriptions(self, batch: List) -> dict[int, str]:
         if not self.use_vision:
             return {}
@@ -436,6 +493,7 @@ class _PageWriter:
                 is_rendered=self._is_rendered,
                 on_page_done=self._page_settled,
                 on_page_failed=self._page_failed,
+                on_pictures_missed=self._pictures_missed,
             )
         except VisionUnsupportedError as exc:
             self.use_vision = False
@@ -546,6 +604,9 @@ def _resolve_vision(session, document: Document):
 
 def _unreadable_image_detail(writer: _PageWriter) -> str:
     """Why an image yielded no text, for the error shown on its card."""
+    if writer.pictures_left_out and not writer.vision_failures:
+        # OCR reads through Pillow too, so it could not open the file either.
+        return "the file is not a picture Nojoin can open."
     vision = (
         "visual analysis by the AI model failed"
         if writer.vision_failures
@@ -556,12 +617,35 @@ def _unreadable_image_detail(writer: _PageWriter) -> str:
     return f"{vision}, and local OCR found no readable text in it."
 
 
+def _picture_notes(writer: _PageWriter, *, logs_named: bool) -> List[str]:
+    """Sentences on pictures the model did not describe, for the warning."""
+    notes: List[str] = []
+    failed = writer.pictures_failed
+    if failed:
+        note = (
+            _PICTURE_FAILED_NOTE
+            if failed == 1
+            else _PICTURES_FAILED_NOTE.format(count=failed)
+        )
+        notes.append(note if logs_named else note + _CHECK_THE_LOGS)
+    left_out = writer.pictures_left_out
+    if left_out:
+        notes.append(
+            _PICTURE_LEFT_OUT_NOTE
+            if left_out == 1
+            else _PICTURES_LEFT_OUT_NOTE.format(count=left_out)
+        )
+    return notes
+
+
 def _parse_warning(
     warning: Optional[str], writer: _PageWriter, page_count: Optional[int]
 ) -> Optional[str]:
     """The warning shown on a parsed document's card, or None when all went well."""
     parse_warning = warning or writer.warning
+    logs_named = False
     if parse_warning is None and writer.vision_failures:
+        logs_named = True
         if (page_count or 1) <= 1:
             parse_warning = _VISION_FAILED_ONE_PAGE_WARNING
         else:
@@ -572,6 +656,8 @@ def _parse_warning(
                 if writer.vision_failures == 1
                 else "those pages hold",
             )
+    sentences = [parse_warning, *_picture_notes(writer, logs_named=logs_named)]
+    parse_warning = " ".join(s for s in sentences if s) or None
     if parse_warning and writer.used_ocr:
         parse_warning += _OCR_USED_NOTE
     return parse_warning

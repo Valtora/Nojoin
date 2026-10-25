@@ -7,6 +7,8 @@ provider is contacted.
 
 from __future__ import annotations
 
+import io
+
 import pytest
 
 from backend.models.document_page import PageParseMode
@@ -19,12 +21,23 @@ from backend.utils.vision import VisionImage, VisionUnsupportedError
 from backend.worker.tasks.documents import _transcribe_batch
 
 
+def _png(color=(40, 120, 200), size=(32, 32)) -> bytes:
+    import io
+
+    from PIL import Image
+
+    buffer = io.BytesIO()
+    Image.new("RGB", size, color).save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
 def _page(number: int, *, with_image: bool = True) -> PageSource:
+    # A real PNG: bytes Pillow cannot open are left out, never sent (#714).
     return PageSource(
         page_number=number,
         text=f"structural text {number}",
         images=(
-            [VisionImage(data=b"png", media_type="image/png")] if with_image else []
+            [VisionImage(data=_png(), media_type="image/png")] if with_image else []
         ),
     )
 
@@ -364,7 +377,7 @@ def _progress_writer(monkeypatch, *, use_vision, transcriptions=None, ocr=None):
     if transcriptions is not None:
 
         def _fake_batch(
-            backend, pages, *, is_rendered, on_page_done=None, on_page_failed=None
+            backend, pages, *, is_rendered, on_page_done=None, **_callbacks
         ):
             # Mirror the real contract: settle one page at a time, by number.
             for page in pages:
@@ -609,7 +622,7 @@ def test_an_image_whose_vision_call_failed_says_so_in_its_error(image_parse):
 def test_a_document_counts_the_pages_whose_vision_call_failed(monkeypatch):
     import backend.worker.tasks.documents as documents_task
 
-    def _batch(backend, pages, *, is_rendered, on_page_done=None, on_page_failed=None):
+    def _batch(backend, pages, *, is_rendered, on_page_failed=None, **_callbacks):
         for page in pages:
             if page.page_number in (2, 5):
                 on_page_failed(page.page_number)
@@ -652,6 +665,369 @@ def test_the_model_gets_a_fitted_copy_and_the_page_keeps_its_original(tmp_path):
     )
     backend = _ClaudeLikeBackend()
 
-    assert transcribe_page(backend, page, is_rendered_page=True)
+    assert transcribe_page(backend, page, is_rendered_page=True).text
     assert page.images[0].data == original
     assert backend.seen[0][3] == "image/jpeg"
+
+
+# ---------------------------------------------------------------------------
+# A page's pictures in several calls (#714)
+# ---------------------------------------------------------------------------
+
+
+class _ClaudeRequestBackend:
+    """Refuses a call as the Claude API does: past 32 MB a request, past 5 MB
+    of base64 an image, or carrying an image it cannot decode. Records the
+    labels of the pictures in each call it answers, and fails the calls
+    numbered in ``fail_calls`` as an overloaded provider would."""
+
+    REQUEST_LIMIT = 32 * 1000 * 1000
+    IMAGE_LIMIT = 5 * 1024 * 1024
+
+    def __init__(self, fail_calls=()):
+        self.fail_calls = set(fail_calls)
+        self.attempts = 0
+        self.calls: list[list[str]] = []
+        self.request_sizes: list[int] = []
+
+    def generate_text_from_images(self, prompt, images, timeout=120, max_tokens=8192):
+        from backend.tests.picture_fixtures import label_of
+
+        self.attempts += 1
+        size = len(prompt) + sum(len(image.to_base64()) for image in images)
+        if size > self.REQUEST_LIMIT:
+            raise RuntimeError("413 request_too_large: request exceeds 32 MB")
+        labels = []
+        for image in images:
+            if len(image.to_base64()) > self.IMAGE_LIMIT:
+                raise RuntimeError("400 invalid_request_error: image exceeds 5 MB")
+            try:
+                labels.append(label_of(image.data))
+            except OSError as exc:
+                raise RuntimeError(
+                    "400 invalid_request_error: Could not process image"
+                ) from exc
+        if self.attempts in self.fail_calls:
+            raise RuntimeError("529 overloaded_error")
+        self.calls.append(labels)
+        self.request_sizes.append(size)
+        return f"Pictures {', '.join(labels)}."
+
+
+def _pictures(count: int) -> list[VisionImage]:
+    """``count`` small JPEGs labelled 1, 2, 3 and on."""
+    from backend.tests.picture_fixtures import jpeg, labelled
+
+    base = jpeg()
+    return [
+        VisionImage(data=labelled(base, str(number)), media_type="image/jpeg")
+        for number in range(1, count + 1)
+    ]
+
+
+def _described(first: int, last: int) -> str:
+    """The stub's answer for a call carrying pictures ``first`` to ``last``."""
+    return f"Pictures {', '.join(str(n) for n in range(first, last + 1))}."
+
+
+def _emf() -> VisionImage:
+    from backend.tests.picture_fixtures import emf_drawing
+
+    return VisionImage(data=emf_drawing(), media_type="image/x-emf")
+
+
+def _figures(images) -> PageSource:
+    return PageSource(page_number=1, title="Site visit", text="", images=images)
+
+
+def _transcribe(backend, images):
+    from backend.processing.documents.vision import transcribe_page
+
+    return transcribe_page(backend, _figures(images), is_rendered_page=False)
+
+
+def test_a_page_of_many_pictures_is_read_in_calls_joined_in_order():
+    from backend.processing.documents.vision_input import MAX_BATCH_IMAGES
+
+    count = MAX_BATCH_IMAGES * 2 + 3
+    backend = _ClaudeRequestBackend()
+
+    transcription = _transcribe(backend, _pictures(count))
+
+    numbers = [str(n) for n in range(1, count + 1)]
+    assert backend.calls == [
+        numbers[:MAX_BATCH_IMAGES],
+        numbers[MAX_BATCH_IMAGES : 2 * MAX_BATCH_IMAGES],
+        numbers[2 * MAX_BATCH_IMAGES :],
+    ]
+    assert transcription.text == "\n\n".join(
+        f"Pictures {', '.join(call)}." for call in backend.calls
+    )
+    assert (transcription.left_out, transcription.failed) == (0, 0)
+
+
+def test_a_failed_call_costs_only_its_own_pictures():
+    from backend.processing.documents.vision_input import MAX_BATCH_IMAGES as per_call
+
+    backend = _ClaudeRequestBackend(fail_calls={2})
+
+    transcription = _transcribe(backend, _pictures(per_call * 2 + 3))
+
+    assert transcription.text == (
+        f"{_described(1, per_call)}\n\n{_described(per_call * 2 + 1, per_call * 2 + 3)}"
+    )
+    assert transcription.failed == per_call
+    assert not transcription.page_failed
+
+
+def test_a_page_fails_only_when_every_call_did():
+    backend = _ClaudeRequestBackend(fail_calls={1, 2})
+
+    transcription = _transcribe(backend, _pictures(10))
+
+    assert (transcription.text, transcription.failed) == (None, 10)
+    assert transcription.page_failed
+
+
+def test_a_picture_pillow_cannot_read_is_left_out_not_sent():
+    """An EMF drawing went with its neighbours, the provider refused it, and
+    the whole call failed (#714)."""
+    first, second = _pictures(2)
+    backend = _ClaudeRequestBackend()
+
+    transcription = _transcribe(backend, [first, _emf(), second])
+
+    assert backend.calls == [["1", "2"]]
+    assert transcription.text == _described(1, 2)
+    assert transcription.left_out == 1
+
+
+def test_a_page_of_only_unreadable_pictures_makes_no_call():
+    backend = _ClaudeRequestBackend()
+
+    transcription = _transcribe(backend, [_emf(), _emf()])
+
+    assert backend.attempts == 0
+    assert (transcription.text, transcription.left_out) == (None, 2)
+    assert not transcription.page_failed
+
+
+class _FailsSomeCalls(_ClaudeRequestBackend):
+    """Fails page 3's call and page 2's second one. Pages run concurrently, so
+    a call is picked out by its page and its first picture, not by its order."""
+
+    def __init__(self, second_call_starts_at: int):
+        super().__init__()
+        self.second_call_starts_at = str(second_call_starts_at)
+
+    def generate_text_from_images(self, prompt, images, timeout=120, max_tokens=8192):
+        from backend.tests.picture_fixtures import label_of
+
+        first = label_of(images[0].data)
+        if "page 3" in prompt or (
+            "page 2" in prompt and first == self.second_call_starts_at
+        ):
+            raise RuntimeError("529 overloaded_error")
+        return super().generate_text_from_images(prompt, images, timeout, max_tokens)
+
+
+def test_the_fan_out_reports_what_each_page_did_not_describe():
+    from backend.processing.documents.vision_input import MAX_BATCH_IMAGES as per_call
+
+    pages = [
+        _figures([*_pictures(1), _emf()]),
+        PageSource(page_number=2, images=_pictures(per_call + 2)),
+        PageSource(page_number=3, images=_pictures(1)),
+    ]
+    failed_pages: list[int] = []
+    missed: list[tuple[int, int]] = []
+
+    results = _transcribe_batch(
+        _FailsSomeCalls(second_call_starts_at=per_call + 1),
+        pages,
+        is_rendered=False,
+        on_page_failed=failed_pages.append,
+        on_pictures_missed=lambda left_out, failed: missed.append((left_out, failed)),
+    )
+
+    assert results == {1: _described(1, 1), 2: _described(1, per_call)}
+    assert failed_pages == [3]
+    # (left out, failed) per page: page 3's picture counts with its failed page.
+    assert sorted(missed) == [(0, 0), (0, 2), (1, 0)]
+
+
+def _writer_with(monkeypatch, *, pictures_failed=0, left_out=0, vision_failures=0):
+    writer, _session = _progress_writer(monkeypatch, use_vision=True)
+    writer.pictures_failed = pictures_failed
+    writer.pictures_left_out = left_out
+    writer.vision_failures = vision_failures
+    return writer
+
+
+def test_the_warning_counts_pictures_failed_and_left_out(monkeypatch):
+    import backend.worker.tasks.documents as documents_task
+
+    writer = _writer_with(monkeypatch, pictures_failed=8, left_out=2)
+
+    assert documents_task._parse_warning(None, writer, 3) == (
+        "Visual analysis failed on 8 pictures, so they are not described. Check "
+        "the server logs for the reason. Visual analysis left out 2 pictures "
+        "Nojoin cannot open, such as EMF or WMF drawings."
+    )
+    one = _writer_with(monkeypatch, pictures_failed=1, left_out=1)
+    assert documents_task._parse_warning(None, one, 3) == (
+        "Visual analysis failed on 1 picture, so it is not described. Check the "
+        "server logs for the reason. Visual analysis left out 1 picture Nojoin "
+        "cannot open, such as an EMF or WMF drawing."
+    )
+
+
+def test_the_warning_names_the_server_logs_once(monkeypatch):
+    import backend.worker.tasks.documents as documents_task
+
+    writer = _writer_with(monkeypatch, pictures_failed=3, vision_failures=1)
+
+    warning = documents_task._parse_warning(None, writer, 9)
+
+    assert warning.startswith("Visual analysis failed on 1 of 9 pages, so that page")
+    assert warning.endswith(
+        "Visual analysis failed on 3 pictures, so they are not described."
+    )
+    assert warning.count("Check the server logs") == 1
+
+
+def test_a_clean_parse_has_no_warning(monkeypatch):
+    import backend.worker.tasks.documents as documents_task
+
+    assert documents_task._parse_warning(None, _writer_with(monkeypatch), 3) is None
+
+
+@pytest.fixture
+def parse_file(monkeypatch):
+    """Parses a file through the real orchestrator on SQLite, with a stub model
+    and no OCR. run(path, backend) returns the document and its pages."""
+    from sqlalchemy import text
+    from sqlmodel import Session, create_engine, select
+
+    import backend.worker.tasks.documents as documents_task
+    from backend.models.document import Document, DocumentStatus
+    from backend.models.document_page import DocumentPage
+    from backend.tests.sqlite_schemas import DOCUMENT_PAGES_SCHEMA, DOCUMENTS_SCHEMA
+
+    engine = create_engine("sqlite://")
+    with engine.begin() as connection:
+        for schema in (DOCUMENTS_SCHEMA, DOCUMENT_PAGES_SCHEMA):
+            connection.execute(text(schema))
+    session = Session(engine)
+    monkeypatch.setattr(documents_task, "_index_page", lambda *_args: 0)
+    monkeypatch.setattr(documents_task, "_flag_notes_stale", lambda *_args: None)
+    monkeypatch.setattr(documents_task, "ocr_images", lambda _images: None)
+    monkeypatch.setattr(documents_task, "ocr_is_available", lambda: False)
+
+    def run(path, backend):
+        monkeypatch.setattr(
+            documents_task, "_resolve_vision", lambda *_args: (backend, True, None)
+        )
+        document = Document(
+            id=1,
+            recording_id=10,
+            title=path.name,
+            file_path=str(path),
+            file_type="application/octet-stream",
+            status=DocumentStatus.PROCESSING,
+        )
+        session.add(document)
+        session.commit()
+        documents_task._parse_document(session, document, str(path))
+        pages = session.exec(
+            select(DocumentPage).order_by(DocumentPage.page_number)
+        ).all()
+        return document, pages
+
+    yield run
+    session.close()
+
+
+def _word_file(path, photos: list[bytes], *, extra_parts=()):
+    """A Word file: a heading, a line of text, then ``photos`` in order, with
+    ``extra_parts`` ((before_photo, file_name, content_type, blob)) among them."""
+    docx = pytest.importorskip("docx")
+    from docx.opc.constants import RELATIONSHIP_TYPE
+    from docx.opc.packuri import PackURI
+    from docx.opc.part import Part
+
+    document = docx.Document()
+    document.add_heading("Site visit", level=1)
+    document.add_paragraph("Photos from the walk round the east wing.")
+    for index, photo in enumerate(photos):
+        for before, file_name, content_type, blob in extra_parts:
+            if before == index:
+                name = PackURI(f"/word/media/{file_name}")
+                part = Part(name, content_type, blob, document.part.package)
+                document.part.relate_to(part, RELATIONSHIP_TYPE.IMAGE)
+        document.add_picture(io.BytesIO(photo))
+    document.save(str(path))
+
+
+def test_a_word_file_full_of_photos_gets_every_description(parse_file, tmp_path):
+    """Regression for #714: nine photos of about 3 MB went to the model in one
+    call, past the Claude API's 32 MB request limit, and the section lost all
+    of its visual analysis. An EMF drawing beside them failed the call too."""
+    from backend.models.document import DocumentStatus
+    from backend.processing.documents.vision_input import MAX_IMAGE_BYTES
+    from backend.tests.picture_fixtures import emf_drawing, jpeg, labelled
+
+    base = jpeg((2200, 1500), noise=True)
+    assert 2_500_000 < len(base) < MAX_IMAGE_BYTES  # sent as it is
+    photos = [labelled(base, str(number)) for number in range(1, 10)]
+    svg = b'<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"/>'
+    path = tmp_path / "site-visit.docx"
+    _word_file(
+        path,
+        photos,
+        extra_parts=[
+            (5, "drawing.emf", "image/x-emf", emf_drawing()),
+            (7, "icon.svg", "image/svg+xml", svg),
+        ],
+    )
+    backend = _ClaudeRequestBackend()
+
+    document, (page,) = parse_file(path, backend)
+
+    assert document.status == DocumentStatus.READY
+    assert page.parse_mode == PageParseMode.VISUAL
+    # Every photo, in order, in as few calls as fit the tightest request
+    # limit: Gemini's 20 MB of inline data.
+    assert [label for call in backend.calls for label in call] == [
+        str(number) for number in range(1, 10)
+    ]
+    from backend.processing.documents.vision_input import (
+        MAX_BATCH_BYTES,
+        MAX_BATCH_IMAGES,
+    )
+
+    per_call = min(MAX_BATCH_BYTES // len(photos[0]), MAX_BATCH_IMAGES)
+    assert len(backend.calls) == -(-len(photos) // per_call)
+    assert max(backend.request_sizes) <= 20_000_000
+    described = "\n\n".join(f"Pictures {', '.join(call)}." for call in backend.calls)
+    assert page.content == f"Photos from the walk round the east wing.\n\n{described}"
+    # The EMF is counted. The SVG is neither sent nor counted: Word stores a
+    # PNG of every SVG picture as well, and that copy is the one described.
+    assert document.parse_warning == (
+        "Visual analysis left out 1 picture Nojoin cannot open, such as an EMF "
+        "or WMF drawing."
+    )
+
+
+def test_an_image_pillow_cannot_open_says_so_in_its_error(parse_file, tmp_path):
+    path = tmp_path / "scan.png"
+    path.write_bytes(b"\x89PNG\r\n\x1a\n and then nothing")
+    backend = _ClaudeRequestBackend()
+
+    with pytest.raises(RuntimeError) as raised:
+        parse_file(path, backend)
+
+    assert str(raised.value) == (
+        "This image could not be read: the file is not a picture Nojoin can open."
+    )
+    assert backend.attempts == 0

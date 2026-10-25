@@ -317,7 +317,8 @@ Meeting notes are generated once, at the end of processing, from every document 
 - Files over 20 MB show a cost warning before upload. There is no page limit, and the document card shows progress per page.
 - Your model must accept images. Current hosted models from Anthropic, OpenAI and Google do. With Ollama, an administrator must choose a vision-capable model (such as a `llava` or `-vision` variant) in **Settings > AI providers**.
 - A large photo or screenshot is scaled down for the model to 2,576 px on its long edge, the most any provider reads, and kept within every provider's size limit. The file you attached stays as it was.
-- If the model fails on some pages, those pages keep the text Nojoin read without it, and the document card says how many.
+- A Word file or a slide with many pictures goes to the model in several calls, eight pictures at most to each, so a file full of photos is read in full.
+- If the model fails on some pages, those pages keep the text Nojoin read without it, and the document card says how many. It also counts pictures the model failed on, and pictures Nojoin left out because it cannot open them, such as EMF or WMF drawings.
 - Without visual analysis, Nojoin uses OCR on your own server, which sends nothing anywhere and keeps scanned pages searchable but cannot describe a chart. Failing that, the document is parsed from its text layer. The document card says what was skipped; once a suitable model is configured, use **Parse again with visual analysis** on the card.
 - PowerPoint, Word and Excel files are also read structurally, which recovers speaker notes, table cells and the values behind native charts. For a deck built mostly from SmartArt or drawn diagrams, export it to PDF first.
 
