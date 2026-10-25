@@ -178,6 +178,53 @@ describe("suggested names on transcript lines", () => {
     });
   });
 
+  it("focuses search when opening and switching speaker name menus", () => {
+    renderView();
+    const blairLine = document.querySelector('[data-segment-id="u1"]') as HTMLElement;
+    fireEvent.click(within(blairLine).getByRole("button", { name: "Blair" }));
+    const blairInput = screen.getByPlaceholderText("Search or add...");
+    expect(blairInput).toHaveFocus();
+
+    const alexLine = document.querySelector('[data-segment-id="u0"]') as HTMLElement;
+    fireEvent.click(within(alexLine).getByRole("button", { name: "Alex" }));
+    expect(blairInput).not.toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Search or add...")).toHaveFocus();
+  });
+
+  it("keeps focus on the speaker when an input-focus timer is due before the close commits", async () => {
+    vi.useFakeTimers();
+    try {
+      let finishReview = () => {};
+      const review = new Promise<void>((resolve) => (finishReview = resolve));
+      renderView({
+        speakers: [speaker({ local_name: "Alex", name_source: "voiceprint", name_pending: false })],
+        onReviewSpeakerName: () => review,
+      });
+      const line = document.querySelector('[data-segment-id="u0"]') as HTMLElement;
+      const alexName = within(line).getByRole("button", { name: "Alex" });
+      fireEvent.click(alexName);
+      const input = screen.getByPlaceholderText("Search or add...");
+      const restoredFocus = new Promise<void>((resolve) => {
+        alexName.addEventListener("focus", () => resolve(), { once: true });
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Not Alex" }));
+
+      await act(async () => {
+        finishReview();
+        await restoredFocus;
+        expect(alexName).toHaveFocus();
+        expect(input).toBeInTheDocument();
+        // Run due focus work after restoration, before React commits the close.
+        vi.advanceTimersByTime(50);
+      });
+
+      expect(input).not.toBeInTheDocument();
+      expect(alexName).toHaveFocus();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("ignores the ? while its decision is sent", async () => {
     let finish = () => {};
     const onReviewSpeakerName = vi.fn(() => new Promise<void>((resolve) => (finish = resolve)));
