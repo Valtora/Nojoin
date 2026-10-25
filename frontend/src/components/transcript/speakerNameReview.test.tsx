@@ -171,9 +171,11 @@ describe("suggested names on transcript lines", () => {
     expect(onReviewSpeakerName.mock.calls).toEqual([["SPEAKER_A", "Alex", "dismiss"]]);
     expect(onUpdateSegmentSpeaker).not.toHaveBeenCalled();
     expect(screen.queryByRole("button", { name: "Not Alex" })).not.toBeInTheDocument();
-    await waitFor(() =>
-      expect(within(alexLine).getByRole("button", { name: "Alex" })).toHaveFocus(),
-    );
+    // Re-query the line: the dismissal re-renders it, and a node held from before can be stale.
+    await waitFor(() => {
+      const line = document.querySelector('[data-segment-id="u0"]') as HTMLElement;
+      expect(within(line).getByRole("button", { name: "Alex" })).toHaveFocus();
+    });
   });
 
   it("ignores the ? while its decision is sent", async () => {
