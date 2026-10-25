@@ -75,6 +75,8 @@ describe("a note's file", () => {
       </NoteFilesProvider>,
     );
 
+    expect(screen.getByTestId("captures-gallery")).toHaveAttribute("data-ui", "surface");
+    expect(screen.getByTestId("captures-gallery")).toHaveAttribute("data-ui-surface", "pane");
     const items = screen.getAllByTestId("capture-item");
     expect(items.map((item) => within(item).getAllByRole("button")[1].textContent)).toEqual([
       "01:05",
@@ -82,6 +84,10 @@ describe("a note's file", () => {
     ]);
     fireEvent.click(screen.getByRole("button", { name: "Open screen-capture.png, on the note at 01:05" }));
     const viewer = await screen.findByRole("dialog");
+    const preview = within(viewer).getByRole("img").parentElement;
+    expect(preview?.tagName).toBe("DIV");
+    expect(preview).toHaveAttribute("data-ui", "surface");
+    expect(preview).toHaveAttribute("data-ui-surface", "inset");
     expect(viewer).toHaveTextContent("Off: the AI notes, Meeting Chat and search leave it out.");
     fireEvent.click(within(viewer).getByRole("switch"));
 
@@ -105,6 +111,24 @@ describe("a note's file", () => {
 
     expect(screen.queryByTestId("unsaved-note-file")).toBeNull();
     expect(outbox.hasUnsaved()).toBe(false);
+  });
+
+  it.each([
+    { state: "loading", notes: null },
+    { state: "empty", notes: [] },
+  ])("keeps the gallery pane while its notes are $state", ({ notes }) => {
+    render(
+      <CapturesGallery
+        recordingId={RECORDING}
+        timelineNotes={notes}
+        segments={[]}
+        noteEdits={noteEdits}
+      />,
+    );
+    const gallery = screen.getByTestId("captures-gallery");
+    expect(gallery).toHaveAttribute("data-ui", "surface");
+    expect(gallery).toHaveAttribute("data-ui-surface", "pane");
+    expect(gallery).toHaveTextContent(notes === null ? "Loading captures…" : "No captures yet.");
   });
 
   it("shows its picture on the note's line, and nothing outside a recording page", () => {
@@ -166,6 +190,10 @@ describe("a note's file", () => {
     expect(within(viewer).getByRole("switch")).toBeDisabled();
     expect(viewer).toHaveTextContent("Nojoin can't read this kind of file");
     expect(viewer.querySelector("img")).toBeNull();
+    const preview = within(viewer).getByText("slides.zip", { selector: "span" }).parentElement;
+    expect(preview?.tagName).toBe("P");
+    expect(preview).toHaveAttribute("data-ui", "surface");
+    expect(preview).toHaveAttribute("data-ui-surface", "inset");
     expect(within(viewer).getByRole("button", { name: "Download" })).toBeEnabled();
   });
 });

@@ -1,5 +1,6 @@
 "use client";
 
+import { ButtonBase } from "@/components/ui/nativeBases";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { Pencil, Play } from "lucide-react";
 
@@ -102,7 +103,7 @@ export default function MyNotesList({
         {/* A note at a time is one press target: the button covers the row,
             and the row's own buttons sit above it. */}
         {isBody ? (
-          <button
+          <ButtonBase
             type="button"
             data-jump
             aria-label={`Show in the transcript: the note ${name}`}

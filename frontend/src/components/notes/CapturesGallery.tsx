@@ -1,5 +1,7 @@
 "use client";
 
+import { ButtonBase } from "@/components/ui/nativeBases";
+import { SurfaceBase } from "@/components/ui/SurfaceBase";
 import { useMemo } from "react";
 import { FileText } from "lucide-react";
 
@@ -59,7 +61,7 @@ export default function CapturesGallery({
     const time = atMs === null ? "Meeting" : formatTimelineMs(atMs);
     return (
       <li key={note.id} data-testid="capture-item" className="min-w-0">
-        <button
+        <ButtonBase
           type="button"
           onClick={() => open?.(note.id)}
           aria-label={`Open ${file.title}, on the note at ${time}`}
@@ -79,9 +81,9 @@ export default function CapturesGallery({
               <span className="max-w-full truncate">{file.title}</span>
             </span>
           )}
-        </button>
+        </ButtonBase>
         <div className="mt-1 flex min-w-0 items-baseline gap-2">
-          <button
+          <ButtonBase
             type="button"
             onClick={() => {
               onShowTranscript?.();
@@ -91,7 +93,7 @@ export default function CapturesGallery({
             className="shrink-0 rounded-sm font-mono text-xs tabular-nums text-action-text outline-none hover:underline focus-visible:ring-2 focus-visible:ring-action"
           >
             {time}
-          </button>
+          </ButtonBase>
           <span className="min-w-0 truncate text-xs text-contrast-helper">
             {file.use_in_notes ? "In notes · " : ""}
             {note.body}
@@ -102,7 +104,7 @@ export default function CapturesGallery({
   };
 
   return (
-    <div
+    <SurfaceBase kind="pane"
       data-testid="captures-gallery"
       className={cn("min-h-0 overflow-y-auto p-3 pb-clear-floating-3", className)}
     >
@@ -121,6 +123,6 @@ export default function CapturesGallery({
           {placements.map(renderItem)}
         </ul>
       )}
-    </div>
+    </SurfaceBase>
   );
 }

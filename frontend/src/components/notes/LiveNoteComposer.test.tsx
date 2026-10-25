@@ -152,6 +152,10 @@ describe("LiveNoteComposer", () => {
 
   it("returns focus to the box after sending with the button", () => {
     const box = renderComposer();
+    const composer = screen.getByRole("form", { name: "Add a note" });
+    expect(composer.tagName).toBe("FORM");
+    expect(composer).toHaveAttribute("data-ui", "surface");
+    expect(composer).toHaveAttribute("data-ui-surface", "pane");
     type(box, "Via the button");
     const send = screen.getByRole("button", { name: "Add note" });
     send.focus();
