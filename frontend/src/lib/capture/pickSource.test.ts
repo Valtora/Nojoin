@@ -86,7 +86,7 @@ describe("capture source picker", () => {
         audio: {
           deviceId: { exact: "mic-1" },
           echoCancellation: true,
-          noiseSuppression: true,
+          noiseSuppression: false,
           autoGainControl: true,
         },
       });

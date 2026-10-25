@@ -156,7 +156,7 @@ export const DEFAULT_CAPTURE_SETTINGS: CaptureSettings = {
   microphoneGain: 1,
   systemGain: 1,
   echoCancellation: true,
-  noiseSuppression: true,
+  noiseSuppression: false,
   autoGainControl: true,
 };
 

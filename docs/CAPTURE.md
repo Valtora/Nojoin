@@ -129,6 +129,8 @@ Nojoin offers the audio only while the browser is signed in as the account that 
 - **Live microphone input test**, which shows raw and gain-adjusted levels.
 - Under **Advanced**, the browser's echo cancellation, noise suppression and auto gain, and the **Quiet audio warnings** reset.
 
+Noise suppression is off by default: in a room it makes speaker labels less accurate and doesn't improve the transcript. Turn it on for a noisy space. Echo cancellation and auto gain stay on.
+
 These settings are stored in the browser, so they do not follow you to another browser or device.
 
 If the microphone you chose is unavailable when a recording starts or resumes, Nojoin stops with an error instead of falling back to the system default. Pick another microphone first.
