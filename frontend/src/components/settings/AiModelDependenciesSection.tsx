@@ -1,3 +1,4 @@
+import { ButtonBase } from "@/components/ui/nativeBases";
 import { Download, Loader2, Trash2 } from "lucide-react";
 
 import {
@@ -173,7 +174,8 @@ export default function AiModelDependenciesSection({
                 // The description says why a bundled or external model has no
                 // Delete, so there is no disabled button to explain on hover.
                 reason === undefined && (
-                  <button
+                  <ButtonBase
+                    chrome="action"
                     type="button"
                     {...loadingButtonProps(busy, !isAdmin, () => handleDeleteModel(model.id))}
                     title="Delete this model"
@@ -185,12 +187,13 @@ export default function AiModelDependenciesSection({
                     ) : (
                       <Trash2 className="h-4 w-4" aria-hidden="true" />
                     )}
-                  </button>
+                  </ButtonBase>
                 )
               ) : (
                 <>
                   {status?.partial && (
-                    <button
+                    <ButtonBase
+                      chrome="action"
                       type="button"
                       {...loadingButtonProps(busy, !isAdmin || preparationRunning, () => handleDeleteModel(model.id))}
                       title={
@@ -206,9 +209,10 @@ export default function AiModelDependenciesSection({
                       ) : (
                         <Trash2 className="h-4 w-4" aria-hidden="true" />
                       )}
-                    </button>
+                    </ButtonBase>
                   )}
-                  <button
+                  <ButtonBase
+                    chrome="action"
                     type="button"
                     onClick={() => void startPreparation(model.target)}
                     disabled={!isAdmin || preparationRunning}
@@ -216,7 +220,7 @@ export default function AiModelDependenciesSection({
                   >
                     <Download className="h-4 w-4" aria-hidden="true" />
                     Download
-                  </button>
+                  </ButtonBase>
                 </>
               )}
             </div>

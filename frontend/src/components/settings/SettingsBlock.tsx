@@ -88,6 +88,8 @@ export default function SettingsBlock({
       )}
 
       <div
+        data-ui={inset ? "surface" : undefined}
+        data-ui-surface={inset ? "inset" : undefined}
         className={cn(
           inset && "settings-inset rounded-xl p-4",
           contentClassName,

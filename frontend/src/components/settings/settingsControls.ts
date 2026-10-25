@@ -10,9 +10,9 @@
  *
  * The recipes deliberately mirror the `Input` and `Button` primitives token for
  * token, so a settings field and a field anywhere else cannot drift apart. They
- * exist as strings rather than as components only because settings pages apply
- * them to elements they render themselves, including native selects and
- * textareas the primitives do not wrap.
+ * remain strings so native base controls can preserve each settings recipe,
+ * including native select arrows and textarea sizing. The bases carry the
+ * shared style hooks; these recipes keep their current appearance.
  */
 
 import { DISABLED_LOOK } from "@/components/ui/loadingButton";

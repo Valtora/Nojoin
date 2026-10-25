@@ -1,5 +1,6 @@
 "use client";
 
+import { ButtonBase, InputBase } from "@/components/ui/nativeBases";
 import { useEffect, useRef, useState } from "react";
 import {
   deleteLatestBackup,
@@ -306,22 +307,24 @@ export default function BackupRestore() {
             controlClassName="@min-[26rem]:min-w-0"
           >
             <div className="flex flex-wrap gap-2 @min-[26rem]:justify-end">
-              <button
+              <ButtonBase
+                chrome="action"
                 type="button"
                 onClick={handleDownloadLatest}
                 className={SETTINGS_BUTTON_SECONDARY}
               >
                 <Download aria-hidden="true" className="h-4 w-4" />
                 Download
-              </button>
-              <button
+              </ButtonBase>
+              <ButtonBase
+                chrome="action"
                 type="button"
                 onClick={() => setConfirmDelete(true)}
                 className={SETTINGS_BUTTON_DANGER}
               >
                 <Trash2 aria-hidden="true" className="h-4 w-4" />
                 Delete
-              </button>
+              </ButtonBase>
             </div>
           </SettingsRow>
         )}
@@ -361,14 +364,15 @@ export default function BackupRestore() {
             description="Choose what goes in it and how far to compress it."
           >
             <div className="flex @min-[26rem]:justify-end">
-              <button
+              <ButtonBase
+                chrome="action"
                 type="button"
                 onClick={() => setShowBackupOptions(true)}
                 className={SETTINGS_BUTTON_PRIMARY}
               >
                 <Download className="h-4 w-4" aria-hidden="true" />
                 Back up now
-              </button>
+              </ButtonBase>
             </div>
           </SettingsRow>
         )}
@@ -406,7 +410,7 @@ export default function BackupRestore() {
               importing && "pointer-events-none opacity-75",
             )}
           >
-            <input
+            <InputBase
               ref={fileInputRef}
               type="file"
               accept=".zip"
@@ -440,14 +444,15 @@ export default function BackupRestore() {
           </div>
 
           {selectedFile && !importing && (
-            <button
+            <ButtonBase
+              chrome="action"
               type="button"
               onClick={handleRemoveFile}
               className={cn(SETTINGS_BUTTON_SECONDARY, "mt-3")}
             >
               <Trash2 className="h-4 w-4" aria-hidden="true" />
               Remove file
-            </button>
+            </ButtonBase>
           )}
 
           {importing && (
@@ -485,7 +490,8 @@ export default function BackupRestore() {
           )}
 
           <div className="mt-4 flex justify-end">
-            <button
+            <ButtonBase
+              chrome="action"
               type="button"
               onClick={handleRestoreClick}
               disabled={!isValidZip || importing}
@@ -497,7 +503,7 @@ export default function BackupRestore() {
                 <Upload className="h-4 w-4" aria-hidden="true" />
               )}
               {importing ? "Restoring..." : "Restore"}
-            </button>
+            </ButtonBase>
           </div>
         </SettingsBlock>
 
@@ -513,22 +519,22 @@ export default function BackupRestore() {
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <p className="font-medium">{outcome.message}</p>
                 {(outcome.kind === "failed" || outcome.kind === "unknown") && (
-                  <button
+                  <ButtonBase
                     type="button"
                     onClick={dismissOutcome}
                     className="shrink-0 text-xs font-semibold underline"
                   >
                     Dismiss
-                  </button>
+                  </ButtonBase>
                 )}
                 {outcomeIsSuccess && (
-                  <button
+                  <ButtonBase
                     type="button"
                     onClick={dismissAndReload}
                     className="shrink-0 text-xs font-semibold underline"
                   >
                     Reload
-                  </button>
+                  </ButtonBase>
                 )}
               </div>
             </SettingsCallout>
@@ -555,13 +561,13 @@ export default function BackupRestore() {
                   </li>
                 ))}
               </ul>
-              <button
+              <ButtonBase
                 type="button"
                 onClick={dismissAndReload}
                 className="mt-3 text-xs font-semibold underline"
               >
                 Dismiss and reload
-              </button>
+              </ButtonBase>
             </SettingsCallout>
           </SettingsBlock>
         )}

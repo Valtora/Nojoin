@@ -1,5 +1,7 @@
 "use client";
 
+import { ButtonBase, InputBase } from "@/components/ui/nativeBases";
+import { SurfaceBase } from "@/components/ui/SurfaceBase";
 import { useCallback, useEffect, useState } from "react";
 import { ExternalLink, Loader2, Trash2 } from "lucide-react";
 import Button from "../ui/Button";
@@ -356,7 +358,8 @@ function ProviderConnectRow({
       controlClassName={SETTINGS_CONTROL_END}
     >
       {connected ? (
-        <button
+        <ButtonBase
+          chrome="action"
           type="button"
           {...loadingButtonProps(busy, undefined, handleDisconnect)}
           className={SETTINGS_BUTTON_DANGER}
@@ -367,9 +370,10 @@ function ProviderConnectRow({
             <Trash2 className="h-4 w-4" aria-hidden="true" />
           )}
           Disconnect
-        </button>
+        </ButtonBase>
       ) : blockedBy ? null : (
-        <button
+        <ButtonBase
+          chrome="action"
           type="button"
           {...loadingButtonProps(busy, undefined, beginFlow)}
           className={SETTINGS_BUTTON_PRIMARY}
@@ -380,7 +384,7 @@ function ProviderConnectRow({
             <ExternalLink className="h-4 w-4" aria-hidden="true" />
           )}
           {meta.connectLabel}
-        </button>
+        </ButtonBase>
       )}
 
       <Modal
@@ -417,12 +421,13 @@ function ProviderConnectRow({
                     Open the sign-in page, enter the code below, and approve
                     access. This page updates automatically once you approve.
                   </p>
-                  <div className="rounded-lg border border-surface-border bg-surface-inset px-4 py-3 text-center">
+                  <SurfaceBase
+                    kind="inset" className="rounded-lg border border-surface-border bg-surface-inset px-4 py-3 text-center">
                     <div className="text-xs text-contrast-helper mb-1">Your code</div>
                     <div className="text-2xl font-mono font-semibold tracking-widest text-foreground">
                       {device.userCode}
                     </div>
-                  </div>
+                  </SurfaceBase>
                   <a
                     href={device.verificationUriComplete || device.verificationUri}
                     target="_blank"
@@ -467,7 +472,7 @@ function ProviderConnectRow({
                     >
                       Paste the code {meta.vendor} shows you
                     </label>
-                    <input
+                    <InputBase
                       id={`cli-code-${provider}`}
                       type="text"
                       autoComplete="off"
@@ -478,14 +483,14 @@ function ProviderConnectRow({
                       className={SETTINGS_INPUT_CLASS}
                     />
                   </div>
-                  <button
+                  <ButtonBase
                     type="button"
                     {...loadingButtonProps(busy, undefined, beginFlow)}
                     className="inline-flex items-center gap-1 text-xs text-contrast-helper hover:text-foreground disabled:opacity-50 aria-disabled:opacity-50"
                   >
                     <ExternalLink className="w-3 h-3" />
                     Need a fresh code? Restart sign-in
-                  </button>
+                  </ButtonBase>
                 </>
               )}
         </div>

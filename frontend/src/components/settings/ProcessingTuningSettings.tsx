@@ -1,5 +1,6 @@
 "use client";
 
+import { ButtonBase, InputBase } from "@/components/ui/nativeBases";
 import { Fragment, useId, useState } from "react";
 import { RotateCcw } from "lucide-react";
 
@@ -86,7 +87,7 @@ function TuningInput({
           {spec.label}
         </label>
       )}
-      <input
+      <InputBase
         id={inputId}
         type="number"
         inputMode={spec.integer ? "numeric" : "decimal"}
@@ -181,7 +182,8 @@ export default function ProcessingTuningSettings({
       title="Speech and speaker tuning"
       description="Fine-tune how recordings are split into speech and speakers. Empty fields use the installation's value, or the default shown; a saved value that is no longer accepted uses the default until this page saves again. Changes apply to recordings processed or reprocessed afterwards."
       headerAside={
-        <button
+        <ButtonBase
+          chrome="action"
           type="button"
           onClick={() => {
             setResetCount((count) => count + 1);
@@ -191,7 +193,7 @@ export default function ProcessingTuningSettings({
         >
           <RotateCcw className="h-4 w-4" aria-hidden="true" />
           Reset to defaults
-        </button>
+        </ButtonBase>
       }
     >
       <SettingsRow

@@ -1,5 +1,6 @@
 "use client";
 
+import { TextareaBase } from "@/components/ui/nativeBases";
 import { Settings } from "@/types";
 import { cn } from "@/lib/cn";
 import SettingsBlock from "./SettingsBlock";
@@ -54,7 +55,7 @@ export default function GlossarySection({
         }
       >
         {isAdmin ? (
-          <textarea
+          <TextareaBase
             id="glossary-shared"
             value={shared}
             onChange={(event) =>
@@ -66,7 +67,7 @@ export default function GlossarySection({
             className={GLOSSARY_CLASS}
           />
         ) : shared.trim() ? (
-          <textarea
+          <TextareaBase
             id="glossary-shared"
             value={shared}
             readOnly
@@ -84,7 +85,7 @@ export default function GlossarySection({
         label={<label htmlFor="glossary-personal">Your glossary</label>}
         description="Added to the shared glossary. Where both define a term, yours is used. One term per line, as Term: meaning."
       >
-        <textarea
+        <TextareaBase
           id="glossary-personal"
           value={settings.glossary_terms || ""}
           onChange={(event) =>

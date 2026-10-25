@@ -1,5 +1,7 @@
 'use client';
 
+import { InputBase } from '@/components/ui/nativeBases';
+import { SurfaceBase } from '@/components/ui/SurfaceBase';
 import { AlertTriangle, FileArchive } from 'lucide-react';
 import { useState } from 'react';
 import { useOnDepsChange } from '@/lib/useOnDepsChange';
@@ -74,7 +76,8 @@ export default function RestoreOptionsModal({
         >
             <div className="space-y-6">
                 {/* Option 1: Clear Existing Data */}
-                <div className="rounded-lg border border-surface-border bg-surface-inset p-4">
+                <SurfaceBase
+                    kind="inset" className="rounded-lg border border-surface-border bg-surface-inset p-4">
                     <div className="mb-2 flex items-center justify-between gap-4">
                         <span id="restore-clear-label" className="text-sm font-semibold text-foreground">
                             Clear all existing data
@@ -93,7 +96,7 @@ export default function RestoreOptionsModal({
                             User accounts are kept, so nobody is locked out.
                         </p>
                     </div>
-                </div>
+                </SurfaceBase>
 
                 {/* Option 2: Conflict Resolution (Only if NOT clearing data) */}
                 {!clearExisting && (
@@ -108,7 +111,7 @@ export default function RestoreOptionsModal({
                         <div className="space-y-3">
                             {/* Skip Option */}
                             <label className={optionClass(!overwriteExisting)}>
-                                <input
+                                <InputBase
                                     type="radio"
                                     name="conflict_resolution"
                                     className="mt-1 accent-action"
@@ -127,7 +130,7 @@ export default function RestoreOptionsModal({
 
                             {/* Overwrite Option */}
                             <label className={optionClass(overwriteExisting)}>
-                                <input
+                                <InputBase
                                     type="radio"
                                     name="conflict_resolution"
                                     className="mt-1 accent-action"

@@ -1,3 +1,4 @@
+import { ButtonBase } from "@/components/ui/nativeBases";
 import { PlayCircle, RefreshCw, Bug } from "lucide-react";
 import { useNavigationStore } from "@/lib/store";
 import { seedDemoData } from "@/lib/api";
@@ -64,7 +65,8 @@ export default function HelpSettings({ userId }: HelpSettingsProps) {
           description="Shows the dashboard, recordings and transcript tours again the next time you open each page."
         >
           <div className="flex @min-[26rem]:justify-end">
-            <button
+            <ButtonBase
+              chrome="action"
               type="button"
               onClick={handleRestartTour}
               disabled={!userId}
@@ -72,7 +74,7 @@ export default function HelpSettings({ userId }: HelpSettingsProps) {
             >
               <PlayCircle className="h-4 w-4" aria-hidden="true" />
               Restart tours
-            </button>
+            </ButtonBase>
           </div>
         </SettingsRow>
 
@@ -81,7 +83,8 @@ export default function HelpSettings({ userId }: HelpSettingsProps) {
           description="Creates the Welcome to Nojoin meeting again, if you deleted it."
         >
           <div className="flex @min-[26rem]:justify-end">
-            <button
+            <ButtonBase
+              chrome="action"
               type="button"
               onClick={handleRecreateDemo}
               disabled={isSeeding}
@@ -92,7 +95,7 @@ export default function HelpSettings({ userId }: HelpSettingsProps) {
                 aria-hidden="true"
               />
               {isSeeding ? "Creating..." : "Create it again"}
-            </button>
+            </ButtonBase>
           </div>
         </SettingsRow>
       </SettingsCard>

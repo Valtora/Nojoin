@@ -1,5 +1,6 @@
 "use client";
 
+import { ButtonBase, InputBase, TextareaBase } from "@/components/ui/nativeBases";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2, Eye, RotateCcw, Sparkles } from "lucide-react";
 import Button from "../ui/Button";
@@ -240,7 +241,7 @@ export default function NotesTemplateEditorModal({
                 AI drafts a structure you can edit before saving.
               </p>
             </div>
-            <textarea
+            <TextareaBase
               aria-label="Describe your meetings"
               value={brief}
               disabled={readOnly || generating}
@@ -248,7 +249,8 @@ export default function NotesTemplateEditorModal({
               placeholder="I run weekly user interviews. I need the questions I asked, what the participant did and said, the insights worth acting on, and follow-ups for next time. No action item table."
               className={cn(SETTINGS_TEXTAREA_CLASS, "min-h-[9rem] flex-1 resize-none")}
             />
-            <button
+            <ButtonBase
+              chrome="action"
               type="button"
               {...loadingButtonProps(generating, readOnly || !brief.trim(), handleGenerate)}
               className={SETTINGS_BUTTON_PRIMARY}
@@ -259,7 +261,7 @@ export default function NotesTemplateEditorModal({
                 <Sparkles className="w-4 h-4" />
               )}
               {generating ? "Drafting..." : "Generate structure"}
-            </button>
+            </ButtonBase>
             <p className="text-xs contrast-helper">
               Uses your configured AI provider. The draft replaces what is in the
               editor; nothing is saved until you save it.
@@ -275,7 +277,7 @@ export default function NotesTemplateEditorModal({
               >
                 Name
               </label>
-              <input
+              <InputBase
                 id="notes-structure-name"
                 type="text"
                 value={name}
@@ -298,7 +300,7 @@ export default function NotesTemplateEditorModal({
                   {description.length} / {maxDescriptionLength}
                 </span>
               </div>
-              <input
+              <InputBase
                 id="notes-structure-description"
                 type="text"
                 value={description}
@@ -324,7 +326,7 @@ export default function NotesTemplateEditorModal({
                   {sections.length} / {maxSectionsLength}
                 </span>
               </div>
-              <textarea
+              <TextareaBase
                 id="notes-structure-sections"
                 value={sections}
                 disabled={readOnly}
@@ -340,14 +342,14 @@ export default function NotesTemplateEditorModal({
             </div>
 
             {!readOnly && (
-              <button
+              <ButtonBase
                 type="button"
                 onClick={() => setSections(builtinSections)}
                 className="inline-flex items-center gap-2 text-sm contrast-helper hover:text-foreground shrink-0"
               >
                 <RotateCcw className="w-4 h-4" />
                 Reset to the Nojoin default
-              </button>
+              </ButtonBase>
             )}
           </div>
 
@@ -357,7 +359,8 @@ export default function NotesTemplateEditorModal({
               <h3 className="text-sm font-medium text-contrast-muted">
                 Full prompt
               </h3>
-              <button
+              <ButtonBase
+                chrome="action"
                 type="button"
                 onClick={handlePreview}
                 disabled={loadingPreview}
@@ -369,7 +372,7 @@ export default function NotesTemplateEditorModal({
                   <Eye className="w-4 h-4" />
                 )}
                 Preview
-              </button>
+              </ButtonBase>
             </div>
             <pre className="flex-1 min-h-[12rem] overflow-auto whitespace-pre-wrap break-words p-3 rounded-lg border border-surface-border bg-surface-page text-[11px] leading-relaxed text-contrast-muted">
               {preview ??

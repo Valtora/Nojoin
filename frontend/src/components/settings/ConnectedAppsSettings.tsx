@@ -1,5 +1,6 @@
 "use client";
 
+import { ButtonBase } from "@/components/ui/nativeBases";
 import { useCallback, useEffect, useState } from "react";
 import { Loader2, Trash2 } from "lucide-react";
 
@@ -105,7 +106,8 @@ export default function ConnectedAppsSettings() {
             description={`${SCOPE_LABELS[app.scope] ?? app.scope} · Connected ${formatTimestamp(app.created_at)} · Last used ${formatTimestamp(app.last_used_at)}`}
             controlClassName={SETTINGS_CONTROL_END}
           >
-            <button
+            <ButtonBase
+              chrome="action"
               type="button"
               onClick={() => handleRevoke(app.grant_id)}
               disabled={revokingGrantId === app.grant_id}
@@ -117,7 +119,7 @@ export default function ConnectedAppsSettings() {
                 <Trash2 className="h-4 w-4" aria-hidden="true" />
               )}
               Revoke
-            </button>
+            </ButtonBase>
           </SettingsRow>
         ))
       )}
