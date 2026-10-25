@@ -162,6 +162,12 @@ export const DEFAULT_CAPTURE_SETTINGS: CaptureSettings = {
 
 const CAPTURE_SETTINGS_STORAGE_KEY = "nojoin.capture.settings";
 const PAUSED_CAPTURE_STORAGE_KEY = "nojoin.capture.paused-recording";
+/**
+ * Saved with the settings. Settings saved without it predate noise suppression
+ * defaulting off (#709). Every save then wrote the old default, on, alongside
+ * whatever else changed, so a stored `true` there is not a choice.
+ */
+const CAPTURE_SETTINGS_VERSION = 2;
 
 export const readCaptureSettings = (): CaptureSettings => {
   if (typeof window === "undefined") {
@@ -174,8 +180,10 @@ export const readCaptureSettings = (): CaptureSettings => {
       return DEFAULT_CAPTURE_SETTINGS;
     }
 
-    const parsed = JSON.parse(raw) as Partial<CaptureSettings>;
-    return {
+    const parsed = JSON.parse(raw) as Partial<CaptureSettings> & {
+      version?: unknown;
+    };
+    const settings: CaptureSettings = {
       microphoneDeviceId:
         typeof parsed.microphoneDeviceId === "string"
           ? parsed.microphoneDeviceId
@@ -203,6 +211,19 @@ export const readCaptureSettings = (): CaptureSettings => {
           ? parsed.autoGainControl
           : DEFAULT_CAPTURE_SETTINGS.autoGainControl,
     };
+
+    if (typeof parsed.version !== "number") {
+      // Runs once: the settings are saved again with the version, after which
+      // a stored `true` is the user's own and is kept.
+      settings.noiseSuppression = false;
+      try {
+        writeCaptureSettings(settings);
+      } catch {
+        // Storage refused the write; the next read migrates again.
+      }
+    }
+
+    return settings;
   } catch {
     return DEFAULT_CAPTURE_SETTINGS;
   }
@@ -215,7 +236,7 @@ export const writeCaptureSettings = (settings: CaptureSettings) => {
 
   window.localStorage.setItem(
     CAPTURE_SETTINGS_STORAGE_KEY,
-    JSON.stringify(settings),
+    JSON.stringify({ ...settings, version: CAPTURE_SETTINGS_VERSION }),
   );
 };
 

@@ -131,7 +131,7 @@ Nojoin offers the audio only while the browser is signed in as the account that 
 - **Live microphone input test**, which shows raw and gain-adjusted levels.
 - Under **Advanced**, the browser's echo cancellation, noise suppression and auto gain, and the **Quiet audio warnings** reset.
 
-Noise suppression is off by default: in a room it makes speaker labels less accurate and doesn't improve the transcript. Turn it on for a noisy space. Echo cancellation and auto gain stay on.
+Noise suppression is off by default: in a room it makes speaker labels less accurate and doesn't improve the transcript. Turn it on for a noisy space. Echo cancellation and auto gain stay on. A browser that saved these settings before noise suppression defaulted off has it turned off once, because those saves stored the old default rather than a choice, and if you turn it back on it stays on.
 
 These settings are stored in the browser, so they do not follow you to another browser or device.
 
