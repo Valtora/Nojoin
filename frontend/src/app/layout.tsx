@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
 import { headers } from "next/headers";
+import "./fonts/geist";
 import "./globals.css";
 import { ThemeProvider } from "@/lib/ThemeProvider";
 import { themeScript } from "@/lib/theme-script";
@@ -9,16 +9,6 @@ import AuthGuard from "@/components/AuthGuard";
 import BackupPoller from "@/components/BackupPoller";
 import RestorePoller from "@/components/RestorePoller";
 import { ViewportDensityProvider } from "@/components/ViewportDensityProvider";
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
 
 export const metadata: Metadata = {
   title: "Nojoin",
@@ -46,7 +36,7 @@ export default async function RootLayout({
         <script nonce={nonce} dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground overflow-hidden`}
+        className="antialiased bg-background text-foreground overflow-hidden"
       >
         <ThemeProvider>
           <ViewportDensityProvider>
