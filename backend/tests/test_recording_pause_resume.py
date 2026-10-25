@@ -228,7 +228,9 @@ CREATE TABLE documents (
     file_path VARCHAR(1024),
     content_type VARCHAR(255),
     size_bytes INTEGER,
-    status VARCHAR(32)
+    status VARCHAR(32),
+    note_id INTEGER,
+    use_in_notes BOOLEAN NOT NULL DEFAULT 0
 )
 """
 

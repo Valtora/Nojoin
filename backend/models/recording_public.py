@@ -132,7 +132,8 @@ class TranscriptPublicRead(PublicModel):
     )
     notes_status: str = "pending"
     # True when a document finished parsing after these notes were written,
-    # so they no longer reflect everything attached to the meeting.
+    # or a note's file was switched since, so they no longer reflect what
+    # notes generation would read.
     notes_stale_documents: bool = False
     transcript_status: str = "pending"
     error_message: Optional[str] = None

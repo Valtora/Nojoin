@@ -14,6 +14,7 @@ const renderColumn = () =>
     <RecordingSideColumn
       speakers={<div data-testid="speaker-panel" />}
       myNotes={<div data-testid="my-notes-list" />}
+      captures={<div data-testid="captures-list" />}
       chatPanelHeight={40}
       onChatPanelHeightChange={vi.fn()}
       onNotesUpdate={vi.fn()}
@@ -24,7 +25,7 @@ const renderColumn = () =>
 const tablist = () => screen.getByRole("tablist", { name: "Side panels" });
 const tab = (name: string) => within(tablist()).getByRole("tab", { name });
 
-describe("the side column's Speakers and My notes tabs", () => {
+describe("the side column's Speakers, My notes and Captures tabs", () => {
   beforeEach(() => {
     useNavigationStore.setState({
       sideTab: "speakers",
@@ -33,16 +34,18 @@ describe("the side column's Speakers and My notes tabs", () => {
     });
   });
 
-  it("opens on Speakers, with My notes a tab beside it, each tied to its panel", () => {
+  it("opens on Speakers, with My notes and Captures beside it, each tied to its panel", () => {
     renderColumn();
 
     expect(within(tablist()).getAllByRole("tab").map((each) => each.textContent)).toEqual([
       "Speakers",
       "My notes",
+      "Captures",
     ]);
     expect(tab("Speakers")).toHaveAttribute("aria-selected", "true");
     expect(screen.getByTestId("speaker-panel")).toBeVisible();
     expect(screen.getByTestId("my-notes-list")).not.toBeVisible();
+    expect(screen.getByTestId("captures-list")).not.toBeVisible();
     for (const each of within(tablist()).getAllByRole("tab")) {
       const panel = document.getElementById(each.getAttribute("aria-controls") ?? "");
       expect(panel).toHaveAttribute("role", "tabpanel");
@@ -61,12 +64,24 @@ describe("the side column's Speakers and My notes tabs", () => {
     expect(useNavigationStore.getState().sideTab).toBe("my-notes");
   });
 
+  it("switches to Captures on a click, keeping the others mounted", () => {
+    renderColumn();
+
+    fireEvent.click(tab("Captures"));
+
+    expect(tab("Captures")).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByTestId("captures-list")).toBeVisible();
+    expect(screen.getByTestId("speaker-panel")).not.toBeVisible();
+    expect(useNavigationStore.getState().sideTab).toBe("captures");
+  });
+
   it.each([
     ["speakers", "ArrowRight", "My notes"],
-    ["speakers", "ArrowLeft", "My notes"],
-    ["my-notes", "ArrowRight", "Speakers"],
+    ["speakers", "ArrowLeft", "Captures"],
+    ["my-notes", "ArrowRight", "Captures"],
+    ["captures", "ArrowRight", "Speakers"],
     ["my-notes", "Home", "Speakers"],
-    ["speakers", "End", "My notes"],
+    ["speakers", "End", "Captures"],
   ] as const)("from %s, %s opens %s and focuses its tab", (from, key, to) => {
     useNavigationStore.setState({ sideTab: from });
     renderColumn();
@@ -80,20 +95,21 @@ describe("the side column's Speakers and My notes tabs", () => {
   });
 
   // jsdom has no container queries, so this reads the rules a browser applies:
-  // a label hides under 13.25rem on the other tab, and only under 10.75rem on
-  // the open one, where both are icons.
-  it("keeps the open tab's label longest in a narrow column, the other tab its icon", () => {
+  // a label hides under 18.5rem on the other tabs, and only under 12rem on
+  // the open one, where all are icons.
+  it("keeps the open tab's label longest in a narrow column, the others their icons", () => {
     renderColumn();
     const label = (name: string) => tab(name).querySelector("span")!;
     const hidesBelow = (name: string) =>
-      ["10.75rem", "13.25rem"].filter((width) => label(name).classList.contains(`@max-[${width}]:sr-only`));
+      ["12rem", "18.5rem"].filter((width) => label(name).classList.contains(`@max-[${width}]:sr-only`));
 
-    expect(hidesBelow("Speakers")).toEqual(["10.75rem"]);
-    expect(hidesBelow("My notes")).toEqual(["13.25rem"]);
+    expect(hidesBelow("Speakers")).toEqual(["12rem"]);
+    expect(hidesBelow("My notes")).toEqual(["18.5rem"]);
+    expect(hidesBelow("Captures")).toEqual(["18.5rem"]);
     fireEvent.click(tab("My notes"));
-    expect(hidesBelow("Speakers")).toEqual(["13.25rem"]);
-    expect(hidesBelow("My notes")).toEqual(["10.75rem"]);
-    for (const name of ["Speakers", "My notes"]) {
+    expect(hidesBelow("Speakers")).toEqual(["18.5rem"]);
+    expect(hidesBelow("My notes")).toEqual(["12rem"]);
+    for (const name of ["Speakers", "My notes", "Captures"]) {
       expect(tab(name)).toHaveAttribute("title", name);
       expect(tab(name).querySelector("svg")).toHaveAttribute("aria-hidden", "true");
     }
@@ -104,7 +120,7 @@ describe("the side column's Speakers and My notes tabs", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Collapse speakers and notes panel" }));
     expect(screen.queryByRole("tablist")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Speakers and My notes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Speakers, My notes and Captures" }));
 
     expect(tab("Speakers")).toHaveAttribute("aria-selected", "true");
   });
@@ -120,6 +136,7 @@ describe("the side column's Speakers and My notes tabs", () => {
   it.each([
     ["Show speakers panel", "speakers"],
     ["Show my notes", "my-notes"],
+    ["Show captures", "captures"],
   ] as const)("opens the tab the rail's %s button names", (name, sideTab) => {
     useNavigationStore.setState({
       isSpeakerPanelCollapsed: true,

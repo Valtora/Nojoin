@@ -34,6 +34,7 @@ from backend.tests.export_fixtures import (
     exported_text,
 )
 from backend.tests.sqlite_schemas import (
+    DOCUMENTS_SCHEMA,
     GLOBAL_SPEAKERS_SCHEMA,
     RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA,
     RECORDING_SPEAKERS_SCHEMA,
@@ -66,7 +67,7 @@ def api(monkeypatch):
         async with maker() as session:
             yield session
 
-    state = SimpleNamespace(user=None, analytics_reads=0, recording=None)
+    state = SimpleNamespace(user=None, analytics_reads=0, recording=None, maker=maker)
     app.dependency_overrides[get_db] = override_db
     app.dependency_overrides[get_current_user] = lambda: state.user
 
@@ -107,6 +108,7 @@ def api(monkeypatch):
                 RECORDING_SPEAKERS_SCHEMA,
                 RECORDING_SPEAKER_DRIFT_REFUSALS_SCHEMA,
                 TIMELINE_NOTES_SCHEMA,
+                DOCUMENTS_SCHEMA,
                 SPEAKER_NAME_EVENTS_SCHEMA,
             ):
                 await conn.execute(text(schema))
@@ -308,3 +310,56 @@ def test_leaving_the_readers_notes_out_drops_them_from_the_notes_too(
     assert "Peter books the venue." in left_out, left_out
     assert "User Notes" not in left_out, left_out
     assert "Ask about catering" not in left_out, left_out
+
+
+def test_a_notes_file_follows_its_note_unless_my_notes_are_left_out(
+    api, tmp_path
+) -> None:
+    import io
+
+    from docx import Document as WordDocument
+    from PIL import Image
+    from sqlmodel import select
+
+    from backend.models.document import Document, DocumentStatus
+    from backend.models.timeline_note import TimelineNote
+
+    frame = tmp_path / "frame.png"
+    Image.new("RGB", (320, 180), (240, 240, 240)).save(frame, format="PNG")
+
+    async def go():
+        recording = await api.setup()
+        async with api.state.maker() as session:
+            note = (await session.execute(select(TimelineNote))).scalar_one()
+            session.add(
+                Document(
+                    recording_id=recording.id,
+                    note_id=note.id,
+                    title="capture.png",
+                    file_path=str(frame),
+                    file_type="image/png",
+                    status=DocumentStatus.PENDING,
+                )
+            )
+            await session.commit()
+        kept = await api.export(recording, sections=["transcript"], export_format="txt")
+        left_out = await api.export(
+            recording,
+            sections=["transcript"],
+            export_format="txt",
+            include_notes="false",
+        )
+        docx = await api.export(
+            recording, sections=["transcript"], export_format="docx"
+        )
+        return kept, left_out, docx
+
+    kept, left_out, docx = asyncio.run(go())
+
+    assert kept.status_code == 200, kept.text
+    assert "> [00:06] Note: Check the budget\n> Attached: capture.png" in kept.text
+    assert "capture.png" not in left_out.text
+    assert docx.status_code == 200, docx.text
+    word = WordDocument(io.BytesIO(docx.content))
+    assert len(word.inline_shapes) == 1
+    assert "[00:06] Note: Check the budget" in exported_text(docx.content, "docx")

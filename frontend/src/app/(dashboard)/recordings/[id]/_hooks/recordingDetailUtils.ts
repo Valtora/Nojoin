@@ -1,4 +1,4 @@
-import { Recording, RecordingStatus, TranscriptSegment } from "@/types";
+import { Recording, RecordingStatus, TimelineNote, TranscriptSegment } from "@/types";
 import type {
   RollingSpeakerCorrectionHistory,
   TranscriptSegmentChange,
@@ -50,17 +50,30 @@ export const AUDIO_RECHECK_INTERVAL_MS = 15_000;
 export const AUDIO_RECHECK_WINDOW_MS = 10 * 60_000;
 
 /**
+ * Whether a note's file switched on is still being read. The detail read's
+ * notes signature changes when its parse ends, so the page polls until then.
+ */
+export const noteFilesBeingRead = (notes: readonly TimelineNote[] | null): boolean =>
+  !!notes?.some(
+    ({ attachment }) =>
+      attachment?.use_in_notes &&
+      (attachment.status === "PENDING" || attachment.status === "PROCESSING"),
+  );
+
+/**
  * How often the detail page re-reads the recording, or null when nothing on
  * it can change by itself. Unavailable audio is re-checked slowly for a while,
  * so a page opened while a restore is still moving files into place recovers
  * without a reload. `audioUnavailableForMs` is how long the page has seen the
- * audio as unavailable.
+ * audio as unavailable; `filesBeingRead` keeps it reading while a note's
+ * file is parsed (`noteFilesBeingRead`).
  */
 export const recordingPollIntervalMs = (
   recording: Recording,
   audioUnavailableForMs = 0,
+  filesBeingRead = false,
 ): number | null => {
-  if (shouldPollRecordingUpdates(recording)) {
+  if (shouldPollRecordingUpdates(recording) || filesBeingRead) {
     return recording.status === RecordingStatus.UPLOADING ||
       recording.status === RecordingStatus.PAUSED ||
       isWaitingForProxy(recording)

@@ -7,7 +7,7 @@ import { NextRequest, NextResponse } from "next/server";
 // This is the only CSP on app pages: the bundled nginx adds none on `/`.
 // Images, fonts and media come from the app's own origin. The API does too,
 // unless the image was built with an absolute NEXT_PUBLIC_API_URL, and then
-// fetches and recording streams need that origin allowed as well.
+// fetches, recording streams and capture images need that origin allowed too.
 
 // Mirrors the fallback in lib/api/client.ts. A relative URL such as the
 // release build's "/api" is same-origin and adds nothing.
@@ -42,7 +42,8 @@ export function proxy(request: NextRequest) {
     "font-src 'self'",
     "frame-ancestors 'none'",
     "form-action 'self'",
-    "img-src 'self' data:",
+    // Captures draw from the API: their previews and images are `<img>` loads.
+    `img-src 'self' data:${apiSource}`,
     `media-src 'self'${apiSource} blob:`,
     "object-src 'none'",
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`,

@@ -16,6 +16,7 @@ import type { RecordingId } from "@/types";
 
 import Button from "../ui/Button";
 
+import { NoteFileUpload } from "./NoteFiles";
 import { NOTE_BUTTON_TOUCH } from "./noteButtons";
 import UnsavedNotesList from "./UnsavedNotesList";
 
@@ -27,6 +28,8 @@ interface RecordingUnsavedNotesProps {
   readEndMs: () => number;
   /** Where focus goes when the last thing listed here is removed. */
   onEmptied?: () => void;
+  /** Lists notes' files not uploaded yet too, where no note line shows them. */
+  listUploads?: boolean;
   className?: string;
 }
 
@@ -50,13 +53,15 @@ const draftPlace = (draft: ComposerDraft) => {
  * Notes from the note box not saved yet, and text left in the box, once the
  * live view and its box are gone: after Stop, through processing and in the
  * finished recording. Nothing typed is dropped when capture ends, here or on
- * another device.
+ * another device. With `listUploads`, notes' files not uploaded yet are
+ * listed too, a failed one with Retry and Discard.
  */
 export default function RecordingUnsavedNotes({
   recordingId,
   kinds,
   readEndMs,
   onEmptied,
+  listUploads = false,
   className = "",
 }: RecordingUnsavedNotesProps) {
   const { outbox, snapshot } = useNoteOutbox(recordingId);
@@ -67,10 +72,14 @@ export default function RecordingUnsavedNotes({
       kinds ? snapshot.entries.filter((entry) => kinds.includes(entry.kind)) : snapshot.entries,
     [kinds, snapshot.entries],
   );
-  const { draft, notice } = snapshot;
-  const hasDraft = stripNote(draft.text) !== "";
+  const { draft, draftFile, notice } = snapshot;
+  const hasDraft = stripNote(draft.text) !== "" || draftFile !== null;
+  const uploads = listUploads ? [...snapshot.uploads.values()] : [];
 
-  const clearDraft = () => outbox.setDraft({ ...EMPTY_DRAFT, mode: draft.mode });
+  const clearDraft = () => {
+    outbox.setDraft({ ...EMPTY_DRAFT, mode: draft.mode });
+    outbox.setDraftFile(null);
+  };
   const focusAfterDraft = () => {
     if (entries.length > 0) headingRef.current?.focus();
     else onEmptied?.();
@@ -94,7 +103,7 @@ export default function RecordingUnsavedNotes({
       <p className="sr-only" aria-live="polite">
         {notice?.text ?? ""}
       </p>
-      {entries.length > 0 || hasDraft ? (
+      {entries.length > 0 || hasDraft || uploads.length > 0 ? (
         <section
           aria-labelledby={`${recordingId}-unsaved-notes`}
           data-testid="unsaved-notes"
@@ -120,6 +129,9 @@ export default function RecordingUnsavedNotes({
                 <p className="line-clamp-2 whitespace-pre-wrap break-words text-sm leading-5 text-foreground">
                   {draft.text}
                 </p>
+                {draftFile ? (
+                  <p className="text-xs text-contrast-helper">With {draftFile.name}</p>
+                ) : null}
                 {draftError ? (
                   <p className="mt-1 text-xs text-status-danger-fg">{draftError}</p>
                 ) : null}
@@ -153,6 +165,21 @@ export default function RecordingUnsavedNotes({
               onDiscard={outbox.discard}
               onEmptied={() => (hasDraft ? headingRef.current?.focus() : onEmptied?.())}
             />
+            {uploads.map((upload) => (
+              <div
+                key={upload.key}
+                data-testid="unsaved-note-file"
+                data-upload-status={upload.status}
+                className="density-surface-panel bg-surface-inset px-3 py-2"
+              >
+                <p className="text-xs text-contrast-helper">File for the note {upload.place}</p>
+                <NoteFileUpload
+                  upload={upload}
+                  outbox={outbox}
+                  onButton={() => headingRef.current?.focus()}
+                />
+              </div>
+            ))}
           </div>
         </section>
       ) : null}

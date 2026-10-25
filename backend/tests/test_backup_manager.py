@@ -1603,6 +1603,78 @@ async def test_documents_round_trip_with_their_files(
 
 
 @pytest.mark.anyio
+async def test_a_notes_file_round_trips_on_its_restored_note(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A note's file is a document: its file travels as a document's does, and
+    # its row keeps its switch and points at the note restored under a new id.
+    source_context = build_test_context(tmp_path / "source")
+    patch_backup_manager(monkeypatch, source_context)
+    monkeypatch.setenv("DATA_ENCRYPTION_KEY", "source-encryption-key")
+
+    frame = source_context.path_manager.documents_directory / "frame.png"
+    frame.write_bytes(b"\x89PNG\r\n\x1a\n frame")
+
+    await seed_source_data(
+        source_context.async_session_maker,
+        recording_meeting_uid="meeting-uid-note-files",
+        recording_proxy_path=None,
+    )
+    async with source_context.async_session_maker() as session:
+        session.add(
+            TestTimelineNote(
+                id=77,
+                public_id="note-with-still",
+                recording_id=40,
+                kind="point",
+                body="Screen capture",
+                anchor_ms=65_000,
+            )
+        )
+        session.add(
+            TestDocument(
+                id=1,
+                recording_id=40,
+                title="capture.png",
+                file_path=str(frame),
+                file_type="image/png",
+                note_id=77,
+                use_in_notes=True,
+            )
+        )
+        await session.commit()
+
+    zip_path, _warnings = await BackupManager.create_backup(include_audio=False)
+
+    target_context = build_test_context(tmp_path / "target")
+    patch_backup_manager(monkeypatch, target_context)
+    monkeypatch.setenv("DATA_ENCRYPTION_KEY", "target-encryption-key")
+    job_id = "note-files-round-trip-job"
+    BackupManager.restore_jobs[job_id] = {
+        "status": "pending",
+        "progress": "Queued",
+        "error": None,
+    }
+
+    await BackupManager.restore_backup(job_id, zip_path)
+
+    assert BackupManager.restore_jobs[job_id]["status"] == "completed"
+    with Session(target_context.sync_engine) as session:
+        restored = session.exec(select(TestDocument)).one()
+        note = session.exec(
+            select(TestTimelineNote).where(
+                TestTimelineNote.public_id == "note-with-still"
+            )
+        ).one()
+    assert (restored.note_id, restored.use_in_notes) == (note.id, True)
+    assert Path(restored.file_path).read_bytes() == b"\x89PNG\r\n\x1a\n frame"
+
+    await source_context.async_engine.dispose()
+    await target_context.async_engine.dispose()
+
+
+@pytest.mark.anyio
 async def test_documents_directory_follows_the_data_directory(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

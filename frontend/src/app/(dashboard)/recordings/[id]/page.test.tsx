@@ -111,6 +111,11 @@ vi.mock("@/lib/api", () => ({
   createTimelineNote: vi.fn(),
   updateTimelineNote: (...args: unknown[]) => updateTimelineNote(...args),
   deleteTimelineNote: vi.fn(),
+  attachFileToNote: vi.fn(),
+  setNoteFileUseInNotes: vi.fn(),
+  downloadDocument: vi.fn(),
+  documentPreviewUrl: (id: number) => `/api/v1/documents/${id}/preview`,
+  documentFileUrl: (id: number) => `/api/v1/documents/${id}/download`,
 }));
 
 // Heavy child components are stubbed so the tests pin the page's own
@@ -684,12 +689,12 @@ describe("RecordingPage (detail)", () => {
   // On a phone the speaker panel opens in the tab area, so it has a tab of its
   // own: with none, no tab shows as current and nothing leads back (#650).
   // My notes, in the desktop side column too, has one after Notes.
-  it("gives the speaker panel and My notes tabs on a phone, Speakers current while it is open", async () => {
+  it("gives the speaker panel, My notes and Captures tabs on a phone, Speakers current while it is open", async () => {
     activePanel = "speakers";
     const tablist = await openTabs(360);
 
     expect(tabLabels(tablist)).toEqual([
-      "Transcript", "Notes", "My notes", "Documents", "Analytics", "Speakers",
+      "Transcript", "Notes", "My notes", "Captures", "Documents", "Analytics", "Speakers",
     ]);
     expect(within(tablist).getAllByRole("tab", { selected: true })).toEqual([
       within(tablist).getByRole("tab", { name: "Speakers" }),
@@ -920,8 +925,9 @@ describe("RecordingPage (detail)", () => {
     [360, "notes", "End", "speakers"],
     [1440, "speakers", "ArrowRight", "notes"],
     [360, "notes", "ArrowRight", "my-notes"],
-    [360, "documents", "ArrowLeft", "my-notes"],
-    [360, "my-notes", "ArrowRight", "documents"],
+    [360, "documents", "ArrowLeft", "captures"],
+    [360, "my-notes", "ArrowRight", "captures"],
+    [360, "captures", "ArrowRight", "documents"],
   ])("at %i px from %s, %s opens %s and focuses its tab", async (width, from, key, to) => {
     activePanel = from;
     const tablist = await openTabs(width);
