@@ -1408,6 +1408,8 @@ describe("RecordingPage (detail): the recording answers 404", () => {
 
   it("stays when a refresh of the view answers 404 under another account", async () => {
     await open();
+    // The status display can appear before the refresh listener's effect runs.
+    await act(async () => {});
     cookie = BOB;
 
     await act(async () => {
