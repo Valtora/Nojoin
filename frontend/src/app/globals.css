@@ -6,6 +6,7 @@
 @import "./palettes.css";
 @import "./styles.css";
 @import "./depth-dark.css";
+@import "./depth-gradient.css";
 @import "./classic.css";
 
 /* Enable class-based dark mode for manual theme switching */

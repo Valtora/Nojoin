@@ -1,5 +1,5 @@
 /** Actual Depth role/fill combinations, without an intermediate overlay representation. */
-import { colour, mixOklab, mixPercent, parseBlock, rgb } from "./contrast-colour.mjs";
+import { colour, flattenStack, mixOklab, mixPercent, parseBlock, rgb } from "./contrast-colour.mjs";
 
 const ROLES = ["inset", "card", "pane", "float"];
 const FILLS = ["surface-card", "surface-inset", "surface-float", "control-bg", "control-disabled-bg", "rail-bg",
@@ -77,7 +77,10 @@ function darkPairings(fill) {
   ];
   const text = TEXT.filter(([fg]) => ["foreground", "contrast-helper", "contrast-muted", "contrast-icon-muted"]
     .includes(fg));
-  const result = descriptions.flatMap(([label, bg]) => pairs(label, bg));
+  // Nested danger affordances are icons (e.g. IconButton); danger labels on
+  // cards and floats retain their original 4.5:1 semantic pairings.
+  const result = descriptions.flatMap(([label, bg]) => pairs(label, bg,
+    [...TEXT, ["danger-text", 3], ["danger-text-hover", 3], ["action-text-hover", 4.5]]));
   result.push(...pairs("calendar header", [float, fill("inset", "surface-inset")], text),
     ...pairs("inset eighty-percent", [float, fill("inset", "surface-inset-80")], text),
     ...pairs("chat placeholder", [card, fill("inset", "surface-inset")], [["control-placeholder", 4.5]]),
@@ -119,5 +122,119 @@ export function addDepthThemes(themes, css) {
       theme.behindStack = [fill("pane", "surface-card"), "scrim"];
       theme.floatStack = [fill("float", "surface-float")];
     }
+  }
+}
+
+const STOPS = [0, .4, .75, .94, 1];
+const GRADIENT_FILLS = new Set(["surface-card", "surface-inset", "surface-inset-80", "surface-float", "control-bg"]);
+
+function gradientModel(theme, css, dark) {
+  const settings = parseBlock(css, `html[data-style="depth"]${dark ? ".dark" : ":not(.dark)"}`);
+  const tokens = { ...theme.tokens, ...Object.fromEntries(Object.entries(settings)
+    .filter(([name]) => !name.startsWith("depth-"))) };
+  const read = (name) => colour(name, tokens, theme.base);
+  const percent = (name) => mixPercent(settings[name], name);
+  const put = (name, value) => {
+    const token = `depth-gradient-${name}`;
+    tokens[token] = rgb(value);
+    return token;
+  };
+  const foreground = read("foreground");
+  const alpha = (value, strength) => [...value.slice(0, 3), value[3] * strength];
+  const darkTop = dark ? alpha(foreground, percent("depth-gradient-light")) : null;
+  const darkBottom = dark ? alpha(foreground, percent("depth-gradient-shade")) : null;
+
+  function raised(role, fill, original) {
+    if (dark) {
+      const first = role === "pane" ? mixOklab(darkTop, read("action"), .035) : darkTop;
+      return STOPS.map((weight, index) => [...original,
+        put(`${role}-wash-${index}`, mixOklab(first, darkBottom, weight))]);
+    }
+    const raw = read(fill === "surface-inset-80" ? "surface-inset" : fill);
+    if (fill === "surface-inset-80") raw[3] *= .8;
+    const shade = role === "pane" && fill.startsWith("surface-inset") ? "pane-inset" : role;
+    const bottom = mixOklab(raw, foreground, percent(`depth-light-${shade}`));
+    const stops = STOPS.map((weight, index) => [put(`${role}-${fill}-${index}`, mixOklab(raw, bottom, weight))]);
+    // The highlight occupies only the first pixel, at the top stop.
+    return [...stops, [...stops[0], put("highlight", alpha(read("action-on"), .65))]];
+  }
+
+  function choices(pair) {
+    let result = [[]];
+    for (const token of pair.bg) {
+      const explicit = /^depth-(inset|card|pane|float)-(.+)$/.exec(token);
+      const role = explicit?.[1] ?? ({ "surface-card": "card", "surface-float": "float" })[token];
+      const fill = explicit?.[2] ?? token;
+      const action = /neutral action/.test(pair.label) && token === pair.bg.at(-1);
+      let options = [[token]];
+      if (!action && ["card", "pane", "float"].includes(role) && GRADIENT_FILLS.has(fill)) {
+        options = raised(role, fill, [token]);
+      } else if (dark && ["action", "action-hover", "action-active"].includes(token)
+        && !/(disabled|pressed) primary/.test(pair.label)) {
+        const own = read(token), first = mixOklab(own, read("action-hover"), .03);
+        options = STOPS.map((weight, index) => [put(`${token}-${index}`, mixOklab(first, own, weight))]);
+      }
+      result = result.flatMap((stack) => options.map((option) => [...stack, ...option]));
+    }
+    return result;
+  }
+  return { tokens, choices, put };
+}
+
+/** Actual light roles that cannot be inferred from a fill token alone. */
+function lightGradientPairings(theme) {
+  const fill = (role, name) => {
+    const token = key(role, name);
+    theme.tokens[token] = rgb(colour(name === "surface-inset-80" ? "surface-inset" : name,
+      theme.tokens, theme.base));
+    if (name === "surface-inset-80") {
+      const raw = colour("surface-inset", theme.tokens, theme.base);
+      raw[3] *= .8;
+      theme.tokens[token] = rgb(raw);
+    }
+    return token;
+  };
+  const pane = fill("pane", "surface-card"), float = fill("float", "surface-float");
+  const surfaces = [
+    ["float card-fill", [fill("float", "surface-card")]],
+    ["float control-fill", [fill("float", "control-bg")]],
+    ["chat pane", [pane, fill("pane", "surface-inset")]],
+    ["translucent pane", [pane, fill("pane", "surface-inset-80")]],
+    ["chat field", [pane, "surface-inset"]],
+    ["merge field", [float, "action-tint", "control-bg"]],
+    ["neutral action resting", [pane, "surface-card"]],
+    ["neutral action hover", [pane, "surface-inset"]],
+    ["neutral action pressed", [pane, "surface-inset"]],
+  ];
+  return surfaces.flatMap(([label, bg]) => pairs(`gradient ${label}`, bg,
+    [...TEXT, ["danger-text", 4.5], ["danger-text-hover", 4.5], ["action-text-hover", 4.5],
+      ["action", 3], ["danger", 3]]))
+    .concat(pairs("gradient chat placeholder", [pane, "surface-inset"], [["control-placeholder", 4.5]]));
+}
+
+/** Replace only Depth's measurements with all independently positioned gradient stops.
+ * Decorative borders retain palette values and have no gradient contrast requirement.
+ */
+export function addDepthGradientThemes(themes, css) {
+  for (const theme of themes.filter((entry) => entry.name.endsWith("-style-depth"))) {
+    const dark = /(?:^|-)dark-style-depth$/.test(theme.name);
+    const original = [...theme.pairings, ...(dark ? [] : lightGradientPairings(theme))];
+    const model = gradientModel(theme, css, dark);
+    theme.tokens = model.tokens;
+    theme.pairings = original.filter((pair) => pair.min >= 3).flatMap((pair) =>
+      model.choices(pair).map((bg, index) => ({ ...pair, bg, label: `${pair.label} [gradient ${index}]` })));
+    const behind = model.choices({ label: "scrim", bg: theme.behindStack ?? ["surface-page", "surface-card", "scrim"] });
+    const floats = model.choices({ label: "float", bg: theme.floatStack ?? ["surface-float"] });
+    for (const [index, stack] of floats.entries()) {
+      const fg = model.put(`separation-${index}`, flattenStack(stack, theme.tokens, theme.base));
+      theme.pairings.push(...behind.map((bg, back) => ({
+        label: `gradient float separation ${index}:${back}`, fg, bg, min: 1.15,
+      })));
+    }
+    // The splitter's grip carries identification; the strip and pane edges are decorative.
+    const split = dark ? key("pane", "surface-inset") : "depth-gradient-pane-surface-inset-4";
+    theme.pairings.push(...pairs("splitter grip", ["surface-page", split], [["control-border", 3]]),
+      ...pairs("splitter hover grip", ["action"], [["action-on", 3]]));
+    theme.floats = false;
   }
 }

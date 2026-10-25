@@ -82,7 +82,8 @@ storage falls back to Default. These choices change immediately and never reach 
 ### Style
 
 [styles.css](../frontend/src/app/styles.css), [classic.css](../frontend/src/app/classic.css)
-and [depth-dark.css](../frontend/src/app/depth-dark.css)
+and [depth-dark.css](../frontend/src/app/depth-dark.css), followed by
+[depth-gradient.css](../frontend/src/app/depth-gradient.css),
 are app-only and import after the palettes. Every rule is scoped to Classic or Depth, so
 Default retains the flat canon above. Style changes
 shape and elevation and derives dark Depth's lighter fills and contrast support from the
@@ -107,13 +108,18 @@ The new Style row is the intentional addition to the Appearance page under every
   The inline deadline calendar and its header stay transparent over their Inset container.
   In dark mode, raised surfaces mix their own palette fill towards the palette's lighter
   foreground tone in Oklab: Inset 0%, Card 3%, Pane 6% and Float 9%. Transparent surfaces keep
-  their backdrop; speaker colours and coloured action fills remain unchanged. Neutral actions
+  their backdrop; speaker colours and danger fills stay flat. Neutral actions
   follow Card at rest, Pane during eligible hover and Inset while pressed. Dark shadows retain
   narrow inset highlights. Rows and individual tabs
   do not lift. Reduced motion disables the lift and its transitions. Dark action and danger
   labels use their palette hover text colours; control borders and disabled labels use the
   muted-icon token. Filled actions and selected calendar cells gain a local palette focus
   perimeter. These control borders also remain identifiable on the coloured person-merge pane.
+  Light raised surfaces shade towards foreground at eased stops: Card 7%, Pane 10% and Float 12%,
+  with a 1px highlight; nested inset panes stop at 7.5% to retain danger-text contrast. Dark raised
+  surfaces carry a 5% foreground wash, with a 3.5% action accent on panes, fading to their own fill;
+  primary buttons mix 3% towards their hover fill at the top. Fields and rails stay flat. Splitters
+  continue the pane fill with an identifying grip. Decorative borders retain their palette values.
 
 | Tokens | Readers |
 | --- | --- |
@@ -124,6 +130,9 @@ The new Style row is the intentional addition to the Appearance page under every
 | `--style-elevation-1`, `--style-elevation-2`, `--style-elevation-3` | Depth Card/actions/bubbles, Pane/eligible hover, Float; Classic uses only its smaller float cast shadow |
 | `--depth-mix-inset`, `--depth-mix-card`, `--depth-mix-pane`, `--depth-mix-float` | Dark Depth mixes eligible palette fills towards `--foreground` in Oklab at 0%, 3%, 6% and 9% respectively |
 | `--depth-fill-base`, `--depth-role-mix` | Element-local palette fill and role strength; reset on each eligible host so nested surfaces keep their own fill |
+| `--depth-light-card`, `--depth-light-pane`, `--depth-light-float`, `--depth-light-pane-inset` | Light gradient bottom strengths: 7%, 10%, 12% and 7.5%; host-local fill, shade and highlight preserve translucent backdrops |
+| `--depth-gradient-light`, `--depth-gradient-shade`, `--depth-gradient-paint`, `--depth-gradient-pane-paint` | Dark foreground wash from 5% to 0%; pane top includes the palette action accent; five eased stops in Oklab |
+| `--depth-split-fill` | Horizontal resize strip continues its upper pane's bottom colour; the grip uses the identifying control edge |
 | `--depth-filled-edge` → `--focus-ring` | Local inset identifying perimeter on dark Depth's filled actions and selected calendar cells; preserves all five Tailwind shadow/ring slots |
 | `--style-focus-edge` → `--focus-ring`, `--style-glow-colour` | Exterior focus outline and Depth's supplemental halo |
 | `--float-shadow` | Style float recipe, also consumed by vendor calendar popovers |
@@ -136,8 +145,8 @@ outline and Depth's 2px solid outline use the palette focus token; the glow is n
 focus indicator. The contrast gate measures identifying edges and exterior focus at 3:1 on
 their page, card, inset, float, rail and control backdrops; decorative bevels are supplemental.
 It resolves Classic's nested palette mixes before measuring the rendered identifying facet and
-audits Depth's effective dark role mixes, nested controls, callouts and coloured merge pane
-alongside the unchanged light treatment in every palette. Each style has one recipe, selected
+audits Depth's effective role mixes, every gradient stop, independent nested stops, controls,
+callouts and coloured merge pane in every palette. Each style has one recipe, selected
 only through `data-style`; the dark Depth treatment follows `.dark` without a separate switch.
 
 ### Palettes

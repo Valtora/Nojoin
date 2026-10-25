@@ -25,7 +25,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { contrastRatio, flattenStack, measurePairing, parseBlock, toHex } from "./contrast-colour.mjs";
 import { addStyleThemes } from "./style-contrast.mjs";
-import { addDepthThemes } from "./depth-contrast.mjs";
+import { addDepthGradientThemes, addDepthThemes } from "./depth-contrast.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 /**
@@ -455,6 +455,7 @@ for (const name of paletteNames) {
 const styleCss = await readFile(STYLES, "utf8");
 addStyleThemes(themes, styleCss, parseBlock);
 addDepthThemes(themes, await readFile(DEPTH, "utf8"));
+addDepthGradientThemes(themes, await readFile(resolve(ROOT, "src/app/depth-gradient.css"), "utf8"));
 
 const failures = [];
 const results = [];

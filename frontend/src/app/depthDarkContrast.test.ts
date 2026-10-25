@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import postcss from "postcss";
 import { describe, expect, it } from "vitest";
 import { colour, composite, measurePairing, mixOklab, mixPercent, parseBlock } from "../../scripts/contrast-colour.mjs";
-import { addDepthThemes } from "../../scripts/depth-contrast.mjs";
+import { addDepthGradientThemes, addDepthThemes } from "../../scripts/depth-contrast.mjs";
 import { addStyleThemes } from "../../scripts/style-contrast.mjs";
 
 type Pairing = { label: string; fg: string; bg: string[]; min: number };
@@ -11,6 +11,7 @@ type Theme = { name: string; tokens: Record<string, string>; base: Record<string
   floats: boolean; pairings: Pairing[] };
 const read = (file: string) => readFileSync(new URL(file, import.meta.url), "utf8");
 const css = read("./depth-dark.css");
+const gradientCss = read("./depth-gradient.css");
 const root = parseBlock(read("./tokens.css"), ":root");
 const dark = parseBlock(read("./tokens.css"), ".dark");
 
@@ -129,5 +130,78 @@ describe("Depth effective backgrounds", () => {
     expect(perimeterTargets(css, "depth", false)).toEqual([]);
     expect(perimeterTargets(css.replace(":is(.bg-action, .bg-danger)", ":is(.missing-action, .missing-danger)")))
       .toEqual([]);
+  });
+});
+
+function gradientThemes(source = gradientCss): Theme[] {
+  const entries = themes();
+  addDepthThemes(entries, css);
+  addDepthGradientThemes(entries, source);
+  return entries;
+}
+
+function gradientTargets(source: string, style: string, darkMode: boolean): string[] {
+  const fixture = document.implementation.createHTMLDocument();
+  fixture.documentElement.dataset.style = style;
+  fixture.documentElement.className = darkMode ? "dark" : "";
+  fixture.body.innerHTML = '<section data-ui-surface="pane" class="bg-surface-card" id="pane"></section>'
+    + '<section data-ui-surface="float" class="bg-surface-float" id="float"></section>'
+    + '<section data-ui-surface="card" class="bg-surface-card" id="card"></section>'
+    + '<section data-ui-surface="pane" id="unfilled"></section>'
+    + '<div data-ui-surface="inset" class="bg-surface-card" id="bubble"></div>'
+    + '<input data-ui-input="field" data-ui-surface="pane" class="bg-control-bg" id="field">'
+    + '<button data-ui-chrome="action" data-ui-surface="card" class="bg-surface-card" id="neutral"></button>'
+    + '<button data-ui-chrome="action" class="bg-action" id="primary"></button>'
+    + '<button data-ui-chrome="action" class="bg-danger" id="danger"></button>'
+    + '<section data-ui-surface="pane" class="bg-status-info-bg" id="status"></section>'
+    + '<div data-ui-surface="float" role="tooltip" class="bg-surface-card" id="tooltip"></div>'
+    + '<div class="react-datepicker task-deadline-calendar" id="inline-calendar"></div>';
+  const selectors: string[] = [];
+  postcss.parse(source).walkRules((rule) => {
+    if (rule.parent?.type === "root" && rule.nodes.some((node) => node.type === "decl"
+      && node.prop === "background-image" && /gradient\(|var\(--depth-(?:light-neutral|gradient)-paint\)/.test(node.value))) {
+      selectors.push(rule.selector);
+    }
+  });
+  return [...fixture.querySelectorAll("[id]")].filter((element) =>
+    selectors.some((selector) => element.matches(selector))).map((element) => element.id);
+}
+
+describe("Depth production gradients", () => {
+  it("paints filled raised roles automatically, excluding fields, bubbles and semantic fills in both modes", () => {
+    for (const darkMode of [false, true]) {
+      expect(gradientTargets(gradientCss, "depth", darkMode)).toEqual(["pane", "float", "card", ...(darkMode ? ["primary"] : [])]);
+      expect(gradientTargets(gradientCss, "classic", darkMode)).toEqual([]);
+      expect(gradientTargets(gradientCss, "default", darkMode)).toEqual([]);
+    }
+  });
+
+  it("measures nested independent stops, flat fields, primary states and splitter identification in every palette", () => {
+    const entries = gradientThemes();
+    const flat = themes();
+    addDepthThemes(flat, css);
+    expect(entries.filter((entry) => !entry.name.endsWith("-style-depth")))
+      .toEqual(flat.filter((entry) => !entry.name.endsWith("-style-depth")));
+    for (const entry of entries.filter((item) => item.name.endsWith("-style-depth"))) {
+      for (const pair of entry.pairings) {
+        expect(measurePairing(pair, entry.tokens, entry.base).ratio, `${entry.name}: ${pair.label}`)
+          .toBeGreaterThanOrEqual(pair.min);
+      }
+    }
+    const light = entries.find((entry) => entry.name === "light-style-depth")!;
+    const nested = light.pairings.find((pair) => pair.label === "depth gradient chat pane foreground [gradient 28]")!;
+    expect(nested.bg).toEqual(["depth-gradient-pane-surface-card-4", "depth-gradient-pane-surface-inset-4"]);
+    const placeholder = light.pairings.find((pair) => pair.label === "depth gradient chat placeholder control-placeholder [gradient 4]")!;
+    expect(placeholder.bg.at(-1)).toBe("surface-inset");
+    expect(light.pairings.find((pair) => pair.label === "primary label [gradient 0]")?.bg).toEqual(["action"]);
+  });
+
+  it("fails real contrast measurements when a necessary safeguard or the lighter nested stop is removed", () => {
+    for (const source of [gradientCss.replace("--control-border: var(--contrast-icon-muted);", ""),
+      gradientCss.replace("--depth-light-pane-inset: 7.5%;", "--depth-light-pane-inset: 10%;")]) {
+      const entries = gradientThemes(source).filter((entry) => entry.name.endsWith("-style-depth"));
+      expect(entries.some((entry) => entry.pairings.some((pair) =>
+        measurePairing(pair, entry.tokens, entry.base).ratio < pair.min))).toBe(true);
+    }
   });
 });
