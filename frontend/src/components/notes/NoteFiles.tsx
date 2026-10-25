@@ -1,5 +1,7 @@
 "use client";
 
+import { ButtonBase } from "@/components/ui/nativeBases";
+import { SurfaceBase } from "@/components/ui/SurfaceBase";
 import {
   createContext,
   useContext,
@@ -128,7 +130,7 @@ export function NoteFile({
   if (!context) return null;
   if (attachment) {
     return (
-      <button
+      <ButtonBase
         type="button"
         onClick={() => context.open(noteId)}
         data-testid="note-file"
@@ -152,7 +154,7 @@ export function NoteFile({
             <span className="shrink-0 font-semibold text-action-text">· In notes</span>
           ) : null}
         </span>
-      </button>
+      </ButtonBase>
     );
   }
   const upload = snapshot.uploads.get(noteId);
@@ -294,16 +296,16 @@ function NoteFileViewer({
     >
       <div className="space-y-4">
         {file.is_image ? (
-          <div className="flex items-center justify-center overflow-hidden rounded-md border border-surface-border bg-surface-inset">
+          <SurfaceBase kind="inset" className="flex items-center justify-center overflow-hidden rounded-md border border-surface-border bg-surface-inset">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={documentFileUrl(file.id)}
               alt={`${file.title}, on the note ${atMs === null ? "on the meeting" : `at ${formatTimelineMs(atMs)}`}`}
               className="max-h-[60dvh] w-auto max-w-full object-contain"
             />
-          </div>
+          </SurfaceBase>
         ) : (
-          <p className="flex items-center gap-2 rounded-md border border-surface-border bg-surface-inset p-4 text-sm text-foreground">
+          <p data-ui="surface" data-ui-surface="inset" className="flex items-center gap-2 rounded-md border border-surface-border bg-surface-inset p-4 text-sm text-foreground">
             <FileText aria-hidden="true" className="h-5 w-5 shrink-0 text-contrast-icon-muted" />
             <span className="min-w-0 break-words">{file.title}</span>
           </p>

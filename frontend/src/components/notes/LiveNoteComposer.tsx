@@ -1,5 +1,6 @@
 "use client";
 
+import { SelectBase, TextareaBase } from "@/components/ui/nativeBases";
 import {
   useId,
   useLayoutEffect,
@@ -276,7 +277,7 @@ export default function LiveNoteComposer({
     : (message ?? { text: modeHint(draft), tone: "info" as const });
 
   return (
-    <form
+    <form data-ui="surface" data-ui-surface="pane"
       onSubmit={handleSubmit}
       onDragOver={(event) => {
         if (onDraftFileChange && event.dataTransfer.types.includes("Files")) event.preventDefault();
@@ -340,7 +341,7 @@ export default function LiveNoteComposer({
           Place note
         </label>
         <div className="relative h-[44px] w-[52px] shrink-0">
-          <select
+          <SelectBase
             id={modeId}
             value={selection ? ON_SELECTION : draft.mode}
             title={selection ? ON_SELECTION_LABEL : MODE_LABELS[draft.mode]}
@@ -358,7 +359,7 @@ export default function LiveNoteComposer({
                 {MODE_LABELS[value]}
               </option>
             ))}
-          </select>
+          </SelectBase>
           <span
             aria-hidden="true"
             className="pointer-events-none absolute inset-0 flex items-center justify-center gap-0.5 text-contrast-muted"
@@ -367,7 +368,7 @@ export default function LiveNoteComposer({
             <ChevronDown className="h-3 w-3" />
           </span>
         </div>
-        <textarea
+        <TextareaBase
           ref={box}
           rows={1}
           value={draft.text}

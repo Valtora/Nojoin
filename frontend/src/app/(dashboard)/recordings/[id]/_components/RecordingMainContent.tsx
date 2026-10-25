@@ -1,5 +1,7 @@
 "use client";
 
+import { ButtonBase } from "@/components/ui/nativeBases";
+import { SurfaceBase } from "@/components/ui/SurfaceBase";
 import { ChevronsLeft, ChevronsRight } from "lucide-react";
 import {
   useEffect,
@@ -285,7 +287,7 @@ export default function RecordingMainContent({
           className={`${isMobile ? "flex overflow-x-auto" : "grid grid-cols-4"} border-b-2 border-surface-border`}
         >
           {tabs.map(({ panel, label }) => (
-            <button
+            <ButtonBase
               key={panel}
               type="button"
               role="tab"
@@ -298,13 +300,13 @@ export default function RecordingMainContent({
               className={tabClassName(activePanel === panel, isMobile)}
             >
               <span className="truncate">{label}</span>
-            </button>
+            </ButtonBase>
           ))}
         </div>
       </div>
 
       {/* Panel Content */}
-      <div className="flex-1 flex flex-col bg-surface-card overflow-hidden min-h-0 h-full relative">
+      <SurfaceBase kind="pane" className="flex-1 flex flex-col bg-surface-card overflow-hidden min-h-0 h-full relative">
         <TranscriptSection
           active={activePanel === "transcript"}
           recording={recording}
@@ -430,7 +432,7 @@ export default function RecordingMainContent({
             />
           </div>
         )}
-      </div>
+      </SurfaceBase>
     </div>
   );
 }

@@ -1,5 +1,7 @@
 "use client";
 
+import { ButtonBase } from "@/components/ui/nativeBases";
+import { SurfaceBase } from "@/components/ui/SurfaceBase";
 import { ArrowLeft, MessageSquare } from "lucide-react";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 
@@ -212,31 +214,31 @@ export default function RecordingPage({ params }: PageProps) {
           // tabs' scroll regions (pb-clear-floating-*) end with this much
           // room: the button's 3.5rem, its 1rem offset, a 0.5rem gap and the
           // safe area it also clears.
-          <div className="flex h-full flex-1 min-w-0 flex-col bg-surface-card [--floating-action-clearance:calc(env(safe-area-inset-bottom)+5rem)]">
+          <SurfaceBase kind="pane" className="flex h-full flex-1 min-w-0 flex-col bg-surface-card [--floating-action-clearance:calc(env(safe-area-inset-bottom)+5rem)]">
             <div className="min-h-0 flex-1">{mainContent}</div>
 
             {!isMobileChatOpen && (
               <div className="pointer-events-none fixed bottom-[calc(env(safe-area-inset-bottom)+1rem)] right-4 z-[var(--z-sticky)]">
-                <button
+                <ButtonBase chrome="action"
                   onClick={() => setIsMobileChatOpen(true)}
                   className="pointer-events-auto inline-flex h-14 w-14 items-center justify-center rounded-full bg-action text-action-on shadow-float transition-colors hover:bg-action-hover"
                   title="Open Meeting Chat"
                   aria-label="Open Meeting Chat"
                 >
                   <MessageSquare className="h-6 w-6" />
-                </button>
+                </ButtonBase>
               </div>
             )}
 
             {/* Mobile Chat Full-Screen Modal */}
             {isMobileChatOpen && (
-              <div className="fixed inset-0 z-[var(--z-modal)] flex h-dvh flex-col bg-surface-card animate-in slide-in-from-bottom">
+              <SurfaceBase kind="pane" className="fixed inset-0 z-[var(--z-modal)] flex h-dvh flex-col bg-surface-card animate-in slide-in-from-bottom">
                 <header className="flex shrink-0 items-center justify-between border-b-2 border-surface-border bg-surface-inset px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
                   <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
                     <MessageSquare className="w-5 h-5 text-action-text" />
                     Meeting Chat
                   </h2>
-                  <button
+                  <ButtonBase
                     onClick={() => setIsMobileChatOpen(false)}
                     className="inline-flex items-center gap-2 rounded-lg px-2 py-2 text-sm font-medium text-contrast-helper transition-colors hover:bg-surface-inset hover:text-foreground"
                     title="Back to meeting"
@@ -244,14 +246,14 @@ export default function RecordingPage({ params }: PageProps) {
                   >
                     <ArrowLeft className="h-5 w-5" />
                     <span>Back</span>
-                  </button>
+                  </ButtonBase>
                 </header>
                 <div className="flex-1 min-h-0 flex flex-col overflow-hidden pb-[env(safe-area-inset-bottom)]">
                   <ChatPanel onNotesUpdate={fetchRecording} />
                 </div>
-              </div>
+              </SurfaceBase>
             )}
-          </div>
+          </SurfaceBase>
         ) : (
           <div className="flex h-full flex-1 min-w-0">
             <PanelGroup

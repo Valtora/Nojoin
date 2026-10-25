@@ -1,5 +1,7 @@
 "use client";
 
+import { ButtonBase } from "@/components/ui/nativeBases";
+import { SurfaceBase } from "@/components/ui/SurfaceBase";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Loader2, Mic, Pause, Trash2, Upload } from "lucide-react";
 
@@ -225,7 +227,7 @@ export default function RecordingStatusDisplay({
   // Attaching a document is a toolbar action, not a panel one: it is most
   // useful while the meeting is still running, before processing finishes.
   const uploadButton = (
-    <button
+    <ButtonBase chrome="action"
       type="button"
       onClick={() => setIsUploadOpen(true)}
       className="inline-flex h-10 shrink-0 items-center gap-2 rounded-lg border border-control-border bg-surface-card px-4 text-sm font-semibold text-contrast-muted transition-colors hover:border-action-border hover:text-action-text"
@@ -233,7 +235,7 @@ export default function RecordingStatusDisplay({
     >
       <Upload className="h-4 w-4" />
       Attach Docs
-    </button>
+    </ButtonBase>
   );
 
   const progressValue = isActiveRecording
@@ -271,7 +273,8 @@ export default function RecordingStatusDisplay({
     >
       {showMobileBackButton && onBack ? (
         <div className="pointer-events-none fixed left-4 top-[calc(env(safe-area-inset-top)+0.75rem)] z-[var(--z-sticky)] lg:hidden">
-          <button
+          <ButtonBase
+            chrome="action"
             type="button"
             onClick={onBack}
             className="pointer-events-auto inline-flex h-12 items-center gap-2 rounded-2xl border border-surface-border bg-surface-card px-4 text-sm font-medium text-contrast-muted shadow-float transition-colors hover:bg-surface-card"
@@ -280,7 +283,7 @@ export default function RecordingStatusDisplay({
           >
             <ArrowLeft className="h-4 w-4" />
             Back
-          </button>
+          </ButtonBase>
         </div>
       ) : null}
 
@@ -304,7 +307,7 @@ export default function RecordingStatusDisplay({
         {/* The console is chrome, not a panel: as a strip it costs one row,
             where a card would take a column's width away from the transcript
             and the guidance, both dense text. */}
-        <section className="density-surface flex min-w-0 flex-col border border-surface-border bg-surface-card shadow-card">
+        <SurfaceBase as="section" kind="card" className="density-surface flex min-w-0 flex-col border border-surface-border bg-surface-card shadow-card">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
             <span className="inline-flex shrink-0 items-center gap-2 rounded-pill border border-action-border bg-action-tint px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-action-text">
               {isActiveRecording ? (
@@ -351,7 +354,8 @@ export default function RecordingStatusDisplay({
                 >
                   {formatClock(Math.round(recording.duration_seconds || 0))}
                 </span>
-                <button
+                <ButtonBase
+                  chrome="action"
                   type="button"
                   onClick={handleProcessingDiscard}
                   disabled={isDiscarding}
@@ -364,7 +368,7 @@ export default function RecordingStatusDisplay({
                     <Trash2 className="h-4 w-4" />
                   )}
                   Discard Recording
-                </button>
+                </ButtonBase>
               </>
             )}
           </div>
@@ -381,7 +385,7 @@ export default function RecordingStatusDisplay({
               />
             </div>
           ) : null}
-        </section>
+        </SurfaceBase>
 
         <section className="flex grow flex-col gap-[var(--workspace-gap)] @min-[54rem]:grid @min-[54rem]:min-h-0 @min-[54rem]:grid-cols-[minmax(0,1fr)_minmax(24rem,1.1fr)] @min-[54rem]:grid-rows-[minmax(0,1fr)] @min-[54rem]:items-stretch">
           {/* The meeting's record: what was said, what you wrote, what you
@@ -444,7 +448,7 @@ export default function RecordingStatusDisplay({
                 }
               />
             ) : (
-              <section className="density-surface flex flex-col border border-surface-border bg-surface-card shadow-card">
+              <SurfaceBase as="section" kind="card" className="density-surface flex flex-col border border-surface-border bg-surface-card shadow-card">
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
                   <Loader2 className="h-5 w-5 shrink-0 animate-spin text-action-text" />
                   {/* Not "Processing": the console beside this already carries
@@ -507,7 +511,7 @@ export default function RecordingStatusDisplay({
                   onEmptied={focusNoteHome}
                   className="mt-4 border-t border-surface-divider pt-3"
                 />
-              </section>
+              </SurfaceBase>
             )}
           </div>
 

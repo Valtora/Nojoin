@@ -1,5 +1,7 @@
 "use client";
 
+import { ButtonBase } from "@/components/ui/nativeBases";
+import { SurfaceBase } from "@/components/ui/SurfaceBase";
 import {
   useCallback,
   useLayoutEffect,
@@ -244,7 +246,7 @@ export default function LiveTranscriptPanel({
     // below. Not when stacked, where the page scrolls: a clipping card is a
     // scroll container, and the note box would stick to the card, which never
     // scrolls, rather than to the page above an on-screen keyboard.
-    <section className="density-surface flex h-full min-h-0 flex-col border border-surface-border bg-surface-card shadow-card @min-[54rem]:overflow-hidden">
+    <SurfaceBase as="section" kind="card" className="density-surface flex h-full min-h-0 flex-col border border-surface-border bg-surface-card shadow-card @min-[54rem]:overflow-hidden">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="inline-flex items-center gap-2 rounded-pill border border-action-border bg-action-tint px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-action-text">
           <Radio className="h-3.5 w-3.5" />
@@ -275,7 +277,7 @@ export default function LiveTranscriptPanel({
               itself puts the bar within the frame and across its rounded corners.
               Drawing the frame behind the content and ending it before the gutter
               leaves the bar outside the window entirely. */}
-          <div
+          <SurfaceBase kind="pane"
             aria-hidden
             className="density-surface-panel pointer-events-none absolute inset-y-0 left-0 right-[var(--live-transcript-gutter)] border border-action-border bg-surface-card"
           />
@@ -366,20 +368,21 @@ export default function LiveTranscriptPanel({
           </div>
 
           {!isEmpty && !isPinnedToBottom ? (
-            <button
+            <ButtonBase
+              chrome="action"
               type="button"
               onClick={jumpToLatest}
               className="absolute bottom-3 left-[calc(50%-var(--live-transcript-gutter)/2)] inline-flex -translate-x-1/2 items-center gap-1.5 rounded-pill border border-action-border bg-surface-card px-3 py-1.5 text-xs font-semibold text-action-text shadow-float transition-colors hover:bg-action-tint"
             >
               <ArrowDown className="h-3.5 w-3.5" />
               Jump to latest
-            </button>
+            </ButtonBase>
           ) : null}
         </div>
 
         {footer}
       </div>
       <TranscriptSelectionNotes root={scrollContainerRef} onNoteOnText={onNoteOnLine} />
-    </section>
+    </SurfaceBase>
   );
 }
