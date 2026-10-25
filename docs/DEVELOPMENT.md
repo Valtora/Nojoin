@@ -138,7 +138,7 @@ Require `CI gate` and nothing else. The individual CI jobs are skipped when thei
 - Backend or worker code: `pytest`, or `python scripts/check.py` for every Python gate.
 - Bulk database reads or writes whose size follows the data: also `pytest` with `NOJOIN_TEST_POSTGRES_URL` set. See [Bind Parameter Limits](#bind-parameter-limits).
 - Alembic migrations: `python3 scripts/validate_alembic.py`, which needs exactly one head, and `python3 scripts/check_migrations.py` against a throwaway Postgres. See [Running Migrations Against Postgres](#running-migrations-against-postgres).
-- Frontend code: `npm run lint`, `npm run check:contrast`, `npm run test` and `npm run build`.
+- Frontend code: `npm run lint`, `npm run check:contrast`, `npm run test` and `npm run build`. Once `node_modules` is installed, none of them needs network, so they run in a container on `--network none`. The fonts are in the repository rather than fetched from Google at build time ([DESIGN.md](DESIGN.md#font-files)).
 - Design tokens (`frontend/src/app/tokens.css`, `frontend/src/app/palettes.css`, `site/src/styles/site-tokens.css`): `npm run check:contrast`, which fails on any declared pairing below its threshold in any theme or palette. A new token drawn on or behind another needs its pairing added to `frontend/scripts/check-contrast.mjs`. [DESIGN.md](DESIGN.md#accessibility) has the thresholds.
 - Marketing site (`site/`): `cd site && npm ci && npm run build` on Node 26. Use `npm ci`, never `npm install`, because an older npm rewrites `site/package-lock.json` in a way CI rejects. [SITE.md](SITE.md) has the preview and review runbook.
 - Browser capture: the frontend checks plus the manual checks in [Browser Capture Development](#browser-capture-development).
