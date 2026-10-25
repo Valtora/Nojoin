@@ -1,9 +1,11 @@
 import { AxiosError } from "axios";
 
 import {
+  deleteSpeakerFrames,
   discardRecordingCapture,
   finalizeRecordingCapture,
   getRecording,
+  getSpeakerFrameStatus,
   getUnfinishedCaptures,
   getUserMe,
   initRecording,
@@ -44,9 +46,12 @@ import { pickCaptureSource, PickSourceError, type PickedCaptureSources } from ".
 import {
   CAPTURE_SEGMENT_SECONDS,
   createBrowserRecorder,
+  type AudioPosition,
   type BrowserRecorder,
   type RecorderStallInfo,
 } from "./recorder";
+import type { ScreenStudySession } from "./screenStudy/session";
+import { useScreenStudyStore } from "./screenStudy/store";
 import {
   contiguousSegmentsAfter,
   createSegmentStore,
@@ -68,6 +73,7 @@ import {
   type CaptureSettings,
   type CaptureState,
   type CaptureStopStage,
+  type StartCaptureOptions,
   type StartCaptureResponse,
   type StartCaptureResult,
   readCaptureSettings,
@@ -466,6 +472,13 @@ export class CaptureController {
   /** The owed pause's next attempt, held back until its delay has passed. */
   private owedPauseRetryTimerId: ReturnType<typeof setTimeout> | null = null;
 
+  /**
+   * The screen study of this tab's capture (#653), when it was ticked at
+   * Start Meeting. It outlives the runtime by up to 20 s after Stop, while its
+   * queued frames drain.
+   */
+  private screenStudy: ScreenStudySession | null = null;
+
   constructor() {
     const pausedContext = readPausedCaptureContext();
     this.state = {
@@ -625,6 +638,136 @@ export class CaptureController {
     this.setState({ error: null });
   };
 
+  /** Stop: the screen study takes no more frames; the recording carries on. */
+  stopScreenStudy = () => {
+    this.screenStudy?.stopSampling();
+  };
+
+  /**
+   * Delete: this meeting's frames go from the server now. Sampling stops
+   * first, so none arrives after them.
+   */
+  deleteScreenStudyFrames = async () => {
+    const store = useScreenStudyStore.getState();
+    const recordingId = store.recordingId;
+    if (!recordingId) {
+      return;
+    }
+    const study = this.screenStudy;
+    if (study && study.recordingId === recordingId) {
+      await study.deleteFrames();
+      return;
+    }
+    store.update({ deleting: true });
+    try {
+      await deleteSpeakerFrames(recordingId);
+      useScreenStudyStore.getState().update({
+        status: "deleted",
+        frames: 0,
+        bytes: 0,
+        deleting: false,
+      });
+    } catch (error: unknown) {
+      useScreenStudyStore.getState().update({ deleting: false });
+      throw error;
+    }
+  };
+
+  /**
+   * Starts the screen study on the capture this tab has just started. Its
+   * code and its worker load only now. A browser that cannot read the shared
+   * screen in the background says so and records as usual.
+   */
+  private beginScreenStudy = async (recordingId: RecordingId) => {
+    const runtime = this.runtime;
+    const track = runtime?.sources.displayStream?.getVideoTracks?.()[0];
+    if (!runtime || runtime.recordingId !== recordingId || !track) {
+      return;
+    }
+    useScreenStudyStore.getState().reset();
+    try {
+      const { startScreenStudySession } = await import("./screenStudy/session");
+      if (this.runtime !== runtime || runtime.mediaReleased || track.readyState !== "live") {
+        return;
+      }
+      this.screenStudy?.abort();
+      this.screenStudy = startScreenStudySession({
+        recordingId,
+        displayTrack: track,
+        audioWaiting: () => this.state.uploadQueue.segments > 0,
+      });
+      if (this.state.status === "paused") {
+        this.screenStudy.pause();
+      }
+    } catch (error: unknown) {
+      console.warn("[screen-study] could not start", error);
+      useScreenStudyStore.getState().update({
+        recordingId,
+        status: "stopped",
+        error:
+          "This browser could not sample the shared screen, so the screen study is off for this meeting.",
+      });
+    }
+  };
+
+  /** Stop: sampling ends now, and queued frames have 20 s to go. */
+  private finishScreenStudy() {
+    const study = this.screenStudy;
+    if (!study) {
+      return;
+    }
+    void study.finish().finally(() => {
+      if (this.screenStudy === study) {
+        this.screenStudy = null;
+      }
+    });
+  }
+
+  private abortScreenStudy(recordingId: RecordingId) {
+    const study = this.screenStudy;
+    if (study && study.recordingId === recordingId) {
+      study.abort();
+      this.screenStudy = null;
+    } else if (useScreenStudyStore.getState().recordingId === recordingId) {
+      useScreenStudyStore.getState().reset();
+    }
+  }
+
+  /**
+   * After a reload this tab samples nothing, since the study was ticked in the
+   * tab that started the meeting. Frames sent before are still listed, with
+   * Delete. One request, answered 404 unless the study is on for this account.
+   */
+  private showEarlierScreenStudy = async (recordingId: RecordingId) => {
+    if (this.screenStudy) {
+      return;
+    }
+    try {
+      const summary = await getSpeakerFrameStatus(recordingId);
+      if (
+        !summary ||
+        summary.frames === 0 ||
+        this.screenStudy ||
+        this.state.recordingId !== recordingId
+      ) {
+        return;
+      }
+      useScreenStudyStore.getState().update({
+        recordingId,
+        status: "stopped",
+        frames: summary.frames,
+        bytes: summary.bytes,
+        deleteAfter: summary.delete_after,
+        queued: 0,
+        dropped: 0,
+        error: null,
+        deleting: false,
+      });
+    } catch {
+      // Only a status display; the capture does not depend on it.
+    }
+  };
+
   private reportCaptureSourceAttempt = async (
     recordingId: RecordingId,
     payload: CaptureSourceReportPayload,
@@ -641,7 +784,10 @@ export class CaptureController {
     }
   };
 
-  start = async (name?: string): Promise<StartCaptureResponse> => {
+  start = async (
+    name?: string,
+    options: StartCaptureOptions = {},
+  ): Promise<StartCaptureResponse> => {
     this.captureActionTicket += 1;
     const support = detectCaptureSupport();
     this.setState({ support });
@@ -706,6 +852,9 @@ export class CaptureController {
         sources,
         captureReport: sources.captureReport,
         elapsedSeconds: 0,
+        audioTickSeconds: options.screenStudy
+          ? 1 / options.screenStudy.rateHz
+          : undefined,
       });
       const captureReport = sources.captureReport;
       sources = null;
@@ -714,6 +863,9 @@ export class CaptureController {
         recordingId: initResponse.id,
         error: null,
       });
+      if (options.screenStudy) {
+        await this.beginScreenStudy(initResponse.id);
+      }
       await this.reportCaptureSourceAttempt(
         initResponse.id,
         buildCaptureSourceReportPayload(captureReport, {
@@ -951,6 +1103,7 @@ export class CaptureController {
         lastSequence: resumeResponse.last_sequence,
         error: null,
       });
+      void this.showEarlierScreenStudy(targetRecordingId);
       await this.reportCaptureSourceAttempt(
         targetRecordingId,
         buildCaptureSourceReportPayload(captureReport, {
@@ -1024,6 +1177,7 @@ export class CaptureController {
 
     try {
       if (runtime) {
+        this.finishScreenStudy();
         this.setStopStage("stopping-recorder");
         await withStageTimeout(
           "stopping-recorder",
@@ -1177,6 +1331,8 @@ export class CaptureController {
     const ownCapture = this.runtime?.recordingId === targetRecordingId ? this.runtime : null;
     const epoch = ownCapture?.epoch;
     const ownerId = ownCapture ? ownCapture.ownerId : signedInAccountId();
+    // The server deletes a discarded meeting's frames with it.
+    this.abortScreenStudy(targetRecordingId);
     if (this.runtime) {
       await this.runtime.recorder.stop({ emitTail: false }).catch(() => {});
       await this.disposeRuntime();
@@ -1598,6 +1754,8 @@ export class CaptureController {
     sources: PickedCaptureSources;
     captureReport: CaptureSourceReportSnapshot;
     elapsedSeconds?: number;
+    /** Ticks the screen study this often, in seconds of audio, when it runs. */
+    audioTickSeconds?: number;
   }) => {
     await this.disposeRuntime();
 
@@ -1618,6 +1776,8 @@ export class CaptureController {
       checkCaptureGone: (error) => this.captureGoneError(options.recordingId, ownerId, error),
       onQueueChange: (uploadQueue) => {
         this.setState({ uploadQueue });
+        // Frames wait while any audio does, and go once it has.
+        this.screenStudy?.audioQueueChanged();
       },
       onUploaded: (sequence) => {
         this.setState({
@@ -1667,6 +1827,17 @@ export class CaptureController {
       onStall: (info) => {
         this.handleRecorderStall(info);
       },
+      ...(options.audioTickSeconds
+        ? {
+            audioTickSeconds: options.audioTickSeconds,
+            onAudioTick: (position: AudioPosition) => {
+              const study = this.screenStudy;
+              if (study && study.recordingId === options.recordingId) {
+                study.tick(position);
+              }
+            },
+          }
+        : {}),
     });
 
     recorder.start();
@@ -1970,6 +2141,7 @@ export class CaptureController {
       if (this.runtime !== runtime) {
         return;
       }
+      this.abortScreenStudy(runtime.recordingId);
       await this.disposeRuntime();
     }
     clearPausedCaptureContext();
@@ -2392,6 +2564,12 @@ export class CaptureController {
     this.stopElapsedTimer();
     runtime.waveform.stop();
     runtime.displayTracksCleanup?.();
+    // The study's clone of the video track keeps the share open until it is
+    // stopped too.
+    const study = this.screenStudy;
+    if (study && study.recordingId === runtime.recordingId) {
+      study.stopSampling();
+    }
     runtime.sources.release();
     await runtime.mixer.dispose();
     this.setState({ levels: DEFAULT_CAPTURE_LEVELS });
@@ -2467,6 +2645,12 @@ export class CaptureController {
 
   private setState(patch: Partial<CaptureState>) {
     this.state = { ...this.state, ...patch };
+    // Paused, the study takes nothing, however the capture came to pause.
+    if (patch.status === "paused") {
+      this.screenStudy?.pause();
+    } else if (patch.status === "recording") {
+      this.screenStudy?.resume();
+    }
     // A live capture, or a stop still sending audio, must outlive the session
     // ending: a refused request then asks for sign-in in place rather than
     // reloading to the sign-in page (issue #502).

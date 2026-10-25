@@ -240,6 +240,8 @@ TASK_ROUTES = {
     "backend.worker.tasks.ensure_calendar_push_channels_task": {"queue": IO_QUEUE},
     "backend.worker.tasks.renew_calendar_push_channels_task": {"queue": IO_QUEUE},
     "backend.worker.tasks.cleanup_temp_recordings": {"queue": IO_QUEUE},
+    # Deletes screen study frames that are due: local disk work and one query.
+    "backend.worker.tasks.sweep_speaker_frames_task": {"queue": IO_QUEUE},
     # Local disk work on the model volume. Belongs on a worker at all because
     # the API mounts that volume read-only.
     "backend.worker.tasks.delete_model_task": {"queue": IO_QUEUE},
@@ -289,6 +291,13 @@ celery_app.conf.update(
         },
         # Reclaims exported archives, uploaded archives, abandoned multipart uploads and
         # any restore staging left behind by a worker that died mid-restore.
+        # Screen study frames (#653) go 14 days after their recording stops.
+        # Hourly, so none outlives its date by more than an hour; a run with
+        # no frames lists one empty directory.
+        "sweep-speaker-frames-every-1h": {
+            "task": "backend.worker.tasks.sweep_speaker_frames_task",
+            "schedule": 3600.0,
+        },
         "cleanup-backup-artifacts-every-6h": {
             "task": "backend.worker.tasks.cleanup_backup_artifacts",
             "schedule": 21600.0,

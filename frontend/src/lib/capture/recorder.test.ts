@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { StreamingResampler } from "./pcm/resampler";
 import type { PcmBlockListener, PcmSource } from "./pcm/tapSource";
-import { createBrowserRecorder, type RecordedChunk } from "./recorder";
+import { createBrowserRecorder, type AudioPosition, type RecordedChunk } from "./recorder";
 
 const INPUT_RATE = 48_000;
 
@@ -239,5 +239,72 @@ describe("PCM recorder", () => {
 
     expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: "encoder broke" }));
     expect(chunks.map((chunk) => chunk.sequence)).toEqual([0]);
+  });
+
+  describe("audio ticks", () => {
+    it("ticks once a second of audio with the segment and the offset into it", () => {
+      const ticks: AudioPosition[] = [];
+      const recorder = createRecorder({ startSequence: 4, onAudioTick: (tick) => ticks.push(tick) });
+      recorder.start();
+
+      // A little over 5 s, since the resampler holds a few frames back.
+      source.render(INPUT_RATE * 5.1);
+
+      expect(ticks).toHaveLength(5);
+      expect(ticks.map((tick) => tick.sequence)).toEqual([4, 5, 5, 6, 6]);
+      // Each tick lands within one 85 ms block of a whole second.
+      ticks.forEach((tick, index) => {
+        const expectedMs = ((index + 1) * 1_000) % 2_000;
+        expect(Math.abs(tick.offsetMs - expectedMs)).toBeLessThan(100);
+      });
+    });
+
+    it("ticks twice a second at 2 Hz", () => {
+      const ticks: AudioPosition[] = [];
+      const recorder = createRecorder({
+        audioTickSeconds: 0.5,
+        onAudioTick: (tick) => ticks.push(tick),
+      });
+      recorder.start();
+
+      source.render(INPUT_RATE * 3.1);
+
+      expect(ticks).toHaveLength(6);
+    });
+
+    it("does not tick while paused, and starts counting again after a resume", async () => {
+      const ticks: AudioPosition[] = [];
+      const recorder = createRecorder({ onAudioTick: (tick) => ticks.push(tick) });
+      recorder.start();
+      source.render(INPUT_RATE * 1.5);
+      await recorder.pause();
+      source.render(INPUT_RATE * 4);
+      expect(ticks).toHaveLength(1);
+
+      recorder.resume();
+      await Promise.resolve();
+      source.render(INPUT_RATE * 0.9);
+      expect(ticks).toHaveLength(1);
+      source.render(INPUT_RATE * 0.2);
+
+      expect(ticks).toHaveLength(2);
+      // The pause ended segment 0, so the resumed audio fills segment 1.
+      expect(ticks[1].sequence).toBe(1);
+    });
+
+    it("keeps recording when a tick listener throws", () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const recorder = createRecorder({
+        onAudioTick: () => {
+          throw new Error("listener broke");
+        },
+      });
+      recorder.start();
+
+      source.render(INPUT_RATE * 5);
+
+      expect(chunks.map((chunk) => chunk.sequence)).toEqual([0, 1]);
+      warn.mockRestore();
+    });
   });
 });
