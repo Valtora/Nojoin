@@ -1,5 +1,7 @@
 "use client";
 
+import { ButtonBase, InputBase } from '@/components/ui/nativeBases';
+import { SurfaceBase } from '@/components/ui/SurfaceBase';
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
@@ -205,7 +207,7 @@ function AuthorizeContent() {
     // revocation note and, on a short window, Allow itself fall off the bottom.
     <div className="page-shell flex flex-col items-center bg-surface-page px-4 py-8 sm:px-6 sm:py-12 lg:px-8">
       <div className="my-auto w-full max-w-lg flex flex-col items-center">
-        <div className="w-full bg-surface-card rounded-surface border border-surface-border shadow-card overflow-hidden">
+        <SurfaceBase kind="card" className="w-full bg-surface-card rounded-surface border border-surface-border shadow-card overflow-hidden">
           <div className="px-8 pt-10 pb-8">
             {loading && (
               <div className="flex justify-center py-16">
@@ -308,7 +310,7 @@ function AuthorizeContent() {
                       <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                         <UserIcon className="h-5 w-5 text-contrast-icon-muted" />
                       </div>
-                      <input
+                      <InputBase
                         id="oauth-username"
                         name="username"
                         type="text"
@@ -325,7 +327,7 @@ function AuthorizeContent() {
                       <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                         <Lock className="h-5 w-5 text-contrast-icon-muted" />
                       </div>
-                      <input
+                      <InputBase
                         id="oauth-password"
                         name="password"
                         type="password"
@@ -337,7 +339,7 @@ function AuthorizeContent() {
                         onChange={(e) => setPassword(e.target.value)}
                       />
                     </div>
-                    <button
+                    <ButtonBase chrome="action"
                       type="submit"
                       {...loadingButtonProps(signingIn)}
                       className="w-full inline-flex items-center justify-center gap-2 py-3 px-4 rounded-lg text-sm font-semibold text-action-on bg-action hover:bg-action-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:opacity-60 transition-colors aria-disabled:opacity-60"
@@ -346,7 +348,7 @@ function AuthorizeContent() {
                         <Loader2 className="h-4 w-4 animate-spin" />
                       )}
                       {signingIn ? "Signing in..." : "Sign in"}
-                    </button>
+                    </ButtonBase>
                   </form>
                 ) : (
                   <div className="mt-6 space-y-5">
@@ -362,14 +364,14 @@ function AuthorizeContent() {
                       </span>
                     </div>
                     <div className="flex gap-3">
-                      <button
+                      <ButtonBase chrome="action"
                         type="button"
                         {...loadingButtonProps(submitting, undefined, () => handleDecision(false))}
                         className="flex-1 py-3 px-4 rounded-lg text-sm font-semibold text-foreground border border-control-border hover:bg-surface-inset focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:opacity-60 transition-colors aria-disabled:opacity-60"
                       >
                         Deny
-                      </button>
-                      <button
+                      </ButtonBase>
+                      <ButtonBase chrome="action"
                         type="button"
                         {...loadingButtonProps(submitting, undefined, () => handleDecision(true))}
                         className="flex-1 inline-flex items-center justify-center gap-2 py-3 px-4 rounded-lg text-sm font-semibold text-action-on bg-action hover:bg-action-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:opacity-60 transition-colors aria-disabled:opacity-60"
@@ -378,7 +380,7 @@ function AuthorizeContent() {
                           <Loader2 className="h-4 w-4 animate-spin" />
                         )}
                         {submitting ? "Connecting..." : "Allow"}
-                      </button>
+                      </ButtonBase>
                     </div>
                   </div>
                 )}
@@ -403,7 +405,7 @@ function AuthorizeContent() {
               </p>
             </div>
           )}
-        </div>
+        </SurfaceBase>
 
         <p className="mt-6 text-xs text-contrast-icon-muted">
           Secured by your Nojoin server

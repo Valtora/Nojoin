@@ -1,3 +1,4 @@
+import { ButtonBase } from '@/components/ui/nativeBases';
 import {
   AlertTriangle,
   ArrowRight,
@@ -358,7 +359,7 @@ function RouteCard({
   badgeTone?: "success" | "danger" | "muted";
 }) {
   return (
-    <button
+    <ButtonBase
       type="button"
       role="radio"
       aria-checked={selected}
@@ -406,6 +407,6 @@ function RouteCard({
         </span>
       </span>
       <span className="text-xs leading-5 text-contrast-helper">{description}</span>
-    </button>
+    </ButtonBase>
   );
 }

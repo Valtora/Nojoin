@@ -1,3 +1,4 @@
+import { InputBase } from '@/components/ui/nativeBases';
 import { ArrowRight } from "lucide-react";
 
 import Button from "@/components/ui/Button";
@@ -68,7 +69,7 @@ export default function LegalStep({
           htmlFor="setup-enable-telemetry"
           className="flex items-start gap-3 cursor-pointer"
         >
-          <input
+          <InputBase
             id="setup-enable-telemetry"
             name="setup-enable-telemetry"
             type="checkbox"
