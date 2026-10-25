@@ -174,7 +174,9 @@ describe("RecordingStatusDisplay", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Back to Recordings" }));
+    const back = screen.getByRole("button", { name: "Back to Recordings" });
+    expect(back).toHaveAttribute("data-ui-chrome", "action");
+    fireEvent.click(back);
 
     expect(onBack).toHaveBeenCalledTimes(1);
   });

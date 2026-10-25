@@ -369,6 +369,7 @@ export default function LiveTranscriptPanel({
 
           {!isEmpty && !isPinnedToBottom ? (
             <ButtonBase
+              chrome="action"
               type="button"
               onClick={jumpToLatest}
               className="absolute bottom-3 left-[calc(50%-var(--live-transcript-gutter)/2)] inline-flex -translate-x-1/2 items-center gap-1.5 rounded-pill border border-action-border bg-surface-card px-3 py-1.5 text-xs font-semibold text-action-text shadow-float transition-colors hover:bg-action-tint"

@@ -192,6 +192,7 @@ describe("LiveTranscriptPanel", () => {
     fireEvent.scroll(container);
 
     const jumpButton = screen.getByRole("button", { name: /jump to latest/i });
+    expect(jumpButton).toHaveAttribute("data-ui-chrome", "action");
 
     setScrollGeometry(container, {
       scrollTop: 700,
