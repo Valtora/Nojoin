@@ -558,7 +558,8 @@ before the app served its own, so the app renders as it did.
   on a file that is not declared, a subset out of order and any import of `next/font/google`.
 
 Geist is under the SIL Open Font License 1.1, in `OFL.txt` beside the files. The marketing site
-serves its own latin files from `site/public/fonts/`.
+serves copies of the two latin files and the licence from `site/public/fonts/`, so an update here
+is copied there too ([SITE.md](SITE.md#fonts)).
 
 ### The heading scale
 

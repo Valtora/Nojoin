@@ -115,3 +115,53 @@ describe("self-hosted fonts", () => {
     expect(read(path.join(FONTS, "OFL.txt"))).toContain("SIL OPEN FONT LICENSE Version 1.1");
   });
 });
+
+/**
+ * The marketing site deploys from site/ on its own, so it serves copies of the
+ * app's latin files rather than importing them (#716). Its Geist Mono was once
+ * a static Regular declared for weights 100 to 900, so no weight-600 mono label
+ * got a real SemiBold: Chromium drew them at Regular weight.
+ */
+const SITE = path.resolve(APP, "../../../site");
+const SITE_FONTS = path.join(SITE, "public", "fonts");
+
+/** Each @font-face in site.css, in declaration order. */
+function siteFaces(): { family: string; weight: string; url: string }[] {
+  const css = read(path.join(SITE, "src", "styles", "site.css"));
+  return [...css.matchAll(/@font-face\s*\{([^}]*)\}/g)].map(([, body]) => ({
+    family: /font-family:\s*"([^"]+)"/.exec(body)?.[1] ?? "",
+    weight: /font-weight:\s*([^;]+);/.exec(body)?.[1].trim() ?? "",
+    url: /url\("([^"]+)"\)/.exec(body)?.[1] ?? "",
+  }));
+}
+
+describe("the marketing site's fonts", () => {
+  it("serves the app's two latin files, byte for byte", () => {
+    const files = readdirSync(SITE_FONTS).filter((name) => name.endsWith(".woff2"));
+    expect([...files].sort()).toEqual(["geist-latin.woff2", "geist-mono-latin.woff2"]);
+    for (const name of files) {
+      const copy = readFileSync(path.join(SITE_FONTS, name));
+      expect(copy.equals(readFileSync(path.join(FONTS, name))), name).toBe(true);
+    }
+  });
+
+  it("declares each file once, across the variable font's weights", () => {
+    expect(siteFaces()).toEqual([
+      { family: "Geist", weight: "100 900", url: "/fonts/geist-latin.woff2" },
+      { family: "Geist Mono", weight: "100 900", url: "/fonts/geist-mono-latin.woff2" },
+    ]);
+  });
+
+  it("preloads only a file that site.css declares", () => {
+    const layout = read(path.join(SITE, "src", "layouts", "Base.astro"));
+    const preloads = [...layout.matchAll(/<link rel="preload" href="([^"]+)" as="font"/g)].map(
+      ([, href]) => href,
+    );
+    expect(preloads).toEqual(["/fonts/geist-latin.woff2"]);
+    expect(siteFaces().map((face) => face.url)).toContain(preloads[0]);
+  });
+
+  it("serves the font licence beside the files", () => {
+    expect(read(path.join(SITE_FONTS, "OFL.txt"))).toBe(read(path.join(FONTS, "OFL.txt")));
+  });
+});
