@@ -78,6 +78,7 @@ files = [
     "backend/processing/onnx_threads.py",
     "backend/processing/processing_tuning.py",
     "backend/processing/vad_muting.py",
+    "backend/processing/documents/vision_input.py",
     "backend/processing/unheard_words.py",
     "backend/processing/live_diarization",
     "backend/utils/canonical_pipeline/live_labels.py",

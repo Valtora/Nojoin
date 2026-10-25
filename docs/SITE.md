@@ -26,8 +26,9 @@ Documentation stays on GitHub and the site links to it. `/docs` redirects (301) 
 Both themes follow `prefers-color-scheme`. A header toggle stores an override in `localStorage`
 under `nojoin-theme`, applied before first paint, and the screenshots follow the active theme.
 There is no framework and no hydration: `Base.astro` carries two small inline scripts plus the
-Cloudflare beacon. Fonts (Geist and Geist Mono) are self-hosted in `site/public/fonts/`; a page
-arguing that nothing leaves your server does not fetch fonts from a CDN.
+Cloudflare beacon. Fonts (Geist and Geist Mono) are self-hosted in `site/public/fonts/`
+([Fonts](#fonts)), because a page arguing that nothing leaves your server should not fetch fonts
+from a CDN.
 
 ## Design direction
 
@@ -257,6 +258,28 @@ tunnelled requests.
 **If the host also runs a `cloudflared` service for live traffic, never stop, restart or
 reconfigure it.** `pkill -f cloudflared` kills both, and the pattern can match the invoking
 shell too. Stop preview tunnels by PID when the review is done.
+
+### Fonts
+
+`site/public/fonts/` holds copies of two of the app's files in `frontend/src/app/fonts/`:
+`geist-latin.woff2` and `geist-mono-latin.woff2`, the latin subsets of Google Fonts' build of
+Geist 1.800 and Geist Mono 1.701. Both are variable fonts covering weights 100 to 900, so the
+semibold mono labels (the quick-start step numbers, the flow card's actor tags, the tool counts)
+are real Geist Mono SemiBold. [DESIGN.md](DESIGN.md#font-files) records where the app's files
+come from and how to update them.
+
+- **Copies, kept in step.** `site/public/` is served as it is, at fixed URLs that the preload
+  and `site/scripts/build-og-card.mjs` name, so the site keeps its own copies rather than
+  importing the app's files through the build. When the app's files change, copy the two latin
+  files and `OFL.txt` again. `selfHostedFonts.test.ts` in the frontend fails while a copy
+  differs from the app's file, and checks the `@font-face` rules and the preload below.
+- **The licence ships with them.** `OFL.txt`, the SIL Open Font License 1.1 that Geist is under,
+  sits beside the files and is served at `/fonts/OFL.txt`.
+- **Latin only.** `site.css` declares one face per family, for weights 100 to 900 and without a
+  `unicode-range`, so a character outside the latin file falls back to a system font. The site's
+  ticks, crosses and arrows already do.
+- **Only Geist is preloaded**, from `Base.astro`, because the headline and body text are set in
+  it. The preload's URL must match the `@font-face` `src`, or the browser fetches the file twice.
 
 ### Page titles
 
