@@ -1,5 +1,7 @@
 "use client";
 
+import { ButtonBase, InputBase } from "@/components/ui/nativeBases";
+import { SurfaceBase } from "@/components/ui/SurfaceBase";
 import React, { useState } from "react";
 import { GlobalSpeaker } from "@/types";
 import { MoreVertical, Mail, Phone, MessageSquare, Lock } from "lucide-react";
@@ -69,7 +71,8 @@ export function PeopleTable({
 
   if (people.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center p-12 text-center bg-surface-card rounded-xl border border-surface-border border-dashed">
+      <SurfaceBase
+        kind="card" className="flex flex-col items-center justify-center p-12 text-center bg-surface-card rounded-xl border border-surface-border border-dashed">
         <div className="w-16 h-16 bg-surface-inset rounded-full flex items-center justify-center mb-4">
           <MessageSquare className="w-8 h-8 text-contrast-icon-muted" />
         </div>
@@ -80,20 +83,21 @@ export function PeopleTable({
           No people match your search criteria. Try a different filter or add a
           new person.
         </p>
-      </div>
+      </SurfaceBase>
     );
   }
 
   return (
     <>
       {/* Desktop / wide viewports: the full data table. */}
-      <div className="hidden lg:block bg-surface-card rounded-xl shadow-card border border-surface-border">
+      <SurfaceBase
+        kind="card" className="hidden lg:block bg-surface-card rounded-xl shadow-card border border-surface-border">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-surface-inset border-b border-surface-border">
                 <th className="px-6 py-4 w-12">
-                  <input
+                  <InputBase
                     type="checkbox"
                     className="rounded border-control-border text-action-text focus:ring-action w-4 h-4 cursor-pointer"
                     checked={allSelected}
@@ -135,7 +139,7 @@ export function PeopleTable({
                     className="px-6 py-4"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    <input
+                    <InputBase
                       type="checkbox"
                       className="rounded border-control-border text-action-text focus:ring-action w-4 h-4 cursor-pointer"
                       checked={selectedIds.has(person.id)}
@@ -162,9 +166,10 @@ export function PeopleTable({
                           {person.is_voiceprint_locked && (
                             <div className="group/lock relative">
                               <Lock className="w-3.5 h-3.5 text-status-success-fg" />
-                              <span className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1.5 px-2 py-1 text-xs text-foreground bg-surface-card rounded opacity-0 group-hover/lock:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+                              <SurfaceBase
+                                as="span" kind="float" className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1.5 px-2 py-1 text-xs text-foreground bg-surface-card rounded opacity-0 group-hover/lock:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
                                 Voiceprint Locked
-                              </span>
+                              </SurfaceBase>
                             </div>
                           )}
                         </div>
@@ -254,24 +259,25 @@ export function PeopleTable({
 
                   {/* Actions */}
                   <td className="px-6 py-4 text-right relative">
-                    <button
+                    <ButtonBase
+                      chrome="action"
                       onClick={(e) => openMenuFromButton(e, person)}
                       className="p-2 text-contrast-icon-muted hover:text-contrast-helper rounded-full hover:bg-surface-inset transition-colors"
                     >
                       <MoreVertical className="w-5 h-5" />
-                    </button>
+                    </ButtonBase>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-      </div>
+      </SurfaceBase>
 
       {/* Narrow viewports: stacked cards so nothing needs horizontal scrolling. */}
       <div className="lg:hidden space-y-3">
         <label className="flex cursor-pointer items-center gap-2 px-1 text-sm text-contrast-helper">
-          <input
+          <InputBase
             type="checkbox"
             className="h-4 w-4 cursor-pointer rounded border-control-border text-action-text focus:ring-action"
             checked={allSelected}
@@ -284,7 +290,8 @@ export function PeopleTable({
         </label>
 
         {people.map((person) => (
-          <div
+          <SurfaceBase
+            kind="card"
             key={person.id}
             onContextMenu={(e) => handleContextMenu(e, person)}
             className={`rounded-xl border p-4 shadow-card transition-colors ${
@@ -294,7 +301,7 @@ export function PeopleTable({
             }`}
           >
             <div className="flex items-start gap-3">
-              <input
+              <InputBase
                 type="checkbox"
                 className="mt-1 h-4 w-4 shrink-0 cursor-pointer rounded border-control-border text-action-text focus:ring-action"
                 checked={selectedIds.has(person.id)}
@@ -326,13 +333,14 @@ export function PeopleTable({
                   </div>
                 )}
               </div>
-              <button
+              <ButtonBase
+                chrome="action"
                 onClick={(e) => openMenuFromButton(e, person)}
                 className="-mr-1 -mt-1 shrink-0 rounded-full p-2 text-contrast-icon-muted transition-colors hover:bg-surface-inset hover:text-contrast-helper"
                 aria-label={`Actions for ${person.name}`}
               >
                 <MoreVertical className="h-5 w-5" />
-              </button>
+              </ButtonBase>
             </div>
 
             {(person.email || person.phone_number) && (
@@ -376,7 +384,7 @@ export function PeopleTable({
                 );
               })}
             </div>
-          </div>
+          </SurfaceBase>
         ))}
       </div>
 
