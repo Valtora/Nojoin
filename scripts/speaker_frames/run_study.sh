@@ -7,7 +7,8 @@
 #
 # FRAMES_DIR is live's data/speaker_frames. TIMELINE_JSONL is the output of
 # export_timeline.sql. OUT_DIR must not exist yet or be empty.
-# PREREG_SHA256 is the hash posted on #653.
+# PREREG_SHA256 is the hash posted on #653. GATE_PARTS and STUDY_LOCK, both
+# optional, are described below.
 set -euo pipefail
 
 if [ "$#" -ne 4 ]; then
@@ -29,20 +30,59 @@ mkdir -p "$out"
 # is opened to that owner for the run only.
 owner=$(stat -c '%u:%g' "$frames")
 chmod 0777 "$out"
-trap 'chmod 0755 "$out"' EXIT
+parts_dir=""
+cleanup() {
+  chmod 0755 "$out"
+  if [ -n "$parts_dir" ]; then rm -rf "$parts_dir"; fi
+}
+trap cleanup EXIT
 
-docker run --rm --name agent-653-study --network none \
-  --memory 3g --memory-swap 3g --cpus 4 --pids-limit 256 --oom-score-adj 500 \
-  --user "$owner" --cap-drop ALL --security-opt no-new-privileges \
-  --read-only --tmpfs /tmp:size=16m \
-  -e HOME=/tmp -e PYTHONDONTWRITEBYTECODE=1 \
-  -v "$here":/analysis/speaker_frames:ro \
-  -v "$frames":/frames:ro \
-  -v "$timeline":/input/timeline.jsonl:ro \
-  -v "$out":/out \
-  -w /analysis --entrypoint python nojoin-dev-tests:local \
-  -B -m speaker_frames.run --frames /frames --timeline /input/timeline.jsonl \
-  --prereg /analysis/speaker_frames/PREREG.md --prereg-sha256 "$sha" --out /out --workers 4
+# GATE_PARTS=N runs the synthetic gate first as N separate containers, each
+# writing one part's counts, so no single run is long: the whole gate, 30
+# meetings of 20 minutes, takes some two hours on these 4 cores, so
+# GATE_PARTS=10 keeps each part near 12 minutes. STUDY_LOCK=PATH takes that
+# lock with flock around each container.
+parts=${GATE_PARTS:-1}
+lock=${STUDY_LOCK:-}
+
+study() {
+  local into=$1
+  shift
+  local cmd=(docker run --rm --name agent-653-study --network none
+    --memory 3g --memory-swap 3g --cpus 4 --pids-limit 256 --oom-score-adj 500
+    --user "$owner" --cap-drop ALL --security-opt no-new-privileges
+    --read-only --tmpfs /tmp:size=16m
+    -e HOME=/tmp -e PYTHONDONTWRITEBYTECODE=1
+    -v "$here":/analysis/speaker_frames:ro
+    -v "$frames":/frames:ro
+    -v "$timeline":/input/timeline.jsonl:ro
+    -v "$into":/out
+    "${mounts[@]}"
+    -w /analysis --entrypoint python nojoin-dev-tests:local
+    -B -m speaker_frames.run --prereg /analysis/speaker_frames/PREREG.md
+    --prereg-sha256 "$sha" --out /out --workers 4 "$@")
+  if [ -n "$lock" ]; then
+    flock "$lock" "${cmd[@]}"
+  else
+    "${cmd[@]}"
+  fi
+}
+
+mounts=()
+gate_args=()
+if [ "$parts" -gt 1 ]; then
+  parts_dir=$(mktemp -d)
+  for k in $(seq 1 "$parts"); do
+    mkdir "$parts_dir/$k"
+    chmod 0777 "$parts_dir/$k"
+    study "$parts_dir/$k" --gate-part "$k/$parts"
+    gate_args+=("/gate/$k/summary.json")
+  done
+  mounts=(-v "$parts_dir":/gate:ro)
+  gate_args=(--gate-from "${gate_args[@]}")
+fi
+
+study "$out" --frames /frames --timeline /input/timeline.jsonl "${gate_args[@]}"
 
 written=$(ls -A "$out")
 if [ "$written" != "summary.json" ]; then

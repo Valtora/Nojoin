@@ -8,6 +8,9 @@ frame; this suite checks the pieces and a few meetings end to end.
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import numpy as np
 import pytest
 from PIL import Image, ImageDraw
@@ -141,3 +144,66 @@ def test_synthetic_frames_follow_the_samplers_change_rule() -> None:
     assert rule.keep(lit, 2)
     assert not rule.keep(lit, 16)
     assert rule.keep(lit, 17)
+
+
+def test_the_change_grid_is_each_blocks_rounded_mean() -> None:
+    rng = np.random.default_rng(3)
+    for width, height in ((1920, 1080), (1897, 1067)):
+        pixels = rng.integers(0, 256, (height, width, 3), dtype=np.uint8)
+        rows = np.minimum(35, (np.arange(height) * 36) // height)
+        cols = np.minimum(63, (np.arange(width) * 64) // width)
+        cell = (rows[:, None] * 64 + cols[None, :]).ravel()
+        counts = np.bincount(cell, minlength=64 * 36)
+        means = np.stack(
+            [
+                np.bincount(cell, pixels[..., c].ravel().astype(float), 64 * 36)
+                / counts
+                for c in range(3)
+            ],
+            axis=1,
+        )
+        grid = synth.change_grid(Image.fromarray(pixels))
+        assert np.array_equal(grid, np.floor(means + 0.5))
+
+
+def test_a_ridge_is_settled_on_the_peak_nearest_where_it_was() -> None:
+    # This tile's side at 4, and a neighbour's stronger side a gap away.
+    profile = np.array([0, 1, 4, 6, 4, 1, 0, 0, 0, 2, 7, 9, 7, 2, 0], float)
+    nearest = detect._ridge_line(profile, 4)
+    strongest = detect._ridge_line(profile)
+    assert nearest is not None and strongest is not None
+    assert abs(nearest[0] - 3) < 0.5
+    assert abs(strongest[0] - 11) < 0.5
+
+
+def test_a_box_closed_on_a_lit_rings_side_does_not_make_it_static() -> None:
+    params = detect.DEFAULT
+    lit = detect.Slot((40, 160, 760, 570), list(range(50)))
+    # Closed on the lit ring's bottom side, so lit only with it, now and then.
+    echo = detect.Slot((40, 570, 760, 980), list(range(0, 50, 3)))
+    assert not detect._static(lit, [lit, echo], params)
+    # A slide outline lit throughout while a tile elsewhere takes turns.
+    tile = detect.Slot((800, 160, 1520, 570), list(range(0, 50, 3)))
+    assert detect._static(lit, [lit, tile], params)
+
+
+def test_stored_signals_come_back_rounded() -> None:
+    signals = detect.Signals()
+    thin = np.array([[0.2, 3.6], [98.4, 300.0]], np.float32)
+    signals.put(7, thin)
+    back = signals.get(7)
+    assert back is not None
+    assert back.tolist() == [[0.0, 4.0], [98.0, 255.0]]
+    assert signals.get(8) is None
+
+
+def test_saved_parts_combine_into_one_report(tmp_path: Path) -> None:
+    rows = [
+        {"platform": "teams", "layout": "gallery 2-4", "screen": "1920x1080"}
+        | {"scale": 1.0, "ring_px": 2.0, "correct": correct}
+        for correct in (True, True, False, True)
+    ]
+    first, second = tmp_path / "1.json", tmp_path / "2.json"
+    first.write_text(json.dumps(rows[:2]))
+    second.write_text(json.dumps(rows[2:]))
+    assert evaluate.main(["--combine", str(first), str(second)]) == 1

@@ -32,9 +32,11 @@ number. A layout's meeting window is the union of its slots.
 from __future__ import annotations
 
 import math
+import multiprocessing
+import zlib
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
-from typing import Protocol
+from typing import Any, Protocol
 
 import numpy as np
 from scipy import ndimage
@@ -80,7 +82,8 @@ class Params:
     lit_floor: float = 1.5
     lit_separation: float = 3.0
     lit_contrast: float = 4.0
-    calibration_frames: int = 1500
+    # Calibration needs a few rings, not every frame of a long meeting.
+    calibration_frames: int = 300
     settle_frames: int = 8
     grid_reach: int = 7
     grid_slack: int = 7
@@ -237,8 +240,10 @@ def hue(rgb: Sequence[float]) -> float:
 
 
 def chroma_size(rgb: Sequence[float]) -> float:
-    vector = np.asarray(rgb, dtype=np.float64)
-    return float(np.linalg.norm(vector - vector.mean()))
+    # Plain arithmetic: it runs millions of times a meeting, on three numbers.
+    r, g, b = (float(c) for c in rgb)
+    mean = (r + g + b) / 3
+    return math.sqrt((r - mean) ** 2 + (g - mean) ** 2 + (b - mean) ** 2)
 
 
 def hue_distance(a: float, b: float) -> float:
@@ -286,7 +291,10 @@ def _luma(image: np.ndarray) -> np.ndarray:
 
 
 def find_rings(
-    image: np.ndarray, colour: Sequence[float] | None, params: Params = DEFAULT
+    image: np.ndarray,
+    colour: Sequence[float] | None,
+    params: Params = DEFAULT,
+    keep: tuple[Signals, int] | None = None,
 ) -> list[Ring]:
     """Thin rounded-rectangle outlines of tile size in one frame.
 
@@ -302,7 +310,10 @@ def find_rings(
     else:
         signal, threshold = project(pixels, colour), params.project_threshold
     thin = top_hat(signal, params.tophat)
+    if keep is not None and colour is not None:
+        keep[0].put(keep[1], thin)
     mask = _thin_mask(thin, threshold)
+    luma = _luma(pixels)
     upright = np.ascontiguousarray(mask.T)
     lines = (_bridge(mask), np.ascontiguousarray(_bridge(upright).T))
     sides = _runs(upright, params)
@@ -314,7 +325,7 @@ def find_rings(
         for rough in _close(lines, left, right, params):
             refined = _refine(thin, rough, params)
             if refined is not None and _plausible(refined[0], params):
-                ring = _check(pixels, (signal, mask), refined, params)
+                ring = _check(pixels, (signal, mask, luma), refined, params)
                 if ring is not None:
                     closed.append(ring)
         if closed:
@@ -353,7 +364,7 @@ def _refine(signal: np.ndarray, rough: Box, params: Params) -> tuple[Box, float]
             profile = signal[y0 + corner : y1 - corner, lo : edge + reach + 1].mean(
                 axis=0
             )
-        found = _ridge_line(profile)
+        found = _ridge_line(profile, edge - lo)
         if found is None:
             return None
         lines.append(lo + found[0])
@@ -364,14 +375,30 @@ def _refine(signal: np.ndarray, rough: Box, params: Params) -> tuple[Box, float]
     return (left, top, right, bottom), float(np.median(widths))
 
 
-def _ridge_line(profile: np.ndarray) -> tuple[float, float] | None:
-    """The centre and width of the strongest peak across a ring's side."""
+def _ridge_line(
+    profile: np.ndarray, near: float | None = None
+) -> tuple[float, float] | None:
+    """The centre and width of a peak across a ring's side: the strongest,
+    or with ``near``, of the peaks at least half as high as the strongest
+    the one nearest that index. A neighbouring tile's side, a gap away,
+    can stand higher than this tile's own."""
     if not profile.size:
         return None
     peak = int(np.argmax(profile))
     height = float(profile[peak])
     if height <= 0:
         return None
+    if near is not None:
+        last = profile.size - 1
+        tops = [
+            i
+            for i in range(profile.size)
+            if profile[i] >= height / 2
+            and (i == 0 or profile[i] >= profile[i - 1])
+            and (i == last or profile[i] >= profile[i + 1])
+        ]
+        peak = min(tops, key=lambda i: abs(i - near))
+        height = float(profile[peak])
     half = height / 2
     low, high = peak, peak
     while low > 0 and profile[low - 1] >= half:
@@ -414,10 +441,53 @@ def _take(values: np.ndarray, start: int, stop: int | None, axis: int) -> np.nda
 
 
 def top_hat(signal: np.ndarray, size: int) -> np.ndarray:
-    """What is brighter than its surroundings and narrower than ``size``."""
-    opened = _slide(_slide(signal, size, 0, np.minimum), size, 1, np.minimum)
-    opened = _slide(_slide(opened, size, 0, np.maximum), size, 1, np.maximum)
+    """What is brighter than its surroundings and narrower than ``size``.
+
+    scipy's running minimum and maximum give what ``_slide`` does, and at
+    this window are faster.
+    """
+    opened = ndimage.minimum_filter1d(signal, size, axis=0, mode="nearest")
+    opened = ndimage.minimum_filter1d(opened, size, axis=1, mode="nearest")
+    opened = ndimage.maximum_filter1d(opened, size, axis=0, mode="nearest")
+    opened = ndimage.maximum_filter1d(opened, size, axis=1, mode="nearest")
     return signal - opened
+
+
+class Signals:
+    """Each frame's thin signal along the ring colour, kept between passes.
+
+    Every pass after the ring search reads it. Stored rounded to whole
+    levels and compressed, a 1920 px frame's takes some 90 kB, which costs
+    less than working it out again; a slot's score averages hundreds of
+    pixels, so the rounding does not show.
+    """
+
+    def __init__(self, workers: int = 1) -> None:
+        self._stored: dict[int, tuple[tuple[int, int], bytes]] = {}
+        # How many processes the passes that read them may use.
+        self.workers = workers
+
+    def put(self, frame: int, thin: np.ndarray) -> None:
+        levels = np.clip(np.rint(thin), 0, 255).astype(np.uint8)
+        self._stored[frame] = (levels.shape, zlib.compress(levels.tobytes(), 1))
+
+    def take(self, frame: int) -> tuple[tuple[int, int], bytes] | None:
+        return self._stored.pop(frame, None)
+
+    def restore(self, frame: int, stored: tuple[tuple[int, int], bytes] | None) -> None:
+        if stored is not None:
+            self._stored[frame] = stored
+
+    def get(self, frame: int) -> np.ndarray | None:
+        found = self._stored.get(frame)
+        if found is None:
+            return None
+        shape, data = found
+        return (
+            np.frombuffer(zlib.decompress(data), np.uint8)
+            .reshape(shape)
+            .astype(np.float32)
+        )
 
 
 def _thin_mask(thin: np.ndarray, threshold: float) -> np.ndarray:
@@ -522,6 +592,11 @@ def _close(
         return []
     cover = rows[y_lo:y_hi, x0 + corner : x1 - corner].mean(axis=1)
     bands = [(y_lo + a, y_lo + b) for a, b in _bands(cover >= params.line_cover)]
+    # Rows each side has a pixel in, as running sums, for every pair below.
+    hits = tuple(
+        np.concatenate([[0], np.cumsum(cols[:, side[2] : side[3]].any(axis=1))])
+        for side in (left, right)
+    )
     boxes = []
     for top, _ in bands:
         for _, bottom in bands:
@@ -529,7 +604,7 @@ def _close(
             if (
                 bottom > top
                 and _plausible(box, params)
-                and _sides_cover(cols, box, (left, right), params)
+                and _sides_cover(hits, box, params)
             ):
                 boxes.append(box)
     return boxes
@@ -549,23 +624,27 @@ def _plausible(box: Box, params: Params) -> bool:
     return params.aspect[0] <= width / height <= params.aspect[1]
 
 
-def _sides_cover(
-    cols: np.ndarray, box: Box, sides: tuple[Run, Run], params: Params
-) -> bool:
+def _sides_cover(hits: tuple[np.ndarray, ...], box: Box, params: Params) -> bool:
+    """Whether both sides have a pixel in most rows between the corners.
+
+    ``hits`` are each side's running count of rows with a pixel in.
+    """
     x0, y0, x1, y1 = (int(v) for v in box)
     corner = _corner(x1 - x0, y1 - y0, params)
-    span = slice(y0 + corner, y1 - corner)
-    if span.stop - span.start < 4:
+    start, stop = y0 + corner, y1 - corner
+    if stop - start < 4:
         return False
-    for side in sides:
-        if cols[span, side[2] : side[3]].any(axis=1).mean() < params.side_cover:
+    for counts in hits:
+        last = len(counts) - 1
+        lo, hi = min(max(start, 0), last), min(max(stop, 0), last)
+        if hi > lo and (counts[hi] - counts[lo]) / (hi - lo) < params.side_cover:
             return False
     return True
 
 
 def _check(
     pixels: np.ndarray,
-    maps: tuple[np.ndarray, np.ndarray],
+    maps: tuple[np.ndarray, np.ndarray, np.ndarray],
     refined: tuple[Box, float],
     params: Params,
 ) -> Ring | None:
@@ -575,7 +654,7 @@ def _check(
     sides beside it, a few pixels off. Outlines made of text, or of edges in
     a picture, change colour from side to side; a ring does not.
     """
-    signal, mask = maps
+    signal, mask, luma = maps
     box, width = refined
     if width > params.max_thickness:
         return None
@@ -605,7 +684,7 @@ def _check(
         box=box,
         rgb=(float(colour[0]), float(colour[1]), float(colour[2])),
         thickness=width,
-        outer_luma=_outer_band(pixels, outer, (full_width, height)),
+        outer_luma=_outer_band(luma, outer, (full_width, height)),
         strength=min(chroma_size(v) for v in vectors),
     )
 
@@ -652,7 +731,7 @@ def _ridge(
     return ridge, before, after
 
 
-def _outer_band(pixels: np.ndarray, box: Box, size: tuple[int, int]) -> float:
+def _outer_band(luma: np.ndarray, box: Box, size: tuple[int, int]) -> float:
     """The luminance just outside a ring, on its second-darkest side.
 
     The apps draw tiles on a dark stage, which shows in the gaps between
@@ -662,12 +741,12 @@ def _outer_band(pixels: np.ndarray, box: Box, size: tuple[int, int]) -> float:
     x0, y0, x1, y1 = (int(v) for v in box)
     width, height = size
     strips = [
-        pixels[max(0, y0 - 6) : max(0, y0 - 1), x0:x1],
-        pixels[min(height, y1 + 1) : min(height, y1 + 6), x0:x1],
-        pixels[y0:y1, max(0, x0 - 6) : max(0, x0 - 1)],
-        pixels[y0:y1, min(width, x1 + 1) : min(width, x1 + 6)],
+        luma[max(0, y0 - 6) : max(0, y0 - 1), x0:x1],
+        luma[min(height, y1 + 1) : min(height, y1 + 6), x0:x1],
+        luma[y0:y1, max(0, x0 - 6) : max(0, x0 - 1)],
+        luma[y0:y1, min(width, x1 + 1) : min(width, x1 + 6)],
     ]
-    sides = sorted(float(np.median(_luma(s))) for s in strips if s.size)
+    sides = sorted(float(np.median(s)) for s in strips if s.size)
     return sides[1] if len(sides) > 1 else 0.0
 
 
@@ -787,12 +866,29 @@ def _static(slot: Slot, slots: Sequence[Slot], params: Params) -> bool:
         return False
     span = frames[-1] - frames[0] + 1
     for other in slots:
-        if other is slot:
+        # A box closed on this ring's own side lights with it; it is not a
+        # tile taking turns.
+        if other is slot or _shares_side(slot.box, other.box):
             continue
         inside = sum(1 for f in other.sightings if frames[0] <= f <= frames[-1])
         if 2 <= inside < span:
             return True
     return False
+
+
+def _shares_side(a: Box, b: Box, reach: float = 2.0) -> bool:
+    """Whether a side of one box lies on a side of the other, within
+    ``reach`` pixels, along at least half the shorter one. Neighbouring
+    tiles are a gap apart; a box closed by a lit neighbour's ring is not."""
+    across = min(a[2], b[2]) - max(a[0], b[0])
+    down = min(a[3], b[3]) - max(a[1], b[1])
+    if across >= 0.5 * min(a[2] - a[0], b[2] - b[0]) and (
+        abs(a[3] - b[1]) <= reach or abs(b[3] - a[1]) <= reach
+    ):
+        return True
+    return down >= 0.5 * min(a[3] - a[1], b[3] - b[1]) and (
+        abs(a[2] - b[0]) <= reach or abs(b[2] - a[0]) <= reach
+    )
 
 
 def _apart(slots: list[Slot], params: Params) -> list[Slot]:
@@ -879,10 +975,13 @@ class _Scorer:
         colour: Sequence[float],
         params: Params = DEFAULT,
         slack: int = 2,
+        thin: np.ndarray | None = None,
     ) -> None:
         # Only what is thin counts, so a neighbour's picture of the ring's
         # colour does not raise the bands beside a side.
-        self.signal = top_hat(project(image.astype(np.float32), colour), params.tophat)
+        if thin is None:
+            thin = top_hat(project(image.astype(np.float32), colour), params.tophat)
+        self.signal = thin
         self.height, self.width = self.signal.shape
         self.slack = slack
         self.params = params
@@ -1007,13 +1106,23 @@ def _place(
 
 
 def detect_meeting(
-    frames: Frames, platform: str | None, params: Params = DEFAULT
+    frames: Frames, platform: str | None, params: Params = DEFAULT, workers: int = 1
 ) -> MeetingResult:
-    """Lit tiles in every frame of one meeting."""
+    """Lit tiles in every frame of one meeting.
+
+    With ``workers``, the passes over every frame run in forked processes.
+    """
     if len(frames):
         params = scaled(params, max(frames[0].shape[:2]))
-    colour, calibrated = _calibrate_meeting(frames, platform, params)
-    rings = [find_rings(frames[i], colour, params) for i in range(len(frames))]
+    colour, calibrated = _calibrate_meeting(frames, platform, params, workers)
+    signals = Signals(workers)
+    _WORK["rings"] = (frames, colour, params)
+    rings: list[list[Ring]] = []
+    for part in _map(_rings_in, _spans(len(frames), workers), workers):
+        for frame, found, stored in part:
+            rings.append(found)
+            signals.restore(frame, stored)
+    _WORK.clear()
     target = hue(colour)
     candidates = [
         c
@@ -1023,7 +1132,7 @@ def detect_meeting(
     ]
     strict = _sightings(rings, candidates, params)
     _settle(frames, candidates, strict, (colour, params))
-    scores = _score_all(frames, candidates, colour, params)
+    scores = _score_all(frames, candidates, (colour, params), signals=signals)
     lit = _read_sightings(candidates, scores, strict, params)
     keep = {
         id(s)
@@ -1032,7 +1141,7 @@ def detect_meeting(
     chosen = [i for i, c in enumerate(candidates) if id(c) in keep]
     slots = [candidates[i] for i in chosen]
     scores, lit = scores[:, chosen], lit[:, chosen]
-    found = _grid_slots(frames, slots, colour, params)
+    found = _grid_slots(frames, slots, colour, params, signals)
     if found is not None:
         extra, extra_scores, extra_lit = found
         slots = slots + extra
@@ -1048,7 +1157,11 @@ def detect_meeting(
 
 
 def _grid_slots(
-    frames: Frames, slots: Sequence[Slot], colour: Sequence[float], params: Params
+    frames: Frames,
+    slots: Sequence[Slot],
+    colour: Sequence[float],
+    params: Params,
+    signals: Signals | None = None,
 ) -> tuple[list[Slot], np.ndarray, np.ndarray] | None:
     """Tiles whose ring was never found on its own, at the gallery's places.
 
@@ -1070,7 +1183,7 @@ def _grid_slots(
     # A lattice drawn from a few slots can be some pixels out at its far
     # places, so each is first read with room to spare, then settled on the
     # ridge in the frames it was lit, then read again as a slot is.
-    loose = _score_all(frames, places, colour, params, slack=params.grid_slack)
+    loose = _score_all(frames, places, (colour, params), params.grid_slack, signals)
     _read_sightings(places, loose, {}, params)
     places = [p for p in places if len(p.sightings) >= params.min_sightings]
     if not places:
@@ -1080,7 +1193,7 @@ def _grid_slots(
         for frame in place.sightings[: params.settle_frames]:
             lit_in.setdefault(frame, set()).add(index)
     _settle(frames, places, lit_in, (colour, params))
-    scores = _score_all(frames, places, colour, params)
+    scores = _score_all(frames, places, (colour, params), signals=signals)
     lit = _read_sightings(places, scores, {}, params)
     keep = []
     for index, place in enumerate(places):
@@ -1290,7 +1403,7 @@ def _from_profiles(
         # The order of ``box`` is left, top, right, bottom; profiles are
         # top, bottom, left, right.
         side = (2, 0, 3, 1)[k]
-        found = _ridge_line(profiles[side])
+        found = _ridge_line(profiles[side], reach)
         if found is None:
             return None
         lines.append(int(round(line)) - reach + found[0])
@@ -1303,11 +1416,17 @@ def _from_profiles(
 
 
 def _calibrate_meeting(
-    frames: Frames, platform: str | None, params: Params
+    frames: Frames, platform: str | None, params: Params, workers: int = 1
 ) -> tuple[tuple[float, float, float], bool]:
     """The ring colour from rings of any colour, or the prior when too few."""
     sample = _sample(len(frames), params.calibration_frames)
-    loose = [find_rings(frames[i], None, params) for i in sample]
+    _WORK["loose"] = (frames, params, sample)
+    loose = [
+        found
+        for part in _map(_loose_in, _spans(len(sample), workers), workers)
+        for found in part
+    ]
+    _WORK.clear()
     extent = (len(sample), frames[sample[0]].shape[1] if sample else 0)
     colour = calibrate(
         _valid(_cluster(loose, params), None, params, extent), platform, params
@@ -1321,18 +1440,65 @@ def _calibrate_meeting(
 def _score_all(
     frames: Frames,
     slots: Sequence[Slot],
-    colour: Sequence[float],
-    params: Params = DEFAULT,
+    setting: tuple[Sequence[float], Params],
     slack: int = 2,
+    signals: Signals | None = None,
 ) -> np.ndarray:
     """Every slot's ring score in every frame."""
-    scores = np.zeros((len(frames), len(slots)), np.float32)
     if not slots:
-        return scores
-    for frame in range(len(frames)):
-        scorer = _Scorer(frames[frame], colour, params, slack)
-        scores[frame] = [scorer.score(s.box, s.thickness) for s in slots]
-    return scores
+        return np.zeros((len(frames), 0), np.float32)
+    workers = signals.workers if signals is not None else 1
+    _WORK["scores"] = (frames, slots, setting, slack, signals)
+    parts = _map(_scores_in, _spans(len(frames), workers), workers)
+    _WORK.clear()
+    return np.concatenate(parts) if parts else np.zeros((0, len(slots)), np.float32)
+
+
+def _scores_in(span: tuple[int, int]) -> np.ndarray:
+    frames, slots, (colour, params), slack, signals = _WORK["scores"]
+    rows = np.zeros((span[1] - span[0], len(slots)), np.float32)
+    for row, frame in enumerate(range(*span)):
+        thin = signals.get(frame) if signals is not None else None
+        image = frames[frame] if thin is None else np.empty((0, 0, 3), np.uint8)
+        scorer = _Scorer(image, colour, params, slack, thin)
+        rows[row] = [scorer.score(s.box, s.thickness) for s in slots]
+    return rows
+
+
+# What the forked passes over a meeting's frames read, set before each.
+_WORK: dict[str, Any] = {}
+
+
+def _spans(count: int, workers: int) -> list[tuple[int, int]]:
+    """Runs of consecutive frames, a few for each worker."""
+    if count == 0:
+        return []
+    size = count if workers <= 1 else max(1, math.ceil(count / (4 * workers)))
+    return [(start, min(count, start + size)) for start in range(0, count, size)]
+
+
+def _map(function: Any, items: Sequence[Any], workers: int) -> list[Any]:
+    """``function`` over ``items`` in order, in forked workers when asked.
+    A forked worker inherits the runner's guard and ``_WORK``."""
+    if workers <= 1 or len(items) <= 1:
+        return [function(item) for item in items]
+    with multiprocessing.get_context("fork").Pool(workers) as pool:
+        return pool.map(function, items, chunksize=1)
+
+
+def _rings_in(span: tuple[int, int]) -> list[tuple[int, list[Ring], Any]]:
+    frames, colour, params = _WORK["rings"]
+    signals = Signals()
+    out = []
+    for frame in range(*span):
+        found = find_rings(frames[frame], colour, params, (signals, frame))
+        out.append((frame, found, signals.take(frame)))
+    return out
+
+
+def _loose_in(span: tuple[int, int]) -> list[list[Ring]]:
+    frames, params, sample = _WORK["loose"]
+    return [find_rings(frames[sample[k]], None, params) for k in range(*span)]
 
 
 def _read_sightings(

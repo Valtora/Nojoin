@@ -189,6 +189,51 @@ def test_the_runner_writes_summary_json_and_nothing_else(
     assert summary["synthetic_gate"]["result"] in ("pass", "fail")
 
 
+def test_the_gate_can_run_in_parts(
+    study: tuple[Path, Path, Path, list[str]],
+) -> None:
+    root, frames, timeline, _ = study
+    sha = hashlib.sha256(PREREG.read_bytes()).hexdigest()
+    common = ["--prereg", str(PREREG), "--prereg-sha256", sha, "--workers", "2"]
+    common += ["--gate-meetings", "1", "--gate-ticks", "6"]
+    parts = []
+    for k in (1, 2):
+        out = root / f"gate-{k}"
+        out.mkdir()
+        result, recorded = _run(
+            SCRIPTS, [*common, "--out", str(out), "--gate-part", f"{k}/2"]
+        )
+        assert result.returncode == 0, result.stderr[-2000:]
+        assert recorded["writes"] == [str(out / "summary.json")]
+        assert recorded["outward"] == []
+        part = json.loads((out / "summary.json").read_text())
+        guard.check_summary(part, [])
+        assert "synthetic_gate" not in part
+        assert part["gate_part"]["part"] == k
+        parts.append(out / "summary.json")
+    frames_scored = sum(
+        sum(json.loads(p.read_text())["gate_part"]["frames"].values()) for p in parts
+    )
+    reading = ["--frames", str(frames), "--timeline", str(timeline)]
+
+    out = root / "out-parts"
+    out.mkdir()
+    gate_from = ["--gate-from", *map(str, parts)]
+    result, _ = _run(SCRIPTS, [*common, *reading, "--out", str(out), *gate_from])
+    assert result.returncode == 0, result.stderr[-2000:]
+    gate = json.loads((out / "summary.json").read_text())["synthetic_gate"]
+    assert gate["parts"] == 2
+    assert gate["frames"] == frames_scored
+
+    # One part of two is not a gate.
+    out = root / "out-one-part"
+    out.mkdir()
+    gate_from = ["--gate-from", str(parts[0])]
+    result, _ = _run(SCRIPTS, [*common, *reading, "--out", str(out), *gate_from])
+    assert result.returncode != 0
+    assert list(out.iterdir()) == []
+
+
 def test_a_prereg_that_does_not_match_stops_before_anything(
     study: tuple[Path, Path, Path, list[str]],
 ) -> None:

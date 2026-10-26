@@ -6,7 +6,10 @@ starts, with the frames mounted read-only. In order, it:
 1. installs the guard, so the only file it can write is summary.json;
 2. checks PREREG.md against the SHA-256 posted on #653;
 3. runs the detector's gate on the held-out synthetic meetings, and stops
-   there, before reading any real frame, if it scores under 99%;
+   there, before reading any real frame, if it scores under 99%. The gate
+   can instead run first in parts, ``--gate-part 1/6`` and so on, each a
+   run of its own that writes only that part's counts; ``--gate-from``
+   then reads those summaries in place of running the gate;
 4. reads the timeline the export wrote and each study meeting's frames;
 5. fits each platform's lag on its calibration meeting, then scores the
    held-out meetings against the pass rules.
@@ -35,7 +38,7 @@ SCHEMA = "speaker-frames-summary-1"
 PLATFORMS = ("teams", "zoom", "meet")
 # Tiles count as on screen within 30 s of a ring seen in the same layout.
 VISIBLE_GAP_MS = 30_000
-GATE_MEETINGS = 30
+GATE_MEETINGS = evaluate.MEETINGS
 
 
 @dataclass
@@ -220,27 +223,89 @@ def _visible(
     return visible
 
 
+Part = tuple[int, int]
+
+
+def _gate_counts(
+    meetings: int, workers: int, ticks: int | None, part: Part = (1, 1)
+) -> dict[str, list[int]]:
+    """Frames scored and frames right, by platform, for every Nth held-out
+    meeting from the Kth."""
+    shorter = {} if ticks is None else {"frames": ticks}
+    chosen = evaluate.specs("held-out", meetings, **shorter)[part[0] - 1 :: part[1]]
+    counts = {platform: [0, 0] for platform in PLATFORMS}
+    for spec in chosen:
+        for score in evaluate.score_meeting(spec, workers):
+            counts[score.platform][0] += 1
+            counts[score.platform][1] += int(score.correct)
+    return counts
+
+
+def _gate_result(counts: dict[str, list[int]], parts: int) -> dict[str, Any]:
+    frames = sum(c[0] for c in counts.values())
+    accuracy = sum(c[1] for c in counts.values()) / frames if frames else 0.0
+    return {
+        "threshold": evaluate.GATE,
+        "frames": frames,
+        "accuracy": accuracy,
+        "parts": parts,
+        "by_platform": {k: c[1] / c[0] for k, c in counts.items() if c[0]},
+        "result": metrics.PASS
+        if frames and accuracy >= evaluate.GATE
+        else metrics.FAIL,
+    }
+
+
 def gate(meetings: int, workers: int, ticks: int | None = None) -> dict[str, Any]:
     """The detector's held-out synthetic gate.
 
     ``ticks`` shortens each meeting, for tests; the gate itself runs them
     whole.
     """
-    shorter = {} if ticks is None else {"frames": ticks}
-    scores: list[evaluate.FrameScore] = []
-    for found in evaluate.parallel(
-        evaluate.score_meeting, evaluate.specs("held-out", meetings, **shorter), workers
-    ):
-        scores.extend(found)
-    report = evaluate.summarise(scores)
-    accuracy = report["overall"]["all"]["accuracy"]
+    return _gate_result(_gate_counts(meetings, workers, ticks), 1)
+
+
+def gate_part(
+    part: Part, meetings: int, workers: int, ticks: int | None = None
+) -> dict[str, Any]:
+    """One part of the gate, so a long gate can run as several shorter jobs."""
+    counts = _gate_counts(meetings, workers, ticks, part)
     return {
-        "threshold": evaluate.GATE,
-        "frames": report["overall"]["all"]["frames"],
-        "accuracy": accuracy,
-        "by_platform": {k: v["accuracy"] for k, v in report["platform"].items()},
-        "result": metrics.PASS if accuracy >= evaluate.GATE else metrics.FAIL,
+        "part": part[0],
+        "parts": part[1],
+        "meetings": meetings,
+        "ticks": ticks,
+        "frames": {k: c[0] for k, c in counts.items()},
+        "correct": {k: c[1] for k, c in counts.items()},
     }
+
+
+def gate_from(
+    paths: Sequence[Path], summary: dict[str, Any], meetings: int, ticks: int | None
+) -> dict[str, Any]:
+    """The gate from its parts' summaries, each run on this code and this
+    PREREG.md, every part once."""
+    parts = []
+    for path in paths:
+        part = json.loads(path.read_text(encoding="utf-8"))
+        if any(
+            part.get(k) != summary[k]
+            for k in ("schema", "prereg_sha256", "code_sha256")
+        ):
+            raise SystemExit(f"{path} was run on other code or another PREREG.md")
+        parts.append(part["gate_part"])
+    count = len(parts)
+    if sorted(p["part"] for p in parts) != list(range(1, count + 1)) or any(
+        (p["parts"], p["meetings"], p["ticks"]) != (count, meetings, ticks)
+        for p in parts
+    ):
+        raise SystemExit("the gate's parts do not make up one whole gate")
+    counts = {k: [0, 0] for k in PLATFORMS}
+    for p in parts:
+        for k in PLATFORMS:
+            counts[k][0] += int(p["frames"][k])
+            counts[k][1] += int(p["correct"][k])
+    return _gate_result(counts, count)
 
 
 def analyse(
@@ -323,8 +388,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    parser.add_argument("--frames", type=Path, required=True)
-    parser.add_argument("--timeline", type=Path, required=True)
+    parser.add_argument("--frames", type=Path)
+    parser.add_argument("--timeline", type=Path)
     parser.add_argument("--prereg", type=Path, required=True)
     parser.add_argument("--prereg-sha256", required=True)
     parser.add_argument("--out", type=Path, required=True)
@@ -334,8 +399,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--gate-ticks", type=int, default=None, help="per meeting, for tests"
     )
+    parser.add_argument(
+        "--gate-part", help="K/N: run only part K of the gate in N, write it and stop"
+    )
+    parser.add_argument(
+        "--gate-from", type=Path, nargs="+", help="the parts --gate-part wrote"
+    )
     parser.add_argument("--workers", type=int, default=1)
     args = parser.parse_args(argv)
+    if not args.gate_part and (args.frames is None or args.timeline is None):
+        parser.error("--frames and --timeline are needed unless --gate-part is given")
     if any(args.out.iterdir()):
         raise SystemExit("the output folder must be empty")
     guard.install(args.out / guard.SUMMARY_NAME)
@@ -347,7 +420,23 @@ def main(argv: Sequence[str] | None = None) -> int:
         "prereg_sha256": prereg,
         "code_sha256": code_sha256(),
     }
-    summary["synthetic_gate"] = gate(args.gate_meetings, args.workers, args.gate_ticks)
+    if args.gate_part:
+        k, n = (int(v) for v in args.gate_part.split("/"))
+        if not 1 <= k <= n:
+            raise SystemExit("--gate-part is K/N with K from 1 to N")
+        summary["gate_part"] = gate_part(
+            (k, n), args.gate_meetings, args.workers, args.gate_ticks
+        )
+        guard.write_summary(args.out, summary, [])
+        return 0
+    if args.gate_from:
+        summary["synthetic_gate"] = gate_from(
+            args.gate_from, summary, args.gate_meetings, args.gate_ticks
+        )
+    else:
+        summary["synthetic_gate"] = gate(
+            args.gate_meetings, args.workers, args.gate_ticks
+        )
     recordings = load_timeline(args.timeline)
     ids = [r.public_id for r in recordings]
     if summary["synthetic_gate"]["result"] == metrics.PASS:

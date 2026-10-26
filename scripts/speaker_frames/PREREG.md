@@ -27,7 +27,7 @@ When a user shares the screen that shows their meeting, does the meeting app's a
 ## Detector
 
 - The detector in `detect.py` at the commit whose files hash to the summary's `code_sha256`. It finds rings, groups them into slots seen in at least 3 frames, splits the meeting into layouts, and reads which slot is lit in every frame.
-- Gate: before reading a real frame, it must be at least 99% correct per frame on the held-out synthetic meetings (`evaluate.py`, 30 meetings per platform from seed 2600000, at 1920 px on the long edge as the sampler stores them). `run.py` runs the gate first and stops if it fails.
+- Gate: before reading a real frame, it must be at least 99% correct per frame on the held-out synthetic meetings (`evaluate.py`, 10 meetings per platform of 20 minutes each from seed 3700000, at 1920 px on the long edge as the sampler stores them). `run.py` runs the gate first and stops if it fails.
 - A tile is a slot within a layout. A layout that returns keeps its number.
 - Tiles are on screen at a frame when a ring was seen in the same layout within 30 s of it.
 

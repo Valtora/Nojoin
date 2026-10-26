@@ -20,6 +20,7 @@ from __future__ import annotations
 import colorsys
 import io
 import math
+import multiprocessing
 import random
 from collections.abc import Iterator
 from dataclasses import dataclass, field, replace
@@ -34,6 +35,8 @@ Box = tuple[float, float, float, float]
 PLATFORMS = ("teams", "zoom", "meet")
 SAMPLER_LONG_EDGE = 1920
 SAMPLER_JPEG_QUALITY = 80  # canvas.toBlob(..., "image/jpeg", 0.8)
+# The study's meetings run 20 minutes or more, sampled once a second.
+MEETING_TICKS = 20 * 60
 SCREENS = (
     (1920, 1080),
     (1920, 1200),
@@ -82,7 +85,7 @@ class Screen:
 class MeetingSpec:
     platform: str
     seed: int
-    frames: int = 60
+    frames: int = MEETING_TICKS
     screen: Screen | None = None
     participants: int | None = None
     long_edge: int = SAMPLER_LONG_EDGE
@@ -460,7 +463,8 @@ def _stage_area(
 
 def _plan_segments(ctx: _Context, rng: random.Random) -> list[Segment]:
     spec, look, scale = ctx.spec, ctx.look, ctx.screen.scale
-    count = rng.randint(1, 3)
+    # A layout or two more for each five minutes.
+    count = rng.randint(1, max(3, spec.frames // 300))
     lengths = _split(spec.frames, count, rng)
     window = _place_window(ctx.screen, rng)
     panel = rng.random() < 0.3
@@ -538,6 +542,7 @@ class MeetingRenderer:
         self.segments = _plan_segments(self.ctx, rng)
         self.speech = _speech(count, spec.frames, look, rng)
         self.out_size = _out_size(screen, spec.long_edge)
+        self._current: tuple[int, Image.Image, list[list[bool]]] | None = None
 
     @property
     def look(self) -> Look:
@@ -547,26 +552,60 @@ class MeetingRenderer:
     def screen(self) -> Screen:
         return self.ctx.screen
 
-    def frames(self) -> Iterator[SyntheticFrame]:
-        """The frames the sampler keeps, one tick a second."""
-        frame = 0
+    def frames(self, workers: int = 1) -> Iterator[SyntheticFrame]:
+        """The frames the sampler keeps, one tick a second.
+
+        Each tick is drawn on its own, so ``workers`` forked processes can
+        draw them; the change rule then runs over them in order.
+        """
         rule = ChangeRule()
+        for tick, grid, jpeg, truth in self._ticks(workers):
+            if not self.ctx.spec.change_rule or rule.keep_grid(grid, tick):
+                yield SyntheticFrame(jpeg, truth, tick)
+
+    def _ticks(self, workers: int) -> Iterator[_Tick]:
+        plan, frame = [], 0
         for index, segment in enumerate(self.segments):
-            base = _render_base(
-                segment, self.ctx, random.Random(self.ctx.spec.seed * 31 + index)
-            )
-            for _ in range(segment.frames):
-                image, lit = self._draw(segment, base, frame)
-                small = browser_shrink(image, self.ctx.spec)
-                if not self.ctx.spec.change_rule or rule.keep(small, frame):
-                    truth = self._truth(segment, lit, index)
-                    yield SyntheticFrame(
-                        browser_jpeg(small, self.ctx.spec), truth, frame
-                    )
+            for local in range(segment.frames):
+                plan.append((index, local, frame))
                 frame += 1
+        if workers <= 1:
+            for job in plan:
+                yield self._tick(job)
+            return
+        global _RENDERER
+        _RENDERER = self
+        chunks = [plan[i : i + TICK_CHUNK] for i in range(0, len(plan), TICK_CHUNK)]
+        try:
+            with multiprocessing.get_context("fork").Pool(workers) as pool:
+                for done in pool.imap(_draw_chunk, chunks):
+                    yield from done
+        finally:
+            _RENDERER = None
+
+    def _tick(self, job: tuple[int, int, int]) -> _Tick:
+        index, local, frame = job
+        segment = self.segments[index]
+        base, schedule = self._base(index)
+        image, lit = self._draw(segment, base, frame, [s[local] for s in schedule])
+        small = browser_shrink(image, self.ctx.spec)
+        jpeg = browser_jpeg(small, self.ctx.spec)
+        return frame, change_grid(small), jpeg, self._truth(segment, lit, index)
+
+    def _base(self, index: int) -> tuple[Image.Image, list[list[bool]]]:
+        """A segment's still parts and when each distractor shows, drawn
+        once per process from the segment's own seed."""
+        if self._current is None or self._current[0] != index:
+            segment = self.segments[index]
+            segment.toggles = []
+            seed = self.ctx.spec.seed
+            base = _render_base(segment, self.ctx, random.Random(seed * 31 + index))
+            schedule = _toggle_schedule(segment, random.Random(seed * 131 + index))
+            self._current = (index, base, schedule)
+        return self._current[1], self._current[2]
 
     def _draw(
-        self, segment: Segment, base: Image.Image, frame: int
+        self, segment: Segment, base: Image.Image, frame: int, shown: list[bool]
     ) -> tuple[Image.Image, list[Box]]:
         image = base.copy()
         draw = ImageDraw.Draw(image)
@@ -578,9 +617,8 @@ class MeetingRenderer:
         if segment.big is not None:
             speaker = min(speaking) if speaking else 0
             _draw_tile_face(image, draw, segment.big, self.ctx, (speaker, frame))
-        for toggle in segment.toggles:
-            _step_toggle(toggle, self.rng)
-            if toggle.on:
+        for toggle, on in zip(segment.toggles, shown, strict=True):
+            if on:
                 draw.rounded_rectangle(
                     toggle.box,
                     radius=toggle.radius,
@@ -617,9 +655,29 @@ def _out_size(screen: Screen, long_edge: int) -> tuple[int, int]:
     return (round(screen.width * factor), round(screen.height * factor))
 
 
-def _step_toggle(toggle: Toggle, rng: random.Random) -> None:
-    if rng.random() < (0.35 if toggle.on else 0.2):
-        toggle.on = not toggle.on
+def _toggle_schedule(segment: Segment, rng: random.Random) -> list[list[bool]]:
+    """Whether each distractor shows at each of the segment's ticks."""
+    schedule = []
+    for toggle in segment.toggles:
+        on, shown = toggle.on, []
+        for _ in range(segment.frames):
+            if rng.random() < (0.35 if on else 0.2):
+                on = not on
+            shown.append(on)
+        schedule.append(shown)
+    return schedule
+
+
+# A tick: its number, the change rule's grid, the encoded frame, what it shows.
+_Tick = tuple[int, np.ndarray, bytes, "FrameTruth"]
+# Ticks a forked worker draws at a time.
+TICK_CHUNK = 30
+_RENDERER: MeetingRenderer | None = None
+
+
+def _draw_chunk(jobs: list[tuple[int, int, int]]) -> list[_Tick]:
+    assert _RENDERER is not None
+    return [_RENDERER._tick(job) for job in jobs]
 
 
 def _draw_ring(draw: ImageDraw.ImageDraw, box: Box, ctx: _Context, frame: int) -> None:
@@ -1069,18 +1127,21 @@ KEEP_ALIVE_TICKS = 15
 
 def change_grid(small: Image.Image) -> np.ndarray:
     """Red, green and blue averages over a 64 x 36 grid of blocks, rounded."""
-    pixels = np.asarray(small, dtype=np.float64)
+    pixels = np.asarray(small)
     height, width = pixels.shape[:2]
     rows = np.minimum(GRID[0] - 1, (np.arange(height) * GRID[0]) // height)
     cols = np.minimum(GRID[1] - 1, (np.arange(width) * GRID[1]) // width)
-    cell = (rows[:, None] * GRID[1] + cols[None, :]).ravel()
-    counts = np.bincount(cell, minlength=GRID[0] * GRID[1])
-    means = [
-        np.bincount(cell, weights=pixels[..., c].ravel(), minlength=counts.size)
-        / counts
-        for c in range(3)
-    ]
-    return np.floor(np.stack(means, axis=1) + 0.5)
+    # Each block's first row and column; the blocks run in order.
+    row_starts = np.flatnonzero(np.diff(rows, prepend=-1))
+    col_starts = np.flatnonzero(np.diff(cols, prepend=-1))
+    sums = np.add.reduceat(
+        np.add.reduceat(pixels, row_starts, axis=0, dtype=np.uint32), col_starts, axis=1
+    )
+    counts = np.diff(np.append(row_starts, height))[:, None] * np.diff(
+        np.append(col_starts, width)
+    )
+    means = sums.reshape(-1, 3) / counts.reshape(-1, 1)
+    return np.floor(means + 0.5)
 
 
 class ChangeRule:
@@ -1092,7 +1153,9 @@ class ChangeRule:
         self.tick = 0
 
     def keep(self, small: Image.Image, tick: int) -> bool:
-        grid = change_grid(small)
+        return self.keep_grid(change_grid(small), tick)
+
+    def keep_grid(self, grid: np.ndarray, tick: int) -> bool:
         if (
             self.grid is None
             or tick - self.tick >= KEEP_ALIVE_TICKS
