@@ -14,14 +14,33 @@ import {
   updateSettings,
   type InitialSetupConfig,
 } from "@/lib/api";
-import { getErrorMessage, getErrorStatus } from "@/lib/errors";
+import {
+  getErrorDetail,
+  getErrorMessage,
+  getErrorStatus,
+  isRecord,
+} from "@/lib/errors";
 import type { CliOAuthStatus, CliProvider } from "@/types";
 
-// Shown for every unlock failure. The backend deliberately returns one
+// Shown for every other unlock failure. The backend deliberately returns one
 // generic denial whether the password is wrong, FIRST_RUN_PASSWORD is unset,
 // or the system is already initialised, so the client cannot say more.
 const SETUP_ACCESS_DENIED_MESSAGE =
   "Setup access denied. Check the first-run password, or sign in normally if this system is already set up.";
+
+// The one specific denial: the password entered is the example value from
+// .env.example. The backend sends it whatever state the server is in, so it
+// says nothing about the server, only about the password typed.
+const EXAMPLE_PASSWORD_DETAIL =
+  "Setup does not accept the example FIRST_RUN_PASSWORD from .env.example.";
+const EXAMPLE_PASSWORD_MESSAGE =
+  "Setup does not accept the example password from .env.example. Set your own FIRST_RUN_PASSWORD in .env, restart the stack with docker compose up -d, then enter it here.";
+
+function setupDeniedMessage(err: unknown): string {
+  return getErrorDetail(err) === EXAMPLE_PASSWORD_DETAIL
+    ? EXAMPLE_PASSWORD_MESSAGE
+    : SETUP_ACCESS_DENIED_MESSAGE;
+}
 
 /**
  * The wizard's steps, in order.
@@ -66,6 +85,85 @@ const PROGRESS_MAX_CONSECUTIVE_ERRORS = 5;
 
 function isBlank(value: string): boolean {
   return value.trim().length === 0;
+}
+
+const AI_SUMMARY_CLI_LABEL: Record<string, string> = {
+  claude_code: "Claude subscription",
+  codex: "ChatGPT subscription",
+};
+
+const AI_SUMMARY_PROVIDER_LABEL: Record<string, string> = {
+  gemini: "Google Gemini",
+  openai: "OpenAI",
+  anthropic: "Anthropic",
+  ollama: "Ollama",
+};
+
+/**
+ * Where a wizard past the account step has got to. Once the owner exists the
+ * session cookie survives a reload but the wizard's own state does not, and
+ * a signed-in visit to /setup otherwise goes straight to the dashboard,
+ * skipping the AI and Finish steps. Kept in sessionStorage, per tab like the
+ * reload it serves, from the account step until the operator leaves for the
+ * dashboard. Nothing in it is secret.
+ */
+interface SetupProgress {
+  username: string;
+  step: typeof STEP_AI | typeof STEP_COMPLETE;
+  whisperModelSize: string;
+  includeDemoRecording: boolean;
+  /** The Finish summary's AI line, which the AI step's choices produced. */
+  aiSummary?: string;
+}
+
+const SETUP_PROGRESS_STORAGE_KEY = "nojoin.setup.progress";
+
+function readSetupProgress(): SetupProgress | null {
+  try {
+    const raw = window.sessionStorage.getItem(SETUP_PROGRESS_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed: unknown = JSON.parse(raw);
+    if (
+      !isRecord(parsed) ||
+      typeof parsed.username !== "string" ||
+      (parsed.step !== STEP_AI && parsed.step !== STEP_COMPLETE) ||
+      typeof parsed.whisperModelSize !== "string" ||
+      typeof parsed.includeDemoRecording !== "boolean"
+    ) {
+      return null;
+    }
+    return {
+      username: parsed.username,
+      step: parsed.step,
+      whisperModelSize: parsed.whisperModelSize,
+      includeDemoRecording: parsed.includeDemoRecording,
+      aiSummary:
+        typeof parsed.aiSummary === "string" ? parsed.aiSummary : undefined,
+    };
+  } catch {
+    // Storage can be unavailable (a private window, blocked site data); the
+    // wizard then behaves as it did before resuming existed.
+    return null;
+  }
+}
+
+function writeSetupProgress(progress: SetupProgress): void {
+  try {
+    window.sessionStorage.setItem(
+      SETUP_PROGRESS_STORAGE_KEY,
+      JSON.stringify(progress),
+    );
+  } catch {
+    // Best effort, as above.
+  }
+}
+
+function clearSetupProgress(): void {
+  try {
+    window.sessionStorage.removeItem(SETUP_PROGRESS_STORAGE_KEY);
+  } catch {
+    // Best effort, as above.
+  }
 }
 
 export function useSetupWizard() {
@@ -118,12 +216,64 @@ export function useSetupWizard() {
   );
   const [modelPreparationComplete, setModelPreparationComplete] = useState(false);
   const [modelPreparationWarning, setModelPreparationWarning] = useState("");
+  // The AI line of a Finish step restored after a reload, when the AI step's
+  // choices that produced it are gone.
+  const [resumedAiSummary, setResumedAiSummary] = useState<string | null>(null);
+
+  const applyInitialConfig = useCallback((initialConfig: InitialSetupConfig) => {
+    setServerConfig(initialConfig);
+    if (initialConfig.selected_model) {
+      setFormData((prev) => ({
+        ...prev,
+        selected_model: prev.selected_model || initialConfig.selected_model || "",
+      }));
+    }
+  }, []);
 
   useEffect(() => {
+    /** Brings a reloaded wizard back to the step it was on. The owner exists
+     * and is signed in, so the cookie authenticates from here on. */
+    const resumeSetup = async (username: string, progress: SetupProgress) => {
+      setAccountCreated(true);
+      setFormData((prev) => ({
+        ...prev,
+        username,
+        whisper_model_size: progress.whisperModelSize,
+      }));
+      setIncludeDemoRecording(progress.includeDemoRecording);
+      setResumedAiSummary(
+        progress.step === STEP_COMPLETE ? (progress.aiSummary ?? null) : null,
+      );
+      try {
+        applyInitialConfig(await getInitialConfig(undefined));
+      } catch (err: unknown) {
+        // The AI step's "Check config again" retries this.
+        console.error("Could not reload the server's AI configuration:", err);
+      }
+      try {
+        const ffmpegStatus = await checkFFmpeg();
+        setFfmpegMissing(!ffmpegStatus.ffmpeg || !ffmpegStatus.ffprobe);
+      } catch {
+        // Non-fatal, as on the account step.
+      }
+      setStep(progress.step);
+      setLoading(false);
+    };
+
     const prepareSetup = async () => {
       try {
         try {
           const user = await getCurrentUser();
+          const progress = readSetupProgress();
+          if (
+            progress &&
+            progress.username === user.username &&
+            !user.force_password_change
+          ) {
+            await resumeSetup(user.username, progress);
+            return;
+          }
+          clearSetupProgress();
           router.push(user.force_password_change ? "/settings/profile" : "/");
           return;
         } catch (err: unknown) {
@@ -140,7 +290,7 @@ export function useSetupWizard() {
       }
     };
     prepareSetup();
-  }, [router]);
+  }, [router, applyInitialConfig]);
 
   /** Every transition clears the banner, so an error cannot follow the operator
    * into a step it does not describe. */
@@ -184,18 +334,11 @@ export function useSetupWizard() {
     }
 
     try {
-      const initialConfig = await getInitialConfig(credential);
-      setServerConfig(initialConfig);
-      if (initialConfig.selected_model) {
-        setFormData((prev) => ({
-          ...prev,
-          selected_model: prev.selected_model || initialConfig.selected_model || "",
-        }));
-      }
+      applyInitialConfig(await getInitialConfig(credential));
       return true;
     } catch (err: unknown) {
       if (getErrorStatus(err) === 403) {
-        setError(SETUP_ACCESS_DENIED_MESSAGE);
+        setError(setupDeniedMessage(err));
         return false;
       }
       setError(
@@ -206,7 +349,7 @@ export function useSetupWizard() {
       );
       return false;
     }
-  }, [accountCreated]);
+  }, [accountCreated, applyInitialConfig]);
 
   // --- Step 0: Unlock ---
   const handleUnlockSubmit = async (e: React.FormEvent) => {
@@ -269,6 +412,12 @@ export function useSetupWizard() {
 
       await login(formData.username, formData.password);
       setAccountCreated(true);
+      writeSetupProgress({
+        username: formData.username,
+        step: STEP_AI,
+        whisperModelSize: formData.whisper_model_size,
+        includeDemoRecording,
+      });
 
       // FFmpeg availability is admin-gated, so it can only be checked once the
       // owner session exists.
@@ -294,7 +443,7 @@ export function useSetupWizard() {
       } else {
         setError(
           getErrorStatus(err) === 403
-            ? SETUP_ACCESS_DENIED_MESSAGE
+            ? setupDeniedMessage(err)
             : getErrorMessage(err, "Could not create the account. Please try again."),
         );
       }
@@ -330,6 +479,13 @@ export function useSetupWizard() {
     cliStatus?.providers ?? []
   ).find((entry) => entry.connected)?.provider;
   const subscriptionConnected = connectedCliProvider !== undefined;
+  const aiSummary =
+    resumedAiSummary ??
+    (aiRoute === "subscription" && connectedCliProvider
+      ? AI_SUMMARY_CLI_LABEL[connectedCliProvider]
+      : aiRoute === "server" && formData.selected_model
+        ? `${AI_SUMMARY_PROVIDER_LABEL[serverProvider] || serverProvider} (${formData.selected_model})`
+        : "Not configured yet");
 
   const validateAndFetchModels = useCallback(async () => {
     setValidatingLLM(true);
@@ -424,6 +580,15 @@ export function useSetupWizard() {
   const handleAiSubmit = async () => {
     setSavingAi(true);
     setError("");
+    // Recorded before the save, so a reload on the Finish step finds it
+    // whether or not the save worked: the step is reached either way.
+    writeSetupProgress({
+      username: formData.username,
+      step: STEP_COMPLETE,
+      whisperModelSize: formData.whisper_model_size,
+      includeDemoRecording,
+      aiSummary,
+    });
 
     try {
       if (aiRoute === "subscription" && connectedCliProvider) {
@@ -494,7 +659,7 @@ export function useSetupWizard() {
         if (progress.status === "error") {
           finish(
             progress.message ||
-              "Model preparation reported a problem. Settings > AI providers can retry it.",
+              "Could not download the transcription and speaker models. Retry from Model downloads in Settings > AI providers.",
           );
           return;
         }
@@ -515,7 +680,7 @@ export function useSetupWizard() {
         if (consecutiveErrors >= PROGRESS_MAX_CONSECUTIVE_ERRORS) {
           console.error("Model preparation progress unavailable:", err);
           finish(
-            "Lost contact with the progress endpoint. Preparation continues on the server; Settings > AI providers shows the current state.",
+            "Lost contact with the progress endpoint. Preparation continues on the server; Model downloads in Settings > AI providers shows the current state.",
           );
           return;
         }
@@ -523,7 +688,7 @@ export function useSetupWizard() {
 
       if (Date.now() - startedAt > PROGRESS_TIMEOUT_MS) {
         finish(
-          "Model preparation is taking longer than expected. It continues in the background on the server, and Settings > AI providers shows the current state.",
+          "Model preparation is taking longer than expected. It continues in the background on the server, and Model downloads in Settings > AI providers shows the current state.",
         );
         return;
       }
@@ -540,6 +705,7 @@ export function useSetupWizard() {
   }, [step]);
 
   const handleCompleteSetup = () => {
+    clearSetupProgress();
     router.push("/");
   };
 
@@ -571,6 +737,7 @@ export function useSetupWizard() {
     secondaryProvider: serverConfig?.secondary_llm_provider ?? null,
     setCliStatus,
     connectedCliProvider,
+    aiSummary,
     // Transcription step
     pyannoteModelsReady: Boolean(serverConfig?.pyannote_models_ready),
     bundledPyannoteModelsReady: Boolean(serverConfig?.bundled_pyannote_models_ready),

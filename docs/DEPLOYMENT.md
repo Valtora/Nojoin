@@ -26,7 +26,7 @@ This is the operator reference for running Nojoin. For a first install, follow [
 
 Compose stops with `Set FIRST_RUN_PASSWORD in .env` while that variable is unset or empty. After changing it, run `docker compose up -d` again so the `api` container receives it. [SECURITY.md](SECURITY.md#first-run-bootstrap-protection) describes how setup reports a denial.
 
-If `FIRST_RUN_PASSWORD`, `DATA_ENCRYPTION_KEY`, `POSTGRES_PASSWORD` or `REDIS_PASSWORD` still holds its example value, the api and workers log a warning at startup and the web app shows one to signed-in users. Nothing is blocked.
+First-run setup refuses the example `FIRST_RUN_PASSWORD` from `.env.example`, and the wizard asks for your own. If `FIRST_RUN_PASSWORD`, `DATA_ENCRYPTION_KEY`, `POSTGRES_PASSWORD` or `REDIS_PASSWORD` still holds its example value, the api and workers also log a warning at startup and the web app shows one to signed-in users. The warnings block nothing, and an install that is already set up is unaffected.
 
 `frontend` waits for a healthy `api`, and `nginx` waits for both. Compose does not start a dependent service you leave out, so name `nginx` in a partial start:
 
@@ -165,7 +165,7 @@ A trip is logged as a warning naming its rules, or as an error where noted above
 
 ## Worker Container Startup
 
-At startup the API queues model preparation for Pyannote diarisation, voice embeddings and the install's transcription engine (**Settings > Transcription**). Whisper is prepared only when the engine is Whisper. Preparation validates each model, caches it on disk and releases it, so the GPU stays idle until there is work.
+Once an account exists, the API queues model preparation at startup for Pyannote diarisation, voice embeddings and the install's transcription engine (**Settings > Transcription**). Whisper is prepared only when the engine is Whisper. A new install downloads nothing until the setup wizard creates the Owner account, which queues preparation for the transcription model chosen in the wizard. Preparation validates each model, caches it on disk and releases it, so the GPU stays idle until there is work.
 
 Models live in the `model_cache` volume (`XDG_CACHE_HOME` and `HF_HOME` on the workers), so they survive container recreation. The text embedding model is cached in `$XDG_CACHE_HOME/fastembed`. Set `FASTEMBED_CACHE_PATH` on the workers to keep it elsewhere.
 
@@ -229,7 +229,7 @@ Put each comment on a line of its own. Compose strips a comment that follows a v
 
 | Variable | Purpose |
 | --- | --- |
-| `FIRST_RUN_PASSWORD` | Password for the setup wizard at `/setup` on an uninitialised system. Unused once setup is done. |
+| `FIRST_RUN_PASSWORD` | Password for the setup wizard at `/setup` on an uninitialised system. Setup refuses the example value from `.env.example`. Unused once setup is done. |
 | `DATA_ENCRYPTION_KEY` | Encrypts calendar OAuth client secrets, users' calendar tokens and subscription (CLI OAuth) credentials. See [DATA_ENCRYPTION_KEY Guidance](#data_encryption_key-guidance). |
 | `POSTGRES_PASSWORD` | Database password. Set it before the first start: PostgreSQL keeps the password its data directory was initialised with. |
 | `REDIS_PASSWORD` | Redis password. |
@@ -250,7 +250,7 @@ AI providers:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `LLM_PROVIDER` | `gemini` | The install's default provider: `gemini`, `openai`, `anthropic` or `ollama`. Empty means `gemini`. Shown read-only in **Settings > AI providers**. |
+| `LLM_PROVIDER` | `gemini` | The install's default provider: `gemini`, `openai`, `anthropic` or `ollama`. Empty means the provider of the only key set among `GEMINI_API_KEY`, `OPENAI_API_KEY` and `ANTHROPIC_API_KEY`, and `gemini` when none or several are set. Shown read-only in **Settings > AI providers**. |
 | `GEMINI_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` | | Keys for the hosted providers. |
 | `OLLAMA_API_URL` | `http://host.docker.internal:11434` | Ollama endpoint. |
 | `OLLAMA_CONTEXT_WINDOW` | `32768` | Ollama `num_ctx` for full-meeting prompts. See below. |
@@ -608,6 +608,7 @@ These run on the first start after the upgrade and need no action unless a note 
 
 #### Unreleased Changes on Main
 
+- **An empty `LLM_PROVIDER` follows a single key (#724).** With `LLM_PROVIDER` empty and exactly one of `GEMINI_API_KEY`, `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` set, the api and workers now use that key's provider. Until now they used `gemini`, so an install with only an OpenAI or Anthropic key sent every AI request to Gemini with no key, and each one failed. Such an install changes provider on the first start: choose a model for it in **Settings > AI providers** if the page reads **No model selected**. An install with no key, with a Gemini key alone or with several keys keeps `gemini`, and a set `LLM_PROVIDER` still decides.
 - **Companion pairing tables on a new install (#724).** Alembic revision `4a8e2f5b6c71` now drops `companion_pairings` and `companion_pairing_requests` without `NOJOIN_ALLOW_COMPANION_DROP` when both are empty, as they are on every new install, and no longer logs `Skipping companion table drop` there. An install that has already run the revision keeps the tables it had, which nothing reads.
 - **Files on notes (#653).** Alembic revision `c4d81e6a2f90` adds `documents.note_id`, unique, a foreign key to `timeline_notes` with `ON DELETE CASCADE`, and `documents.use_in_notes`, `false` by default. Every existing row keeps `note_id` empty, so attached documents behave as before. A downgrade drops both columns, and files on notes stay on their meetings as ordinary documents, read by every notes run from then on. A newer worker fails on the missing columns until the API has migrated, so upgrade the API and the workers together.
 - **Speaker names with sources (#487).** Alembic revision `0f3b502561a6` adds the table `speaker_name_events` and the nullable column `recording_speakers.name_source`, with no backfill: names given before the upgrade show as they did, with no "?", and their links to People still teach voiceprints. A downgrade drops both, and backups leave the table out ([BACKUP_RESTORE.md](BACKUP_RESTORE.md#what-is-not-included)). Every user starts with `voiceprint_learning` at `confirmed` and `confirm_suggested_names` off, so from the first run after the upgrade, a suggested name waits for **Confirm** and only confirmed names update a person's voiceprint ([USAGE.md](USAGE.md#speaker-management)). A newer worker fails on the missing column until the API has migrated, so upgrade the API and the workers together.

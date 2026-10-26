@@ -24,6 +24,7 @@ from backend.utils.languages import (
     validate_notes_language,
     validate_transcription_language,
 )
+from backend.utils.llm_provider_env import provider_of_only_llm_key
 from backend.utils.ollama_url_policy import (
     OllamaURLValidationError,
     validate_ollama_api_url,
@@ -232,7 +233,7 @@ DEFAULT_SYSTEM_CONFIG = {
     "telemetry_policy_version": None,
 }
 
-# The install's provider when LLM_PROVIDER is empty.
+# The install's provider when neither LLM_PROVIDER nor a single API key names one.
 DEFAULT_LLM_PROVIDER = "gemini"
 
 DEFAULT_USER_SETTINGS = {
@@ -513,16 +514,16 @@ class ConfigManager:
                 else:
                     config[config_key] = env_val
 
-        # An empty LLM_PROVIDER selects the default provider and outranks
-        # config.json, as a set one does. Compose used to fill in gemini itself
-        # and now passes the variable through empty, so that the setup wizard
+        # An empty LLM_PROVIDER selects the only API key's provider, or else the
+        # default, and outranks config.json as a set one does. Compose passes
+        # the variable through empty, not as gemini, so that the setup wizard
         # can tell an operator who chose gemini from one who chose nothing
         # (#477). Skipping the empty value as the loop above does would hand
         # the choice to whatever provider config.json or the owner's settings
         # still hold, and switch an install that relied on the old default.
         llm_provider_env = os.environ.get(ENV_OVERRIDES["llm_provider"])
         if llm_provider_env is not None and not llm_provider_env.strip():
-            config["llm_provider"] = DEFAULT_LLM_PROVIDER
+            config["llm_provider"] = provider_of_only_llm_key() or DEFAULT_LLM_PROVIDER
 
         return config
 

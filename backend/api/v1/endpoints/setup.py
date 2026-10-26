@@ -22,6 +22,7 @@ from backend.api.error_handling import sanitized_http_exception
 from backend.models.user import User
 from backend.processing.llm_services import get_llm_backend
 from backend.utils.config_manager import config_manager
+from backend.utils.deployment_warnings import FIRST_RUN_PASSWORD_PLACEHOLDER
 from backend.utils.ollama_url_policy import (
     OllamaURLValidationError,
     validate_ollama_api_url,
@@ -32,10 +33,18 @@ logger = logging.getLogger(__name__)
 
 FIRST_RUN_PASSWORD_AUTH_SCHEME = "Bootstrap"
 FIRST_RUN_PASSWORD_ENV_KEY = "FIRST_RUN_PASSWORD"
-# Every setup denial uses this one detail so anonymous responses are identical
-# whether the system is initialised, the bootstrap password is wrong, or
-# FIRST_RUN_PASSWORD is not configured. The specific reason is server-log only.
+# Every setup denial but the one below uses this detail, so anonymous responses
+# are identical whether the system is initialised, the bootstrap password is
+# wrong, or FIRST_RUN_PASSWORD is not configured. The specific reason is
+# server-log only.
 FIRST_RUN_SETUP_ACCESS_DENIED_DETAIL = "First-run setup access denied."
+# The one other setup denial: the password sent is the example value from
+# .env.example. It depends only on what was sent, never on the system's state
+# or on what FIRST_RUN_PASSWORD holds, so it discloses nothing the sender did
+# not already know, and the wizard can say what to change.
+FIRST_RUN_PASSWORD_EXAMPLE_DETAIL = (
+    "Setup does not accept the example FIRST_RUN_PASSWORD from .env.example."
+)
 SETUP_RATE_LIMIT = 60
 SETUP_RATE_LIMIT_WINDOW_SECONDS = 10 * 60
 SETUP_RATE_LIMIT_DETAIL = "Too many setup requests. Please try again later."
@@ -152,12 +161,44 @@ def _bootstrap_password_matches(provided: str, configured: str) -> bool:
     return any(matches)
 
 
+def refuse_example_first_run_password(request: Request) -> None:
+    """Refuse the example bootstrap password from .env.example.
+
+    Callers run this before any state-dependent check, so the refusal is the
+    same on an initialised system as on a new one.
+    """
+    provided_password = get_first_run_password(request)
+    if not provided_password or not _bootstrap_password_matches(
+        provided_password, FIRST_RUN_PASSWORD_PLACEHOLDER
+    ):
+        return
+    logger.warning(
+        "First-run setup request denied: the bootstrap password sent is the "
+        "example value from .env.example. Set your own FIRST_RUN_PASSWORD in "
+        ".env and restart or redeploy Nojoin."
+    )
+    raise HTTPException(status_code=403, detail=FIRST_RUN_PASSWORD_EXAMPLE_DETAIL)
+
+
 def require_first_run_password(request: Request) -> None:
     configured_password = os.getenv(FIRST_RUN_PASSWORD_ENV_KEY)
     if not configured_password:
         logger.warning(
             "First-run setup request denied: FIRST_RUN_PASSWORD is not set. "
             "Set the env var and restart or redeploy Nojoin before initialising."
+        )
+        raise HTTPException(
+            status_code=403,
+            detail=FIRST_RUN_SETUP_ACCESS_DENIED_DETAIL,
+        )
+
+    # Never unlocks, even for a caller that skipped the check above: the only
+    # password that would match is the example value everyone can read.
+    if configured_password.strip() == FIRST_RUN_PASSWORD_PLACEHOLDER:
+        logger.warning(
+            "First-run setup request denied: FIRST_RUN_PASSWORD is still the "
+            "example value from .env.example. Set your own in .env and restart "
+            "or redeploy Nojoin before initialising."
         )
         raise HTTPException(
             status_code=403,
@@ -200,6 +241,7 @@ async def check_setup_permission(db: AsyncSession, request: Request):
     2. OR User is authenticated as Admin/Owner (JWT token in header).
     """
     await enforce_setup_rate_limit(request)
+    refuse_example_first_run_password(request)
 
     is_initialized = await is_system_initialized(db)
 
@@ -268,10 +310,10 @@ async def get_initial_config(req: Request, db: AsyncSession = Depends(get_db)):
     system_keys = await async_get_system_api_keys(db)
     llm_provider = config_manager.get("llm_provider", "gemini")
     # `llm_provider` always resolves to something (an empty LLM_PROVIDER means
-    # gemini), so on its own it cannot tell an operator who chose gemini from
-    # one who set nothing. .env.example ships LLM_PROVIDER empty and compose
-    # passes it through empty, so the raw variable is what says whether a
-    # provider was chosen.
+    # the provider of the only API key set, or else gemini), so on its own it
+    # cannot tell an operator who chose gemini from one who set nothing.
+    # .env.example ships LLM_PROVIDER empty and compose passes it through
+    # empty, so the raw variable is what says whether a provider was chosen.
     llm_provider_selected = bool(os.getenv(LLM_PROVIDER_ENV_KEY, "").strip())
     secondary_llm_provider = config_manager.get("secondary_llm_provider") or None
     selected_model_key = (

@@ -24,18 +24,6 @@ import {
   useSetupWizard,
 } from "./_hooks/useSetupWizard";
 
-const CLI_PROVIDER_LABEL: Record<string, string> = {
-  claude_code: "Claude subscription",
-  codex: "ChatGPT subscription",
-};
-
-const PROVIDER_LABEL: Record<string, string> = {
-  gemini: "Google Gemini",
-  openai: "OpenAI",
-  anthropic: "Anthropic",
-  ollama: "Ollama",
-};
-
 export default function SetupPage() {
   const wizard = useSetupWizard();
   // Swapping the step swaps the whole panel without moving focus, which leaves
@@ -71,6 +59,7 @@ export default function SetupPage() {
     secondaryProviderConfigured,
     setCliStatus,
     connectedCliProvider,
+    aiSummary,
     pyannoteModelsReady,
     bundledPyannoteModelsReady,
     hfTokenPresent,
@@ -103,13 +92,6 @@ export default function SetupPage() {
   const whisperModelLabel =
     WHISPER_MODELS.find((model) => model.id === formData.whisper_model_size)
       ?.label || formData.whisper_model_size;
-
-  const aiDetail =
-    aiRoute === "subscription" && connectedCliProvider
-      ? CLI_PROVIDER_LABEL[connectedCliProvider]
-      : aiRoute === "server" && formData.selected_model
-        ? `${PROVIDER_LABEL[serverProvider] || serverProvider} (${formData.selected_model})`
-        : "Not configured yet";
 
   return (
     // page-shell: this route owns its scroll, because <body> is overflow-hidden
@@ -310,7 +292,7 @@ export default function SetupPage() {
                 whisperModelLabel,
                 diarizationReady: hfTokenPresent || pyannoteModelsReady,
                 aiRoute,
-                aiDetail,
+                aiDetail: aiSummary,
                 demoRecording: includeDemoRecording,
               }}
               onComplete={handleCompleteSetup}

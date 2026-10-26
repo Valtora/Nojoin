@@ -15,7 +15,9 @@ class DeploymentWarning(TypedDict):
 
 logger = logging.getLogger(__name__)
 
-_FIRST_RUN_PASSWORD_PLACEHOLDER = "change_this_before_first_start"
+# The value .env.example ships. First-run setup refuses it outright
+# (backend/api/v1/endpoints/setup.py), so it is shared rather than repeated.
+FIRST_RUN_PASSWORD_PLACEHOLDER = "change_this_before_first_start"
 _DATA_ENCRYPTION_KEY_PLACEHOLDER = "change_this_to_a_long_random_secret"
 _REDIS_PASSWORD_PLACEHOLDERS = frozenset(
     {
@@ -41,7 +43,7 @@ def get_deployment_warnings() -> list[DeploymentWarning]:
     warnings: list[DeploymentWarning] = []
 
     first_run_password = os.getenv("FIRST_RUN_PASSWORD")
-    if first_run_password == _FIRST_RUN_PASSWORD_PLACEHOLDER:
+    if first_run_password == FIRST_RUN_PASSWORD_PLACEHOLDER:
         warnings.append(
             {
                 "code": "placeholder_first_run_password",
