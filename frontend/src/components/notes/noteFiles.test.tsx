@@ -332,6 +332,44 @@ describe("a note's file", () => {
     expect(onChanged).toHaveBeenCalled();
   });
 
+  it("leaves another file's viewer open when a removal closed with X finishes", async () => {
+    let finish: (removal: NoteFileRemoval) => void = () => undefined;
+    removeNoteFile.mockImplementationOnce(
+      () => new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const first = { ...note("first", 65_000, file()), body: "First slide" };
+    const second = { ...note("second", 70_000, file({ id: 8, title: "second.png" })), body: "Second slide" };
+    const Openers = () => {
+      const open = useOpenNoteFile();
+      return (
+        <>
+          <button onClick={() => open?.("first")}>Open first</button>
+          <button onClick={() => open?.("second")}>Open second</button>
+        </>
+      );
+    };
+    render(
+      <NoteFilesProvider recordingId={RECORDING} notes={[first, second]} noteEdits={noteEdits}>
+        <Openers />
+      </NoteFilesProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open first" }));
+    const viewer = await screen.findByRole("dialog");
+    fireEvent.click(within(viewer).getByRole("button", { name: "Remove" }));
+    fireEvent.click(within(viewer).getByRole("button", { name: "Remove file" }));
+
+    fireEvent.click(within(viewer).getByRole("button", { name: "Close" }));
+    await vi.waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    fireEvent.click(screen.getByRole("button", { name: "Open second" }));
+    expect(await screen.findByRole("dialog", { name: "second.png" })).toBeInTheDocument();
+    finish({ note: { ...first, attachment: null } });
+
+    await vi.waitFor(() => expect(lastNotice()).toBe("File removed. Its note stays."));
+    expect(screen.getByRole("dialog", { name: "second.png" })).toBeInTheDocument();
+  });
+
   it("forgets the file's upload held for its note, so Retry can't bring it back", async () => {
     const outbox = noteOutboxFor(RECORDING);
     server.uploadFailures.push(NO_ANSWER);

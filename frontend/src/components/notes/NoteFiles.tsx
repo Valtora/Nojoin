@@ -156,7 +156,8 @@ export function NoteFilesProvider({
         onRemoved={(noteId) => {
           // Nojoin refuses any later upload for the note, so none is kept here.
           outbox.forgetUpload(noteId);
-          setOpenId(null);
+          // Closed with X while the removal was on its way, another file may be open.
+          setOpenId((current) => (current === noteId ? null : current));
           // A page that polls brings the list from the recording's read; one
           // that doesn't fetches it now. Either way the line updates in place.
           outbox.notesChanged();
