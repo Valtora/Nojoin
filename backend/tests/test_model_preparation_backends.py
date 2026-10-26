@@ -39,6 +39,11 @@ def prepared(monkeypatch) -> list[str]:
     )
     monkeypatch.setattr(
         preload_models,
+        "prepare_forced_aligner_model",
+        lambda **kwargs: steps.append("forced_aligner"),
+    )
+    monkeypatch.setattr(
+        preload_models,
         "_resolve_onnx_asr_id",
         lambda backend, model_id: f"{backend}/{model_id}",
     )
@@ -62,7 +67,10 @@ def test_core_batch_on_an_onnx_engine_skips_whisper(
         **{model_kwarg: model_id},
     )
 
-    assert prepared == ["pyannote", f"onnx:{backend}/{model_id}"]
+    expected = ["pyannote", f"onnx:{backend}/{model_id}"]
+    if backend == "canary":
+        expected.append("forced_aligner")
+    assert prepared == expected
 
 
 def test_core_batch_on_whisper_prepares_the_configured_whisper_size(prepared):

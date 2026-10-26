@@ -504,6 +504,9 @@ def serialize_canonical_utterances(
                 active_labels=active_labels,
             ),
         }
+        alignment_error = (utterance.confidence_payload or {}).get("alignment_error")
+        if alignment_error:
+            payload["alignment_error"] = alignment_error
         if include_confidence_payload:
             payload["confidence_payload"] = dict(utterance.confidence_payload or {})
         payloads.append(payload)

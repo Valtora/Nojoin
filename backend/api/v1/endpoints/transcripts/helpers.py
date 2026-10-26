@@ -145,6 +145,7 @@ class TranscriptUtteranceRead(BaseModel):
     start_ms: int
     end_ms: int
     text: str
+    alignment_error: Optional[str] = None
     speaker: str
     recording_speaker_id: Optional[int] = None
     # The diariser's own cluster label for this span, kept across merges. Null

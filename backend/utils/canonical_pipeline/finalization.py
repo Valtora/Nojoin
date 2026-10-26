@@ -13,6 +13,53 @@ from .segmentation import *
 from .speaker import *
 
 
+def _final_confidence_payload(
+    segment: dict[str, Any],
+    existing: dict[str, Any] | None = None,
+    *,
+    matched: bool = False,
+) -> dict[str, Any] | None:
+    """Keep evidence while replacing the previous run's alignment outcome."""
+    payload = dict(existing or {})
+    incoming = segment.get("confidence_payload")
+    forced = segment.get("alignment_error") or any(
+        word.get("source_id") for word in segment.get("words") or []
+    )
+    if isinstance(incoming, dict):
+        forced = (
+            forced
+            or incoming.get("alignment_error")
+            or any(
+                word.get("source_id")
+                for source in incoming.get("asr_segments") or []
+                for word in source.get("words") or []
+            )
+        )
+    if matched and not forced and not payload.get("alignment_error"):
+        return existing
+    if isinstance(incoming, dict) and (not matched or forced):
+        payload.update(incoming)
+    if forced and (segment.get("words") or segment.get("alignment_error")):
+        from backend.processing.live_asr_payload import _build_live_confidence_payload
+
+        # Canonical utterances store word evidence in the existing ASR payload;
+        # rejected spans stay null, including after projection refreshes.
+        evidence = _build_live_confidence_payload(
+            region_segment_payloads=[segment],
+            region_start_ms=0,
+            region_end_ms=round(segment["end"] * 1000),
+        )
+        # Final segment/word seconds are already recording-relative: zero is
+        # the conversion offset, not the utterance's actual start.
+        evidence["utterance_start_ms"] = round(segment["start"] * 1000)
+        payload.update(evidence)
+    if segment.get("alignment_error"):
+        payload["alignment_error"] = segment["alignment_error"]
+    else:
+        payload.pop("alignment_error", None)
+    return payload if payload or isinstance(incoming, dict) else None
+
+
 def finalize_utterances_from_segments(
     session,
     *,
@@ -285,6 +332,9 @@ def finalize_utterances_from_segments(
             )
             if effective_speaker_confidence is None:
                 effective_speaker_confidence = matched_utterance.speaker_confidence
+            effective_confidence_payload = _final_confidence_payload(
+                effective_segment, matched_utterance.confidence_payload, matched=True
+            )
             effective_speaker_assignment_source = (
                 _resolve_segment_speaker_assignment_source(
                     effective_segment,
@@ -325,6 +375,8 @@ def finalize_utterances_from_segments(
                     matched_utterance.text_confidence != effective_text_confidence,
                     matched_utterance.speaker_confidence
                     != effective_speaker_confidence,
+                    matched_utterance.confidence_payload
+                    != effective_confidence_payload,
                     _utterance_speaker_assignment_source(matched_utterance)
                     != effective_speaker_assignment_source,
                     _utterance_speaker_assignment_authority(matched_utterance)
@@ -342,6 +394,7 @@ def finalize_utterances_from_segments(
             matched_utterance.speaker_last_edit_source = effective_speaker_edit_source
             matched_utterance.text_confidence = effective_text_confidence
             matched_utterance.speaker_confidence = effective_speaker_confidence
+            matched_utterance.confidence_payload = effective_confidence_payload
             matched_utterance.state = TranscriptUtteranceState.FINALIZED
             matched_utterance.processing_run_id = processing_run.id
             matched_utterance.overlap_group_id = overlap_groups.get(index, {}).get(
@@ -481,11 +534,7 @@ def finalize_utterances_from_segments(
             speaker_confidence=_to_optional_float(
                 effective_segment.get("speaker_confidence")
             ),
-            confidence_payload=(
-                dict(effective_segment.get("confidence_payload"))
-                if isinstance(effective_segment.get("confidence_payload"), dict)
-                else None
-            ),
+            confidence_payload=_final_confidence_payload(effective_segment),
         )
         session.add(utterance)
         session.flush()

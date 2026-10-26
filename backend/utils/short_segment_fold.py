@@ -8,7 +8,7 @@ segment, and neighbours whose pieces tiled one turn are rejoined afterwards.
 import logging
 from typing import Callable, Optional
 
-from backend.utils.word_times import exceeds, falls_short
+from backend.utils.word_times import exceeds, falls_short, has_untimed_words
 
 logger = logging.getLogger(__name__)
 
@@ -142,7 +142,11 @@ def _short_segment_fold(
 ) -> int:
     candidates: list[tuple[int, dict, float]] = []
     for kind, neighbour in ((_FOLD_PREVIOUS, previous), (_FOLD_NEXT, following)):
-        if neighbour is None:
+        if (
+            neighbour is None
+            or neighbour.get("alignment_error")
+            or has_untimed_words(neighbour)
+        ):
             continue
         if kind == _FOLD_PREVIOUS:
             gap = short["start"] - neighbour["end"]
@@ -173,7 +177,11 @@ def _same_turn_within(previous: dict, following: dict, max_duration_s: float) ->
         previous["start"], following["start"]
     )
     return (
-        following["speaker"] == previous["speaker"]
+        not any(
+            segment.get("alignment_error") or has_untimed_words(segment)
+            for segment in (previous, following)
+        )
+        and following["speaker"] == previous["speaker"]
         and set(following["overlapping_speakers"])
         == set(previous["overlapping_speakers"])
         and not exceeds(span, max_duration_s)

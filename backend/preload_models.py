@@ -14,6 +14,14 @@ from backend.utils.download_progress import (
     clear_download_progress,
     set_download_progress,
 )
+from backend.utils.forced_aligner_model_utils import (
+    control as aligner_control,
+)
+from backend.utils.forced_aligner_model_utils import (
+    forced_aligner_repo_path,
+    inspect_forced_aligner_model,
+    prepare_forced_aligner_model,
+)
 from backend.utils.logging_config import setup_logging
 from backend.utils.model_cache_paths import (
     hf_hub_cache_root,
@@ -36,6 +44,7 @@ from backend.utils.pyannote_model_utils import (
     is_repo_bundled_pyannote_path,
     resolve_local_pyannote_model,
 )
+from backend.utils.transcription_models import engine_has_native_word_timestamps
 
 setup_logging()
 logger = logging.getLogger("backend.preload_models")
@@ -396,6 +405,7 @@ _PREPARATION_STAGE_SUBJECTS = {
     "segmentation": "the speaker models",
     "parakeet": "the Parakeet transcription model",
     "canary": "the Canary transcription model",
+    "forced_aligner": "the word timing aligner",
 }
 
 
@@ -421,6 +431,7 @@ def download_models(
     include_core=True,
     *,
     nemotron_only: bool = False,
+    pinned_model: str | None = None,
 ):
     """
     Prepare required model assets on disk without retaining models in memory.
@@ -431,6 +442,9 @@ def download_models(
     """
     if nemotron_only:
         _download_nemotron_only(progress_callback)
+        return
+    if pinned_model is not None:
+        _download_pinned_only(pinned_model, progress_callback)
         return
     clear_download_progress()
 
@@ -513,6 +527,22 @@ def download_models(
             )
             _prepare_onnx_asr_model(onnx_model_id)
 
+        if not engine_has_native_word_timestamps(transcription_backend):
+            report(
+                "Preparing forced aligner word-timing assets...",
+                90,
+                stage="forced_aligner",
+                status="downloading",
+            )
+            prepare_forced_aligner_model(
+                progress=lambda message, percent: report(
+                    message,
+                    90 + percent // 10,
+                    stage="forced_aligner",
+                    status="downloading",
+                )
+            )
+
         report("Model preparation complete.", 100, stage="complete", status="complete")
     except Exception as exc:
         logger.error("Model preparation failed: %s", exc, exc_info=True)
@@ -520,7 +550,7 @@ def download_models(
             0,
             preparation_failure_message(stage_reached),
             status="error",
-            stage="error",
+            stage=stage_reached,
         )
         raise
     finally:
@@ -531,25 +561,40 @@ def _download_nemotron_only(
     progress_callback: Callable[..., None] | None = None,
 ) -> None:
     """Keep optional asset preparation outside ASR setup and cache cleanup."""
+    _download_pinned_only("nemotron", progress_callback)
+
+
+def _download_pinned_only(
+    model: str,
+    progress_callback: Callable[..., None] | None = None,
+) -> None:
+    """Prepare one pinned model without evicting resident inference models."""
+    recipes = {
+        "nemotron": (prepare_nemotron_model, "Native speaker"),
+        "forced_aligner": (prepare_forced_aligner_model, "Forced aligner"),
+    }
+    if model not in recipes:
+        raise ValueError("Unknown pinned model preparation target")
+    prepare, label = recipes[model]
     clear_download_progress()
 
     def report(message: str, percent: int) -> None:
         status = "complete" if percent == 100 else "downloading"
-        set_download_progress(percent, message, status=status, stage="nemotron")
+        set_download_progress(percent, message, status=status, stage=model)
         if progress_callback:
-            progress_callback(message, percent, stage="nemotron")
+            progress_callback(message, percent, stage=model)
 
     try:
-        report("Preparing native speaker assets...", 0)
-        prepare_nemotron_model(progress=report)
+        report(f"Preparing {label.lower()} assets...", 0)
+        prepare(progress=report)
     except (OSError, ValueError, RuntimeError) as exc:
         set_download_progress(
             0,
             str(exc)
             if isinstance(exc, NemotronOfflineError)
-            else "Native speaker model preparation failed.",
+            else f"{label} model preparation failed.",
             status="error",
-            stage="nemotron",
+            stage=model,
         )
         raise
 
@@ -558,7 +603,7 @@ def preload_models():
     try:
         download_models()
     except Exception as e:
-        set_download_progress(0, f"Download failed: {str(e)}", status="error")
+        logger.error("Model preload failed: %s", e)
         raise
 
 
@@ -585,6 +630,17 @@ def check_model_status(whisper_model_size=None):
         "revision": native.revision,
         "manifest_sha256": native.manifest_sha256,
         "verification_error": native.error,
+    }
+    aligner = inspect_forced_aligner_model()
+    status["forced_aligner"] = {
+        "downloaded": aligner.state == "verified",
+        "path": str(aligner.path) if aligner.path else None,
+        "checked_paths": [str(forced_aligner_repo_path())],
+        "partial": aligner.state in {"partial", "invalid"},
+        "verification_state": aligner.state,
+        "revision": aligner.revision,
+        "manifest_sha256": aligner.manifest_sha256,
+        "verification_error": aligner.error,
     }
 
     # Check Whisper
@@ -644,6 +700,8 @@ def _hub_repo_dirname(model_name: str) -> str:
     """The model's own repo directory name in the hub cache."""
     if model_name == "nemotron":
         return nemotron_repo_path().name
+    if model_name == "forced_aligner":
+        return forced_aligner_repo_path().name
     if model_name in ONNX_ASR_MODELS:
         return ONNX_ASR_MODELS[model_name].repo_dirname
     return hf_repo_dirname(PYANNOTE_STATUS_MODELS[model_name])
@@ -743,16 +801,32 @@ def _delete_hub_repo(repo_dir: str) -> None:
 
 def delete_model(model_name: str, whisper_model_size: str | None = None) -> bool:
     """Delete managed assets, coordinating native preparation on its local lock."""
-    if model_name != "nemotron":
+    if model_name not in {"nemotron", "forced_aligner"}:
         return _delete_model(model_name, whisper_model_size)
     from backend.utils.nemotron_lock import clear_pending, model_lock
 
-    with model_lock():
-        module = sys.modules.get("backend.processing.nemotron_model")
+    control_lock = (
+        aligner_control.model_lock if model_name == "forced_aligner" else model_lock
+    )
+    clear = (
+        aligner_control.clear_pending
+        if model_name == "forced_aligner"
+        else clear_pending
+    )
+    module_name, release_name = (
+        (
+            "backend.processing.forced_aligner_model",
+            "release_forced_aligner_model_cache",
+        )
+        if model_name == "forced_aligner"
+        else ("backend.processing.nemotron_model", "release_nemotron_model_cache")
+    )
+    with control_lock():
+        module = sys.modules.get(module_name)
         if module is not None:
-            module.release_nemotron_model_cache()
+            getattr(module, release_name)()
         deleted = _delete_model(model_name, whisper_model_size)
-        clear_pending(None)
+        clear(None)
         return deleted
 
 

@@ -4,6 +4,7 @@
 import logging
 
 from ..utils.config_manager import config_manager
+from ..utils.transcription_models import engine_has_native_word_timestamps
 from .engines.errors import (
     TranscriptionError,
     is_task_interruption,
@@ -64,7 +65,12 @@ def transcribe_audio(audio_path: str, config: dict | None = None) -> dict:
             engine=str(backend),
         ) from e
     try:
-        return engine.transcribe(audio_path, config or {})
+        result = engine.transcribe(audio_path, config or {})
+        if not engine_has_native_word_timestamps(str(backend)):
+            from .forced_alignment import align_transcription
+
+            result = align_transcription(result, audio_path, config or {})
+        return result
     except TranscriptionError:
         raise
     except Exception as e:
@@ -78,6 +84,9 @@ def transcribe_audio(audio_path: str, config: dict | None = None) -> dict:
 
 def release_model_cache() -> None:
     """Release cached models of every instantiated engine."""
+    from .forced_aligner_model import release_forced_aligner_model_cache
+
+    release_forced_aligner_model_cache()
     for engine in _ENGINE_REGISTRY.values():
         try:
             engine.release()

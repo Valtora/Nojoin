@@ -373,6 +373,8 @@ Each settings category is its own page. Every user has **Profile and security**,
 
 Most settings belong to your account. One marked **This browser** is kept in the browser you set it in, such as the theme and the microphone and its levels. One marked **Everyone** applies to the whole installation, and only an administrator can change it.
 
+For Canary, administrators can prepare the **Qwen3 forced aligner** in **Settings > AI providers > Advanced > Model downloads**. It supplies word timings for live and processed transcripts and downloads on first use if needed. Whisper and Parakeet already supply word timings. See [Forced Aligner Assets](DEPLOYMENT.md#forced-aligner-assets) for storage and CPU fallback details.
+
 ### Language Preferences
 
 Two per-user settings:

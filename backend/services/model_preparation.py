@@ -31,7 +31,7 @@ async def enqueue_model_preparation(
     transcription_backend: str | None = None,
     parakeet_model: str | None = None,
     canary_model: str | None = None,
-    target: Literal["core", "active", "nemotron"] = "core",
+    target: Literal["core", "active", "nemotron", "forced_aligner"] = "core",
 ) -> str:
     """Queue worker-side model preparation without importing inference code.
 
@@ -55,6 +55,8 @@ async def enqueue_model_preparation(
     }
     if target == "nemotron":
         kwargs = {"nemotron_only": True, "include_core": False}
+    elif target == "forced_aligner":
+        kwargs = {"pinned_model": "forced_aligner", "include_core": False}
     task = await dispatch_task(
         MODEL_PREPARATION_TASK, kwargs=kwargs, ignore_result=True
     )
@@ -63,7 +65,7 @@ async def enqueue_model_preparation(
         0,
         "Model preparation queued...",
         status="downloading",
-        stage="nemotron" if target == "nemotron" else "queued",
+        stage=target if target in {"nemotron", "forced_aligner"} else "queued",
     )
     logger.info("Queued model preparation task %s with args %s", task.id, kwargs)
     return str(task.id)

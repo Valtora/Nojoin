@@ -8,7 +8,22 @@ from backend.processing.live_audio_buffer import (
     LiveSourceChannelEvidence,
     _coerce_live_source_channel_evidence,
 )
-from backend.utils.word_times import exceeds
+from backend.utils.word_text import reconstruct_text_from_words
+from backend.utils.word_times import exceeds, has_untimed_words, has_word_timing
+
+
+def _region_word(word: dict[str, Any], prefix_s: float) -> dict[str, Any]:
+    if word.get("source_id") and not has_word_timing(word):
+        return {**word, "start": None, "end": None}
+    word_start = float(word.get("start", 0.0))
+    word_end = float(word.get("end", word_start))
+    text = str(word.get("word") or "")
+    return {
+        **(word if word.get("source_id") else {}),
+        "start": max(0.0, word_start - prefix_s),
+        "end": max(0.0, word_end - prefix_s),
+        "word": text if word.get("source_id") else text.strip(),
+    }
 
 
 def _build_live_utterance_public_id(
@@ -85,21 +100,15 @@ def _extract_region_segment_payloads(
                 "end": max(0.0, end - prefix_s),
                 "text": seg_text,
             }
+            if seg.get("alignment_error"):
+                kept_segment["alignment_error"] = seg["alignment_error"]
             words = seg.get("words") or []
             kept_words = []
             for word in words:
                 word_text = str(word.get("word") or "").strip()
                 if not word_text:
                     continue
-                word_start = float(word.get("start", 0.0))
-                word_end = float(word.get("end", word_start))
-                kept_words.append(
-                    {
-                        "start": max(0.0, word_start - prefix_s),
-                        "end": max(0.0, word_end - prefix_s),
-                        "word": word_text,
-                    }
-                )
+                kept_words.append(_region_word(word, prefix_s))
             if kept_words:
                 kept_segment["words"] = kept_words
             kept.append(kept_segment)
@@ -112,33 +121,41 @@ def _extract_region_segment_payloads(
                 word_text = str(word.get("word") or "").strip()
                 if not word_text:
                     continue
-                word_start = float(word.get("start", 0.0))
-                word_end = float(word.get("end", word_start))
-                if not exceeds(word_end, prefix_s + EPS):
+                untimed = word.get("source_id") and not has_word_timing(word)
+                word_start = float(word.get("start", 0.0)) if not untimed else 0.0
+                word_end = float(word.get("end", word_start)) if not untimed else 0.0
+                if not untimed and not exceeds(word_end, prefix_s + EPS):
                     continue
-                kept_words.append(
-                    {
-                        "start": max(0.0, word_start - prefix_s),
-                        "end": max(0.0, word_end - prefix_s),
-                        "word": word_text,
-                    }
-                )
-            joined = " ".join(word["word"] for word in kept_words)
+                kept_words.append(_region_word(word, prefix_s))
+            joined = (
+                reconstruct_text_from_words(kept_words)
+                if any(word.get("source_id") for word in kept_words)
+                else " ".join(word["word"] for word in kept_words)
+            )
             if joined:
                 kept.append(
                     {
-                        "start": kept_words[0]["start"],
-                        "end": kept_words[-1]["end"],
+                        "start": 0.0
+                        if has_untimed_words(seg)
+                        else kept_words[0]["start"],
+                        "end": max(0.0, end - prefix_s)
+                        if has_untimed_words(seg)
+                        else kept_words[-1]["end"],
                         "text": joined,
                         "words": kept_words,
                     }
                 )
-        elif (start + end) / 2 >= prefix_s:
+        elif seg.get("alignment_error") or (start + end) / 2 >= prefix_s:
             kept.append(
                 {
                     "start": 0.0,
                     "end": max(0.0, end - prefix_s),
                     "text": seg_text,
+                    **(
+                        {"alignment_error": seg["alignment_error"]}
+                        if seg.get("alignment_error")
+                        else {}
+                    ),
                 }
             )
 
@@ -166,24 +183,40 @@ def _build_live_confidence_payload(
             ),
             "text": str(segment.get("text", "") or ""),
         }
+        if segment.get("alignment_error"):
+            absolute_segment["alignment_error"] = segment["alignment_error"]
         words = []
         for word in segment.get("words") or []:
             word_text = str(word.get("word") or "").strip()
             if not word_text:
                 continue
+            untimed = word.get("source_id") and not has_word_timing(word)
             words.append(
                 {
+                    **{
+                        key: word[key]
+                        for key in ("source_start", "source_end", "source_id")
+                        if key in word
+                    },
                     "start_ms": int(
                         region_start_ms + round(float(word.get("start", 0.0)) * 1000.0)
-                    ),
+                    )
+                    if not untimed
+                    else None,
                     "end_ms": int(
                         region_start_ms + round(float(word.get("end", 0.0)) * 1000.0)
-                    ),
-                    "word": word_text,
+                    )
+                    if not untimed
+                    else None,
+                    "word": str(word.get("word") or "")
+                    if word.get("source_id")
+                    else word_text,
                 }
             )
         if words:
-            has_word_timestamps = True
+            has_word_timestamps = has_word_timestamps or any(
+                word["start_ms"] is not None for word in words
+            )
             absolute_segment["words"] = words
         absolute_segments.append(absolute_segment)
 
@@ -193,12 +226,112 @@ def _build_live_confidence_payload(
         "asr_segments": absolute_segments,
         "asr_word_timestamps_available": has_word_timestamps,
     }
+    errors = list(
+        dict.fromkeys(
+            segment["alignment_error"]
+            for segment in absolute_segments
+            if segment.get("alignment_error")
+        )
+    )
+    if errors:
+        payload["alignment_error"] = "; ".join(errors)
     if source_activity:
         payload["source_channel_activity"] = source_activity
     evidence = _coerce_live_source_channel_evidence(source_channel_evidence)
     if evidence:
         payload["source_channel_evidence"] = evidence.to_payload()
     return payload
+
+
+def _prepare_live_region(
+    result: dict, prefix_s: float
+) -> tuple[str, list[dict[str, Any]]]:
+    """Keep the native live path; filter forced wording and evidence together."""
+    segments = _extract_region_segment_payloads(result, prefix_s)
+    forced = any(
+        segment.get("alignment_error")
+        or any(word.get("source_id") for word in segment.get("words") or [])
+        for segment in segments
+    )
+    if not forced:
+        return _strip_repetition(_extract_region_text(result, prefix_s)), segments
+    segments = _filter_region_repetitions(segments)
+    text = re.sub(
+        r"\s+", " ", " ".join(str(segment.get("text") or "") for segment in segments)
+    ).strip()
+    return text, segments
+
+
+def _filter_region_repetitions(segments: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Collapse only repetitions that can be removed from text and word evidence."""
+    if any(
+        segment.get("alignment_error") or has_untimed_words(segment)
+        for segment in segments
+    ):
+        # Unplaced words cannot identify which repetition belongs to new audio.
+        return segments
+    tokens = [
+        token
+        for segment in segments
+        for token in str(segment.get("text") or "").split()
+    ]
+    target = _strip_repetition(" ".join(tokens)).split()
+    if tokens == target:
+        return segments
+    selected: list[bool] = []
+    cursor = 0
+    for token in tokens:
+        keep = cursor < len(target) and token == target[cursor]
+        selected.append(keep)
+        cursor += int(keep)
+    return _select_region_tokens(segments, selected)
+
+
+def _select_region_tokens(
+    segments: list[dict[str, Any]], selected: list[bool]
+) -> list[dict[str, Any]]:
+    filtered = []
+    cursor = 0
+    for segment in segments:
+        tokens = str(segment.get("text") or "").split()
+        flags = selected[cursor : cursor + len(tokens)]
+        cursor += len(tokens)
+        words = segment.get("words") or []
+        if not words:
+            text = " ".join(token for token, keep in zip(tokens, flags) if keep)
+            if text:
+                filtered.append({**segment, "text": text})
+            continue
+        word_tokens = [str(word.get("word") or "").split() for word in words]
+        if [token for group in word_tokens for token in group] != tokens:
+            return segments
+        kept_words = _select_whole_words(words, word_tokens, flags)
+        if kept_words is None:
+            return segments
+        if kept_words:
+            filtered.append(
+                {
+                    **segment,
+                    "words": kept_words,
+                    "text": reconstruct_text_from_words(kept_words),
+                }
+            )
+    return filtered
+
+
+def _select_whole_words(
+    words: list[dict[str, Any]], word_tokens: list[list[str]], flags: list[bool]
+) -> list[dict[str, Any]] | None:
+    kept = []
+    cursor = 0
+    for word, tokens in zip(words, word_tokens):
+        selected = flags[cursor : cursor + len(tokens)]
+        cursor += len(tokens)
+        if any(selected) and not all(selected):
+            return None
+        if selected and all(selected):
+            kept.append(word)
+    return kept
 
 
 def _strip_repetition(text: str) -> str:

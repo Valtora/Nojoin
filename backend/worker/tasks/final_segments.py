@@ -101,6 +101,8 @@ def combine_and_consolidate_segments(
                 fallback_segment["id"] = seg["id"]
             if seg.get("words"):
                 fallback_segment["words"] = seg["words"]
+            if seg.get("alignment_error"):
+                fallback_segment["alignment_error"] = seg["alignment_error"]
             combined_segments.append(fallback_segment)
 
     final_segments = consolidate_diarized_transcript(combined_segments)

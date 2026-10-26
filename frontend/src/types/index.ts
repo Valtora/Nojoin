@@ -258,6 +258,7 @@ export interface TranscriptUtterance {
   start_ms?: number;
   end_ms?: number;
   text: string;
+  alignment_error?: string | null;
   speaker: string;
   recording_speaker_id?: number;
   /** The diariser's own cluster label for this span, kept across merges. */
@@ -321,6 +322,7 @@ export interface TranscriptSegment {
   start: number;
   end: number;
   text: string;
+  alignment_error?: string | null;
   speaker: string;
   recording_speaker_id?: number;
   /** The diariser's own cluster label for this span, kept across merges. */
@@ -1097,7 +1099,7 @@ export interface SystemModelStatus {
 
 /** Which local model assets a preparation request should fetch. `active` covers
  * whatever the saved transcription settings need. */
-export type ModelPreparationTarget = "active" | "core" | "parakeet" | "canary" | "nemotron";
+export type ModelPreparationTarget = "active" | "core" | "parakeet" | "canary" | "nemotron" | "forced_aligner";
 
 export interface ModelPreparationResponse {
   task_id: string;

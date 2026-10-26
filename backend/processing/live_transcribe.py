@@ -19,9 +19,16 @@ from backend.processing.engines.errors import TranscriptionError
 from backend.processing.live_asr_payload import (
     _build_live_confidence_payload,
     _build_live_utterance_public_id,
-    _extract_region_segment_payloads,
-    _extract_region_text,
-    _strip_repetition,
+    _prepare_live_region,
+)
+from backend.processing.live_asr_payload import (
+    _extract_region_segment_payloads as _extract_region_segment_payloads,
+)
+from backend.processing.live_asr_payload import (
+    _extract_region_text as _extract_region_text,
+)
+from backend.processing.live_asr_payload import (
+    _strip_repetition as _strip_repetition,
 )
 from backend.processing.live_audio_buffer import (
     LIVE_SAMPLE_RATE,
@@ -477,8 +484,7 @@ def _transcribe_live_regions(
                 except OSError:
                     pass
 
-        region_segment_payloads = _extract_region_segment_payloads(result, prefix_s)
-        text = _strip_repetition(_extract_region_text(result, prefix_s))
+        text, region_segment_payloads = _prepare_live_region(result, prefix_s)
         if not text:
             continue
 

@@ -32,13 +32,20 @@ def reconstruct_text_from_words(words: list[dict]) -> str:
     other word gets one space. The text has no space at either end.
     """
     text_parts: list[str] = []
+    previous_source = None
     for index, word in enumerate(words):
         token = str(word.get("word") or "")
         if not token:
             continue
         if index == 0:
             text_parts.append(token.lstrip())
+            previous_source = word.get("source_id")
             continue
+        source = word.get("source_id")
+        if source and source == previous_source:
+            text_parts.append(token)
+            continue
+        previous_source = source
         if token[:1].isspace():
             text_parts.append(token)
             continue

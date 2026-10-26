@@ -100,6 +100,11 @@ def build_transient_utterance_payloads_from_segments(
                 "start_ms": _segment_to_ms(segment.get("start", 0.0)),
                 "end_ms": _segment_to_ms(segment.get("end", 0.0)),
                 "text": str(segment.get("text", "") or ""),
+                **(
+                    {"alignment_error": segment["alignment_error"]}
+                    if segment.get("alignment_error")
+                    else {}
+                ),
                 "speaker": str(segment.get("speaker") or UNKNOWN_SPEAKER),
                 "recording_speaker_id": segment.get("recording_speaker_id"),
                 "diarization_label": segment.get("diarization_label"),
