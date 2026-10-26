@@ -1,3 +1,5 @@
+import asyncio
+import contextlib
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -145,7 +147,7 @@ from backend.utils.config_manager import (
 )
 from backend.utils.deployment_warnings import log_deployment_warnings
 from backend.utils.primary_owner import get_primary_owner_async
-from backend.utils.rate_limit import log_trusted_proxy_warnings
+from backend.utils.rate_limit import warn_unresolvable_trusted_proxies
 from backend.utils.stall_watchdog import start_stall_watchdog
 
 
@@ -153,23 +155,24 @@ async def ensure_owner_exists():
     """Promote the first user to OWNER when no user holds that role."""
     async with async_session_maker() as session:
         owner = await get_primary_owner_async(session)
+        if owner:
+            return
 
-        if not owner:
-            logger.warning("No owner found. Promoting the first user to OWNER.")
-            # If no owner, promote the first user
-            query = select(User).order_by(User.id).limit(1)
-            result = await session.execute(query)
-            first_user = result.scalar_one_or_none()
+        query = select(User).order_by(User.id).limit(1)
+        result = await session.execute(query)
+        first_user = result.scalar_one_or_none()
+        if first_user is None:
+            # A fresh install: first-run setup creates the owner, and
+            # log_first_run_setup_pointer says where.
+            return
 
-            if first_user:
-                logger.info(
-                    f"Promoting user {first_user.username} (ID: {first_user.id}) to OWNER"
-                )
-                first_user.role = "owner"
-                session.add(first_user)
-                await session.commit()
-            else:
-                logger.warning("No users found to promote.")
+        logger.warning("No owner found. Promoting the first user to OWNER.")
+        logger.info(
+            f"Promoting user {first_user.username} (ID: {first_user.id}) to OWNER"
+        )
+        first_user.role = "owner"
+        session.add(first_user)
+        await session.commit()
 
 
 async def log_first_run_setup_pointer() -> None:
@@ -240,6 +243,21 @@ async def carry_owner_transcription_choice_on_startup() -> None:
             "choice into config.json: %s",
             carried,
         )
+
+
+async def check_trusted_proxies_after_startup() -> None:
+    """Report trusted proxy hostnames that do not resolve, once the stack is up.
+
+    Run as a task beside the app: the bundled nginx starts only after the API
+    is healthy, so the check has to outlast startup to see it.
+    """
+    try:
+        await warn_unresolvable_trusted_proxies(
+            startup_path="API startup", logger_instance=logger
+        )
+    except Exception:
+        # Boundary: a diagnostic must never take the API down.
+        logger.exception("The trusted proxy check failed to run.")
 
 
 def run_migrations():
@@ -321,7 +339,7 @@ async def lifespan(app: FastAPI):
     await ensure_recording_meeting_uids_on_startup()
     await carry_owner_transcription_choice_on_startup()
     log_deployment_warnings(startup_path="API startup", logger_instance=logger)
-    log_trusted_proxy_warnings(startup_path="API startup", logger_instance=logger)
+    trusted_proxy_check = asyncio.create_task(check_trusted_proxies_after_startup())
     log_recordings_storage_warnings(logger_instance=logger)
     try:
         await seed_demo_data()
@@ -346,6 +364,9 @@ async def lifespan(app: FastAPI):
         else:
             yield
     finally:
+        trusted_proxy_check.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await trusted_proxy_check
         if watchdog is not None:
             await watchdog.stop()
 

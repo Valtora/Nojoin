@@ -365,7 +365,6 @@ def test_startup_prepares_the_engine_it_has_just_carried(config_path, monkeypatc
         "log_signing_keyring_status",
         "run_migrations",
         "log_deployment_warnings",
-        "log_trusted_proxy_warnings",
         "log_recordings_storage_warnings",
         "start_stall_watchdog",
     ):
@@ -375,6 +374,7 @@ def test_startup_prepares_the_engine_it_has_just_carried(config_path, monkeypatc
         "log_first_run_setup_pointer",
         "ensure_recording_public_ids_on_startup",
         "ensure_recording_meeting_uids_on_startup",
+        "check_trusted_proxies_after_startup",
         "seed_demo_data",
     ):
         monkeypatch.setattr(main, name, no_op_async)

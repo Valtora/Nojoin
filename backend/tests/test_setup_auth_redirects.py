@@ -40,6 +40,10 @@ class _FakeSession:
     async def execute(self, statement):
         return _FakeResult(self._initialized)
 
+    def get_bind(self):
+        # Not PostgreSQL, so setup takes no advisory lock on this session.
+        return SimpleNamespace(dialect=SimpleNamespace(name="fake"))
+
     def add(self, value):
         self._added.append(value)
 

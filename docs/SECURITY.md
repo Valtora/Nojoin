@@ -39,6 +39,7 @@ Use GitHub's [Private Vulnerability Reporting](https://github.com/Valtora/Nojoin
 First-run setup needs the operator's `FIRST_RUN_PASSWORD`, which the web client sends in the `Authorization` header with the `Bootstrap` scheme. If the variable is unset, setup stays closed until it is set and the stack is restarted.
 
 - The password works only while the system is uninitialised. The wizard creates the owner account partway through and signs in, and the server refuses the bootstrap credential from then on.
+- One owner is created. If two browsers submit the account step at the same moment, the server creates the first and refuses the second with the same `403`.
 - The setup surface does not reveal whether the system is initialised. The sign-in page never mentions setup, `/setup` shows the same password prompt in every state, and every anonymous denial returns the same `403` (`First-run setup access denied.`) whether the password is wrong, unset, or the system is already set up. The reason goes to the server log only, and while the system is uninitialised the API startup log points to `/setup`.
 - Setup requests are rate limited per client address before any state-dependent check, so throttling is the same in every state.
 - The password is never returned by the API or stored in Nojoin's configuration.
