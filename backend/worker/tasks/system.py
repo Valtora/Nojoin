@@ -44,6 +44,25 @@ def cleanup_temp_recordings(self):
         logger.exception("Storage hygiene failed; the cleanup sweeps above completed")
 
 
+@celery_app.task(
+    name="backend.worker.tasks.sweep_speaker_frames_task", base=DatabaseTask, bind=True
+)
+def sweep_speaker_frames_task(self):
+    """Delete the screen study frames that are due (#653). Hourly.
+
+    Runs whatever ``speaker_frame_sampling`` says, so switching the study off
+    never keeps a frame past its date. Logs one line per recording it deletes.
+    """
+    from backend.utils.speaker_frames.retention import sweep_speaker_frames
+
+    result = sweep_speaker_frames(self.session)
+    return {
+        "deleted_recordings": len(result.deleted_recordings),
+        "deleted_frames": result.deleted_frames,
+        "kept": result.kept,
+    }
+
+
 @celery_app.task(name="backend.worker.tasks.download_models_task", bind=True)
 def download_models_task(
     self,

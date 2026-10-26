@@ -216,6 +216,9 @@ DEFAULT_SYSTEM_CONFIG = {
     # them when the live lane is on CUDA. See docs/DEPLOYMENT.md.
     "live_speaker_labels": "off",
     "speaker_engine": "auto",
+    # The opt-in screen study (#653): see backend/utils/speaker_frames/settings.py.
+    "speaker_frame_sampling": "off",
+    "speaker_frame_rate_hz": 1,
     "vad_parameters": {
         "threshold": 0.5,
         "min_speech_duration_ms": 250,

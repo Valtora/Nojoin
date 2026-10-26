@@ -4,16 +4,19 @@ import { ButtonBase } from '@/components/ui/nativeBases';
 import { SurfaceBase } from '@/components/ui/SurfaceBase';
 import { Mic } from "lucide-react";
 import { useRouter } from "next/navigation";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { useConnectivityStore } from "@/lib/connectivity/monitor";
 import { isReachable } from "@/lib/connectivity/reducer";
 import { useCapture } from "@/lib/capture/CaptureProvider";
+import { useScreenStudyAvailability } from "@/lib/capture/screenStudy/availability";
+import { useOnDepsChange } from "@/lib/useOnDepsChange";
 import { DEMO_MODE, DEMO_RECORDING_OFF } from "@/lib/demo";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { RecordingStatus } from "@/types";
 
 import CaptureUnsupportedNotice from "./CaptureUnsupportedNotice";
 import LiveMeetingControls from "./LiveMeetingControls";
+import ScreenStudyOptIn from "./screenStudy/ScreenStudyOptIn";
 
 type MeetingControlsProps =
   | {
@@ -66,6 +69,18 @@ export default function MeetingControls({
   const isBusy = status === "starting" || status === "finalizing";
   const unsupported = !support.supported;
   const microphoneOnly = support.supported && support.mode === "microphone_only";
+  // The screen study (#653) needs a shared screen, so never on a phone.
+  const studyAvailability = useScreenStudyAvailability(
+    !DEMO_MODE && support.supported && support.mode === "shared_audio",
+  );
+  // Unticked at the start of every meeting, however it starts: Start Meeting
+  // clears it, and so does any capture going live, a resume included.
+  const [screenStudyTicked, setScreenStudyTicked] = useState(false);
+  useOnDepsChange([hasLiveRecording], () => {
+    if (hasLiveRecording) {
+      setScreenStudyTicked(false);
+    }
+  });
 
   // Naming the stage keeps a slow stop legible instead of looking hung.
   const stopStageLabel = !stopStage
@@ -150,8 +165,13 @@ export default function MeetingControls({
             };
 
   const sendStart = async () => {
+    const screenStudy =
+      screenStudyTicked && studyAvailability
+        ? { rateHz: studyAvailability.rate_hz }
+        : undefined;
+    setScreenStudyTicked(false);
     try {
-      return await start("");
+      return await (screenStudy ? start("", { screenStudy }) : start(""));
     } catch (err: unknown) {
       console.error("Failed to start browser recording:", err);
       if (!controller.getState().error) {
@@ -182,6 +202,20 @@ export default function MeetingControls({
       void handleStart();
     }
   };
+
+  const screenStudyOptIn = (idPrefix: string, compact: boolean) =>
+    studyAvailability && meetingSurfaceState.buttonMode === "start" ? (
+      <div className={compact ? "basis-full pt-1" : "mt-3"}>
+        <ScreenStudyOptIn
+          checked={screenStudyTicked}
+          onChange={setScreenStudyTicked}
+          retentionDays={studyAvailability.retention_days}
+          rateHz={studyAvailability.rate_hz}
+          compact={compact}
+          idPrefix={idPrefix}
+        />
+      </div>
+    ) : null;
 
   if (variant === "dashboard") {
     return (
@@ -225,6 +259,7 @@ export default function MeetingControls({
                 <Mic className="h-[1.15em] w-[1.15em] shrink-0" />
                 {meetingSurfaceState.buttonLabel}
               </ButtonBase>
+              {screenStudyOptIn("dashboard", false)}
             </div>
           ) : (
             <LiveMeetingControls size="full" onMeetingEnd={onMeetingEnd} />
@@ -277,6 +312,7 @@ export default function MeetingControls({
             {pairedAction ? (
               <div className="flex min-w-fit grow basis-0">{pairedAction}</div>
             ) : null}
+            {screenStudyOptIn("sidebar", true)}
           </div>
         ) : (
           <>

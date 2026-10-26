@@ -5,6 +5,7 @@ import { AlertTriangle, CloudUpload, Pause, Play, Square, Trash2, X } from "luci
 import { useState, type ReactNode } from "react";
 
 import SpeakerCapField from "@/components/SpeakerCapField";
+import ScreenStudyStatus from "@/components/screenStudy/ScreenStudyStatus";
 import { updateRecordingMaxSpeakers } from "@/lib/api";
 import { useCapture } from "@/lib/capture/CaptureProvider";
 import { useNotificationStore } from "@/lib/notificationStore";
@@ -316,6 +317,7 @@ export default function LiveMeetingControls({
         </div>
         {coverageBadge}
         {uploadBacklogNotice}
+        <ScreenStudyStatus recordingId={recordingId} compact />
         {speakerCapField}
       </div>
     );
@@ -405,6 +407,7 @@ export default function LiveMeetingControls({
 
         {coverageBadge}
         {uploadBacklogNotice}
+        <ScreenStudyStatus recordingId={recordingId} />
       </div>
     );
   }
@@ -475,6 +478,7 @@ export default function LiveMeetingControls({
 
       {coverageBadge}
       {uploadBacklogNotice}
+      <ScreenStudyStatus recordingId={recordingId} />
       {speakerCapField}
     </div>
   );
