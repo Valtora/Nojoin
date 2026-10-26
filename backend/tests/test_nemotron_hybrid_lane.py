@@ -7,7 +7,6 @@ import shutil
 import sys
 import weakref
 from collections.abc import Iterator
-from contextlib import contextmanager, nullcontext
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -97,14 +96,12 @@ def _rows(engine: Engine) -> dict[str, Any]:
         return _by_id(serialize_canonical_utterances(session, RECORDING_ID))
 
 
-def test_missing_assets_prepare_once_and_readiness_only_changes_a_new_capture(
+def test_asset_readiness_only_changes_a_new_capture(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     lane_db: Engine,
     numpy_codec: None,
-    stub_celery_dispatch: list[Any],
 ) -> None:
-    from backend.services import model_preparation as preparation
     from backend.utils import nemotron_model_utils as assets
 
     runtime = LaneRuntime()
@@ -112,18 +109,6 @@ def test_missing_assets_prepare_once_and_readiness_only_changes_a_new_capture(
     readiness = {"state": "missing"}
     inspect = lambda: SimpleNamespace(state=readiness["state"])
     monkeypatch.setattr(assets, "inspect_nemotron_model", inspect)
-    monkeypatch.setattr(preparation, "inspect_nemotron_model", inspect)
-
-    @contextmanager
-    def available_lock(**kwargs: Any) -> Iterator[bool]:
-        yield True
-
-    monkeypatch.setattr(preparation, "model_lock", available_lock)
-    monkeypatch.setattr(preparation, "pending_task", lambda: None)
-    monkeypatch.setattr(preparation, "write_pending", lambda task_id: None)
-    monkeypatch.setattr(
-        preparation.celery_app, "connection_for_write", lambda **kwargs: nullcontext()
-    )
     audio = speaker_audio([(0, 12, 1)], 12)
     _run(tmp_path, audio[: 4 * SAMPLE_RATE], 0.0, 0.0)
     _run(tmp_path, audio[4 * SAMPLE_RATE : 8 * SAMPLE_RATE], 4.0, 0.0)
@@ -132,8 +117,6 @@ def test_missing_assets_prepare_once_and_readiness_only_changes_a_new_capture(
     saved = load_hybrid(tmp_path, step.CONFIG, recording_id=RECORDING_ID)
     assert saved is not None and saved.reason == "model_missing"
     assert saved.route == "clustering" and runtime.calls == []
-    assert len(stub_celery_dispatch) == 1
-    assert stub_celery_dispatch[0][2] == {"nemotron_only": True, "include_core": False}
     next_capture = tmp_path / "next"
     next_capture.mkdir()
     # A new recording has its own DB history as well as its own directory.
@@ -147,7 +130,6 @@ def test_missing_assets_prepare_once_and_readiness_only_changes_a_new_capture(
     finally:
         next_database.dispose()
     assert runtime.calls
-    assert len(stub_celery_dispatch) == 1
 
 
 @pytest.mark.parametrize("selection", ["auto", "classic"])
@@ -183,11 +165,10 @@ def test_selection_is_frozen_through_disk_reload_and_changes_for_new_capture(
 
 
 @pytest.mark.parametrize("gate", ["classic", "off", "cpu"])
-def test_classic_off_and_cpu_do_not_import_or_prepare_native(
+def test_classic_off_and_cpu_do_not_import_native(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     lane_db: Engine,
-    stub_celery_dispatch: list[Any],
     gate: str,
 ) -> None:
     import torch
@@ -202,9 +183,7 @@ def test_classic_off_and_cpu_do_not_import_or_prepare_native(
         if gate == "cpu":
             monkeypatch.setitem(config_manager.config, "live_speaker_labels", "auto")
     monkeypatch.setitem(sys.modules, "backend.processing.nemotron_model", None)
-    monkeypatch.setitem(sys.modules, "backend.services.model_preparation", None)
     _run(tmp_path, speaker_audio([(0, 12, 1)], 12), 0.0, 0.0)
-    assert stub_celery_dispatch == []
     if gate == "classic":
         saved = load_hybrid(tmp_path, step.CONFIG, recording_id=RECORDING_ID)
         assert saved is not None and saved.route == "clustering"

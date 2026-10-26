@@ -1,20 +1,11 @@
-import { ButtonBase } from "@/components/ui/nativeBases";
-import { Download, Loader2, Trash2 } from "lucide-react";
-
 import {
   DownloadProgress,
   ModelPreparationTarget,
-  ModelSource,
-  ModelStatusInfo,
   SystemModelStatus,
 } from "@/types";
-import { cn } from "@/lib/cn";
+import AiModelDependencyRow, { type DependencyModel } from "./AiModelDependencyRow";
 import SettingsBlock from "./SettingsBlock";
 import SettingsCard from "./SettingsCard";
-import SettingsRow from "./SettingsRow";
-import SettingsStatusBadge from "./SettingsStatusBadge";
-import { SETTINGS_BUTTON_SECONDARY } from "./settingsControls";
-import { loadingButtonProps } from "@/components/ui/loadingButton";
 
 interface AiModelDependenciesSectionProps {
   modelStatus: SystemModelStatus | null;
@@ -28,12 +19,7 @@ interface AiModelDependenciesSectionProps {
 
 /** `target` is what a repair of this row queues. The Whisper and Pyannote
  * assets are prepared as one core batch, so each of those rows maps to it. */
-const DEPENDENCY_MODELS: {
-  id: string;
-  label: string;
-  desc: string;
-  target: ModelPreparationTarget;
-}[] = [
+const DEPENDENCY_MODELS: DependencyModel[] = [
   {
     id: "whisper",
     label: "Whisper",
@@ -70,19 +56,13 @@ const DEPENDENCY_MODELS: {
     desc: "Pyannote's model for two people speaking at once.",
     target: "core",
   },
+  {
+    id: "nemotron",
+    label: "Nemotron",
+    desc: "Optional speaker diarisation. Used only on CUDA workers with the automatic speaker engine.",
+    target: "nemotron",
+  },
 ];
-
-/** Why Delete is not offered for a model kept where Nojoin does not delete. */
-const UNDELETABLE_REASON: Partial<Record<ModelSource, string>> = {
-  bundled: "Bundled with Nojoin, so it cannot be deleted here.",
-  external: "Kept in a cache outside Nojoin's, so it is used but not deleted from here.",
-};
-
-function undeletableReason(status?: ModelStatusInfo): string | undefined {
-  return status?.source ? UNDELETABLE_REASON[status.source] : undefined;
-}
-
-const ICON_BUTTON = cn(SETTINGS_BUTTON_SECONDARY, "h-9 w-9 px-0");
 
 /** The speech and speaker models on the server. Admins only. */
 export default function AiModelDependenciesSection({
@@ -103,7 +83,7 @@ export default function AiModelDependenciesSection({
     <SettingsCard
       id="ai-providers-model-assets"
       title="Model downloads"
-      description="Required models download on first run. A missing model downloads when it is first needed, which holds up live transcription and Meeting Edge until it arrives."
+      description="Required speech models download on first run or when first needed, holding up live transcription and Meeting Edge until they arrive. Optional Nemotron speaker models prepare during the final pass after capture ends."
     >
       {preparationRunning && (
         <SettingsBlock label="Preparing models" aside={<span className="text-sm tabular-nums text-foreground">{progressPercent}%</span>}>
@@ -127,106 +107,18 @@ export default function AiModelDependenciesSection({
         </SettingsBlock>
       )}
 
-      {DEPENDENCY_MODELS.map((model) => {
-        const status = modelStatus?.[model.id];
-        const reason = undeletableReason(status);
-        const busy = deleting === model.id;
-
-        return (
-          <SettingsRow
-            key={model.id}
-            label={model.label}
-            description={
-              <>
-                {model.desc}
-                {status?.downloaded && reason && (
-                  <span className="block">{reason}</span>
-                )}
-                {!status?.downloaded && (status?.checked_paths?.length ?? 0) > 0 && (
-                  <details className="mt-1">
-                    <summary className="cursor-pointer text-action-text">
-                      Paths checked
-                    </summary>
-                    <ul className="mt-1 space-y-0.5 font-mono break-all">
-                      {status?.checked_paths.map((path) => <li key={path}>{path}</li>)}
-                    </ul>
-                  </details>
-                )}
-              </>
-            }
-            badge={
-              status?.downloaded ? (
-                <SettingsStatusBadge tone="success">
-                  {status.source === "bundled"
-                    ? "Bundled"
-                    : status.source === "external"
-                      ? "External"
-                      : "Ready"}
-                </SettingsStatusBadge>
-              ) : (
-                <SettingsStatusBadge tone="error">Missing</SettingsStatusBadge>
-              )
-            }
-            controlClassName="@min-[26rem]:min-w-0"
-          >
-            <div className="flex flex-wrap items-center gap-2 @min-[26rem]:justify-end">
-              {status?.downloaded ? (
-                // The description says why a bundled or external model has no
-                // Delete, so there is no disabled button to explain on hover.
-                reason === undefined && (
-                  <ButtonBase
-                    chrome="action"
-                    type="button"
-                    {...loadingButtonProps(busy, !isAdmin, () => handleDeleteModel(model.id))}
-                    title="Delete this model"
-                    aria-label={`Delete ${model.label}`}
-                    className={ICON_BUTTON}
-                  >
-                    {busy ? (
-                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                    ) : (
-                      <Trash2 className="h-4 w-4" aria-hidden="true" />
-                    )}
-                  </ButtonBase>
-                )
-              ) : (
-                <>
-                  {status?.partial && (
-                    <ButtonBase
-                      chrome="action"
-                      type="button"
-                      {...loadingButtonProps(busy, !isAdmin || preparationRunning, () => handleDeleteModel(model.id))}
-                      title={
-                        preparationRunning
-                          ? "A model preparation is running and may still be writing this download"
-                          : "Clear the partial download left in the model cache"
-                      }
-                      aria-label={`Clear partial download of ${model.label}`}
-                      className={ICON_BUTTON}
-                    >
-                      {busy ? (
-                        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                      ) : (
-                        <Trash2 className="h-4 w-4" aria-hidden="true" />
-                      )}
-                    </ButtonBase>
-                  )}
-                  <ButtonBase
-                    chrome="action"
-                    type="button"
-                    onClick={() => void startPreparation(model.target)}
-                    disabled={!isAdmin || preparationRunning}
-                    className={SETTINGS_BUTTON_SECONDARY}
-                  >
-                    <Download className="h-4 w-4" aria-hidden="true" />
-                    Download
-                  </ButtonBase>
-                </>
-              )}
-            </div>
-          </SettingsRow>
-        );
-      })}
+      {DEPENDENCY_MODELS.map((model) => (
+        <AiModelDependencyRow
+          key={model.id}
+          model={model}
+          status={modelStatus?.[model.id]}
+          deleting={deleting}
+          handleDeleteModel={handleDeleteModel}
+          isAdmin={isAdmin}
+          preparationRunning={preparationRunning}
+          startPreparation={startPreparation}
+        />
+      ))}
     </SettingsCard>
   );
 }

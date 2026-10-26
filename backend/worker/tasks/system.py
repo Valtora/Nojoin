@@ -97,6 +97,11 @@ def download_models_task(
         include_core,
     )
     try:
+        if nemotron_only:
+            from backend.utils.nemotron_lock import model_lock, write_pending
+
+            with model_lock():
+                write_pending(self.request.id)
         kwargs = {"nemotron_only": True} if nemotron_only else {}
         download_models(
             progress_callback=progress_callback,

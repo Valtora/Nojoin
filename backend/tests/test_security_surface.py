@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from collections import Counter
 from collections.abc import AsyncGenerator
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -13,6 +14,7 @@ from backend.api.deps import get_current_admin_user, get_current_user, get_db
 from backend.api.v1.api import legacy_companion_router
 from backend.api.v1.endpoints import invitations, setup, system
 from backend.main import create_app
+from backend.services import model_status
 from backend.utils.config_manager import ConfigManager
 
 BOOTSTRAP_PASSWORD = "bootstrap-secret"
@@ -1259,7 +1261,11 @@ async def test_cors_preflight_allows_configured_web_app_url(monkeypatch) -> None
 
 
 @pytest.mark.anyio
-async def test_models_status_admin() -> None:
+async def test_models_status_admin(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(model_status, "get_download_progress", lambda: None)
+    monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path / "hub"))
     app, _ = _build_app(initialized=True)
     app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
         id=1, role="admin", is_superuser=False
@@ -1276,10 +1282,17 @@ async def test_models_status_admin() -> None:
     assert "whisper" in res_data
     # Admin users should see the unredacted paths/checked_paths lists
     assert len(res_data["whisper"]["checked_paths"]) > 0
+    assert res_data["nemotron"]["checked_paths"]
+    assert res_data["nemotron"]["state"] == "absent"
+    assert res_data["nemotron"]["size_bytes"] == 396956673
 
 
 @pytest.mark.anyio
-async def test_models_status_non_admin() -> None:
+async def test_models_status_non_admin(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(model_status, "get_download_progress", lambda: None)
+    monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path / "hub"))
     app, _ = _build_app(initialized=True)
     app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
         id=1, role="user", is_superuser=False
@@ -1294,6 +1307,8 @@ async def test_models_status_non_admin() -> None:
     assert response.status_code == 200
     res_data = response.json()
     assert "whisper" in res_data
+    assert res_data["nemotron"]["state"] == "absent"
+    assert res_data["nemotron"]["size_bytes"] == 396956673
     # Non-admin users should get redacted path and checked_paths
     for model in res_data:
         assert res_data[model]["path"] is None

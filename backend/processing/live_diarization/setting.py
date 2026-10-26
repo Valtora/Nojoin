@@ -1,7 +1,8 @@
 """The ``live_speaker_labels`` setting, readable without the label engine.
 
-The live task reads it before importing ``step``, so with labels off (the
-default) a live run imports none of the engine, its state code or SciPy.
+The live task reads it before importing ``step``, so with labels explicitly
+off a live run imports none of the engine, its state code or SciPy. The
+shipped ``auto`` default runs labels only when the step finds CUDA.
 """
 
 from __future__ import annotations
