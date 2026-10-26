@@ -205,7 +205,8 @@ export default function ContextMenu({
             item.onClick();
             onClose();
           }}
-          className={`w-full text-left px-4 py-2.5 text-sm hover:bg-surface-inset active:bg-action-tint transition-colors flex items-center gap-2 ${
+          // The ring sits inside the item: the menu clips anything outside it.
+          className={`w-full text-left px-4 py-2.5 text-sm hover:bg-surface-inset active:bg-action-tint transition-colors flex items-center gap-2 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus-ring ${
             index !== items.length - 1
               ? "border-b border-surface-divider"
               : ""

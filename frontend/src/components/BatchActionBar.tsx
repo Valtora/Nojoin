@@ -1,6 +1,7 @@
 "use client";
 
 import { SurfaceBase } from "@/components/ui/SurfaceBase";
+import { cn } from "@/lib/cn";
 import type { ViewType } from "@/lib/store";
 import { X } from "lucide-react";
 import { useState, type KeyboardEvent } from "react";
@@ -86,7 +87,9 @@ export default function BatchActionBar({
                     size="sm"
                     variant={destructive ? "danger" : "ghost"}
                     iconLeft={<Icon aria-hidden="true" className="h-4 w-4" />}
-                    className={TOUCH_TARGET_HEIGHT}
+                    // Narrow enough that a view's actions share one line
+                    // at the rail's default width.
+                    className={cn("px-2", TOUCH_TARGET_HEIGHT)}
                     onClick={() =>
                       id === "tag" ? setTagModalOpen(true) : onAction(id)
                     }
