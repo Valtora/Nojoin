@@ -249,3 +249,101 @@ def test_log_trusted_proxy_warnings_silent_when_all_resolvable(caplog):
 
     assert flagged == []
     assert "NOJOIN_TRUSTED_PROXIES" not in caplog.text
+
+
+def _nginx_resolves_after(failures: int):
+    """A getaddrinfo on which `nginx` fails ``failures`` times, then resolves."""
+    calls = {"nginx": 0}
+
+    def mock_getaddrinfo(host, port, *args, **kwargs):
+        if host == "nginx":
+            calls["nginx"] += 1
+            if calls["nginx"] > failures:
+                return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("172.19.0.2", 80))]
+        raise socket.gaierror(-2, "Name or service not known")
+
+    return mock_getaddrinfo
+
+
+@pytest.mark.anyio
+async def test_startup_check_waits_for_the_bundled_proxy(caplog):
+    # nginx starts only once the API is healthy, so its name resolves a few
+    # seconds after the API starts. That is not worth a warning.
+    import logging
+
+    from backend.utils.rate_limit import warn_unresolvable_trusted_proxies
+
+    with patch("socket.getaddrinfo", side_effect=_nginx_resolves_after(2)):
+        with patch.dict(os.environ, {"NOJOIN_TRUSTED_PROXIES": "127.0.0.1,::1,nginx"}):
+            with caplog.at_level(logging.WARNING):
+                flagged = await warn_unresolvable_trusted_proxies(
+                    startup_path="API startup", grace_seconds=30, retry_seconds=0
+                )
+
+    assert flagged == []
+    assert "NOJOIN_TRUSTED_PROXIES" not in caplog.text
+
+
+@pytest.mark.anyio
+async def test_startup_check_warns_once_the_grace_period_ends(caplog):
+    import logging
+
+    from backend.utils.rate_limit import warn_unresolvable_trusted_proxies
+
+    with patch("socket.getaddrinfo", side_effect=_nginx_resolves_after(10**6)):
+        with patch.dict(os.environ, {"NOJOIN_TRUSTED_PROXIES": "127.0.0.1,::1,nginx"}):
+            with caplog.at_level(logging.WARNING):
+                flagged = await warn_unresolvable_trusted_proxies(
+                    startup_path="API startup", grace_seconds=0, retry_seconds=0
+                )
+
+    assert flagged == ["nginx"]
+    assert "1 NOJOIN_TRUSTED_PROXIES entry could not be resolved" in caplog.text
+
+
+@pytest.mark.anyio
+async def test_api_startup_does_not_report_the_proxy_it_starts_before(
+    monkeypatch, caplog
+):
+    """A full stack start brings the API up before nginx, so at that moment
+    `nginx` cannot resolve. Startup must not report it then."""
+    import logging
+
+    from backend import main
+
+    async def no_op_async(*args, **kwargs) -> None:
+        return None
+
+    def no_op(*args, **kwargs) -> None:
+        return None
+
+    for name in (
+        "log_signing_keyring_status",
+        "run_migrations",
+        "log_deployment_warnings",
+        "log_recordings_storage_warnings",
+        "start_stall_watchdog",
+    ):
+        monkeypatch.setattr(main, name, no_op)
+    for name in (
+        "ensure_owner_exists",
+        "log_first_run_setup_pointer",
+        "ensure_recording_public_ids_on_startup",
+        "ensure_recording_meeting_uids_on_startup",
+        "carry_owner_transcription_choice_on_startup",
+        "seed_demo_data",
+        "enqueue_model_preparation",
+    ):
+        monkeypatch.setattr(main, name, no_op_async)
+    monkeypatch.setattr(main, "is_mcp_enabled", lambda: False)
+    # As at that moment: the bundled proxy's name does not resolve yet. Stubbed
+    # above DNS, so no lookup can outlive the test.
+    monkeypatch.setattr(
+        _rate_limit_module, "get_unresolvable_trusted_proxies", lambda: ["nginx"]
+    )
+
+    with caplog.at_level(logging.WARNING):
+        async with main.lifespan(main.app):
+            pass
+
+    assert "NOJOIN_TRUSTED_PROXIES" not in caplog.text

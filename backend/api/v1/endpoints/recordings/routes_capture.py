@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Optional
 from uuid import uuid4
@@ -42,6 +43,7 @@ from backend.utils.document_storage import (
 from backend.utils.rate_limit import enforce_upload_concurrency
 from backend.utils.recording_audio_sync import BROWSER_AUDIO_SEGMENT_SUFFIXES
 from backend.utils.recording_storage import delete_recording_artifacts_after_commit
+from backend.utils.speaker_frames import delete_frames_off_loop, mark_recording_stopped
 from backend.utils.stored_paths import require_recording_path
 from backend.utils.time import utc_now
 from backend.utils.upload_limit import UPLOAD_LIMIT_SEGMENT, stream_and_validate_upload
@@ -726,6 +728,13 @@ async def finalize_upload(
 
     finalized_from_paused = recording.status == RecordingStatus.PAUSED
 
+    # Starts a screen study's 14 days and its upload window before the status
+    # changes, so a frame arriving in between is still taken. For a recording
+    # without frames it costs one stat (#653).
+    await asyncio.to_thread(
+        mark_recording_stopped, recording.public_id, datetime.now(UTC)
+    )
+
     recording.status = RecordingStatus.QUEUED
     recording.client_status = ClientStatus.IDLE
     recording.processing_started_at = None
@@ -856,6 +865,7 @@ async def discard_upload(
     # so a failed commit keeps them for the capture it leaves.
     artifacts = [(recording.id, recording.audio_path, recording.proxy_path)]
     document_paths = await recording_document_paths(db, [recording.id])
+    public_id = recording.public_id
 
     await db.execute(
         delete(RecordingAudioChunk).where(
@@ -872,6 +882,7 @@ async def discard_upload(
     await db.commit()
     delete_recording_artifacts_after_commit(artifacts, logger=logger)
     await delete_document_files(document_paths, logger=logger)
+    await delete_frames_off_loop([public_id], reason="discarded")
 
     return {"ok": True}
 

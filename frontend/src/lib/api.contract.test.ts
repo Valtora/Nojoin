@@ -36,6 +36,7 @@ describe("api public surface", () => {
       [
         "API_BASE_URL",
         "DOCUMENT_SIZE_WARNING_BYTES",
+        "SPEAKER_FRAME_UPLOAD_TIMEOUT_MS",
         "SUPPORTED_DOCUMENT_FORMATS",
         "VISION_ONLY_DOCUMENT_FORMATS",
         "addPersonalDictionaryWord",
@@ -72,6 +73,7 @@ describe("api public surface", () => {
         "deletePeopleTag",
         "deleteRecording",
         "deleteRecordingSpeaker",
+        "deleteSpeakerFrames",
         "deleteTag",
         "deleteTimelineNote",
         "deleteUser",
@@ -130,6 +132,8 @@ describe("api public surface", () => {
         "getRecordingsCalendar",
         "getRestoreStatus",
         "getSettings",
+        "getSpeakerFrameAvailability",
+        "getSpeakerFrameStatus",
         "getSpeakerSegments",
         "getSpellcheckIgnoredWords",
         "getStalledImports",
@@ -226,6 +230,7 @@ describe("api public surface", () => {
         "uploadBackupArchive",
         "uploadDocument",
         "uploadRecordingSegment",
+        "uploadSpeakerFrame",
         "validateInvitation",
         "validateLLM",
       ]

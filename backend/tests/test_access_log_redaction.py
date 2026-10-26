@@ -311,7 +311,10 @@ def test_nginx_includes_the_access_log_config_in_its_http_block() -> None:
     assert "access_log" not in conf
 
     access_log = _nginx_text("access-log.conf")
-    assert "access_log /var/log/nginx/access.log nojoin_combined;" in access_log
+    assert (
+        "access_log /var/log/nginx/access.log nojoin_combined "
+        "if=$nojoin_log_this_request;"
+    ) in access_log
     assert '"$nojoin_log_request"' in access_log
     assert '"$nojoin_log_referer"' in access_log
 
@@ -357,3 +360,27 @@ def test_nginx_leaves_other_requests_as_combined_logs_them() -> None:
         _nginx_value("$nojoin_log_request", request_vars) == (request_vars["$request"])
     )
     assert _nginx_value("$nojoin_log_referer", request_vars) == "-"
+
+
+@pytest.mark.parametrize(
+    ("request_uri", "logged"),
+    [
+        ("/api/v1/recordings/0b0c-11/speaker-frames?sequence=4&offset_ms=0", "0"),
+        ("/api/v1/recordings/0b0c-11/speaker-frames", "0"),
+        ("/api/v1/recordings/0b0c-11/segment?sequence=4", "1"),
+        ("/api/v1/recordings/speaker-frames/availability", "1"),
+        ("/recordings/0b0c-11?tab=speaker-frames", "1"),
+    ],
+)
+def test_nginx_leaves_screen_study_frames_out_of_the_access_log(
+    request_uri: str, logged: str
+) -> None:
+    """Frames arrive about once a second; the study logs once per capture (#653)."""
+    source, entries = _nginx_maps()["$nojoin_log_this_request"]
+    assert source == "$request_uri"
+    value = dict(entries)["default"]
+    for key, result in entries:
+        if key.startswith("~") and re.search(key.lstrip("~*"), request_uri):
+            value = result
+            break
+    assert value == logged

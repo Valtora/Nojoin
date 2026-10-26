@@ -164,14 +164,19 @@ def get_unresolvable_trusted_proxies(
 
 
 def log_trusted_proxy_warnings(
-    *, startup_path: str, logger_instance: Optional[logging.Logger] = None
+    *,
+    startup_path: str,
+    logger_instance: Optional[logging.Logger] = None,
+    unresolvable: Optional[list[str]] = None,
 ) -> list[str]:
-    """Warn once at startup when a configured trusted proxy hostname will not resolve.
+    """Warn when a configured trusted proxy hostname will not resolve.
 
-    Called from API startup so the misconfiguration is visible at deploy time
-    rather than silently degrading per-request rate limiting under load.
+    Reached from API startup through ``warn_unresolvable_trusted_proxies``, so
+    the misconfiguration is visible at deploy time rather than silently
+    degrading per-request rate limiting under load.
     """
-    unresolvable = get_unresolvable_trusted_proxies()
+    if unresolvable is None:
+        unresolvable = get_unresolvable_trusted_proxies()
     if not unresolvable:
         return unresolvable
 
@@ -198,6 +203,43 @@ def log_trusted_proxy_warnings(
     return unresolvable
 
 
+# The bundled nginx is started only once the API reports healthy (its compose
+# depends_on), so the default entry `nginx` cannot resolve while the API starts.
+# A hostname gets this long to start resolving before it is reported.
+TRUSTED_PROXY_RESOLVE_GRACE_SECONDS = 120.0
+TRUSTED_PROXY_RESOLVE_RETRY_SECONDS = 5.0
+
+
+async def warn_unresolvable_trusted_proxies(
+    *,
+    startup_path: str,
+    logger_instance: Optional[logging.Logger] = None,
+    grace_seconds: float = TRUSTED_PROXY_RESOLVE_GRACE_SECONDS,
+    retry_seconds: float = TRUSTED_PROXY_RESOLVE_RETRY_SECONDS,
+) -> list[str]:
+    """Warn about trusted proxy hostnames still unresolvable after a grace period.
+
+    Checked once at startup, the bundled `nginx` entry never resolved on a full
+    stack start, so every fresh install was told to replace a correct entry.
+    Requests are unaffected either way: ``_resolve_hostname`` looks a name up
+    when a request needs it and keeps a failed lookup for DNS_CACHE_TTL only,
+    and a request through the proxy arrives once the proxy is running. The
+    lookups block, so they run on a worker thread.
+    """
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + grace_seconds
+    while True:
+        unresolvable = await asyncio.to_thread(get_unresolvable_trusted_proxies)
+        if not unresolvable or loop.time() >= deadline:
+            break
+        await asyncio.sleep(retry_seconds)
+    return log_trusted_proxy_warnings(
+        startup_path=startup_path,
+        logger_instance=logger_instance,
+        unresolvable=unresolvable,
+    )
+
+
 def _build_rate_limit_key(
     namespace: str,
     client_address: str,
@@ -212,6 +254,26 @@ def _build_rate_limit_key(
     return key
 
 
+# Every rate-limited request meets an outage, so each kind of Redis failure is
+# logged at most once a minute rather than once per request.
+_REDIS_WARNING_INTERVAL_SECONDS = 60.0
+_last_redis_warning: dict[str, float] = {}
+
+
+def _warn_redis_failure(kind: str, exc: BaseException) -> None:
+    now = time.monotonic()
+    last = _last_redis_warning.get(kind)
+    if last is not None and now - last < _REDIS_WARNING_INTERVAL_SECONDS:
+        return
+    _last_redis_warning[kind] = now
+    logger.warning(
+        "Redis %s failed, so the in-memory fallback is in use "
+        "(logged at most once a minute): %s",
+        kind,
+        exc,
+    )
+
+
 async def _get_redis() -> Optional[redis.Redis]:
     global _redis_client
     if _redis_client is None:
@@ -219,7 +281,7 @@ async def _get_redis() -> Optional[redis.Redis]:
             _redis_client = redis.from_url(REDIS_URL, decode_responses=True)
             await _redis_client.ping()
         except Exception as exc:  # noqa: BLE001 -- boundary: Redis is optional for rate limiting; the in-memory window takes over
-            logger.warning(f"Could not connect to Redis for rate limiting: {exc}")
+            _warn_redis_failure("connection for rate limiting", exc)
             _redis_client = None
             return None
     return _redis_client
@@ -243,7 +305,7 @@ async def _consume_redis_window(
 
         return count, ttl
     except Exception as exc:  # noqa: BLE001 -- boundary: Redis is optional for rate limiting; the in-memory window takes over
-        logger.warning(f"Redis-backed rate limiting failed for {key}: {exc}")
+        _warn_redis_failure("rate limiting", exc)
         return None
 
 
@@ -322,7 +384,7 @@ async def acquire_concurrency_limit(key: str, limit: int) -> bool:
                 return False
             return True
         except Exception as exc:  # noqa: BLE001 -- boundary: Redis is optional for concurrency limits; the in-memory counter takes over
-            logger.warning(f"Redis concurrency check failed: {exc}")
+            _warn_redis_failure("concurrency check", exc)
             # Fall through to in-memory fallback
 
     async with _fallback_lock:
@@ -344,7 +406,7 @@ async def release_concurrency_limit(key: str):
                 await client.delete(key)
             return
         except Exception as exc:  # noqa: BLE001 -- boundary: Redis is optional for concurrency limits; the in-memory counter takes over
-            logger.warning(f"Redis concurrency release failed: {exc}")
+            _warn_redis_failure("concurrency release", exc)
             # Fall through to in-memory fallback
 
     async with _fallback_lock:

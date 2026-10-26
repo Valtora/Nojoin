@@ -368,6 +368,35 @@ Any other value is off. Workers re-read `config.json` before each task, so a cha
 
 On a 12 GB RTX 4070 Ti, labels take about 32 ms of the GPU worker's time per 2 s of audio (p95 about 90 ms, when a re-cluster runs) and add about 450 MiB of VRAM to a capture, since the live lane keeps the segmentation and speaker embedding models loaded beside the transcription model. The first segment of a capture also loads them, about 2 s. On the shipped single GPU lane a final pass releases every model before it starts and after it ends, so it never runs beside them: with Parakeet, the lane's peak rose from 3,890 to 4,140 MiB, set by a capture rather than the final pass. With two GPU lanes on one card, a final pass and a labelled capture running at once peaked at about 8,030 MiB. The engine's state sits in the recording's `temp/<id>/live/` and is deleted at finalise: a file rewritten every 2 s, about 0.35 MB plus 2 KB per speaker (0.5 MB after two and a half hours), and an append-only bank of 1 KB per speaker turn (2.4 MB). Each save syncs both to disk, about 60 ms on a RAID array. A re-cluster handles at most 1,000 recent turns plus 10 older ones per speaker, so its cost does not grow with the meeting (about 0.3 s every 10 s with 40 speakers, against 2.6 s at 8,000 turns unbounded).
 
+### Screen Study
+
+`speaker_frame_sampling` in `data/config.json` allows the screen study ([CAPTURE.md](CAPTURE.md#screen-study)): frames of the shared screen, kept on the server for an offline measurement of speaker labels, only for meetings started with the box ticked. There is no settings page for it.
+
+- `off`, the shipped default: nobody is offered the study, and every one of its endpoints answers 404.
+- `owner`: the installation's first Owner account, the one created at first-run setup, sees **Screen study** under **Start Meeting**. No other account does.
+
+`speaker_frame_rate_hz` sets how often the browser looks at the shared screen: `1` (the default) or `2` times per second of audio. Any other value of either key reads as its default. The api re-reads `config.json` on each study request, so an edit reaches the next request without a restart. A page already open offers the box once it is reloaded.
+
+To allow it, add the key to `data/config.json`, keeping the file valid JSON and owned by UID 1000:
+
+```json
+"speaker_frame_sampling": "owner"
+```
+
+Frames live in `data/speaker_frames/<recording public id>/` as `<sequence>-<offset_ms>.jpg`, mode 0600, with an `index.jsonl` beside them: `sequence` is the audio chunk a frame was taken in and `offset_ms` the offset into it, so `recording_audio_chunks.absolute_start_ms + offset_ms` puts the frame on the transcript's clock. Each index line also holds the frame's size and SHA-256, `tick` (the capture's audio tick it was sampled on, from 0), `lost_before` (ticks since the previous stored frame that were not sampled, or whose frame was dropped or failed to upload, so a still screen is not mistaken for a gap), `frame_ts_us` (the video frame's own timestamp) and `grab_delay_ms` (from the audio tick to the grab). `platform_hint` is always `null` for now. `data/speaker_frame_state/` records when each recording stopped and whether its frames were deleted, and holds a lock file per recording. A frame is kept only when the screen changes, or every 15 seconds while it does not, so storage depends on the meeting. Once all frames together reach 20 GB, or storing one would leave less free disk space than uploads keep (2 GB by default, `DOCUMENT_DISK_HEADROOM_BYTES`), no more are kept. An hourly task on `worker-io` deletes frames 14 days after their recording stops, and keeps doing so with the key set to `off`.
+
+The bundled proxy leaves the study's per-recording requests out of its access log, as the api does. A reverse proxy of your own logs them like any other request unless you exclude `/api/v1/recordings/<id>/speaker-frames`.
+
+To end a study, set the key to `off`, then delete the frames and check that none are left:
+
+```bash
+docker compose exec --user appuser api python -m backend.utils.speaker_frames purge --all
+docker compose exec --user appuser api python -m backend.utils.speaker_frames audit
+docker compose exec --user appuser api python -m backend.utils.speaker_frames audit --scan /app/data
+```
+
+`purge` (or `purge <public id>` for one recording) first writes the SHA-256 of every frame it deletes to a new list in `data/speaker_frame_hashes/`. `audit` lists the frame directories with their counts and sizes, the state files and the hash lists, and never any frame content. `--scan` also hashes every JPEG under a directory, the members of ZIP files such as backups included, names each one that matches a saved hash, and then exits with status 1. Delete `data/speaker_frame_hashes/` once you are satisfied.
+
 ## CLI OAuth (worker-io image)
 
 The per-user CLI OAuth AI mode routes a user's inference through their own Claude or ChatGPT subscription. It needs Node.js, the Claude Code CLI and the OpenAI Codex CLI, which ship only in the `worker-io` image (`docker/Dockerfile.worker-io`, built on the shared worker image). The shipped compose file runs `worker-io` and `worker-parse` on that image, including for the first-run wizard's AI step, and `worker-gpu` and `worker-cpu` on the base image. If your compose file runs `worker-io` on the base image, users can still connect a Claude subscription, but inference through it fails and falls back to the server's providers. The stored credential is encrypted with `DATA_ENCRYPTION_KEY`, and no other variable is needed.
@@ -519,7 +548,7 @@ A hostname entry works only if the API container can resolve it, and Docker reso
 NOJOIN_TRUSTED_PROXIES=127.0.0.1,::1,nginx,172.18.0.0/16
 ```
 
-An entry that does not resolve, such as a bare `caddy` from another network, is dropped. The walk then stops at the proxy's own address, and every remote client shares one bucket for the per-IP limits on sign-in, invitations, `/setup` and MCP registration. The API logs a warning at startup with the number of `NOJOIN_TRUSTED_PROXIES` entries it could not resolve.
+An entry that does not resolve, such as a bare `caddy` from another network, is dropped. The walk then stops at the proxy's own address, and every remote client shares one bucket for the per-IP limits on sign-in, invitations, `/setup` and MCP registration. If an entry still does not resolve two minutes after the API starts, the API logs a warning with the number of such entries. The wait is for the bundled proxy, which starts only once the API and the web app report healthy, so `nginx` cannot resolve while the API is starting.
 
 #### Host-Run Edge Proxies (Tailscale Serve and Similar)
 
@@ -608,6 +637,8 @@ These run on the first start after the upgrade and need no action unless a note 
 
 #### Unreleased Changes on Main
 
+- **Screen study (#653).** Two new keys in `data/config.json`, `speaker_frame_sampling` (`off` by default) and `speaker_frame_rate_hz` (`1`), and an hourly `sweep_speaker_frames_task` on `worker-io` ([Screen Study](#screen-study)). Nothing changes until the first key is set to `owner`. `nginx/access-log.conf` leaves the study's frame requests out of the bundled proxy's access log; it reaches an existing install through the `git pull` in [Updating a Deployment](#updating-a-deployment) and a restart of `nginx`.
+- **Companion pairing tables on a new install (#724).** Alembic revision `4a8e2f5b6c71` now drops `companion_pairings` and `companion_pairing_requests` without `NOJOIN_ALLOW_COMPANION_DROP` when both are empty, as they are on every new install, and no longer logs `Skipping companion table drop` there. An install that has already run the revision keeps the tables it had, which nothing reads.
 - **Files on notes (#653).** Alembic revision `c4d81e6a2f90` adds `documents.note_id`, unique, a foreign key to `timeline_notes` with `ON DELETE CASCADE`, and `documents.use_in_notes`, `false` by default. Every existing row keeps `note_id` empty, so attached documents behave as before. A downgrade drops both columns, and files on notes stay on their meetings as ordinary documents, read by every notes run from then on. A newer worker fails on the missing columns until the API has migrated, so upgrade the API and the workers together.
 - **Speaker names with sources (#487).** Alembic revision `0f3b502561a6` adds the table `speaker_name_events` and the nullable column `recording_speakers.name_source`, with no backfill: names given before the upgrade show as they did, with no "?", and their links to People still teach voiceprints. A downgrade drops both, and backups leave the table out ([BACKUP_RESTORE.md](BACKUP_RESTORE.md#what-is-not-included)). Every user starts with `voiceprint_learning` at `confirmed` and `confirm_suggested_names` off, so from the first run after the upgrade, a suggested name waits for **Confirm** and only confirmed names update a person's voiceprint ([USAGE.md](USAGE.md#speaker-management)). A newer worker fails on the missing column until the API has migrated, so upgrade the API and the workers together.
 - **Language detection notice (#671).** Alembic revision `b13e4912f23a` adds the nullable column `transcripts.language_detection`, with no backfill, so recordings processed earlier never show the notice. A downgrade drops it. With Whisper and VAD on, every run now detects a language, also when one is set: one more `detect_language` call per recording, about 0.14 s on a GPU and a few seconds on a CPU. As with the next note, upgrade the API and the workers together.
