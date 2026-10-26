@@ -24,6 +24,7 @@ from backend.utils.languages import (
     validate_notes_language,
     validate_transcription_language,
 )
+from backend.utils.llm_provider_env import provider_of_only_llm_key
 from backend.utils.ollama_url_policy import (
     OllamaURLValidationError,
     validate_ollama_api_url,
@@ -146,6 +147,8 @@ INSTALL_WIDE_AI_SETTING_KEYS = (
     "install_glossary_terms",
     # Not an AI setting: listed for the same admin-only, install-wide handling.
     EXPORT_BRANDING_KEY,
+    "live_speaker_labels",
+    "speaker_engine",
     *TRANSCRIPTION_SETTING_KEYS,
 )
 
@@ -194,12 +197,9 @@ DEFAULT_SYSTEM_CONFIG = {
     "transcription_backend": "whisper",  # "whisper" | "parakeet" | "canary"
     "parakeet_model": "parakeet-tdt-0.6b-v3",
     "canary_model": "nemo-canary-1b-v2",
-    # Ollama num_ctx. Sized for the hardware this project is actually
-    # self-hosted on rather than for the model's advertised maximum: a KV cache
-    # costs roughly 190 KiB per token on a 14B model, so 32768 is about 6 GB and
-    # fits alongside quantised weights on a 16 GB card. It still covers a
-    # two-hour meeting (~25-30k tokens). 131072 would need ~24 GB of cache on its
-    # own and fails to load on a consumer GPU.
+    # Ollama num_ctx, sized for consumer GPUs: a 14B model's KV cache is ~190 KiB
+    # a token, so 32768 (~6 GB) fits beside quantised weights on a 16 GB card and
+    # covers a two-hour meeting (~25-30k tokens). 131072 would need ~24 GB.
     "ollama_context_window": 32768,
     "secondary_ollama_context_window": 32768,
     "enable_live_transcription": True,
@@ -212,7 +212,8 @@ DEFAULT_SYSTEM_CONFIG = {
     "live_speech_pad_ms": 300,
     # Provisional speaker labels in the live transcript: "off", or "auto" to run
     # them when the live lane is on CUDA. See docs/DEPLOYMENT.md.
-    "live_speaker_labels": "off",
+    "live_speaker_labels": "auto",
+    "speaker_engine": "auto",
     "vad_parameters": {
         "threshold": 0.5,
         "min_speech_duration_ms": 250,
@@ -232,7 +233,7 @@ DEFAULT_SYSTEM_CONFIG = {
     "telemetry_policy_version": None,
 }
 
-# The install's provider when LLM_PROVIDER is empty.
+# The install's provider when neither LLM_PROVIDER nor a single API key names one.
 DEFAULT_LLM_PROVIDER = "gemini"
 
 DEFAULT_USER_SETTINGS = {
@@ -513,16 +514,16 @@ class ConfigManager:
                 else:
                     config[config_key] = env_val
 
-        # An empty LLM_PROVIDER selects the default provider and outranks
-        # config.json, as a set one does. Compose used to fill in gemini itself
-        # and now passes the variable through empty, so that the setup wizard
+        # An empty LLM_PROVIDER selects the only API key's provider, or else the
+        # default, and outranks config.json as a set one does. Compose passes
+        # the variable through empty, not as gemini, so that the setup wizard
         # can tell an operator who chose gemini from one who chose nothing
         # (#477). Skipping the empty value as the loop above does would hand
         # the choice to whatever provider config.json or the owner's settings
         # still hold, and switch an install that relied on the old default.
         llm_provider_env = os.environ.get(ENV_OVERRIDES["llm_provider"])
         if llm_provider_env is not None and not llm_provider_env.strip():
-            config["llm_provider"] = DEFAULT_LLM_PROVIDER
+            config["llm_provider"] = provider_of_only_llm_key() or DEFAULT_LLM_PROVIDER
 
         return config
 

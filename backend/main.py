@@ -1,3 +1,5 @@
+import asyncio
+import contextlib
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -143,9 +145,12 @@ from backend.utils.config_manager import (
     get_trusted_web_origin,
     is_mcp_enabled,
 )
-from backend.utils.deployment_warnings import log_deployment_warnings
+from backend.utils.deployment_warnings import (
+    FIRST_RUN_PASSWORD_PLACEHOLDER,
+    log_deployment_warnings,
+)
 from backend.utils.primary_owner import get_primary_owner_async
-from backend.utils.rate_limit import log_trusted_proxy_warnings
+from backend.utils.rate_limit import warn_unresolvable_trusted_proxies
 from backend.utils.stall_watchdog import start_stall_watchdog
 
 
@@ -153,23 +158,24 @@ async def ensure_owner_exists():
     """Promote the first user to OWNER when no user holds that role."""
     async with async_session_maker() as session:
         owner = await get_primary_owner_async(session)
+        if owner:
+            return
 
-        if not owner:
-            logger.warning("No owner found. Promoting the first user to OWNER.")
-            # If no owner, promote the first user
-            query = select(User).order_by(User.id).limit(1)
-            result = await session.execute(query)
-            first_user = result.scalar_one_or_none()
+        query = select(User).order_by(User.id).limit(1)
+        result = await session.execute(query)
+        first_user = result.scalar_one_or_none()
+        if first_user is None:
+            # A fresh install: first-run setup creates the owner, and
+            # log_first_run_setup_pointer says where.
+            return
 
-            if first_user:
-                logger.info(
-                    f"Promoting user {first_user.username} (ID: {first_user.id}) to OWNER"
-                )
-                first_user.role = "owner"
-                session.add(first_user)
-                await session.commit()
-            else:
-                logger.warning("No users found to promote.")
+        logger.warning("No owner found. Promoting the first user to OWNER.")
+        logger.info(
+            f"Promoting user {first_user.username} (ID: {first_user.id}) to OWNER"
+        )
+        first_user.role = "owner"
+        session.add(first_user)
+        await session.commit()
 
 
 async def log_first_run_setup_pointer() -> None:
@@ -190,11 +196,38 @@ async def log_first_run_setup_pointer() -> None:
         "FIRST_RUN_PASSWORD to create the owner account.",
         setup_url,
     )
-    if not os.getenv("FIRST_RUN_PASSWORD"):
+    first_run_password = os.getenv("FIRST_RUN_PASSWORD")
+    if not first_run_password:
         logger.warning(
             "FIRST_RUN_PASSWORD is not set. First-run setup will refuse to "
             "unlock until it is set and the stack is restarted or redeployed."
         )
+    elif first_run_password.strip() == FIRST_RUN_PASSWORD_PLACEHOLDER:
+        logger.warning(
+            "FIRST_RUN_PASSWORD is still the example value from .env.example, "
+            "which first-run setup refuses. Set your own in .env and restart "
+            "or redeploy Nojoin."
+        )
+
+
+async def queue_startup_model_preparation() -> None:
+    """Queue model preparation at startup, once the install has an account.
+
+    A new install waits for first-run setup, which queues preparation when it
+    creates the owner, with the transcription model chosen in the wizard.
+    Queuing here as well would download the default model first.
+    """
+    try:
+        async with async_session_maker() as session:
+            result = await session.execute(select(User).limit(1))
+            if result.scalar_one_or_none() is None:
+                logger.info(
+                    "No users yet, so model downloads wait for first-run setup."
+                )
+                return
+        await enqueue_model_preparation(target="core")
+    except Exception as e:  # noqa: BLE001 -- boundary: model preparation is queued best-effort at startup; the admin page can retry
+        logger.error("Failed to queue startup model preparation: %s", e, exc_info=True)
 
 
 async def ensure_recording_meeting_uids_on_startup() -> None:
@@ -240,6 +273,21 @@ async def carry_owner_transcription_choice_on_startup() -> None:
             "choice into config.json: %s",
             carried,
         )
+
+
+async def check_trusted_proxies_after_startup() -> None:
+    """Report trusted proxy hostnames that do not resolve, once the stack is up.
+
+    Run as a task beside the app: the bundled nginx starts only after the API
+    is healthy, so the check has to outlast startup to see it.
+    """
+    try:
+        await warn_unresolvable_trusted_proxies(
+            startup_path="API startup", logger_instance=logger
+        )
+    except Exception:
+        # Boundary: a diagnostic must never take the API down.
+        logger.exception("The trusted proxy check failed to run.")
 
 
 def run_migrations():
@@ -321,17 +369,14 @@ async def lifespan(app: FastAPI):
     await ensure_recording_meeting_uids_on_startup()
     await carry_owner_transcription_choice_on_startup()
     log_deployment_warnings(startup_path="API startup", logger_instance=logger)
-    log_trusted_proxy_warnings(startup_path="API startup", logger_instance=logger)
+    trusted_proxy_check = asyncio.create_task(check_trusted_proxies_after_startup())
     log_recordings_storage_warnings(logger_instance=logger)
     try:
         await seed_demo_data()
     except Exception as e:  # noqa: BLE001 -- boundary: a failed demo seed must not stop the API starting
         logger.error(f"Failed to seed demo data on startup: {e}")
 
-    try:
-        await enqueue_model_preparation(include_core=True)
-    except Exception as e:  # noqa: BLE001 -- boundary: model preparation is queued best-effort at startup; the admin page can retry
-        logger.error("Failed to queue startup model preparation: %s", e, exc_info=True)
+    await queue_startup_model_preparation()
 
     # Started last, so it measures the loop that actually serves requests rather
     # than the one still working through startup migrations.
@@ -346,6 +391,9 @@ async def lifespan(app: FastAPI):
         else:
             yield
     finally:
+        trusted_proxy_check.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await trusted_proxy_check
         if watchdog is not None:
             await watchdog.stop()
 

@@ -180,6 +180,13 @@ RUN python -c "from torchcodec.decoders import AudioDecoder"
 # fails the build here.
 RUN python -c "from fastembed import TextEmbedding"
 
+# Validate the native Nemotron classes/frontend without fetching weights or
+# executing a model. Keep this in the final image, after all dependency swaps.
+RUN HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 python -c \
+    "from transformers import Nemotron3DiarizationConfig, Nemotron3DiarizationForAudioFrameClassification, Nemotron3DiarizationProcessor, NemotronAsrStreamingFeatureExtractor; \
+     processor = Nemotron3DiarizationProcessor(NemotronAsrStreamingFeatureExtractor()); \
+     model = Nemotron3DiarizationForAudioFrameClassification(Nemotron3DiarizationConfig())"
+
 WORKDIR /app
 
 COPY . .

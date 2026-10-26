@@ -53,10 +53,10 @@ def download_models_task(
     parakeet_model: str | None = None,
     canary_model: str | None = None,
     include_core: bool = True,
+    *,
+    nemotron_only: bool = False,
 ):
-    """
-    Prepare required model assets on disk without retaining models in memory.
-    """
+    """Prepare required assets on disk without retaining models in memory."""
     from backend.preload_models import download_models
 
     def progress_callback(message, progress, speed=None, eta=None, stage=None):
@@ -77,15 +77,28 @@ def download_models_task(
         whisper_model_size,
         include_core,
     )
-    download_models(
-        progress_callback=progress_callback,
-        hf_token=hf_token,
-        whisper_model_size=whisper_model_size,
-        transcription_backend=transcription_backend,
-        parakeet_model=parakeet_model,
-        canary_model=canary_model,
-        include_core=include_core,
-    )
+    try:
+        if nemotron_only:
+            from backend.utils.nemotron_lock import model_lock, write_pending
+
+            with model_lock():
+                write_pending(self.request.id)
+        kwargs = {"nemotron_only": True} if nemotron_only else {}
+        download_models(
+            progress_callback=progress_callback,
+            hf_token=hf_token,
+            whisper_model_size=whisper_model_size,
+            transcription_backend=transcription_backend,
+            parakeet_model=parakeet_model,
+            canary_model=canary_model,
+            include_core=include_core,
+            **kwargs,
+        )
+    finally:
+        if nemotron_only:
+            from backend.utils.nemotron_lock import complete_pending
+
+            complete_pending(self.request.id)
     return {"status": "success", "message": "Model preparation complete."}
 
 

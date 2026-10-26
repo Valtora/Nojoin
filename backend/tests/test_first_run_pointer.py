@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
+from types import SimpleNamespace
 
 import pytest
 
@@ -76,3 +77,144 @@ async def test_startup_pointer_silent_once_initialised(monkeypatch, caplog) -> N
         await backend_main.log_first_run_setup_pointer()
 
     assert "/setup" not in caplog.text
+
+
+async def _no_owner(session):
+    return None
+
+
+@pytest.mark.anyio
+async def test_owner_check_is_quiet_on_an_empty_install(monkeypatch, caplog) -> None:
+    # Before first-run setup there is nobody to promote, and that is the state
+    # every install starts in, so it is not worth a warning.
+    monkeypatch.setattr(backend_main, "async_session_maker", _fake_session_maker(None))
+    monkeypatch.setattr(backend_main, "get_primary_owner_async", _no_owner)
+
+    with caplog.at_level(logging.INFO, logger="backend.main"):
+        await backend_main.ensure_owner_exists()
+
+    assert caplog.records == []
+
+
+class _NoUsersResult:
+    def scalars(self):
+        return self
+
+    def first(self):
+        return None
+
+
+class _NoUsersSession:
+    async def execute(self, statement):
+        return _NoUsersResult()
+
+    async def get(self, model, key):
+        return None
+
+
+@asynccontextmanager
+async def _no_users_session_maker():
+    yield _NoUsersSession()
+
+
+@pytest.mark.anyio
+async def test_demo_seed_is_quiet_on_an_empty_install(
+    monkeypatch, caplog, tmp_path
+) -> None:
+    import backend.seed_demo as seed_demo
+
+    monkeypatch.setattr(seed_demo, "async_session_maker", _no_users_session_maker)
+    monkeypatch.setattr(
+        seed_demo,
+        "PathManager",
+        lambda: SimpleNamespace(recordings_directory=str(tmp_path)),
+    )
+
+    with caplog.at_level(logging.INFO, logger="backend.seed_demo"):
+        await seed_demo.seed_demo_data()
+
+    assert [record.levelno for record in caplog.records] == [
+        logging.INFO,
+        logging.INFO,
+    ]
+    assert "No users yet" in caplog.text
+
+
+@pytest.mark.anyio
+async def test_demo_seed_for_a_missing_user_is_an_error(
+    monkeypatch, caplog, tmp_path
+) -> None:
+    import backend.seed_demo as seed_demo
+
+    monkeypatch.setattr(seed_demo, "async_session_maker", _no_users_session_maker)
+    monkeypatch.setattr(
+        seed_demo,
+        "PathManager",
+        lambda: SimpleNamespace(recordings_directory=str(tmp_path)),
+    )
+
+    with caplog.at_level(logging.INFO, logger="backend.seed_demo"):
+        await seed_demo.seed_demo_data(user_id=42)
+
+    assert "user 42 not found" in caplog.text
+    assert caplog.records[-1].levelno == logging.ERROR
+
+
+def _recording_enqueue(monkeypatch) -> list[dict]:
+    calls: list[dict] = []
+
+    async def _enqueue(**kwargs):
+        calls.append(kwargs)
+        return "model-prep-task"
+
+    monkeypatch.setattr(backend_main, "enqueue_model_preparation", _enqueue)
+    return calls
+
+
+@pytest.mark.anyio
+async def test_startup_downloads_nothing_before_an_account_exists(
+    monkeypatch, caplog
+) -> None:
+    # A new install waits for the setup wizard, which queues preparation with
+    # the transcription model the operator chose. Queuing at startup as well
+    # downloaded the default model (Turbo, about 1.5 GB) before the wizard ran.
+    monkeypatch.setattr(backend_main, "async_session_maker", _fake_session_maker(None))
+    calls = _recording_enqueue(monkeypatch)
+
+    with caplog.at_level(logging.INFO, logger="backend.main"):
+        await backend_main.queue_startup_model_preparation()
+
+    assert calls == []
+    assert "wait for first-run setup" in caplog.text
+
+
+@pytest.mark.anyio
+async def test_startup_prepares_models_once_an_account_exists(monkeypatch) -> None:
+    monkeypatch.setattr(
+        backend_main, "async_session_maker", _fake_session_maker(object())
+    )
+    calls = _recording_enqueue(monkeypatch)
+
+    await backend_main.queue_startup_model_preparation()
+
+    # The same core preparation startup queued before it learned to wait.
+    assert calls == [{"target": "core"}]
+
+
+@pytest.mark.anyio
+async def test_a_failed_startup_queue_does_not_stop_the_api(
+    monkeypatch, caplog
+) -> None:
+    monkeypatch.setattr(
+        backend_main, "async_session_maker", _fake_session_maker(object())
+    )
+
+    async def _broker_down(**kwargs):
+        raise ConnectionError("broker unreachable")
+
+    monkeypatch.setattr(backend_main, "enqueue_model_preparation", _broker_down)
+
+    with caplog.at_level(logging.ERROR, logger="backend.main"):
+        await backend_main.queue_startup_model_preparation()
+
+    assert "Failed to queue startup model preparation" in caplog.text

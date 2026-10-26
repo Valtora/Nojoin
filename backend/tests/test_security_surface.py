@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from collections import Counter
 from collections.abc import AsyncGenerator
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -13,6 +14,7 @@ from backend.api.deps import get_current_admin_user, get_current_user, get_db
 from backend.api.v1.api import legacy_companion_router
 from backend.api.v1.endpoints import invitations, setup, system
 from backend.main import create_app
+from backend.services import model_status
 from backend.utils.config_manager import ConfigManager
 
 BOOTSTRAP_PASSWORD = "bootstrap-secret"
@@ -48,6 +50,10 @@ class _FakeSession:
 
     async def execute(self, statement):
         return _FakeResult(self._initialized)
+
+    def get_bind(self):
+        # Not PostgreSQL, so setup takes no advisory lock on this session.
+        return SimpleNamespace(dialect=SimpleNamespace(name="fake"))
 
     def add(self, value):
         self._added.append(value)
@@ -392,6 +398,73 @@ async def test_first_run_setup_accepts_correct_bootstrap_password(monkeypatch) -
     }
 
 
+NON_ASCII_BOOTSTRAP_PASSWORD = "bootstrap-£-secret"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "sent",
+    [
+        # Python's http.client, and requests on it, send each character up to
+        # U+00FF as one Latin-1 byte.
+        NON_ASCII_BOOTSTRAP_PASSWORD.encode("latin-1"),
+        # The web app, and curl in a UTF-8 terminal, send the UTF-8 bytes.
+        NON_ASCII_BOOTSTRAP_PASSWORD.encode("utf-8"),
+    ],
+    ids=["latin-1", "utf-8"],
+)
+async def test_first_run_unlock_accepts_a_non_ascii_bootstrap_password(
+    monkeypatch, sent: bytes
+) -> None:
+    app, _ = _build_app(initialized=False)
+    monkeypatch.setenv(setup.FIRST_RUN_PASSWORD_ENV_KEY, NON_ASCII_BOOTSTRAP_PASSWORD)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL
+    ) as client:
+        accepted = await client.get(
+            "/api/v1/setup/initial-config",
+            headers={"Authorization": b"Bootstrap " + sent},
+        )
+        refused = await client.get(
+            "/api/v1/setup/initial-config",
+            headers={"Authorization": b"Bootstrap " + sent + b"x"},
+        )
+
+    assert accepted.status_code == 200
+    assert refused.status_code == 403
+    assert refused.json() == {"detail": "First-run setup access denied."}
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "configured",
+    [
+        # The UTF-8 for "à" ends in 0xA0 and for "ą" in 0x85. Read back from
+        # the header as Latin-1, those are characters str.strip() removes.
+        "bootstrap-secret-à",
+        "bootstrap-secret-ą",
+        # Outside Latin-1, so only its UTF-8 bytes can be sent.
+        "bootstrap-€-secret",
+    ],
+)
+async def test_first_run_unlock_accepts_any_bootstrap_password_sent_as_utf8(
+    monkeypatch, configured: str
+) -> None:
+    app, _ = _build_app(initialized=False)
+    monkeypatch.setenv(setup.FIRST_RUN_PASSWORD_ENV_KEY, configured)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL
+    ) as client:
+        response = await client.get(
+            "/api/v1/setup/initial-config",
+            headers={"Authorization": b"Bootstrap " + configured.encode("utf-8")},
+        )
+
+    assert response.status_code == 200
+
+
 @pytest.mark.anyio
 async def test_initialised_setup_helpers_do_not_disclose_state_without_auth(
     monkeypatch,
@@ -590,6 +663,14 @@ async def _initial_config_with_empty_llm_provider(monkeypatch, tmp_path) -> dict
     return response.json()
 
 
+def _only_provider_key(monkeypatch, variable: str | None, value: str = "") -> None:
+    """Leave at most one provider key set: a single key chooses its provider."""
+    for name in ("GEMINI_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"):
+        monkeypatch.delenv(name, raising=False)
+    if variable:
+        monkeypatch.setenv(variable, value)
+
+
 @pytest.mark.anyio
 async def test_initial_config_reports_no_provider_when_none_was_chosen(
     monkeypatch, tmp_path
@@ -598,7 +679,7 @@ async def test_initial_config_reports_no_provider_when_none_was_chosen(
     signal to tell "the operator chose gemini" from "the operator chose
     nothing". Without it, an install with an empty LLM_PROVIDER (which is what
     .env.example ships) was told its gemini key was missing."""
-    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    _only_provider_key(monkeypatch, None)
 
     body = await _initial_config_with_empty_llm_provider(monkeypatch, tmp_path)
 
@@ -613,13 +694,28 @@ async def test_initial_config_offers_a_gemini_key_when_no_provider_was_chosen(
 ) -> None:
     """Gemini is the default provider, so a Gemini key alone is a working
     server route, and the wizard has to be told the provider it belongs to."""
-    monkeypatch.setenv("GEMINI_API_KEY", "gemini-secret-value")
+    _only_provider_key(monkeypatch, "GEMINI_API_KEY", "gemini-secret-value")
 
     body = await _initial_config_with_empty_llm_provider(monkeypatch, tmp_path)
 
     assert body["llm_provider"] == "gemini"
     assert body["llm_provider_selected"] is False
     assert body["gemini_api_key"] == "gem...alue"
+
+
+@pytest.mark.anyio
+async def test_initial_config_offers_the_only_key_when_no_provider_was_chosen(
+    monkeypatch, tmp_path
+) -> None:
+    """Only OPENAI_API_KEY set used to resolve to gemini, so the wizard said
+    no provider was configured although the operator had set one up."""
+    _only_provider_key(monkeypatch, "OPENAI_API_KEY", "sk-openai-secret-value")
+
+    body = await _initial_config_with_empty_llm_provider(monkeypatch, tmp_path)
+
+    assert body["llm_provider"] == "openai"
+    assert body["llm_provider_selected"] is False
+    assert body["openai_api_key"] == "sk-...alue"
 
 
 @pytest.mark.anyio
@@ -1165,7 +1261,11 @@ async def test_cors_preflight_allows_configured_web_app_url(monkeypatch) -> None
 
 
 @pytest.mark.anyio
-async def test_models_status_admin() -> None:
+async def test_models_status_admin(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(model_status, "get_download_progress", lambda: None)
+    monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path / "hub"))
     app, _ = _build_app(initialized=True)
     app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
         id=1, role="admin", is_superuser=False
@@ -1182,10 +1282,17 @@ async def test_models_status_admin() -> None:
     assert "whisper" in res_data
     # Admin users should see the unredacted paths/checked_paths lists
     assert len(res_data["whisper"]["checked_paths"]) > 0
+    assert res_data["nemotron"]["checked_paths"]
+    assert res_data["nemotron"]["state"] == "absent"
+    assert res_data["nemotron"]["size_bytes"] == 396956673
 
 
 @pytest.mark.anyio
-async def test_models_status_non_admin() -> None:
+async def test_models_status_non_admin(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(model_status, "get_download_progress", lambda: None)
+    monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path / "hub"))
     app, _ = _build_app(initialized=True)
     app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
         id=1, role="user", is_superuser=False
@@ -1200,6 +1307,8 @@ async def test_models_status_non_admin() -> None:
     assert response.status_code == 200
     res_data = response.json()
     assert "whisper" in res_data
+    assert res_data["nemotron"]["state"] == "absent"
+    assert res_data["nemotron"]["size_bytes"] == 396956673
     # Non-admin users should get redacted path and checked_paths
     for model in res_data:
         assert res_data[model]["path"] is None

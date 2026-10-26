@@ -157,7 +157,7 @@ def test_active_target_on_an_onnx_engine_skips_the_core_batch(prepare_app, monke
 
     assert response.status_code == 200
     assert calls[0]["transcription_backend"] == "parakeet"
-    assert calls[0]["include_core"] is False
+    assert calls[0]["target"] == "active"
 
 
 def test_a_missing_row_can_be_repaired_on_its_own(prepare_app):
@@ -168,7 +168,7 @@ def test_a_missing_row_can_be_repaired_on_its_own(prepare_app):
 
     assert response.status_code == 200
     assert calls[0]["transcription_backend"] == "canary"
-    assert calls[0]["include_core"] is False
+    assert calls[0]["target"] == "active"
 
 
 def test_the_core_target_prepares_whisper_and_the_pyannote_models(prepare_app):
@@ -179,7 +179,7 @@ def test_the_core_target_prepares_whisper_and_the_pyannote_models(prepare_app):
 
     assert response.status_code == 200
     assert calls[0]["transcription_backend"] == "whisper"
-    assert calls[0]["include_core"] is True
+    assert calls[0]["target"] == "core"
 
 
 def test_a_second_preparation_is_refused_while_one_is_running(prepare_app, monkeypatch):
@@ -191,6 +191,22 @@ def test_a_second_preparation_is_refused_while_one_is_running(prepare_app, monke
 
     assert response.status_code == 409
     assert calls == []
+
+
+def test_native_target_is_exclusive_and_keeps_core_targets_unchanged(prepare_app):
+    app, calls = prepare_app
+    _as_user(app)
+
+    response = asyncio.run(_post_prepare(app, {"target": "nemotron"}))
+
+    assert response.status_code == 200
+    assert response.json()["target"] == "nemotron"
+    assert calls == [
+        {
+            "transcription_backend": "nemotron",
+            "target": "nemotron",
+        }
+    ]
 
 
 def test_an_unknown_target_is_rejected(prepare_app):

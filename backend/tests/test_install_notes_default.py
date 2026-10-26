@@ -25,14 +25,15 @@ from backend.api.v1.endpoints import settings as settings_ep
 from backend.models.notes_template import NotesTemplate, NotesTemplateScope
 from backend.models.user import User
 from backend.tests.sqlite_schemas import NOTES_TEMPLATES_SCHEMA, USERS_SCHEMA
+from backend.utils.config_manager import ConfigManager
 
 SECTIONS = "## Summary\nWhat happened."
 INSTALL_TEMPLATE_ID = 1
 PERSONAL_TEMPLATE_ID = 2
 
 
-class _FakeConfigManager:
-    """Stands in for the module-level config_manager singleton."""
+class _FakeConfigManager(ConfigManager):
+    """Use the real getter while keeping persistence in memory."""
 
     def __init__(self, *, fail: bool = False):
         self.config: dict = {}

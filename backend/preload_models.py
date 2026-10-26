@@ -5,6 +5,7 @@ import sys
 import time
 import urllib.request
 import warnings
+from typing import Callable
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -18,6 +19,12 @@ from backend.utils.model_cache_paths import (
     hf_hub_cache_root,
     hf_repo_dirname,
     whisper_cache_root,
+)
+from backend.utils.nemotron_manifest import NemotronOfflineError
+from backend.utils.nemotron_model_utils import (
+    inspect_nemotron_model,
+    nemotron_repo_path,
+    prepare_nemotron_model,
 )
 from backend.utils.onnx_asr_cache import (
     ONNX_ASR_MODELS,
@@ -240,6 +247,7 @@ def _release_validation_caches() -> None:
     import sys
 
     release_hooks = (
+        ("backend.processing.nemotron_model", "release_nemotron_model_cache"),
         ("backend.processing.transcribe", "release_model_cache"),
         ("backend.processing.diarize", "release_pipeline_cache"),
         ("backend.processing.embedding_core", "release_embedding_model_cache"),
@@ -378,6 +386,31 @@ def _resolve_onnx_asr_id(backend: str, model_id: str | None) -> str | None:
     return None
 
 
+# What each preparation stage fetches, named in the message shown when it
+# fails. The exception goes to the worker log instead: offline it reads
+# "<urlopen error [Errno -3] Temporary failure in name resolution>", which
+# tells someone finishing the setup wizard nothing they can act on.
+_PREPARATION_STAGE_SUBJECTS = {
+    "whisper": "the Whisper transcription model",
+    "pyannote": "the speaker models",
+    "segmentation": "the speaker models",
+    "parakeet": "the Parakeet transcription model",
+    "canary": "the Canary transcription model",
+}
+
+
+def preparation_failure_message(stage: str | None) -> str:
+    """The progress message for a preparation that failed during ``stage``."""
+    subject = _PREPARATION_STAGE_SUBJECTS.get(
+        stage or "", "the transcription and speaker models"
+    )
+    return (
+        f"Could not download {subject}. Check that the server can reach the "
+        "internet and has free disk space, then retry from Model downloads "
+        "under Advanced in Settings > AI providers."
+    )
+
+
 def download_models(
     progress_callback=None,
     hf_token=None,
@@ -386,6 +419,8 @@ def download_models(
     parakeet_model=None,
     canary_model=None,
     include_core=True,
+    *,
+    nemotron_only: bool = False,
 ):
     """
     Prepare required model assets on disk without retaining models in memory.
@@ -394,9 +429,16 @@ def download_models(
     on CPU to validate that downloads completed, then releases all caches and
     CUDA allocations before returning.
     """
+    if nemotron_only:
+        _download_nemotron_only(progress_callback)
+        return
     clear_download_progress()
 
+    stage_reached: str | None = None
+
     def report(msg, percent, speed=None, eta=None, stage=None, status="complete"):
+        nonlocal stage_reached
+        stage_reached = stage
         logger.info(f"{msg} ({percent}%)")
         set_download_progress(percent, msg, speed, eta, status=status, stage=stage)
         if progress_callback:
@@ -475,11 +517,41 @@ def download_models(
     except Exception as exc:
         logger.error("Model preparation failed: %s", exc, exc_info=True)
         set_download_progress(
-            0, f"Model preparation failed: {exc}", status="error", stage="error"
+            0,
+            preparation_failure_message(stage_reached),
+            status="error",
+            stage="error",
         )
         raise
     finally:
         _release_validation_caches()
+
+
+def _download_nemotron_only(
+    progress_callback: Callable[..., None] | None = None,
+) -> None:
+    """Keep optional asset preparation outside ASR setup and cache cleanup."""
+    clear_download_progress()
+
+    def report(message: str, percent: int) -> None:
+        status = "complete" if percent == 100 else "downloading"
+        set_download_progress(percent, message, status=status, stage="nemotron")
+        if progress_callback:
+            progress_callback(message, percent, stage="nemotron")
+
+    try:
+        report("Preparing native speaker assets...", 0)
+        prepare_nemotron_model(progress=report)
+    except (OSError, ValueError, RuntimeError) as exc:
+        set_download_progress(
+            0,
+            str(exc)
+            if isinstance(exc, NemotronOfflineError)
+            else "Native speaker model preparation failed.",
+            status="error",
+            stage="nemotron",
+        )
+        raise
 
 
 def preload_models():
@@ -502,6 +574,17 @@ def check_model_status(whisper_model_size=None):
         "pyannote": {"downloaded": False, "path": None, "checked_paths": []},
         "embedding": {"downloaded": False, "path": None, "checked_paths": []},
         "segmentation": {"downloaded": False, "path": None, "checked_paths": []},
+    }
+    native = inspect_nemotron_model()
+    status["nemotron"] = {
+        "downloaded": native.state == "verified",
+        "path": str(native.path) if native.path else None,
+        "checked_paths": [str(nemotron_repo_path())],
+        "partial": native.state in {"partial", "invalid"},
+        "verification_state": native.state,
+        "revision": native.revision,
+        "manifest_sha256": native.manifest_sha256,
+        "verification_error": native.error,
     }
 
     # Check Whisper
@@ -559,6 +642,8 @@ def check_model_status(whisper_model_size=None):
 
 def _hub_repo_dirname(model_name: str) -> str:
     """The model's own repo directory name in the hub cache."""
+    if model_name == "nemotron":
+        return nemotron_repo_path().name
     if model_name in ONNX_ASR_MODELS:
         return ONNX_ASR_MODELS[model_name].repo_dirname
     return hf_repo_dirname(PYANNOTE_STATUS_MODELS[model_name])
@@ -657,6 +742,21 @@ def _delete_hub_repo(repo_dir: str) -> None:
 
 
 def delete_model(model_name: str, whisper_model_size: str | None = None) -> bool:
+    """Delete managed assets, coordinating native preparation on its local lock."""
+    if model_name != "nemotron":
+        return _delete_model(model_name, whisper_model_size)
+    from backend.utils.nemotron_lock import clear_pending, model_lock
+
+    with model_lock():
+        module = sys.modules.get("backend.processing.nemotron_model")
+        if module is not None:
+            module.release_nemotron_model_cache()
+        deleted = _delete_model(model_name, whisper_model_size)
+        clear_pending(None)
+        return deleted
+
+
+def _delete_model(model_name: str, whisper_model_size: str | None = None) -> bool:
     """Delete one model from the cache its loader downloads into.
 
     Removes exactly the model's own file or repo directory in that cache,

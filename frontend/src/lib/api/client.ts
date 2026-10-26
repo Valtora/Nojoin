@@ -71,6 +71,14 @@ const formatValidationDetail = (detail: unknown): string | unknown => {
   return messages.join(" ");
 };
 
+// A header value is a string of bytes, so the browser refuses any character
+// above U+00FF. Each UTF-8 byte of the value goes in as one character, which
+// lets any FIRST_RUN_PASSWORD through; the server compares the bytes.
+const toUtf8ByteString = (value: string): string =>
+  Array.from(new TextEncoder().encode(value), (byte) =>
+    String.fromCharCode(byte),
+  ).join("");
+
 // Shared first-run bootstrap header. Onboarding endpoints accept the one-time
 // FIRST_RUN_PASSWORD via the Bootstrap auth scheme before a session exists.
 export const buildFirstRunRequestConfig = (bootstrapPassword?: string) => {
@@ -80,7 +88,7 @@ export const buildFirstRunRequestConfig = (bootstrapPassword?: string) => {
 
   return {
     headers: {
-      Authorization: `${FIRST_RUN_PASSWORD_AUTH_SCHEME} ${bootstrapPassword}`,
+      Authorization: `${FIRST_RUN_PASSWORD_AUTH_SCHEME} ${toUtf8ByteString(bootstrapPassword)}`,
     },
   };
 };

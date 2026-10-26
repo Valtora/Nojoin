@@ -36,15 +36,17 @@ Use GitHub's [Private Vulnerability Reporting](https://github.com/Valtora/Nojoin
 
 ## First-Run Bootstrap Protection
 
-First-run setup needs the operator's `FIRST_RUN_PASSWORD`, which the web client sends in the `Authorization` header with the `Bootstrap` scheme. If the variable is unset, setup stays closed until it is set and the stack is restarted.
+First-run setup needs the operator's `FIRST_RUN_PASSWORD`, which the web client sends in the `Authorization` header with the `Bootstrap` scheme. If the variable is unset, or still holds the example value from `.env.example`, setup stays closed until it holds a value of your own and the stack is restarted.
 
 - The password works only while the system is uninitialised. The wizard creates the owner account partway through and signs in, and the server refuses the bootstrap credential from then on.
+- One owner is created. If two browsers submit the account step at the same moment, the server creates the first and refuses the second with the same `403`.
 - The setup surface does not reveal whether the system is initialised. The sign-in page never mentions setup, `/setup` shows the same password prompt in every state, and every anonymous denial returns the same `403` (`First-run setup access denied.`) whether the password is wrong, unset, or the system is already set up. The reason goes to the server log only, and while the system is uninitialised the API startup log points to `/setup`.
+- Entering the example `FIRST_RUN_PASSWORD` gets a `403` of its own, which the wizard turns into a request to set your own value. It depends only on the password entered, never on the system's state or the configured value, so it says nothing about the system.
 - Setup requests are rate limited per client address before any state-dependent check, so throttling is the same in every state.
 - The password is never returned by the API or stored in Nojoin's configuration.
 - Application logs redact `Authorization`, cookies, bootstrap credentials, passwords, tokens and API-key fields.
 
-The api and worker startup logs, and the web app once you are signed in, warn when `FIRST_RUN_PASSWORD`, `DATA_ENCRYPTION_KEY`, `REDIS_PASSWORD` or `POSTGRES_PASSWORD` still holds the template placeholder. The warnings do not block startup or setup.
+The api and worker startup logs, and the web app once you are signed in, warn when `FIRST_RUN_PASSWORD`, `DATA_ENCRYPTION_KEY`, `REDIS_PASSWORD` or `POSTGRES_PASSWORD` still holds the template placeholder. The warnings do not block startup. Setup refuses the placeholder `FIRST_RUN_PASSWORD`, as above, and an install that is already set up no longer uses that variable.
 
 ## Passwords, Sign-In and Rate Limits
 

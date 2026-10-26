@@ -27,9 +27,9 @@ x-shared-app-environment: &shared-app-environment
   # flag or delete, for the IO worker's daily cleanup. No default here:
   # backend/utils/storage_hygiene.py owns it. The CLI goes by --delete instead.
   NOJOIN_STORAGE_HYGIENE: ${NOJOIN_STORAGE_HYGIENE:-}
-  # Left empty: config_manager reads an empty value as gemini, and the setup
-  # wizard can only report that no provider was chosen if the variable reaches
-  # it empty.
+  # Left empty: config_manager reads an empty value as the provider of the
+  # only API key set, or else gemini, and the setup wizard can only report that
+  # no provider was chosen if the variable reaches it empty.
   LLM_PROVIDER: ${LLM_PROVIDER:-}
   GEMINI_API_KEY: ${GEMINI_API_KEY:-}
   OPENAI_API_KEY: ${OPENAI_API_KEY:-}
@@ -251,12 +251,12 @@ services:
   worker-io:
     <<: *worker-base
     container_name: nojoin-worker-io
-    # CLI OAuth AI mode routes inference through a user's Claude subscription via
-    # the Claude Code CLI + claude-agent-sdk, which need Node.js. Those live only
-    # in this io-specific image (docker/Dockerfile.worker-io) layered on the
-    # shared worker image, keeping worker-gpu / worker-cpu lean. The tag is
-    # published by the release pipeline (M6); until then `docker compose build
-    # worker-io` builds it locally from the base image via the build stanza.
+    # CLI OAuth AI mode routes inference through a user's Claude or ChatGPT
+    # subscription via the Claude Code and Codex CLIs, which need Node.js. Those
+    # live only in this io-specific image (docker/Dockerfile.worker-io) layered
+    # on the shared worker image, keeping worker-gpu / worker-cpu lean. Every
+    # release publishes the tag, so `docker compose up` pulls it; `docker compose
+    # build worker-io` builds it locally from the base image via the build stanza.
     image: ghcr.io/valtora/nojoin-worker-io:latest
     build:
       context: .

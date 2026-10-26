@@ -106,12 +106,16 @@ export interface SettingsRegistryEntry {
  *  - theme is written by ThemeProvider into local storage, not through settings;
  *  - processing_tuning_install is read-only context the API supplies (the
  *    installation's tuning values) for validation, not a value anyone sets;
+ *  - live_speaker_labels and speaker_engine are install-wide settings managed
+ *    through config.json or the administrator API, without frontend controls;
  *  - the rest are read by the backend and have never had a frontend control.
  */
 export const UNSURFACED_SETTINGS_KEYS = [
   "theme",
   "enable_auto_voiceprints",
   "enable_live_transcription",
+  "live_speaker_labels",
+  "speaker_engine",
   "processing_device",
   "worker_url",
   "processing_tuning_install",

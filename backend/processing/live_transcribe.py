@@ -1783,7 +1783,7 @@ def transcribe_segment_live_task(self, recording_id: int, sequence: int):
                 live_labels.run_live_speaker_labels(
                     live_labels.LiveLabelRun(
                         recording_id=recording_id,
-                        sequence=sequence,
+                        sequence=run[-1],
                         live_dir=live_dir,
                         audio=combined,
                         audio_start_s=combined_abs_start,

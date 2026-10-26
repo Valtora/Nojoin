@@ -6,6 +6,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
@@ -21,6 +22,7 @@ from backend.api.error_handling import sanitized_http_exception
 from backend.models.user import User
 from backend.processing.llm_services import get_llm_backend
 from backend.utils.config_manager import config_manager
+from backend.utils.deployment_warnings import FIRST_RUN_PASSWORD_PLACEHOLDER
 from backend.utils.ollama_url_policy import (
     OllamaURLValidationError,
     validate_ollama_api_url,
@@ -31,16 +33,27 @@ logger = logging.getLogger(__name__)
 
 FIRST_RUN_PASSWORD_AUTH_SCHEME = "Bootstrap"
 FIRST_RUN_PASSWORD_ENV_KEY = "FIRST_RUN_PASSWORD"
-# Every setup denial uses this one detail so anonymous responses are identical
-# whether the system is initialised, the bootstrap password is wrong, or
-# FIRST_RUN_PASSWORD is not configured. The specific reason is server-log only.
+# Every setup denial but the one below uses this detail, so anonymous responses
+# are identical whether the system is initialised, the bootstrap password is
+# wrong, or FIRST_RUN_PASSWORD is not configured. The specific reason is
+# server-log only.
 FIRST_RUN_SETUP_ACCESS_DENIED_DETAIL = "First-run setup access denied."
+# The one other setup denial: the password sent is the example value from
+# .env.example. It depends only on what was sent, never on the system's state
+# or on what FIRST_RUN_PASSWORD holds, so it discloses nothing the sender did
+# not already know, and the wizard can say what to change.
+FIRST_RUN_PASSWORD_EXAMPLE_DETAIL = (
+    "Setup does not accept the example FIRST_RUN_PASSWORD from .env.example."
+)
 SETUP_RATE_LIMIT = 60
 SETUP_RATE_LIMIT_WINDOW_SECONDS = 10 * 60
 SETUP_RATE_LIMIT_DETAIL = "Too many setup requests. Please try again later."
 PUBLIC_LLM_VALIDATION_ERROR_DETAIL = "Unable to validate the AI provider configuration."
 PUBLIC_MODEL_LIST_ERROR_DETAIL = "Unable to list AI provider models."
 LLM_PROVIDER_ENV_KEY = "LLM_PROVIDER"
+# Outside the int4 range on purpose: the hashtext() keys other routes lock on
+# can never take this value.
+FIRST_RUN_SETUP_ADVISORY_LOCK_ID = 724_118_305_264_909_173
 
 
 def _raise_setup_validation_error(
@@ -94,6 +107,25 @@ async def is_system_initialized(db: AsyncSession) -> bool:
     return result.scalar_one_or_none() is not None
 
 
+async def lock_first_run_setup(db: AsyncSession) -> None:
+    """Hold first-run setup to one request at a time until this transaction ends.
+
+    Setup checks that no user exists and then creates the owner. Two requests
+    that both checked before either committed would each create one. Taken
+    before the check, this lock makes the second wait for the first to commit
+    or roll back, and its check then sees the first's owner. It relies on READ
+    COMMITTED, PostgreSQL's default, so the check after the lock reads what the
+    first request committed. Other databases run only in tests, one request at
+    a time, and take no lock.
+    """
+    if db.get_bind().dialect.name != "postgresql":
+        return
+    await db.execute(
+        text("SELECT pg_advisory_xact_lock(:lock_id)"),
+        {"lock_id": FIRST_RUN_SETUP_ADVISORY_LOCK_ID},
+    )
+
+
 def get_first_run_password(request: Request) -> Optional[str]:
     authorization_header = request.headers.get("Authorization")
     if not authorization_header:
@@ -103,7 +135,49 @@ def get_first_run_password(request: Request) -> Optional[str]:
     if scheme.lower() != FIRST_RUN_PASSWORD_AUTH_SCHEME.lower() or not credential:
         return None
 
-    return credential.strip()
+    # ASCII whitespace only: the header is read as Latin-1, so a bare strip()
+    # would also cut 0x85 and 0xA0, which end the UTF-8 of letters such as "à".
+    return credential.strip(" \t")
+
+
+def _bootstrap_password_matches(provided: str, configured: str) -> bool:
+    """Compare the header's password with FIRST_RUN_PASSWORD, as bytes.
+
+    hmac.compare_digest refuses str with any non-ASCII character, so a
+    FIRST_RUN_PASSWORD such as one holding a pound sign failed every unlock
+    with a 500. Starlette decodes header bytes as Latin-1, so encoding back
+    recovers the bytes sent. The web app and curl in a UTF-8 terminal send
+    UTF-8, while Python's http.client sends a character up to U+00FF as one
+    Latin-1 byte, so either form of the configured password is accepted.
+    """
+    sent = provided.encode("latin-1", errors="replace")
+    candidates = [configured.encode("utf-8")]
+    try:
+        candidates.append(configured.encode("latin-1"))
+    except UnicodeEncodeError:
+        pass
+    # Every candidate is compared, so the time taken does not say which matched.
+    matches = [hmac.compare_digest(sent, candidate) for candidate in candidates]
+    return any(matches)
+
+
+def refuse_example_first_run_password(request: Request) -> None:
+    """Refuse the example bootstrap password from .env.example.
+
+    Callers run this before any state-dependent check, so the refusal is the
+    same on an initialised system as on a new one.
+    """
+    provided_password = get_first_run_password(request)
+    if not provided_password or not _bootstrap_password_matches(
+        provided_password, FIRST_RUN_PASSWORD_PLACEHOLDER
+    ):
+        return
+    logger.warning(
+        "First-run setup request denied: the bootstrap password sent is the "
+        "example value from .env.example. Set your own FIRST_RUN_PASSWORD in "
+        ".env and restart or redeploy Nojoin."
+    )
+    raise HTTPException(status_code=403, detail=FIRST_RUN_PASSWORD_EXAMPLE_DETAIL)
 
 
 def require_first_run_password(request: Request) -> None:
@@ -118,10 +192,22 @@ def require_first_run_password(request: Request) -> None:
             detail=FIRST_RUN_SETUP_ACCESS_DENIED_DETAIL,
         )
 
+    # Never unlocks, even for a caller that skipped the check above: the only
+    # password that would match is the example value everyone can read.
+    if configured_password.strip() == FIRST_RUN_PASSWORD_PLACEHOLDER:
+        logger.warning(
+            "First-run setup request denied: FIRST_RUN_PASSWORD is still the "
+            "example value from .env.example. Set your own in .env and restart "
+            "or redeploy Nojoin before initialising."
+        )
+        raise HTTPException(
+            status_code=403,
+            detail=FIRST_RUN_SETUP_ACCESS_DENIED_DETAIL,
+        )
+
     provided_password = get_first_run_password(request)
-    if not provided_password or not hmac.compare_digest(
-        provided_password,
-        configured_password,
+    if not provided_password or not _bootstrap_password_matches(
+        provided_password, configured_password
     ):
         logger.warning(
             "First-run setup request denied: missing or incorrect bootstrap password."
@@ -155,6 +241,7 @@ async def check_setup_permission(db: AsyncSession, request: Request):
     2. OR User is authenticated as Admin/Owner (JWT token in header).
     """
     await enforce_setup_rate_limit(request)
+    refuse_example_first_run_password(request)
 
     is_initialized = await is_system_initialized(db)
 
@@ -223,10 +310,10 @@ async def get_initial_config(req: Request, db: AsyncSession = Depends(get_db)):
     system_keys = await async_get_system_api_keys(db)
     llm_provider = config_manager.get("llm_provider", "gemini")
     # `llm_provider` always resolves to something (an empty LLM_PROVIDER means
-    # gemini), so on its own it cannot tell an operator who chose gemini from
-    # one who set nothing. .env.example ships LLM_PROVIDER empty and compose
-    # passes it through empty, so the raw variable is what says whether a
-    # provider was chosen.
+    # the provider of the only API key set, or else gemini), so on its own it
+    # cannot tell an operator who chose gemini from one who set nothing.
+    # .env.example ships LLM_PROVIDER empty and compose passes it through
+    # empty, so the raw variable is what says whether a provider was chosen.
     llm_provider_selected = bool(os.getenv(LLM_PROVIDER_ENV_KEY, "").strip())
     secondary_llm_provider = config_manager.get("secondary_llm_provider") or None
     selected_model_key = (
