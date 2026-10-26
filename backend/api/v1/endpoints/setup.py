@@ -126,7 +126,9 @@ def get_first_run_password(request: Request) -> Optional[str]:
     if scheme.lower() != FIRST_RUN_PASSWORD_AUTH_SCHEME.lower() or not credential:
         return None
 
-    return credential.strip()
+    # ASCII whitespace only: the header is read as Latin-1, so a bare strip()
+    # would also cut 0x85 and 0xA0, which end the UTF-8 of letters such as "à".
+    return credential.strip(" \t")
 
 
 def _bootstrap_password_matches(provided: str, configured: str) -> bool:
@@ -135,9 +137,9 @@ def _bootstrap_password_matches(provided: str, configured: str) -> bool:
     hmac.compare_digest refuses str with any non-ASCII character, so a
     FIRST_RUN_PASSWORD such as one holding a pound sign failed every unlock
     with a 500. Starlette decodes header bytes as Latin-1, so encoding back
-    recovers the bytes sent. A browser sends a character up to U+00FF as one
-    Latin-1 byte, and curl in a UTF-8 terminal sends UTF-8, so either form of
-    the configured password is accepted.
+    recovers the bytes sent. The web app and curl in a UTF-8 terminal send
+    UTF-8, while Python's http.client sends a character up to U+00FF as one
+    Latin-1 byte, so either form of the configured password is accepted.
     """
     sent = provided.encode("latin-1", errors="replace")
     candidates = [configured.encode("utf-8")]

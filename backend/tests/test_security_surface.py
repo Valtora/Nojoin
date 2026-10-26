@@ -403,9 +403,10 @@ NON_ASCII_BOOTSTRAP_PASSWORD = "bootstrap-£-secret"
 @pytest.mark.parametrize(
     "sent",
     [
-        # A browser sends each character up to U+00FF as one Latin-1 byte.
+        # Python's http.client, and requests on it, send each character up to
+        # U+00FF as one Latin-1 byte.
         NON_ASCII_BOOTSTRAP_PASSWORD.encode("latin-1"),
-        # curl in a UTF-8 terminal sends the UTF-8 bytes.
+        # The web app, and curl in a UTF-8 terminal, send the UTF-8 bytes.
         NON_ASCII_BOOTSTRAP_PASSWORD.encode("utf-8"),
     ],
     ids=["latin-1", "utf-8"],
@@ -431,6 +432,35 @@ async def test_first_run_unlock_accepts_a_non_ascii_bootstrap_password(
     assert accepted.status_code == 200
     assert refused.status_code == 403
     assert refused.json() == {"detail": "First-run setup access denied."}
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "configured",
+    [
+        # The UTF-8 for "à" ends in 0xA0 and for "ą" in 0x85. Read back from
+        # the header as Latin-1, those are characters str.strip() removes.
+        "bootstrap-secret-à",
+        "bootstrap-secret-ą",
+        # Outside Latin-1, so only its UTF-8 bytes can be sent.
+        "bootstrap-€-secret",
+    ],
+)
+async def test_first_run_unlock_accepts_any_bootstrap_password_sent_as_utf8(
+    monkeypatch, configured: str
+) -> None:
+    app, _ = _build_app(initialized=False)
+    monkeypatch.setenv(setup.FIRST_RUN_PASSWORD_ENV_KEY, configured)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url=SECURE_TEST_BASE_URL
+    ) as client:
+        response = await client.get(
+            "/api/v1/setup/initial-config",
+            headers={"Authorization": b"Bootstrap " + configured.encode("utf-8")},
+        )
+
+    assert response.status_code == 200
 
 
 @pytest.mark.anyio
