@@ -113,7 +113,7 @@ def test_the_two_groups_of_a_toggling_slot_split_and_a_steady_one_does_not() -> 
 
 @pytest.mark.parametrize("platform", synth.PLATFORMS)
 def test_easy_meetings_are_read_frame_by_frame(platform: str) -> None:
-    # 1080p at 150%: a ring two pixels wide once shrunk to 1280.
+    # 1080p at 150%: a ring three pixels wide at the sampler's 1920 px.
     spec = synth.MeetingSpec(
         platform=platform,
         seed=4242,
@@ -127,3 +127,17 @@ def test_easy_meetings_are_read_frame_by_frame(platform: str) -> None:
     # Tiles lit in fewer than three frames cannot form a slot, so a short
     # meeting is not read perfectly.
     assert accuracy >= 0.9
+
+
+def test_synthetic_frames_follow_the_samplers_change_rule() -> None:
+    rule = synth.ChangeRule()
+    still = Image.new("RGB", (1280, 720), (31, 31, 31))
+    assert rule.keep(still, 0)
+    assert not rule.keep(still, 1)
+    # A thin coloured line lighting up moves one block's blue by seven
+    # levels, as the sampler's own test has it.
+    lit = still.copy()
+    ImageDraw.Draw(lit).line((645, 400, 645, 419), fill=(95, 99, 174))
+    assert rule.keep(lit, 2)
+    assert not rule.keep(lit, 16)
+    assert rule.keep(lit, 17)

@@ -83,14 +83,21 @@ class Params:
     calibration_frames: int = 1500
     settle_frames: int = 8
     grid_reach: int = 7
+    grid_slack: int = 7
+    # How far a rounded corner may reach, and how far around a side its
+    # ridge is looked for.
+    corner_cap: float = 24.0
+    side_reach: float = 30.0
+    refine_reach: int = 6
+    settle_reach: int = 8
     grid_strength: float = 0.5
     side_chroma: float = 4.0
     side_hue_spread: float = 60.0
 
 
 DEFAULT = Params()
-# The pixel sizes above are for frames 1280 px on the long edge, the
-# sampler's; frames of another size scale them.
+# The pixel sizes above were tuned on frames 1280 px on the long edge;
+# frames of another size, such as the sampler's 1920 px, scale them.
 REFERENCE_EDGE = 1280
 
 
@@ -108,6 +115,10 @@ def scaled(params: Params, long_edge: int) -> Params:
         min_run=int(round(params.min_run * factor)) | 1,
         max_tile_width=round(params.max_tile_width * factor),
         max_thickness=params.max_thickness * factor,
+        corner_cap=params.corner_cap * factor,
+        side_reach=params.side_reach * factor,
+        refine_reach=round(params.refine_reach * factor),
+        settle_reach=round(params.settle_reach * factor),
     )
 
 
@@ -301,7 +312,7 @@ def find_rings(
         # strongest: a line inside the tile can close a smaller box too.
         closed = []
         for rough in _close(lines, left, right, params):
-            refined = _refine(thin, rough)
+            refined = _refine(thin, rough, params)
             if refined is not None and _plausible(refined[0], params):
                 ring = _check(pixels, (signal, mask), refined, params)
                 if ring is not None:
@@ -317,21 +328,31 @@ def find_rings(
     return rings
 
 
-def _refine(signal: np.ndarray, rough: Box) -> tuple[Box, float] | None:
+def _corner(width: float, height: float, params: Params, share: float = 0.2) -> int:
+    """How much of each end of a side to leave out for the rounded corner."""
+    return int(min(params.corner_cap, max(3.0, min(width, height) * share)))
+
+
+def _refine(signal: np.ndarray, rough: Box, params: Params) -> tuple[Box, float] | None:
     """Put each side on its ridge, the line through the ring's middle.
 
     The rough box is a few pixels out, more so for thick or blurred rings.
     Returns the box through the four ridges and the ring's width there.
     """
     x0, y0, x1, y1 = (int(round(v)) for v in rough)
-    corner = int(min(24, max(3, min(x1 - x0, y1 - y0) * 0.2)))
+    corner = _corner(x1 - x0, y1 - y0, params)
+    reach = params.refine_reach
     lines, widths = [], []
     for edge, horizontal in ((y0, True), (y1 - 1, True), (x0, False), (x1 - 1, False)):
-        lo = max(0, edge - 6)
+        lo = max(0, edge - reach)
         if horizontal:
-            profile = signal[lo : edge + 7, x0 + corner : x1 - corner].mean(axis=1)
+            profile = signal[lo : edge + reach + 1, x0 + corner : x1 - corner].mean(
+                axis=1
+            )
         else:
-            profile = signal[y0 + corner : y1 - corner, lo : edge + 7].mean(axis=0)
+            profile = signal[y0 + corner : y1 - corner, lo : edge + reach + 1].mean(
+                axis=0
+            )
         found = _ridge_line(profile)
         if found is None:
             return None
@@ -493,8 +514,8 @@ def _close(
     """
     rows, cols = lines
     x0, x1 = left[2] + 1, right[3] - 1
-    reach = int(min(30.0, 0.3 * (x1 - x0))) + int(params.max_thickness) + 2
-    corner = int(min(24, max(3, (x1 - x0) * 0.1)))
+    reach = int(min(params.side_reach, 0.3 * (x1 - x0))) + int(params.max_thickness) + 2
+    corner = _corner(x1 - x0, x1 - x0, params, 0.1)
     y_lo = max(0, min(left[0], right[0]) - reach)
     y_hi = min(rows.shape[0], max(left[1], right[1]) + reach)
     if x1 - x0 - 2 * corner < 4 or y_hi - y_lo < params.min_height:
@@ -532,7 +553,7 @@ def _sides_cover(
     cols: np.ndarray, box: Box, sides: tuple[Run, Run], params: Params
 ) -> bool:
     x0, y0, x1, y1 = (int(v) for v in box)
-    corner = int(min(24, max(3, min(x1 - x0, y1 - y0) * 0.2)))
+    corner = _corner(x1 - x0, y1 - y0, params)
     span = slice(y0 + corner, y1 - corner)
     if span.stop - span.start < 4:
         return False
@@ -564,7 +585,7 @@ def _check(
     if inner.size and inner.mean() > params.interior:
         return None
     ridges = _ridge_colours(
-        pixels, signal, (x0, y0, x1, y1), int(max(3, width // 2 + 2))
+        pixels, signal, (x0, y0, x1, y1), (int(max(3, width // 2 + 2)), params)
     )
     if ridges is None:
         return None
@@ -590,11 +611,15 @@ def _check(
 
 
 def _ridge_colours(
-    pixels: np.ndarray, signal: np.ndarray, box: tuple[int, int, int, int], gap: int
+    pixels: np.ndarray,
+    signal: np.ndarray,
+    box: tuple[int, int, int, int],
+    where: tuple[int, Params],
 ) -> list[tuple[np.ndarray, np.ndarray, np.ndarray]] | None:
     """Each side's mean colour along its ridge, and a few pixels either side."""
+    gap, params = where
     x0, y0, x1, y1 = box
-    corner = int(min(24, max(3, min(x1 - x0, y1 - y0) * 0.2)))
+    corner = _corner(x1 - x0, y1 - y0, params)
     along_x = np.arange(x0 + corner, x1 - corner)
     along_y = np.arange(y0 + corner, y1 - corner)
     if len(along_x) < 2 or len(along_y) < 2:
@@ -849,23 +874,30 @@ class _Scorer:
     """Ring evidence along a slot's four sides in one frame."""
 
     def __init__(
-        self, image: np.ndarray, colour: Sequence[float], params: Params = DEFAULT
+        self,
+        image: np.ndarray,
+        colour: Sequence[float],
+        params: Params = DEFAULT,
+        slack: int = 2,
     ) -> None:
         # Only what is thin counts, so a neighbour's picture of the ring's
         # colour does not raise the bands beside a side.
         self.signal = top_hat(project(image.astype(np.float32), colour), params.tophat)
         self.height, self.width = self.signal.shape
+        self.slack = slack
+        self.params = params
 
     def score(self, box: Box, width: float) -> float:
         """The weakest side's ridge above the higher of the bands beside it.
 
-        The ridge is looked for within two pixels of where the slot puts it,
-        so a slot a pixel out still reads. Standing above both sides, not
-        their mean, keeps a hard edge from scoring: JPEG's overshoot along a
-        bright tile stands only a little above that tile.
+        The ridge is looked for within ``slack`` pixels of where the slot
+        puts it, so a slot a pixel out still reads, and the bands are taken
+        beside the ridge found. Standing above both sides, not their mean,
+        keeps a hard edge from scoring: JPEG's overshoot along a bright tile
+        stands only a little above that tile.
         """
         lx, ty, rx, by = box
-        corner = min(24.0, max(3.0, min(rx - lx, by - ty) * 0.2))
+        corner = _corner(rx - lx, by - ty, self.params)
         near = math.ceil(max(0.5, width / 2)) + 1
         along_x = (int(lx + corner), int(rx - corner))
         along_y = (int(ty + corner), int(by - corner))
@@ -889,7 +921,8 @@ class _Scorer:
         the one band that fits."""
         reach = near + 3
         limit = self.height if horizontal else self.width
-        start, stop = max(0, line - reach), min(limit, line + reach + 1)
+        start = max(0, line - self.slack - reach)
+        stop = min(limit, line + self.slack + reach + 1)
         if along[1] - along[0] < 2 or not start <= line < stop:
             return None
         if horizontal:
@@ -897,13 +930,17 @@ class _Scorer:
         else:
             profile = self.signal[along[0] : along[1], start:stop].mean(axis=0)
         centre = line - start
-        peak = float(profile[max(0, centre - 2) : centre + 3].max())
+        low = max(0, centre - self.slack)
+        peak_at = low + int(np.argmax(profile[low : centre + self.slack + 1]))
         beside = [
             float(band.mean())
-            for band in (profile[: max(0, centre - near + 1)], profile[centre + near :])
+            for band in (
+                profile[max(0, peak_at - reach) : max(0, peak_at - near + 1)],
+                profile[peak_at + near : peak_at + reach + 1],
+            )
             if band.size
         ]
-        return peak - max(beside) if beside else None
+        return float(profile[peak_at]) - max(beside) if beside else None
 
 
 def _lit_slots(
@@ -1030,6 +1067,19 @@ def _grid_slots(
     ]
     if not places:
         return None
+    # A lattice drawn from a few slots can be some pixels out at its far
+    # places, so each is first read with room to spare, then settled on the
+    # ridge in the frames it was lit, then read again as a slot is.
+    loose = _score_all(frames, places, colour, params, slack=params.grid_slack)
+    _read_sightings(places, loose, {}, params)
+    places = [p for p in places if len(p.sightings) >= params.min_sightings]
+    if not places:
+        return None
+    lit_in: dict[int, set[int]] = {}
+    for index, place in enumerate(places):
+        for frame in place.sightings[: params.settle_frames]:
+            lit_in.setdefault(frame, set()).add(index)
+    _settle(frames, places, lit_in, (colour, params))
     scores = _score_all(frames, places, colour, params)
     lit = _read_sightings(places, scores, {}, params)
     keep = []
@@ -1167,10 +1217,14 @@ def _settle(
         plain = project(pixels, colour)
         thin = top_hat(plain, params.tophat)
         for index in indices:
-            total[index] = total.get(index, 0) + _side_profiles(thin, slots[index].box)
-            raw[index] = raw.get(index, 0) + _side_profiles(plain, slots[index].box)
+            total[index] = total.get(index, 0) + _side_profiles(
+                thin, slots[index].box, params
+            )
+            raw[index] = raw.get(index, 0) + _side_profiles(
+                plain, slots[index].box, params
+            )
     for index, profiles in total.items():
-        settled = _from_profiles(profiles, slots[index].box)
+        settled = _from_profiles(profiles, slots[index].box, params.settle_reach)
         if settled is None:
             continue
         slots[index].prominence = _prominence(raw[index], settled[2], settled[1])
@@ -1200,15 +1254,13 @@ def _prominence(profiles: np.ndarray, centres: Sequence[float], width: float) ->
     return sorted(shares)[1]
 
 
-SETTLE_REACH = 8
-
-
-def _side_profiles(signal: np.ndarray, box: Box) -> np.ndarray:
-    """The mean signal across each side, out to ``SETTLE_REACH`` either way."""
+def _side_profiles(signal: np.ndarray, box: Box, params: Params) -> np.ndarray:
+    """The mean signal across each side, out to ``settle_reach`` either way."""
+    reach = params.settle_reach
     lx, ty, rx, by = box
-    corner = min(24.0, max(3.0, min(rx - lx, by - ty) * 0.2))
+    corner = _corner(rx - lx, by - ty, params)
     height, width = signal.shape
-    out = np.zeros((4, 2 * SETTLE_REACH + 1), np.float64)
+    out = np.zeros((4, 2 * reach + 1), np.float64)
     sides = (
         (ty, (int(lx + corner), int(rx - corner)), True),
         (by, (int(lx + corner), int(rx - corner)), True),
@@ -1217,7 +1269,7 @@ def _side_profiles(signal: np.ndarray, box: Box) -> np.ndarray:
     )
     for k, (line, along, horizontal) in enumerate(sides):
         centre = int(round(line))
-        for j, at in enumerate(range(centre - SETTLE_REACH, centre + SETTLE_REACH + 1)):
+        for j, at in enumerate(range(centre - reach, centre + reach + 1)):
             if 0 <= at < (height if horizontal else width) and along[1] > along[0]:
                 band = (
                     signal[at, along[0] : along[1]]
@@ -1229,7 +1281,7 @@ def _side_profiles(signal: np.ndarray, box: Box) -> np.ndarray:
 
 
 def _from_profiles(
-    profiles: np.ndarray, box: Box
+    profiles: np.ndarray, box: Box, reach: int
 ) -> tuple[Box, float, list[float]] | None:
     """The settled box, the ring's width, and where each side's ridge sits
     in its profile (top, bottom, left, right)."""
@@ -1241,7 +1293,7 @@ def _from_profiles(
         found = _ridge_line(profiles[side])
         if found is None:
             return None
-        lines.append(int(round(line)) - SETTLE_REACH + found[0])
+        lines.append(int(round(line)) - reach + found[0])
         widths.append(found[1])
         centres[side] = found[0]
     left, top, right, bottom = lines
@@ -1271,13 +1323,14 @@ def _score_all(
     slots: Sequence[Slot],
     colour: Sequence[float],
     params: Params = DEFAULT,
+    slack: int = 2,
 ) -> np.ndarray:
     """Every slot's ring score in every frame."""
     scores = np.zeros((len(frames), len(slots)), np.float32)
     if not slots:
         return scores
     for frame in range(len(frames)):
-        scorer = _Scorer(frames[frame], colour, params)
+        scorer = _Scorer(frames[frame], colour, params, slack)
         scores[frame] = [scorer.score(s.box, s.thickness) for s in slots]
     return scores
 

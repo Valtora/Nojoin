@@ -1,8 +1,9 @@
 """The detector's gate: per-frame accuracy on synthetic meetings.
 
 A frame is right when the detector's lit tiles and the drawn ones match one
-for one (IoU of at least 0.5), or when both are empty. The development seeds
-tune the detector; the held-out seeds are only ever scored. Run it as
+for one (IoU of at least 0.5), or when both are empty. The training and
+development seeds tune the detector; the held-out seeds are only ever
+scored, and are the gate's. Run it as
 
     python -m speaker_frames.evaluate --set held-out --meetings 30
 
@@ -24,8 +25,10 @@ from . import synth
 from .detect import Box, detect_meeting, iou
 
 GATE = 0.99
-DEVELOPMENT_SEED = 1_000
-HELD_OUT_SEED = 500_000
+# Training and development seeds tune the detector. The held-out seeds are
+# only ever scored, and are the gate's. The development set was the held-out
+# set until 26 Oct 2026, when tuning had seen it and a fresh one replaced it.
+SEEDS = {"training": 1_000, "development": 500_000, "held-out": 2_600_000}
 
 
 @dataclass(frozen=True)
@@ -61,7 +64,7 @@ def layout_name(truth: synth.FrameTruth) -> str:
 
 def specs(which: str, meetings: int, **overrides: object) -> list[synth.MeetingSpec]:
     """Meetings spread evenly over every screen size and scaling."""
-    base = HELD_OUT_SEED if which == "held-out" else DEVELOPMENT_SEED
+    base = SEEDS[which]
     out = []
     for p, platform in enumerate(synth.PLATFORMS):
         for i in range(meetings):
@@ -167,9 +170,7 @@ def run(
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--set", choices=("development", "held-out"), default="development"
-    )
+    parser.add_argument("--set", choices=tuple(SEEDS), default="training")
     parser.add_argument("--meetings", type=int, default=30, help="per platform")
     parser.add_argument("--frames", type=int, default=60)
     parser.add_argument("--long-edge", type=int, default=synth.SAMPLER_LONG_EDGE)

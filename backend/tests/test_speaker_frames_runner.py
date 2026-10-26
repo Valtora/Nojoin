@@ -70,7 +70,10 @@ def _study(root: Path, meetings: int = 2) -> tuple[Path, Path, list[str]]:
         folder = frames_root / public_id
         folder.mkdir()
         index = []
-        for k, frame in enumerate(renderer.frames()):
+        # The sampler keeps a frame on a tick when the screen changed; a tick
+        # it passed over for that is not lost.
+        for frame in renderer.frames():
+            k = frame.tick
             sequence, offset = k // 10, (k % 10) * 1000
             (folder / f"{sequence}-{offset}.jpg").write_bytes(frame.jpeg)
             index.append(
@@ -80,8 +83,8 @@ def _study(root: Path, meetings: int = 2) -> tuple[Path, Path, list[str]]:
                     "received_at": "2026-10-26T00:00:00Z",
                     "bytes": len(frame.jpeg),
                     "sha256": hashlib.sha256(frame.jpeg).hexdigest(),
-                    "width": 1280,
-                    "height": 720,
+                    "width": 1920,
+                    "height": 1080,
                     "platform_hint": None,
                     "tick": k,
                     "lost_before": 0,
@@ -163,6 +166,9 @@ def test_the_runner_writes_summary_json_and_nothing_else(
             str(out),
             "--gate-meetings",
             "1",
+            # Short meetings: this checks what the runner writes, not the gate.
+            "--gate-ticks",
+            "12",
             "--workers",
             "2",
         ],
@@ -221,7 +227,7 @@ def test_the_analysis_scores_a_synthetic_study(
     assert calibration["agreement"] > 0.5
     held_out = result["meetings"][ids[1]]
     assert held_out["role"] == "held_out"
-    assert held_out["frames"] == 24
+    assert 3 <= held_out["frames"] <= 24
     assert held_out["visible_speech_share"] > 0.5
     assert result["rules"]["precondition"]["result"] == "pass"
 

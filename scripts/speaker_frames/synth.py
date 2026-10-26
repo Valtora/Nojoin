@@ -5,9 +5,11 @@ the three apps: a gallery of 2 to 49 tiles, the filmstrip beside someone's
 screen share, speaker view, cameras on and off, Meet's audio-level indicator,
 and each app's ring style and colour. The meeting window sits anywhere on an
 Entire Screen desktop of 1080p to 4K at 100 to 200% scaling, beside other
-windows whose accents are close to the ring's colour. Every frame is then
-shrunk to the sampler's long edge and JPEG-encoded at quality 0.8, as the
-browser does, and comes out with the boxes of the tiles that are lit.
+windows whose accents are close to the ring's colour. One frame is drawn per
+second of audio and shrunk to the sampler's long edge with a filtered
+resize, as the sampler's high-quality canvas draw does. The sampler's change
+rule then decides which frames are kept, and those are JPEG-encoded at
+quality 0.8 and come out with the boxes of the tiles that are lit.
 
 Nothing here reads a file or keeps an image: frames exist only as bytes the
 caller asked for.
@@ -30,7 +32,7 @@ RGB = tuple[int, int, int]
 Box = tuple[float, float, float, float]
 
 PLATFORMS = ("teams", "zoom", "meet")
-SAMPLER_LONG_EDGE = 1280
+SAMPLER_LONG_EDGE = 1920
 SAMPLER_JPEG_QUALITY = 80  # canvas.toBlob(..., "image/jpeg", 0.8)
 SCREENS = (
     (1920, 1080),
@@ -85,11 +87,14 @@ class MeetingSpec:
     participants: int | None = None
     long_edge: int = SAMPLER_LONG_EDGE
     quality: int = SAMPLER_JPEG_QUALITY
-    # "area" shrinks with a filter, as a high-quality canvas resize does.
-    # "point" samples without one, as a GPU bilinear draw with no mipmaps.
+    # "area" shrinks with a filter, as the sampler's high-quality canvas
+    # resize does. "point" samples without one, as a GPU bilinear draw with
+    # no mipmaps would.
     resize: str = "area"
     # Which layouts the meeting may use: gallery, share and speaker.
     kinds: tuple[str, ...] = ("gallery", "share", "speaker")
+    # Keep only the frames the sampler's change rule keeps.
+    change_rule: bool = True
 
 
 @dataclass(frozen=True)
@@ -107,6 +112,8 @@ class FrameTruth:
 class SyntheticFrame:
     jpeg: bytes
     truth: FrameTruth
+    # The audio tick it was sampled on, one a second from 0.
+    tick: int = 0
 
 
 @dataclass
@@ -541,15 +548,21 @@ class MeetingRenderer:
         return self.ctx.screen
 
     def frames(self) -> Iterator[SyntheticFrame]:
+        """The frames the sampler keeps, one tick a second."""
         frame = 0
+        rule = ChangeRule()
         for index, segment in enumerate(self.segments):
             base = _render_base(
                 segment, self.ctx, random.Random(self.ctx.spec.seed * 31 + index)
             )
             for _ in range(segment.frames):
                 image, lit = self._draw(segment, base, frame)
-                truth = self._truth(segment, lit, index)
-                yield SyntheticFrame(browser_encode(image, self.ctx.spec), truth)
+                small = browser_shrink(image, self.ctx.spec)
+                if not self.ctx.spec.change_rule or rule.keep(small, frame):
+                    truth = self._truth(segment, lit, index)
+                    yield SyntheticFrame(
+                        browser_jpeg(small, self.ctx.spec), truth, frame
+                    )
                 frame += 1
 
     def _draw(
@@ -1031,15 +1044,63 @@ def _draw_share(
 
 def browser_encode(image: Image.Image, spec: MeetingSpec) -> bytes:
     """Shrink to the sampler's long edge and encode as the browser would."""
+    return browser_jpeg(browser_shrink(image, spec), spec)
+
+
+def browser_shrink(image: Image.Image, spec: MeetingSpec) -> Image.Image:
     size = _out_size(Screen(image.width, image.height, 1.0), spec.long_edge)
     if spec.resize == "point":
-        small = _point_resize(image, size)
-    else:
-        small = image.resize(size, Image.Resampling.BILINEAR)
+        return _point_resize(image, size)
+    return image.resize(size, Image.Resampling.BILINEAR)
+
+
+def browser_jpeg(small: Image.Image, spec: MeetingSpec) -> bytes:
     buffer = io.BytesIO()
     # 4:2:0 chroma, as Chrome's encoder uses.
     small.save(buffer, format="JPEG", quality=spec.quality, subsampling=2)
     return buffer.getvalue()
+
+
+# The sampler's change rule (frontend/src/lib/capture/screenStudy/changeRule.ts).
+GRID = (36, 64)
+CHANGE_LEVELS = 4
+KEEP_ALIVE_TICKS = 15
+
+
+def change_grid(small: Image.Image) -> np.ndarray:
+    """Red, green and blue averages over a 64 x 36 grid of blocks, rounded."""
+    pixels = np.asarray(small, dtype=np.float64)
+    height, width = pixels.shape[:2]
+    rows = np.minimum(GRID[0] - 1, (np.arange(height) * GRID[0]) // height)
+    cols = np.minimum(GRID[1] - 1, (np.arange(width) * GRID[1]) // width)
+    cell = (rows[:, None] * GRID[1] + cols[None, :]).ravel()
+    counts = np.bincount(cell, minlength=GRID[0] * GRID[1])
+    means = [
+        np.bincount(cell, weights=pixels[..., c].ravel(), minlength=counts.size)
+        / counts
+        for c in range(3)
+    ]
+    return np.floor(np.stack(means, axis=1) + 0.5)
+
+
+class ChangeRule:
+    """Keeps a frame when any channel of any block moved more than four levels
+    from the last frame kept, or 15 ticks after it."""
+
+    def __init__(self) -> None:
+        self.grid: np.ndarray | None = None
+        self.tick = 0
+
+    def keep(self, small: Image.Image, tick: int) -> bool:
+        grid = change_grid(small)
+        if (
+            self.grid is None
+            or tick - self.tick >= KEEP_ALIVE_TICKS
+            or np.abs(grid - self.grid).max() > CHANGE_LEVELS
+        ):
+            self.grid, self.tick = grid, tick
+            return True
+        return False
 
 
 def _point_resize(image: Image.Image, size: tuple[int, int]) -> Image.Image:

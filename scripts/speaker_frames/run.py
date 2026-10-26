@@ -220,11 +220,16 @@ def _visible(
     return visible
 
 
-def gate(meetings: int, workers: int) -> dict[str, Any]:
-    """The detector's held-out synthetic gate."""
+def gate(meetings: int, workers: int, ticks: int | None = None) -> dict[str, Any]:
+    """The detector's held-out synthetic gate.
+
+    ``ticks`` shortens each meeting, for tests; the gate itself runs them
+    whole.
+    """
+    shorter = {} if ticks is None else {"frames": ticks}
     scores: list[evaluate.FrameScore] = []
     for found in evaluate.parallel(
-        evaluate.score_meeting, evaluate.specs("held-out", meetings), workers
+        evaluate.score_meeting, evaluate.specs("held-out", meetings, **shorter), workers
     ):
         scores.extend(found)
     report = evaluate.summarise(scores)
@@ -326,6 +331,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--gate-meetings", type=int, default=GATE_MEETINGS, help="per platform"
     )
+    parser.add_argument(
+        "--gate-ticks", type=int, default=None, help="per meeting, for tests"
+    )
     parser.add_argument("--workers", type=int, default=1)
     args = parser.parse_args(argv)
     if any(args.out.iterdir()):
@@ -339,7 +347,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "prereg_sha256": prereg,
         "code_sha256": code_sha256(),
     }
-    summary["synthetic_gate"] = gate(args.gate_meetings, args.workers)
+    summary["synthetic_gate"] = gate(args.gate_meetings, args.workers, args.gate_ticks)
     recordings = load_timeline(args.timeline)
     ids = [r.public_id for r in recordings]
     if summary["synthetic_gate"]["result"] == metrics.PASS:
