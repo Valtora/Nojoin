@@ -265,22 +265,51 @@ export const getSupportedAudioFormats = (): string[] => {
   ];
 };
 
-export const batchArchiveRecordings = async (ids: RecordingId[]): Promise<void> => {
-  await api.post("/recordings/batch/archive", { recording_ids: ids });
+/**
+ * What a batch recording action did, as the server counts it: the recordings
+ * it changed, by id, and how many of those asked for it left as they were.
+ */
+export interface BatchRecordingResult {
+  count: number;
+  skipped: number;
+  recording_ids: RecordingId[];
+}
+
+export const batchArchiveRecordings = async (
+  ids: RecordingId[],
+): Promise<BatchRecordingResult> => {
+  const response = await api.post<BatchRecordingResult>("/recordings/batch/archive", {
+    recording_ids: ids,
+  });
+  return response.data;
 };
 
-export const batchRestoreRecordings = async (ids: RecordingId[]): Promise<void> => {
-  await api.post("/recordings/batch/restore", { recording_ids: ids });
+/** Back to Recordings, from Archived or from the bin, as a single restore does. */
+export const batchRestoreRecordings = async (
+  ids: RecordingId[],
+): Promise<BatchRecordingResult> => {
+  const response = await api.post<BatchRecordingResult>("/recordings/batch/restore", {
+    recording_ids: ids,
+  });
+  return response.data;
 };
 
 export const batchSoftDeleteRecordings = async (
   ids: RecordingId[],
-): Promise<void> => {
-  await api.post("/recordings/batch/soft-delete", { recording_ids: ids });
+): Promise<BatchRecordingResult> => {
+  const response = await api.post<BatchRecordingResult>(
+    "/recordings/batch/soft-delete",
+    { recording_ids: ids },
+  );
+  return response.data;
 };
 
+/** Deletes for good only the recordings still in the bin. */
 export const batchPermanentlyDeleteRecordings = async (
   ids: RecordingId[],
-): Promise<void> => {
-  await api.post("/recordings/batch/permanent", { recording_ids: ids });
+): Promise<BatchRecordingResult> => {
+  const response = await api.post<BatchRecordingResult>("/recordings/batch/permanent", {
+    recording_ids: ids,
+  });
+  return response.data;
 };

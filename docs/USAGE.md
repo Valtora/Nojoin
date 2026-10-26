@@ -45,9 +45,18 @@ The **Tasks** page has **Open**, **Completed** and **Archived** views and a **Cr
 
 - **Search...** above the list matches meeting titles, tags and speaker names. Its filter button adds a date filter (a range, after or before) and a speaker filter.
 - **Tags** in the navigation hold your tags, which can nest. Select a tag to filter the list by it, drag a tag onto another to nest it, and right-click one to rename, add a sub-tag, promote or delete it. Tag a single meeting from its header. When a new tag, sub-tag, rename or move is refused, for example a name you already use or a tag dropped onto its own sub-tag, a notification gives the reason, and a refused name stays typed so you can correct it. In a meeting's header or the batch bar, typing a name you already use adds that tag instead of creating another.
-- Right-click a recording for **Rename**, **Retry Speaker Inference**, **Retry Processing**, **Show Recording Info**, **Archive** and **Delete**. An unfinished recording offers **Discard Recording** in place of **Retry Processing**.
-- **Archive** moves a recording to **Archived**. **Delete** moves it to **Deleted**, the bin, where **Restore** brings it back and **Delete Permanently** removes it, its audio and its attached documents for good. Recordings stay in the bin until you delete them permanently.
-- Ctrl-click (Cmd-click on a Mac) or Shift-click to select several recordings, then use the batch bar to **Add Tag**, **Archive**, **Delete**, **Restore** or **Permanently Delete** them.
+- Right-click a recording for **Rename**, **Retry Speaker Inference**, **Retry Processing**, **Show Recording Info**, **Archive** and **Move to Bin**. An unfinished recording offers **Discard Recording** in place of **Retry Processing**. In **Archived** the menu has **Unarchive** and **Move to Bin**, and in **Deleted** it has **Restore** and **Delete Permanently**.
+- **Archive** moves a recording to **Archived**, and **Unarchive** brings it back. **Move to Bin** moves it to **Deleted**, the bin, where **Restore** returns it to **Recordings**, wherever it was binned from, and **Delete Permanently** removes it, its audio and its attached documents for good. Recordings stay in the bin until you delete them permanently.
+- Only **Delete Permanently** asks first. The others say how many recordings they changed and offer **Undo** for ten seconds.
+
+### Selecting Several Recordings
+
+The **Recordings**, **Archived** and **Deleted** views select the same way.
+
+- Each recording has a checkbox, shown when you point at the recording or tab to it and on every recording once one is selected. On a touch screen, press and hold a recording to select it. **Select all** above the list selects every recording shown, and shows a partial tick when only some are.
+- While anything is selected, clicking a recording selects or clears it instead of opening it. Ctrl-click (Cmd-click on a Mac) does the same at any time, and Shift-click selects every recording from the last one you selected or cleared. From the keyboard, Space selects or clears the focused recording, Shift+Space extends the selection to it, and Escape clears the selection.
+- The selection only holds recordings shown in the list, so a search or filter that hides a recording, or an action from its own menu that moves it, takes it out of the selection.
+- The batch bar under the list acts on the selection: **Tag**, **Archive** and **Move to Bin** in **Recordings**, **Tag**, **Unarchive** and **Move to Bin** in **Archived**, and **Restore** and **Delete Permanently** in **Deleted**. **Delete Permanently** deletes only recordings still in the bin.
 
 ## People Workspace
 
