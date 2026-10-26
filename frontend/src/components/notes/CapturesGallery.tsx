@@ -64,7 +64,7 @@ export default function CapturesGallery({
         <ButtonBase
           data-ui-fill="inset"
           type="button"
-          onClick={() => open?.(note.id)}
+          onClick={(event) => open?.(note.id, event.currentTarget)}
           aria-label={`Open ${file.title}, on the note at ${time}`}
           className="flex aspect-video w-full items-center justify-center overflow-hidden rounded-md border border-surface-border bg-surface-inset outline-none transition-colors hover:border-action-border focus-visible:ring-2 focus-visible:ring-action"
         >
@@ -107,7 +107,9 @@ export default function CapturesGallery({
   return (
     <SurfaceBase kind="pane"
       data-testid="captures-gallery"
-      className={cn("min-h-0 overflow-y-auto p-3 pb-clear-floating-3", className)}
+      // Focus lands here when a capture's Remove takes away the button pressed.
+      tabIndex={-1}
+      className={cn("min-h-0 overflow-y-auto p-3 pb-clear-floating-3 outline-none", className)}
     >
       {placements === null ? (
         <p className="p-4 text-center text-sm italic text-contrast-helper">Loading captures…</p>
