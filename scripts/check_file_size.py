@@ -35,9 +35,7 @@ EXEMPT_PREFIXES = ("backend/tests/", "backend/alembic/versions/")
 # the gate was introduced, mapped to their recorded line count. A listed file is
 # allowed up to its recorded count and FAILS if it grows beyond it. Lower the
 # count when a file shrinks. Do not add new entries; remove them over time.
-GRANDFATHERED: dict[str, int] = {
-    "backend/utils/canonical_pipeline/core.py": 1974,
-}
+GRANDFATHERED: dict[str, int] = {}
 
 
 def tracked_python_files() -> list[str]:

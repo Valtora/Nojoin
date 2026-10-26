@@ -185,7 +185,13 @@ max-complexity = 10
 "backend/services/jwt_revocation_service.py" = ["PLR0913"]
 "backend/utils/audio_windows.py" = ["PLR0913"]
 "backend/utils/canonical_pipeline/constants.py" = ["PLR0913"]
-"backend/utils/canonical_pipeline/core.py" = ["C901", "PLR0912", "PLR0913", "PLR0915"]
+# Pure moves from core.py carry only their existing violations; no new logic
+# or exemptions beyond that baseline. Core no longer needs C901/PLR0912.
+"backend/utils/canonical_pipeline/core.py" = ["PLR0913", "PLR0915"]
+"backend/utils/canonical_pipeline/assignment.py" = ["PLR0913"]
+"backend/utils/canonical_pipeline/finalization.py" = ["C901", "PLR0912", "PLR0913", "PLR0915"]
+"backend/utils/canonical_pipeline/persistence.py" = ["PLR0913", "PLR0915"]
+"backend/utils/canonical_pipeline/queries.py" = ["PLR0913"]
 "backend/utils/canonical_pipeline/identity_fields.py" = ["PLR0913"]
 "backend/utils/canonical_pipeline/speaker.py" = ["C901", "PLR0912", "PLR0913"]
 # Carries _find_matching_recording_speaker, split out of speaker.py unchanged;
