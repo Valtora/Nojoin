@@ -29,6 +29,7 @@ import sys
 import types
 from concurrent.futures import CancelledError
 from pathlib import Path
+from unittest.mock import Mock
 
 import numpy as np
 import pytest
@@ -41,8 +42,11 @@ from pyannote.core import Annotation, Segment
 
 from backend.models.recording import ClientStatus, RecordingStatus
 from backend.models.transcript import Transcript
+from backend.processing import final_diarization
 from backend.processing import transcribe as real_transcribe
 from backend.processing.engines.base import VAD_MUTED_INPUT
+from backend.services import model_preparation
+from backend.utils import nemotron_lock, nemotron_model_utils
 from backend.utils.status_manager import update_recording_status
 from backend.worker import tasks as tasks_module
 from backend.worker.tasks import vad_stage
@@ -150,6 +154,11 @@ class _FakeSession:
 
 def _install_happy_path_modules(monkeypatch, *, diarization_result=None, segments=None):
     """Install the heavy-import stubs shared by the success-path tests."""
+    # First-use native speakers can request preparation on GPU hosts. Keep
+    # these stage tests independent of Redis and any pending cache marker.
+    monkeypatch.setattr(
+        model_preparation, "request_nemotron_preparation", lambda **kwargs: None
+    )
     _install(
         monkeypatch,
         "backend.processing.audio_preprocessing",
@@ -1761,11 +1770,19 @@ def test_a_time_limit_while_writing_the_union_stops_the_task(
     transcript_status: str,
     failure_type: type[Exception],
 ) -> None:
+    # Exercise first-use native preparation on CPU-only hosts too. A fresh
+    # cache must never hide an unstubbed dispatch behind a pending marker.
+    monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path / "empty-hub"))
+    assert nemotron_lock.pending_task() is None
+    assert nemotron_model_utils.inspect_nemotron_model().state == "missing"
+    monkeypatch.setattr(final_diarization, "_effective_device", lambda config: "cuda")
     recording = _FakeRecording(734)
     transcript = _FakeTranscript(734)
     transcript.transcript_status = transcript_status
     session = _FakeSession(recording, transcript)
     _install_happy_path_modules(monkeypatch)
+    preparation = Mock(wraps=model_preparation.request_nemotron_preparation)
+    monkeypatch.setattr(model_preparation, "request_nemotron_preparation", preparation)
     monkeypatch.setattr(
         tasks_module, "update_recording_status", update_recording_status
     )
@@ -1783,6 +1800,7 @@ def test_a_time_limit_while_writing_the_union_stops_the_task(
         _run_task(monkeypatch, session, recording_id=734)
 
     assert raised.value is failure
+    preparation.assert_called_once_with(recording_id=734)
     assert "transcribe" not in seen["order"]
     assert transcript.transcript_status == transcript_status
     assert transcript.error_message is None
