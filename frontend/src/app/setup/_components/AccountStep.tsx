@@ -47,10 +47,10 @@ export default function AccountStep({
     >
       <div className="text-center mb-6">
         <h2 className="text-xl font-semibold text-foreground">
-          Create Admin Account
+          Create Owner Account
         </h2>
         <p className="text-sm text-contrast-helper">
-          Set up your administrator credentials
+          The Owner manages this server&apos;s users and settings
         </p>
       </div>
 
@@ -121,7 +121,8 @@ export default function AccountStep({
           Include a sample meeting
           <span className="block text-xs text-contrast-helper mt-0.5">
             A short recording with its transcript, notes, and chat already in
-            place. Needs no AI provider. Removable in Settings &gt; Help.
+            place. Needs no AI provider. Delete it like any other meeting;
+            Settings &gt; Help can create it again.
           </span>
         </span>
       </label>

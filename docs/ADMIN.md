@@ -59,7 +59,7 @@ LLM provider API keys and the Hugging Face token are set only in `.env`, followe
 
 **Settings > AI providers** sets the AI everyone uses unless they connect their own subscription ([USAGE.md](USAGE.md#your-own-subscription-cli-oauth)).
 
-- **Default provider** shows the provider set by `LLM_PROVIDER` and lets you choose its model. No provider has a default model: until you choose one the page reads **No model selected** and every AI feature fails. **Test connection** checks the key or address and reloads the model list without saving.
+- **Default provider** shows the install's provider, set by `LLM_PROVIDER` or, when that is empty, by the only provider key in `.env`, and lets you choose its model. No provider has a default model: until you choose one the page reads **No model selected** and every AI feature fails. **Test connection** checks the key or address and reloads the model list without saving.
 - Anthropic's API does not accept a temperature setting on any Claude model, so Claude's notes and titles vary more from run to run than other providers', which Nojoin runs at a low temperature.
 - With Ollama, the page shows the address from `OLLAMA_API_URL` and sets the **Context window** sent as `num_ctx`, with the GPU memory it needs at about 190 KiB per token on a 14B model. `OLLAMA_CONTEXT_WINDOW` in [DEPLOYMENT.md](DEPLOYMENT.md) explains sizing, and [USAGE.md](USAGE.md#long-meetings-and-ollama) what happens to a meeting longer than the window.
 - **Meeting Edge** turns live guidance on or off for everyone and chooses its model.

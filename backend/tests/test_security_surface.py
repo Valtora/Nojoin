@@ -663,6 +663,14 @@ async def _initial_config_with_empty_llm_provider(monkeypatch, tmp_path) -> dict
     return response.json()
 
 
+def _only_provider_key(monkeypatch, variable: str | None, value: str = "") -> None:
+    """Leave at most one provider key set: a single key chooses its provider."""
+    for name in ("GEMINI_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"):
+        monkeypatch.delenv(name, raising=False)
+    if variable:
+        monkeypatch.setenv(variable, value)
+
+
 @pytest.mark.anyio
 async def test_initial_config_reports_no_provider_when_none_was_chosen(
     monkeypatch, tmp_path
@@ -671,7 +679,7 @@ async def test_initial_config_reports_no_provider_when_none_was_chosen(
     signal to tell "the operator chose gemini" from "the operator chose
     nothing". Without it, an install with an empty LLM_PROVIDER (which is what
     .env.example ships) was told its gemini key was missing."""
-    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    _only_provider_key(monkeypatch, None)
 
     body = await _initial_config_with_empty_llm_provider(monkeypatch, tmp_path)
 
@@ -686,13 +694,28 @@ async def test_initial_config_offers_a_gemini_key_when_no_provider_was_chosen(
 ) -> None:
     """Gemini is the default provider, so a Gemini key alone is a working
     server route, and the wizard has to be told the provider it belongs to."""
-    monkeypatch.setenv("GEMINI_API_KEY", "gemini-secret-value")
+    _only_provider_key(monkeypatch, "GEMINI_API_KEY", "gemini-secret-value")
 
     body = await _initial_config_with_empty_llm_provider(monkeypatch, tmp_path)
 
     assert body["llm_provider"] == "gemini"
     assert body["llm_provider_selected"] is False
     assert body["gemini_api_key"] == "gem...alue"
+
+
+@pytest.mark.anyio
+async def test_initial_config_offers_the_only_key_when_no_provider_was_chosen(
+    monkeypatch, tmp_path
+) -> None:
+    """Only OPENAI_API_KEY set used to resolve to gemini, so the wizard said
+    no provider was configured although the operator had set one up."""
+    _only_provider_key(monkeypatch, "OPENAI_API_KEY", "sk-openai-secret-value")
+
+    body = await _initial_config_with_empty_llm_provider(monkeypatch, tmp_path)
+
+    assert body["llm_provider"] == "openai"
+    assert body["llm_provider_selected"] is False
+    assert body["openai_api_key"] == "sk-...alue"
 
 
 @pytest.mark.anyio

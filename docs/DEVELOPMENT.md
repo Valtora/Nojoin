@@ -671,9 +671,9 @@ x-shared-app-environment: &shared-app-environment
   BACKUP_EXPORT_DIR: ${BACKUP_EXPORT_DIR:-}
   NOJOIN_UMASK: ${NOJOIN_UMASK:-}
   NOJOIN_STORAGE_HYGIENE: ${NOJOIN_STORAGE_HYGIENE:-}
-  # Left empty: config_manager reads an empty value as gemini, and the setup
-  # wizard can only report that no provider was chosen if the variable reaches
-  # it empty.
+  # Left empty: config_manager reads an empty value as the provider of the
+  # only API key set, or else gemini, and the setup wizard can only report that
+  # no provider was chosen if the variable reaches it empty.
   LLM_PROVIDER: ${LLM_PROVIDER:-}
   GEMINI_API_KEY: ${GEMINI_API_KEY:-}
   OPENAI_API_KEY: ${OPENAI_API_KEY:-}

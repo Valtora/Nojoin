@@ -1,4 +1,5 @@
-"""An empty LLM_PROVIDER means gemini, whatever else holds a provider.
+"""An empty LLM_PROVIDER means gemini, whatever else holds a provider, unless
+exactly one provider key is set, which then names the provider (#724).
 
 docker-compose.example.yml filled in gemini for an unset LLM_PROVIDER until
 #477, and now passes the variable through empty so the setup wizard can see
@@ -19,6 +20,15 @@ from backend.utils.llm_config import (
     _apply_owner_provider_override,
     _merge_llm_config,
 )
+
+PROVIDER_KEY_VARIABLES = ("GEMINI_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY")
+
+
+@pytest.fixture(autouse=True)
+def _no_provider_keys(monkeypatch):
+    """A key in the developer's own environment would choose a provider."""
+    for variable in PROVIDER_KEY_VARIABLES:
+        monkeypatch.delenv(variable, raising=False)
 
 
 def _manager(tmp_path, on_disk: dict) -> ConfigManager:
@@ -91,3 +101,68 @@ def test_an_empty_llm_provider_is_not_replaced_by_the_owners_legacy_provider(
     assert resolved.provider == "gemini"
     assert resolved.api_key == "gemini-key"
     assert resolved.model == "gemini-flash-latest"
+
+
+@pytest.mark.parametrize(
+    ("variable", "provider"),
+    [
+        ("OPENAI_API_KEY", "openai"),
+        ("ANTHROPIC_API_KEY", "anthropic"),
+        ("GEMINI_API_KEY", "gemini"),
+    ],
+)
+def test_an_empty_llm_provider_follows_the_only_key_set(
+    tmp_path, monkeypatch, variable: str, provider: str
+) -> None:
+    """Only OPENAI_API_KEY set, with LLM_PROVIDER empty, read as gemini: every
+    AI request went to Gemini with no key, and the setup wizard said no
+    provider was configured."""
+    monkeypatch.setenv("LLM_PROVIDER", "")
+    monkeypatch.setenv(variable, "sk-test-value")
+
+    manager = _manager(tmp_path, {"llm_provider": "ollama"})
+
+    assert manager.get("llm_provider") == provider
+
+
+def test_several_keys_keep_the_default_provider(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("LLM_PROVIDER", "")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-value")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test-value")
+
+    assert _manager(tmp_path, {}).get("llm_provider") == DEFAULT_LLM_PROVIDER
+
+
+def test_a_blank_key_is_not_a_key(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("LLM_PROVIDER", "")
+    monkeypatch.setenv("GEMINI_API_KEY", "gemini-key")
+    monkeypatch.setenv("OPENAI_API_KEY", "  ")
+
+    assert _manager(tmp_path, {}).get("llm_provider") == "gemini"
+
+
+def test_a_set_llm_provider_outranks_a_single_key(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("LLM_PROVIDER", "ollama")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-value")
+
+    assert _manager(tmp_path, {}).get("llm_provider") == "ollama"
+
+
+def test_the_inferred_provider_and_its_key_resolve_together(
+    tmp_path, monkeypatch
+) -> None:
+    """What processing runs with: the key's provider, its key and its model."""
+    monkeypatch.setenv("LLM_PROVIDER", "")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-value")
+    manager = _manager(tmp_path, {"openai_model": "gpt-test"})
+
+    resolved = _merge_llm_config(
+        base_config=manager.get_all(),
+        system_keys={"openai_api_key": "sk-test-value"},
+        owner_settings=None,
+        user_settings=None,
+    )
+
+    assert resolved.provider == "openai"
+    assert resolved.api_key == "sk-test-value"
+    assert resolved.model == "gpt-test"
