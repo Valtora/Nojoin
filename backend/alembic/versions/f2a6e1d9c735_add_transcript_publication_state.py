@@ -1,7 +1,7 @@
 """Add transcript publication sequence and runtime settling metadata.
 
 Revision ID: f2a6e1d9c735
-Revises: c4d81e6a2f90
+Revises: 7bb9c74f9946
 """
 
 import sqlalchemy as sa
@@ -9,7 +9,7 @@ from alembic import op
 from sqlalchemy.dialects.postgresql import JSONB
 
 revision = "f2a6e1d9c735"
-down_revision = "c4d81e6a2f90"
+down_revision = "7bb9c74f9946"
 branch_labels = None
 depends_on = None
 
