@@ -1,5 +1,6 @@
 import type { PeopleTag, RecordingId, Tag } from "@/types";
 import api from "./client";
+import type { BatchRecordingResult } from "./recordings";
 
 export const getTags = async (): Promise<Tag[]> => {
   const response = await api.get<Tag[]>("/tags/");
@@ -76,16 +77,21 @@ export const deletePeopleTag = async (id: number): Promise<void> => {
 export const batchAddTagToRecordings = async (
   ids: RecordingId[],
   tagName: string,
-): Promise<void> => {
-  await api.post("/tags/batch/add", { recording_ids: ids, tag_name: tagName });
+): Promise<BatchRecordingResult> => {
+  const response = await api.post<BatchRecordingResult>("/tags/batch/add", {
+    recording_ids: ids,
+    tag_name: tagName,
+  });
+  return response.data;
 };
 
 export const batchRemoveTagFromRecordings = async (
   ids: RecordingId[],
   tagName: string,
-): Promise<void> => {
-  await api.post("/tags/batch/remove", {
+): Promise<BatchRecordingResult> => {
+  const response = await api.post<BatchRecordingResult>("/tags/batch/remove", {
     recording_ids: ids,
     tag_name: tagName,
   });
+  return response.data;
 };

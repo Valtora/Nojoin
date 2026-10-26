@@ -1,268 +1,116 @@
 "use client";
 
-import { ButtonBase } from '@/components/ui/nativeBases';
-import { SurfaceBase } from '@/components/ui/SurfaceBase';
-import { useNavigationStore } from "@/lib/store";
-import { Archive, Trash2, RotateCcw, Tag, X } from "lucide-react";
-import { useState } from "react";
-import ConfirmationModal from "./ConfirmationModal";
+import { SurfaceBase } from "@/components/ui/SurfaceBase";
+import { cn } from "@/lib/cn";
+import type { ViewType } from "@/lib/store";
+import { X } from "lucide-react";
+import { useState, type KeyboardEvent } from "react";
 import BatchTagModal from "./BatchTagModal";
 import {
-  batchArchiveRecordings,
-  batchRestoreRecordings,
-  batchSoftDeleteRecordings,
-  batchPermanentlyDeleteRecordings,
-  batchAddTagToRecordings,
-  batchRemoveTagFromRecordings,
-} from "@/lib/api";
-import { forgetRecordingNotes } from "@/lib/notes/noteOutboxes";
-import { useNotificationStore } from "@/lib/notificationStore";
-import { notifyRequestError } from "@/lib/notifyRequestError";
+  LIST_ACTIONS,
+  VIEW_ACTIONS,
+  recordingsPhrase,
+  type ListActionId,
+} from "./recordings/recordingListActions";
+import Button from "./ui/Button";
+import IconButton from "./ui/IconButton";
+import { TOUCH_TARGET_HEIGHT, TOUCH_TARGET_SQUARE } from "./ui/touchTarget";
 
 interface BatchActionBarProps {
-  onActionComplete: () => void;
+  view: ViewType;
+  /** How many shown rows are selected. */
+  count: number;
+  onClear: () => void;
+  /** Every action in the view's table but Tag, which the bar asks for a tag first. */
+  onAction: (action: Exclude<ListActionId, "tag">) => void;
+  onTag: (tagName: string) => void;
 }
 
+/**
+ * The actions on a selection, from the view's row of the action table. It
+ * sits at the foot of the scrolling list rather than over it, so the last row
+ * can always be scrolled clear of it.
+ */
 export default function BatchActionBar({
-  onActionComplete,
+  view,
+  count,
+  onClear,
+  onAction,
+  onTag,
 }: BatchActionBarProps) {
-  const { selectedRecordingIds, clearSelection, currentView } =
-    useNavigationStore();
-  const { addNotification } = useNotificationStore();
+  const [isTagModalOpen, setTagModalOpen] = useState(false);
 
-  const [confirmModal, setConfirmModal] = useState<{
-    isOpen: boolean;
-    title: string;
-    message: string;
-    onConfirm: () => void;
-    isDangerous?: boolean;
-  }>({
-    isOpen: false,
-    title: "",
-    message: "",
-    onConfirm: () => {},
-  });
-
-  const [tagModal, setTagModal] = useState<{
-    isOpen: boolean;
-    mode: "add" | "remove";
-  }>({
-    isOpen: false,
-    mode: "add",
-  });
-
-  if (selectedRecordingIds.length === 0) return null;
-
-  const handleArchive = async () => {
-    try {
-      await batchArchiveRecordings(selectedRecordingIds);
-      addNotification({
-        type: "success",
-        message: `Archived ${selectedRecordingIds.length} recordings`,
-      });
-      onActionComplete();
-      clearSelection();
-
-        } catch (error: unknown) {
-      console.error("Batch archive failed:", error);
-      addNotification({
-        type: "error",
-        message: "Failed to archive recordings",
-      });
-    }
-  };
-
-  const handleRestore = async () => {
-    try {
-      await batchRestoreRecordings(selectedRecordingIds);
-      addNotification({
-        type: "success",
-        message: `Restored ${selectedRecordingIds.length} recordings`,
-      });
-      onActionComplete();
-      clearSelection();
-
-        } catch (error: unknown) {
-      console.error("Batch restore failed:", error);
-      addNotification({
-        type: "error",
-        message: "Failed to restore recordings",
-      });
-    }
-  };
-
-  const handleSoftDelete = async () => {
-    try {
-      await batchSoftDeleteRecordings(selectedRecordingIds);
-      addNotification({
-        type: "success",
-        message: `Moved ${selectedRecordingIds.length} recordings to trash`,
-      });
-      onActionComplete();
-      clearSelection();
-
-        } catch (error: unknown) {
-      console.error("Batch delete failed:", error);
-      addNotification({
-        type: "error",
-        message: "Failed to delete recordings",
-      });
-    }
-  };
-
-  const handlePermanentDelete = () => {
-    setConfirmModal({
-      isOpen: true,
-      title: "Permanently Delete Recordings",
-      message: `Are you sure you want to permanently delete ${selectedRecordingIds.length} recordings? This action cannot be undone.`,
-      isDangerous: true,
-      onConfirm: async () => {
-        try {
-          await batchPermanentlyDeleteRecordings(selectedRecordingIds);
-          for (const id of selectedRecordingIds) void forgetRecordingNotes(id);
-          addNotification({
-            type: "success",
-            message: `Permanently deleted ${selectedRecordingIds.length} recordings`,
-          });
-          onActionComplete();
-          clearSelection();
-
-                } catch (error: unknown) {
-          console.error("Batch permanent delete failed:", error);
-          addNotification({
-            type: "error",
-            message: "Failed to permanently delete recordings",
-          });
-        }
-      },
-    });
-  };
-
-  const handleTagAction = async (tagName: string) => {
-    try {
-      if (tagModal.mode === "add") {
-        await batchAddTagToRecordings(selectedRecordingIds, tagName);
-        addNotification({
-          type: "success",
-          message: `Added tag "${tagName}" to ${selectedRecordingIds.length} recordings`,
-        });
-      } else {
-        await batchRemoveTagFromRecordings(selectedRecordingIds, tagName);
-        addNotification({
-          type: "success",
-          message: `Removed tag "${tagName}" from ${selectedRecordingIds.length} recordings`,
-        });
-      }
-      window.dispatchEvent(new CustomEvent("tags-updated"));
-      onActionComplete();
-      clearSelection();
-    } catch (error: unknown) {
-      notifyRequestError(error, "Failed to update tags.");
+  const handleKeyDown = (event: KeyboardEvent) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      onClear();
     }
   };
 
   return (
     <>
-      <SurfaceBase data-ui-fill="card" data-ui-border="full" kind="float" className="absolute bottom-4 left-4 right-4 bg-surface-card rounded-lg shadow-float border border-surface-border p-3 flex items-center justify-between z-20 animate-in slide-in-from-bottom-4 duration-200">
-        <div className="flex items-center gap-3">
-          <span className="bg-action-tint text-action-text px-2 py-1 rounded-md text-xs font-medium">
-            {selectedRecordingIds.length} selected
-          </span>
-          <ButtonBase
-            onClick={clearSelection}
-            className="text-contrast-helper hover:text-contrast-muted"
+      {/* Mounted with nothing selected too, so the first count is announced. */}
+      <p role="status" className="sr-only">
+        {count > 0 ? `${recordingsPhrase(count)} selected` : ""}
+      </p>
+
+      {count > 0 && (
+        <div className="sticky bottom-0 z-[var(--z-sticky)] px-2 pb-2">
+          <SurfaceBase
+            data-ui-fill="float"
+            data-ui-border="full"
+            kind="float"
+            role="group"
+            aria-label="Selected recordings"
+            onKeyDown={handleKeyDown}
+            className="flex flex-wrap items-center gap-2 rounded-lg border border-surface-float-border bg-surface-float p-2 shadow-float"
           >
-            <X className="w-4 h-4" />
-          </ButtonBase>
+            <div className="mr-auto flex items-center gap-1">
+              <span className="rounded-md bg-action-tint px-2 py-1 text-xs font-medium text-action-tint-fg">
+                {count} selected
+              </span>
+              <IconButton
+                size="sm"
+                icon={<X aria-hidden="true" />}
+                aria-label="Clear selection"
+                title="Clear selection"
+                onClick={onClear}
+                className={TOUCH_TARGET_SQUARE}
+              />
+            </div>
+
+            <div className="flex flex-wrap items-center gap-1">
+              {VIEW_ACTIONS[view].map((id) => {
+                const { label, icon: Icon, destructive } = LIST_ACTIONS[id];
+                return (
+                  <Button
+                    key={id}
+                    size="sm"
+                    variant={destructive ? "danger" : "ghost"}
+                    iconLeft={<Icon aria-hidden="true" className="h-4 w-4" />}
+                    // Narrow enough that a view's actions share one line
+                    // at the rail's default width.
+                    className={cn("px-2", TOUCH_TARGET_HEIGHT)}
+                    onClick={() =>
+                      id === "tag" ? setTagModalOpen(true) : onAction(id)
+                    }
+                  >
+                    {label}
+                  </Button>
+                );
+              })}
+            </div>
+          </SurfaceBase>
         </div>
-
-        <div className="flex items-center gap-2">
-          {/* Tag Actions */}
-          <div className="flex gap-1 border-r border-surface-border pr-2 mr-1">
-            <ButtonBase
-              onClick={() => setTagModal({ isOpen: true, mode: "add" })}
-              className="p-2 text-contrast-helper hover:bg-surface-inset rounded-md"
-              title="Add Tag"
-            >
-              <Tag className="w-4 h-4" />
-            </ButtonBase>
-          </div>
-
-          {/* View Specific Actions */}
-          {currentView === "recordings" && (
-            <>
-              <ButtonBase
-                onClick={handleArchive}
-                className="p-2 text-contrast-helper hover:bg-surface-inset rounded-md"
-                title="Archive"
-              >
-                <Archive className="w-4 h-4" />
-              </ButtonBase>
-              <ButtonBase
-                onClick={handleSoftDelete}
-                className="p-2 text-status-danger-fg hover:bg-status-danger-bg rounded-md"
-                title="Delete"
-              >
-                <Trash2 className="w-4 h-4" />
-              </ButtonBase>
-            </>
-          )}
-
-          {currentView === "archived" && (
-            <>
-              <ButtonBase
-                onClick={handleRestore}
-                className="p-2 text-contrast-helper hover:bg-surface-inset rounded-md"
-                title="Restore"
-              >
-                <RotateCcw className="w-4 h-4" />
-              </ButtonBase>
-              <ButtonBase
-                onClick={handleSoftDelete}
-                className="p-2 text-status-danger-fg hover:bg-status-danger-bg rounded-md"
-                title="Delete"
-              >
-                <Trash2 className="w-4 h-4" />
-              </ButtonBase>
-            </>
-          )}
-
-          {currentView === "deleted" && (
-            <>
-              <ButtonBase
-                onClick={handleRestore}
-                className="p-2 text-contrast-helper hover:bg-surface-inset rounded-md"
-                title="Restore"
-              >
-                <RotateCcw className="w-4 h-4" />
-              </ButtonBase>
-              <ButtonBase
-                onClick={handlePermanentDelete}
-                className="p-2 text-status-danger-fg hover:bg-status-danger-bg rounded-md"
-                title="Permanently Delete"
-              >
-                <Trash2 className="w-4 h-4" />
-              </ButtonBase>
-            </>
-          )}
-        </div>
-      </SurfaceBase>
-
-      <ConfirmationModal
-        isOpen={confirmModal.isOpen}
-        onClose={() => setConfirmModal({ ...confirmModal, isOpen: false })}
-        onConfirm={confirmModal.onConfirm}
-        title={confirmModal.title}
-        message={confirmModal.message}
-        isDangerous={confirmModal.isDangerous}
-      />
+      )}
 
       <BatchTagModal
-        isOpen={tagModal.isOpen}
-        onClose={() => setTagModal({ ...tagModal, isOpen: false })}
-        onApply={handleTagAction}
-        count={selectedRecordingIds.length}
-        mode={tagModal.mode}
+        isOpen={isTagModalOpen}
+        onClose={() => setTagModalOpen(false)}
+        onApply={onTag}
+        count={count}
+        mode="add"
       />
     </>
   );

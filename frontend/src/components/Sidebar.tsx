@@ -15,20 +15,21 @@ import {
   Search,
   Filter,
   X,
-  CheckSquare,
-  Square,
   Archive,
   Mic,
   PanelLeftClose,
   PanelLeftOpen,
   Trash2,
   NotebookPen,
+  MoreHorizontal,
 } from "lucide-react";
+import { cn } from "@/lib/cn";
 import IconButton from "./ui/IconButton";
+import { TOUCH_TARGET_SQUARE } from "./ui/touchTarget";
 import ImportAudioButton from "./importAudio/ImportAudioButton";
 import RecordingInfoModal from "./RecordingInfoModal";
 import MeetingControls from "./MeetingControls";
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useHydrated } from "@/lib/useHydrated";
 import {
   getRecordings,
@@ -36,8 +37,18 @@ import {
   RecordingFilters,
   getTags,
   getRecordingsCalendar,
+  type BatchRecordingResult,
 } from "@/lib/api";
 import { useRecordingActions } from "./recordings/_hooks/useRecordingActions";
+import {
+  useRecordingSelection,
+  useTouchLongPress,
+} from "./recordings/_hooks/useRecordingSelection";
+import {
+  LIST_ACTIONS,
+  permanentDeleteConfirmation,
+  type ListActionId,
+} from "./recordings/recordingListActions";
 import { subscribeRecordingRemoved } from "@/lib/recordingEvents";
 import MonthCalendar from "./MonthCalendar";
 import { getUserTimeZone, localDayRangeToUtc } from "@/lib/timezone";
@@ -57,6 +68,12 @@ import { useForgetNotesOfDeletedRecordings } from "@/lib/notes/deletedRecordingN
 import { useUnsentRecordings } from "@/lib/notes/useNoteOutbox";
 import { useRecordingStatusNotifications } from "./recordings/_hooks/useRecordingStatusNotifications";
 import { useSidebarResize } from "./recordings/_hooks/useSidebarResize";
+
+interface RowMenuItem {
+  label: string;
+  onClick: () => void;
+  className?: string;
+}
 
 const formatDurationString = (seconds?: number) => {
   if (!seconds) return "0s";
@@ -138,10 +155,6 @@ export default function Sidebar() {
     selectedTagIds,
     toggleTagFilter,
     clearTagFilters,
-    selectionMode,
-    selectedRecordingIds,
-    toggleRecordingSelection,
-    selectAllRecordings,
     clearSelection,
     recordingsSidebarWidth,
     setRecordingsSidebarWidth,
@@ -152,14 +165,19 @@ export default function Sidebar() {
   const mounted = useHydrated();
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [hasLoadedRecordings, setHasLoadedRecordings] = useState(false);
-  const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(
-    null,
-  );
+  // The menu's items are built when it opens, as they act on the list. A
+  // right-click opens it at the pointer; a row's actions button anchors it.
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
-    recording: Recording;
+    items: RowMenuItem[];
+    label: string;
+    returnFocusTo: HTMLElement;
+    /** The row whose actions button holds the menu, when one does. */
+    buttonFor?: RecordingId;
+    anchor?: HTMLElement;
   } | null>(null);
+  const closeContextMenu = useCallback(() => setContextMenu(null), []);
   const [renamingId, setRenamingId] = useState<RecordingId | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [showInfoModal, setShowInfoModal] = useState(false);
@@ -287,6 +305,13 @@ export default function Sidebar() {
     return fuse.search(debouncedSearchQuery).map((result) => result.item);
   }, [recordings, debouncedSearchQuery]);
 
+  const shownIds = useMemo(
+    () => filteredRecordings.map((recording) => recording.id),
+    [filteredRecordings],
+  );
+  const selection = useRecordingSelection(shownIds);
+  const longPress = useTouchLongPress(selection.toggle);
+
   // Debounce search query
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -405,53 +430,187 @@ export default function Sidebar() {
     clearSelection();
   }, [currentView, clearSelection]);
 
-  const handleContextMenu = (e: React.MouseEvent, recording: Recording) => {
+  const rowMenuLabel = (recording: Recording) => `Actions for ${recording.name}`;
+
+  const handleContextMenu = (e: React.MouseEvent<HTMLElement>, recording: Recording) => {
     e.preventDefault();
-    if (selectionMode) return; // Disable context menu in selection mode
-    setContextMenu({ x: e.clientX, y: e.clientY, recording });
-  };
-
-  const handleArchive = async (id: RecordingId) => {
-    setRecordings((prev) => prev.filter((r) => r.id !== id));
-    await actions.archive(id, { onError: fetchRecordings });
-  };
-
-  const handleRestore = async (id: RecordingId) => {
-    setRecordings((prev) => prev.filter((r) => r.id !== id));
-    await actions.restore(id, { onError: fetchRecordings });
-  };
-
-  const handleSoftDelete = async (id: RecordingId) => {
-    setRecordings((prev) => prev.filter((r) => r.id !== id));
-    await actions.softDelete(id, {
-      onSuccess: () => {
-        if (pathname === `/recordings/${id}`) {
-          router.push("/recordings");
-        }
-      },
-      onError: fetchRecordings,
+    // A touch held on a row selects it; Android raises contextmenu for it.
+    if (longPress.claimContextMenu(recording.id)) return;
+    setContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      items: getContextMenuItems(recording),
+      label: rowMenuLabel(recording),
+      returnFocusTo: e.currentTarget,
     });
   };
 
-  const handlePermanentDelete = async (id: RecordingId) => {
+  /**
+   * The row's actions button: the way to the row menu on a touch screen,
+   * where a long press selects. It opens the menu right-click opens, against
+   * the button, and a second press closes it.
+   */
+  const toggleRowMenu = (button: HTMLButtonElement, recording: Recording) => {
+    if (contextMenu?.buttonFor === recording.id) {
+      setContextMenu(null);
+      return;
+    }
+    const box = button.getBoundingClientRect();
+    setContextMenu({
+      x: box.right,
+      y: box.bottom,
+      items: getContextMenuItems(recording),
+      label: rowMenuLabel(recording),
+      returnFocusTo: button,
+      buttonFor: recording.id,
+      anchor: button,
+    });
+  };
+
+  const listRef = useRef<HTMLUListElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  // Where focus goes once the rows an action took away have gone, or the
+  // batch bar holding focus has closed: a row link by id, or the search box.
+  const pendingFocusRef = useRef<RecordingId | "search" | null>(null);
+  // Where the confirmation dialog sends focus as it closes, in place of the
+  // element that opened it, which a permanent delete takes away.
+  const confirmFocusRef = useRef<HTMLElement | null>(null);
+
+  const focusTargetElement = (target: RecordingId | "search") => {
+    const link =
+      target === "search"
+        ? undefined
+        : Array.from(
+            listRef.current?.querySelectorAll<HTMLElement>("[data-recording-link]") ??
+              [],
+          ).find((element) => element.dataset.recordingLink === target);
+    return link ?? searchInputRef.current;
+  };
+
+  useEffect(() => {
+    const target = pendingFocusRef.current;
+    if (target === null) return;
+    pendingFocusRef.current = null;
+    focusTargetElement(target)?.focus();
+  });
+
+  /** The row after the first one going, else the one before it, else the search box. */
+  const focusTargetAfterRemoving = (ids: RecordingId[]): RecordingId | "search" => {
+    const gone = new Set(ids);
+    const first = shownIds.findIndex((id) => gone.has(id));
+    const after = shownIds.slice(first + 1).find((id) => !gone.has(id));
+    const before = shownIds
+      .slice(0, Math.max(first, 0))
+      .reverse()
+      .find((id) => !gone.has(id));
+    return after ?? before ?? "search";
+  };
+
+  const focusAfterRemoving = (ids: RecordingId[]) => {
+    pendingFocusRef.current = focusTargetAfterRemoving(ids);
+  };
+
+  const removeRows = (ids: RecordingId[]) => {
+    const gone = new Set(ids);
+    setRecordings((prev) => prev.filter((r) => !gone.has(r.id)));
+  };
+
+  const leaveIfOpen = (ids: RecordingId[]) => {
+    if (ids.some((id) => pathname === `/recordings/${id}`)) {
+      router.push("/recordings");
+    }
+  };
+
+  // An undo brings back rows this list dropped, so every list reloads.
+  const refreshAfterUndo = () => {
+    window.dispatchEvent(new CustomEvent("recording-updated", { detail: {} }));
+  };
+
+  /**
+   * Archive, unarchive, move to the bin or restore, for one row from its menu
+   * or for the selection from the batch bar. The rows go at once, the
+   * notification reports what the server changed, with Undo, and the list
+   * reloads to match.
+   */
+  const moveRecordings = (
+    action: "archive" | "unarchive" | "softDelete" | "restore",
+    ids: RecordingId[],
+  ) => {
+    if (ids.length === 0) return;
+    focusAfterRemoving(ids);
+    removeRows(ids);
+    const callbacks = {
+      onSuccess: (result: BatchRecordingResult) => {
+        if (action === "softDelete") leaveIfOpen(result.recording_ids);
+        void fetchRecordings();
+      },
+      onError: () => void fetchRecordings(),
+      onUndone: refreshAfterUndo,
+    };
+    switch (action) {
+      case "archive":
+        void actions.archive(ids, callbacks);
+        break;
+      case "unarchive":
+        void actions.unarchive(ids, callbacks);
+        break;
+      case "restore":
+        void actions.restore(ids, callbacks);
+        break;
+      case "softDelete":
+        void actions.softDelete(ids, {
+          ...callbacks,
+          from: view === "archived" ? "archived" : "recordings",
+        });
+        break;
+    }
+  };
+
+  /** The one list action that asks first, as it cannot be undone. */
+  const confirmPermanentDelete = (ids: RecordingId[]) => {
+    if (ids.length === 0) return;
+    confirmFocusRef.current = null;
     setConfirmModal({
       isOpen: true,
-      title: "Permanently Delete Recording",
-      message:
-        "Are you sure you want to permanently delete this recording? This action cannot be undone.",
+      ...permanentDeleteConfirmation(ids.length),
       isDangerous: true,
-      onConfirm: async () => {
-        setRecordings((prev) => prev.filter((r) => r.id !== id));
-        await actions.permanentDelete(id, {
-          onSuccess: () => {
-            if (pathname === `/recordings/${id}`) {
-              router.push("/recordings");
-            }
+      onConfirm: () => {
+        const target = focusTargetAfterRemoving(ids);
+        pendingFocusRef.current = target;
+        confirmFocusRef.current = focusTargetElement(target);
+        removeRows(ids);
+        void actions.permanentDelete(ids, {
+          onSuccess: (result) => {
+            leaveIfOpen(result.recording_ids);
+            void fetchRecordings();
           },
-          onError: fetchRecordings,
+          onError: () => void fetchRecordings(),
         });
       },
     });
+  };
+
+  const runListAction = (
+    action: Exclude<ListActionId, "tag">,
+    ids: RecordingId[],
+  ) => {
+    if (action === "permanentDelete") {
+      confirmPermanentDelete(ids);
+    } else {
+      moveRecordings(action, ids);
+    }
+  };
+
+  const tagRecordings = (ids: RecordingId[], tagName: string) => {
+    const announce = () => window.dispatchEvent(new CustomEvent("tags-updated"));
+    void actions.tag(ids, tagName, { onSuccess: announce, onUndone: announce });
+  };
+
+  const clearSelectionFromBar = () => {
+    // The bar goes with the selection, so focus returns to the list.
+    pendingFocusRef.current =
+      selection.anchorId ?? selection.selectedIds[0] ?? "search";
+    selection.clear();
   };
 
   const handleRenameStart = (id: RecordingId, currentName: string) => {
@@ -491,6 +650,7 @@ export default function Sidebar() {
   };
 
   const handleDiscard = (id: RecordingId) => {
+    confirmFocusRef.current = null;
     setConfirmModal({
       isOpen: true,
       title: "Discard Recording",
@@ -512,47 +672,48 @@ export default function Sidebar() {
     });
   };
 
-  const handleRecordingClick = (
-    e: React.MouseEvent,
-    recording: Recording,
-    index: number,
-  ) => {
-    const isCtrl = e.ctrlKey || e.metaKey;
-    const isShift = e.shiftKey;
+  /**
+   * Ctrl or Cmd toggles a row and Shift extends from the anchor. While
+   * anything is selected a plain click toggles too, rather than opening the
+   * recording, so a click can never act on a selection by surprise.
+   */
+  const handleRecordingClick = (e: React.MouseEvent, id: RecordingId) => {
+    if (longPress.consumeClick(id)) {
+      e.preventDefault();
+      return;
+    }
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      selection.toggle(id);
+    } else if (e.shiftKey) {
+      e.preventDefault();
+      selection.extendTo(id);
+    } else if (selection.isSelecting) {
+      e.preventDefault();
+      selection.toggle(id);
+    }
+  };
 
-    if (isCtrl || isShift) {
+  const handleRecordingKeyDown = (e: React.KeyboardEvent, id: RecordingId) => {
+    if (e.key !== " ") return;
+    e.preventDefault();
+    if (e.shiftKey) {
+      selection.extendTo(id);
+    } else {
+      selection.toggle(id);
+    }
+  };
+
+  const handleListKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Escape" && selection.isSelecting) {
       e.preventDefault();
       e.stopPropagation();
+      selection.clear();
     }
-
-    if (isCtrl) {
-      toggleRecordingSelection(recording.id);
-      setLastSelectedIndex(index);
-      return;
-    }
-
-    if (isShift && lastSelectedIndex !== null) {
-      const start = Math.min(lastSelectedIndex, index);
-      const end = Math.max(lastSelectedIndex, index);
-      const rangeIds = filteredRecordings
-        .slice(start, end + 1)
-        .map((r) => r.id);
-
-      const newSelection = Array.from(
-        new Set([...selectedRecordingIds, ...rangeIds]),
-      );
-      selectAllRecordings(newSelection);
-      return;
-    }
-
-    if (selectionMode) {
-      clearSelection();
-    }
-    setLastSelectedIndex(index);
   };
 
   const getContextMenuItems = (recording: Recording) => {
-    const items = [];
+    const items: RowMenuItem[] = [];
 
     if (view === "recordings") {
       items.push(
@@ -595,40 +756,36 @@ export default function Sidebar() {
           },
         },
         {
-          label: "Archive",
-          onClick: () => handleArchive(recording.id),
+          label: LIST_ACTIONS.archive.label,
+          onClick: () => moveRecordings("archive", [recording.id]),
         },
         {
-          label: "Delete",
-          className:
-            "text-danger-text hover:bg-status-danger-bg",
-          onClick: () => handleSoftDelete(recording.id),
+          label: LIST_ACTIONS.softDelete.label,
+          onClick: () => moveRecordings("softDelete", [recording.id]),
         },
       );
     } else if (view === "archived") {
       items.push(
         {
-          label: "Restore",
-          onClick: () => handleRestore(recording.id),
+          label: LIST_ACTIONS.unarchive.label,
+          onClick: () => moveRecordings("unarchive", [recording.id]),
         },
         {
-          label: "Delete",
-          className:
-            "text-danger-text hover:bg-status-danger-bg",
-          onClick: () => handleSoftDelete(recording.id),
+          label: LIST_ACTIONS.softDelete.label,
+          onClick: () => moveRecordings("softDelete", [recording.id]),
         },
       );
     } else if (view === "deleted") {
       items.push(
         {
-          label: "Restore",
-          onClick: () => handleRestore(recording.id),
+          label: LIST_ACTIONS.restore.label,
+          onClick: () => moveRecordings("restore", [recording.id]),
         },
         {
-          label: "Delete Permanently",
+          label: LIST_ACTIONS.permanentDelete.label,
           className:
             "text-danger-text hover:bg-status-danger-bg",
-          onClick: () => handlePermanentDelete(recording.id),
+          onClick: () => confirmPermanentDelete([recording.id]),
         },
       );
     }
@@ -645,8 +802,8 @@ export default function Sidebar() {
         };
       case "deleted":
         return {
-          main: "No deleted recordings.",
-          sub: "Deleted recordings will appear here.",
+          main: "The bin is empty.",
+          sub: "Recordings you move to the bin appear here.",
         };
       default:
         return {
@@ -743,66 +900,41 @@ export default function Sidebar() {
           )}
         </div>
 
-        {selectionMode ? (
-          <div className="flex items-center justify-between mb-2 px-1">
-            <span className="text-xs text-rail-fg-muted">
-              {selectedRecordingIds.length} selected
-            </span>
-            <ButtonBase
-              onClick={() => {
-                if (
-                  selectedRecordingIds.length === filteredRecordings.length &&
-                  filteredRecordings.length > 0
-                ) {
-                  clearSelection();
-                } else {
-                  selectAllRecordings(filteredRecordings.map((r) => r.id));
-                }
-              }}
-              className="text-xs text-action-text hover:underline"
-            >
-              {selectedRecordingIds.length === filteredRecordings.length &&
-              filteredRecordings.length > 0
-                ? "Deselect All"
-                : "Select All"}
-            </ButtonBase>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            <div className="flex items-center gap-1">
-              <div className="relative min-w-0 flex-1">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-contrast-icon-muted" />
-                <InputBase
-                  data-ui-fill="control"
-                  data-ui-border="full"
-                  type="text"
-                  placeholder="Search..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-9 pr-9 py-2 text-sm bg-control-bg border border-control-border rounded-lg text-foreground placeholder:text-control-placeholder focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-focus-ring"
-                />
-                <ButtonBase
-                  onClick={() => setShowFilters(!showFilters)}
-                  className={`absolute right-2 top-1/2 transform -translate-y-1/2 p-1 rounded-md hover:bg-rail-item-hover ${showFilters ? "text-action-text" : "text-contrast-icon-muted"}`}
-                >
-                  <Filter className="w-4 h-4" />
-                </ButtonBase>
-              </div>
-              <IconButton
-                onClick={toggleRecordingsSidebarCollapse}
-                size="sm"
-                icon={<PanelLeftClose aria-hidden="true" />}
-                className="hidden lg:inline-flex text-rail-fg-muted hover:bg-rail-item-hover hover:text-rail-fg"
-                title="Collapse recordings list"
-                aria-label="Collapse recordings list"
-                aria-expanded={true}
+        <div className="space-y-2">
+          <div className="flex items-center gap-1">
+            <div className="relative min-w-0 flex-1">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-contrast-icon-muted" />
+              <InputBase
+                data-ui-fill="control"
+                data-ui-border="full"
+                ref={searchInputRef}
+                type="text"
+                placeholder="Search..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-9 py-2 text-sm bg-control-bg border border-control-border rounded-lg text-foreground placeholder:text-control-placeholder focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-focus-ring"
               />
+              <ButtonBase
+                onClick={() => setShowFilters(!showFilters)}
+                className={`absolute right-2 top-1/2 transform -translate-y-1/2 p-1 rounded-md hover:bg-rail-item-hover ${showFilters ? "text-action-text" : "text-contrast-icon-muted"}`}
+              >
+                <Filter className="w-4 h-4" />
+              </ButtonBase>
             </div>
+            <IconButton
+              onClick={toggleRecordingsSidebarCollapse}
+              size="sm"
+              icon={<PanelLeftClose aria-hidden="true" />}
+              className="hidden lg:inline-flex text-rail-fg-muted hover:bg-rail-item-hover hover:text-rail-fg"
+              title="Collapse recordings list"
+              aria-label="Collapse recordings list"
+              aria-expanded={true}
+            />
           </div>
-        )}
+        </div>
 
         {/* Active Tag Filter Pills */}
-        {selectedTagIds.length > 0 && !selectionMode && (
+        {selectedTagIds.length > 0 && (
           <div className="flex flex-wrap items-center gap-2 mt-2">
             {selectedTagIds.map((tagId) => {
               const tag = tags.find((t) => t.id === tagId);
@@ -841,7 +973,7 @@ export default function Sidebar() {
           </div>
         )}
 
-        {showFilters && !selectionMode && (
+        {showFilters && (
           <SurfaceBase data-ui-fill="card" data-ui-border="full" kind="card" className="p-3 bg-surface-card rounded-lg border border-surface-border space-y-3 text-sm mt-2">
             <div className="space-y-1">
               <label className="text-xs font-medium text-rail-fg-muted">
@@ -962,149 +1094,227 @@ export default function Sidebar() {
       </div>
 
       {/* Recording List */}
-      <div className="@container p-2 space-y-2">
-        {filteredRecordings.length === 0 && (
-          <div className="text-center p-4 text-rail-fg-muted text-sm">
-            <p>{getEmptyMessage().main}</p>
-            <p className="mt-1 text-xs">{getEmptyMessage().sub}</p>
-            {/* Only for a library that is really empty: not before the first
-                fetch lands, and not when a search or filter hides the rows. */}
-            {view === "recordings" && hasLoadedRecordings && !hasActiveFilters && (
-              <div className="mt-3">
-                <ImportAudioButton />
-              </div>
-            )}
-          </div>
-        )}
-        {filteredRecordings.map((recording, index) => {
-          const isActive = pathname === `/recordings/${recording.id}`;
-          const startDate = new Date(recording.created_at);
-          const endDate = new Date(
-            startDate.getTime() + (recording.duration_seconds || 0) * 1000,
-          );
-          const isRenaming = renamingId === recording.id;
-          const isSelected = selectedRecordingIds.includes(recording.id);
-
-          return (
-            <div key={recording.id} className="relative group">
-              {isRenaming ? (
-                <SurfaceBase data-ui-fill="card" data-ui-border="full" kind="card" className="p-3 rounded-lg border bg-surface-card border-action">
-                  <InputBase
-                    autoFocus
-                    type="text"
-                    value={renameValue}
-                    onChange={(e) => setRenameValue(e.target.value)}
-                    onBlur={() => handleRenameSubmit(recording.id)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") handleRenameSubmit(recording.id);
-                      if (e.key === "Escape") setRenamingId(null);
-                    }}
-                    className="w-full text-sm font-semibold bg-transparent focus:outline-none"
-                  />
-                </SurfaceBase>
-              ) : (
-                <div>
-                  <Link
-                    data-ui-fill={(isActive && !selectionMode) ? "action-tint" : (isSelected) ? "action-tint" : "card"}
-                    data-ui-hover={(isActive && !selectionMode) ? undefined : (isSelected) ? undefined : "action-tint"}
-                    data-ui-border="full"
-                    data-ui="surface"
-                    data-ui-surface="card"
-                    href={`/recordings/${recording.id}`}
-                    id={
-                      recording.name === "Welcome to Nojoin"
-                        ? "demo-recording-card"
-                        : undefined
-                    }
-                    onClick={(e) => handleRecordingClick(e, recording, index)}
-                    onContextMenu={(e) => handleContextMenu(e, recording)}
-                    className={`block p-3 rounded-lg border transition-all ${
-                      isActive && !selectionMode
-                        ? "bg-action-tint border-action"
-                        : isSelected
-                          ? "bg-action-tint border-action-border"
-                          : "bg-surface-card border-surface-border hover:border-action-border hover:bg-action-tint"
-                    } ${
-                      isSelected
-                        ? "ring-2 ring-focus-ring ring-offset-2 ring-offset-rail"
-                        : ""
-                    }`}
-                  >
-                    <div className="flex justify-between items-start mb-1">
-                      <div className="flex items-center gap-2 min-w-0">
-                        {(selectionMode || isSelected) && (
-                          <div
-                            className={`shrink-0 ${isSelected ? "text-action-text" : "text-contrast-icon-muted"}`}
-                          >
-                            {isSelected ? (
-                              <CheckSquare className="w-4 h-4" />
-                            ) : (
-                              <Square className="w-4 h-4" />
-                            )}
-                          </div>
-                        )}
-                        <h3
-                          className={`text-sm font-semibold line-clamp-2 ${isActive && !selectionMode ? "text-action-text" : "text-foreground"}`}
-                          title="Double-click to rename"
-                          onDoubleClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            handleRenameStart(recording.id, recording.name);
-                          }}
-                        >
-                          {recording.name}
-                        </h3>
-                      </div>
-                      <StatusIcon recording={recording} />
-                    </div>
-
-                    <div
-                      className={`flex items-center overflow-hidden text-xs text-contrast-helper gap-2 ${selectionMode || isSelected ? "pl-6" : ""}`}
-                    >
-                      <span className="whitespace-nowrap">
-                        {formatDate(recording.created_at)}
-                      </span>
-                      {/* The time range yields first when the rail narrows; date and duration stay. */}
-                      <span className="hidden whitespace-nowrap text-contrast-icon-muted @min-[19rem]:inline">
-                        |
-                      </span>
-                      <span className="hidden whitespace-nowrap @min-[19rem]:inline">
-                        {formatTime(startDate)} - {formatTime(endDate)}
-                      </span>
-                      <span className="whitespace-nowrap text-contrast-icon-muted">
-                        |
-                      </span>
-                      <span className="whitespace-nowrap">
-                        {formatDurationString(recording.duration_seconds)}
-                      </span>
-                    </div>
-                    {/* The open recording lists its own unsent notes. */}
-                    {!isActive && unsentRecordings.includes(recording.id) && (
-                      <Badge
-                        tone="warning"
-                        size="sm"
-                        icon={<NotebookPen aria-hidden="true" />}
-                        className={`mt-2 ${selectionMode || isSelected ? "ml-6" : ""}`}
-                      >
-                        Unsent notes
-                      </Badge>
-                    )}
-                  </Link>
-                </div>
-              )}
+      {filteredRecordings.length === 0 && (
+        <div className="text-center p-4 m-2 text-rail-fg-muted text-sm">
+          <p>{getEmptyMessage().main}</p>
+          <p className="mt-1 text-xs">{getEmptyMessage().sub}</p>
+          {/* Only for a library that is really empty: not before the first
+              fetch lands, and not when a search or filter hides the rows. */}
+          {view === "recordings" && hasLoadedRecordings && !hasActiveFilters && (
+            <div className="mt-3">
+              <ImportAudioButton />
             </div>
-          );
-        })}
-      </div>
+          )}
+        </div>
+      )}
+      {filteredRecordings.length > 0 && (
+        // Escape anywhere in the list, header checkbox included, clears the selection.
+        <div onKeyDown={handleListKeyDown}>
+          <label className="flex w-fit cursor-pointer items-center gap-2 px-5 pt-2 text-xs text-rail-fg-muted pointer-coarse:min-h-[44px] pointer-coarse:pt-0">
+            <InputBase
+              type="checkbox"
+              aria-controls="recordings-list"
+              checked={selection.headerState === "all"}
+              ref={(input) => {
+                if (input) input.indeterminate = selection.headerState === "some";
+              }}
+              onChange={selection.toggleAll}
+              className="h-4 w-4 cursor-pointer rounded border-control-border text-action-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
+            />
+            Select all
+          </label>
+          <ul
+            id="recordings-list"
+            ref={listRef}
+            aria-label={`${currentViewLabel} list`}
+            className="@container p-2 space-y-2"
+          >
+            {filteredRecordings.map((recording) => {
+              const isActive = pathname === `/recordings/${recording.id}`;
+              const startDate = new Date(recording.created_at);
+              const endDate = new Date(
+                startDate.getTime() + (recording.duration_seconds || 0) * 1000,
+              );
+              const isRenaming = renamingId === recording.id;
+              const isSelected = selection.isSelected(recording.id);
+              const isHighlighted = isSelected || (isActive && !selection.isSelecting);
+              const isMenuOpen = contextMenu?.buttonFor === recording.id;
 
-      <BatchActionBar onActionComplete={fetchRecordings} />
+              return (
+                <li key={recording.id} className="relative group">
+                  {isRenaming ? (
+                    <SurfaceBase data-ui-fill="card" data-ui-border="full" kind="card" className="p-3 rounded-lg border bg-surface-card border-action">
+                      <InputBase
+                        autoFocus
+                        type="text"
+                        value={renameValue}
+                        onChange={(e) => setRenameValue(e.target.value)}
+                        onBlur={() => handleRenameSubmit(recording.id)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") handleRenameSubmit(recording.id);
+                          if (e.key === "Escape") {
+                            e.stopPropagation();
+                            setRenamingId(null);
+                          }
+                        }}
+                        className="w-full text-sm font-semibold bg-transparent focus:outline-none"
+                      />
+                    </SurfaceBase>
+                  ) : (
+                    <>
+                      {/* Shown on hover or focus where there is a pointer that
+                          hovers, and on every row once anything is selected.
+                          On touch it stays hidden, but readable by a screen
+                          reader, until a long press starts a selection. */}
+                      <InputBase
+                        type="checkbox"
+                        aria-label={`Select ${recording.name}`}
+                        checked={isSelected}
+                        // Handled on click, which knows whether Shift is held.
+                        onChange={() => undefined}
+                        onClick={(e) => {
+                          if (e.shiftKey) {
+                            selection.extendTo(recording.id);
+                          } else {
+                            selection.toggle(recording.id);
+                          }
+                        }}
+                        className={`absolute left-3 top-3.5 z-10 h-4 w-4 cursor-pointer rounded border-control-border text-action-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring ${
+                          selection.isSelecting
+                            ? ""
+                            : "pointer-coarse:sr-only pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100 pointer-fine:group-focus-within:opacity-100"
+                        }`}
+                      />
+                      <Link
+                        data-ui-fill={isHighlighted ? "action-tint" : "card"}
+                        data-ui-hover={isHighlighted ? undefined : "action-tint"}
+                        data-ui-border="full"
+                        data-ui="surface"
+                        data-ui-surface="card"
+                        data-recording-link={recording.id}
+                        href={`/recordings/${recording.id}`}
+                        id={
+                          recording.name === "Welcome to Nojoin"
+                            ? "demo-recording-card"
+                            : undefined
+                        }
+                        aria-current={isActive ? "page" : undefined}
+                        onClick={(e) => handleRecordingClick(e, recording.id)}
+                        onKeyDown={(e) => handleRecordingKeyDown(e, recording.id)}
+                        onMouseDown={(e) => {
+                          // Shift-click extends the selection, not a text selection.
+                          if (e.shiftKey) e.preventDefault();
+                        }}
+                        onContextMenu={(e) => handleContextMenu(e, recording)}
+                        {...longPress.bind(recording.id)}
+                        // The right padding keeps the text clear of the actions button.
+                        className={`block py-3 pr-9 pointer-coarse:pr-[52px] rounded-lg border transition-all [-webkit-touch-callout:none] pointer-coarse:select-none ${
+                          selection.isSelecting ? "pl-9" : "pl-3 pointer-fine:pl-9"
+                        } ${
+                          isHighlighted
+                            ? isSelected
+                              ? "bg-action-tint border-action-border"
+                              : "bg-action-tint border-action"
+                            : "bg-surface-card border-surface-border hover:border-action-border hover:bg-action-tint"
+                        }`}
+                      >
+                        <div className="flex justify-between items-start mb-1">
+                          <h3
+                            className={`min-w-0 text-sm font-semibold line-clamp-2 ${isActive && !selection.isSelecting ? "text-action-text" : "text-foreground"}`}
+                            title="Double-click to rename"
+                            onDoubleClick={(e) => {
+                              if (selection.isSelecting) return;
+                              e.preventDefault();
+                              e.stopPropagation();
+                              handleRenameStart(recording.id, recording.name);
+                            }}
+                          >
+                            {recording.name}
+                          </h3>
+                          <StatusIcon recording={recording} />
+                        </div>
+
+                        <div className="flex items-center overflow-hidden text-xs text-contrast-helper gap-2">
+                          <span className="whitespace-nowrap">
+                            {formatDate(recording.created_at)}
+                          </span>
+                          {/* The time range yields first when the rail narrows; date and duration stay. */}
+                          <span className="hidden whitespace-nowrap text-contrast-icon-muted @min-[19rem]:inline">
+                            |
+                          </span>
+                          <span className="hidden whitespace-nowrap @min-[19rem]:inline">
+                            {formatTime(startDate)} - {formatTime(endDate)}
+                          </span>
+                          <span className="whitespace-nowrap text-contrast-icon-muted">
+                            |
+                          </span>
+                          <span className="whitespace-nowrap">
+                            {formatDurationString(recording.duration_seconds)}
+                          </span>
+                        </div>
+                        {/* The open recording lists its own unsent notes. */}
+                        {!isActive && unsentRecordings.includes(recording.id) && (
+                          <Badge
+                            tone="warning"
+                            size="sm"
+                            icon={<NotebookPen aria-hidden="true" />}
+                            className="mt-2"
+                          >
+                            Unsent notes
+                          </Badge>
+                        )}
+                      </Link>
+                      {/* Beside the link, not in it, so a press here never
+                          opens, selects or long-presses the row. Shown on hover
+                          or focus where the pointer hovers, and always on touch. */}
+                      <IconButton
+                        size="sm"
+                        icon={<MoreHorizontal aria-hidden="true" />}
+                        aria-label={rowMenuLabel(recording)}
+                        title="Recording actions"
+                        aria-haspopup="menu"
+                        aria-expanded={isMenuOpen}
+                        onClick={(e) => toggleRowMenu(e.currentTarget, recording)}
+                        onKeyDown={(e) => {
+                          if (e.key === "ArrowDown" && !isMenuOpen) {
+                            e.preventDefault();
+                            toggleRowMenu(e.currentTarget, recording);
+                          }
+                        }}
+                        className={cn(
+                          "absolute right-1 top-1/2 z-10 h-7 w-7 -translate-y-1/2",
+                          TOUCH_TARGET_SQUARE,
+                          isMenuOpen
+                            ? "opacity-100"
+                            : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:opacity-100",
+                        )}
+                      />
+                    </>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+
+      <BatchActionBar
+        view={view}
+        count={selection.count}
+        onClear={clearSelectionFromBar}
+        onAction={(action) => runListAction(action, selection.selectedIds)}
+        onTag={(tagName) => tagRecordings(selection.selectedIds, tagName)}
+      />
 
       {contextMenu && (
         <ContextMenu
           x={contextMenu.x}
           y={contextMenu.y}
-          onClose={() => setContextMenu(null)}
-          items={getContextMenuItems(contextMenu.recording)}
+          onClose={closeContextMenu}
+          items={contextMenu.items}
+          label={contextMenu.label}
+          anchor={contextMenu.anchor}
+          returnFocusTo={contextMenu.returnFocusTo}
         />
       )}
 
@@ -1128,6 +1338,7 @@ export default function Sidebar() {
         confirmText={confirmModal.confirmText}
         cancelText={confirmModal.cancelText}
         isDangerous={confirmModal.isDangerous}
+        returnFocus={confirmFocusRef}
       />
 
       {reprocessRecordingId && (

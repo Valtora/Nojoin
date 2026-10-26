@@ -26,7 +26,6 @@ let currentView: ViewType = "recordings";
 let pausedRecording: { id: string } | null = null;
 let pathname = "/recordings";
 let unsentRecordings: string[] = [];
-let selectionMode = false;
 let selectedRecordingIds: string[] = [];
 
 vi.mock("next/link", () => ({
@@ -51,10 +50,10 @@ vi.mock("@/lib/api", () => ({
   retryProcessing: vi.fn(),
   inferSpeakers: vi.fn(),
   getGlobalSpeakers: (...args: unknown[]) => getGlobalSpeakers(...args),
-  archiveRecording: vi.fn(),
-  restoreRecording: vi.fn(),
-  softDeleteRecording: vi.fn(),
-  permanentlyDeleteRecording: vi.fn(),
+  batchArchiveRecordings: vi.fn(),
+  batchRestoreRecordings: vi.fn(),
+  batchSoftDeleteRecordings: vi.fn(),
+  batchPermanentlyDeleteRecordings: vi.fn(),
   getTags: (...args: unknown[]) => getTags(...args),
   discardRecordingCapture: vi.fn(),
   getRecordingsCalendar: (...args: unknown[]) => getRecordingsCalendar(...args),
@@ -95,11 +94,12 @@ vi.mock("@/lib/store", () => ({
     selectedTagIds: [],
     toggleTagFilter: vi.fn(),
     clearTagFilters: vi.fn(),
-    selectionMode,
     selectedRecordingIds,
+    selectionAnchorId: null,
+    setRecordingSelection: vi.fn(),
     toggleRecordingSelection: vi.fn(),
-    selectAllRecordings: vi.fn(),
     clearSelection: vi.fn(),
+    pruneRecordingSelection: vi.fn(),
     recordingsSidebarWidth: 320,
     setRecordingsSidebarWidth: vi.fn(),
   }),
@@ -174,7 +174,6 @@ describe("Sidebar", () => {
     pausedRecording = null;
     pathname = "/recordings";
     unsentRecordings = [];
-    selectionMode = false;
     selectedRecordingIds = [];
     sweptLists.length = 0;
     useImportAudioStore.setState({ isImportAudioOpen: false });
@@ -189,6 +188,7 @@ describe("Sidebar", () => {
   });
 
   it("checks ordinary, active and batch-selected recording fills", async () => {
+    getRecordings.mockResolvedValue([recording, { ...recording, id: "rec-2", name: "Other meeting" }]);
     const { rerender } = renderWithProviders(<Sidebar />);
     const heading = await screen.findByRole("heading", { name: "Latest meeting" });
     const card = heading.closest("a")!;
@@ -200,13 +200,15 @@ describe("Sidebar", () => {
     pathname = "/recordings/rec-1";
     rerender(<Sidebar />);
     check("bg-action-tint");
-    selectionMode = true;
+    // Selecting another recording takes the highlight off the active one.
+    selectedRecordingIds = ["rec-2"];
     rerender(<Sidebar />);
     check("bg-surface-card");
     selectedRecordingIds = ["rec-1"];
     rerender(<Sidebar />);
     check("bg-action-tint");
     selectedRecordingIds = [];
+    pathname = "/recordings";
     rerender(<Sidebar />);
     check("bg-surface-card");
   });
@@ -237,7 +239,7 @@ describe("Sidebar", () => {
       "Retry Processing",
       "Show Recording Info",
       "Archive",
-      "Delete",
+      "Move to Bin",
     ]);
   });
 
@@ -359,7 +361,9 @@ describe("Sidebar", () => {
         getRecordings.mockResolvedValue([]);
         renderList();
 
-        await screen.findByText(/^No (archived|deleted) recordings\.$/);
+        await screen.findByText(
+          view === "archived" ? "No archived recordings." : "The bin is empty.",
+        );
         expect(importButtons()).toHaveLength(0);
       },
     );

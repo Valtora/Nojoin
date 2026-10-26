@@ -1112,7 +1112,12 @@ async def test_a_delete_racing_the_task_leaves_no_file(
     source = env.tmp / "screen.mkv"
     _screen_recording(source, ["-c:a", "aac"])
     recording_id = _waiting_import(env, source)
-    with env.engine.connect() as connection:
+    with env.engine.begin() as connection:
+        # The batch route deletes for good only what is in the bin.
+        connection.execute(
+            text("UPDATE recordings SET is_deleted = :binned WHERE id = :id"),
+            {"binned": batch, "id": recording_id},
+        )
         public_id = connection.execute(
             text("SELECT public_id FROM recordings WHERE id = :id"),
             {"id": recording_id},

@@ -32,6 +32,8 @@ export interface Notification {
   actions?: NotificationAction[];
   /** Runs when the close button dismisses the notification, not when an action does. */
   onClose?: () => void;
+  /** How long a transient notification stays, if not TRANSIENT_NOTIFICATION_MS. */
+  durationMs?: number;
 }
 
 export type NewNotification = Omit<Notification, 'id' | 'timestamp'> & {
@@ -90,7 +92,7 @@ export const useNotificationStore = create<NotificationState>()(
             set((state) => ({
               activeNotifications: state.activeNotifications.filter((n) => n !== newNotification),
             }));
-          }, TRANSIENT_NOTIFICATION_MS);
+          }, notification.durationMs ?? TRANSIENT_NOTIFICATION_MS);
         }
 
         return id;
