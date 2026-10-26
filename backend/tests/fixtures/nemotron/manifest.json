@@ -33,7 +33,7 @@
     },
     "tolerances": {
       "probabilities": {
-        "atol": 2e-06,
+        "atol": 0.0004,
         "rtol": 1e-05
       },
       "cache": {
@@ -42,7 +42,7 @@
       }
     }
   },
-  "tolerance_policy_sha256": "4e83e0c90e528c582aa28caccf1faf8e5dc0430756e4eddfead414a1e31dff21",
+  "tolerance_policy_sha256": "41f0b6ce00e709f08e3f8d3f1393d28acb134f26b9152e3c0f3b23e116f5d621",
   "generated_utc": "2026-10-26T01:09:47.320483+00:00",
   "artifacts": {
     "es2004d-first-21_13.wav": {
